@@ -15,6 +15,7 @@ type InvokeCommand = (command: string) => Promise<unknown>;
 
 type MicrophoneAccessDependencies = {
   nativeMac?: boolean;
+  detectNativeMac?: () => Promise<boolean>;
   invoke?: InvokeCommand;
   getUserMedia?: () => Promise<MediaStream>;
 };
@@ -114,12 +115,9 @@ export async function requestMicrophoneStream(
 ): Promise<MediaStream> {
   let nativeMac: boolean;
   try {
-    nativeMac = dependencies.nativeMac ?? await isNativeMacPlatform();
+    nativeMac = dependencies.nativeMac ?? await (dependencies.detectNativeMac ?? isNativeMacPlatform)();
   } catch {
-    throw new MicrophoneAccessError(
-      "microphone_permission_failed",
-      "Restart Coven Cave and retry the call.",
-    );
+    nativeMac = false;
   }
   const invoke = dependencies.invoke ?? defaultInvoke;
 

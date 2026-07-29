@@ -60,6 +60,20 @@ test("older macOS falls through to webview capture when native preflight is unav
   assert.equal(result, stream);
 });
 
+test("missing native platform detection falls through to webview capture", async () => {
+  let detected = false;
+  const result = await requestMicrophoneStream({
+    detectNativeMac: async () => {
+      detected = true;
+      throw new Error("plugin-os unavailable");
+    },
+    getUserMedia: async () => stream,
+  });
+
+  assert.equal(detected, true);
+  assert.equal(result, stream);
+});
+
 test("iOS Tauri skips macOS preflight even when its webview identifies as Mac", async () => {
   const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
   const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");

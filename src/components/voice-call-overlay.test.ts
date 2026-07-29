@@ -125,6 +125,11 @@ assert.match(
 );
 assert.match(
   component,
+  /catch \(error\) \{[\s\S]*?if \(cancelled\) return;[\s\S]*?const failure = classifyMicrophoneCaptureError\(error\)/,
+  "cancelled microphone requests do not dispatch failure after cleanup",
+);
+assert.match(
+  component,
   /\{state\.canOpenSettings && \([\s\S]{0,600}>\s*Open settings\s*<\/button>/,
   "denied desktop access offers a direct System Settings recovery action",
 );

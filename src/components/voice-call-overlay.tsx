@@ -44,6 +44,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           micStreamRef.current = stream;
           dispatch({ type: "MIC_READY" });
         } catch (error) {
+          if (cancelled) return;
           const failure = classifyMicrophoneCaptureError(error);
           dispatch({
             type: "MIC_FAILED",
