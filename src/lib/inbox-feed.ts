@@ -26,6 +26,7 @@ export function inboxActivityTime(item: InboxItem): number {
  * activity. An item is in exactly one group:
  *   • resolved — status done | dismissed (terminal), regardless of kind.
  *   • needsYou — fired, OR a response-needed item (and not yet resolved).
+ *                Never a daily summary: a report is read, not answered.
  *   • active   — everything else still live (pending | snoozed).
  */
 export function groupInboxFeed(items: readonly InboxItem[]): InboxFeedGroups {
@@ -36,6 +37,12 @@ export function groupInboxFeed(items: readonly InboxItem[]): InboxFeedGroups {
   for (const item of items) {
     if (item.status === "done" || item.status === "dismissed") {
       resolved.push(item);
+    } else if (item.kind === "daily-summary") {
+      // A report is something to READ, not an action to clear. It fires like
+      // everything else, but "needs you" means "you owe this a response" —
+      // and a day's summary never does. Left in that tier it also drowned the
+      // handful of items that genuinely did.
+      active.push(item);
     } else if (item.status === "fired" || item.kind === "response-needed") {
       needsYou.push(item);
     } else {
