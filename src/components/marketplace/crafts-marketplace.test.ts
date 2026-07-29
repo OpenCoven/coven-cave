@@ -8,7 +8,7 @@ const card = await readFile(new URL("./marketplace-card.tsx", import.meta.url), 
 const detail = await readFile(new URL("./marketplace-detail.tsx", import.meta.url), "utf8");
 const createDrawer = await readFile(new URL("./craft-create-drawer.tsx", import.meta.url), "utf8");
 const craftDetailUrl = new URL("./craft-detail.tsx", import.meta.url);
-const css = await readFile(new URL("../../app/globals.css", import.meta.url), "utf8");
+const css = await readFile(new URL("../../styles/globals/surface-marketplace.css", import.meta.url), "utf8");
 const marketplaceRoute = await readFile(new URL("../../app/api/marketplace/route.ts", import.meta.url), "utf8");
 
 assert.match(model, /\{ id: "crafts", label: "Crafts"/, "Crafts is a first-class Marketplace section");

@@ -134,7 +134,7 @@ test.describe("Craft Marketplace transactions", () => {
     });
 
     await openCrafts(page);
-    const preview = page.getByRole("button", { name: "Preview" });
+    const preview = page.getByTestId("detail").getByRole("button", { name: "Preview" });
     await preview.focus();
     await preview.click();
     const dialog = page.getByRole("dialog", { name: "Seeker's Lens Craft details" });
