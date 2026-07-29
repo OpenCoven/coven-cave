@@ -112,7 +112,7 @@ async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> 
  */
 export function DaemonReleaseAlignmentTrigger() {
   const isDesktop = useIsTauriDesktop();
-  const { pushBanner, dismissBanner } = useShellBanners();
+  const { dismissBanner } = useShellBanners();
   const attempted = useRef(false);
 
   useEffect(() => {
@@ -142,7 +142,7 @@ export function DaemonReleaseAlignmentTrigger() {
     return () => {
       active = false;
     };
-  }, [dismissBanner, isDesktop, pushBanner]);
+  }, [dismissBanner, isDesktop]);
 
   return null;
 }
