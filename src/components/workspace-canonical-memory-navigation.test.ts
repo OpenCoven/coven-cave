@@ -15,7 +15,7 @@ assert.match(
 );
 
 const intentBranch = workspace.match(
-  /if \(intent\.kind === "open-coven-memory"\) \{([\s\S]*?)\n\s*\}\n\s*if \(intent\.kind === "open-memory-file"\)/,
+  /if \(intent\.kind === "open-coven-memory"\) \{([\s\S]*?)\r?\n\s*\}\r?\n\s*if \(intent\.kind === "open-memory-file"\)/,
 );
 assert.ok(intentBranch, "Workspace handles canonical navigation separately from files");
 assert.match(
