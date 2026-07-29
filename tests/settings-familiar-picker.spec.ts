@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test.describe.configure({ mode: "serial" });
+
 const FAMILIARS = Array.from({ length: 60 }, (_, index) => ({
   id: `familiar-${String(index + 1).padStart(2, "0")}`,
   display_name: `Familiar ${String(index + 1).padStart(2, "0")}`,
@@ -15,6 +17,10 @@ async function gotoChatFamiliarSettings(page: Page) {
     window.localStorage.setItem("cave:familiar-scope", JSON.stringify(["familiar-01"]));
     window.localStorage.setItem("cave:active-familiar", "familiar-01");
   });
+  // This migration path only needs the roster and session shape below. Abort
+  // unrelated daemon-backed API reads so Cave-home reconciliation cannot hold
+  // the Chat shell behind a live runtime lock in the full CI suite.
+  await page.route("**/api/**", (route) => route.abort());
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: FAMILIARS } }),
   );
