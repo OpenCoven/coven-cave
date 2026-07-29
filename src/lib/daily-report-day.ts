@@ -36,6 +36,9 @@ export type DayEvent = {
   tone: DayTone;
   href?: string;
   familiarId?: string | null;
+  /** Set on merge events — lets a surface open the rich GitHub card for it
+   *  instead of sending the reader out to github.com. */
+  pr?: { repo: string; number: number };
 };
 
 export type Chapter = {
@@ -139,6 +142,8 @@ export type SpineEntry = {
   chapterIndex: number;
   /** >1 when this line stands for several merges. */
   count: number;
+  /** Only on a line that stands for exactly one merge. */
+  pr?: { repo: string; number: number };
 };
 
 export type DayModel = {
@@ -296,6 +301,7 @@ export function dayEvents(
       detail: `${repoBasename(pr.repo)}#${pr.number}`,
       href: pr.url,
       familiarId: familiarByPr.get(prKey(pr.repo, pr.number)) ?? null,
+      pr: { repo: pr.repo, number: pr.number },
     });
   }
 
@@ -454,6 +460,7 @@ export function deriveSpine(chapters: Chapter[]): SpineEntry[] {
           detail: e.detail,
           chapterIndex: chapter.index,
           count: 1,
+          pr: e.pr,
         });
       }
       continue;

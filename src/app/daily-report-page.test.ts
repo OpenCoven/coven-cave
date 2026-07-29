@@ -61,8 +61,8 @@ assert.match(view, /THE SPINE/, "the written page carries the time spine");
 assert.match(view, /data-dim=\{dimmed/, "spine events dim when a chapter is selected");
 assert.match(
   view,
-  /onClick=\{\(\) => setChapter\(e\.chapterIndex\)\}/,
-  "clicking a spine line selects the chapter it belongs to",
+  /setChapter\(e\.chapterIndex\)/,
+  "a spine line that stands for several merges selects the chapter it belongs to",
 );
 // A 33-merge day must read as a story, not a changelog.
 assert.match(
@@ -138,6 +138,31 @@ assert.match(
   /\.drd-week__step\[data-disabled\][\s\S]{0,160}pointer-events:\s*none/,
   "the disabled step must not be clickable",
 );
+
+// ── PR detail reuses the app's own GitHub card ─────────────────────────────
+// The report must not grow a second GitHub client, and must not bounce the
+// reader to github.com for something the app already renders richly.
+
+{
+  const prModal = read("../components/daily-report-pr-modal.tsx");
+  assert.match(prModal, /from "@\/components\/github-card"/, "the PR overlay mounts the app's GitHubCard");
+  assert.match(prModal, /kind: "pr"/, "it asks the card for a pull request");
+  assert.match(prModal, /useFocusTrap/, "the overlay traps focus like the report's other dialogs");
+  assert.doesNotMatch(prModal, /api\/github\//, "the overlay must not fetch PR data itself — the card owns that");
+
+  // Shipped rows open it rather than leaving the app.
+  assert.match(shipped, /onOpenPr/, "shipped rows can open the in-app PR card");
+  assert.match(view, /DailyReportPrModal/, "the report shell mounts the PR overlay");
+  assert.match(view, /setPr\(\{ repo: row\.repo/, "a shipped row opens its own PR");
+  // Escape unwinds the layer stack top-down.
+  assert.match(view, /setPr\(\(current\) => \{/, "Escape closes the PR card before the dialogs and panels");
+  // A spine line standing for one merge carries the PR through the model.
+  assert.match(
+    read("../lib/daily-report-day.ts"),
+    /pr\?: \{ repo: string; number: number \}/,
+    "the model carries PR identity so surfaces can open the card",
+  );
+}
 
 // ── theme safety ───────────────────────────────────────────────────────────
 // This surface ships beside 21 themes × 2 modes. A literal color from the
