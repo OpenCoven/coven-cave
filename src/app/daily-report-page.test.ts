@@ -86,6 +86,59 @@ assert.match(view, /no line counts/, "cast members without line counts say so");
 // The share card reuses the frozen image when one exists.
 assert.match(modals, /shareImageUrl/, "the share modal renders the frozen generated card");
 
+// ── one screen at md and up ────────────────────────────────────────────────
+// The report is a single screen from 768px: the page itself must not scroll,
+// the columns take their own scrollbars instead. `.dr-page` is its own scroll
+// container nested inside `.aps-main`, so the lock has to clamp the day
+// variant or the outer pane picks the scroll back up.
+
+{
+  const css = read("../styles/daily-report-day.css");
+  const md = css.match(/@media \(min-width: 768px\)\s*\{[\s\S]*?\n\}/);
+  assert.ok(md, "daily-report-day.css must carry a min-width: 768px block");
+  assert.match(md[0], /\.dr-page--day\s*\{[^}]*overflow:\s*hidden/, "the day page must not scroll at md+");
+  assert.match(md[0], /\.dr-page--day \.drd\b[^{]*\{[^}]*min-height:\s*0/, "the card must be allowed to shrink");
+  assert.match(md[0], /\.dr-page--day \.drd-body[^{]*\{[^}]*(flex|overflow)/, "the body row absorbs the leftover height");
+  // Below md the page scrolls normally — that is correct for a phone. Scope
+  // the check to the mobile block itself by brace-matching; a loose regex
+  // here just reaches forward into the md block and always "passes".
+  const blockAt = (source, header) => {
+    const start = source.indexOf(header);
+    if (start === -1) return "";
+    let depth = 0;
+    for (let i = source.indexOf("{", start); i < source.length; i++) {
+      if (source[i] === "{") depth++;
+      else if (source[i] === "}" && --depth === 0) return source.slice(start, i + 1);
+    }
+    return "";
+  };
+  const mobile = blockAt(css, "@media (max-width: 760px)");
+  assert.ok(mobile, "the mobile band block should still exist");
+  assert.doesNotMatch(mobile, /overflow:\s*hidden/, "the mobile band must keep its normal page scroll");
+  assert.match(
+    css,
+    /@media \(min-width: 1025px\)[\s\S]*?\.dr-page--day \.drd-rail/,
+    "from lg each column takes its own scrollbar",
+  );
+}
+
+// ── the week strip never pages into the future ─────────────────────────────
+
+assert.match(page, /const canGoForward = dateSlug\(day\) < todaySlug/, "forward paging stops at the current week");
+assert.match(
+  page,
+  /dateSlug\(nextWeek\) > todaySlug \? todaySlug : dateSlug\(nextWeek\)/,
+  "the last forward step clamps to today rather than overshooting",
+);
+assert.match(page, /isFuture,/, "week cells know whether they are in the future");
+assert.match(view, /canGoForward \?/, "the next-week control is dead on the current week");
+assert.match(view, /day\.isFuture \?/, "a future day renders as a dead cell, not a link");
+assert.match(
+  read("../styles/daily-report-day.css"),
+  /\.drd-week__step\[data-disabled\][\s\S]{0,160}pointer-events:\s*none/,
+  "the disabled step must not be clickable",
+);
+
 // ── theme safety ───────────────────────────────────────────────────────────
 // This surface ships beside 21 themes × 2 modes. A literal color from the
 // mock would break the other 41 combinations, so the sheets must be

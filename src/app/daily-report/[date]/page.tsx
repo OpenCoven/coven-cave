@@ -120,10 +120,12 @@ export default async function DailyReportPage({ params }: Props) {
   }
   const weekMerges = weekDates.map((d) => statBySlug.get(dateSlug(d))?.prsMerged ?? 0);
   const peakMerges = Math.max(...weekMerges, 0);
+  const todaySlug = dateSlug(new Date());
   const week: WeekCell[] = weekDates.map((d, i) => {
     const slug = dateSlug(d);
     const dayStats = statBySlug.get(slug);
     const merges = weekMerges[i];
+    const isFuture = slug > todaySlug;
     return {
       slug,
       letter: WEEKDAY_LETTER[d.getDay()],
@@ -131,19 +133,27 @@ export default async function DailyReportPage({ params }: Props) {
       level: peakMerges > 0 ? merges / peakMerges : 0,
       selected: slug === dateSlug(day),
       hasReport: Boolean(dayStats),
-      title: `${d.toDateString()} · ${dayStats ? `${merges} ${merges === 1 ? "merge" : "merges"}` : "no report"}`,
+      isFuture,
+      title: isFuture
+        ? `${d.toDateString()} · hasn't happened yet`
+        : `${d.toDateString()} · ${dayStats ? `${merges} ${merges === 1 ? "merge" : "merges"}` : "no report"}`,
     };
   });
 
   const prevWeek = new Date(day);
   prevWeek.setDate(day.getDate() - 7);
+  // Forward paging stops at the current week — the cave cannot report on a day
+  // that has not happened. The last step clamps to today rather than
+  // overshooting into a week of empty cells.
   const nextWeek = new Date(day);
   nextWeek.setDate(day.getDate() + 7);
+  const nextWeekSlug = dateSlug(nextWeek) > todaySlug ? todaySlug : dateSlug(nextWeek);
+  const canGoForward = dateSlug(day) < todaySlug;
 
   // media.generatedAt moves on every in-place refresh; firedAt stays at the
   // day's first generation, so prefer the former for a truthful timestamp.
   const generatedAt = item.media?.generatedAt ?? item.firedAt ?? item.updatedAt ?? null;
-  const isToday = dateSlug(day) === dateSlug(new Date());
+  const isToday = dateSlug(day) === todaySlug;
 
   // The familiar's narrative, with the piggybacked next-paths block stripped.
   const rawNarrative = item.media?.narrative?.text ?? null;
@@ -166,7 +176,8 @@ export default async function DailyReportPage({ params }: Props) {
             week={week}
             weekLabel={`${shortDate(weekDates[0])} — ${shortDate(weekDates[6])}`}
             prevWeekSlug={dateSlug(prevWeek)}
-            nextWeekSlug={dateSlug(nextWeek)}
+            nextWeekSlug={nextWeekSlug}
+            canGoForward={canGoForward}
             isToday={isToday}
             narrative={narrative}
             narrativeByline={narrativeByline}
