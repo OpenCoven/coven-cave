@@ -54,6 +54,25 @@ test("the gate stays prop-driven and focuses the correct first control on first 
   assert.doesNotMatch(src, /autoFocus/, "initial focus no longer depends on DOM-order-sensitive autoFocus");
 });
 
+test("the registered-project default never overwrites an explicit create-new selection", () => {
+  const src = read("./first-project-gate.tsx");
+  assert.match(
+    src,
+    /const existingProjectSelectionInitializedRef = useRef\(false\);/,
+    "tracks whether the automatic existing-project default has already run",
+  );
+  assert.match(
+    src,
+    /if \(registeredProject \|\| availableProjects\.length === 0 \|\| existingProjectSelectionInitializedRef\.current\) return;\s*existingProjectSelectionInitializedRef\.current = true;\s*setSelectedExistingProjectId\(availableProjects\[0\]!\.id\);/,
+    "defaults once when projects arrive, then preserves the explicit empty create-new option",
+  );
+  assert.doesNotMatch(
+    src,
+    /registeredProject \|\| selectedExistingProjectId \|\| availableProjects\.length === 0/,
+    "does not mistake the intentional empty select value for an uninitialized selection",
+  );
+});
+
 test("workspace wires the first-project gate through pending-aware policy and renders it inside the detail area", () => {
   const src = read("./workspace.tsx");
   assert.match(src, /import \{ FirstProjectGate \} from "@\/components\/first-project-gate";/, "workspace eagerly imports the first-project gate");
