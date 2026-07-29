@@ -408,9 +408,11 @@ assert.match(
   /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
   "the shared footer reads the version from the shared app-version module",
 );
+// It became a link to Settings → About (see sidebar-footer.test.ts); still one
+// minimal-height muted line, still the bottommost element.
 assert.match(
   footer,
-  /className="sidebar-version"[\s\S]{0,120}?v\{APP_VERSION\}[\s\S]{0,40}?<\/div>/,
+  /className="sidebar-version"[\s\S]{0,280}?v\{APP_VERSION\}[\s\S]{0,40}?<\/a>/,
   "the version line is the bottommost element of the shared footer",
 );
 // Phase D (chat-revamp): the rail-only account avatar circle closes the nav,
