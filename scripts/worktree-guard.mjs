@@ -36,9 +36,14 @@
  *
  * Deliberate destruction is allowed by prefixing the command with
  * `WT_GUARD_BYPASS=1 ` — the guard only ensures it can't happen by accident.
- * Honoured bypasses are appended to `.claude/worktree-guard-bypass.log`
- * (gitignored) so a later post-mortem can tell a deliberate override from a
- * gap in the guard — the question cave-boor8 could not answer.
+ * Honoured bypasses AND blocked attempts are appended to
+ * `.claude/worktree-guard-bypass.log` (gitignored, one JSON line each with a
+ * `verdict` field) so a later post-mortem can tell a deliberate override from
+ * a gap in the guard — the question cave-boor8 could not answer. Blocks are
+ * recorded too because their absence is itself evidence: a worktree that was
+ * never the subject of a block or a bypass yet disappeared was destroyed by
+ * something that does not route through the hook at all (external terminal,
+ * editor, automation) — the one hole no PreToolUse hook can close.
  * On any internal error the guard exits 0: a hook bug must never brick Bash.
  */
 
@@ -62,7 +67,11 @@ function allow() {
   process.exit(0);
 }
 
+/** Set once in main() so block() can record what it refused. */
+const CTX = { command: null, cwd: null, session: null };
+
 function block(reason) {
+  recordEvent("block", reason);
   process.stderr.write(
     `⛔ worktree-guard blocked this command.\n${reason}\n` +
       `If this destruction is deliberate, re-run prefixed with \`${BYPASS} \` — but first make sure ` +
@@ -73,23 +82,29 @@ function block(reason) {
 }
 
 /**
- * Record every honoured bypass.
+ * Record every honoured bypass AND every block.
  *
  * On 2026-07-29 a worktree holding 3 uncommitted files was destroyed and the
  * post-mortem (cave-boor8) could not establish whether the guard had been
- * bypassed or circumvented — the bypass path left no trace at all. An append
- * here makes that question answerable. Best-effort by construction: any failure
- * is swallowed, because refusing a command over a logging problem would be a
- * worse bug than the missing record.
+ * bypassed or circumvented — the bypass path left no trace at all. Appends
+ * here make that question answerable: a bypass entry names the deliberate
+ * override; a block entry followed by the worktree's disappearance names an
+ * actor that retried OUTSIDE the hook; and no entry at all means the
+ * destruction never routed through Bash — the unhookable hole. Best-effort by
+ * construction: any failure is swallowed, because refusing a command over a
+ * logging problem would be a worse bug than the missing record.
  */
-function recordBypass(command, cwd, sessionId) {
+function recordEvent(verdict, reason) {
   try {
-    const root = process.env.CLAUDE_PROJECT_DIR || cwd;
+    if (typeof CTX.command !== "string") return;
+    const root = process.env.CLAUDE_PROJECT_DIR || CTX.cwd;
     const line = `${JSON.stringify({
       at: new Date().toISOString(),
-      session: sessionId ?? null,
-      cwd,
-      command: command.length > 500 ? `${command.slice(0, 500)}…` : command,
+      verdict,
+      session: CTX.session ?? null,
+      cwd: CTX.cwd,
+      command: CTX.command.length > 500 ? `${CTX.command.slice(0, 500)}…` : CTX.command,
+      ...(reason ? { reason: reason.length > 300 ? `${reason.slice(0, 300)}…` : reason } : {}),
     })}\n`;
     // .claude/* is gitignored (except settings.json), so this never enters the repo.
     appendFileSync(path.join(root, ".claude", "worktree-guard-bypass.log"), line);
@@ -313,8 +328,11 @@ function main() {
   if (typeof command !== "string" || !INTEREST.test(command)) return allow();
   const cwd =
     (typeof input.cwd === "string" && input.cwd) || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  CTX.command = command;
+  CTX.cwd = cwd;
+  CTX.session = input?.session_id ?? null;
   if (/^\s*WT_GUARD_BYPASS=1(?:\s|$)/.test(command)) {
-    recordBypass(command, cwd, input?.session_id);
+    recordEvent("bypass", null);
     return allow();
   }
 

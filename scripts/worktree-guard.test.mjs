@@ -149,11 +149,31 @@ if (!isWin) {
   const entry = JSON.parse(readFileSync(log, "utf8").trim().split("\n").pop());
   assert.match(entry.command, /worktree remove/, "the record names the command that was let through");
   assert.equal(entry.session, "test", "and the session that ran it");
+  assert.equal(entry.verdict, "bypass", "and that it was a deliberate override");
   assert.ok(Date.parse(entry.at) > 0, "and when");
 
   // A second bypass appends rather than truncating — the log is a history.
   runHook(`WT_GUARD_BYPASS=1 rm -rf ${wt}`, dir);
   assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 2, "bypasses accumulate");
+}
+
+// ── 8c. BLOCKS are recorded too — absence of any entry is itself evidence ──────
+// cave-boor8's second half: a block entry followed by the worktree's
+// disappearance names an actor that retried outside the hook; no entry at all
+// means the destruction never routed through Bash. Both readings need blocks
+// in the log, not just bypasses.
+{
+  const { dir, wt } = repoWithWorktree({ push: true, dirty: true });
+  mkdirSync(path.join(dir, ".claude"), { recursive: true });
+  const res = runHook(`git worktree remove ${wt}`, dir);
+  assert.equal(res.status, 2, "still blocks");
+
+  const log = path.join(dir, ".claude", "worktree-guard-bypass.log");
+  assert.ok(existsSync(log), "the refusal is recorded");
+  const entry = JSON.parse(readFileSync(log, "utf8").trim().split("\n").pop());
+  assert.equal(entry.verdict, "block", "as a block, distinct from a bypass");
+  assert.match(entry.command, /worktree remove/, "naming the refused command");
+  assert.match(entry.reason, /uncommitted change/, "and why it was refused");
 }
 
 // ── 8b. A missing .claude dir must not brick the command ──────────────────────
