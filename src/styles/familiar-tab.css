@@ -2,7 +2,8 @@
    Chat · Familiar tab — identity detail for the ACTIVE familiar
    (design-handoff redesign, scoped by cave-k8b0a: the sidebar's global scope
    dropdown is the only familiar switcher, so the tab hosts no roster rail —
-   just the identity header + Roles/Skills/Runtime/Capabilities cards. The
+   just the identity header + Identity/Skills/MCP/Analytics/Memory/Settings
+   sections spanning the full-width capability panel. The
    `.familiar-tab` root class is load-bearing for backdrop glass — see
    backdrop.css.)
    ──────────────────────────────────────────────── */
