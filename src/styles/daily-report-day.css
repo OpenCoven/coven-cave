@@ -1087,9 +1087,15 @@
     overflow: hidden;
   }
 
+  /* Fill the pane. The report it replaced was a centred 1060px reading column,
+     but the chaptered day is a dashboard — three columns plus two full-width
+     panel strips, all of which want every pixel. The gutter stays small and
+     even so the card reads as the surface rather than floating on one. */
   .dr-page--day .dr-shell--wide {
     box-sizing: border-box;
+    max-width: none;
     height: 100%;
+    padding: var(--space-2);
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -1148,4 +1154,17 @@
    on a short viewport. */
 .drd-panelhost:has([data-panel]) {
   z-index: 30;
+}
+
+/* On a very wide window the middle column would balloon while the prose keeps
+   its reading measure. Give the rail and the cast a little more of that space
+   so the three columns stay in proportion instead of stranding it. */
+@media (min-width: 1600px) {
+  .dr-page--day .drd-body {
+    grid-template-columns: 232px minmax(0, 1fr) 320px;
+  }
+
+  .dr-page--day .drd-cast {
+    width: 320px;
+  }
 }
