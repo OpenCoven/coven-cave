@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
-import { readdir } from "node:fs/promises";
-import { homedir, hostname } from "node:os";
-import path from "node:path";
+import { hostname } from "node:os";
 import { pickVersionLine } from "@/lib/harness-version";
 import {
   COMPATIBILITY_ADAPTERS,
@@ -18,6 +16,7 @@ import { probeCodexRuntimeAvailability } from "@/lib/codex-runtime-availability"
 import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { openCodeAvailabilityProbe, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
+import { listOpenClawAgents } from "@/lib/openclaw-bridge";
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
 import {
   resolveCopilotRuntimeLaunch,
@@ -287,16 +286,7 @@ function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
 }
 
 async function countOpenClawAgents(): Promise<number> {
-  try {
-    const entries = await readdir(path.join(homedir(), ".openclaw", "agents"), {
-      withFileTypes: true,
-    });
-    return entries.filter(
-      (entry) => entry.isDirectory() && !entry.name.startsWith("."),
-    ).length;
-  } catch {
-    return 0;
-  }
+  return (await listOpenClawAgents()).length;
 }
 
 export async function GET() {

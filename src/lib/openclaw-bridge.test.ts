@@ -10,6 +10,7 @@ import {
   openClawBridgeCapabilities,
   openClawAgentArgs,
   openClawSessionKey,
+  parseOpenClawAgentList,
   readTomlString,
   resolveOpenClawAgentBindingFromSources,
   resolveOpenClawAgentId,
@@ -24,6 +25,36 @@ assert.equal(readTomlString("id = \"nova\"", "openclaw_agent"), null);
 
 assert.equal(slugifyOpenClawAgentName("Cody Main"), "cody-main");
 assert.equal(slugifyOpenClawAgentName("  Nova / Release Review  "), "nova-release-review");
+assert.deepEqual(
+  parseOpenClawAgentList([
+    {
+      id: " main ",
+      name: null,
+      identityName: null,
+      isDefault: true,
+      workspace: "C:\\Users\\example\\.openclaw\\workspace",
+      futureField: "ignored",
+    },
+  ]),
+  [
+    {
+      id: "main",
+      isDefault: true,
+      workspace: "C:\\Users\\example\\.openclaw\\workspace",
+    },
+  ],
+  "the live registry parser should normalize the stable agent contract",
+);
+assert.deepEqual(
+  parseOpenClawAgentList([{ id: "main" }, { id: "main" }]),
+  [],
+  "duplicate live agent ids should fail closed",
+);
+assert.deepEqual(
+  parseOpenClawAgentList([{ id: "main", isDefault: "yes" }]),
+  [],
+  "malformed live registry fields should fail closed",
+);
 
 const candidateAgents = [
   { id: "fallback-match", name: "Nova", identityName: "Nova Identity" },

@@ -18,11 +18,18 @@ export type OpenClawAgentJson = {
 };
 
 export type OpenClawAgentSummary = {
-  id?: string;
-  name?: string;
-  identityName?: string;
+  id: string;
+  name?: string | null;
+  identityName?: string | null;
   isDefault?: boolean;
+  workspace?: string | null;
 };
+
+const OPENCLAW_AGENT_CACHE_TTL_MS = 5_000;
+let openClawAgentCache:
+  | { expiresAt: number; agents: OpenClawAgentSummary[] }
+  | null = null;
+let openClawAgentListInFlight: Promise<OpenClawAgentSummary[]> | null = null;
 
 type OpenClawBridgeRequest = {
   familiarId: string;
@@ -111,6 +118,33 @@ export function slugifyOpenClawAgentName(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+export function parseOpenClawAgentList(value: unknown): OpenClawAgentSummary[] {
+  if (!Array.isArray(value)) return [];
+
+  const seen = new Set<string>();
+  const agents: OpenClawAgentSummary[] = [];
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== "object") return [];
+    const row = candidate as Record<string, unknown>;
+    const id = typeof row.id === "string" ? row.id.trim() : "";
+    if (!id || seen.has(id)) return [];
+    if (row.name != null && typeof row.name !== "string") return [];
+    if (row.identityName != null && typeof row.identityName !== "string") return [];
+    if (row.isDefault != null && typeof row.isDefault !== "boolean") return [];
+    if (row.workspace != null && typeof row.workspace !== "string") return [];
+
+    seen.add(id);
+    agents.push({
+      id,
+      ...(typeof row.name === "string" ? { name: row.name } : {}),
+      ...(typeof row.identityName === "string" ? { identityName: row.identityName } : {}),
+      ...(typeof row.isDefault === "boolean" ? { isDefault: row.isDefault } : {}),
+      ...(typeof row.workspace === "string" ? { workspace: row.workspace } : {}),
+    });
+  }
+  return agents;
+}
+
 export async function readOpenClawAgentBinding(familiarId: string): Promise<string | null> {
   try {
     const raw = await readFile(path.join(covenHome(), "familiars.toml"), "utf8");
@@ -125,7 +159,7 @@ export async function readOpenClawAgentBinding(familiarId: string): Promise<stri
   return null;
 }
 
-export async function listOpenClawAgents(): Promise<OpenClawAgentSummary[]> {
+async function loadOpenClawAgents(): Promise<OpenClawAgentSummary[]> {
   const {
     openClawBin,
     openClawNeedsShell,
@@ -139,19 +173,54 @@ export async function listOpenClawAgents(): Promise<OpenClawAgentSummary[]> {
       shell: openClawNeedsShell(),
     });
     let stdout = "";
+    let settled = false;
+    const finish = (agents: OpenClawAgentSummary[]) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(agents);
+    };
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      finish([]);
+    }, 15_000);
     child.stdout.on("data", (data: Buffer) => {
       stdout += data.toString("utf8");
     });
-    child.on("error", () => resolve([]));
-    child.on("close", () => {
+    child.on("error", () => finish([]));
+    child.on("close", (code) => {
+      if (code !== 0) {
+        finish([]);
+        return;
+      }
       try {
-        const parsed = JSON.parse(stdout.trim()) as OpenClawAgentSummary[];
-        resolve(Array.isArray(parsed) ? parsed : []);
+        finish(parseOpenClawAgentList(JSON.parse(stdout.trim())));
       } catch {
-        resolve([]);
+        finish([]);
       }
     });
   });
+}
+
+export async function listOpenClawAgents(): Promise<OpenClawAgentSummary[]> {
+  const now = Date.now();
+  if (openClawAgentCache && openClawAgentCache.expiresAt > now) {
+    return openClawAgentCache.agents;
+  }
+  if (openClawAgentListInFlight) return openClawAgentListInFlight;
+
+  openClawAgentListInFlight = loadOpenClawAgents()
+    .then((agents) => {
+      openClawAgentCache = {
+        expiresAt: Date.now() + OPENCLAW_AGENT_CACHE_TTL_MS,
+        agents,
+      };
+      return agents;
+    })
+    .finally(() => {
+      openClawAgentListInFlight = null;
+    });
+  return openClawAgentListInFlight;
 }
 
 export function resolveOpenClawAgentIdFromSources(
@@ -188,11 +257,11 @@ export function resolveOpenClawAgentBindingFromSources(
     return { caveFamiliarId: familiarId, openclawAgentId: named, source: "name-match" };
   }
 
-  const defaults = agents.filter((agent) => agent.isDefault === true && agent.id);
+  const defaults = agents.filter((agent) => agent.isDefault === true);
   if (defaults.length === 1) {
     return {
       caveFamiliarId: familiarId,
-      openclawAgentId: defaults[0].id!,
+      openclawAgentId: defaults[0].id,
       source: "default",
     };
   }
