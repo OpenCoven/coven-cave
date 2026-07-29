@@ -95,3 +95,42 @@ assert.match(
 assert.match(tab, /const ok = await deleteProject\(id\);\s*if \(ok\) void load\(\);/, "removing a project reloads the access snapshot");
 
 console.log("familiar-studio-projects-tab.test.ts: ok");
+
+// ── Grant-change log surfaced in the console (cave-kbniv) ─────────────────
+// grantAudit was write-only until this: #4003/#4010 recorded every change and
+// nothing rendered it. These pin the read path end to end.
+assert.match(
+  route,
+  /listRecentGrantChanges/,
+  "the grants GET returns a recent grant-CHANGE window alongside the decision audit",
+);
+assert.match(
+  route,
+  /\n    grantChanges,/,
+  "the change window ships in the GET payload",
+);
+assert.match(
+  tab,
+  /Array\.isArray\(grantRes\?\.grantChanges\)/,
+  "the console reads the change window defensively",
+);
+assert.match(
+  tab,
+  /Recent access changes \(\$\{famChanges\.length\}\)/,
+  "changes render in their own group, separate from Recent decisions",
+);
+assert.match(
+  tab,
+  /const famChanges = useMemo\(/,
+  "changes are scoped to the selected familiar",
+);
+assert.match(
+  tab,
+  /\{grantLevelLabel\(e\.from\)\} → \{grantLevelLabel\(e\.to\)\}/,
+  "each line shows the levels either side of the change",
+);
+assert.match(
+  tab,
+  /grantChangeOriginLabel\(e\)/,
+  "each line says where the change came from",
+);

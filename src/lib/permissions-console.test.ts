@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 
 import {
+  grantChangeMeta,
+  grantChangeOriginLabel,
+  grantLevelLabel,
   accessLevelMeta,
   accessSummary,
   auditDecisionMeta,
@@ -189,3 +192,44 @@ assert.deepEqual(
 assert.deepEqual(groupsForFamiliar(groups, "ghost"), [], "non-members get no groups");
 
 console.log("permissions-console.test.ts: ok");
+
+// ── Grant-change log rendering (cave-kbniv) ───────────────────────────────
+// Direction is DERIVED from the two levels rather than stored, so a widening
+// can never be mislabeled as a narrowing by a bad writer.
+
+assert.equal(grantLevelLabel("write"), "Full");
+assert.equal(grantLevelLabel("read"), "Read");
+assert.equal(grantLevelLabel(null), "No access");
+
+assert.equal(grantChangeMeta({ from: null, to: "read" }).label, "Widened");
+assert.equal(grantChangeMeta({ from: "read", to: "write" }).label, "Widened");
+assert.equal(grantChangeMeta({ from: "write", to: "read" }).label, "Narrowed");
+assert.equal(grantChangeMeta({ from: "read", to: null }).label, "Narrowed");
+assert.equal(grantChangeMeta({ from: null, to: null }).label, "Changed");
+
+// A widening takes the accent so it is scannable, but NOT the danger tone —
+// red on every legitimate grant would cry wolf.
+assert.equal(grantChangeMeta({ from: null, to: "write" }).tone, "pending");
+assert.notEqual(
+  grantChangeMeta({ from: null, to: "write" }).tone,
+  "negative",
+  "a legitimate widening must not render as an error",
+);
+assert.equal(grantChangeMeta({ from: "write", to: null }).tone, "neutral");
+assert.equal(grantChangeMeta({ from: null, to: "write" }).icon, "ph:arrow-up");
+assert.equal(grantChangeMeta({ from: "write", to: null }).icon, "ph:arrow-down");
+
+// Origin tells the human where a change came from — the phone is the one that
+// matters most, since it is the remote surface.
+assert.equal(grantChangeOriginLabel({ actor: "loopback", kind: "direct" }), "on this desktop");
+assert.equal(grantChangeOriginLabel({ actor: "mobile", kind: "direct" }), "from the phone");
+assert.equal(
+  grantChangeOriginLabel({ actor: "loopback", kind: "group" }),
+  "via an access group · on this desktop",
+);
+assert.equal(
+  grantChangeOriginLabel({ actor: "system", kind: "project-removed" }),
+  "project removed from the registry",
+);
+
+console.log("permissions-console grant-change assertions: ok");

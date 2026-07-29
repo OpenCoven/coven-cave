@@ -10,6 +10,7 @@ import {
   grantProjectToFamiliar,
   listAccessGroups,
   listProjectGrants,
+  listRecentGrantChanges,
   listRecentPermissionAudit,
   loadHumanPermissionConfig,
   revokeProjectFromFamiliar,
@@ -55,10 +56,11 @@ function accessInput(payload: Record<string, unknown>): "read" | "write" | null 
 }
 
 export async function GET() {
-  const [grants, config, audit, accessGroups] = await Promise.all([
+  const [grants, config, audit, grantChanges, accessGroups] = await Promise.all([
     listProjectGrants(),
     loadHumanPermissionConfig(),
     listRecentPermissionAudit(),
+    listRecentGrantChanges(),
     listAccessGroups(),
   ]);
   // `supremeFamiliarId` has access to every project regardless of grants — the
@@ -74,6 +76,9 @@ export async function GET() {
     supremeFamiliarId: config.supremeFamiliarId,
     mobileMutationsAllowed: config.allowMobileGrantMutations,
     audit,
+    // Access CHANGES — who widened or narrowed a grant. Distinct from
+    // `audit`, which is the access-CHECK decision log.
+    grantChanges,
   });
 }
 
