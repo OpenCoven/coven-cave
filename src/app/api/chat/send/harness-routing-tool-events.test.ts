@@ -140,6 +140,17 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /reportUnsupportedClaudeToolFrame = \(frame: unknown\) => \{[\s\S]*?pushProgress\([\s\S]*?"claude-runtime-compatibility"[\s\S]*?"notice"/,
+  "unsupported profiled tool blocks must be presented as neutral notices",
+);
+assert.match(
+  chatRoute,
+  /reportCopilotProtocolDiagnostic[\s\S]*?label: "Copilot tool activity needs an update"[\s\S]*?status: "notice"/,
+  "Copilot protocol drift must be presented as a neutral notice",
+);
+
+assert.match(
+  chatRoute,
   /Claude stream frame could not be decoded[\s\S]*?fingerprint: redactedEventFingerprint\(frame\)[\s\S]*?chat text will continue without unverified tool bubbles[\s\S]*?reportMalformedClaudeStreamFrame\(line\)/,
   "malformed Claude JSONL must be reduced to a fingerprint and diagnostic rather than falling through to payload-bearing stdout diagnostics",
 );

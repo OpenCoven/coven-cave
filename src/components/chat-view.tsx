@@ -452,7 +452,7 @@ function upsertProgressEvent(
     id?: string;
     label: string;
     detail?: string;
-    status?: "running" | "done" | "error";
+    status?: "running" | "done" | "notice" | "error";
     durationMs?: number;
     createdAt?: string;
   },
@@ -518,7 +518,7 @@ function DurationText({ durationMs }: { durationMs?: number }) {
 }
 
 type ErrorStripTool = { id: string; name: string; input?: string; output?: string; status: "running" | "ok" | "error"; durationMs?: number };
-type ErrorStripStep = { id: string; label: string; detail?: string; status: "running" | "done" | "error" };
+type ErrorStripStep = { id: string; label: string; detail?: string; status: "running" | "done" | "notice" | "error" };
 type ErrorStripTurn = { tools?: ErrorStripTool[]; progress?: ErrorStripStep[]; lifecycle?: string };
 
 /** Inline error/debug strip between the transcript and the composer. Shows the
@@ -5426,7 +5426,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       id?: string;
       label: string;
       detail?: string;
-      status?: "running" | "done" | "error";
+      status?: "running" | "done" | "notice" | "error";
       durationMs?: number;
     },
     targetSessionId: string | null = currentSessionRef.current,
@@ -7561,8 +7561,9 @@ function ProgressGroup({
   pending: boolean;
 }) {
   const running = progress.filter((event) => event.status === "running").length;
+  const notices = progress.filter((event) => event.status === "notice").length;
   const errors = progress.filter((event) => event.status === "error").length;
-  const completed = progress.length - running - errors;
+  const completed = progress.filter((event) => event.status === "done").length;
   const current = currentProgress(progress);
 
   return (
@@ -7579,6 +7580,7 @@ function ProgressGroup({
         ) : null}
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+          {notices ? <span className="cave-tool-count cave-tool-count--notice">{notices} {notices === 1 ? "notice" : "notices"}</span> : null}
           {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "issue" : "issues"}</span> : null}
           {completed ? <span className="cave-tool-count">{completed} done</span> : null}
         </span>
@@ -7601,6 +7603,8 @@ function ProgressRow({ event }: { event: ProgressEvent }) {
   const statusIcon =
     event.status === "error"
       ? "ph:warning-circle"
+      : event.status === "notice"
+        ? "ph:info"
       : event.status === "done"
         ? "ph:check-circle"
         : "ph:circle-dashed";
@@ -8108,6 +8112,7 @@ function RunActivityStrip({
   const issues =
     tools.filter((t) => t.status === "error").length +
     progress.filter((p) => p.status === "error").length;
+  const notices = progress.filter((p) => p.status === "notice").length;
   const done =
     tools.filter((t) => t.status === "ok").length +
     progress.filter((p) => p.status === "done").length;
@@ -8134,14 +8139,15 @@ function RunActivityStrip({
           aria-label={live ? "Agent activity (running)" : "Last run summary"}
         >
           <Icon
-            name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : "ph:check-circle"}
+            name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices ? "ph:info" : "ph:check-circle"}
             width={13}
-            className={`shrink-0 ${live ? "animate-spin text-[var(--accent-presence)]" : issues ? "text-[var(--color-warning)]" : "text-[var(--color-success)]"}`}
+            className={`shrink-0 ${live ? "animate-spin text-[var(--accent-presence)]" : issues ? "text-[var(--color-warning)]" : notices ? "text-[var(--text-secondary)]" : "text-[var(--color-success)]"}`}
             aria-hidden
           />
           <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">{headline}</span>
           <span className="flex shrink-0 items-center gap-1.5 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+            {notices ? <span className="cave-tool-count cave-tool-count--notice">{notices} {notices === 1 ? "notice" : "notices"}</span> : null}
             {issues ? <span className="cave-tool-count cave-tool-count--error">{issues} {issues === 1 ? "issue" : "issues"}</span> : null}
             {done ? <span className="cave-tool-count">{done} done</span> : null}
           </span>

@@ -164,7 +164,7 @@ assert.match(
 );
 assert.match(
   route,
-  /Couldn't verify OpenCode JSON events; continuing in plain chat without tool activity[\s\S]*?capability-probe-unavailable[\s\S]*?capability-probe-fallback[\s\S]*?\? "done"\s*:\s*"error"/,
+  /Couldn't verify OpenCode JSON events; continuing in plain chat without tool activity[\s\S]*?capability-probe-unavailable[\s\S]*?capability-probe-fallback[\s\S]*?pushProgress\([\s\S]*?"notice"/,
   "an unavailable capability probe is distinct from confirmed JSON incompatibility and does not create a false error issue",
 );
 assert.doesNotMatch(
@@ -236,6 +236,16 @@ assert.match(
   route,
   /opencode-compatibility[\s\S]*?unrecognized event[\s\S]*?redactedOpenCodeEventFingerprint\(rawEvent\)/,
   "unknown future event shapes surface a safe visible diagnostic",
+);
+assert.match(
+  route,
+  /quarantineOpenCodeProtocol[\s\S]*?pushProgress\("opencode-compatibility", label, "notice"/,
+  "OpenCode protocol quarantine is presented as a neutral notice",
+);
+assert.match(
+  route,
+  /const diagnostic = openCodeCompatibility\.diagnostic ===[\s\S]*?pushProgress\([\s\S]*?"opencode-compatibility"[\s\S]*?diagnostic,[\s\S]*?"notice"/,
+  "OpenCode compatibility fallback diagnostics are presented as neutral notices",
 );
 assert.match(
   route,
