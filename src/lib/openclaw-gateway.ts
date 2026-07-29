@@ -12,7 +12,7 @@ import {
   signOpenClawDevicePayload,
   type OpenClawDeviceCredentialStore,
   type OpenClawDeviceIdentity,
-} from "@/lib/server/openclaw-device-credentials";
+} from "./server/openclaw-device-credentials.ts";
 
 /**
  * The direct Gateway transport is intentionally opt-in.  It owns a turn only
