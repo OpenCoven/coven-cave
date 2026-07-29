@@ -1,8 +1,8 @@
 // @ts-nocheck
 // Chat-revamp phase D — app chrome contracts:
 //   1. 56px icon rail: brand mark on top, primary-surface icon buttons,
-//      Settings + account avatar at the bottom; quiet surfaces demoted to the
-//      expanded panel (still reachable via ⌘B / hover-peek / ⌘K).
+//      Dashboard + Settings + account avatar at the bottom; quiet surfaces
+//      remain reachable as icons.
 //   2. 52px-band command bar: "Search or ask <familiar>…" + ⌘K keycap,
 //      right cluster = compact running status + notification bell.
 //   3. Bottom status bar: session context chips (project/model/branch/cwd) +
@@ -51,12 +51,12 @@ assert.match(
   /\.shell-nav--rail \.sidebar-folder-row,\n\.shell-nav--rail \.sidebar-action-row,\n\.shell-nav--rail \.sidebar-foot-btn,\n\.shell-nav--rail \.sidebar-foot-icon-btn \{[\s\S]{0,220}?width: 36px;\s*\n\s*height: 36px;/,
   "rail controls are 36px squares",
 );
-// Every visible workspace destination earns a rail icon; Dashboard remains an
-// expanded-panel link because it leaves the workspace route context.
-assert.match(
+// Dashboard stays reachable in the rail and follows the footer's DOM order, so
+// its icon sits directly above Settings in the rail's vertical footer stack.
+assert.doesNotMatch(
   sidebarCss,
   /\.shell-nav--rail a\.sidebar-foot-btn\[href="\/dashboard"\] \{\s*\n\s*display: none;/,
-  "Dashboard stays out of the rail because it leaves the workspace route context",
+  "Dashboard remains visible above Settings in the rail footer",
 );
 assert.doesNotMatch(
   sidebarCss,

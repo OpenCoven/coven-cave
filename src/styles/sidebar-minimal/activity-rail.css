@@ -99,14 +99,6 @@
   color: var(--text-primary);
 }
 
-/* The collapsed rail keeps every visible sidebar destination reachable by
-   icon, including the quiet cluster (Memories, Marketplace, and GitHub).
-   Dashboard remains an expanded-panel destination; its route context is
-   distinct from workspace mode navigation. */
-.shell-nav--rail a.sidebar-foot-btn[href="/dashboard"] {
-  display: none;
-}
-
 /* The header familiar switcher survives the rail as the avatar-only trigger:
    the trigger label drops, the 28px avatar stays reachable. */
 .shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-label {
