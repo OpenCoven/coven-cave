@@ -3930,6 +3930,8 @@ export async function POST(req: Request) {
             covenBackedProcessFailed ||=
               !sshRuntime &&
               localRuntimePlan?.runner === "coven" &&
+              !runHandle.stopRequested &&
+              typeof code === "number" &&
               code !== 0;
             if (covenBackedProcessFailed) {
               result = { ...result, is_error: true };
@@ -4139,7 +4141,7 @@ export async function POST(req: Request) {
       // bounded preflight passed. Coven has started in this branch, so map
       // only its adapter-level evidence back to the same actionable Codex
       // state; provider/auth errors intentionally remain untouched.
-      if (!launchFailure && binding.harness === "codex" && !assistantText.trim()) {
+      if (!launchFailure && !runHandle.stopRequested && binding.harness === "codex" && !assistantText.trim()) {
         const adapterFailure = codexAdapterFailure
           ?? codexAdapterFailureAvailability([...stderrTail, ...stdoutErrTail].join("\n"));
         if (adapterFailure) {

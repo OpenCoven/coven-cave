@@ -19,6 +19,7 @@ const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousCovenBin = process.env.COVEN_BIN;
 const previousCovenTestLog = process.env.COVEN_TEST_LOG;
 const previousCovenTestMode = process.env.COVEN_TEST_MODE;
+const previousCovenCancelReady = process.env.COVEN_TEST_CANCEL_READY;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.COVEN_TEST_LOG = log;
@@ -28,11 +29,16 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'assistant-envelope'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'assistant-envelope', 'cancel'].includes(process.env.COVEN_TEST_MODE) }]));",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === 'codex') {",
   "  if (process.env.COVEN_TEST_MODE === 'silent-exit') process.exit(1);",
+  "  if (process.env.COVEN_TEST_MODE === 'cancel') {",
+  "    appendFileSync(process.env.COVEN_TEST_CANCEL_READY, 'started');",
+  "    setInterval(() => {}, 1000);",
+  "    return;",
+  "  }",
   "  if (process.env.COVEN_TEST_MODE === 'assistant-envelope') {",
   "    const events = [",
   "      { type: 'system', subtype: 'init', model: 'gpt-5.6-sol', session_id: 'coven-envelope-session' },",
@@ -70,6 +76,18 @@ async function readSse(response) {
   return { body, events };
 }
 
+async function waitForText(file, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      return await readFile(file, "utf8");
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  assert.fail(`timed out waiting for fixture marker ${file}`);
+}
+
 try {
   const { refreshCovenBin } = await import("@/lib/coven-bin");
   refreshCovenBin();
@@ -77,6 +95,7 @@ try {
   const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { requestChatStop } = await import("@/lib/server/chat-stop-registry");
   const { POST } = await import("./route.ts");
   await saveConfig({ familiars: { opal: { harness: "codex" } } });
   const project = await createProject({ name: "Codex availability fixture", root: familiarWorkspace });
@@ -181,6 +200,47 @@ try {
   assert.ok(!silentExitEvents.some((event) => event.kind === "assistant_chunk"));
   const silentDone = silentExitEvents.findLast((event) => event.kind === "done");
   assert.equal(silentDone?.isError, true);
+
+  // Stop is an expected interruption, not evidence that Coven or Codex
+  // failed. Its child commonly closes with a null exit code after SIGTERM;
+  // the route must preserve the user's cancelled turn without emitting a
+  // runtime-process failure or failed progress state.
+  const cancelReady = path.join(home, "cancel-ready");
+  process.env.COVEN_TEST_MODE = "cancel";
+  process.env.COVEN_TEST_CANCEL_READY = cancelReady;
+  const cancelledSessionId = "cancelled-codex-session";
+  const cancelledRunId = "cancelled-codex-run";
+  const cancelResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      prompt: "stop this silent Codex run",
+      projectRoot: familiarWorkspace,
+      sessionId: cancelledSessionId,
+      runId: cancelledRunId,
+    }),
+  }));
+  await waitForText(cancelReady);
+  assert.equal(requestChatStop(cancelledRunId), true, "the explicit Stop registry signal reaches the live run");
+  const { events: cancelledEvents } = await readSse(cancelResponse);
+  assert.equal(
+    cancelledEvents.find((event) => event.kind === "error"),
+    undefined,
+    "an explicit stop never emits an error event",
+  );
+  assert.equal(
+    cancelledEvents.find((event) => event.kind === "progress" && event.status === "error"),
+    undefined,
+    `an explicit stop never creates failed progress state: ${JSON.stringify(cancelledEvents)}`,
+  );
+  assert.equal(cancelledEvents.findLast((event) => event.kind === "done")?.isError, false);
+  const cancelledConversation = await loadConversation(cancelledSessionId);
+  const cancelledTurn = cancelledConversation?.turns.at(-1);
+  assert.equal(cancelledTurn?.role, "assistant");
+  assert.equal(cancelledTurn?.text, "(cancelled)");
+  assert.equal(cancelledTurn?.cancelled, true);
+  assert.equal(cancelledTurn?.isError, false);
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;
@@ -192,6 +252,8 @@ try {
   else process.env.COVEN_TEST_LOG = previousCovenTestLog;
   if (previousCovenTestMode === undefined) delete process.env.COVEN_TEST_MODE;
   else process.env.COVEN_TEST_MODE = previousCovenTestMode;
+  if (previousCovenCancelReady === undefined) delete process.env.COVEN_TEST_CANCEL_READY;
+  else process.env.COVEN_TEST_CANCEL_READY = previousCovenCancelReady;
   await rm(home, { recursive: true, force: true });
 }
 
