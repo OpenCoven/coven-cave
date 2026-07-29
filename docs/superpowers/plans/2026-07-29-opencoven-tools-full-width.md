@@ -137,9 +137,7 @@ Run:
 git add src/components/settings-about.tsx \
   src/styles/settings-about.css \
   src/components/settings-about.test.ts
-git commit -S \
-  -m "fix: widen OpenCoven Tools settings control" \
-  -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+git commit -S -m "fix: widen OpenCoven Tools settings control"
 git push
 ```
 
@@ -290,7 +288,7 @@ Run:
 gh pr merge "$(gh pr view --json number --jq .number)" \
   --squash \
   --subject "fix: widen OpenCoven Tools settings control" \
-  --body $'Keep CovenCave compact while OpenCoven Tools spans the full Settings > About controls grid on desktop, with the existing narrow layout preserved.\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>'
+  --body "Keep CovenCave compact while OpenCoven Tools spans the full Settings > About controls grid on desktop, with the existing narrow layout preserved."
 ```
 
 Expected: the PR state becomes `MERGED`.
