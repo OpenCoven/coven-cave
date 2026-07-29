@@ -48,7 +48,7 @@
  */
 
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 
 const BYPASS = "WT_GUARD_BYPASS=1";
@@ -201,19 +201,28 @@ function ownAncestry() {
  *  costs nothing. Fails open like every other probe here — a guard that bricks
  *  Bash when lsof is missing or slow is worse than one that misses a case. */
 function liveProcesses(wtPath) {
-  let out = "";
-  try {
-    out = execFileSync("lsof", ["-d", "cwd", "-F", "pcn"], {
-      encoding: "utf8",
-      timeout: 5000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-  } catch (err) {
-    // lsof exits non-zero when some processes are unreadable; keep partial output.
-    out = typeof err?.stdout === "string" ? err.stdout : "";
-  }
+  // lsof reports ITSELF, and a child inherits this process's cwd — so cleaning
+  // up a worktree while standing in it made the guard block its own caller
+  // ("1 process(es) are still working in it: pid N (lsof)"). ownAncestry()
+  // cannot help: the probe is a DESCENDANT of the guard, and it has already
+  // exited by the time any ps walk could classify it.
+  //
+  // Running the probe from the filesystem root is the fix that holds
+  // everywhere: its cwd then cannot match the worktree prefix no matter how
+  // many helpers it forks (some lsof builds do), which pid bookkeeping alone
+  // would miss. Scanning is system-wide, so its own cwd does not affect output.
+  // spawnSync additionally exposes the pid, kept below as a cheap backstop.
+  const probe = spawnSync("lsof", ["-d", "cwd", "-F", "pcn"], {
+    cwd: path.parse(process.cwd()).root || path.sep,
+    encoding: "utf8",
+    timeout: 5000,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  // lsof exits non-zero when some processes are unreadable; keep partial output.
+  const out = typeof probe.stdout === "string" ? probe.stdout : "";
   if (!out) return [];
   const mine = ownAncestry();
+  if (probe.pid) mine.add(String(probe.pid));
   // The kernel hands lsof the CANONICAL path, so `/var/...` on macOS comes back
   // as `/private/var/...`. Comparing the caller's spelling against it silently
   // matches nothing — the check would look installed and catch zero cases.
