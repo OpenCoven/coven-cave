@@ -5,39 +5,25 @@
    the reading column's existing side gutters — overlays, never layout — and
    both stay home on narrow panes (gated in the components).
 
-   One tint per tool category, set once here and read by spine segments, card
-   swatches and map bars alike — the design's NODE_TINT palette. */
-
-.cave-thread-spine,
-.cave-thread-map {
-  --tim-turn: var(--text-primary);
-  --tim-answer: var(--color-success);
-  --tim-read: oklch(0.74 0.13 235);
-  --tim-shell: oklch(0.8 0.15 150);
-  --tim-edit: oklch(0.82 0.14 75);
-  --tim-search: oklch(0.74 0.16 295);
-  --tim-wait: var(--color-warning);
-  --tim-web: oklch(0.78 0.12 200);
-  --tim-agent: oklch(0.74 0.18 350);
-  --tim-other: var(--text-muted);
-}
+   Category colors deliberately come from the global semantic token contract so
+   every palette and mode can retune them without a component-local palette. */
 
 .cave-thread-spine .is-shell,
-.cave-thread-map .is-shell { --tim: var(--tim-shell); }
+.cave-thread-map .is-shell { --tim: var(--color-success); }
 .cave-thread-spine .is-edit,
-.cave-thread-map .is-edit { --tim: var(--tim-edit); }
+.cave-thread-map .is-edit { --tim: var(--color-warning); }
 .cave-thread-spine .is-search,
-.cave-thread-map .is-search { --tim: var(--tim-search); }
+.cave-thread-map .is-search { --tim: var(--accent-presence); }
 .cave-thread-spine .is-wait,
-.cave-thread-map .is-wait { --tim: var(--tim-wait); }
+.cave-thread-map .is-wait { --tim: var(--color-warning); }
 .cave-thread-spine .is-web,
-.cave-thread-map .is-web { --tim: var(--tim-web); }
+.cave-thread-map .is-web { --tim: var(--color-info); }
 .cave-thread-spine .is-agent,
-.cave-thread-map .is-agent { --tim: var(--tim-agent); }
+.cave-thread-map .is-agent { --tim: var(--accent-presence); }
 .cave-thread-spine .is-other,
-.cave-thread-map .is-other { --tim: var(--tim-other); }
+.cave-thread-map .is-other { --tim: var(--text-muted); }
 .cave-thread-spine .is-read,
-.cave-thread-map .is-read { --tim: var(--tim-read); }
+.cave-thread-map .is-read { --tim: var(--color-info); }
 
 /* ── Spine — left gutter, scrolls with the content ───────────────────────── */
 
@@ -312,8 +298,8 @@
   background: color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
-.cave-thread-map .is-turn { --tim: var(--tim-turn); }
-.cave-thread-map .is-answer { --tim: var(--tim-answer); }
+.cave-thread-map .is-turn { --tim: var(--text-primary); }
+.cave-thread-map .is-answer { --tim: var(--color-success); }
 .cave-thread-map .is-error { --tim: var(--color-danger); }
 
 .cave-thread-map__bar {
