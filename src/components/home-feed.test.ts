@@ -43,6 +43,26 @@ assert.match(
 );
 assert.match(
   reposRoute,
+  /const SOURCE_PAGE_SIZE = 100/,
+  "each curated repository source should use a bounded page large enough to fill the feed",
+);
+assert.match(
+  reposRoute,
+  /nextGitHubPagePath\(res\.headers\.get\("link"\)\) !== null/,
+  "the REST repository source should disclose omitted pages",
+);
+assert.match(
+  reposRoute,
+  /pageInfo\?\.\s*hasNextPage === true/,
+  "the GraphQL repository source should disclose omitted pages",
+);
+assert.match(
+  reposRoute,
+  /orgRepos\.hasMore \|\| listRepos\.hasMore \|\| out\.length > items\.length/,
+  "curated feed hasMore should include source-level pagination, not only merged rows",
+);
+assert.match(
+  reposRoute,
   /incomplete: errors\.length > 0/,
   "repos API should expose partial upstream failures instead of returning a trustworthy empty list",
 );

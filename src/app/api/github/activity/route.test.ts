@@ -102,6 +102,31 @@ assert.match(
 );
 assert.match(
   route,
+  /if \(identityFailure\?\.rateLimited\)/,
+  "identity rate limits should stop the request even when a fallback username is configured",
+);
+assert.match(
+  route,
+  /if \(organizationResult\.failure\?\.rateLimited\)/,
+  "organization rate limits should stop the request before activity searches spend more quota",
+);
+assert.match(
+  route,
+  /if \(!cooldownFailure && token\)/,
+  "review-request searches should stop after an earlier category triggers a cooldown",
+);
+assert.match(
+  route,
+  /if \(!cooldownFailure\) \{\s*assignedIssues = await fetchActivitySearch/,
+  "assigned-issue searches should stop after an earlier category triggers a cooldown",
+);
+assert.match(
+  route,
+  /if \(token && !cooldownFailure\)/,
+  "check enrichment should not issue more GitHub requests during a category cooldown",
+);
+assert.match(
+  route,
   /collections,\r?\n\s*items,/,
   "activity responses should expose per-category completeness metadata",
 );

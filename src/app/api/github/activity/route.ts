@@ -121,6 +121,7 @@ type ActivitySearchResult = {
   collection: ActivityCollection;
   rateRemaining: number;
   rateLimit: number;
+  failure: GitHubApiFailure | null;
 };
 
 async function fetchActivitySearch(query: string, token: string | null): Promise<ActivitySearchResult> {
@@ -142,6 +143,7 @@ async function fetchActivitySearch(query: string, token: string | null): Promise
         collection: activityCollectionFailure(failure.message, failure.retryAfterSeconds),
         rateRemaining,
         rateLimit,
+        failure,
       };
     }
 
@@ -152,6 +154,7 @@ async function fetchActivitySearch(query: string, token: string | null): Promise
         collection: activityCollectionFailure("GitHub search returned an invalid response."),
         rateRemaining,
         rateLimit,
+        failure: null,
       };
     }
 
@@ -167,6 +170,7 @@ async function fetchActivitySearch(query: string, token: string | null): Promise
       }),
       rateRemaining,
       rateLimit,
+      failure: null,
     };
   } catch {
     return {
@@ -174,6 +178,7 @@ async function fetchActivitySearch(query: string, token: string | null): Promise
       collection: activityCollectionFailure("Couldn't reach GitHub search."),
       rateRemaining: -1,
       rateLimit: -1,
+      failure: null,
     };
   }
 }
@@ -195,23 +200,59 @@ function nextGitHubPagePath(link: string | null): string | null {
  * separately so an organization selector represents the account's scope, not
  * whichever organizations happen to have an open item today.
  */
-async function fetchOrganizations(token: string): Promise<string[]> {
+type OrganizationResult = {
+  organizations: string[];
+  failure: GitHubApiFailure | null;
+};
+
+async function fetchOrganizations(token: string): Promise<OrganizationResult> {
+  const organizations = new Set<string>();
   try {
-    const organizations = new Set<string>();
     let path: string | null = "/user/orgs?per_page=100";
     while (path) {
-      const { res, data } = await ghFetch(path, token);
-      if (!res.ok || !Array.isArray(data)) break;
+      const { res, data, rateRemaining, retryAfter, rateLimitReset } = await ghFetch(path, token);
+      if (!res.ok) {
+        return {
+          organizations: Array.from(organizations).sort((a, b) => a.localeCompare(b)),
+          failure: githubApiFailure({
+            status: res.status,
+            remaining: rateRemaining,
+            retryAfter,
+            rateLimitReset,
+            responseMessage: githubResponseMessage(data),
+          }),
+        };
+      }
+      if (!Array.isArray(data)) {
+        return {
+          organizations: Array.from(organizations).sort((a, b) => a.localeCompare(b)),
+          failure: {
+            message: "GitHub returned an invalid organization response.",
+            rateLimited: false,
+            retryAfterSeconds: null,
+          },
+        };
+      }
       data
         .map((org) => typeof org?.login === "string" ? org.login : "")
         .filter(Boolean)
         .forEach((org) => organizations.add(org));
       path = nextGitHubPagePath(res.headers.get("link"));
     }
-    return Array.from(organizations).sort((a, b) => a.localeCompare(b));
+    return {
+      organizations: Array.from(organizations).sort((a, b) => a.localeCompare(b)),
+      failure: null,
+    };
   } catch {
     // Memberships improve the selector but must not make activity unavailable.
-    return [];
+    return {
+      organizations: Array.from(organizations).sort((a, b) => a.localeCompare(b)),
+      failure: {
+        message: "Couldn't reach GitHub for organization memberships.",
+        rateLimited: false,
+        retryAfterSeconds: null,
+      },
+    };
   }
 }
 
@@ -254,6 +295,22 @@ export async function GET() {
     }
   }
   const token = patInvalid ? null : storedToken;
+
+  if (identityFailure?.rateLimited) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: identityFailure.message,
+        retryAfterSeconds: identityFailure.retryAfterSeconds,
+      },
+      {
+        status: 429,
+        headers: identityFailure.retryAfterSeconds === null
+          ? undefined
+          : { "Retry-After": String(identityFailure.retryAfterSeconds) },
+      },
+    );
+  }
 
   if (!login && patInvalid) {
     const unavailable = activityCollectionUnavailable();
@@ -301,7 +358,25 @@ export async function GET() {
   }
 
   const items: GitHubItem[] = [];
-  const organizations = token ? await fetchOrganizations(token) : [];
+  const organizationResult = token
+    ? await fetchOrganizations(token)
+    : { organizations: [], failure: null };
+  if (organizationResult.failure?.rateLimited) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: organizationResult.failure.message,
+        retryAfterSeconds: organizationResult.failure.retryAfterSeconds,
+      },
+      {
+        status: 429,
+        headers: organizationResult.failure.retryAfterSeconds === null
+          ? undefined
+          : { "Retry-After": String(organizationResult.failure.retryAfterSeconds) },
+      },
+    );
+  }
+  const organizations = organizationResult.organizations;
   const recordRateInfo = (search: ActivitySearchResult) => {
     if (search.rateRemaining >= 0) {
       rateInfo = { remaining: search.rateRemaining, limit: search.rateLimit };
@@ -311,6 +386,7 @@ export async function GET() {
   // ── Open PRs authored by user ─────────────────────────────────────────────
   const authored = await fetchActivitySearch(`is:pr+is:open+author:${login}`, token);
   recordRateInfo(authored);
+  let cooldownFailure = authored.failure?.rateLimited ? authored.failure : null;
   for (const p of authored.items) {
     const repoUrl = (p.repository_url as string | undefined) ?? "";
     const repo = repoUrl.replace("https://api.github.com/repos/", "");
@@ -330,9 +406,10 @@ export async function GET() {
 
   // ── PRs requesting review from user (needs token for private repos) ───────
   let reviewRequests: ActivitySearchResult | null = null;
-  if (token) {
+  if (!cooldownFailure && token) {
     reviewRequests = await fetchActivitySearch(`is:pr+is:open+review-requested:${login}`, token);
     recordRateInfo(reviewRequests);
+    if (reviewRequests.failure?.rateLimited) cooldownFailure = reviewRequests.failure;
     for (const p of reviewRequests.items) {
       const repoUrl = (p.repository_url as string | undefined) ?? "";
       const repo = repoUrl.replace("https://api.github.com/repos/", "");
@@ -354,35 +431,45 @@ export async function GET() {
   }
 
   // ── Open issues assigned to user ──────────────────────────────────────────
-  const assignedIssues = await fetchActivitySearch(`is:issue+is:open+assignee:${login}`, token);
-  recordRateInfo(assignedIssues);
-  for (const i of assignedIssues.items) {
-    const repoUrl = (i.repository_url as string | undefined) ?? "";
-    const repo = repoUrl.replace("https://api.github.com/repos/", "");
-    items.push({
-      kind: "issue",
-      id: `issue-${i.id}`,
-      title: String(i.title ?? ""),
-      repo,
-      number: Number(i.number),
-      url: String(i.html_url ?? ""),
-      state: "open",
-      updatedAt: String(i.updated_at ?? new Date().toISOString()),
-      labels: ((i.labels as { name: string }[] | undefined) ?? []).map((l) => l.name),
-    });
+  let assignedIssues: ActivitySearchResult | null = null;
+  if (!cooldownFailure) {
+    assignedIssues = await fetchActivitySearch(`is:issue+is:open+assignee:${login}`, token);
+    recordRateInfo(assignedIssues);
+    if (assignedIssues.failure?.rateLimited) cooldownFailure = assignedIssues.failure;
+    for (const i of assignedIssues.items) {
+      const repoUrl = (i.repository_url as string | undefined) ?? "";
+      const repo = repoUrl.replace("https://api.github.com/repos/", "");
+      items.push({
+        kind: "issue",
+        id: `issue-${i.id}`,
+        title: String(i.title ?? ""),
+        repo,
+        number: Number(i.number),
+        url: String(i.html_url ?? ""),
+        state: "open",
+        updatedAt: String(i.updated_at ?? new Date().toISOString()),
+        labels: ((i.labels as { name: string }[] | undefined) ?? []).map((l) => l.name),
+      });
+    }
   }
 
+  const cooldownCollection = cooldownFailure
+    ? activityCollectionFailure(cooldownFailure.message, cooldownFailure.retryAfterSeconds)
+    : null;
   const collections: ActivityCollections = {
     authored: authored.collection,
-    reviewRequests: reviewRequests?.collection ?? activityCollectionUnavailable(),
-    assignedIssues: assignedIssues.collection,
+    reviewRequests: reviewRequests?.collection
+      ?? (token ? cooldownCollection ?? activityCollectionFailure("GitHub search wasn't attempted.") : activityCollectionUnavailable()),
+    assignedIssues: assignedIssues?.collection
+      ?? cooldownCollection
+      ?? activityCollectionFailure("GitHub search wasn't attempted."),
   };
 
   // Enrich PR rows with their CI rollup. Token-gated: this spends core REST
   // quota (a few calls per PR), which the public 60/hr budget can't absorb —
   // mirrors how review-requested PRs already require a token. Best-effort and
   // parallel; the UI only surfaces a `failing` pip.
-  if (token) {
+  if (token && !cooldownFailure) {
     const prRows = items
       .filter((it) => (it.kind === "pr" || it.kind === "review_request") && typeof it.number === "number")
       .slice(0, CHECK_ENRICH_CAP);
