@@ -205,18 +205,22 @@ async function waitForProcessExit(pid, timeoutMs = 5_000) {
 
 async function writeHangingDaemonFixture(rootDir, marker) {
   const fixture = path.join(rootDir, process.platform === "win32" ? "hanging-coven.cmd" : "hanging-coven.sh");
-  const nodeExpression = "const fs=require('node:fs');fs.writeFileSync(process.env.COVEN_DAEMON_SMOKE_CHILD_PID,String(process.pid));setInterval(()=>{},1000)";
+  const daemonScript = path.join(rootDir, "hanging-daemon-child.cjs");
+  // The harness spawn boundary deliberately removes Cave-internal env before
+  // it launches a daemon. Embed this smoke-only marker and bundled Node path
+  // into the fixture instead of weakening that production scrubber.
+  const nodeExpression = `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},String(process.pid));setInterval(()=>{},1000)`;
+  await writeFile(daemonScript, nodeExpression, "utf8");
   if (process.platform === "win32") {
     await writeFile(
       fixture,
-      `@echo off\r\n"%COVEN_DAEMON_SMOKE_NODE%" -e "${nodeExpression}"\r\n`,
+      `@echo off\r\n"${bundledNode}" "${daemonScript}"\r\n`,
       "utf8",
     );
   } else {
-    const shellSafeExpression = nodeExpression.replaceAll("'", "'\\''");
     await writeFile(
       fixture,
-      `#!/bin/sh\n"$COVEN_DAEMON_SMOKE_NODE" -e '${shellSafeExpression}'\n`,
+      `#!/bin/sh\nexec "${bundledNode}" "${daemonScript}"\n`,
       "utf8",
     );
     await chmod(fixture, 0o755);
@@ -228,8 +232,6 @@ async function writeHangingDaemonFixture(rootDir, marker) {
       COVEN_SOCKET: process.platform === "win32"
         ? `coven-cave-smoke-unready-${process.pid}-${Date.now()}`
         : path.join(rootDir, "unready.sock"),
-      COVEN_DAEMON_SMOKE_CHILD_PID: marker,
-      COVEN_DAEMON_SMOKE_NODE: bundledNode,
     },
   };
 }
@@ -423,8 +425,12 @@ async function main() {
       headers: authenticatedHeaders(baseUrl, "application/json"),
       body: JSON.stringify({ restart: true }),
     });
-    assert.equal(daemonStartResponse.status, 504, "an unready packaged daemon launch must return a structured timeout");
     const daemonStart = await daemonStartResponse.json();
+    assert.equal(
+      daemonStartResponse.status,
+      504,
+      `an unready packaged daemon launch must return a structured timeout: ${JSON.stringify(daemonStart)}`,
+    );
     assert.equal(daemonStart.code, "readiness_timeout");
     assert.deepEqual(
       daemonStart.cleanup,
