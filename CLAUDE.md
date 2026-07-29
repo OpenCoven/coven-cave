@@ -51,7 +51,10 @@ git push -u origin <branch>
 gh pr create --base main --head <branch> --title "…" --body "…"
 # wait for the required checks to go green, then resolve every review thread —
 # including the bots' — or the merge stays BLOCKED with a misleading error:
-gh api graphql -f query='{repository(owner:"OpenCoven",name:"coven-cave"){pullRequest(number:<#>){reviewThreads(first:30){nodes{id isResolved path comments(first:1){nodes{author{login} body}}}}}}}'
+gh api graphql -f query='{repository(owner:"OpenCoven",name:"coven-cave"){pullRequest(number:<#>){reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved path comments(first:1){nodes{author{login} body}}}}}}}'
+# If hasNextPage is true, page with `reviewThreads(first:100, after:"<endCursor>")`
+# until it is false — an unlisted thread keeps the merge BLOCKED with no hint
+# which one, so a partial listing is worse than no listing.
 # read each one, fix what is real, reply naming the commit, then per thread id:
 gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -f t=<PRRT_…>
 gh pr merge <#> --squash --delete-branch
