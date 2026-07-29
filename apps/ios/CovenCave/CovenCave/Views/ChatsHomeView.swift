@@ -18,6 +18,7 @@ struct ChatsHomeView: View {
     @Environment(\.chrome) private var chrome
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var showNewChat = false
+    @State private var initialNewChatFamiliarIds: [String] = []
     @State private var query = ""
     /// Drives the accent glow on the search field while it's being edited.
     @FocusState private var searchFocused: Bool
@@ -49,7 +50,12 @@ struct ChatsHomeView: View {
         splitView
         .sheet(isPresented: $showFamiliars) {
             FamiliarsListView { familiar in
-                open(.thread(app.directThread(for: familiar.id)))
+                showFamiliars = false
+                initialNewChatFamiliarIds = [familiar.id]
+                Task { @MainActor in
+                    await Task.yield()
+                    showNewChat = true
+                }
             }
         }
         .onAppear {
@@ -82,8 +88,11 @@ struct ChatsHomeView: View {
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { header }
             .safeAreaInset(edge: .bottom, spacing: 0) { homeSearchBar }
-            .sheet(isPresented: $showNewChat) {
-                NewChatView { thread in
+            .sheet(
+                isPresented: $showNewChat,
+                onDismiss: { initialNewChatFamiliarIds = [] }
+            ) {
+                NewChatView(initialFamiliarIds: initialNewChatFamiliarIds) { thread in
                     showNewChat = false
                     open(.thread(thread))
                 }
@@ -114,7 +123,7 @@ struct ChatsHomeView: View {
             }
             .onChange(of: app.newChatRequested) { _, requested in
                 guard requested else { return }
-                showNewChat = true
+                presentNewChat()
                 app.newChatRequested = false
             }
             .onChange(of: app.chatSearchRequested) { _, requested in
@@ -198,8 +207,12 @@ struct ChatsHomeView: View {
 
     /// Start a brand-new chat with a familiar and open it (familiar-row action).
     private func startNewChat(with familiar: Familiar) {
-        let thread = app.startFreshThread(familiarIds: [familiar.id])
-        open(.thread(thread))
+        presentNewChat(familiarIds: [familiar.id])
+    }
+
+    private func presentNewChat(familiarIds: [String] = []) {
+        initialNewChatFamiliarIds = familiarIds
+        showNewChat = true
     }
 
     /// Large-title header pinned to the top, mirroring the Read / Tasks
@@ -223,7 +236,7 @@ struct ChatsHomeView: View {
             }
             CircularIconButton(systemImage: "square.and.pencil",
                                label: "New chat") {
-                showNewChat = true
+                presentNewChat()
             }
         }
         .padding(.horizontal, 16)
@@ -258,7 +271,7 @@ struct ChatsHomeView: View {
 
             CircularIconButton(systemImage: "square.and.pencil",
                                label: "New chat") {
-                showNewChat = true
+                presentNewChat()
             }
         }
         .padding(.horizontal, 12)
@@ -378,7 +391,7 @@ struct ChatsHomeView: View {
     private func consumeGlobalRequests() {
         consumeThreadRequest(app.threadToOpen)
         if app.newChatRequested {
-            showNewChat = true
+            presentNewChat()
             app.newChatRequested = false
         }
         if app.chatSearchRequested {
@@ -474,7 +487,7 @@ struct ChatsHomeView: View {
         } description: {
             Text("Pull to refresh once your desktop is connected, or start a group chat.")
         } actions: {
-            Button("New chat") { showNewChat = true }
+            Button("New chat") { presentNewChat() }
                 .buttonStyle(.borderedProminent)
         }
     }

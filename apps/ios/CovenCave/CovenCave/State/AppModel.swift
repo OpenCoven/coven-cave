@@ -199,6 +199,16 @@ final class AppModel {
     var projectsError: String?
     var projectsLoaded = false
 
+    /// Recently used chat roots, newest first and de-duplicated. Project
+    /// pickers filter this list against the current familiar-scoped response.
+    var recentProjectRoots: [String] {
+        var seen = Set<String>()
+        return threads
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .compactMap(\.projectRoot)
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
     // MARK: - Appearance (desktop theme)
 
     /// App-chrome palette mirrored from the desktop's published theme
@@ -1406,7 +1416,8 @@ final class AppModel {
         }
         let title = row.title.isEmpty ? (familiar(familiarId)?.displayName ?? familiarId) : row.title
         let thread = ChatThread(title: title, familiarIds: [familiarId],
-                                sessionIds: [familiarId: row.id])
+                                sessionIds: [familiarId: row.id],
+                                projectRoot: row.projectRoot)
         threads.insert(thread, at: 0)
         persistThreads()
         Task { await loadHistory(into: thread, sessionId: row.id) }
@@ -1475,7 +1486,10 @@ final class AppModel {
             // The card already points at a server session (e.g. started on the
             // desktop) but no local thread carries it — bind one and pull history.
             thread = ChatThread(title: title, familiarIds: [familiarId],
-                                sessionIds: [familiarId: sid])
+                                sessionIds: [familiarId: sid],
+                                projectRoot: serverSessions.first {
+                                    $0.id == sid
+                                }?.projectRoot)
             threads.insert(thread, at: 0)
             Task { await loadHistory(into: thread, sessionId: sid) }
         } else {
@@ -1556,10 +1570,18 @@ final class AppModel {
         return thread
     }
 
-    func createGroup(familiarIds: [String], title: String?) -> ChatThread {
+    func createGroup(
+        familiarIds: [String],
+        title: String?,
+        projectRoot: String
+    ) -> ChatThread {
         let names = familiarIds.compactMap { familiar($0)?.displayName ?? $0 }
         let derived = title?.isEmpty == false ? title! : names.joined(separator: ", ")
-        let thread = ChatThread(title: derived, familiarIds: familiarIds)
+        let thread = ChatThread(
+            title: derived,
+            familiarIds: familiarIds,
+            projectRoot: projectRoot
+        )
         threads.insert(thread, at: 0)
         persistThreads()
         return thread
@@ -1567,13 +1589,21 @@ final class AppModel {
 
     /// Always create a brand-new thread (no reuse) — backs `/new`. Works for a
     /// single familiar (direct) or several (group).
-    func startFreshThread(familiarIds: [String], title: String? = nil) -> ChatThread {
+    func startFreshThread(
+        familiarIds: [String],
+        title: String? = nil,
+        projectRoot: String?
+    ) -> ChatThread {
         let names = familiarIds.compactMap { familiar($0)?.displayName ?? $0 }
         let date = Date.now.formatted(.dateTime.month(.abbreviated).day())
         let derived = (title?.isEmpty == false)
             ? title!
             : "Chat with \(names.joined(separator: ", ")) on \(date)"
-        let thread = ChatThread(title: derived, familiarIds: familiarIds)
+        let thread = ChatThread(
+            title: derived,
+            familiarIds: familiarIds,
+            projectRoot: projectRoot
+        )
         threads.insert(thread, at: 0)
         persistThreads()
         return thread
@@ -1663,12 +1693,17 @@ final class AppModel {
     /// become assistant turns, resolved to a familiar by display name when
     /// possible. Inserts at the top and persists.
     @discardableResult
-    func importMarkdown(_ text: String, fallbackTitle: String = "Imported chat") -> ChatThread {
+    func importMarkdown(
+        _ text: String,
+        fallbackTitle: String = "Imported chat",
+        familiarIds preferredFamiliarIds: [String] = [],
+        projectRoot: String? = nil
+    ) -> ChatThread {
         let parsed = parseThreadMarkdown(text)
         func resolve(_ name: String) -> String? {
             familiars.first { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }?.id
         }
-        var familiarIds: [String] = []
+        var discoveredFamiliarIds: [String] = []
         var messages: [DisplayMessage] = []
         for turn in parsed.turns {
             switch turn.who.lowercased() {
@@ -1678,15 +1713,24 @@ final class AppModel {
                 messages.append(DisplayMessage(role: .system, familiarId: nil, text: turn.text))
             default:
                 let fid = resolve(turn.who)
-                if let fid, !familiarIds.contains(fid) { familiarIds.append(fid) }
+                if let fid { discoveredFamiliarIds.append(fid) }
                 messages.append(DisplayMessage(role: .assistant, familiarId: fid, text: turn.text))
             }
         }
         for name in parsed.participants {
-            if let fid = resolve(name), !familiarIds.contains(fid) { familiarIds.append(fid) }
+            if let fid = resolve(name) { discoveredFamiliarIds.append(fid) }
         }
+        let familiarIds = ChatProjectSelection.importedFamiliarIDs(
+            preferred: preferredFamiliarIds,
+            discovered: discoveredFamiliarIds
+        )
         let title = parsed.title.isEmpty ? fallbackTitle : parsed.title
-        let thread = ChatThread(title: title, familiarIds: familiarIds, messages: messages)
+        let thread = ChatThread(
+            title: title,
+            familiarIds: familiarIds,
+            projectRoot: projectRoot,
+            messages: messages
+        )
         threads.insert(thread, at: 0)
         persistThreads()
         return thread
@@ -1702,6 +1746,7 @@ final class AppModel {
         }
         let copy = ChatThread(title: "\(thread.title) (copy)",
                               familiarIds: thread.familiarIds,
+                              projectRoot: thread.projectRoot,
                               messages: copiedMessages)
         threads.insert(copy, at: 0)
         persistThreads()
