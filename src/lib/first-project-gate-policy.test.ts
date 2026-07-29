@@ -121,3 +121,37 @@ test("first-project gate policy keeps a pending retry bound to its original fami
     "the same pending retry hides on non-Home/Chat surfaces and can reopen later without losing its target",
   );
 });
+
+test("a globally registered project does not bypass the gate when the active familiar has no access", () => {
+  const denied = resolveFirstProjectGatePolicy({
+    activeFamiliarId: "ember",
+    visibleFamiliars,
+    registeredProjects: [project],
+    accessibleProjects: [],
+    accessibleProjectsInitiallyResolved: true,
+    pendingGrant: null,
+    onboardingResolved: true,
+    onboardingOpen: false,
+    mode: "chat",
+    familiarsLoaded: true,
+    familiarRosterLoadedSuccessfully: true,
+    projectsInitiallyResolved: true,
+  });
+  assert.deepEqual(denied, { open: true, familiarId: "ember", blockChatLaunch: true });
+
+  const granted = resolveFirstProjectGatePolicy({
+    activeFamiliarId: "ember",
+    visibleFamiliars,
+    registeredProjects: [project],
+    accessibleProjects: [project],
+    accessibleProjectsInitiallyResolved: true,
+    pendingGrant: null,
+    onboardingResolved: true,
+    onboardingOpen: false,
+    mode: "chat",
+    familiarsLoaded: true,
+    familiarRosterLoadedSuccessfully: true,
+    projectsInitiallyResolved: true,
+  });
+  assert.deepEqual(granted, { open: false, familiarId: "ember", blockChatLaunch: false });
+});
