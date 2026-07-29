@@ -161,6 +161,10 @@ jobs:
   build:
     name: Build ${{ matrix.label }}
     needs: daemon-package
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -731,9 +735,38 @@ jobs:
           fi
           gh release upload "$RELEASE_TAG" "${UPLOAD_FILES[@]}" --clobber
 
+      - name: Attest Linux AppImage
+        if: >-
+          matrix.family == 'linux' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: src-tauri/target/release/bundle/**/*.AppImage
+
+      - name: Attest Windows MSI
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: src-tauri/target/release/bundle/**/*.msi
+
+      - name: Attest macOS DMG
+        if: >-
+          matrix.family == 'macos' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.dmg
+
   checksums:
     name: Publish SHA256SUMS
     needs: build
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     runs-on: ubuntu-24.04
     if: ${{ success() && (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only) }}
     steps:
@@ -801,6 +834,11 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "$RELEASE_TAG" _release/SHA256SUMS --clobber
+
+      - name: Attest SHA256SUMS
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: _release/SHA256SUMS
 
       # Render the standardized release body — CHANGELOG.md section for
       # the version, plus arch-aware install instructions, checksum verify
