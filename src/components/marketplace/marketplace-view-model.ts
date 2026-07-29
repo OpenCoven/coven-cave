@@ -4,33 +4,35 @@ import type { SkillEntry as SkillDetailEntry } from "@/components/skill-detail-d
 import type { KindFilter, SortKey } from "@/lib/marketplace-catalog";
 import { caveCrafts } from "@/lib/feature-flags";
 
-/** Sections retained by the marketplace router, including legacy deep links.
- *  "skills" is no longer a visible tab — the Skills directory merged into
- *  Explore (the renamed Browse section) as its "Skills" type. The id survives
- *  in the type so `mode === "skills"` deep links keep type-checking; they land
- *  on Explore pre-filtered to Skills. */
+/** Sections retained by the Marketplace router, including legacy deep links. */
 export type MarketplaceSection = "browse" | "crafts" | "roles" | "skills" | "build" | "capabilities";
 
 export const MARKETPLACE_SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label: string; icon: IconName }> = [
-  { id: "browse", label: "Explore", icon: "ph:compass" },
-  ...(caveCrafts() ? [{ id: "crafts", label: "Crafts", icon: "ph:package-bold" } satisfies { id: MarketplaceSection; label: string; icon: IconName }] : []),
+  { id: "browse", label: "Yours", icon: "ph:squares-four" },
+  ...(caveCrafts()
+    ? [{ id: "crafts", label: "Crafts", icon: "ph:package-bold" } satisfies {
+        id: MarketplaceSection;
+        label: string;
+        icon: IconName;
+      }]
+    : []),
+  { id: "skills", label: "Skills", icon: "ph:sparkle" },
   { id: "build", label: "Build", icon: "ph:flow-arrow" },
 ];
 
 export const MARKETPLACE_SECTION_HINT: Record<MarketplaceSection, string> = {
-  browse: "Everything your familiars can equip — MCP servers, connected APIs, and skills in one place.",
+  browse: "Things you already installed or authored, kept together in one local inventory.",
   crafts: "Versioned Role loadouts — preview, verify, equip, update, and detach Craft bundles.",
   roles: "Personas your familiars wear — each bundles skills, tools, MCP servers, and workflows.",
-  skills: "SKILL.md procedures familiars load while they work — browsed here alongside tools.",
-  build: "Author a new skill — write the SKILL.md your familiars load, straight into a local skill root.",
-  capabilities: "What each runtime you've installed can do — retired from the hub; deep links land on Explore.",
+  skills: "A smaller, reviewed OpenCoven Skills marketplace is being curated.",
+  build: "Author a new skill directly in a local skill root.",
+  capabilities: "What each runtime you've installed can do — retired from the hub; deep links land on Yours.",
 };
 
-export const MARKETPLACE_SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities" | "build">, string> = {
-  browse: "Search tools and skills",
-  crafts: "Search Crafts",
-  roles: "Search roles",
-  skills: "Search tools and skills",
+export const MARKETPLACE_SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities" | "build" | "skills">, string> = {
+  browse: "Search your items",
+  crafts: "Search your Crafts",
+  roles: "Search your items",
 };
 
 /** Explore's left-rail "Type" segment — the item kinds a familiar can equip.
@@ -43,12 +45,11 @@ export const MARKETPLACE_TYPE_RAIL: ReadonlyArray<{ id: KindFilter; label: strin
   { id: "skill", label: "Skills", icon: "ph:sparkle" },
 ];
 
-/** Explore's left-rail "Status" segment — install/setup lifecycle filter. */
+/** Yours' left-rail setup filter. "installed" remains parseable for migration. */
 export type MarketplaceStatusFilter = "all" | "installed" | "needs-setup";
 
 export const MARKETPLACE_STATUS_FILTERS: ReadonlyArray<{ id: MarketplaceStatusFilter; label: string; icon: IconName }> = [
   { id: "all", label: "All", icon: "ph:list" },
-  { id: "installed", label: "Installed", icon: "ph:check-circle" },
   { id: "needs-setup", label: "Needs setup", icon: "ph:warning" },
 ];
 

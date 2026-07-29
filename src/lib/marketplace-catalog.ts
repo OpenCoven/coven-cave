@@ -176,6 +176,8 @@ export type MarketplacePlugin = {
   /** Local, unpublished Craft authoring draft created inside Cave. */
   draft?: boolean;
   draftId?: string;
+  /** Install state retained locally after its catalog card disappeared. */
+  unlisted?: boolean;
 };
 
 export function isCraftInstallationVerified(
@@ -305,6 +307,54 @@ export function mergeCatalog(
       };
     })
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+
+function humanizeMarketplaceId(id: string): string {
+  return id
+    .split(/[-_.]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function unlistedInstalledPlugin(
+  id: string,
+  installation: MarketplaceInstallationState,
+): MarketplacePlugin {
+  return {
+    id,
+    displayName: humanizeMarketplaceId(id) || id,
+    description: "Installed locally. Catalog details are no longer available.",
+    category: "Local installs",
+    author: "Local install",
+    trust: "local-tool",
+    policy: { installation: "UNAVAILABLE", authentication: "NONE" },
+    capabilities: [],
+    keywords: [],
+    roleAffinity: [],
+    kind: "skill",
+    version: installation.version,
+    installed: true,
+    installation: { ...installation },
+    updateAvailable: false,
+    requiresSetup: false,
+    available: false,
+    requiredConfig: [],
+    configured: true,
+    unlisted: true,
+  };
+}
+
+export function selectOwnedMarketplacePlugins(
+  plugins: MarketplacePlugin[],
+  installed: InstalledMap,
+): MarketplacePlugin[] {
+  const owned = plugins.filter((plugin) => plugin.installed);
+  const represented = new Set(owned.map((plugin) => plugin.id));
+  const unlisted = Object.entries(installed)
+    .filter(([id]) => !represented.has(id))
+    .map(([id, installation]) => unlistedInstalledPlugin(id, installation));
+  return [...owned, ...unlisted].sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
 export type PluginBadgeState = "add" | "added" | "needs-setup" | "unavailable";

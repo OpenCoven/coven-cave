@@ -56,6 +56,7 @@ function addHelp(kind: MarketplacePlugin["kind"]) {
 }
 
 function setupEffortLabel(plugin: MarketplacePlugin) {
+  if (plugin.unlisted) return { icon: "ph:check-circle" as const, label: "Installed" };
   if (plugin.draft) return { icon: "ph:pencil-simple" as const, label: "Draft" };
   if (!plugin.available) return { icon: "ph:warning" as const, label: "Unavailable" };
   if (plugin.requiresSetup && !plugin.configured) {
@@ -74,6 +75,7 @@ function setupEffortLabel(plugin: MarketplacePlugin) {
 // label is the clamped chip text; full is the untruncated list for the
 // tooltip — a "+3" chip whose title repeats the same "+3" hides the rest.
 function capabilityPreview(plugin: MarketplacePlugin) {
+  if (plugin.unlisted) return { label: "Catalog details unavailable", full: "Catalog details unavailable" };
   const capabilities = plugin.capabilities.length > 0 ? plugin.capabilities : plugin.keywords;
   if (capabilities.length === 0) return { label: "Core capability", full: "Core capability" };
   const first = capabilities.slice(0, 2).join(", ");
@@ -82,6 +84,7 @@ function capabilityPreview(plugin: MarketplacePlugin) {
 }
 
 function roleFitLabel(plugin: MarketplacePlugin) {
+  if (plugin.unlisted) return { label: "Local record", full: "Local record" };
   const roles = plugin.roleAffinity.flatMap((entry) => entry.roles).filter(Boolean);
   if (roles.length === 0) return { label: "General fit", full: "General fit" };
   const unique = [...new Set(roles)];
@@ -98,7 +101,7 @@ export const MarketplaceCard = memo(function MarketplaceCard({
   onRemove,
   onConfigure,
 }: Props) {
-  const state = pluginBadgeState(plugin);
+  const state = plugin.unlisted ? "added" : pluginBadgeState(plugin);
   const setup = setupEffortLabel(plugin);
   const capability = capabilityPreview(plugin);
   const roleFit = roleFitLabel(plugin);
@@ -118,7 +121,7 @@ export const MarketplaceCard = memo(function MarketplaceCard({
               {plugin.displayName}
             </span>
             <span className="block truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
-              {kindLabel(plugin.kind)} · {plugin.author}
+              {plugin.unlisted ? "Installed item" : kindLabel(plugin.kind)} · {plugin.author}
             </span>
           </span>
         </button>
@@ -204,10 +207,11 @@ export const MarketplaceCard = memo(function MarketplaceCard({
       <div className="marketplace-card__meta">
         <span>
           <Icon name={kindIcon(plugin.kind)} width={11} aria-hidden />{" "}
-          {kindLabel(plugin.kind)}
+          {plugin.unlisted ? "Installed item" : kindLabel(plugin.kind)}
         </span>
         <span>
-          <Icon name="ph:seal-check" width={11} aria-hidden /> {TRUST_LABEL[plugin.trust] ?? plugin.trust}
+          <Icon name={plugin.unlisted ? "ph:folder-open" : "ph:seal-check"} width={11} aria-hidden />{" "}
+          {plugin.unlisted ? "Local record" : TRUST_LABEL[plugin.trust] ?? plugin.trust}
         </span>
         {plugin.requiresSetup && plugin.configured ? (
           <button

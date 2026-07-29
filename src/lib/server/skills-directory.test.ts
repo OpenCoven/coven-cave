@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 
 import {
+  localSkillDirectoryEntries,
   matchDirectoryEntry,
   mergeDirectoryWithLocal,
   parseSkillsShDirectoryHtml,
@@ -9,6 +10,49 @@ import {
   remoteSkillMarkdownUrl,
   remoteSkillMarkdownUrls,
 } from "@/lib/server/skills-directory";
+
+const localDirectory = localSkillDirectoryEntries([
+  {
+    id: "owned-research",
+    name: "Owned Research",
+    description: "Research from local sources.",
+    tags: ["research"],
+    path: "/Users/test/.coven/skills/owned-research/SKILL.md",
+    familiar: "global",
+  },
+  {
+    id: "owned-code",
+    name: "Owned Code",
+    description: "Coding from local sources.",
+    path: "/Users/test/.agents/skills/owned-code/SKILL.md",
+    familiar: "agents-user",
+  },
+], "research");
+
+assert.equal(localDirectory.length, 1, "local search filters without a registry call");
+assert.equal(localDirectory[0].id, "owned-research");
+assert.equal(localDirectory[0].installed, true);
+assert.equal(localDirectory[0].source, "local");
+assert.equal(localDirectory[0].trust.source, "local");
+assert.equal(localDirectory[0].local?.scope, "coven");
+assert.equal(localDirectory[0].installsAllTime, 0, "local skills never invent registry metrics");
+assert.equal(localDirectory[0].registryUrl, undefined);
+
+const duplicateIdLocals = localSkillDirectoryEntries([
+  {
+    id: "shared-name",
+    name: "Shared Name",
+    path: "/Users/test/.coven/skills/shared-name/SKILL.md",
+    familiar: "global",
+  },
+  {
+    id: "shared-name",
+    name: "Shared Name",
+    path: "/Users/test/project/.agents/skills/shared-name/SKILL.md",
+    familiar: "agents-project",
+  },
+]);
+assert.equal(duplicateIdLocals.length, 2, "distinct local paths survive even when their ids match");
 
 const escapedHtml = String.raw`<script>self.__next_f.push([1,"{\"skills\":[{\"source\":\"vercel-labs/skills\",\"skillId\":\"find-skills\",\"name\":\"find-skills\",\"installs\":2300000,\"weeklyInstalls\":[1,2,3,4,5,6,7,8],\"isOfficial\":true},{\"source\":\"anthropics/skills\",\"skillId\":\"frontend-design\",\"name\":\"frontend-design\",\"installs\":624300,\"weeklyInstalls\":[10,11]}],\"totalSkills\":9631}"])</script>`;
 const escaped = parseSkillsShDirectoryHtml(escapedHtml);
