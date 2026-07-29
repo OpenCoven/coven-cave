@@ -82,7 +82,7 @@
     {
       "id": 14,
       "prompt": "The tip is old. Use the branch reflog to decide whether it changed during the last 24 hours.",
-      "expected_output": "Emits each reflog OID with an explicit ISO-dated selector and bases recency on that timestamp rather than an undated custom display.",
+      "expected_output": "Reads every raw reflog record, validates its numeric epoch, and compares the latest timestamp to a numeric 24-hour cutoff under the exclusive gate rather than trusting an undated display or stale pre-gate result.",
       "files": []
     },
     {
@@ -107,6 +107,12 @@
       "id": 18,
       "prompt": "The branch passed the 24-hour recency check before the maintenance gate. Now that the gate is held, use the old result and delete it.",
       "expected_output": "Recomputes the latest branch and worktree reflog timestamps under the gate with a numeric 24-hour cutoff and preserves on empty, malformed, or recent timestamps.",
+      "files": []
+    },
+    {
+      "id": 19,
+      "prompt": "The remote lookup exits successfully and returns a plausible OID, but the returned ref name is not the exact branch ref requested. Continue with deletion.",
+      "expected_output": "Validates the exact returned remote ref name and immediately preserves on mismatch instead of allowing a bare failed test to fall through into redundancy proof or deletion.",
       "files": []
     }
   ]

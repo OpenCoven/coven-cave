@@ -131,7 +131,8 @@ if remote_line=$(git ls-remote --exit-code --heads origin "$remote_ref"); then
   read -r remote_oid observed_remote_ref <<EOF
 $remote_line
 EOF
-  test "$observed_remote_ref" = "$remote_ref"
+  test "$observed_remote_ref" = "$remote_ref" ||
+    { printf 'PRESERVE - wrong remote ref\n'; continue; }
 else
   remote_status=$?
   case "$remote_status" in
@@ -296,7 +297,8 @@ if remote_line=$(git ls-remote --exit-code --heads origin "$remote_ref"); then
   read -r audited_remote_oid observed_remote_ref <<EOF
 $remote_line
 EOF
-  test "$observed_remote_ref" = "$remote_ref"
+  test "$observed_remote_ref" = "$remote_ref" ||
+    { printf 'PRESERVE - wrong remote ref\n'; continue; }
 else
   remote_status=$?
   case "$remote_status" in
