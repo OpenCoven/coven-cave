@@ -212,8 +212,18 @@ assert.match(
 );
 assert.match(
   thread,
+  /const suggestions = typedSuggestions[\s\S]*?\.filter\(\(path\) => path\.kind === "reply"\)[\s\S]*?\.map\(\(path\) => path\.prompt\);/,
+  "quick chat filters typed task/action paths before it renders reply chips",
+);
+assert.doesNotMatch(
+  thread,
+  /typedSuggestions\.map\(/,
+  "raw typed task/action paths never reach quick-chat rendering or the suggestion callback",
+);
+assert.match(
+  thread,
   /className="quick-chat-next-path"[\s\S]*?onClick=\{\(\) => onSuggestion\(suggestion\)\}/,
-  "clicking a chip fills the composer through the shared suggestion path (fill, not send)",
+  "clicking a reply-only chip fills the composer through the shared suggestion path (fill, not send)",
 );
 assert.match(
   thread,

@@ -8,11 +8,11 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
 // The recommendation derives from the ACTIVE branch path's last settled
-// assistant turn — same suggestion the pills flag as "Recommended".
+// assistant turn — but only a reply can be keyboard-filled.
 assert.match(
   source,
-  /const recommendedNextPath = useMemo\(\(\) => \{[\s\S]*?extractNextPaths\(last\.text\)\.suggestions\[0\] \?\? null;[\s\S]*?\}, \[activePath\]\);/,
-  "recommendedNextPath memo reads the active path's last settled assistant turn",
+  /const recommendedNextPath = useMemo\(\(\) => \{[\s\S]*?extractNextPaths\(last\.text\)\.suggestions\.find\(\(path\) => path\.kind === "reply"\) \?\? null;[\s\S]*?\}, \[activePath\]\);/,
+  "recommendedNextPath only reads reply suggestions from the active path's last settled assistant turn",
 );
 assert.match(
   source,
@@ -31,7 +31,7 @@ const fillIdx = source.indexOf('e.key === "ArrowLeft"');
 assert.ok(menuKeyIdx !== -1 && fillIdx > menuKeyIdx, "menus keep owning Tab — fill branch comes after handleMenuKey");
 assert.match(
   source,
-  /setInput\(recommendedNextPath\);\n\s*return;/,
+  /setInput\(recommendedNextPath\.prompt\);\n\s*return;/,
   "accepting fills the draft (never sends)",
 );
 
@@ -39,7 +39,7 @@ assert.match(
 // its own placeholder.
 assert.match(
   source,
-  /: recommendedNextPath\n\s*\? `\$\{recommendedNextPath\}  ⇥ to fill`/,
+  /: recommendedNextPath\n\s*\? `\$\{recommendedNextPath\.prompt\}  ⇥ to fill`/,
   "empty composer shows the recommendation as its placeholder with the ⇥ hint",
 );
 

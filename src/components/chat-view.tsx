@@ -136,7 +136,9 @@ import {
   type ChatResponseMetadata,
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent } from "@/lib/stream-events";
-import { extractNextPaths } from "@/lib/next-paths";
+import { extractNextPaths, type NextPath } from "@/lib/next-paths";
+import { FollowUpCards } from "@/components/chat-follow-up-cards";
+import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { GitHubCard } from "@/components/github-card";
@@ -1922,6 +1924,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
+  const [taskSuggestion, setTaskSuggestion] = useState<Extract<NextPath, { kind: "task" }> | null>(null);
   const { announce } = useAnnouncer();
   // "Start a task" (card-follows-chat): the starting page arms this, and the
   // stream's "session" event — where the session id is born — creates the
@@ -3184,25 +3187,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return resolveActivePath(turns, activeLeafId) as Turn[];
   }, [turns, activeLeafId]);
 
-  // The last settled assistant turn's top next-path — the pills flag that one
-  // as "Recommended", and the empty composer mirrors it as its placeholder so
-  // ⇥ / ← can accept it without reaching for the pills.
+  // The last settled assistant turn's first reply next-path. Typed task/action
+  // suggestions are deliberately excluded: keyboard fill may only prepare
+  // editable chat text, never start a task or navigate as a side effect.
   const recommendedNextPath = useMemo(() => {
     const last = [...activePath]
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return null;
-    return extractNextPaths(last.text).suggestions[0] ?? null;
+    return extractNextPaths(last.text).suggestions.find((path) => path.kind === "reply") ?? null;
   }, [activePath]);
 
   // Chat-revamp 1b: the LATEST settled turn's follow-up suggestions render as
-  // a pill row directly above the composer (aligned to the reading column) —
+  // typed cards directly above the composer (aligned to the reading column) —
   // the most actionable element sits closest to the input. That turn's in-turn
-  // pill row is suppressed (followUp.turnId → TurnRow) so the suggestions
+  // card row is suppressed (followUp.turnId → TurnRow) so the suggestions
   // never render twice; older turns keep their in-turn rows. Capped at 4 and
   // laid out on the uniform-rows data-count grammar (never a 3+1 wrap).
   const followUp = useMemo(() => {
-    const empty = { turnId: null as string | null, suggestions: [] as string[] };
+    const empty = { turnId: null as string | null, suggestions: [] as NextPath[] };
     const last = [...activePath]
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
@@ -3210,6 +3213,40 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const suggestions = extractNextPaths(splitReasoning(last.text).visible).suggestions.slice(0, 4);
     return suggestions.length ? { turnId: last.id, suggestions } : empty;
   }, [activePath]);
+
+  const handleFollowUp = useCallback((path: NextPath) => {
+    if (path.kind === "reply") {
+      setInput(path.prompt);
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return;
+    }
+    if (path.kind === "task") {
+      setTaskSuggestion(path);
+      return;
+    }
+    if (path.actionId === "open-tasks") {
+      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "board" } }));
+    }
+  }, []);
+
+  const handleTaskCreated = useCallback((card: Card) => {
+    const linked = {
+      id: card.id,
+      title: card.title,
+      status: card.status,
+      priority: card.priority,
+      lifecycle: card.lifecycle,
+      labels: card.labels,
+      cwd: card.cwd,
+      projectId: card.projectId ?? null,
+      notes: card.notes.trim() || null,
+    };
+    setLinkedContext((previous) => {
+      const context = previous ?? { task: null, tasks: [], github: [] };
+      if (context.tasks.some((task) => task.id === linked.id)) return context;
+      return { ...context, task: context.task ?? linked, tasks: [...context.tasks, linked] };
+    });
+  }, []);
 
   // Branch-nav siblings for EVERY turn, built once per `turns` change instead
   // of scanning the whole array per rendered row (which ran on every stream
@@ -4947,6 +4984,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     regenerateFor,
     replyFor,
     send,
+    activateFollowUp: handleFollowUp,
   };
 
   // Auto-send a prompt handed off from the home composer. Deferred one
@@ -5447,7 +5485,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       recommendedNextPath
     ) {
       e.preventDefault();
-      setInput(recommendedNextPath);
+      setInput(recommendedNextPath.prompt);
       return;
     }
     // `isComposing` is true for the Enter that confirms an IME candidate
@@ -6051,18 +6089,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       >
         {/* Chat-revamp 1b: the latest settled turn's follow-up suggestions sit
             directly above the composer, aligned to the reading column. Same
-            data source (<coven:next-paths>) and pill grammar as the in-turn
+            data source (<coven:next-paths>) and typed-card treatment as the in-turn
             rows; hidden while a response streams so a stale suggestion can't
             be clicked mid-turn. */}
-        {followUp.suggestions.length && !busy ? (
-          <div className="cave-chat-followups" role="group" aria-label="Suggested follow-ups">
-            <div className="cave-next-paths cave-chat-followups__row" data-count={followUp.suggestions.length}>
-              {followUp.suggestions.map((s, i) => (
-                <button key={i} type="button" className="cave-next-path" onClick={() => void send(s)}>
-                  {s}
-                </button>
-              ))}
-            </div>
+        {followUp.suggestions.length > 0 && !busy ? (
+          <div className="cave-chat-followups">
+            <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
           </div>
         ) : null}
         {setupCandidateRoot && !setupBannerDismissed ? (
@@ -6395,7 +6427,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 busy
                   ? "Streaming… (send to queue · esc to cancel)"
                   : recommendedNextPath
-                    ? `${recommendedNextPath}  ⇥ to fill`
+                    ? `${recommendedNextPath.prompt}  ⇥ to fill`
                     : `Message ${familiar.display_name}…  ↵ to send`
               }
               rows={1}
@@ -6628,6 +6660,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </div>
         </div>
       </footer>
+      {taskSuggestion && sessionId ? (
+        <FollowUpTaskReview
+          open
+          sessionId={sessionId}
+          suggestion={taskSuggestion}
+          context={{
+            turns: activePath,
+            familiarId: familiar.id,
+            projectId: resolvedProjectId !== NO_PROJECT_ID ? resolvedProjectId : null,
+          }}
+          onCreated={handleTaskCreated}
+          onClose={() => setTaskSuggestion(null)}
+        />
+      ) : null}
       {voiceCallOpen && sessionId && (
         <VoiceCallOverlay
           familiar={familiar}
@@ -6798,6 +6844,7 @@ type TranscriptHandlers = {
   regenerateFor: (turn: Turn) => (() => void) | undefined;
   replyFor: (turn: Turn) => (() => void) | undefined;
   send: (override?: string) => Promise<void>;
+  activateFollowUp: (path: NextPath) => void;
 };
 
 /**
@@ -6892,7 +6939,8 @@ const TranscriptRows = memo(function TranscriptRows({
           onRegenerate={handlers().regenerateFor(t)}
           onReply={handlers().replyFor(t)}
           onOpenUrl={onOpenUrl}
-          onSuggestion={(sug) => void handlers().send(sug)}
+          onSuggestion={(path) => handlers().activateFollowUp(path)}
+          onRequest={(prompt) => void handlers().send(prompt)}
           feedbackContext={feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
@@ -6941,7 +6989,8 @@ const TranscriptRows = memo(function TranscriptRows({
               onRegenerate={handlers().regenerateFor(t)}
               onReply={handlers().replyFor(t)}
               onOpenUrl={onOpenUrl}
-              onSuggestion={(sug) => void handlers().send(sug)}
+              onSuggestion={(path) => handlers().activateFollowUp(path)}
+              onRequest={(prompt) => void handlers().send(prompt)}
               feedbackContext={feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
@@ -6971,12 +7020,15 @@ function TurnRowImpl({
   expanded = false,
   onToggleAvatar,
   onSuggestion,
+  onRequest,
   feedbackContext,
   branchNav,
   suppressSuggestions = false,
 }: {
   turn: Turn;
-  onSuggestion?: (s: string) => void;
+  onSuggestion?: (path: NextPath) => void;
+  /** User-authored artifact feedback remains a normal chat send. */
+  onRequest?: (prompt: string) => void;
   /** Chat-revamp 1b: true for the latest settled turn, whose follow-up pills
    *  render above the composer instead of at the turn's tail. */
   suppressSuggestions?: boolean;
@@ -7395,31 +7447,11 @@ function TurnRowImpl({
                   );
                 })()
               : null}
-            {/* Suggested follow-ups render LAST — they're the most actionable
-                element (click to send), so they sit closest to the composer and
-                aren't pushed up the turn by the tool-activity section. */}
-            {nextPaths.length > 0 && !turn.pending && !suppressSuggestions ? (
-              // data-count keys the row layout: pills lay out 1, 2, or 3 per
-              // row — 4 pills pair into a 2×2, never a 3+1 orphan wrap.
-              <div className="cave-next-paths" data-count={nextPaths.length}>
-                {nextPaths.map((s, i) => {
-                  // The agent lists next steps best-first, so flag the top one as
-                  // the recommendation (green pulsing border + leading dot).
-                  const recommended = i === 0;
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      className={`cave-next-path${recommended ? " cave-next-path--recommended" : ""}`}
-                      onClick={() => onSuggestion?.(s)}
-                      aria-label={recommended ? `Recommended: ${s}` : undefined}
-                      title={recommended ? "Recommended next step" : undefined}
-                    >
-                      {s}
-                    </button>
-                  );
-                })}
-              </div>
+            {/* Typed follow-ups render LAST — reply fills the composer, task
+                opens review, and action routes to Tasks; they sit closest to
+                the composer and aren't pushed up by tool activity. */}
+            {nextPaths.length > 0 && !turn.pending && !suppressSuggestions && onSuggestion ? (
+              <FollowUpCards paths={nextPaths} onActivate={onSuggestion} />
             ) : null}
             {/* Comment on the markdown artifact this turn produced: select any
                 passage above to leave a comment, then request a revision that
@@ -7429,7 +7461,7 @@ function TurnRowImpl({
               <ArtifactComments
                 turnId={turn.id}
                 familiarName={familiar.display_name}
-                onRequest={(prompt) => onSuggestion?.(prompt)}
+                onRequest={(prompt) => onRequest?.(prompt)}
               />
             ) : null}
           </div>
@@ -7984,6 +8016,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&
+    Boolean(prev.onRequest) === Boolean(next.onRequest) &&
     // Branch nav: compare by index+total (the displayed position changes when
     // branches are added); skip closure identity — callbacks are recreated on
     // every parent render and would defeat memoization.

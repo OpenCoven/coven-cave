@@ -80,7 +80,6 @@ test("external board writers invalidate a warmed board landing before navigation
     "../components/chat-view.tsx",
     "../components/task-link-picker.tsx",
     "../components/thread-signals-section.tsx",
-    "../components/journal/journal-entries.tsx",
     "../lib/chat-task-handoff.ts",
     "../lib/chat-task-autofill.ts",
     "../lib/github-tasks.ts",
@@ -90,6 +89,12 @@ test("external board writers invalidate a warmed board landing before navigation
     const code = await readFile(new URL(writer, here), "utf8");
     assert.match(code, /publishBoardChanged\(\)/, `${writer} publishes its successful board write`);
   }
+});
+
+test("Journal strips chat controls without becoming a board writer", async () => {
+  const journal = await readFile(new URL("../components/journal/journal-entries.tsx", here), "utf8");
+  assert.match(journal, /const \{ visible \} = useMemo\(\(\) => extractNextPaths\(text\), \[text\]\);/);
+  assert.doesNotMatch(journal, /publishBoardChanged\(\)/, "journal reflection rendering never invalidates board data");
 });
 
 test("publishing from the Scribe surface invalidates a warmed Grimoire landing", async () => {

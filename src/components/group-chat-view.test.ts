@@ -34,12 +34,12 @@ test("GroupChatView schedules Broadcast and Round robin replies through /api/cha
   assert.match(view, /group\.responseMode === "round-robin"[\s\S]*renderCovenRoundRobinPrompt\(\{/, "round robin uses the relay-aware prompt");
   assert.match(view, /transcript: \[\.\.\.priorTurns, userTurn, \.\.\.settledBefore\]/, "later speakers receive settled earlier replies");
   assert.match(view, /extractNextPaths\(turn\.text\)\.visible/, "relay strips internal next-path controls");
-  // Strips the piggybacked next-paths block (visible) and surfaces the parsed
-  // lines (suggestions) so control markup never leaks and chips can render.
+  // Group chat strips the typed trailer and keeps ONLY reply suggestions. A
+  // compact coven bubble cannot execute or send task/action suggestions.
   assert.match(
     view,
-    /const \{ visible: withoutNextPaths, suggestions \} = extractNextPaths\(r\.text\)[\s\S]*extractCovenDelegations\(withoutNextPaths\)/,
-    "strips next-path and delegation controls from coven replies",
+    /typedSuggestions[\s\S]*?\.filter\(\(path\) => path\.kind === "reply"\)[\s\S]*?\.map\(\(path\) => path\.prompt\)/,
+    "filters non-reply intents before group-chat suggestions can render or send",
   );
   // Parsed suggestions render as click-to-send chips targeted to their author.
   assert.match(
