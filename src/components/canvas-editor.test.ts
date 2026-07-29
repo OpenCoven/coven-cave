@@ -268,6 +268,33 @@ assert.match(
   "edit mode explains that overrides are experiments",
 );
 assert.match(editor, /Apply via familiar/, "dirty style edits offer the familiar handoff");
+// Experiments need a way back out that doesn't cost the sketch's runtime state
+// (open menus, scroll, game state) — so revert clears the inline declarations
+// the overrides added instead of reloading the frame.
+assert.match(
+  editor,
+  /cleared\[property\] = "";[\s\S]{0,300}?applyStyleOverride\(selector, cleared\)/,
+  "revert removes each override with an empty value rather than reloading the sketch",
+);
+assert.match(editor, /Revert style edits/, "live style experiments expose an undo");
+
+// Attach is explicit and detachable: a live selection scopes the design-chat
+// ask only while it's attached, so a general question doesn't cost the pick.
+assert.match(
+  editor,
+  /const target = attachedRef\.current \? selectionRef\.current : null;/,
+  "only an attached selection scopes the design-chat ask",
+);
+assert.match(
+  editor,
+  /setSelection\(target\);[\s\S]{0,200}?setAttached\(true\)/,
+  "a freshly selected component arrives attached to the chat",
+);
+assert.match(
+  editor,
+  /aria-label="Detach the selected component from the design chat"/,
+  "the attach chip exposes a labelled detach control",
+);
 assert.match(
   editor,
   /follows the gallery thumbnail\s*\/\/ precedent|precedent of a fixed `#fff` sketch ground/,
