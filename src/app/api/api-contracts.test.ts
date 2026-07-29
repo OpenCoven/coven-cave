@@ -359,8 +359,8 @@ for (const contract of contracts) {
   );
   assert.match(
     dailySummarySource,
-    /media:\s*draft\.media/,
-    "/inbox/daily-summary should persist the generated media card",
+    /media:\s*\{\s*\n\s*\.\.\.draft\.media,/,
+    "/inbox/daily-summary should persist the generated media card (spread, so a backfill can stamp a truthful generatedAt over it)",
   );
   assert.match(
     dailySummarySource,
@@ -374,8 +374,13 @@ for (const contract of contracts) {
   );
   assert.match(
     dailySummarySource,
-    /fetchMergedPrsForDay\(now\)\.catch\(/,
-    "/inbox/daily-summary should gather merged PRs server-side, degrading to absent on failure",
+    /fetchMergedPrsForDay\(target\)\.catch\(/,
+    "/inbox/daily-summary should gather merged PRs server-side for the TARGET day (today, or a backfilled past day), degrading to absent on failure",
+  );
+  assert.match(
+    dailySummarySource,
+    /body\.backfill !== true/,
+    "/inbox/daily-summary must keep the midnight-rollover guard on the automatic path — only an explicit backfill may target another day",
   );
   assert.match(
     dailySummarySource,

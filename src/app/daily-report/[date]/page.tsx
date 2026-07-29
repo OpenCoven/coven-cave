@@ -2,6 +2,7 @@ import { loadInbox } from "@/lib/cave-inbox";
 import { Icon } from "@/lib/icon";
 import { AnalyticsPageShell } from "@/components/analytics-page-shell";
 import { DailyReportDay, type WeekCell } from "@/components/daily-report-day";
+import { DailyReportEmpty } from "@/components/daily-report-empty";
 import {
   breakdownForDay,
   dateSlug,
@@ -48,6 +49,7 @@ export default async function DailyReportPage({ params }: Props) {
   const parsedDate = parseDateSlug(date);
 
   if (!item) {
+    const todaySlug = dateSlug(new Date());
     return (
       <AnalyticsPageShell>
         {/* div, not main: the shell's aps-main is the page's main landmark. */}
@@ -59,28 +61,12 @@ export default async function DailyReportPage({ params }: Props) {
             </a>
           </div>
           <div className="dr-shell">
-            <section className="dr-hero" style={{ marginTop: 64 }}>
-              <p className="dr-eyebrow">
-                <span className="dr-eyebrow__dot" aria-hidden />
-                Daily report
-              </p>
-              <h1 className="dr-title">Daily report not found</h1>
-              <p className="dr-subtitle">
-                No generated daily summary exists for{" "}
-                {parsedDate ? longDateLabel(parsedDate) : date}. Reports are created automatically
-                once there is activity to summarize.
-              </p>
-              <div className="dr-actions">
-                <a className="dr-btn dr-btn--primary" href="/dashboard">
-                  <Icon name="ph:squares-four" aria-hidden />
-                  Go to dashboard
-                </a>
-                <a className="dr-btn" href="/">
-                  <Icon name="ph:house-bold" aria-hidden />
-                  Back to CovenCave
-                </a>
-              </div>
-            </section>
+            <DailyReportEmpty
+              date={date}
+              dateLabel={parsedDate ? longDateLabel(parsedDate) : date}
+              isFuture={date > todaySlug}
+              isToday={date === todaySlug}
+            />
           </div>
         </div>
       </AnalyticsPageShell>
@@ -182,7 +168,6 @@ export default async function DailyReportPage({ params }: Props) {
             narrative={narrative}
             narrativeByline={narrativeByline}
             shareImageUrl={item.media?.imageUrl ?? null}
-            summaryBody={item.body ?? null}
           />
         </div>
       </div>

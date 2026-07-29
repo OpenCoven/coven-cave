@@ -10,6 +10,7 @@ import {
   dateSlug,
   type DailySummaryExtras,
 } from "@/lib/daily-summary-notifications";
+import { parseDateSlug } from "@/lib/daily-report";
 import { completedCardsForDay, unionMergedPrs } from "@/lib/daily-report-facts";
 import { fetchMergedPrsForDay } from "@/lib/server/github-merged";
 import { loadBoard } from "@/lib/cave-board";
@@ -24,6 +25,15 @@ startScheduler();
 const NARRATIVE_MAX_STORED_CHARS = 4_000;
 
 type NarrativePatch = NonNullable<NonNullable<InboxItem["media"]>["narrative"]>;
+
+type DailySummaryRequest = {
+  sessions?: SessionRow[];
+  date?: string;
+  /** Explicit request to build a PAST day's report. The automatic refresh
+   *  never sets this, so the midnight-rollover guard still protects it. */
+  backfill?: boolean;
+  narrative?: { text?: string; familiarId?: string; familiarName?: string; factsHash?: string };
+};
 
 /** Validate a client-submitted narrative: required fields present, control
  *  characters stripped, length bounded. Returns null (ignored) when invalid. */
@@ -57,11 +67,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
-  let body: {
-    sessions?: SessionRow[];
-    date?: string;
-    narrative?: { text?: string; familiarId?: string; familiarName?: string; factsHash?: string };
-  } = {};
+  let body: DailySummaryRequest = {};
   try {
     body = await req.json();
   } catch {
@@ -69,10 +75,28 @@ export async function POST(req: Request) {
   }
 
   const now = new Date();
-  // Midnight-rollover race: a client that computed its payload just before the
-  // day flipped must not create or overwrite the new day's report.
-  if (typeof body.date === "string" && body.date !== dateSlug(now)) {
-    return NextResponse.json({ ok: true, created: false, updated: false, dateMismatch: true });
+  const todaySlug = dateSlug(now);
+  const requestedSlug = typeof body.date === "string" ? body.date : null;
+
+  // `target` is the day the report is ABOUT; `now` stays wall-clock for the
+  // write's own timestamps. They differ only on an explicit backfill.
+  let target = now;
+  if (requestedSlug && requestedSlug !== todaySlug) {
+    // Midnight-rollover race: a client that computed its payload just before
+    // the day flipped must not create or overwrite the new day's report. The
+    // automatic refresh never sets `backfill`, so it still lands here.
+    if (body.backfill !== true) {
+      return NextResponse.json({ ok: true, created: false, updated: false, dateMismatch: true });
+    }
+    const parsed = parseDateSlug(requestedSlug);
+    // A day that has not happened has nothing to report.
+    if (!parsed || requestedSlug > todaySlug) {
+      return NextResponse.json(
+        { ok: false, error: "backfill requires a past date" },
+        { status: 400 },
+      );
+    }
+    target = parsed;
   }
 
   const sessions = Array.isArray(body.sessions) ? body.sessions : [];
@@ -86,12 +110,12 @@ export async function POST(req: Request) {
   // lock (GitHub can take seconds; the lock serializes every inbox write).
   // Each source degrades to "absent" — never an error, never a blocked write.
   const [githubPrs, board] = await Promise.all([
-    fetchMergedPrsForDay(now).catch(() => null),
+    fetchMergedPrsForDay(target).catch(() => null),
     loadBoard().catch(() => null),
   ]);
   const extras: DailySummaryExtras = {
-    prsMerged: unionMergedPrs(githubPrs, sessions, now),
-    cardsCompleted: board ? completedCardsForDay(board.cards, now) : undefined,
+    prsMerged: unionMergedPrs(githubPrs, sessions, target),
+    cardsCompleted: board ? completedCardsForDay(board.cards, target) : undefined,
   };
 
   const result = await withInboxLock(async ({ load, save }) => {
@@ -100,13 +124,23 @@ export async function POST(req: Request) {
       items: file.items,
       sessions,
       extras,
-      now,
+      now: target,
     });
     if (!draft) return null;
 
+    // Backfill splits two different clocks, and they must not be conflated:
+    //   • WHEN IT WAS WRITTEN — media.generatedAt / report.refreshedAt. These
+    //     must be wall-clock `now`, or the report's byline claims a familiar
+    //     wrote it days ago when it was written seconds ago.
+    //   • WHICH DAY IT COVERS — createdAt / fireAt / firedAt stay anchored to
+    //     `target`. The inbox sorts and labels by these, so day-anchoring is
+    //     what makes seven backfilled days list as seven days instead of
+    //     collapsing to "just now" and burying today's report.
+    const writtenAt = body.backfill === true ? now.toISOString() : undefined;
+
     // Ensure-or-refresh: today's report is rebuilt in place so it tracks the
     // day instead of freezing at the first app-open after midnight.
-    const existing = file.items.find((item) => item.auto === dailySummaryAutoKey(now));
+    const existing = file.items.find((item) => item.auto === dailySummaryAutoKey(target));
     if (existing) {
       const refreshed: InboxItem = {
         ...existing,
@@ -117,6 +151,16 @@ export async function POST(req: Request) {
         // fact-only refresh must not discard the narrative layered on top.
         media: {
           ...draft.media,
+          ...(writtenAt
+            ? {
+                generatedAt: writtenAt,
+                // `report` is optional on the draft; spreading it when absent
+                // would leave factsHash undefined and break its type.
+                ...(draft.media?.report
+                  ? { report: { ...draft.media.report, refreshedAt: writtenAt } }
+                  : {}),
+              }
+            : {}),
           narrative: narrativeInput ?? existing.media?.narrative ?? null,
         },
         updatedAt: now.toISOString(),
@@ -142,7 +186,19 @@ export async function POST(req: Request) {
       familiarId: null,
       sessionId: null,
       link: draft.link,
-      media: draft.media,
+      media: {
+        ...draft.media,
+        ...(writtenAt
+            ? {
+                generatedAt: writtenAt,
+                // `report` is optional on the draft; spreading it when absent
+                // would leave factsHash undefined and break its type.
+                ...(draft.media?.report
+                  ? { report: { ...draft.media.report, refreshedAt: writtenAt } }
+                  : {}),
+              }
+            : {}),
+      },
       auto: draft.auto,
     };
     file.items.push(next);

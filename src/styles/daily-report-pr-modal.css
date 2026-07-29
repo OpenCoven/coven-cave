@@ -3,9 +3,9 @@
    come from foundations.css — the report ships beside 21 themes × 2 modes. */
 
 .drd-pr-scrim {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 80;
   display: flex;
   align-items: center;
   justify-content: center;

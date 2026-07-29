@@ -19,7 +19,7 @@ const modals = read("../components/daily-report-modals.tsx");
 
 assert.match(page, /loadInbox/, "daily report page should load persisted inbox data");
 assert.match(page, /daily-summary:\$\{date\}/, "daily report page should resolve the daily summary by auto key");
-assert.match(page, /Daily report not found/, "daily report page should have an empty/not-found state");
+assert.match(page, /DailyReportEmpty/, "daily report page should render the no-report state");
 assert.match(page, /breakdownForDay/, "report should compute the live per-day breakdown");
 assert.match(page, /item\.media\?\.report/, "report should read the structured day-in-review facts");
 assert.match(page, /media\?\.narrative\?\.text/, "report should lead with the familiar-written narrative when present");
@@ -162,6 +162,28 @@ assert.match(
     /pr\?: \{ repo: string; number: number \}/,
     "the model carries PR identity so surfaces can open the card",
   );
+}
+
+// ── the no-report day is recoverable, not a dead end ───────────────────────
+// Past days still have their facts on disk (sessions, merged PRs, board
+// cards, rituals), so the empty state offers to build the report rather than
+// telling the reader it happens automatically — which is only true of today.
+
+{
+  const empty = read("../components/daily-report-empty.tsx");
+  assert.match(empty, /backfill: !isToday/, "a past day is generated as an explicit backfill");
+  assert.match(empty, /\/api\/sessions\/list/, "backfill reuses the enriched session list, not a second query");
+  assert.match(empty, /isFuture/, "a day that hasn't happened is never offered a generate button");
+  assert.match(empty, /kind: "empty"/, "an honestly empty day says so instead of reporting failure");
+
+  const route = read("../app/api/inbox/daily-summary/route.ts");
+  // The midnight-rollover guard must survive: only an EXPLICIT backfill may
+  // target another day, and never a future one.
+  assert.match(route, /body\.backfill !== true/, "the automatic path keeps the midnight-rollover guard");
+  assert.match(route, /requestedSlug > todaySlug/, "a future date is refused");
+  assert.match(route, /now: target/, "the report is built for the requested day, not today");
+  assert.match(route, /dailySummaryAutoKey\(target\)/, "the item is keyed to the requested day");
+  assert.match(route, /fetchMergedPrsForDay\(target\)/, "merged PRs are fetched for the requested day");
 }
 
 // ── theme safety ───────────────────────────────────────────────────────────

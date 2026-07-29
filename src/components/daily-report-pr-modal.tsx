@@ -50,6 +50,7 @@ export function DailyReportPrModal({
         role="dialog"
         aria-modal="true"
         aria-label={`Pull request ${label}`}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="drd-pr-head">
