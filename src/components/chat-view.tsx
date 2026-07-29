@@ -15,6 +15,7 @@ import { FileLinkResolverContext, MessageBubble, SyntaxBlock, type MessageBubble
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
+import { ChatSessionContextRow } from "@/components/chat-session-context-row";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
@@ -2116,6 +2117,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
+  // The session's live git branch for the context row. Rides the shared
+  // changes-summary gate (cave-v8hh) that the composer git chip and the header
+  // meta line already subscribe to, so this adds no extra requests.
+  const { branch: sessionGitBranch } = useChangesSummary(
+    session?.project_root ?? projectRoot ?? undefined,
+    Boolean(session?.project_root ?? projectRoot),
+  );
   // The project the most recent chat ran in — the default a brand-new chat
   // inherits (kept live: sessions can land seconds after boot).
   const recentProjectRoot = useMemo(
@@ -5645,6 +5653,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     />
   );
 
+  // Facts for the slim context row. Same derivations the header meta line
+  // uses, hoisted here so the two rows can never disagree about which model
+  // answered or which directory the session runs in.
+  const contextRowProject = projectIdDraft ? chatProjectById(projectIdDraft, projects) : null;
+  const contextRowModel =
+    responseMetadataModel(lastSettledAssistantTurn?.responseMetadata) ??
+    visibleModelId(session?.model ?? undefined, familiar.harness ?? undefined) ??
+    visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined);
+  const contextRowBranch = sessionGitBranch;
+
   return (
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
@@ -5779,6 +5797,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </div>
         </MetaLine>
       </header>
+      {/* Chat.dc.html 2a ③: the slim mono context band under the title —
+          project · branch · model · cwd on the left, what the last run cost on
+          the right. Everything here is machine-decided, so it reads in mono
+          and never invents a fact: a chip with no value doesn't render. */}
+      <ChatSessionContextRow
+        projectName={contextRowProject?.name ?? null}
+        projectRoot={session?.project_root ?? projectRoot ?? null}
+        runtime={lastSettledAssistantTurn?.responseMetadata?.runtime ?? session?.runtime ?? null}
+        branch={contextRowBranch}
+        model={contextRowModel}
+        usage={lastSettledAssistantTurn?.usage}
+        costUsd={lastSettledAssistantTurn?.costUsd}
+        durationMs={lastSettledAssistantTurn?.durationMs}
+        projects={projects}
+        projectId={projectIdDraft}
+        onProjectChange={setProjectIdDraft}
+        onAddProject={overflowAddProject.beginAddProject}
+      />
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>

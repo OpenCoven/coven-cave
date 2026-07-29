@@ -30,6 +30,7 @@ import { groupInboxFeed } from "@/lib/inbox-feed";
 import { greetingForHour } from "@/lib/home-greeting";
 import { relativeAge } from "@/lib/rss";
 import { filterVisibleChatSessions } from "@/lib/chat-projects";
+import { startFromGroup } from "@/lib/chat-start-from";
 import { useDashboardBoard } from "@/components/home/use-dashboard-board";
 import {
   OPEN_WORK_FILTERS,
@@ -175,6 +176,15 @@ export function ChatNewDashboard({
       .slice(0, RECENT_THREADS_CAP);
   }, [sessions, familiar.id]);
 
+  // Group headers come from the same pure model the zero-turn starting page
+  // uses, so the two new-session surfaces can't disagree about their counts.
+  const tasksGroup = startFromGroup("tasks", visibleWork.length, openWork.length);
+  const chatsGroup = startFromGroup(
+    "chats",
+    recentThreads.length,
+    filterVisibleChatSessions(sessions, familiar.id).filter((s) => Boolean(s.title?.trim())).length,
+  );
+
   return (
     <div className="home-dash__body home-dash--embed select-none" data-testid="chat-new-dashboard">
 
@@ -184,9 +194,11 @@ export function ChatNewDashboard({
 
           <div className="home-dash__board-head">
             <div className="home-dash__head-text">
+              {/* Chat.dc.html 2b: the eyebrow names the session and its
+                  familiar; the time-of-day greeting rides after it. */}
               <p className="home-dash__eyebrow">
                 <span className="home-dash__eyebrow-dot" aria-hidden />
-                {greeting ?? "In the cave"}
+                {`New session · ${familiar.display_name}${greeting ? ` · ${greeting}` : ""}`}
               </p>
               <h1 className="home-dash__headline">
                 {openWork.length > 0
@@ -219,10 +231,20 @@ export function ChatNewDashboard({
             </div>
           </div>
 
-          {/* Open work */}
+          {/* Chat.dc.html 2b: everything below is a launcher over work that
+              already exists — one band, then a group per source. */}
+          <div className="home-dash__startfrom">
+            <span className="home-dash__startfrom-label">Start from</span>
+            <span className="home-dash__startfrom-rule" aria-hidden />
+          </div>
+
+          {/* Tasks */}
           <section className="home-dash__section" aria-label="Open work">
             <div className="home-dash__section-head">
-              <div className="home-dash__section-label">Open work</div>
+              <div className="home-dash__section-label">
+                {tasksGroup.label}
+                <span className="home-dash__section-count">{tasksGroup.count}</span>
+              </div>
               {workFilter === "inbox" && scopedNeedsYou.length > 0 ? (
                 <button
                   type="button"
@@ -296,7 +318,10 @@ export function ChatNewDashboard({
               className="home-dash__section home-dash__section--recent"
               aria-label="Recent threads"
             >
-              <div className="home-dash__section-label">Recent threads</div>
+              <div className="home-dash__section-label">
+                {chatsGroup.label}
+                <span className="home-dash__section-count">{chatsGroup.count}</span>
+              </div>
               <div className="home-dash__recent">
                 {recentThreads.map((s) => (
                   <button

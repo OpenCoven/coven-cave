@@ -89,8 +89,8 @@ test("continue row and identity polish", () => {
   assert.match(emptyState, /title=\{project\.root\}/, "the ellipsizing project path exposes its full value");
 });
 
-test("chat-first landing: time greeting eyebrow, calm first paint, disclosed context", () => {
-  // The retired home hero's time-of-day greeting now warms the chat landing,
+test("chat-first landing: mono eyebrow, serif hero, always-visible launcher", () => {
+  // The retired home hero's time-of-day greeting still warms the chat landing,
   // sampled client-side so SSR never paints a mismatch.
   assert.match(
     emptyState,
@@ -99,38 +99,38 @@ test("chat-first landing: time greeting eyebrow, calm first paint, disclosed con
   );
   assert.match(emptyState, /className=\{`cave-chat-empty-greeting/, "greeting renders as the landing eyebrow");
 
-  // Project picker, open-work rail, task tile and recents collapse by default so
-  // first paint is just greeting + suggestions + composer (Phase 2.1).
-  assert.match(
+  // Chat.dc.html 2b replaced the collapsed "open work & recents" disclosure
+  // with an always-visible "Start from" launcher: the work IS the page, so it
+  // no longer hides behind a toggle. (Group headers, tiles and counts are
+  // pinned in chat-session-chrome.test.ts.)
+  assert.doesNotMatch(
     emptyState,
-    /const \[showContext, setShowContext\] = useState\(false\)/,
-    "the working context is collapsed by default",
+    /const \[showContext, setShowContext\]/,
+    "the disclosure state is gone with the disclosure",
   );
   assert.match(
     emptyState,
-    /className="cave-chat-empty-context-toggle"[\s\S]*?aria-expanded=\{showContext\}/,
-    "a labelled toggle discloses the working context with aria-expanded",
-  );
-  assert.match(
-    emptyState,
-    /\{showContext \? \([\s\S]*?className="cave-chat-empty-context-body"/,
-    "the project picker + rails render only once context is expanded",
+    /className="cave-chat-startfrom" aria-label="Start from existing work"/,
+    "the launcher is a labelled landmark rather than a collapsed panel",
   );
 
-  // Ordering: greeting sits above the identity; suggestions paint before the
-  // collapsed context block.
+  // Ordering: eyebrow, then the serif hero, then the identity; suggestions
+  // still paint ahead of the launcher.
   assert.ok(
-    emptyState.indexOf("cave-chat-empty-greeting") < emptyState.indexOf("cave-chat-empty-familiar"),
-    "greeting eyebrow sits above the familiar identity",
+    emptyState.indexOf("cave-chat-empty-greeting") < emptyState.indexOf("cave-chat-empty-hero"),
+    "greeting eyebrow sits above the hero line",
   );
   assert.ok(
-    emptyState.indexOf("cave-chat-empty-prompts") < emptyState.indexOf('className="cave-chat-empty-context"'),
-    "starter suggestions are part of the always-visible first paint, ahead of the collapsed context",
+    emptyState.indexOf("cave-chat-empty-hero") < emptyState.indexOf("cave-chat-empty-familiar"),
+    "the hero sits above the familiar identity",
+  );
+  assert.ok(
+    emptyState.indexOf("cave-chat-empty-prompts") < emptyState.indexOf('className="cave-chat-startfrom"'),
+    "starter suggestions paint ahead of the launcher",
   );
 
-  // The greeting eyebrow + context toggle stay on semantic tokens.
+  // The greeting eyebrow stays on semantic tokens.
   assert.match(styles, /\.cave-chat-empty-greeting-dot \{[\s\S]*?background: var\(--accent-presence\)/, "greeting dot uses the presence accent token");
-  assert.match(styles, /\.cave-chat-empty-context-toggle \{[\s\S]*?border-radius: var\(--radius-pill\)/, "context toggle reads as a pill control");
 });
 
 test("starter pills resume unassigned + own board work, marked as tasks (cave-qvwu)", () => {
