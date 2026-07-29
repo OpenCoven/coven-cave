@@ -76,7 +76,10 @@ const {
       throw new Error("no daemon status for default socket fixture");
     },
   });
-  assert.match(def, /\.coven\/coven\.sock$/);
+  // `resolveDaemonSocketPath` deliberately uses the host's path module, so
+  // the simulated Linux policy still returns Windows separators in a Windows
+  // test process. The suffix contract itself is separator-independent.
+  assert.match(def.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
 }
 
 // Windows daemon status stores the pipe name; Node HTTP needs the full pipe path
