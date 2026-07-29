@@ -60,6 +60,13 @@ test("About gives OpenCoven Tools a full-width desktop row", () => {
   );
 });
 
+test("About gives the build details a full-width desktop row", () => {
+  assert.match(
+    component,
+    /id=\{settingsGroupId\("CovenCave"\)\}\s+data-settings-group\s+className="settings-about-control settings-about-control--wide"/,
+  );
+});
+
 test("About preserves truthful live status and safe diagnostic behavior", () => {
   assert.match(component, /classifyAboutDaemonStatus/);
   assert.match(component, /fetch\("\/api\/daemon\/status"/);

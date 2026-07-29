@@ -426,7 +426,7 @@ export function AboutSection() {
         <div
           id={settingsGroupId("CovenCave")}
           data-settings-group
-          className="settings-about-control"
+          className="settings-about-control settings-about-control--wide"
         >
           <SectionRule aside="This build">CovenCave</SectionRule>
           <div className="settings-about-sheet">

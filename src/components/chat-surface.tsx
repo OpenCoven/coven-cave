@@ -10,7 +10,6 @@ import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import {
   ChatCanvasView,
   ChatFamiliarView,
-  ChatSettingsView,
   GroupChatView,
   ProjectsView,
   WorkspaceRail,
@@ -59,10 +58,9 @@ const chatStorage = {
 // surface and the Grimoire editor, not as a chat scope (cave-liut).
 // "familiar" is the active familiar's capability panel, promoted from the
 // retired inspector sidepanel to a first-class chat tab.
-// "settings" is the consolidated chat-settings tab (auto-archive policy et al).
 // "canvas" is the gallery of sketches saved from chat artifacts — saves landed
 // in the canvas store with no surface after the standalone Canvas page retired.
-type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar" | "settings" | "canvas";
+type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar" | "canvas";
 
 type Props = {
   familiars: Familiar[];
@@ -373,7 +371,6 @@ export function ChatSurface({
               { id: "projects", label: "Projects" },
               { id: "canvas", label: "Canvas" },
               { id: "familiar", label: "Familiar" },
-              { id: "settings", label: "Settings" },
             ]}
           />
           <div className="flex shrink-0 items-center gap-1.5">
@@ -445,13 +442,6 @@ export function ChatSurface({
                 onRosterChanged={onRetryFamiliars}
               />
             </div>
-          </div>
-        ) : scope === "settings" ? (
-          // Consolidated chat settings (cave-wide auto-archive policy, incl.
-          // archive-on-reflection) as a first-class chat tab — the knobs govern
-          // chat behavior, so they live where chats live.
-          <div className="flex min-h-0 min-w-0 flex-1">
-            <ChatSettingsView />
           </div>
         ) : scope === "coven" ? (
           // Group Chat ("coven") lives here as a first-class chat tab instead of

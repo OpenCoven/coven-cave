@@ -2,24 +2,42 @@
 
 import { useMemo, useState } from "react";
 import { AccessGroupsSection } from "@/components/access-groups-section";
+import dynamic from "next/dynamic";
 import { FamiliarStudioBrainTab } from "@/components/familiar-studio-brain-tab";
 import { FamiliarStudioIdentityTab } from "@/components/familiar-studio-identity-tab";
 import { FamiliarStudioMemoryTab } from "@/components/familiar-studio-memory-tab";
 import { FamiliarStudioProjectsTab } from "@/components/familiar-studio-projects-tab";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { VaultPanel } from "@/components/vault-panel";
 import { Tabs } from "@/components/ui/tabs";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { Familiar } from "@/lib/types";
 
-type FamiliarSettingsTab = "identity" | "brain" | "memory" | "projects" | "vault";
+type FamiliarSettingsTab = "chat" | "identity" | "brain" | "memory" | "projects" | "vault";
 
 const SETTINGS_TABS: Array<{ id: FamiliarSettingsTab; label: string }> = [
+  { id: "chat", label: "Chat" },
   { id: "identity", label: "Identity" },
   { id: "brain", label: "Brain" },
   { id: "memory", label: "Memory" },
   { id: "projects", label: "Projects" },
   { id: "vault", label: "Vault" },
 ];
+
+const ChatSettingsView = dynamic(
+  () =>
+    import("@/components/chat-settings-view").then(
+      (module) => module.ChatSettingsView,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-0 flex-col gap-3 p-6" aria-hidden>
+        <SkeletonRows count={6} />
+      </div>
+    ),
+  },
+);
 
 /**
  * The selected familiar's editable Studio controls, embedded in Chat's
@@ -64,7 +82,6 @@ export function FamiliarSettingsSection({
           value={tab}
           onChange={setTab}
           items={SETTINGS_TABS}
-          bordered={false}
         />
       </div>
 
@@ -74,6 +91,7 @@ export function FamiliarSettingsSection({
         aria-labelledby={`familiar-settings-tab-${tab}`}
         className="familiar-tab__settings-body familiar-studio__body"
       >
+        {tab === "chat" ? <ChatSettingsView /> : null}
         {tab === "identity" ? (
           <FamiliarStudioIdentityTab
             key={`${familiar.id}:identity`}
