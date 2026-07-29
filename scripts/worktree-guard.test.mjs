@@ -6,7 +6,7 @@
 // garbage input. A guard bug must never brick Bash.
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -133,11 +133,75 @@ if (!isWin) {
   assert.equal(runHook("git push origin --delete feature-x", dir, env).status, 0, "no open PR → passes");
 }
 
-// ── 8. The bypass token allows deliberate destruction ──────────────────────────
+// ── 8. The bypass token allows deliberate destruction, and is RECORDED ────────
+// cave-boor8: a worktree with 3 uncommitted files was destroyed and the
+// post-mortem could not tell a deliberate override from a hole in the guard,
+// because the bypass path left no trace whatsoever.
 {
   const { dir, wt } = repoWithWorktree({ push: false, dirty: true });
+  mkdirSync(path.join(dir, ".claude"), { recursive: true });
   const res = runHook(`WT_GUARD_BYPASS=1 git worktree remove --force ${wt}`, dir);
   assert.equal(res.status, 0, "bypass token is honored");
+
+  const log = path.join(dir, ".claude", "worktree-guard-bypass.log");
+  assert.ok(existsSync(log), "an honored bypass is recorded");
+  const entry = JSON.parse(readFileSync(log, "utf8").trim().split("\n").pop());
+  assert.match(entry.command, /worktree remove/, "the record names the command that was let through");
+  assert.equal(entry.session, "test", "and the session that ran it");
+  assert.ok(Date.parse(entry.at) > 0, "and when");
+
+  // A second bypass appends rather than truncating — the log is a history.
+  runHook(`WT_GUARD_BYPASS=1 rm -rf ${wt}`, dir);
+  assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 2, "bypasses accumulate");
+}
+
+// ── 8b. A missing .claude dir must not brick the command ──────────────────────
+{
+  const { dir, wt } = repoWithWorktree({ push: false, dirty: true });
+  // no .claude/ here — appendFileSync will throw and must be swallowed
+  assert.equal(
+    runHook(`WT_GUARD_BYPASS=1 git worktree remove --force ${wt}`, dir).status,
+    0,
+    "a logging failure never blocks a command",
+  );
+}
+
+// ── 8c. `cd` and `git -C` no longer hide a removal from the guard ─────────────
+// The gap that let cave-boor8 happen: relative targets were resolved against the
+// HOOK's cwd, so these forms stat'd a nonexistent path and were waved through.
+{
+  const { dir } = repoWithWorktree({ push: true, dirty: true });
+  const cases = [
+    ["cd .worktrees && git worktree remove feature-x", "cd moves the resolution base"],
+    [`git -C ${dir} worktree remove .worktrees/feature-x`, "-C moves the resolution base"],
+    ["cd .worktrees && rm -rf feature-x", "cd applies to rm too"],
+  ];
+  for (const [cmd, why] of cases) {
+    const res = runHook(cmd, dir);
+    assert.equal(res.status, 2, `blocks (${why}): ${cmd}`);
+    assert.match(res.stderr, /uncommitted change/, "and says why");
+  }
+  // A cd that walks somewhere unrelated must not create false positives.
+  assert.equal(
+    runHook("cd /tmp && rm -rf feature-x", dir).status,
+    0,
+    "an unrelated path outside .worktrees still passes",
+  );
+}
+
+// ── 8d. Moving a live worktree strands it just as badly as deleting it ────────
+{
+  const { dir, wt } = repoWithWorktree({ push: true, dirty: true });
+  const res = runHook(`mv ${wt} /tmp/parked-worktree`, dir);
+  assert.equal(res.status, 2, "moving a live worktree root is blocked");
+  assert.match(res.stderr, /strand a live worktree/, "explains that git still points at the old path");
+
+  // Moving something INSIDE a worktree, or a husk, is nobody else's business.
+  assert.equal(
+    runHook(`mv ${path.join(wt, "c.txt")} /tmp/c.txt`, dir).status,
+    0,
+    "moving a file inside a worktree passes",
+  );
 }
 
 // ── 9. Non-matching commands and garbage input never block ────────────────────
