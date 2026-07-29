@@ -19,9 +19,13 @@ async function gotoChatFamiliarSettings(page: Page) {
     route.fulfill({ json: { ok: true, familiars: FAMILIARS } }),
   );
   await page.goto("/?mode=chat");
-  await page.getByRole("tab", { name: "Familiar", exact: true }).click();
-  const settingsTab = page.getByRole("tab", { name: "Settings", exact: true });
-  await expect(settingsTab).toBeVisible({ timeout: 30_000 });
+  const chatSections = page.getByRole("tablist", { name: "Chat sections" });
+  await expect(chatSections).toBeVisible({ timeout: 60_000 });
+  await chatSections.getByRole("tab", { name: "Familiar", exact: true }).click();
+  const familiarSections = page.getByRole("tablist", { name: "Familiar sections" });
+  await expect(familiarSections).toBeVisible({ timeout: 60_000 });
+  const settingsTab = familiarSections.getByRole("tab", { name: "Settings", exact: true });
+  await expect(settingsTab).toBeVisible({ timeout: 60_000 });
   await settingsTab.click();
   await expect(
     page.getByRole("region", { name: "Settings for Familiar 01" }),
