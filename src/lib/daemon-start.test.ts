@@ -117,6 +117,25 @@ test("a readiness timeout terminates the Windows launch tree", async () => {
   });
 });
 
+test("cleanup's own child close remains a readiness timeout", async () => {
+  const child = fakeChild();
+  const result = await startLocalDaemon({
+    restart: true,
+    startTimeoutMs: 0,
+    probe: async () => ({ ok: false }),
+    spawnImpl: () => child,
+    terminateLaunchTree: async () => {
+      child.emit("close", null);
+      return { attempted: true, completed: true, mode: "windows-tree" };
+    },
+    platform: "win32",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "readiness_timeout");
+  assert.equal(result.status, 504);
+  assert.deepEqual(result.cleanup, { attempted: true, completed: true, mode: "windows-tree" });
+});
+
 test("the pre-cleanup health probe preserves a daemon that becomes healthy at the deadline", async () => {
   const child = fakeChild();
   let probes = 0;

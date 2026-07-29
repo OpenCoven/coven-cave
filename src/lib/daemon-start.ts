@@ -266,8 +266,13 @@ export async function startLocalDaemon({
       stderr: sanitizeDaemonStartDiagnostic(stderr),
     };
   }
+  // Capture this before cleanup. The owned-tree terminator deliberately
+  // causes the child to close (often with a null code after SIGTERM); that is
+  // evidence that cleanup worked, not that the launcher exited before its
+  // readiness deadline.
+  const runnerExitedBeforeCleanup = exitCode !== undefined;
   const cleanup = await terminateLaunchTree(child);
-  if (exitCode !== undefined) {
+  if (runnerExitedBeforeCleanup) {
     return {
       ok: false, code: "runner_exited", error: "daemon launcher exited before health became ready",
       stdout: sanitizeDaemonStartDiagnostic(stdout), stderr: sanitizeDaemonStartDiagnostic(stderr),
