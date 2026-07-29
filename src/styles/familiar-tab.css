@@ -387,6 +387,38 @@
   overscroll-behavior: contain;
 }
 
+/* Settings keeps the same familiar detail column while reusing the canonical
+   Studio bodies. The nested tab strip stays visible as its body scrolls. */
+.familiar-tab__settings {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+}
+
+.familiar-tab__settings-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.familiar-tab__settings-copy {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.familiar-tab__settings-tabs {
+  flex: none;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.familiar-tab__settings-body {
+  min-width: 0;
+}
+
 /* Coarse pointers: the group toggles and CTAs are compact targets tuned for a
    cursor — grow their hit areas on touch. */
 @media (pointer: coarse) {

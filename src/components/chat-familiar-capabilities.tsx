@@ -6,8 +6,8 @@
  * Skills-page design handoff (cave-moig): a shared SurfaceRail roster on the
  * left (search, collapse, resize — local selection only, never the app-wide
  * scope) and, on the right, an identity hero (avatar, serif name, presence,
- * live Runtime/Model/Voice selects, Edit in Studio, New chat) over a five-tab
- * band: Identity · Skills · MCP · Analytics · Memory. Capability data still
+ * live Runtime/Model/Voice selects, Edit in Studio, New chat) over a six-tab
+ * band: Identity · Skills · MCP · Analytics · Memory · Settings. Capability data still
  * flows through useCapabilitySnapshot (/api/roles, /api/skills/local,
  * /api/capabilities?harness=, /api/harnesses) and is derived once into a
  * shared section model; the lifecycle/scope state machine
@@ -40,6 +40,7 @@ import { FamiliarIdentitySection } from "@/components/familiar-tab-identity";
 import { FamiliarMcpSection } from "@/components/familiar-tab-mcp";
 import { FamiliarAnalyticsSection } from "@/components/familiar-tab-analytics";
 import { FamiliarMemorySection } from "@/components/familiar-tab-memory";
+import { FamiliarSettingsSection } from "@/components/familiar-tab-settings";
 import "@/styles/familiar-tab.css";
 
 // ── Identity hero ────────────────────────────────────────────────────────────
@@ -447,15 +448,23 @@ function FamiliarScopeOverview({
 
 // ── Section tabs ─────────────────────────────────────────────────────────────
 
-type FamiliarSectionId = "identity" | "skills" | "mcp" | "analytics" | "memory";
+type FamiliarSectionId = "identity" | "skills" | "mcp" | "analytics" | "memory" | "settings";
 
 function FamiliarCapabilityPanel({
   familiar,
+  familiars,
+  allFamiliars,
   daemonRunning,
+  localDaemonReady,
+  onRosterChanged,
   onStartChat,
 }: {
-  familiar: Familiar;
+  familiar: ResolvedFamiliar;
+  familiars: Familiar[];
+  allFamiliars: ResolvedFamiliar[];
   daemonRunning?: boolean;
+  localDaemonReady: boolean;
+  onRosterChanged?: () => void;
   onStartChat?: (familiarId: string) => void;
 }) {
   const harnessId = familiar.harness ?? "codex";
@@ -512,6 +521,7 @@ function FamiliarCapabilityPanel({
             { id: "mcp", label: "MCP" },
             { id: "analytics", label: "Analytics" },
             { id: "memory", label: "Memory" },
+            { id: "settings", label: "Settings" },
           ]}
           value={section}
           onChange={setSection}
@@ -535,6 +545,15 @@ function FamiliarCapabilityPanel({
         )}
         {section === "analytics" ? <FamiliarAnalyticsSection familiar={familiar} /> : null}
         {section === "memory" ? <FamiliarMemorySection familiar={familiar} /> : null}
+        {section === "settings" ? (
+          <FamiliarSettingsSection
+            familiar={familiar}
+            familiars={familiars}
+            allFamiliars={allFamiliars}
+            localDaemonReady={localDaemonReady}
+            onRosterChanged={onRosterChanged}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -626,6 +645,7 @@ export function ChatFamiliarCapabilities({
   familiar,
   familiars,
   selectedFamiliarIds,
+  localDaemonReady,
   familiarsLoaded = true,
   familiarsError,
   daemonRunning,
@@ -634,10 +654,12 @@ export function ChatFamiliarCapabilities({
   onOpenOnboarding,
   onFamiliarScopeChange,
   onStartChat,
+  onRosterChanged,
 }: {
   familiar: Familiar | null;
   familiars: Familiar[];
   selectedFamiliarIds: ReadonlySet<string>;
+  localDaemonReady: boolean;
   familiarsLoaded?: boolean;
   familiarsError?: string | null;
   daemonRunning?: boolean;
@@ -646,6 +668,7 @@ export function ChatFamiliarCapabilities({
   onOpenOnboarding?: () => void;
   onFamiliarScopeChange: (id: string | null, opts?: { preserveSurface?: boolean }) => void;
   onStartChat?: (familiarId: string) => void;
+  onRosterChanged?: () => void;
 }) {
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
   const selectableFamiliars = resolvedFamiliars.filter((item) => !item.archived);
@@ -781,7 +804,11 @@ export function ChatFamiliarCapabilities({
         <FamiliarCapabilityPanel
           key={detailFamiliar.id}
           familiar={detailFamiliar}
+          familiars={familiars}
+          allFamiliars={resolvedFamiliars}
           daemonRunning={daemonRunning}
+          localDaemonReady={localDaemonReady}
+          onRosterChanged={onRosterChanged}
           onStartChat={onStartChat}
         />
       </div>

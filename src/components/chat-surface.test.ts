@@ -119,6 +119,17 @@ assert.match(
 
 assert.match(
   chatSurface,
+  /\{\s*id:\s*"familiar",\s*label:\s*"Familiar"\s*\}/,
+  "ChatSurface should name the familiar-focused scope Familiar",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /\{\s*id:\s*"familiar",\s*label:\s*"Skills"\s*\}/,
+  "ChatSurface should not leave the merged familiar scope labeled Skills",
+);
+
+assert.match(
+  chatSurface,
   /useState<FamiliarsScope>\("conversation"\)/,
   "ChatSurface should default the scope to conversation so the ChatList shows when Chat is selected",
 );
@@ -220,8 +231,8 @@ assert.doesNotMatch(
 // between Projects and Familiar.
 assert.match(
   chatSurface,
-  /\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Skills" \},\s*\{ id: "settings", label: "Settings" \},/,
-  "the Skills tab (familiar scope) sits immediately left of Settings (after Canvas)",
+  /\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Familiar" \},\s*\{ id: "settings", label: "Settings" \},/,
+  "the Familiar tab sits immediately left of Settings (after Canvas)",
 );
 // The skills-tab latch must be consumed on the LIVE event path too: "Manage
 // skills" from an already-mounted chat doesn't remount this surface, so a

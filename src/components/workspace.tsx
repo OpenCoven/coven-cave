@@ -2996,6 +2996,7 @@ export function Workspace() {
         activeFamiliarId={activeId}
         selectedFamiliarIds={scopeIds}
         daemonRunning={daemonRunning}
+        localDaemonReady={localDaemonReady}
         routerRef={routerRef}
         hideThreadRail
         sessionsLoaded={sessionsLoaded}
