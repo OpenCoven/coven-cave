@@ -20,6 +20,22 @@ const sidecarTargetModule = readFileSync(
   "utf8",
 );
 
+function getWorkflowJob(name) {
+  const lines = releaseWorkflow.split(/\r?\n/);
+  const marker = `  ${name}:`;
+  const start = lines.findIndex((line) => line === marker);
+  assert.notEqual(start, -1, `release workflow must define the ${name} job`);
+
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^  [A-Za-z0-9_-]+:\s*$/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end).join("\n");
+}
+
 test("macOS release signing includes native files without executable mode", () => {
   assert.match(
     releaseScript,
@@ -219,6 +235,53 @@ test("manual release retries build from the release tag before publishing", () =
     releaseWorkflow,
     /scripts\/release\.sh[\s\S]*scripts\/sidecar-bundle\.sh[\s\S]*scripts\/windows-msi-budget\.ps1/,
     "the allowlist must cover only the three packaging scripts needed by v0.2.0 recovery",
+  );
+});
+
+test("release packages and checksum manifest receive GitHub artifact attestations", () => {
+  const buildJob = getWorkflowJob("build");
+  const checksumsJob = getWorkflowJob("checksums");
+
+  for (const job of [buildJob, checksumsJob]) {
+    assert.match(job, /^\s{4}permissions:\n\s{6}contents: write\n\s{6}id-token: write\n\s{6}attestations: write$/m);
+  }
+
+  assert.match(
+    buildJob,
+    /name: Attest Linux AppImage[\s\S]*uses: actions\/attest@[0-9a-f]{40} # v4[\s\S]*subject-path: src-tauri\/target\/release\/bundle\/\*\*\/\*\.AppImage/,
+  );
+  assert.match(
+    buildJob,
+    /name: Attest Windows MSI[\s\S]*uses: actions\/attest@[0-9a-f]{40} # v4[\s\S]*subject-path: src-tauri\/target\/release\/bundle\/\*\*\/\*\.msi/,
+  );
+  assert.match(
+    buildJob,
+    /name: Attest macOS DMG[\s\S]*uses: actions\/attest@[0-9a-f]{40} # v4[\s\S]*subject-path: release\/CovenCave-v\$\{\{ env\.RELEASE_VERSION \}\}-\$\{\{ matrix\.arch_suffix \}\}\.dmg/,
+  );
+  assert.match(
+    checksumsJob,
+    /name: Attest SHA256SUMS[\s\S]*uses: actions\/attest@[0-9a-f]{40} # v4[\s\S]*subject-path: _release\/SHA256SUMS/,
+  );
+
+  assert(
+    buildJob.indexOf("name: Upload and re-sign stripped AppImage") <
+      buildJob.indexOf("name: Attest Linux AppImage"),
+    "the final repacked AppImage must be uploaded and re-signed before it is attested",
+  );
+  assert(
+    buildJob.indexOf("name: Publish validated Windows MSI") <
+      buildJob.indexOf("name: Attest Windows MSI"),
+    "the budget-approved MSI must be final before it is attested",
+  );
+  assert(
+    buildJob.indexOf("name: Verify macOS DMG is notarized") <
+      buildJob.indexOf("name: Attest macOS DMG"),
+    "the DMG must pass notarization verification before it is attested",
+  );
+  assert(
+    checksumsJob.indexOf("name: Compute SHA256SUMS") <
+      checksumsJob.indexOf("name: Attest SHA256SUMS"),
+    "the checksum manifest must be complete before it is attested",
   );
 });
 
