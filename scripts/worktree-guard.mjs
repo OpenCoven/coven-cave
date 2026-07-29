@@ -197,9 +197,21 @@ function checkMove(seg, cwd) {
   if (operands.length < 2) return;
   for (const tok of operands.slice(0, -1)) {
     const hit = worktreeRoot(resolveTarget(tok, cwd));
-    if (!hit?.root) continue; // container or a path inside — not ours to police
-    const risk = destructionRisk(hit.root);
-    if (risk) block(`\`mv\` would strand a live worktree (git still points at the old path):\n${risk}`);
+    if (!hit) continue; // a path inside a worktree is the owner's business
+    if (hit.root) {
+      const risk = destructionRisk(hit.root);
+      if (risk) block(`\`mv\` would strand a live worktree (git still points at the old path):\n${risk}`);
+    } else if (hit.container && existsSync(hit.container)) {
+      // Moving the container strands every child just like removing it does.
+      try {
+        for (const child of readdirSync(hit.container)) {
+          const risk = destructionRisk(path.join(hit.container, child));
+          if (risk) block(`\`mv ${tok}\` wipes every worktree, including live work:\n${risk}`);
+        }
+      } catch {
+        /* unreadable container — allow */
+      }
+    }
   }
 }
 
@@ -301,7 +313,7 @@ function main() {
   if (typeof command !== "string" || !INTEREST.test(command)) return allow();
   const cwd =
     (typeof input.cwd === "string" && input.cwd) || process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  if (command.includes(BYPASS)) {
+  if (/^\s*WT_GUARD_BYPASS=1(?:\s|$)/.test(command)) {
     recordBypass(command, cwd, input?.session_id);
     return allow();
   }

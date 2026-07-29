@@ -15,6 +15,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(root, "scripts", "worktree-guard.mjs");
 const isWin = process.platform === "win32";
+const BYPASS = "WT_GUARD_BYPASS=1";
 
 function runHook(command, cwd, extraEnv = {}) {
   const payload = JSON.stringify({ session_id: "test", cwd, tool_name: "Bash", tool_input: { command } });
@@ -202,6 +203,22 @@ if (!isWin) {
     0,
     "moving a file inside a worktree passes",
   );
+}
+
+// ── 8e. Moving the whole container must scan every child ─────────────────────
+{
+  const { dir } = repoWithWorktree({ push: true, dirty: true });
+  const res = runHook(`mv ${path.join(dir, ".worktrees")} /tmp/parked-worktrees`, dir);
+  assert.equal(res.status, 2, "moving every worktree is blocked while one is dirty");
+  assert.match(res.stderr, /wipes every worktree/);
+}
+
+// ── 8f. Only a leading bypass assignment is honoured ─────────────────────────
+{
+  const { dir, wt } = repoWithWorktree({ push: true, dirty: true });
+  const res = runHook(`echo ${BYPASS} && rm -rf ${wt}`, dir);
+  assert.equal(res.status, 2, "a bypass-looking argument cannot disable a later destructive command");
+  assert.match(res.stderr, /uncommitted change/);
 }
 
 // ── 9. Non-matching commands and garbage input never block ────────────────────
