@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 
 import { loadProjects, projectForRoot } from "./cave-projects.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
@@ -406,7 +407,12 @@ export function materializeDueGrantProposals(
 }
 
 async function saveProjectPermissions(file: ProjectPermissionsFile): Promise<void> {
-  await writeJsonFile(permissionsFilePath(), file);
+  const filePath = permissionsFilePath();
+  await mkdir(path.dirname(filePath), { recursive: true });
+  // Repairs remove grants and append their audit record as one atomic state
+  // change. A crash before rename leaves the prior valid permission file
+  // authoritative; a later retry can safely inspect and repair it again.
+  await writeJsonAtomic(filePath, file);
 }
 
 function ensureProjectGrant(

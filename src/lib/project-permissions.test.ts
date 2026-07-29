@@ -427,6 +427,15 @@ try {
     proposals: 0,
     orphanProjectIds: ["removed-project"],
   }, "orphaned grants are visible without changing access");
+  const permissionSource = await readFile(new URL("./project-permissions.ts", import.meta.url), "utf8");
+  assert.match(permissionSource, /await writeJsonAtomic\(filePath, file\)/, "permission repairs persist through the atomic writer");
+  const interruptedWrite = `${process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE}.interrupted.tmp`;
+  await writeFile(interruptedWrite, '{"version":2,"projectGrants":[', "utf8");
+  assert.deepEqual(
+    await inspectProjectPermissionIntegrity(),
+    beforeRepair,
+    "an abandoned partial atomic-write temp file cannot replace the last valid permission state",
+  );
   const repaired = await repairOrphanProjectPermissions();
   assert.deepEqual(repaired, beforeRepair, "repair reports the exact records it removed");
   const afterRepair = await inspectProjectPermissionIntegrity();
@@ -437,7 +446,7 @@ try {
     orphanProjectIds: [],
   }, "repair only removes unknown-project records and never broadens access");
   assert.equal((await loadProjectPermissions()).repairAudit.at(-1)?.kind, "orphan-project-repair", "repair writes an auditable record");
-  assert.deepEqual(await repairOrphanProjectPermissions(), afterRepair, "a retry after interruption is idempotent");
+  assert.deepEqual(await repairOrphanProjectPermissions(), afterRepair, "a retry after an interrupted repair is idempotent");
 
   console.log("project-permissions.test.ts: ok");
 } finally {
