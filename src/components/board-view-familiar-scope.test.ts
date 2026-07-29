@@ -26,6 +26,18 @@ assert.match(
   "BoardView filters by the multiselect scope set when provided",
 );
 
+assert.match(
+  source,
+  /const showFamiliarGrouping = \(scopeFamiliarIds\?\.size \?\? 0\) > 1;/,
+  "BoardView exposes familiar grouping only for a true multi-familiar scope",
+);
+
+assert.equal(
+  (source.match(/\{showFamiliarGrouping \? \(/g) ?? []).length,
+  2,
+  "Kanban/Table and Gantt both gate their Familiar grouping control on multi-selection",
+);
+
 // The header stats object these pins guarded was dead code (computed every
 // render, rendered nowhere — its board-header-stats CSS was orphaned too) and
 // was removed in the 2026-07-02 board audit. Keep it gone.
@@ -37,8 +49,14 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /const effectiveGroupBy: GroupBy = activeFamiliarId !== null && groupBy === "familiar" \? "status" : groupBy;/,
-  "Scoping to one familiar should drop the redundant familiar grouping back to status (project grouping stays usable)",
+  /const effectiveGroupBy: GroupBy = !showFamiliarGrouping && groupBy === "familiar" \? "status" : groupBy;/,
+  "Tasks falls back to status when a saved Familiar grouping is unavailable",
+);
+
+assert.match(
+  source,
+  /const effectiveGanttGroup = ganttGroup === "familiar" && !showFamiliarGrouping \? "project" : ganttGroup;/,
+  "Gantt falls back to project when a saved Familiar grouping is unavailable",
 );
 
 assert.match(
