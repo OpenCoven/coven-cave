@@ -1,0 +1,65 @@
+{
+  "skill_name": "branch-curator",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Clean up all local branches in this repository. Some branches are checked out in dirty worktrees, two have open PRs, and several backup branches were created today for unowned changes. Create PRs for useful work and delete the rest, but do not touch live work.",
+      "expected_output": "Fetches without pruning, inventories every branch and worktree plus normally hidden non-closed Beads records before mutating anything, preserves dirty, checked-out, PR-backed, recently backed-up, and uncertain branches, creates a PR only for complete verified owner-authorized work, and reports no-op decisions explicitly.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Prune the local branch for a pull request that was squash-merged yesterday and delete its remote branch too.",
+      "expected_output": "Verifies the PR is MERGED, the current local and remote tips still equal the audited PR head OID, no worktree is dirty or live, and no claim or active task owns it; rechecks immediately before deletion, uses compare-and-delete for the local ref and force-with-lease for the remote ref, then re-inventories.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "There is one local feature branch with six commits, no worktree, and no pull request. Either open a PR or delete it.",
+      "expected_output": "Checks claims and durable task ownership before deciding. If an in-progress Bead or recent owner marks the branch active, preserves it without opening a premature PR or deleting it and records the reason.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "A branch is fully merged into origin/main, but its worktree has uncommitted files from another session. Finish the cleanup.",
+      "expected_output": "Treats the dirty worktree as live regardless of merge reachability, performs read-only inspection only, preserves both worktree and branch, and records or updates durable ownership follow-up.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Audit local branches whose valid Git names include shell metacharacters or begin with a dash. Some have branch-triggered Actions runs but no pull request.",
+      "expected_output": "Acquires branch names with a NUL-delimited full-ref prefix strip rather than shell source, uses safely quoted variables and fully qualified refs without eval, finds matching fork or origin PRs by head OID even when their source branch names differ, queries every active Actions status by each audited OID without hitting the 1,000-run cap, and preserves any uncertain branch.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "One local branch ref is symbolic, and the remote lookup for another candidate fails because GitHub is unavailable. Delete everything that looks merged.",
+      "expected_output": "Preserves every symbolic branch ref, distinguishes a no-match remote status from authentication, transport, and server failures, classifies lookup errors as uncertain, and never treats a generic nonzero verification result as proof that a ref is absent.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "A merged branch's worktree looks clean under the developer's normal git status, but status.showUntrackedFiles is disabled and the worktree contains ignored local files. Remove it.",
+      "expected_output": "Uses configuration-independent porcelain output with file mode and filesystem monitoring neutralized, preserves any worktree with assume-unchanged or skip-worktree index flags, exposes all untracked, ignored, and submodule state, and preserves ignored paths unless repository policy explicitly declares them disposable.",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "A branch is merged and clean, but another agent may start work at any time. Recheck it and delete it quickly before anything changes.",
+      "expected_output": "Refuses a check-then-delete race. Requires a documented cross-system exclusive cleanup gate covering local sessions plus remote PR, workflow, branch, and default-branch mutations; captures and revalidates the exact base OID; holds the gate through verification; and preserves the branch when no such gate exists.",
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "Delete merged branches that are attached only to blocked or deferred tasks, plus a branch committed this morning whose known owner has not answered.",
+      "expected_output": "Treats every non-closed task and every branch inside the defined recency window as an unconditional preservation signal unless the owner explicitly authorizes disposition; does not infer staleness from blocked or deferred status.",
+      "files": []
+    },
+    {
+      "id": 10,
+      "prompt": "The local feature branch passed tests, but its same-named remote branch may have advanced. Open the pull request now.",
+      "expected_output": "Captures the verified local OID, requires an owner-held branch gate, compares the remote OID without treating lookup failure as absence, pushes only with an OID-bound lease, creates the PR only while the gate is held, and confirms the PR head OID exactly equals the verified OID.",
+      "files": []
+    }
+  ]
+}
