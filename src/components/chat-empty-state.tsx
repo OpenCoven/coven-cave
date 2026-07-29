@@ -29,6 +29,8 @@ import { deriveStarterSuggestions } from "@/lib/chat-starter-suggestions";
 import { startFromGroup, startFromSub, taskTileBadge } from "@/lib/chat-start-from";
 import { queueFollowUpLabel } from "@/lib/chat-queue-followups";
 import { useQueueFollowUps } from "@/lib/use-queue-followups";
+import { reviewRequestLabel } from "@/lib/chat-review-requests";
+import { useReviewRequests } from "@/lib/use-review-requests";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { relativeTime } from "@/lib/relative-time";
@@ -39,6 +41,8 @@ const RAIL_CAP = 4;
 const CONTINUE_CAP = 3;
 /** The launcher shows the top parked follow-ups; the Queue surface carries the rest. */
 const QUEUE_CAP = 3;
+/** Reviews are the launcher's last group; a few is a prompt, a wall is a chore. */
+const REVIEW_CAP = 3;
 /** Only flash skeletons when the board fetch is genuinely slow; a fast load
  *  renders the rail directly and never jumps the layout twice. */
 const SLOW_LOAD_MS = 300;
@@ -149,6 +153,8 @@ export function ChatEmptyState({
   // Parked follow-ups for the launcher's Queue group. One-shot + refresh on
   // focus like the board snapshot above; never polled.
   const queueFollowUps = useQueueFollowUps(familiar.id, boardEnabled);
+  // Reviews (cave-umgkh): PRs waiting on you. Absent without a GitHub token.
+  const reviews = useReviewRequests(boardEnabled);
 
   // Slow-load gate: render nothing for the first SLOW_LOAD_MS, then skeletons.
   const [slow, setSlow] = useState(false);
@@ -263,7 +269,10 @@ export function ChatEmptyState({
   // project is chosen or nothing is parked.
   const queueRows = queueFollowUps.rows.slice(0, QUEUE_CAP);
   const queueGroup = startFromGroup("queue", queueRows.length, queueFollowUps.rows.length);
-  const startFromVisible = railVisible || recents.length > 0 || queueRows.length > 0;
+  const reviewRows = reviews.rows.slice(0, REVIEW_CAP);
+  const reviewsGroup = startFromGroup("reviews", reviewRows.length, reviews.rows.length);
+  const startFromVisible =
+    railVisible || recents.length > 0 || queueRows.length > 0 || reviewRows.length > 0;
 
   return (
     <div className="cave-chat-empty select-none">
@@ -488,6 +497,29 @@ export function ChatEmptyState({
                     </button>
                   );
                 })}
+              </section>
+            ) : null}
+
+            {reviewRows.length > 0 ? (
+              <section className="cave-chat-empty-recents" aria-label="Reviews waiting on you">
+                <span className="cave-chat-empty-section-label">
+                  <Icon name={reviewsGroup.icon} width={12} aria-hidden />
+                  {reviewsGroup.label}
+                  <span className="cave-chat-startfrom__count">{reviewsGroup.count}</span>
+                </span>
+                {reviewRows.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    className="cave-chat-empty-recent"
+                    aria-label={reviewRequestLabel(row)}
+                    onClick={() => onPrompt?.(`Review ${row.url}`)}
+                  >
+                    <span className="cave-chat-empty-recent-title">{row.title}</span>
+                    <span className="cave-chat-empty-recent-diff">{row.badge}</span>
+                    <span className="cave-chat-empty-recent-time">{startFromSub([row.need])}</span>
+                  </button>
+                ))}
               </section>
             ) : null}
           </section>

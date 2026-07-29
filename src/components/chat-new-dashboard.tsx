@@ -33,6 +33,8 @@ import { filterVisibleChatSessions } from "@/lib/chat-projects";
 import { startFromGroup } from "@/lib/chat-start-from";
 import { queueFollowUpLabel } from "@/lib/chat-queue-followups";
 import { useQueueFollowUps } from "@/lib/use-queue-followups";
+import { reviewRequestLabel } from "@/lib/chat-review-requests";
+import { useReviewRequests } from "@/lib/use-review-requests";
 import { useDashboardBoard } from "@/components/home/use-dashboard-board";
 import {
   OPEN_WORK_FILTERS,
@@ -54,6 +56,8 @@ const OPEN_WORK_ROWS_CAP = 5;
 const RECENT_THREADS_CAP = 3;
 /** The launcher shows the top parked follow-ups; the Queue surface has the rest. */
 const QUEUE_CAP = 3;
+/** Reviews are the launcher's last group; a few is a prompt, a wall is a chore. */
+const REVIEW_CAP = 3;
 
 /** One-shot inbox snapshot for the "needs you" tier of the open-work board.
  *  Abort-guarded like useBoardCards; mount + window refocus are the only
@@ -95,6 +99,16 @@ const startFollowUp = (familiarId: string | null, beadId: string, title: string)
   window.dispatchEvent(
     new CustomEvent("cave:agents-new-chat", {
       detail: { familiarId: familiarId ?? undefined, initialPrompt: `Pick up ${beadId}: ${title}` },
+    }),
+  );
+};
+
+/** Starting a review briefs a fresh chat with the PR url — same new-chat
+ *  bridge the parked follow-ups use, so the work opens in place. */
+const startReview = (familiarId: string | null, url: string) => {
+  window.dispatchEvent(
+    new CustomEvent("cave:agents-new-chat", {
+      detail: { familiarId: familiarId ?? undefined, initialPrompt: `Review ${url}` },
     }),
   );
 };
@@ -178,6 +192,8 @@ export function ChatNewDashboard({
   // Parked follow-ups for the launcher's Queue group — one-shot + refresh on
   // focus, like the board and inbox snapshots; never polled.
   const queueFollowUps = useQueueFollowUps(familiar.id);
+  // Reviews (cave-umgkh): PRs waiting on you. Absent without a GitHub token.
+  const reviews = useReviewRequests();
   const [workFilter, setWorkFilter] = useState<OpenWorkFilter>("all");
   const workCounts = useMemo(() => openWorkCounts(openWork), [openWork]);
   // Capped so the no-scroll board fits the pane; "View all in Tasks →" carries
@@ -207,6 +223,8 @@ export function ChatNewDashboard({
   // this page never shows chrome for an empty source.
   const queueRows = queueFollowUps.rows.slice(0, QUEUE_CAP);
   const queueGroup = startFromGroup("queue", queueRows.length, queueFollowUps.rows.length);
+  const reviewRows = reviews.rows.slice(0, REVIEW_CAP);
+  const reviewsGroup = startFromGroup("reviews", reviewRows.length, reviews.rows.length);
 
   return (
     <div className="home-dash__body home-dash--embed select-none" data-testid="chat-new-dashboard">
@@ -386,6 +404,35 @@ export function ChatNewDashboard({
                     <span className="home-dash__recent-time">
                       {row.updatedAt ? relativeAge(row.updatedAt, nowMs) : row.id}
                     </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {/* Reviews — pull requests waiting on you; a review is a good way to
+              start a session, since the diff is already chosen. */}
+          {reviewRows.length > 0 ? (
+            <section
+              className="home-dash__section home-dash__section--reviews"
+              aria-label="Reviews waiting on you"
+            >
+              <div className="home-dash__section-label">
+                {reviewsGroup.label}
+                <span className="home-dash__section-count">{reviewsGroup.count}</span>
+              </div>
+              <div className="home-dash__recent">
+                {reviewRows.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    className="home-dash__recent-row"
+                    onClick={() => startReview(familiar.id, row.url)}
+                    aria-label={reviewRequestLabel(row)}
+                    title={`Review ${row.title}`}
+                  >
+                    <span className="home-dash__recent-title">{row.title}</span>
+                    <span className="home-dash__recent-time">{row.need}</span>
                   </button>
                 ))}
               </div>

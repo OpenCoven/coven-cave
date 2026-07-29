@@ -2,17 +2,18 @@
 //
 // The design turns the blank new-session page into a launcher over the places
 // work already lives in the Cave: open board cards (Tasks), resumable threads
-// (Chats), and parked follow-ups (Queue). Tasks and Chats fill from data the
-// page already holds; Queue reads the beads work queue for the Queue's own
-// selected project, so it renders only when that project is set (cave-3lonn).
-// (The mock's fourth group, Reviews, is tracked separately.)
+// (Chats), parked follow-ups (Queue), and pull requests waiting on you
+// (Reviews). Tasks and Chats fill from data the page already holds; Queue
+// reads the beads work queue for the Queue's own selected project (cave-3lonn)
+// and Reviews reads GitHub (cave-umgkh), so each renders only when its source
+// has something to offer.
 
-export type StartFromKind = "chats" | "tasks" | "queue";
+export type StartFromKind = "chats" | "tasks" | "queue" | "reviews";
 
 export type StartFromGroupMeta = {
   kind: StartFromKind;
   label: string;
-  icon: "ph:chat-circle-dots" | "ph:kanban" | "ph:stack";
+  icon: "ph:chat-circle-dots" | "ph:kanban" | "ph:stack" | "ph:git-branch";
   /** "3 of 12" when the group is capped, a bare count when it isn't. */
   count: string;
   /** Quiet right-hand note in the group header. */
@@ -35,6 +36,15 @@ export function startFromGroup(kind: StartFromKind, shown: number, total: number
       icon: "ph:chat-circle-dots",
       count,
       note: total === 1 ? "1 thread to resume" : `${Math.max(0, Math.trunc(total))} threads to resume`,
+    };
+  }
+  if (kind === "reviews") {
+    return {
+      kind,
+      label: "Reviews",
+      icon: "ph:git-branch",
+      count,
+      note: total === 1 ? "1 waiting on you" : `${Math.max(0, Math.trunc(total))} waiting on you`,
     };
   }
   if (kind === "queue") {

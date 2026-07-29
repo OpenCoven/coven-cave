@@ -383,7 +383,8 @@
    (chats widest, queue smallest), so the Queue group goes first and the
    recent threads follow one tier down (cave-3lonn). */
 @container (max-height: 760px) {
-  .home-dash__section--queue {
+  .home-dash__section--queue,
+  .home-dash__section--reviews {
     display: none;
   }
 }
