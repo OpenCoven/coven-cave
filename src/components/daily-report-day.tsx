@@ -243,6 +243,7 @@ export function DailyReportDay({
                 className="drd-week__step"
                 data-disabled
                 aria-disabled="true"
+                aria-label="Next week unavailable: this is the current week"
                 title="This is the current week"
               >
                 <Icon name="ph:caret-right" aria-hidden />

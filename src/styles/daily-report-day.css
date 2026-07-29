@@ -135,14 +135,21 @@
   font-size: var(--text-2xs);
 }
 
-.drd-week__step:hover {
+.drd-week__step:not([data-disabled]):hover {
   background: var(--bg-hover);
   color: var(--fg-base);
 }
 
 /* The current week is the end of the road: forward paging is dead rather than
    hidden, so the strip keeps its shape and the reason lives in the tooltip. */
-.drd-week__step[data-disabled],
+.drd-week__step[data-disabled] {
+  opacity: var(--opacity-disabled);
+  cursor: default;
+  /* Keep hover enabled so the title tooltip ("This is the current week") appears. */
+  pointer-events: auto;
+  user-select: none;
+}
+
 .drd-week__day[data-future] {
   opacity: var(--opacity-disabled);
   cursor: default;

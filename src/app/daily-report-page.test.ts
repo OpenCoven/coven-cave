@@ -134,9 +134,19 @@ assert.match(page, /isFuture,/, "week cells know whether they are in the future"
 assert.match(view, /canGoForward \?/, "the next-week control is dead on the current week");
 assert.match(view, /day\.isFuture \?/, "a future day renders as a dead cell, not a link");
 assert.match(
+  view,
+  /<span(?=[^>]*className="drd-week__step")(?=[^>]*data-disabled)(?=[^>]*aria-disabled="true")[^>]*>/,
+  "the disabled next-week branch renders as a non-link step with disabled semantics",
+);
+assert.match(
+  view,
+  /aria-label="Next week unavailable: this is the current week"/,
+  "the disabled next-week step has an accessible name explaining why it is disabled",
+);
+assert.match(
   read("../styles/daily-report-day.css"),
-  /\.drd-week__step\[data-disabled\][\s\S]{0,160}pointer-events:\s*none/,
-  "the disabled step must not be clickable",
+  /\.drd-week__step:not\(\[data-disabled\]\):hover/,
+  "the disabled next-week step keeps its tooltip without enabled-link hover styling",
 );
 
 // ── PR detail reuses the app's own GitHub card ─────────────────────────────
