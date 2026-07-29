@@ -626,6 +626,11 @@
   padding-bottom: 0;
 }
 
+/* Kind is a category, not a state, so the two get distinct TREATMENTS rather
+   than distinct hues — this system has exactly one accent (--color-info is
+   aliased to it) and a second hue would have to survive 21 palettes × 2 modes.
+   Workspace is filled, repository is ringed: both read as deliberate, where
+   before a repo was encoded only by the ABSENCE of the workspace's accent. */
 .projects-access-kind {
   display: grid;
   place-items: center;
@@ -633,13 +638,21 @@
   height: var(--space-6);
   flex: none;
   border-radius: var(--radius-control);
+}
+
+/* Coven-native: solid accent fill. */
+.projects-access-kind.is-workspace {
   background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
   color: var(--accent-presence);
 }
 
+/* Git-backed: a ring, not a fill — the outline reads as "linked elsewhere",
+   and the ink is a tier stronger than the old muted grey so the icon carries
+   as much weight as its filled sibling. */
 .projects-access-kind.is-repo {
-  background: color-mix(in oklch, var(--text-primary) 8%, transparent);
-  color: var(--text-secondary);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  color: var(--text-primary);
 }
 
 .projects-access-card-id {
@@ -896,10 +909,14 @@
   flex: none;
 }
 
+/* The dense rows view shows the bare glyph, not the tile — so neither the
+   workspace fill nor the repository ring applies here. The icon itself still
+   differs, and the Scope column names the kind in words. */
 .projects-access-tr-name .projects-access-kind {
   width: auto;
   height: auto;
   background: none;
+  box-shadow: none;
 }
 
 .projects-access-tr-path,
