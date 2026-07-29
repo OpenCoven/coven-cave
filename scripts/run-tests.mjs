@@ -722,6 +722,8 @@ export const SUITES = {
     "src/lib/task-asana.test.ts",
     "src/components/github-action-popover-chat-launch.test.ts",
     "src/components/github-card-wiring.test.ts",
+    "src/lib/gh-card-commands.test.ts",
+    "src/lib/gh-review-draft.test.ts",
     "src/components/skill-stage-card-wiring.test.ts",
     "src/components/github-view-polish.test.ts",
     "src/components/github-advanced.test.ts",
@@ -1393,6 +1395,8 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  // reaches @/lib/next-paths and @/lib/familiar-stream through the draft module
+  "src/lib/gh-review-draft.test.ts",
   // Imports the module under test, which resolves "@/lib/github-repo-link".
   "src/lib/project-setup-validation.test.ts",
   "src/lib/use-role-surfaces-loader.test.ts",

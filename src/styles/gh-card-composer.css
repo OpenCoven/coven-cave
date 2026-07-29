@@ -1,0 +1,1117 @@
+/*
+  Inline GitHub card composer — the gated cockpit.
+  Design: `Final Card Components.dc.html` (Claude Design handoff, 2026-07-29).
+  Imported from src/components/github-card-composer.tsx, not from globals.css.
+
+  The one structural invariant: the CARD's footprint never changes. `.ghc-slot`
+  is a constant-height reply row in every phase, and every expanded phase paints
+  into `.ghc-sheet`, an absolutely-positioned overlay pinned to the card's
+  bottom edge that grows UPWARD over the transcript. Opening a section or the
+  command palette therefore never reflows the chat below the card.
+
+  Radii follow the design's scale: 3px segment thumb · 4px chip ·
+  --radius-sm control (the design's "5-6px control" band) · --radius-control
+  card · --radius-pill for switches and the resting pill only. The 3px and 4px
+  marks are too short to take a scale radius without reading as squares.
+*/
+
+/* ── the constant reply slot ─────────────────────────────────────────────── */
+
+.ghc-root {
+  min-width: 0;
+}
+
+.ghc-slot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 28px;
+  margin-top: 9px;
+}
+
+/* Resting pill — the only 999px thing at rest, so the row reads as one pill. */
+.ghc-rest-pill {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-panel) 60%, transparent);
+  cursor: text;
+  text-align: left;
+  transition: border-color var(--motion-fast) var(--ease-standard);
+}
+
+.ghc-rest-pill:hover {
+  border-color: var(--border-strong);
+}
+
+.ghc-rest-pill__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.ghc-rest-pill__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.ghc-kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+/* Reaction chips + the gate summary live beside the pill at rest. */
+.ghc-reaction {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-1);
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 4px;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease-standard);
+}
+
+.ghc-reaction:hover {
+  border-color: var(--border-strong);
+}
+
+.ghc-reaction--mine {
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.ghc-gatechip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-2xs);
+  color: var(--color-warning);
+}
+
+.ghc-gatechip--ok {
+  color: var(--color-success);
+}
+
+.ghc-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+/* ── the upward sheet ────────────────────────────────────────────────────── */
+
+.ghc-sheet {
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  z-index: 5;
+  max-height: 352px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  box-shadow: 0 -14px 40px color-mix(in oklch, var(--color-mix-dark) 48%, transparent),
+    0 2px 10px color-mix(in oklch, var(--color-mix-dark) 28%, transparent);
+}
+
+/* Status sheets (sending / error / merged) are single rows — no scroll. */
+.ghc-sheet--status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-height: none;
+  overflow: visible;
+  padding: 7px 10px;
+}
+
+.ghc-sheet--sending {
+  border-left: 2px solid color-mix(in oklch, var(--accent-presence) 60%, transparent);
+}
+
+.ghc-sheet--error {
+  align-items: center;
+  border-color: color-mix(in oklch, var(--color-warning) 45%, transparent);
+  background: linear-gradient(
+      color-mix(in oklch, var(--color-warning) 9%, transparent),
+      color-mix(in oklch, var(--color-warning) 9%, transparent)
+    ),
+    var(--bg-raised);
+  padding: var(--space-2) 10px;
+}
+
+.ghc-sheet--merged {
+  align-items: center;
+  gap: var(--space-2);
+  border-color: color-mix(in oklch, var(--color-success) 38%, transparent);
+  background: linear-gradient(
+      color-mix(in oklch, var(--color-success) 9%, transparent),
+      color-mix(in oklch, var(--color-success) 9%, transparent)
+    ),
+    var(--bg-raised);
+  padding: var(--space-2) 11px;
+}
+
+.ghc-status__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.ghc-status__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.ghc-status__title {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.ghc-status__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-2);
+  margin-top: 2px;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.ghc-status__excerpt {
+  margin-top: 2px;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.ghc-status__msg {
+  min-width: 0;
+  flex: 1;
+  font-size: var(--text-2xs);
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.ghc-status__code {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--color-warning);
+}
+
+.ghc-spin {
+  display: inline-flex;
+  animation: ghc-spin 1s linear infinite;
+}
+
+@keyframes ghc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ghc-spin {
+    animation: none;
+  }
+}
+
+/* ── sheet header: tabs · repo context · markdown toolbar ────────────────── */
+
+.ghc-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-panel) 70%, transparent);
+  padding: 7px var(--space-2) 7px 9px;
+}
+
+.ghc-seg {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  background: color-mix(in oklch, var(--bg-sunken) 80%, transparent);
+}
+
+.ghc-seg__item {
+  padding: 3px 11px;
+  border-radius: 3px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.ghc-seg__item--on {
+  background: var(--bg-hover);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.ghc-ctx {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ghc-ctx__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--color-success);
+}
+
+.ghc-ctx__repo {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.ghc-ctx__num {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-primary);
+}
+
+.ghc-tools {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  color: var(--text-secondary);
+}
+
+.ghc-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 3px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.ghc-tool:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ghc-tool--bold {
+  font-weight: 600;
+}
+
+.ghc-tool--italic {
+  font-style: italic;
+}
+
+.ghc-tools__sep {
+  width: 1px;
+  height: 13px;
+  margin: 0 5px;
+  background: var(--border-hairline);
+}
+
+/* ── write tab ───────────────────────────────────────────────────────────── */
+
+.ghc-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 64px;
+  max-height: 220px;
+  margin: 0;
+  padding: 10px var(--space-3) 11px;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--text-primary);
+  outline: none;
+  overflow-y: auto;
+  resize: none;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent-presence) 22%, transparent) transparent;
+}
+
+.ghc-input::placeholder {
+  color: var(--text-muted);
+}
+
+.ghc-preview {
+  box-sizing: border-box;
+  min-height: 64px;
+  padding: 10px var(--space-3) 11px;
+  font-size: var(--text-base);
+  line-height: 1.55;
+}
+
+.ghc-preview__empty {
+  color: var(--text-muted);
+}
+
+/* ── command / mention palette ───────────────────────────────────────────── */
+
+.ghc-pal {
+  margin: 0 var(--space-2) var(--space-2);
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-panel) 92%, transparent);
+}
+
+.ghc-pal__label {
+  padding: 5px 9px;
+  border-bottom: 1px solid var(--border-hairline);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.ghc-pal__crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 5px 9px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+.ghc-pal__crumb-cmd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--accent-presence-soft);
+}
+
+.ghc-pal__rows {
+  padding: var(--space-1);
+}
+
+.ghc-pal__row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px 7px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+}
+
+.ghc-pal__row:hover {
+  background: var(--bg-hover);
+}
+
+.ghc-pal__row--active {
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+}
+
+.ghc-pal__cmd {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.ghc-pal__desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.ghc-pal__hint {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.ghc-pal__nomatch {
+  padding: var(--space-1) 7px;
+  font-size: var(--text-xs);
+  color: var(--color-warning);
+}
+
+.ghc-pal__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--border-hairline);
+  padding: 5px 9px;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.ghc-pal__foot-key {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.ghc-pal__ghost {
+  font-family: var(--font-mono);
+  color: var(--accent-presence-soft);
+}
+
+.ghc-pal__row--person {
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1);
+  border-radius: 4px;
+}
+
+.ghc-avatar {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  background: var(--bg-hover);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ghc-pal__name {
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.ghc-pal__role {
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.ghc-pal__state {
+  margin-left: auto;
+  font-size: var(--text-2xs);
+  color: var(--accent-presence-soft);
+}
+
+/* ── accordion sections ──────────────────────────────────────────────────── */
+
+.ghc-sec {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border-hairline);
+  padding: 7px 10px;
+  cursor: pointer;
+  user-select: none;
+  text-align: left;
+}
+
+.ghc-sec:hover {
+  background: var(--bg-subtle);
+}
+
+.ghc-sec__caret {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+
+.ghc-sec__caret--open {
+  transform: rotate(90deg);
+}
+
+.ghc-sec__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.ghc-sec__title {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.ghc-sec__accent {
+  color: var(--accent-presence-soft);
+}
+
+.ghc-sec__summary {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.ghc-sec__mono {
+  font-family: var(--font-mono);
+}
+
+.ghc-sec__warn {
+  color: var(--color-warning);
+}
+
+.ghc-sec__ok {
+  color: var(--color-success);
+}
+
+/* Section bodies indent past the caret + glyph so rows align under the title. */
+.ghc-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border-top: 1px solid var(--border-hairline);
+  padding: var(--space-2) 10px 9px 29px;
+  background: color-mix(in oklch, var(--bg-panel) 35%, transparent);
+}
+
+.ghc-body--roomy {
+  gap: var(--space-2);
+  padding: 9px 10px 10px 29px;
+}
+
+.ghc-body--familiar {
+  background: color-mix(in oklch, var(--accent-presence) 7%, transparent);
+}
+
+/* ── gate rows ───────────────────────────────────────────────────────────── */
+
+.ghc-gate-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.ghc-gate-row__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.ghc-gate-row__tail {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ghc-gate-row__note {
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.ghc-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 19px;
+  padding: 0 7px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 4px;
+  font-size: var(--text-2xs);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.ghc-mini:hover {
+  background: var(--bg-hover);
+}
+
+.ghc-mini:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* ── merge section ───────────────────────────────────────────────────────── */
+
+.ghc-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ghc-seg--sunken {
+  background: color-mix(in oklch, var(--bg-sunken) 60%, transparent);
+}
+
+.ghc-seg__item--tight {
+  padding: 3px 10px;
+  font-size: var(--text-2xs);
+}
+
+.ghc-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.ghc-switch__track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 26px;
+  height: 15px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  background: var(--bg-hover);
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.ghc-switch__track--on {
+  background: var(--accent-presence);
+}
+
+.ghc-switch__knob {
+  position: absolute;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-pill);
+  background: var(--text-secondary);
+  transition: left var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard);
+}
+
+.ghc-switch__track--on .ghc-switch__knob {
+  left: 13px;
+  background: var(--accent-presence-foreground);
+}
+
+.ghc-switch__branch {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.ghc-commit {
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+}
+
+.ghc-commit__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px 9px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.ghc-commit__eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.ghc-commit__method {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.ghc-commit__title {
+  padding: 6px 9px;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.ghc-commit__body {
+  border-top: 1px solid var(--border-hairline);
+  padding: 6px 9px 7px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+/* The arm field: the merge CTA stays inert until "merge" is typed here. */
+.ghc-arm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid color-mix(in oklch, var(--color-danger) 50%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--color-danger) 7%, transparent);
+  padding: 5px 9px;
+}
+
+.ghc-arm--nudged {
+  border-color: var(--color-danger);
+}
+
+.ghc-arm__label {
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.ghc-arm__word {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.ghc-arm__input {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.ghc-arm__ok {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--color-success);
+}
+
+/* ── assignees & labels ──────────────────────────────────────────────────── */
+
+.ghc-field {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.ghc-field__label {
+  width: 56px;
+  flex-shrink: 0;
+  padding-top: 5px;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.ghc-field__body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ghc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 22px;
+  padding: 0 3px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 4px;
+  font-size: var(--text-2xs);
+  color: var(--text-primary);
+}
+
+.ghc-chip--label {
+  height: 21px;
+  padding: 0 var(--space-1) 0 7px;
+}
+
+.ghc-chip__dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+}
+
+.ghc-chip__x {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.ghc-chip__x:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ghc-add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 22px;
+  padding: 0 7px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+
+.ghc-add:hover {
+  color: var(--text-primary);
+}
+
+.ghc-add--label {
+  height: 21px;
+}
+
+.ghc-picker {
+  width: 100%;
+  margin-top: 2px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-panel) 92%, transparent);
+}
+
+/* ── familiar draft ──────────────────────────────────────────────────────── */
+
+.ghc-scopes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ghc-scope {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: 4px;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ghc-scope--on {
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.ghc-draft-cta {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--accent-presence-soft);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.ghc-draft-cta:hover {
+  background: color-mix(in oklch, var(--accent-presence) 28%, transparent);
+}
+
+.ghc-draft-cta:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.ghc-draft-box {
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  padding: var(--space-2) 10px;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+.ghc-draft-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ghc-draft-note {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.ghc-draft-use {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  height: 23px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  color: var(--accent-presence-soft);
+  cursor: pointer;
+}
+
+.ghc-draft-use:hover {
+  background: color-mix(in oklch, var(--accent-presence) 28%, transparent);
+}
+
+.ghc-draft-alt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 23px;
+  padding: 0 9px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.ghc-draft-alt:hover {
+  background: var(--bg-hover);
+}
+
+.ghc-draft-drop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 23px;
+  height: 23px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ghc-draft-drop:hover {
+  background: var(--bg-hover);
+}
+
+/* ── footer: mode · draft state · nudge · CTA ─────────────────────────────── */
+
+.ghc-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-panel) 60%, transparent);
+  padding: 6px var(--space-2) 6px 10px;
+}
+
+.ghc-draftstate {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.ghc-draftstate--saved {
+  color: var(--color-success);
+}
+
+.ghc-draftstate--restored {
+  color: var(--accent-presence-soft);
+}
+
+.ghc-nudge {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-2xs);
+  color: var(--color-warning);
+}
+
+.ghc-cta {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+/* Accent for the reversible verbs once there is a body to send. */
+.ghc-cta--ready {
+  border-color: var(--accent-presence);
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+}
+
+/* Green belongs to merge alone, and only once the arm field agrees. */
+.ghc-cta--merge {
+  border-color: color-mix(in oklch, var(--color-success) 45%, transparent);
+  background: color-mix(in oklch, var(--color-success) 18%, transparent);
+}
+
+.ghc-cta--armed {
+  background: var(--color-success);
+  color: var(--color-success-foreground);
+}
+
+.ghc-cta__hint {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  opacity: 0.6;
+}
