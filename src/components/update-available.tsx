@@ -33,8 +33,7 @@ import {
   adoptNativeUpdateResult,
   nativeUpdateCoordinator,
 } from "@/lib/native-update-coordinator";
-import { updateDaemonForCaveUpdate } from "@/lib/app-update-daemon";
-import { APP_VERSION } from "@/lib/app-version";
+import { updateCovenCli } from "@/lib/app-update-daemon";
 
 const BANNER_ID = "update-available";
 const DAEMON_ALIGNMENT_BANNER_ID = "daemon-release-alignment";
@@ -106,10 +105,10 @@ async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> 
 }
 
 /**
- * The updater that installs a release belongs to the previous Cave version.
- * Reconcile once after the new shell starts so the first release containing
- * this behavior also aligns the separately installed Coven CLI. The CLI owns
- * the daemon lifecycle; it is not itself the daemon process.
+ * On desktop startup, inspect the separately installed Coven CLI. Cave, the
+ * CLI, and its daemon are independently versioned, so an unavailable
+ * background availability check remains silent and no Cave version is used as
+ * a CLI requirement. A global install is always user-confirmed.
  */
 export function DaemonReleaseAlignmentTrigger() {
   const isDesktop = useIsTauriDesktop();
@@ -121,55 +120,21 @@ export function DaemonReleaseAlignmentTrigger() {
     let active = true;
     let running = false;
 
-    const start = (confirmInstall = false) => {
+    const start = () => {
       if (!active || running) return;
       attempted.current = true;
       running = true;
-      void updateDaemonForCaveUpdate(APP_VERSION, {
-        confirmInstall,
-        onUpdateStart: () => {
-          if (active) {
-            pushBanner({
-              id: DAEMON_ALIGNMENT_BANNER_ID,
-              severity: "info",
-              title: `Updating Coven CLI for Cave v${APP_VERSION}…`,
-            });
-          }
-        },
-      }).then((result) => {
+      void updateCovenCli().then(() => {
         running = false;
         if (!active) return;
-        if (result === "confirmation-required") {
-          pushBanner({
-            id: DAEMON_ALIGNMENT_BANNER_ID,
-            severity: "info",
-            title: `Coven CLI v${APP_VERSION} is ready to install`,
-            cta: {
-              label: "Update Coven CLI",
-              onClick: () => {
-                attempted.current = false;
-                start(true);
-              },
-            },
-          });
-        } else {
-          dismissBanner(DAEMON_ALIGNMENT_BANNER_ID);
-        }
-      }).catch((error) => {
+        // Ordinary CLI availability and update actions live in Settings →
+        // About. Keep chat headers focused on chat; only that surface has the
+        // detailed version, verification, and installer state needed to act.
+        dismissBanner(DAEMON_ALIGNMENT_BANNER_ID);
+      }).catch(() => {
         running = false;
         if (!active) return;
-        pushBanner({
-          id: DAEMON_ALIGNMENT_BANNER_ID,
-          severity: "warning",
-          title: `Coven CLI update failed (${errorMessage(error, "update failed")})`,
-          cta: {
-            label: "Retry CLI update",
-            onClick: () => {
-              attempted.current = false;
-              start(true);
-            },
-          },
-        });
+        dismissBanner(DAEMON_ALIGNMENT_BANNER_ID);
       });
     };
 
