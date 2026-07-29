@@ -6828,6 +6828,9 @@ function splitTextForArtifacts(
 function splitSegmentsForGitHub(
   segments: MessageBubbleSegment[],
   onOpenUrl?: (url: string) => void,
+  /** Threaded through so the card's composer can offer "Draft with <familiar>"
+   *  — the card has no other way to learn who the turn's familiar is. */
+  familiar?: { id: string; name: string } | null,
 ): MessageBubbleSegment[] {
   const out: MessageBubbleSegment[] = [];
   segments.forEach((seg, si) => {
@@ -6855,7 +6858,7 @@ function splitSegmentsForGitHub(
         out.push({
           kind: "block",
           key: `gh-${si}-${pi}-${descriptorUrl(p.descriptor)}`,
-          node: <GitHubCard descriptor={p.descriptor} onOpenUrl={onOpenUrl} />,
+          node: <GitHubCard descriptor={p.descriptor} onOpenUrl={onOpenUrl} familiar={familiar} />,
         });
       }
     });
@@ -7133,6 +7136,13 @@ function TurnRowImpl({
     wasAvatarExpandedRef.current = expanded;
   }, [expanded]);
 
+  // Stable identity: the GitHub card's composer keys a useMemo off this object,
+  // so a fresh literal per render would rebuild its command tree every commit.
+  const ghFamiliar = useMemo(
+    () => ({ id: familiar.id, name: familiar.display_name }),
+    [familiar.id, familiar.display_name],
+  );
+
   if (turn.role === "system" || turn.role === "user") {
     const recency = showTimestamp && turn.createdAt ? formatChatRecency(turn.createdAt, dtPrefs) : "";
     const exactTime = turn.createdAt ? formatTimestamp(turn.createdAt, dtPrefs) : "";
@@ -7191,7 +7201,7 @@ function TurnRowImpl({
                       <SkillStageCard name={skillInvocation.name} stage="invoked" note={skillInvocation.args} />
                     ) : null}
                     {ghRefs.map((d) => (
-                      <GitHubCard key={descriptorUrl(d)} descriptor={d} onOpenUrl={onOpenUrl} />
+                      <GitHubCard key={descriptorUrl(d)} descriptor={d} onOpenUrl={onOpenUrl} familiar={ghFamiliar} />
                     ))}
                   </div>
                 ) : null;
@@ -7265,7 +7275,7 @@ function TurnRowImpl({
     // below. GitHub splitting runs on visibleWithGh (markers intact) so cards
     // mount at the markers' positions; the `visible` fallback/content path is
     // marker-free either way.
-    const split = splitSegmentsForGitHub(splitTextForArtifacts(visibleWithGh, artifactCtx), onOpenUrl);
+    const split = splitSegmentsForGitHub(splitTextForArtifacts(visibleWithGh, artifactCtx), onOpenUrl, ghFamiliar);
     renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
   }
 
