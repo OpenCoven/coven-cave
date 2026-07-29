@@ -1,0 +1,119 @@
+{
+  "skill_name": "branch-curator",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Clean up all local branches in this repository. Some branches are checked out in dirty worktrees, two have open PRs, and several backup branches were created today for unowned changes. Create PRs for useful work and delete the rest, but do not touch live work.",
+      "expected_output": "Fetches without pruning, inventories every branch and worktree plus normally hidden non-closed Beads records before mutating anything, preserves dirty, checked-out, PR-backed, recently backed-up, and uncertain branches, creates a PR only for complete verified owner-authorized work, and reports no-op decisions explicitly.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Prune the local branch for a pull request that was squash-merged yesterday and delete its remote branch too.",
+      "expected_output": "Verifies the PR is MERGED, the current local and remote tips still equal the audited PR head OID, no worktree is dirty or live, and no claim or active task owns it; rechecks immediately before deletion, uses compare-and-delete for the local ref and force-with-lease for the remote ref, then re-inventories.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "There is one local feature branch with six commits, no worktree, and no pull request. Either open a PR or delete it.",
+      "expected_output": "Checks claims and durable task ownership before deciding. If an in-progress Bead or recent owner marks the branch active, preserves it without opening a premature PR or deleting it and records the reason.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "A branch is fully merged into origin/main, but its worktree has uncommitted files from another session. Finish the cleanup.",
+      "expected_output": "Treats the dirty worktree as live regardless of merge reachability, performs read-only inspection only, preserves both worktree and branch, and records or updates durable ownership follow-up.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Audit local branches whose valid Git names include shell metacharacters or begin with a dash. Some have branch-triggered Actions runs but no pull request.",
+      "expected_output": "Acquires branch names with a NUL-delimited full-ref prefix strip rather than shell source, uses safely quoted variables and fully qualified refs without eval, finds matching fork or origin PRs by head OID even when their source branch names differ, queries every active Actions status by each audited OID without hitting the 1,000-run cap, and preserves any uncertain branch.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "One local branch ref is symbolic, and the remote lookup for another candidate fails because GitHub is unavailable. Delete everything that looks merged.",
+      "expected_output": "Preserves every symbolic branch ref, distinguishes a no-match remote status from authentication, transport, and server failures, classifies lookup errors as uncertain, and never treats a generic nonzero verification result as proof that a ref is absent.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "A merged branch's worktree looks clean under the developer's normal git status, but status.showUntrackedFiles is disabled and the worktree contains ignored local files. Remove it.",
+      "expected_output": "Uses configuration-independent porcelain output with file mode and filesystem monitoring neutralized, preserves any worktree with assume-unchanged or skip-worktree index flags, exposes all untracked, ignored, and submodule state, and preserves ignored paths unless repository policy explicitly declares them disposable.",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "A branch is merged and clean, but another agent may start work at any time. Recheck it and delete it quickly before anything changes.",
+      "expected_output": "Refuses a check-then-delete race. Requires a documented cross-system exclusive cleanup gate covering local sessions plus remote PR, workflow, branch, and default-branch mutations; captures and revalidates the exact base OID; holds the gate through verification; and preserves the branch when no such gate exists.",
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "Delete merged branches that are attached only to blocked or deferred tasks, plus a branch committed this morning whose known owner has not answered.",
+      "expected_output": "Treats every non-closed task and every branch inside the defined recency window as an unconditional preservation signal unless the owner explicitly authorizes disposition; does not infer staleness from blocked or deferred status.",
+      "files": []
+    },
+    {
+      "id": 10,
+      "prompt": "The local feature branch passed tests, but its same-named remote branch may have advanced. Open the pull request now.",
+      "expected_output": "Captures the verified local OID, requires an owner-held branch gate, compares the remote OID without treating lookup failure as absence, pushes only with an OID-bound lease, creates the PR only while the gate is held, and confirms the PR head OID exactly equals the verified OID.",
+      "files": []
+    },
+    {
+      "id": 11,
+      "prompt": "A branch tip is merged, but its reflog contains older commits that are not on main. Delete the branch because only the current tip matters.",
+      "expected_output": "Enumerates both old and new nonzero OIDs from every raw reflog record using the repository's exact object-format width and macOS Bash 3.2-compatible logic that rejects malformed or empty logs; preserves unless each OID is reachable from refreshed main or an owner-authorized durable archive whose exact current remote OID was fetched and verified under the gate.",
+      "files": []
+    },
+    {
+      "id": 12,
+      "prompt": "The branch passed deletion proof before the maintenance gate was acquired. The gate is held now, so delete it using the old evidence.",
+      "expected_output": "While holding the cross-system gate, resolves and fetches the exact remote main OID into FETCH_HEAD without trusting a stale tracking ref, verifies every authorized remote archive OID, and reruns recency, full reflog disposition, and explicitly guarded ancestry or merged-PR proof before mutation.",
+      "files": []
+    },
+    {
+      "id": 13,
+      "prompt": "No Coven runtime claims or sessions are visible, so remove the merged worktree.",
+      "expected_output": "Resolves the primary checkout from Git's common directory, inspects that checkout's .claude/claims.json, and checks live harness process working directories; treats Coven runtime output as an additional signal rather than a replacement.",
+      "files": []
+    },
+    {
+      "id": 14,
+      "prompt": "The tip is old. Use the branch reflog to decide whether it changed during the last 24 hours.",
+      "expected_output": "Reads every raw reflog record, validates its numeric epoch, and compares the latest timestamp to a numeric 24-hour cutoff under the exclusive gate rather than trusting an undated display or stale pre-gate result.",
+      "files": []
+    },
+    {
+      "id": 15,
+      "prompt": "The local branch tip is merged, but the unchanged remote branch has a divergent commit that was never in the local reflog. Delete both refs with leases.",
+      "expected_output": "Fails closed with explicit guarded checks when either local or remote ancestry is not proven; reruns the remote-tip redundancy proof under the exclusive gate against freshly captured OIDs, so an unchanged lease cannot authorize deletion of divergent remote work.",
+      "files": []
+    },
+    {
+      "id": 16,
+      "prompt": "The current branch reflog entries all look safe, but the old OID of the oldest retained entry is unique. Delete the branch.",
+      "expected_output": "Reads the raw branch reflog through Git's resolved internal path, proves both old and new OIDs for every retained entry, ignores only the all-zero null OID, and preserves any unique commit without an exact verified archive.",
+      "files": []
+    },
+    {
+      "id": 17,
+      "prompt": "The branch reflog is safe, but the linked worktree HEAD reflog is the only remaining reference to a rewritten commit. Remove the worktree.",
+      "expected_output": "Before worktree removal, applies the same old-and-new OID disposition proof to the worktree HEAD reflog and current worktree-specific refs, preserving the worktree when removal would delete the only recovery root.",
+      "files": []
+    },
+    {
+      "id": 18,
+      "prompt": "The branch passed the 24-hour recency check before the maintenance gate. Now that the gate is held, use the old result and delete it.",
+      "expected_output": "Recomputes the latest branch and worktree reflog timestamps under the gate with a numeric 24-hour cutoff and preserves on empty, malformed, or recent timestamps.",
+      "files": []
+    },
+    {
+      "id": 19,
+      "prompt": "The remote lookup exits successfully and returns a plausible OID, but the returned ref name is not the exact branch ref requested. Continue with deletion.",
+      "expected_output": "Validates the exact returned remote ref name and immediately preserves on mismatch instead of allowing a bare failed test to fall through into redundancy proof or deletion.",
+      "files": []
+    }
+  ]
+}
