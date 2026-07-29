@@ -588,7 +588,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     return (
       <button
         type="button"
-        className={`projects-access-pill is-${row.state}${pending ? " is-pending" : ""}`}
+        className={`projects-access-pill is-${row.state}${pending ? " is-pending" : ""} focus-ring`}
         disabled={pending || supreme}
         onClick={() => void cycleRow(row)}
         title={
@@ -851,7 +851,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                     <button
                       type="button"
                       id={`project-access-row:${row.id}`}
-                      className={`projects-access-chip${flashId === row.id ? " is-flash" : ""}`}
+                      className={`projects-access-chip${flashId === row.id ? " is-flash" : ""} focus-ring`}
                       disabled={pendingIds.has(row.id) || supreme}
                       onClick={() => void cycleRow(row)}
                       title={`${row.name} — ${accessStateMeta(row.state).label}. Click to ${accessStateMeta(row.state).action}.`}
@@ -900,7 +900,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                     width={10}
                     aria-hidden
                   />
-                  <h2 className="projects-access-section-title">{section.label}</h2>
+                  <span className="projects-access-section-title">{section.label}</span>
                   <span className="projects-access-section-count">{rows.length}</span>
                   {/* Folding a section must never hide that something in it is granted. */}
                   {isCollapsed ? (

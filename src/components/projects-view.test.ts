@@ -150,6 +150,29 @@ test("secondary controls stay quiet until hover or keyboard focus", () => {
   assert.ok(hoverNoneBlocks.length >= 2, "touch devices keep both controls always visible");
 });
 
+test("access controls retain semantic headings and visible keyboard focus", () => {
+  assert.doesNotMatch(
+    view,
+    /<h2 className="projects-access-section-title">/,
+    "the section-toggle button contains phrasing content, not a nested heading",
+  );
+  assert.match(
+    view,
+    /<span className="projects-access-section-title">/,
+    "the section label keeps its presentation class after leaving the heading element",
+  );
+  assert.match(
+    view,
+    /className=\{`projects-access-pill is-\$\{row\.state\}\$\{pending \? " is-pending" : ""\} focus-ring`\}/,
+    "row access pills use the shared visible focus ring",
+  );
+  assert.match(
+    view,
+    /className=\{`projects-access-chip\$\{flashId === row\.id \? " is-flash" : ""\} focus-ring`\}/,
+    "tree access pills use the shared visible focus ring",
+  );
+});
+
 test("pills and states are token-driven for both themes", () => {
   assert.match(css, /\.projects-access-pill\.is-write \{[^}]*background: var\(--accent-presence\)/, "Full pill fills with the accent");
   assert.match(css, /\.projects-access-pill\.is-write \{[^}]*color: var\(--accent-presence-foreground\)/, "Full pill text uses the paired foreground token");
