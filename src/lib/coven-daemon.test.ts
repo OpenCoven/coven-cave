@@ -64,13 +64,19 @@ const {
   else process.env.COVEN_SOCKET = before;
 }
 
-// socketPath() default has the expected suffix
+// The platform-neutral fallback has the expected Unix socket suffix. Do not
+// read the real host's daemon.json here: on Windows an active daemon resolves
+// to its named pipe, making a supposedly default-path assertion flaky.
 {
-  const before = process.env.COVEN_SOCKET;
-  delete process.env.COVEN_SOCKET;
-  const def = socketPath();
+  const def = resolveDaemonSocketPath({
+    platform: "linux",
+    env: {},
+    homeDir: "/home/cave-test",
+    readFileSync: () => {
+      throw new Error("no daemon status for default socket fixture");
+    },
+  });
   assert.match(def, /\.coven\/coven\.sock$/);
-  if (before !== undefined) process.env.COVEN_SOCKET = before;
 }
 
 // Windows daemon status stores the pipe name; Node HTTP needs the full pipe path
