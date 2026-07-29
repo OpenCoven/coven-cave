@@ -24,6 +24,11 @@ private final class VoiceSessionURLProtocol: URLProtocol {
 }
 
 final class VoiceSessionContractTests: XCTestCase {
+    override func tearDown() {
+        VoiceSessionURLProtocol.handler = nil
+        super.tearDown()
+    }
+
     private func client(status: Int, body: String, contentType: String? = "application/json") -> CaveClient {
         VoiceSessionURLProtocol.handler = { request in
             XCTAssertEqual(request.url?.path, "/api/voice/session")
