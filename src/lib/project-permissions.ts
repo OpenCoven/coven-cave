@@ -126,6 +126,22 @@ export type GrantChangeEntry = {
   groupId?: string;
 };
 
+export type ProjectPermissionRepairAudit = {
+  at: string;
+  kind: "orphan-project-repair";
+  directGrants: number;
+  groupGrants: number;
+  proposals: number;
+  orphanProjectIds: string[];
+};
+
+export type ProjectPermissionIntegrityReport = {
+  directGrants: number;
+  groupGrants: number;
+  proposals: number;
+  orphanProjectIds: string[];
+};
+
 type ProjectPermissionsFile = {
   version: 2;
   projectGrants: ProjectGrant[];
@@ -138,6 +154,7 @@ type ProjectPermissionsFile = {
    * would force every existing entry to be reinterpreted.
    */
   grantAudit: GrantChangeEntry[];
+  repairAudit: ProjectPermissionRepairAudit[];
 };
 
 type HumanPermissionConfigFile = {
@@ -193,6 +210,7 @@ function emptyFile(): ProjectPermissionsFile {
     grantProposals: [],
     permissionAudit: [],
     grantAudit: [],
+    repairAudit: [],
   };
 }
 
@@ -348,6 +366,7 @@ async function loadProjectPermissionsUnlocked(): Promise<ProjectPermissionsFile>
     // Absent on every store written before this log existed — an empty array
     // is the honest answer there, not a reconstruction.
     grantAudit: Array.isArray(parsed.grantAudit) ? parsed.grantAudit : [],
+    repairAudit: Array.isArray(parsed.repairAudit) ? parsed.repairAudit : [],
   };
   materializeDueGrantProposals(file, new Date());
   return file;
@@ -805,6 +824,62 @@ export async function revokeAllGrantsForProject(
 
     if (grants > 0 || groupGrants > 0 || proposals > 0) await saveProjectPermissions(file);
     return { grants, groupGrants, proposals };
+  }));
+}
+
+function orphanProjectIntegrity(
+  file: Pick<ProjectPermissionsFile, "projectGrants" | "accessGroups" | "grantProposals">,
+  knownProjectIds: ReadonlySet<string>,
+): ProjectPermissionIntegrityReport {
+  const orphanIds = new Set<string>();
+  let directGrants = 0;
+  let groupGrants = 0;
+  let proposals = 0;
+  for (const grant of file.projectGrants) {
+    if (knownProjectIds.has(grant.projectId)) continue;
+    directGrants += 1;
+    orphanIds.add(grant.projectId);
+  }
+  for (const group of file.accessGroups) for (const grant of group.projectGrants) {
+    if (knownProjectIds.has(grant.projectId)) continue;
+    groupGrants += 1;
+    orphanIds.add(grant.projectId);
+  }
+  for (const proposal of file.grantProposals) {
+    if (knownProjectIds.has(proposal.projectId)) continue;
+    proposals += 1;
+    orphanIds.add(proposal.projectId);
+  }
+  return { directGrants, groupGrants, proposals, orphanProjectIds: [...orphanIds].sort() };
+}
+
+/** Read-only integrity check. It deliberately does not grant or prune anything. */
+export async function inspectProjectPermissionIntegrity(): Promise<ProjectPermissionIntegrityReport> {
+  const [projects, permissions] = await Promise.all([loadProjects(), loadProjectPermissions()]);
+  return orphanProjectIntegrity(permissions, new Set(projects.map((project) => project.id)));
+}
+
+/**
+ * Explicit human-invoked repair for legacy orphan grants. Removing records for
+ * projects absent from the registry can only reduce access; an audit record is
+ * persisted atomically with the cleanup, making retries after interruption
+ * idempotent and reviewable.
+ */
+export async function repairOrphanProjectPermissions(): Promise<ProjectPermissionIntegrityReport> {
+  const projects = await loadProjects();
+  const knownProjectIds = new Set(projects.map((project) => project.id));
+  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked();
+    const report = orphanProjectIntegrity(file, knownProjectIds);
+    if (report.directGrants + report.groupGrants + report.proposals === 0) return report;
+    file.projectGrants = file.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
+    for (const group of file.accessGroups) {
+      group.projectGrants = group.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
+    }
+    file.grantProposals = file.grantProposals.filter((proposal) => knownProjectIds.has(proposal.projectId));
+    file.repairAudit.push({ at: new Date().toISOString(), kind: "orphan-project-repair", ...report });
+    await saveProjectPermissions(file);
+    return report;
   }));
 }
 

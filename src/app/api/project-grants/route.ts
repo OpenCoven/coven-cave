@@ -12,6 +12,8 @@ import {
   listProjectGrants,
   listRecentPermissionAudit,
   loadHumanPermissionConfig,
+  inspectProjectPermissionIntegrity,
+  repairOrphanProjectPermissions,
   revokeProjectFromFamiliar,
 } from "@/lib/project-permissions";
 
@@ -55,11 +57,12 @@ function accessInput(payload: Record<string, unknown>): "read" | "write" | null 
 }
 
 export async function GET() {
-  const [grants, config, audit, accessGroups] = await Promise.all([
+  const [grants, config, audit, accessGroups, integrity] = await Promise.all([
     listProjectGrants(),
     loadHumanPermissionConfig(),
     listRecentPermissionAudit(),
     listAccessGroups(),
+    inspectProjectPermissionIntegrity(),
   ]);
   // `supremeFamiliarId` has access to every project regardless of grants — the
   // Permissions UI marks it as all-access and locks its toggles on. `audit` is a
@@ -74,6 +77,7 @@ export async function GET() {
     supremeFamiliarId: config.supremeFamiliarId,
     mobileMutationsAllowed: config.allowMobileGrantMutations,
     audit,
+    integrity,
   });
 }
 
@@ -85,6 +89,10 @@ export async function POST(req: Request) {
   if (payload instanceof Response) return payload;
   const rejected = rejectRelayedApproval(payload);
   if (rejected) return rejected;
+  if (payload.repairOrphans === true) {
+    const integrity = await repairOrphanProjectPermissions();
+    return NextResponse.json({ ok: true, repaired: integrity });
+  }
   const input = grantInput(payload);
   if (!input) {
     return NextResponse.json(

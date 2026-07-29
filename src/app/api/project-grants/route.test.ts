@@ -153,6 +153,12 @@ assert.match(
   /listAccessGroups/,
   "grants GET should ride access groups along so one fetch renders effective access",
 );
+assert.match(grantsRoute, /inspectProjectPermissionIntegrity/, "grants GET exposes orphan-grant integrity for operator remediation");
+assert.match(
+  grantsRoute,
+  /payload\.repairOrphans === true[\s\S]*repairOrphanProjectPermissions/,
+  "a trusted human may explicitly repair orphan grants without granting access",
+);
 assert.match(
   grantsRoute,
   /if \(payload\.access === undefined\) return "write";/,

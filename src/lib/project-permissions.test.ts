@@ -24,6 +24,8 @@ try {
     filterProjectsForFamiliar,
     grantProjectToFamiliar,
     revokeAllGrantsForProject,
+    inspectProjectPermissionIntegrity,
+    repairOrphanProjectPermissions,
     listProjectGrants,
     listAccessibleProjects,
     loadHumanPermissionConfig,
@@ -414,6 +416,28 @@ try {
     afterCascade.some((grant) => grant.projectId === "docs" && grant.familiarId === "cascade-a"),
     "grants for other projects are untouched by the cascade",
   );
+
+  // ── Explicit orphan repair: legacy state is inspected first, then pruned
+  // only by an idempotent human-triggered repair that records what changed. ──
+  await grantProjectToFamiliar({ familiarId: "orphaned", projectId: "removed-project", source: "human" });
+  const beforeRepair = await inspectProjectPermissionIntegrity();
+  assert.deepEqual(beforeRepair, {
+    directGrants: 1,
+    groupGrants: 0,
+    proposals: 0,
+    orphanProjectIds: ["removed-project"],
+  }, "orphaned grants are visible without changing access");
+  const repaired = await repairOrphanProjectPermissions();
+  assert.deepEqual(repaired, beforeRepair, "repair reports the exact records it removed");
+  const afterRepair = await inspectProjectPermissionIntegrity();
+  assert.deepEqual(afterRepair, {
+    directGrants: 0,
+    groupGrants: 0,
+    proposals: 0,
+    orphanProjectIds: [],
+  }, "repair only removes unknown-project records and never broadens access");
+  assert.equal((await loadProjectPermissions()).repairAudit.at(-1)?.kind, "orphan-project-repair", "repair writes an auditable record");
+  assert.deepEqual(await repairOrphanProjectPermissions(), afterRepair, "a retry after interruption is idempotent");
 
   console.log("project-permissions.test.ts: ok");
 } finally {
