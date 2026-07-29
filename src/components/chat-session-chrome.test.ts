@@ -64,6 +64,11 @@ test("2a ③ — the row is presentation over a pure model and never renders emp
     /<ProjectPickerPopover/,
     "the project chip opens the shared project picker rather than a private menu",
   );
+  assert.match(
+    contextRow,
+    /<div className="cave-chat-context-row" role="group" aria-label="Session context">/,
+    "the context row exposes its accessible name through a semantic group",
+  );
 });
 
 test("2a — the title row and turn names wear the display serif", () => {

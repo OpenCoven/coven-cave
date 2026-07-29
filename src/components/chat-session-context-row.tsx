@@ -96,7 +96,7 @@ export function ChatSessionContextRow({
   const pickerAvailable = Boolean(onProjectChange) && (projects.length > 0 || Boolean(onAddProject));
 
   return (
-    <div className="cave-chat-context-row" aria-label="Session context">
+    <div className="cave-chat-context-row" role="group" aria-label="Session context">
       <div className="cave-chat-context-row__chips">
         {chips.map((chip) =>
           chip.id === "project" && pickerAvailable ? (

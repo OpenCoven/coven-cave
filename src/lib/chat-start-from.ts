@@ -18,22 +18,28 @@ export type StartFromGroupMeta = {
   note: string;
 };
 
+function startFromTotals(shown: number, total: number) {
+  const normalize = (value: number) => (Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0);
+  const safeShown = normalize(shown);
+  return { safeShown, safeTotal: Math.max(safeShown, normalize(total)) };
+}
+
 /** "3 of 12" when more exists than fits, else the bare count. */
 export function startFromCount(shown: number, total: number): string {
-  const safeShown = Math.max(0, Math.trunc(shown));
-  const safeTotal = Math.max(safeShown, Math.trunc(total));
+  const { safeShown, safeTotal } = startFromTotals(shown, total);
   return safeTotal > safeShown ? `${safeShown} of ${safeTotal}` : String(safeShown);
 }
 
 export function startFromGroup(kind: StartFromKind, shown: number, total: number): StartFromGroupMeta {
-  const count = startFromCount(shown, total);
+  const { safeShown, safeTotal } = startFromTotals(shown, total);
+  const count = safeTotal > safeShown ? `${safeShown} of ${safeTotal}` : String(safeShown);
   if (kind === "chats") {
     return {
       kind,
       label: "Chats",
       icon: "ph:chat-circle-dots",
       count,
-      note: total === 1 ? "1 thread to resume" : `${Math.max(0, Math.trunc(total))} threads to resume`,
+      note: safeTotal === 1 ? "1 thread to resume" : `${safeTotal} threads to resume`,
     };
   }
   return {
@@ -41,7 +47,7 @@ export function startFromGroup(kind: StartFromKind, shown: number, total: number
     label: "Tasks",
     icon: "ph:kanban",
     count,
-    note: total === 1 ? "1 open on the board" : `${Math.max(0, Math.trunc(total))} open on the board`,
+    note: safeTotal === 1 ? "1 open on the board" : `${safeTotal} open on the board`,
   };
 }
 
