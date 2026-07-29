@@ -850,7 +850,10 @@ export class CopilotMessageTranscript {
 
   offset(messageId: string): number {
     const index = this.order.indexOf(messageId);
-    return index < 0 ? this.text.length : this.order.slice(0, index).reduce((sum, id) => sum + (this.content.get(id) ?? "").length, 0);
+    if (index < 0) return this.text.length + (this.order.length ? 1 : 0);
+    return this.order
+      .slice(0, index)
+      .reduce((sum, id) => sum + (this.content.get(id) ?? "").length + 1, 0);
   }
 
   messageLength(messageId: string): number {
@@ -858,7 +861,9 @@ export class CopilotMessageTranscript {
   }
 
   get text(): string {
-    return this.order.map((messageId) => this.content.get(messageId) ?? "").join("");
+    return this.order
+      .map((messageId) => this.content.get(messageId) ?? "")
+      .join("\n");
   }
 
   reset(): void {

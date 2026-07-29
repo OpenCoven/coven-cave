@@ -215,7 +215,7 @@ assert.match(
 );
 assert.match(
   rustArchiveSource,
-  /const MAX_FILE_COUNT: u64 = 5_794;/,
+  /const MAX_FILE_COUNT: u64 = 5_806;/,
   "Windows archive extractor must accept the shared runtime file-count budget",
 );
 assert.match(manifestSource, /isSymbolicLink\(\)/, "archive input must reject symlinks");
