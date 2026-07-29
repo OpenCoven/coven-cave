@@ -119,9 +119,12 @@ if (!isWin) {
 if (!isWin) {
   const { dir, wt } = repoWithWorktree({ push: true });
   const res = runHook(`git worktree remove ${wt}`, wt);
-  assert.equal(res.status, 0, "cleanup from inside the worktree is not blocked by the guard's own probe");
-  assert.doesNotMatch(res.stderr, /still working in it/, "the probe is never reported as live work");
-  assert.doesNotMatch(res.stderr, /lsof/, "and never named as an owner");
+  // Report the guard's own reason on failure: asserting bare status turns any
+  // platform difference into an unreadable "2 !== 0".
+  const why = `guard said: ${JSON.stringify(res.stderr)}`;
+  assert.doesNotMatch(res.stderr, /still working in it/, `the probe is never reported as live work — ${why}`);
+  assert.doesNotMatch(res.stderr, /lsof/, `and is never named as an owner — ${why}`);
+  assert.equal(res.status, 0, `cleanup from inside the worktree is not blocked — ${why}`);
 }
 
 // ── 4. Husk dirs (no .git link) and paths INSIDE a worktree pass ───────────────
