@@ -71,6 +71,29 @@ assert.deepEqual(
   },
   "slugified display or identity-name matches should report name-match source metadata",
 );
+assert.deepEqual(
+  resolveOpenClawAgentBindingFromSources("wren", null, [
+    { id: "main", isDefault: true },
+  ]),
+  {
+    caveFamiliarId: "wren",
+    openclawAgentId: "main",
+    source: "default",
+  },
+  "a unique OpenClaw default should bind a differently named Cave familiar",
+);
+assert.deepEqual(
+  resolveOpenClawAgentBindingFromSources("wren", null, [
+    { id: "main", isDefault: true },
+    { id: "research", isDefault: false },
+  ]),
+  {
+    caveFamiliarId: "wren",
+    openclawAgentId: "main",
+    source: "default",
+  },
+  "one declared default should remain deterministic when other agents exist",
+);
 assert.throws(
   () => resolveOpenClawAgentBindingFromSources("unknown", null, candidateAgents),
   (error) =>
@@ -89,6 +112,15 @@ assert.deepEqual(
     source: "fallback",
   },
   "fallback-to-familiar-id should be explicit and source-tagged",
+);
+assert.throws(
+  () =>
+    resolveOpenClawAgentBindingFromSources("unknown", null, [
+      { id: "main", isDefault: true },
+      { id: "other", isDefault: true },
+    ]),
+  (error) => error instanceof OpenClawAgentResolutionError,
+  "ambiguous default declarations should still fail closed",
 );
 
 assert.equal(

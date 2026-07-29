@@ -13,7 +13,7 @@ export type ChatResponseMetadata = {
   modelApplicationState?: ModelApplicationState;
   modelApplicationReason?: string;
   openclawAgentId?: string;
-  openclawAgentSource?: "explicit" | "id-match" | "name-match" | "fallback";
+  openclawAgentSource?: "explicit" | "id-match" | "name-match" | "default" | "fallback";
   caveSessionId?: string;
   gatewaySessionId?: string;
   sessionKey?: string;

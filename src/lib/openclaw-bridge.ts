@@ -39,7 +39,7 @@ type OpenClawBridgeRequest = {
 export type OpenClawAgentBinding = {
   caveFamiliarId: string;
   openclawAgentId: string;
-  source: "explicit" | "id-match" | "name-match" | "fallback";
+  source: "explicit" | "id-match" | "name-match" | "default" | "fallback";
 };
 
 export type OpenClawBridgeCapabilities = {
@@ -186,6 +186,15 @@ export function resolveOpenClawAgentBindingFromSources(
   )?.id;
   if (named) {
     return { caveFamiliarId: familiarId, openclawAgentId: named, source: "name-match" };
+  }
+
+  const defaults = agents.filter((agent) => agent.isDefault === true && agent.id);
+  if (defaults.length === 1) {
+    return {
+      caveFamiliarId: familiarId,
+      openclawAgentId: defaults[0].id!,
+      source: "default",
+    };
   }
 
   if (options.allowFallback) {
