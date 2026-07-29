@@ -681,12 +681,43 @@ assert.equal(
 
 {
   const transcript = new CopilotMessageTranscript();
-  transcript.appendDelta("first", "Hello old");
-  transcript.appendDelta("later", " and later");
+  transcript.appendDelta("before-tool", "First sentence.");
+  transcript.appendDelta("after-tool", "Next sentence.");
   assert.equal(
-    transcript.setMessage("first", "Hello new"),
-    "Hello new and later",
-    "a corrected earlier message retains interleaved later message text",
+    transcript.setMessage("before-tool", "Corrected sentence."),
+    "Corrected sentence.\nNext sentence.",
+    "a corrected earlier message retains a semantic boundary before later message text",
+  );
+  assert.equal(
+    transcript.offset("after-tool"),
+    "Corrected sentence.\n".length,
+    "later message offsets include the semantic boundary",
+  );
+}
+
+{
+  const transcript = new CopilotMessageTranscript();
+  transcript.setMessage("first", "First sentence.");
+  assert.equal(
+    transcript.offset("recovering"),
+    "First sentence.\n".length,
+    "new message offsets anticipate their semantic boundary",
+  );
+  transcript.setMessage("recovering", "");
+  assert.equal(
+    transcript.text,
+    "First sentence.\n",
+    "an ordered empty message keeps its boundary stable before correction",
+  );
+  assert.equal(
+    transcript.offset("recovering"),
+    "First sentence.\n".length,
+    "empty message offsets include their stable boundary",
+  );
+  assert.equal(
+    transcript.setMessage("recovering", "Recovered sentence."),
+    "First sentence.\nRecovered sentence.",
+    "recovering empty message content does not introduce an untracked separator",
   );
 }
 
