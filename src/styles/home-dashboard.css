@@ -379,6 +379,14 @@
    .home-dash__board (an element can never match its own @container query),
    and stay last in the file so these equal-specificity overrides win the
    cascade. */
+/* Shed order follows the design's priority: the mock encodes it as width
+   (chats widest, queue smallest), so the Queue group goes first and the
+   recent threads follow one tier down (cave-3lonn). */
+@container (max-height: 760px) {
+  .home-dash__section--queue {
+    display: none;
+  }
+}
 @container (max-height: 650px) {
   .home-dash__section--recent {
     display: none;

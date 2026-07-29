@@ -1,17 +1,18 @@
 // Pure model for the new-session "Start from" launcher (Chat.dc.html 2b).
 //
 // The design turns the blank new-session page into a launcher over the places
-// work already lives in the Cave. We ship the two groups the starting page can
-// fill from data it already holds — resumable threads and open board cards —
-// so the launcher costs no extra request. (The mock also shows Queue and
-// Reviews groups; those need their own fetches and are tracked separately.)
+// work already lives in the Cave: open board cards (Tasks), resumable threads
+// (Chats), and parked follow-ups (Queue). Tasks and Chats fill from data the
+// page already holds; Queue reads the beads work queue for the Queue's own
+// selected project, so it renders only when that project is set (cave-3lonn).
+// (The mock's fourth group, Reviews, is tracked separately.)
 
-export type StartFromKind = "chats" | "tasks";
+export type StartFromKind = "chats" | "tasks" | "queue";
 
 export type StartFromGroupMeta = {
   kind: StartFromKind;
   label: string;
-  icon: "ph:chat-circle-dots" | "ph:kanban";
+  icon: "ph:chat-circle-dots" | "ph:kanban" | "ph:stack";
   /** "3 of 12" when the group is capped, a bare count when it isn't. */
   count: string;
   /** Quiet right-hand note in the group header. */
@@ -34,6 +35,15 @@ export function startFromGroup(kind: StartFromKind, shown: number, total: number
       icon: "ph:chat-circle-dots",
       count,
       note: total === 1 ? "1 thread to resume" : `${Math.max(0, Math.trunc(total))} threads to resume`,
+    };
+  }
+  if (kind === "queue") {
+    return {
+      kind,
+      label: "Queue",
+      icon: "ph:stack",
+      count,
+      note: "parked follow-ups",
     };
   }
   return {
