@@ -2,7 +2,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const css = readFileSync(new URL("./globals.css", import.meta.url), "utf8");
+// globals.css is an import facade; include the modules that own the contracts
+// asserted below so this guard tests the shipped CSS rather than import lines.
+const css = [
+  "./globals.css",
+  "../styles/globals/foundations.css",
+  "../styles/globals/themes.css",
+  "../styles/globals/shell-navigation.css",
+  "../styles/globals/surface-compact-calendar.css",
+].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
 
 // 1. :root[data-mode="light"] block exists with foreground/background.
 const lightBlock = css.match(/:root\[data-mode="light"\]\s*\{([\s\S]*?)\}/)?.[1] ?? "";
@@ -45,13 +53,10 @@ assert.match(
 
 console.log("globals.css.test.ts (task 3) OK");
 
-// Task 4 assertions: every non-default theme has dark + light blocks —
-// including the tweakcn ports and the a11y additions (contrast/beacon/
-// solstice), which the original loop of 9 never covered.
+// Task 4 assertions: every non-default theme has dark + light blocks.
 const otherThemes = [
-  "tide", "grove", "ember", "bloom", "dusk", "mist", "hex", "bane", "slate",
-  "ghosty", "claymorphism", "claude", "codex", "pastel-dreams", "meatseeks",
-  "trucker", "snow", "contrast", "beacon", "solstice",
+  "tide", "ember", "slate", "ghosty", "claymorphism", "claude", "codex",
+  "pastel-dreams", "snow", "contrast", "solstice",
 ];
 for (const id of otherThemes) {
   const darkRe = new RegExp(`\\[data-theme="${id}"\\]\\s*\\{`);
@@ -64,6 +69,9 @@ for (const id of otherThemes) {
 for (const old of ["midnight", "orchid", "sky", "openai"]) {
   const re = new RegExp(`\\[data-theme="${old}"\\]`);
   assert.doesNotMatch(css, re, `old preset ${old} removed`);
+}
+for (const removed of ["grove", "bloom", "dusk", "mist", "hex", "bane", "beacon", "trucker", "meatseeks"]) {
+  assert.doesNotMatch(css, new RegExp(`\\[data-theme="${removed}"\\]`), `${removed} theme blocks are removed`);
 }
 
 console.log("globals.css.test.ts (task 4) OK");

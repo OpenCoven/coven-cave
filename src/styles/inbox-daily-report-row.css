@@ -1,6 +1,6 @@
 /* The daily report's row in the Rituals inbox. It sits inside the feed's
    existing <button> row, so it must not own hover/selection — only the
-   content. Colors from foundations.css; this ships beside 21 themes. */
+   content. Colors from foundations.css; this ships beside 12 themes. */
 
 .dri {
   display: flex;

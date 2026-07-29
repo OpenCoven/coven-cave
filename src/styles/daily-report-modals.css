@@ -8,7 +8,7 @@
  *    presence -> --accent-presence, its greens/reds/ambers -> --color-success /
  *    --color-danger / --color-warning, grounds -> --bg-raised / --bg-elevated,
  *    hairlines -> --border, scrim -> --backdrop-scrim. No hex and no raw
- *    color-space literal: 21 themes x 2 modes have to survive this sheet.
+ *    color-space literal: 12 themes x 2 modes have to survive this sheet.
  *  - spacing, radii and font sizes ride the scales. Compact mono labels keep
  *    the design's exact px through the `font:` shorthand (the type-scale gate
  *    governs the standalone `font-size` property); the serif/display sizes the

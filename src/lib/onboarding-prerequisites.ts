@@ -4,7 +4,7 @@
  * Probes and installers are server-owned implementations of this contract.
  */
 
-export const MANAGED_NODE_VERSION = "22.18.0";
+export const MANAGED_NODE_VERSION = "24.18.0";
 
 export type PrerequisitePlatform = "win32" | "darwin" | "linux" | "ios" | "android";
 export type PrerequisiteArchitecture = "x64" | "arm64";
@@ -89,37 +89,37 @@ const NODE_MAX_BYTES = 128_000_000;
 const managedNodeArtifacts = {
   "win32-x64": {
     url: `${NODE_BASE}/node-v${MANAGED_NODE_VERSION}-win-x64.zip`,
-    sha256: "c95d8a7e1c99e669cc08c9f1176e068c1f50847c37908fcb8c35b62482366511",
+    sha256: "0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821",
     maxBytes: NODE_MAX_BYTES,
     format: "zip",
   },
   "win32-arm64": {
     url: `${NODE_BASE}/node-v${MANAGED_NODE_VERSION}-win-arm64.zip`,
-    sha256: "023afb3d25c4c7d10cb6eb8a64865c347b56d4b07e6690606d021130a9192263",
+    sha256: "f274669adb93b1fd0fbf8f21fd078609e9dcc84333d4f2718d2dde3f9a161a01",
     maxBytes: NODE_MAX_BYTES,
     format: "zip",
   },
   "darwin-x64": {
     url: `${NODE_BASE}/node-v${MANAGED_NODE_VERSION}-darwin-x64.tar.gz`,
-    sha256: "9c8aa1e5ff5780b38cc1134e2263d84e2f4308eb84c02515e3af33936ca02cdc",
+    sha256: "dfd0dbd3e721503434df7b7205e719f61b3a3a31b2bcf9729b8b91fea240f080",
     maxBytes: NODE_MAX_BYTES,
     format: "tar.gz",
   },
   "darwin-arm64": {
     url: `${NODE_BASE}/node-v${MANAGED_NODE_VERSION}-darwin-arm64.tar.gz`,
-    sha256: "2c12913cba67af77ded8a399df3fd91c2e7f8628c7079da40bb9ff33bf00dfc0",
+    sha256: "e1a97e14c99c803e96c7339403282ea05a499c32f8d83defe9ef5ec66f979ed1",
     maxBytes: NODE_MAX_BYTES,
     format: "tar.gz",
   },
   "linux-x64": {
     url: `${NODE_BASE}/node-v${MANAGED_NODE_VERSION}-linux-x64.tar.gz`,
-    sha256: "a2e703725d8683be86bb5da967bf8272f4518bdaf10f21389e2b2c9eaeae8c8a",
+    sha256: "783130984963dbba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8",
     maxBytes: NODE_MAX_BYTES,
     format: "tar.gz",
   },
   "linux-arm64": {
     url: `${NODE_BASE}/node-v${MANAGED_NODE_VERSION}-linux-arm64.tar.gz`,
-    sha256: "d415eeea90a2fdb60c66dd386b258acbfc4d1fa4720a8df5dea7369fbdbcddee",
+    sha256: "6b4484c2190274175df9aa8f28e2d758a819cb1c1fe6ab481e2f95b463ab8508",
     maxBytes: NODE_MAX_BYTES,
     format: "tar.gz",
   },
@@ -193,7 +193,7 @@ export const PREREQUISITES: readonly PrerequisiteDefinition[] = [
     install: { kind: "managed-node", artifacts: managedNodeArtifacts },
     requiresPrivilege: false,
     restart: "none",
-    manualRecovery: "Download the matching Node.js 22 archive from nodejs.org and contact support with the verification result.",
+    manualRecovery: "Download the matching Node.js 24 archive from nodejs.org and contact support with the verification result.",
   },
   {
     id: "coven-cli",

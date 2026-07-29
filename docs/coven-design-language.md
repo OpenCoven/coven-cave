@@ -26,7 +26,7 @@ letting it drift.**
   ink-and-graphite, not a tinted gray"* (the token contract's own words,
   `src/styles/globals/foundations.css`), with the violet reserved for the
   brand accent. Light mode is a complete, AA-retuned override
-  (`[data-mode="light"]`), not an afterthought — every one of the 21 theme
+  (`[data-mode="light"]`), not an afterthought — every one of the 12 theme
   palettes ships both modes.
 - **One palette, two vocabularies.** Tokens exist under shadcn-style names
   (`--background`, `--card`, `--muted`) *and* semantic aliases (`--bg-base`,
@@ -101,14 +101,13 @@ color.
   `:focus-visible` via the `.focus-ring` / `.focus-ring-inset` utilities.
 
 ### Theming
-`data-theme` (21 palettes: coven, tide, grove, ember, bloom, dusk, mist, hex,
-bane, slate, ghosty, claymorphism, claude, codex, pastel-dreams, meatseeks,
-trucker, snow, contrast, beacon, solstice)
+`data-theme` (12 palettes: coven, tide, ember, slate, ghosty, claymorphism,
+claude, codex, pastel-dreams, snow, contrast, solstice)
 × `data-mode` (dark/light) are orthogonal attributes on `:root`, hydrated by
 `theme-script.tsx`. External shadcn themes import via tweakcn and are enriched
 with the Cave's derived semantic tokens (`settings-shell.tsx` →
 `enrichTweakcnTheme`). **Consequence: never hardcode a color; every surface
-must survive all 42 palette×mode combinations.**
+must survive all 24 palette×mode combinations.**
 
 ## 3. Signature idioms
 

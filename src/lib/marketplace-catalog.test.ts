@@ -7,6 +7,7 @@ import {
   deriveKind,
   pluginBadgeState,
   filterPlugins,
+  visibleMarketplacePlugins,
   sortPlugins,
   countByKind,
   groupPluginsByCategory,
@@ -108,6 +109,17 @@ assert.deepEqual(
   normalizeMarketplaceScope(["All", "Web"], "Removed category", "removed-collection"),
   { category: "All", collectionId: null },
   "stale persisted Marketplace filters must safely fall back after catalog refresh",
+);
+
+const craftOnly = { ...merged[0], id: "research-craft", kind: "craft", category: "Research Crafts" };
+assert.deepEqual(
+  categoriesFrom(visibleMarketplacePlugins([...merged, craftOnly], false)),
+  categoriesFrom(merged),
+  "Craft-only categories stay out of Browse scopes when Crafts are disabled",
+);
+assert.ok(
+  categoriesFrom(visibleMarketplacePlugins([...merged, craftOnly], true)).includes("Research Crafts"),
+  "Craft categories remain available when the Crafts flag is enabled",
 );
 
 // --- requiredConfig + configured + badge state (credential collection) ---

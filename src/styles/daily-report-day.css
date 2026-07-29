@@ -1,8 +1,8 @@
 /* The redesigned daily report — "the chaptered day".
  *
  * Colors, type and density come from foundations.css: this surface ships
- * beside 21 themes × 2 modes, so the handoff's literal oklch/hex ground would
- * break 41 of those combinations. What the Nocturne system contributes here is
+ * beside 12 themes × 2 modes, so the handoff's literal oklch/hex ground would
+ * break 23 of those combinations. What the Nocturne system contributes here is
  * its interaction grammar, not its palette: primary actions are an accent
  * OUTLINE on transparent (never a flood), and every interactive element
  * carries the 2px accent :focus-visible ring.
