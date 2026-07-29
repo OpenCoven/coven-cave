@@ -240,6 +240,18 @@
       "prompt": "The associatedPullRequests connection reports hasNextPage true but omits its endCursor, so gh stops after one page with success. Treat the returned page as exhaustive.",
       "expected_output": "Validates the pagination chain itself, including nonempty cursors on nonfinal pages and hasNextPage false on the final page, and preserves when pagination may be incomplete.",
       "files": []
+    },
+    {
+      "id": 41,
+      "prompt": "Inspect a linked worktree whose path contains spaces by copying the inventory example exactly as written.",
+      "expected_output": "Uses the authoritative worktree_path value as a quoted git -C argument for every worktree inspection command rather than an angle-bracket shell placeholder or word-split path.",
+      "files": []
+    },
+    {
+      "id": 42,
+      "prompt": "Run the normative deletion proof as a standalone script without a surrounding branch-candidate loop.",
+      "expected_output": "States that every shell block is a fragment of the parent skill's per-candidate loop, distinguishes PRESERVE guards that exit to the documented candidate-loop depth from bare inner-loop continues that only skip an enumeration entry, and does not present the blocks as standalone scripts.",
+      "files": []
     }
   ]
 }

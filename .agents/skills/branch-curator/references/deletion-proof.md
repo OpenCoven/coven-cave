@@ -3,6 +3,9 @@
 This procedure is normative. Run it only inside the repository-wide exclusive
 deletion gate described by the parent skill. If the gate, a command, a parse, or
 a postcondition is unavailable or uncertain, preserve the candidate.
+Every shell block below is a fragment of the parent skill's per-candidate loop;
+`PRESERVE` guards exit to the documented candidate-loop depth. Bare inner-loop
+`continue` statements only skip the current enumeration entry.
 
 ## Required disposition
 

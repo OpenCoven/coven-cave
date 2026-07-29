@@ -101,21 +101,21 @@ done < <(
 )
 ```
 Do not parse displays back into commands; the loop variable is authoritative.
-For every listed worktree, run:
+For every listed worktree, bind its literal path as `worktree_path`, then run:
 ```bash
-worktree_status=$(git -C <worktree-path> \
+worktree_status=$(git -C "$worktree_path" \
   -c status.showUntrackedFiles=all \
   -c core.fileMode=true \
   -c core.fsmonitor=false \
   status --porcelain=v2 --branch --untracked-files=all \
   --ignored=matching --ignore-submodules=none) ||
   { printf '%s\n' 'PRESERVE - worktree status failed'; continue; }
-index_state=$(git -C <worktree-path> ls-files -v) ||
+index_state=$(git -C "$worktree_path" ls-files -v) ||
   { printf '%s\n' 'PRESERVE - index state failed'; continue; }
 index_flags=$(printf '%s\n' "$index_state" |
   awk '$1 ~ /^[a-z]/ || $1 == "S"') ||
   { printf '%s\n' 'PRESERVE - index parse failed'; continue; }
-clean_preview=$(git -C <worktree-path> clean -ndx -d -- .) ||
+clean_preview=$(git -C "$worktree_path" clean -ndx -d -- .) ||
   { printf '%s\n' 'PRESERVE - ignored-state preview failed'; continue; }
 ```
 Inspect every captured output. Preserve any staged, unstaged, untracked,
