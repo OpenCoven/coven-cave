@@ -40,20 +40,36 @@ export function HomeFeed({ onOpenUrl }: Props) {
   const [repos, setRepos] = useState<RepoItem[]>([]);
   const [repoState, setRepoState] = useState<LoadState>("idle");
   const [reposConfigured, setReposConfigured] = useState(true);
+  const [repoWarning, setRepoWarning] = useState<string | null>(null);
   const [tweets, setTweets] = useState<TweetItem[]>([]);
   const [tweetState, setTweetState] = useState<LoadState>("idle");
 
-  const loadRepos = useCallback(async () => {
+  const loadRepos = useCallback(async (refresh = false) => {
     setRepoState((s) => (s === "ready" ? s : "loading"));
     try {
-      const res = await fetch("/api/github/repos", { cache: "no-store" });
-      const json = (await res.json()) as { ok?: boolean; items?: RepoItem[]; configured?: boolean };
+      const res = await fetch(`/api/github/repos${refresh ? "?refresh=1" : ""}`, { cache: "no-store" });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        items?: RepoItem[];
+        configured?: boolean;
+        incomplete?: boolean;
+        errors?: unknown[];
+      };
       if (!json.ok || !Array.isArray(json.items)) throw new Error("bad payload");
       setRepos(json.items);
       setReposConfigured(json.configured !== false);
+      const errors = Array.isArray(json.errors)
+        ? json.errors.filter((error): error is string => typeof error === "string")
+        : [];
+      setRepoWarning(
+        json.incomplete
+          ? errors.join(" ") || "Some curated repositories couldn't be loaded."
+          : null,
+      );
       setNowMs(Date.now());
       setRepoState("ready");
     } catch {
+      setRepoWarning("Couldn't refresh curated repositories.");
       setRepoState((s) => (s === "ready" ? s : "error"));
     }
   }, []);
@@ -87,7 +103,7 @@ export function HomeFeed({ onOpenUrl }: Props) {
   }, []);
 
   const refresh = useCallback(() => {
-    if (tab === "repos") { setRepoState("idle"); void loadRepos(); }
+    if (tab === "repos") { setRepoState("idle"); void loadRepos(true); }
     if (tab === "tweets") void loadTweets(true);
   }, [tab, loadRepos, loadTweets]);
 
@@ -121,7 +137,7 @@ export function HomeFeed({ onOpenUrl }: Props) {
       </div>
 
       {tab === "repos" ? (
-        <ReposTab state={repoState} items={repos} configured={reposConfigured} nowMs={nowMs} onOpenUrl={onOpenUrl} onRetry={() => void loadRepos()} />
+        <ReposTab state={repoState} items={repos} configured={reposConfigured} warning={repoWarning} nowMs={nowMs} onOpenUrl={onOpenUrl} onRetry={() => void loadRepos(true)} />
       ) : (
         <TweetsTab state={tweetState} items={tweets} nowMs={nowMs} onOpenUrl={onOpenUrl} onRetry={() => void loadTweets(true)} />
       )}
@@ -134,6 +150,7 @@ function ReposTab({
   state,
   items,
   configured,
+  warning,
   nowMs,
   onOpenUrl,
   onRetry,
@@ -141,6 +158,7 @@ function ReposTab({
   state: LoadState;
   items: RepoItem[];
   configured: boolean;
+  warning: string | null;
   nowMs: number;
   onOpenUrl: (url: string) => void;
   onRetry: () => void;
@@ -159,28 +177,35 @@ function ReposTab({
   }
   if (state === "error") return <FeedError label="Couldn’t load repos." onRetry={onRetry} />;
   if (!configured) {
-    return <FeedEmpty icon="ph:github-logo" text="Add a GitHub token in Settings to see your starred list." />;
+    return <FeedEmpty icon="ph:github-logo" text="Add a GitHub token in Settings to load the curated OpenCoven repository feed." />;
   }
-  if (items.length === 0) return <FeedEmpty icon="ph:github-logo" text="No repositories in the list yet." />;
+  if (items.length === 0 && warning) return <FeedError label={warning} onRetry={onRetry} />;
+  if (items.length === 0) return <FeedEmpty icon="ph:github-logo" text="No repositories in the curated feed yet." />;
   return (
-    <ul className="home-feed__list">
-      {items.map((r) => (
-        <li key={r.id}>
-          <button type="button" className="home-feed__row" onClick={() => onOpenUrl(r.url)} title={r.fullName}>
-            <span className="home-feed__rowtop">
-              <Icon name="ph:git-fork" width={13} className="home-feed__rowicon" aria-hidden />
-              <span className="home-feed__rowtitle">{r.fullName}</span>
-            </span>
-            {r.description ? <span className="home-feed__rowdesc">{r.description}</span> : null}
-            <span className="home-feed__rowmeta">
-              {r.language ? <span className="home-feed__lang">{r.language}</span> : null}
-              <span className="home-feed__stars">★ {formatStars(r.stars)}</span>
-              {compactAge(r.pushedAt, nowMs) ? <span>· pushed {compactAge(r.pushedAt, nowMs)} ago</span> : null}
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <>
+      <p className="home-feed__note">
+        Curated repositories: OpenCoven and the opencoven-openclaw list.
+      </p>
+      {warning ? <p className="home-feed__note home-feed__note--err">{warning}</p> : null}
+      <ul className="home-feed__list">
+        {items.map((r) => (
+          <li key={r.id}>
+            <button type="button" className="home-feed__row" onClick={() => onOpenUrl(r.url)} title={r.fullName}>
+              <span className="home-feed__rowtop">
+                <Icon name="ph:git-fork" width={13} className="home-feed__rowicon" aria-hidden />
+                <span className="home-feed__rowtitle">{r.fullName}</span>
+              </span>
+              {r.description ? <span className="home-feed__rowdesc">{r.description}</span> : null}
+              <span className="home-feed__rowmeta">
+                {r.language ? <span className="home-feed__lang">{r.language}</span> : null}
+                <span className="home-feed__stars">★ {formatStars(r.stars)}</span>
+                {compactAge(r.pushedAt, nowMs) ? <span>· pushed {compactAge(r.pushedAt, nowMs)} ago</span> : null}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

@@ -17,6 +17,16 @@
  */
 
 import { NextResponse } from "next/server";
+import {
+  GITHUB_ACTIVITY_PAGE_SIZE,
+  activityCollectionFailure,
+  activityCollectionFromSearch,
+  activityCollectionUnavailable,
+  githubApiFailure,
+  type ActivityCollection,
+  type ActivityCollections,
+  type GitHubApiFailure,
+} from "@/lib/github-activity";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { summarizeChecks, type CheckSummary } from "@/lib/github-checks";
 import { resolveSecret } from "@/lib/vault";
@@ -75,9 +85,21 @@ type ActivityResult = {
   /** Organizations visible to the authenticated token. Unlike activity items,
    * these remain useful even when no open work exists in an organization. */
   organizations: string[];
+  collections: ActivityCollections;
   items: GitHubItem[];
   rateLimit: { remaining: number; limit: number } | null;
 };
+
+type SearchPayload = {
+  items?: unknown[];
+  total_count?: number;
+  incomplete_results?: boolean;
+};
+
+function githubResponseMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object" || !("message" in data)) return null;
+  return typeof data.message === "string" ? data.message : null;
+}
 
 async function ghFetch(path: string, token: string | null) {
   const headers: Record<string, string> = {
@@ -88,8 +110,72 @@ async function ghFetch(path: string, token: string | null) {
   const res = await fetch(`${GH}${path}`, { headers, cache: "no-store" });
   const rateRemaining = Number(res.headers.get("x-ratelimit-remaining") ?? -1);
   const rateLimit = Number(res.headers.get("x-ratelimit-limit") ?? -1);
+  const retryAfter = res.headers.get("retry-after");
+  const rateLimitReset = res.headers.get("x-ratelimit-reset");
   const data = await res.json().catch(() => null);
-  return { res, data, rateRemaining, rateLimit };
+  return { res, data, rateRemaining, rateLimit, retryAfter, rateLimitReset };
+}
+
+type ActivitySearchResult = {
+  items: Array<Record<string, unknown>>;
+  collection: ActivityCollection;
+  rateRemaining: number;
+  rateLimit: number;
+};
+
+async function fetchActivitySearch(query: string, token: string | null): Promise<ActivitySearchResult> {
+  try {
+    const { res, data, rateRemaining, rateLimit, retryAfter, rateLimitReset } = await ghFetch(
+      `/search/issues?q=${query}&per_page=${GITHUB_ACTIVITY_PAGE_SIZE}&sort=updated`,
+      token,
+    );
+    if (!res.ok) {
+      const failure = githubApiFailure({
+        status: res.status,
+        remaining: rateRemaining,
+        retryAfter,
+        rateLimitReset,
+        responseMessage: githubResponseMessage(data),
+      });
+      return {
+        items: [],
+        collection: activityCollectionFailure(failure.message, failure.retryAfterSeconds),
+        rateRemaining,
+        rateLimit,
+      };
+    }
+
+    const payload = data as SearchPayload | null;
+    if (!payload || !Array.isArray(payload.items) || typeof payload.total_count !== "number") {
+      return {
+        items: [],
+        collection: activityCollectionFailure("GitHub search returned an invalid response."),
+        rateRemaining,
+        rateLimit,
+      };
+    }
+
+    const items = payload.items.filter(
+      (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object",
+    );
+    return {
+      items,
+      collection: activityCollectionFromSearch({
+        shown: items.length,
+        total: payload.total_count,
+        githubIncomplete: payload.incomplete_results === true,
+      }),
+      rateRemaining,
+      rateLimit,
+    };
+  } catch {
+    return {
+      items: [],
+      collection: activityCollectionFailure("Couldn't reach GitHub search."),
+      rateRemaining: -1,
+      rateLimit: -1,
+    };
+  }
 }
 
 
@@ -138,23 +224,66 @@ export async function GET() {
   let login: string | null = envLogin;
   let rateInfo: { remaining: number; limit: number } | null = null;
   let patInvalid = false;
+  let identityFailure: GitHubApiFailure | null = null;
 
   if (storedToken) {
     try {
-      const { res, data, rateRemaining, rateLimit } = await ghFetch("/user", storedToken);
+      const { res, data, rateRemaining, rateLimit, retryAfter, rateLimitReset } = await ghFetch("/user", storedToken);
       if (res.status === 401) {
         // GitHub rejected the stored PAT (revoked/expired). Flag it and stop
         // sending it — every downstream search would just 401 into empty
         // arrays, rendering a convincing "nothing open" (cave-cjgg).
         patInvalid = true;
+      } else if (!res.ok) {
+        identityFailure = githubApiFailure({
+          status: res.status,
+          remaining: rateRemaining,
+          retryAfter,
+          rateLimitReset,
+          responseMessage: githubResponseMessage(data),
+        });
       }
       login = data?.login ?? login;
       if (rateRemaining >= 0) rateInfo = { remaining: rateRemaining, limit: rateLimit };
     } catch {
-      // Network failure probing /user — transient; keep using the token.
+      identityFailure = {
+        message: "Couldn't reach GitHub to identify the configured account.",
+        rateLimited: false,
+        retryAfterSeconds: null,
+      };
     }
   }
   const token = patInvalid ? null : storedToken;
+
+  if (!login && patInvalid) {
+    const unavailable = activityCollectionUnavailable();
+    return NextResponse.json({
+      ok: true,
+      authed: false,
+      patInvalid: true,
+      login: null,
+      organizations: [],
+      collections: {
+        authored: unavailable,
+        reviewRequests: unavailable,
+        assignedIssues: unavailable,
+      },
+      items: [],
+      rateLimit: rateInfo,
+    } satisfies ActivityResult);
+  }
+
+  if (!login && identityFailure) {
+    return NextResponse.json(
+      { ok: false, error: identityFailure.message },
+      {
+        status: identityFailure.rateLimited ? 429 : 502,
+        headers: identityFailure.retryAfterSeconds === null
+          ? undefined
+          : { "Retry-After": String(identityFailure.retryAfterSeconds) },
+      },
+    );
+  }
 
   if (!login) {
     return NextResponse.json(
@@ -169,88 +298,81 @@ export async function GET() {
 
   const items: GitHubItem[] = [];
   const organizations = token ? await fetchOrganizations(token) : [];
+  const recordRateInfo = (search: ActivitySearchResult) => {
+    if (search.rateRemaining >= 0) {
+      rateInfo = { remaining: search.rateRemaining, limit: search.rateLimit };
+    }
+  };
 
   // ── Open PRs authored by user ─────────────────────────────────────────────
-  try {
-    const { data, rateRemaining, rateLimit } = await ghFetch(
-      `/search/issues?q=is:pr+is:open+author:${login}&per_page=20&sort=updated`,
-      token,
-    );
-    if (rateRemaining >= 0) rateInfo = { remaining: rateRemaining, limit: rateLimit };
-    const prs: unknown[] = Array.isArray(data?.items) ? data.items : [];
-    for (const pr of prs) {
-      const p = pr as Record<string, unknown>;
+  const authored = await fetchActivitySearch(`is:pr+is:open+author:${login}`, token);
+  recordRateInfo(authored);
+  for (const p of authored.items) {
+    const repoUrl = (p.repository_url as string | undefined) ?? "";
+    const repo = repoUrl.replace("https://api.github.com/repos/", "");
+    items.push({
+      kind: "pr",
+      id: `pr-${p.id}`,
+      title: String(p.title ?? ""),
+      repo,
+      number: Number(p.number),
+      url: String(p.html_url ?? ""),
+      state: String(p.state ?? "open"),
+      updatedAt: String(p.updated_at ?? new Date().toISOString()),
+      draft: Boolean(p.draft),
+      labels: ((p.labels as { name: string }[] | undefined) ?? []).map((l) => l.name),
+    });
+  }
+
+  // ── PRs requesting review from user (needs token for private repos) ───────
+  let reviewRequests: ActivitySearchResult | null = null;
+  if (token) {
+    reviewRequests = await fetchActivitySearch(`is:pr+is:open+review-requested:${login}`, token);
+    recordRateInfo(reviewRequests);
+    for (const p of reviewRequests.items) {
       const repoUrl = (p.repository_url as string | undefined) ?? "";
       const repo = repoUrl.replace("https://api.github.com/repos/", "");
+      // avoid duplicates (already in authored list)
+      if (items.some((i) => i.id === `pr-${p.id}`)) continue;
       items.push({
-        kind: "pr",
-        id: `pr-${p.id}`,
+        kind: "review_request",
+        id: `rv-${p.id}`,
         title: String(p.title ?? ""),
         repo,
         number: Number(p.number),
         url: String(p.html_url ?? ""),
-        state: String(p.state ?? "open"),
+        state: "review_requested",
         updatedAt: String(p.updated_at ?? new Date().toISOString()),
-        draft: Boolean((p as Record<string, unknown>).draft),
+        draft: Boolean(p.draft),
         labels: ((p.labels as { name: string }[] | undefined) ?? []).map((l) => l.name),
       });
     }
-  } catch { /* non-fatal */ }
-
-  // ── PRs requesting review from user (needs token for private repos) ───────
-  if (token) {
-    try {
-      const { data } = await ghFetch(
-        `/search/issues?q=is:pr+is:open+review-requested:${login}&per_page=10&sort=updated`,
-        token,
-      );
-      const prs: unknown[] = Array.isArray(data?.items) ? data.items : [];
-      for (const pr of prs) {
-        const p = pr as Record<string, unknown>;
-        const repoUrl = (p.repository_url as string | undefined) ?? "";
-        const repo = repoUrl.replace("https://api.github.com/repos/", "");
-        // avoid duplicates (already in authored list)
-        if (items.some((i) => i.id === `pr-${p.id}`)) continue;
-        items.push({
-          kind: "review_request",
-          id: `rv-${p.id}`,
-          title: String(p.title ?? ""),
-          repo,
-          number: Number(p.number),
-          url: String(p.html_url ?? ""),
-          state: "review_requested",
-          updatedAt: String(p.updated_at ?? new Date().toISOString()),
-          draft: Boolean((p as Record<string, unknown>).draft),
-          labels: ((p.labels as { name: string }[] | undefined) ?? []).map((l) => l.name),
-        });
-      }
-    } catch { /* non-fatal */ }
   }
 
   // ── Open issues assigned to user ──────────────────────────────────────────
-  try {
-    const { data } = await ghFetch(
-      `/search/issues?q=is:issue+is:open+assignee:${login}&per_page=10&sort=updated`,
-      token,
-    );
-    const issues: unknown[] = Array.isArray(data?.items) ? data.items : [];
-    for (const issue of issues) {
-      const i = issue as Record<string, unknown>;
-      const repoUrl = (i.repository_url as string | undefined) ?? "";
-      const repo = repoUrl.replace("https://api.github.com/repos/", "");
-      items.push({
-        kind: "issue",
-        id: `issue-${i.id}`,
-        title: String(i.title ?? ""),
-        repo,
-        number: Number(i.number),
-        url: String(i.html_url ?? ""),
-        state: "open",
-        updatedAt: String(i.updated_at ?? new Date().toISOString()),
-        labels: ((i.labels as { name: string }[] | undefined) ?? []).map((l) => l.name),
-      });
-    }
-  } catch { /* non-fatal */ }
+  const assignedIssues = await fetchActivitySearch(`is:issue+is:open+assignee:${login}`, token);
+  recordRateInfo(assignedIssues);
+  for (const i of assignedIssues.items) {
+    const repoUrl = (i.repository_url as string | undefined) ?? "";
+    const repo = repoUrl.replace("https://api.github.com/repos/", "");
+    items.push({
+      kind: "issue",
+      id: `issue-${i.id}`,
+      title: String(i.title ?? ""),
+      repo,
+      number: Number(i.number),
+      url: String(i.html_url ?? ""),
+      state: "open",
+      updatedAt: String(i.updated_at ?? new Date().toISOString()),
+      labels: ((i.labels as { name: string }[] | undefined) ?? []).map((l) => l.name),
+    });
+  }
+
+  const collections: ActivityCollections = {
+    authored: authored.collection,
+    reviewRequests: reviewRequests?.collection ?? activityCollectionUnavailable(),
+    assignedIssues: assignedIssues.collection,
+  };
 
   // Enrich PR rows with their CI rollup. Token-gated: this spends core REST
   // quota (a few calls per PR), which the public 60/hr budget can't absorb —
@@ -276,6 +398,7 @@ export async function GET() {
     patInvalid: patInvalid || undefined,
     login,
     organizations,
+    collections,
     items,
     rateLimit: rateInfo,
   };

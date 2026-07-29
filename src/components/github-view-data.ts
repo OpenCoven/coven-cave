@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
+import type { ActivityCollections } from "@/lib/github-activity";
 import type { GitHubItem } from "@/lib/github-tasks";
 import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 
@@ -10,6 +11,7 @@ export type ActivityResult = {
   patInvalid?: boolean;
   login: string | null;
   organizations: string[];
+  collections: ActivityCollections;
   items: GitHubItem[];
   rateLimit: { remaining: number; limit: number } | null;
 };

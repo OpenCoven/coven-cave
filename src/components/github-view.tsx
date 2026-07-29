@@ -29,6 +29,11 @@ import { useIsMobile } from "@/lib/use-viewport";
 import { useAppPreferences } from "@/lib/app-preferences";
 import { Icon, type IconName } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
+import {
+  activityCollectionsEqual,
+  activityCompletenessNotice,
+  activityRetryAfterSeconds,
+} from "@/lib/github-activity";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useArmedConfirm } from "@/lib/use-armed-confirm";
@@ -2318,6 +2323,7 @@ export function GitHubView({
   const [groupBy, setGroupBy] = useSurfacePreference(surfacePreferenceSpecs.github.groupBy);
   const [showPatModal, setShowPatModal] = useState(false);
   const [showSubsModal, setShowSubsModal] = useState(false);
+  const [retryBlocked, setRetryBlocked] = useState(false);
   const [sortKey, setSortKey] = useSurfacePreference(surfacePreferenceSpecs.github.sortKey);
   const [sortDir, setSortDir] = useSurfacePreference(surfacePreferenceSpecs.github.sortDir);
   const [selectedTarget, setSelectedTarget] = useSurfacePreference(surfacePreferenceSpecs.github.selected);
@@ -2342,6 +2348,8 @@ export function GitHubView({
       : null);
   }, [activity?.items, setSelectedTarget]);
   const timerRef = useRef<number | null>(null);
+  const retryUnlockTimerRef = useRef<number | null>(null);
+  const retryBlockedUntilRef = useRef(0);
   // Guards against setState after unmount from an in-flight fetch (mirrors useCards).
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -2376,6 +2384,22 @@ export function GitHubView({
     timerRef.current = window.setTimeout(() => void fetchActivity(true, true), ms);
   }
 
+  function applyRetryCooldown(ms: number) {
+    if (retryUnlockTimerRef.current !== null) {
+      window.clearTimeout(retryUnlockTimerRef.current);
+      retryUnlockTimerRef.current = null;
+    }
+    retryBlockedUntilRef.current = ms > 0 ? Date.now() + ms : 0;
+    setRetryBlocked(ms > 0);
+    if (ms > 0) {
+      retryUnlockTimerRef.current = window.setTimeout(() => {
+        retryUnlockTimerRef.current = null;
+        retryBlockedUntilRef.current = 0;
+        if (mountedRef.current) setRetryBlocked(false);
+      }, ms);
+    }
+  }
+
   async function fetchActivity(silent = false, force = false) {
     // Skeleton only on the first load — a manual refresh with data already on
     // screen must not unmount the list (and any open composer draft with it).
@@ -2385,6 +2409,7 @@ export function GitHubView({
       const { data } = await readSurfaceResource<ActivityPayload>("github:activity", force);
       if (!mountedRef.current) return;
       if (!data.ok) {
+        applyRetryCooldown(0);
         if (data.error === "no_user") {
           setError("no_user");
           return;
@@ -2397,13 +2422,18 @@ export function GitHubView({
       setActivity((prev) =>
         prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid
           && arrayContentEqual(prev.organizations, nextActivity.organizations)
+          && activityCollectionsEqual(prev.collections, nextActivity.collections)
           && arrayContentEqual(prev.items, nextActivity.items)
           ? prev
           : nextActivity);
       setError(null);
-      schedulePoll(nextActivity.authed ? 90_000 : 120_000);
+      const basePollMs = nextActivity.authed ? 90_000 : 120_000;
+      const retryDelayMs = activityRetryAfterSeconds(nextActivity.collections) * 1000;
+      applyRetryCooldown(retryDelayMs);
+      schedulePoll(Math.max(basePollMs, retryDelayMs));
     } catch (e) {
       if (!mountedRef.current) return;
+      applyRetryCooldown(0);
       setError(e instanceof Error ? e.message : "Failed to load GitHub activity");
       schedulePoll(60_000);
     } finally {
@@ -2415,6 +2445,7 @@ export function GitHubView({
   // second self-scheduling timer chain (the error-state Retry used to skip this
   // and leak a chain, doubling the poll rate — and the GitHub rate-limit spend).
   function refreshActivity() {
+    if (Date.now() < retryBlockedUntilRef.current) return;
     if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
     void fetchActivity(false, true);
   }
@@ -2422,7 +2453,10 @@ export function GitHubView({
   useEffect(() => {
     void fetchPatStatus();
     void fetchActivity();
-    return () => { if (timerRef.current !== null) window.clearTimeout(timerRef.current); };
+    return () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      if (retryUnlockTimerRef.current !== null) window.clearTimeout(retryUnlockTimerRef.current);
+    };
   }, []);
 
   // Pause polling while the tab is hidden; refetch (and resume the chain) on
@@ -2432,7 +2466,9 @@ export function GitHubView({
       if (document.hidden) {
         if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
       } else {
-        void fetchActivity(true, true);
+        const retryDelayMs = Math.max(0, retryBlockedUntilRef.current - Date.now());
+        if (retryDelayMs > 0) schedulePoll(retryDelayMs);
+        else void fetchActivity(true, true);
       }
     };
     document.addEventListener("visibilitychange", onVis);
@@ -2565,6 +2601,15 @@ export function GitHubView({
     }),
     [items],
   );
+  const completenessNotice = activity
+    ? activityCompletenessNotice(activity.collections, { includeUnavailable: !activity.patInvalid })
+    : null;
+  const completenessNeedsRetry = activity
+    ? Object.values(activity.collections).some(
+        (collection) => collection.status === "failed" || collection.githubIncomplete,
+      )
+    : false;
+  const reviewsUnavailable = activity?.collections.reviewRequests.status === "unavailable";
 
   const sameSelectedTarget = useCallback((item: GitHubItem) =>
     selectedTarget !== null &&
@@ -2853,6 +2898,40 @@ export function GitHubView({
         </div>
       </header>
 
+      {completenessNotice && (
+        <div role="status" className="gh-completeness-notice">
+          <Icon
+            name="ph:warning-circle"
+            width={14}
+            className="gh-completeness-notice-icon"
+            aria-hidden
+          />
+          <span>{completenessNotice}</span>
+          {completenessNeedsRetry ? (
+            <Button
+              className="gh-completeness-action"
+              size="xs"
+              variant="ghost"
+              leadingIcon="ph:arrow-clockwise"
+              onClick={refreshActivity}
+              disabled={retryBlocked}
+            >
+              {retryBlocked ? "Retry later" : "Retry"}
+            </Button>
+          ) : reviewsUnavailable ? (
+            <Button
+              className="gh-completeness-action"
+              size="xs"
+              variant="ghost"
+              leadingIcon="ph:key"
+              onClick={() => setShowPatModal(true)}
+            >
+              {activity?.patInvalid ? "Update PAT" : "Add PAT"}
+            </Button>
+          ) : null}
+        </div>
+      )}
+
       {/* ── Body ── */}
       <div className="github-surface-body min-h-0 flex-1 overflow-hidden">
 
@@ -2896,6 +2975,28 @@ export function GitHubView({
                 icon="ph:magnifying-glass"
                 headline={`No items match “${query.trim()}”`}
                 subtitle="Try a shorter query, or clear the search to see everything."
+              />
+            ) : completenessNotice ? (
+              <EmptyState
+                icon="ph:warning-circle"
+                headline="GitHub activity is incomplete"
+                subtitle={completenessNotice}
+                actions={
+                  completenessNeedsRetry ? (
+                    <Button
+                      variant="secondary"
+                      leadingIcon="ph:arrow-clockwise"
+                      onClick={refreshActivity}
+                      disabled={retryBlocked}
+                    >
+                      {retryBlocked ? "Retry later" : "Retry"}
+                    </Button>
+                  ) : reviewsUnavailable ? (
+                    <Button variant="secondary" leadingIcon="ph:key" onClick={() => setShowPatModal(true)}>
+                      Add PAT
+                    </Button>
+                  ) : undefined
+                }
               />
             ) : activity?.patInvalid ? (
               // A dead PAT means this emptiness is unverifiable — an all-clear

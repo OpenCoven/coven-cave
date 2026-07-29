@@ -27,7 +27,7 @@ assert.match(
 );
 assert.match(
   route,
-  /organizations,\r?\n\s*items,/,
+  /organizations,\r?\n\s*collections,\r?\n\s*items,/,
   "activity responses should expose memberships separately from open activity items",
 );
 assert.match(
@@ -44,6 +44,66 @@ assert.match(
   route,
   /nextGitHubPagePath\(res\.headers\.get\("link"\)\)/,
   "organization memberships should follow GitHub pagination",
+);
+assert.match(
+  route,
+  /GITHUB_ACTIVITY_PAGE_SIZE/,
+  "activity searches should share an explicit bounded page size",
+);
+assert.equal(
+  [...route.matchAll(/per_page=\$\{GITHUB_ACTIVITY_PAGE_SIZE\}/g)].length,
+  1,
+  "the shared activity search helper should apply the expanded page size",
+);
+assert.equal(
+  [...route.matchAll(/await fetchActivitySearch\(/g)].length,
+  3,
+  "authored PRs, review requests, and assigned issues should each use the bounded search helper",
+);
+assert.match(
+  route,
+  /total_count/,
+  "activity search metadata should preserve GitHub's total result count",
+);
+assert.match(
+  route,
+  /incomplete_results/,
+  "activity search metadata should preserve GitHub's incomplete-results signal",
+);
+assert.match(
+  route,
+  /activityCollectionFailure/,
+  "failed activity categories should return explicit failure metadata",
+);
+assert.match(
+  route,
+  /if \(!login && patInvalid\)/,
+  "an invalid launcher token without a stored username should still render the rejected-token state",
+);
+assert.match(
+  route,
+  /if \(!login && identityFailure\)/,
+  "identity lookup failures should not masquerade as an unconfigured GitHub account",
+);
+assert.match(
+  route,
+  /retryAfter/,
+  "GitHub rate-limit responses should preserve Retry-After metadata",
+);
+assert.match(
+  route,
+  /identityFailure\.rateLimited \? 429 : 502/,
+  "primary and secondary rate limits should use a recoverable rate-limit response",
+);
+assert.match(
+  route,
+  /collections,\r?\n\s*items,/,
+  "activity responses should expose per-category completeness metadata",
+);
+assert.doesNotMatch(
+  route,
+  /catch \{ \/\* non-fatal \*\/ \}/,
+  "activity searches should not silently collapse failures to empty categories",
 );
 assert.doesNotMatch(
   route,
