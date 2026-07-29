@@ -1231,6 +1231,7 @@ export const SUITES = {
     "src/app/api/github/activity/route.test.ts",
     "src/app/api/github/pat/route.test.ts",
     "src/app/api/github/assigned/route.test.ts",
+    "src/lib/github-assigned-meta.test.ts",
     "src/app/api/github/commit/route.test.ts",
     "src/app/api/github/dispatch/route.test.ts",
     "src/app/api/github/merge/route.test.ts",
