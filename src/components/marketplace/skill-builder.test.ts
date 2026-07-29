@@ -17,17 +17,16 @@ assert.match(model, /"browse" \| "crafts" \| "roles" \| "skills" \| "build" \| "
 assert.match(view, /id="marketplace-panel-build"/, "Build section has a labelled tabpanel");
 assert.match(view, /aria-labelledby="marketplace-tab-build"/, "Build tabpanel is labelled by its tab");
 assert.match(model, /build: "Author a new skill/, "Build has a section hint (tab tooltip)");
-assert.match(view, /section !== "capabilities" && section !== "build"/, "the hub search hides on the Build section");
+assert.match(view, /\{searchLabel \? \(\s*\n\s*<SearchInput/, "the hub search hides when Build has no owned-inventory label");
 assert.match(view, /<SkillBuilder\s/, "the Build panel hosts the SkillBuilder surface");
 assert.match(
   view,
-  /onSaved=\{\(\) => \{\s*invalidateSurfaceResources\("marketplace:skills"\);\s*void loadSkills\(""\);\s*\}\}/,
-  "a saved skill invalidates the warm list before refreshing the Skills list and tab count",
+  /onSaved=\{\(\) => \{\s*invalidateSurfaceResources\("marketplace:skills"\);\s*void loadSkills\(true\);\s*\}\}/,
+  "a saved skill invalidates the warm list before force-refreshing owned skills",
 );
-// The Build success panel jumps back to the skills view — now Explore
-// pre-filtered to the Skills type (selectSection maps "skills" → Explore).
-assert.match(view, /onViewSkills=\{\(\) => selectSection\("skills"\)\}/, "the success panel can jump back to the skills view");
-assert.match(view, /if \(next === "skills"\)[\s\S]{0,120}setKind\("skill"\)/, "the retired Skills route lands on Explore filtered to the Skills type");
+// The Build success panel jumps to Yours, filtered to locally owned skills.
+assert.match(view, /onViewSkills=\{viewOwnedSkills\}/, "the success panel can jump back to owned skills");
+assert.match(view, /const viewOwnedSkills = useCallback\(\(\) => \{[\s\S]*?setStoredSection\("browse"\);[\s\S]*?setKind\("skill"\)/, "the owned-skills action lands on Yours filtered to Skills");
 
 // The old dead-end: creating a skill used to punt to the read-only
 // Capabilities inspector.

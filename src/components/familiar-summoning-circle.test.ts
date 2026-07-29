@@ -284,18 +284,10 @@ assert.match(
 // ── The circle is the only creation path (dialog fully replaced) ────────────
 const familiarsView = await readFile(new URL("./familiars-view.tsx", import.meta.url), "utf8");
 const settingsShell = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
-for (const [name, consumer] of [["familiars-view", familiarsView], ["settings-shell", settingsShell]]) {
-  assert.match(
-    consumer,
-    /FamiliarSummoningCircle/,
-    `${name} opens the summoning circle`,
-  );
-  assert.doesNotMatch(
-    consumer,
-    /CreateFamiliarDialog/,
-    `${name} no longer references the retired CreateFamiliarDialog`,
-  );
-}
+assert.match(familiarsView, /FamiliarSummoningCircle/, "the Chat familiars view opens the summoning circle");
+assert.doesNotMatch(familiarsView, /CreateFamiliarDialog/, "the Chat familiars view no longer references the retired CreateFamiliarDialog");
+assert.doesNotMatch(settingsShell, /FamiliarSummoningCircle/, "the retired Settings Familiars section no longer opens the summoning circle");
+assert.doesNotMatch(settingsShell, /CreateFamiliarDialog/, "Settings no longer references the retired CreateFamiliarDialog");
 assert.match(
   familiarsView,
   /onEnhance=\{\(\) => setEnhanceTarget\(selectedFamiliar\)\}/,

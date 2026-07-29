@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { uninstallMarketplacePlugin } from "@/lib/cave-config";
+import { loadConfig, uninstallMarketplacePlugin } from "@/lib/cave-config";
 import { sanitizeMarketplacePlugins, type MarketplaceJsonPlugin } from "@/lib/marketplace-catalog";
 
 export const dynamic = "force-dynamic";
@@ -36,11 +36,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
   const id = typeof body?.id === "string" ? body.id : "";
-  const plugin = id ? await catalogPlugin(id) : null;
-  if (!plugin) {
+  const [plugin, cfg] = await Promise.all([
+    id ? catalogPlugin(id) : Promise.resolve(null),
+    loadConfig(),
+  ]);
+  const installedRecord = cfg.marketplace.installed[id];
+  if (!plugin && !installedRecord) {
     return NextResponse.json({ ok: false, error: `unknown plugin "${id}"` }, { status: 400 });
   }
-  if (plugin.kind === "craft") {
+  if (
+    plugin?.kind === "craft"
+    || installedRecord?.runtime === "codex"
+    || typeof installedRecord?.craftVersion === "string"
+  ) {
     return NextResponse.json(
       { ok: false, error: "Crafts require verified Codex removal", code: "craft_transaction_required" },
       { status: 409 },

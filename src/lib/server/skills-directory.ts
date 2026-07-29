@@ -45,12 +45,12 @@ export type SkillDirectoryEntry = {
   hotScore: number;
   registryUrl?: string;
   sourceUrl?: string;
-  source: "registry" | "daemon" | "fallback";
+  source: "registry" | "daemon" | "fallback" | "local";
 };
 
 export type SkillDirectoryListResponse = {
   ok: boolean;
-  source: "live" | "fallback";
+  source: "live" | "fallback" | "local";
   reason?: string;
   fetchedAt: string;
   entries: SkillDirectoryEntry[];
@@ -351,7 +351,7 @@ function addInstalledLocalOnly(entry: LocalSkillEntry): SkillDirectoryEntry {
     weeklyInstalls: [],
     trendScore: 0,
     hotScore: 0,
-    source: "fallback",
+    source: "local",
   };
 }
 
@@ -512,6 +512,18 @@ function matchesEntryQuery(entry: SkillDirectoryEntry, query: string): boolean {
   return hay.includes(q);
 }
 
+export function localSkillDirectoryEntries(
+  locals: LocalSkillEntry[],
+  query?: string,
+): SkillDirectoryEntry[] {
+  const q = normalizeSearchQuery(query);
+  // scanLocalSkillEntries already collapses aliases by real path. Preserve
+  // distinct physical skills even when two roots use the same id/slug; callers
+  // disambiguate mutations with the scanned local path.
+  const entries = locals.map(addInstalledLocalOnly);
+  return q ? entries.filter((entry) => matchesEntryQuery(entry, q)) : entries;
+}
+
 export async function listSkillDirectoryEntries(query?: string): Promise<SkillDirectoryListResponse> {
   const q = normalizeSearchQuery(query);
   const live = q ? await readSkillsShSearchEntries(q) : await readLiveEntries();
@@ -552,6 +564,17 @@ function isDirectoryMatch(entry: SkillDirectoryEntry, key: string, source?: stri
 
 export async function listSkillDirectoryEntriesWithLocal(query?: string): Promise<SkillDirectoryListResponse> {
   const q = normalizeSearchQuery(query);
+  const locals = await scanLocalSkillEntries();
+
+  const directory = await listSkillDirectoryEntries(q);
+  const merged = mergeDirectoryWithLocal(directory.entries, locals);
+  return {
+    ...directory,
+    entries: q ? merged.filter((entry) => entry.source !== "fallback" || matchesEntryQuery(entry, q)) : merged,
+  };
+}
+
+async function scanLocalSkillEntries(): Promise<LocalSkillEntry[]> {
   const rawLocals: LocalSkillEntry[] = [];
   await scanSkillsDir(path.join(covenHome(), "skills"), "global", rawLocals);
   await scanClaudeUserSkills().then((items) => rawLocals.push(...items));
@@ -560,13 +583,18 @@ export async function listSkillDirectoryEntriesWithLocal(query?: string): Promis
   // One physical skill can sit under several roots (~/.claude/skills symlinks
   // into ~/.agents/skills) — collapse those before the directory merge so the
   // browser doesn't list the same install twice.
-  const locals = await dedupeByRealPath(rawLocals);
+  return dedupeByRealPath(rawLocals);
+}
 
-  const directory = await listSkillDirectoryEntries(q);
-  const merged = mergeDirectoryWithLocal(directory.entries, locals);
+export async function listLocalSkillDirectoryEntries(
+  query?: string,
+): Promise<SkillDirectoryListResponse> {
+  const locals = await scanLocalSkillEntries();
   return {
-    ...directory,
-    entries: q ? merged.filter((entry) => entry.source !== "fallback" || matchesEntryQuery(entry, q)) : merged,
+    ok: true,
+    source: "local",
+    fetchedAt: new Date().toISOString(),
+    entries: localSkillDirectoryEntries(locals, query),
   };
 }
 

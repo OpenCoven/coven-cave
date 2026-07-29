@@ -281,6 +281,10 @@ details[open] > .cave-tool-summary::before {
   color: var(--color-danger);
 }
 
+.cave-tool-count--notice {
+  color: var(--text-secondary);
+}
+
 .cave-progress-list {
   display: grid;
   gap: 6px;
@@ -311,6 +315,10 @@ details[open] > .cave-tool-summary::before {
 
 .cave-progress-row--done {
   color: var(--text-muted);
+}
+
+.cave-progress-row--notice {
+  color: var(--text-secondary);
 }
 
 .cave-progress-row--error {

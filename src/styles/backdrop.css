@@ -105,6 +105,7 @@ html[data-backdrop] .cave-backdrop-layer::after {
    backgrounds, so the image shows through the content area only. The shared
    glass tokens (PR 2790) give floating chrome above the image a real blur. */
 html[data-backdrop-on] .shell-root,
+html[data-backdrop-on] .shell-detail-panel,
 html[data-backdrop-on] .shell-detail {
   background: transparent;
 }

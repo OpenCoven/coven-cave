@@ -14,7 +14,7 @@ async function gotoBuildTab(page: Page) {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
   await page.goto("/?mode=marketplace");
-  await expect(page.getByRole("heading", { name: "Marketplace" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Marketplace" }).first()).toBeVisible({ timeout: 30_000 });
   await page.locator("#marketplace-tab-build").click();
   await expect(page.locator("#marketplace-panel-build")).toBeVisible();
 }

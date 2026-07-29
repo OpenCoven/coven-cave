@@ -201,6 +201,29 @@ The 2026-07-03 actor left no session transcript (likely a familiar/automation
 running outside the hook system) — for those, the pushed-branch discipline and
 the branch-protection rules are the only backstops.
 
+**Audit log (cave-boor8).** On 2026-07-29 `.worktrees/probe-timing` was
+destroyed holding 3 uncommitted files, and the post-mortem could not tell a
+deliberate `WT_GUARD_BYPASS=1` from a hole in the guard — the bypass path left
+no trace. The guard now appends one JSON line per **bypass** and per **block**
+to `.claude/worktree-guard-bypass.log` (gitignored): `at`, `verdict`,
+`session`, `cwd`, `command`, and for blocks the `reason`. Read it as evidence,
+in three tiers: a `bypass` entry names a deliberate override; a `block` entry
+followed by the worktree's disappearance names an actor that retried *outside*
+the hook; and **no entry at all** means the destruction never routed through
+the Bash tool — an external terminal, editor, or automation, which no
+PreToolUse hook can see. That last tier is the one the pushed-branch
+discipline exists for.
+
+**Audits record paths, not counts (cave-boor8's other lesson).** probe-timing
+was unrecoverable *even in principle* because the sweep that flagged it logged
+only `dirty=3` — once the directory was gone there was no filename or content
+signature to match `git fsck` debris against. Any sweep or audit that touches
+a dirty worktree must capture the full `git status --porcelain` output (paths,
+not counts) in its notes or bead. Three lines of porcelain is the difference
+between "recovery impossible" and a targeted `lost-found` search — and for
+UNSTAGED edits (which never enter the object store) it is the only record that
+the work existed at all.
+
 ## Practical recommendations for sessions
 
 Until any of the above is built, sessions should:

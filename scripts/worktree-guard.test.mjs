@@ -82,6 +82,51 @@ function repoWithWorktree({ push = false, dirty = false } = {}) {
   assert.equal(res.stdout.trim(), "", "and silent");
 }
 
+// ── 3b. Clean + pushed, but a process is still working IN it → blocked ────────
+// The husk case named in the guard's own header: a session driving a worktree by
+// absolute path (or running its test suite there) leaves `git status` clean and
+// the branch pushed, so every earlier check waves the removal through while the
+// work is still live.
+if (!isWin) {
+  const { dir, wt } = repoWithWorktree({ push: true });
+  const child = execFileSync("node", ["-e", `
+    const { spawn } = require("node:child_process");
+    const p = spawn(process.execPath, ["-e", "setTimeout(()=>{},60000)"], { cwd: ${JSON.stringify(wt)}, detached: true, stdio: "ignore" });
+    p.unref(); console.log(p.pid);
+  `], { encoding: "utf8" }).trim();
+  try {
+    // Give the child a moment to land its cwd.
+    execFileSync("node", ["-e", "setTimeout(()=>{}, 400)"]);
+    const res = runHook(`git worktree remove ${wt}`, dir);
+    assert.equal(res.status, 2, "blocks removal while a process is working inside the worktree");
+    assert.match(res.stderr, /still working in it/, "names the live processes");
+    // The bypass still wins — the guard advises, it does not imprison.
+    const forced = runHook(`${BYPASS} git worktree remove ${wt}`, dir);
+    assert.equal(forced.status, 0, "explicit bypass overrides the live-process block");
+  } finally {
+    try { process.kill(Number(child)); } catch { /* already gone */ }
+  }
+}
+
+// ── 3c. The guard must not see its OWN probe as live work ────────────────────
+// Cleaning up a worktree while standing in it is the single most common
+// legitimate case. The guard's lsof child inherits that cwd and lsof reports
+// itself, so the guard blocked its own caller with "1 process(es) are still
+// working in it: pid <n> (lsof)" — every routine cleanup demanded a bypass,
+// which is the one habit a destructive-op guard must never teach.
+// ownAncestry() cannot cover this: lsof is a DESCENDANT of the guard, and it
+// has already exited by the time any ps walk could classify it.
+if (!isWin) {
+  const { dir, wt } = repoWithWorktree({ push: true });
+  const res = runHook(`git worktree remove ${wt}`, wt);
+  // Report the guard's own reason on failure: asserting bare status turns any
+  // platform difference into an unreadable "2 !== 0".
+  const why = `guard said: ${JSON.stringify(res.stderr)}`;
+  assert.doesNotMatch(res.stderr, /still working in it/, `the probe is never reported as live work — ${why}`);
+  assert.doesNotMatch(res.stderr, /lsof/, `and is never named as an owner — ${why}`);
+  assert.equal(res.status, 0, `cleanup from inside the worktree is not blocked — ${why}`);
+}
+
 // ── 4. Husk dirs (no .git link) and paths INSIDE a worktree pass ───────────────
 {
   const { dir } = repoWithWorktree({ push: true });
@@ -149,11 +194,31 @@ if (!isWin) {
   const entry = JSON.parse(readFileSync(log, "utf8").trim().split("\n").pop());
   assert.match(entry.command, /worktree remove/, "the record names the command that was let through");
   assert.equal(entry.session, "test", "and the session that ran it");
+  assert.equal(entry.verdict, "bypass", "and that it was a deliberate override");
   assert.ok(Date.parse(entry.at) > 0, "and when");
 
   // A second bypass appends rather than truncating — the log is a history.
   runHook(`WT_GUARD_BYPASS=1 rm -rf ${wt}`, dir);
   assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 2, "bypasses accumulate");
+}
+
+// ── 8c. BLOCKS are recorded too — absence of any entry is itself evidence ──────
+// cave-boor8's second half: a block entry followed by the worktree's
+// disappearance names an actor that retried outside the hook; no entry at all
+// means the destruction never routed through Bash. Both readings need blocks
+// in the log, not just bypasses.
+{
+  const { dir, wt } = repoWithWorktree({ push: true, dirty: true });
+  mkdirSync(path.join(dir, ".claude"), { recursive: true });
+  const res = runHook(`git worktree remove ${wt}`, dir);
+  assert.equal(res.status, 2, "still blocks");
+
+  const log = path.join(dir, ".claude", "worktree-guard-bypass.log");
+  assert.ok(existsSync(log), "the refusal is recorded");
+  const entry = JSON.parse(readFileSync(log, "utf8").trim().split("\n").pop());
+  assert.equal(entry.verdict, "block", "as a block, distinct from a bypass");
+  assert.match(entry.command, /worktree remove/, "naming the refused command");
+  assert.match(entry.reason, /uncommitted change/, "and why it was refused");
 }
 
 // ── 8b. A missing .claude dir must not brick the command ──────────────────────

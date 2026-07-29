@@ -48,8 +48,19 @@ assert.match(
 
 assert.match(
   streamEvents,
-  /\{\s*kind: "progress";\s*id\?: string;\s*label: string;\s*detail\?: string;\s*status\?: "running" \| "done" \| "error";\s*durationMs\?: number;\s*\}/,
+  /\{\s*kind: "progress";\s*id\?: string;\s*label: string;\s*detail\?: string;\s*status\?: "running" \| "done" \| "notice" \| "error";\s*durationMs\?: number;\s*\}/,
   "Chat streams should expose non-token progress events for quiet phases",
+);
+
+assert.match(
+  source,
+  /event\.status === "notice"[\s\S]*?ph:info/,
+  "neutral progress notices use an informational icon instead of an error icon",
+);
+assert.match(
+  styles,
+  /\.cave-progress-row--notice\s*\{[\s\S]*?var\(--text-secondary\)/,
+  "neutral progress notices use secondary text styling rather than danger color",
 );
 
 assert.match(

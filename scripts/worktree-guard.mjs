@@ -36,14 +36,19 @@
  *
  * Deliberate destruction is allowed by prefixing the command with
  * `WT_GUARD_BYPASS=1 ` — the guard only ensures it can't happen by accident.
- * Honoured bypasses are appended to `.claude/worktree-guard-bypass.log`
- * (gitignored) so a later post-mortem can tell a deliberate override from a
- * gap in the guard — the question cave-boor8 could not answer.
+ * Honoured bypasses AND blocked attempts are appended to
+ * `.claude/worktree-guard-bypass.log` (gitignored, one JSON line each with a
+ * `verdict` field) so a later post-mortem can tell a deliberate override from
+ * a gap in the guard — the question cave-boor8 could not answer. Blocks are
+ * recorded too because their absence is itself evidence: a worktree that was
+ * never the subject of a block or a bypass yet disappeared was destroyed by
+ * something that does not route through the hook at all (external terminal,
+ * editor, automation) — the one hole no PreToolUse hook can close.
  * On any internal error the guard exits 0: a hook bug must never brick Bash.
  */
 
-import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 
 const BYPASS = "WT_GUARD_BYPASS=1";
@@ -62,7 +67,11 @@ function allow() {
   process.exit(0);
 }
 
+/** Set once in main() so block() can record what it refused. */
+const CTX = { command: null, cwd: null, session: null };
+
 function block(reason) {
+  recordEvent("block", reason);
   process.stderr.write(
     `⛔ worktree-guard blocked this command.\n${reason}\n` +
       `If this destruction is deliberate, re-run prefixed with \`${BYPASS} \` — but first make sure ` +
@@ -73,23 +82,29 @@ function block(reason) {
 }
 
 /**
- * Record every honoured bypass.
+ * Record every honoured bypass AND every block.
  *
  * On 2026-07-29 a worktree holding 3 uncommitted files was destroyed and the
  * post-mortem (cave-boor8) could not establish whether the guard had been
- * bypassed or circumvented — the bypass path left no trace at all. An append
- * here makes that question answerable. Best-effort by construction: any failure
- * is swallowed, because refusing a command over a logging problem would be a
- * worse bug than the missing record.
+ * bypassed or circumvented — the bypass path left no trace at all. Appends
+ * here make that question answerable: a bypass entry names the deliberate
+ * override; a block entry followed by the worktree's disappearance names an
+ * actor that retried OUTSIDE the hook; and no entry at all means the
+ * destruction never routed through Bash — the unhookable hole. Best-effort by
+ * construction: any failure is swallowed, because refusing a command over a
+ * logging problem would be a worse bug than the missing record.
  */
-function recordBypass(command, cwd, sessionId) {
+function recordEvent(verdict, reason) {
   try {
-    const root = process.env.CLAUDE_PROJECT_DIR || cwd;
+    if (typeof CTX.command !== "string") return;
+    const root = process.env.CLAUDE_PROJECT_DIR || CTX.cwd;
     const line = `${JSON.stringify({
       at: new Date().toISOString(),
-      session: sessionId ?? null,
-      cwd,
-      command: command.length > 500 ? `${command.slice(0, 500)}…` : command,
+      verdict,
+      session: CTX.session ?? null,
+      cwd: CTX.cwd,
+      command: CTX.command.length > 500 ? `${CTX.command.slice(0, 500)}…` : CTX.command,
+      ...(reason ? { reason: reason.length > 300 ? `${reason.slice(0, 300)}…` : reason } : {}),
     })}\n`;
     // .claude/* is gitignored (except settings.json), so this never enters the repo.
     appendFileSync(path.join(root, ".claude", "worktree-guard-bypass.log"), line);
@@ -154,6 +169,89 @@ function worktreeRoot(abs) {
 }
 
 /** "" = safe to destroy; otherwise a human reason it is not. */
+/** PIDs from this process up to init — a hook that blocked on its OWN shell's
+ *  cwd would make every in-worktree cleanup impossible. */
+function ownAncestry() {
+  const mine = new Set();
+  let pid = process.pid;
+  for (let hops = 0; hops < 32 && pid > 1; hops += 1) {
+    mine.add(String(pid));
+    try {
+      const out = execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8", timeout: 2000 });
+      const parent = Number.parseInt(out.trim(), 10);
+      if (!Number.isFinite(parent) || parent <= 1) break;
+      pid = parent;
+    } catch {
+      break;
+    }
+  }
+  return mine;
+}
+
+/** Processes whose cwd sits inside `wtPath`.
+ *
+ *  `git status` only sees a session that has SAVED edits. A session driving the
+ *  worktree by absolute path — editing files in it while its own cwd is the
+ *  primary checkout, or running `pnpm test:app` in it — leaves a clean, pushed
+ *  worktree that this guard used to wave through. That is the husk case named
+ *  at the top of this file (a worktree gutted while a dev server or tsc still
+ *  ran inside it), and it is the one shape the earlier checks cannot see.
+ *
+ *  One `lsof` over cwd descriptors only: no directory walk, so node_modules
+ *  costs nothing. Fails open like every other probe here — a guard that bricks
+ *  Bash when lsof is missing or slow is worse than one that misses a case. */
+function liveProcesses(wtPath) {
+  // lsof reports ITSELF, and a child inherits this process's cwd — so cleaning
+  // up a worktree while standing in it made the guard block its own caller
+  // ("1 process(es) are still working in it: pid N (lsof)"). ownAncestry()
+  // cannot help: the probe is a DESCENDANT of the guard, and it has already
+  // exited by the time any ps walk could classify it.
+  //
+  // Running the probe from the filesystem root is the fix that holds
+  // everywhere: its cwd then cannot match the worktree prefix no matter how
+  // many helpers it forks (some lsof builds do), which pid bookkeeping alone
+  // would miss. Scanning is system-wide, so its own cwd does not affect output.
+  // spawnSync additionally exposes the pid, kept below as a cheap backstop.
+  const probe = spawnSync("lsof", ["-d", "cwd", "-F", "pcn"], {
+    cwd: path.parse(process.cwd()).root || path.sep,
+    encoding: "utf8",
+    timeout: 5000,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  // lsof exits non-zero when some processes are unreadable; keep partial output.
+  const out = typeof probe.stdout === "string" ? probe.stdout : "";
+  if (!out) return [];
+  const mine = ownAncestry();
+  if (probe.pid) mine.add(String(probe.pid));
+  // The kernel hands lsof the CANONICAL path, so `/var/...` on macOS comes back
+  // as `/private/var/...`. Comparing the caller's spelling against it silently
+  // matches nothing — the check would look installed and catch zero cases.
+  let root = wtPath;
+  try {
+    root = realpathSync(wtPath);
+  } catch {
+    /* unreadable — fall back to the literal path */
+  }
+  const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  const hits = [];
+  let pid = "";
+  let cmd = "";
+  for (const line of out.split("\n")) {
+    if (line.startsWith("p")) {
+      pid = line.slice(1);
+      cmd = "";
+    } else if (line.startsWith("c")) {
+      cmd = line.slice(1);
+    } else if (line.startsWith("n")) {
+      const dir = line.slice(1);
+      if (dir !== root && !dir.startsWith(prefix)) continue;
+      if (mine.has(pid)) continue;
+      if (!hits.some((h) => h.pid === pid)) hits.push({ pid, cmd });
+    }
+  }
+  return hits;
+}
+
 function destructionRisk(wtPath) {
   if (!existsSync(wtPath)) return "";
   if (!existsSync(path.join(wtPath, ".git"))) return ""; // husk — GC freely
@@ -167,6 +265,12 @@ function destructionRisk(wtPath) {
     const head = git(["-C", wtPath, "rev-parse", "HEAD"], undefined).trim();
     const onRemote = git(["-C", wtPath, "branch", "-r", "--contains", head], undefined).trim();
     if (!onRemote) return `\`${wtPath}\` HEAD (${head.slice(0, 8)}) exists on NO remote ref — removing it orphans unpushed commits.`;
+    const live = liveProcesses(wtPath);
+    if (live.length) {
+      const who = live.slice(0, 3).map((h) => `pid ${h.pid} (${h.cmd || "?"})`).join(", ");
+      const more = live.length > 3 ? ` and ${live.length - 3} more` : "";
+      return `\`${wtPath}\` is clean and pushed, but ${live.length} process(es) are still working in it: ${who}${more}.`;
+    }
     return "";
   } catch {
     return ""; // can't assess (mid-teardown, permissions) — don't brick cleanup
@@ -313,8 +417,11 @@ function main() {
   if (typeof command !== "string" || !INTEREST.test(command)) return allow();
   const cwd =
     (typeof input.cwd === "string" && input.cwd) || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  CTX.command = command;
+  CTX.cwd = cwd;
+  CTX.session = input?.session_id ?? null;
   if (/^\s*WT_GUARD_BYPASS=1(?:\s|$)/.test(command)) {
-    recordBypass(command, cwd, input?.session_id);
+    recordEvent("bypass", null);
     return allow();
   }
 

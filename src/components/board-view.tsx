@@ -399,12 +399,12 @@ export function BoardView({
     return () => window.clearTimeout(t);
   }, [rescheduleUndo]);
 
-  // Familiar grouping is redundant once the board is scoped to a single
-  // familiar — fall back to status there. Status and project grouping stay
-  // meaningful regardless of the familiar scope.
-  const effectiveGroupBy: GroupBy = activeFamiliarId !== null && groupBy === "familiar" ? "status" : groupBy;
-  // Familiar grouping is meaningless once the board is scoped to one familiar.
-  const effectiveGanttGroup = ganttGroup === "familiar" && activeFamiliarId !== null ? "project" : ganttGroup;
+  // The shell already owns familiar scope. Re-expose Familiar grouping only
+  // when the selected set contains multiple familiars and grouping that union
+  // adds information; hide it for All and single-familiar scopes.
+  const showFamiliarGrouping = (scopeFamiliarIds?.size ?? 0) > 1;
+  const effectiveGroupBy: GroupBy = !showFamiliarGrouping && groupBy === "familiar" ? "status" : groupBy;
+  const effectiveGanttGroup = ganttGroup === "familiar" && !showFamiliarGrouping ? "project" : ganttGroup;
   // Grouping applies to both the kanban (swimlanes) and table views; hidden on
   // phones, where BoardCardStack replaces both surfaces.
   const showGroupToggle = !isMobile;
@@ -1057,7 +1057,7 @@ export function BoardView({
                 >
                   Task
                 </button>
-                {activeFamiliarId === null ? (
+                {showFamiliarGrouping ? (
                   <button
                     type="button"
                     className={`board-group-toggle-btn${effectiveGanttGroup === "familiar" ? " board-group-toggle-btn--active" : ""}`}
@@ -1078,7 +1078,7 @@ export function BoardView({
             >
               Status
             </button>
-            {activeFamiliarId === null ? (
+            {showFamiliarGrouping ? (
               <button
                 type="button"
                 className={`board-group-toggle-btn${effectiveGroupBy === "familiar" ? " board-group-toggle-btn--active" : ""}`}

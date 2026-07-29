@@ -103,7 +103,7 @@ export type GroupStreamEvent =
   | { kind: "user"; text: string }
   | { kind: "assistant_chunk"; text: string }
   | { kind: "assistant_replace"; text: string }
-  | { kind: "progress"; label?: string; status?: "running" | "done" | "error" }
+  | { kind: "progress"; label?: string; status?: "running" | "done" | "notice" | "error" }
   | { kind: "tool_use"; name?: string; status?: "running" | "ok" | "error" }
   | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string; costUsd?: number }
   | { kind: "error"; message: string; code?: string };

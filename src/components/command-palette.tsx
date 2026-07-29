@@ -69,7 +69,6 @@ type PaletteIntent =
       kind: "open-setting";
       section: SettingsIndexEntry["section"];
       group?: string;
-      familiarTab?: SettingsIndexEntry["familiarTab"];
     };
 
 type Card = {
@@ -492,7 +491,7 @@ export function CommandPalette({
         )
           .slice(0, RESULT_LIMITS.setting)
           .map((entry) => ({
-            id: `setting:${entry.section}:${entry.group ?? "overview"}:${entry.familiarTab ?? "root"}`,
+            id: `setting:${entry.section}:${entry.group ?? "overview"}`,
             kind: "setting" as const,
             entry,
           }));
@@ -777,7 +776,6 @@ export function CommandPalette({
         kind: "open-setting",
         section: row.entry.section,
         ...(row.entry.group ? { group: row.entry.group } : {}),
-        ...(row.entry.familiarTab ? { familiarTab: row.entry.familiarTab } : {}),
       });
     } else {
       onIntent(row.intent);
@@ -1166,7 +1164,7 @@ export function CommandPalette({
                           {row.entry.group ? ` › ${row.entry.group}` : ""}
                         </span>
                         <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                          {row.entry.familiarTab ? `Familiars · ${row.entry.familiarTab}` : row.entry.keywords}
+                          {row.entry.keywords}
                         </span>
                       </span>
                       {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">open</span> : null}

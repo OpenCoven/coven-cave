@@ -8,6 +8,7 @@ const styles = readFileSync(new URL("../styles/settings-familiars.css", import.m
 const identityTab = readFileSync(new URL("./familiar-studio-identity-tab.tsx", import.meta.url), "utf8");
 const memoryTab = readFileSync(new URL("./familiar-studio-memory-tab.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const chatCapabilities = readFileSync(new URL("./chat-familiar-capabilities.tsx", import.meta.url), "utf8");
 
 assert.match(source, /export function FamiliarStudioInlinePanel/, "Exports the inline control sheet");
 assert.match(source, /SettingsFamiliarPicker/, "Renders the persistent familiar roster");
@@ -43,10 +44,11 @@ assert.match(
 assert.match(picker, /data-archived=\{familiar\.archived \|\| undefined\}/, "Archived rows expose a visual state");
 assert.match(picker, /reveal-scope/, "Row actions follow shared progressive disclosure");
 assert.match(
-  shell,
-  /useResolvedFamiliars\(rawFamiliars,\s*\{\s*includeArchived:\s*true\s*\}\)/,
-  "Settings keeps archived familiars in the lifecycle control sheet",
+  chatCapabilities,
+  /useResolvedFamiliars\(familiars,\s*\{\s*includeArchived:\s*true\s*\}\)/,
+  "Chat keeps archived familiars in the lifecycle control sheet",
 );
+assert.doesNotMatch(shell, /useResolvedFamiliars\(/, "the retired Settings shell no longer owns familiar lifecycle state");
 assert.match(
   styles,
   /\.settings-familiar-roster__list\s*\{[\s\S]*?min-height:\s*0[\s\S]*?overflow-y:\s*auto/,
