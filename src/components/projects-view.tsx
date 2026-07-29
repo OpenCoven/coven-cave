@@ -32,11 +32,22 @@ import {
   type AccessState,
   type SectionModel,
 } from "@/lib/projects/access-page";
+import {
+  accessLedger,
+  grantChips,
+  isViewMode,
+  projectKind,
+  sectionMix,
+  sectionPeek,
+  selectionLabel,
+  sortByAccessThenName,
+  treeGroups,
+  type ProjectViewMode,
+} from "@/lib/projects/access-views";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -86,8 +97,10 @@ async function runAccessOp(familiarId: string, op: AccessOp): Promise<void> {
   if (!res.ok) throw new Error(String(res.status));
 }
 
-/** Grouping preference: "1" (default) = workspaces/repositories, "0" = flat. */
-const GROUPED_STORAGE_KEY = "cave:projects:grouped";
+/** View preference: "grid" (default) | "rows" | "tree". Replaces the older
+ *  grouped/flat boolean — "rows" IS the flat list, and "tree" adds the
+ *  by-access-level audit the boolean could not express. */
+const VIEW_STORAGE_KEY = "cave:projects:view";
 
 /**
  * The Chat → Projects surface: one familiar's project-access map. Pick a
@@ -264,25 +277,112 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     [rowByProject],
   );
 
-  // ── Search & grouping ──────────────────────────────────────────────────
+  // ── Search & view ──────────────────────────────────────────────────────
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
-  // Grouped by default; the preference survives reloads per profile.
-  const [grouped, setGrouped] = useState<boolean>(
-    () => typeof window === "undefined" || window.localStorage.getItem(GROUPED_STORAGE_KEY) !== "0",
-  );
-  const toggleGrouped = useCallback(() => {
-    const next = !grouped;
-    setGrouped(next);
+  // Grid by default; the preference survives reloads per profile.
+  const [view, setView] = useState<ProjectViewMode>(() => {
+    if (typeof window === "undefined") return "grid";
     try {
-      window.localStorage.setItem(GROUPED_STORAGE_KEY, next ? "1" : "0");
+      const stored = window.localStorage.getItem(VIEW_STORAGE_KEY);
+      return isViewMode(stored) ? stored : "grid";
     } catch {
-      // Storage failures (private mode) only lose the preference, not the view.
+      return "grid";
     }
-    announce(next ? "Projects grouped by type." : "Projects shown as one flat list.");
-  }, [grouped, announce]);
+  });
+  const pickView = useCallback(
+    (next: ProjectViewMode) => {
+      setView(next);
+      try {
+        window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+      } catch {
+        // Storage failures (private mode) only lose the preference, not the view.
+      }
+      announce(
+        next === "grid"
+          ? "Projects shown as cards."
+          : next === "rows"
+            ? "Projects shown as one dense list."
+            : "Projects grouped by access level.",
+      );
+    },
+    [announce],
+  );
   const filtered = useMemo(() => filterProjectsByQuery(projects, query), [projects, query]);
-  const sections = useMemo(() => sectionModels(filtered, grouped), [filtered, grouped]);
+  // Grid keeps the workspace/repository split; rows and tree impose their own
+  // ordering, so they read from the flat filtered set.
+  const sections = useMemo(() => sectionModels(filtered, true), [filtered]);
+
+  /** The header's proportional access bar — always the whole map. */
+  const ledger = useMemo(() => accessLedger(counts), [counts]);
+
+  // ── Section collapse ───────────────────────────────────────────────────
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleSection = useCallback((key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  // ── Card disclosure ────────────────────────────────────────────────────
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpanded = useCallback((projectId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  }, []);
+
+  // ── Bulk selection ─────────────────────────────────────────────────────
+  const [bulk, setBulk] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleBulk = useCallback(() => {
+    setBulk((on) => !on);
+    setSelected(new Set());
+  }, []);
+  const toggleSelected = useCallback((projectId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  }, []);
+  // Leaving a familiar mid-selection would carry checkmarks onto a different
+  // access map, so the selection is dropped with the matrix.
+  useEffect(() => {
+    setSelected(new Set());
+    setBulk(false);
+  }, [familiarId]);
+
+  // ── Inline rename ──────────────────────────────────────────────────────
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const renameRef = useRef<HTMLInputElement | null>(null);
+  const startRename = useCallback((project: CaveProject) => {
+    setRenamingId(project.id);
+    setDraftName(project.name);
+    window.requestAnimationFrame(() => {
+      renameRef.current?.focus();
+      renameRef.current?.select();
+    });
+  }, []);
+  const commitRename = useCallback(async () => {
+    const id = renamingId;
+    if (!id) return;
+    const name = draftName.trim();
+    const project = projects.find((p) => p.id === id);
+    setRenamingId(null);
+    if (!name || !project || name === project.name) return;
+    const ok = await renameProject(id, name);
+    if (ok) announce("Project renamed.");
+    else setMutateError("Couldn’t rename the project.");
+  }, [renamingId, draftName, projects, renameProject, announce]);
 
   // "/" jumps to the search box (unless focus is already in an editable).
   useEffect(() => {
@@ -415,6 +515,23 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     [directByProject, applyOps, announce],
   );
 
+  /** Bulk band: apply one level to every checked project. */
+  const setSelectedAccess = useCallback(
+    (target: AccessState) => {
+      const ids = [...selected];
+      const ops = setAllOps(ids, directByProject, target);
+      if (ops.length === 0) {
+        announce("Nothing to change.");
+        return;
+      }
+      void applyOps(
+        ops,
+        `${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.`,
+      ).then(() => setSelected(new Set()));
+    },
+    [selected, directByProject, applyOps, announce],
+  );
+
   const resetAll = useCallback(async () => {
     if (!familiar) return;
     const ops = setAllOps(
@@ -435,10 +552,177 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     if (!ok) return;
     void applyOps(ops, `${familiarLabel(familiar)}: all direct grants removed.`);
   }, [familiar, projects, directByProject, confirm, applyOps, announce]);
-
   // ── Render ─────────────────────────────────────────────────────────────
   const isLoading = (projectsLoading && projects.length === 0) || (grantsLoading && !grantsData);
   const controlsDisabled = !familiar || supreme || busyAll;
+
+  /** One project's full face: registry row + effective access + presentation. */
+  const viewRows = useMemo(
+    () =>
+      filtered.map((project) => {
+        const row = rowByProject.get(project.id) ?? {
+          project,
+          state: "none" as AccessState,
+          direct: null,
+          groupNames: [],
+        };
+        const kind = projectKind(project.root);
+        return {
+          ...row,
+          id: project.id,
+          name: project.name,
+          kind,
+          kindLabel: kind === "workspace" ? "coven workspace" : "git repository",
+          meta: project.repoUrl ? (gitHubRepoSlug(project.repoUrl) ?? "linked") : kind === "workspace" ? "workspace" : "no remote",
+        };
+      }),
+    [filtered, rowByProject],
+  );
+  const rowsById = useMemo(() => new Map(viewRows.map((r) => [r.id, r])), [viewRows]);
+
+  /** Access pill — the one control that mutates a row, in every view. */
+  const renderPill = (row: (typeof viewRows)[number]) => {
+    const meta = accessStateMeta(row.state);
+    const pending = pendingIds.has(row.id);
+    const viaGroups = row.groupNames.length > 0 && !supreme ? ` — via ${row.groupNames.join(", ")}` : "";
+    return (
+      <button
+        type="button"
+        className={`projects-access-pill is-${row.state}${pending ? " is-pending" : ""}`}
+        disabled={pending || supreme}
+        onClick={() => void cycleRow(row)}
+        title={
+          supreme
+            ? `${row.name} — Full (supreme familiar)`
+            : `${row.name} — ${meta.label}${viaGroups}. Click to ${meta.action}.`
+        }
+        aria-label={`${row.name}: ${meta.label}${viaGroups}. ${supreme ? "Locked for the supreme familiar." : `Click to ${meta.action}.`}`}
+      >
+        <span className="projects-access-dot" aria-hidden />
+        {meta.label}
+      </button>
+    );
+  };
+
+  /** The disclosed face: what this level actually permits, plus the facts. */
+  const renderDetail = (row: (typeof viewRows)[number]) => (
+    <div className="projects-access-detail">
+      <dl className="projects-access-facts">
+        <div>
+          <dt>path</dt>
+          <dd>{row.project.root}</dd>
+        </div>
+        <div>
+          <dt>kind</dt>
+          <dd>{row.kindLabel}</dd>
+        </div>
+        <div>
+          <dt>held</dt>
+          <dd>
+            {supreme
+              ? "supreme familiar"
+              : row.groupNames.length > 0
+                ? `via ${row.groupNames.join(", ")}`
+                : row.direct
+                  ? "direct grant"
+                  : "not granted"}
+          </dd>
+        </div>
+      </dl>
+      <ul className={`projects-access-grants is-${row.state}`}>
+        {grantChips(row.state).map((chip) => (
+          <li key={chip.label} className={chip.on ? "is-on" : undefined}>
+            <span className="projects-access-dot" aria-hidden />
+            {chip.label}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
+  const renderCard = (row: (typeof viewRows)[number]) => {
+    const open = expanded.has(row.id);
+    const checked = selected.has(row.id);
+    return (
+      <li
+        key={row.id}
+        className={`projects-access-card is-${row.state}${checked ? " is-checked" : ""}${flashId === row.id ? " is-flash" : ""}`}
+        id={`project-access-row:${row.id}`}
+      >
+        <span className="projects-access-card-bar" aria-hidden />
+        {bulk ? (
+          <label className="projects-access-check">
+            <input
+              type="checkbox"
+              checked={checked}
+              aria-label={`Select ${row.name}`}
+              onChange={() => toggleSelected(row.id)}
+            />
+            <Icon name="ph:check" width={11} aria-hidden />
+          </label>
+        ) : null}
+        <div className="projects-access-card-head">
+          <span className={`projects-access-kind is-${row.kind}`} aria-hidden>
+            <Icon name={row.kind === "workspace" ? "ph:folder" : "ph:github-logo"} width={13} />
+          </span>
+          <span className="projects-access-card-id">
+            {renamingId === row.id ? (
+              <input
+                ref={renameRef}
+                className="projects-access-rename"
+                value={draftName}
+                aria-label="Project name"
+                onChange={(e) => setDraftName(e.target.value)}
+                onBlur={() => void commitRename()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void commitRename();
+                  if (e.key === "Escape") setRenamingId(null);
+                }}
+              />
+            ) : (
+              <span
+                className="projects-access-card-name"
+                title="Double-click to rename"
+                onDoubleClick={() => startRename(row.project)}
+              >
+                {row.name}
+              </span>
+            )}
+            <span className="projects-access-card-path">{row.project.root}</span>
+          </span>
+        </div>
+        <div className="projects-access-card-foot">
+          {renderPill(row)}
+          <span className="projects-access-card-meta" title={row.meta}>
+            {row.meta}
+          </span>
+          <button
+            type="button"
+            className="projects-access-disclose focus-ring"
+            aria-expanded={open}
+            aria-label={`${open ? "Hide" : "Show"} details for ${row.name}`}
+            onClick={() => toggleExpanded(row.id)}
+          >
+            <Icon name="ph:caret-down" width={10} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="projects-access-gear focus-ring"
+            onClick={() => setSettingsProjectId(row.id)}
+            aria-label={`Project settings — ${row.name}`}
+            title={
+              row.project.repoUrl
+                ? `Project settings — linked to ${gitHubRepoSlug(row.project.repoUrl) ?? row.project.repoUrl}`
+                : "Project settings — link a GitHub repository"
+            }
+          >
+            <Icon name="ph:gear-six" width={13} aria-hidden />
+          </button>
+        </div>
+        {open ? renderDetail(row) : null}
+      </li>
+    );
+  };
 
   let body: React.ReactNode;
   if (isLoading) {
@@ -497,7 +781,97 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         }
       />
     );
+  } else if (viewRows.length === 0) {
+    body = (
+      <p className="projects-access-nomatch" role="status">
+        No projects match “{query.trim()}”.
+      </p>
+    );
+  } else if (view === "rows") {
+    // Dense audit list: strongest access first, then name.
+    body = (
+      <div className="projects-access-table">
+        <div className="projects-access-thead" aria-hidden>
+          <span>Project</span>
+          <span>Path</span>
+          <span>Scope</span>
+          <span>Access</span>
+        </div>
+        <ul className="projects-access-tbody">
+          {sortByAccessThenName(viewRows).map((row) => {
+            const open = expanded.has(row.id);
+            return (
+              <li
+                key={row.id}
+                id={`project-access-row:${row.id}`}
+                className={`projects-access-tr is-${row.state}${flashId === row.id ? " is-flash" : ""}`}
+              >
+                <div className="projects-access-tr-main">
+                  <span className="projects-access-tr-name">
+                    <span className="projects-access-card-bar" aria-hidden />
+                    <span className={`projects-access-kind is-${row.kind}`} aria-hidden>
+                      <Icon name={row.kind === "workspace" ? "ph:folder" : "ph:github-logo"} width={12} />
+                    </span>
+                    <span className="projects-access-card-name">{row.name}</span>
+                  </span>
+                  <span className="projects-access-tr-path">{row.project.root}</span>
+                  <span className="projects-access-tr-scope">{row.kindLabel}</span>
+                  {renderPill(row)}
+                  <button
+                    type="button"
+                    className="projects-access-disclose focus-ring"
+                    aria-expanded={open}
+                    aria-label={`${open ? "Hide" : "Show"} details for ${row.name}`}
+                    onClick={() => toggleExpanded(row.id)}
+                  >
+                    <Icon name="ph:caret-down" width={10} aria-hidden />
+                  </button>
+                </div>
+                {open ? renderDetail(row) : null}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  } else if (view === "tree") {
+    // By access level — the shape an audit actually asks for.
+    body = (
+      <div className="projects-access-tree">
+        {treeGroups(viewRows).map((group) => (
+          <section key={group.state} className={`projects-access-level is-${group.state}`}>
+            <header>
+              <h2>{group.label}</h2>
+              <span className="projects-access-level-count">{group.countLabel}</span>
+            </header>
+            {group.items.length > 0 ? (
+              <ul className="projects-access-chips">
+                {group.items.map((row) => (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      id={`project-access-row:${row.id}`}
+                      className={`projects-access-chip${flashId === row.id ? " is-flash" : ""}`}
+                      disabled={pendingIds.has(row.id) || supreme}
+                      onClick={() => void cycleRow(row)}
+                      title={`${row.name} — ${accessStateMeta(row.state).label}. Click to ${accessStateMeta(row.state).action}.`}
+                    >
+                      <span className={`projects-access-kind is-${row.kind}`} aria-hidden>
+                        <Icon name={row.kind === "workspace" ? "ph:folder" : "ph:github-logo"} width={11} />
+                      </span>
+                      {row.name}
+                      <span className="projects-access-chip-meta">{row.meta}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        ))}
+      </div>
+    );
   } else {
+    // Grid: cards, split into workspaces and repositories.
     body = (
       <>
         {supreme && familiar ? (
@@ -506,117 +880,73 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
             {familiarLabel(familiar)} is the supreme familiar — full access to everything, always.
           </p>
         ) : null}
-        {mutateError ? (
-          <p className="projects-access-error" role="alert">
-            {mutateError}
-          </p>
-        ) : null}
-        {addFlow.addError ? (
-          <p className="projects-access-error" role="alert">
-            {addFlow.addError}
-          </p>
-        ) : null}
-        {sections.length === 0 ? (
-          <p className="projects-access-nomatch" role="status">
-            No projects match “{query.trim()}”.
-          </p>
-        ) : (
-          sections.map((section) => (
+        {sections.map((section) => {
+          const rows = section.projects
+            .map((project) => rowsById.get(project.id))
+            .filter((row): row is (typeof viewRows)[number] => Boolean(row));
+          const isCollapsed = collapsed.has(section.key);
+          return (
             <section key={section.key} className="projects-access-section" aria-label={section.label}>
               <header className="projects-access-section-head">
-                <h2 className="projects-access-section-title">
-                  {section.label}
-                  <span className="projects-access-section-count">{section.projects.length}</span>
-                </h2>
+                <button
+                  type="button"
+                  className="projects-access-section-toggle focus-ring"
+                  aria-expanded={!isCollapsed}
+                  onClick={() => toggleSection(section.key)}
+                >
+                  <Icon
+                    className={`projects-access-caret${isCollapsed ? " is-closed" : ""}`}
+                    name="ph:caret-down"
+                    width={10}
+                    aria-hidden
+                  />
+                  <h2 className="projects-access-section-title">{section.label}</h2>
+                  <span className="projects-access-section-count">{rows.length}</span>
+                  {/* Folding a section must never hide that something in it is granted. */}
+                  {isCollapsed ? (
+                    <>
+                      <span className="projects-access-mix">
+                        {sectionMix(rows.map((row) => row.state)).map((chip) => (
+                          <span
+                            key={chip.state}
+                            className={`projects-access-mix-chip is-${chip.state}`}
+                            title={`${chip.count} ${chip.label}`}
+                          >
+                            <span className="projects-access-dot" aria-hidden />
+                            {chip.count}
+                          </span>
+                        ))}
+                      </span>
+                      <span className="projects-access-peek">
+                        {sectionPeek(rows.map((row) => row.name))}
+                      </span>
+                    </>
+                  ) : null}
+                </button>
                 <span className="projects-access-rule" aria-hidden />
                 <span className="projects-access-setall">
                   <span className="projects-access-setall-label">Set all:</span>
-                  {(["none", "read", "write"] as const).map((target) => (
+                  {(["write", "read", "none"] as const).map((target) => (
                     <button
                       key={target}
                       type="button"
-                      className="projects-access-setall-btn focus-ring"
+                      className={`projects-access-setall-btn is-${target} focus-ring`}
                       disabled={controlsDisabled}
+                      title={`Set every project in ${section.label} to ${accessStateMeta(target).label}`}
                       onClick={() => setAllInSection(section, target)}
                     >
-                      {target === "none" ? "None" : accessStateMeta(target).label}
+                      <span className="projects-access-dot" aria-hidden />
+                      {accessStateMeta(target).label}
                     </button>
                   ))}
                 </span>
               </header>
-              <ul className="projects-access-list">
-                {section.projects.map((project) => {
-                  const row = rowByProject.get(project.id) ?? {
-                    project,
-                    state: "none" as AccessState,
-                    direct: null,
-                    groupNames: [],
-                  };
-                  const meta = accessStateMeta(row.state);
-                  const pending = pendingIds.has(project.id);
-                  const viaGroups =
-                    row.groupNames.length > 0 && !supreme
-                      ? ` — via ${row.groupNames.join(", ")}`
-                      : "";
-                  return (
-                    <li key={project.id}>
-                      <div className="projects-access-rowwrap">
-                        <button
-                          id={`project-access-row:${project.id}`}
-                          type="button"
-                          className={`projects-access-row is-${row.state}${pending ? " is-pending" : ""}${flashId === project.id ? " is-flash" : ""}`}
-                          disabled={pending || supreme}
-                          onClick={() => void cycleRow(row)}
-                          title={
-                            supreme
-                              ? `${project.name} — Full (supreme familiar)`
-                              : `${project.name} — ${meta.label}${viaGroups}. Click to ${accessStateMeta(row.state).action}.`
-                          }
-                          aria-label={`${project.name}: ${meta.label}${viaGroups}. ${supreme ? "Locked for the supreme familiar." : `Click to ${meta.action}.`}`}
-                        >
-                          <span className="projects-access-row-name">{project.name}</span>
-                          {project.repoUrl ? (
-                            <Icon
-                              className="projects-access-row-repo"
-                              name="ph:github-logo"
-                              width={13}
-                              aria-hidden
-                            />
-                          ) : null}
-                          {row.groupNames.length > 0 && !supreme ? (
-                            <Icon
-                              className="projects-access-row-group"
-                              name="ph:users-three"
-                              width={13}
-                              aria-hidden
-                            />
-                          ) : null}
-                          <span className={`projects-access-pill is-${row.state}`}>
-                            <span className="projects-access-dot" aria-hidden />
-                            {meta.label}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className="projects-access-row-settings focus-ring"
-                          onClick={() => setSettingsProjectId(project.id)}
-                          aria-label={`Project settings — ${project.name}`}
-                          title={
-                            project.repoUrl
-                              ? `Project settings — linked to ${gitHubRepoSlug(project.repoUrl) ?? project.repoUrl}`
-                              : "Project settings — link a GitHub repository"
-                          }
-                        >
-                          <Icon name="ph:gear-six" width={14} aria-hidden />
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+              {!isCollapsed ? (
+                <ul className="projects-access-grid">{rows.map(renderCard)}</ul>
+              ) : null}
             </section>
-          ))
-        )}
+          );
+        })}
       </>
     );
   }
@@ -625,11 +955,38 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     <div className="projects-access" data-surface="projects">
       <div className="projects-access-inner">
         <header className="projects-access-header">
-          <p className="projects-access-eyebrow">Familiars</p>
-          <h1 className="projects-access-title">Project access</h1>
-          <p className="projects-access-subtitle">
-            Click a project to cycle access — none, read, full.
-          </p>
+          <div className="projects-access-headline">
+            <p className="projects-access-eyebrow">Familiars</p>
+            <h1 className="projects-access-title">Project access</h1>
+            <p className="projects-access-subtitle">
+              What {familiar ? familiarLabel(familiar) : "this familiar"} may read and write. Click a
+              project’s pill to cycle — none, read, full.
+            </p>
+          </div>
+          {/* A proportional ledger, not three loose numbers: the bar IS the map. */}
+          <div
+            className="projects-access-ledger"
+            title={ledger.map((seg) => `${seg.count} ${seg.label}`).join(" · ")}
+          >
+            <div className="projects-access-ledger-bar">
+              {ledger.map((seg) => (
+                <span
+                  key={seg.state}
+                  className={`is-${seg.state}`}
+                  style={{ width: seg.width }}
+                  aria-hidden
+                />
+              ))}
+            </div>
+            <div className="projects-access-ledger-key">
+              {ledger.map((seg) => (
+                <span key={seg.state} className={`is-${seg.state}`}>
+                  <span className="projects-access-dot" aria-hidden />
+                  {seg.count} {seg.label}
+                </span>
+              ))}
+            </div>
+          </div>
         </header>
 
         <div className="projects-access-toolbar">
@@ -652,35 +1009,40 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
               placeholder="Find a project…"
               aria-label="Find a project"
             />
+            <kbd aria-hidden>/</kbd>
           </label>
-          <IconButton
-            icon={grouped ? "ph:stack" : "ph:rows"}
+          <div className="projects-access-views" role="group" aria-label="View mode">
+            {(
+              [
+                { mode: "grid", icon: "ph:squares-four", label: "Grid", title: "Cards" },
+                { mode: "rows", icon: "ph:rows", label: "Rows", title: "Dense list" },
+                { mode: "tree", icon: "ph:stack", label: "Tree", title: "By access level" },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.mode}
+                type="button"
+                className={`projects-access-view focus-ring${view === option.mode ? " is-on" : ""}`}
+                aria-pressed={view === option.mode}
+                title={option.title}
+                onClick={() => pickView(option.mode)}
+              >
+                <Icon name={option.icon} width={11} aria-hidden />
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <Button
+            variant={bulk ? "primary" : "ghost"}
             size="sm"
-            active={grouped}
-            className="projects-access-grouping"
-            aria-label="Group projects by type"
-            title={
-              grouped
-                ? "Grouped into workspaces and repositories — click for one flat list"
-                : "Flat list — click to group into workspaces and repositories"
-            }
-            onClick={toggleGrouped}
-          />
-          <span className="projects-access-counts" title={`${counts.none} without access · ${counts.read} read · ${counts.write} full`}>
-            <span className="projects-access-count is-none">
-              <span className="projects-access-dot" aria-hidden />
-              {counts.none}
-            </span>
-            <span className="projects-access-count is-read">
-              <span className="projects-access-dot" aria-hidden />
-              {counts.read}
-            </span>
-            <span className="projects-access-count is-write">
-              <span className="projects-access-dot" aria-hidden />
-              {counts.write}
-            </span>
-            <span className="sr-only">{`${counts.none} without access, ${counts.read} read, ${counts.write} full`}</span>
-          </span>
+            className="projects-access-select"
+            leadingIcon="ph:check-square"
+            aria-pressed={bulk}
+            disabled={controlsDisabled}
+            onClick={toggleBulk}
+          >
+            Select
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -702,6 +1064,41 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
             {addFlow.adding ? "Adding…" : "New project"}
           </Button>
         </div>
+
+        {/* Bulk band — present only while selecting. */}
+        {bulk ? (
+          <div className="projects-access-bulk" role="group" aria-label="Bulk access actions">
+            <span className="projects-access-bulk-count">{selectionLabel(selected.size)}</span>
+            <span className="projects-access-bulk-sep" aria-hidden />
+            {(["write", "read", "none"] as const).map((target) => (
+              <button
+                key={target}
+                type="button"
+                className={`projects-access-bulk-btn is-${target} focus-ring`}
+                disabled={selected.size === 0 || controlsDisabled}
+                onClick={() => setSelectedAccess(target)}
+              >
+                <span className="projects-access-dot" aria-hidden />
+                Set {accessStateMeta(target).label.toLowerCase()}
+              </button>
+            ))}
+            <span className="projects-access-rule" aria-hidden />
+            <button type="button" className="projects-access-bulk-done focus-ring" onClick={toggleBulk}>
+              Done
+            </button>
+          </div>
+        ) : null}
+
+        {mutateError ? (
+          <p className="projects-access-error" role="alert">
+            {mutateError}
+          </p>
+        ) : null}
+        {addFlow.addError ? (
+          <p className="projects-access-error" role="alert">
+            {addFlow.addError}
+          </p>
+        ) : null}
 
         {body}
       </div>
