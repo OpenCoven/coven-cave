@@ -240,6 +240,12 @@
 .gh-task-chip { display:inline-flex; align-items:center; gap:5px; max-width:130px; padding:2px 6px; border:1px solid var(--border-hairline); border-radius:9999px; background:var(--bg-base); color:var(--text-secondary); font-size:10.5px; cursor:pointer; transition:background .1s,color .1s,border-color .1s; }
 .gh-task-chip:hover { background:var(--bg-hover); color:var(--text-primary); border-color:var(--border-strong); }
 .gh-task-chip-dot { display:inline-block; width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.gh-task-chip-dot--backlog { background:var(--text-muted); }
+.gh-task-chip-dot--inbox { background:var(--accent-presence); }
+.gh-task-chip-dot--running,
+.gh-task-chip-dot--review { background:var(--color-warning); }
+.gh-task-chip-dot--blocked { background:var(--color-danger); }
+.gh-task-chip-dot--done { background:var(--color-success); }
 .gh-task-chip-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .gh-task-chip-chat { color:var(--accent-presence); flex-shrink:0; }
 .gh-task-chip-more { color:var(--text-muted); font-size:10.5px; }

@@ -76,7 +76,7 @@ import {
 } from "@/lib/surface-warmup-registry";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
-  GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON, KIND_LABEL, KIND_ORDER, STATUS_DOT_COLOR,
+  GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON, KIND_LABEL, KIND_ORDER,
   linkedCardsForItem, orgOf, useCards, useFamiliars,
   type ActivityResult, type Filter, type GroupBy, type PatStatus, type SortKey,
 } from "./github-view-data";
@@ -345,8 +345,7 @@ function LinkedTaskChip({
       className="gh-task-chip"
     >
       <span
-        className="gh-task-chip-dot"
-        style={{ background: STATUS_DOT_COLOR[card.status] }}
+        className={`gh-task-chip-dot gh-task-chip-dot--${card.status}`}
         aria-hidden
       />
       <span className="gh-task-chip-title">{card.title}</span>
@@ -481,8 +480,7 @@ function OpenChatAction({
                     className="gh-action-popover-item"
                   >
                     <span
-                      className="gh-task-chip-dot"
-                      style={{ background: STATUS_DOT_COLOR[c.status] }}
+                      className={`gh-task-chip-dot gh-task-chip-dot--${c.status}`}
                       aria-hidden
                     />
                     <span className="gh-action-popover-item-title">{c.title}</span>
