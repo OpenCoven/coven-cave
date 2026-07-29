@@ -123,9 +123,13 @@ Existing `comment` and `resolve-thread` routes are reused unchanged.
 - `issue` PATCH takes `assignees` / `labels` alongside `state`, as replace-the-
   whole-list writes, and now passes GitHub's error through verbatim (a 422
   names the offending login).
-- `merge` takes an optional `deleteBranch` + `headRef`. The ref is validated by
-  its own anchored pattern before interpolation, and a failed branch delete
-  never fails the response — the merge already happened and is irreversible.
+- `merge` takes an optional `deleteBranch`. It deliberately does NOT take a
+  branch name: the route reads `head.ref` back from GitHub's own PR object after
+  the merge. A request-supplied ref would both let a caller steer the route at an
+  arbitrary ref path (CodeQL `js/request-forgery` — an anchored regex is not a
+  sanitiser CodeQL recognises) and let a caller with a stale ref delete a branch
+  nobody asked about. A failed branch delete never fails the response — the
+  merge already happened and is irreversible.
 
 **Tier classification** lives in one pure function
 (`classifyGitHubAction(kind): "fire" | "confirm"` in `github-blocks.ts`) so

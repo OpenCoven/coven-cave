@@ -133,8 +133,19 @@ assert.match(
 );
 assert.match(
   composer,
-  /\.\.\.\(delBranch && item\.pull\?\.headRef \? \{ deleteBranch: true, headRef: item\.pull\.headRef \} : \{\}\)/,
-  "branch deletion rides along ONLY with a known head ref — never a guessed one",
+  /\.\.\.\(delBranch && item\.pull\?\.headRef \? \{ deleteBranch: true \} : \{\}\)/,
+  "the composer asks for the tidy but never names the branch",
+);
+const mergeRoute = readFileSync(new URL("../app/api/github/merge/route.ts", import.meta.url), "utf8");
+assert.doesNotMatch(
+  mergeRoute,
+  /body\.headRef/,
+  "the merge route must not read a branch name from the request — CodeQL js/request-forgery, and a wrong ref would delete the wrong branch",
+);
+assert.match(
+  mergeRoute,
+  /const ref = typeof pr\?\.head\?\.ref === "string"/,
+  "the branch to delete comes from GitHub's own PR object",
 );
 assert.match(
   composer,

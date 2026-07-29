@@ -182,7 +182,10 @@ export function GitHubCardComposer({
   const [drafting, setDrafting] = useState(false);
   const [famDraft, setFamDraft] = useState<string | null>(null);
   const [famError, setFamError] = useState<string | null>(null);
+  /** Measured placement: how much room the sheet has, and which way it opens. */
+  const [fit, setFit] = useState<{ down: boolean; room: number } | null>(null);
 
+  const sheetRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const armRef = useRef<HTMLInputElement | null>(null);
   const draftAbort = useRef<AbortController | null>(null);
@@ -222,6 +225,50 @@ export function GitHubCardComposer({
   useEffect(() => {
     grow();
   }, [text, tab, phase, grow]);
+
+  /**
+   * Place the sheet inside the transcript's scroll viewport.
+   *
+   * `.cave-chat-transcript` is `overflow-y: auto`, so a sheet taller than the
+   * gap between the card's bottom and that viewport's top edge gets its HEADER
+   * clipped — tabs, toolbar and textarea vanish with no way to scroll to them.
+   * So: clamp the height to the room that exists, and open downward instead
+   * when there is more of it below. Either way the card's own footprint is
+   * untouched, which is the invariant the design actually cares about.
+   *
+   * Safe against feedback loops: the sheet is absolutely positioned, so nothing
+   * measured here can change the flow that produced the measurement, and the
+   * setter bails when the result is materially unchanged.
+   */
+  useEffect(() => {
+    if (phase !== "open") {
+      setFit(null);
+      return;
+    }
+    const sheet = sheetRef.current;
+    const card = sheet?.offsetParent as HTMLElement | null;
+    if (!sheet || !card) return;
+    let scroller: HTMLElement | null = card.parentElement;
+    while (scroller && scroller !== document.body) {
+      if (/auto|scroll|hidden|clip/.test(getComputedStyle(scroller).overflowY)) break;
+      scroller = scroller.parentElement;
+    }
+    const bounds =
+      scroller && scroller !== document.body
+        ? scroller.getBoundingClientRect()
+        : { top: 0, bottom: window.innerHeight };
+    const rect = card.getBoundingClientRect();
+    // GUTTER keeps the sheet's own border off the viewport edge.
+    const GUTTER = 8;
+    const above = Math.max(0, rect.bottom - bounds.top - GUTTER);
+    const below = Math.max(0, bounds.bottom - rect.top - GUTTER);
+    const down = sheet.scrollHeight > above && below > above;
+    // MIN_ROOM: below this the sheet is unusable either way, so stop shrinking
+    // and let it scroll rather than collapse to a sliver.
+    const MIN_ROOM = 160;
+    const room = Math.max(MIN_ROOM, Math.round(down ? below : above));
+    setFit((prev) => (prev && prev.down === down && Math.abs(prev.room - room) < 4 ? prev : { down, room }));
+  }, [phase, sec, tab, text, famDraft, pick]);
 
   useEffect(
     () => () => {
@@ -468,7 +515,9 @@ export function GitHubCardComposer({
         repo,
         number,
         method,
-        ...(delBranch && item.pull?.headRef ? { deleteBranch: true, headRef: item.pull.headRef } : {}),
+        // Intentionally no headRef: the route reads the branch back from GitHub
+        // rather than trusting a caller to name it. We only say whether to tidy.
+        ...(delBranch && item.pull?.headRef ? { deleteBranch: true } : {}),
       });
       if (!ok) {
         setFailure({ code: String(status), message: (data?.error as string) ?? "merge failed" });
@@ -856,7 +905,11 @@ export function GitHubCardComposer({
   return (
     <div className="ghc-root">
       <div className="ghc-slot" />
-      <div className="ghc-sheet">
+      <div
+        ref={sheetRef}
+        className={`ghc-sheet${fit?.down ? " ghc-sheet--down" : ""}`}
+        style={fit ? ({ "--ghc-room": `${fit.room}px` } as React.CSSProperties) : undefined}
+      >
         <div className="ghc-head">
           <div className="ghc-seg" role="tablist" aria-label="Composer mode">
             <button

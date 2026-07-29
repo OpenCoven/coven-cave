@@ -182,7 +182,9 @@ test.describe("github chat cards", () => {
     await expect(prCard).toContainText("type merge in the Merge section to arm this");
     expect(mergeCalls.length).toBe(0);
 
-    // Arm it, then fire. The branch toggle defaults on, so the head ref rides along.
+    // Arm it, then fire. The branch toggle defaults on, so the tidy is requested
+    // — but the body carries NO branch name: the route reads that back from
+    // GitHub instead of trusting the caller (CodeQL js/request-forgery).
     await prCard.getByLabel("Type merge to arm the merge button").fill("merge");
     await cta.click();
     await expect.poll(() => mergeCalls.length).toBe(1);
@@ -191,7 +193,6 @@ test.describe("github chat cards", () => {
       number: 7,
       method: "squash",
       deleteBranch: true,
-      headRef: "feat/thing",
     });
     await expect(prCard.getByLabel(/Merged:/)).toBeVisible({ timeout: 10_000 });
   });

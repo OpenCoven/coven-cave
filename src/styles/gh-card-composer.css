@@ -121,7 +121,11 @@
   right: -1px;
   bottom: -1px;
   z-index: 5;
-  max-height: 352px;
+  /* --ghc-room is the space the composer actually has inside the transcript's
+     scroll viewport, measured at open time. Without the clamp the sheet grows
+     past .cave-chat-transcript's overflow-y:auto edge and its header — tabs,
+     toolbar, textarea — is silently cut off with no way to scroll to it. */
+  max-height: min(352px, var(--ghc-room, 352px));
   overflow-x: hidden;
   overflow-y: auto;
   border: 1px solid var(--border-strong);
@@ -129,6 +133,16 @@
   background: var(--bg-raised);
   box-shadow: 0 -14px 40px color-mix(in oklch, var(--color-mix-dark) 48%, transparent),
     0 2px 10px color-mix(in oklch, var(--color-mix-dark) 28%, transparent);
+}
+
+/* When the card sits near the top of the transcript there is no room to grow
+   upward, so the sheet drops instead — same overlay, mirrored shadow. The card's
+   footprint is unchanged either way, which is the invariant that matters. */
+.ghc-sheet--down {
+  top: -1px;
+  bottom: auto;
+  box-shadow: 0 14px 40px color-mix(in oklch, var(--color-mix-dark) 48%, transparent),
+    0 -2px 10px color-mix(in oklch, var(--color-mix-dark) 28%, transparent);
 }
 
 /* Status sheets (sending / error / merged) are single rows — no scroll. */

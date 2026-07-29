@@ -7,10 +7,16 @@
  * checks", "review required", "not mergeable") pass through VERBATIM so the
  * confirm card can show the real reason.
  *
- * `deleteBranch` + `headRef` add the usual post-merge tidy as a second, strictly
+ * `deleteBranch` adds the usual post-merge tidy as a second, strictly
  * subordinate step. The merge is irreversible, so a failed ref delete is
  * reported in the payload (`branchDeleteError`) and never allowed to turn a
  * landed merge into an `ok: false` the caller might retry.
+ *
+ * The branch name is NOT taken from the request. It is read back from GitHub's
+ * own PR object after the merge, for two reasons: a caller cannot steer this
+ * route at an arbitrary ref path (CodeQL js/request-forgery — and a regex test
+ * is not a sanitiser), and a caller that sent a stale or simply wrong ref would
+ * otherwise have deleted a branch nobody asked about.
  *
  * Requires a PAT — never echoed, never logged.
  */
@@ -29,8 +35,8 @@ const METHODS = new Set(["squash", "merge", "rebase"]);
 // names legitimately contain slashes, so REPO_RE cannot be reused: this allows
 // slash-joined segments of [A-Za-z0-9._-] with no empty segment (hence no
 // leading or trailing slash) and no segment starting with "-" (git rejects
-// those). Deliberately narrower than git's own rules — the composer only ever
-// sends a headRef this route just read back from GitHub.
+// those). Deliberately narrower than git's own rules. This guards a value that
+// already came from GitHub, so it is defence in depth, not the only barrier.
 const BRANCH_SEGMENTS_RE = /^[A-Za-z0-9._][A-Za-z0-9._-]*(?:\/[A-Za-z0-9._][A-Za-z0-9._-]*)*$/;
 
 function ghHeaders(token: string): Record<string, string> {
@@ -49,7 +55,7 @@ function isSafeBranch(value: string): boolean {
 }
 
 export async function POST(req: Request) {
-  let body: { repo?: unknown; number?: unknown; method?: unknown; deleteBranch?: unknown; headRef?: unknown };
+  let body: { repo?: unknown; number?: unknown; method?: unknown; deleteBranch?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -60,7 +66,6 @@ export async function POST(req: Request) {
   const number = Number.parseInt(String(body.number ?? ""), 10);
   const method = typeof body.method === "string" ? body.method : "squash";
   const deleteBranch = body.deleteBranch === true;
-  const headRef = typeof body.headRef === "string" ? body.headRef.trim() : "";
 
   if (!REPO_RE.test(repo)) {
     return NextResponse.json({ ok: false, error: "invalid repo" }, { status: 400 });
@@ -70,11 +75,6 @@ export async function POST(req: Request) {
   }
   if (!METHODS.has(method)) {
     return NextResponse.json({ ok: false, error: "invalid method" }, { status: 400 });
-  }
-  // Validated before the merge, never after: rejecting a bad ref once the merge
-  // has landed would report a failure for work that already happened.
-  if (deleteBranch && !isSafeBranch(headRef)) {
-    return NextResponse.json({ ok: false, error: "invalid headRef" }, { status: 400 });
   }
 
   const token = resolveGitHubToken();
@@ -101,8 +101,27 @@ export async function POST(req: Request) {
     let branchDeleteError: string | null = null;
     if (deleteBranch) {
       try {
-        // headRef passed isSafeBranch — safe to interpolate into the ref path.
-        const del = await fetch(`${GH}/repos/${repo}/git/refs/heads/${headRef}`, {
+        // Ask GitHub which branch this PR merged from, rather than believing the
+        // caller. `head.ref` survives the merge, so this is available here.
+        const prRes = await fetch(`${GH}/repos/${repo}/pulls/${number}`, {
+          headers: ghHeaders(token),
+          cache: "no-store",
+        });
+        const pr = (await prRes.json().catch(() => null)) as { head?: { ref?: unknown } } | null;
+        const ref = typeof pr?.head?.ref === "string" ? pr.head.ref.trim() : "";
+        if (!isSafeBranch(ref)) {
+          branchDeleteError = ref ? "branch name is not one this route will delete" : "could not read the head branch";
+          return NextResponse.json({
+            ok: true,
+            merged: true,
+            sha: typeof data.sha === "string" ? data.sha : null,
+            branchDeleted: false,
+            branchDeleteError,
+          });
+        }
+        // `ref` is GitHub's own value and passed isSafeBranch — safe to
+        // interpolate, and not reachable from the request body.
+        const del = await fetch(`${GH}/repos/${repo}/git/refs/heads/${ref}`, {
           method: "DELETE",
           headers: ghHeaders(token),
           cache: "no-store",
