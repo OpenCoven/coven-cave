@@ -304,6 +304,11 @@ assert.match(
   /kind: "assistant_replace", text: assistantText/,
   "an authoritative Copilot full frame replaces divergent streamed text in the live and persisted turn",
 );
+assert.match(
+  chatRoute,
+  /if \(correctedText === previousAssistantText\) \{[\s\S]*?\} else if \(correctedText === `\$\{previousAssistantText\}\$\{text\}`\) \{[\s\S]*?kind: "assistant_chunk", text[\s\S]*?\} else \{[\s\S]*?kind: "assistant_replace", text: assistantText/,
+  "a boundary-only Copilot message update replaces the live transcript instead of being dropped",
+);
 
 assert.match(
   chatRoute,

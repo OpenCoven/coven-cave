@@ -2593,16 +2593,16 @@ export async function POST(req: Request) {
                   // per-message spans so an interleaved later message survives.
                   assistantText = correctedText;
                   push({ kind: "assistant_replace", text: assistantText });
-                } else if (text) {
-                  if (correctedText === `${previousAssistantText}${text}`) {
-                    assistantText = correctedText;
-                    push({ kind: "assistant_chunk", text });
-                  } else {
-                    assistantText = correctedText;
-                    push({ kind: "assistant_replace", text: assistantText });
-                  }
-                } else {
+                } else if (correctedText === previousAssistantText) {
                   assistantText = correctedText;
+                } else if (correctedText === `${previousAssistantText}${text}`) {
+                  assistantText = correctedText;
+                  push({ kind: "assistant_chunk", text });
+                } else {
+                  // Even an empty message can add a transcript boundary. Send
+                  // the authoritative text so clients retain that separator.
+                  assistantText = correctedText;
+                  push({ kind: "assistant_replace", text: assistantText });
                 }
                 if (ev.malformedToolRequests) {
                   reportCopilotProtocolDiagnostic(
