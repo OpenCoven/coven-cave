@@ -39,7 +39,23 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "WebFetch"
+      "WebFetch",
+      "Bash(git fetch *)",
+      "Bash(pnpm build)",
+      "Bash(pnpm test:app)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint:design)",
+      "Bash(pnpm codemod:design:check)",
+      "Bash(pnpm check:tests-wired)",
+      "Bash(pnpm exec tsc --noEmit *)",
+      "Bash(pnpm exec eslint *)",
+      "Bash(bd show *)",
+      "Bash(bd ready*)",
+      "Bash(bd list *)",
+      "mcp__claude-design__read_file",
+      "mcp__claude-design__list_files",
+      "mcp__claude-design__list_projects"
     ]
   }
 }
