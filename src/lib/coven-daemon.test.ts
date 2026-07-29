@@ -190,7 +190,11 @@ const {
     multiHost: { mode: "local", hubUrl: "", executorUrls: [] },
   });
   assert.equal(target.mode, "local");
-  assert.match(target.socketPath, /\.coven\/coven\.sock$/);
+  assert.match(
+    target.socketPath.replaceAll("\\", "/"),
+    /(?:\.coven\/coven\.sock|\/pipe\/coven-daemon-[a-f0-9]+\.sock)$/,
+    "the live local target may use the active Windows daemon pipe or the socket fallback",
+  );
   assert.equal(target.label, "Local daemon");
 }
 
