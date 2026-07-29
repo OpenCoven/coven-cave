@@ -11,7 +11,7 @@ import { fuzzyMatch, bestFuzzyScore } from "@/lib/fuzzy-match";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
-import { FOLDER_MODES, type FolderMode } from "@/components/sidebar-minimal";
+import { WORKSPACE_NAV_ITEMS, type WorkspaceNavMode } from "@/lib/workspace-navigation";
 import { useProjects } from "@/lib/use-projects";
 import {
   PALETTE_CATEGORIES,
@@ -55,7 +55,7 @@ type PaletteIntent =
   | { kind: "open-tui-session"; sessionId: string }
   | { kind: "open-board" }
   | { kind: "set-board-view"; view: "kanban" | "table" | "gantt" }
-  | { kind: "go-to-surface"; mode: FolderMode | `surface:${string}` }
+  | { kind: "go-to-surface"; mode: WorkspaceNavMode | `surface:${string}` }
   | { kind: "open-project"; root: string }
   | { kind: "focus-card"; cardId: string }
   | { kind: "create-task"; title: string }
@@ -528,14 +528,14 @@ export function CommandPalette({
       ? [{ id: "create-task", kind: "create-task", title: trimmedTitle }]
       : [];
 
-    // "Go to <surface>" rows make ⌘K a launcher for the visible sidebar
-    // surfaces. Hidden while typing a slash command or a familiar scope (where
-    // surface nav would be noise). Role Surface rooms (cave-cc5r) append with
-    // the same treatment so "Go to Code Workshop" works like any surface.
+    // "Go to <surface>" rows make ⌘K a launcher for every canonical workspace
+    // destination, including on-demand rows hidden from the sidebar. Hidden
+    // while typing a slash command or a familiar scope (where surface nav would
+    // be noise). Role Surface rooms (cave-cc5r) append with the same treatment.
     const surfaceRows: Row[] = (scoped || slashToken)
       ? []
       : [
-          ...rank(FOLDER_MODES
+          ...rank(WORKSPACE_NAV_ITEMS
           // Fuzzy on the short label/id; substring-only on the long description
           // (subsequence-matching prose surfaces irrelevant items).
           .filter((fm) => !q || fz(fm.label) || fz(fm.id) || fm.description.toLowerCase().includes(q)),

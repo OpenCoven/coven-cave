@@ -6,7 +6,7 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
 const workspaceMode = read("../lib/workspace-mode.ts");
 const workspace = read("./workspace.tsx");
-const sidebar = read("./sidebar-minimal.tsx");
+const navigation = read("../lib/workspace-navigation.ts");
 const settings = read("./settings-shell.tsx");
 const config = read("../lib/cave-config.ts");
 const slashCommands = read("../lib/slash-commands.ts");
@@ -16,7 +16,7 @@ assert.doesNotMatch(workspaceMode, /[|]\s*"terminal"/, "terminal is not a standa
 assert.doesNotMatch(workspace, /terminal:\s*"Terminal"/, "workspace title map does not expose a Terminal page");
 assert.doesNotMatch(workspace, /setMode\("terminal"\)/, "workspace never navigates to a standalone Terminal page");
 assert.doesNotMatch(workspace, /mode === "terminal"/, "workspace does not branch around a standalone Terminal page");
-assert.doesNotMatch(sidebar, /id:\s*"terminal"/, "sidebar has no Terminal nav row");
+assert.doesNotMatch(navigation, /id:\s*"terminal"/, "the navigation registry has no Terminal row");
 assert.doesNotMatch(settings, /key:\s*"terminal"/, "settings add-ons do not expose Terminal as an add-on");
 assert.doesNotMatch(config, /terminal\?:\s*boolean|terminal:\s*false|terminal:\s*parsed\.addons\?\.terminal/, "config has no terminal add-on flag");
 assert.doesNotMatch(slashCommands, /\/terminal|\/comux|integrated terminal view/i, "slash commands do not open a standalone Terminal page");

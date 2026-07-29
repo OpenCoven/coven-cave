@@ -17,6 +17,7 @@ import { readFile } from "node:fs/promises";
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const codeView = await readFile(new URL("./code-view.tsx", import.meta.url), "utf8");
 const lazySurfaces = await readFile(new URL("./lazy-surfaces.tsx", import.meta.url), "utf8");
@@ -128,14 +129,19 @@ assert.match(
 // row arrives via the registry-driven roleSurfaces cluster, and the GitHub
 // row hides while the room is visible (the room carries its own GitHub tab).
 assert.match(
+  navigation,
+  /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"[^}]*quiet: true \}/,
+  "the GitHub quiet row owns the canonical navigation slot",
+);
+assert.match(
   sidebar,
-  /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"[\s\S]{0,300}?badge: \(p\) => badgeText\(p\.githubAssignedCount\)/,
-  "the GitHub quiet row owns the slot and carries the assigned-work badge",
+  /github: \(props\) => badgeText\(props\.githubAssignedCount\)/,
+  "the sidebar adds the assigned-work badge to the canonical GitHub row",
 );
 assert.doesNotMatch(
-  sidebar,
+  navigation,
   /\{ id: "code", label: "Code"/,
-  "no static Code row survives in FOLDER_MODES — the room row is registry-driven",
+  "no static Code row survives in workspace navigation — the room row is registry-driven",
 );
 assert.match(
   workspace,

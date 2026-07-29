@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 // The footer (Dashboard + Settings + version) lives in a shared component so it
 // stays identical when Chat replaces SidebarMinimal with WorkspaceSidebar.
@@ -79,25 +80,25 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /props\.hideGithubRow \? VISIBLE_MODES\.filter\(\(fm\) => fm\.id !== "github"\) : VISIBLE_MODES/,
+  /props\.hideGithubRow[\s\S]{0,120}\? VISIBLE_WORKSPACE_NAV_ITEMS\.filter\(\(item\) => item\.id !== "github"\)[\s\S]{0,80}: VISIBLE_WORKSPACE_NAV_ITEMS/,
   "Sidebar renders the visible folder modes, dropping the GitHub row while the Code room already carries a GitHub tab (cave-cc5r)",
 );
 assert.match(
   source,
-  /const VISIBLE_MODES = FOLDER_MODES\.filter\(\(fm\) => !fm\.navHidden\)/,
-  "VISIBLE_MODES drops navHidden surfaces (Browser) from the rendered nav",
+  /import \{[\s\S]*VISIBLE_WORKSPACE_NAV_ITEMS,[\s\S]*\} from "@\/lib\/workspace-navigation"/,
+  "the sidebar consumes the shared registry's already-filtered visible rows",
 );
 
 assert.match(
-  source,
+  navigation,
   /\{ id: "home", label: "Home"/,
-  "Home is the first Work surface",
+  "Home is the first workspace destination",
 );
 
 assert.doesNotMatch(
-  source,
+  navigation,
   /\{ id: "agents", label: "Familiars"/,
-  "Familiars subpage should not appear as a Work navigation row",
+  "Familiars subpage should not appear as a workspace navigation row",
 );
 
 // The horizontal dock is gone, and the profile switcher no longer lives in the
@@ -122,31 +123,31 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  source,
+  navigation,
   /\{ id: "chat", label: "Chat", iconName: "ph:chats", kbd: "⌘2", description:/,
   "The Chat surface should keep the ⌘2 shortcut",
 );
 
 assert.match(
-  source,
+  navigation,
   /\{ id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description:/,
   "the Tasks surface (mode id 'board') sits on the ⌘3 shortcut",
 );
 
 assert.doesNotMatch(
-  source,
+  navigation,
   /\{ id: "calendar", label: "Calendar"/,
   "Calendar should not appear as a standalone sidebar row after merging into Schedules",
 );
 
 assert.match(
-  source,
+  navigation,
   /\{ id: "inbox", label: "Rituals", iconName: "ph:calendar-check", kbd: "⌘4", description:/,
   "Rituals should own the old Calendar shortcut as the active schedule surface",
 );
 
 assert.doesNotMatch(
-  source,
+  navigation,
   /\{ id: "library", label: "Library"/,
   "Library should not be an integrated sidebar surface while it lives on feature/library",
 );
@@ -154,7 +155,7 @@ assert.doesNotMatch(
 // The "Coven" surface was purged — its docs/feedback/social are now default
 // Browser tabs, so no nav entry should remain.
 assert.doesNotMatch(
-  source,
+  navigation,
   /id: "docs"|label: "Coven"/,
   "the removed Coven (docs) surface should have no sidebar nav entry",
 );
@@ -165,60 +166,60 @@ assert.doesNotMatch(
   "Library should not be a root add-on gate in the integrated sidebar",
 );
 
-// Browser stays in FOLDER_MODES (so ⌘5 + the ⌘K "Go to" launcher still reach
+// Browser stays in the shared registry (so ⌘5 + the ⌘K "Go to" launcher reach
 // it) but is navHidden, so it renders no sidebar row — summoned on demand.
 assert.match(
-  source,
+  navigation,
   /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
   "Browser is kept for ⌘5/palette but hidden from the sidebar rows (navHidden)",
 );
 
-assert.doesNotMatch(source, /id:\s*"terminal"/, "Terminal is not a standalone sidebar destination");
+assert.doesNotMatch(navigation, /id:\s*"terminal"/, "Terminal is not a standalone sidebar destination");
 
 assert.match(
-  source,
+  navigation,
   /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description:/,
   "The merged Marketplace hub should appear as a Tools surface",
 );
 
 assert.doesNotMatch(
-  source,
+  navigation,
   /\{ id: "roles", label: "Roles"/,
   "Roles is no longer a standalone nav entry — it merged into the Marketplace hub",
 );
 
 assert.doesNotMatch(
-  source,
+  navigation,
   /\{ id: "workflows", label: "Workflows"/,
   "Workflows should not appear as a top-level Tools surface",
 );
 
 assert.doesNotMatch(
-  source,
+  navigation,
   /\{ id: "flow", label: "Flow", iconName: "ph:flow-arrow", description:/,
   "Flow should not appear as a top-level Tools surface on the active branch",
 );
 
 assert.doesNotMatch(
-  source,
+  navigation,
   /\{ id: "capabilities",/,
   "Capabilities is no longer a standalone nav entry — it is a section of the Marketplace hub",
 );
 
 assert.doesNotMatch(
-  source,
+  navigation,
   /\{ id: "sessions"/,
   "Sessions row removed — folded into Chat surface as History sub-view",
 );
 
 assert.doesNotMatch(
-  source,
+  navigation,
   /\{ id: "schedules"/,
   "Schedules uses the existing inbox mode instead of a second schedules mode",
 );
 
 assert.doesNotMatch(
-  source,
+  navigation,
   /\{ id: "plugins"/,
   "Plugins row removed — moved into Settings · Plugins",
 );
@@ -268,18 +269,18 @@ assert.doesNotMatch(
 // (navHidden), so it must NOT appear among the rendered VISIBLE_MODES rows.
 // (Capabilities moved to a tab on the Roles page — no standalone entry.)
 assert.match(
-  source,
+  navigation,
   /id:\s*"browser"[^}]*navHidden:\s*true/,
   "browser is navHidden (kept for ⌘5/palette, not a sidebar row)",
 );
-assert.doesNotMatch(source, /id:\s*"terminal"/, "terminal does not stay visible");
+assert.doesNotMatch(navigation, /id:\s*"terminal"/, "terminal does not stay visible");
 assert.match(
-  source,
+  navigation,
   /id:\s*"marketplace"[^}]*label:\s*"Marketplace"/,
   "marketplace stays visible",
 );
 assert.doesNotMatch(
-  source,
+  navigation,
   /id:\s*"flow"[^}]*label:\s*"Flow"/,
   "flow does not stay in Tools",
 );
@@ -291,12 +292,12 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  source,
+  navigation,
   /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"/,
   "The standalone GitHub row is back (cave-cc5r): Code lives in the Coding familiar's room",
 );
 assert.doesNotMatch(
-  source,
+  navigation,
   /\{ id: "code", label: "Code"/,
   "Code is no longer a static folder row — the Coding familiar's room row arrives via roleSurfaces (cave-cc5r)",
 );
@@ -385,7 +386,7 @@ assert.match(
 // Every surface carries a one-line description, and FolderRow surfaces it as a
 // title (hover tooltip / touch long-press hint / AT description).
 assert.match(
-  source,
+  navigation,
   /id: "marketplace"[\s\S]*?description: "Browse the store/,
   "Marketplace is described as the store + setup hub",
 );
@@ -436,22 +437,22 @@ assert.match(
 // ⌘-numbered daily set (Home ⌘1 · Chat ⌘2 · Tasks ⌘3 · Schedules ⌘4); Memories
 // leads the quiet cluster, followed by Marketplace/GitHub/Work Queue.
 assert.match(
-  source,
+  navigation,
   /\{ id: "journal",[^}]*navHidden: true \}/,
   "Journal keeps no sidebar row — it's a tab inside Memories (palette/deep-link reachability stays via navHidden)",
 );
 assert.match(
-  source,
+  navigation,
   /\{ id: "grimoire", label: "Memories",[^}]*quiet: true \}/,
   "Memories (grimoire) is in the quiet cluster (cave-xsq.8)",
 );
 assert.match(
-  source,
+  navigation,
   /id: "inbox",[\s\S]*?\{ id: "grimoire"/,
   "the ⌘-numbered prominent cluster (…Schedules) renders above the quiet cluster",
 );
 assert.match(
-  source,
+  navigation,
   /\{ id: "marketplace",[^}]*quiet: true \}/,
   "Marketplace is in the quiet cluster",
 );

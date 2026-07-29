@@ -57,6 +57,8 @@ assert.match(view, /binds one protected surface to one\s+writer/, "thread refere
 // --- page shell --------------------------------------------------------------
 assert.match(page, /dr-page/, "page uses the standard shell");
 assert.match(page, /Weaves<\/span>/, "breadcrumb names the surface");
+assert.match(page, /href="\/\?mode=grimoire"/, "Weaves breadcrumbs back to Memories");
+assert.match(page, /href="\/proposals"/, "Weaves exposes the nested proposal decision queue");
 assert.match(page, /never healthy/, "page states the fail-closed rendering rule");
 
 console.log("weave-rail wiring: all assertions passed");

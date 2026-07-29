@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const topBar = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
 const workspaceMode = readFileSync(
   new URL("../lib/workspace-mode.ts", import.meta.url),
@@ -167,9 +168,9 @@ assert.doesNotMatch(
 );
 
 assert.doesNotMatch(
-  sidebar,
+  navigation,
   /\{ id: "agents", label: "Familiars"/,
-  "Sidebar should not expose a Familiars subpage in Work",
+  "The navigation registry should not expose a Familiars subpage",
 );
 
 assert.doesNotMatch(
@@ -293,17 +294,17 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  sidebar,
+  navigation,
   /\{ id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description:/,
-  "Sidebar Home keeps its shortcut hint",
+  "Home keeps its canonical shortcut hint",
 );
 
 assert.match(
-  sidebar,
+  navigation,
   /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
-  "Browser is kept for ⌘5/palette but navHidden from the sidebar rows",
+  "Browser is kept for ⌘5/palette but navHidden from rendered navigation rows",
 );
 
-assert.doesNotMatch(sidebar, /id:\s*"terminal"/, "Sidebar does not expose Terminal as a standalone destination");
+assert.doesNotMatch(navigation, /id:\s*"terminal"/, "Navigation does not expose Terminal as a standalone destination");
 
 console.log("workspace-familiars-landing: all assertions passed");

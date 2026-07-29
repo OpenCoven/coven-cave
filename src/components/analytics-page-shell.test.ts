@@ -13,6 +13,7 @@ const workspaceShell = await source("components/shell.tsx");
 const css = await source("styles/analytics-page-shell.css");
 const desktopChrome = await source("styles/globals/desktop-chrome.css");
 const historyNav = await source("components/desktop-history-nav.tsx");
+const navigation = await source("lib/workspace-navigation.ts");
 
 // ── The canonical analytics route wraps the view in the left-sidepanel shell ──
 assert.match(dashPage, /import \{ AnalyticsPageShell \} from "@\/components\/analytics-page-shell"/, "/dashboard/familiars/[id]/analytics imports the shell");
@@ -38,9 +39,24 @@ assert.match(
   /className=\{`aps-rail\$\{isExpanded \? " aps-rail--expanded" : ""\}`\}/,
   "shell renders a labelled rail with an explicit expanded state",
 );
-assert.match(shell, /href: "\/\?mode=home"/, "rail deep-links Home into the SPA");
-assert.match(shell, /href: "\/\?mode=chat"/, "rail deep-links Chat");
-assert.match(shell, /href: "\/\?mode=board"/, "rail deep-links Tasks");
+assert.match(
+  shell,
+  /import \{ VISIBLE_WORKSPACE_NAV_ITEMS \} from "@\/lib\/workspace-navigation"/,
+  "standalone routes consume the same navigation registry as the workspace sidebar",
+);
+assert.match(
+  shell,
+  /const PRIMARY = VISIBLE_WORKSPACE_NAV_ITEMS\.map/,
+  "the standalone rail derives its destinations from the shared visible registry",
+);
+assert.doesNotMatch(
+  shell,
+  /\{ href: "\/\?mode=/,
+  "the standalone rail must not hand-copy workspace deep links",
+);
+assert.match(navigation, /\{ id: "home", label: "Home"/, "canonical navigation registry includes Home");
+assert.match(navigation, /\{ id: "chat", label: "Chat"/, "canonical navigation registry includes Chat");
+assert.match(navigation, /\{ id: "board", label: "Tasks"/, "canonical navigation registry includes Tasks");
 assert.match(shell, /href="\/dashboard"/, "rail links to the Dashboard route");
 assert.match(shell, /<span className="aps-rail-label">Dashboard<\/span>/, "expanded rail links have visible labels");
 

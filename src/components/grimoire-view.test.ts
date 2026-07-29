@@ -9,6 +9,7 @@ const view = [
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
+const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const warmupRegistry = await readFile(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8");
 
 // ── Surface registration: mode, title, render branch, sidebar row ────────────
@@ -19,8 +20,15 @@ assert.match(workspace, /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{grim
 // Journal is now a tab inside Grimoire: the nav/deep-link `journal` mode opens
 // Grimoire on its Journal tab instead of redirecting to Settings.
 assert.match(workspace, /if \(next === "journal"\) \{[\s\S]{0,400}setGrimoireView\("journal"\);\s*\n\s*commitMode\("grimoire", "journal"\);/, "the journal mode routes into the Grimoire Journal tab and preserves that destination in history");
-assert.match(sidebar, /export type FolderMode = WorkspaceMode/, "the sidebar's FolderMode is the WorkspaceMode union (no drifting copy), so grimoire is a FolderMode");
-assert.match(sidebar, /id: "grimoire", label: "Memories"/, "grimoire has a sidebar row labeled Memories (and ⌘K palette entry via FOLDER_MODES)");
+assert.match(navigation, /export type WorkspaceNavMode = WorkspaceMode/, "the shared registry uses the WorkspaceMode union (no drifting copy)");
+assert.match(navigation, /id: "grimoire", label: "Memories"/, "grimoire has a navigation row labeled Memories (and a ⌘K palette entry)");
+assert.match(sidebar, /VISIBLE_WORKSPACE_NAV_ITEMS/, "the sidebar renders visible rows from the shared registry");
+assert.match(
+  view,
+  /href="\/weaves"/,
+  "Memories exposes its nested protected-memory Weaves destination",
+);
+assert.match(view, />\s*Weaves\s*<\/Link>/, "the protected-memory destination has a visible label");
 
 // ── Navigator: three sources, searchable, new-entry affordance ───────────────
 

@@ -60,6 +60,7 @@ assert.doesNotMatch(entriesSrc, /standalone/, "journal-entries no longer carries
 
 const ws = read("./workspace.tsx");
 const sidebar = read("./sidebar-minimal.tsx");
+const navigation = read("../lib/workspace-navigation.ts");
 const pageDrag = read("../lib/page-drag.ts");
 const slash = read("../lib/slash-commands.ts");
 
@@ -78,8 +79,9 @@ assert.match(ws, /case "\/journal":\s*\n\s*setMode\("journal"\)/, "/journal rout
 // ── Sidebar: the Journal mode stays reachable (⌘K palette + deep links via
 // navHidden) even though its dedicated row is retired — it's a tab inside
 // Memories now. ─────
-assert.match(sidebar, /id: "journal", label: "Journal", iconName: "ph:book-open"/, "sidebar keeps the Journal FOLDER_MODES entry for the palette");
-assert.doesNotMatch(sidebar, /generated sketches/, "sidebar description no longer promises the canvas");
+assert.match(navigation, /id: "journal", label: "Journal", iconName: "ph:book-open"/, "the navigation registry keeps Journal reachable through the palette");
+assert.doesNotMatch(navigation, /generated sketches/, "the Journal description no longer promises the canvas");
+assert.match(sidebar, /VISIBLE_WORKSPACE_NAV_ITEMS/, "the sidebar consumes the shared visible registry");
 
 // ── A redirect is not a page: journal can't be dragged into a split ─────────
 assert.match(pageDrag, /NON_SPLITTABLE = new Set\(\["terminal", "journal"\]\)/, "journal is excluded from drag-to-split");

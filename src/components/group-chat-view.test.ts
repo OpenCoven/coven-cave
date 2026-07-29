@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const view = readFileSync(new URL("./group-chat-view.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const mode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const transcript = readFileSync(new URL("../lib/group-chat-transcript.ts", import.meta.url), "utf8");
@@ -296,9 +296,9 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
 
   // The standalone left-nav destination is gone.
   assert.doesNotMatch(
-    sidebar,
+    navigation,
     /id: "groupchat", label: "Group"/,
-    "sidebar no longer exposes a standalone Group destination",
+    "workspace navigation no longer exposes a standalone Group destination",
   );
 
   // ChatSurface owns Group Chat now: it imports GroupChatView, offers a Group

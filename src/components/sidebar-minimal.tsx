@@ -26,11 +26,11 @@ import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
-import type { WorkspaceMode } from "@/lib/workspace-mode";
-
-/** The sidebar's mode vocabulary IS the workspace's — one union, no copy.
- *  (Was a hand-maintained duplicate that drifted; cave-m4ih.3.) */
-export type FolderMode = WorkspaceMode;
+import {
+  VISIBLE_WORKSPACE_NAV_ITEMS,
+  type WorkspaceNavItem,
+  type WorkspaceNavMode,
+} from "@/lib/workspace-navigation";
 
 export type SidebarRoleSurfaceRow = {
   /** Generic workspace mode string (`surface:<id>`) — the sidebar never
@@ -85,69 +85,11 @@ function badgeText(n?: number): string | undefined {
   return n > 99 ? "99+" : String(n);
 }
 
-type FolderModeRow = {
-  id: FolderMode;
-  label: string;
-  iconName: Parameters<typeof Icon>[0]["name"];
-  badge?: (props: SidebarMinimalProps) => string | undefined;
-  kbd?: string;
-  // One-line hover/long-press help. Differentiates surfaces that read alike at
-  // a glance.
-  description: string;
-  /** Visual demotion (§8 quiet hierarchy): still one flat list — same roving
-   *  tabindex, same click targets — but quiet rows render muted-until-hover
-   *  and the first one opens a spacing gap, so daily destinations read first. */
-  quiet?: boolean;
-  /** Kept in the list (so the command palette's "Go to" launcher and the
-   *  ⌘-number shortcut still reach it) but NOT rendered as a sidebar row. For
-   *  surfaces you summon on demand rather than navigate to daily — the Browser
-   *  opens itself when a link/URL is clicked, so it needn't sit in the nav. */
-  navHidden?: boolean;
+const MODE_BADGES: Partial<Record<WorkspaceNavMode, (props: SidebarMinimalProps) => string | undefined>> = {
+  board: (props) => badgeText(props.boardOpenCount),
+  inbox: (props) => badgeText(props.scheduleNeedsCount),
+  github: (props) => badgeText(props.githubAssignedCount),
 };
-
-const FOLDER_MODES: Array<FolderModeRow> = [
-  { id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description: "Overview and quick actions" },
-  { id: "chat", label: "Chat", iconName: "ph:chats", kbd: "⌘2", description: "Talk with your familiars — 1:1 or a Group tab for a whole coven" },
-  // Group Chat ("coven") is no longer a standalone destination — it lives as the
-  // Group tab inside Chat. The `groupchat` mode still exists as a redirect target.
-  { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
-  { id: "inbox", label: "Rituals", iconName: "ph:calendar-check", kbd: "⌘4", description: "Inbox, calendar, and scheduled jobs in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
-  // Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
-  // ⌘-numbered daily destinations (Home · Chat · Tasks · Schedules — Schedules
-  // also carries the needs-you badge). Memories joins the quiet cluster: same
-  // flat list, same reachability (rows, palette, deep links), just
-  // muted-until-hover so the conversation-first surfaces read first.
-  // Journal keeps no row of its own — it's a tab inside Memories, and a
-  // dedicated row double-listed the same surface. navHidden keeps the mode in
-  // the ⌘K palette and as a deep-link target (setMode remaps it to the
-  // Memories surface's Journal tab).
-  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — a tab in Memories", quiet: true, navHidden: true },
-  { id: "grimoire", label: "Memories", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents", quiet: true },
-  // Browser is summoned on demand (a clicked link/URL opens it, plus ⌘5 and the
-  // ⌘K palette) rather than navigated to daily, so it's kept in the list for
-  // those launchers but hidden from the sidebar rows.
-  { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true },
-  // Ask Salem is a destination you summon (Home entry, ⌘K "Go to", deep link,
-  // or the split-pane widget's expand button) — deliberately NOT a sidebar row
-  // (see salem-home-entry.test.ts). navHidden keeps it reachable everywhere else.
-  { id: "salem", label: "Ask Salem", iconName: "ph:cat", description: "Ask the docs familiar — grounded answers from the Coven index and your Cave", navHidden: true },
-  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' crafts and skills", quiet: true },
-  // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
-  // mode + page remain reachable programmatically but aren't surfaced here.
-  //
-  // GitHub — the standalone assigned-work surface, restored when the Code
-  // workbench moved into the Coding familiar's room (cave-cc5r). Every
-  // familiar keeps this row (with the assigned-work badge) EXCEPT while the
-  // Code room is visible for the active familiar — the room carries its own
-  // GitHub tab, so the workspace passes hideGithubRow to avoid double-listing.
-  { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Assigned PRs, issues, and review requests across your repos", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },
-];
-
-// Rows actually rendered in the sidebar — everything except on-demand surfaces
-// (navHidden), which stay in FOLDER_MODES for the ⌘K palette + ⌘-number launcher.
-const VISIBLE_MODES = FOLDER_MODES.filter((fm) => !fm.navHidden);
-
-export { FOLDER_MODES };
 
 
 function FolderRow({
@@ -245,7 +187,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   // Projects lives only inside the Familiars surface's Projects tab now (and ⌘9 /
   // the /projects deep-link in workspace.tsx open it there) — no sidebar entry.
-  const handleModeSelect = (id: FolderMode) => {
+  const handleModeSelect = (id: WorkspaceNavMode) => {
     onModeChange(id);
   };
 
@@ -292,7 +234,10 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       </div>
 
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
-        {(props.hideGithubRow ? VISIBLE_MODES.filter((fm) => fm.id !== "github") : VISIBLE_MODES).map((fm, i, rows) => (
+        {(props.hideGithubRow
+          ? VISIBLE_WORKSPACE_NAV_ITEMS.filter((item) => item.id !== "github")
+          : VISIBLE_WORKSPACE_NAV_ITEMS
+        ).map((fm: WorkspaceNavItem, i, rows) => (
           <FolderRow
             key={fm.id}
             id={fm.id}
@@ -302,7 +247,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             // Marketplace hub lit); pages open as split tiles get a lighter
             // "open in split" state instead. Derivation in lib/sidebar-nav-state.
             state={sidebarRowState(fm.id, mode, props.splitPageModes)}
-            badge={fm.badge?.(props)}
+            badge={MODE_BADGES[fm.id]?.(props)}
             kbd={fm.kbd}
             description={fm.description}
             quiet={fm.quiet}
