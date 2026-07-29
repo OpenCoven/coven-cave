@@ -1,65 +1,11 @@
 /* ────────────────────────────────────────────────
-   Chat · Familiar tab — roster rail + identity detail
-   (design-handoff redesign: SurfaceRail roster on the left, identity header
-   + Roles/Skills/Runtime/Capabilities cards on the right. The `.familiar-tab`
-   root class is load-bearing for backdrop glass — see backdrop.css.)
+   Chat · Familiar tab — identity detail for the ACTIVE familiar
+   (design-handoff redesign, scoped by cave-k8b0a: the sidebar's global scope
+   dropdown is the only familiar switcher, so the tab hosts no roster rail —
+   just the identity header + Roles/Skills/Runtime/Capabilities cards. The
+   `.familiar-tab` root class is load-bearing for backdrop glass — see
+   backdrop.css.)
    ──────────────────────────────────────────────── */
-
-/* Roster rail rows (rendered inside SurfaceRail's content slot). */
-.familiar-tab__rail-row {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-1);
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-primary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.familiar-tab__rail-row:hover {
-  background: color-mix(in oklch, var(--text-primary) 6%, transparent);
-}
-
-/* Selected row = surface bg. */
-.familiar-tab__rail-row[aria-current="true"] {
-  background: var(--bg-raised);
-}
-
-/* Collapsed rail: avatar-only square buttons. */
-.surface-rail[data-open="false"] .familiar-tab__rail-row {
-  width: auto;
-  justify-content: center;
-}
-
-.familiar-tab__rail-text {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.familiar-tab__rail-name {
-  font-size: var(--text-base);
-  font-weight: 500;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.familiar-tab__rail-role {
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* Detail pane: the main column measures its own inline size so the card grid
    goes two-column when the pane (not the viewport) is wide enough. */
