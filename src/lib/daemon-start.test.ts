@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
+import { sanitizeAboutDiagnosticText } from "./about-diagnostics.ts";
 import { waitForDaemonReadiness } from "./daemon-readiness.ts";
 
 const daemonStart = await readFile(new URL("./daemon-start.ts", import.meta.url), "utf8");
@@ -14,6 +15,17 @@ assert.match(daemonStart, /path: "\/api\/v1\/health"/);
 assert.match(daemonStart, /shell: launchMode === "shell"/);
 assert.match(readinessSource, /A final probe closes the race/);
 assert.doesNotMatch(daemonStart, /child\.kill\("SIGTERM"\)/, "a timeout must not kill an already-daemonized Windows descendant");
+assert.match(daemonStart, /sanitizeAboutDiagnosticText/, "daemon-start responses reuse the value-safe diagnostics sanitizer");
+assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stdout\)/, "launcher stdout is redacted before it reaches a client");
+assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stderr\)/, "launcher stderr is redacted before it reaches a client");
+
+{
+  const safe = sanitizeAboutDiagnosticText(
+    "failed at C:\\Users\\Example Person\\.npmrc token=ghp_1234567890abcdefghijklmnopqrstuv",
+  );
+  assert.doesNotMatch(safe, /Example Person|npmrc|ghp_/, "daemon start diagnostics redact local paths and credentials");
+  assert.match(safe, /\[local path omitted\]|\[redacted\]/, "redaction remains apparent to the user");
+}
 
 test("a foreground launcher is successful as soon as health becomes ready", async () => {
   let now = 0;

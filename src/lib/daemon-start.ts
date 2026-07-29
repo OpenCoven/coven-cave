@@ -4,6 +4,7 @@ import { covenBin } from "@/lib/coven-bin";
 import { covenCliMissingError, isMissingExecutableError } from "@/lib/coven-spawn-error";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 import { waitForDaemonReadiness } from "./daemon-readiness.ts";
+import { sanitizeAboutDiagnosticText } from "./about-diagnostics.ts";
 
 export type DaemonStartResult =
   | { ok: true; alreadyRunning: true; readinessAttempts: number; elapsedMs: number; launchMode: "none" }
@@ -36,6 +37,15 @@ type StartLocalDaemonOptions = {
   startTimeoutMs?: number;
   readinessPollMs?: number;
 };
+
+/**
+ * Process output can contain local paths, npm configuration, and credentials.
+ * Keep the bounded, structured launch result useful without turning a failed
+ * start into a diagnostics exfiltration path.
+ */
+export function sanitizeDaemonStartDiagnostic(value: string): string {
+  return sanitizeAboutDiagnosticText(value);
+}
 
 export async function startLocalDaemon({
   restart = false,
@@ -82,26 +92,29 @@ export async function startLocalDaemon({
       elapsedMs: Date.now() - startedAt,
       launchMode,
       runner: readiness.runnerExited ? "exited" : "still-running",
-      stdout,
-      stderr,
+      stdout: sanitizeDaemonStartDiagnostic(stdout),
+      stderr: sanitizeDaemonStartDiagnostic(stderr),
     };
   }
   if (spawnError) {
     if (isMissingExecutableError(spawnError)) {
       const missing = covenCliMissingError();
       return {
-        ok: false, code: "spawn_failed", error: missing.error, stdout, stderr,
+        ok: false, code: "spawn_failed", error: sanitizeDaemonStartDiagnostic(missing.error),
+        stdout: sanitizeDaemonStartDiagnostic(stdout), stderr: sanitizeDaemonStartDiagnostic(stderr),
         status: 500, readinessAttempts: readiness.attempts, elapsedMs: Date.now() - startedAt, launchMode,
       };
     }
     return {
-      ok: false, code: "spawn_failed", error: spawnError.message, stdout, stderr,
+      ok: false, code: "spawn_failed", error: sanitizeDaemonStartDiagnostic(spawnError.message),
+      stdout: sanitizeDaemonStartDiagnostic(stdout), stderr: sanitizeDaemonStartDiagnostic(stderr),
       status: 500, readinessAttempts: readiness.attempts, elapsedMs: Date.now() - startedAt, launchMode,
     };
   }
   if (exitCode !== undefined) {
     return {
-      ok: false, code: "runner_exited", error: "daemon launcher exited before health became ready", stdout, stderr,
+      ok: false, code: "runner_exited", error: "daemon launcher exited before health became ready",
+      stdout: sanitizeDaemonStartDiagnostic(stdout), stderr: sanitizeDaemonStartDiagnostic(stderr),
       status: 500, readinessAttempts: readiness.attempts, elapsedMs: Date.now() - startedAt, launchMode, exitCode,
     };
   }
@@ -109,7 +122,8 @@ export async function startLocalDaemon({
   // handed the daemon to a descendant; the final health probe above is the
   // authority, and killing by shell pid can leave that healthy child orphaned.
   return {
-    ok: false, code: "readiness_timeout", error: "daemon readiness timed out", stdout, stderr,
+    ok: false, code: "readiness_timeout", error: "daemon readiness timed out",
+    stdout: sanitizeDaemonStartDiagnostic(stdout), stderr: sanitizeDaemonStartDiagnostic(stderr),
     status: 504, readinessAttempts: readiness.attempts, elapsedMs: Date.now() - startedAt, launchMode,
   };
 }
