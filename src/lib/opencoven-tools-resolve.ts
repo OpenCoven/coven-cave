@@ -67,6 +67,10 @@ export type StaleLauncherResolution = {
 
 export type StaleLauncherDependencies = {
   platform?: NodeJS.Platform;
+  /** Child-process budget for the real PATH lookup and `--version` probes.
+   *  Defaults to the UI latency budgets in opencoven-tools-status. Raise it
+   *  when the caller needs the true answer more than a fast one. */
+  probeTimeoutMs?: number;
   refreshEnv?: () => NodeJS.ProcessEnv;
   /** Resolve npm's global prefix (`npm prefix -g`). */
   npmGlobalPrefix?: (env: NodeJS.ProcessEnv) => Promise<string | null>;
@@ -260,11 +264,14 @@ export async function resolveStaleOpenCovenLaunchers(
   const platform = dependencies.platform ?? process.platform;
   const refreshEnv = dependencies.refreshEnv ?? refreshCovenSpawnEnv;
   const npmGlobalPrefix = dependencies.npmGlobalPrefix ?? defaultNpmGlobalPrefix;
+  const probeTimeoutMs = dependencies.probeTimeoutMs;
   const discover =
     dependencies.discover ??
     ((spec: OpenCovenToolSpec, env: NodeJS.ProcessEnv) =>
-      discoverOpenCovenTool(spec, { env }));
-  const probeAt = dependencies.probeAt ?? probeOpenCovenBinaryAt;
+      discoverOpenCovenTool(spec, { env, timeoutMs: probeTimeoutMs }));
+  const probeAt =
+    dependencies.probeAt ??
+    ((spec, binaryPath, env) => probeOpenCovenBinaryAt(spec, binaryPath, env, { timeoutMs: probeTimeoutMs }));
   const fileExists = dependencies.fileExists ?? defaultFileExists;
   const removeFile = dependencies.removeFile ?? removeLauncherFile;
 
