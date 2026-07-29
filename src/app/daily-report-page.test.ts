@@ -134,9 +134,9 @@ assert.match(page, /isFuture,/, "week cells know whether they are in the future"
 assert.match(view, /canGoForward \?/, "the next-week control is dead on the current week");
 assert.match(view, /day\.isFuture \?/, "a future day renders as a dead cell, not a link");
 assert.match(
-  read("../styles/daily-report-day.css"),
-  /\.drd-week__step\[data-disabled\][\s\S]{0,160}pointer-events:\s*none/,
-  "the disabled step must not be clickable",
+  view,
+  /:\s*\(\s*<span[\s\S]{0,220}className="drd-week__step"[\s\S]{0,220}data-disabled[\s\S]{0,220}title="This is the current week"/,
+  "the disabled next-week branch renders as a non-link step with disabled semantics",
 );
 
 // ── theme safety ───────────────────────────────────────────────────────────

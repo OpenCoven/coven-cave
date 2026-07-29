@@ -236,6 +236,7 @@ export function DailyReportDay({
                 aria-disabled="true"
                 title="This is the current week"
               >
+                <span className="sr-only">Next week unavailable: this is the current week</span>
                 <Icon name="ph:caret-right" aria-hidden />
               </span>
             )}
