@@ -11,6 +11,7 @@ Use Apify Actors for prebuilt scraping and automation tasks instead of hand-roll
 - Run a Store actor to extract data
 - Automate a repetitive web task
 - Collect structured datasets
+- Research X posts and public relationship data
 
 ## Guardrails
 
