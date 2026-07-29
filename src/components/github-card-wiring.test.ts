@@ -86,6 +86,10 @@ assert.match(card, /Workflow run failed/, "hydrated run glyph reflects a fail co
 // composer cockpit ("Final Card Components.dc.html" §01). The write routes are
 // unchanged — only where they are called from moved.
 const composer = readFileSync(new URL("./github-card-composer.tsx", import.meta.url), "utf8");
+// The composer's four accordion sections are presentation-only child files
+// (src/components/github-card/*.tsx) statically imported into the same chunk —
+// all state, fetches and mutation handlers stay in the composer above.
+const familiarSection = readFileSync(new URL("./github-card/familiar-section.tsx", import.meta.url), "utf8");
 // The composer MUST stay lazy. chat-view sits in the `/` startup graph, so a
 // static import drags gh-card-composer.css into the home first load for every
 // session — that is 8 KB over the CSS budget and fails `Frontend build`.
@@ -154,7 +158,7 @@ assert.match(
 );
 
 // The familiar drafts, the human sends.
-assert.match(composer, /never auto-sent/, "the draft strip says out loud that it is not sent");
+assert.match(familiarSection, /never auto-sent/, "the draft strip says out loud that it is not sent");
 
 // navigator.clipboard is undefined in the packaged Tauri webview, which is the
 // whole reason @/lib/clipboard exists. A direct call there no-ops while the
