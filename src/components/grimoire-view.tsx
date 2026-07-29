@@ -1059,6 +1059,9 @@ export function GrimoireView({
   }, [announce, closeTab, confirm, deleting, load, selection]);
 
   const q = query.trim().toLowerCase();
+  // Search results must stay reachable even when the persisted rail preference
+  // is compact. Clearing the query restores that preference without a write.
+  const navigatorCollapsedForDisplay = navigatorCollapsed && !q;
   const matches = useCallback(
     (...fields: Array<string | undefined | null>) =>
       !q || fields.some((f) => f && f.toLowerCase().includes(q)),
@@ -1502,7 +1505,7 @@ export function GrimoireView({
       <div className="flex min-h-0 flex-1 gap-3 p-3">
       <aside
         className={`flex h-full min-h-0 w-full flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 @min-[880px]/grimoire:shrink-0 ${
-          navigatorCollapsed ? "@min-[880px]/grimoire:w-[44px]" : "@min-[880px]/grimoire:w-[300px]"
+          navigatorCollapsedForDisplay ? "@min-[880px]/grimoire:w-[44px]" : "@min-[880px]/grimoire:w-[300px]"
         } ${
           // On a narrow container the rail and the main pane both go full-width,
           // so only one may show. Hide the rail when a doc is open OR the graph
@@ -1513,18 +1516,20 @@ export function GrimoireView({
       >
         {/* Title, surface verbs, and the doc search all live in the compact
             band above — the rail is purely the grouped navigator now. */}
-        <div className={`flex shrink-0 ${navigatorCollapsed ? "justify-center p-1" : "justify-end p-1.5"}`}>
-          <button
-            type="button"
-            onClick={toggleNavigator}
-            aria-label={navigatorCollapsed ? "Expand Memories sidebar" : "Collapse Memories sidebar"}
-            title={navigatorCollapsed ? "Expand Memories sidebar" : "Collapse Memories sidebar"}
-            className="focus-ring-inset inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:sidebar-simple" width={14} aria-hidden />
-          </button>
-        </div>
-        {navigatorCollapsed ? (
+        {!q ? (
+          <div className={`flex shrink-0 ${navigatorCollapsed ? "justify-center p-1" : "justify-end p-1.5"}`}>
+            <button
+              type="button"
+              onClick={toggleNavigator}
+              aria-label={navigatorCollapsed ? "Expand Memories sidebar" : "Collapse Memories sidebar"}
+              title={navigatorCollapsed ? "Expand Memories sidebar" : "Collapse Memories sidebar"}
+              className="focus-ring-inset inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:sidebar-simple" width={14} aria-hidden />
+            </button>
+          </div>
+        ) : null}
+        {navigatorCollapsedForDisplay ? (
           <nav aria-label="Collapsed Memories navigator" className="flex min-h-0 flex-1 flex-col items-center gap-1 px-1 pb-2">
             <button
               type="button"
