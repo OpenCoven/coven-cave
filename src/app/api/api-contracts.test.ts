@@ -359,8 +359,8 @@ for (const contract of contracts) {
   );
   assert.match(
     dailySummarySource,
-    /media:\s*draft\.media/,
-    "/inbox/daily-summary should persist the generated media card",
+    /media:\s*\{\s*\n\s*\.\.\.draft\.media,/,
+    "/inbox/daily-summary should persist the generated media card (spread, so a backfill can stamp a truthful generatedAt over it)",
   );
   assert.match(
     dailySummarySource,
