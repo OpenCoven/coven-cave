@@ -9,8 +9,8 @@ const home = await readFile(
 // Familiar rows gain quick actions (parity with thread rows).
 assert.match(
   home,
-  /private func startNewChat\(with familiar: Familiar\) \{[\s\S]*startFreshThread\(familiarIds: \[familiar\.id\]\)[\s\S]*open\(\.thread\(thread\)\)/,
-  "startNewChat should open a fresh thread with the familiar",
+  /private func startNewChat\(with familiar: Familiar\) \{[\s\S]*presentNewChat\(familiarIds: \[familiar\.id\]\)/,
+  "startNewChat should open project-aware New Chat with the familiar preselected",
 );
 
 // The familiar NavigationLink has a leading swipe to start a new chat…

@@ -70,6 +70,8 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var createdAt: String?
     var updatedAt: String?
     var archivedAt: String?
+    /// Launch provenance for first-turn continuity across clients.
+    var projectRoot: String? = nil
     /// Provenance from /api/sessions/list — generator surfaces (journal,
     /// canvas, cron, …) tag their runs so chat lists can hide them.
     var origin: String?
@@ -82,6 +84,7 @@ struct SessionRow: Identifiable, Codable, Hashable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case archivedAt = "archived_at"
+        case projectRoot = "project_root"
         case origin, generated
     }
 

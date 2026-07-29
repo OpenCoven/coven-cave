@@ -512,6 +512,7 @@ struct CaveClient {
         var familiarId: String
         var prompt: String
         var sessionId: String?
+        var projectRoot: String?
         var attachments: [ChatAttachment]?
         /// Per-send client token (cave-h40l): the server keys its resumable
         /// run buffer under this, so a NEW chat (no sessionId yet) is still
@@ -535,6 +536,48 @@ struct CaveClient {
         let id: Int?
     }
 
+    private struct ServerErrorEnvelope: Decodable {
+        var error: String?
+        var code: String?
+        var hint: String?
+    }
+
+    static let serverErrorBodyLimit = 65_536
+
+    static func serverResponseError(statusCode: Int, data: Data) -> CaveError {
+        let bounded = Data(data.prefix(serverErrorBodyLimit))
+        guard let envelope = try? JSONDecoder().decode(
+            ServerErrorEnvelope.self,
+            from: bounded
+        ) else {
+            return .serverResponse(status: statusCode, code: nil, message: nil)
+        }
+        let message = [envelope.error, envelope.hint]
+            .compactMap { value -> String? in
+                guard let value else { return nil }
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            .first
+        return .serverResponse(
+            status: statusCode,
+            code: envelope.code,
+            message: message
+        )
+    }
+
+    private static func readServerErrorBody(
+        from bytes: URLSession.AsyncBytes
+    ) async throws -> Data {
+        var body = Data()
+        body.reserveCapacity(serverErrorBodyLimit)
+        for try await byte in bytes {
+            guard body.count < serverErrorBodyLimit else { break }
+            body.append(byte)
+        }
+        return body
+    }
+
     /// Open the SSE stream for a chat send. Yields decoded frames — keep the
     /// last applied frame's `id` to resume mid-turn via `resumeStream`.
     func sendStream(_ body: SendBody) -> AsyncThrowingStream<StreamFrame, Error> {
@@ -547,7 +590,14 @@ struct CaveClient {
                     req.timeoutInterval = 600
 
                     let (bytes, resp) = try await Self.streamSession.bytes(for: req)
-                    try Self.check(resp)
+                    if let http = resp as? HTTPURLResponse,
+                       !(200..<300).contains(http.statusCode) {
+                        let data = try await Self.readServerErrorBody(from: bytes)
+                        throw Self.serverResponseError(
+                            statusCode: http.statusCode,
+                            data: data
+                        )
+                    }
 
                     var parser = SSELineParser()
                     for try await line in bytes.lines {

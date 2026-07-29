@@ -45,8 +45,14 @@ assert.match(
 
 assert.match(
   chat,
-  /let destination = app\.directThread\(for: familiar\.id\)[\s\S]*destination\.send\(prompt,[\s\S]*displayText: displayText,[\s\S]*client: client/,
-  "forwarding should send the context prompt to the selected familiar's direct thread with a compact visible label",
+  /let destination = app\.directThread\(for: familiar\.id\)[\s\S]*client\.projects\(familiarIds: \[familiar\.id\]\)[\s\S]*ChatProjectSelection\.resolvedRoot\([\s\S]*destination\.send\(\s*prompt,[\s\S]*displayText: displayText,[\s\S]*client: client/,
+  "forwarding should resolve an accessible destination project before sending the context prompt with a compact visible label",
+);
+
+assert.match(
+  chat,
+  /private func forward\([\s\S]*Task \{ @MainActor in/,
+  "forwarding should keep destination thread and app mutations on the main actor",
 );
 
 assert.match(
