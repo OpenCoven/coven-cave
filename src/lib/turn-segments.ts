@@ -38,6 +38,36 @@ export type TurnSegment<T extends SegmentedTool> =
   | { kind: "text"; text: string }
   | { kind: "tools"; tools: T[] };
 
+export type ConsecutiveToolRun<T extends { name: string; textOffset?: number }> = {
+  /** The first tool's display name, retained for the run summary. */
+  name: string;
+  tools: T[];
+};
+
+/**
+ * Partition tool activity into maximal adjacent runs with the same name.
+ *
+ * This is deliberately presentation-only: callers already decide the
+ * chronological boundary (a streamed `TurnSegment`, or the legacy tool
+ * rollup) and retain the original ToolEvent records inside every run.
+ */
+export function groupConsecutiveTools<T extends { name: string; textOffset?: number }>(tools: readonly T[]): ConsecutiveToolRun<T>[] {
+  const runs: ConsecutiveToolRun<T>[] = [];
+  for (const tool of tools) {
+    const normalizedName = tool.name.trim().toLowerCase();
+    const previous = runs[runs.length - 1];
+    const previousTool = previous?.tools[previous.tools.length - 1];
+    const bothOffsetsKnown = Number.isFinite(previousTool?.textOffset) && Number.isFinite(tool.textOffset);
+    const sameOffset = !bothOffsetsKnown || previousTool?.textOffset === tool.textOffset;
+    if (previous && previous.name.trim().toLowerCase() === normalizedName && sameOffset) {
+      previous.tools.push(tool);
+    } else {
+      runs.push({ name: tool.name, tools: [tool] });
+    }
+  }
+  return runs;
+}
+
 /**
  * Offsets (into `text`) where the document can be split without landing
  * inside a code fence: the start of each line that follows a blank line,

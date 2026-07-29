@@ -192,6 +192,15 @@
   padding: 10px var(--space-3);
 }
 
+.cave-reasoning-block[data-streaming] {
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 7%, var(--bg-panel));
+}
+
+.cave-reasoning-block[data-streaming] > .cave-tool-summary {
+  color: var(--accent-presence);
+}
+
 .cave-tool-summary {
   display: flex;
   align-items: center;
@@ -328,18 +337,48 @@ details[open] > .cave-tool-summary::before {
   --tool-accent: var(--text-muted);
   border-left: 2px solid color-mix(in oklch, var(--tool-accent) 70%, transparent);
 }
+
+.cave-tool-run {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  padding: var(--space-2);
+}
+
+.cave-tool-run > .cave-tool-summary {
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.cave-tool-run__name {
+  min-width: 0;
+  overflow: hidden;
+  color: color-mix(in oklch, var(--tool-accent) 80%, var(--text-secondary));
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cave-tool-run__list {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  border-top: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
+  padding-top: var(--space-2);
+}
+
 .cave-tool-icon { color: var(--tool-accent); }
 .cave-tool-name { color: color-mix(in oklch, var(--tool-accent) 80%, var(--text-secondary)); }
 
-.cave-tool-block[data-tool-category="shell"]  { --tool-accent: oklch(0.80 0.15 150); } /* green */
-.cave-tool-block[data-tool-category="read"]   { --tool-accent: oklch(0.74 0.13 235); } /* blue */
-.cave-tool-block[data-tool-category="search"] { --tool-accent: oklch(0.74 0.16 295); } /* violet */
-.cave-tool-block[data-tool-category="edit"]   { --tool-accent: oklch(0.82 0.14 75); }  /* amber */
-.cave-tool-block[data-tool-category="agent"]  { --tool-accent: oklch(0.74 0.18 350); } /* magenta */
-.cave-tool-block[data-tool-category="web"]    { --tool-accent: oklch(0.78 0.12 200); } /* teal */
-.cave-tool-block[data-tool-category="task"]   { --tool-accent: oklch(0.80 0.13 95); }  /* lime */
-.cave-tool-block[data-tool-category="mcp"]    { --tool-accent: oklch(0.72 0.14 270); } /* indigo */
-.cave-tool-block[data-tool-category="other"]  { --tool-accent: var(--text-muted); }
+.cave-tool-block[data-tool-category="shell"], .cave-tool-run[data-tool-category="shell"]  { --tool-accent: oklch(0.80 0.15 150); } /* green */
+.cave-tool-block[data-tool-category="read"], .cave-tool-run[data-tool-category="read"]   { --tool-accent: oklch(0.74 0.13 235); } /* blue */
+.cave-tool-block[data-tool-category="search"], .cave-tool-run[data-tool-category="search"] { --tool-accent: oklch(0.74 0.16 295); } /* violet */
+.cave-tool-block[data-tool-category="edit"], .cave-tool-run[data-tool-category="edit"]   { --tool-accent: oklch(0.82 0.14 75); }  /* amber */
+.cave-tool-block[data-tool-category="agent"], .cave-tool-run[data-tool-category="agent"]  { --tool-accent: oklch(0.74 0.18 350); } /* magenta */
+.cave-tool-block[data-tool-category="web"], .cave-tool-run[data-tool-category="web"]    { --tool-accent: oklch(0.78 0.12 200); } /* teal */
+.cave-tool-block[data-tool-category="task"], .cave-tool-run[data-tool-category="task"]   { --tool-accent: oklch(0.80 0.13 95); }  /* lime */
+.cave-tool-block[data-tool-category="mcp"], .cave-tool-run[data-tool-category="mcp"]    { --tool-accent: oklch(0.72 0.14 270); } /* indigo */
+.cave-tool-block[data-tool-category="other"], .cave-tool-run[data-tool-category="other"]  { --tool-accent: var(--text-muted); }
 
 /* CHAT-D4-07: expanded tool I/O is secondary context — clamp it tighter than
    prose code blocks (which cap at min(60vh, 520px), CHAT-D7-03). 360px sits
