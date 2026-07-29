@@ -2716,14 +2716,6 @@ export function GitHubView({
               public API
             </span>
           )}
-          {activity?.authed === true && (
-            <span
-              className="gh-compact-auth gh-compact-auth--authed"
-              title="Authenticated — private repos included"
-            >
-              authenticated
-            </span>
-          )}
 
           {activity?.rateLimit && (
             <span
@@ -3188,9 +3180,8 @@ export function GitHubView({
         )}
       </div>
 
-      {/* Keyboard hints moved to the ⌘/ Shortcuts sheet (§8 chrome diet); the
-          low-rate warning lives beside the header rate chip context, and the
-          auth state is already the header's gh-compact-auth chip. */}
+      {/* Keyboard hints moved to the ⌘/ Shortcuts sheet (§8 chrome diet); only
+          the actionable low-rate warning remains in this footer. */}
       {activity?.rateLimit && activity.rateLimit.remaining < 10 && (
         <footer className="github-surface-footer shrink-0 px-5 py-1.5 text-[length:var(--text-2xs)] flex items-center justify-end">
           <span className="inline-flex items-center gap-1 text-[var(--color-warning)]">

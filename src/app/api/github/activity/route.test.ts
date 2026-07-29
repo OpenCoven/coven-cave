@@ -57,11 +57,6 @@ assert.doesNotMatch(
 );
 assert.match(
   githubView,
-  /Authenticated — private repos included/,
-  "authenticated GitHub auth chip should make private repo visibility explicit",
-);
-assert.match(
-  githubView,
   /\.\.\.filtered\.map\(\(i\) => orgOf\(i\.repo\)\)/,
   "organization options derive from the orgs present in the current table rows, not from every membership",
 );

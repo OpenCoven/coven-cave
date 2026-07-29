@@ -93,6 +93,16 @@ assert.match(
   /\{patStatus\?\.hasPat \? \(\s*<>\s*<PopoverSeparator \/>\s*<PopoverItem icon="ph:key" onSelect=\{\(\) => setShowPatModal\(true\)\}>/,
   "connected state moves PAT management into the overflow menu",
 );
+assert.doesNotMatch(
+  source,
+  /activity\?\.authed === true|>\s*authenticated\s*</,
+  "authenticated state does not render a persistent status chip",
+);
+assert.doesNotMatch(
+  boardCss,
+  /\.gh-compact-auth--authed/,
+  "the retired authenticated status chip leaves no dead modifier styles",
+);
 
 assert.match(
   source,
