@@ -15,8 +15,13 @@ assert.match(
 );
 assert.match(
   source,
-  /requestFailed[\s\S]{0,500}?d\.github/,
+  /requestFailed[\s\S]{0,700}?d\.github/,
   "failed polls retain last-known GitHub rows instead of replacing them with an empty slice",
+);
+assert.match(
+  source,
+  /failedKinds[\s\S]{0,700}?d\.github/,
+  "failed activity categories retain their last-known rows while successful categories refresh",
 );
 assert.match(
   source,
@@ -42,6 +47,11 @@ assert.match(
   source,
   /activityRetryAfterSeconds\(act\.collections\)/,
   "the dashboard reads category Retry-After metadata before scheduling another GitHub request",
+);
+assert.match(
+  source,
+  /retryAfterSeconds[\s\S]{0,500}?githubRetryUntilRef\.current/,
+  "top-level GitHub backpressure delays dashboard polling",
 );
 
 console.log("bento-dashboard.test.ts: ok");

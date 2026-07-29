@@ -77,7 +77,7 @@ export type GitHubApiFailure = {
   retryAfterSeconds: number | null;
 };
 
-const GITHUB_SECONDARY_RATE_LIMIT_RETRY_SECONDS = 60;
+const GITHUB_RATE_LIMIT_RETRY_SECONDS = 60;
 
 function retryAfterSeconds(value: string | null): number | null {
   if (!value) return null;
@@ -111,7 +111,9 @@ export function githubApiFailure({
     && /secondary rate limit|abuse detection mechanism/i.test(responseMessage ?? "");
   const retrySeconds = retryAfterSeconds(retryAfter)
     ?? (remaining === 0 ? rateLimitResetSeconds(rateLimitReset) : null)
-    ?? (secondaryRateLimit ? GITHUB_SECONDARY_RATE_LIMIT_RETRY_SECONDS : null);
+    ?? (status === 429 || remaining === 0 || secondaryRateLimit
+      ? GITHUB_RATE_LIMIT_RETRY_SECONDS
+      : null);
   const rateLimited = status === 429
     || (status === 403 && (remaining === 0 || retrySeconds !== null || secondaryRateLimit));
 
@@ -167,6 +169,11 @@ const COLLECTION_KEYS = Object.keys(COLLECTION_LABELS) as Array<keyof ActivityCo
 
 export function activityCollectionsComplete(collections: ActivityCollections): boolean {
   return COLLECTION_KEYS.every((key) => !collections[key].incomplete);
+}
+
+export function activityCountLabel(count: number, collection: ActivityCollection): string {
+  if (!collection.incomplete) return String(count);
+  return count > 0 ? `${count}+` : "—";
 }
 
 export function activityRetryAfterSeconds(collections: ActivityCollections): number {

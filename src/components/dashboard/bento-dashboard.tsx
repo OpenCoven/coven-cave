@@ -63,6 +63,13 @@ type BentoData = {
   projects: number | null;
 };
 
+type GitHubActivityPayload = {
+  ok: boolean;
+  items?: GitHubItem[];
+  collections?: ActivityCollections;
+  retryAfterSeconds?: number | null;
+};
+
 const EMPTY: BentoData = {
   cards: [],
   familiars: [],
@@ -85,27 +92,30 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
-function retryAfterMs(headers: Headers): number {
-  const value = headers.get("retry-after");
+function retryAfterHeaderSeconds(value: string | null): number {
   if (!value) return 0;
   const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
   const date = Date.parse(value);
-  return Number.isNaN(date) ? 0 : Math.max(0, date - Date.now());
+  return Number.isNaN(date) ? 0 : Math.max(0, Math.ceil((date - Date.now()) / 1000));
 }
 
-async function getGithubActivityJson(): Promise<{
-  data: { ok: boolean; items?: GitHubItem[]; collections?: ActivityCollections } | null;
-  retryAfterMs: number;
+async function getGitHubActivity(): Promise<{
+  data: GitHubActivityPayload | null;
+  retryAfterSeconds: number;
 }> {
   try {
-    const res = await fetch("/api/github/activity", { cache: "no-store" });
-    const retryMs = retryAfterMs(res.headers);
-    if (!res.ok) return { data: null, retryAfterMs: retryMs };
-    const data = (await res.json()) as { ok: boolean; items?: GitHubItem[]; collections?: ActivityCollections };
-    return { data, retryAfterMs: retryMs };
+    const response = await fetch("/api/github/activity", { cache: "no-store" });
+    const data = await response.json().catch(() => null) as GitHubActivityPayload | null;
+    return {
+      data,
+      retryAfterSeconds: Math.max(
+        typeof data?.retryAfterSeconds === "number" ? data.retryAfterSeconds : 0,
+        retryAfterHeaderSeconds(response.headers.get("retry-after")),
+      ),
+    };
   } catch {
-    return { data: null, retryAfterMs: 0 };
+    return { data: null, retryAfterSeconds: 0 };
   }
 }
 
@@ -155,25 +165,33 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
       put("projects", Array.isArray(r?.projects) ? r.projects.length : null),
     );
     if (Date.now() < githubRetryUntilRef.current) return;
-    void getGithubActivityJson().then(({ data: act, retryAfterMs }) => {
+    void getGitHubActivity().then(({ data: act, retryAfterSeconds }) => {
       if (!aliveRef.current) return;
       const activityItems = act?.ok && Array.isArray(act.items) ? act.items : null;
       const requestFailed = activityItems === null;
       const complete = !requestFailed
         && act?.collections !== undefined
         && activityCollectionsComplete(act.collections);
-      if (act?.ok && act.collections) {
-        const retryAfterCollectionsMs = activityRetryAfterSeconds(act.collections) * 1000;
-        githubRetryUntilRef.current = retryAfterCollectionsMs > 0 ? Date.now() + retryAfterCollectionsMs : 0;
-      } else if (retryAfterMs > 0) {
-        githubRetryUntilRef.current = Date.now() + retryAfterMs;
-      }
+      const collectionRetryAfterSeconds = act?.ok && act.collections
+        ? activityRetryAfterSeconds(act.collections)
+        : 0;
+      const retryAfterMs = Math.max(retryAfterSeconds, collectionRetryAfterSeconds) * 1000;
+      githubRetryUntilRef.current = retryAfterMs > 0 ? Date.now() + retryAfterMs : 0;
+      const failedKinds = new Set<GitHubItem["kind"]>();
+      if (act?.collections?.authored.status === "failed") failedKinds.add("pr");
+      if (act?.collections?.reviewRequests.status === "failed") failedKinds.add("review_request");
+      if (act?.collections?.assignedIssues.status === "failed") failedKinds.add("issue");
       const map = new Map<string, GitHubItem>();
       for (const it of activityItems ?? []) map.set(it.url || it.id, it);
       setData((d) => {
-        if (requestFailed) {
+        if (requestFailed || failedKinds.size > 0) {
           for (const item of d.github) {
-            if (!map.has(item.url || item.id)) map.set(item.url || item.id, item);
+            if (
+              (requestFailed || failedKinds.has(item.kind))
+              && !map.has(item.url || item.id)
+            ) {
+              map.set(item.url || item.id, item);
+            }
           }
         }
         return { ...d, github: [...map.values()], githubComplete: complete };

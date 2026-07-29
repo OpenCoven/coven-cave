@@ -26,8 +26,28 @@ assert.match(
 );
 assert.match(
   view,
+  /if \(timerRef\.current !== null\) window\.clearTimeout\(timerRef\.current\);[\s\S]{0,240}?timerRef\.current = null;[\s\S]{0,120}?fetchActivity\(true, true\)/,
+  "poll scheduling replaces the prior timer and clears its id before fetching",
+);
+assert.match(
+  view,
+  /surfaceWarmupRetryAfterSeconds\(e\)/,
+  "top-level GitHub backpressure preserves its retry delay",
+);
+assert.match(
+  view,
   /disabled=\{retryBlocked\}/,
   "manual completeness retries remain disabled during GitHub's cooldown",
+);
+assert.match(
+  view,
+  /countLabels=\{countLabels\}/,
+  "detail counts receive completeness-aware labels",
+);
+assert.match(
+  view,
+  /activityIncomplete\s*\?\s*`No loaded items match/,
+  "filtered empty copy does not claim to have searched omitted activity",
 );
 assert.match(
   view,

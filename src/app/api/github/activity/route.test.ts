@@ -97,6 +97,11 @@ assert.match(
 );
 assert.match(
   route,
+  /retryAfterSeconds:\s*identityFailure\.retryAfterSeconds/,
+  "top-level identity failures expose their cooldown to activity consumers",
+);
+assert.match(
+  route,
   /collections,\r?\n\s*items,/,
   "activity responses should expose per-category completeness metadata",
 );

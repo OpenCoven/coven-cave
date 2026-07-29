@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  activityCountLabel,
   activityCollectionsComplete,
   activityCollectionsEqual,
   activityCompletenessNotice,
@@ -216,12 +217,24 @@ const primaryRateLimit = githubApiFailure({
   status: 403,
   remaining: 0,
   retryAfter: null,
-  rateLimitReset: Math.floor(Date.now() / 1000) + 60,
+  rateLimitReset: String(Math.floor(Date.now() / 1000) + 60),
 });
 assert.equal(primaryRateLimit.rateLimited, true);
 assert.ok(
   (primaryRateLimit.retryAfterSeconds ?? 0) >= 50,
   "a primary rate limit delays the next poll until GitHub's reset time",
 );
+assert.deepEqual(
+  githubApiFailure({ status: 429, remaining: 42, retryAfter: null }),
+  {
+    message: "GitHub rate limit reached. Try again in 60 seconds.",
+    rateLimited: true,
+    retryAfterSeconds: 60,
+  },
+  "headerless 429 responses use a bounded fallback cooldown",
+);
+assert.equal(activityCountLabel(12, complete), "12");
+assert.equal(activityCountLabel(100, truncated), "100+");
+assert.equal(activityCountLabel(0, failed), "—");
 
 console.log("github-activity.test.ts: ok");

@@ -275,7 +275,11 @@ export async function GET() {
 
   if (!login && identityFailure) {
     return NextResponse.json(
-      { ok: false, error: identityFailure.message },
+      {
+        ok: false,
+        error: identityFailure.message,
+        retryAfterSeconds: identityFailure.retryAfterSeconds,
+      },
       {
         status: identityFailure.rateLimited ? 429 : 502,
         headers: identityFailure.retryAfterSeconds === null
