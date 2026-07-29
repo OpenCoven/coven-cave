@@ -13,6 +13,10 @@ settings:
     DEVELOPMENT_TEAM: "9LR8Z8UQ9X"
     CODE_SIGN_STYLE: Automatic
     GENERATE_INFOPLIST_FILE: NO
+packages:
+  WebRTC:
+    url: https://github.com/stasel/WebRTC.git
+    revision: 6ed87f05368632f71dc95c89c14c051561710925 # 150.0.0
 targets:
   CovenCave:
     type: application
@@ -54,6 +58,8 @@ targets:
         IPHONEOS_DEPLOYMENT_TARGET: "18.0"
         CODE_SIGN_ENTITLEMENTS: CovenCave/CovenCave.entitlements
     dependencies:
+      - package: WebRTC
+        product: WebRTC
       - target: CovenCaveWidgets
 
   # Unit tests for the pure pairing logic (CaveInvite parsing, token-expiry

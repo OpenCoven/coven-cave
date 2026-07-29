@@ -17,6 +17,11 @@ struct Familiar: Identifiable, Codable, Hashable {
     var avatarUrl: String?
     var activeSessions: Int?
     var memoryFreshness: String?
+    /// Voice configuration published by Familiar Studio. All three remain
+    /// optional so phones can decode familiars created before voice support.
+    var voiceProvider: String? = nil
+    var voiceModel: String? = nil
+    var voiceName: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -25,6 +30,7 @@ struct Familiar: Identifiable, Codable, Hashable {
         case avatarUrl
         case activeSessions = "active_sessions"
         case memoryFreshness = "memory_freshness"
+        case voiceProvider, voiceModel, voiceName
     }
 }
 

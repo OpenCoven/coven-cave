@@ -16,6 +16,73 @@ protocol CaveBootstrapClient: Sendable {
 /// is required for the Tailscale app path because it exposes the full API.
 struct CaveClient {
     var connection: CaveConnection
+    private let injectedSession: URLSession?
+
+    init(connection: CaveConnection, session: URLSession? = nil) {
+        self.connection = connection
+        self.injectedSession = session
+    }
+
+    /// `POST /api/voice/session` request. The desktop resolves the familiar's
+    /// provider and mints any provider credential server-side.
+    struct VoiceSessionRequest: Codable, Sendable {
+        var familiarId: String
+        var sessionId: String
+    }
+
+    /// A prior conversation turn supplied by provider grants that need local
+    /// context to continue the call.
+    struct VoiceSessionSeedTurn: Codable, Sendable {
+        var role: String
+        var content: String
+    }
+
+    /// Provider-specific connection details. Known fields stay explicit while
+    /// optional metadata lets later transports select their own connection
+    /// path without teaching this client about provider secrets.
+    struct VoiceSessionConnection: Codable, Sendable {
+        var kind: String
+        var url: String?
+        var model: String?
+        var voice: String?
+        var familiarId: String?
+        var sessionId: String?
+        var voiceId: String?
+        var modelId: String?
+        var instructions: String?
+        var conversationSeed: [VoiceSessionSeedTurn]?
+    }
+
+    /// A short-lived server-minted grant. This contains an ephemeral client
+    /// secret when one is needed; it is never the desktop's OPENAI_API_KEY.
+    struct VoiceSessionGrant: Codable, Sendable {
+        var provider: String
+        var clientSecret: String
+        var expiresAt: String
+        var connection: VoiceSessionConnection
+    }
+
+    /// Wire response from `POST /api/voice/session`.
+    struct VoiceSessionResponse: Codable, Sendable {
+        var ok: Bool
+        var grant: VoiceSessionGrant?
+        var callId: String?
+        var error: String?
+    }
+
+    private struct VoiceSessionErrorEnvelope: Decodable {
+        var error: String?
+        var hint: String?
+        var missingKey: String?
+        var providerMessage: String?
+
+        var message: String? {
+            guard let error, !error.isEmpty else { return nil }
+            let detail = hint ?? providerMessage
+                ?? missingKey.map { "Missing \($0)." }
+            return detail.map { "\(error): \($0)" } ?? error
+        }
+    }
 
     private var base: URL {
         get throws {
@@ -57,6 +124,7 @@ struct CaveClient {
         let retryDelays: [Duration] = ["GET", "HEAD"].contains(method)
             ? [.milliseconds(350), .seconds(1)]
             : []
+        let session = injectedSession ?? self.session
         for attempt in 0...retryDelays.count {
             do {
                 return try await session.data(for: req)
@@ -163,6 +231,36 @@ struct CaveClient {
         guard let path = familiar.avatarUrl, let base = connection.baseURL else { return nil }
         if path.hasPrefix("http") { return URL(string: path) }
         return URL(string: path, relativeTo: base)?.absoluteURL
+    }
+
+    // MARK: - Voice
+
+    /// Mint a voice-call grant through Cave. The desktop keeps provider API
+    /// keys in its vault; iOS receives only the short-lived response grant.
+    func mintVoiceSession(familiarId: String, sessionId: String) async throws -> VoiceSessionResponse {
+        let payload = try JSONEncoder().encode(
+            VoiceSessionRequest(familiarId: familiarId, sessionId: sessionId)
+        )
+        let req = try request("api/voice/session", method: "POST", body: payload)
+        let (data, resp) = try await data(for: req)
+        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            if let envelope = try? JSONDecoder().decode(VoiceSessionErrorEnvelope.self, from: data),
+               let message = envelope.message {
+                throw CaveError.transport(message)
+            }
+            try Self.check(resp)
+        }
+        let decoded: VoiceSessionResponse
+        do {
+            decoded = try JSONDecoder().decode(VoiceSessionResponse.self, from: data)
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+        try Self.check(resp)
+        guard decoded.ok, decoded.grant != nil, decoded.callId != nil else {
+            throw CaveError.transport(decoded.error ?? "Voice session was not granted.")
+        }
+        return decoded
     }
 
     // MARK: - Marketplace
