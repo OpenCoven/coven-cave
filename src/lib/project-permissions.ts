@@ -98,12 +98,46 @@ export type PermissionAuditEntry = {
   requiredAccess?: ProjectAccessLevel;
 };
 
+/**
+ * Who performed a grant change. `permissionAudit` answers "was this familiar
+ * allowed to do X"; this answers "who widened this, when, and from what" —
+ * a different question the check log structurally cannot serve.
+ */
+export type GrantChangeActor = "loopback" | "mobile" | "system";
+
+export type GrantChangeKind = "direct" | "group" | "project-removed" | "bootstrap";
+
+export type GrantChangeEntry = {
+  id: string;
+  at: string;
+  familiarId: string;
+  projectId: string;
+  /** Level before the change; null when there was no grant. */
+  from: ProjectAccessLevel | null;
+  /** Level after the change; null when the grant was removed. */
+  to: ProjectAccessLevel | null;
+  /** Where the write came from — the desktop, the paired phone, or the app itself. */
+  actor: GrantChangeActor;
+  /** Which surface of the model changed: a direct grant, a group grant, … */
+  kind: GrantChangeKind;
+  /** Provenance recorded on the grant itself (human, bootstrap, …). */
+  source?: ProjectGrantSource;
+  /** Access group id, when kind is "group". */
+  groupId?: string;
+};
+
 type ProjectPermissionsFile = {
   version: 2;
   projectGrants: ProjectGrant[];
   accessGroups: FamiliarAccessGroup[];
   grantProposals: GrantProposal[];
   permissionAudit: PermissionAuditEntry[];
+  /**
+   * Grant-change log. Separate from permissionAudit on purpose: that array
+   * holds 1000s of check decisions with a check-shaped schema, and widening it
+   * would force every existing entry to be reinterpreted.
+   */
+  grantAudit: GrantChangeEntry[];
 };
 
 type HumanPermissionConfigFile = {
@@ -158,6 +192,7 @@ function emptyFile(): ProjectPermissionsFile {
     accessGroups: [],
     grantProposals: [],
     permissionAudit: [],
+    grantAudit: [],
   };
 }
 
@@ -310,6 +345,9 @@ async function loadProjectPermissionsUnlocked(): Promise<ProjectPermissionsFile>
       : [],
     grantProposals: Array.isArray(parsed.grantProposals) ? parsed.grantProposals : [],
     permissionAudit: Array.isArray(parsed.permissionAudit) ? parsed.permissionAudit : [],
+    // Absent on every store written before this log existed — an empty array
+    // is the honest answer there, not a reconstruction.
+    grantAudit: Array.isArray(parsed.grantAudit) ? parsed.grantAudit : [],
   };
   materializeDueGrantProposals(file, new Date());
   return file;
@@ -538,6 +576,34 @@ export async function assertProjectRootAccess(
   return project;
 }
 
+/**
+ * Append a grant-change record to an already-loaded file. Takes the file so it
+ * lands inside the SAME lock+save as the mutation it describes — recording it
+ * separately could leave a change with no record if the second write failed.
+ */
+function recordGrantChange(
+  file: ProjectPermissionsFile,
+  entry: Omit<GrantChangeEntry, "id" | "at">,
+): void {
+  file.grantAudit.push({ id: randomUUID(), at: new Date().toISOString(), ...entry });
+}
+
+/**
+ * Most-recent grant changes, newest first, capped to `limit`.
+ *
+ * Ties on `at` break on append order, not arbitrarily: a bulk "Set all" writes
+ * many entries inside the same millisecond, and sorting on the timestamp alone
+ * would report that burst in reverse.
+ */
+export async function listRecentGrantChanges(limit = 200): Promise<GrantChangeEntry[]> {
+  const log = (await loadProjectPermissions()).grantAudit;
+  return log
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => b.entry.at.localeCompare(a.entry.at) || b.index - a.index)
+    .slice(0, Math.max(0, limit))
+    .map(({ entry }) => entry);
+}
+
 async function appendAudit(entry: Omit<PermissionAuditEntry, "id" | "at">): Promise<void> {
   await withProjectPermissionsStore(() => withWriteMutex(async () => {
     const file = await loadProjectPermissionsUnlocked();
@@ -551,10 +617,27 @@ export async function grantProjectToFamiliar(input: {
   projectId: string;
   source: ProjectGrantSource;
   access?: ProjectAccessLevel;
+  /** Who is making the change; defaults to the app itself. */
+  actor?: GrantChangeActor;
 }): Promise<void> {
   await withProjectPermissionsStore(() => withWriteMutex(async () => {
     const file = await loadProjectPermissionsUnlocked();
+    // Read the prior level first — ensureProjectGrant mutates in place, so
+    // after it runs the "from" side of the change is gone.
+    const before =
+      file.projectGrants.find(
+        (grant) => grant.familiarId === input.familiarId && grant.projectId === input.projectId,
+      )?.access ?? null;
     if (ensureProjectGrant(file, input)) {
+      recordGrantChange(file, {
+        familiarId: input.familiarId,
+        projectId: input.projectId,
+        from: before,
+        to: normalizeAccessLevel(input.access),
+        actor: input.actor ?? "system",
+        kind: "direct",
+        source: input.source,
+      });
       await saveProjectPermissions(file);
     }
   }));
@@ -563,14 +646,28 @@ export async function grantProjectToFamiliar(input: {
 export async function revokeProjectFromFamiliar(input: {
   familiarId: string;
   projectId: string;
+  /** Who is making the change; defaults to the app itself. */
+  actor?: GrantChangeActor;
 }): Promise<boolean> {
   return withProjectPermissionsStore(() => withWriteMutex(async () => {
     const file = await loadProjectPermissionsUnlocked();
+    const removed = file.projectGrants.find(
+      (grant) => grant.familiarId === input.familiarId && grant.projectId === input.projectId,
+    );
     const next = file.projectGrants.filter(
       (grant) => !(grant.familiarId === input.familiarId && grant.projectId === input.projectId),
     );
     if (next.length === file.projectGrants.length) return false;
     file.projectGrants = next;
+    recordGrantChange(file, {
+      familiarId: input.familiarId,
+      projectId: input.projectId,
+      from: removed?.access ?? null,
+      to: null,
+      actor: input.actor ?? "system",
+      kind: "direct",
+      source: removed?.source,
+    });
     await saveProjectPermissions(file);
     return true;
   }));
@@ -588,15 +685,43 @@ export async function revokeAllGrantsForProject(
   return withProjectPermissionsStore(() => withWriteMutex(async () => {
     const file = await loadProjectPermissionsUnlocked();
 
+    const removedGrants = file.projectGrants.filter((grant) => grant.projectId === projectId);
     const nextGrants = file.projectGrants.filter((grant) => grant.projectId !== projectId);
     const grants = file.projectGrants.length - nextGrants.length;
     file.projectGrants = nextGrants;
+    // A registry removal drops access for every familiar at once; without a
+    // record per familiar the cascade is the least visible change of all.
+    for (const grant of removedGrants) {
+      recordGrantChange(file, {
+        familiarId: grant.familiarId,
+        projectId,
+        from: grant.access,
+        to: null,
+        actor: "system",
+        kind: "project-removed",
+        source: grant.source,
+      });
+    }
 
     let groupGrants = 0;
     for (const group of file.accessGroups) {
       const before = group.projectGrants.length;
+      const dropped = group.projectGrants.filter((grant) => grant.projectId === projectId);
       group.projectGrants = group.projectGrants.filter((grant) => grant.projectId !== projectId);
       groupGrants += before - group.projectGrants.length;
+      for (const grant of dropped) {
+        for (const familiarId of group.memberFamiliarIds) {
+          recordGrantChange(file, {
+            familiarId,
+            projectId,
+            from: grant.access,
+            to: null,
+            actor: "system",
+            kind: "project-removed",
+            groupId: group.id,
+          });
+        }
+      }
     }
 
     const nextProposals = file.grantProposals.filter((proposal) => proposal.projectId !== projectId);

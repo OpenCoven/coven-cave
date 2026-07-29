@@ -153,6 +153,7 @@ export const SUITES = {
     "src/lib/cave-inbox-prefs.test.ts",
     "src/lib/cave-inbox-bulk.test.ts",
     "src/lib/project-permissions.test.ts",
+    "src/lib/project-grant-audit.test.ts",
     "src/lib/project-access-levels.test.ts",
     "src/lib/project-icon-prompt.test.ts",
     "src/lib/project-icon-image-provider.test.ts",
