@@ -6,6 +6,7 @@ import {
   openClawGatewayPairedDeviceAuthStatus,
   textFromOpenClawGatewayMessage,
 } from "./openclaw-gateway.ts";
+import { createOpenClawDeviceCredentialStore } from "./server/openclaw-device-credentials.ts";
 
 const expected = {
   runId: "run-accepted",
@@ -64,12 +65,31 @@ assert.equal(
 );
 assert.equal(textFromOpenClawGatewayMessage({ raw: "not published" }), undefined);
 assert.deepEqual(
-  openClawGatewayPairedDeviceAuthStatus(),
+  openClawGatewayPairedDeviceAuthStatus(createOpenClawDeviceCredentialStore({ platform: "linux" })),
   {
     available: false,
-    reason: "Cave has no cross-platform OS-backed paired-device credential store for OpenClaw Gateway dispatch",
+    reason:
+      "OpenClaw Gateway dispatch requires the macOS Keychain credential store; linux has no supported OS credential store",
   },
-  "Cave must not activate the Gateway route before its host-owned paired-device credentials are secure",
+  "platforms without an OS credential store must not activate the Gateway route",
+);
+assert.deepEqual(
+  openClawGatewayPairedDeviceAuthStatus(
+    createOpenClawDeviceCredentialStore({ platform: "darwin", securityBinaryExists: () => false }),
+  ),
+  { available: false, reason: "The macOS security tool is unavailable for the OpenClaw credential store" },
+  "a macOS host without the security tool fails closed instead of degrading to env tokens",
+);
+assert.deepEqual(
+  openClawGatewayPairedDeviceAuthStatus(
+    createOpenClawDeviceCredentialStore({
+      platform: "darwin",
+      securityBinaryExists: () => true,
+      runSecurity: () => assert.fail("a status probe must not touch the keychain"),
+    }),
+  ),
+  { available: true },
+  "a macOS host with the security tool reports paired-device auth as available without keychain reads",
 );
 
 const missingRequestId = await dispatchOpenClawGatewayTurn({
@@ -101,12 +121,14 @@ const unpairedDispatch = await dispatchOpenClawGatewayTurn({
     OPENCLAW_GATEWAY_TOKEN: "must-not-activate-direct-dispatch",
   },
   onEvent: () => assert.fail("an unpaired Gateway must not emit events"),
+  credentialStore: createOpenClawDeviceCredentialStore({ platform: "linux" }),
 });
 assert.deepEqual(
   unpairedDispatch,
   {
     kind: "unavailable",
-    reason: "Cave has no cross-platform OS-backed paired-device credential store for OpenClaw Gateway dispatch",
+    reason:
+      "OpenClaw Gateway dispatch requires the macOS Keychain credential store; linux has no supported OS credential store",
   },
   "an environment token alone must never activate a write-capable Gateway dispatch",
 );
@@ -424,5 +446,126 @@ reconnectOptions.onEvent?.({
 if (reconnectDispatch.kind === "accepted") {
   assert.deepEqual(await reconnectDispatch.done, { state: "final" });
 }
+
+// --- paired-device credential wiring -------------------------------------
+
+// Opaque placeholders: nothing in the wiring path parses key material.
+const wiringIdentity = {
+  deviceId: "0".repeat(64),
+  privateKeyPem: "fake-device-private-key-pem",
+  publicKeyPem: "fake-device-public-key-pem",
+};
+const wiringCalls = [];
+const wiringStore = {
+  status: () => ({ available: true }),
+  loadOrCreateDeviceIdentity: () => wiringIdentity,
+  loadDeviceAuthToken: (params) => {
+    wiringCalls.push(["load", params]);
+    return { token: "keychain-token", scopes: ["operator.read", "operator.write"] };
+  },
+  storeDeviceAuthToken: (params) => {
+    wiringCalls.push(["store", params]);
+  },
+  clearDeviceAuthToken: (params) => {
+    wiringCalls.push(["clear", params]);
+  },
+};
+let wiringOptions;
+const wiredDispatch = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "hello",
+  idempotencyKey: "cave-request-wired",
+  env: { OPENCLAW_GATEWAY_DISPATCH: "1", OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789" },
+  onEvent: () => {},
+  credentialStore: wiringStore,
+  clientFactory: (options) => {
+    wiringOptions = options;
+    return {
+      start() {
+        queueMicrotask(() => options.onHelloOk?.(helloOk()));
+      },
+      stop() {},
+      async request(method, _params, requestOptions) {
+        if (method === "chat.send") {
+          requestOptions?.onSent?.();
+          return { runId: expected.runId };
+        }
+        return {};
+      },
+    };
+  },
+});
+assert.equal(wiredDispatch.kind, "accepted", "an available credential store activates the Gateway dispatch path");
+assert.equal(
+  wiringOptions.deviceIdentity,
+  wiringIdentity,
+  "the client receives the store-resolved paired-device identity, not one it derives itself",
+);
+assert.deepEqual(
+  Object.keys(wiringOptions.env),
+  ["NODE_ENV"],
+  "wiring the credential store must not widen the client's environment beyond NODE_ENV",
+);
+assert.equal(typeof wiringOptions.hostDeps.signDevicePayload, "function");
+assert.equal(typeof wiringOptions.hostDeps.publicKeyRawBase64UrlFromPem, "function");
+assert.equal(
+  wiringOptions.hostDeps.loadOrCreateDeviceIdentity(),
+  wiringIdentity,
+  "hostDeps identity resolution returns the pre-resolved identity without another keychain round trip",
+);
+const loadedToken = wiringOptions.hostDeps.loadDeviceAuthToken({
+  deviceId: wiringIdentity.deviceId,
+  role: "operator",
+  env: { OPENCLAW_GATEWAY_DEVICE_TOKEN: "env-token-must-not-be-read" },
+});
+assert.deepEqual(
+  loadedToken,
+  { token: "keychain-token", scopes: ["operator.read", "operator.write"] },
+  "device tokens come from the credential store",
+);
+wiringOptions.hostDeps.storeDeviceAuthToken({
+  deviceId: wiringIdentity.deviceId,
+  role: "operator",
+  token: "minted-token",
+  scopes: ["operator.read"],
+  env: { HOME: "/nope" },
+});
+wiringOptions.hostDeps.clearDeviceAuthToken({
+  deviceId: wiringIdentity.deviceId,
+  role: "operator",
+  env: { HOME: "/nope" },
+});
+assert.deepEqual(
+  wiringCalls,
+  [
+    ["load", { deviceId: wiringIdentity.deviceId, role: "operator" }],
+    ["store", { deviceId: wiringIdentity.deviceId, role: "operator", token: "minted-token", scopes: ["operator.read"] }],
+    ["clear", { deviceId: wiringIdentity.deviceId, role: "operator" }],
+  ],
+  "hostDeps delegate to the credential store and drop the client's env bag so env auth can never revive",
+);
+if (wiredDispatch.kind === "accepted") wiredDispatch.close();
+
+const failingStoreDispatch = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "hello",
+  idempotencyKey: "cave-request-store-failure",
+  env: { OPENCLAW_GATEWAY_DISPATCH: "1", OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789" },
+  onEvent: () => assert.fail("a failed credential store must not emit events"),
+  credentialStore: {
+    ...wiringStore,
+    loadOrCreateDeviceIdentity: () => {
+      throw new Error("The macOS Keychain holds an invalid OpenClaw device identity");
+    },
+  },
+  clientFactory: () => assert.fail("a failed credential store must not construct a Gateway client"),
+});
+assert.deepEqual(
+  failingStoreDispatch,
+  { kind: "unavailable", reason: "The macOS Keychain holds an invalid OpenClaw device identity" },
+  "an identity failure is a pre-dispatch compatibility failure that retains the CLI fallback",
+);
 
 console.log("openclaw Gateway run correlation tests passed");

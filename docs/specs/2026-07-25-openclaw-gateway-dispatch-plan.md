@@ -91,13 +91,21 @@ package pair, negotiating wire protocol v4. It publishes `HelloOkSchema`,
 `sessions.messages.subscribe`. Cave validates that exact chat-only contract in
 its dispatcher, including the accepted `(sessionKey, agentId, runId)` tuple.
 
-Cave currently keeps the live route fail-closed **before client construction**:
-the reference client delegates device identity, challenge signing, and token
-lifecycle to host-owned `GatewayClientHostDeps`, and Cave does not yet have the
-required cross-platform OS-backed credential-store boundary. In particular,
-`OPENCLAW_GATEWAY_TOKEN` and `OPENCLAW_GATEWAY_DEVICE_TOKEN` cannot activate a
-write-capable direct turn; the existing CLI/plain-chat bridge remains the
-fallback. This is intentional until real paired-device storage is shipped.
+The reference client delegates device identity, challenge signing, and token
+lifecycle to host-owned `GatewayClientHostDeps`. Cave backs those with an
+OS-backed paired-device credential store
+(`src/lib/server/openclaw-device-credentials.ts`, cave-cth7q): on macOS the
+Ed25519 device identity and Gateway-minted device tokens live in the login
+keychain (service `coven-cave.openclaw-gateway`, written through the
+`security` tool's stdin command mode so secrets never appear on argv), and
+every other platform fails closed **before client construction**. In
+particular, `OPENCLAW_GATEWAY_TOKEN` and `OPENCLAW_GATEWAY_DEVICE_TOKEN` still
+cannot activate a write-capable direct turn — the hostDeps drop the client's
+`env` bag — and dispatch stays opt-in behind `OPENCLAW_GATEWAY_DISPATCH` plus
+`OPENCLAW_GATEWAY_URL`; the existing CLI/plain-chat bridge remains the
+fallback everywhere the store (or the Gateway) is unavailable. An invalid
+persisted identity fails loudly and is never silently regenerated, because
+regeneration would silently unpair the device.
 
 The release also does **not** publish a `session.tool` event name, payload
 schema, or validator. Cave emits no Gateway tool card for this release and does
@@ -106,7 +114,7 @@ string is not a substitute for a versioned payload contract.
 
 | Package profile | Wire protocol | Runtime projection | Tool cards | Upgrade rule |
 | --- | --- | --- | --- | --- |
-| `2026.7.2-beta.4` | v4 only | None until Cave has OS-backed paired-device credentials; dispatcher tests validate only correlated `chat` frames | Disabled: no published schema | Add credential-store integration, then a fixture and explicit profile only when OpenClaw publishes a stable tool payload validator. |
+| `2026.7.2-beta.4` | v4 only | Correlated `chat` frames on macOS via the keychain-backed paired-device store; all other platforms fail closed | Disabled: no published schema (re-verified against `2026.7.2-beta.5`, whose `AgentEvent.data` is unchanged and whose typed `tool.*` events belong to the Talk surface only) | Add a fixture and explicit profile only when OpenClaw publishes a stable tool payload validator. |
 | Any other version/profile | Not assumed | None | Disabled | Keep CLI/plain chat with a visible compatibility diagnostic. |
 
 Before enabling tool cards, record the package release, exported validator,
