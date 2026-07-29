@@ -38,7 +38,7 @@ export function FollowUpTaskReview({
   const { announce } = useAnnouncer();
   const initialDraft = useMemo(
     () => buildTaskDraftFromChat({ sessionId, context, title: suggestion.prompt }),
-    [sessionId, context, suggestion.prompt],
+    [sessionId, context.turns, context.familiarId, context.projectId, suggestion.prompt],
   );
   const [draft, setDraft] = useState<ChatTaskDraft>(initialDraft);
   const [creating, setCreating] = useState(false);

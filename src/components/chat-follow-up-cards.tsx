@@ -60,11 +60,9 @@ export function FollowUpCards({ paths, onActivate, recommended = true }: FollowU
               onClick={() => onActivate(path)}
               aria-label={accessibleName}
             >
-              <span className="cave-followup-card__topline">
-                <span className="cave-followup-card__type">
-                  <Icon name={meta.icon} width={14} aria-hidden />
-                  {meta.label}
-                </span>
+              <span className="cave-followup-card__type">
+                <Icon name={meta.icon} width={14} aria-hidden />
+                {meta.label}
                 {isRecommended ? (
                   <span className="cave-followup-card__recommended">Recommended</span>
                 ) : null}
