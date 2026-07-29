@@ -105,9 +105,6 @@
   color: var(--color-warning);
 }
 
-.ghc-gatechip--ok {
-  color: var(--color-success);
-}
 
 .ghc-dot {
   width: 5px;
@@ -308,6 +305,12 @@
   align-items: center;
   gap: 1px;
   color: var(--text-secondary);
+}
+
+.ghc-tools__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
 }
 
 .ghc-tool {
@@ -763,15 +766,6 @@
   color: var(--text-primary);
 }
 
-.ghc-commit__body {
-  border-top: 1px solid var(--border-hairline);
-  padding: 6px 9px 7px;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  line-height: 1.55;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-}
 
 /* The arm field: the merge CTA stays inert until "merge" is typed here. */
 .ghc-arm {
