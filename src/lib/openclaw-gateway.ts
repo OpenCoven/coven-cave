@@ -1,4 +1,4 @@
-import { GatewayClient } from "@openclaw/gateway-client";
+import { GatewayClient, type GatewayClientHostDeps } from "@openclaw/gateway-client";
 import {
   ChatEventSchema,
   GATEWAY_SERVER_CAPS,
@@ -6,6 +6,13 @@ import {
 } from "@openclaw/gateway-protocol";
 import { PROTOCOL_VERSION } from "@openclaw/gateway-protocol/version";
 import { Value } from "typebox/value";
+import {
+  createOpenClawDeviceCredentialStore,
+  openClawPublicKeyRawBase64UrlFromPem,
+  signOpenClawDevicePayload,
+  type OpenClawDeviceCredentialStore,
+  type OpenClawDeviceIdentity,
+} from "@/lib/server/openclaw-device-credentials";
 
 /**
  * The direct Gateway transport is intentionally opt-in.  It owns a turn only
@@ -73,14 +80,35 @@ function gatewayDispatchEnabled(env: NodeJS.ProcessEnv): boolean {
 
 /**
  * The published client delegates device-identity creation, challenge signing,
- * and device-token lifecycle to hostDeps. Cave has not yet implemented the
- * required cross-platform OS credential-store boundary, so the route must not
- * activate a write-capable Gateway transport with process-environment tokens.
+ * and device-token lifecycle to hostDeps. Cave backs those with the OS
+ * credential store (macOS Keychain); platforms without a supported store fail
+ * closed so the route never activates a write-capable Gateway transport with
+ * process-environment tokens.
  */
-export function openClawGatewayPairedDeviceAuthStatus(): { available: boolean; reason?: string } {
+export function openClawGatewayPairedDeviceAuthStatus(
+  credentialStore?: OpenClawDeviceCredentialStore,
+): { available: boolean; reason?: string } {
+  return (credentialStore ?? createOpenClawDeviceCredentialStore()).status();
+}
+
+/**
+ * hostDeps ignore the `env` bag the client threads through its token hooks:
+ * device tokens live in the OS credential store only, and reviving env-token
+ * auth here would reopen the write-capable-transport-from-env hole this
+ * boundary exists to close.
+ */
+function hostDepsForCredentialStore(
+  store: OpenClawDeviceCredentialStore,
+  deviceIdentity: OpenClawDeviceIdentity,
+): GatewayClientHostDeps {
   return {
-    available: false,
-    reason: "Cave has no cross-platform OS-backed paired-device credential store for OpenClaw Gateway dispatch",
+    loadOrCreateDeviceIdentity: () => deviceIdentity,
+    signDevicePayload: signOpenClawDevicePayload,
+    publicKeyRawBase64UrlFromPem: openClawPublicKeyRawBase64UrlFromPem,
+    loadDeviceAuthToken: ({ deviceId, role }) => store.loadDeviceAuthToken({ deviceId, role }),
+    storeDeviceAuthToken: ({ deviceId, role, token, scopes }) =>
+      store.storeDeviceAuthToken({ deviceId, role, token, scopes }),
+    clearDeviceAuthToken: ({ deviceId, role }) => store.clearDeviceAuthToken({ deviceId, role }),
   };
 }
 
@@ -162,14 +190,22 @@ export async function dispatchOpenClawGatewayTurn(args: {
   env?: NodeJS.ProcessEnv;
   /** Injectable only so the official-client lifecycle can be tested without a live Gateway. */
   clientFactory?: GatewayClientFactory;
+  /** Injectable only so paired-device credential wiring can be tested without the OS keychain. */
+  credentialStore?: OpenClawDeviceCredentialStore;
 }): Promise<OpenClawGatewayDispatch> {
   const env = args.env ?? process.env;
   if (!gatewayDispatchEnabled(env)) return { kind: "unavailable", reason: "Gateway dispatch is disabled" };
-  const pairedDeviceAuth = openClawGatewayPairedDeviceAuthStatus();
+  // An injected test client without an injected store must never construct
+  // the real OS credential store: that path exists to exercise the client
+  // lifecycle hermetically and cannot create a real Gateway connection.
+  const credentialStore =
+    args.credentialStore ?? (args.clientFactory ? undefined : createOpenClawDeviceCredentialStore());
+  const pairedDeviceAuth: { available: boolean; reason?: string } = credentialStore
+    ? credentialStore.status()
+    : { available: false, reason: "Gateway paired-device authentication is unavailable" };
   // Keep this guard in the dispatcher as well as the route. A future caller
   // must not be able to turn an environment token into a write-capable
-  // Gateway session simply by bypassing the route-level fallback choice. The
-  // injectable port is test-only and cannot create a real Gateway connection.
+  // Gateway session simply by bypassing the route-level fallback choice.
   if (!pairedDeviceAuth.available && !args.clientFactory) {
     return { kind: "unavailable", reason: pairedDeviceAuth.reason ?? "Gateway paired-device authentication is unavailable" };
   }
@@ -178,6 +214,22 @@ export async function dispatchOpenClawGatewayTurn(args: {
   }
   const url = env[GATEWAY_URL_ENV];
   if (!nonEmptyString(url)) return { kind: "unavailable", reason: "Gateway URL is not configured" };
+  // Resolve the paired-device identity before any client is constructed. A
+  // keychain failure here is a pre-dispatch compatibility failure — the
+  // caller keeps the CLI fallback and no request can have reached the
+  // Gateway. When no store is in play (injected test client), the dispatcher
+  // proceeds without an identity exactly as before.
+  let deviceIdentity: OpenClawDeviceIdentity | undefined;
+  if (credentialStore && pairedDeviceAuth.available) {
+    try {
+      deviceIdentity = credentialStore.loadOrCreateDeviceIdentity();
+    } catch (error) {
+      return {
+        kind: "unavailable",
+        reason: error instanceof Error ? error.message : "The OpenClaw paired-device credential store failed",
+      };
+    }
+  }
 
   let client!: GatewayClientPort;
   let helloResolve: (() => void) | undefined;
@@ -283,11 +335,14 @@ export async function dispatchOpenClawGatewayTurn(args: {
 
   const clientOptions: ConstructorParameters<typeof GatewayClient>[0] = {
     url,
-    // Never let the Gateway client read Cave's process environment. The
-    // future paired-device boundary must provide identity and token lifecycle
-    // through hostDeps, rather than reviving token/device-token env auth.
+    // Never let the Gateway client read Cave's process environment. Identity
+    // and token lifecycle come only from the OS credential store via
+    // hostDeps, never from token/device-token env auth.
     // `GatewayClientOptions.env` requires NODE_ENV, which is non-secret.
     env: { NODE_ENV: process.env.NODE_ENV ?? "production" },
+    ...(deviceIdentity && credentialStore
+      ? { deviceIdentity, hostDeps: hostDepsForCredentialStore(credentialStore, deviceIdentity) }
+      : {}),
     clientName: "gateway-client",
     clientDisplayName: "Coven Cave",
     clientVersion: "2026.7.2-beta.4",
