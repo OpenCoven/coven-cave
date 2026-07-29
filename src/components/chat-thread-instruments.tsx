@@ -23,6 +23,7 @@ import { Icon } from "@/lib/icon";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import type { Turn } from "@/lib/chat-turn-state";
 import {
+  spineSegmentHeights,
   spineNodes,
   spineStackHeight,
   threadMapEvents,
@@ -137,10 +138,11 @@ function SpineNodeButton({
   onJump: () => void;
 }) {
   const stackH = spineStackHeight(node.total);
+  const segmentHeights = spineSegmentHeights(node.cats);
   return (
     <button
       type="button"
-      className={`cave-thread-spine__node is-${node.role}${node.error ? " is-error" : ""}${node.running ? " is-running" : ""}`}
+      className={`cave-thread-spine__node focus-ring is-${node.role}${node.error ? " is-error" : ""}`}
       style={{ top }}
       title={`${node.name}${node.time ? ` · ${node.time}` : ""} — click to jump`}
       aria-label={`Jump to ${node.name}'s turn${node.time ? ` at ${node.time}` : ""}`}
@@ -156,11 +158,11 @@ function SpineNodeButton({
       ) : null}
       {node.total > 0 ? (
         <span className="cave-thread-spine__stack" style={{ height: stackH }} aria-hidden>
-          {node.cats.map((c) => (
+          {node.cats.map((c, index) => (
             <span
               key={c.cat}
               className={`cave-thread-spine__seg is-${c.cat}`}
-              style={{ height: `${Math.max(8, (c.count / node.total) * 100)}%` }}
+              style={{ height: `${segmentHeights[index] ?? 0}%` }}
               title={`${c.cat} · ${c.count}`}
             />
           ))}
@@ -380,7 +382,7 @@ function MapRow({
   return (
     <button
       type="button"
-      className={`cave-thread-map__row is-${event.kind}${event.error ? " is-error" : ""}`}
+      className={`cave-thread-map__row focus-ring is-${event.kind}${event.error ? " is-error" : ""}`}
       title={`${event.label} — click to jump`}
       aria-label={`Jump to ${event.label}`}
       onClick={onJump}

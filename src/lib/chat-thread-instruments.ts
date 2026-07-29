@@ -94,7 +94,6 @@ export type SpineNode = {
   name: string;
   summary: string;
   error: boolean;
-  running: boolean;
   /** Aggregated tool calls, in THREAD_TOOL_CATEGORIES order, zero-counts dropped. */
   cats: { cat: ThreadToolCategory; count: number }[];
   total: number;
@@ -123,7 +122,6 @@ export function spineNodes(
       name: turn.role === "user" ? names.operatorName : names.familiarName,
       summary: instrumentSummary(turn.text),
       error: Boolean(turn.error),
-      running: Boolean(turn.pending),
       cats,
       total: cats.reduce((n, c) => n + c.count, 0),
     });
@@ -136,6 +134,19 @@ export function spineNodes(
 export function spineStackHeight(total: number): number {
   if (total <= 0) return 0;
   return Math.min(96, Math.max(28, Math.round(total * 2.4)));
+}
+
+/** Convert category counts into bounded percentages for the vertical stack.
+ * Reserve a readable minimum for every category, then distribute only the
+ * remaining height by count so the minimum can never be renormalized away. */
+export function spineSegmentHeights(cats: readonly { count: number }[]): number[] {
+  if (cats.length === 0) return [];
+  const counts = cats.map(({ count }) => Math.max(0, count));
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  if (total <= 0) return counts.map(() => 0);
+  const minimum = Math.min(8, 100 / counts.length);
+  const remaining = 100 - minimum * counts.length;
+  return counts.map((count) => minimum + (count / total) * remaining);
 }
 
 export type ThreadMapEvent = {

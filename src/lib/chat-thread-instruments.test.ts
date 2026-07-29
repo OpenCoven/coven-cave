@@ -9,6 +9,7 @@ import {
   formatTookLabel,
   instrumentSummary,
   instrumentTime,
+  spineSegmentHeights,
   spineNodes,
   spineStackHeight,
   threadMapEvents,
@@ -78,6 +79,16 @@ test("spine stack height follows the design's curve and stays bounded", () => {
   assert.equal(spineStackHeight(500), 96); // cap — a 100-step turn can't own the gutter
 });
 
+test("spine segment heights stay within one stack even with a dominant category", () => {
+  const heights = spineSegmentHeights([
+    { count: 99 },
+    { count: 1 },
+  ]);
+  assert.equal(heights.length, 2);
+  assert.ok(heights.every((height) => height >= Math.min(8, 100 / heights.length)));
+  assert.ok(heights.reduce((sum, height) => sum + height, 0) <= 100.0001);
+});
+
 test("threadMapEvents orders prompt → tools → answer and attributes owners", () => {
   const events = threadMapEvents(
     [
@@ -136,6 +147,21 @@ const instruments = readFileSync(
   new URL("../components/chat-thread-instruments.tsx", import.meta.url),
   "utf8",
 );
+const instrumentStyles = readFileSync(
+  new URL("../styles/cave-chat/thread-instruments.css", import.meta.url),
+  "utf8",
+);
+
+test("instrument controls use the shared focus ring and no dead running class", () => {
+  assert.match(instruments, /className=\{`cave-thread-spine__node focus-ring/);
+  assert.match(instruments, /className=\{`cave-thread-map__row focus-ring/);
+  assert.doesNotMatch(instruments, /is-running/);
+});
+
+test("instrument tint mappings use theme-aware semantic tokens", () => {
+  assert.doesNotMatch(instrumentStyles, /--tim-[^:]+:\s*oklch\(/);
+  assert.match(instrumentStyles, /\.cave-thread-map \.is-read \{ --tim: var\(--color-info\); \}/);
+});
 
 test("chat-view mounts both instruments over the SAME activePath the transcript renders", () => {
   assert.match(
