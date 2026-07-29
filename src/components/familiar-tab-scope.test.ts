@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 const view = readFileSync(new URL("./chat-familiar-capabilities.tsx", import.meta.url), "utf8");
 const surface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../styles/globals/shell-responsive.css", import.meta.url), "utf8");
 
 test("Workspace threads the explicit scope and canonical mutation path to the Familiar tab", () => {
   assert.match(workspace, /selectedFamiliarIds=\{scopeIds\}/, "full scope reaches ChatSurface");
