@@ -1177,6 +1177,7 @@ export const SUITES = {
     "src/lib/voice/local-tts-server.test.ts",
     "src/lib/voice/local-tts.test.ts",
     "src/lib/voice/speech-loop.test.ts",
+    "src/lib/voice/microphone-access.test.ts",
     "src/lib/voice/native-stt.test.ts",
     "src/lib/voice/familiar-brain.test.ts",
     "src/lib/voice/elevenlabs.test.ts",

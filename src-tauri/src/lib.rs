@@ -49,6 +49,8 @@ pub mod browser;
 mod desktop_reachability;
 #[cfg(desktop)]
 mod platform_lifecycle;
+#[cfg(all(desktop, target_os = "macos"))]
+mod microphone;
 #[cfg(desktop)]
 mod pty;
 #[cfg(desktop)]
