@@ -28,6 +28,7 @@ import "@/styles/journal.css";
 import "@/styles/grimoire-launcher.css";
 import { GrimoireLauncher } from "@/components/grimoire-launcher";
 import type { Familiar } from "@/lib/types";
+import { familiarInScope } from "@/lib/familiar-multiselect";
 import { serializeMdDocument } from "@/lib/md-frontmatter";
 import { relativeTime } from "@/lib/relative-time";
 import {
@@ -108,6 +109,9 @@ type MemoryEntry = {
 };
 
 type JournalSummary = { date: string; preview: string; reflectedBy: string | null; modified: string | null };
+
+/** The canonical "All familiars" scope — an empty selection filters nothing. */
+const EMPTY_FAMILIAR_SCOPE: ReadonlySet<string> = new Set<string>();
 
 function compactPath(path: string): string {
   const collapsed = path.replace(/^\/Users\/[^/]+/, "~");
@@ -716,6 +720,7 @@ export function GrimoireView({
   onViewChange,
   familiars = [],
   activeFamiliarId = null,
+  scopeFamiliarIds,
 }: {
   /** Which tab shows. Controlled by the Workspace so the Journal nav row can
    *  route straight into the Journal tab; falls back to internal state when the
@@ -725,6 +730,11 @@ export function GrimoireView({
   /** Roster for the Journal tab (reflection filter + attribution). */
   familiars?: Familiar[];
   activeFamiliarId?: string | null;
+  /** The shell's familiar multiselect. Empty = All. When familiars are
+   *  selected, the Memory navigator shows only those familiars' own memory —
+   *  ownerless shared pools drop out, matching the app-wide familiar-memory
+   *  rule documented in `@/lib/memory-file-scope`. */
+  scopeFamiliarIds?: ReadonlySet<string>;
 } = {}) {
   const [knowledge, setKnowledge] = useState<KnowledgeEntry[] | null>(null);
   const [collections, setCollections] = useState<KnowledgeCollectionSummary[] | null>(null);
@@ -1090,9 +1100,26 @@ export function GrimoireView({
       return next;
     });
   }, []);
+  // The shell's familiar multiselect scopes the Memory navigator: an empty
+  // selection is "All", otherwise only the selected familiars' own memory
+  // files survive (ownerless shared pools are another familiar's business).
+  const memoryScope = scopeFamiliarIds ?? EMPTY_FAMILIAR_SCOPE;
+  const memoryScoped = memoryScope.size > 0;
+  /** Who the Memory section is currently narrowed to, for scoped empty copy. */
+  const memoryScopeLabel = useMemo(() => {
+    if (memoryScope.size === 0) return null;
+    if (memoryScope.size > 2) return `the ${memoryScope.size} selected familiars`;
+    return [...memoryScope]
+      .map((id) => familiars.find((f) => f.id === id)?.display_name ?? id)
+      .join(" and ");
+  }, [familiars, memoryScope]);
+  const scopedMemory = useMemo(
+    () => (memory ?? []).filter((e) => familiarInScope(memoryScope, e.familiarId)),
+    [memory, memoryScope],
+  );
   const visibleMemory = useMemo(
-    () => (memory ?? []).filter((e) => matches(e.relPath, e.fullPath, e.rootLabel, e.familiarId)),
-    [memory, matches],
+    () => scopedMemory.filter((e) => matches(e.relPath, e.fullPath, e.rootLabel, e.familiarId)),
+    [scopedMemory, matches],
   );
   // Runtime roots write thousands of timestamp-named session files; rendered
   // flat they drown Stitches and Journal. Group memory by its source root —
@@ -1332,7 +1359,7 @@ export function GrimoireView({
       // points — all driven by the lists this view already loaded.
       <GrimoireLauncher
         knowledge={knowledge ?? []}
-        memory={memory ?? []}
+        memory={scopedMemory}
         journal={journal ?? []}
         graph={graph}
         journalTitle={(date) => journalDayLabel(date, dateTimePrefs)}
@@ -1523,15 +1550,27 @@ export function GrimoireView({
         }`}
       >
         {/* Title, surface verbs, and the doc search all live in the compact
-            band above — the rail is purely the grouped navigator now. */}
+            band above — the rail is purely the grouped navigator now. Its own
+            header row names the rail so the collapse toggle isn't a floating,
+            unlabelled control. The row is suppressed while a search is running,
+            because the rail force-expands to keep results reachable. */}
         {!q ? (
-          <div className={`flex shrink-0 ${navigatorCollapsed ? "justify-center p-1" : "justify-end p-1.5"}`}>
+          <div
+            className={`flex shrink-0 items-center ${
+              navigatorCollapsed ? "justify-center p-1" : "justify-between gap-2 p-1.5"
+            }`}
+          >
+            {navigatorCollapsed ? null : (
+              <h2 className="min-w-0 truncate pl-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Navigator
+              </h2>
+            )}
             <button
               type="button"
               onClick={toggleNavigator}
               aria-label={navigatorCollapsed ? "Expand Memories sidebar" : "Collapse Memories sidebar"}
               title={navigatorCollapsed ? "Expand Memories sidebar" : "Collapse Memories sidebar"}
-              className="focus-ring-inset inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              className="focus-ring-inset inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
               <Icon name="ph:sidebar-simple" width={14} aria-hidden />
             </button>
@@ -1681,14 +1720,22 @@ export function GrimoireView({
                 ariaLabel="Memory files"
                 icon="ph:brain"
                 label="Memory"
-                description="Files your familiars and runtimes write as they work — editable in place"
+                description={
+                  memoryScoped
+                    ? `Memory files for ${memoryScopeLabel} — editable in place`
+                    : "Files your familiars and runtimes write as they work — editable in place"
+                }
                 count={visibleMemory.length}
                 collapsed={!q && collapsedSections.memory}
                 onToggle={() => toggleSection("memory")}
               >
                 {visibleMemory.length === 0 ? (
                   <p className="px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                    {q ? "No matches." : "No memory yet — it fills in as your familiars work and remember."}
+                    {q
+                      ? "No matches."
+                      : memoryScoped
+                        ? `No memory for ${memoryScopeLabel} yet — clear the familiar filter to see everything.`
+                        : "No memory yet — it fills in as your familiars work and remember."}
                   </p>
                 ) : (
                   memoryGroups.map((group) => {

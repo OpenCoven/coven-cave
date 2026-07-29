@@ -3031,6 +3031,7 @@ export function Workspace() {
         onViewChange={selectGrimoireView}
         familiars={familiars}
         activeFamiliarId={activeId}
+        scopeFamiliarIds={scopeIds}
       />
     ) : mode === "inbox" || mode === "calendar" ? (
       // Calendar and crons are one Schedules surface. The "calendar" mode still resolves
