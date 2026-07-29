@@ -1018,6 +1018,7 @@ export const SUITES = {
     "src/lib/server/cave-home-migration-status.test.ts",
     "src/lib/server/cave-home-migration-discard-guard.test.ts",
     "src/lib/server/cave-home-migration-fast-path.test.ts",
+    "src/lib/testing/wait-for.test.ts",
     "src/lib/server/claude-models.test.ts",
     "src/lib/server/copilot-models.test.ts",
     "src/lib/server/runtime-model-options.test.ts",
