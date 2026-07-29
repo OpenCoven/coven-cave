@@ -41,6 +41,11 @@ assert.match(
 );
 assert.match(
   view,
+  /prev\.login === nextActivity\.login/,
+  "failed-category retention must never carry rows across GitHub account changes",
+);
+assert.match(
+  view,
   /error && activity[\s\S]{0,500}?Showing last loaded activity/,
   "top-level refresh failures stay visible without hiding previously loaded activity",
 );

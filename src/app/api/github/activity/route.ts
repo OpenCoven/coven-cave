@@ -81,12 +81,13 @@ async function fetchPrChecks(
     const checks = await ghFetch(`/repos/${repo}/commits/${sha}/check-runs?per_page=100`, token, signal);
     const checksFailure = responseRateLimitFailure(checks);
     if (checksFailure) return { summary: null, failure: checksFailure };
-    if (!checks.res.ok) return { summary: null, failure: null };
     const runs = ((checks.data as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<{
       status?: string;
       conclusion?: string;
     }>;
-    if (runs.length > 0) return { summary: summarizeChecks(runs), failure: null };
+    if (checks.res.ok && runs.length > 0) {
+      return { summary: summarizeChecks(runs), failure: null };
+    }
 
     const status = await ghFetch(`/repos/${repo}/commits/${sha}/status`, token, signal);
     const statusFailure = responseRateLimitFailure(status);

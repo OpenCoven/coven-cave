@@ -135,6 +135,11 @@ assert.match(
   /controller\.abort\(\)/,
   "a check-enrichment rate limit should abort other in-flight enrichment requests",
 );
+assert.doesNotMatch(
+  route,
+  /if \(!checks\.res\.ok\) return/,
+  "non-rate-limited check-runs failures should still fall back to combined commit status",
+);
 assert.match(
   route,
   /warning:\s*checkCooldownFailure/,

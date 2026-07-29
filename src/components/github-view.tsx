@@ -2436,6 +2436,9 @@ export function GitHubView({
       const nextActivity = data;
       setActivity((prev) => {
         const mergedItems = prev
+          && prev.login === nextActivity.login
+          && prev.authed === nextActivity.authed
+          && prev.patInvalid === nextActivity.patInvalid
           ? mergeFailedActivityItems(prev.items, nextActivity.items, nextActivity.collections)
           : nextActivity.items;
         const mergedActivity = mergedItems === nextActivity.items
