@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { MarkdownBlock } from "@/components/message-bubble";
+import { GitHubActionCard } from "@/components/github-action-card";
+import { GitHubCard } from "@/components/github-card";
+import { ProgressiveMarkdownBlock } from "@/components/message-bubble";
+import { SkillStageCard } from "@/components/skill-stage-card";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { copyText } from "@/lib/clipboard";
 import { Icon, type IconName } from "@/lib/icon";
-import { extractNextPaths } from "@/lib/next-paths";
+import { formatQuickChatAssistantMessage } from "@/lib/quick-chat-message-format";
 import type { Familiar } from "@/lib/types";
 import { useStickToBottom } from "@/lib/use-stick-to-bottom";
 import type { QuickChatMessage } from "@/lib/use-quick-chat";
@@ -32,11 +35,6 @@ function QuickChatBubble({
     return () => window.clearTimeout(timer);
   }, [copied]);
 
-  const { visible, suggestions } =
-    message.role === "assistant"
-      ? extractNextPaths(message.text)
-      : { visible: message.text, suggestions: [] };
-
   if (message.role === "user") {
     return (
       <div className="quick-chat-turn quick-chat-turn--user">
@@ -53,7 +51,24 @@ function QuickChatBubble({
     );
   }
 
-  const streaming = message.pending;
+  const streaming = Boolean(message.pending);
+  const {
+    copyText: visible,
+    pieces,
+    skillUpdates,
+    suggestions,
+  } = formatQuickChatAssistantMessage(message.text, streaming);
+  const hasRenderableContent = pieces.some(
+    (piece) => piece.kind === "text"
+      ? piece.text.trim().length > 0
+      : !streaming,
+  );
+  let pendingTextIndex = -1;
+  if (streaming) {
+    pieces.forEach((piece, index) => {
+      if (piece.kind === "text" && piece.text.trim()) pendingTextIndex = index;
+    });
+  }
   const canAct = !streaming && visible.length > 0;
   return (
     <div className="quick-chat-turn quick-chat-turn--familiar">
@@ -63,13 +78,45 @@ function QuickChatBubble({
         </span>
       )}
       <div className="quick-chat-bubble quick-chat-bubble--familiar">
-        {visible ? (
-          streaming ? <p className="whitespace-pre-wrap break-words leading-6">{visible}<span className="quick-chat-caret" aria-hidden /></p> : (
-            <div className="quick-chat-md"><MarkdownBlock text={visible} /></div>
-          )
+        {hasRenderableContent ? (
+          <div className="quick-chat-md">
+            {pieces.map((piece, index) => {
+              if (piece.kind === "text") {
+                return piece.text.trim() ? (
+                  <ProgressiveMarkdownBlock key={`text-${index}`} text={piece.text} pending={streaming && index === pendingTextIndex} />
+                ) : null;
+              }
+              if (streaming) return null;
+              if (piece.kind === "action") {
+                return (
+                  <div key={`action-${index}`} className="my-2">
+                    <GitHubActionCard action={piece.action} />
+                  </div>
+                );
+              }
+              return (
+                <div key={`card-${index}`} className="my-2">
+                  <GitHubCard descriptor={piece.descriptor} />
+                </div>
+              );
+            })}
+          </div>
         ) : streaming ? (
           <span className="quick-chat-typing" aria-label="Thinking…"><i /><i /><i /></span>
         ) : <p className="text-[var(--fg-muted)]">No response.</p>}
+
+        {skillUpdates.length ? (
+          <div className="mt-2 space-y-1.5">
+            {skillUpdates.map((update) => (
+              <SkillStageCard
+                key={update.name}
+                name={update.name}
+                stage={update.stage}
+                note={update.note}
+              />
+            ))}
+          </div>
+        ) : null}
 
         {message.error ? <p className="quick-chat-turn__error">{message.error}</p> : null}
 

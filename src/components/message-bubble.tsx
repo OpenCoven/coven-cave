@@ -690,7 +690,14 @@ async function mdToHtml(
 // plain fallback only until the first render lands
 // ---------------------------------------------------------------------------
 
-function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?: boolean; onOpenUrl?: (url: string) => void }) {
+type MarkdownContentProps = {
+  text: string;
+  pending?: boolean;
+  onOpenUrl?: (url: string) => void;
+  className?: string;
+};
+
+function MarkdownContent({ text, pending, onOpenUrl, className }: MarkdownContentProps) {
   const [html, setHtml] = useState<string | null>(
     () => pending ? null : renderCacheGet(text) ?? null,
   );
@@ -789,7 +796,7 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
 
   if (!html) {
     return (
-      <span className="whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed">
+      <span className={`whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed ${className ?? ""}`}>
         {text}
         {pending && text ? (
           <span aria-hidden className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
@@ -802,7 +809,7 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
     <>
       <div
         ref={containerRef}
-        className="cave-md"
+        className={`cave-md ${className ?? ""}`}
         // Markdown output is sanitized in mdToHtml before DOM insertion.
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: html }}
@@ -814,6 +821,18 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
       ) : null}
     </>
   );
+}
+
+export function ProgressiveMarkdownBlock({
+  text,
+  pending,
+  className,
+}: {
+  text: string;
+  pending?: boolean;
+  className?: string;
+}) {
+  return <MarkdownContent text={text} pending={pending} className={className} />;
 }
 
 // ---------------------------------------------------------------------------

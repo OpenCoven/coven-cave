@@ -324,20 +324,27 @@ export function stripGitHubMarkers(text: string): string {
   if (!text || !text.includes("<coven:g")) return text;
   const fences = fencedRanges(text);
   MARKER_RE.lastIndex = 0;
-  let out = text.replace(MARKER_RE, (m, _action, _attrs, index: number) =>
+  const out = text.replace(MARKER_RE, (m, _action, _attrs, index: number) =>
     inRanges(fences, index) ? m : "",
   );
+  return stripIncompleteGitHubMarker(out);
+}
+
+/** Remove only an unterminated marker tail, preserving complete markers for
+ * callers that still need to turn them into cards. */
+export function stripIncompleteGitHubMarker(text: string): string {
+  if (!text || !text.includes("<coven:g")) return text;
   // Partial tail: an unterminated `<coven:github…` (or any prefix of the tag
   // name) with no UNQUOTED closing `>` after it hides from the visible
   // stream — unless it sits inside a fence, where it's example text.
-  const tail = out.lastIndexOf("<coven:g");
-  if (tail !== -1 && !hasUnquotedGt(out, tail) && !inRanges(fencedRanges(out), tail)) {
-    const frag = out.slice(tail);
+  const tail = text.lastIndexOf("<coven:g");
+  if (tail !== -1 && !hasUnquotedGt(text, tail) && !inRanges(fencedRanges(text), tail)) {
+    const frag = text.slice(tail);
     if ("<coven:github-action".startsWith(frag.slice(0, "<coven:github-action".length)) || frag.startsWith("<coven:github")) {
-      out = out.slice(0, tail);
+      return text.slice(0, tail);
     }
   }
-  return out;
+  return text;
 }
 
 /** True when a trimmed line is exactly one unfurlable github.com URL. */
