@@ -535,7 +535,7 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   for (const table of ["File", "Component", "CreateFolder", "Directory"]) {
     assert.match(budget, new RegExp("FROM `" + table + "`"), `budget must inspect MSI ${table} rows`);
   }
-  assert.match(budget, /\$rowBudget = 65/);
+  assert.match(budget, /\$rowBudget = 66/);
   assert.match(budget, /\$byteBudget = 256MB/);
   assert.match(budget, /expected exactly one server\.tar\.zst File row/);
   assert.match(
