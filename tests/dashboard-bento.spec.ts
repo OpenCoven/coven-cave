@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 // /dashboard surface imported from Claude Design: live stat tiles, the
 // collapsible session heatmap, the three board buckets, the familiar roster
 // (select → carousel jump), the activity-over-time carousel, the performance
-// matrix, and the GitHub rail's dedupe-by-URL merge.
+// matrix, and the GitHub rail's completeness-aware activity response.
 //
 // Daemon-less (COVEN_CAVE_E2E=1): every data source the surface polls is
 // mocked via page.route, so the spec fully determines what renders. The
@@ -37,9 +37,6 @@ const SESSIONS = [
   session("kitty", 1),
 ];
 
-// The same PR from both GitHub endpoints with mismatched id shapes
-// (activity prefixes "pr-", assigned is raw) — the exact cave-2it bug class.
-// Dedupe must key on URL, so these 10 PRs stay 10, not 20.
 const STALLED_PRS = Array.from({ length: 10 }, (_, i) => ({
   n: i + 1,
   title: `Stalled PR ${i + 1}`,
@@ -49,9 +46,14 @@ const STALLED_PRS = Array.from({ length: 10 }, (_, i) => ({
 const GH_ACTIVITY = STALLED_PRS.map((p) => ({
   id: `pr-${p.n}`, kind: "pr", title: p.title, repo: "o/r", url: p.url, state: "open", updatedAt: p.updatedAt,
 }));
-const GH_ASSIGNED = STALLED_PRS.map((p) => ({
-  id: String(p.n), kind: "pr", title: p.title, repo: "o/r", url: p.url, state: "open", updatedAt: p.updatedAt,
-}));
+const completeCollection = (shown: number) => ({
+  status: "complete",
+  shown,
+  total: shown,
+  hasMore: false,
+  incomplete: false,
+  githubIncomplete: false,
+});
 
 const card = (id: string, title: string, status: string, familiarId: string | null, ageDays = 0) => ({
   id, title, status, familiarId,
@@ -68,8 +70,17 @@ async function gotoDashboard(page: Page, opts: { inbox?: unknown[]; cards?: unkn
   await page.route("**/api/familiars/*/contract", (route) => route.fulfill({ status: 404, json: {} }));
   await page.route("**/api/familiars/*/self-reports**", (route) => route.fulfill({ json: { ok: true, reports: [], total: 0 } }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: SESSIONS } }));
-  await page.route("**/api/github/activity", (route) => route.fulfill({ json: { items: GH_ACTIVITY } }));
-  await page.route("**/api/github/assigned", (route) => route.fulfill({ json: { items: GH_ASSIGNED } }));
+  await page.route("**/api/github/activity", (route) => route.fulfill({
+    json: {
+      ok: true,
+      items: GH_ACTIVITY,
+      collections: {
+        authored: completeCollection(GH_ACTIVITY.length),
+        reviewRequests: completeCollection(0),
+        assignedIssues: completeCollection(0),
+      },
+    },
+  }));
   await page.route("**/api/board", (route) => route.fulfill({ json: { cards: opts.cards ?? [] } }));
   await page.route("**/api/inbox**", (route) => route.fulfill({ json: { items: opts.inbox ?? [] } }));
   await page.route("**/api/coven-memory", (route) => route.fulfill({ json: { entries: [] } }));
@@ -209,14 +220,14 @@ test("performance matrix renders a row per familiar and links to growth", async 
   await expect(matrix.locator("a[href='/dashboard/familiars/growth']")).toBeVisible();
 });
 
-test("github rail dedupes across endpoints by URL and rolls up per repo", async ({ page }) => {
+test("github rail consumes complete activity and rolls up per repo", async ({ page }) => {
   await gotoDashboard(page);
 
   const gh = page.locator(".bd-github");
   // One repo group, rows capped at 4 of the 10 PRs.
   await expect(gh.locator(".bd-github-repo")).toHaveText(["o/r"]);
   await expect(gh.locator(".bd-github-row")).toHaveCount(4);
-  // 20 items arrived across the two endpoints; the footer proves dedupe → 10.
+  // A complete response can render an exact total.
   await expect(gh.locator(".bd-github-foot")).toContainText("10 open items");
   await expect(gh.locator(".bd-github-foot")).toContainText("ci —");
 });
