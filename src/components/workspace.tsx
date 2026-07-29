@@ -27,8 +27,8 @@ import {
   restoreWorkspaceNavigation,
 } from "@/lib/workspace-navigation-history";
 import type { PaletteIntent } from "@/components/command-palette";
-// Journal retired as an in-shell surface (redirects to Settings → Familiars),
-// so JournalView is gone; Grimoire is a new in-shell surface from main.
+// Journal retired as an in-shell surface, so JournalView is gone; Grimoire is
+// a new in-shell surface from main.
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
@@ -2476,7 +2476,6 @@ export function Workspace() {
     if (intent.kind === "open-setting") {
       const params = new URLSearchParams();
       if (intent.group) params.set("group", intent.group);
-      if (intent.familiarTab) params.set("familiarTab", intent.familiarTab);
       const search = params.size > 0 ? `?${params.toString()}` : "";
       nextRouter.push(`/settings${search}#${intent.section}`);
       return;
@@ -3252,11 +3251,11 @@ export function Workspace() {
       inboxBadgeCount={inboxBadgeCount}
     />
   );
-  // The standalone "Manage familiars" drawer is gone — Settings → Familiars is
-  // the single source of truth. `redirectToSettings` routes every
+  // The standalone "Manage familiars" drawer is gone — Chat → Familiar →
+  // Settings is the single source of truth. `redirectToChat` routes every
   // openFamiliarStudio(...) trigger (cards, switcher, onboarding) there.
   return (
-    <FamiliarStudioProvider redirectToSettings>
+    <FamiliarStudioProvider redirectToChat>
       {/* Backdrop vibe: the user's image behind Home + Chat, painted under
           the shell; the derived accent applies document-wide from the same
           store (cave-backdrop.ts). In chat, a single-familiar scope with its

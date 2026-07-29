@@ -31,6 +31,7 @@ import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
 import { isBindableRuntimeChoice, type AdapterReport } from "@/lib/harness-adapters";
+import { consumeFamiliarSettingsPending, type FamiliarSettingsTab } from "@/lib/chat-tab-events";
 import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { listVoiceProviders } from "@/lib/voice/registry";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
@@ -471,6 +472,14 @@ function FamiliarCapabilityPanel({
   const snapshot = useCapabilitySnapshot(harnessId);
   // Skills is the section this handoff is named for — it opens first.
   const [section, setSection] = useState<FamiliarSectionId>("skills");
+  const [settingsTab, setSettingsTab] = useState<FamiliarSettingsTab | undefined>();
+
+  useEffect(() => {
+    const target = consumeFamiliarSettingsPending();
+    if (!target) return;
+    setSection("settings");
+    setSettingsTab(target.tab);
+  }, []);
 
   const data = useMemo(
     () =>
@@ -551,6 +560,7 @@ function FamiliarCapabilityPanel({
             familiars={familiars}
             allFamiliars={allFamiliars}
             localDaemonReady={localDaemonReady}
+            initialTab={settingsTab}
             onRosterChanged={onRosterChanged}
           />
         ) : null}

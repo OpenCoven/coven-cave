@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AccessGroupsSection } from "@/components/access-groups-section";
 import dynamic from "next/dynamic";
 import { FamiliarStudioBrainTab } from "@/components/familiar-studio-brain-tab";
@@ -10,10 +10,11 @@ import { FamiliarStudioProjectsTab } from "@/components/familiar-studio-projects
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { VaultPanel } from "@/components/vault-panel";
 import { Tabs } from "@/components/ui/tabs";
+import type { FamiliarSettingsTab } from "@/lib/chat-tab-events";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { Familiar } from "@/lib/types";
 
-type FamiliarSettingsTab = "chat" | "identity" | "brain" | "memory" | "projects" | "vault";
+export type { FamiliarSettingsTab } from "@/lib/chat-tab-events";
 
 const SETTINGS_TABS: Array<{ id: FamiliarSettingsTab; label: string }> = [
   { id: "chat", label: "Chat" },
@@ -42,22 +43,28 @@ const ChatSettingsView = dynamic(
 /**
  * The selected familiar's editable Studio controls, embedded in Chat's
  * Familiar tab. The Chat roster owns selection; these bodies remain the
- * canonical settings writers used by Settings → Familiars.
+ * canonical settings writers shared with the retired Settings → Familiars
+ * surface.
  */
 export function FamiliarSettingsSection({
   familiar,
   familiars,
   allFamiliars,
   localDaemonReady,
+  initialTab,
   onRosterChanged,
 }: {
   familiar: ResolvedFamiliar;
   familiars: Familiar[];
   allFamiliars: ResolvedFamiliar[];
   localDaemonReady: boolean;
+  initialTab?: FamiliarSettingsTab;
   onRosterChanged?: () => void;
 }) {
-  const [tab, setTab] = useState<FamiliarSettingsTab>("identity");
+  const [tab, setTab] = useState<FamiliarSettingsTab>(initialTab ?? "identity");
+  useEffect(() => {
+    if (initialTab) setTab(initialTab);
+  }, [initialTab]);
   const raw = useMemo(
     () => familiars.find((item) => item.id === familiar.id),
     [familiars, familiar.id],
