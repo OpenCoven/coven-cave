@@ -225,6 +225,35 @@ test("each row opens per-project settings with the GitHub repo link", () => {
   assert.match(css, /\.projects-access-kind \{/, "the kind glyph is styled");
 });
 
+// Kind is a category, so each gets its own treatment. Before, only workspaces
+// were styled — a repository was encoded by the ABSENCE of the accent, which
+// reads as "no kind" rather than "repository". Distinct hues aren't available:
+// this system has one accent (--color-info aliases it) and a second hue would
+// have to survive 21 palettes × 2 modes, so the split is fill vs ring.
+test("workspaces and repositories each carry their own kind treatment", () => {
+  assert.match(
+    css,
+    /\.projects-access-kind\.is-workspace \{[^}]*background:\s*color-mix\(in oklch, var\(--accent-presence\)/,
+    "workspaces are the filled, accent-tinted kind",
+  );
+  assert.match(
+    css,
+    /\.projects-access-kind\.is-repo \{[^}]*box-shadow:\s*inset 0 0 0 1px var\(--border-strong\)/,
+    "repositories are ringed rather than filled",
+  );
+  assert.doesNotMatch(
+    css,
+    /\.projects-access-kind \{[^}]*background:\s*color-mix/,
+    "the base glyph carries no kind colour of its own — each kind states itself",
+  );
+  // The dense rows view strips the tile, so neither treatment may leak there.
+  assert.match(
+    css,
+    /\.projects-access-tr-name \.projects-access-kind \{[^}]*box-shadow:\s*none/,
+    "the rows view drops the ring along with the fill",
+  );
+});
+
 test("the settings modal also renames and removes from the registry (issue #3710)", () => {
   assert.match(view, /<ProjectSettingsModal[\s\S]{0,260}onRename=\{renameProjectAndAnnounce\}[\s\S]{0,60}onDelete=\{removeProject\}/, "the modal carries rename + remove handlers");
   assert.match(view, /const ok = await renameProject\(id, name\);/, "rename goes through useProjects().renameProject");
