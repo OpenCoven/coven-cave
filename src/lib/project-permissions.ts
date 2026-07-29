@@ -589,6 +589,81 @@ function recordGrantChange(
 }
 
 /**
+ * Effective access for a set of (familiar, project) pairs, as one snapshot.
+ *
+ * Group edits are logged by DIFFING effective access, not by echoing the edit:
+ * adding a member to a group grants nothing they already hold directly, and
+ * removing a group grant takes nothing away if another group still confers it.
+ * Logging the edit itself would claim changes that did not happen.
+ */
+type EffectivePair = { familiarId: string; projectId: string };
+
+function pairKey(familiarId: string, projectId: string): string {
+  return `${familiarId}\u0000${projectId}`;
+}
+
+function effectiveSnapshot(
+  file: ProjectPermissionsFile,
+  pairs: readonly EffectivePair[],
+): Map<string, ProjectAccessLevel | null> {
+  const snapshot = new Map<string, ProjectAccessLevel | null>();
+  for (const { familiarId, projectId } of pairs) {
+    snapshot.set(
+      pairKey(familiarId, projectId),
+      effectiveProjectAccess(file, familiarId, projectId).level ?? null,
+    );
+  }
+  return snapshot;
+}
+
+/**
+ * Every (familiar, project) pair a group edit could move: the union of members
+ * and project grants on BOTH sides of the edit, so removals are covered too.
+ */
+function groupPairs(
+  before: Pick<FamiliarAccessGroup, "memberFamiliarIds" | "projectGrants"> | null,
+  after: Pick<FamiliarAccessGroup, "memberFamiliarIds" | "projectGrants"> | null,
+): EffectivePair[] {
+  const familiars = new Set<string>([
+    ...(before?.memberFamiliarIds ?? []),
+    ...(after?.memberFamiliarIds ?? []),
+  ]);
+  const projects = new Set<string>([
+    ...(before?.projectGrants ?? []).map((grant) => grant.projectId),
+    ...(after?.projectGrants ?? []).map((grant) => grant.projectId),
+  ]);
+  const pairs: EffectivePair[] = [];
+  for (const familiarId of familiars) {
+    for (const projectId of projects) pairs.push({ familiarId, projectId });
+  }
+  return pairs;
+}
+
+/** Record one entry per pair whose EFFECTIVE level actually moved. */
+function recordGroupEffectiveChanges(
+  file: ProjectPermissionsFile,
+  pairs: readonly EffectivePair[],
+  before: Map<string, ProjectAccessLevel | null>,
+  groupId: string,
+  actor: GrantChangeActor,
+): void {
+  for (const { familiarId, projectId } of pairs) {
+    const from = before.get(pairKey(familiarId, projectId)) ?? null;
+    const to = effectiveProjectAccess(file, familiarId, projectId).level ?? null;
+    if (from === to) continue;
+    recordGrantChange(file, {
+      familiarId,
+      projectId,
+      from,
+      to,
+      actor,
+      kind: "group",
+      groupId,
+    });
+  }
+}
+
+/**
  * Most-recent grant changes, newest first, capped to `limit`.
  *
  * Ties on `at` break on append order, not arbitrarily: a bulk "Set all" writes
@@ -901,6 +976,8 @@ export async function createAccessGroup(input: {
   description?: string;
   memberFamiliarIds?: string[];
   projectGrants?: { projectId: string; access?: ProjectAccessLevel }[];
+  /** Who is making the change; defaults to the app itself. */
+  actor?: GrantChangeActor;
 }): Promise<FamiliarAccessGroup> {
   const name = input.name.trim();
   if (!name) throw new Error("access group name is required");
@@ -916,7 +993,12 @@ export async function createAccessGroup(input: {
       createdAt: now,
       updatedAt: now,
     };
+    // A group can arrive already populated with members AND project grants,
+    // granting several familiars access in one call.
+    const pairs = groupPairs(null, group);
+    const before = effectiveSnapshot(file, pairs);
     file.accessGroups.push(group);
+    recordGroupEffectiveChanges(file, pairs, before, group.id, input.actor ?? "system");
     await saveProjectPermissions(file);
     return group;
   }));
@@ -928,11 +1010,19 @@ export async function updateAccessGroup(input: {
   description?: string | null;
   memberFamiliarIds?: string[];
   projectGrants?: { projectId: string; access?: ProjectAccessLevel }[];
+  /** Who is making the change; defaults to the app itself. */
+  actor?: GrantChangeActor;
 }): Promise<FamiliarAccessGroup> {
   return withProjectPermissionsStore(() => withWriteMutex(async () => {
     const file = await loadProjectPermissionsUnlocked();
     const group = file.accessGroups.find((candidate) => candidate.id === input.groupId);
     if (!group) throw new AccessGroupNotFoundError();
+    // Snapshot BEFORE the in-place edit — members and grants are rewritten
+    // wholesale, so the prior side is otherwise unrecoverable.
+    const priorShape = {
+      memberFamiliarIds: [...group.memberFamiliarIds],
+      projectGrants: group.projectGrants.map((grant) => ({ ...grant })),
+    };
     if (input.name !== undefined) {
       const name = input.name.trim();
       if (!name) throw new Error("access group name is required");
@@ -948,17 +1038,38 @@ export async function updateAccessGroup(input: {
     }
     group.projectGrants = normalizeGroupGrants(input.projectGrants, group.projectGrants);
     group.updatedAt = new Date().toISOString();
+    const pairs = groupPairs(priorShape, group);
+    // Recompute "before" against the pre-edit shape: swap the prior members and
+    // grants back in, measure, then restore. Cheaper and less error-prone than
+    // cloning the whole file.
+    const editedMembers = group.memberFamiliarIds;
+    const editedGrants = group.projectGrants;
+    group.memberFamiliarIds = priorShape.memberFamiliarIds;
+    group.projectGrants = priorShape.projectGrants;
+    const before = effectiveSnapshot(file, pairs);
+    group.memberFamiliarIds = editedMembers;
+    group.projectGrants = editedGrants;
+    recordGroupEffectiveChanges(file, pairs, before, group.id, input.actor ?? "system");
     await saveProjectPermissions(file);
     return group;
   }));
 }
 
-export async function deleteAccessGroup(groupId: string): Promise<boolean> {
+export async function deleteAccessGroup(
+  groupId: string,
+  options: { actor?: GrantChangeActor } = {},
+): Promise<boolean> {
   return withProjectPermissionsStore(() => withWriteMutex(async () => {
     const file = await loadProjectPermissionsUnlocked();
+    const removed = file.accessGroups.find((group) => group.id === groupId) ?? null;
     const next = file.accessGroups.filter((group) => group.id !== groupId);
     if (next.length === file.accessGroups.length) return false;
+    // Deleting a group takes away everything it conferred, from every member
+    // at once — the widest single change the model allows.
+    const pairs = groupPairs(removed, null);
+    const before = effectiveSnapshot(file, pairs);
     file.accessGroups = next;
+    recordGroupEffectiveChanges(file, pairs, before, groupId, options.actor ?? "system");
     await saveProjectPermissions(file);
     return true;
   }));

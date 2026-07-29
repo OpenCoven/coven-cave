@@ -179,3 +179,140 @@ test("a store written before this log existed loads as empty, not broken", async
 });
 
 console.log("project-grant-audit.test.ts: ok");
+
+// ── Access-group edits (cave-8qew1) ────────────────────────────────────────
+// Group edits are logged by DIFFING effective access, not by echoing the edit.
+// A member who already holds a level directly gains nothing from a group grant,
+// and removing a group grant takes nothing away if another group still confers
+// it — logging the edit itself would claim changes that never happened.
+
+const {
+  updateAccessGroup,
+  deleteAccessGroup,
+} = await import("./project-permissions.ts");
+
+test("creating a populated group logs what each member actually gained", async () => {
+  const before = (await listRecentGrantChanges()).length;
+  const group = await createAccessGroup({
+    name: "Readers",
+    memberFamiliarIds: ["ada", "brie"],
+    projectGrants: [{ projectId: "g1", access: "read" }],
+    actor: "loopback",
+  });
+  const added = (await listRecentGrantChanges()).slice(0, (await listRecentGrantChanges()).length - before);
+  const forG1 = added.filter((e) => e.projectId === "g1");
+  assert.equal(forG1.length, 2, "one entry per member who gained access");
+  for (const entry of forG1) {
+    assert.equal(entry.from, null);
+    assert.equal(entry.to, "read");
+    assert.equal(entry.kind, "group");
+    assert.equal(entry.groupId, group.id);
+    assert.equal(entry.actor, "loopback");
+  }
+});
+
+test("adding a member logs only the access they did not already hold", async () => {
+  // cyd already holds write DIRECTLY on g1 — a group read grant gives nothing.
+  await grantProjectToFamiliar({ familiarId: "cyd", projectId: "g1", source: "human", access: "write" });
+  const groups = await (await import("./project-permissions.ts")).listAccessGroups();
+  const readers = groups.find((g) => g.name === "Readers");
+
+  const before = (await listRecentGrantChanges()).length;
+  await updateAccessGroup({
+    groupId: readers.id,
+    memberFamiliarIds: ["ada", "brie", "cyd", "dov"],
+    actor: "loopback",
+  });
+  const added = (await listRecentGrantChanges()).slice(0, (await listRecentGrantChanges()).length - before);
+  const names = added.filter((e) => e.projectId === "g1").map((e) => e.familiarId);
+  assert.deepEqual(names.sort(), ["dov"], "only the member whose effective level moved is logged");
+});
+
+test("removing a member logs the access they lost", async () => {
+  const groups = await (await import("./project-permissions.ts")).listAccessGroups();
+  const readers = groups.find((g) => g.name === "Readers");
+  const before = (await listRecentGrantChanges()).length;
+  await updateAccessGroup({
+    groupId: readers.id,
+    memberFamiliarIds: ["ada", "brie", "cyd"],
+    actor: "loopback",
+  });
+  const added = (await listRecentGrantChanges()).slice(0, (await listRecentGrantChanges()).length - before);
+  const dov = added.find((e) => e.familiarId === "dov" && e.projectId === "g1");
+  assert.ok(dov, "the removed member is logged");
+  assert.equal(dov.from, "read");
+  assert.equal(dov.to, null);
+});
+
+test("a member with a direct grant loses nothing when the group drops them", async () => {
+  const groups = await (await import("./project-permissions.ts")).listAccessGroups();
+  const readers = groups.find((g) => g.name === "Readers");
+  const before = (await listRecentGrantChanges()).length;
+  await updateAccessGroup({
+    groupId: readers.id,
+    memberFamiliarIds: ["ada", "brie"],
+    actor: "loopback",
+  });
+  const added = (await listRecentGrantChanges()).slice(0, (await listRecentGrantChanges()).length - before);
+  assert.equal(
+    added.filter((e) => e.familiarId === "cyd").length,
+    0,
+    "cyd keeps write via its direct grant — nothing changed, so nothing is logged",
+  );
+});
+
+test("deleting a group logs every member's loss and names the group", async () => {
+  const groups = await (await import("./project-permissions.ts")).listAccessGroups();
+  const readers = groups.find((g) => g.name === "Readers");
+  const before = (await listRecentGrantChanges()).length;
+  const deleted = await deleteAccessGroup(readers.id, { actor: "loopback" });
+  assert.equal(deleted, true);
+  const added = (await listRecentGrantChanges()).slice(0, (await listRecentGrantChanges()).length - before);
+  const forG1 = added.filter((e) => e.projectId === "g1");
+  assert.deepEqual(forG1.map((e) => e.familiarId).sort(), ["ada", "brie"]);
+  for (const entry of forG1) {
+    assert.equal(entry.from, "read");
+    assert.equal(entry.to, null);
+    assert.equal(entry.kind, "group");
+    assert.equal(entry.groupId, readers.id, "the group that conferred it is named");
+  }
+});
+
+test("a no-op group edit logs nothing", async () => {
+  const group = await createAccessGroup({
+    name: "Noop",
+    memberFamiliarIds: ["ada"],
+    projectGrants: [{ projectId: "g2", access: "read" }],
+    actor: "loopback",
+  });
+  const before = (await listRecentGrantChanges()).length;
+  await updateAccessGroup({ groupId: group.id, name: "Noop renamed", actor: "loopback" });
+  assert.equal(
+    (await listRecentGrantChanges()).length,
+    before,
+    "renaming a group changes no access, so it writes no access record",
+  );
+});
+
+test("overlapping groups: losing one grant is not a loss when another still confers it", async () => {
+  const a = await createAccessGroup({
+    name: "OverlapA",
+    memberFamiliarIds: ["eve"],
+    projectGrants: [{ projectId: "g3", access: "read" }],
+    actor: "loopback",
+  });
+  await createAccessGroup({
+    name: "OverlapB",
+    memberFamiliarIds: ["eve"],
+    projectGrants: [{ projectId: "g3", access: "read" }],
+    actor: "loopback",
+  });
+  const before = (await listRecentGrantChanges()).length;
+  await deleteAccessGroup(a.id, { actor: "loopback" });
+  const added = (await listRecentGrantChanges()).slice(0, (await listRecentGrantChanges()).length - before);
+  assert.equal(
+    added.filter((e) => e.familiarId === "eve" && e.projectId === "g3").length,
+    0,
+    "OverlapB still grants read — effective access did not move, so nothing is logged",
+  );
+});
