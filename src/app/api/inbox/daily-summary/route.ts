@@ -128,6 +128,13 @@ export async function POST(req: Request) {
     });
     if (!draft) return null;
 
+    // When backfilling a past day, `target` is midnight of that day, so draft
+    // timestamps (generatedAt/firedAt/fireAt) would be midnight rather than the
+    // real write time. Override them to wall-clock `now` so the byline and
+    // generatedAt remain truthful. Day-selection keys (auto, link) still use
+    // `target`, which is correct.
+    const writeAt = body.backfill === true ? now.toISOString() : undefined;
+
     // Ensure-or-refresh: today's report is rebuilt in place so it tracks the
     // day instead of freezing at the first app-open after midnight.
     const existing = file.items.find((item) => item.auto === dailySummaryAutoKey(target));
@@ -141,6 +148,7 @@ export async function POST(req: Request) {
         // fact-only refresh must not discard the narrative layered on top.
         media: {
           ...draft.media,
+          ...(writeAt ? { generatedAt: writeAt, report: { ...draft.media?.report, refreshedAt: writeAt } } : {}),
           narrative: narrativeInput ?? existing.media?.narrative ?? null,
         },
         updatedAt: now.toISOString(),
@@ -156,17 +164,20 @@ export async function POST(req: Request) {
       title: draft.title,
       body: draft.body,
       status: "fired",
-      createdAt: draft.firedAt,
-      updatedAt: draft.firedAt,
-      fireAt: draft.fireAt,
-      firedAt: draft.firedAt,
+      createdAt: writeAt ?? draft.firedAt,
+      updatedAt: writeAt ?? draft.firedAt,
+      fireAt: writeAt ?? draft.fireAt,
+      firedAt: writeAt ?? draft.firedAt,
       snoozeUntil: null,
       recurrence: draft.recurrence,
       source: "system",
       familiarId: null,
       sessionId: null,
       link: draft.link,
-      media: draft.media,
+      media: {
+        ...draft.media,
+        ...(writeAt ? { generatedAt: writeAt, report: { ...draft.media?.report, refreshedAt: writeAt } } : {}),
+      },
       auto: draft.auto,
     };
     file.items.push(next);
