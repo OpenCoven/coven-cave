@@ -1,0 +1,110 @@
+/* The daily report's pull-request overlay. The card inside is the app's own
+   GitHubCard, so this sheet only frames it: scrim, dialog box, header. Colors
+   come from foundations.css — the report ships beside 21 themes × 2 modes. */
+
+.drd-pr-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--backdrop-scrim);
+  backdrop-filter: blur(var(--glass-blur));
+}
+
+.drd-pr-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: 100%;
+  min-height: 0;
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-lg, 0 32px 90px -28px rgb(0 0 0 / 78%));
+  overflow: hidden;
+}
+
+.drd-pr-dialog :focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 2px;
+}
+
+.drd-pr-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  min-width: 0;
+}
+
+.drd-pr-head > svg {
+  flex: none;
+  color: var(--accent-presence);
+}
+
+.drd-pr-ref {
+  flex: none;
+  font: 500 var(--text-xs) var(--font-mono);
+  color: var(--accent-presence);
+}
+
+.drd-pr-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--fg-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drd-pr-time {
+  flex: none;
+  font: 400 var(--text-2xs) var(--font-mono);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.drd-pr-close {
+  flex: none;
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+
+.drd-pr-close:hover {
+  border-color: var(--accent-presence);
+  color: var(--accent-presence);
+}
+
+/* The card brings its own chrome; this is just the scroll region around it. */
+.drd-pr-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+@media (max-width: 760px) {
+  .drd-pr-scrim {
+    padding: var(--space-3);
+  }
+
+  .drd-pr-title {
+    display: none;
+  }
+}

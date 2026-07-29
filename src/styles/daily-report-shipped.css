@@ -490,3 +490,22 @@
     transition: none;
   }
 }
+
+/* The row title and index entries became buttons when the report can open the
+   app's own PR card instead of sending the reader to github.com. Strip the
+   button chrome so they still read as text. */
+button.drd-ship-link,
+button.drd-ship-index-item {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.drd-ship-index-item {
+  display: block;
+  width: 100%;
+  color: inherit;
+}

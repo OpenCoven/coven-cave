@@ -59,10 +59,13 @@ export function ShippedPanel({
   model,
   open,
   onToggle,
+  onOpenPr,
 }: {
   model: DayModel;
   open: boolean;
   onToggle: () => void;
+  /** Opens the app's own PR card. Without it rows fall back to github.com. */
+  onOpenPr?: (row: ShippedRow) => void;
 }): JSX.Element {
   const [repo, setRepo] = useState<string>(ALL);
   const [query, setQuery] = useState("");
@@ -202,17 +205,28 @@ export function ShippedPanel({
                       #{row.number}
                     </span>
                     <span className="drd-ship-title" role="cell">
-                      <a
-                        className="drd-ship-link"
-                        href={row.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={`${row.repoLabel}#${row.number} — ${row.title}`}
-                      >
-                        {row.title}
-                      </a>
+                      {onOpenPr ? (
+                        <button
+                          type="button"
+                          className="drd-ship-link"
+                          onClick={() => onOpenPr(row)}
+                          title={`${row.repoLabel}#${row.number} — ${row.title}`}
+                        >
+                          {row.title}
+                        </button>
+                      ) : (
+                        <a
+                          className="drd-ship-link"
+                          href={row.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={`${row.repoLabel}#${row.number} — ${row.title}`}
+                        >
+                          {row.title}
+                        </a>
+                      )}
                       <span className="drd-ship-out">
-                        <Icon name="ph:arrow-square-out" aria-hidden />
+                        <Icon name={onOpenPr ? "ph:git-pull-request" : "ph:arrow-square-out"} aria-hidden />
                       </span>
                     </span>
                     <span role="cell">
@@ -231,17 +245,30 @@ export function ShippedPanel({
                 <div className="drd-ship-kicker drd-ship-index-head">THE REST OF THE INDEX</div>
                 <div className="drd-ship-index-cols">
                   {indexShown.map((row) => (
-                    <a
-                      key={row.key}
-                      className="drd-ship-index-item"
-                      data-dim={dimmed(row)}
-                      href={row.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      title={`${row.repoLabel}#${row.number} — ${row.title}`}
-                    >
-                      <span className="drd-ship-num">{row.number}</span> {row.title}
-                    </a>
+                    onOpenPr ? (
+                      <button
+                        key={row.key}
+                        type="button"
+                        className="drd-ship-index-item"
+                        data-dim={dimmed(row)}
+                        onClick={() => onOpenPr(row)}
+                        title={`${row.repoLabel}#${row.number} — ${row.title}`}
+                      >
+                        <span className="drd-ship-num">{row.number}</span> {row.title}
+                      </button>
+                    ) : (
+                      <a
+                        key={row.key}
+                        className="drd-ship-index-item"
+                        data-dim={dimmed(row)}
+                        href={row.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`${row.repoLabel}#${row.number} — ${row.title}`}
+                      >
+                        <span className="drd-ship-num">{row.number}</span> {row.title}
+                      </a>
+                    )
                   ))}
                 </div>
                 {moreCount > 0 ? (

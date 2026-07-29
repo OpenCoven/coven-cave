@@ -15,6 +15,7 @@ import { clockLabel, type Chapter, type DayModel, type DayTone } from "@/lib/dai
 import { DayCarousel } from "@/components/daily-report-carousel";
 import { ShippedPanel } from "@/components/daily-report-shipped";
 import { DayModals, type ReportModal } from "@/components/daily-report-modals";
+import { DailyReportPrModal, type PrTarget } from "@/components/daily-report-pr-modal";
 import "@/styles/daily-report-day.css";
 
 export type WeekCell = {
@@ -104,6 +105,7 @@ export function DailyReportDay({
   const [shipOpen, setShipOpen] = useState(false);
   const [castOpen, setCastOpen] = useState(true);
   const [modal, setModal] = useState<ReportModal>(null);
+  const [pr, setPr] = useState<PrTarget | null>(null);
   const [refresh, setRefresh] = useState<"idle" | "busy" | "done">("idle");
   const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -113,11 +115,17 @@ export function DailyReportDay({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      setModal((m) => {
-        if (m) return null;
-        setCarouselOpen(false);
-        setShipOpen(false);
-        return m;
+      // Unwind the layer stack top-down: the PR card sits above the dialogs,
+      // which sit above the inline panels.
+      setPr((current) => {
+        if (current) return null;
+        setModal((m) => {
+          if (m) return null;
+          setCarouselOpen(false);
+          setShipOpen(false);
+          return m;
+        });
+        return current;
       });
     };
     const onAway = (e: MouseEvent) => {
@@ -411,9 +419,30 @@ export function DailyReportDay({
                 <ul className="drd-page__events">
                   {active.events.slice(0, CHAPTER_EVIDENCE_LIMIT).map((e) => (
                     <li key={e.id} className="drd-page__event" style={toneStyle(e.tone)}>
-                      <span className="drd-page__eventat">{clockLabel(e.at)}</span>
-                      {e.detail && <span className="drd-page__eventref">{e.detail}</span>}
-                      <span className="drd-page__eventlabel">{e.label}</span>
+                      {e.pr ? (
+                        <button
+                          type="button"
+                          className="drd-page__eventopen"
+                          onClick={() =>
+                            setPr({
+                              repo: e.pr!.repo,
+                              number: e.pr!.number,
+                              title: e.label,
+                              time: clockLabel(e.at),
+                            })
+                          }
+                        >
+                          <span className="drd-page__eventat">{clockLabel(e.at)}</span>
+                          {e.detail && <span className="drd-page__eventref">{e.detail}</span>}
+                          <span className="drd-page__eventlabel">{e.label}</span>
+                        </button>
+                      ) : (
+                        <>
+                          <span className="drd-page__eventat">{clockLabel(e.at)}</span>
+                          {e.detail && <span className="drd-page__eventref">{e.detail}</span>}
+                          <span className="drd-page__eventlabel">{e.label}</span>
+                        </>
+                      )}
                     </li>
                   ))}
                   {active.events.length > CHAPTER_EVIDENCE_LIMIT && (
@@ -483,7 +512,11 @@ export function DailyReportDay({
                         className="drd-spine__item"
                         data-dim={dimmed || undefined}
                         style={toneStyle(e.tone)}
-                        onClick={() => setChapter(e.chapterIndex)}
+                        onClick={() =>
+                          e.pr
+                            ? setPr({ repo: e.pr.repo, number: e.pr.number, title: e.label, time: clockLabel(e.at) })
+                            : setChapter(e.chapterIndex)
+                        }
                       >
                         <span className="drd-spine__at">{clockLabel(e.at)}</span>
                         <span className="drd-spine__dot" data-many={e.count > 1 || undefined} aria-hidden />
@@ -601,6 +634,9 @@ export function DailyReportDay({
         <ShippedPanel
           model={model}
           open={shipOpen}
+          onOpenPr={(row) =>
+            setPr({ repo: row.repo, number: row.number, title: row.title, time: row.time })
+          }
           onToggle={() =>
             setShipOpen((v) => {
               if (!v) setCarouselOpen(false);
@@ -609,6 +645,8 @@ export function DailyReportDay({
           }
         />
       </div>
+
+      <DailyReportPrModal target={pr} onClose={() => setPr(null)} />
 
       <DayModals
         modal={modal}
