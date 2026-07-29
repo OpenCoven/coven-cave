@@ -9,15 +9,38 @@
  */
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { Icon, type IconName } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
-import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { countChecks, isFailConclusion, type CheckCounts, type CheckSummary } from "@/lib/github-checks";
 import { descriptorUrl, type GitHubBlockDescriptor } from "@/lib/github-blocks";
 
+// The composer keeps its own chunk. chat-view is in the `/` startup graph, so a
+// static import would drag gh-card-composer.css into the home first load for
+// every session — including the overwhelming majority with no GitHub card in
+// the transcript (it put the route 8 KB over the CSS budget). Splitting it also
+// means the card's own hydration is not blocked on composer bytes.
+//
+// The fallback reserves the reply slot's exact footprint in Tailwind, NOT in
+// .ghc-slot — those rules live in the chunk that has not arrived yet, so using
+// them here would collapse the card and break the never-reflow invariant during
+// the load.
+const LazyComposer = dynamic(
+  () => import("@/components/github-card-composer").then((m) => m.GitHubCardComposer),
+  { ssr: false, loading: () => <div className="mt-[9px] h-7" /> },
+);
+
 type Person = { login: string; avatarUrl: string | null; url: string | null };
+
+/** PR-only detail, present only when the card asked for `pull=1`. */
+type PullDetail = {
+  headRef: string | null;
+  baseRef: string | null;
+  commits: number | null;
+  reviews: { approved: number; changesRequested: number; commented: number } | null;
+};
 
 type ItemDetail = {
   ok: true;
@@ -27,12 +50,14 @@ type ItemDetail = {
   isPull: boolean;
   merged: boolean;
   draft: boolean;
+  body: string;
   author: Person | null;
   assignees: Person[];
   labels: { name: string; color: string }[];
   updatedAt: string | null;
   htmlUrl: string | null;
   comments: number;
+  pull: PullDetail | null;
 };
 
 type HydrationState =
@@ -172,7 +197,10 @@ function useGitHubItem(
     setState((prev) => (tick > 0 && prev.phase === "ready" ? prev : { phase: "loading" }));
     (async () => {
       try {
-        const res = await fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${number}`, {
+        // pull=1 asks for the PR-only block (head/base ref, commit count, review
+        // tally) the composer's merge and gate sections need. The server ignores
+        // it for issues, and omitting it is what every other caller still does.
+        const res = await fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${number}&pull=1`, {
           cache: "no-store",
         });
         if (cancelled) return;
@@ -356,246 +384,6 @@ function stateGlyph(
   };
 }
 
-type ActionPhase = "idle" | "sending" | "error";
-
-type PendingTier2 =
-  | { kind: "merge"; method: "squash" }
-  | { kind: "review"; event: "APPROVE" | "REQUEST_CHANGES" };
-
-/** Tier-1 action row + tier-2 confirm step for hydrated issue/PR cards
- *  (design §3). Tier-1 (comment, close/reopen) fires on the user's tap;
- *  tier-2 (approve, request changes, merge) opens an inline confirm strip
- *  stating exactly what will fire — proposed → confirming → firing →
- *  done|error, with GitHub's own guard errors shown verbatim. */
-function CardActions({
-  descriptor,
-  item,
-  onMutated,
-  onMerged,
-}: {
-  descriptor: GitHubBlockDescriptor;
-  item: ItemDetail;
-  onMutated: () => void;
-  /** Fired once on a confirmed merge — the parent card plays the reward flare. */
-  onMerged?: () => void;
-}) {
-  const { announce } = useAnnouncer();
-  const [composing, setComposing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [phase, setPhase] = useState<ActionPhase>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState<PendingTier2 | null>(null);
-  const [reviewBody, setReviewBody] = useState("");
-  const composerId = `gh-card-composer-${descriptor.repo.replace(/[^A-Za-z0-9]/g, "-")}-${descriptor.number}`;
-
-  const run = async (fn: () => Promise<Response>) => {
-    setPhase("sending");
-    setError(null);
-    try {
-      const res = await fn();
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-      if (!res.ok || !data?.ok) {
-        setPhase("error");
-        setError(res.status === 401 ? "connect GitHub first" : (data?.error ?? `failed (${res.status})`));
-        return false;
-      }
-      setPhase("idle");
-      return true;
-    } catch {
-      setPhase("error");
-      setError("network error");
-      return false;
-    }
-  };
-
-  const sendComment = async () => {
-    const text = draft.trim();
-    if (!text) return;
-    const ok = await run(() =>
-      fetch("/api/github/comment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repo: descriptor.repo, number: descriptor.number, body: text }),
-      }),
-    );
-    if (ok) {
-      setDraft("");
-      setComposing(false);
-      onMutated();
-    }
-  };
-
-  const setIssueState = async (state: "open" | "closed") => {
-    const ok = await run(() =>
-      fetch("/api/github/issue", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repo: descriptor.repo, number: descriptor.number, state }),
-      }),
-    );
-    if (ok) onMutated();
-  };
-
-  const fireTier2 = async () => {
-    if (!pending) return;
-    const ok =
-      pending.kind === "merge"
-        ? await run(() =>
-            fetch("/api/github/merge", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ repo: descriptor.repo, number: descriptor.number, method: pending.method }),
-            }),
-          )
-        : await run(() =>
-            fetch("/api/github/review", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                repo: descriptor.repo,
-                number: descriptor.number,
-                event: pending.event,
-                body: reviewBody.trim(),
-              }),
-            }),
-          );
-    if (ok) {
-      // The flare is visual-only on top of this announcement (AT channel).
-      if (pending.kind === "merge") {
-        announce(`Merged ${descriptor.repo}#${descriptor.number}.`);
-        onMerged?.();
-      }
-      setPending(null);
-      setReviewBody("");
-      onMutated();
-    }
-  };
-
-  const tier2Summary = !pending
-    ? ""
-    : pending.kind === "merge"
-      ? `Merge ${descriptor.repo}#${descriptor.number} via ${pending.method}?`
-      : pending.event === "APPROVE"
-        ? `Approve ${descriptor.repo}#${descriptor.number}?`
-        : `Request changes on ${descriptor.repo}#${descriptor.number}?`;
-  const needsBody = pending?.kind === "review" && pending.event === "REQUEST_CHANGES";
-
-  const btn =
-    "focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50";
-
-  return (
-    <div className="mt-2">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <button
-          type="button"
-          className={btn}
-          onClick={() => setComposing((v) => !v)}
-          disabled={phase === "sending"}
-          aria-expanded={composing}
-          aria-controls={composerId}
-        >
-          Comment
-        </button>
-        {!item.isPull ? (
-          item.state === "open" ? (
-            <button type="button" className={btn} onClick={() => setIssueState("closed")} disabled={phase === "sending"}>
-              Close issue
-            </button>
-          ) : (
-            <button type="button" className={btn} onClick={() => setIssueState("open")} disabled={phase === "sending"}>
-              Reopen issue
-            </button>
-          )
-        ) : null}
-        {item.isPull && item.state === "open" && !item.merged ? (
-          <>
-            <button
-              type="button"
-              className={btn}
-              onClick={() => setPending({ kind: "review", event: "APPROVE" })}
-              disabled={phase === "sending"}
-            >
-              Approve
-            </button>
-            <button
-              type="button"
-              className={btn}
-              onClick={() => setPending({ kind: "review", event: "REQUEST_CHANGES" })}
-              disabled={phase === "sending"}
-            >
-              Request changes
-            </button>
-            <button
-              type="button"
-              className={btn}
-              onClick={() => setPending({ kind: "merge", method: "squash" })}
-              disabled={phase === "sending"}
-            >
-              Merge
-            </button>
-          </>
-        ) : null}
-        {phase === "sending" ? <span className="text-[length:var(--text-2xs)] text-[var(--text-secondary)]" aria-live="polite">sending…</span> : null}
-        {phase === "error" && error ? (
-          <span className="text-[length:var(--text-2xs)] text-[var(--color-warning)]" role="alert">{error}</span>
-        ) : null}
-      </div>
-      {pending ? (
-        // Tier-2 confirm strip (design §3): states exactly what will fire.
-        <div className="mt-1.5 rounded border border-[var(--color-danger)] px-2 py-1.5" role="group" aria-label={tier2Summary}>
-          <div className="text-[length:var(--text-xs)] text-[var(--text-primary)]">{tier2Summary}</div>
-          {pending.kind === "review" ? (
-            <textarea
-              value={reviewBody}
-              onChange={(e) => setReviewBody(e.target.value)}
-              rows={2}
-              placeholder={needsBody ? "Why are changes needed? (required)" : "Optional review comment…"}
-              aria-label="Review comment"
-              className="focus-ring mt-1 min-h-[2.5em] w-full resize-y rounded border border-[var(--border-hairline)] bg-transparent px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)]"
-            />
-          ) : null}
-          <div className="mt-1.5 flex items-center gap-1.5">
-            <button
-              type="button"
-              className={`${btn} border-[var(--color-danger)] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)]`}
-              onClick={fireTier2}
-              disabled={phase === "sending" || (needsBody && !reviewBody.trim())}
-            >
-              {phase === "sending" ? "Working…" : "Confirm"}
-            </button>
-            <button
-              type="button"
-              className={btn}
-              onClick={() => {
-                setPending(null);
-                setError(null);
-              }}
-              disabled={phase === "sending"}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {composing ? (
-        <div id={composerId} className="mt-1.5 flex items-end gap-1.5">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            rows={2}
-            placeholder={`Comment on ${descriptor.repo}#${descriptor.number}…`}
-            aria-label={`Comment on ${descriptor.repo}#${descriptor.number}`}
-            className="focus-ring min-h-[3em] w-full resize-y rounded border border-[var(--border-hairline)] bg-transparent px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)]"
-          />
-          <button type="button" className={btn} onClick={sendComment} disabled={phase === "sending" || !draft.trim()}>
-            Send
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 /** Compact `✓ n · ✕ n · ○ n` strip with a rollup-tinted leading dot. */
 function ChecksStrip({ data }: { data: ChecksData }) {
   const { rollup, counts } = data;
@@ -759,9 +547,13 @@ function ReviewThreadBody({
 export function GitHubCard({
   descriptor,
   onOpenUrl,
+  familiar,
 }: {
   descriptor: GitHubBlockDescriptor;
   onOpenUrl?: (url: string) => void;
+  /** The chat's familiar, for the composer's "Draft with <familiar>" section.
+   *  Absent (e.g. the daily-report modal) simply drops that one section. */
+  familiar?: { id: string; name: string } | null;
 }) {
   const hydratable = descriptor.kind === "pr" || descriptor.kind === "issue";
   const state = useGitHubItem(descriptor.repo, descriptor.number, hydratable);
@@ -787,6 +579,9 @@ export function GitHubCard({
   const checks = useCardChecks(descriptor.repo, descriptor.number, isOpenPull);
   const [expanded, setExpanded] = useState(false);
   const expandable = isOpenPull && checks.phase === "ready" && checks.data.counts.total > 0;
+  // The composer's Gate section needs the PR's review threads, so an open PR
+  // card now fetches them too — the same route the review-thread card uses.
+  const prThreads = useReviewThreads(descriptor.repo, descriptor.number, isOpenPull);
 
   const refText =
     descriptor.kind === "commit"
@@ -832,7 +627,10 @@ export function GitHubCard({
 
   return (
     <div
-      className={`cave-gh-card flex items-start gap-2.5 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-2${justMerged ? " cave-gh-card--reward" : ""}`}
+      // `relative` is load-bearing, not cosmetic: the composer's sheet is
+      // absolutely positioned against this box so it can grow upward over the
+      // transcript without changing the card's own footprint.
+      className={`cave-gh-card relative flex items-start gap-2.5 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-2${justMerged ? " cave-gh-card--reward" : ""}`}
       data-gh-kind={descriptor.kind}
     >
       <span aria-hidden className="mt-[2px] inline-flex shrink-0" style={{ color: glyph.color }}>
@@ -906,7 +704,43 @@ export function GitHubCard({
             <ReviewThreadBody descriptor={descriptor} onOpenUrl={onOpenUrl} />
           </div>
         ) : null}
-        {item ? <CardActions descriptor={descriptor} item={item} onMutated={state.refresh} onMerged={() => { if (readCelebrationsEnabled()) setJustMerged(true); }} /> : null}
+        {item ? (
+          <LazyComposer
+            item={{
+              repo: descriptor.repo,
+              number: item.number,
+              title: item.title,
+              body: item.body,
+              isPull: item.isPull,
+              state: item.state,
+              merged: item.merged,
+              author: item.author?.login ?? null,
+              assignees: item.assignees.map((a) => a.login),
+              labels: item.labels,
+              // Absent whenever the response predates `pull=1` (or the item is
+              // an issue) — the composer treats null as "no PR facts yet".
+              pull: item.pull ?? null,
+            }}
+            checks={checks.phase === "ready" ? { counts: checks.data.counts, runs: checks.data.runs } : null}
+            threads={
+              prThreads.phase === "ready"
+                ? prThreads.threads.map((t) => ({
+                    id: t.id,
+                    path: t.path,
+                    isResolved: t.isResolved,
+                    excerpt: t.comments[0]?.body ?? "",
+                    author: t.comments[0]?.author?.login ?? null,
+                  }))
+                : null
+            }
+            familiar={familiar}
+            onOpenUrl={onOpenUrl}
+            onRefreshChecks={state.refresh}
+            onRefreshThreads={prThreads.refresh}
+            onMutated={state.refresh}
+            onMerged={() => { if (readCelebrationsEnabled()) setJustMerged(true); }}
+          />
+        ) : null}
         {expanded && checks.phase === "ready" ? (
           <div className="mt-2 border-t border-[var(--border-hairline)] pt-2">
             <CheckRunList runs={checks.data.runs} onOpenUrl={onOpenUrl} />

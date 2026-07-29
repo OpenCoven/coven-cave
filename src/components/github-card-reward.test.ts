@@ -6,13 +6,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./github-card.tsx", import.meta.url), "utf8");
+const composer = readFileSync(new URL("./github-card-composer.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
+// The merge now fires from the composer (cave-076kh), but the division of
+// labour is unchanged: announce() is the AT channel, onMerged() is the flare.
 assert.match(
-  source,
-  /if \(pending\.kind === "merge"\) \{\n\s*announce\(`Merged \$\{descriptor\.repo\}#\$\{descriptor\.number\}\.`\);\n\s*onMerged\?\.\(\);/,
-  "merge success announces for AT and signals the parent — the flare is visual-only on top",
+  composer,
+  /announce\(`Merged \$\{repo\}#\$\{number\}\.`\);/,
+  "merge success announces for AT — the flare is visual-only on top of this",
 );
+assert.match(composer, /onMerged\?\.\(\);/, "merge success signals the parent so it can play the flare");
 assert.match(
   source,
   /onMerged=\{\(\) => \{ if \(readCelebrationsEnabled\(\)\) setJustMerged\(true\); \}\}/,
