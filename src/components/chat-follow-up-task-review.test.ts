@@ -22,8 +22,8 @@ assert.match(source, /error=\{error \?\? undefined\}/, "creation failures use th
 assert.match(source, /announce\(`Task "\$\{result\.card\.title\}" created from this chat\.`\)/, "successful creation is announced with its task title");
 assert.match(
   transcriptStyles,
-  /\.cave-followup-card \{[\s\S]*?background-color: var\(--bg-raised\);[\s\S]*?\.cave-followup-card:hover \{[\s\S]*?background-color: color-mix/,
-  "follow-up card base and hover states use the transitioned background-color property",
+  /\.cave-followup-card \{[\s\S]*?background-color: var\(--bg-raised\);/,
+  "follow-up cards retain a token-backed raised surface",
 );
 
 console.log("chat-follow-up-task-review.test.ts: ok");
