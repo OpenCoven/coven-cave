@@ -164,6 +164,9 @@ export default defineConfig({
     reuseExistingServer: false,
     env: {
       COVEN_CAVE_E2E: "1",
+      // Crafts stay hidden in production by default. Their dedicated E2E
+      // specs exercise the explicitly enabled surface through this fixture.
+      NEXT_PUBLIC_CAVE_CRAFTS: "1",
       // Keep app-owned preferences and backdrop bytes out of the developer's
       // real ~/.coven directory. A per-config UUID prevents concurrent runs or
       // later PID reuse from sharing stale state while remaining stable for
