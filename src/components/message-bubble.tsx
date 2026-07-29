@@ -817,6 +817,16 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
   );
 }
 
+export function ProgressiveMarkdownBlock({
+  text,
+  pending,
+}: {
+  text: string;
+  pending?: boolean;
+}) {
+  return <MarkdownContent text={text} pending={pending} />;
+}
+
 // ---------------------------------------------------------------------------
 // CopyButton — hover "Copy message" (raw markdown source)
 // ---------------------------------------------------------------------------

@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./quick-chat-controls.tsx", import.meta.url), "utf8");
 const primitives = readFileSync(new URL("./quick-chat-primitives.tsx", import.meta.url), "utf8");
 const thread = readFileSync(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
+const messageBubble = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+const messageFormat = readFileSync(new URL("../lib/quick-chat-message-format.ts", import.meta.url), "utf8");
 const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
 
 assert.match(primitives, /StandardSelect/, "quick-chat select helper should delegate to StandardSelect");
@@ -13,7 +15,39 @@ assert.match(primitives, /renderValue=/, "quick-chat select helper should keep i
 
 // Shared conversation thread — used by both the in-app dropdown and the tray.
 assert.match(source, /export \{ QuickChatThread \} from "\.\/quick-chat-thread"/, "controls preserve the shared thread export");
-assert.match(thread, /import \{ MarkdownBlock \} from "@\/components\/message-bubble"/, "familiar replies render markdown via the shared MarkdownBlock");
+assert.match(
+  thread,
+  /import \{ ProgressiveMarkdownBlock \} from "@\/components\/message-bubble"/,
+  "familiar replies render through the normal chat's progressive Markdown path",
+);
+assert.match(
+  thread,
+  /pendingTextIndex[\s\S]*<ProgressiveMarkdownBlock key=\{`text-\$\{index\}`\} text=\{piece\.text\} pending=\{streaming && index === pendingTextIndex\}/,
+  "streaming replies use progressive Markdown and show a cursor only on the final visible piece",
+);
+assert.match(
+  messageBubble,
+  /export function ProgressiveMarkdownBlock[\s\S]*<MarkdownContent text=\{text\} pending=\{pending\}/,
+  "the public progressive wrapper preserves one MarkdownContent instance across stream settlement",
+);
+assert.doesNotMatch(
+  thread,
+  /streaming \? <p className="whitespace-pre-wrap/,
+  "quick chat must not fork pending replies into an unformatted plain-text branch",
+);
+assert.match(
+  thread,
+  /formatQuickChatAssistantMessage\(message\.text, streaming\)/,
+  "quick chat uses the shared marker-safe formatter for human-readable reply details",
+);
+assert.match(thread, /<SkillStageCard/, "quick chat renders live skill details as readable status cards");
+assert.match(thread, /<GitHubCard/, "quick chat renders settled GitHub details as preview cards");
+assert.match(thread, /<GitHubActionCard/, "quick chat renders GitHub write proposals as explicit action cards");
+assert.match(
+  thread,
+  /if \(streaming\) return null;/,
+  "quick chat keeps GitHub placeholders stable while streaming without mounting their cards",
+);
 assert.match(thread, /copyText\(visible\)/, "each familiar reply can be copied to the clipboard — the visible text, not the raw next-paths trailer");
 assert.match(thread, /aria-live="polite"/, "the thread is a polite live region so streamed replies are announced");
 assert.match(thread, /quick-chat-caret|quick-chat-typing/, "streaming turns show a caret / thinking affordance");
@@ -196,14 +230,14 @@ assert.match(
 // the half-open block hides too) and renders the suggestions as chips on the
 // LATEST settled reply only — a compact tray can't afford stale chip rows.
 assert.match(
-  thread,
-  /import \{ extractNextPaths \} from "@\/lib\/next-paths"/,
-  "the thread parses the shared next-paths trailer format — no bespoke parser",
+  messageFormat,
+  /import \{ extractNextPaths \} from "\.\/next-paths\.ts"/,
+  "the quick-chat formatter parses the shared next-paths trailer format — no bespoke parser",
 );
 assert.match(
-  thread,
-  /message\.role === "assistant"\s*\?\s*extractNextPaths\(message\.text\)/,
-  "the trailer is stripped from familiar turns (never shown raw)",
+  messageFormat,
+  /extractNextPaths\(skillSplit\.visible\)/,
+  "the formatter strips the trailer from familiar turns after protocol markers (never shown raw)",
 );
 assert.match(
   thread,
