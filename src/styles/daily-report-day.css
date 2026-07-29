@@ -142,13 +142,15 @@
 
 /* The current week is the end of the road: forward paging is dead rather than
    hidden, so the strip keeps its shape and the reason lives in the tooltip. */
-.drd-week__step[data-disabled],
-.drd-week__day[data-future] {
+.drd-week__step[data-disabled] {
   opacity: var(--opacity-disabled);
   cursor: default;
+  pointer-events: auto;
 }
 
 .drd-week__day[data-future] {
+  opacity: var(--opacity-disabled);
+  cursor: default;
   pointer-events: none;
 }
 
