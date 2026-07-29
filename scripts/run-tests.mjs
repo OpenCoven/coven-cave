@@ -186,6 +186,7 @@ export const SUITES = {
     "src/lib/chat-open-tasks.test.ts",
     "src/lib/chat-session-context.test.ts",
     "src/lib/chat-start-from.test.ts",
+    "src/lib/chat-thread-instruments.test.ts",
     "src/lib/chat-queue-followups.test.ts",
     "src/lib/chat-review-requests.test.ts",
     "src/lib/chat-starter-suggestions.test.ts",
