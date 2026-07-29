@@ -146,6 +146,7 @@
   opacity: var(--opacity-disabled);
   cursor: default;
   pointer-events: auto;
+  user-select: none;
 }
 
 .drd-week__day[data-future] {

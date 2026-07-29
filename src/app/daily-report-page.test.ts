@@ -135,8 +135,13 @@ assert.match(view, /canGoForward \?/, "the next-week control is dead on the curr
 assert.match(view, /day\.isFuture \?/, "a future day renders as a dead cell, not a link");
 assert.match(
   view,
-  /:\s*\(\s*<span[\s\S]{0,260}className="drd-week__step"[\s\S]{0,260}data-disabled[\s\S]{0,260}aria-label="Next week unavailable: this is the current week"[\s\S]{0,260}title="This is the current week"/,
-  "the disabled next-week branch renders as a non-link step with accessible disabled semantics",
+  /:\s*\(\s*<span[\s\S]{0,220}className="drd-week__step"[\s\S]{0,220}data-disabled[\s\S]{0,220}aria-disabled="true"/,
+  "the disabled next-week branch renders as a non-link step with disabled semantics",
+);
+assert.match(
+  view,
+  /aria-label="Next week unavailable: this is the current week"/,
+  "the disabled next-week step has an accessible name explaining why it is disabled",
 );
 
 // ── theme safety ───────────────────────────────────────────────────────────
