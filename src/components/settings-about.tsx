@@ -472,7 +472,7 @@ export function AboutSection() {
         <div
           id={settingsGroupId("OpenCoven tools")}
           data-settings-group
-          className="settings-about-control"
+          className="settings-about-control settings-about-control--wide"
         >
           <SectionRule
             aside={

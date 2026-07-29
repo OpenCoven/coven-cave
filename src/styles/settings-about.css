@@ -185,6 +185,10 @@
   gap: var(--space-3);
 }
 
+.settings-about-control--wide {
+  grid-column: 1 / -1;
+}
+
 .settings-about-control,
 .settings-about-elsewhere {
   min-width: 0;

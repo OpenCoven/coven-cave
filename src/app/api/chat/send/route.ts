@@ -2206,6 +2206,10 @@ export async function POST(req: Request) {
       // stream frame. Defer classifying that condition until all buffered
       // stdout has passed through the more-specific adapter failure parser.
       let covenBackedProcessFailed = false;
+      // Coven is the outer launch vehicle. Its cleanup can fail after the
+      // adapter has already supplied a successful structured result; that
+      // completed assistant response remains authoritative for this attempt.
+      let covenCompletedSuccessfulResult = false;
       // Grok Build is launched directly. Its initial interactive sign-in
       // failure can exit non-zero without emitting stdout or stderr, so retain
       // the child outcome until buffered stream text has been fully decoded.
@@ -3084,6 +3088,7 @@ export async function POST(req: Request) {
                 usage: parseStreamJsonUsage(ev.usage),
                 costUsd: parseCostUsd(ev.total_cost_usd),
               };
+              if (ev.is_error === false) covenCompletedSuccessfulResult = true;
             } else if (
               // `output` belongs to Coven's Windows Codex bridge, not the
               // profile-selected Claude protocol. Let an unexpected Claude
@@ -3931,6 +3936,7 @@ export async function POST(req: Request) {
               !sshRuntime &&
               localRuntimePlan?.runner === "coven" &&
               !runHandle.stopRequested &&
+              !covenCompletedSuccessfulResult &&
               typeof code === "number" &&
               code !== 0;
             if (covenBackedProcessFailed) {
@@ -4065,6 +4071,8 @@ export async function POST(req: Request) {
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         codexAdapterFailure = null;
+        covenBackedProcessFailed = false;
+        covenCompletedSuccessfulResult = false;
         resumeFailed = false;
         adapterConflict = null;
         // Settle the heal step BEFORE the retry attempt runs (same shape as
@@ -4119,6 +4127,8 @@ export async function POST(req: Request) {
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         codexAdapterFailure = null;
+        covenBackedProcessFailed = false;
+        covenCompletedSuccessfulResult = false;
         resumeFailed = false;
         // Settle the retry step BEFORE the fresh attempt runs, not after it
         // finishes: the step's own work (rebuild context, relaunch) is done

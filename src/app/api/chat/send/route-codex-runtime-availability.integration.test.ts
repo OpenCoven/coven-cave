@@ -29,7 +29,7 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'assistant-envelope', 'cancel'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'assistant-envelope', 'assistant-envelope-exit-1', 'cancel'].includes(process.env.COVEN_TEST_MODE) }]));",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === 'codex') {",
@@ -39,14 +39,15 @@ const shim = [
   "    setInterval(() => {}, 1000);",
   "    return;",
   "  }",
-  "  if (process.env.COVEN_TEST_MODE === 'assistant-envelope') {",
+  "  if (process.env.COVEN_TEST_MODE === 'assistant-envelope' || process.env.COVEN_TEST_MODE === 'assistant-envelope-exit-1') {",
+  "    const cleanupExit = process.env.COVEN_TEST_MODE === 'assistant-envelope-exit-1';",
   "    const events = [",
-  "      { type: 'system', subtype: 'init', model: 'gpt-5.6-sol', session_id: 'coven-envelope-session' },",
-  "      { type: 'assistant', message: { content: [{ type: 'text', text: 'Coven envelope response' }] }, session_id: 'coven-envelope-session' },",
-  "      { type: 'result', subtype: 'success', is_error: false, session_id: 'coven-envelope-session' },",
+  "      { type: 'system', subtype: 'init', model: 'gpt-5.6-sol', session_id: cleanupExit ? 'coven-envelope-cleanup-session' : 'coven-envelope-session' },",
+  "      { type: 'assistant', message: { content: [{ type: 'text', text: cleanupExit ? 'Coven envelope survives cleanup exit' : 'Coven envelope response' }] }, session_id: cleanupExit ? 'coven-envelope-cleanup-session' : 'coven-envelope-session' },",
+  "      { type: 'result', subtype: 'success', is_error: false, session_id: cleanupExit ? 'coven-envelope-cleanup-session' : 'coven-envelope-session' },",
   "    ];",
   "    process.stdout.write(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n');",
-  "    process.exit(0);",
+  "    process.exit(cleanupExit ? 1 : 0);",
   "  }",
   "  process.stdout.write('unsupported harness `codex`');",
   "  process.exit(1);",
@@ -180,6 +181,26 @@ try {
   );
   assert.equal(envelopeEvents.find((event) => event.kind === "error"), undefined);
   assert.equal(envelopeEvents.findLast((event) => event.kind === "done")?.isError, false);
+
+  // Coven is only the outer launch vehicle. A post-response cleanup failure
+  // cannot rewrite a completed assistant/result pair into a failed turn.
+  process.env.COVEN_TEST_MODE = "assistant-envelope-exit-1";
+  const cleanupExitResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", prompt: "preserve completed envelope", projectRoot: familiarWorkspace }),
+  }));
+  const { events: cleanupExitEvents } = await readSse(cleanupExitResponse);
+  assert.deepEqual(
+    cleanupExitEvents.filter((event) => event.kind === "assistant_chunk").map((event) => event.text),
+    ["Coven envelope survives cleanup exit"],
+    "the complete assistant response survives a later non-zero Coven exit",
+  );
+  assert.equal(cleanupExitEvents.find((event) => event.kind === "error"), undefined);
+  assert.equal(cleanupExitEvents.findLast((event) => event.kind === "done")?.isError, false);
+  const cleanupExitConversation = await loadConversation("coven-envelope-cleanup-session");
+  assert.equal(cleanupExitConversation?.turns.at(-1)?.text, "Coven envelope survives cleanup exit");
+  assert.equal(cleanupExitConversation?.turns.at(-1)?.isError, false, "the persisted turn remains successful");
 
   // A process can start successfully and still exit before Coven emits any
   // JSONL. That is neither an adapter-discovery failure nor evidence that
