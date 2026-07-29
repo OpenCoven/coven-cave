@@ -90,6 +90,7 @@ async function openCrafts(page: Page, plugin = craftPlugin()) {
 
 test.describe("Craft Marketplace transactions", () => {
   test("preview → install → equip → inspect origins → detach → remove", async ({ page }) => {
+    const marketplacePlugin = craftPlugin();
     let equipped = false;
     const roleWrites: Array<{ attach: boolean }> = [];
     let installCalls = 0;
@@ -116,6 +117,17 @@ test.describe("Craft Marketplace transactions", () => {
     }));
     await page.route("**/api/marketplace/crafts/install", async (route) => {
       installCalls += 1;
+      Object.assign(marketplacePlugin, {
+        installed: true,
+        installation: {
+          version: "0.1.0",
+          source: "catalog",
+          installedAt: "2026-07-10T01:00:00.000Z",
+          verifiedAt: "2026-07-10T01:00:00.000Z",
+          runtime: "codex",
+          craftVersion: "0.1.0",
+        },
+      });
       await new Promise<void>((resolve) => { installGate.release = resolve; });
       await route.fulfill({
         json: {
@@ -130,10 +142,11 @@ test.describe("Craft Marketplace transactions", () => {
     });
     await page.route("**/api/marketplace/crafts/uninstall", async (route) => {
       uninstallCalls += 1;
+      Object.assign(marketplacePlugin, { installed: false, installation: undefined });
       await route.fulfill({ json: { ok: true, installed: false, runtime: "codex", craftVersion: "0.1.0" } });
     });
 
-    await openCrafts(page);
+    await openCrafts(page, marketplacePlugin);
     const preview = page.getByTestId("detail").getByRole("button", { name: "Preview" });
     await preview.focus();
     await preview.click();
