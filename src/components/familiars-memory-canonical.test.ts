@@ -26,12 +26,12 @@ const workspace = readFileSync(
   new URL("./workspace.tsx", import.meta.url),
   "utf8",
 );
-const settings = readFileSync(
+const settingsShell = readFileSync(
   new URL("./settings-shell.tsx", import.meta.url),
   "utf8",
 );
-const settingsReadiness = readFileSync(
-  new URL("../lib/use-local-daemon-readiness.ts", import.meta.url),
+const familiarSettings = readFileSync(
+  new URL("./familiar-tab-settings.tsx", import.meta.url),
   "utf8",
 );
 const studio = readFileSync(
@@ -175,39 +175,20 @@ test("local daemon readiness reaches every mounted canonical reader", () => {
     (sections.match(/localDaemonReady=\{localDaemonReady\}/g) ?? []).length >= 2,
     "overlay and detail tab pass readiness to FamiliarsMemoryView",
   );
-  assert.match(
-    settings,
-    /\{\s*acceptedLocalDaemonHealthy,\s*refreshLocalDaemonReadiness,\s*\} = useLocalDaemonReadiness\(\)/,
-    "Settings consumes one live readiness checker for initial, poll, and post-Start reads",
+  assert.doesNotMatch(
+    settingsShell,
+    /useLocalDaemonReadiness/,
+    "the retired Settings Familiars host no longer owns canonical readiness",
   );
   assert.match(
-    settingsReadiness,
-    /payload\.running === true && payload\.target\.mode === "local"/,
-    "Settings accepts only a healthy local daemon target",
+    familiarSettings,
+    /localDaemonReady: boolean/,
+    "Chat Familiar Settings receives the workspace-owned local readiness state",
   );
   assert.match(
-    settingsReadiness,
-    /createDaemonStatusRequestGate\(\)[\s\S]*!mounted \|\| !requestGate\.isLatest\(requestId\)/,
-    "Settings readiness rejects out-of-order and post-unmount publications",
-  );
-  assert.match(
-    settingsReadiness,
-    /usePausablePoll\(\s*\(\) => void refreshLocalDaemonReadiness\(\),\s*5_000,\s*\{ pauseWhileInputActive: true \}/,
-    "Settings keeps accepted-local readiness live through the visible/focus poll",
-  );
-  assert.match(
-    settings,
-    /Promise\.all\(\[load\(\), refreshLocalDaemonReadiness\(\)\]\)/,
-    "post-Start readiness uses the same latest-safe checker",
-  );
-  assert.match(
-    settings,
-    /const localDaemonReady = acceptedLocalDaemonHealthy &&\s*canonicalMemoryLocalAccessEligible\(\{[\s\S]{0,240}platform: tauriPlatform,[\s\S]{0,240}hostname:/,
-    "Settings reuses the same local platform/host eligibility gate as Workspace",
-  );
-  assert.match(
-    settings,
-    /<FamiliarStudioInlinePanel[\s\S]*localDaemonReady=\{localDaemonReady\}/,
+    familiarSettings,
+    /<FamiliarStudioMemoryTab[\s\S]*localDaemonReady=\{localDaemonReady\}/,
+    "Chat Familiar Settings passes exact local readiness to its memory tab",
   );
   assert.match(
     studio,
@@ -227,7 +208,7 @@ test("local daemon readiness reaches every mounted canonical reader", () => {
     "all three production memory mounts carry local readiness",
   );
   assert.doesNotMatch(
-    settings,
+    familiarSettings,
     /json\?\.ok[\s\S]{0,200}setAcceptedLocalDaemonHealthy\(true\)/,
     "a successful familiar roster response never implies canonical readiness",
   );

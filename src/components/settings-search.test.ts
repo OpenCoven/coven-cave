@@ -45,32 +45,11 @@ assert.match(
   "global foundations style the search highlight",
 );
 
-// ── Search reaches inside the Familiars studio panel (2026-07-06) ────────────
-// Each studio tab is indexed with a familiarTab target, so "voice" or
-// "archive" lands on the right tab instead of just the section.
-assert.match(
-  sections,
-  /familiarTab\?: FamiliarStudioTab/,
-  "index entries can target a Familiars studio tab",
-);
-for (const tab of ["identity", "brain", "memory", "projects", "vault"]) {
-  assert.match(
-    sections,
-    new RegExp(`familiarTab: "${tab}"`),
-    `the ${tab} studio tab is indexed for search`,
-  );
-}
-// Look/Lifecycle/Journal merged or moved out — no rows target retired tabs.
-for (const gone of ["look", "lifecycle", "journal"]) {
-  assert.doesNotMatch(
-    sections,
-    new RegExp(`familiarTab: "${gone}"`),
-    `no search row targets the retired ${gone} tab`,
-  );
-}
-// Picking a familiars entry activates the studio tab below the provider
-// instead of scrolling to a SettingsGroup (the panel has none).
-assert.match(shell, /if \(entry\.familiarTab\) \{[\s\S]*?setFamiliarsTabTarget\(entry\.familiarTab\)/, "goToSetting branches familiars entries to the tab target");
+// Familiar controls moved to Chat → Familiar → Settings. Settings search must
+// not keep exposing the retired section or its nested studio tabs.
+assert.doesNotMatch(sections, /section: "familiars"/, "Settings search omits the retired Familiars section");
+assert.doesNotMatch(sections, /familiarTab/, "Settings search has no retired studio-tab targets");
+assert.doesNotMatch(shell, /FamiliarsSection|familiarsTabTarget|familiarTab/, "Settings shell has no retired Familiars routing");
 
 assert.match(
   shell,
@@ -78,9 +57,6 @@ assert.match(
   "Settings reads exact group/tab targets passed by the global palette",
 );
 assert.match(shell, /params\.get\("group"\)/, "Settings accepts a group deep-link target");
-assert.match(shell, /params\.get\("familiarTab"\)/, "Settings accepts a familiar studio-tab deep-link target");
-assert.match(shell, /setActiveTab\(tabTarget\)/, "FamiliarsSection activates the targeted studio tab");
-assert.match(shell, /familiar-studio-inline-tab-\$\{tabTarget\}/, "the targeted tab button receives focus");
-assert.match(shell, /onTabTargetConsumed\?\.\(\)/, "the one-shot tab target is handed back to the shell");
+assert.doesNotMatch(shell, /params\.get\("familiarTab"\)/, "Settings no longer accepts a retired familiar studio-tab target");
 
 console.log("settings-search.test.ts OK");

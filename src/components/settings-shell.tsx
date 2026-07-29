@@ -15,14 +15,9 @@ import { SettingControlRow, Segmented } from "@/components/ui/settings-controls"
 import { SearchInput } from "@/components/ui/search-input";
 import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { SkeletonRows } from "@/components/ui/skeleton";
-import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import type { Familiar } from "@/lib/types";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
 import type { Mode, ModePref } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
-import { FamiliarStudioProvider, useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
-import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useCelebrationsEnabled, writeCelebrationsEnabled } from "@/lib/celebrations-pref";
@@ -63,9 +58,6 @@ import {
 import { readableTextColor } from "@/lib/readable-text-color";
 import { openExternalUrl } from "@/lib/open-external";
 import { getBackupPassphraseGuidance } from "@/lib/backup-passphrase-strength";
-import { canonicalMemoryLocalAccessEligible } from "@/lib/canonical-memory-local-access";
-import { useTauriPlatform } from "@/lib/tauri-platform";
-import { useLocalDaemonReadiness } from "@/lib/use-local-daemon-readiness";
 import { BackdropSettings } from "@/components/backdrop-settings";
 import { VoiceEngineSettings } from "@/components/voice-engine-settings";
 import {
@@ -96,8 +88,7 @@ export function SettingsShell() {
   const [suggestedHubUrl, setSuggestedHubUrl] = useState<string | null>(null);
   // Mobile drill-down: when true, render the section list full-screen
   // (no section content) — iOS-Settings-style. Tap a section → false,
-  // render that section. Hash-deep-link (`/settings#familiars`) skips the
-  // picker so the user lands directly on the target.
+  // render that section.
   const [pickerView, setPickerView] = useState(false);
   const activeSection = SECTIONS.find((s) => s.id === section);
   const showPicker = isMobile && pickerView;
@@ -105,9 +96,6 @@ export function SettingsShell() {
   // ── Search across settings ────────────────────────────────────────────────
   const [query, setQuery] = useState("");
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
-  // One-shot studio-tab target for search results that point inside the
-  // Familiars panel (see SettingsIndexEntry.familiarTab).
-  const [familiarsTabTarget, setFamiliarsTabTarget] = useState<FamiliarStudioTab | null>(null);
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
@@ -118,14 +106,6 @@ export function SettingsShell() {
   function goToSetting(entry: SettingsIndexEntry) {
     openSection(entry.section);
     setQuery("");
-    if (entry.familiarTab) {
-      // The Familiars panel isn't a SettingsGroup — the entry targets one of
-      // its studio tabs instead, activated below the provider by
-      // FamiliarsSection once the roster has loaded.
-      setFamiliarsTabTarget(entry.familiarTab);
-      setScrollTarget(null);
-      return;
-    }
     setScrollTarget(entry.group ? settingsGroupId(entry.group) : null);
   }
 
@@ -166,24 +146,17 @@ export function SettingsShell() {
     }
   }
 
-  // Support hash-based deep-linking, e.g. /settings#familiars. Read it after
-  // hydration so SSR and the first client render both start on General.
+  // Support hash-based deep-linking. Read it after hydration so SSR and the
+  // first client render both start on General.
   useEffect(() => {
     const applyHashSection = () => {
       const hash = window.location.hash.replace("#", "") as Section;
       if (SECTIONS.some((s) => s.id === hash)) {
         const params = new URLSearchParams(window.location.search);
         const group = params.get("group")?.trim();
-        const familiarTab = params.get("familiarTab")?.trim() as FamiliarStudioTab | undefined;
         setSection(hash);
         setPickerView(false);
-        if (familiarTab && SETTINGS_INDEX.some((entry) => entry.familiarTab === familiarTab)) {
-          setFamiliarsTabTarget(familiarTab);
-          setScrollTarget(null);
-        } else {
-          setFamiliarsTabTarget(null);
-          setScrollTarget(group ? settingsGroupId(group) : null);
-        }
+        setScrollTarget(group ? settingsGroupId(group) : null);
         return;
       }
       setPickerView(true);
@@ -217,7 +190,6 @@ export function SettingsShell() {
   }, [router, section]);
 
   return (
-    <FamiliarStudioProvider>
     <div className="settings-shell flex h-[100dvh] w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
       {/* Header. On mobile the back button has two roles: from a section
           page it drops back to the picker; from the picker it pops the
@@ -328,13 +300,7 @@ export function SettingsShell() {
         {/* Content */}
         <main
           hidden={showPicker}
-          className={`settings-shell__content min-h-0 flex-1 ${
-            section === "familiars" ? "settings-shell__content--familiars" : ""
-          } ${
-            section === "familiars"
-              ? "overflow-hidden"
-              : "overflow-y-auto px-4 py-6 md:px-8 [padding-bottom:calc(1.5rem_+_var(--sai-bottom))]!"
-          }`}
+          className="settings-shell__content min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 [padding-bottom:calc(1.5rem_+_var(--sai-bottom))]!"
         >
           {section === "profile" && <ProfileSection />}
           {section === "general" && <GeneralSection />}
@@ -343,12 +309,6 @@ export function SettingsShell() {
               suggestedHubUrl={suggestedHubUrl}
               onSuggestionConsumed={() => setSuggestedHubUrl(null)}
               omnigentSettings={<OmnigentSettingsGroup />}
-            />
-          )}
-          {section === "familiars" && (
-            <FamiliarsSection
-              tabTarget={familiarsTabTarget}
-              onTabTargetConsumed={() => setFamiliarsTabTarget(null)}
             />
           )}
           {section === "mobile"   && <PhoneSection onUseAsHub={(url) => { setSuggestedHubUrl(url); openSection("daemon"); }} />}
@@ -360,7 +320,6 @@ export function SettingsShell() {
         {isMobile ? (pickerView ? "Tap a section to open" : "Back returns to Settings") : "Esc back · ↑↓ navigate sections"}
       </footer>
     </div>
-    </FamiliarStudioProvider>
   );
 }
 
@@ -1276,192 +1235,6 @@ function OmnigentSettingsGroup() {
         </>
       ) : null}
     </SettingsGroup>
-  );
-}
-
-// ─── Section: Familiars ───────────────────────────────────────────────────────
-
-function FamiliarsSection({
-  tabTarget,
-  onTabTargetConsumed,
-}: {
-  /** Studio tab a search result asked to open; consumed once activated. */
-  tabTarget?: FamiliarStudioTab | null;
-  onTabTargetConsumed?: () => void;
-}) {
-  // Settings is a standalone route with no workspace context, so this panel
-  // sources its own familiar roster and resolves cave overrides locally.
-  const [rawFamiliars, setRawFamiliars] = useState<Familiar[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  // The roster endpoint 503s when the daemon is down — that means "unknown",
-  // not "no familiars"; the two must never share an empty state.
-  const [daemonDown, setDaemonDown] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-  const {
-    acceptedLocalDaemonHealthy,
-    refreshLocalDaemonReadiness,
-  } = useLocalDaemonReadiness();
-  const tauriPlatform = useTauriPlatform();
-  const localDaemonReady = acceptedLocalDaemonHealthy &&
-    canonicalMemoryLocalAccessEligible({
-      platform: tauriPlatform,
-      hostname: typeof window === "undefined" ? null : window.location.hostname,
-    });
-  const familiars = useResolvedFamiliars(rawFamiliars, { includeArchived: true });
-  // This renders below FamiliarStudioProvider (the shell mounts it), so the
-  // studio tab state is reachable here even though the shell body can't.
-  const { setActiveTab, openFamiliarStudio } = useFamiliarStudio();
-
-  // A search result can target a specific studio tab (e.g. "voice" → Brain).
-  // Activate it once the roster has settled so the tab strip exists, move
-  // focus to the tab button (the panel has no SettingsGroup to flash), and
-  // hand the one-shot target back to the shell.
-  useEffect(() => {
-    if (!tabTarget || !loaded) return;
-    setActiveTab(tabTarget);
-    const raf = requestAnimationFrame(() => {
-      const el = document.getElementById(`familiar-studio-inline-tab-${tabTarget}`);
-      if (el) {
-        el.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
-        el.focus({ preventScroll: true });
-      }
-      onTabTargetConsumed?.();
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [tabTarget, loaded, setActiveTab, onTabTargetConsumed]);
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const res = await fetch("/api/familiars", { cache: "no-store", signal });
-      const json = await res.json().catch(() => null);
-      if (signal?.aborted) return;
-      if (json?.ok) {
-        setRawFamiliars((json.familiars ?? []) as Familiar[]);
-        setDaemonDown(false);
-      } else if (res.status === 503) {
-        setDaemonDown(true);
-      }
-    } catch {
-      /* transient (or aborted) — keep last good list */
-    } finally {
-      if (!signal?.aborted) setLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    void load(ctrl.signal);
-    return () => ctrl.abort();
-  }, [load]);
-
-  const startDaemon = useCallback(async () => {
-    setStarting(true);
-    setStartError(null);
-    try {
-      const res = await fetch("/api/daemon/start", { method: "POST" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || json?.stderr || "daemon did not start");
-      }
-      await Promise.all([load(), refreshLocalDaemonReadiness()]);
-    } catch (err) {
-      setStartError(err instanceof Error ? err.message : "daemon did not start");
-    } finally {
-      setStarting(false);
-    }
-  }, [load, refreshLocalDaemonReadiness]);
-
-  // Hold the panel until the first fetch settles so the "No familiars
-  // configured" empty state never flashes before the roster loads.
-  if (!loaded) {
-    return (
-      <div className="settings-familiars-panel" role="status" aria-busy="true" aria-label="Loading familiars">
-        <SkeletonRows count={4} />
-      </div>
-    );
-  }
-
-  const createDialog = (
-    <FamiliarSummoningCircle
-      open={createOpen}
-      onClose={() => setCreateOpen(false)}
-      existingIds={rawFamiliars.map((f) => f.id)}
-      defaultHarness={rawFamiliars.find((f) => f.defaultHarness)?.defaultHarness}
-      daemonRunning={!daemonDown}
-      onCreated={(id) => {
-        // Select the freshly created familiar (not the first in the roster);
-        // the shared studio context drives the inline panel's detail pane.
-        openFamiliarStudio(id);
-        void load();
-      }}
-    />
-  );
-
-  if (daemonDown) {
-    return (
-      <div className="settings-familiars-panel">
-        <div className="flex flex-col items-start gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-4">
-          <p className="text-[length:var(--text-base)] text-[var(--text-secondary)]">
-            <Icon name="ph:warning-circle" width={13} aria-hidden className="mr-1.5 inline-block align-[-2px]" />
-            The daemon is offline, so the familiar roster can&apos;t be read. Start it to manage
-            familiars.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => void startDaemon()}
-              disabled={starting}
-              leadingIcon="ph:rocket-launch-bold"
-              title="coven daemon start"
-            >
-              {starting ? "Starting..." : "Start daemon"}
-            </Button>
-            {startError ? (
-              <span role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">
-                {startError}
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (familiars.length === 0) {
-    return (
-      <div className="settings-familiars-panel">
-        <div className="flex flex-col items-start gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-4">
-          <p className="text-[length:var(--text-base)] text-[var(--text-secondary)]">
-            No familiars configured yet. The circle awaits your first summoning.
-          </p>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setCreateOpen(true)}
-            leadingIcon="ph:magic-wand-fill"
-          >
-            Summon familiar
-          </Button>
-        </div>
-        {createDialog}
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <FamiliarStudioInlinePanel
-        familiars={rawFamiliars}
-        resolved={familiars}
-        localDaemonReady={localDaemonReady}
-        onSummon={() => setCreateOpen(true)}
-        onRosterChanged={() => void load()}
-      />
-      {createDialog}
-    </>
   );
 }
 
