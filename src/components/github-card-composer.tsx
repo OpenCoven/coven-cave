@@ -748,7 +748,16 @@ export function GitHubCardComposer({
     unresolved.length === 0
       ? "all threads resolved"
       : `${unresolved.length} unresolved thread${unresolved.length === 1 ? "" : "s"}`;
-  const threadNote = unresolved[0]?.path ? `1 unresolved in ${unresolved[0].path}` : threadLabel;
+  // Name the file only when there is exactly one thread to name. The old form
+  // read `1 unresolved in <first path>` for ANY count, so three open threads
+  // reported one — understating the gate the user is about to merge past.
+  const firstPath = unresolved[0]?.path;
+  const threadNote =
+    !firstPath
+      ? threadLabel
+      : unresolved.length === 1
+        ? `1 unresolved in ${firstPath}`
+        : `${threadLabel}, first in ${firstPath}`;
 
   const baseRef = item.pull?.baseRef ?? "the base branch";
   const commits = item.pull?.commits ?? null;

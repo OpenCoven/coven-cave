@@ -22,7 +22,8 @@ export type GateSectionProps = {
   /** Empty when the item has no review data — the row is then omitted. */
   reviewLabel: string;
   threadLabel: string;
-  /** The Threads row's note: names the file when exactly one thread is open. */
+  /** The Threads row's note, already derived by the parent: names the file when
+   *  exactly one thread is open, otherwise counts them and names the first. */
   threadNote: string;
   unresolvedCount: number;
   failedChecks: number;
