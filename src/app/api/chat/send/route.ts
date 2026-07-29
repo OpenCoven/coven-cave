@@ -80,6 +80,14 @@ import {
   probeCodexRuntimeAvailability,
 } from "@/lib/codex-runtime-availability";
 import {
+  codexProbeEnv,
+  discoverCachedCodexRuntime,
+  parseCodexStreamEvent,
+  productionCodexSchemaSources,
+} from "@/lib/codex-compatibility";
+import { codexLaunchCommand } from "@/lib/codex-bin";
+import { buildCodexExecArgs, prepareCodexChatRouting } from "./codex-routing";
+import {
   evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
@@ -1334,6 +1342,53 @@ export async function POST(req: Request) {
   });
   const copilotStream = copilotRouting.spec;
 
+  // Codex tool activity (cave-53iko.1): a verified local Codex CLI streams
+  // its native `codex exec --json` JSONL directly, so tool lifecycles reach
+  // the chat as structured events. Every unverified, remote, prerelease, or
+  // resume-incapable combination retains the existing filtered
+  // `coven run codex` transport unchanged.
+  const codexResumeTarget =
+    binding.harness === "codex" &&
+    body.sessionId &&
+    !(body.startNewConversation && !existingConversation)
+      ? existingConversation?.harnessSessionId ?? body.sessionId
+      : null;
+  const codexSpawnEnv =
+    !sshRuntime && binding.harness === "codex" ? harnessSpawnEnv(body.familiarId) : null;
+  const codexDirectLaunch = codexSpawnEnv ? codexLaunchCommand() : null;
+  // The same passive availability contract every direct runner uses. The
+  // bounded capability probe below only runs against a launch-ready plan,
+  // mirroring how Copilot gates its capability probe on launch readiness.
+  const codexLaunchAvailability =
+    codexDirectLaunch && codexSpawnEnv
+      ? evaluateRuntimeAvailability({
+          runner: "codex",
+          command: codexDirectLaunch.command,
+          env: codexSpawnEnv,
+          unresolvedWindowsShim: codexDirectLaunch.unresolvedWindowsShim === true,
+        })
+      : null;
+  const codexRouting = await prepareCodexChatRouting({
+    harness: binding.harness,
+    isSshRuntime: Boolean(sshRuntime),
+    resumeSessionId: codexResumeTarget,
+    // TTL-cached, single-flight discovery in the scrubbed probe environment:
+    // provider/vault secrets never reach `codex --version` / `--help`.
+    probe: async () =>
+      codexDirectLaunch && codexSpawnEnv && codexLaunchAvailability?.state === "ready"
+        ? discoverCachedCodexRuntime(
+            { command: codexDirectLaunch.command, fixedArgs: codexDirectLaunch.fixedArgs },
+            undefined,
+            codexProbeEnv(codexSpawnEnv),
+          )
+        : null,
+    resolveSources: () => productionCodexSchemaSources(),
+  });
+  const codexDirect = codexRouting.mode === "direct";
+  const codexSchema = codexRouting.mode === "direct" ? codexRouting.schema : null;
+  const codexDirectCapabilities =
+    codexRouting.mode === "direct" ? codexRouting.report.capabilities : null;
+
   let localRuntimePlan: LocalRuntimePlan | null = null;
   if (!sshRuntime && binding.harness !== "openclaw" && !(hermesDirect && hermesApi)) {
     if (
@@ -1372,6 +1427,16 @@ export async function POST(req: Request) {
         runner: "grok",
         launch: grokLaunchCommand(),
         env,
+      });
+    } else if (codexDirect && codexDirectLaunch && codexSpawnEnv) {
+      // The direct plan reuses the exact launch command and availability the
+      // capability probe was gated on, so preflight, probe, and spawn cannot
+      // diverge onto different executables.
+      localRuntimePlan = createLocalRuntimePlan({
+        runner: "codex",
+        launch: codexDirectLaunch,
+        env: codexSpawnEnv,
+        ...(codexLaunchAvailability ? { availability: codexLaunchAvailability } : {}),
       });
     } else if (!hermesDirect) {
       const env = harnessSpawnEnv(body.familiarId);
@@ -1636,8 +1701,10 @@ export async function POST(req: Request) {
         ? openCodeCompatibility?.capabilities.model ?? false
         : copilotStream
           ? true
-          : binding.harness === "grok" ||
-            (binding.harness !== "openclaw" && ((await probeCovenCapability(covenRunSupportsModel)) ?? false));
+          : codexDirect
+            ? codexDirectCapabilities?.model === true
+            : binding.harness === "grok" ||
+              (binding.harness !== "openclaw" && ((await probeCovenCapability(covenRunSupportsModel)) ?? false));
   const permissionForwardingEnabled =
     !openCodeDirect &&
     binding.harness !== "openclaw" &&
@@ -1809,6 +1876,9 @@ export async function POST(req: Request) {
   const openCodeLaunchModel = openCodeDirect
     ? runtimeModelIdForLaunch("opencode", forwardModel)
     : null;
+  const codexDirectLaunchModel = codexDirect
+    ? runtimeModelIdForLaunch("codex", forwardModel)
+    : null;
   const forwardPermission =
     permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
   // Directory grants: forward every granted project root — plus the familiar's
@@ -1964,6 +2034,21 @@ export async function POST(req: Request) {
       // per-attempt prompt after spawning this option-only launch plan.
       return a;
     }
+    if (codexDirect && codexDirectCapabilities) {
+      // Direct `codex exec --json`: every flag is gated on the exact probed
+      // CLI contract (fresh and resume help are distinct), and the prompt is
+      // a positional behind `--` so it can never be parsed as an option. The
+      // routing gate already forced this turn onto the Coven path when a
+      // resume was requested without JSON resume support.
+      return buildCodexExecArgs({
+        prompt,
+        resumeSessionId,
+        capabilities: codexDirectCapabilities,
+        model: codexDirectLaunchModel,
+        readOnly: body.permissionMode === "read",
+        addDirs: grantDirs,
+      });
+    }
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
     if (forwardModel) a.push("--model", forwardModel);
@@ -2089,7 +2174,7 @@ export async function POST(req: Request) {
         detail?: string,
         durationMs?: number,
       ) => {
-        if (id === "opencode-compatibility" || id === "grok-compatibility") {
+        if (id === "opencode-compatibility" || id === "grok-compatibility" || id === "codex-compatibility") {
           persistedCompatibilityDiagnostics.push({
             id,
             label,
@@ -2151,6 +2236,13 @@ export async function POST(req: Request) {
       // ID on resumed turns. Always retain the latest event-provided native ID
       // for the next CLI resume, while only announcing the stable Cave ID.
       let openCodeSessionId: string | null = null;
+      // Codex's native thread id (from `thread.started`) is likewise retained
+      // separately from Cave's stable conversation id on the direct path.
+      let codexSessionId: string | null = null;
+      // Unknown direct-protocol events are counted during the stream and
+      // surfaced once per turn as a shape-only diagnostic — never payloads.
+      let codexUnknownEventCount = 0;
+      const codexUnknownEventFingerprints = new Set<string>();
       // Responses API ids rotate per turn like other harness session ids, but
       // Cave's `sessionId` remains the stable conversation identity. Preserve
       // the latest response id separately so follow-ups send
@@ -2971,6 +3063,102 @@ export async function POST(req: Request) {
         });
       };
 
+      // Codex direct JSONL (cave-53iko.1): `codex exec --json` stdout is
+      // protocol-only. Every line feeds the versioned, capability-gated
+      // parser; prose, malformed frames, and unknown shapes become bounded
+      // shape-only diagnostics — never assistant text or persisted payloads.
+      const MAX_CODEX_JSONL_FRAME_CHARS = 256 * 1024;
+      const recordCodexUnknownEvent = (fingerprint: string) => {
+        codexUnknownEventCount += 1;
+        if (codexUnknownEventFingerprints.size < 3) {
+          codexUnknownEventFingerprints.add(fingerprint);
+        }
+      };
+      const handleCodexDirectLine = (line: string) => {
+        if (!codexSchema) return;
+        if (line.length > MAX_CODEX_JSONL_FRAME_CHARS) {
+          recordCodexUnknownEvent("oversized-jsonl");
+          recordStdoutErrorTail("Codex emitted an oversized protocol frame", true);
+          return;
+        }
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("{")) {
+          // Fixed, payload-free diagnostic, exactly like the Copilot JSONL
+          // path: future CLIs may write prompts or tool data before a frame.
+          recordCodexUnknownEvent("unframed-output");
+          recordStdoutErrorTail("Codex emitted an unrecognized protocol line", true);
+          return;
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(trimmed);
+        } catch {
+          recordCodexUnknownEvent("malformed-jsonl");
+          recordStdoutErrorTail("Codex emitted a malformed protocol frame", true);
+          return;
+        }
+        const event = parseCodexStreamEvent(parsed, codexSchema);
+        if (!event || event.kind === "ignored") return;
+        switch (event.kind) {
+          case "session": {
+            codexSessionId = event.sessionId;
+            if (!sessionId) announceSession(event.sessionId);
+            return;
+          }
+          case "text": {
+            const text = event.text.endsWith("\n") ? event.text : `${event.text}\n`;
+            assistantText += text;
+            push({ kind: "assistant_chunk", text });
+            return;
+          }
+          case "tool_start": {
+            boundarySentinel?.observe(event.name, event.input);
+            const input = formatToolInputValue(event.input);
+            const started = toolTracker.envelopeToolUse(
+              event.id,
+              event.name,
+              input,
+              assistantText.length,
+            );
+            if (started) push({ kind: "tool_use", ...started });
+            else {
+              // item.updated refreshes an already-announced call's input.
+              const updated = toolTracker.envelopeToolInput(event.id, input);
+              if (updated) push({ kind: "tool_use", ...updated });
+            }
+            const reorderedEnd = toolTracker.consumePendingEnvelopeResult(event.id);
+            if (reorderedEnd) push({ kind: "tool_use", ...reorderedEnd });
+            return;
+          }
+          case "tool_end": {
+            boundarySentinel?.observe(event.name, event.input);
+            // A terminal item carries its full description, so a completion
+            // whose start frame was never seen still settles as one bubble.
+            const started = toolTracker.envelopeToolUse(
+              event.id,
+              event.name,
+              formatToolInputValue(event.input),
+              assistantText.length,
+            );
+            if (started) push({ kind: "tool_use", ...started });
+            const ended = toolTracker.envelopeToolResult(event.id, event.output, event.isError);
+            if (ended) push({ kind: "tool_use", ...ended });
+            return;
+          }
+          case "failure": {
+            // Terminal Codex failure: error state only — the engine already
+            // stripped every payload from this event.
+            result = { ...result, is_error: true };
+            recordStdoutErrorTail("Codex reported a failure event", true);
+            return;
+          }
+          case "unknown": {
+            recordCodexUnknownEvent(event.fingerprint);
+            return;
+          }
+        }
+      };
+
       const handleLine = (rawLine: string) => {
         // stdout is split on bare \n; external adapters (copilot) emit CRLF,
         // and a trailing \r would both fail the endsWith("}") JSON sniff and
@@ -3028,6 +3216,10 @@ export async function POST(req: Request) {
         }
         if (openCodeDirect) {
           handleOpenCodeLine(line);
+          return;
+        }
+        if (codexDirect) {
+          handleCodexDirectLine(line);
           return;
         }
         if (isJson || isClaudeStreamFrame) {
@@ -3877,6 +4069,12 @@ export async function POST(req: Request) {
             if ((openCodeDirect || copilotStream || grokDirect) && code !== 0) {
               result = { ...result, is_error: true };
             }
+            // Direct Codex can exit non-zero before (or without) a terminal
+            // protocol frame; that failed invocation must not read as a
+            // successful empty turn.
+            if (codexDirect && code !== 0) {
+              result = { ...result, is_error: true };
+            }
             if (grokDirect && code !== 0 && !runHandle.stopRequested) {
               grokProcessFailed = true;
             }
@@ -3978,6 +4176,24 @@ export async function POST(req: Request) {
         }
       }
       if (!launchFailure) {
+      // Codex compatibility fallback notice (cave-53iko.1): when a local
+      // Codex chat stays on the generic Coven transport for a noteworthy
+      // reason (probe unavailable, unsupported version, capability mismatch),
+      // say so once — exactly parallel to the OpenCode health notice below.
+      // The turn then continues down the existing `coven run codex` path.
+      if (
+        binding.harness === "codex" &&
+        !sshRuntime &&
+        codexRouting.mode === "fallback" &&
+        codexRouting.compatibilityDiagnostic
+      ) {
+        pushProgress(
+          "codex-compatibility",
+          codexRouting.compatibilityDiagnostic,
+          "notice",
+          codexRouting.diagnosticCode ?? undefined,
+        );
+      }
       // A compatibility decision is meaningful even when the CLI exits before
       // stdout. Announce it before spawning instead of relying on handleLine.
       if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
@@ -4109,6 +4325,9 @@ export async function POST(req: Request) {
         // that token would persist it again if the fresh process exits before
         // announcing a replacement session.
         openCodeSessionId = null;
+        // Same for a failed direct Codex resume: the fresh attempt's
+        // thread.started supplies the replacement thread id.
+        codexSessionId = null;
         hermesResponseId = null;
         hermesPreviousResponseId = null;
         assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
@@ -4143,11 +4362,28 @@ export async function POST(req: Request) {
       }
       }
 
+      // Unknown direct-Codex protocol events surface as ONE safe diagnostic
+      // per turn: a count plus up to three shape fingerprints. The payloads
+      // themselves were never rendered, persisted, or logged.
+      if (codexDirect && codexUnknownEventCount > 0) {
+        pushProgress(
+          "codex-compatibility",
+          codexUnknownEventCount === 1
+            ? "Codex sent an unrecognized protocol event; its content was not shown"
+            : `Codex sent ${codexUnknownEventCount} unrecognized protocol events; their content was not shown`,
+          "notice",
+          [...codexUnknownEventFingerprints].join(", "),
+        );
+      }
+
       // A Codex adapter can disappear or become misconfigured after the
       // bounded preflight passed. Coven has started in this branch, so map
       // only its adapter-level evidence back to the same actionable Codex
       // state; provider/auth errors intentionally remain untouched.
-      if (!launchFailure && !runHandle.stopRequested && binding.harness === "codex" && !assistantText.trim()) {
+      // The adapter-evidence mapping below is about Coven's adapter layer;
+      // the direct spawn has no Coven in front of it and keeps the shared
+      // direct-runner failure diagnostics instead.
+      if (!launchFailure && !runHandle.stopRequested && binding.harness === "codex" && !codexDirect && !assistantText.trim()) {
         const adapterFailure = codexAdapterFailure
           ?? codexAdapterFailureAvailability([...stderrTail, ...stdoutErrTail].join("\n"));
         if (adapterFailure) {
@@ -4302,6 +4538,10 @@ export async function POST(req: Request) {
           ? openCodeSessionId ?? (openCodeNativeResumeUsed
             ? existingConversation?.harnessSessionId ?? (!existingConversation ? body.sessionId : undefined)
             : undefined)
+          : codexDirect
+            // Direct Codex resumes keep the same thread id; a turn that never
+            // reached thread.started retains the prior native id untouched.
+            ? codexSessionId ?? existingConversation?.harnessSessionId ?? null
           : hermesDirect && hermesApi
             ? !result.is_error && hermesResponseId
               ? hermesResponseId
