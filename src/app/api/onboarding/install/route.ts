@@ -406,10 +406,9 @@ function daemonLifecycleDependencies(job: InstallJob): DaemonUpdateDependencies 
             : "daemon start completed",
         };
       }
-      const details = "error" in started
-        ? started.error
-        : [started.stderr, started.stdout].filter(Boolean).join("\n") || `exit ${started.exitCode ?? "unknown"}`;
-      return { ok: false, detail: details };
+      // Every non-success result from startLocalDaemon has a stable, redacted
+      // error code/message. Do not fall back to raw launcher output here.
+      return { ok: false, detail: started.error };
     },
     refreshExecutable: () => {
       refreshCovenBin();

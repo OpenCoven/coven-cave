@@ -77,6 +77,10 @@ export async function startLocalDaemon({
   child.stderr.on("data", (d) => (stderr += d.toString()));
   child.on("close", (code) => { exitCode = code; });
   child.on("error", (error) => { spawnError = error; });
+  // TypeScript's control-flow analysis cannot observe event-callback writes
+  // across an await. Read through a closure so the post-readiness state keeps
+  // its declared Error | null shape.
+  const launchError = () => spawnError;
 
   const readiness = await waitForDaemonReadiness({
     probe,
@@ -96,8 +100,9 @@ export async function startLocalDaemon({
       stderr: sanitizeDaemonStartDiagnostic(stderr),
     };
   }
-  if (spawnError) {
-    if (isMissingExecutableError(spawnError)) {
+  const error = launchError();
+  if (error) {
+    if (isMissingExecutableError(error)) {
       const missing = covenCliMissingError();
       return {
         ok: false, code: "spawn_failed", error: sanitizeDaemonStartDiagnostic(missing.error),
@@ -106,7 +111,7 @@ export async function startLocalDaemon({
       };
     }
     return {
-      ok: false, code: "spawn_failed", error: sanitizeDaemonStartDiagnostic(spawnError.message),
+      ok: false, code: "spawn_failed", error: sanitizeDaemonStartDiagnostic(error.message),
       stdout: sanitizeDaemonStartDiagnostic(stdout), stderr: sanitizeDaemonStartDiagnostic(stderr),
       status: 500, readinessAttempts: readiness.attempts, elapsedMs: Date.now() - startedAt, launchMode,
     };
