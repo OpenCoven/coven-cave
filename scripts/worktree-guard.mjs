@@ -42,7 +42,7 @@
  * On any internal error the guard exits 0: a hook bug must never brick Bash.
  */
 
-import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
@@ -154,6 +154,80 @@ function worktreeRoot(abs) {
 }
 
 /** "" = safe to destroy; otherwise a human reason it is not. */
+/** PIDs from this process up to init — a hook that blocked on its OWN shell's
+ *  cwd would make every in-worktree cleanup impossible. */
+function ownAncestry() {
+  const mine = new Set();
+  let pid = process.pid;
+  for (let hops = 0; hops < 32 && pid > 1; hops += 1) {
+    mine.add(String(pid));
+    try {
+      const out = execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8", timeout: 2000 });
+      const parent = Number.parseInt(out.trim(), 10);
+      if (!Number.isFinite(parent) || parent <= 1) break;
+      pid = parent;
+    } catch {
+      break;
+    }
+  }
+  return mine;
+}
+
+/** Processes whose cwd sits inside `wtPath`.
+ *
+ *  `git status` only sees a session that has SAVED edits. A session driving the
+ *  worktree by absolute path — editing files in it while its own cwd is the
+ *  primary checkout, or running `pnpm test:app` in it — leaves a clean, pushed
+ *  worktree that this guard used to wave through. That is the husk case named
+ *  at the top of this file (a worktree gutted while a dev server or tsc still
+ *  ran inside it), and it is the one shape the earlier checks cannot see.
+ *
+ *  One `lsof` over cwd descriptors only: no directory walk, so node_modules
+ *  costs nothing. Fails open like every other probe here — a guard that bricks
+ *  Bash when lsof is missing or slow is worse than one that misses a case. */
+function liveProcesses(wtPath) {
+  let out = "";
+  try {
+    out = execFileSync("lsof", ["-d", "cwd", "-F", "pcn"], {
+      encoding: "utf8",
+      timeout: 5000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch (err) {
+    // lsof exits non-zero when some processes are unreadable; keep partial output.
+    out = typeof err?.stdout === "string" ? err.stdout : "";
+  }
+  if (!out) return [];
+  const mine = ownAncestry();
+  // The kernel hands lsof the CANONICAL path, so `/var/...` on macOS comes back
+  // as `/private/var/...`. Comparing the caller's spelling against it silently
+  // matches nothing — the check would look installed and catch zero cases.
+  let root = wtPath;
+  try {
+    root = realpathSync(wtPath);
+  } catch {
+    /* unreadable — fall back to the literal path */
+  }
+  const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  const hits = [];
+  let pid = "";
+  let cmd = "";
+  for (const line of out.split("\n")) {
+    if (line.startsWith("p")) {
+      pid = line.slice(1);
+      cmd = "";
+    } else if (line.startsWith("c")) {
+      cmd = line.slice(1);
+    } else if (line.startsWith("n")) {
+      const dir = line.slice(1);
+      if (dir !== root && !dir.startsWith(prefix)) continue;
+      if (mine.has(pid)) continue;
+      if (!hits.some((h) => h.pid === pid)) hits.push({ pid, cmd });
+    }
+  }
+  return hits;
+}
+
 function destructionRisk(wtPath) {
   if (!existsSync(wtPath)) return "";
   if (!existsSync(path.join(wtPath, ".git"))) return ""; // husk — GC freely
@@ -167,6 +241,12 @@ function destructionRisk(wtPath) {
     const head = git(["-C", wtPath, "rev-parse", "HEAD"], undefined).trim();
     const onRemote = git(["-C", wtPath, "branch", "-r", "--contains", head], undefined).trim();
     if (!onRemote) return `\`${wtPath}\` HEAD (${head.slice(0, 8)}) exists on NO remote ref — removing it orphans unpushed commits.`;
+    const live = liveProcesses(wtPath);
+    if (live.length) {
+      const who = live.slice(0, 3).map((h) => `pid ${h.pid} (${h.cmd || "?"})`).join(", ");
+      const more = live.length > 3 ? ` and ${live.length - 3} more` : "";
+      return `\`${wtPath}\` is clean and pushed, but ${live.length} process(es) are still working in it: ${who}${more}.`;
+    }
     return "";
   } catch {
     return ""; // can't assess (mid-teardown, permissions) — don't brick cleanup
