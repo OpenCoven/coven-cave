@@ -554,10 +554,13 @@
   gap: var(--space-3);
 }
 
+/* Sized to the copy beside it rather than to itself: at 4.5rem the art was the
+   tallest thing in the row and set the card's height on its own. */
 .settings-about-podcast-art {
   display: inline-flex;
-  width: 4.5rem;
-  height: 4.5rem;
+  width: 3rem;
+  height: 3rem;
+  align-self: center;
   flex: none;
   flex-direction: column;
   align-items: center;
@@ -584,9 +587,17 @@
   line-height: 1;
 }
 
+/* The card stretches its children, which inflated this pill to the card's full
+   height (97px for a one-word label). It centres on its own axis instead, at a
+   fixed control height, so it reads as a button and not a coloured column. */
 .settings-about-link-card__action {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  height: 28px;
+  flex: none;
   margin-left: auto;
-  padding: var(--space-2) var(--space-3);
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-pill);
   color: var(--text-secondary);

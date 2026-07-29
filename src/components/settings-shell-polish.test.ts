@@ -559,10 +559,15 @@ assert.match(
   /settings-backup-sync__state[\s\S]*\{enabled \? "On" : "Off"\}/,
   "scheduled sync always names its state",
 );
+// Was a responsive two-column grid. Scheduled sync carries a destination, a
+// passphrase, a retention field and a freshness readout — several times the
+// height of the manual export beside it — so the pair left a dead half-column
+// the length of the taller card. Stacked full-width, each block gets the whole
+// measure and the section reads top to bottom.
 assert.match(
   dashboardCss,
-  /\.settings-backup-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*240px\),\s*1fr\)\)/,
-  "Backup uses the source's responsive two-column grid",
+  /\.settings-backup-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+  "Backup stacks its two blocks full-width instead of pairing them",
 );
 assert.equal(
   dashboardCss.match(/\.settings-backup-grid\s*\{/g)?.length,
