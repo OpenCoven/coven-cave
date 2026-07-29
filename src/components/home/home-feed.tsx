@@ -103,7 +103,7 @@ export function HomeFeed({ onOpenUrl }: Props) {
   }, []);
 
   const refresh = useCallback(() => {
-    if (tab === "repos") { setRepoState("idle"); void loadRepos(true); }
+    if (tab === "repos") void loadRepos(true);
     if (tab === "tweets") void loadTweets(true);
   }, [tab, loadRepos, loadTweets]);
 

@@ -37,6 +37,7 @@ export const runtime = "nodejs";
 const GH = "https://api.github.com";
 // Cap per-PR check enrichment so a long PR list can't blow the rate budget.
 const CHECK_ENRICH_CAP = 15;
+const CHECK_ENRICH_CONCURRENCY = 3;
 
 type GitHubItem = {
   kind: "pr" | "issue" | "review_request" | "notification";
@@ -59,18 +60,44 @@ type GitHubItem = {
  * so callers must gate this behind a token (the public 60/hr budget can't
  * absorb it).
  */
-async function fetchPrChecks(repo: string, number: number, token: string | null): Promise<CheckSummary> {
+type PrCheckResult = {
+  summary: CheckSummary;
+  failure: GitHubApiFailure | null;
+};
+
+async function fetchPrChecks(
+  repo: string,
+  number: number,
+  token: string | null,
+  signal: AbortSignal,
+): Promise<PrCheckResult> {
   try {
-    const { res, data } = await ghFetch(`/repos/${repo}/pulls/${number}`, token);
-    const sha = (data as { head?: { sha?: string } } | null)?.head?.sha;
-    if (!res.ok || !sha) return null;
-    const { data: cr } = await ghFetch(`/repos/${repo}/commits/${sha}/check-runs?per_page=100`, token);
-    const runs = ((cr as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<{ status?: string; conclusion?: string }>;
-    if (runs.length > 0) return summarizeChecks(runs);
-    const { data: st } = await ghFetch(`/repos/${repo}/commits/${sha}/status`, token);
-    return summarizeChecks([], (st as { state?: string } | null)?.state);
+    const pull = await ghFetch(`/repos/${repo}/pulls/${number}`, token, signal);
+    const pullFailure = responseRateLimitFailure(pull);
+    if (pullFailure) return { summary: null, failure: pullFailure };
+    const sha = (pull.data as { head?: { sha?: string } } | null)?.head?.sha;
+    if (!pull.res.ok || !sha) return { summary: null, failure: null };
+
+    const checks = await ghFetch(`/repos/${repo}/commits/${sha}/check-runs?per_page=100`, token, signal);
+    const checksFailure = responseRateLimitFailure(checks);
+    if (checksFailure) return { summary: null, failure: checksFailure };
+    if (!checks.res.ok) return { summary: null, failure: null };
+    const runs = ((checks.data as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<{
+      status?: string;
+      conclusion?: string;
+    }>;
+    if (runs.length > 0) return { summary: summarizeChecks(runs), failure: null };
+
+    const status = await ghFetch(`/repos/${repo}/commits/${sha}/status`, token, signal);
+    const statusFailure = responseRateLimitFailure(status);
+    if (statusFailure) return { summary: null, failure: statusFailure };
+    if (!status.res.ok) return { summary: null, failure: null };
+    return {
+      summary: summarizeChecks([], (status.data as { state?: string } | null)?.state),
+      failure: null,
+    };
   } catch {
-    return null;
+    return { summary: null, failure: null };
   }
 }
 
@@ -88,6 +115,8 @@ type ActivityResult = {
   collections: ActivityCollections;
   items: GitHubItem[];
   rateLimit: { remaining: number; limit: number } | null;
+  warning?: string;
+  retryAfterSeconds?: number;
 };
 
 type SearchPayload = {
@@ -101,19 +130,33 @@ function githubResponseMessage(data: unknown): string | null {
   return typeof data.message === "string" ? data.message : null;
 }
 
-async function ghFetch(path: string, token: string | null) {
+async function ghFetch(path: string, token: string | null, signal?: AbortSignal) {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${GH}${path}`, { headers, cache: "no-store" });
+  const res = await fetch(`${GH}${path}`, { headers, cache: "no-store", signal });
   const rateRemaining = Number(res.headers.get("x-ratelimit-remaining") ?? -1);
   const rateLimit = Number(res.headers.get("x-ratelimit-limit") ?? -1);
   const retryAfter = res.headers.get("retry-after");
   const rateLimitReset = res.headers.get("x-ratelimit-reset");
   const data = await res.json().catch(() => null);
   return { res, data, rateRemaining, rateLimit, retryAfter, rateLimitReset };
+}
+
+type GitHubFetchResult = Awaited<ReturnType<typeof ghFetch>>;
+
+function responseRateLimitFailure(result: GitHubFetchResult): GitHubApiFailure | null {
+  if (result.res.ok) return null;
+  const failure = githubApiFailure({
+    status: result.res.status,
+    remaining: result.rateRemaining,
+    retryAfter: result.retryAfter,
+    rateLimitReset: result.rateLimitReset,
+    responseMessage: githubResponseMessage(result.data),
+  });
+  return failure.rateLimited ? failure : null;
 }
 
 type ActivitySearchResult = {
@@ -466,18 +509,44 @@ export async function GET() {
   };
 
   // Enrich PR rows with their CI rollup. Token-gated: this spends core REST
-  // quota (a few calls per PR), which the public 60/hr budget can't absorb —
-  // mirrors how review-requested PRs already require a token. Best-effort and
-  // parallel; the UI only surfaces a `failing` pip.
+  // quota (a few calls per PR), which the public 60/hr budget can't absorb.
+  // A bounded worker pool lets the first rate limit abort the remaining queue.
+  let checkCooldownFailure: GitHubApiFailure | null = null;
   if (token && !cooldownFailure) {
     const prRows = items
       .filter((it) => (it.kind === "pr" || it.kind === "review_request") && typeof it.number === "number")
       .slice(0, CHECK_ENRICH_CAP);
-    await Promise.all(
-      prRows.map(async (it) => {
-        it.checkStatus = await fetchPrChecks(it.repo, it.number as number, token);
-      }),
+    const controller = new AbortController();
+    let nextRow = 0;
+    const enrichNext = async (): Promise<GitHubApiFailure | null> => {
+      while (!controller.signal.aborted) {
+        const rowIndex = nextRow;
+        nextRow += 1;
+        if (rowIndex >= prRows.length) return null;
+        const item = prRows[rowIndex];
+        const result = await fetchPrChecks(
+          item.repo,
+          item.number as number,
+          token,
+          controller.signal,
+        );
+        if (result.failure?.rateLimited) {
+          controller.abort();
+          return result.failure;
+        }
+        item.checkStatus = result.summary;
+      }
+      return null;
+    };
+    const failures = await Promise.all(
+      Array.from(
+        { length: Math.min(CHECK_ENRICH_CONCURRENCY, prRows.length) },
+        () => enrichNext(),
+      ),
     );
+    checkCooldownFailure = failures.find(
+      (failure): failure is GitHubApiFailure => failure !== null,
+    ) ?? null;
   }
 
   // sort all by updatedAt desc
@@ -492,6 +561,8 @@ export async function GET() {
     collections,
     items,
     rateLimit: rateInfo,
+    warning: checkCooldownFailure?.message,
+    retryAfterSeconds: checkCooldownFailure?.retryAfterSeconds ?? undefined,
   };
 
   return NextResponse.json(result);

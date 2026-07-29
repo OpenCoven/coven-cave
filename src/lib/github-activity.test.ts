@@ -9,6 +9,7 @@ import {
   activityCollectionUnavailable,
   activityRetryAfterSeconds,
   githubApiFailure,
+  mergeFailedActivityItems,
 } from "./github-activity.ts";
 
 const complete = activityCollectionFromSearch({
@@ -236,5 +237,27 @@ assert.deepEqual(
 assert.equal(activityCountLabel(12, complete), "12");
 assert.equal(activityCountLabel(100, truncated), "100+");
 assert.equal(activityCountLabel(0, failed), "—");
+
+const previousItems = [
+  { id: "pr-old", kind: "pr" as const },
+  { id: "review-old", kind: "review_request" as const },
+  { id: "issue-old", kind: "issue" as const },
+];
+const incomingItems = [
+  { id: "review-new", kind: "review_request" as const },
+  { id: "issue-new", kind: "issue" as const },
+];
+assert.deepEqual(
+  mergeFailedActivityItems(previousItems, incomingItems, {
+    authored: failed,
+    reviewRequests: complete,
+    assignedIssues: complete,
+  }),
+  [
+    ...incomingItems,
+    previousItems[0],
+  ],
+  "failed categories retain their last-loaded rows while successful categories refresh",
+);
 
 console.log("github-activity.test.ts: ok");

@@ -91,6 +91,11 @@ assert.match(
   /setRepoWarning\("Couldn't refresh curated repositories\."\)/,
   "a failed refresh should remain visible when stale repository rows stay mounted",
 );
+assert.doesNotMatch(
+  feed,
+  /setRepoState\("idle"\);\s*void loadRepos\(true\)/,
+  "manual repository refresh should not replace stale rows with a skeleton or error state",
+);
 assert.match(
   feed,
   /Add a GitHub token in Settings to load the curated OpenCoven repository feed\./,

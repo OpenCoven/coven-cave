@@ -201,6 +201,29 @@ export function activityCollectionsEqual(
   });
 }
 
+type MergeableActivityItem = {
+  id: string;
+  kind: "pr" | "review_request" | "issue" | "notification";
+};
+
+export function mergeFailedActivityItems<T extends MergeableActivityItem>(
+  previous: T[],
+  incoming: T[],
+  collections: ActivityCollections,
+): T[] {
+  const failedKinds = new Set<T["kind"]>();
+  if (collections.authored.status === "failed") failedKinds.add("pr");
+  if (collections.reviewRequests.status === "failed") failedKinds.add("review_request");
+  if (collections.assignedIssues.status === "failed") failedKinds.add("issue");
+  if (failedKinds.size === 0) return incoming;
+
+  const incomingIds = new Set(incoming.map((item) => item.id));
+  const retained = previous.filter(
+    (item) => failedKinds.has(item.kind) && !incomingIds.has(item.id),
+  );
+  return retained.length > 0 ? [...incoming, ...retained] : incoming;
+}
+
 export function activityCompletenessNotice(
   collections: ActivityCollections,
   { includeUnavailable = true }: { includeUnavailable?: boolean } = {},

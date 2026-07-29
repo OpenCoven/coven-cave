@@ -405,7 +405,7 @@ assert.match(
 // ── 2026-07-03 GitHub audit fixes ─────────────────────────────────────────────
 // The activity poll is content-guarded — an unchanged response keeps the prior
 // reference so the whole table + detail panel don't re-render every 90s.
-assert.match(source, /setActivity\(\(prev\) =>[\s\S]*?arrayContentEqual\(prev\.items, nextActivity\.items\)[\s\S]*?\? prev/, "the activity poll guards setActivity with arrayContentEqual");
+assert.match(source, /setActivity\(\(prev\) =>[\s\S]*?arrayContentEqual\(prev\.items, mergedActivity\.items\)[\s\S]*?\? prev/, "the activity poll guards setActivity with arrayContentEqual");
 // A manual refresh with data already on screen keeps the list mounted (so an
 // open composer draft isn't destroyed) — skeleton is initial-load only.
 assert.match(source, /if \(!silent && !activity\) setLoading\(true\)/, "non-silent refresh only skeletons the initial load, preserving the composer");

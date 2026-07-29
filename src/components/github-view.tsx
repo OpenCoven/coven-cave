@@ -35,6 +35,7 @@ import {
   activityCompletenessNotice,
   activityCountLabel,
   activityRetryAfterSeconds,
+  mergeFailedActivityItems,
 } from "@/lib/github-activity";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -2433,16 +2434,29 @@ export function GitHubView({
         return;
       }
       const nextActivity = data;
-      setActivity((prev) =>
-        prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid
-          && arrayContentEqual(prev.organizations, nextActivity.organizations)
-          && activityCollectionsEqual(prev.collections, nextActivity.collections)
-          && arrayContentEqual(prev.items, nextActivity.items)
+      setActivity((prev) => {
+        const mergedItems = prev
+          ? mergeFailedActivityItems(prev.items, nextActivity.items, nextActivity.collections)
+          : nextActivity.items;
+        const mergedActivity = mergedItems === nextActivity.items
+          ? nextActivity
+          : { ...nextActivity, items: mergedItems };
+        return prev && prev.authed === mergedActivity.authed
+          && prev.patInvalid === mergedActivity.patInvalid
+          && prev.warning === mergedActivity.warning
+          && prev.retryAfterSeconds === mergedActivity.retryAfterSeconds
+          && arrayContentEqual(prev.organizations, mergedActivity.organizations)
+          && activityCollectionsEqual(prev.collections, mergedActivity.collections)
+          && arrayContentEqual(prev.items, mergedActivity.items)
           ? prev
-          : nextActivity);
+          : mergedActivity;
+      });
       setError(null);
       const basePollMs = nextActivity.authed ? 90_000 : 120_000;
-      const retryDelayMs = activityRetryAfterSeconds(nextActivity.collections) * 1000;
+      const retryDelayMs = Math.max(
+        activityRetryAfterSeconds(nextActivity.collections),
+        nextActivity.retryAfterSeconds ?? 0,
+      ) * 1000;
       applyRetryCooldown(retryDelayMs);
       schedulePoll(Math.max(basePollMs, retryDelayMs));
     } catch (e) {
@@ -2639,6 +2653,15 @@ export function GitHubView({
         (collection) => collection.status === "failed" || collection.githubIncomplete,
       )
     : false;
+  const staleErrorNotice = error && activity
+    ? `Couldn't refresh GitHub. Showing last loaded activity. ${error}`
+    : null;
+  const activityNotice = [staleErrorNotice, activity?.warning, completenessNotice]
+    .filter((notice): notice is string => Boolean(notice))
+    .join(" ");
+  const activityNoticeNeedsRetry = Boolean(
+    staleErrorNotice || activity?.warning || completenessNeedsRetry,
+  );
   const reviewsUnavailable = activity?.collections.reviewRequests.status === "unavailable";
 
   const sameSelectedTarget = useCallback((item: GitHubItem) =>
@@ -2928,7 +2951,7 @@ export function GitHubView({
         </div>
       </header>
 
-      {completenessNotice && (
+      {activityNotice && (
         <div role="status" className="gh-completeness-notice">
           <Icon
             name="ph:warning-circle"
@@ -2936,8 +2959,8 @@ export function GitHubView({
             className="gh-completeness-notice-icon"
             aria-hidden
           />
-          <span>{completenessNotice}</span>
-          {completenessNeedsRetry ? (
+          <span>{activityNotice}</span>
+          {activityNoticeNeedsRetry ? (
             <Button
               className="gh-completeness-action"
               size="xs"
@@ -2970,7 +2993,7 @@ export function GitHubView({
             <SkeletonRows count={8} />
           </div>
 
-        ) : error === "no_user" ? (
+        ) : error === "no_user" && !activity ? (
           <div className="flex h-full items-center justify-center px-8">
             <EmptyState
               icon="ph:github-logo"
@@ -2984,7 +3007,7 @@ export function GitHubView({
             />
           </div>
 
-        ) : error ? (
+        ) : error && !activity ? (
           <div className="flex h-full items-center justify-center px-8">
             <EmptyState
               icon="ph:warning-circle"

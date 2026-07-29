@@ -36,6 +36,21 @@ assert.match(
 );
 assert.match(
   view,
+  /mergeFailedActivityItems\(prev\.items,\s*nextActivity\.items,\s*nextActivity\.collections\)/,
+  "failed activity categories retain their last-loaded rows in the main GitHub view",
+);
+assert.match(
+  view,
+  /error && activity[\s\S]{0,500}?Showing last loaded activity/,
+  "top-level refresh failures stay visible without hiding previously loaded activity",
+);
+assert.match(
+  view,
+  /nextActivity\.retryAfterSeconds/,
+  "check-enrichment cooldowns delay the next GitHub poll",
+);
+assert.match(
+  view,
   /disabled=\{retryBlocked\}/,
   "manual completeness retries remain disabled during GitHub's cooldown",
 );

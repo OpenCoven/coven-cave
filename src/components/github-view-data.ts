@@ -14,6 +14,8 @@ export type ActivityResult = {
   collections: ActivityCollections;
   items: GitHubItem[];
   rateLimit: { remaining: number; limit: number } | null;
+  warning?: string;
+  retryAfterSeconds?: number;
 };
 export type PatStatus = { hasPat: boolean; login: string | null; canRemoveStoredPat?: boolean };
 export type Filter = "all" | "pr" | "review_request" | "issue";

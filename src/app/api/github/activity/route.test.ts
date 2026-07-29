@@ -127,6 +127,26 @@ assert.match(
 );
 assert.match(
   route,
+  /const CHECK_ENRICH_CONCURRENCY = 3/,
+  "check enrichment should bound concurrent GitHub requests so a cooldown can stop the remaining queue",
+);
+assert.match(
+  route,
+  /controller\.abort\(\)/,
+  "a check-enrichment rate limit should abort other in-flight enrichment requests",
+);
+assert.match(
+  route,
+  /warning:\s*checkCooldownFailure/,
+  "check-enrichment rate limits should remain visible on otherwise successful activity responses",
+);
+assert.match(
+  route,
+  /retryAfterSeconds:\s*checkCooldownFailure/,
+  "check-enrichment rate limits should propagate their cooldown to pollers",
+);
+assert.match(
+  route,
   /collections,\r?\n\s*items,/,
   "activity responses should expose per-category completeness metadata",
 );
@@ -152,6 +172,6 @@ assert.match(
 );
 assert.match(
   githubView,
-  /arrayContentEqual\(prev\.organizations, nextActivity\.organizations\)/,
+  /arrayContentEqual\(prev\.organizations, mergedActivity\.organizations\)/,
   "activity refreshes should retain changed organization memberships even when items are unchanged",
 );
