@@ -469,9 +469,10 @@ git commit -S -m "feat(research): persist media render configuration"
 Cover these exact sequences:
 
 ```ts
-// FIFO: both rows persist; only the first may enter rendering.
+// FIFO: fakeFactory keeps the first run pending; only it may enter rendering.
 await queueResearchMediaGeneration(familiarId, firstId, fakeFactory);
 await queueResearchMediaGeneration(familiarId, secondId, fakeFactory);
+await waitForStatus(familiarId, firstId, "rendering");
 const queueRows = await listResearchGenerations(familiarId);
 assert.equal(
   queueRows.find((row) => row.id === firstId)?.status,
