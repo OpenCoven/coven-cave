@@ -258,6 +258,8 @@ const contracts: RouteContract[] = [
   { route: "/workflows", methods: ["GET"], kind: "json" },
   { route: "/weaves", methods: ["GET"], kind: "json" },
   { route: "/weaves/[id]", methods: ["GET"], kind: "json" },
+  { route: "/x/connection", methods: ["GET", "DELETE"], kind: "json", localOriginGuard: true },
+  { route: "/x/oauth/start", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
 ];
 
 function walkRoutes(dir: string): string[] {
