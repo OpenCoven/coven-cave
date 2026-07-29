@@ -18,6 +18,7 @@ export type CallState = {
   errorCode?: string;
   missingKey?: string;
   hint?: string;
+  canOpenSettings?: boolean;
   /** How a live loop-based call hears (cave-vpe1); unset for realtime providers. */
   earsEngine?: VoiceEarsEngine;
   mouthEngine?: VoiceMouthEngine;
@@ -28,7 +29,7 @@ export const initialState: CallState = { state: "idle", muted: false };
 export type CallEvent =
   | { type: "START" }
   | { type: "MIC_READY" }
-  | { type: "MIC_DENIED" }
+  | { type: "MIC_FAILED"; errorCode: string; hint?: string; canOpenSettings?: boolean }
   | { type: "SESSION_GRANTED"; callId: string }
   | { type: "SESSION_FAILED"; errorCode: string; missingKey?: string; hint?: string }
   | { type: "CONNECTED"; startedAt: number; earsEngine?: VoiceEarsEngine; mouthEngine?: VoiceMouthEngine }
@@ -46,8 +47,14 @@ export function reduce(s: CallState, ev: CallEvent): CallState {
     case "MIC_READY":
       if (s.state !== "requesting-mic") return s;
       return { ...s, state: "minting-session" };
-    case "MIC_DENIED":
-      return { ...s, state: "error", errorCode: "microphone_denied" };
+    case "MIC_FAILED":
+      return {
+        ...s,
+        state: "error",
+        errorCode: ev.errorCode,
+        hint: ev.hint,
+        canOpenSettings: ev.canOpenSettings,
+      };
     case "SESSION_GRANTED":
       if (s.state !== "minting-session") return s;
       return { ...s, state: "connecting", callId: ev.callId };
@@ -58,6 +65,7 @@ export function reduce(s: CallState, ev: CallEvent): CallState {
         errorCode: ev.errorCode,
         missingKey: ev.missingKey,
         hint: ev.hint,
+        canOpenSettings: undefined,
       };
     case "CONNECTED":
       if (s.state !== "connecting") return s;
@@ -65,7 +73,14 @@ export function reduce(s: CallState, ev: CallEvent): CallState {
     case "PROVIDER_ERROR":
       // Explicitly clear missingKey — a stale key name from an earlier mint
       // failure must not dress an unrelated connect error as key-fixable.
-      return { ...s, state: "error", errorCode: ev.errorCode, missingKey: undefined, hint: ev.hint };
+      return {
+        ...s,
+        state: "error",
+        errorCode: ev.errorCode,
+        missingKey: undefined,
+        hint: ev.hint,
+        canOpenSettings: undefined,
+      };
     case "CLOSE_REQUEST":
       if (s.state === "live") return { ...s, state: "ending" };
       return { ...s, state: "closed" };

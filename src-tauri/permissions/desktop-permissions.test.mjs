@@ -21,15 +21,21 @@ const loopbackUpdaterCapability = JSON.parse(
 const loopbackSpeechCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-speech.json", import.meta.url), "utf8"),
 );
+const loopbackMicrophoneCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-microphone.json", import.meta.url), "utf8"),
+);
 const defaultPermissions = readFileSync(new URL("./default.toml", import.meta.url), "utf8");
 const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), "utf8");
 const speechPermissions = readFileSync(new URL("./speech.toml", import.meta.url), "utf8");
+const microphonePermissions = readFileSync(new URL("./microphone.toml", import.meta.url), "utf8");
 const reachabilityPermissions = readFileSync(new URL("./desktop-reachability.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
 const browserCommandsRust = readFileSync(new URL("../src/browser_commands.rs", import.meta.url), "utf8");
 const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 const tauriSetupRust = readFileSync(new URL("../src/tauri_setup.rs", import.meta.url), "utf8");
+const microphoneRust = readFileSync(new URL("../src/microphone.rs", import.meta.url), "utf8");
 const nativeSttTs = readFileSync(new URL("../../src/lib/voice/native-stt.ts", import.meta.url), "utf8");
+const microphoneAccessTs = readFileSync(new URL("../../src/lib/voice/microphone-access.ts", import.meta.url), "utf8");
 const browserPane = readFileSync(new URL("../../src/components/browser-pane.tsx", import.meta.url), "utf8");
 const bottomTerminal = readFileSync(new URL("../../src/components/bottom-terminal.tsx", import.meta.url), "utf8");
 const shellTsx = readFileSync(new URL("../../src/components/shell.tsx", import.meta.url), "utf8");
@@ -649,5 +655,55 @@ test("native speech recognition is scoped to the trusted main webview", () => {
     readFileSync(new URL("../src/speech.rs", import.meta.url), "utf8"),
     /options\.device|device_id|model_path/,
     "renderer must not choose capture devices or model files",
+  );
+});
+
+test("desktop calls can request and recover macOS microphone permission", () => {
+  const microphonePermissionIds = [
+    ["allow-microphone-permission-request", "microphone_permission_request"],
+    ["allow-microphone-settings-open", "microphone_settings_open"],
+  ];
+
+  for (const [permission, command] of microphonePermissionIds) {
+    assert.match(
+      microphonePermissions,
+      new RegExp(String.raw`identifier\s*=\s*"${permission}"[\s\S]{0,240}commands\.allow\s*=\s*\[[^\]]*"${command}"`),
+      `${permission} must map to ${command}`,
+    );
+    assert.match(
+      tauriSetupRust,
+      new RegExp(String.raw`microphone::${command}`),
+      `${command} must be registered in the desktop invoke handler`,
+    );
+    assert.match(
+      microphoneAccessTs,
+      new RegExp(String.raw`"${command}"`),
+      `the frontend microphone flow must drive ${command}`,
+    );
+    assert.ok(
+      loopbackMicrophoneCapability.permissions.includes(permission),
+      `loopback-microphone should grant ${permission}`,
+    );
+  }
+
+  assert.deepEqual(loopbackMicrophoneCapability.webviews, ["main"]);
+  assert.deepEqual(loopbackMicrophoneCapability.platforms, ["macOS"]);
+  assert.ok(capabilityAllowsOrigin(loopbackMicrophoneCapability, "http://127.0.0.1:3000/"));
+  assert.ok(capabilityAllowsOrigin(loopbackMicrophoneCapability, "http://localhost:64203/"));
+  assert.equal(capabilityAllowsOrigin(loopbackMicrophoneCapability, "http://example.com:64203/"), false);
+  assert.match(
+    microphoneRust,
+    /requestRecordPermissionWithCompletionHandler/,
+    "the native command must use the Sonoma microphone permission API",
+  );
+  assert.match(
+    microphoneRust,
+    /AVCaptureDevice[\s\S]*respondsToSelector[\s\S]*requestAccessForMediaType/,
+    "the native command must safely fall back to AVFoundation permission prompting before macOS 14",
+  );
+  assert.match(
+    microphoneRust,
+    /x-apple\.systempreferences:com\.apple\.preference\.security\?Privacy_Microphone/,
+    "denied access must open the macOS microphone privacy pane directly",
   );
 });

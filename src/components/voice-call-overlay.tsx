@@ -8,6 +8,11 @@ import { Icon } from "@iconify/react";
 import type { Familiar } from "@/lib/types";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { getVoiceProvider } from "@/lib/voice/registry";
+import {
+  classifyMicrophoneCaptureError,
+  openMicrophoneSettings,
+  requestMicrophoneStream,
+} from "@/lib/voice/microphone-access";
 import type { LiveSession, VoiceSessionGrant, VoiceEarsEngine, VoiceMouthEngine } from "@/lib/voice/types";
 import { voiceErrorHint } from "@/lib/voice/types";
 import { voiceRecoveryVaultKey } from "@/lib/voice/vault-key-recovery";
@@ -34,12 +39,19 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
     (async () => {
       if (state.state === "requesting-mic") {
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const stream = await requestMicrophoneStream();
           if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
           micStreamRef.current = stream;
           dispatch({ type: "MIC_READY" });
-        } catch {
-          dispatch({ type: "MIC_DENIED" });
+        } catch (error) {
+          if (cancelled) return;
+          const failure = classifyMicrophoneCaptureError(error);
+          dispatch({
+            type: "MIC_FAILED",
+            errorCode: failure.code,
+            hint: failure.hint,
+            canOpenSettings: failure.canOpenSettings,
+          });
         }
       } else if (state.state === "minting-session") {
         try {
@@ -148,10 +160,12 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
   const [keyDraft, setKeyDraft] = useState("");
   const [savingKey, setSavingKey] = useState(false);
   const [keySaveError, setKeySaveError] = useState<string | null>(null);
+  const [settingsOpenError, setSettingsOpenError] = useState<string | null>(null);
   useEffect(() => {
     if (state.state !== "error") {
       setKeyDraft("");
       setKeySaveError(null);
+      setSettingsOpenError(null);
     }
   }, [state.state]);
 
@@ -186,6 +200,15 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
       setKeySaveError("Couldn't save the key — is the daemon running?");
     } finally {
       setSavingKey(false);
+    }
+  };
+
+  const openPermissionSettings = async () => {
+    setSettingsOpenError(null);
+    try {
+      await openMicrophoneSettings();
+    } catch {
+      setSettingsOpenError("Couldn't open System Settings. Open Privacy & Security → Microphone manually.");
     }
   };
 
@@ -231,6 +254,18 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
             <div className="voice-call-overlay__error" role="alert">
               <div id="voice-call-overlay-error">{errorMessage(state.errorCode)}</div>
               {state.hint && <div className="voice-call-overlay__hint">{state.hint}</div>}
+              {state.canOpenSettings && (
+                <button
+                  type="button"
+                  className="voice-call-overlay__retry focus-ring"
+                  onClick={() => { void openPermissionSettings(); }}
+                >
+                  Open settings
+                </button>
+              )}
+              {settingsOpenError && (
+                <div className="voice-call-overlay__hint" role="alert">{settingsOpenError}</div>
+              )}
               {fixableKey && (
                 <form
                   className="voice-call-overlay__fix"
@@ -345,7 +380,15 @@ function errorMessage(code: string | undefined): string {
   }
   switch (code) {
     case "microphone_denied":
-      return "Microphone access was denied. Allow it in your browser settings to start a call.";
+      return "Microphone access is blocked.";
+    case "microphone_not_found":
+      return "No microphone was found.";
+    case "microphone_unavailable":
+      return "The microphone isn't available.";
+    case "microphone_unsupported":
+      return "Microphone capture isn't available in this window.";
+    case "microphone_permission_failed":
+      return "Coven Cave couldn't request microphone access.";
     case "network":
       return "Couldn't reach the voice service. Check your connection and try again.";
     case "internal":
