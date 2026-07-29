@@ -40,11 +40,11 @@ final class OpenAIRealtimeTransport: NSObject, VoiceCallTransport {
 
     func start(with context: VoiceCallTransportContext) async throws {
         guard !stopped else { return }
-        guard let grant = context.grant,
-              grant.provider == "openai",
-              let endpoint = grant.connection.url,
-              let url = URL(string: endpoint) else {
+        guard let grant = context.grant, grant.provider == "openai" else {
             throw OpenAIRealtimeTransportError.missingGrant
+        }
+        guard let endpoint = grant.connection.url, let url = URL(string: endpoint) else {
+            throw OpenAIRealtimeTransportError.invalidConnectionURL
         }
 
         let configuration = RTCConfiguration()

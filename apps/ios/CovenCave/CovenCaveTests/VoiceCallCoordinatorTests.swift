@@ -3,11 +3,12 @@ import XCTest
 
 @MainActor
 final class VoiceCallCoordinatorTests: XCTestCase {
+    private let context = VoiceCallTransportContext(familiarId: "familiar", sessionId: "session", grant: nil)
     func testEndStopsMediaAndTransportOnceAndRejectsLateTransportCallbacks() async {
         let media = FakeVoiceMediaSession()
         let transport = FakeVoiceTransport()
         let coordinator = VoiceCallCoordinator(
-            mode: .realtime, transport: transport, mediaSession: media
+            mode: .realtime, transport: transport, mediaSession: media, context: context
         )
 
         await coordinator.start()
@@ -33,7 +34,7 @@ final class VoiceCallCoordinatorTests: XCTestCase {
         let media = FakeVoiceMediaSession()
         let transport = FakeVoiceTransport()
         let coordinator = VoiceCallCoordinator(
-            mode: .native, transport: transport, mediaSession: media
+            mode: .native, transport: transport, mediaSession: media, context: context
         )
 
         await coordinator.start()
@@ -51,7 +52,7 @@ final class VoiceCallCoordinatorTests: XCTestCase {
         media.prepareError = VoiceCallMediaError.speechRecognitionDenied
         let transport = FakeVoiceTransport()
         let coordinator = VoiceCallCoordinator(
-            mode: .native, transport: transport, mediaSession: media
+            mode: .native, transport: transport, mediaSession: media, context: context
         )
 
         await coordinator.start()
@@ -67,7 +68,7 @@ final class VoiceCallCoordinatorTests: XCTestCase {
         media.suspendsPreparation = true
         let transport = FakeVoiceTransport()
         let coordinator = VoiceCallCoordinator(
-            mode: .native, transport: transport, mediaSession: media
+            mode: .native, transport: transport, mediaSession: media, context: context
         )
         media.onPreparationWait = {
             coordinator.end()

@@ -38,7 +38,7 @@ final class VoiceCallCoordinator {
 
     init(mode: VoiceCallMode, transport: VoiceCallTransport,
          mediaSession: VoiceMediaSessionManaging,
-         context: VoiceCallTransportContext = .init(familiarId: "", sessionId: "", grant: nil)) {
+         context: VoiceCallTransportContext) {
         state = VoiceCallState(mode: mode)
         self.transport = transport
         self.mediaSession = mediaSession
