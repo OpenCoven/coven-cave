@@ -1,4 +1,4 @@
-import { isMacDesktopShell } from "../tauri-platform.ts";
+import { isTauri } from "../tauri-platform.ts";
 
 export type MicrophoneAccessErrorCode =
   | "microphone_denied"
@@ -103,10 +103,24 @@ function defaultGetUserMedia(): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({ audio: true });
 }
 
+async function isNativeMacPlatform(): Promise<boolean> {
+  if (!isTauri()) return false;
+  const { platform } = await import("@tauri-apps/plugin-os");
+  return platform() === "macos";
+}
+
 export async function requestMicrophoneStream(
   dependencies: MicrophoneAccessDependencies = {},
 ): Promise<MediaStream> {
-  const nativeMac = dependencies.nativeMac ?? isMacDesktopShell();
+  let nativeMac: boolean;
+  try {
+    nativeMac = dependencies.nativeMac ?? await isNativeMacPlatform();
+  } catch {
+    throw new MicrophoneAccessError(
+      "microphone_permission_failed",
+      "Restart Coven Cave and retry the call.",
+    );
+  }
   const invoke = dependencies.invoke ?? defaultInvoke;
 
   if (nativeMac) {

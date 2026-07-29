@@ -60,6 +60,41 @@ test("older macOS falls through to webview capture when native preflight is unav
   assert.equal(result, stream);
 });
 
+test("iOS Tauri skips macOS preflight even when its webview identifies as Mac", async () => {
+  const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      __TAURI_INTERNALS__: {},
+      __TAURI_OS_PLUGIN_INTERNALS__: { platform: "ios" },
+    },
+  });
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)" },
+  });
+
+  try {
+    let invoked = false;
+    const result = await requestMicrophoneStream({
+      invoke: async () => {
+        invoked = true;
+        return { status: "denied" };
+      },
+      getUserMedia: async () => stream,
+    });
+
+    assert.equal(result, stream);
+    assert.equal(invoked, false);
+  } finally {
+    if (windowDescriptor) Object.defineProperty(globalThis, "window", windowDescriptor);
+    else delete globalThis.window;
+    if (navigatorDescriptor) Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    else delete globalThis.navigator;
+  }
+});
+
 test("capture failures keep permission, hardware, and availability errors distinct", () => {
   const cases = [
     ["NotAllowedError", "microphone_denied"],
