@@ -31,6 +31,8 @@ import { greetingForHour } from "@/lib/home-greeting";
 import { relativeAge } from "@/lib/rss";
 import { filterVisibleChatSessions } from "@/lib/chat-projects";
 import { startFromGroup } from "@/lib/chat-start-from";
+import { queueFollowUpLabel } from "@/lib/chat-queue-followups";
+import { useQueueFollowUps } from "@/lib/use-queue-followups";
 import { useDashboardBoard } from "@/components/home/use-dashboard-board";
 import {
   OPEN_WORK_FILTERS,
@@ -50,6 +52,8 @@ import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
  *  stays reachable through the "View all in Tasks →" section link. */
 const OPEN_WORK_ROWS_CAP = 5;
 const RECENT_THREADS_CAP = 3;
+/** The launcher shows the top parked follow-ups; the Queue surface has the rest. */
+const QUEUE_CAP = 3;
 
 /** One-shot inbox snapshot for the "needs you" tier of the open-work board.
  *  Abort-guarded like useBoardCards; mount + window refocus are the only
@@ -82,6 +86,17 @@ function useNeedsYou() {
 
 const navigateMode = (mode: string) => {
   window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
+};
+
+/** Starting a parked follow-up briefs a fresh chat with the bead — the same
+ *  new-chat bridge the rest of the shell uses, so the work opens in place
+ *  instead of sending the user to the Queue surface to copy an id. */
+const startFollowUp = (familiarId: string | null, beadId: string, title: string) => {
+  window.dispatchEvent(
+    new CustomEvent("cave:agents-new-chat", {
+      detail: { familiarId: familiarId ?? undefined, initialPrompt: `Pick up ${beadId}: ${title}` },
+    }),
+  );
 };
 
 const openSession = (sessionId: string, familiarId?: string | null) => {
@@ -160,6 +175,9 @@ export function ChatNewDashboard({
     }));
     return [...board, ...needs];
   }, [scopedBoardCards, scopedNeedsYou]);
+  // Parked follow-ups for the launcher's Queue group — one-shot + refresh on
+  // focus, like the board and inbox snapshots; never polled.
+  const queueFollowUps = useQueueFollowUps(familiar.id);
   const [workFilter, setWorkFilter] = useState<OpenWorkFilter>("all");
   const workCounts = useMemo(() => openWorkCounts(openWork), [openWork]);
   // Capped so the no-scroll board fits the pane; "View all in Tasks →" carries
@@ -184,6 +202,11 @@ export function ChatNewDashboard({
     recentThreads.length,
     filterVisibleChatSessions(sessions, familiar.id).filter((s) => Boolean(s.title?.trim())).length,
   );
+  // Queue (cave-3lonn): parked follow-ups from the Queue's own project. The
+  // group is absent when no Queue project is chosen or nothing is parked —
+  // this page never shows chrome for an empty source.
+  const queueRows = queueFollowUps.rows.slice(0, QUEUE_CAP);
+  const queueGroup = startFromGroup("queue", queueRows.length, queueFollowUps.rows.length);
 
   return (
     <div className="home-dash__body home-dash--embed select-none" data-testid="chat-new-dashboard">
@@ -333,6 +356,36 @@ export function ChatNewDashboard({
                   >
                     <span className="home-dash__recent-title">{s.title}</span>
                     <span className="home-dash__recent-time">{relativeAge(s.updated_at, nowMs)}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {/* Queue — parked follow-ups, the third place work already lives. */}
+          {queueRows.length > 0 ? (
+            <section
+              className="home-dash__section home-dash__section--queue"
+              aria-label="Parked follow-ups"
+            >
+              <div className="home-dash__section-label">
+                {queueGroup.label}
+                <span className="home-dash__section-count">{queueGroup.count}</span>
+              </div>
+              <div className="home-dash__recent">
+                {queueRows.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    className="home-dash__recent-row"
+                    onClick={() => startFollowUp(familiar.id, row.id, row.title)}
+                    aria-label={queueFollowUpLabel(row)}
+                    title={`Pick up ${row.id}`}
+                  >
+                    <span className="home-dash__recent-title">{row.title}</span>
+                    <span className="home-dash__recent-time">
+                      {row.updatedAt ? relativeAge(row.updatedAt, nowMs) : row.id}
+                    </span>
                   </button>
                 ))}
               </div>

@@ -27,6 +27,8 @@ import { NO_PROJECT_ID, chatProjectById, filterVisibleChatSessions } from "@/lib
 import { cardMatchesProject, deriveOpenTaskCards, deriveContinueThreads } from "@/lib/chat-open-tasks";
 import { deriveStarterSuggestions } from "@/lib/chat-starter-suggestions";
 import { startFromGroup, startFromSub, taskTileBadge } from "@/lib/chat-start-from";
+import { queueFollowUpLabel } from "@/lib/chat-queue-followups";
+import { useQueueFollowUps } from "@/lib/use-queue-followups";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { relativeTime } from "@/lib/relative-time";
@@ -35,6 +37,8 @@ import { useAnnouncer } from "@/components/ui/live-region";
 
 const RAIL_CAP = 4;
 const CONTINUE_CAP = 3;
+/** The launcher shows the top parked follow-ups; the Queue surface carries the rest. */
+const QUEUE_CAP = 3;
 /** Only flash skeletons when the board fetch is genuinely slow; a fast load
  *  renders the rail directly and never jumps the layout twice. */
 const SLOW_LOAD_MS = 300;
@@ -142,6 +146,9 @@ export function ChatEmptyState({
   const linkedTasks: LinkedTask[] = linkedContext?.tasks ?? [];
   const boardEnabled = linkedTasks.length === 0;
   const { cards, loading, error: boardError, reload } = useBoardCards(boardEnabled);
+  // Parked follow-ups for the launcher's Queue group. One-shot + refresh on
+  // focus like the board snapshot above; never polled.
+  const queueFollowUps = useQueueFollowUps(familiar.id, boardEnabled);
 
   // Slow-load gate: render nothing for the first SLOW_LOAD_MS, then skeletons.
   const [slow, setSlow] = useState(false);
@@ -251,7 +258,12 @@ export function ChatEmptyState({
   // the pure model so the header can't disagree with the tiles below it.
   const tasksGroup = startFromGroup("tasks", railCards.length, openCards.length);
   const chatsGroup = startFromGroup("chats", recents.length, continuableCount);
-  const startFromVisible = railVisible || recents.length > 0;
+  // Queue (cave-3lonn): parked follow-ups from the Queue's OWN project, so
+  // this page needs no extra props — and the group stays absent when no Queue
+  // project is chosen or nothing is parked.
+  const queueRows = queueFollowUps.rows.slice(0, QUEUE_CAP);
+  const queueGroup = startFromGroup("queue", queueRows.length, queueFollowUps.rows.length);
+  const startFromVisible = railVisible || recents.length > 0 || queueRows.length > 0;
 
   return (
     <div className="cave-chat-empty select-none">
@@ -446,6 +458,32 @@ export function ChatEmptyState({
                           +{session.diff.additions} −{session.diff.deletions}
                         </span>
                       ) : null}
+                      <span className="cave-chat-empty-recent-time">{startFromSub([when])}</span>
+                    </button>
+                  );
+                })}
+              </section>
+            ) : null}
+
+            {queueRows.length > 0 ? (
+              <section className="cave-chat-empty-recents" aria-label="Parked follow-ups">
+                <span className="cave-chat-empty-section-label">
+                  <Icon name={queueGroup.icon} width={12} aria-hidden />
+                  {queueGroup.label}
+                  <span className="cave-chat-startfrom__count">{queueGroup.count}</span>
+                </span>
+                {queueRows.map((row) => {
+                  const when = row.updatedAt ? relativeTime(row.updatedAt, nowMs) : "";
+                  return (
+                    <button
+                      key={row.id}
+                      type="button"
+                      className="cave-chat-empty-recent"
+                      aria-label={queueFollowUpLabel(row)}
+                      onClick={() => onPrompt?.(`Pick up ${row.id}: ${row.title}`)}
+                    >
+                      <span className="cave-chat-empty-recent-title">{row.title}</span>
+                      <span className="cave-chat-empty-recent-diff">{row.id}</span>
                       <span className="cave-chat-empty-recent-time">{startFromSub([when])}</span>
                     </button>
                   );

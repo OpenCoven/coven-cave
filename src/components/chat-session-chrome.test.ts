@@ -120,9 +120,11 @@ test("2b — the new session leads with a mono eyebrow and one serif line", () =
 });
 
 test("2b — 'Start from' is always visible and launches work that already exists", () => {
+  // The launcher appears when ANY of its sources has work — each group added
+  // since (Queue, cave-3lonn) joins this same disjunction.
   assert.match(
     emptyState,
-    /const startFromVisible = railVisible \|\| recents\.length > 0;/,
+    /const startFromVisible = railVisible \|\| recents\.length > 0/,
     "the launcher shows when there is work to start from",
   );
   assert.doesNotMatch(
