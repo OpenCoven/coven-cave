@@ -15,13 +15,18 @@ export default function WeavesPage() {
       <div className="dr-page">
         <div className="dr-topbar" data-tauri-drag-region="deep">
           <nav className="dr-topbar__crumbs" aria-label="Breadcrumb">
-            <a className="dr-back" href="/">
+            <a className="dr-back" href="/?mode=grimoire">
               <Icon name="ph:arrow-left" aria-hidden />
-              CovenCave
+              Memories
             </a>
             <span className="dr-crumb-sep" aria-hidden>/</span>
             <span className="dr-crumb-current">Weaves</span>
           </nav>
+          <div className="dr-topbar__actions">
+            <a className="dr-back" href="/proposals">
+              Review proposals →
+            </a>
+          </div>
         </div>
         <div className="px-4 pb-6">
           <p className="mb-3 max-w-2xl text-xs text-[var(--text-muted)]">

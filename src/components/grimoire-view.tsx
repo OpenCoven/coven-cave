@@ -19,6 +19,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { Icon, type IconName } from "@/lib/icon";
 import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-editor";
 import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
@@ -1480,6 +1481,13 @@ export function GrimoireView({
               containerClassName="surface-compact-search"
             />
           ) : null}
+          <Link
+            href="/weaves"
+            className="focus-ring inline-flex h-[26px] shrink-0 items-center gap-1 whitespace-nowrap rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:path" width={11} aria-hidden />
+            Weaves
+          </Link>
           {view === "docs" ? (
             <>
               <button

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const palette = await readFile(new URL("./command-palette.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
@@ -52,16 +53,16 @@ assert.doesNotMatch(
   "Workspace should not expose a top-level Workflows page",
 );
 
-// ── Sidebar: one Tools entry for the merged hub ──────────────────────────────
+// ── Navigation: one Tools entry for the merged hub ───────────────────────────
 assert.match(
-  sidebar,
+  navigation,
   /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' crafts and skills", quiet: true \},/,
-  "Sidebar navigation should expose the merged Marketplace hub with a description covering both halves",
+  "The navigation registry should expose the merged Marketplace hub with a description covering both halves",
 );
 assert.doesNotMatch(
-  sidebar,
+  navigation,
   /\{ id: "roles", label: "Roles"/,
-  "The separate Roles sidebar entry is retired — roles live inside the Marketplace hub",
+  "The separate Roles navigation entry is retired — roles live inside the Marketplace hub",
 );
 assert.doesNotMatch(sidebar, /addons\?\.roles/, "The roles add-on gate is retired from the sidebar");
 assert.doesNotMatch(palette, /addons\?\.roles/, "The roles add-on gate is retired from the command palette");

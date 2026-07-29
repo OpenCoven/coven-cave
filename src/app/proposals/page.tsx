@@ -15,9 +15,13 @@ export default function ProposalsPage() {
       <div className="dr-page">
         <div className="dr-topbar" data-tauri-drag-region="deep">
           <nav className="dr-topbar__crumbs" aria-label="Breadcrumb">
-            <a className="dr-back" href="/">
+            <a className="dr-back" href="/?mode=grimoire">
               <Icon name="ph:arrow-left" aria-hidden />
-              CovenCave
+              Memories
+            </a>
+            <span className="dr-crumb-sep" aria-hidden>/</span>
+            <a className="dr-back" href="/weaves">
+              Weaves
             </a>
             <span className="dr-crumb-sep" aria-hidden>/</span>
             <span className="dr-crumb-current">Proposals</span>

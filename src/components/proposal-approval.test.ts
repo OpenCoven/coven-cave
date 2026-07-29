@@ -110,5 +110,7 @@ assert.match(flow, /meta\.sourceCursor/, "freshness footer present");
 // page: never applies edits itself, daemon re-validates
 assert.match(page, /data, not authority/, "page states the staged-write rule");
 assert.match(page, /never applies edits\s+itself/, "page denies a UI write path");
+assert.match(page, /href="\/weaves"/, "proposal decisions breadcrumb back to Weaves");
+assert.match(page, /href="\/\?mode=grimoire"/, "proposal decisions preserve the Memories parent path");
 
 console.log("proposal-approval wiring: all assertions passed");

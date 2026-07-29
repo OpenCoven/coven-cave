@@ -75,6 +75,13 @@ describe("Profile card wiring (cave-ujbr)", () => {
     assert.match(settings, /View profile card →/);
   });
 
+  it("returns familiar and human profiles to real parent destinations", () => {
+    const source = read("./profile-card.tsx");
+    assert.match(source, /href="\/\?mode=agents"/, "familiar profiles return to the Familiars surface");
+    assert.match(source, /href="\/settings"/, "the human profile returns to Settings");
+    assert.doesNotMatch(source, /\/\?mode=(?:familiars|settings)/, "profile navigation never targets invalid workspace modes");
+  });
+
   it("keeps the profile card fixed-dark and monospace, scoped under .pfc-*", () => {
     const css = readFileSync(new URL("../styles/profile-card.css", import.meta.url), "utf8");
     assert.match(css, /\.pfc-page \{/);

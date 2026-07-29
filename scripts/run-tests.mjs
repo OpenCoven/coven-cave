@@ -36,6 +36,7 @@ export const SUITES = {
     "src/lib/page-drag.test.ts",
     "src/lib/sidebar-nav-state.test.ts",
     "src/lib/workspace-mode.test.ts",
+    "src/lib/workspace-navigation.test.ts",
     "src/lib/workspace-navigation-history.test.ts",
     "src/lib/surface-preferences.test.ts",
     "src/lib/surface-warm-cache.test.ts",
@@ -1533,10 +1534,10 @@ const ALIAS_LOADER = new Set([
   "src/lib/voice/elevenlabs.test.ts",
 ]);
 
-// This gate measures the physical CSS tree, where facade imports are part of
-// the source structure. Every other source contract reads the effective
-// cascade through the hook below.
-const RAW_CSS_SCANNER_TESTS = new Set([
+// These gates inspect physical source files. The CSS facade expander would
+// change what they are measuring and makes recursive route-source scans slow.
+const RAW_SOURCE_SCANNER_TESTS = new Set([
+  "src/app/route-inventory.test.ts",
   "src/lib/design-token-drift.test.ts",
 ]);
 
@@ -1554,7 +1555,7 @@ const VITEST_TESTS = new Set([
 
 /** Build the `node` argv (flags + file) for a single test path. */
 export function nodeArgsFor(file) {
-  const args = RAW_CSS_SCANNER_TESTS.has(file)
+  const args = RAW_SOURCE_SCANNER_TESTS.has(file)
     ? []
     : ["--require", "./scripts/css-source-contract-hook.cjs"];
   if (file.endsWith(".ts") || STRIP_TYPES_MJS.has(file)) {

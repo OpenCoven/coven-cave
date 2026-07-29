@@ -149,13 +149,13 @@ assert.ok(stripMatch, "create-task title strips a leading /task prefix via repla
 // ── Surface navigation ("Go to <surface>") makes ⌘K a launcher ──
 assert.match(
   source,
-  /kind:\s*"go-to-surface";\s*mode:\s*FolderMode/,
+  /kind:\s*"go-to-surface";\s*mode:\s*WorkspaceNavMode/,
   "palette exposes a go-to-surface intent",
 );
 assert.match(
   source,
-  /import \{ FOLDER_MODES[\s\S]*?from "@\/components\/sidebar-minimal"/,
-  "surface rows are built from the shared FOLDER_MODES list (single source of truth)",
+  /import \{ WORKSPACE_NAV_ITEMS, type WorkspaceNavMode \} from "@\/lib\/workspace-navigation"/,
+  "surface rows are built from the shared workspace navigation registry",
 );
 assert.match(
   source,

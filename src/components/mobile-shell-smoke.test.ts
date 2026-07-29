@@ -81,8 +81,8 @@ assert.match(
 
 assert.match(
   mobileTabs,
-  /FOLDER_MODES\.filter\(\(fm\) => !fm\.quiet && !fm\.navHidden\)/,
-  "Mobile bottom tabs should derive from the desktop sidebar's primary cluster, inheriting canonical names (Rituals included) by construction",
+  /PRIMARY_WORKSPACE_NAV_ITEMS\.map/,
+  "Mobile bottom tabs should derive from the shared primary navigation cluster, inheriting canonical names (Rituals included) by construction",
 );
 
 assert.match(

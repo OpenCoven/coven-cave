@@ -3,8 +3,9 @@
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { DesktopHistoryNav } from "@/components/desktop-history-nav";
-import { Icon, CAVE_ICON_SIZE, type IconName } from "@/lib/icon";
+import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { useIsMobile } from "@/lib/use-viewport";
+import { VISIBLE_WORKSPACE_NAV_ITEMS } from "@/lib/workspace-navigation";
 import "@/styles/analytics-page-shell.css";
 
 // Shared with shell.tsx so the nav open/closed preference is consistent across
@@ -30,22 +31,13 @@ function writeNavOpenPref(open: boolean): void {
   }
 }
 
-type RailDest = { href: string; label: string; icon: IconName };
-
-// Mirror the app's primary sidebar destinations (sidebar-minimal FOLDER_MODES)
-// as deep links the SPA resolves via `?mode=` (workspace readModeParam). Kept as
-// plain <a> links because this shell wraps STANDALONE routes that live outside
-// the SPA workspace which owns SidebarMinimal.
-const PRIMARY: RailDest[] = [
-  { href: "/?mode=home", label: "Home", icon: "ph:house-bold" },
-  { href: "/?mode=chat", label: "Chat", icon: "ph:chats" },
-  { href: "/?mode=board", label: "Tasks", icon: "ph:kanban" },
-  { href: "/?mode=inbox", label: "Rituals", icon: "ph:calendar-check" },
-  { href: "/?mode=journal", label: "Journal", icon: "ph:book-open" },
-  { href: "/?mode=grimoire", label: "Memories", icon: "ph:books" },
-  { href: "/?mode=marketplace", label: "Marketplace", icon: "ph:storefront-bold" },
-  { href: "/?mode=github", label: "GitHub", icon: "ph:github-logo" },
-];
+// Standalone pages use the workspace sidebar's canonical visible destinations
+// instead of maintaining a second list that can drift in names or reachability.
+const PRIMARY = VISIBLE_WORKSPACE_NAV_ITEMS.map((item) => ({
+  href: `/?mode=${item.id}`,
+  label: item.label,
+  icon: item.iconName,
+}));
 
 const NAV_ICON = CAVE_ICON_SIZE.sidePanelNav;
 
