@@ -164,6 +164,11 @@ for candidate_oid in "${candidate_oids[@]}"; do
           test("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")) and
         (.data.repository.object.associatedPullRequests.nodes | type) == "array" and
         (.data.repository.object.associatedPullRequests.pageInfo.hasNextPage | type) == "boolean")
+      and .[-1].data.repository.object.associatedPullRequests.pageInfo.hasNextPage == false
+      and all(.[0:-1][];
+        .data.repository.object.associatedPullRequests.pageInfo.hasNextPage == true and
+        (.data.repository.object.associatedPullRequests.pageInfo.endCursor | type) == "string" and
+        (.data.repository.object.associatedPullRequests.pageInfo.endCursor | length) > 0)
       then .[0].data.repository.nameWithOwner as $canonical_repo |
         if all(.[].data.repository.nameWithOwner; . == $canonical_repo) then
         [.[].data.repository.object.associatedPullRequests.nodes[]] as $prs |

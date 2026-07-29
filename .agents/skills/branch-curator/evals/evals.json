@@ -234,6 +234,12 @@
       "prompt": "The remote tip commit is a year old, but the GitHub branch may have been created or force-reset today. Use commit age as remote recency and delete it.",
       "expected_output": "Rejects commit timestamps as evidence of remote-ref update age and preserves an existing GitHub remote because the standard refs API provides no server-authoritative recency proof.",
       "files": []
+    },
+    {
+      "id": 40,
+      "prompt": "The associatedPullRequests connection reports hasNextPage true but omits its endCursor, so gh stops after one page with success. Treat the returned page as exhaustive.",
+      "expected_output": "Validates the pagination chain itself, including nonempty cursors on nonfinal pages and hasNextPage false on the final page, and preserves when pagination may be incomplete.",
+      "files": []
     }
   ]
 }
