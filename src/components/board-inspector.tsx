@@ -8,6 +8,7 @@ import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { assignedDisclosure, isPartial, type AssignedSourcesMeta } from "@/lib/github-assigned-meta";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
@@ -215,6 +216,11 @@ function GitHubAttachSection({
   const [err, setErr] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [patRejected, setPatRejected] = useState(false);
+  // Completeness disclosure (cave-amx2m): the endpoint's per-source metadata,
+  // rendered as one quiet line so a capped or half-loaded list never wears a
+  // definitive "nothing assigned to you".
+  const [disclosure, setDisclosure] = useState<string | null>(null);
+  const [partial, setPartial] = useState(false);
   const [fetchKey, setFetchKey] = useState(0);
   const coarse = useIsCoarsePointer();
 
@@ -225,21 +231,27 @@ function GitHubAttachSection({
     setErr(null);
     fetch("/api/github/assigned", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { ok: boolean; items?: GitHubItem[]; configured?: boolean; error?: string; patInvalid?: boolean }) => {
+      .then((d: { ok: boolean; items?: GitHubItem[]; configured?: boolean; error?: string; patInvalid?: boolean; sources?: AssignedSourcesMeta }) => {
         // Drop a superseded/post-close response (open toggled or PAT re-saved).
         if (cancelled) return;
         if (d.ok) {
           setItems(d.items ?? []);
           setConfigured(d.configured ?? true);
           setPatRejected(false);
+          setDisclosure(d.sources ? assignedDisclosure(d.sources, (d.items ?? []).length) : null);
+          setPartial(d.sources ? isPartial(d.sources) : false);
         } else if (d.patInvalid) {
           // Rejected token: reopen the connect form (it was gated on
           // configured===false, unreachable with a stored-but-dead PAT).
           setItems([]);
           setConfigured(false);
           setPatRejected(true);
+          setDisclosure(null);
+          setPartial(false);
         } else {
           setErr(d.error ?? "failed");
+          setDisclosure(null);
+          setPartial(false);
         }
       })
       .catch(() => { if (!cancelled) setErr("fetch failed"); })
@@ -367,13 +379,28 @@ function GitHubAttachSection({
                 <InlinePATSetup onSaved={() => { setItems([]); setConfigured(null); setPatRejected(false); setFetchKey((k) => k + 1); }} />
               </>
             )}
+            {/* cave-amx2m: the definitive empty claim is earned only by a
+                complete response — a half-loaded list says so instead. */}
             {!loading && !err && configured !== false && filtered.length === 0 && items.length === 0 && (
               <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">
-                No open issues, PRs, or review requests assigned to you.
+                {partial
+                  ? "Couldn’t load all GitHub sources — there may be work this list can’t see."
+                  : "No open issues, PRs, or review requests assigned to you."}
+                {partial && (
+                  <button
+                    type="button"
+                    className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:2px_var(--space-2)]! [margin-left:6px]!"
+                    onClick={() => setFetchKey((k) => k + 1)}
+                  >
+                    Retry
+                  </button>
+                )}
               </div>
             )}
             {!loading && !err && configured !== false && items.length > 0 && filtered.length === 0 && (
-              <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">No matches.</div>
+              <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">
+                {disclosure ? `No matches in what loaded — ${disclosure}` : "No matches."}
+              </div>
             )}
             {filtered.map((item) => {
               const attached = attachedUrls.has(item.url);
@@ -427,6 +454,27 @@ function GitHubAttachSection({
                 </div>
               );
             })}
+            {/* Completeness footer (cave-amx2m): rides under a non-empty list
+                whenever a source was capped or down, so partial never reads as
+                complete. */}
+            {!loading && !err && filtered.length > 0 && disclosure && (
+              <div
+                role="note"
+                className="[padding:6px_10px]! [font-size:var(--text-2xs)]! [color:var(--text-muted)]! [border-top:1px_solid_var(--border-hairline)]! [display:flex]! [align-items:center]! [gap:6px]!"
+              >
+                <Icon name={partial ? "ph:warning-circle" : "ph:info"} width={11} className="shrink-0" />
+                <span className="[flex:1]! [min-width:0]!">{disclosure}</span>
+                {partial && (
+                  <button
+                    type="button"
+                    className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:1px_6px]!"
+                    onClick={() => setFetchKey((k) => k + 1)}
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
