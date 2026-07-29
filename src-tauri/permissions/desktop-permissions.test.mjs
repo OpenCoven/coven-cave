@@ -694,7 +694,12 @@ test("desktop calls can request and recover macOS microphone permission", () => 
   assert.match(
     microphoneRust,
     /requestRecordPermissionWithCompletionHandler/,
-    "the native command must ask macOS for microphone access",
+    "the native command must use the Sonoma microphone permission API",
+  );
+  assert.match(
+    microphoneRust,
+    /AVCaptureDevice[\s\S]*respondsToSelector[\s\S]*requestAccessForMediaType/,
+    "the native command must safely fall back to AVFoundation permission prompting before macOS 14",
   );
   assert.match(
     microphoneRust,
