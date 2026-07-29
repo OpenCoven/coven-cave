@@ -10,6 +10,7 @@ import {
   dateSlug,
   type DailySummaryExtras,
 } from "@/lib/daily-summary-notifications";
+import { parseDateSlug } from "@/lib/daily-report";
 import { completedCardsForDay, unionMergedPrs } from "@/lib/daily-report-facts";
 import { fetchMergedPrsForDay } from "@/lib/server/github-merged";
 import { loadBoard } from "@/lib/cave-board";
@@ -60,6 +61,9 @@ export async function POST(req: Request) {
   let body: {
     sessions?: SessionRow[];
     date?: string;
+    /** Explicit request to build a PAST day's report. The automatic path never
+     *  sets this, so the midnight-rollover guard below still protects it. */
+    backfill?: boolean;
     narrative?: { text?: string; familiarId?: string; familiarName?: string; factsHash?: string };
   } = {};
   try {
@@ -69,10 +73,28 @@ export async function POST(req: Request) {
   }
 
   const now = new Date();
-  // Midnight-rollover race: a client that computed its payload just before the
-  // day flipped must not create or overwrite the new day's report.
-  if (typeof body.date === "string" && body.date !== dateSlug(now)) {
-    return NextResponse.json({ ok: true, created: false, updated: false, dateMismatch: true });
+  const todaySlug = dateSlug(now);
+  const requestedSlug = typeof body.date === "string" ? body.date : null;
+
+  // `target` is the day the report is ABOUT; `now` stays wall-clock for the
+  // write's own timestamps. They differ only on an explicit backfill.
+  let target = now;
+  if (requestedSlug && requestedSlug !== todaySlug) {
+    // Midnight-rollover race: a client that computed its payload just before
+    // the day flipped must not create or overwrite the new day's report. The
+    // automatic refresh never sets `backfill`, so it still lands here.
+    if (body.backfill !== true) {
+      return NextResponse.json({ ok: true, created: false, updated: false, dateMismatch: true });
+    }
+    const parsed = parseDateSlug(requestedSlug);
+    // A day that has not happened has nothing to report.
+    if (!parsed || requestedSlug > todaySlug) {
+      return NextResponse.json(
+        { ok: false, error: "backfill requires a past date" },
+        { status: 400 },
+      );
+    }
+    target = parsed;
   }
 
   const sessions = Array.isArray(body.sessions) ? body.sessions : [];
@@ -86,12 +108,12 @@ export async function POST(req: Request) {
   // lock (GitHub can take seconds; the lock serializes every inbox write).
   // Each source degrades to "absent" — never an error, never a blocked write.
   const [githubPrs, board] = await Promise.all([
-    fetchMergedPrsForDay(now).catch(() => null),
+    fetchMergedPrsForDay(target).catch(() => null),
     loadBoard().catch(() => null),
   ]);
   const extras: DailySummaryExtras = {
-    prsMerged: unionMergedPrs(githubPrs, sessions, now),
-    cardsCompleted: board ? completedCardsForDay(board.cards, now) : undefined,
+    prsMerged: unionMergedPrs(githubPrs, sessions, target),
+    cardsCompleted: board ? completedCardsForDay(board.cards, target) : undefined,
   };
 
   const result = await withInboxLock(async ({ load, save }) => {
@@ -100,13 +122,13 @@ export async function POST(req: Request) {
       items: file.items,
       sessions,
       extras,
-      now,
+      now: target,
     });
     if (!draft) return null;
 
     // Ensure-or-refresh: today's report is rebuilt in place so it tracks the
     // day instead of freezing at the first app-open after midnight.
-    const existing = file.items.find((item) => item.auto === dailySummaryAutoKey(now));
+    const existing = file.items.find((item) => item.auto === dailySummaryAutoKey(target));
     if (existing) {
       const refreshed: InboxItem = {
         ...existing,

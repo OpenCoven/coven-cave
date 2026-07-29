@@ -54,8 +54,6 @@ type Props = {
   narrative: string | null;
   narrativeByline: string | null;
   shareImageUrl: string | null;
-  /** The frozen summary body — the pre-narrative fallback. */
-  summaryBody: string | null;
 };
 
 const TONE_VAR: Record<DayTone, string> = {
@@ -95,7 +93,6 @@ export function DailyReportDay({
   narrative,
   narrativeByline,
   shareImageUrl,
-  summaryBody,
 }: Props): JSX.Element {
   const router = useRouter();
 
@@ -165,21 +162,25 @@ export function DailyReportDay({
 
   // The whole-day view leads with the familiar's narrative; a chapter view
   // rewrites the page with that chapter's own derived prose.
+  // Only the familiar's narrative is prose. The frozen body is the generated
+  // stats list ("1 reminder fired / 43 PRs merged / …") — the band and the
+  // carousel already say all of it, and setting it in serif reads as if the
+  // cave wrote a shopping list.
   const paragraphs = useMemo(
     () =>
-      (narrative ?? summaryBody ?? "")
+      (narrative ?? "")
         .split(/\n{2,}/)
         .map((p) => p.trim())
         .filter(Boolean),
-    [narrative, summaryBody],
+    [narrative],
   );
 
   const activeChapterIndex = active ? active.index : null;
 
   const readingMinutes = useMemo(() => {
-    const words = (narrative ?? summaryBody ?? "").split(/\s+/).filter(Boolean).length;
+    const words = (narrative ?? "").split(/\s+/).filter(Boolean).length;
     return Math.max(1, Math.round(words / 200));
-  }, [narrative, summaryBody]);
+  }, [narrative]);
 
   return (
     <div className="drd">

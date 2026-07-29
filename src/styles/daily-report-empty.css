@@ -1,0 +1,117 @@
+/* The daily report's no-report state. Sits inside .dr-page, so it inherits
+   the surface's ground; colors come from foundations.css. */
+
+.dre {
+  max-width: 62ch;
+  margin: 0 auto;
+  padding: var(--space-10) 0;
+}
+
+.dre :focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 2px;
+}
+
+.dre__kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font: 400 var(--text-2xs) var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent-presence);
+}
+
+.dre__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+}
+
+.dre__title {
+  margin: 0 0 var(--space-3);
+  font: 400 2.125rem var(--font-serif);
+  line-height: 1.1;
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg-base);
+}
+
+.dre__lede {
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-md);
+  line-height: var(--leading-relaxed);
+  color: var(--fg-muted);
+}
+
+.dre__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-card);
+  border: 1px solid color-mix(in oklch, var(--color-danger) 38%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 10%, transparent);
+  font-size: var(--text-sm);
+  color: var(--fg-base);
+}
+
+.dre__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.dre__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  text-decoration: none;
+}
+
+.dre__btn:hover {
+  border-color: var(--accent-presence);
+  color: var(--accent-presence);
+}
+
+/* Primary action: an accent outline, never a flood. */
+.dre__btn--accent {
+  border-color: var(--accent-presence);
+  color: var(--accent-presence);
+  font-weight: 600;
+}
+
+.dre__btn--accent:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
+.dre__btn:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: default;
+}
+
+.dre__btn:disabled svg {
+  animation: dre-spin 0.7s linear infinite;
+}
+
+@keyframes dre-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dre__btn:disabled svg {
+    animation: none;
+  }
+}
