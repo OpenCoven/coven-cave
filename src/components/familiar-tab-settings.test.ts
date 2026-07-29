@@ -18,16 +18,30 @@ assert.match(settings, /FamiliarStudioBrainTab/);
 assert.match(settings, /FamiliarStudioMemoryTab/);
 assert.match(settings, /FamiliarStudioProjectsTab/);
 assert.match(settings, /import \{ AccessGroupsSection \} from "@\/components\/access-groups-section"/);
+assert.match(settings, /ChatSettingsView/);
+assert.doesNotMatch(
+  settings,
+  /from "@\/components\/lazy-surfaces"/,
+  "Familiar settings should not pull the all-surfaces lazy registry into Chat's client graph",
+);
+assert.match(settings, /type FamiliarSettingsTab = "chat" \|/);
+assert.match(settings, /\{ id: "chat", label: "Chat" \}/);
+assert.match(settings, /tab === "chat" \? <ChatSettingsView \/>/);
 assert.match(settings, /<VaultPanel[\s\S]{0,100}familiarId=\{familiar\.id\}/);
 assert.match(settings, /<AccessGroupsSection[\s\S]{0,100}familiars=\{allFamiliars\}/);
 assert.match(settings, /familiar\.id/);
 assert.match(settings, /localDaemonReady/);
 assert.match(settings, /allFamiliars/);
-assert.match(settings, /<Tabs[\s\S]{0,240}bordered=\{false\}/);
+assert.match(settings, /<Tabs<FamiliarSettingsTab>/);
 assert.match(
   styles,
-  /\.familiar-tab__settings-tabs\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;[^}]*z-index:\s*1;[^}]*background:\s*var\(--bg-raised\);/,
-  "the nested settings tabs stay reachable while the familiar section scrolls",
+  /\.familiar-tab__settings\s*\{[^}]*min-height:\s*0;[^}]*flex:\s*1;/,
+  "the nested settings section fills the Familiar panel",
+);
+assert.match(
+  styles,
+  /\.familiar-tab__settings-body\s*\{[^}]*flex:\s*1;[^}]*min-width:\s*0;[^}]*min-height:\s*0;/,
+  "the nested settings body owns the remaining scrollable height",
 );
 
 console.log("familiar-tab-settings.test.ts: ok");

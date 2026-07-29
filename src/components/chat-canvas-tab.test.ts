@@ -19,7 +19,7 @@ const css = readFileSync(new URL("../styles/chat-canvas.css", import.meta.url), 
 // ── Tab wiring in the chat surface ──────────────────────────────────────────
 assert.match(
   surface,
-  /"conversation" \| "projects" \| "coven" \| "familiar" \| "settings" \| "canvas"/,
+  /"conversation" \| "projects" \| "coven" \| "familiar" \| "canvas"/,
   "FamiliarsScope includes the canvas scope",
 );
 assert.match(
