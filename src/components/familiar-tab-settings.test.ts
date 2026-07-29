@@ -29,5 +29,13 @@ assert.match(
   /\.familiar-tab__settings-tabs\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;[^}]*z-index:\s*1;[^}]*background:\s*var\(--bg-raised\);/,
   "the nested settings tabs stay reachable while the familiar section scrolls",
 );
+assert.match(settings, /ChatSettingsView/);
+assert.match(settings, /type FamiliarSettingsTab = "chat" \|/);
+assert.match(settings, /\{ id: "chat", label: "Chat" \}/);
+assert.match(settings, /tab === "chat" \? <ChatSettingsView \/>/);
+assert.match(settings, /<VaultPanel[\s\S]{0,100}familiarId=\{familiar\.id\}/);
+assert.match(settings, /familiar\.id/);
+assert.match(settings, /localDaemonReady/);
+assert.match(settings, /allFamiliars/);
 
 console.log("familiar-tab-settings.test.ts: ok");

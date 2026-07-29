@@ -6,14 +6,16 @@ import { FamiliarStudioBrainTab } from "@/components/familiar-studio-brain-tab";
 import { FamiliarStudioIdentityTab } from "@/components/familiar-studio-identity-tab";
 import { FamiliarStudioMemoryTab } from "@/components/familiar-studio-memory-tab";
 import { FamiliarStudioProjectsTab } from "@/components/familiar-studio-projects-tab";
+import { ChatSettingsView } from "@/components/lazy-surfaces";
 import { VaultPanel } from "@/components/vault-panel";
 import { Tabs } from "@/components/ui/tabs";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { Familiar } from "@/lib/types";
 
-type FamiliarSettingsTab = "identity" | "brain" | "memory" | "projects" | "vault";
+type FamiliarSettingsTab = "chat" | "identity" | "brain" | "memory" | "projects" | "vault";
 
 const SETTINGS_TABS: Array<{ id: FamiliarSettingsTab; label: string }> = [
+  { id: "chat", label: "Chat" },
   { id: "identity", label: "Identity" },
   { id: "brain", label: "Brain" },
   { id: "memory", label: "Memory" },
@@ -74,6 +76,7 @@ export function FamiliarSettingsSection({
         aria-labelledby={`familiar-settings-tab-${tab}`}
         className="familiar-tab__settings-body familiar-studio__body"
       >
+        {tab === "chat" ? <ChatSettingsView /> : null}
         {tab === "identity" ? (
           <FamiliarStudioIdentityTab
             key={`${familiar.id}:identity`}
