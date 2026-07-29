@@ -3103,6 +3103,24 @@ export async function POST(req: Request) {
                 push({ kind: "assistant_chunk", text: filtered });
               }
             } else if (
+              // Coven's native stream-json transport represents completed
+              // Codex replies as an `assistant` envelope, just like the
+              // adapter's direct CLI output.  This is structured assistant
+              // content, not raw Codex transcript text, so it must bypass
+              // AssistantFilter's marker-phase gate.  Previously only the
+              // Claude compatibility branch decoded this shape; a successful
+              // Coven Codex reply was therefore discarded and misreported as
+              // an empty/authentication failure.
+              binding.harness !== "claude" &&
+              ev.type === "assistant" &&
+              Array.isArray(ev.message?.content)
+            ) {
+              for (const block of ev.message.content) {
+                if (block?.type !== "text" || typeof block.text !== "string" || !block.text) continue;
+                assistantText += block.text;
+                push({ kind: "assistant_chunk", text: block.text });
+              }
+            } else if (
               binding.harness === "claude" &&
               claudeCompatibility?.kind === "compatible" &&
               !claudeCompatibility.stale &&

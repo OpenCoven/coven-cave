@@ -28,11 +28,20 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'assistant-envelope'].includes(process.env.COVEN_TEST_MODE) }]));",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === 'codex') {",
   "  if (process.env.COVEN_TEST_MODE === 'silent-exit') process.exit(1);",
+  "  if (process.env.COVEN_TEST_MODE === 'assistant-envelope') {",
+  "    const events = [",
+  "      { type: 'system', subtype: 'init', model: 'gpt-5.6-sol', session_id: 'coven-envelope-session' },",
+  "      { type: 'assistant', message: { content: [{ type: 'text', text: 'Coven envelope response' }] }, session_id: 'coven-envelope-session' },",
+  "      { type: 'result', subtype: 'success', is_error: false, session_id: 'coven-envelope-session' },",
+  "    ];",
+  "    process.stdout.write(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n');",
+  "    process.exit(0);",
+  "  }",
   "  process.stdout.write('unsupported harness `codex`');",
   "  process.exit(1);",
   "}",
@@ -132,6 +141,26 @@ try {
     callsAfterStart.some((args) => args[0] === "run" && args[1] === "codex" && args.includes("--stream-json")),
     "the post-start fixture exercises a real Coven run after the availability probe passed",
   );
+
+  // Coven's current Codex adapter emits its completed reply as a normal
+  // stream-json assistant envelope.  The route must emit that text directly;
+  // it is already structured assistant data and must not enter Codex's raw
+  // transcript filter, which expects an interactive marker line first.
+  process.env.COVEN_TEST_MODE = "assistant-envelope";
+  const envelopeResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", prompt: "decode Coven envelope", projectRoot: familiarWorkspace }),
+  }));
+  const { events: envelopeEvents } = await readSse(envelopeResponse);
+  const envelopeChunks = envelopeEvents.filter((event) => event.kind === "assistant_chunk");
+  assert.deepEqual(
+    envelopeChunks.map((event) => event.text),
+    ["Coven envelope response"],
+    "a successful Coven Codex assistant envelope reaches the chat stream",
+  );
+  assert.equal(envelopeEvents.find((event) => event.kind === "error"), undefined);
+  assert.equal(envelopeEvents.findLast((event) => event.kind === "done")?.isError, false);
 
   // A process can start successfully and still exit before Coven emits any
   // JSONL. That is neither an adapter-discovery failure nor evidence that
