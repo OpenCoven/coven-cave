@@ -43,8 +43,8 @@ assert.match(
 );
 assert.match(
   reposRoute,
-  /const SOURCE_PAGE_SIZE = 100/,
-  "each curated repository source should use a bounded page large enough to fill the feed",
+  /const SOURCE_PAGE_SIZE = 30/,
+  "curated repository sources should remain bounded without letting org rows displace the curated list",
 );
 assert.match(
   reposRoute,
