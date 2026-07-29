@@ -449,6 +449,7 @@ export const SUITES = {
     "src/components/projects-view.test.ts",
     "src/components/project-settings-modal.test.ts",
     "src/lib/projects/access-page.test.ts",
+    "src/lib/projects/access-views.test.ts",
     "src/components/dnd-context-stable-ids.test.ts",
     "src/components/onboarding-guided-steps.test.ts",
     "src/components/familiar-studio-look-tab.test.ts",
