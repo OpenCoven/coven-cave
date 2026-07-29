@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -152,6 +152,28 @@ function authenticatedHeaders(baseUrl, contentType) {
   };
 }
 
+/** Verify that a staged or extracted runtime actually retained a behavioral
+ * guard. This complements the live HTTP assertion below: the archive must not
+ * silently omit the compiled project gate or daemon readiness implementation. */
+async function runtimeContainsText(rootDir, expectedText) {
+  const pending = [rootDir];
+  while (pending.length) {
+    const current = pending.pop();
+    const entries = await readdir(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(fullPath);
+        continue;
+      }
+      if (!entry.isFile() || !/\.(?:js|mjs|json)$/i.test(entry.name)) continue;
+      const contents = await readFile(fullPath, "utf8").catch(() => "");
+      if (contents.includes(expectedText)) return true;
+    }
+  }
+  return false;
+}
+
 async function main() {
   let extractedSidecarRoot = null;
   let sidecarRoot = stagedSidecarRoot;
@@ -249,6 +271,19 @@ async function main() {
   const covenHome = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-smoke-"));
   const avatarDir = path.join(covenHome, "workspaces", "familiars", "smoke", "avatars");
   await mkdir(avatarDir, { recursive: true });
+  await mkdir(path.join(covenHome, "cave"), { recursive: true });
+  // This familiar makes the project boundary test reach authorization rather
+  // than fail earlier as an unknown familiar. No project is registered or
+  // granted: a projectless launch must fail closed without creating a session.
+  await writeFile(
+    path.join(covenHome, "cave", "config.json"),
+    JSON.stringify({
+      version: 1,
+      defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
+      familiars: { smoke: { harness: "codex", model: "openai/gpt-5.6-sol" } },
+    }),
+    "utf8",
+  );
   await sharp({
     create: {
       width: 640,
@@ -295,6 +330,34 @@ async function main() {
       buildInfo.identity,
       `v${buildInfo.version}+${buildInfo.revision}`,
       "packaged sidecar build identity must be internally consistent",
+    );
+
+    const projectlessConversation = await fetch(`${baseUrl}/api/chat/conversation`, {
+      method: "POST",
+      headers: authenticatedHeaders(baseUrl, "application/json"),
+      body: JSON.stringify({ familiarId: "smoke" }),
+    });
+    assert.equal(
+      projectlessConversation.status,
+      400,
+      "packaged sidecar must reject a projectless conversation before session creation",
+    );
+    const projectlessBody = await projectlessConversation.json();
+    assert.equal(projectlessBody.code, "project_root_required");
+    await assert.rejects(
+      access(path.join(covenHome, "cave", "conversations")),
+      { code: "ENOENT" },
+      "projectless packaged launches must not persist a conversation",
+    );
+    assert.equal(
+      await runtimeContainsText(sidecarRoot, "daemon readiness timed out"),
+      true,
+      "packaged runtime must retain daemon readiness timeout handling",
+    );
+    assert.equal(
+      await runtimeContainsText(sidecarRoot, "project_root_required"),
+      true,
+      "packaged runtime must retain the project-root refusal gate",
     );
 
     const enginesResponse = await fetch(`${baseUrl}/api/voice/engines`, {

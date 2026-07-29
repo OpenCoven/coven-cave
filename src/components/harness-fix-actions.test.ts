@@ -52,12 +52,12 @@ import { readFile } from "node:fs/promises";
   );
   assert.match(
     source,
-    /parseHarnessFailure\(detailText\)/,
-    "ChatErrorStrip should parse the full detail text (message + code + tool/step output)",
+    /parseHarnessFailure\(recoveryText\)/,
+    "ChatErrorStrip should parse raw in-memory recovery context without exposing it in copied diagnostics",
   );
   assert.match(
     source,
-    /parseHarnessAuthFailure\(detailText, harnessId\)/,
+    /parseHarnessAuthFailure\(recoveryText, harnessId\)/,
     "ChatErrorStrip should detect runtime sign-in failures with the failing send's runtime (cave-f6ol)",
   );
   assert.match(

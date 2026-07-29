@@ -521,9 +521,10 @@ type ErrorStripStep = { id: string; label: string; detail?: string; status: "run
 type ErrorStripTurn = { tools?: ErrorStripTool[]; progress?: ErrorStripStep[]; lifecycle?: string };
 
 /** Inline error/debug strip between the transcript and the composer. Shows the
- *  latest chat error message + code, and (expandable) the failing turn's errored
- *  tool/step output so the debug detail is visible without opening the side
- *  Debug pane. Auto-expands on every new error (keyed on `errorSeq`). */
+ *  latest chat error message + code plus metadata-only failure diagnostics.
+ *  Tool input/output and step detail can contain project content, paths, or
+ *  credentials, so they are deliberately never rendered or copied here.
+ *  Auto-expands on every new error (keyed on `errorSeq`). */
 function ChatErrorStrip({
   message,
   code,
@@ -589,7 +590,10 @@ function ChatErrorStrip({
     setOpen(true);
   }, [errorSeq]);
 
-  const detailText = useMemo(() => {
+  // Keep the unredacted failure context in-memory solely for established
+  // recovery classification (adapter switch and sign-in remediation). It must
+  // never be rendered, copied, or included in telemetry/diagnostics.
+  const recoveryText = useMemo(() => {
     const lines: string[] = [message];
     if (code) lines.push(`code: ${code}`);
     for (const t of erroredTools) {
@@ -605,15 +609,26 @@ function ChatErrorStrip({
     return lines.join("\n");
   }, [message, code, erroredTools, erroredSteps]);
 
+  // This is the only diagnostic text that leaves the component. Keep it
+  // deliberately structural: no dynamic tool names, input, output, labels,
+  // or error detail can cross this boundary.
+  const detailText = useMemo(() => {
+    const lines: string[] = ["Chat request did not complete."];
+    if (code && /^[a-z0-9_]{1,80}$/i.test(code)) lines.push(`code: ${code}`);
+    if (erroredTools.length) lines.push(`failed tools: ${erroredTools.length}`);
+    if (erroredSteps.length) lines.push(`failed steps: ${erroredSteps.length}`);
+    return lines.join("\n");
+  }, [code, erroredTools.length, erroredSteps.length]);
+
   // Harness/runtime failures get an inline fix row (switch adapter / copy the
   // quoted `coven adapter …` commands) instead of ending at the message.
-  const harnessFailure = useMemo(() => parseHarnessFailure(detailText), [detailText]);
+  const harnessFailure = useMemo(() => parseHarnessFailure(recoveryText), [recoveryText]);
   // Sign-in failures land here at the FIRST message (the wizard greens on
   // install, never auth) — surface the runtime's login command instead of
   // ending at raw stderr (cave-f6ol).
   const authFailure = useMemo(
-    () => parseHarnessAuthFailure(detailText, harnessId),
-    [detailText, harnessId],
+    () => parseHarnessAuthFailure(recoveryText, harnessId),
+    [recoveryText, harnessId],
   );
   // A preflight-confirmed missing runtime (or the legacy Coven ENOENT path)
   // gets a soft Setup recovery instead of a bare error + generic Retry. The
@@ -769,17 +784,16 @@ function ChatErrorStrip({
             {erroredTools.map((t) => (
               <div key={t.id}>
                 <div className={kicker}>
-                  tool: {t.name}
+                  tool failure
                   {t.durationMs != null ? ` · ${fmtDuration(t.durationMs)}` : ""}
                 </div>
-                {t.input ? <pre className={pre}>{t.input}</pre> : null}
-                {t.output ? <pre className={pre}>{t.output}</pre> : null}
+                <pre className={pre}>A tool failed. Its input and output are withheld to protect project data.</pre>
               </div>
             ))}
             {erroredSteps.map((p) => (
               <div key={p.id}>
-                <div className={kicker}>step{p.detail ? `: ${p.label}` : ""}</div>
-                <pre className={pre}>{p.detail || p.label}</pre>
+                <div className={kicker}>step failure</div>
+                <pre className={pre}>A runtime step failed. Its detail is withheld to protect project data.</pre>
               </div>
             ))}
             {erroredTools.length === 0 && erroredSteps.length === 0 ? (
