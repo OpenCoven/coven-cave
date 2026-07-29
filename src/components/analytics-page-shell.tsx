@@ -68,9 +68,11 @@ export function AnalyticsPageShell({ children }: { children: ReactNode }) {
   }, []);
 
   const handleToggleNav = () => {
-    const next = !navOpen;
-    setNavOpen(next);
-    writeNavOpenPref(next);
+    setNavOpen((current) => {
+      const next = !current;
+      writeNavOpenPref(next);
+      return next;
+    });
   };
 
   // On mobile the sidebar is always the 56px icon rail; on desktop it
