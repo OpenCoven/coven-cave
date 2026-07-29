@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { scrubSidecarInternalEnv } from "@/lib/coven-bin";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
+  listLocalSkillDirectoryEntries,
   listSkillDirectoryEntriesWithLocal,
   matchDirectoryEntry,
   type SkillDirectoryEntry,
@@ -22,6 +23,8 @@ const SAFE_SKILL_NAME_RE = /^[A-Za-z0-9._@:/+ -]+$/;
 type UseBody = {
   id?: unknown;
   source?: unknown;
+  scope?: unknown;
+  path?: unknown;
 };
 
 function skillTarget(entry: SkillDirectoryEntry): string | null {
@@ -48,10 +51,26 @@ export async function POST(req: Request) {
   const source = typeof parsed.body.source === "string" ? parsed.body.source.trim() : "";
   if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
 
-  const directory = await listSkillDirectoryEntriesWithLocal();
-  const entry = matchDirectoryEntry(id, directory.entries, source);
+  const localOnly = parsed.body.scope === "local";
+  const localPath = typeof parsed.body.path === "string" ? parsed.body.path : "";
+  const directory = localOnly
+    ? await listLocalSkillDirectoryEntries()
+    : await listSkillDirectoryEntriesWithLocal();
+  const candidates = localOnly && localPath
+    ? directory.entries.filter((candidate) => candidate.local?.path === localPath)
+    : directory.entries;
+  const entry = matchDirectoryEntry(id, candidates, localOnly ? "" : source);
   if (!entry) {
     return NextResponse.json({ ok: false, error: `skill "${id}" not found` }, { status: 404 });
+  }
+
+  if (localOnly) {
+    return NextResponse.json({
+      ok: true,
+      prompt: localSkillDirective(entry),
+      source: "local-directive",
+      entry,
+    });
   }
 
   const target = skillTarget(entry);

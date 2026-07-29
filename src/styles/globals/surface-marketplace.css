@@ -946,3 +946,162 @@
   background: var(--accent-presence);
   transition: width 0.1s linear;
 }
+
+/* ── Curated Skills preview ── */
+.marketplace-coming-soon {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  place-items: center;
+  overflow-y: auto;
+  padding: var(--space-8) var(--space-6);
+}
+
+.marketplace-coming-soon__stage {
+  width: min(960px, 100%);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  background: var(--bg-raised);
+  padding: var(--space-8);
+}
+
+.marketplace-coming-soon__copy {
+  max-width: 640px;
+}
+
+.marketplace-coming-soon__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.marketplace-coming-soon__eyebrow span {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-secondary);
+}
+
+.marketplace-coming-soon__copy h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: var(--text-display);
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.marketplace-coming-soon__copy > p:last-child {
+  max-width: 560px;
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: 1.5;
+}
+
+.marketplace-coming-soon__shelf {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-8) 0 0;
+  border-bottom: 2px solid var(--border-strong);
+  padding: 0 0 var(--space-3);
+  list-style: none;
+}
+
+.marketplace-coming-soon__slot {
+  display: grid;
+  min-height: 180px;
+  align-content: start;
+  gap: var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-style: dashed;
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-base) 72%, transparent);
+  padding: var(--space-4);
+  animation: marketplace-coming-soon-rise var(--duration-slow) var(--ease-decelerate) both;
+}
+
+.marketplace-coming-soon__slot:nth-child(2) {
+  animation-delay: calc(var(--duration-fast) * 0.5);
+}
+
+.marketplace-coming-soon__slot:nth-child(3) {
+  animation-delay: var(--duration-fast);
+}
+
+.marketplace-coming-soon__slot > svg {
+  color: var(--accent-presence);
+}
+
+.marketplace-coming-soon__slot strong {
+  color: var(--text-primary);
+  font-size: var(--text-md);
+}
+
+.marketplace-coming-soon__slot p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.marketplace-coming-soon__number {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+}
+
+.marketplace-coming-soon__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+}
+
+@keyframes marketplace-coming-soon-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@container marketplace (max-width: 640px) {
+  .marketplace-coming-soon {
+    place-items: start stretch;
+    padding: var(--space-5) var(--space-4);
+  }
+
+  .marketplace-coming-soon__stage {
+    padding: var(--space-5);
+  }
+
+  .marketplace-coming-soon__shelf {
+    grid-template-columns: minmax(0, 1fr);
+    border-bottom: 0;
+    border-left: 2px solid var(--border-strong);
+    padding: 0 0 0 var(--space-3);
+  }
+
+  .marketplace-coming-soon__slot {
+    min-height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketplace-coming-soon__slot {
+    animation: none;
+  }
+}

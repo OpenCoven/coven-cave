@@ -85,7 +85,11 @@ defineResource(
 defineResource("github:familiars", (signal) => json(signal, "/api/familiars"), 30_000);
 defineResource("board:cards", (signal) => json(signal, "/api/board"), 30_000);
 defineResource("marketplace:catalog", (signal) => json(signal, "/api/marketplace"), 2 * 60_000);
-defineResource("marketplace:skills", (signal) => json(signal, "/api/skills/directory"), 2 * 60_000);
+defineResource(
+  "marketplace:skills",
+  (signal) => json(signal, "/api/skills/directory?scope=local"),
+  2 * 60_000,
+);
 defineResource("schedules:inbox", (signal) => json(signal, "/api/inbox"), 15_000);
 defineResource("schedules:automations", (signal) => json(signal, "/api/codex-automations"), 15_000);
 defineResource("grimoire:knowledge", (signal) => json(signal, "/api/knowledge"), 45_000);

@@ -1,5 +1,10 @@
 # Marketplace
 
+Coven Cave keeps a checked-in publisher catalog for package metadata and
+compatibility exports. The in-app Marketplace is intentionally narrower: it
+shows items the current user already installed or authored. Unowned publisher
+entries do not appear in the product and are not fetched as discovery inventory.
+
 Coven Cave is the canonical user-facing marketplace surface for first-party OpenCoven plugins and MCP integrations. The seeded package catalog lives in `marketplace/catalog.json`, and `scripts/sync-marketplace.py` expands that catalog into:
 
 - `marketplace/plugins/<name>/plugin.json`
@@ -75,11 +80,9 @@ Familiar → Role → Craft → Skills / MCPs / prompts / workflows / capabiliti
   (`sha256:`) pins; plus `requiredCapabilities`, `recommendedRoles`, and
   `provenance` (upstream, commit, license, modifications, source, licensePath).
   Optional `mcpServers` declare servers the bundle needs.
-- **Collection** is the curated presentation layer — the "Featured
-  collections" strips defined in `COLLECTIONS`
-  (`src/lib/marketplace-catalog.ts`) group catalog entries, including Crafts,
-  for browsing. Collections are ordering/curation only; they carry no install
-  semantics.
+- **Collection** remains publisher grouping metadata in
+  `src/lib/marketplace-catalog.ts`. It is not rendered as unowned discovery
+  inventory in the current Marketplace and carries no install semantics.
 - **Grimoire** is the human-reviewed publication analog: audited research
   Craft content follows the same draft-first, human-approved trail the Coven
   Grimoire uses for public writing. No Craft content reaches the catalog
@@ -195,9 +198,24 @@ The check command fails if generated packages or exports are missing or stale.
 
 Cave records local marketplace installs in `~/.coven/cave/config.json` under `marketplace.installed`. This records which package the user chose so Cave can layer configuration, export application, and harness setup on top. It never stores raw secrets — see Configuration & Validation below.
 
+## Curated Skills preview
+
+The Skills section is a Coming Soon space for a deliberately small OpenCoven
+catalog. A skill reaches that shelf only after its source is reviewed, its
+behavior is verified in Cave, and it is explicitly published for familiars.
+Until Val curates the first collection, the section contains no synthetic
+listings or borrowed registry metrics.
+
+Locally installed and authored skills remain operational under **Yours** and
+new skills can still be authored under **Build**. Marketplace uses the
+local-only `scope=local` directory path; dormant remote directory APIs are not
+part of its mount or search flow.
+
 ## Configuration & Validation
 
-The Marketplace surface lives as a **Marketplace** tab on the Roles page. Beyond browse + track-install, it can configure and validate a package:
+The Marketplace surface lives as a **Marketplace** tab on the Roles page.
+**Yours** manages packages already present in the local inventory, including
+configuration, validation, and removal:
 
 - **Credential collection.** Each required `userConfig` field declares the env var its MCP server resolves (`env` key in `catalog.json`). The Configure modal collects values, split by `sensitive`:
   - **Sensitive** secrets (e.g. `github_token` → `GITHUB_PAT`) are stored as **1Password `op://` references** via the vault (`/api/vault`). Cave never stores the raw secret value.

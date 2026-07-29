@@ -387,8 +387,8 @@ assert.match(
 // title (hover tooltip / touch long-press hint / AT description).
 assert.match(
   navigation,
-  /id: "marketplace"[\s\S]*?description: "Browse the store/,
-  "Marketplace is described as the store + setup hub",
+  /id: "marketplace"[\s\S]*?description: "Manage what you own and preview the curated Skills shelf"/,
+  "Marketplace is described as owned inventory plus the curated Skills preview",
 );
 assert.match(
   source,

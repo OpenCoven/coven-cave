@@ -461,7 +461,7 @@ async function main() {
     });
     assert.equal(marketplaceResponse.status, 200, "packaged marketplace API must load its bundled catalog");
     const marketplace = await marketplaceResponse.json();
-    assert.ok(marketplace.ok && marketplace.plugins.length > 0, "packaged marketplace catalog must not be empty");
+    assert.ok(marketplace.ok && Array.isArray(marketplace.plugins), "packaged marketplace owned inventory must be an array");
 
     const promptPackResponse = await fetch(`${baseUrl}/api/marketplace/pack-prompts?id=prompt-pack-essentials`, {
       headers: { "x-coven-cave-token": token },
