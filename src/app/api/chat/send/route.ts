@@ -590,7 +590,7 @@ function openClawChatResponse(args: {
       const pushProgress = (
         id: string,
         label: string,
-        status: "running" | "done" | "error",
+        status: "running" | "done" | "notice" | "error",
         detail?: string,
         durationMs?: number,
       ) =>
@@ -2085,7 +2085,7 @@ export async function POST(req: Request) {
       const pushProgress = (
         id: string,
         label: string,
-        status: "running" | "done" | "error",
+        status: "running" | "done" | "notice" | "error",
         detail?: string,
         durationMs?: number,
       ) => {
@@ -2253,7 +2253,7 @@ export async function POST(req: Request) {
       if (claudeDiagnostic) {
         // Emit the fallback state before the child produces output: an absent
         // or immediately-failing CLI must not hide the only useful diagnostic.
-        pushProgress("claude-runtime-compatibility", claudeDiagnostic, "error");
+        pushProgress("claude-runtime-compatibility", claudeDiagnostic, "notice");
       }
       // A fallback reason is already a user-visible compatibility diagnostic.
       // Later malformed frames still get a redacted log fingerprint, but must
@@ -2276,7 +2276,7 @@ export async function POST(req: Request) {
         pushProgress(
           "claude-runtime-compatibility",
           "A Claude Code stream frame could not be decoded; chat text will continue without unverified tool bubbles.",
-          "error",
+          "notice",
         );
       };
       const reportUnsupportedClaudeToolFrame = (frame: unknown) => {
@@ -2294,7 +2294,7 @@ export async function POST(req: Request) {
         pushProgress(
           "claude-runtime-compatibility",
           "A Claude Code tool frame is not supported by the selected compatibility profile; chat text will continue without unverified tool bubbles.",
-          "error",
+          "notice",
         );
       };
       const settleUnfinishedTools = () => {
@@ -2360,7 +2360,7 @@ export async function POST(req: Request) {
         pushProgress(
           "grok-compatibility",
           "Grok Build sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
-          "error",
+          "notice",
           detail,
         );
       };
@@ -2375,7 +2375,7 @@ export async function POST(req: Request) {
         quarantineOpenCodeSchema(openCodeCompatibility?.schema);
         if (openCodeProtocolQuarantineNoticeSent) return;
         openCodeProtocolQuarantineNoticeSent = true;
-        pushProgress("opencode-compatibility", label, "error", detail);
+        pushProgress("opencode-compatibility", label, "notice", detail);
       };
 
       // Model parity: the harness echoes its resolved model on the init/system
@@ -2402,7 +2402,7 @@ export async function POST(req: Request) {
           id: `copilot-protocol-${code}`,
           label: "Copilot tool activity needs an update",
           detail,
-          status: "error",
+          status: "notice",
         });
       };
 
@@ -2692,7 +2692,7 @@ export async function POST(req: Request) {
               : grokCompatibility.diagnostic === "no-compatible-schema"
                 ? "This Grok Build client has no verified tool-event schema; continuing without tool activity"
                 : "Grok Build's structured event protocol is unavailable; continuing without tool activity";
-          pushProgress("grok-compatibility", label, "error", grokCompatibility.diagnostic);
+          pushProgress("grok-compatibility", label, "notice", grokCompatibility.diagnostic);
         }
         if (grokCompatibility?.mode === "plain") {
           // Plain output is safe only while it is prose. A changed client can
@@ -2716,7 +2716,7 @@ export async function POST(req: Request) {
               pushProgress(
                 "grok-compatibility",
                 "Grok Build emitted unverified structured output; continuing without tool activity",
-                "error",
+                "notice",
                 "unverified-structured-output",
               );
             }
@@ -2824,7 +2824,7 @@ export async function POST(req: Request) {
                 pushProgress(
                   "grok-compatibility",
                   "Grok Build sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
-                  "error",
+                  "notice",
                   `unknown-event:${redactedGrokEventFingerprint(raw)}`,
                 );
               }
@@ -2957,7 +2957,7 @@ export async function POST(req: Request) {
               pushProgress(
                 "opencode-compatibility",
                 "OpenCode sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
-                "error",
+                "notice",
                 `${ev.diagnostic ?? "unknown-event"}:${redactedOpenCodeEventFingerprint(rawEvent)}`,
               );
             }
@@ -2999,9 +2999,7 @@ export async function POST(req: Request) {
           pushProgress(
             "opencode-compatibility",
             diagnostic,
-            openCodeCompatibility.diagnostic === "capability-probe-unavailable" || openCodeCompatibility.diagnostic === "capability-probe-fallback"
-              ? "done"
-              : "error",
+            "notice",
             openCodeCompatibility.diagnostic,
           );
         }
@@ -4002,9 +4000,7 @@ export async function POST(req: Request) {
         pushProgress(
           "opencode-compatibility",
           diagnostic,
-          openCodeCompatibility.diagnostic === "capability-probe-unavailable" || openCodeCompatibility.diagnostic === "capability-probe-fallback"
-            ? "done"
-            : "error",
+          "notice",
           openCodeCompatibility.diagnostic,
         );
       }
@@ -4020,7 +4016,7 @@ export async function POST(req: Request) {
             : openCodeSessionUnavailable
               ? "This OpenCode client cannot resume sessions; starting a fresh chat"
               : "This conversation has no resumable OpenCode session; starting a fresh chat",
-          "error",
+          "notice",
           "session-unavailable",
         );
       }
