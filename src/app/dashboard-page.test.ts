@@ -39,7 +39,11 @@ assert.match(
 );
 assert.match(bento, /\/api\/projects/, "the projects stat pulls the project registry");
 assert.match(bento, /\/api\/github\/activity/, "github rail pulls activity");
-assert.match(bento, /\/api\/github\/assigned/, "github rail merges assigned items");
+assert.doesNotMatch(
+  bento,
+  /\/api\/github\/assigned/,
+  "github rail does not merge an independently capped feed into the completeness-aware activity response",
+);
 assert.match(bento, /usePausablePoll\(load, 30_000\)/, "polls on the shared pausable interval");
 assert.match(bento, /aliveRef/, "poll results guard against unmounted setState");
 assert.match(
