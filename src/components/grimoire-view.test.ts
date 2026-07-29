@@ -80,12 +80,32 @@ assert.match(
 );
 assert.match(
   view,
-  /navigatorCollapsed \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[300px\]"/,
+  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[300px\]"/,
   "collapsed navigator becomes a compact rail instead of disappearing",
 );
 assert.match(view, /aria-label="Open Stitches navigator"/, "compact rail keeps Stitches reachable");
 assert.match(view, /aria-label="Open Memory files navigator"/, "compact rail keeps memory files reachable");
 assert.match(view, /aria-label="Open Journal navigator"/, "compact rail keeps Journal reachable");
+assert.match(
+  view,
+  /const navigatorCollapsedForDisplay = navigatorCollapsed && !q;/,
+  "an active document search forces the whole navigator open without changing its persisted preference",
+);
+assert.match(
+  view,
+  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[300px\]"/,
+  "the rail width uses the search-aware display state",
+);
+assert.match(
+  view,
+  /\{navigatorCollapsedForDisplay \? \(/,
+  "the compact navigator branch is suppressed while searching",
+);
+assert.match(
+  view,
+  /\{!q \? \(\s*<div[\s\S]{0,240}onClick=\{toggleNavigator\}/,
+  "the collapse toggle is hidden while search forces the navigator open",
+);
 
 // ── Detail: the right transport per source ───────────────────────────────────
 
