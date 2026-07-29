@@ -12,8 +12,8 @@ import { readFile } from "node:fs/promises";
 // (cave-m6ys) made it default-on. Phase 3 (cave-cc5r) moved the surface into
 // the Coding familiar's Role Surface room: "code" is now an alias landing on
 // `surface:code` (role-gated, explicit familiar Type picker in the Studio),
-// while the standalone GitHub surface returned as a canonical mode every
-// familiar keeps. These pins document that sanctioned shape.
+// and GitHub is available only inside that role-gated room. These pins
+// document that sanctioned shape.
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
@@ -25,6 +25,9 @@ const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url),
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const registerRooms = await readFile(new URL("./role-surfaces/register.tsx", import.meta.url), "utf8");
 const codeRoom = await readFile(new URL("./role-surfaces/code-room.tsx", import.meta.url), "utf8");
+const pendingGithub = await readFile(new URL("../lib/pending-code-github.ts", import.meta.url), "utf8");
+const contextDock = await readFile(new URL("./code-context-dock.tsx", import.meta.url), "utf8");
+const terminalWorkspace = await readFile(new URL("./code-terminal-workspace.tsx", import.meta.url), "utf8");
 
 // ── Mode vocabulary ──────────────────────────────────────────────────────────
 
@@ -55,6 +58,11 @@ assert.match(
   /pendingOpen=\{pendingOpen\}\s+onPendingOpenHandled=\{clearPendingCodeOpen\}/,
   "the room consumes pending file/diff opens from the module store and clears them",
 );
+assert.match(
+  codeRoom,
+  /pendingGithubOpen=\{pendingGithubOpen\}\s+onPendingGithubOpenHandled=\{clearPendingCodeGithubOpen\}/,
+  "the room consumes pending GitHub opens from the module store and clears them",
+);
 
 // ── Workspace wiring ─────────────────────────────────────────────────────────
 
@@ -68,11 +76,8 @@ assert.match(
   /if \(next === "code"\) \{[\s\S]{0,700}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\)\)/,
   "setMode funnels every code entry point (deep links, palette, navigate-mode, persisted restore) into the room",
 );
-assert.match(
-  workspace,
-  /mode === "github" \?[\s\S]{0,400}?<GitHubView/,
-  "Workspace renders the standalone GitHub surface on the canonical github mode",
-);
+assert.doesNotMatch(workspace, /mode === "github" \?[\s\S]{0,400}?<GitHubView/, "Workspace has no standalone GitHub render branch");
+assert.doesNotMatch(workspace, /\bGitHubView,\s*\n/, "Workspace does not import the standalone GitHub surface");
 assert.match(
   lazySurfaces,
   /export const GitHubView = dynamic\(\s*timed\("github", loadGitHubView\)/,
@@ -103,6 +108,27 @@ assert.match(
   /code: "surface:code"/,
   "MODE_ALIASES routes the code alias onto the Coding familiar's room (cave-cc5r)",
 );
+assert.match(
+  modeType,
+  /github: "surface:code"/,
+  "MODE_ALIASES routes the legacy github mode onto the Coding familiar's room",
+);
+assert.doesNotMatch(
+  modeType,
+  /CANONICAL_WORKSPACE_MODES[\s\S]{0,300}"github"/,
+  "GitHub is not a canonical standalone workspace surface",
+);
+assert.match(
+  workspace,
+  /if \(next === "github"\) \{[\s\S]{0,500}?enqueuePendingCodeGithubOpen\([\s\S]{0,300}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\)\)/,
+  "setMode funnels legacy GitHub navigation into the Coding Room",
+);
+assert.match(
+  workspace,
+  /const openGitHubTarget[\s\S]{0,500}?enqueuePendingCodeGithubOpen\(\{[\s\S]{0,250}?target,[\s\S]{0,250}?setMode\("code"\)/,
+  "GitHub item URLs enqueue their detail target before opening the Coding Room",
+);
+assert.match(pendingGithub, /export function enqueuePendingCodeGithubOpen/, "the GitHub Room open store is available");
 
 // File/diff links from chat transcripts, inbox cards, the Projects hub —
 // everywhere — land on the Code room (cave-ohcj, cave-cc5r): the workspace
@@ -123,32 +149,23 @@ assert.match(
 
 // ── Sidebar row ──────────────────────────────────────────────────────────────
 
-// One quiet slot, one vocabulary (cave-cc5r): the standalone GitHub row is
-// back for every familiar and keeps the assigned-work badge; the Code room's
-// row arrives via the registry-driven roleSurfaces cluster, and the GitHub
-// row hides while the room is visible (the room carries its own GitHub tab).
-assert.match(
-  sidebar,
-  /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"[\s\S]{0,300}?badge: \(p\) => badgeText\(p\.githubAssignedCount\)/,
-  "the GitHub quiet row owns the slot and carries the assigned-work badge",
-);
+// GitHub is not a standalone destination. The Code room's row arrives via the
+// registry-driven roleSurfaces cluster and owns all GitHub affordances.
+assert.doesNotMatch(sidebar, /\{ id: "github", label: "GitHub"/, "the sidebar has no standalone GitHub row");
 assert.doesNotMatch(
   sidebar,
   /\{ id: "code", label: "Code"/,
   "no static Code row survives in FOLDER_MODES — the room row is registry-driven",
 );
+assert.doesNotMatch(sidebar, /hideGithubRow/, "the retired conditional GitHub-row prop is gone");
+assert.doesNotMatch(sidebar, /githubAssignedCount/, "the retired standalone GitHub badge prop is gone");
 assert.match(
-  workspace,
-  /hideGithubRow=\{roleSurfaceSession\.visibleSurfaces\.some\(\(s\) => s\.id === CODE_SURFACE_ID\)\}/,
-  "the GitHub row hides while the Code room is visible for the active familiar",
-);
-assert.match(
-  codeView,
-  /import\("@\/components\/github-view"\)\.then\(\(m\) => m\.GitHubView\)/,
-  "the Code surface mounts GitHubView whole under its GitHub tab",
+  contextDock,
+  /import\("@\/components\/github-view"\)\.then\(\(module\) => module\.GitHubView\)/,
+  "the Coding Room lazy-loads GitHubView inside its context dock",
 );
 
-// ── Workbench (Diff | Files | Terminal) ──────────────────────────────────────
+// ── Workbench (terminal center | context dock) ────────────────────────────────
 
 const workbench = await readFile(new URL("./code-workbench.tsx", import.meta.url), "utf8");
 const workbenchFiles = await readFile(new URL("./code-workbench-files.tsx", import.meta.url), "utf8");
@@ -162,24 +179,24 @@ assert.match(
   "the workbench derives one work root for all tabs",
 );
 assert.match(
-  workbench,
+  contextDock,
   /<SessionChangesInner\s+key=\{workRoot\}\s+projectRoot=\{workRoot\}\s+running=\{running\}/,
-  "Diff tab mounts the proven changes panel keyed+scoped to the work root",
+  "the Changes dock tab mounts the proven changes panel keyed+scoped to the work root",
 );
 assert.match(
-  workbench,
+  contextDock,
   /import\("@\/components\/code-workbench-files"\)/,
-  "Files tab is dynamic() so CodeMirror stays out of the surface's initial chunk",
+  "Files stays dynamic so CodeMirror stays out of the Room's initial chunk",
 );
 assert.match(
   workbench,
-  /import\("@\/components\/rail-terminal-panel"\)/,
-  "Terminal tab is dynamic() so xterm stays out of the surface's initial chunk",
+  /<CodeTerminalWorkspace[\s\S]*?sessionId=\{row\.id\}[\s\S]*?projectRoot=\{workRoot\}[\s\S]*?allowSplits=\{!isMobile\}/,
+  "the selected session mounts a persistent terminal center",
 );
 assert.match(
-  workbench,
-  /\{terminalOpened \? \([\s\S]*?active=\{tab === "terminal"\}/,
-  "the terminal stays mounted once opened (keepalive) with active tracking the tab",
+  terminalWorkspace,
+  /<BottomTerminal[\s\S]*?threadId=\{terminalThreadId\(sessionId, node\.id\)\}[\s\S]*?active=\{focusedPaneId === node\.id\}[\s\S]*?visible/,
+  "every visible terminal stays mounted while only the focused pane owns input",
 );
 assert.match(
   workbenchFiles,
@@ -192,14 +209,14 @@ assert.match(
 const prPanel = await readFile(new URL("./code-session-pr-panel.tsx", import.meta.url), "utf8");
 
 assert.match(
-  workbench,
+  contextDock,
   /import\("@\/components\/code-session-pr-panel"\)/,
-  "PR tab is dynamic() — its fetch stack stays out of the surface's initial chunk",
+  "the Pull request dock tab stays dynamic",
 );
 assert.match(
-  workbench,
-  /\{tab === "pr" \? <LazyPrTab key=\{row\.id\} row=\{row\} \/> : null\}/,
-  "PR tab mounts keyed by session id so switching sessions never shows stale PR state",
+  contextDock,
+  /\{tab === "pr" \? <LazyPullRequest key=\{row\.id\} row=\{row\} \/> : null\}/,
+  "Pull request mounts keyed by session id so switching sessions never shows stale state",
 );
 assert.match(
   prPanel,
@@ -296,8 +313,8 @@ assert.match(
 );
 assert.match(
   workbench,
-  /\{tab !== "terminal" \? <CodeComposer row=\{row\} onJumpToSession=\{onJumpToSession\} \/> : null\}/,
-  "the composer rides under every tab except Terminal (which owns its input)",
+  /<CodeComposer row=\{row\} onJumpToSession=\{onJumpToSession\} \/>/,
+  "the follow-up composer remains available below the terminal/context split",
 );
 
 // ── Inspector: branches / worktrees / session env (right column) ─────────────
@@ -333,17 +350,12 @@ assert.match(
   "the checked-out branch is not a switch target and switches don't overlap",
 );
 assert.match(
-  workbench,
-  /aria-pressed=\{inspectorOpen\}/,
-  "the header exposes an accessible inspector toggle",
+  contextDock,
+  /\{ id: "inspector", label: "Inspector"/,
+  "Inspector is a first-class context dock tab",
 );
 assert.match(
-  workbench,
-  /\{inspectorOpen \? \(\s*<aside/,
-  "the inspector column mounts only when toggled open",
-);
-assert.match(
-  workbench,
+  contextDock,
   /<LazyInspector key=\{workRoot\} row=\{row\} onChanged=\{onRefresh\} \/>/,
   "inspector mutations re-poll the enriched session list via onRefresh",
 );
@@ -395,18 +407,18 @@ assert.match(
 );
 assert.match(
   codeView,
-  /\$\{selected \? "hidden md:block" : "block"\}/,
-  "picking a session hides the rail below md only",
+  /const showWorkbench = Boolean\(selected \|\| githubOpen\)/,
+  "a selected session or in-Room GitHub context can drive the compact workbench",
 );
 assert.match(
   codeView,
-  /\$\{selected \? "flex" : "hidden md:flex"\}/,
-  "the workbench column is hidden below md until a session is picked",
+  /\$\{showWorkbench \? "hidden md:block" : "block"\}[\s\S]*?\$\{showWorkbench \? "flex" : "hidden md:flex"\}/,
+  "the rail and workbench swap below md when session or GitHub context is open",
 );
 assert.match(
   codeView,
-  /aria-label="Back to sessions"[\s\S]{0,80}onClick=\{\(\) => setSelectedId\(null\)\}/,
-  "the mobile Back affordance clears the selection explicitly",
+  /aria-label="Back to sessions"[\s\S]{0,180}?setSelectedId\(null\);[\s\S]{0,80}?setGithubOpen\(null\);/,
+  "the mobile Back affordance clears session and GitHub context explicitly",
 );
 
 // ── Chat stays untouched this phase ──────────────────────────────────────────

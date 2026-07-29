@@ -16,8 +16,8 @@
  *    pending-code-open module store — Workspace enqueues + navigates here,
  *    the room consumes.
  *
- * GitHub-item URL opens (`githubTarget`) intentionally stay OUT of the room:
- * they land on the standalone GitHub surface, which every familiar keeps.
+ * GitHub navigation and item URL opens use the same module-store bridge, so
+ * GitHub remains available only inside this role-gated room.
  */
 
 import { useSyncExternalStore } from "react";
@@ -27,12 +27,22 @@ import {
   getPendingCodeOpen,
   subscribePendingCodeOpen,
 } from "@/lib/pending-code-open";
+import {
+  clearPendingCodeGithubOpen,
+  getPendingCodeGithubOpen,
+  subscribePendingCodeGithubOpen,
+} from "@/lib/pending-code-github";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 
 export function CodeRoom({ context }: { context: RoleSurfaceContext }) {
   const pendingOpen = useSyncExternalStore(
     subscribePendingCodeOpen,
     getPendingCodeOpen,
+    () => null,
+  );
+  const pendingGithubOpen = useSyncExternalStore(
+    subscribePendingCodeGithubOpen,
+    getPendingCodeGithubOpen,
     () => null,
   );
   return (
@@ -42,6 +52,8 @@ export function CodeRoom({ context }: { context: RoleSurfaceContext }) {
       onFocusCard={context.focusCard}
       pendingOpen={pendingOpen}
       onPendingOpenHandled={clearPendingCodeOpen}
+      pendingGithubOpen={pendingGithubOpen}
+      onPendingGithubOpenHandled={clearPendingCodeGithubOpen}
       onTasksRefresh={context.refreshTasks}
     />
   );

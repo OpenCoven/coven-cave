@@ -1,7 +1,8 @@
 // @ts-nocheck
-// cave-qcsv: GitHub-event inbox notifications open the NATIVE GitHub surface.
+// cave-qcsv: GitHub-event inbox notifications open the Coding Room's native
+// GitHub context.
 // github-watcher writes `link: { kind: "url", ref: <github html_url> }` on its
-// items; every open path must route PR/issue URLs to mode "github" with a
+// items; every open path must route PR/issue URLs to the Coding Room with a
 // deep-link target — never a browser tab. Non-item GitHub URLs (actions runs,
 // repo roots) keep the in-app browser fallback.
 import assert from "node:assert/strict";
@@ -16,8 +17,8 @@ const githubView = [
 // ── Workspace: one shared interceptor, used by every open path ───────────────
 assert.match(
   workspace,
-  /const openGitHubTarget = useCallback\(\(url: string \| null \| undefined\): boolean => \{\s*const target = parseGitHubItemUrl\(url\);\s*if \(!target\) return false;\s*setGithubTarget\(target\);\s*setMode\("github"\);\s*return true;/,
-  "openGitHubTarget parses the URL and routes to the native GitHub surface",
+  /const openGitHubTarget = useCallback\(\(url: string \| null \| undefined\): boolean => \{\s*const target = parseGitHubItemUrl\(url\);\s*if \(!target\) return false;\s*enqueuePendingCodeGithubOpen\(\{[\s\S]{0,250}?target,[\s\S]{0,250}?setMode\("code"\);\s*return true;/,
+  "openGitHubTarget parses the URL and routes it into the Coding Room",
 );
 assert.match(
   workspace,
@@ -36,13 +37,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<GitHubView[\s\S]{0,300}initialTarget=\{githubTarget\}/,
-  "the standalone GitHub surface receives the deep-link target (cave-cc5r)",
+  /enqueuePendingCodeGithubOpen\(\{[\s\S]{0,250}?target,/,
+  "the Coding Room GitHub context receives the deep-link target",
 );
-assert.match(
+assert.doesNotMatch(
   workspace,
-  /if \(mode !== "github" && githubTarget\) setGithubTarget\(null\);/,
-  "leaving the surface clears the target so later visits don't re-open a stale item",
+  /\bgithubTarget\b/,
+  "Workspace no longer owns standalone GitHub selection state",
 );
 
 // ── GitHubView: deep link selects/synthesizes the item ───────────────────────

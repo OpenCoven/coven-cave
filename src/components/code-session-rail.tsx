@@ -52,9 +52,16 @@ export type CodeSessionRailProps = {
   selectedId: string | null;
   onSelect: (sessionId: string) => void;
   onNewSession?: () => void;
+  onOpenGithub?: () => void;
 };
 
-export function CodeSessionRail({ sessions, selectedId, onSelect, onNewSession }: CodeSessionRailProps) {
+export function CodeSessionRail({
+  sessions,
+  selectedId,
+  onSelect,
+  onNewSession,
+  onOpenGithub,
+}: CodeSessionRailProps) {
   const groups = groupCodeRailSessions(sessions);
   const newButton = onNewSession ? (
     <div className="px-2 pb-1">
@@ -76,6 +83,18 @@ export function CodeSessionRail({ sessions, selectedId, onSelect, onNewSession }
           No coding sessions yet. Start one here — or from Chat — and it will
           appear with its branch, diff, and PR context.
         </div>
+        {onOpenGithub ? (
+          <div className="px-2">
+            <button
+              type="button"
+              className="focus-ring flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              onClick={onOpenGithub}
+            >
+              <Icon name="ph:github-logo" width={12} height={12} />
+              Open GitHub
+            </button>
+          </div>
+        ) : null}
       </div>
     );
   }

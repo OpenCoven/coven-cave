@@ -17,7 +17,6 @@ export type CanonicalWorkspaceMode =
   | "board"
   | "inbox"
   | "browser"
-  | "github"
   | "marketplace"
   | "submissions"
   | "grimoire"
@@ -31,6 +30,7 @@ export type AliasWorkspaceMode =
   | "familiar-work-queue"
   | "roles"
   | "capabilities"
+  | "github"
   | "code";
 
 export type WorkspaceMode = CanonicalWorkspaceMode | AliasWorkspaceMode;
@@ -46,10 +46,6 @@ export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
   "board",
   "inbox",
   "browser",
-  // GitHub — the standalone assigned-work surface. Restored to canonical when
-  // Code moved into the Coding familiar's Role Surface room (cave-cc5r): every
-  // familiar keeps GitHub; the Code workbench is the coder's room.
-  "github",
   "marketplace",
   "submissions",
   "grimoire",
@@ -65,9 +61,8 @@ export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
  * - Rewritten in Workspace.setMode, so `mode` state never holds them:
  *   `groupchat` opens Chat's Group tab, `journal` opens Memories' Journal
  *   tab, `flow` (retired surface) lands on Rituals, and `code` opens the
- *   Coding familiar's Code Workshop room (cave-cc5r) — old `?mode=code` deep
- *   links and persisted last-surface strings keep landing on the workbench,
- *   now behind the room's role gate.
+ *   Coding familiar's Code Workshop room (cave-cc5r) — old `?mode=code` and
+ *   `?mode=github` deep links keep landing on the role-gated workbench.
  * - Kept in `mode` state as tab/section selectors: the render branch mounts
  *   the canonical surface on the matching tab, keyed by the alias so deep
  *   links remount onto it — `calendar` (Rituals' Calendar tab),
@@ -85,6 +80,7 @@ export const MODE_ALIASES = {
   "familiar-work-queue": "board",
   roles: "marketplace",
   capabilities: "marketplace",
+  github: "surface:code",
   code: "surface:code",
 } as const satisfies Record<AliasWorkspaceMode, CanonicalWorkspaceMode | RoleSurfaceModeString>;
 

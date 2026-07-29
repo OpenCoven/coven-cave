@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
-import { parseGitHubItemUrl, type GitHubItemTarget } from "@/lib/github-item-url";
+import { parseGitHubItemUrl } from "@/lib/github-item-url";
 import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
@@ -80,7 +80,6 @@ import {
   FamiliarsView,
   FamiliarWorkQueueView,
   FamiliarGlyphPicker,
-  GitHubView,
   GrimoireView,
   InboxEscalationsView,
   MarketplaceView,
@@ -153,6 +152,7 @@ import {
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
 import { enqueuePendingCodeOpen, type PendingCodeOpen } from "@/lib/pending-code-open";
+import { enqueuePendingCodeGithubOpen } from "@/lib/pending-code-github";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import { startVoiceConversation, voiceChatStartErrorMessage } from "@/lib/voice/start-voice-chat";
 import {
@@ -421,6 +421,11 @@ export function Workspace() {
       commitMode(roleSurfaceMode(CODE_SURFACE_ID));
       return;
     }
+    if (next === "github") {
+      enqueuePendingCodeGithubOpen({ tab: "prs", nonce: Date.now() });
+      commitMode(roleSurfaceMode(CODE_SURFACE_ID));
+      return;
+    }
     commitMode(next);
   }, [commitMode]);
   const navigateWorkspaceHistory = useCallback((direction: -1 | 1) => {
@@ -611,7 +616,6 @@ export function Workspace() {
   const manualOnboardingOpenedRef = useRef(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
-  const [githubAssignedCount, setGithubAssignedCount] = useState(0);
   // Open (not-done) board cards, kept with their familiar so the Tasks badge can
   // show a per-familiar count when a familiar is scoped, and the grand total
   // only when "All familiars" is selected.
@@ -633,14 +637,6 @@ export function Workspace() {
     whenText: string;
   }>({ fireAt: "", title: "", whenText: "" });
   const [editingReminder, setEditingReminder] = useState<InboxItem | null>(null);
-  // Deep-link target for the native GitHub surface (a GitHub-event inbox
-  // notification's PR/issue). The standalone GitHub surface hosts it for every
-  // familiar (cave-cc5r); the target clears on leaving so a later manual visit
-  // doesn't re-open a stale item.
-  const [githubTarget, setGithubTarget] = useState<GitHubItemTarget | null>(null);
-  useEffect(() => {
-    if (mode !== "github" && githubTarget) setGithubTarget(null);
-  }, [mode, githubTarget]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
@@ -1109,7 +1105,6 @@ export function Workspace() {
 
       const tasks = normalizeGitHubTasks(json);
       githubTasksRef.current = tasks;
-      setGithubAssignedCount(Array.isArray(json.tasks) ? json.tasks.length : 0);
       setSessions((currentSessions) => {
         const baseSessions = baseSessionsRef.current.length > 0
           ? baseSessionsRef.current
@@ -1929,14 +1924,18 @@ export function Workspace() {
   }, [openFamiliarSession]);
 
   // GitHub PR/issue URLs (github-watcher notifications, reminder links) open
-  // the NATIVE GitHub surface with the item's detail — never a browser tab.
+  // the Coding familiar's GitHub context — never a browser tab.
   // Returns false for anything that isn't a github.com item URL so callers
   // fall back to their existing behavior (cave-qcsv).
   const openGitHubTarget = useCallback((url: string | null | undefined): boolean => {
     const target = parseGitHubItemUrl(url);
     if (!target) return false;
-    setGithubTarget(target);
-    setMode("github");
+    enqueuePendingCodeGithubOpen({
+      tab: target.kind === "issue" ? "issues" : "prs",
+      target,
+      nonce: Date.now(),
+    });
+    setMode("code");
     return true;
   }, []);
 
@@ -2789,10 +2788,6 @@ export function Workspace() {
       onNotificationPrefsChanged={refreshPrefs}
       boardOpenCount={boardTaskCount}
       scheduleNeedsCount={scheduleNeedsCount}
-      githubAssignedCount={githubAssignedCount}
-      // The Code room carries its own GitHub tab — hide the standalone row
-      // while the room is visible for the active familiar (cave-cc5r).
-      hideGithubRow={roleSurfaceSession.visibleSurfaces.some((s) => s.id === CODE_SURFACE_ID)}
     />
   );
 
@@ -3012,16 +3007,6 @@ export function Workspace() {
         active={browserVisible}
         navigationRequest={browserNavigationQueue[0] ?? null}
         onNavigationConsumed={acknowledgeBrowserNavigation}
-      />
-    ) : mode === "github" ? (
-      // Standalone GitHub surface — every familiar keeps it (cave-cc5r). The
-      // Code workbench (which carries its own GitHub tab) lives in the Coding
-      // familiar's room; GitHub-item deep links land here for everyone.
-      <GitHubView
-        onJumpToSession={openFamiliarSession}
-        onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
-        initialTarget={githubTarget}
-        onTasksRefresh={() => void loadGitHubTasks(true)}
       />
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
       // Roles and Marketplace merged into one hub. The "roles"/"capabilities"

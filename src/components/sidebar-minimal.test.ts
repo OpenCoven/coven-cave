@@ -2,7 +2,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
+const styles = [
+  "../styles/sidebar-minimal.css",
+  "../styles/sidebar-minimal/shell-chrome.css",
+  "../styles/sidebar-minimal/navigation-recents.css",
+  "../styles/sidebar-minimal/familiars.css",
+  "../styles/sidebar-minimal/activity-rail.css",
+].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 // The footer (Dashboard + Settings + version) lives in a shared component so it
@@ -79,8 +85,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /props\.hideGithubRow \? VISIBLE_MODES\.filter\(\(fm\) => fm\.id !== "github"\) : VISIBLE_MODES/,
-  "Sidebar renders the visible folder modes, dropping the GitHub row while the Code room already carries a GitHub tab (cave-cc5r)",
+  /\{VISIBLE_MODES\.map\(\(fm, i, rows\) => \(/,
+  "Sidebar renders the visible folder modes directly because GitHub is not a standalone row",
 );
 assert.match(
   source,
@@ -290,11 +296,7 @@ assert.doesNotMatch(
   "Sidebar should not hide surfaces behind add-on config",
 );
 
-assert.match(
-  source,
-  /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"/,
-  "The standalone GitHub row is back (cave-cc5r): Code lives in the Coding familiar's room",
-);
+assert.doesNotMatch(source, /\{ id: "github", label: "GitHub"/, "GitHub only appears inside the Coding familiar's room");
 assert.doesNotMatch(
   source,
   /\{ id: "code", label: "Code"/,
