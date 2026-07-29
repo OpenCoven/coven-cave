@@ -197,6 +197,7 @@ export const SUITES = {
     "src/lib/chat-project-overrides.test.ts",
     "src/lib/chat-add-project.test.ts",
     "src/lib/project-setup-offer.test.ts",
+    "src/lib/project-setup-validation.test.ts",
     "src/lib/project-registry-events.test.ts",
     "src/lib/first-project-gate-retry.test.ts",
     "src/lib/first-project-gate-policy.test.ts",
@@ -1367,6 +1368,8 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  // Imports the module under test, which resolves "@/lib/github-repo-link".
+  "src/lib/project-setup-validation.test.ts",
   "src/lib/use-role-surfaces-loader.test.ts",
   "src/components/role-surfaces/researcher-status.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
