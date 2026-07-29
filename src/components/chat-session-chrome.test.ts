@@ -129,7 +129,7 @@ test("2b — 'Start from' is always visible and launches work that already exist
   // since (Queue, cave-3lonn) joins this same disjunction.
   assert.match(
     emptyState,
-    /const startFromVisible = railVisible \|\| recents\.length > 0/,
+    /const startFromVisible =\s*\n?\s*railVisible \|\| recents\.length > 0/,
     "the launcher shows when there is work to start from",
   );
   assert.doesNotMatch(
