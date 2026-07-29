@@ -231,6 +231,10 @@ try {
     body: JSON.stringify({ familiarId: "opal", prompt: "exit error", projectRoot: familiarWorkspace }),
   })));
   assert.equal(exited.events.findLast((event) => event.kind === "done")?.isError, true, "a non-zero Grok process cannot be persisted as a successful turn");
+  const exitFailure = exited.events.find((event) => event.kind === "error");
+  assert.equal(exitFailure?.code, "runtime_process_failed", "a silent Grok process failure is not downgraded to the empty-output fallback");
+  assert.match(exitFailure?.message ?? "", /interactive sign-in.*`grok`/i, "the direct Grok failure gives the actionable first-run sign-in recovery");
+  assert.doesNotMatch(exited.body, /No error output captured|produced no output/i, "Grok's silent exit must not render the ambiguous empty-output diagnosis");
   assert.doesNotMatch(exited.body, /private Grok stderr payload/, "Grok stderr values never enter assistant-visible or persisted diagnostics");
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME; else process.env.COVEN_HOME = previousHome;

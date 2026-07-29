@@ -218,6 +218,12 @@ export function runtimeProcessFailure(runner: DirectRunnerId | CovenBackedRunner
   code: typeof RUNTIME_AVAILABILITY_ERROR_CODES.process_failed;
   message: string;
 } {
+  if (runner === "grok") {
+    return {
+      code: RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
+      message: "Grok Build exited before returning a response. Complete its interactive sign-in by running `grok` in a terminal, then retry.",
+    };
+  }
   const label = runner === "hermes" ? "Hermes" : RUNNER_LABELS[runner];
   return {
     code: RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,

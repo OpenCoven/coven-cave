@@ -2206,6 +2206,10 @@ export async function POST(req: Request) {
       // stream frame. Defer classifying that condition until all buffered
       // stdout has passed through the more-specific adapter failure parser.
       let covenBackedProcessFailed = false;
+      // Grok Build is launched directly. Its initial interactive sign-in
+      // failure can exit non-zero without emitting stdout or stderr, so retain
+      // the child outcome until buffered stream text has been fully decoded.
+      let grokProcessFailed = false;
       // Coven can send adapter startup failures through stdout, where Codex's
       // transcript filter intentionally suppresses pre-assistant noise. Keep
       // only the classified, fixed remediation so those failures cannot fall
@@ -3870,6 +3874,9 @@ export async function POST(req: Request) {
             if ((openCodeDirect || copilotStream || grokDirect) && code !== 0) {
               result = { ...result, is_error: true };
             }
+            if (grokDirect && code !== 0 && !runHandle.stopRequested) {
+              grokProcessFailed = true;
+            }
             if (binding.harness === "claude" && claudeInnerLaunchMissing) {
               const message = missingRunnerMessage("claude");
               result = { ...result, is_error: true };
@@ -4153,6 +4160,14 @@ export async function POST(req: Request) {
         launchFailure = failure;
         result.is_error = true;
         pushProgress("harness-start", `${binding.harness} exited with an error`, "error", failure.message);
+        push({ kind: "error", code: failure.code, message: failure.message });
+      }
+
+      if (!launchFailure && grokProcessFailed && !assistantText.trim()) {
+        const failure = runtimeProcessFailure("grok");
+        launchFailure = failure;
+        result.is_error = true;
+        pushProgress("harness-start", "Grok Build needs interactive sign-in", "error", failure.message);
         push({ kind: "error", code: failure.code, message: failure.message });
       }
 
