@@ -15,6 +15,24 @@ export type SelfHealRequest = {
   suggestedAction: string;
   actionKind: HealActionKind;
   createdAt: string;
+  /** Consumers honour this; no producer sets it yet.
+   *
+   *  Every request in this file is DERIVED — from contract violations, growth
+   *  signals, or the thread-signal aggregate — and none is persisted, so
+   *  nothing has anywhere to record a resolution and all four construction
+   *  sites below set `false`. A request stops existing when the condition that
+   *  derived it stops holding, which is why the system works without ever
+   *  flipping this.
+   *
+   *  It is still load-bearing on the read side: familiar-card-insights gates
+   *  its "Review heal requests" action on `!resolved` and excludes resolved
+   *  requests from the `openHeals` count, with a test pinning that a resolved
+   *  request is not counted. So the filter reads as vacuous today but is the
+   *  correct behaviour the moment persisted, resolvable requests exist.
+   *
+   *  Do not "clean this up" as a dead field (cave-7zbup): deleting it changes
+   *  tested insight behaviour. Delete it only together with those consumers,
+   *  or leave it until resolution is actually implemented. */
   resolved: boolean;
 };
 
