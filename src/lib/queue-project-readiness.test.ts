@@ -101,7 +101,15 @@ try {
   // an error here exactly like the mutation adapter's 422, never as ready.
   await rm(path.join(projectRoot, ".beads"), { recursive: true, force: true });
   await mkdir(path.join(projectRoot, "beads-elsewhere"));
-  await symlink(path.join(projectRoot, "beads-elsewhere"), path.join(projectRoot, ".beads"), "dir");
+  // Windows directory symlinks require Developer Mode/elevation. A junction
+  // is the equivalent reparse-point attack shape for this containment guard
+  // and is creatable by an ordinary Windows user, so retain this security
+  // regression test on every supported host.
+  await symlink(
+    path.join(projectRoot, "beads-elsewhere"),
+    path.join(projectRoot, ".beads"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
   const swapped = await queueProjectReadiness({
     beadsProbe: async () => ({ ok: true, stdout: "[]", stderr: "" }),
   });
