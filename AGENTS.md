@@ -23,7 +23,7 @@ Where the truth lives:
   (surfaces, text tiers, borders, radii, 4px spacing grid, type scale, motion,
   focus rings, icon sizes). `src/app/globals.css` is only an import facade.
 - `src/styles/globals/themes.css` — 12 palettes × 2 modes (`data-theme` ×
-  `data-mode` on `:root`). Every surface must survive all 42 combinations.
+  `data-mode` on `:root`). Every surface must survive all 24 combinations.
 - `src/styles/globals/primitives.css` — shared `.ui-*` classes; grep before
   inventing a class.
 - `src/components/ui/` — React primitives (Button, EmptyState, ErrorState,
