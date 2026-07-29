@@ -140,16 +140,23 @@ test("2b — 'Start from' is always visible and launches work that already exist
     /startFromGroup\("chats", recents\.length, continuableCount\)/,
     "the Chats header counts the capped strip against every resumable thread",
   );
-  // Resume/open contracts survive the restyle.
+  // Resume/open contracts survive the restructure — and the groups reuse the
+  // starting page's existing row grammar rather than a second vocabulary, so
+  // the redesign adds structure without adding weight to the home CSS.
   assert.match(
     emptyState,
-    /className="cave-chat-startfrom__tile"[\s\S]{0,400}?onClick=\{\(\) => void resumeCard\(card\)\}/,
-    "task tiles still resume through the board chat route",
+    /className="cave-chat-empty-task"[\s\S]{0,500}?onClick=\{\(\) => void resumeCard\(card\)\}/,
+    "task rows still resume through the board chat route",
   );
   assert.match(
     emptyState,
-    /className="cave-chat-startfrom__tile"[\s\S]{0,400}?onClick=\{\(\) => openSession\(session\.id, session\.familiarId\)\}/,
-    "chat tiles still open through the shared open-session event",
+    /className="cave-chat-empty-recent"[\s\S]{0,400}?onClick=\{\(\) => openSession\(session\.id, session\.familiarId\)\}/,
+    "thread rows still open through the shared open-session event",
+  );
+  assert.match(
+    emptyState,
+    /className="cave-chat-startfrom__count">\{tasksGroup\.count\}/,
+    "each group states how much of its source is on screen",
   );
 });
 

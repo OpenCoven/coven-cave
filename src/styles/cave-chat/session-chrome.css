@@ -252,7 +252,10 @@
 /* ── New session (Chat.dc.html 2b) ─────────────────────────────────────────
    The blank page reads eyebrow → serif hero → prompts → "Start from"
    launcher. The eyebrow names the session in mono; the hero is the surface's
-   one identity moment; the launcher below turns existing work into one tap. */
+   one identity moment; the launcher below turns existing work into one tap.
+   The launcher's groups reuse the starting page's existing section/row
+   grammar — only the band and the per-group count are new, so the redesign
+   adds structure without adding a second row vocabulary. */
 
 .cave-chat-empty-eyebrow {
   font-family: var(--font-mono);
@@ -285,13 +288,10 @@
   gap: var(--space-3);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  color: var(--text-muted);
-}
-
-.cave-chat-startfrom__head-label {
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .cave-chat-startfrom__rule {
@@ -300,175 +300,15 @@
   background: var(--border-hairline);
 }
 
-.cave-chat-startfrom__group {
-  /* Per-group tint: the header, the tile top-bars and the row dots all read
-     from this one property, so a new group only sets --sf-tint. */
-  --sf-tint: var(--accent-presence);
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid color-mix(in oklch, var(--sf-tint) 32%, transparent);
-  border-radius: var(--radius-card);
-  background: color-mix(in oklch, var(--bg-raised) 35%, transparent);
-}
-
-.cave-chat-startfrom__group.is-tasks {
-  --sf-tint: var(--color-warning);
-}
-
-.cave-chat-startfrom__group.is-chats {
-  --sf-tint: var(--color-success);
-}
-
-.cave-chat-startfrom__group-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: none;
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid color-mix(in oklch, var(--sf-tint) 32%, transparent);
-  background: color-mix(in oklch, var(--sf-tint) 9%, transparent);
-  color: var(--sf-tint);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-}
-
-.cave-chat-startfrom__group-label {
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.cave-chat-startfrom__group-count {
-  color: var(--text-secondary);
-}
-
-.cave-chat-startfrom__group-note {
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-muted);
-}
-
-.cave-chat-startfrom__tiles {
-  display: flex;
-  align-items: stretch;
-  gap: 1px;
-  min-width: 0;
-  overflow-x: auto;
-  background: var(--border-hairline);
-  scrollbar-width: none;
-}
-
-.cave-chat-startfrom__tiles::-webkit-scrollbar {
-  display: none;
-}
-
-.cave-chat-startfrom__tile {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  width: 224px;
-  flex: none;
-  padding: var(--space-3);
-  border: none;
-  border-top: 2px solid color-mix(in oklch, var(--sf-tint) 40%, transparent);
-  background: var(--bg-base);
-  color: var(--text-primary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.13s ease;
-}
-
-.cave-chat-startfrom__tile:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--sf-tint) 12%, var(--bg-base));
-}
-
-.cave-chat-startfrom__tile:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.cave-chat-startfrom__tile-top {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  width: 100%;
-  min-width: 0;
-}
-
-.cave-chat-startfrom__tile-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  font-size: var(--text-sm);
-  line-height: 1.35;
-  color: var(--text-secondary);
-}
-
-.cave-chat-startfrom__tile-badge {
-  flex: none;
-  padding: 1px var(--space-1);
-  border: 1px solid var(--border-hairline);
-  border-radius: 3px;
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-}
-
-.cave-chat-startfrom__tile-sub {
+/* Per-group count ("3 of 12") beside the reused section label. */
+.cave-chat-startfrom__count {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-}
-
-.cave-chat-startfrom__tile-dot {
-  width: 4px;
-  height: 4px;
-  flex: none;
-  border-radius: var(--radius-pill);
-  background: var(--sf-tint);
-}
-
-/* Wide panes get the design's side-by-side header: the group label rides a
-   fixed left column and the tiles scroll beside it. */
-@media (min-width: 860px) {
-  .cave-chat-startfrom__group {
-    flex-direction: row;
-  }
-
-  .cave-chat-startfrom__group-head {
-    width: 176px;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: var(--space-1);
-    border-bottom: none;
-    border-right: 1px solid color-mix(in oklch, var(--sf-tint) 32%, transparent);
-  }
-
-  .cave-chat-startfrom__group-note {
-    flex: none;
-    max-width: 100%;
-    text-align: left;
-  }
-
-  .cave-chat-startfrom__tiles {
-    flex: 1 1 auto;
-  }
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
 }

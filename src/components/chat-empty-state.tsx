@@ -354,26 +354,24 @@ export function ChatEmptyState({
 
         {/* ── "Start from" (Chat.dc.html 2b) ────────────────────────────────
             The blank page becomes a launcher over the work that already
-            exists: threads worth resuming and open board cards. Each tile
-            carries the whole setup, so one tap starts the session where the
-            work already lives. Always visible — it IS the page, not context
-            hidden behind a disclosure. */}
+            exists: open board cards and threads worth resuming. Always
+            visible — it IS the page, not context behind a disclosure. The
+            rows keep the starting page's existing grammar; the band and the
+            per-group counts are what the redesign adds. */}
         {startFromVisible ? (
           <section className="cave-chat-startfrom" aria-label="Start from existing work">
             <div className="cave-chat-startfrom__head">
-              <span className="cave-chat-startfrom__head-label">Start from</span>
+              <span>Start from</span>
               <span className="cave-chat-startfrom__rule" aria-hidden />
-              <span className="cave-chat-startfrom__head-note">one tap opens the work in place</span>
             </div>
 
             {railVisible ? (
-              <div className="cave-chat-startfrom__group is-tasks">
-                <div className="cave-chat-startfrom__group-head">
-                  <Icon name={tasksGroup.icon} width={14} aria-hidden />
-                  <span className="cave-chat-startfrom__group-label">{tasksGroup.label}</span>
-                  <span className="cave-chat-startfrom__group-count">{tasksGroup.count}</span>
-                  <span className="cave-chat-startfrom__group-note">{tasksGroup.note}</span>
-                </div>
+              <section className="cave-chat-empty-work" aria-label="Open work">
+                <span className="cave-chat-empty-section-label">
+                  <Icon name={tasksGroup.icon} width={12} aria-hidden />
+                  {tasksGroup.label}
+                  <span className="cave-chat-startfrom__count">{tasksGroup.count}</span>
+                </span>
                 {loading && slow ? (
                   <div className="cave-chat-empty-work-skeleton" role="status" aria-label="Loading open work">
                     <span className="cave-chat-empty-task-skeleton" />
@@ -387,7 +385,7 @@ export function ChatEmptyState({
                     </button>
                   </p>
                 ) : (
-                  <div className="cave-chat-startfrom__tiles">
+                  <>
                     {railCards.map((card) => {
                       const needsDaemon = !card.sessionId && daemonRunning === false;
                       const action = card.sessionId ? "Resume" : "Start";
@@ -395,19 +393,18 @@ export function ChatEmptyState({
                         <button
                           key={card.id}
                           type="button"
-                          className="cave-chat-startfrom__tile"
+                          className="cave-chat-empty-task"
                           disabled={busyId === card.id || needsDaemon}
                           title={needsDaemon ? "Starting a task needs the daemon running" : undefined}
                           aria-label={`${action} '${card.title}' — ${card.status}, ${card.priority} priority`}
                           onClick={() => void resumeCard(card)}
                         >
-                          <span className="cave-chat-startfrom__tile-top">
-                            <span className="cave-chat-startfrom__tile-title">{card.title}</span>
-                            <span className="cave-chat-startfrom__tile-badge">{taskTileBadge(card)}</span>
-                          </span>
-                          <span className="cave-chat-startfrom__tile-sub">
-                            <span className={`cave-chat-startfrom__tile-dot is-${card.status}`} aria-hidden />
-                            {startFromSub([card.status, busyId === card.id ? "opening…" : action.toLowerCase()])}
+                          <span className={`cave-chat-empty-task-status is-${card.status}`}>{card.status}</span>
+                          <span className="cave-chat-empty-task-title">{card.title}</span>
+                          <span className="cave-chat-empty-task-priority">{taskTileBadge(card)}</span>
+                          <span className="cave-chat-empty-task-action">
+                            {busyId === card.id ? "Opening…" : action}
+                            <Icon name="ph:arrow-right-bold" width={12} aria-hidden />
                           </span>
                         </button>
                       );
@@ -415,53 +412,45 @@ export function ChatEmptyState({
                     {moreCount > 0 ? (
                       <span className="cave-chat-empty-work-more">+{moreCount} more in Tasks</span>
                     ) : null}
-                  </div>
+                  </>
                 )}
                 {actionError ? (
                   <p className="cave-chat-empty-work-error" role="alert">
                     {actionError}
                   </p>
                 ) : null}
-              </div>
+              </section>
             ) : null}
 
             {recents.length > 0 ? (
-              <div className="cave-chat-startfrom__group is-chats">
-                <div className="cave-chat-startfrom__group-head">
-                  <Icon name={chatsGroup.icon} width={14} aria-hidden />
-                  <span className="cave-chat-startfrom__group-label">{chatsGroup.label}</span>
-                  <span className="cave-chat-startfrom__group-count">{chatsGroup.count}</span>
-                  <span className="cave-chat-startfrom__group-note">{chatsGroup.note}</span>
-                </div>
-                <div className="cave-chat-startfrom__tiles">
-                  {recents.map((session) => {
-                    const title = session.title?.trim() || "Untitled thread";
-                    const when = relativeTime(session.updated_at || session.created_at, nowMs);
-                    const diff =
-                      session.diff && (session.diff.additions || session.diff.deletions)
-                        ? `+${session.diff.additions} −${session.diff.deletions}`
-                        : null;
-                    return (
-                      <button
-                        key={session.id}
-                        type="button"
-                        className="cave-chat-startfrom__tile"
-                        aria-label={`Continue '${title}'${when ? `, updated ${when}` : ""}`}
-                        onClick={() => openSession(session.id, session.familiarId)}
-                      >
-                        <span className="cave-chat-startfrom__tile-top">
-                          <span className="cave-chat-startfrom__tile-title">{title}</span>
-                          <span className="cave-chat-startfrom__tile-badge">resume</span>
+              <section className="cave-chat-empty-recents" aria-label="Continue a recent thread">
+                <span className="cave-chat-empty-section-label">
+                  <Icon name={chatsGroup.icon} width={12} aria-hidden />
+                  {chatsGroup.label}
+                  <span className="cave-chat-startfrom__count">{chatsGroup.count}</span>
+                </span>
+                {recents.map((session) => {
+                  const title = session.title?.trim() || "Untitled thread";
+                  const when = relativeTime(session.updated_at || session.created_at, nowMs);
+                  return (
+                    <button
+                      key={session.id}
+                      type="button"
+                      className="cave-chat-empty-recent"
+                      aria-label={`Continue '${title}'${when ? `, updated ${when}` : ""}`}
+                      onClick={() => openSession(session.id, session.familiarId)}
+                    >
+                      <span className="cave-chat-empty-recent-title">{title}</span>
+                      {session.diff && (session.diff.additions || session.diff.deletions) ? (
+                        <span className="cave-chat-empty-recent-diff">
+                          +{session.diff.additions} −{session.diff.deletions}
                         </span>
-                        <span className="cave-chat-startfrom__tile-sub">
-                          <span className="cave-chat-startfrom__tile-dot is-thread" aria-hidden />
-                          {startFromSub([diff, when])}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+                      ) : null}
+                      <span className="cave-chat-empty-recent-time">{startFromSub([when])}</span>
+                    </button>
+                  );
+                })}
+              </section>
             ) : null}
           </section>
         ) : null}
