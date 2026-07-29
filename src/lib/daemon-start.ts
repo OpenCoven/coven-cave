@@ -97,6 +97,10 @@ async function terminateChild(child: ChildProcess, waitForExit: (child: ChildPro
   return waitForExit(child, 2_000);
 }
 
+function isMissingProcess(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ESRCH";
+}
+
 /**
  * Terminates only the process tree Cave started after readiness has failed a
  * final health check. Windows taskkill owns the shell and all descendants;
@@ -129,7 +133,7 @@ export async function terminateDaemonLaunchTree(
   } catch (error) {
     // A process that disappeared between readiness and cleanup is already
     // safe. Other failures are reported as incomplete cleanup diagnostics.
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") {
+    if (isMissingProcess(error)) {
       return { attempted: true, completed: true, mode: "process-group" };
     }
     return { attempted: true, completed: false, mode: "process-group" };
@@ -140,7 +144,7 @@ export async function terminateDaemonLaunchTree(
   try {
     killProcessGroup(pid, "SIGKILL");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
+    if (!isMissingProcess(error)) {
       return { attempted: true, completed: false, mode: "process-group" };
     }
   }

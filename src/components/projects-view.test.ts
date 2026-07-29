@@ -154,7 +154,7 @@ test("secondary controls stay quiet until hover or keyboard focus", () => {
   assert.match(css, /\.projects-access-setall \{[^}]*opacity: 0/, "Set-all rests invisible");
   assert.match(css, /\.projects-access-section-head:hover \.projects-access-setall,\r?\n\.projects-access-section-head:focus-within \.projects-access-setall \{[^}]*opacity: 1/, "hover or focus reveals Set-all");
   assert.match(view, /className=\{`projects-access-setall-btn is-\$\{target\} focus-ring`\}/, "revealed Set-all buttons carry the level and the focus ring");
-  assert.match(css, /\.projects-access-disclose,\n\.projects-access-gear \{[^}]*opacity: 0/, "the card gear and disclosure rest invisible");
+  assert.match(css, /\.projects-access-disclose,\r?\n\.projects-access-gear \{[^}]*opacity: 0/, "the card gear and disclosure rest invisible");
   assert.match(css, /\.projects-access-card:focus-within \.projects-access-gear,/, "card hover or focus reveals them");
   assert.match(css, /\.projects-access-disclose\[aria-expanded="true"\] \{[^}]*opacity: 1/, "an open disclosure stays visible after the pointer leaves");
   const hoverNoneBlocks = css.match(/@media \(hover: none\)/g) ?? [];
