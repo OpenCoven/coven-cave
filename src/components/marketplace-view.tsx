@@ -320,12 +320,16 @@ export function MarketplaceViewSurface({
     setQuery("");
   }, [setStoredSection, setKind]);
 
-  const categories = useMemo(() => categoriesFrom(plugins), [plugins]);
+  const visiblePlugins = useMemo(
+    () => plugins.filter((plugin) => craftsEnabled || plugin.kind !== "craft"),
+    [plugins, craftsEnabled],
+  );
+  const categories = useMemo(() => categoriesFrom(visiblePlugins), [visiblePlugins]);
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const p of plugins) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+    for (const p of visiblePlugins) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
     return counts;
-  }, [plugins]);
+  }, [visiblePlugins]);
 
   // The slim header's tab items — label plus a live count per section. Counts
   // appear once their loader settles so the header never flashes a stale 0;
@@ -337,13 +341,13 @@ export function MarketplaceViewSurface({
         label: s.label,
         icon: s.icon,
         count:
-          s.id === "browse" && loaded && skillsLoaded ? plugins.length + skills.length
-          : s.id === "browse" && loaded ? plugins.length
-          : s.id === "crafts" && loaded ? plugins.filter((plugin) => plugin.kind === "craft").length
+          s.id === "browse" && loaded && skillsLoaded ? visiblePlugins.length + skills.length
+          : s.id === "browse" && loaded ? visiblePlugins.length
+          : s.id === "crafts" && loaded ? visiblePlugins.filter((plugin) => plugin.kind === "craft").length
           : undefined,
         title: SECTION_HINT[s.id],
       })),
-    [loaded, plugins.length, skillsLoaded, skills.length],
+    [loaded, visiblePlugins, skillsLoaded, skills.length],
   );
 
   const activeCollection = useMemo(
@@ -360,8 +364,8 @@ export function MarketplaceViewSurface({
     if (normalized.collectionId !== collectionId) setCollectionId(normalized.collectionId);
   }, [loaded, categories, category, collectionId, setCategory, setCollectionId]);
   const collectionIds = useMemo(
-    () => (activeCollection ? resolveCollection(plugins, activeCollection).map((p) => p.id) : undefined),
-    [plugins, activeCollection],
+    () => (activeCollection ? resolveCollection(visiblePlugins, activeCollection).map((p) => p.id) : undefined),
+    [visiblePlugins, activeCollection],
   );
 
   // Registry-skill install state overlays optimistic local edits on top of the
@@ -403,14 +407,14 @@ export function MarketplaceViewSurface({
   // Plugin pool — connectors (mcp/api) plus plugin-kind skills, honoring the
   // rail's Type + Status + Category/Collection scope and the search box.
   const filteredPlugins = useMemo(() => {
-    const matched = filterPlugins(plugins.filter((plugin) => craftsEnabled || plugin.kind !== "craft"), {
+    const matched = filterPlugins(visiblePlugins, {
       query,
       category: activeCollection || kind === "skill" ? "All" : category,
       kind,
       ids: collectionIds,
     }).filter(statusOkPlugin);
     return sortPlugins(matched, sort);
-  }, [plugins, craftsEnabled, query, category, kind, sort, collectionIds, activeCollection, statusOkPlugin]);
+  }, [visiblePlugins, query, category, kind, sort, collectionIds, activeCollection, statusOkPlugin]);
 
   // Registry skills join the pool whenever Skills (or All) is the active type;
   // a picked plugin category or "needs-setup" status excludes them.
@@ -802,7 +806,7 @@ export function MarketplaceViewSurface({
                     <ExploreRailRow
                       key={cat}
                       label={cat}
-                      count={cat === "All" ? plugins.length : categoryCounts.get(cat) ?? 0}
+                      count={cat === "All" ? visiblePlugins.length : categoryCounts.get(cat) ?? 0}
                       active={!activeCollection && category === cat}
                       onClick={() => selectCategory(cat)}
                     />
