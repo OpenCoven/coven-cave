@@ -64,7 +64,7 @@ function InboxFeedRow({ item, selected, selectMode, checked, familiarLabel, onSe
       <button type="button" role={selectMode ? "checkbox" : undefined} aria-checked={selectMode ? checked : undefined} onClick={activate} aria-current={!selectMode && selected ? "true" : undefined} className={`focus-ring-inset automation-list-row group flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${active ? "bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]" : "hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"}`}>
         {selectMode ? <span aria-hidden className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors" style={{ borderColor: checked ? "var(--accent-presence)" : "var(--border-strong)", background: checked ? "var(--accent-presence)" : "transparent" }}>{checked && <Icon name="ph:check-bold" width={12} className="text-[var(--accent-presence-foreground)]" />}</span> : <StatusIcon item={item} />}
         {item.kind === "daily-summary" ? (
-          <InboxDailyReportRow item={item} />
+          <InboxDailyReportRow item={item} showRead={!selectMode} />
         ) : (
           <span className="flex-1 min-w-0 flex items-center gap-2">
             <span className="text-[length:var(--text-base)] truncate [color:var(--text-primary)]!">{item.title}</span>

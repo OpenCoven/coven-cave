@@ -51,7 +51,7 @@ function mergeHours(item: InboxItem): number[] | null {
   return peak > 0 ? counts.map((c) => c / peak) : null;
 }
 
-export function InboxDailyReportRow({ item }: { item: InboxItem }) {
+export function InboxDailyReportRow({ item, showRead = true }: { item: InboxItem; showRead?: boolean }) {
   const slug = slugOf(item);
   const label = dayLabel(slug);
   const stats = item.media?.stats ?? null;
@@ -123,10 +123,12 @@ export function InboxDailyReportRow({ item }: { item: InboxItem }) {
         </span>
       )}
 
-      <span className="dri__read">
-        Read
-        <Icon name="ph:caret-right" aria-hidden />
-      </span>
+      {showRead && (
+        <span className="dri__read">
+          Read
+          <Icon name="ph:caret-right" aria-hidden />
+        </span>
+      )}
     </span>
   );
 }
