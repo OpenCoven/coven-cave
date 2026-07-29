@@ -581,10 +581,17 @@
 
 /* ── view 2 · graphs ─────────────────────────────────────────────────────── */
 
+/* Graphs is the one view whose content genuinely exceeds the shared 236px
+   view height — hour heatmap, three charts and four tiles. Capping it clipped
+   the last project row and put a scrollbar inside a dropdown, so this view
+   sizes to its content and the panel grows with it. Swimlanes and cards fit
+   the shared height and keep it, so switching views doesn't jump. */
 .drd-car-view-graphs {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   gap: var(--space-3);
+  max-height: none;
+  overflow: visible;
 }
 
 .drd-car-heat {
