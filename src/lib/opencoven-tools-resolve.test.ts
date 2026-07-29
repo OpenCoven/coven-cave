@@ -346,11 +346,15 @@ test("npmGlobalPrefixFromNpmPath routes Windows npm.cmd through node npm-cli.js"
 
 test("removeLauncherFile deletes files but refuses directories", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "coven-resolve-"));
-  const file = path.join(dir, "coven");
-  await writeFile(file, "#!/bin/sh\n");
+  try {
+    const file = path.join(dir, "coven");
+    await writeFile(file, "#!/bin/sh\n");
 
-  await removeLauncherFile(file);
-  await assert.rejects(() => removeLauncherFile(dir), /is not a launcher file/);
+    await removeLauncherFile(file);
+    await assert.rejects(() => removeLauncherFile(dir), /is not a launcher file/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("end-to-end on a real filesystem: stale launcher removed, fresh copy verifies", async (t) => {
@@ -359,6 +363,7 @@ test("end-to-end on a real filesystem: stale launcher removed, fresh copy verifi
     return;
   }
   const root = await mkdtemp(path.join(os.tmpdir(), "coven-resolve-e2e-"));
+  try {
   const makeInstall = async (prefix: string, version: string) => {
     const pkg = path.join(prefix, "lib", "node_modules", "@opencoven", "cli");
     const bin = path.join(prefix, "bin");
@@ -392,15 +397,27 @@ test("end-to-end on a real filesystem: stale launcher removed, fresh copy verifi
   ].join(path.delimiter);
 
   const resolution = await resolveStaleOpenCovenLaunchers("coven-cli", LATEST, {
-    refreshEnv: () => ({ ...process.env, PATH: covenPath }),
-    npmGlobalPrefix: async () => path.join(root, "good"),
-  });
+      refreshEnv: () => ({ ...process.env, PATH: covenPath }),
+      npmGlobalPrefix: async () => path.join(root, "good"),
+      // This test spawns real child processes (`which`, then `node coven.js
+      // --version`). The production budgets are UI latency deadlines — 1.5s
+      // and 2.5s — and inheriting them here makes the assertion a race with
+      // whatever else the machine is doing: every gate below declines when a
+      // probe times out, and the failure reads as a bare `removed: []`.
+      // What is under test is the DECISION, not how fast the box answers.
+      probeTimeoutMs: 30_000,
+    });
 
-  assert.deepEqual(resolution.removed, [stale.launcher]);
-  assert.ok(resolution.verification?.ok, "fresh copy verifies after real removal");
-  assert.equal(resolution.verification?.current, LATEST);
-  assert.equal(resolution.verification?.path, good.launcher);
-  await rm(root, { recursive: true, force: true });
+    // Every gate that declines explains itself in `log`; without it a failure
+    // here is just an empty array with no way to tell which one gave up.
+    const why = resolution.log.join(" | ") || "(no log lines)";
+    assert.deepEqual(resolution.removed, [stale.launcher], `stale launcher not removed — ${why}`);
+    assert.ok(resolution.verification?.ok, `fresh copy did not verify — ${why}`);
+    assert.equal(resolution.verification?.current, LATEST);
+    assert.equal(resolution.verification?.path, good.launcher);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 console.log("opencoven-tools-resolve.test.ts: ok");
