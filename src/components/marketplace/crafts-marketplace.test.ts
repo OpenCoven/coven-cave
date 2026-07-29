@@ -15,7 +15,7 @@ assert.match(model, /\{ id: "crafts", label: "Crafts"/, "Crafts is a first-class
 assert.match(model, /\{ id: "craft", label: "Crafts" \}/, "Browse can filter catalog entries by Craft kind");
 assert.match(model, /\{ id: "knowledge-pack", label: "Knowledge packs" \}/, "Browse can filter catalog entries by Knowledge pack kind");
 assert.match(view, /id="marketplace-panel-crafts"/, "Crafts section has a labelled tabpanel");
-assert.match(view, /onChange=\{selectSection\}/, "the section tabs route between Explore, Crafts, and Build");
+assert.match(view, /onChange=\{selectSection\}/, "the section tabs route between Yours, Crafts, Skills, and Build");
 assert.match(view, /Familiar[\s\S]*Role[\s\S]*Craft[\s\S]*Capabilities/, "Crafts section explains the loadout hierarchy");
 assert.match(view, /Create Craft/, "Crafts section exposes local Craft creation");
 assert.match(view, /setCreatingCraft\(true\)/, "Create Craft opens the authoring drawer");
@@ -27,6 +27,7 @@ assert.match(view, /Craft installed and verified/, "successful verification has 
 assert.match(view, /Craft removed/, "successful Craft removal has an accessible announcement");
 assert.match(marketplaceRoute, /readCraftDrafts/, "marketplace route includes local Craft drafts");
 assert.match(marketplaceRoute, /\.\.\.drafts\.map\(\(draft\) => draft\.plugin\)/, "draft Crafts bypass the public-catalog familiar-name sanitizer");
+assert.match(marketplaceRoute, /selectOwnedMarketplacePlugins/, "published Crafts are limited to installed owned records");
 
 assert.match(card, /plugin\.kind === "craft"[\s\S]*onOpen\(plugin\.id\)/, "Craft card actions open preview before installation");
 assert.match(card, /state === "added" \? "Manage" : "Preview"/, "Craft cards use explicit Preview and Manage states");

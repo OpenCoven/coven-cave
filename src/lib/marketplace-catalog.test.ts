@@ -20,6 +20,7 @@ import {
   sanitizeMarketplaceCatalogCards,
   sanitizeMarketplacePlugins,
   isCraftInstallationVerified,
+  selectOwnedMarketplacePlugins,
 } from "./marketplace-catalog.ts";
 
 const marketplacePlugins = [
@@ -71,6 +72,40 @@ const tinyfish = merged.find((p) => p.id === "tinyfish-search");
 assert.equal(tinyfish.kind, "api", "non-MCP configured API plugins should be first-class API entries");
 assert.equal(tinyfish.installed, true, "installed API entries should reflect Cave setup state");
 assert.equal(tinyfish.requiresSetup, true);
+
+const ownedInstallMap = {
+  fetch: installed.fetch,
+  "tinyfish-search": installed["tinyfish-search"],
+  "legacy-local-record": {
+    version: "0.4.2",
+    source: "legacy",
+    installedAt: "2026-07-01T00:00:00.000Z",
+  },
+};
+const ownedOnly = selectOwnedMarketplacePlugins(
+  mergeCatalog(sanitizeMarketplacePlugins(marketplacePlugins), manifests, ownedInstallMap),
+  ownedInstallMap,
+);
+
+assert.deepEqual(
+  ownedOnly.map((plugin) => plugin.id),
+  ["fetch", "legacy-local-record", "tinyfish-search"],
+  "owned inventory contains every installed record and no uninstalled seed",
+);
+const unlistedOwned = ownedOnly.find((plugin) => plugin.id === "legacy-local-record");
+assert.equal(unlistedOwned?.unlisted, true, "missing catalog metadata is explicit");
+assert.equal(unlistedOwned?.installed, true, "unlisted local records stay owned");
+assert.equal(unlistedOwned?.available, false, "unlisted records never claim remote installability");
+assert.equal(unlistedOwned?.description, "Installed locally. Catalog details are no longer available.");
+assert.deepEqual(
+  ownedInstallMap["legacy-local-record"],
+  {
+    version: "0.4.2",
+    source: "legacy",
+    installedAt: "2026-07-01T00:00:00.000Z",
+  },
+  "owned selection never mutates Cave install state",
+);
 
 assert.deepEqual(
   sanitizeMarketplaceCatalogCards([

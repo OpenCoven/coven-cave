@@ -8,6 +8,7 @@
 
 import { NextResponse } from "next/server";
 import {
+  listLocalSkillDirectoryEntries,
   listSkillDirectoryEntriesWithLocal,
   type SkillDirectoryListResponse,
 } from "@/lib/server/skills-directory";
@@ -16,7 +17,10 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
-  const query = new URL(req.url).searchParams.get("q") ?? undefined;
-  const data: SkillDirectoryListResponse = await listSkillDirectoryEntriesWithLocal(query);
+  const params = new URL(req.url).searchParams;
+  const query = params.get("q") ?? undefined;
+  const data: SkillDirectoryListResponse = params.get("scope") === "local"
+    ? await listLocalSkillDirectoryEntries(query)
+    : await listSkillDirectoryEntriesWithLocal(query);
   return NextResponse.json(data);
 }
