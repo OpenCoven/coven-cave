@@ -128,12 +128,15 @@ export async function POST(req: Request) {
     });
     if (!draft) return null;
 
-    // When backfilling a past day, `target` is midnight of that day, so draft
-    // timestamps (generatedAt/firedAt/fireAt) would be midnight rather than the
-    // real write time. Override them to wall-clock `now` so the byline and
-    // generatedAt remain truthful. Day-selection keys (auto, link) still use
-    // `target`, which is correct.
-    const writeAt = body.backfill === true ? now.toISOString() : undefined;
+    // Backfill splits two different clocks, and they must not be conflated:
+    //   • WHEN IT WAS WRITTEN — media.generatedAt / report.refreshedAt. These
+    //     must be wall-clock `now`, or the report's byline claims a familiar
+    //     wrote it days ago when it was written seconds ago.
+    //   • WHICH DAY IT COVERS — createdAt / fireAt / firedAt stay anchored to
+    //     `target`. The inbox sorts and labels by these, so day-anchoring is
+    //     what makes seven backfilled days list as seven days instead of
+    //     collapsing to "just now" and burying today's report.
+    const writtenAt = body.backfill === true ? now.toISOString() : undefined;
 
     // Ensure-or-refresh: today's report is rebuilt in place so it tracks the
     // day instead of freezing at the first app-open after midnight.
@@ -148,7 +151,16 @@ export async function POST(req: Request) {
         // fact-only refresh must not discard the narrative layered on top.
         media: {
           ...draft.media,
-          ...(writeAt ? { generatedAt: writeAt, report: { ...draft.media?.report, refreshedAt: writeAt } } : {}),
+          ...(writtenAt
+            ? {
+                generatedAt: writtenAt,
+                // `report` is optional on the draft; spreading it when absent
+                // would leave factsHash undefined and break its type.
+                ...(draft.media?.report
+                  ? { report: { ...draft.media.report, refreshedAt: writtenAt } }
+                  : {}),
+              }
+            : {}),
           narrative: narrativeInput ?? existing.media?.narrative ?? null,
         },
         updatedAt: now.toISOString(),
@@ -164,10 +176,10 @@ export async function POST(req: Request) {
       title: draft.title,
       body: draft.body,
       status: "fired",
-      createdAt: writeAt ?? draft.firedAt,
-      updatedAt: writeAt ?? draft.firedAt,
-      fireAt: writeAt ?? draft.fireAt,
-      firedAt: writeAt ?? draft.firedAt,
+      createdAt: draft.firedAt,
+      updatedAt: draft.firedAt,
+      fireAt: draft.fireAt,
+      firedAt: draft.firedAt,
       snoozeUntil: null,
       recurrence: draft.recurrence,
       source: "system",
@@ -176,7 +188,16 @@ export async function POST(req: Request) {
       link: draft.link,
       media: {
         ...draft.media,
-        ...(writeAt ? { generatedAt: writeAt, report: { ...draft.media?.report, refreshedAt: writeAt } } : {}),
+        ...(writtenAt
+            ? {
+                generatedAt: writtenAt,
+                // `report` is optional on the draft; spreading it when absent
+                // would leave factsHash undefined and break its type.
+                ...(draft.media?.report
+                  ? { report: { ...draft.media.report, refreshedAt: writtenAt } }
+                  : {}),
+              }
+            : {}),
       },
       auto: draft.auto,
     };
