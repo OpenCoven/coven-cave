@@ -48,7 +48,7 @@
  */
 
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 
 const BYPASS = "WT_GUARD_BYPASS=1";
@@ -201,19 +201,21 @@ function ownAncestry() {
  *  costs nothing. Fails open like every other probe here — a guard that bricks
  *  Bash when lsof is missing or slow is worse than one that misses a case. */
 function liveProcesses(wtPath) {
-  let out = "";
-  try {
-    out = execFileSync("lsof", ["-d", "cwd", "-F", "pcn"], {
-      encoding: "utf8",
-      timeout: 5000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-  } catch (err) {
-    // lsof exits non-zero when some processes are unreadable; keep partial output.
-    out = typeof err?.stdout === "string" ? err.stdout : "";
-  }
+  // spawnSync, not execFileSync, purely to learn the probe's OWN pid: lsof
+  // reports itself, and it inherits this process's cwd. Cleaning up a worktree
+  // while standing in it therefore made the guard block its own caller, and
+  // ownAncestry() cannot help — lsof is a DESCENDANT of the guard, and it has
+  // already exited by the time any ps walk could classify it.
+  const probe = spawnSync("lsof", ["-d", "cwd", "-F", "pcn"], {
+    encoding: "utf8",
+    timeout: 5000,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  // lsof exits non-zero when some processes are unreadable; keep partial output.
+  const out = typeof probe.stdout === "string" ? probe.stdout : "";
   if (!out) return [];
   const mine = ownAncestry();
+  if (probe.pid) mine.add(String(probe.pid));
   // The kernel hands lsof the CANONICAL path, so `/var/...` on macOS comes back
   // as `/private/var/...`. Comparing the caller's spelling against it silently
   // matches nothing — the check would look installed and catch zero cases.

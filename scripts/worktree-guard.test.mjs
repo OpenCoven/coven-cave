@@ -108,6 +108,22 @@ if (!isWin) {
   }
 }
 
+// ── 3c. The guard must not see its OWN probe as live work ────────────────────
+// Cleaning up a worktree while standing in it is the single most common
+// legitimate case. The guard's lsof child inherits that cwd and lsof reports
+// itself, so the guard blocked its own caller with "1 process(es) are still
+// working in it: pid <n> (lsof)" — every routine cleanup demanded a bypass,
+// which is the one habit a destructive-op guard must never teach.
+// ownAncestry() cannot cover this: lsof is a DESCENDANT of the guard, and it
+// has already exited by the time any ps walk could classify it.
+if (!isWin) {
+  const { dir, wt } = repoWithWorktree({ push: true });
+  const res = runHook(`git worktree remove ${wt}`, wt);
+  assert.equal(res.status, 0, "cleanup from inside the worktree is not blocked by the guard's own probe");
+  assert.doesNotMatch(res.stderr, /still working in it/, "the probe is never reported as live work");
+  assert.doesNotMatch(res.stderr, /lsof/, "and never named as an owner");
+}
+
 // ── 4. Husk dirs (no .git link) and paths INSIDE a worktree pass ───────────────
 {
   const { dir } = repoWithWorktree({ push: true });
