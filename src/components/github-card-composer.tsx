@@ -182,8 +182,8 @@ export function GitHubCardComposer({
   const [drafting, setDrafting] = useState(false);
   const [famDraft, setFamDraft] = useState<string | null>(null);
   const [famError, setFamError] = useState<string | null>(null);
-  /** Measured placement: how much room the sheet has, and which way it opens. */
-  const [fit, setFit] = useState<{ down: boolean; room: number } | null>(null);
+  /** Measured height cap: the room the sheet actually has above the card. */
+  const [room, setRoom] = useState<number | null>(null);
 
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -227,14 +227,19 @@ export function GitHubCardComposer({
   }, [text, tab, phase, grow]);
 
   /**
-   * Place the sheet inside the transcript's scroll viewport.
+   * Make the sheet fit inside the transcript's scroll viewport.
    *
    * `.cave-chat-transcript` is `overflow-y: auto`, so a sheet taller than the
    * gap between the card's bottom and that viewport's top edge gets its HEADER
    * clipped — tabs, toolbar and textarea vanish with no way to scroll to them.
-   * So: clamp the height to the room that exists, and open downward instead
-   * when there is more of it below. Either way the card's own footprint is
-   * untouched, which is the invariant the design actually cares about.
+   *
+   * The fix keeps the design's single direction. Growing downward instead was
+   * the obvious alternative and it is wrong: the sheet then overlaps whatever
+   * follows the card, and in a transcript that is the turn's own action row,
+   * which swallows the clicks aimed at the composer's footer. So instead we
+   * scroll the transcript to MAKE room above (less scrollTop moves the card
+   * down the screen), and cap the height for the residue when the transcript is
+   * already at its top and there is nowhere left to go.
    *
    * Safe against feedback loops: the sheet is absolutely positioned, so nothing
    * measured here can change the flow that produced the measurement, and the
@@ -242,7 +247,7 @@ export function GitHubCardComposer({
    */
   useEffect(() => {
     if (phase !== "open") {
-      setFit(null);
+      setRoom(null);
       return;
     }
     const sheet = sheetRef.current;
@@ -250,24 +255,25 @@ export function GitHubCardComposer({
     if (!sheet || !card) return;
     let scroller: HTMLElement | null = card.parentElement;
     while (scroller && scroller !== document.body) {
-      if (/auto|scroll|hidden|clip/.test(getComputedStyle(scroller).overflowY)) break;
+      if (/auto|scroll/.test(getComputedStyle(scroller).overflowY)) break;
       scroller = scroller.parentElement;
     }
-    const bounds =
-      scroller && scroller !== document.body
-        ? scroller.getBoundingClientRect()
-        : { top: 0, bottom: window.innerHeight };
-    const rect = card.getBoundingClientRect();
     // GUTTER keeps the sheet's own border off the viewport edge.
     const GUTTER = 8;
-    const above = Math.max(0, rect.bottom - bounds.top - GUTTER);
-    const below = Math.max(0, bounds.bottom - rect.top - GUTTER);
-    const down = sheet.scrollHeight > above && below > above;
+    const roomAbove = () => {
+      const top = scroller && scroller !== document.body ? scroller.getBoundingClientRect().top : 0;
+      return Math.max(0, card.getBoundingClientRect().bottom - top - GUTTER);
+    };
+    let above = roomAbove();
+    const shortfall = sheet.scrollHeight - above;
+    if (shortfall > 0 && scroller && scroller.scrollTop > 0) {
+      scroller.scrollTop = Math.max(0, scroller.scrollTop - (shortfall + GUTTER));
+      above = roomAbove();
+    }
     // MIN_ROOM: below this the sheet is unusable either way, so stop shrinking
-    // and let it scroll rather than collapse to a sliver.
-    const MIN_ROOM = 160;
-    const room = Math.max(MIN_ROOM, Math.round(down ? below : above));
-    setFit((prev) => (prev && prev.down === down && Math.abs(prev.room - room) < 4 ? prev : { down, room }));
+    // and let it scroll internally rather than collapse to a sliver.
+    const next = Math.max(160, Math.round(above));
+    setRoom((prev) => (prev != null && Math.abs(prev - next) < 4 ? prev : next));
   }, [phase, sec, tab, text, famDraft, pick]);
 
   useEffect(
@@ -907,8 +913,8 @@ export function GitHubCardComposer({
       <div className="ghc-slot" />
       <div
         ref={sheetRef}
-        className={`ghc-sheet${fit?.down ? " ghc-sheet--down" : ""}`}
-        style={fit ? ({ "--ghc-room": `${fit.room}px` } as React.CSSProperties) : undefined}
+        className="ghc-sheet"
+        style={room != null ? ({ "--ghc-room": `${room}px` } as React.CSSProperties) : undefined}
       >
         <div className="ghc-head">
           <div className="ghc-seg" role="tablist" aria-label="Composer mode">

@@ -135,16 +135,6 @@
     0 2px 10px color-mix(in oklch, var(--color-mix-dark) 28%, transparent);
 }
 
-/* When the card sits near the top of the transcript there is no room to grow
-   upward, so the sheet drops instead — same overlay, mirrored shadow. The card's
-   footprint is unchanged either way, which is the invariant that matters. */
-.ghc-sheet--down {
-  top: -1px;
-  bottom: auto;
-  box-shadow: 0 14px 40px color-mix(in oklch, var(--color-mix-dark) 48%, transparent),
-    0 -2px 10px color-mix(in oklch, var(--color-mix-dark) 28%, transparent);
-}
-
 /* Status sheets (sending / error / merged) are single rows — no scroll. */
 .ghc-sheet--status {
   display: flex;
