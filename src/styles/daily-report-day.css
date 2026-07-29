@@ -145,6 +145,7 @@
 .drd-week__step[data-disabled] {
   opacity: var(--opacity-disabled);
   cursor: default;
+  /* Keep hover enabled so the title tooltip ("This is the current week") appears. */
   pointer-events: auto;
   user-select: none;
 }
