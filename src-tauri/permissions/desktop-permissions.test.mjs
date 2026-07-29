@@ -92,9 +92,13 @@ const requiredCommands = [
   "desktop_reachability_configure",
 ];
 
-// Node 24 (CI's runtime) has no global URLPattern, so match capability
-// remote URL patterns component-wise the way Tauri's urlpattern crate does
-// for the simple `scheme://host:port/path` + `*` shapes this repo uses.
+// Match capability remote URL patterns component-wise, the way Tauri's
+// urlpattern crate does for the simple `scheme://host:port/path` + `*` shapes
+// this repo uses. Node 24 DOES expose a global URLPattern (verified on 24.13
+// and 24.18), but it implements the WHATWG spec rather than Tauri's matcher,
+// and what this test asserts is what Tauri will accept — so the hand-rolled
+// comparison stays. The previous wording claimed the global was absent: true
+// on Node 22, carried forward unchecked when CI moved to 24 in #4033.
 // Backslash escapes in patterns (e.g. the IPv6 colons in
 // "http://[\:\:1]:*/*") are URLPattern literal escapes — strip them first.
 function originMatchesPattern(pattern, origin) {
