@@ -136,7 +136,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-27 (canonical Coven Memory): path-free list/overview/detail routes
   // and their browser readers/resources traced the packaged runtime at 5,769
   // on Linux and 5,772 on Windows. Retain the established ten-file buffer.
-  fileCount: 5_782,
+  // 2026-07-29 (typed chat follow-ups): the reusable Reply/Task/Action
+  // components trace two additional Windows runtime files (5,784). Preserve
+  // the established ten-file cross-platform headroom without relaxing bytes.
+  fileCount: 5_794,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

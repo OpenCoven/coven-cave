@@ -237,20 +237,10 @@ export function buildTaskDraftFromChat({
   };
 }
 
-/** One-click smart handoff: build the auto-filled draft and create the card.
- *  Mirrors createTaskFromChat's contract so callers can swap between them. */
-export async function createSmartTaskFromChat({
-  sessionId,
-  context,
-  title,
-  now,
-}: {
-  sessionId: string;
-  context: ChatHandoffContext;
-  title?: string;
-  now?: Date;
-}): Promise<{ ok: boolean; card?: Card; error?: string }> {
-  const draft = buildTaskDraftFromChat({ sessionId, context, title, now });
+/** Create a board card from a reviewed chat-task draft. */
+export async function createTaskFromDraft(
+  draft: ChatTaskDraft,
+): Promise<{ ok: boolean; card?: Card; error?: string }> {
   try {
     const res = await fetch("/api/board", {
       method: "POST",
@@ -266,4 +256,20 @@ export async function createSmartTaskFromChat({
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Network error" };
   }
+}
+
+/** One-click smart handoff: build the auto-filled draft and create the card.
+ *  Mirrors createTaskFromChat's contract so callers can swap between them. */
+export async function createSmartTaskFromChat({
+  sessionId,
+  context,
+  title,
+  now,
+}: {
+  sessionId: string;
+  context: ChatHandoffContext;
+  title?: string;
+  now?: Date;
+}): Promise<{ ok: boolean; card?: Card; error?: string }> {
+  return createTaskFromDraft(buildTaskDraftFromChat({ sessionId, context, title, now }));
 }

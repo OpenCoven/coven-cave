@@ -56,8 +56,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /<ArtifactComments[\s\S]*?turnId=\{turn\.id\}[\s\S]*?onRequest=\{\(prompt\) => onSuggestion\?\.\(prompt\)\}/,
-  "the revision request is sent through the existing onSuggestion→send path",
+  /<ArtifactComments[\s\S]*?turnId=\{turn\.id\}[\s\S]*?onRequest=\{\(prompt\) => onRequest\?\.\(prompt\)\}/,
+  "the revision request is sent through its explicit onRequest→send path",
 );
 
 // ── CSS present for the affordance + panel ───────────────────────────────────

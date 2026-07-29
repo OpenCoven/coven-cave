@@ -32,10 +32,15 @@ function QuickChatBubble({
     return () => window.clearTimeout(timer);
   }, [copied]);
 
-  const { visible, suggestions } =
+  const { visible, suggestions: typedSuggestions } =
     message.role === "assistant"
       ? extractNextPaths(message.text)
       : { visible: message.text, suggestions: [] };
+  // Quick chat is intentionally a compact reply-only surface. Task and action
+  // intents stay hidden because this tray cannot review or execute them.
+  const suggestions = typedSuggestions
+    .filter((path) => path.kind === "reply")
+    .map((path) => path.prompt);
 
   if (message.role === "user") {
     return (

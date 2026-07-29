@@ -368,37 +368,57 @@
   padding: 10px clamp(16px, 3vw, 34px) var(--space-4);
 }
 
-/* ── Follow-up pills above the composer (chat-revamp 1b) ────────────────────
-   The latest settled turn's suggestions render as a quiet pill row aligned to
-   the reading column, directly above the composer. Reuses the shared
-   .cave-next-paths scrollable single-row grammar (chips keep intrinsic width,
-   horizontal overflow scrolls with a hidden scrollbar). */
+/* ── Typed follow-up cards above the composer ─────────────────────────────── */
 .cave-chat-followups {
   width: 100%;
   max-width: var(--cave-chat-measure);
   margin: 0 auto;
 }
 
-.cave-chat-followups .cave-next-paths {
-  margin-top: 0;
-  margin-bottom: var(--space-2);
+/* Typed assistant suggestions keep their effect legible before activation.
+   The card owns presentation only; ChatView owns routing and side effects. */
+.cave-followup-cards {
 }
 
-/* Quieter grammar than the in-turn accent pills: 999px radius, hairline
-   border, muted 12px label — the composer is the hero at this height. */
-.cave-chat-followups .cave-next-path {
-  border-radius: var(--radius-pill);
-  border-color: var(--border-hairline);
-  background: transparent;
-  color: var(--text-muted);
-  padding: 6px var(--space-3);
+.cave-followup-cards__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
 }
 
-.cave-chat-followups .cave-next-path:hover {
-  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
-  background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
+.cave-followup-card {
+  display: grid;
+  gap: var(--space-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background-color: var(--bg-raised);
   color: var(--text-primary);
+  padding: var(--space-3);
+  text-align: left;
 }
+
+.cave-followup-card__type {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cave-followup-card__recommended {
+  color: var(--color-success);
+  font-weight: 650;
+  margin-left: auto;
+}
+
+.cave-followup-card__outcome {
+  color: var(--text-secondary);
+}
+
+@media (min-width: 40rem) {
+  .cave-followup-cards__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 
 .cave-chat-linear .cave-composer-shell {
   /* Shares the thread's centered measure (cave-xsq.1) so the input sits directly
