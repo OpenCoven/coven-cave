@@ -15,6 +15,11 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 assert.match(footer, /export function SidebarFooter\(\{ onOpenSettings \}/, "SidebarFooter is a shared component taking onOpenSettings");
 assert.match(footer, /href="\/dashboard"/, "footer links to the Dashboard route");
 assert.match(footer, /onClick=\{onOpenSettings\}[\s\S]*?aria-label="Settings"/, "footer Settings button calls onOpenSettings");
+assert.match(
+  footer,
+  /aria-label="Dashboard"[\s\S]*?aria-label="Settings"/,
+  "Dashboard precedes Settings in the footer",
+);
 assert.match(footer, /className="sidebar-version"[\s\S]*?v\{APP_VERSION\}/, "footer shows the app version line");
 // The version line is the shortest path to what it's about: Settings → About
 // carries the version, updates and project links, and the settings shell
