@@ -16,6 +16,7 @@ import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
+import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-instruments";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
@@ -5884,6 +5885,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           hasTurns={turns.length > 0}
           onOpenUrl={onOpenUrl}
         />
+        {/* Thread instruments (Chat.dc.html 2a, cave-j86la): the run spine in
+            the left gutter and the thread minimap on the right edge. Both
+            derive from the SAME activePath the transcript renders and gate
+            themselves to wide panes, so narrow layouts never see them. */}
+        {activePath.length > 0 ? (
+          <>
+            <ChatThreadMinimap
+              turns={activePath}
+              scrollRef={scrollRef}
+              familiarName={familiar.display_name}
+            />
+            <ChatThreadSpine
+              turns={activePath}
+              scrollRef={scrollRef}
+              familiarName={familiar.display_name}
+            />
+          </>
+        ) : null}
         <div
           ref={threadRef}
           className="cave-chat-thread"
