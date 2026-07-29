@@ -145,7 +145,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-29 (Node 24 LTS dependency refresh): the Windows runtime measured
   // 5,801 files. Retain the same ten-file headroom without relaxing the byte
   // ceiling.
-  fileCount: 5_811,
+  // 2026-07-29 (Chat Familiar settings): the nested Familiar settings
+  // writers trace 5,804 files on Windows. Retain the established ten files
+  // of cross-platform headroom without relaxing the byte ceiling.
+  fileCount: 5_814,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
