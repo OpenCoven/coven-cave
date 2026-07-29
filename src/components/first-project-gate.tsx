@@ -67,6 +67,9 @@ export function FirstProjectGate({
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const wasVisibleRef = useRef(false);
+  // An empty select value is the explicit "Add a different project…" path,
+  // not an uninitialized choice. Only apply the convenient default once.
+  const existingProjectSelectionInitializedRef = useRef(false);
   const titleId = useId();
   const copyId = useId();
   const rootHintId = useId();
@@ -81,9 +84,10 @@ export function FirstProjectGate({
   const canSubmit = lockedProject ? true : Boolean(nameDraft.trim() && rootDraft.trim() && isAbsolutePath(rootDraft));
 
   useEffect(() => {
-    if (registeredProject || selectedExistingProjectId || availableProjects.length === 0) return;
+    if (registeredProject || availableProjects.length === 0 || existingProjectSelectionInitializedRef.current) return;
+    existingProjectSelectionInitializedRef.current = true;
     setSelectedExistingProjectId(availableProjects[0]!.id);
-  }, [availableProjects, registeredProject, selectedExistingProjectId]);
+  }, [availableProjects, registeredProject]);
 
   useEffect(() => {
     if (!open) {
