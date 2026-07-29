@@ -364,39 +364,39 @@ test("end-to-end on a real filesystem: stale launcher removed, fresh copy verifi
   }
   const root = await mkdtemp(path.join(os.tmpdir(), "coven-resolve-e2e-"));
   try {
-  const makeInstall = async (prefix: string, version: string) => {
-    const pkg = path.join(prefix, "lib", "node_modules", "@opencoven", "cli");
-    const bin = path.join(prefix, "bin");
-    await mkdir(path.join(pkg, "bin"), { recursive: true });
-    await mkdir(bin, { recursive: true });
-    await writeFile(
-      path.join(pkg, "package.json"),
-      JSON.stringify({ name: "@opencoven/cli", version, bin: { coven: "bin/coven.js" } }),
-    );
-    await writeFile(
-      path.join(pkg, "bin", "coven.js"),
-      `#!/usr/bin/env node\nconsole.log("coven v${version}");\n`,
-      { mode: 0o755 },
-    );
-    await symlink(
-      path.relative(bin, path.join(pkg, "bin", "coven.js")),
-      path.join(bin, "coven"),
-    );
-    return { launcher: path.join(bin, "coven") };
-  };
+    const makeInstall = async (prefix: string, version: string) => {
+      const pkg = path.join(prefix, "lib", "node_modules", "@opencoven", "cli");
+      const bin = path.join(prefix, "bin");
+      await mkdir(path.join(pkg, "bin"), { recursive: true });
+      await mkdir(bin, { recursive: true });
+      await writeFile(
+        path.join(pkg, "package.json"),
+        JSON.stringify({ name: "@opencoven/cli", version, bin: { coven: "bin/coven.js" } }),
+      );
+      await writeFile(
+        path.join(pkg, "bin", "coven.js"),
+        `#!/usr/bin/env node\nconsole.log("coven v${version}");\n`,
+        { mode: 0o755 },
+      );
+      await symlink(
+        path.relative(bin, path.join(pkg, "bin", "coven.js")),
+        path.join(bin, "coven"),
+      );
+      return { launcher: path.join(bin, "coven") };
+    };
 
-  const stale = await makeInstall(path.join(root, "stale"), "0.0.54");
-  const good = await makeInstall(path.join(root, "good"), LATEST);
-  const covenPath = [
-    path.join(root, "stale", "bin"),
-    path.join(root, "good", "bin"),
-    path.dirname(process.execPath),
-    // `which` and realpath live in the system dirs on every CI platform.
-    "/usr/bin",
-    "/bin",
-  ].join(path.delimiter);
+    const stale = await makeInstall(path.join(root, "stale"), "0.0.54");
+    const good = await makeInstall(path.join(root, "good"), LATEST);
+    const covenPath = [
+      path.join(root, "stale", "bin"),
+      path.join(root, "good", "bin"),
+      path.dirname(process.execPath),
+      // `which` and realpath live in the system dirs on every CI platform.
+      "/usr/bin",
+      "/bin",
+    ].join(path.delimiter);
 
-  const resolution = await resolveStaleOpenCovenLaunchers("coven-cli", LATEST, {
+    const resolution = await resolveStaleOpenCovenLaunchers("coven-cli", LATEST, {
       refreshEnv: () => ({ ...process.env, PATH: covenPath }),
       npmGlobalPrefix: async () => path.join(root, "good"),
       // This test spawns real child processes (`which`, then `node coven.js
