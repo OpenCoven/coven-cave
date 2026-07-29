@@ -284,3 +284,146 @@ describe("aggregateThreadSignals skill access gaps", () => {
     ]);
   });
 });
+
+describe("aggregateThreadSignals stale signal clearing", () => {
+  function reportAt(
+    id: string,
+    reportedAt: string,
+    overrides: Partial<ThreadSelfReport>,
+  ): ThreadSelfReport {
+    return {
+      ...fullReport(),
+      id,
+      sessionId: id,
+      reportedAt,
+      ...overrides,
+    };
+  }
+
+  it("clears stale capabilitiesLacking rows when newer reports no longer list them", () => {
+    const stale = reportAt("session-old", "2026-07-10T08:00:00.000Z", {
+      capabilitiesLacking: [
+        {
+          name: "Reliable granted-root write enforcement",
+          importance: "blocking",
+          detail: "Writes and repo-local commands were denied.",
+        },
+      ],
+    });
+    const recovered = reportAt("session-new", "2026-07-14T09:00:00.000Z", {
+      capabilitiesLacking: [],
+    });
+
+    for (const reports of [
+      [stale, recovered],
+      [recovered, stale],
+    ]) {
+      assert.deepEqual(aggregateThreadSignals(reports).capabilitiesLacking, []);
+    }
+  });
+
+  it("clears stale persistent blockers when newer reports resolve them", () => {
+    const stale = reportAt("session-old", "2026-07-10T08:00:00.000Z", {
+      persistentBlockers: [
+        {
+          id: "granted-root-write-denied",
+          title: "coven-cave grant not reflected in tool execution",
+          category: "permission",
+          impact: "blocking",
+          detail: "Writes and cwd changes were denied in the target repo.",
+        },
+      ],
+    });
+    const recovered = reportAt("session-new", "2026-07-14T09:00:00.000Z", {
+      persistentBlockers: [],
+    });
+
+    for (const reports of [
+      [stale, recovered],
+      [recovered, stale],
+    ]) {
+      assert.deepEqual(aggregateThreadSignals(reports).persistentBlockers, []);
+    }
+  });
+
+  it("uses descending report ID to break reportedAt ties regardless of input order", () => {
+    const stale = reportAt("report-a", "2026-07-14T09:00:00.000Z", {
+      capabilitiesLacking: [
+        {
+          name: "Shell access",
+          importance: "blocking",
+          detail: "Commands were denied.",
+        },
+      ],
+      persistentBlockers: [
+        {
+          id: "shell-denied",
+          title: "Shell denied",
+          category: "permission",
+          impact: "blocking",
+          detail: "Commands were denied.",
+        },
+      ],
+    });
+    const recovered = reportAt("report-z", stale.reportedAt, {
+      capabilitiesLacking: [],
+      persistentBlockers: [],
+    });
+
+    for (const reports of [
+      [stale, recovered],
+      [recovered, stale],
+    ]) {
+      const aggregate = aggregateThreadSignals(reports);
+      assert.deepEqual(aggregate.capabilitiesLacking, []);
+      assert.deepEqual(aggregate.persistentBlockers, []);
+    }
+  });
+
+  it("keeps historical frequency only for blockers still active in the newest report", () => {
+    const staleOnly = reportAt("session-oldest", "2026-07-08T08:00:00.000Z", {
+      persistentBlockers: [
+        {
+          id: "old-only",
+          title: "Old blocker",
+          category: "other",
+          impact: "high",
+          detail: "Only appears in old sessions.",
+        },
+        {
+          id: "still-active",
+          title: "Still active",
+          category: "infra",
+          impact: "medium",
+          detail: "Persists into newer sessions.",
+        },
+      ],
+    });
+    const older = reportAt("session-old", "2026-07-10T08:00:00.000Z", {
+      persistentBlockers: [
+        {
+          id: "still-active",
+          title: "Still active",
+          category: "infra",
+          impact: "medium",
+          detail: "Persists into newer sessions.",
+        },
+      ],
+    });
+    const newest = reportAt("session-new", "2026-07-14T09:00:00.000Z", {
+      persistentBlockers: [
+        {
+          id: "still-active",
+          title: "Still active",
+          category: "infra",
+          impact: "medium",
+          detail: "Persists into newer sessions.",
+        },
+      ],
+    });
+
+    const aggregate = aggregateThreadSignals([staleOnly, older, newest]);
+    assert.deepEqual(aggregate.persistentBlockers.map((item) => item.id), ["still-active"]);
+    assert.equal(aggregate.persistentBlockers[0].frequency, 3);
+  });
+});

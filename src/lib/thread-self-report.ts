@@ -215,8 +215,6 @@ export function buildThreadSignalResolutionPrompt(item: ThreadSignalReviewItem):
 
 export const THREAD_SIGNALS_EMPTY_STATE = "No thread reports yet. Use 'Reflect on this thread' to generate the first one.";
 
-const IMPORTANCE_WEIGHT: Record<CapabilityImportance, number> = { "nice-to-have": 1, important: 2, blocking: 3 };
-
 function libAvg(values: number[]): number {
   if (values.length === 0) return 0;
   return Math.round(values.reduce((s, v) => s + v, 0) / values.length);
@@ -236,7 +234,17 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
   const blockerFreq = new Map<string, number>();
   const blockerData = new Map<string, ThreadSelfReport["persistentBlockers"][number]>();
 
-  const sorted = [...reports].sort((a, b) => new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime());
+  const sorted = [...reports].sort(
+    (a, b) =>
+      new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime() ||
+      b.id.localeCompare(a.id),
+  );
+  const newest = sorted[0] ?? null;
+  // Stale-signal clearing: these lists are "current issues". If the newest
+  // report no longer carries an item, treat it as resolved and keep it out of
+  // the aggregate/queue even if older reports still mention it.
+  const activeCapabilityLacking = new Set((newest?.capabilitiesLacking ?? []).map((item) => item.name));
+  const activeBlockers = new Set((newest?.persistentBlockers ?? []).map((item) => item.id));
 
   for (const r of sorted) {
     contextCounts[r.contextPressure]++;
@@ -266,10 +274,13 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
       if (!capVital.has(c.name)) capVital.set(c.name, c);
     }
     for (const c of r.capabilitiesLacking) {
-      const prev = capLacking.get(c.name);
-      if (!prev || IMPORTANCE_WEIGHT[c.importance] > IMPORTANCE_WEIGHT[prev.importance]) capLacking.set(c.name, c);
+      if (!activeCapabilityLacking.has(c.name)) continue;
+      // Latest report wins per capability: once a capability is no longer in
+      // the newest "lacking" list, older complaints stay resolved.
+      if (!capLacking.has(c.name)) capLacking.set(c.name, c);
     }
     for (const b of r.persistentBlockers) {
+      if (!activeBlockers.has(b.id)) continue;
       libIncrement(blockerFreq, b.id);
       if (!blockerData.has(b.id)) blockerData.set(b.id, b);
     }
