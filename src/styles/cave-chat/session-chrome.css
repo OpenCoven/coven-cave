@@ -62,10 +62,7 @@
 
 .cave-chat-context-row__stats {
   flex: none;
-}
-
-.cave-chat-context-row__spacer {
-  flex: 1 1 auto;
+  margin-left: auto;
 }
 
 .cave-chat-context-chip {
@@ -95,18 +92,35 @@
   background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
 }
 
+/* One tint per element, set by the model's `is-*` class and read by the glyph,
+   the dot, the value and the meter fill — so a new tint teaches one place. */
+.cave-chat-context-chip__glyph,
+.cave-chat-context-stat {
+  --ctx-tint: var(--text-muted);
+}
+
+.cave-chat-context-chip__glyph.is-accent,
+.cave-chat-context-stat.is-accent {
+  --ctx-tint: var(--accent-presence);
+}
+
+.cave-chat-context-chip__glyph.is-success,
+.cave-chat-context-stat.is-success {
+  --ctx-tint: var(--color-success);
+}
+
+.cave-chat-context-stat.is-warning {
+  --ctx-tint: var(--color-warning);
+}
+
+.cave-chat-context-stat.is-danger {
+  --ctx-tint: var(--color-danger);
+}
+
 .cave-chat-context-chip__glyph {
   display: inline-flex;
   flex: none;
-  color: var(--text-muted);
-}
-
-.cave-chat-context-chip__glyph.is-accent {
-  color: var(--accent-presence);
-}
-
-.cave-chat-context-chip__glyph.is-success {
-  color: var(--color-success);
+  color: var(--ctx-tint);
 }
 
 .cave-chat-context-chip__key {
@@ -134,8 +148,9 @@
   white-space: nowrap;
 }
 
-.cave-chat-context-stat:hover {
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+.cave-chat-context-stat__dot,
+.cave-chat-context-stat__fill {
+  background: var(--ctx-tint);
 }
 
 .cave-chat-context-stat__dot {
@@ -143,41 +158,6 @@
   height: 4px;
   flex: none;
   border-radius: var(--radius-pill);
-  background: var(--text-muted);
-}
-
-.cave-chat-context-stat__dot.is-accent,
-.cave-chat-context-stat__value.is-accent {
-  background: var(--accent-presence);
-}
-
-.cave-chat-context-stat__value.is-accent {
-  background: none;
-  color: var(--accent-presence);
-}
-
-.cave-chat-context-stat__dot.is-success {
-  background: var(--color-success);
-}
-
-.cave-chat-context-stat__value.is-success {
-  color: var(--color-success);
-}
-
-.cave-chat-context-stat__dot.is-warning {
-  background: var(--color-warning);
-}
-
-.cave-chat-context-stat__value.is-warning {
-  color: var(--color-warning);
-}
-
-.cave-chat-context-stat__dot.is-danger {
-  background: var(--color-danger);
-}
-
-.cave-chat-context-stat__value.is-danger {
-  color: var(--color-danger);
 }
 
 .cave-chat-context-stat__key {
@@ -185,7 +165,7 @@
 }
 
 .cave-chat-context-stat__value {
-  color: var(--text-secondary);
+  color: var(--ctx-tint);
   font-variant-numeric: tabular-nums;
 }
 
@@ -203,19 +183,6 @@
   display: block;
   height: 100%;
   border-radius: var(--radius-pill);
-  background: var(--accent-presence);
-}
-
-.cave-chat-context-stat__fill.is-success {
-  background: var(--color-success);
-}
-
-.cave-chat-context-stat__fill.is-warning {
-  background: var(--color-warning);
-}
-
-.cave-chat-context-stat__fill.is-danger {
-  background: var(--color-danger);
 }
 
 /* Narrow panes drop the stats before the chips — which project and branch the
@@ -270,6 +237,10 @@
    the answer it precedes — rather than a right-aligned accent bubble, so a
    long thread reads as one column of alternating voices (design 2a ④). */
 .cave-chat-linear .cave-bubble-user {
+  /* The message column is items-end (its action row is right-aligned), so the
+     card claims the left edge explicitly rather than floating right. */
+  align-self: flex-start;
+  width: 100%;
   max-width: min(100%, 800px);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-card);
@@ -330,16 +301,16 @@
 }
 
 .cave-chat-startfrom__group {
-  display: flex;
-  align-items: stretch;
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-card);
-  background: color-mix(in oklch, var(--bg-raised) 35%, transparent);
   /* Per-group tint: the header, the tile top-bars and the row dots all read
      from this one property, so a new group only sets --sf-tint. */
   --sf-tint: var(--accent-presence);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--sf-tint) 32%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 35%, transparent);
 }
 
 .cave-chat-startfrom__group.is-tasks {
@@ -348,11 +319,6 @@
 
 .cave-chat-startfrom__group.is-chats {
   --sf-tint: var(--color-success);
-}
-
-.cave-chat-startfrom__group {
-  border-color: color-mix(in oklch, var(--sf-tint) 32%, transparent);
-  flex-direction: column;
 }
 
 .cave-chat-startfrom__group-head {
@@ -446,10 +412,6 @@
   font-size: var(--text-sm);
   line-height: 1.35;
   color: var(--text-secondary);
-}
-
-.cave-chat-startfrom__tile:hover:not(:disabled) .cave-chat-startfrom__tile-title {
-  color: var(--text-primary);
 }
 
 .cave-chat-startfrom__tile-badge {

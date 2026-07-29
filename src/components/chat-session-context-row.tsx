@@ -38,15 +38,18 @@ function ChipBody({ chip }: { chip: ChatContextChip }) {
 }
 
 function StatCell({ stat }: { stat: ChatContextStat }) {
+  // One tint class on the root; the dot, value and meter fill read it as a
+  // custom property, so a new tint never has to be threaded through four
+  // child class names.
   return (
-    <span className="cave-chat-context-stat" title={stat.title}>
-      <span className={`cave-chat-context-stat__dot is-${stat.tint}`} aria-hidden />
+    <span className={`cave-chat-context-stat is-${stat.tint}`} title={stat.title}>
+      <span className="cave-chat-context-stat__dot" aria-hidden />
       <span className="cave-chat-context-stat__key">{stat.label}</span>
-      <span className={`cave-chat-context-stat__value is-${stat.tint}`}>{stat.value}</span>
+      <span className="cave-chat-context-stat__value">{stat.value}</span>
       {stat.percent != null ? (
         <span className="cave-chat-context-stat__meter" aria-hidden>
           <span
-            className={`cave-chat-context-stat__fill is-${stat.tint}`}
+            className="cave-chat-context-stat__fill"
             style={{ width: `${Math.max(3, Math.min(100, stat.percent))}%` }}
           />
         </span>
@@ -117,7 +120,6 @@ export function ChatSessionContextRow({
           ),
         )}
       </div>
-      <span className="cave-chat-context-row__spacer" />
       <div className="cave-chat-context-row__stats">
         {stats.map((stat) => (
           <StatCell key={stat.id} stat={stat} />

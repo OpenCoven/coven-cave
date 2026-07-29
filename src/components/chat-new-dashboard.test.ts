@@ -174,8 +174,30 @@ assert.match(
   "the headline counts the open threads",
 );
 assert.match(dash, /home-dash__work-resume/, "work rows keep the visual Resume CTA");
-assert.match(dash, /home-dash__section-label">Open work</, "the Open work section keeps its label");
-assert.match(dash, /home-dash__section-label">Recent threads</, "a Recent threads list renders under Open work");
+// Chat.dc.html 2b turned the board into a "Start from" launcher: the sections
+// are now named after the SOURCE of the work (Tasks / Chats) and each states
+// how much of that source is on screen, from the shared pure model.
+assert.match(dash, /className="home-dash__startfrom"/, "the board leads with the Start-from band");
+assert.match(
+  dash,
+  /const tasksGroup = startFromGroup\("tasks", visibleWork\.length, openWork\.length\)/,
+  "the Tasks group counts the capped rows against every open item",
+);
+assert.match(
+  dash,
+  /home-dash__section-count">\{tasksGroup\.count\}/,
+  "the Tasks header shows its count",
+);
+assert.match(
+  dash,
+  /home-dash__section-count">\{chatsGroup\.count\}/,
+  "the Chats header shows its count",
+);
+assert.match(
+  dash,
+  /aria-label="Recent threads"/,
+  "the resumable-threads group still renders under the work group",
+);
 assert.match(
   dash,
   /home-dash__meta">[\s\S]*?\{familiar\.harness\}[\s\S]*?\{modelId \? <span>\{modelId\}<\/span> : null\}/,
