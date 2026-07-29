@@ -123,14 +123,26 @@ function firstSemver(text: string): string | null {
   return match?.[1] ?? null;
 }
 
+/** How long a PATH lookup (`which`/`where`) may take before we treat the tool
+ *  as absent, and how long a launcher may take to answer `--version`.
+ *
+ *  These are UI latency budgets, not correctness thresholds: a wedged launcher
+ *  must not stall the settings surface behind it. Callers that care about the
+ *  ANSWER rather than the wait — an end-to-end test on a loaded machine, say —
+ *  pass their own budget instead of inheriting a deadline tuned for a
+ *  responsive UI, which is otherwise a coin flip they'd lose occasionally. */
+const LOOKUP_TIMEOUT_MS = 1500;
+const VERSION_PROBE_TIMEOUT_MS = 2500;
+
 async function commandPath(
   binary: string,
-  options: { env?: NodeJS.ProcessEnv; refresh?: boolean } = {},
+  options: { env?: NodeJS.ProcessEnv; refresh?: boolean; timeoutMs?: number } = {},
 ): Promise<CommandPathResult> {
   const finder = process.platform === "win32" ? "where" : "which";
+  const timeout = options.timeoutMs ?? LOOKUP_TIMEOUT_MS;
   const find = async (env: NodeJS.ProcessEnv): Promise<CommandPathResult> => {
     try {
-      const { stdout } = await execFileAsync(finder, [binary], { env, timeout: 1500 });
+      const { stdout } = await execFileAsync(finder, [binary], { env, timeout });
       const lines = stdout.split(/\r?\n/);
       return {
         path:
@@ -227,10 +239,10 @@ async function packageIdentityForExecutable(
 
 export async function discoverOpenCovenTool(
   tool: OpenCovenToolSpec,
-  options: { env?: NodeJS.ProcessEnv } = {},
+  options: { env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
 ): Promise<OpenCovenToolProbe> {
   const env = options.env ?? refreshCovenSpawnEnv();
-  const located = await commandPath(tool.binary, { env });
+  const located = await commandPath(tool.binary, { env, timeoutMs: options.timeoutMs });
   if (!located.path) {
     return {
       path: null,
@@ -241,7 +253,7 @@ export async function discoverOpenCovenTool(
       packagePath: null,
     };
   }
-  return probeOpenCovenBinaryAt(tool, located.path, env);
+  return probeOpenCovenBinaryAt(tool, located.path, env, { timeoutMs: options.timeoutMs });
 }
 
 /** Probe one explicit launcher path (no PATH lookup): resolve its executable
@@ -252,6 +264,7 @@ export async function probeOpenCovenBinaryAt(
   tool: Pick<OpenCovenToolSpec, "binary" | "versionArgs">,
   binaryPath: string,
   env: NodeJS.ProcessEnv = refreshCovenSpawnEnv(),
+  options: { timeoutMs?: number } = {},
 ): Promise<OpenCovenToolProbe> {
   const executablePath = await resolvedExecutablePath(binaryPath);
   const identity = executablePath
@@ -273,7 +286,7 @@ export async function probeOpenCovenBinaryAt(
     const { stdout, stderr } = await execFileAsync(
       launch.command,
       [...launch.fixedArgs, ...tool.versionArgs],
-      { env, timeout: 2500 },
+      { env, timeout: options.timeoutMs ?? VERSION_PROBE_TIMEOUT_MS },
     );
     const version = firstSemver(`${stdout}\n${stderr}`);
     return {

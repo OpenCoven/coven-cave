@@ -10,6 +10,7 @@ import {
   grantProjectToFamiliar,
   listAccessGroups,
   listProjectGrants,
+  listRecentGrantChanges,
   listRecentPermissionAudit,
   loadHumanPermissionConfig,
   inspectProjectPermissionIntegrity,
@@ -57,10 +58,11 @@ function accessInput(payload: Record<string, unknown>): "read" | "write" | null 
 }
 
 export async function GET() {
-  const [grants, config, audit, accessGroups, integrity] = await Promise.all([
+  const [grants, config, audit, grantChanges, accessGroups, integrity] = await Promise.all([
     listProjectGrants(),
     loadHumanPermissionConfig(),
     listRecentPermissionAudit(),
+    listRecentGrantChanges(),
     listAccessGroups(),
     inspectProjectPermissionIntegrity(),
   ]);
@@ -78,6 +80,9 @@ export async function GET() {
     mobileMutationsAllowed: config.allowMobileGrantMutations,
     audit,
     integrity,
+    // Access CHANGES — who widened or narrowed a grant. Distinct from
+    // `audit`, which is the access-CHECK decision log.
+    grantChanges,
   });
 }
 

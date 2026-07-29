@@ -39,6 +39,7 @@ try {
     GRANT_ACCEPT_UNDO_WINDOW_MS,
     ProjectAccessDeniedError,
   } = await import("./project-permissions.ts");
+  const { withProjectRegistryLock } = await import("./cave-projects.ts");
 
   const projects = [
     { id: "cave", name: "Cave", root: "/tmp/cave", createdAt: "now", updatedAt: "now" },
@@ -447,6 +448,61 @@ try {
   }, "repair only removes unknown-project records and never broadens access");
   assert.equal((await loadProjectPermissions()).repairAudit.at(-1)?.kind, "orphan-project-repair", "repair writes an auditable record");
   assert.deepEqual(await repairOrphanProjectPermissions(), afterRepair, "a retry after an interrupted repair is idempotent");
+
+  // A registry registration that is in-flight while repair is requested must
+  // commit before repair snapshots project ids. Otherwise a grant for an
+  // existing restored id can be incorrectly pruned between an earlier registry
+  // read and the permission-file write.
+  const restoredProject = {
+    id: "restored-during-repair",
+    name: "Restored during repair",
+    root: "/tmp/restored-during-repair",
+    createdAt: "now",
+    updatedAt: "now",
+  };
+  await grantProjectToFamiliar({
+    familiarId: "racing-registration",
+    projectId: restoredProject.id,
+    source: "human",
+  });
+  let registrationEntered!: () => void;
+  let finishRegistration!: () => void;
+  const enteredRegistration = new Promise<void>((resolve) => {
+    registrationEntered = resolve;
+  });
+  const registrationGate = new Promise<void>((resolve) => {
+    finishRegistration = resolve;
+  });
+  const registering = withProjectRegistryLock(async (currentProjects) => {
+    registrationEntered();
+    await registrationGate;
+    await writeFile(
+      process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+      JSON.stringify({ version: 1, projects: [...currentProjects, restoredProject] }),
+      "utf8",
+    );
+  });
+  await enteredRegistration;
+  const concurrentRepair = repairOrphanProjectPermissions();
+  await Promise.resolve();
+  finishRegistration();
+  await registering;
+  assert.deepEqual(
+    await concurrentRepair,
+    {
+      directGrants: 0,
+      groupGrants: 0,
+      proposals: 0,
+      orphanProjectIds: [],
+    },
+    "repair snapshots the registry only after the concurrent registration commits",
+  );
+  assert.ok(
+    (await listProjectGrants()).some(
+      (grant) => grant.familiarId === "racing-registration" && grant.projectId === restoredProject.id,
+    ),
+    "a concurrent registry restore cannot lose its existing permission record",
+  );
 
   console.log("project-permissions.test.ts: ok");
 } finally {

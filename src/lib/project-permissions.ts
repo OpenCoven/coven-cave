@@ -5,7 +5,7 @@ import { caveHome } from "./coven-paths.ts";
 import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 
-import { loadProjects, projectForRoot } from "./cave-projects.ts";
+import { loadProjects, projectForRoot, withProjectRegistryLock } from "./cave-projects.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
 import {
   accessLevelSatisfies,
@@ -872,21 +872,22 @@ export async function inspectProjectPermissionIntegrity(): Promise<ProjectPermis
  * idempotent and reviewable.
  */
 export async function repairOrphanProjectPermissions(): Promise<ProjectPermissionIntegrityReport> {
-  const projects = await loadProjects();
-  const knownProjectIds = new Set(projects.map((project) => project.id));
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
-    const file = await loadProjectPermissionsUnlocked();
-    const report = orphanProjectIntegrity(file, knownProjectIds);
-    if (report.directGrants + report.groupGrants + report.proposals === 0) return report;
-    file.projectGrants = file.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
-    for (const group of file.accessGroups) {
-      group.projectGrants = group.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
-    }
-    file.grantProposals = file.grantProposals.filter((proposal) => knownProjectIds.has(proposal.projectId));
-    file.repairAudit.push({ at: new Date().toISOString(), kind: "orphan-project-repair", ...report });
-    await saveProjectPermissions(file);
-    return report;
-  }));
+  return withProjectRegistryLock((projects) => {
+    const knownProjectIds = new Set(projects.map((project) => project.id));
+    return withProjectPermissionsStore(() => withWriteMutex(async () => {
+      const file = await loadProjectPermissionsUnlocked();
+      const report = orphanProjectIntegrity(file, knownProjectIds);
+      if (report.directGrants + report.groupGrants + report.proposals === 0) return report;
+      file.projectGrants = file.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
+      for (const group of file.accessGroups) {
+        group.projectGrants = group.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
+      }
+      file.grantProposals = file.grantProposals.filter((proposal) => knownProjectIds.has(proposal.projectId));
+      file.repairAudit.push({ at: new Date().toISOString(), kind: "orphan-project-repair", ...report });
+      await saveProjectPermissions(file);
+      return report;
+    }));
+  });
 }
 
 export async function bootstrapSupremeProjectGrants(projects: CaveProject[]): Promise<void> {

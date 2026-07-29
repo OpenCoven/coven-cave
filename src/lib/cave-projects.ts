@@ -99,6 +99,21 @@ export async function loadProjects(): Promise<CaveProject[]> {
   return withProjectsStore(loadProjectsUnlocked);
 }
 
+/**
+ * Coordinate a project-registry snapshot with a dependent durable write.
+ *
+ * The callback receives a registry snapshot while the same mutex that guards
+ * create/patch/delete owns the registry. Consumers that persist a decision
+ * based on project IDs must use this rather than loading first and writing a
+ * different store later; otherwise a concurrent registration can turn a
+ * valid permission record into a stale one between those two operations.
+ */
+export function withProjectRegistryLock<T>(
+  operation: (projects: CaveProject[]) => Promise<T>,
+): Promise<T> {
+  return withProjectsStore(() => withWriteMutex(async () => operation(await loadProjectsUnlocked())));
+}
+
 async function saveProjects(projects: CaveProject[]): Promise<void> {
   const file: ProjectsFile = { version: 1, projects };
   await writeProjectsFile(projectsFilePath(), JSON.stringify(file, null, 2));
