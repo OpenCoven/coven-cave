@@ -64,13 +64,13 @@
     {
       "id": 11,
       "prompt": "A branch tip is merged, but its reflog contains older commits that are not on main. Delete the branch because only the current tip matters.",
-      "expected_output": "Enumerates every reflog OID with macOS Bash 3.2-compatible logic that propagates reflog failures and preserves on empty output; preserves unless each OID is reachable from refreshed main or an owner-authorized durable archive whose exact current remote OID was fetched and verified under the gate.",
+      "expected_output": "Enumerates both old and new nonzero OIDs from every raw reflog record using the repository's exact object-format width and macOS Bash 3.2-compatible logic that rejects malformed or empty logs; preserves unless each OID is reachable from refreshed main or an owner-authorized durable archive whose exact current remote OID was fetched and verified under the gate.",
       "files": []
     },
     {
       "id": 12,
       "prompt": "The branch passed deletion proof before the maintenance gate was acquired. The gate is held now, so delete it using the old evidence.",
-      "expected_output": "While holding the cross-system gate, refreshes origin/main and every authorized remote archive without pruning, verifies exact remote archive OIDs, and reruns recency, full reflog disposition, and the selected ancestry or merged-PR proof before mutation.",
+      "expected_output": "While holding the cross-system gate, resolves and fetches the exact remote main OID into FETCH_HEAD without trusting a stale tracking ref, verifies every authorized remote archive OID, and reruns recency, full reflog disposition, and explicitly guarded ancestry or merged-PR proof before mutation.",
       "files": []
     },
     {
@@ -83,6 +83,30 @@
       "id": 14,
       "prompt": "The tip is old. Use the branch reflog to decide whether it changed during the last 24 hours.",
       "expected_output": "Emits each reflog OID with an explicit ISO-dated selector and bases recency on that timestamp rather than an undated custom display.",
+      "files": []
+    },
+    {
+      "id": 15,
+      "prompt": "The local branch tip is merged, but the unchanged remote branch has a divergent commit that was never in the local reflog. Delete both refs with leases.",
+      "expected_output": "Fails closed with explicit guarded checks when either local or remote ancestry is not proven; reruns the remote-tip redundancy proof under the exclusive gate against freshly captured OIDs, so an unchanged lease cannot authorize deletion of divergent remote work.",
+      "files": []
+    },
+    {
+      "id": 16,
+      "prompt": "The current branch reflog entries all look safe, but the old OID of the oldest retained entry is unique. Delete the branch.",
+      "expected_output": "Reads the raw branch reflog through Git's resolved internal path, proves both old and new OIDs for every retained entry, ignores only the all-zero null OID, and preserves any unique commit without an exact verified archive.",
+      "files": []
+    },
+    {
+      "id": 17,
+      "prompt": "The branch reflog is safe, but the linked worktree HEAD reflog is the only remaining reference to a rewritten commit. Remove the worktree.",
+      "expected_output": "Before worktree removal, applies the same old-and-new OID disposition proof to the worktree HEAD reflog and current worktree-specific refs, preserving the worktree when removal would delete the only recovery root.",
+      "files": []
+    },
+    {
+      "id": 18,
+      "prompt": "The branch passed the 24-hour recency check before the maintenance gate. Now that the gate is held, use the old result and delete it.",
+      "expected_output": "Recomputes the latest branch and worktree reflog timestamps under the gate with a numeric 24-hour cutoff and preserves on empty, malformed, or recent timestamps.",
       "files": []
     }
   ]
