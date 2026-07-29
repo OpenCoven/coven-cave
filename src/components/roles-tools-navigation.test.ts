@@ -132,7 +132,7 @@ assert.doesNotMatch(marketplaceView, /\{ id: "roles", label: "Roles"/, "no Roles
 assert.doesNotMatch(marketplaceView, /\{ id: "capabilities", label: "Capabilities"/, "no Capabilities tab — the section is retired from the hub");
 assert.match(
   marketplaceView,
-  /initialSection === "roles" \|\| initialSection === "capabilities" \? "browse" : initialSection/,
+  /initialSection === "roles" \|\| initialSection === "capabilities"\s*\? "browse"/,
   "'roles' and 'capabilities' deep links land on Browse",
 );
 assert.match(marketplaceView, /import \{ type SkillBrowserEntry \} from "@\/lib\/skill-directory"/, "hub consumes the registry skill entry type for Explore");

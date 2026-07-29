@@ -2,6 +2,7 @@ import type { IconName } from "@/lib/icon";
 import type { SkillBrowserEntry } from "@/lib/skill-directory";
 import type { SkillEntry as SkillDetailEntry } from "@/components/skill-detail-drawer";
 import type { KindFilter, SortKey } from "@/lib/marketplace-catalog";
+import { caveCrafts } from "@/lib/feature-flags";
 
 /** Sections retained by the marketplace router, including legacy deep links.
  *  "skills" is no longer a visible tab — the Skills directory merged into
@@ -12,7 +13,7 @@ export type MarketplaceSection = "browse" | "crafts" | "roles" | "skills" | "bui
 
 export const MARKETPLACE_SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label: string; icon: IconName }> = [
   { id: "browse", label: "Explore", icon: "ph:compass" },
-  { id: "crafts", label: "Crafts", icon: "ph:package-bold" },
+  ...(caveCrafts() ? [{ id: "crafts", label: "Crafts", icon: "ph:package-bold" } satisfies { id: MarketplaceSection; label: string; icon: IconName }] : []),
   { id: "build", label: "Build", icon: "ph:flow-arrow" },
 ];
 
@@ -61,7 +62,7 @@ export const MARKETPLACE_KIND_TABS: ReadonlyArray<{ id: KindFilter; label: strin
   { id: "skill", label: "Skills" },
   { id: "prompt", label: "Prompts" },
   { id: "knowledge-pack", label: "Knowledge packs" },
-  { id: "craft", label: "Crafts" },
+  ...(caveCrafts() ? [{ id: "craft", label: "Crafts" } satisfies { id: KindFilter; label: string }] : []),
 ];
 
 export const MARKETPLACE_SORT_OPTIONS: ReadonlyArray<{ id: SortKey; label: string }> = [

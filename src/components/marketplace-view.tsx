@@ -63,6 +63,7 @@ import {
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { caveCrafts } from "@/lib/feature-flags";
 
 export type { MarketplaceSection } from "@/components/marketplace/marketplace-view-model";
 
@@ -89,17 +90,22 @@ export function MarketplaceViewSurface({
   initialSection = "browse",
   familiars = [],
 }: Props = {}) {
+  const craftsEnabled = caveCrafts();
   // Roles and Capabilities are hidden: their deep links land on Browse.
   const [storedSection, setStoredSection] = useSurfacePreference(surfacePreferenceSpecs.marketplace.section);
   // Alias links are a one-visit destination, not a replacement for a normal
   // return preference.
-  const initialDestination = initialSection === "roles" || initialSection === "capabilities" ? "browse" : initialSection;
+  const initialDestination = initialSection === "roles" || initialSection === "capabilities"
+    ? "browse"
+    : initialSection === "crafts" ? craftsEnabled ? "crafts" : "browse" : initialSection;
   const [deepLinkSection, setDeepLinkSection] = useState<MarketplaceSection | null>(
     initialSection === "roles" || initialSection === "capabilities"
       ? "browse"
       : initialDestination === "browse" ? null : initialDestination,
   );
-  const section = deepLinkSection ?? storedSection;
+  const section = !craftsEnabled && (deepLinkSection ?? storedSection) === "crafts"
+    ? "browse"
+    : deepLinkSection ?? storedSection;
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -109,6 +115,9 @@ export function MarketplaceViewSurface({
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useSurfacePreference(surfacePreferenceSpecs.marketplace.category);
   const [kind, setKind] = useSurfacePreference(surfacePreferenceSpecs.marketplace.kind);
+  useEffect(() => {
+    if (!craftsEnabled && kind === "craft") setKind("all");
+  }, [craftsEnabled, kind, setKind]);
   // Explore's rail "Status" segment and its skill "Topics" scope, plus the
   // card/list layout toggle — all durable so Explore reopens as you left it.
   const [status, setStatus] = useSurfacePreference(surfacePreferenceSpecs.marketplace.status);
@@ -311,12 +320,16 @@ export function MarketplaceViewSurface({
     setQuery("");
   }, [setStoredSection, setKind]);
 
-  const categories = useMemo(() => categoriesFrom(plugins), [plugins]);
+  const visiblePlugins = useMemo(
+    () => plugins.filter((plugin) => craftsEnabled || plugin.kind !== "craft"),
+    [plugins, craftsEnabled],
+  );
+  const categories = useMemo(() => categoriesFrom(visiblePlugins), [visiblePlugins]);
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const p of plugins) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+    for (const p of visiblePlugins) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
     return counts;
-  }, [plugins]);
+  }, [visiblePlugins]);
 
   // The slim header's tab items — label plus a live count per section. Counts
   // appear once their loader settles so the header never flashes a stale 0;
@@ -328,13 +341,13 @@ export function MarketplaceViewSurface({
         label: s.label,
         icon: s.icon,
         count:
-          s.id === "browse" && loaded && skillsLoaded ? plugins.length + skills.length
-          : s.id === "browse" && loaded ? plugins.length
-          : s.id === "crafts" && loaded ? plugins.filter((plugin) => plugin.kind === "craft").length
+          s.id === "browse" && loaded && skillsLoaded ? visiblePlugins.length + skills.length
+          : s.id === "browse" && loaded ? visiblePlugins.length
+          : s.id === "crafts" && loaded ? visiblePlugins.filter((plugin) => plugin.kind === "craft").length
           : undefined,
         title: SECTION_HINT[s.id],
       })),
-    [loaded, plugins.length, skillsLoaded, skills.length],
+    [loaded, visiblePlugins, skillsLoaded, skills.length],
   );
 
   const activeCollection = useMemo(
@@ -351,8 +364,8 @@ export function MarketplaceViewSurface({
     if (normalized.collectionId !== collectionId) setCollectionId(normalized.collectionId);
   }, [loaded, categories, category, collectionId, setCategory, setCollectionId]);
   const collectionIds = useMemo(
-    () => (activeCollection ? resolveCollection(plugins, activeCollection).map((p) => p.id) : undefined),
-    [plugins, activeCollection],
+    () => (activeCollection ? resolveCollection(visiblePlugins, activeCollection).map((p) => p.id) : undefined),
+    [visiblePlugins, activeCollection],
   );
 
   // Registry-skill install state overlays optimistic local edits on top of the
@@ -394,14 +407,14 @@ export function MarketplaceViewSurface({
   // Plugin pool — connectors (mcp/api) plus plugin-kind skills, honoring the
   // rail's Type + Status + Category/Collection scope and the search box.
   const filteredPlugins = useMemo(() => {
-    const matched = filterPlugins(plugins, {
+    const matched = filterPlugins(visiblePlugins, {
       query,
       category: activeCollection || kind === "skill" ? "All" : category,
       kind,
       ids: collectionIds,
     }).filter(statusOkPlugin);
     return sortPlugins(matched, sort);
-  }, [plugins, query, category, kind, sort, collectionIds, activeCollection, statusOkPlugin]);
+  }, [visiblePlugins, query, category, kind, sort, collectionIds, activeCollection, statusOkPlugin]);
 
   // Registry skills join the pool whenever Skills (or All) is the active type;
   // a picked plugin category or "needs-setup" status excludes them.
@@ -446,19 +459,21 @@ export function MarketplaceViewSurface({
   // Rail counts (mock parity): Type spans the whole catalog; Status is global.
   const typeCount = useCallback(
     (id: KindFilter) => {
-      if (id === "all") return plugins.length + skills.length;
-      if (id === "skill") return plugins.filter((p) => p.kind === "skill").length + skills.length;
-      return plugins.filter((p) => p.kind === id).length;
+      const visiblePlugins = plugins.filter((plugin) => craftsEnabled || plugin.kind !== "craft");
+      if (id === "all") return visiblePlugins.length + skills.length;
+      if (id === "skill") return visiblePlugins.filter((p) => p.kind === "skill").length + skills.length;
+      return visiblePlugins.filter((p) => p.kind === id).length;
     },
-    [plugins, skills],
+    [plugins, skills, craftsEnabled],
   );
   const statusCount = useCallback(
     (id: MarketplaceStatusFilter) => {
-      if (id === "installed") return plugins.filter((p) => pluginBadgeState(p) === "added").length + skills.filter(skillIsInstalled).length;
-      if (id === "needs-setup") return plugins.filter((p) => pluginBadgeState(p) === "needs-setup").length;
-      return plugins.length + skills.length;
+      const visiblePlugins = plugins.filter((plugin) => craftsEnabled || plugin.kind !== "craft");
+      if (id === "installed") return visiblePlugins.filter((p) => pluginBadgeState(p) === "added").length + skills.filter(skillIsInstalled).length;
+      if (id === "needs-setup") return visiblePlugins.filter((p) => pluginBadgeState(p) === "needs-setup").length;
+      return visiblePlugins.length + skills.length;
     },
-    [plugins, skills, skillIsInstalled],
+    [plugins, skills, skillIsInstalled, craftsEnabled],
   );
 
   const craftPlugins = useMemo(
@@ -791,7 +806,7 @@ export function MarketplaceViewSurface({
                     <ExploreRailRow
                       key={cat}
                       label={cat}
-                      count={cat === "All" ? plugins.length : categoryCounts.get(cat) ?? 0}
+                      count={cat === "All" ? visiblePlugins.length : categoryCounts.get(cat) ?? 0}
                       active={!activeCollection && category === cat}
                       onClick={() => selectCategory(cat)}
                     />
@@ -971,7 +986,7 @@ export function MarketplaceViewSurface({
             )}
           </div>
         </div>
-      ) : section === "crafts" ? (
+      ) : craftsEnabled && section === "crafts" ? (
         <div
           role="tabpanel"
           id="marketplace-panel-crafts"
@@ -1159,7 +1174,7 @@ export function MarketplaceViewSurface({
         />
       ) : null}
 
-      <CraftCreateDrawer
+      {craftsEnabled ? <CraftCreateDrawer
         open={creatingCraft}
         seed={craftSeed}
         onClose={() => {
@@ -1173,7 +1188,7 @@ export function MarketplaceViewSurface({
           void load(true).then(() => setSelected(id));
           announce("Craft draft saved", "polite");
         }}
-      />
+      /> : null}
 
       <SkillExploreDrawer
         key={exploreSkill?.id ?? "none"}

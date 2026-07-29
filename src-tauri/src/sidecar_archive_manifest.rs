@@ -7,7 +7,8 @@ pub(super) const ARCHIVE_FORMAT: &str = "tar.zst";
 pub(super) const MAX_ARCHIVE_BYTES: u64 = 80 * 1024 * 1024;
 pub(super) const MAX_UNPACKED_BYTES: u64 = 200 * 1024 * 1024 - 1;
 // Keep this in sync with scripts/sidecar-runtime-closure.mjs. Typed chat
-// follow-up and Copilot modules trace 5,796 files on Windows; preserve ten-file headroom.
+// follow-up, Copilot, Crafts, and live voice modules trace 5,796 files on
+// Windows; preserve ten-file headroom.
 pub(super) const MAX_FILE_COUNT: u64 = 5_806;
 
 #[derive(Debug, Deserialize)]
