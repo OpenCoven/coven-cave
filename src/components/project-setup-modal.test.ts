@@ -63,4 +63,57 @@ assert.match(
   "create failures surface the server's error body, not a generic guess",
 );
 
+// ── Live field validation (Projects.dc.html handoff) ───────────────────────
+// The submit gate and the per-field messages must come from ONE module, or
+// they drift and a field goes green on input the submit then rejects.
+assert.match(
+  src,
+  /import \{[\s\S]{0,240}?projectSetupBlocked,[\s\S]{0,240}?\} from "@\/lib\/project-setup-validation"/,
+  "field rules and the submit gate come from the shared validation module",
+);
+assert.match(
+  src,
+  /const blocked = projectSetupBlocked\(name, repoDraft\)/,
+  "the submit gate is computed from the same inputs the fields validate",
+);
+assert.match(src, /disabled=\{blocked\}/, "Create is blocked while any field is invalid");
+// Errors wait for a touch so an opening modal never greets you in red.
+assert.match(
+  src,
+  /const \[touched, setTouched\]/,
+  "field messages are gated on a touch, not shown from first render",
+);
+assert.match(
+  src,
+  /aria-invalid=\{touched\.name && nameError \? true : undefined\}/,
+  "an invalid name is announced, not only coloured",
+);
+assert.match(
+  src,
+  /aria-describedby=\{touched\.repo && repoError \? "project-setup-repo-error" : undefined\}/,
+  "the repo error is wired to its field for assistive tech",
+);
+
+// ── Repository suggester ───────────────────────────────────────────────────
+assert.match(
+  src,
+  /fetch\("\/api\/github\/repos"/,
+  "suggestions come from the existing repos route, not a new backend",
+);
+assert.match(
+  src,
+  /if \(!repoPickerOpen \|\| repos !== null \|\| reposState === "loading"\) return;/,
+  "the repo list is fetched lazily on first open, never on mount",
+);
+assert.match(
+  src,
+  /data\?\.configured === false[\s\S]{0,160}?setReposState\("unconfigured"\)/,
+  "a missing GitHub token says so instead of rendering an empty list",
+);
+assert.match(
+  src,
+  /applyRepoSuggestion\(repo, name\)/,
+  "picking a suggestion routes through the shared fill rule",
+);
+
 console.log("project-setup-modal.test.ts OK");
