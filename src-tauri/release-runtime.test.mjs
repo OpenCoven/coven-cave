@@ -553,6 +553,31 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   );
 });
 
+test("release builds require the configured OpenCoven X app before platform builds", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+  const buildJob = getWorkflowJob(workflow, "build");
+  const xAppConfiguration = getNamedWorkflowStep(buildJob, "Require OpenCoven X app configuration");
+
+  assert.match(
+    buildJob,
+    /^    env:\n      COVEN_CAVE_X_PRODUCTION_CLIENT_ID: \$\{\{ vars\.COVEN_CAVE_X_PRODUCTION_CLIENT_ID \}\}$/m,
+    "every release platform leg must receive the repository X app client ID",
+  );
+  assert.match(xAppConfiguration, /^\s+run: node scripts\/check-x-app-release\.mjs$/m);
+  const guardIndex = buildJob.indexOf("- name: Require OpenCoven X app configuration");
+  for (const platformBuildStep of [
+    "Build with tauri-action",
+    "Build Windows MSI without publishing",
+    "Build macOS DMG with custom release script",
+  ]) {
+    const platformBuildIndex = buildJob.indexOf(`- name: ${platformBuildStep}`);
+    assert.ok(
+      guardIndex >= 0 && platformBuildIndex > guardIndex,
+      `the X app guard must run before ${platformBuildStep}`,
+    );
+  }
+});
+
 test("Windows upgrade diagnostics preserve the legacy-bridge evidence", async () => {
   const [harness, fixtureTest, workflow, changelog, guide] = await Promise.all([
     readFile(new URL("../scripts/windows-upgrade-diagnostics.ps1", import.meta.url), "utf8"),

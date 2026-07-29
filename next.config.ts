@@ -9,6 +9,10 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 const nextConfig: NextConfig = {
+  env: {
+    COVEN_CAVE_X_PRODUCTION_CLIENT_ID:
+      process.env.COVEN_CAVE_X_PRODUCTION_CLIENT_ID?.trim() ?? "",
+  },
   // The Next.js dev tools launcher renders in a portal at bottom-left by
   // default, which intercepts taps on Cave's mobile bottom tabs in local dev.
   devIndicators: false,

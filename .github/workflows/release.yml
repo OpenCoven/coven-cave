@@ -134,6 +134,8 @@ jobs:
   build:
     name: Build ${{ matrix.label }}
     needs: daemon-package
+    env:
+      COVEN_CAVE_X_PRODUCTION_CLIENT_ID: ${{ vars.COVEN_CAVE_X_PRODUCTION_CLIENT_ID }}
     strategy:
       fail-fast: false
       matrix:
@@ -213,6 +215,9 @@ jobs:
           workspaces: "src-tauri -> target"
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Require OpenCoven X app configuration
+        run: node scripts/check-x-app-release.mjs
 
       - name: Require signed OpenCode compatibility registry
         shell: bash
