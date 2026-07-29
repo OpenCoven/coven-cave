@@ -135,13 +135,18 @@ assert.match(view, /canGoForward \?/, "the next-week control is dead on the curr
 assert.match(view, /day\.isFuture \?/, "a future day renders as a dead cell, not a link");
 assert.match(
   view,
-  /className="drd-week__step"\s*data-disabled\s*aria-disabled="true"/,
+  /<span(?=[^>]*className="drd-week__step")(?=[^>]*data-disabled)(?=[^>]*aria-disabled="true")[^>]*>/,
   "the disabled next-week branch renders as a non-link step with disabled semantics",
 );
 assert.match(
   view,
   /aria-label="Next week unavailable: this is the current week"/,
   "the disabled next-week step has an accessible name explaining why it is disabled",
+);
+assert.match(
+  read("../styles/daily-report-day.css"),
+  /\.drd-week__step:not\(\[data-disabled\]\):hover/,
+  "the disabled next-week step keeps its tooltip without enabled-link hover styling",
 );
 
 // ── theme safety ───────────────────────────────────────────────────────────

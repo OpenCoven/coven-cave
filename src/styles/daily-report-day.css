@@ -135,7 +135,7 @@
   font-size: var(--text-2xs);
 }
 
-.drd-week__step:hover {
+.drd-week__step:not([data-disabled]):hover {
   background: var(--bg-hover);
   color: var(--fg-base);
 }
