@@ -193,28 +193,11 @@
   }
 }
 
-/* ── ⑤ Suggestion pills spread the full width ──────────────────────────────
-   The design gives the follow-ups equal shares of the composer's measure —
-   one uniform row of up to four 40px pills — instead of intrinsic-width chips
-   that leave a ragged tail. Scoped to the follow-up row: the in-turn
-   .cave-next-paths chips keep their scrollable single-row grammar. */
-
-.cave-chat-followups .cave-next-paths {
-  flex-wrap: nowrap;
-  overflow: visible;
-}
-
-.cave-chat-followups .cave-next-path {
-  flex: 1 1 0;
-  min-width: 0;
-  justify-content: center;
-  height: 40px;
-  padding: 0 var(--space-4);
-  border-radius: var(--radius-panel);
-  background: color-mix(in oklch, var(--bg-raised) 45%, transparent);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* ── ⑤ Suggestions spread the full width ───────────────────────────────────
+   The design gives the follow-ups equal shares of ONE row of the composer's
+   measure. The typed follow-up cards that replaced the plain pills carry that
+   geometry in cave-chat/transcript.css (.cave-followup-cards__grid); the
+   in-turn .cave-next-paths chips keep their own count-keyed grammar. */
 
 /* ── Turn typography (④) ───────────────────────────────────────────────────
    The familiar's name is the second identity moment in the surface, so it

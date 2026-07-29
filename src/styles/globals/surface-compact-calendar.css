@@ -656,6 +656,17 @@
   padding-block: 7px;
 }
 
+/* Chat.dc.html 2a ① — the chat chrome's tab row reads in the machine register:
+   mono, uppercase, letterspaced. Scoped to the chat surface's tab strip so the
+   shared Tabs primitive keeps its Inter register on every other surface. */
+.chat-scope-tabs [role="tab"] {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 /* Dynamic viewport units for layout shell + modals — `100vh` on iOS
    includes the address bar height, so a `100vh` element would push
    content under the chrome. `100dvh` tracks the visible area, including
