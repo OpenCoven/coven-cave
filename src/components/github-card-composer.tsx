@@ -33,6 +33,7 @@ import {
   resolveSlash,
   type GhCommandAction,
 } from "@/lib/gh-card-commands";
+import { copyText } from "@/lib/clipboard";
 import { clearDraft, readDraft, writeDraft } from "@/lib/gh-card-draft";
 import { generateReviewDraft, type GhDraftScopes } from "@/lib/gh-review-draft";
 import "@/styles/gh-card-composer.css";
@@ -844,8 +845,9 @@ export function GitHubCardComposer({
               type="button"
               className="ghc-mini focus-ring"
               onClick={() => {
-                void navigator.clipboard?.writeText(merged.sha ?? "");
-                announce("Commit sha copied.");
+                void copyText(merged.sha ?? "").then((ok) =>
+                  announce(ok ? "Commit sha copied." : "Could not copy the commit sha."),
+                );
               }}
             >
               <Icon name="ph:copy" width={11} aria-hidden />

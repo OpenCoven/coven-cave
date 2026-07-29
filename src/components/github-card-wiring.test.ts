@@ -155,6 +155,16 @@ assert.match(
 
 // The familiar drafts, the human sends.
 assert.match(composer, /never auto-sent/, "the draft strip says out loud that it is not sent");
+
+// navigator.clipboard is undefined in the packaged Tauri webview, which is the
+// whole reason @/lib/clipboard exists. A direct call there no-ops while the
+// announcement still claims success.
+assert.doesNotMatch(composer, /navigator\.clipboard/, "copy goes through copyText, never navigator.clipboard directly");
+assert.match(
+  composer,
+  /copyText\(merged\.sha \?\? ""\)\.then\(\(ok\) =>/,
+  "the copy announcement reports what actually happened",
+);
 assert.doesNotMatch(
   composer,
   /generateReviewDraft\([\s\S]*?\)[\s\S]{0,400}?await postJson\("\/api\/github\/(comment|review|merge)"/,

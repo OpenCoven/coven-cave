@@ -64,11 +64,7 @@ export function buildCommandTree(ctx: GhCommandContext): GhCommandGroup[] {
       name: "merge",
       desc: "merge into the base branch",
       subs: [
-        {
-          name: "--squash",
-          desc: ctx.commitCount ? "one commit onto the base" : "one commit onto the base",
-          hint: "default",
-        },
+        { name: "--squash", desc: "one commit onto the base", hint: "default" },
         {
           name: "--merge",
           desc: ctx.commitCount ? `merge commit, keeps all ${ctx.commitCount}` : "merge commit, keeps every commit",
