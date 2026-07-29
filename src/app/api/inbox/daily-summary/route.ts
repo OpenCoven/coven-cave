@@ -26,6 +26,15 @@ const NARRATIVE_MAX_STORED_CHARS = 4_000;
 
 type NarrativePatch = NonNullable<NonNullable<InboxItem["media"]>["narrative"]>;
 
+type DailySummaryRequest = {
+  sessions?: SessionRow[];
+  date?: string;
+  /** Explicit request to build a PAST day's report. The automatic refresh
+   *  never sets this, so the midnight-rollover guard still protects it. */
+  backfill?: boolean;
+  narrative?: { text?: string; familiarId?: string; familiarName?: string; factsHash?: string };
+};
+
 /** Validate a client-submitted narrative: required fields present, control
  *  characters stripped, length bounded. Returns null (ignored) when invalid. */
 function sanitizeNarrative(
@@ -58,14 +67,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
-  let body: {
-    sessions?: SessionRow[];
-    date?: string;
-    /** Explicit request to build a PAST day's report. The automatic path never
-     *  sets this, so the midnight-rollover guard below still protects it. */
-    backfill?: boolean;
-    narrative?: { text?: string; familiarId?: string; familiarName?: string; factsHash?: string };
-  } = {};
+  let body: DailySummaryRequest = {};
   try {
     body = await req.json();
   } catch {
