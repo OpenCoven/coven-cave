@@ -302,6 +302,7 @@ export const SUITES = {
     "src/lib/daily-summary-notifications.test.ts",
     "src/lib/daily-summary-refresh.test.ts",
     "src/lib/daily-report-facts.test.ts",
+    "src/lib/daily-report-day.test.ts",
     "src/lib/daily-narrative.test.ts",
     "src/components/dev-cache-reset-script.test.ts",
     "src/components/pwa-register.test.ts",
