@@ -26,6 +26,7 @@ import { ProjectPicker } from "@/components/project-picker";
 import { NO_PROJECT_ID, chatProjectById, filterVisibleChatSessions } from "@/lib/chat-projects";
 import { cardMatchesProject, deriveOpenTaskCards, deriveContinueThreads } from "@/lib/chat-open-tasks";
 import { deriveStarterSuggestions } from "@/lib/chat-starter-suggestions";
+import { startFromGroup, startFromSub, taskTileBadge } from "@/lib/chat-start-from";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { relativeTime } from "@/lib/relative-time";
@@ -167,6 +168,14 @@ export function ChatEmptyState({
     excludeSessionId: sessionId,
     cap: CONTINUE_CAP,
   });
+  // Total resumable threads behind the capped strip — the group header says
+  // "3 of 12" only when there really are more.
+  const continuableCount = deriveContinueThreads(sessions, {
+    familiarId: familiar.id,
+    projectRoot: project?.root ?? null,
+    excludeSessionId: sessionId,
+    cap: Number.MAX_SAFE_INTEGER,
+  }).length;
   // Resumable pills take a wider net than the rail: unassigned cards are fair
   // game (clicking a pill routes the work to THIS familiar), but another
   // familiar's cards are not — that would misroute their work.
@@ -196,12 +205,6 @@ export function ChatEmptyState({
   useEffect(() => {
     setGreeting(greetingForHour(new Date().getHours()));
   }, []);
-
-  // "Context" disclosure: the project picker, open-work rail, task tile and
-  // recent-thread rail are the *context* around a new chat, not the first thing
-  // to greet you with. They collapse by default so the landing first-paints as
-  // greeting + suggestions + composer (Phase 2.1); one tap reveals them.
-  const [showContext, setShowContext] = useState(false);
 
   // Per-row resume/start state — one in-flight action at a time.
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -244,19 +247,29 @@ export function ChatEmptyState({
   const role = familiar.role?.trim();
   const railVisible =
     boardEnabled && (railCards.length > 0 || (loading && slow) || Boolean(boardError));
-  // Anything worth disclosing behind the "context" toggle? (The project picker
-  // moved to the top section — it is not part of the disclosure.)
-  const hasContext =
-    railVisible ||
-    recents.length > 0 ||
-    Boolean(project && onArmTask && linkedTasks.length === 0);
+  // "Start from" group headers (Chat.dc.html 2b) — counts and notes come from
+  // the pure model so the header can't disagree with the tiles below it.
+  const tasksGroup = startFromGroup("tasks", railCards.length, openCards.length);
+  const chatsGroup = startFromGroup("chats", recents.length, continuableCount);
+  const startFromVisible = railVisible || recents.length > 0;
 
   return (
     <div className="cave-chat-empty select-none">
       <div className="cave-chat-empty-shell">
         <p className={`cave-chat-empty-greeting${greeting ? " is-ready" : ""}`}>
           <span className="cave-chat-empty-greeting-dot" aria-hidden />
+          {/* Chat.dc.html 2b: the eyebrow names the session and its familiar;
+              the time greeting rides after it instead of leading alone. */}
+          <span className="cave-chat-empty-eyebrow">{`New session · ${familiar.display_name}`}</span>
+          {greeting ? <span aria-hidden>·</span> : null}
           {greeting ?? " "}
+        </p>
+
+        {/* One serif line — the surface's single identity moment (DESIGN.md
+            §4). It states what the page is for and flips once a project is
+            chosen, mirroring the design's readiness copy. */}
+        <p className="cave-chat-empty-hero">
+          {project ? "Brief the familiar" : "What should we begin?"}
         </p>
 
         <div className="cave-chat-empty-familiar">
@@ -339,142 +352,152 @@ export function ChatEmptyState({
           </div>
         )}
 
-        {hasContext ? (
-          <div className="cave-chat-empty-context">
-            <button
-              type="button"
-              className="cave-chat-empty-context-toggle"
-              aria-expanded={showContext}
-              onClick={() => setShowContext((v) => !v)}
-            >
-              <Icon name={showContext ? "ph:caret-up" : "ph:caret-down"} width={12} aria-hidden />
-              <span>{showContext ? "Hide context" : "Open work & recents"}</span>
-            </button>
+        {/* ── "Start from" (Chat.dc.html 2b) ────────────────────────────────
+            The blank page becomes a launcher over the work that already
+            exists: threads worth resuming and open board cards. Each tile
+            carries the whole setup, so one tap starts the session where the
+            work already lives. Always visible — it IS the page, not context
+            hidden behind a disclosure. */}
+        {startFromVisible ? (
+          <section className="cave-chat-startfrom" aria-label="Start from existing work">
+            <div className="cave-chat-startfrom__head">
+              <span className="cave-chat-startfrom__head-label">Start from</span>
+              <span className="cave-chat-startfrom__rule" aria-hidden />
+              <span className="cave-chat-startfrom__head-note">one tap opens the work in place</span>
+            </div>
 
-            {showContext ? (
-              <div className="cave-chat-empty-context-body">
-                {railVisible ? (
-                  <section className="cave-chat-empty-work" aria-label="Open work">
-                    <span className="cave-chat-empty-section-label">
-                      <Icon name="ph:kanban" width={12} aria-hidden />
-                      Open work
-                    </span>
-                    {loading && slow ? (
-                      <div className="cave-chat-empty-work-skeleton" role="status" aria-label="Loading open work">
-                        <span className="cave-chat-empty-task-skeleton" />
-                        <span className="cave-chat-empty-task-skeleton" />
-                      </div>
-                    ) : boardError ? (
-                      <p className="cave-chat-empty-work-error">
-                        Couldn&apos;t load the board.{" "}
-                        <button type="button" className="cave-chat-empty-retry" onClick={() => void reload()}>
-                          Retry
-                        </button>
-                      </p>
-                    ) : (
-                      <>
-                        {railCards.map((card) => {
-                          const needsDaemon = !card.sessionId && daemonRunning === false;
-                          const action = card.sessionId ? "Resume" : "Start";
-                          return (
-                            <button
-                              key={card.id}
-                              type="button"
-                              className="cave-chat-empty-task"
-                              disabled={busyId === card.id || needsDaemon}
-                              title={needsDaemon ? "Starting a task needs the daemon running" : undefined}
-                              aria-label={`${action} '${card.title}' — ${card.status}, ${card.priority} priority`}
-                              onClick={() => void resumeCard(card)}
-                            >
-                              <span className={`cave-chat-empty-task-status is-${card.status}`}>{card.status}</span>
-                              <span className="cave-chat-empty-task-title">{card.title}</span>
-                              {card.priority === "urgent" || card.priority === "high" ? (
-                                <span className="cave-chat-empty-task-priority">{card.priority}</span>
-                              ) : null}
-                              <span className="cave-chat-empty-task-action">
-                                {busyId === card.id ? "Opening…" : action}
-                                <Icon name="ph:arrow-right-bold" width={12} aria-hidden />
-                              </span>
-                            </button>
-                          );
-                        })}
-                        {moreCount > 0 ? (
-                          <span className="cave-chat-empty-work-more">+{moreCount} more in Tasks</span>
-                        ) : null}
-                      </>
-                    )}
-                    {actionError ? (
-                      <p className="cave-chat-empty-work-error" role="alert">
-                        {actionError}
-                      </p>
-                    ) : null}
-                  </section>
-                ) : null}
-
-                {project && onArmTask && linkedTasks.length === 0 ? (
-                  taskArmed ? (
-                    <div className="cave-chat-empty-task-armed" role="status">
-                      <Icon name="ph:kanban" width={13} aria-hidden />
-                      <span>Describe the task below — sending creates a linked board card.</span>
-                      {onDisarmTask ? (
-                        <button
-                          type="button"
-                          className="cave-chat-empty-task-armed-dismiss"
-                          aria-label="Cancel task creation"
-                          onClick={onDisarmTask}
-                        >
-                          <Icon name="ph:x-bold" width={11} aria-hidden />
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="cave-chat-empty-task-tile"
-                      onClick={() => {
-                        onArmTask();
-                        announce("Describe the task in the message box; sending creates a linked board card.");
-                      }}
-                    >
-                      <Icon name="ph:kanban" width={14} aria-hidden />
-                      <span className="cave-chat-empty-task-tile-label">Start a task in {project.name}</span>
-                      <span className="cave-chat-empty-task-tile-hint">creates a linked card</span>
+            {railVisible ? (
+              <div className="cave-chat-startfrom__group is-tasks">
+                <div className="cave-chat-startfrom__group-head">
+                  <Icon name={tasksGroup.icon} width={14} aria-hidden />
+                  <span className="cave-chat-startfrom__group-label">{tasksGroup.label}</span>
+                  <span className="cave-chat-startfrom__group-count">{tasksGroup.count}</span>
+                  <span className="cave-chat-startfrom__group-note">{tasksGroup.note}</span>
+                </div>
+                {loading && slow ? (
+                  <div className="cave-chat-empty-work-skeleton" role="status" aria-label="Loading open work">
+                    <span className="cave-chat-empty-task-skeleton" />
+                    <span className="cave-chat-empty-task-skeleton" />
+                  </div>
+                ) : boardError ? (
+                  <p className="cave-chat-empty-work-error">
+                    Couldn&apos;t load the board.{" "}
+                    <button type="button" className="cave-chat-empty-retry" onClick={() => void reload()}>
+                      Retry
                     </button>
-                  )
-                ) : null}
-
-                {recents.length > 0 ? (
-                  <section className="cave-chat-empty-recents" aria-label="Continue a recent thread">
-                    <span className="cave-chat-empty-section-label">
-                      <Icon name="ph:chat-circle-dots" width={12} aria-hidden />
-                      Continue
-                    </span>
-                    {recents.map((session) => {
-                      const title = session.title?.trim() || "Untitled thread";
-                      const when = relativeTime(session.updated_at || session.created_at, nowMs);
+                  </p>
+                ) : (
+                  <div className="cave-chat-startfrom__tiles">
+                    {railCards.map((card) => {
+                      const needsDaemon = !card.sessionId && daemonRunning === false;
+                      const action = card.sessionId ? "Resume" : "Start";
                       return (
                         <button
-                          key={session.id}
+                          key={card.id}
                           type="button"
-                          className="cave-chat-empty-recent"
-                          aria-label={`Continue '${title}'${when ? `, updated ${when}` : ""}`}
-                          onClick={() => openSession(session.id, session.familiarId)}
+                          className="cave-chat-startfrom__tile"
+                          disabled={busyId === card.id || needsDaemon}
+                          title={needsDaemon ? "Starting a task needs the daemon running" : undefined}
+                          aria-label={`${action} '${card.title}' — ${card.status}, ${card.priority} priority`}
+                          onClick={() => void resumeCard(card)}
                         >
-                          <span className="cave-chat-empty-recent-title">{title}</span>
-                          {session.diff && (session.diff.additions || session.diff.deletions) ? (
-                            <span className="cave-chat-empty-recent-diff">
-                              +{session.diff.additions} −{session.diff.deletions}
-                            </span>
-                          ) : null}
-                          <span className="cave-chat-empty-recent-time">{when}</span>
+                          <span className="cave-chat-startfrom__tile-top">
+                            <span className="cave-chat-startfrom__tile-title">{card.title}</span>
+                            <span className="cave-chat-startfrom__tile-badge">{taskTileBadge(card)}</span>
+                          </span>
+                          <span className="cave-chat-startfrom__tile-sub">
+                            <span className={`cave-chat-startfrom__tile-dot is-${card.status}`} aria-hidden />
+                            {startFromSub([card.status, busyId === card.id ? "opening…" : action.toLowerCase()])}
+                          </span>
                         </button>
                       );
                     })}
-                  </section>
+                    {moreCount > 0 ? (
+                      <span className="cave-chat-empty-work-more">+{moreCount} more in Tasks</span>
+                    ) : null}
+                  </div>
+                )}
+                {actionError ? (
+                  <p className="cave-chat-empty-work-error" role="alert">
+                    {actionError}
+                  </p>
                 ) : null}
               </div>
             ) : null}
-          </div>
+
+            {recents.length > 0 ? (
+              <div className="cave-chat-startfrom__group is-chats">
+                <div className="cave-chat-startfrom__group-head">
+                  <Icon name={chatsGroup.icon} width={14} aria-hidden />
+                  <span className="cave-chat-startfrom__group-label">{chatsGroup.label}</span>
+                  <span className="cave-chat-startfrom__group-count">{chatsGroup.count}</span>
+                  <span className="cave-chat-startfrom__group-note">{chatsGroup.note}</span>
+                </div>
+                <div className="cave-chat-startfrom__tiles">
+                  {recents.map((session) => {
+                    const title = session.title?.trim() || "Untitled thread";
+                    const when = relativeTime(session.updated_at || session.created_at, nowMs);
+                    const diff =
+                      session.diff && (session.diff.additions || session.diff.deletions)
+                        ? `+${session.diff.additions} −${session.diff.deletions}`
+                        : null;
+                    return (
+                      <button
+                        key={session.id}
+                        type="button"
+                        className="cave-chat-startfrom__tile"
+                        aria-label={`Continue '${title}'${when ? `, updated ${when}` : ""}`}
+                        onClick={() => openSession(session.id, session.familiarId)}
+                      >
+                        <span className="cave-chat-startfrom__tile-top">
+                          <span className="cave-chat-startfrom__tile-title">{title}</span>
+                          <span className="cave-chat-startfrom__tile-badge">resume</span>
+                        </span>
+                        <span className="cave-chat-startfrom__tile-sub">
+                          <span className="cave-chat-startfrom__tile-dot is-thread" aria-hidden />
+                          {startFromSub([diff, when])}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {/* Arming a linked card is a mode for the NEXT send, not a place to
+            start from — it sits under the launcher as a quiet invitation. */}
+        {project && onArmTask && linkedTasks.length === 0 ? (
+          taskArmed ? (
+            <div className="cave-chat-empty-task-armed" role="status">
+              <Icon name="ph:kanban" width={13} aria-hidden />
+              <span>Describe the task below — sending creates a linked board card.</span>
+              {onDisarmTask ? (
+                <button
+                  type="button"
+                  className="cave-chat-empty-task-armed-dismiss"
+                  aria-label="Cancel task creation"
+                  onClick={onDisarmTask}
+                >
+                  <Icon name="ph:x-bold" width={11} aria-hidden />
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="cave-chat-empty-task-tile"
+              onClick={() => {
+                onArmTask();
+                announce("Describe the task in the message box; sending creates a linked board card.");
+              }}
+            >
+              <Icon name="ph:kanban" width={14} aria-hidden />
+              <span className="cave-chat-empty-task-tile-label">Start a task in {project.name}</span>
+              <span className="cave-chat-empty-task-tile-hint">creates a linked card</span>
+            </button>
+          )
         ) : null}
 
         <p className="cave-chat-empty-hint">

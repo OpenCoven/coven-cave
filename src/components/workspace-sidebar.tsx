@@ -217,6 +217,10 @@ function ThreadRow({
     <div
       className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
     >
+      {/* Chat.dc.html 2a: every row carries a 2px colour tick on its left
+          edge — the session's state, readable down the whole rail without
+          hunting for the dot. The active row's tick goes accent (CSS). */}
+      <span className={`cnav__tick ${statusDotClass(session.status)}`} aria-hidden />
       {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
       <button
         type="button"
@@ -620,6 +624,7 @@ export function WorkspaceSidebar({
           <button type="button" title="New chat (⌘N)" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
             <Icon name="ph:pencil-simple" width={15} className="cnav__new-icon" aria-hidden />
             <span className="cnav__new-label">New chat</span>
+            <kbd className="cnav__new-kbd">⌘N</kbd>
           </button>
           <button
             type="button"
@@ -694,7 +699,11 @@ export function WorkspaceSidebar({
         <nav aria-label="Chat threads" className="cnav__scroll">
           {!hasSearch && pinnedSessions.length > 0 ? (
             <section aria-label="Pinned threads">
-              <div className="cnav__label">Pinned</div>
+              <div className="cnav__label">
+                <span className="cnav__label-text">Pinned</span>
+                <span className="cnav__label-count">{pinnedSessions.length}</span>
+                <span className="cnav__label-rule" aria-hidden />
+              </div>
               <ul>
                 {/* Pinned rail is compact; the trailing always-visible bookmark
                     doubles as the pin marker AND a one-click unpin — otherwise
@@ -751,7 +760,11 @@ export function WorkspaceSidebar({
                     : bucket.sessions.slice(0, THREADS_PREVIEW);
                 return (
                   <section key={bucket.key} aria-label={bucket.label}>
-                    <div className="cnav__label">{bucket.label}</div>
+                    <div className="cnav__label">
+                      <span className="cnav__label-text">{bucket.label}</span>
+                      <span className="cnav__label-count">{bucket.sessions.length}</span>
+                      <span className="cnav__label-rule" aria-hidden />
+                    </div>
                     <ul>
                       {rows.map((session) => (
                         <li key={session.id}>
