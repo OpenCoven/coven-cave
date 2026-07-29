@@ -86,7 +86,20 @@ assert.match(card, /Workflow run failed/, "hydrated run glyph reflects a fail co
 // composer cockpit ("Final Card Components.dc.html" §01). The write routes are
 // unchanged — only where they are called from moved.
 const composer = readFileSync(new URL("./github-card-composer.tsx", import.meta.url), "utf8");
-assert.match(card, /import \{ GitHubCardComposer \} from "@\/components\/github-card-composer"/, "the card mounts the composer");
+// The composer MUST stay lazy. chat-view sits in the `/` startup graph, so a
+// static import drags gh-card-composer.css into the home first load for every
+// session — that is 8 KB over the CSS budget and fails `Frontend build`.
+assert.match(
+  card,
+  /const LazyComposer = dynamic\(\s*\(\) => import\("@\/components\/github-card-composer"\)\.then\(\(m\) => m\.GitHubCardComposer\),/,
+  "the composer keeps its own chunk — a static import blows the home CSS budget",
+);
+assert.match(card, /<LazyComposer/, "the card mounts the composer");
+assert.match(
+  card,
+  /loading: \(\) => <div className="mt-\[9px\] h-7" \/>/,
+  "the loading fallback reserves the reply slot in Tailwind, not .ghc-slot — those rules are in the chunk that has not arrived",
+);
 assert.match(card, /familiar=\{familiar\}/, "the card forwards the familiar so the draft section can appear");
 
 // Every write path the old action row owned still exists, now behind the composer.

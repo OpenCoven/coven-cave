@@ -9,13 +9,28 @@
  */
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { Icon, type IconName } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { countChecks, isFailConclusion, type CheckCounts, type CheckSummary } from "@/lib/github-checks";
 import { descriptorUrl, type GitHubBlockDescriptor } from "@/lib/github-blocks";
-import { GitHubCardComposer } from "@/components/github-card-composer";
+
+// The composer keeps its own chunk. chat-view is in the `/` startup graph, so a
+// static import would drag gh-card-composer.css into the home first load for
+// every session — including the overwhelming majority with no GitHub card in
+// the transcript (it put the route 8 KB over the CSS budget). Splitting it also
+// means the card's own hydration is not blocked on composer bytes.
+//
+// The fallback reserves the reply slot's exact footprint in Tailwind, NOT in
+// .ghc-slot — those rules live in the chunk that has not arrived yet, so using
+// them here would collapse the card and break the never-reflow invariant during
+// the load.
+const LazyComposer = dynamic(
+  () => import("@/components/github-card-composer").then((m) => m.GitHubCardComposer),
+  { ssr: false, loading: () => <div className="mt-[9px] h-7" /> },
+);
 
 type Person = { login: string; avatarUrl: string | null; url: string | null };
 
@@ -690,7 +705,7 @@ export function GitHubCard({
           </div>
         ) : null}
         {item ? (
-          <GitHubCardComposer
+          <LazyComposer
             item={{
               repo: descriptor.repo,
               number: item.number,

@@ -185,7 +185,6 @@ export function GitHubCardComposer({
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const armRef = useRef<HTMLInputElement | null>(null);
-  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftAbort = useRef<AbortController | null>(null);
 
   const open = item.state === "open" && !item.merged;
@@ -226,7 +225,6 @@ export function GitHubCardComposer({
 
   useEffect(
     () => () => {
-      if (settle.current) clearTimeout(settle.current);
       draftAbort.current?.abort();
     },
     [],
@@ -418,37 +416,42 @@ export function GitHubCardComposer({
     onRefreshThreads?.();
   };
 
+  const rereadReactions = async () => {
+    try {
+      const r = await fetch(`/api/github/reactions?repo=${encodeURIComponent(repo)}&number=${number}`, {
+        cache: "no-store",
+      });
+      const data = (await r.json().catch(() => null)) as { ok?: boolean; reactions?: Reaction[] } | null;
+      if (data?.ok && Array.isArray(data.reactions)) setReactions(data.reactions);
+    } catch {
+      /* leave the optimistic state; the next mount corrects it */
+    }
+  };
+
   const toggleReaction = async (content: string) => {
     const existing = reactions.find((r) => r.content === content);
+    const removing = existing?.mine != null;
     // Optimistic: the chip is a toggle and a round-trip would make it feel dead.
     setReactions((prev) =>
       prev.map((r) =>
-        r.content === content ? { ...r, count: Math.max(0, r.count + (r.mine ? -1 : 1)), mine: r.mine ? null : -1 } : r,
+        r.content === content ? { ...r, count: Math.max(0, r.count + (removing ? -1 : 1)), mine: null } : r,
       ),
     );
-    const res =
-      existing?.mine != null && existing.mine > 0
-        ? await fetch("/api/github/reactions", {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ repo, number, reactionId: existing.mine }),
-          }).then(
-            (r) => ({ ok: r.ok }),
-            () => ({ ok: false }),
-          )
-        : await postJson("/api/github/reactions", { repo, number, content });
-    if (!res.ok) {
-      // Re-read rather than guess — the optimistic flip may be wrong either way.
-      try {
-        const r = await fetch(`/api/github/reactions?repo=${encodeURIComponent(repo)}&number=${number}`, {
-          cache: "no-store",
-        });
-        const data = (await r.json().catch(() => null)) as { ok?: boolean; reactions?: Reaction[] } | null;
-        if (data?.ok && Array.isArray(data.reactions)) setReactions(data.reactions);
-      } catch {
-        /* leave the optimistic state; the next hydration corrects it */
-      }
-    }
+    const res = removing
+      ? await fetch("/api/github/reactions", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repo, number, reactionId: existing?.mine }),
+        }).then(
+          (r) => ({ ok: r.ok }),
+          () => ({ ok: false }),
+        )
+      : await postJson("/api/github/reactions", { repo, number, content });
+    // Always re-read, success or failure. On success the optimistic row has no
+    // reaction id yet, so a second tap could not find one to DELETE and would
+    // add again; on failure the optimistic flip was simply wrong.
+    await rereadReactions();
+    if (!res.ok) announce("That reaction did not stick.");
   };
 
   const send = async (asComment: boolean) => {
