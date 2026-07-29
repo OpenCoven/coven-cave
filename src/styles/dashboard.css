@@ -616,9 +616,14 @@
   color: var(--text-primary);
 }
 
+/* One column, full measure each. Scheduled sync carries a destination, a
+   passphrase, a retention field and a freshness readout — several times the
+   height of the manual export beside it — so side-by-side left a dead
+   half-column the length of the taller card. Stacked, the section reads top to
+   bottom and each block gets the full width its controls want. */
 .settings-backup-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
 }
 
