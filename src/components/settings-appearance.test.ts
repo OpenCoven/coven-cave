@@ -149,7 +149,7 @@ assert.match(
 
 assert.match(
   about,
-  /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
+  /import\s*\{[\s\S]*?\bAPP_VERSION\b[\s\S]*?\}\s*from "@\/lib\/app-version"/,
   "About settings must import the shared app version source",
 );
 

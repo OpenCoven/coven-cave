@@ -214,10 +214,16 @@ export function localRuntimeLaunchError(
 /** A process that did start but exited unsuccessfully is distinct from a
  * missing or unlaunchable CLI. Its copy is safe to surface without provider
  * output, executable paths, or scoped environment values. */
-export function runtimeProcessFailure(runner: DirectRunnerId): {
+export function runtimeProcessFailure(runner: DirectRunnerId | CovenBackedRunnerId): {
   code: typeof RUNTIME_AVAILABILITY_ERROR_CODES.process_failed;
   message: string;
 } {
+  if (runner === "grok") {
+    return {
+      code: RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
+      message: "Grok Build exited before returning a response. Complete its interactive sign-in by running `grok` in a terminal, then retry.",
+    };
+  }
   const label = runner === "hermes" ? "Hermes" : RUNNER_LABELS[runner];
   return {
     code: RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,

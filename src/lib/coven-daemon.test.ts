@@ -64,13 +64,22 @@ const {
   else process.env.COVEN_SOCKET = before;
 }
 
-// socketPath() default has the expected suffix
+// The platform-neutral fallback has the expected Unix socket suffix. Do not
+// read the real host's daemon.json here: on Windows an active daemon resolves
+// to its named pipe, making a supposedly default-path assertion flaky.
 {
-  const before = process.env.COVEN_SOCKET;
-  delete process.env.COVEN_SOCKET;
-  const def = socketPath();
-  assert.match(def, /\.coven\/coven\.sock$/);
-  if (before !== undefined) process.env.COVEN_SOCKET = before;
+  const def = resolveDaemonSocketPath({
+    platform: "linux",
+    env: {},
+    homeDir: "/home/cave-test",
+    readFileSync: () => {
+      throw new Error("no daemon status for default socket fixture");
+    },
+  });
+  // `resolveDaemonSocketPath` deliberately uses the host's path module, so
+  // the simulated Linux policy still returns Windows separators in a Windows
+  // test process. The suffix contract itself is separator-independent.
+  assert.match(def.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
 }
 
 // Windows daemon status stores the pipe name; Node HTTP needs the full pipe path
@@ -181,7 +190,11 @@ const {
     multiHost: { mode: "local", hubUrl: "", executorUrls: [] },
   });
   assert.equal(target.mode, "local");
-  assert.match(target.socketPath, /\.coven\/coven\.sock$/);
+  assert.match(
+    target.socketPath.replaceAll("\\", "/"),
+    /(?:\.coven\/coven\.sock|\/pipe\/coven-daemon-[a-f0-9]+\.sock)$/,
+    "the live local target may use the active Windows daemon pipe or the socket fallback",
+  );
   assert.equal(target.label, "Local daemon");
 }
 

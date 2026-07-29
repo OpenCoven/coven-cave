@@ -79,7 +79,12 @@ function launchFixture(mode, tempParent, extraEnv = {}) {
     cwd: path.dirname(path.dirname(SCRIPT)),
     env: {
       ...process.env,
+      // Node's tmpdir() prefers TEMP/TMP on Windows over TMPDIR. Override all
+      // three so the lifecycle fixture and this test observe the same guarded
+      // root on every supported platform.
       TMPDIR: tempParent,
+      TMP: tempParent,
+      TEMP: tempParent,
       [TEST_MODE_ENV]: mode,
       COVEN_REPO: path.join(tempParent, "must-not-resolve-coven"),
       COVEN_MEMORY_REPO: path.join(
@@ -411,22 +416,28 @@ if (process.platform !== "win32") {
     });
   });
 }
-await runSelected(
-  "late-browser-close-reject",
-  () =>
-    lateResolvingBrowserFailureRetainsOwnership({
-      mode: "late-browser-close-reject",
-      maximumDurationMs: 2_000,
-    }),
-);
-await runSelected(
-  "late-browser-close-timeout",
-  () =>
-    lateResolvingBrowserFailureRetainsOwnership({
-      mode: "late-browser-close-timeout",
-      maximumDurationMs: 3_000,
-    }),
-);
+// Windows does not deliver SIGTERM to a child Node process as a catchable
+// signal; ChildProcess.kill() terminates it directly. The cleanup ownership
+// assertion below is therefore a POSIX signal-semantics test, like the signal
+// suite above, rather than a false Windows regression.
+if (process.platform !== "win32") {
+  await runSelected(
+    "late-browser-close-reject",
+    () =>
+      lateResolvingBrowserFailureRetainsOwnership({
+        mode: "late-browser-close-reject",
+        maximumDurationMs: 2_000,
+      }),
+  );
+  await runSelected(
+    "late-browser-close-timeout",
+    () =>
+      lateResolvingBrowserFailureRetainsOwnership({
+        mode: "late-browser-close-timeout",
+        maximumDurationMs: 3_000,
+      }),
+  );
+}
 await runSelected(
   "browser-close-reject",
   () =>

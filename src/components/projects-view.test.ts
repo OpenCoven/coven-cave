@@ -64,6 +64,17 @@ test("rows cycle a direct grant against /api/project-grants", () => {
   assert.match(view, /keeps \$\{accessStateMeta\(row\.state\)\.label\} via/, "group-held access explains itself instead of firing a no-op revoke");
 });
 
+test("stale project permissions are visible and repaired only after an explicit human confirmation", () => {
+  assert.match(view, /integrity:\s*\{/, "grant snapshots carry the server's read-only integrity report");
+  assert.match(view, /orphanPermissionRecords/, "the surface derives a visible stale-record count");
+  assert.match(view, /Repair stale project permissions\?/, "repair is explicitly confirmation-gated");
+  assert.match(view, /This only revokes stale access; it never grants access\./, "the destructive scope is truthful");
+  assert.match(view, /body: JSON\.stringify\(\{ repairOrphans: true \}\)/, "the explicit repair endpoint is used");
+  assert.match(view, /Repair stale permissions/, "the actionable remediation is visible in the project-access surface");
+  assert.match(view, /await loadGrants\(\)/, "repair rechecks the authoritative grant snapshot");
+  assert.match(view, /Stale project permissions repaired\./, "repair completion is announced to assistive technology");
+});
+
 test("the supreme familiar renders locked at Full", () => {
   assert.match(view, /isSupreme\(familiar\.id, grantsData\?\.supremeFamiliarId \?\? null\)/, "supreme comes from the console API");
   assert.match(view, /state: "write", direct: "write", groupNames: \[\] \}/, "supreme rows pin to Full");
@@ -141,9 +152,9 @@ test("a card renames in place", () => {
 
 test("secondary controls stay quiet until hover or keyboard focus", () => {
   assert.match(css, /\.projects-access-setall \{[^}]*opacity: 0/, "Set-all rests invisible");
-  assert.match(css, /\.projects-access-section-head:hover \.projects-access-setall,\n\.projects-access-section-head:focus-within \.projects-access-setall \{[^}]*opacity: 1/, "hover or focus reveals Set-all");
+  assert.match(css, /\.projects-access-section-head:hover \.projects-access-setall,\r?\n\.projects-access-section-head:focus-within \.projects-access-setall \{[^}]*opacity: 1/, "hover or focus reveals Set-all");
   assert.match(view, /className=\{`projects-access-setall-btn is-\$\{target\} focus-ring`\}/, "revealed Set-all buttons carry the level and the focus ring");
-  assert.match(css, /\.projects-access-disclose,\n\.projects-access-gear \{[^}]*opacity: 0/, "the card gear and disclosure rest invisible");
+  assert.match(css, /\.projects-access-disclose,\r?\n\.projects-access-gear \{[^}]*opacity: 0/, "the card gear and disclosure rest invisible");
   assert.match(css, /\.projects-access-card:focus-within \.projects-access-gear,/, "card hover or focus reveals them");
   assert.match(css, /\.projects-access-disclose\[aria-expanded="true"\] \{[^}]*opacity: 1/, "an open disclosure stays visible after the pointer leaves");
   const hoverNoneBlocks = css.match(/@media \(hover: none\)/g) ?? [];

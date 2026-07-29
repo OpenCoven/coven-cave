@@ -310,6 +310,17 @@ export function Workspace() {
     reload: reloadProjects,
     createProjectOrThrow,
   } = useProjects();
+  // The global registry answers "does a project exist?"; chat readiness is
+  // stricter and must be evaluated for the familiar that will run the turn.
+  // Keep the two reads separate so an inaccessible project never suppresses
+  // the recovery gate for this familiar.
+  const projectGateCandidateFamiliarId = activeId ?? visibleFamiliars[0]?.id ?? null;
+  const {
+    projects: accessibleGateProjects,
+    loading: accessibleGateProjectsLoading,
+    error: accessibleGateProjectsError,
+    loadedSuccessfully: accessibleGateProjectsLoadedSuccessfully,
+  } = useProjects({ familiarId: projectGateCandidateFamiliarId });
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   // false until the first /api/sessions/list fetch settles — lets the chat
@@ -2641,6 +2652,7 @@ export function Workspace() {
     activeFamiliarId: activeId,
     visibleFamiliars,
     registeredProjects,
+    accessibleProjects: accessibleGateProjects,
     pendingGrant: reconciledPendingFirstProjectGrant,
     onboardingResolved,
     onboardingOpen,
@@ -2648,6 +2660,8 @@ export function Workspace() {
     familiarsLoaded,
     familiarRosterLoadedSuccessfully,
     projectsInitiallyResolved,
+    accessibleProjectsInitiallyResolved:
+      !accessibleGateProjectsLoading && !accessibleGateProjectsError && accessibleGateProjectsLoadedSuccessfully,
   });
   const chatProjectBlockedRef = useRef(chatProjectBlocked);
   chatProjectBlockedRef.current = chatProjectBlocked;
@@ -3179,6 +3193,7 @@ export function Workspace() {
           onPendingGrantChange={setPendingFirstProjectGrant}
           loadingProjects={projectsLoading}
           projectsError={projectsError}
+          registeredProjects={registeredProjects}
           createProjectOrThrow={createProjectOrThrow}
           reloadProjects={reloadProjects}
         />

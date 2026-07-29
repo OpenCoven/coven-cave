@@ -2202,6 +2202,18 @@ export async function POST(req: Request) {
       // (a never-launched CLI must not be diagnosed as "installed but not
       // authenticated") and skips persisting a fabricated assistant turn.
       let launchFailure: { code: string; message: string } | null = null;
+      // A Coven-backed child can exit non-zero before it writes even one
+      // stream frame. Defer classifying that condition until all buffered
+      // stdout has passed through the more-specific adapter failure parser.
+      let covenBackedProcessFailed = false;
+      // Coven is the outer launch vehicle. Its cleanup can fail after the
+      // adapter has already supplied a successful structured result; that
+      // completed assistant response remains authoritative for this attempt.
+      let covenCompletedSuccessfulResult = false;
+      // Grok Build is launched directly. Its initial interactive sign-in
+      // failure can exit non-zero without emitting stdout or stderr, so retain
+      // the child outcome until buffered stream text has been fully decoded.
+      let grokProcessFailed = false;
       // Coven can send adapter startup failures through stdout, where Codex's
       // transcript filter intentionally suppresses pre-assistant noise. Keep
       // only the classified, fixed remediation so those failures cannot fall
@@ -3076,6 +3088,7 @@ export async function POST(req: Request) {
                 usage: parseStreamJsonUsage(ev.usage),
                 costUsd: parseCostUsd(ev.total_cost_usd),
               };
+              if (ev.is_error === false) covenCompletedSuccessfulResult = true;
             } else if (
               // `output` belongs to Coven's Windows Codex bridge, not the
               // profile-selected Claude protocol. Let an unexpected Claude
@@ -3097,6 +3110,24 @@ export async function POST(req: Request) {
               if (filtered) {
                 assistantText += filtered;
                 push({ kind: "assistant_chunk", text: filtered });
+              }
+            } else if (
+              // Coven's native stream-json transport represents completed
+              // Codex replies as an `assistant` envelope, just like the
+              // adapter's direct CLI output.  This is structured assistant
+              // content, not raw Codex transcript text, so it must bypass
+              // AssistantFilter's marker-phase gate.  Previously only the
+              // Claude compatibility branch decoded this shape; a successful
+              // Coven Codex reply was therefore discarded and misreported as
+              // an empty/authentication failure.
+              binding.harness !== "claude" &&
+              ev.type === "assistant" &&
+              Array.isArray(ev.message?.content)
+            ) {
+              for (const block of ev.message.content) {
+                if (block?.type !== "text" || typeof block.text !== "string" || !block.text) continue;
+                assistantText += block.text;
+                push({ kind: "assistant_chunk", text: block.text });
               }
             } else if (
               binding.harness === "claude" &&
@@ -3848,6 +3879,9 @@ export async function POST(req: Request) {
             if ((openCodeDirect || copilotStream || grokDirect) && code !== 0) {
               result = { ...result, is_error: true };
             }
+            if (grokDirect && code !== 0 && !runHandle.stopRequested) {
+              grokProcessFailed = true;
+            }
             if (binding.harness === "claude" && claudeInnerLaunchMissing) {
               const message = missingRunnerMessage("claude");
               result = { ...result, is_error: true };
@@ -3891,6 +3925,22 @@ export async function POST(req: Request) {
             if (tail) {
               assistantText += tail;
               push({ kind: "assistant_chunk", text: tail });
+            }
+            // `coven run` is the outer launch vehicle for Codex, Claude, and
+            // compatible Coven-backed adapters. Process every final stdout
+            // fragment first: an adapter failure can arrive without a
+            // trailing newline and has more specific remediation. If the
+            // child was truly silent, a non-zero exit is a real runtime
+            // failure, not a successful-but-empty assistant response.
+            covenBackedProcessFailed ||=
+              !sshRuntime &&
+              localRuntimePlan?.runner === "coven" &&
+              !runHandle.stopRequested &&
+              !covenCompletedSuccessfulResult &&
+              typeof code === "number" &&
+              code !== 0;
+            if (covenBackedProcessFailed) {
+              result = { ...result, is_error: true };
             }
             req.signal.removeEventListener("abort", onAbort);
             resolve();
@@ -4021,6 +4071,8 @@ export async function POST(req: Request) {
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         codexAdapterFailure = null;
+        covenBackedProcessFailed = false;
+        covenCompletedSuccessfulResult = false;
         resumeFailed = false;
         adapterConflict = null;
         // Settle the heal step BEFORE the retry attempt runs (same shape as
@@ -4075,6 +4127,8 @@ export async function POST(req: Request) {
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         codexAdapterFailure = null;
+        covenBackedProcessFailed = false;
+        covenCompletedSuccessfulResult = false;
         resumeFailed = false;
         // Settle the retry step BEFORE the fresh attempt runs, not after it
         // finishes: the step's own work (rebuild context, relaunch) is done
@@ -4097,7 +4151,7 @@ export async function POST(req: Request) {
       // bounded preflight passed. Coven has started in this branch, so map
       // only its adapter-level evidence back to the same actionable Codex
       // state; provider/auth errors intentionally remain untouched.
-      if (!launchFailure && binding.harness === "codex" && !assistantText.trim()) {
+      if (!launchFailure && !runHandle.stopRequested && binding.harness === "codex" && !assistantText.trim()) {
         const adapterFailure = codexAdapterFailure
           ?? codexAdapterFailureAvailability([...stderrTail, ...stdoutErrTail].join("\n"));
         if (adapterFailure) {
@@ -4106,6 +4160,27 @@ export async function POST(req: Request) {
           pushProgress("harness-start", "codex failed to start", "error", adapterFailure.message);
           push({ kind: "error", code: adapterFailure.code, message: adapterFailure.message });
       }
+      }
+
+      if (!launchFailure && covenBackedProcessFailed && !assistantText.trim()) {
+        const failedRunner = binding.harness === "codex"
+          ? "codex"
+          : binding.harness === "claude"
+            ? "claude"
+            : "coven";
+        const failure = runtimeProcessFailure(failedRunner);
+        launchFailure = failure;
+        result.is_error = true;
+        pushProgress("harness-start", `${binding.harness} exited with an error`, "error", failure.message);
+        push({ kind: "error", code: failure.code, message: failure.message });
+      }
+
+      if (!launchFailure && grokProcessFailed && !assistantText.trim()) {
+        const failure = runtimeProcessFailure("grok");
+        launchFailure = failure;
+        result.is_error = true;
+        pushProgress("harness-start", "Grok Build needs interactive sign-in", "error", failure.message);
+        push({ kind: "error", code: failure.code, message: failure.message });
       }
 
       // User cancel (CHAT-D5-02): when the client stops the response

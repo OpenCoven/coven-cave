@@ -85,6 +85,16 @@ assert.doesNotMatch(
   /availability:\s*\{[\s\S]{0,200}\b(?:command|fixedArgs|env|resolvedPath)\b/,
   "the harness API never copies private Copilot launch-plan data onto availability",
 );
+assert.match(
+  source,
+  /listOpenClawAgents\(\)/,
+  "OpenClaw status should count the live CLI registry used by chat resolution",
+);
+assert.doesNotMatch(
+  source,
+  /readdir\([\s\S]*?\.openclaw[\s\S]*?agents/,
+  "stale OpenClaw agent directories must not be reported as runnable agents",
+);
 
 assert.match(
   source,

@@ -10,6 +10,7 @@ import {
   openClawBridgeCapabilities,
   openClawAgentArgs,
   openClawSessionKey,
+  parseOpenClawAgentList,
   readTomlString,
   resolveOpenClawAgentBindingFromSources,
   resolveOpenClawAgentId,
@@ -24,6 +25,36 @@ assert.equal(readTomlString("id = \"nova\"", "openclaw_agent"), null);
 
 assert.equal(slugifyOpenClawAgentName("Cody Main"), "cody-main");
 assert.equal(slugifyOpenClawAgentName("  Nova / Release Review  "), "nova-release-review");
+assert.deepEqual(
+  parseOpenClawAgentList([
+    {
+      id: " main ",
+      name: null,
+      identityName: null,
+      isDefault: true,
+      workspace: "C:\\Users\\example\\.openclaw\\workspace",
+      futureField: "ignored",
+    },
+  ]),
+  [
+    {
+      id: "main",
+      isDefault: true,
+      workspace: "C:\\Users\\example\\.openclaw\\workspace",
+    },
+  ],
+  "the live registry parser should normalize the stable agent contract",
+);
+assert.deepEqual(
+  parseOpenClawAgentList([{ id: "main" }, { id: "main" }]),
+  [],
+  "duplicate live agent ids should fail closed",
+);
+assert.deepEqual(
+  parseOpenClawAgentList([{ id: "main", isDefault: "yes" }]),
+  [],
+  "malformed live registry fields should fail closed",
+);
 
 const candidateAgents = [
   { id: "fallback-match", name: "Nova", identityName: "Nova Identity" },
@@ -71,6 +102,29 @@ assert.deepEqual(
   },
   "slugified display or identity-name matches should report name-match source metadata",
 );
+assert.deepEqual(
+  resolveOpenClawAgentBindingFromSources("wren", null, [
+    { id: "main", isDefault: true },
+  ]),
+  {
+    caveFamiliarId: "wren",
+    openclawAgentId: "main",
+    source: "default",
+  },
+  "a unique OpenClaw default should bind a differently named Cave familiar",
+);
+assert.deepEqual(
+  resolveOpenClawAgentBindingFromSources("wren", null, [
+    { id: "main", isDefault: true },
+    { id: "research", isDefault: false },
+  ]),
+  {
+    caveFamiliarId: "wren",
+    openclawAgentId: "main",
+    source: "default",
+  },
+  "one declared default should remain deterministic when other agents exist",
+);
 assert.throws(
   () => resolveOpenClawAgentBindingFromSources("unknown", null, candidateAgents),
   (error) =>
@@ -89,6 +143,15 @@ assert.deepEqual(
     source: "fallback",
   },
   "fallback-to-familiar-id should be explicit and source-tagged",
+);
+assert.throws(
+  () =>
+    resolveOpenClawAgentBindingFromSources("unknown", null, [
+      { id: "main", isDefault: true },
+      { id: "other", isDefault: true },
+    ]),
+  (error) => error instanceof OpenClawAgentResolutionError,
+  "ambiguous default declarations should still fail closed",
 );
 
 assert.equal(

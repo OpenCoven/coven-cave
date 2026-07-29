@@ -70,6 +70,12 @@ type GrantsSnapshot = {
   grants: ConsoleGrant[];
   groups: ConsoleAccessGroup[];
   supremeFamiliarId: string | null;
+  integrity: {
+    directGrants: number;
+    groupGrants: number;
+    proposals: number;
+    orphanProjectIds: string[];
+  };
 };
 
 type RowModel = {
@@ -122,6 +128,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   const [grantsLoading, setGrantsLoading] = useState(true);
   const [grantsError, setGrantsError] = useState<string | null>(null);
   const [mutateError, setMutateError] = useState<string | null>(null);
+  const [repairingOrphans, setRepairingOrphans] = useState(false);
 
   const loadGrants = useCallback(async () => {
     try {
@@ -132,6 +139,20 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         groups: Array.isArray(data?.accessGroups) ? (data.accessGroups as ConsoleAccessGroup[]) : [],
         supremeFamiliarId:
           typeof data?.supremeFamiliarId === "string" ? data.supremeFamiliarId : null,
+        integrity: {
+          directGrants: Number.isSafeInteger(data?.integrity?.directGrants)
+            ? Math.max(0, data.integrity.directGrants)
+            : 0,
+          groupGrants: Number.isSafeInteger(data?.integrity?.groupGrants)
+            ? Math.max(0, data.integrity.groupGrants)
+            : 0,
+          proposals: Number.isSafeInteger(data?.integrity?.proposals)
+            ? Math.max(0, data.integrity.proposals)
+            : 0,
+          orphanProjectIds: Array.isArray(data?.integrity?.orphanProjectIds)
+            ? data.integrity.orphanProjectIds.filter((id: unknown): id is string => typeof id === "string")
+            : [],
+        },
       });
       setGrantsError(null);
     } catch {
@@ -160,6 +181,36 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     [familiars, pickedFamiliarId],
   );
   const supreme = familiar ? isSupreme(familiar.id, grantsData?.supremeFamiliarId ?? null) : false;
+  const orphanPermissionRecords = grantsData
+    ? grantsData.integrity.directGrants + grantsData.integrity.groupGrants + grantsData.integrity.proposals
+    : 0;
+
+  const repairOrphanPermissions = useCallback(async () => {
+    if (repairingOrphans || orphanPermissionRecords === 0) return;
+    const ok = await confirm({
+      title: "Repair stale project permissions?",
+      body: `Removes ${orphanPermissionRecords} permission record${orphanPermissionRecords === 1 ? "" : "s"} for project folders no longer registered in Cave. This only revokes stale access; it never grants access.`,
+      confirmLabel: "Repair permissions",
+      danger: true,
+    });
+    if (!ok) return;
+    setRepairingOrphans(true);
+    setMutateError(null);
+    try {
+      const response = await fetch("/api/project-grants", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ repairOrphans: true }),
+      });
+      if (!response.ok) throw new Error("repair failed");
+      await loadGrants();
+      announce("Stale project permissions repaired.");
+    } catch {
+      setMutateError("Couldn’t repair stale project permissions. Nothing was granted; try again.");
+    } finally {
+      setRepairingOrphans(false);
+    }
+  }, [announce, confirm, loadGrants, orphanPermissionRecords, repairingOrphans]);
 
   // ── New project ────────────────────────────────────────────────────────
   // The shared add flow (native folder dialog on desktop, in-app browser on
@@ -1093,6 +1144,21 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
           <p className="projects-access-error" role="alert">
             {mutateError}
           </p>
+        ) : null}
+        {orphanPermissionRecords > 0 ? (
+          <div className="projects-access-error" role="alert">
+            <p>
+              {orphanPermissionRecords} stale permission record{orphanPermissionRecords === 1 ? "" : "s"} refer to {grantsData?.integrity.orphanProjectIds.length === 1 ? "a project folder" : "project folders"} no longer registered in Cave. Repair removes only those stale records; it never grants access.
+            </p>
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={() => void repairOrphanPermissions()}
+              disabled={repairingOrphans}
+            >
+              {repairingOrphans ? "Repairing…" : "Repair stale permissions"}
+            </Button>
+          </div>
         ) : null}
         {addFlow.addError ? (
           <p className="projects-access-error" role="alert">

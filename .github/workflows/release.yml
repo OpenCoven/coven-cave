@@ -231,6 +231,10 @@ jobs:
           fi
           echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          # This public value is compiled into the desktop shell and its
+          # bundled sidecar, so support diagnostics can identify the exact
+          # source artifact that was packaged for a release.
+          echo "NEXT_PUBLIC_COVEN_CAVE_BUILD_REVISION=$(git rev-parse --verify HEAD)" >> "$GITHUB_ENV"
 
       - name: Install Linux dependencies
         if: >-

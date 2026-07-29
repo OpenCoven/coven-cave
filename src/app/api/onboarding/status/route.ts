@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { execFile } from "node:child_process";
-import { readdir, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -19,6 +19,7 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
+import { listOpenClawAgents } from "@/lib/openclaw-bridge";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -94,15 +95,7 @@ async function commandPath(binary: string): Promise<string | null> {
 }
 
 async function countOpenClawAgents(): Promise<number> {
-  const agentsRoot = path.join(homedir(), ".openclaw", "agents");
-  try {
-    const entries = await readdir(agentsRoot, { withFileTypes: true });
-    return entries.filter(
-      (entry) => entry.isDirectory() && !entry.name.startsWith("."),
-    ).length;
-  } catch {
-    return 0;
-  }
+  return (await listOpenClawAgents()).length;
 }
 
 async function checkHarnessAdapters(
