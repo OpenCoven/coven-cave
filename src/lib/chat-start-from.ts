@@ -24,15 +24,19 @@ function startFromTotals(shown: number, total: number) {
   return { safeShown, safeTotal: Math.max(safeShown, normalize(total)) };
 }
 
-/** "3 of 12" when more exists than fits, else the bare count. */
-export function startFromCount(shown: number, total: number): string {
-  const { safeShown, safeTotal } = startFromTotals(shown, total);
+function formatStartFromCount({ safeShown, safeTotal }: ReturnType<typeof startFromTotals>) {
   return safeTotal > safeShown ? `${safeShown} of ${safeTotal}` : String(safeShown);
 }
 
+/** "3 of 12" when more exists than fits, else the bare count. */
+export function startFromCount(shown: number, total: number): string {
+  return formatStartFromCount(startFromTotals(shown, total));
+}
+
 export function startFromGroup(kind: StartFromKind, shown: number, total: number): StartFromGroupMeta {
-  const { safeShown, safeTotal } = startFromTotals(shown, total);
-  const count = safeTotal > safeShown ? `${safeShown} of ${safeTotal}` : String(safeShown);
+  const totals = startFromTotals(shown, total);
+  const { safeTotal } = totals;
+  const count = formatStartFromCount(totals);
   if (kind === "chats") {
     return {
       kind,
