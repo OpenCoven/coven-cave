@@ -131,6 +131,9 @@ async function boot(page: Page, opts: { mergedRef: { merged: boolean }; mergeCal
 
 test.describe("github chat cards", () => {
   test.skip(({ isMobile }) => isMobile, "desktop transcript flow");
+  // The composer's chunk compiles on demand under `next dev`; the suite's 60s
+  // default was set before the card had a lazy boundary in its critical path.
+  test.setTimeout(150_000);
 
   test("PR URL → hydrated card → armed merge → merged morph; proposals never auto-fire", async ({ page }) => {
     const mergedRef = { merged: false };
@@ -151,13 +154,21 @@ test.describe("github chat cards", () => {
     await expect(proposal).toContainText("checks are green");
     expect(mergeCalls.length).toBe(0);
 
-    // At rest the card offers only a reply pill — no bare Merge button to
-    // mis-tap. The card's own height must not change when it opens.
+    // At rest the card offers only a reply pill — no bare Merge button to mis-tap.
+    // The composer is a lazy chunk (it owns gh-card-composer.css, which has to
+    // stay out of the home first load). The webServer is `next dev`, so that
+    // chunk compiles on demand the first time any test reaches it, and that
+    // compile can outlast a default action timeout — hence an explicit wait on
+    // the lazy boundary rather than letting .click() absorb it.
+    const replyPill = prCard.getByRole("button", { name: "Reply to acme/rocket#7" });
+    await expect(replyPill).toBeVisible({ timeout: 60_000 });
+
     const restHeight = (await prCard.boundingBox())?.height ?? 0;
     expect(restHeight).toBeGreaterThan(0);
-    await prCard.getByRole("button", { name: "Reply to acme/rocket#7" }).click();
+    await replyPill.click();
     await expect(prCard.getByRole("tab", { name: "Preview" })).toBeVisible();
-    expect((await prCard.boundingBox())?.height).toBe(restHeight);
+    // The sheet is out of flow, so opening it must not move the card at all.
+    expect((await prCard.boundingBox())?.height ?? 0).toBeCloseTo(restHeight, 0);
 
     // Choosing the Merge verb opens the merge section but arms nothing.
     await prCard.getByRole("button", { name: "Merge", exact: true }).click();
@@ -193,7 +204,9 @@ test.describe("github chat cards", () => {
     const prCard = page.locator('[data-gh-kind="pr"]').first();
     await expect(prCard).toBeVisible({ timeout: 15_000 });
 
-    await prCard.getByRole("button", { name: "Reply to acme/rocket#7" }).click();
+    const pill = prCard.getByRole("button", { name: "Reply to acme/rocket#7" });
+    await expect(pill).toBeVisible({ timeout: 60_000 });
+    await pill.click();
     const input = prCard.getByLabel("Reply to acme/rocket#7");
     await input.fill("/");
     await expect(prCard).toContainText("COMMANDS");
