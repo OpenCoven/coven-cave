@@ -5,42 +5,34 @@ description: Use whenever asked to audit, clean up, prune, delete, archive, or o
 
 # Branch Curator
 
-Curate branches without destroying another session's work. A branch name is
-only one signal: uncommitted files, claims, task ownership, pull requests, and
-recovery snapshots can all make a branch live even when Git calls it merged.
+Curate branches without destroying another session's work. A branch name is only
+one signal: files, claims, tasks, PRs, and recovery snapshots can all make it live.
 
 ## Core rule
 
 Inventory first, classify every local branch, then act. Use read-only commands
-against live or uncertain branches. Make any skill or audit changes in a fresh
-worktree from current `origin/main`.
+against live or uncertain branches; make audit changes in a fresh worktree.
 
-Never treat age, merge reachability, a missing worktree, or a missing open PR as
-proof that a branch is stale. Never switch, reset, rebase, merge, cherry-pick,
-stage, commit, or clean inside a candidate worktree until ownership is clear.
+Never treat age, reachability, a missing worktree, or a missing PR as proof of
+staleness. Do not mutate a candidate worktree until ownership is clear.
 
 ## What counts as live
 
 Preserve a branch or worktree when any of these signals apply:
 
 - It is checked out in any worktree and the owner has not confirmed it is idle.
-- Its worktree has staged, unstaged, untracked, ignored, or dirty submodule
-  state that repository policy does not explicitly declare disposable.
+- Its worktree has staged, unstaged, untracked, ignored, or dirty submodule state.
 - `coven claim status`, a live claim file, or an active session names it.
-- Any non-closed Bead, including blocked or deferred work, names the branch,
-  worktree, surface, or owner.
+- Any non-closed Bead names the branch, worktree, surface, or owner.
 - It heads an open or draft pull request, or its CI is still running.
-- It is a same-day backup, rescue, archive, or WIP snapshot without an explicit
-  retention decision.
-- Its branch tip or reflog changed in the last 24 hours and the owner has not
-  explicitly authorized its disposition. Recency is unconditional evidence;
-  knowing the owner does not make recent work disposable.
+- It is a same-day backup, rescue, archive, or WIP snapshot without a disposition.
+- Its tip or reflog changed in the last 24 hours without owner-authorized
+  disposition. Recency is unconditional; known ownership does not override it.
 - It contains local or remote commits whose disposition is not proven.
 - Its local branch ref is symbolic rather than a direct commit ref.
 
-Treat `main`, the repository's default branch, Beads/Dolt sync refs such as
+Treat `main`, the default branch, Beads/Dolt sync refs such as
 `__dolt_remote_info__`, and other tool-owned refs as protected infrastructure.
-Do not curate them as feature branches.
 
 ## Start with durable coordination
 
@@ -53,11 +45,9 @@ bd list --limit 0 --include-gates --include-infra --include-templates --json |
   jq '[.[] | select(.status != "closed")]'
 ```
 
-Claim exactly one branch-curation task before editing. Do not claim or close the
-tasks that own candidate branches merely to make cleanup easier. Record the
-curator branch, worktree, session or familiar owner, and final evidence in the
-curation task. Inspect every non-closed task, including blocked and deferred
-work; the default `bd list` limit can hide branch ownership.
+Claim one curation task before editing; never claim or close candidate-owning
+tasks to ease cleanup. Record the curator branch, worktree, owner, and evidence.
+Inspect all non-closed tasks because default `bd list` limits can hide ownership.
 
 ## Build the read-only inventory
 
@@ -71,9 +61,8 @@ git branch --merged origin/main --format='%(refname:short)'
 git branch --no-merged origin/main --format='%(refname:short)'
 ```
 
-Acquire branch names as data, not as shell source. Git refnames cannot contain a
-newline, so removing `for-each-ref`'s record newlines leaves an unambiguous NUL
-stream:
+Acquire branch names as data, not shell source. Refname rules make this an
+unambiguous NUL stream after removing record newlines:
 
 ```bash
 while IFS= read -r -d '' branch; do
@@ -85,7 +74,7 @@ while IFS= read -r -d '' branch; do
   fi
   git show-ref --verify "$local_ref"
   git log -1 --format='committed=%cI%nsubject=%s' "$local_ref" --
-  git reflog show -1 --date=iso-strict --format='reflog=%gd' "$local_ref"
+  git reflog show --date=iso-strict --format='oid=%H selector=%gd' "$local_ref"
   git for-each-ref \
     --format='upstream=%(upstream:short)%ntrack=%(upstream:track)' \
     "$local_ref"
@@ -95,8 +84,7 @@ done < <(
 )
 ```
 
-Do not parse `printf %q` or the human-readable metadata back into commands. The
-loop variable is the authoritative branch name.
+Do not parse displays back into commands; the loop variable is authoritative.
 
 For every listed worktree, run:
 
@@ -111,35 +99,30 @@ git -C <worktree-path> ls-files -v |
   awk '$1 ~ /^[a-z]/ || $1 == "S"'
 ```
 
-This output deliberately includes ignored paths. Before removing a worktree,
-also inspect `git -C <worktree-path> clean -ndx -d -- .`. Preserve when any
-staged, unstaged, untracked, ignored, or dirty submodule state exists. A
-repository may explicitly document disposable ignored paths such as dependency
-caches; absent that policy, ignored means local state, not safe-to-delete
-clutter. Never let user or repository
-status, file-mode, or filesystem-monitor configuration suppress this check.
-Preserve any worktree whose `ls-files -v` check emits assume-unchanged or
-skip-worktree entries.
+This includes ignored paths. Also inspect `git -C <worktree-path> clean -ndx -d
+-- .`. Preserve any staged, unstaged, untracked, ignored, dirty submodule,
+assume-unchanged, or skip-worktree state unless policy explicitly declares an
+ignored path disposable. Never let status, file-mode, or fsmonitor configuration
+suppress this check.
 
 Check runtime and task ownership:
 
 ```bash
 coven claim status
 coven sessions --json
+primary_checkout=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+claims_file="$primary_checkout/.claude/claims.json"
+test ! -f "$claims_file" || jq . "$claims_file"
 bd list --limit 0 --include-gates --include-infra --include-templates --json |
   jq '[.[] | select(.status != "closed")]'
 ```
 
-Map active session project roots and working directories to worktrees. If the
-runtime does not expose enough metadata, inspect live harness process working
-directories using the repository's documented coordination procedure. If the
-repository has another claim mechanism, inspect it too. Absence of a claim
-means "no claim found", not "no owner exists"; an unclaimed active session is
-still live.
+Run the documented live harness process/CWD check and map roots to worktrees.
+Coven output supplements rather than replaces claims or process ownership.
+Absence of a claim means "no claim found", not "no owner exists."
 
-Fetch every pull request once. Filtering the exhaustive result by audited head
-OID finds origin and fork PRs even when their source and local branch names
-differ:
+Fetch every PR once. Filter the exhaustive result by audited head OID to find
+origin and fork PRs even when branch names differ:
 
 ```bash
 pr_inventory_ok=1
@@ -152,9 +135,8 @@ if ! all_prs_json=$(
 fi
 ```
 
-For every deletion or PR candidate, use the branch variable from the NUL loop,
-capture both tips without converting lookup failures into absence, and filter
-the PR inventory:
+For each candidate, use the NUL-loop variable, capture both tips without
+converting lookup failures into absence, and filter the PR inventory:
 
 ```bash
 if test "$pr_inventory_ok" -ne 1; then
@@ -189,10 +171,8 @@ matching_prs=$(
 )
 ```
 
-The workflow-runs API caps history at 1,000 results, so do not paginate its
-unfiltered history. Query each active status server-side for every distinct
-audited local or remote OID; only existence matters, and OIDs survive branch
-aliases:
+The workflow-runs API caps history at 1,000. Query each active status server-side
+for every distinct audited OID; only existence matters, and OIDs survive aliases:
 
 ```bash
 active_run_found=0
@@ -218,12 +198,10 @@ for candidate_oid in "${candidate_oids[@]}"; do
 done
 ```
 
-Any matching PR whose state is `open`, or any active workflow status, makes the
-branch live. If the PR inventory or any Actions query fails, classify the branch
-as uncertain.
+An open matching PR or active workflow makes the branch live. Query failure
+makes it uncertain.
 
-For candidates without a live signal, inspect unique work using fully qualified
-refs:
+For other candidates, inspect unique work using fully qualified refs:
 
 ```bash
 local_ref="refs/heads/$branch"
@@ -234,12 +212,10 @@ git diff --name-status "$main_ref...$local_ref" --
 git cherry -v "$main_ref" "$local_ref"
 ```
 
-Do not use `eval`, parse branch names from delimited display text, embed branch
-names into shell source, or use unquoted ref interpolation. Git permits shell
-metacharacters, quotes, pipes, and leading dashes in valid branch names. Keep
-branch names in quoted variables, use fully qualified refs for revision
-arguments, and use `--` before path or branch operands where the Git subcommand
-supports it. Preserve the branch if it cannot be handled safely.
+Do not use `eval`, parse names from displays, embed names in shell source, or use
+unquoted interpolation. Git permits shell metacharacters in refnames. Use quoted
+variables, fully qualified refs, and `--` before operands when supported.
+Preserve a branch that cannot be handled safely.
 
 ## Classify every branch
 
@@ -253,8 +229,7 @@ Use exactly one decision for each local branch:
 | `PR` | Scoped, complete, verified work has no current PR and is authorized for review | Open one PR |
 | `DELETE` | Redundant work is proven safe to remove and cleanup is authorized | Remove only the proven refs |
 
-No-op is a valid outcome. If all branches are live, recovery snapshots, or
-uncertain, delete nothing and say so plainly.
+If every branch is live, recovery, or uncertain, delete nothing and say so.
 
 ## Require an exclusive deletion gate
 
@@ -323,7 +298,6 @@ lookup fails, or the gate cannot exclude concurrent writers, preserve the branch
 and do not open or describe a PR as verified.
 
 ## Delete only after proof
-
 Local deletion requires all of the following:
 
 1. The branch is not protected or tool-owned.
@@ -344,6 +318,8 @@ Local deletion requires all of the following:
    - every local and remote tip being deleted is an ancestor of `main_ref`; or
    - its PR is `MERGED`, every tip being deleted equals that PR's recorded head
      OID, and neither ref has advanced since merge.
+10. Every reflog OID is reachable from refreshed main or an owner-authorized,
+    retained remote archive ref recorded in the owning Bead.
 
 Capture local and remote tips before proving redundancy:
 
@@ -382,12 +358,49 @@ fi
 If any OID differs, is unavailable locally, or fails the chosen proof, preserve
 the branch and inspect the divergence.
 
-After acquiring the exclusive gate and immediately before mutation, repeat the
-symbolic-ref, configuration-independent worktree state, claim, session,
-non-closed Beads, exhaustive PR, and exhaustive Actions checks. Then re-read the
-base, local, and remote OIDs and require exact equality with the captured
-values. Hold the gate through worktree removal, local and remote ref deletion,
-and final verification.
+With the exclusive gate held, populate `authorized_archive_refs` only with full
+owner-approved remote refs whose retention is recorded. Refresh the base and
+resolve every archive to its exact current remote OID before reflog proof:
+
+```bash
+git fetch --no-prune --no-tags origin main || { printf 'PRESERVE - base refresh failed\n'; continue; }
+audited_main_oid=$(git rev-parse --verify "$main_ref^{commit}") ||
+  { printf 'PRESERVE - base missing\n'; continue; }
+archives_safe=1; authorized_archive_oids=()
+for archive_ref in "${authorized_archive_refs[@]}"; do
+  case "$archive_ref" in refs/heads/*) ;; *) archives_safe=0; break ;; esac
+  if ! remote_line=$(git ls-remote --exit-code origin "$archive_ref"); then archives_safe=0; break; fi
+  read -r remote_archive_oid observed_archive_ref <<EOF
+$remote_line
+EOF
+  test "$observed_archive_ref" = "$archive_ref" || { archives_safe=0; break; }
+  git fetch --no-prune --no-tags origin "$archive_ref" || { archives_safe=0; break; }
+  fetched_archive_oid=$(git rev-parse --verify "FETCH_HEAD^{commit}") ||
+    { archives_safe=0; break; }
+  test "$fetched_archive_oid" = "$remote_archive_oid" || { archives_safe=0; break; }
+  authorized_archive_oids[${#authorized_archive_oids[@]}]="$fetched_archive_oid"
+done
+test "$archives_safe" -eq 1 || { printf 'PRESERVE - archive refresh failed\n'; continue; }
+if ! reflog_oids=$(git reflog show --format='%H' "$local_ref"); then
+  printf 'PRESERVE - reflog read failed\n'; continue
+fi
+test -n "$reflog_oids" || { printf 'PRESERVE - reflog is empty\n'; continue; }
+reflog_safe=1
+while IFS= read -r oid; do
+  git merge-base --is-ancestor "$oid" "$audited_main_oid" && continue
+  covered=0
+  for archive_oid in "${authorized_archive_oids[@]}"; do
+    git merge-base --is-ancestor "$oid" "$archive_oid" && { covered=1; break; }
+  done
+  test "$covered" -eq 1 || { printf 'PRESERVE - reflog %s\n' "$oid"; reflog_safe=0; break; }
+done <<EOF
+$reflog_oids
+EOF
+test "$reflog_safe" -eq 1 || continue
+```
+Still under the gate, rerun recency plus the selected ancestry or merged-PR
+proof, repeat every ownership/state check, and require exact base, local, and
+remote OIDs. Hold the gate through mutation and final verification.
 
 Remove only a clean, known-inactive worktree:
 

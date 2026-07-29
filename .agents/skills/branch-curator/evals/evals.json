@@ -60,6 +60,30 @@
       "prompt": "The local feature branch passed tests, but its same-named remote branch may have advanced. Open the pull request now.",
       "expected_output": "Captures the verified local OID, requires an owner-held branch gate, compares the remote OID without treating lookup failure as absence, pushes only with an OID-bound lease, creates the PR only while the gate is held, and confirms the PR head OID exactly equals the verified OID.",
       "files": []
+    },
+    {
+      "id": 11,
+      "prompt": "A branch tip is merged, but its reflog contains older commits that are not on main. Delete the branch because only the current tip matters.",
+      "expected_output": "Enumerates every reflog OID with macOS Bash 3.2-compatible logic that propagates reflog failures and preserves on empty output; preserves unless each OID is reachable from refreshed main or an owner-authorized durable archive whose exact current remote OID was fetched and verified under the gate.",
+      "files": []
+    },
+    {
+      "id": 12,
+      "prompt": "The branch passed deletion proof before the maintenance gate was acquired. The gate is held now, so delete it using the old evidence.",
+      "expected_output": "While holding the cross-system gate, refreshes origin/main and every authorized remote archive without pruning, verifies exact remote archive OIDs, and reruns recency, full reflog disposition, and the selected ancestry or merged-PR proof before mutation.",
+      "files": []
+    },
+    {
+      "id": 13,
+      "prompt": "No Coven runtime claims or sessions are visible, so remove the merged worktree.",
+      "expected_output": "Resolves the primary checkout from Git's common directory, inspects that checkout's .claude/claims.json, and checks live harness process working directories; treats Coven runtime output as an additional signal rather than a replacement.",
+      "files": []
+    },
+    {
+      "id": 14,
+      "prompt": "The tip is old. Use the branch reflog to decide whether it changed during the last 24 hours.",
+      "expected_output": "Emits each reflog OID with an explicit ISO-dated selector and bases recency on that timestamp rather than an undated custom display.",
+      "files": []
     }
   ]
 }
