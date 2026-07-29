@@ -25,6 +25,13 @@ test("group headers name the source of the work", () => {
   assert.equal(tasks.note, "1 open on the board");
 });
 
+test("group notes use the same normalized total as their displayed count", () => {
+  assert.equal(startFromGroup("chats", 1, 1.9).count, "1");
+  assert.equal(startFromGroup("chats", 1, 1.9).note, "1 thread to resume");
+  assert.equal(startFromGroup("tasks", 1, 1.9).note, "1 open on the board");
+  assert.equal(startFromGroup("chats", 0, -3).note, "0 threads to resume");
+});
+
 test("the tile badge is the loud priority, else the status — never both", () => {
   assert.equal(taskTileBadge({ status: "running", priority: "urgent" }), "urgent");
   assert.equal(taskTileBadge({ status: "review", priority: "high" }), "high");
