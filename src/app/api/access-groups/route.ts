@@ -65,6 +65,9 @@ export async function POST(req: Request) {
     ...(typeof payload.description === "string" ? { description: payload.description } : {}),
     ...(memberFamiliarIds !== undefined ? { memberFamiliarIds } : {}),
     ...(projectGrants !== undefined ? { projectGrants } : {}),
+    // requireLocalHumanGrantMutation is isLocalOrigin-only — the phone cannot
+    // reach group routes at all, so the actor is unambiguous here.
+    actor: "loopback",
   });
   return NextResponse.json({ ok: true, group });
 }
