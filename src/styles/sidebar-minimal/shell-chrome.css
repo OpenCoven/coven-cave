@@ -368,13 +368,23 @@
 /* Bottommost element: the app version. One minimal-height line — small,
    muted, unselectable; the footer above keeps its calm hairline boundary. */
 .sidebar-version {
+  display: block;
   flex-shrink: 0;
   padding: 3px 6px var(--space-1);
   font-size: 10.5px;
   line-height: 1;
   text-align: center;
   color: var(--text-muted);
+  text-decoration: none;
   user-select: none;
+  transition: color 0.12s ease;
+}
+
+/* Quiet at rest — it stays the calmest thing in the footer — and only
+   admits to being a link on hover/focus. */
+.sidebar-version:hover,
+.sidebar-version:focus-visible {
+  color: var(--text-primary);
 }
 
 .sidebar-foot-bell:hover,
