@@ -458,6 +458,7 @@ export const SUITES = {
     "src/components/shell-nav-memory.test.ts",
     "src/components/workflows-view.test.ts",
     "src/components/projects-view.test.ts",
+    "src/components/projects-view-repair-behavior.test.tsx",
     "src/components/project-settings-modal.test.ts",
     "src/lib/projects/access-page.test.ts",
     "src/lib/projects/access-views.test.ts",
@@ -1559,6 +1560,7 @@ const VITEST_TESTS = new Set([
   "src/components/command-palette-canonical-memory-behavior.test.tsx",
   "src/components/workspace-canonical-memory-navigation-behavior.test.tsx",
   "src/components/workspace-canonical-memory-lazy-familiar.test.tsx",
+  "src/components/projects-view-repair-behavior.test.tsx",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */
