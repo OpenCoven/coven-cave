@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { githubApiFailure } from "@/lib/github-activity";
 import { resolveGitHubToken } from "@/lib/github-token";
 import type { RepoItem } from "@/lib/home-feed";
 
@@ -23,6 +24,7 @@ const LIST_OWNER = "BunsDev";
 const LIST_SLUG = "opencoven-openclaw";
 const PRIORITY_ORG = ORG.toLowerCase();
 const MAX_ITEMS = 36;
+const SOURCE_PAGE_SIZE = 30;
 const ORG_TIMEOUT_MS = 6000;
 const LIST_TIMEOUT_MS = 12000;
 const TTL_MS = 15 * 60 * 1000;
@@ -32,7 +34,7 @@ const LIST_QUERY = `query {
     lists(first: 20) {
       nodes {
         slug
-        items(first: 30) {
+        items(first: ${SOURCE_PAGE_SIZE}) {
           nodes {
             __typename
             ... on Repository {
@@ -46,6 +48,7 @@ const LIST_QUERY = `query {
               pushedAt
             }
           }
+          pageInfo { hasNextPage }
         }
       }
     }
@@ -77,6 +80,35 @@ type GraphRepo = {
   pushedAt?: string | null;
 };
 
+type RepoSourceResult = {
+  items: RepoItem[];
+  error: string | null;
+  hasMore: boolean;
+};
+
+function repoSourceError(res: Response, source: string): string {
+  const remaining = Number(res.headers.get("x-ratelimit-remaining") ?? -1);
+  const failure = githubApiFailure({
+    status: res.status,
+    remaining,
+    retryAfter: res.headers.get("retry-after"),
+    rateLimitReset: res.headers.get("x-ratelimit-reset"),
+  });
+  if (failure.rateLimited || res.status === 401) return failure.message;
+  return `Couldn't load ${source} (${res.status}).`;
+}
+
+function nextGitHubPagePath(link: string | null): string | null {
+  const nextUrl = link?.match(/<([^>]+)>;\s*rel="next"/)?.[1];
+  if (!nextUrl) return null;
+  try {
+    const parsed = new URL(nextUrl);
+    return parsed.origin === "https://api.github.com" ? `${parsed.pathname}${parsed.search}` : null;
+  } catch {
+    return null;
+  }
+}
+
 function restToItem(r: RestRepo): RepoItem | null {
   if (!r.full_name || !r.html_url) return null;
   return {
@@ -92,8 +124,8 @@ function restToItem(r: RestRepo): RepoItem | null {
   };
 }
 
-function graphToItem(r: GraphRepo): RepoItem | null {
-  if (r.__typename !== "Repository" || !r.nameWithOwner || !r.url) return null;
+function graphToItem(r: GraphRepo | null): RepoItem | null {
+  if (!r || r.__typename !== "Repository" || !r.nameWithOwner || !r.url) return null;
   return {
     id: r.nameWithOwner,
     name: r.name ?? r.nameWithOwner.split("/")[1] ?? r.nameWithOwner,
@@ -110,10 +142,10 @@ function graphToItem(r: GraphRepo): RepoItem | null {
 const pushedTime = (r: RepoItem) => (r.pushedAt ? Date.parse(r.pushedAt) : 0);
 const byPushedDesc = (a: RepoItem, b: RepoItem) => pushedTime(b) - pushedTime(a);
 
-async function fetchOrgRepos(token: string): Promise<RepoItem[]> {
+async function fetchOrgRepos(token: string): Promise<RepoSourceResult> {
   try {
     const res = await fetch(
-      `https://api.github.com/orgs/${ORG}/repos?sort=pushed&per_page=30&type=public`,
+      `https://api.github.com/orgs/${ORG}/repos?sort=pushed&per_page=${SOURCE_PAGE_SIZE}&type=public`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -125,15 +157,26 @@ async function fetchOrgRepos(token: string): Promise<RepoItem[]> {
         signal: AbortSignal.timeout(ORG_TIMEOUT_MS),
       },
     );
-    if (!res.ok) return [];
+    if (!res.ok) return { items: [], error: repoSourceError(res, "OpenCoven repositories"), hasMore: false };
     const raw = (await res.json()) as RestRepo[];
-    return Array.isArray(raw) ? raw.map(restToItem).filter((r): r is RepoItem => r !== null) : [];
+    if (!Array.isArray(raw)) {
+      return {
+        items: [],
+        error: "GitHub returned an invalid OpenCoven repository response.",
+        hasMore: false,
+      };
+    }
+    return {
+      items: raw.map(restToItem).filter((r): r is RepoItem => r !== null),
+      error: null,
+      hasMore: nextGitHubPagePath(res.headers.get("link")) !== null,
+    };
   } catch {
-    return [];
+    return { items: [], error: "Couldn't reach GitHub for OpenCoven repositories.", hasMore: false };
   }
 }
 
-async function fetchListRepos(token: string): Promise<RepoItem[]> {
+async function fetchListRepos(token: string): Promise<RepoSourceResult> {
   try {
     const res = await fetch("https://api.github.com/graphql", {
       method: "POST",
@@ -147,29 +190,80 @@ async function fetchListRepos(token: string): Promise<RepoItem[]> {
       cache: "no-store",
       signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      return { items: [], error: repoSourceError(res, "the curated repository list"), hasMore: false };
+    }
     const json = (await res.json()) as {
-      data?: { user?: { lists?: { nodes?: Array<{ slug?: string; items?: { nodes?: GraphRepo[] } }> } } };
+      data?: {
+        user?: {
+          lists?: {
+            nodes?: Array<{
+              slug?: string;
+              items?: {
+                nodes?: Array<GraphRepo | null>;
+                pageInfo?: { hasNextPage?: boolean };
+              };
+            }>;
+          };
+        };
+      };
+      errors?: unknown[];
     };
+    const graphError = Array.isArray(json.errors) && json.errors.length > 0
+      ? "GitHub couldn't fully load the curated repository list."
+      : null;
     const lists = json.data?.user?.lists?.nodes ?? [];
     const list = lists.find((l) => l?.slug === LIST_SLUG);
-    return (list?.items?.nodes ?? []).map(graphToItem).filter((r): r is RepoItem => r !== null);
+    if (!list) {
+      return {
+        items: [],
+        error: graphError ?? "GitHub didn't return the curated repository list.",
+        hasMore: false,
+      };
+    }
+    const nodes = list.items?.nodes ?? [];
+    return {
+      items: nodes.map(graphToItem).filter((r): r is RepoItem => r !== null),
+      error: graphError,
+      hasMore: list.items?.pageInfo?.hasNextPage === true,
+    };
   } catch {
-    return [];
+    return {
+      items: [],
+      error: "Couldn't reach GitHub for the curated repository list.",
+      hasMore: false,
+    };
   }
 }
 
-let cache: { at: number; items: RepoItem[] } | null = null;
+let cache: { at: number; items: RepoItem[]; hasMore: boolean } | null = null;
 
-export async function GET() {
+export async function GET(request: Request) {
   const token = resolveGitHubToken();
   if (!token) {
-    return NextResponse.json({ ok: true, items: [], source: "unconfigured", configured: false });
+    return NextResponse.json({
+      ok: true,
+      items: [],
+      source: "unconfigured",
+      configured: false,
+      incomplete: false,
+      errors: [],
+      scope: { mode: "curated", limit: MAX_ITEMS, hasMore: false },
+    });
   }
 
   const now = Date.now();
-  if (cache && now - cache.at < TTL_MS) {
-    return NextResponse.json({ ok: true, items: cache.items, source: "list", configured: true });
+  const refresh = new URL(request.url).searchParams.has("refresh");
+  if (!refresh && cache && now - cache.at < TTL_MS) {
+    return NextResponse.json({
+      ok: true,
+      items: cache.items,
+      source: "curated",
+      configured: true,
+      incomplete: false,
+      errors: [],
+      scope: { mode: "curated", limit: MAX_ITEMS, hasMore: cache.hasMore },
+    });
   }
 
   const [orgRepos, listRepos] = await Promise.all([fetchOrgRepos(token), fetchListRepos(token)]);
@@ -184,8 +278,8 @@ export async function GET() {
     seen.add(key);
     out.push(r);
   };
-  orgRepos.sort(byPushedDesc).forEach(push);
-  listRepos
+  orgRepos.items.sort(byPushedDesc).forEach(push);
+  listRepos.items
     .sort((a, b) => {
       const ao = a.owner.toLowerCase() === PRIORITY_ORG ? 0 : 1;
       const bo = b.owner.toLowerCase() === PRIORITY_ORG ? 0 : 1;
@@ -194,7 +288,17 @@ export async function GET() {
     .forEach(push);
 
   const items = out.slice(0, MAX_ITEMS);
+  const hasMore = orgRepos.hasMore || listRepos.hasMore || out.length > items.length;
+  const errors = [orgRepos.error, listRepos.error].filter((error): error is string => error !== null);
   // Only cache a non-empty result so a transient upstream blip isn't pinned.
-  if (items.length > 0) cache = { at: now, items };
-  return NextResponse.json({ ok: true, items, source: "list", configured: true });
+  if (items.length > 0 && errors.length === 0) cache = { at: now, items, hasMore };
+  return NextResponse.json({
+    ok: true,
+    items,
+    source: "curated",
+    configured: true,
+    incomplete: errors.length > 0,
+    errors,
+    scope: { mode: "curated", limit: MAX_ITEMS, hasMore },
+  });
 }

@@ -7,6 +7,11 @@ import { buildDashboardModel, type DashboardModel } from "@/lib/dashboard-model"
 import type { Card } from "@/lib/cave-board-types";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { GitHubItem } from "@/lib/github-tasks";
+import {
+  activityCollectionsComplete,
+  activityRetryAfterSeconds,
+  type ActivityCollections,
+} from "@/lib/github-activity";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { covenStreak } from "@/lib/familiar-renown";
 import { relativeTime } from "@/lib/relative-time";
@@ -50,6 +55,7 @@ type BentoData = {
   cards: Card[];
   familiars: Familiar[];
   github: GitHubItem[];
+  githubComplete: boolean | null;
   inbox: InboxItem[];
   sessions: SessionRow[];
   memory: CanonicalMemorySummary[];
@@ -57,10 +63,18 @@ type BentoData = {
   projects: number | null;
 };
 
+type GitHubActivityPayload = {
+  ok: boolean;
+  items?: GitHubItem[];
+  collections?: ActivityCollections;
+  retryAfterSeconds?: number | null;
+};
+
 const EMPTY: BentoData = {
   cards: [],
   familiars: [],
   github: [],
+  githubComplete: null,
   inbox: [],
   sessions: [],
   memory: [],
@@ -78,6 +92,33 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
+function retryAfterHeaderSeconds(value: string | null): number {
+  if (!value) return 0;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? 0 : Math.max(0, Math.ceil((date - Date.now()) / 1000));
+}
+
+async function getGitHubActivity(): Promise<{
+  data: GitHubActivityPayload | null;
+  retryAfterSeconds: number;
+}> {
+  try {
+    const response = await fetch("/api/github/activity", { cache: "no-store" });
+    const data = await response.json().catch(() => null) as GitHubActivityPayload | null;
+    return {
+      data,
+      retryAfterSeconds: Math.max(
+        typeof data?.retryAfterSeconds === "number" ? data.retryAfterSeconds : 0,
+        retryAfterHeaderSeconds(response.headers.get("retry-after")),
+      ),
+    };
+  } catch {
+    return { data: null, retryAfterSeconds: 0 };
+  }
+}
+
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export function BentoDashboard({ model: initialModel }: { model: DashboardModel }) {
@@ -89,6 +130,7 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
 
   // Keep setState off an unmounted tree: polled loads may resolve after unmount.
   const aliveRef = useRef(true);
+  const githubRetryUntilRef = useRef(0);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -122,15 +164,40 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
     void getJson<{ ok: boolean; projects: unknown[] }>("/api/projects").then((r) =>
       put("projects", Array.isArray(r?.projects) ? r.projects.length : null),
     );
-    void Promise.all([
-      getJson<{ items: GitHubItem[] }>("/api/github/activity"),
-      getJson<{ items: GitHubItem[] }>("/api/github/assigned"),
-    ]).then(([act, assigned]) => {
+    if (Date.now() < githubRetryUntilRef.current) return;
+    void getGitHubActivity().then(({ data: act, retryAfterSeconds }) => {
+      if (!aliveRef.current) return;
+      const activityItems = act?.ok && Array.isArray(act.items) ? act.items : null;
+      const requestFailed = activityItems === null;
+      const complete = !requestFailed
+        && act?.collections !== undefined
+        && activityCollectionsComplete(act.collections);
+      const collectionRetryAfterSeconds = act?.ok && act.collections
+        ? activityRetryAfterSeconds(act.collections)
+        : 0;
+      const retryAfterMs = Math.max(retryAfterSeconds, collectionRetryAfterSeconds) * 1000;
+      githubRetryUntilRef.current = retryAfterMs > 0 ? Date.now() + retryAfterMs : 0;
+      const failedKinds = new Set<GitHubItem["kind"]>();
+      if (act?.collections?.authored.status === "failed") failedKinds.add("pr");
+      if (act?.collections?.reviewRequests.status === "failed") failedKinds.add("review_request");
+      if (act?.collections?.assignedIssues.status === "failed") failedKinds.add("issue");
       const map = new Map<string, GitHubItem>();
-      // Dedupe by URL, not id: /activity prefixes ids ("pr-42") while
-      // /assigned uses raw numbers — the same PR arrives under two ids.
-      for (const it of [...(act?.items ?? []), ...(assigned?.items ?? [])]) map.set(it.url || it.id, it);
-      put("github", [...map.values()]);
+      for (const it of activityItems ?? []) map.set(it.url || it.id, it);
+      setData((d) => {
+        if (requestFailed || failedKinds.size > 0) {
+          for (const item of d.github) {
+            if (
+              (requestFailed || failedKinds.has(item.kind))
+              && !map.has(item.url || item.id)
+            ) {
+              map.set(item.url || item.id, item);
+            }
+          }
+        }
+        return { ...d, github: [...map.values()], githubComplete: complete };
+      });
+      setReady((r) => new Set(r).add("github").add("githubComplete"));
+      setLastUpdated(new Date());
     });
   }, []);
 
@@ -593,7 +660,11 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
             <div className="bd-cell bd-github">
               <div className="bd-label">github</div>
               <div className="bd-github-scroll">
-                {ghGroups.length === 0 ? <div className="bd-empty">nothing assigned</div> : null}
+                {ghGroups.length === 0 ? (
+                  <div className="bd-empty">
+                    {data.githubComplete === false ? "activity incomplete" : data.githubComplete === true ? "nothing assigned" : "loading activity"}
+                  </div>
+                ) : null}
                 {ghGroups.map((group) => (
                   <div key={group.repo}>
                     <div className="bd-github-repo">{group.repo}</div>
@@ -621,7 +692,13 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
               </div>
               <div className="bd-github-foot">
                 <span>{ci ? `ci ${ci}` : "ci —"}</span>
-                <span>{data.github.length} open items</span>
+                <span>
+                  {data.githubComplete === true
+                    ? `${data.github.length} open items`
+                    : data.githubComplete === false && data.github.length > 0
+                      ? `${data.github.length}+ open items`
+                      : "open items —"}
+                </span>
               </div>
             </div>
           </div>

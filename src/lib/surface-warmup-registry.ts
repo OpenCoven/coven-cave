@@ -9,10 +9,30 @@ export type SurfaceWarmResult = { backpressured: boolean };
 const GITHUB_WARMUP_REMAINING_FLOOR = 10;
 
 class SurfaceWarmupBackpressureError extends Error {
-  constructor(message: string) {
+  readonly retryAfterSeconds: number;
+
+  constructor(message: string, retryAfterSeconds: number) {
     super(message);
     this.name = "SurfaceWarmupBackpressureError";
+    this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+function responseRetryAfterSeconds(response: Response, payload: unknown): number {
+  const bodySeconds = (payload as { retryAfterSeconds?: unknown } | null)?.retryAfterSeconds;
+  if (typeof bodySeconds === "number" && Number.isFinite(bodySeconds) && bodySeconds >= 0) {
+    return Math.ceil(bodySeconds);
+  }
+  const header = response.headers.get("retry-after");
+  if (!header) return 0;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+  const date = Date.parse(header);
+  return Number.isNaN(date) ? 0 : Math.max(0, Math.ceil((date - Date.now()) / 1000));
+}
+
+export function surfaceWarmupRetryAfterSeconds(error: unknown): number {
+  return error instanceof SurfaceWarmupBackpressureError ? error.retryAfterSeconds : 0;
 }
 
 export const surfaceWarmupResources = {
@@ -41,6 +61,7 @@ async function json(
   ) {
     throw new SurfaceWarmupBackpressureError(
       (payload as { error?: string } | null)?.error ?? `${url} is rate limited (${response.status})`,
+      responseRetryAfterSeconds(response, payload),
     );
   }
   if ((!response.ok || !payload || (payload as { ok?: boolean }).ok === false) && !options.allowError?.(response, payload)) {

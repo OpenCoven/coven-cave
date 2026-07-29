@@ -27,7 +27,7 @@ assert.match(
 );
 assert.match(
   route,
-  /organizations,\r?\n\s*items,/,
+  /organizations,\r?\n\s*collections,\r?\n\s*items,/,
   "activity responses should expose memberships separately from open activity items",
 );
 assert.match(
@@ -44,6 +44,121 @@ assert.match(
   route,
   /nextGitHubPagePath\(res\.headers\.get\("link"\)\)/,
   "organization memberships should follow GitHub pagination",
+);
+assert.match(
+  route,
+  /GITHUB_ACTIVITY_PAGE_SIZE/,
+  "activity searches should share an explicit bounded page size",
+);
+assert.equal(
+  [...route.matchAll(/per_page=\$\{GITHUB_ACTIVITY_PAGE_SIZE\}/g)].length,
+  1,
+  "the shared activity search helper should apply the expanded page size",
+);
+assert.equal(
+  [...route.matchAll(/await fetchActivitySearch\(/g)].length,
+  3,
+  "authored PRs, review requests, and assigned issues should each use the bounded search helper",
+);
+assert.match(
+  route,
+  /total_count/,
+  "activity search metadata should preserve GitHub's total result count",
+);
+assert.match(
+  route,
+  /incomplete_results/,
+  "activity search metadata should preserve GitHub's incomplete-results signal",
+);
+assert.match(
+  route,
+  /activityCollectionFailure/,
+  "failed activity categories should return explicit failure metadata",
+);
+assert.match(
+  route,
+  /if \(!login && patInvalid\)/,
+  "an invalid launcher token without a stored username should still render the rejected-token state",
+);
+assert.match(
+  route,
+  /if \(!login && identityFailure\)/,
+  "identity lookup failures should not masquerade as an unconfigured GitHub account",
+);
+assert.match(
+  route,
+  /retryAfter/,
+  "GitHub rate-limit responses should preserve Retry-After metadata",
+);
+assert.match(
+  route,
+  /identityFailure\.rateLimited \? 429 : 502/,
+  "primary and secondary rate limits should use a recoverable rate-limit response",
+);
+assert.match(
+  route,
+  /retryAfterSeconds:\s*identityFailure\.retryAfterSeconds/,
+  "top-level identity failures expose their cooldown to activity consumers",
+);
+assert.match(
+  route,
+  /if \(identityFailure\?\.rateLimited\)/,
+  "identity rate limits should stop the request even when a fallback username is configured",
+);
+assert.match(
+  route,
+  /if \(organizationResult\.failure\?\.rateLimited\)/,
+  "organization rate limits should stop the request before activity searches spend more quota",
+);
+assert.match(
+  route,
+  /if \(!cooldownFailure && token\)/,
+  "review-request searches should stop after an earlier category triggers a cooldown",
+);
+assert.match(
+  route,
+  /if \(!cooldownFailure\) \{\s*assignedIssues = await fetchActivitySearch/,
+  "assigned-issue searches should stop after an earlier category triggers a cooldown",
+);
+assert.match(
+  route,
+  /if \(token && !cooldownFailure\)/,
+  "check enrichment should not issue more GitHub requests during a category cooldown",
+);
+assert.match(
+  route,
+  /const CHECK_ENRICH_CONCURRENCY = 3/,
+  "check enrichment should bound concurrent GitHub requests so a cooldown can stop the remaining queue",
+);
+assert.match(
+  route,
+  /controller\.abort\(\)/,
+  "a check-enrichment rate limit should abort other in-flight enrichment requests",
+);
+assert.doesNotMatch(
+  route,
+  /if \(!checks\.res\.ok\) return/,
+  "non-rate-limited check-runs failures should still fall back to combined commit status",
+);
+assert.match(
+  route,
+  /warning:\s*checkCooldownFailure/,
+  "check-enrichment rate limits should remain visible on otherwise successful activity responses",
+);
+assert.match(
+  route,
+  /retryAfterSeconds:\s*checkCooldownFailure/,
+  "check-enrichment rate limits should propagate their cooldown to pollers",
+);
+assert.match(
+  route,
+  /collections,\r?\n\s*items,/,
+  "activity responses should expose per-category completeness metadata",
+);
+assert.doesNotMatch(
+  route,
+  /catch \{ \/\* non-fatal \*\/ \}/,
+  "activity searches should not silently collapse failures to empty categories",
 );
 assert.doesNotMatch(
   route,
@@ -62,6 +177,6 @@ assert.match(
 );
 assert.match(
   githubView,
-  /arrayContentEqual\(prev\.organizations, nextActivity\.organizations\)/,
+  /arrayContentEqual\(prev\.organizations, mergedActivity\.organizations\)/,
   "activity refreshes should retain changed organization memberships even when items are unchanged",
 );

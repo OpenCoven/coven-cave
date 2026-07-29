@@ -20,6 +20,11 @@ test("warmup registry covers canonical sidebar landings with bounded serial reso
   assert.match(registry, /response\.status === 429/);
   assert.match(registry, /response\.headers\.has\("retry-after"\)/);
   assert.match(registry, /error instanceof SurfaceWarmupBackpressureError[\s\S]{0,100}backpressured: true/);
+  assert.match(
+    registry,
+    /export function surfaceWarmupRetryAfterSeconds/,
+    "surface consumers can honor the retry delay carried by a backpressure error",
+  );
   assert.match(registry, /preloadSidebarSurface\(surface\)/);
   assert.match(registry, /await preloadSidebarSurface\(surface\);[\s\S]{0,180}if \(!canContinue\(\)\) return/);
   assert.match(registry, /if \(!result\.cache\.stale\) return result;[\s\S]{0,600}return read<T>\(key, \{ force: true \}\);/, "surface reads join a stale revalidation before returning landing data");
