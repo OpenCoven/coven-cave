@@ -44,6 +44,7 @@ import {
   sortPlugins,
   pluginBadgeState,
   normalizeMarketplaceScope,
+  visibleMarketplacePlugins,
   resolveCollection,
   COLLECTIONS,
   type KindFilter,
@@ -321,7 +322,7 @@ export function MarketplaceViewSurface({
   }, [setStoredSection, setKind]);
 
   const visiblePlugins = useMemo(
-    () => plugins.filter((plugin) => craftsEnabled || plugin.kind !== "craft"),
+    () => visibleMarketplacePlugins(plugins, craftsEnabled),
     [plugins, craftsEnabled],
   );
   const categories = useMemo(() => categoriesFrom(visiblePlugins), [visiblePlugins]);
@@ -459,21 +460,19 @@ export function MarketplaceViewSurface({
   // Rail counts (mock parity): Type spans the whole catalog; Status is global.
   const typeCount = useCallback(
     (id: KindFilter) => {
-      const visiblePlugins = plugins.filter((plugin) => craftsEnabled || plugin.kind !== "craft");
       if (id === "all") return visiblePlugins.length + skills.length;
       if (id === "skill") return visiblePlugins.filter((p) => p.kind === "skill").length + skills.length;
       return visiblePlugins.filter((p) => p.kind === id).length;
     },
-    [plugins, skills, craftsEnabled],
+    [visiblePlugins, skills],
   );
   const statusCount = useCallback(
     (id: MarketplaceStatusFilter) => {
-      const visiblePlugins = plugins.filter((plugin) => craftsEnabled || plugin.kind !== "craft");
       if (id === "installed") return visiblePlugins.filter((p) => pluginBadgeState(p) === "added").length + skills.filter(skillIsInstalled).length;
       if (id === "needs-setup") return visiblePlugins.filter((p) => pluginBadgeState(p) === "needs-setup").length;
       return visiblePlugins.length + skills.length;
     },
-    [plugins, skills, skillIsInstalled, craftsEnabled],
+    [visiblePlugins, skills, skillIsInstalled],
   );
 
   const craftPlugins = useMemo(
@@ -837,10 +836,10 @@ export function MarketplaceViewSurface({
               ))}
             </div>
 
-            {showFeatured && plugins.length > 0 ? (
+            {showFeatured && visiblePlugins.length > 0 ? (
               <CollectionStrip
                 collections={COLLECTIONS}
-                plugins={plugins}
+                plugins={visiblePlugins}
                 onOpen={(id) => {
                   setCollectionId(id);
                   setCategory("All");

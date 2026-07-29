@@ -123,7 +123,7 @@ const themeIdsSource = readFileSync(new URL("src/lib/theme-palettes.ts", repoRoo
 const themeIdsBlock = themeIdsSource.match(/THEME_IDS = \[([\s\S]*?)\] as const/);
 assert.ok(themeIdsBlock, "theme-palettes.ts declares THEME_IDS");
 const paletteCount = (themeIdsBlock[1].match(/"[a-z0-9-]+"/g) ?? []).length;
-assert.ok(paletteCount >= 16, "sanity: palette roster parsed");
+assert.ok(paletteCount >= 12, "sanity: palette roster parsed");
 assert.match(
   designLanguage,
   new RegExp(`every one of the ${paletteCount} theme\\s+palettes`),

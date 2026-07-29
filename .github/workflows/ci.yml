@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -116,6 +117,8 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_CAVE_CRAFTS: "1"
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~5-15min; the job this bead exists for).
     timeout-minutes: 25
     steps:

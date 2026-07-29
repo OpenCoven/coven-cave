@@ -364,7 +364,7 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
   const { transformSync } = await import("esbuild");
   const transformed = transformSync(
     `${parserBlock[0]}\nexport { parseUpgradeTarget };`,
-    { loader: "ts", format: "esm", target: "node22" },
+    { loader: "ts", format: "esm", target: "node24" },
   );
   const parserModule = await import(
     `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`
@@ -418,7 +418,7 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
     entryPoints: [serverTsUrl.pathname],
     bundle: false,
     platform: "node",
-    target: "node22",
+    target: "node24",
     format: "esm",
     write: false,
   });

@@ -1,7 +1,7 @@
 /* "THE DAY" carousel — trigger strip + expanding overlay panel.
  *
  * Every color here resolves through a foundations token; the design mock's
- * raw color literals would only be correct in one of the 21 themes.
+ * raw color literals would only be correct in one of the 12 themes.
  * Semantic tones arrive as `--drd-tone` set inline by the component. */
 
 .drd-car {

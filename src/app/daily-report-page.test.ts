@@ -197,8 +197,8 @@ assert.match(
 }
 
 // ── theme safety ───────────────────────────────────────────────────────────
-// This surface ships beside 21 themes × 2 modes. A literal color from the
-// mock would break the other 41 combinations, so the sheets must be
+// This surface ships beside 12 themes × 2 modes. A literal color from the
+// mock would break the other 23 combinations, so the sheets must be
 // token-only. (`black`/`white` are sanctioned mix anchors, not colors.)
 
 for (const sheet of [

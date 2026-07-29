@@ -165,7 +165,7 @@ For deeper design context, start with [`docs/golden-paths.md`](docs/golden-paths
 
 ### Requirements
 
-- **Node.js 22+**
+- **Node.js 24.18.0 LTS**
 - **pnpm 10+**
 - **Rust** and Cargo
 - Tauri desktop prerequisites for your platform

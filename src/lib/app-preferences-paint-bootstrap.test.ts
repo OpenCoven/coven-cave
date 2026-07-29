@@ -67,7 +67,7 @@ function response(preferences, ok = true, status = ok ? 200 : 503) {
   storage.setItem("coven-theme", "ember");
   installPaintBootstrap(storage);
   let canonical = createDefaultPreferences(true);
-  canonical.appearance.theme.id = "grove";
+  canonical.appearance.theme.id = "tide";
   let finishGet;
   let getCalls = 0;
   let patchCalls = 0;
@@ -91,7 +91,7 @@ function response(preferences, ok = true, status = ok ? 200 : 503) {
   finishGet();
   const loaded = await initializing;
   assert.equal(loaded.initialized, true);
-  assert.equal(loaded.appearance.theme.id, "grove");
+  assert.equal(loaded.appearance.theme.id, "tide");
   assert.equal(
     patchCalls,
     0,

@@ -23,7 +23,7 @@ const PANEL_ID = "drd-car-panel";
 const VIEWS = ["SWIMLANES", "CARDS", "GRAPHS"] as const;
 
 /** A DayTone never becomes a color here — it becomes a custom property that the
- *  stylesheet reads, so all 21 themes × 2 modes stay honest. */
+ *  stylesheet reads, so all 12 themes × 2 modes stay honest. */
 const TONE_VAR: Record<DayTone, string> = {
   accent: "var(--accent-presence)",
   success: "var(--color-success)",

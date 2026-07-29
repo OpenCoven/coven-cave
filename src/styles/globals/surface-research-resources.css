@@ -1,7 +1,7 @@
 /* ═══ Research Desk — Resources tab (cave-dl74, Phase B5 owns this file) ═══
    Saved-links browser: save row, category filter chips, grid/rows layouts,
    grouped shelves, uncited nudge, and the focus-trapped detail overlay.
-   Semantic tokens only — 21 palettes × dark/light must hold. --research-accent
+   Semantic tokens only — 12 palettes × dark/light must hold. --research-accent
    is scoped on .research-desk (surface-role-workspaces.css:683). Layout
    numbers follow the design (lines 623–762) adapted to the desk's container
    breakpoints (760/560). */

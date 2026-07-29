@@ -85,6 +85,17 @@ try {
     "the compatibility theme endpoint must persist through the canonical preference document",
   );
 
+  const legacySelection = await themeStore.saveTheme({
+    themeId: "grove",
+    modePreference: "dark",
+    resolvedMode: "dark",
+  });
+  assert.equal(
+    legacySelection.themeId,
+    "coven",
+    "removed preset ids from older clients migrate at the compatibility API boundary",
+  );
+
   assert.match(
     route,
     /PreferencesConflictError[\s\S]*status: 409/,

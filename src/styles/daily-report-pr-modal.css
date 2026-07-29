@@ -1,6 +1,6 @@
 /* The daily report's pull-request overlay. The card inside is the app's own
    GitHubCard, so this sheet only frames it: scrim, dialog box, header. Colors
-   come from foundations.css — the report ships beside 21 themes × 2 modes. */
+   come from foundations.css — the report ships beside 12 themes × 2 modes. */
 
 .drd-pr-scrim {
   position: fixed;

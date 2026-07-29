@@ -232,9 +232,18 @@ type UnknownRecord = Record<string, unknown>;
 const LEGACY_THEME_RENAME: Record<string, CaveThemeId> = {
   "mood-c": "coven",
   sky: "tide",
-  orchid: "dusk",
+  orchid: "coven",
   midnight: "slate",
   openai: "codex",
+  grove: "coven",
+  bloom: "coven",
+  dusk: "coven",
+  mist: "coven",
+  hex: "coven",
+  bane: "coven",
+  beacon: "coven",
+  trucker: "coven",
+  meatseeks: "coven",
 };
 
 const THEME_ID_SET = new Set<string>([...THEME_IDS, "custom"]);
@@ -562,8 +571,9 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
       assertAllowedKeys(theme, ["id", "modePreference", "resolvedMode", "custom", "tokens"], "appearance.theme");
       const themePatch: NonNullable<typeof next.theme> = {};
       if (Object.hasOwn(theme, "id")) {
-        if (typeof theme.id !== "string" || !THEME_ID_SET.has(theme.id)) fail("appearance.theme.id", "is not a known theme");
-        themePatch.id = theme.id as CaveThemeId;
+        const themeId = typeof theme.id === "string" ? LEGACY_THEME_RENAME[theme.id] ?? theme.id : theme.id;
+        if (typeof themeId !== "string" || !THEME_ID_SET.has(themeId)) fail("appearance.theme.id", "is not a known theme");
+        themePatch.id = themeId as CaveThemeId;
       }
       if (Object.hasOwn(theme, "modePreference")) {
         themePatch.modePreference = strictChoice(theme.modePreference, MODE_PREFERENCES, "appearance.theme.modePreference");
