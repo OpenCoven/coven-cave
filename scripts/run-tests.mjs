@@ -267,7 +267,18 @@ export const SUITES = {
     "src/lib/server/research-mission-store.test.ts",
     "src/lib/server/research-mission-lifecycle.test.ts",
     "src/lib/server/research-links.test.ts",
+    "src/lib/server/process-intent-lock.test.ts",
     "src/lib/server/research-generations.test.ts",
+    "src/lib/server/research-media-store.test.ts",
+    "src/lib/server/research-podcast-pipeline.test.ts",
+    "src/lib/server/research-video-renderer.test.ts",
+    "src/lib/server/research-short-video-pipeline.test.ts",
+    "src/lib/server/research-media-readiness.test.ts",
+    "src/lib/server/research-media-jobs.test.ts",
+    "src/lib/server/research-media-job-factory.test.ts",
+    "src/lib/server/research-long-video-pipeline.test.ts",
+    "src/lib/server/research-media-lifecycle.integration.test.ts",
+    "scripts/research-media-ffmpeg.integration.test.mjs",
     "src/lib/server/research-autoloop.test.ts",
     "src/lib/server/research-mission-runner-lifecycle-actions.test.ts",
     "src/lib/server/research-mission-runner-reconciliation-evidence.test.ts",
@@ -1157,6 +1168,10 @@ export const SUITES = {
     "src/app/api/research/missions/[id]/actions/route.test.ts",
     "src/app/api/research/missions/[id]/schedule/route.test.ts",
     "src/app/api/research/generations/route.test.ts",
+    "src/app/api/research/generations/cancel/route.test.ts",
+    "src/app/api/research/generations/media/route.test.ts",
+    "src/app/api/research/generations/readiness/route.test.ts",
+    "src/app/api/research/generations/render/route.test.ts",
     "src/app/api/research/autoloop/routes.test.ts",
     "src/app/api/flows/webhook/route.test.ts",
     "src/app/api/flows/webhook-test/route.test.ts",
@@ -1397,6 +1412,7 @@ export const SUITES = {
 // `.mjs` tests that still need the TS type-stripper (most `.mjs` tests do not).
 const STRIP_TYPES_MJS = new Set([
   "scripts/release-macos-signing.test.mjs",
+  "scripts/research-media-ffmpeg.integration.test.mjs",
 ]);
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need

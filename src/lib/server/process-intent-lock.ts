@@ -1,0 +1,244 @@
+import { execFile } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
+import {
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rm,
+} from "node:fs/promises";
+import path from "node:path";
+import { promisify } from "node:util";
+
+const INTENT_NAME =
+  /^(\d{24})-(\d+)-([a-f0-9]{16})-([a-f0-9]+)\.lock$/;
+const execFileAsync = promisify(execFile);
+const pendingIntentRemovals = new Map<string, Promise<void>>();
+
+function retryDelay(delayMs: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, delayMs);
+    timer.unref();
+  });
+}
+
+/**
+ * Retain cleanup ownership inside this module until the unique path is gone.
+ * Callers may safely discard their release closure after one invocation.
+ */
+function scheduleIntentRemoval(pathname: string): Promise<void> {
+  const existing = pendingIntentRemovals.get(pathname);
+  if (existing) return existing;
+
+  let resolveFirstAttempt!: () => void;
+  const firstAttempt = new Promise<void>((resolve) => {
+    resolveFirstAttempt = resolve;
+  });
+  const cleanup = (async () => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await rm(/* turbopackIgnore: true */ pathname, { force: true });
+        resolveFirstAttempt();
+        return;
+      } catch {
+        resolveFirstAttempt();
+        await retryDelay(Math.min(1_000, 2 ** Math.min(attempt + 2, 10)));
+      }
+    }
+  })().finally(() => {
+    if (pendingIntentRemovals.get(pathname) === cleanup) {
+      pendingIntentRemovals.delete(pathname);
+    }
+  });
+  pendingIntentRemovals.set(pathname, cleanup);
+  // The loop owns and observes every retry; callers only wait for the first
+  // attempt so a persistent filesystem fault cannot stall the request path.
+  void cleanup;
+  return firstAttempt;
+}
+
+async function removeIntent(pathname: string): Promise<void> {
+  await scheduleIntentRemoval(pathname);
+  const cleanup = pendingIntentRemovals.get(pathname);
+  if (cleanup) {
+    // Cleanup continues in the background after the first failed attempt.
+    return;
+  }
+}
+
+function processIsAlive(pid: number): boolean {
+  if (pid === process.pid) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+async function processStartIdentity(pid: number): Promise<string | null> {
+  if (!processIsAlive(pid)) return null;
+  try {
+    if (process.platform === "linux") {
+      const [stat, bootId] = await Promise.all([
+        readFile(`/proc/${pid}/stat`, "utf8"),
+        readFile("/proc/sys/kernel/random/boot_id", "utf8"),
+      ]);
+      const commandEnd = stat.lastIndexOf(") ");
+      const fields = stat.slice(commandEnd + 2).trim().split(/\s+/);
+      const startTicks = fields[19];
+      if (commandEnd < 0 || !/^\d+$/.test(startTicks ?? "")) {
+        throw new Error(`invalid /proc stat for PID ${pid}`);
+      }
+      return `linux:${bootId.trim()}:${startTicks}`;
+    }
+
+    if (process.platform === "win32") {
+      const script = [
+        `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}"`,
+        `if ($null -ne $p) { $p.CreationDate.ToUniversalTime().Ticks }`,
+      ].join("; ");
+      const { stdout } = await execFileAsync("powershell.exe", [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        script,
+      ]);
+      const startedAt = stdout.trim();
+      if (startedAt) return `win32:${startedAt}`;
+    } else {
+      const { stdout } = await execFileAsync("ps", [
+        "-o",
+        "lstart=",
+        "-p",
+        String(pid),
+      ]);
+      const startedAt = stdout.trim().replace(/\s+/g, " ");
+      if (startedAt) return `${process.platform}:${startedAt}`;
+    }
+  } catch (error) {
+    if (!processIsAlive(pid)) return null;
+    throw new Error(`could not verify process identity for PID ${pid}`, {
+      cause: error,
+    });
+  }
+  if (!processIsAlive(pid)) return null;
+  throw new Error(`could not verify process identity for PID ${pid}`);
+}
+
+function identityHash(identity: string): string {
+  return createHash("sha256").update(identity).digest("hex").slice(0, 16);
+}
+
+function intentOwner(
+  name: string,
+): { pid: number; startIdentityHash: string } | null {
+  const match = INTENT_NAME.exec(name);
+  if (!match) return null;
+  const pid = Number(match[2]);
+  return Number.isSafeInteger(pid) && pid > 0
+    ? { pid, startIdentityHash: match[3] }
+    : null;
+}
+
+export type ProcessIntentLockOptions = {
+  intentsDirectory: string;
+  timeoutMs?: number;
+  label: string;
+};
+
+/**
+ * Cross-process FIFO lock where every contender owns one immutable intent
+ * file. Release removes only the caller's unique file. Dead owners are
+ * recoverable by PID plus verified process-start identity; a live owner is
+ * never reclaimed merely because an I/O stall made its intent old.
+ */
+export async function acquireProcessIntentLock(
+  options: ProcessIntentLockOptions,
+): Promise<() => Promise<void>> {
+  const timeoutMs = options.timeoutMs ?? 15_000;
+  await mkdir(
+    /* turbopackIgnore: true */ options.intentsDirectory,
+    { recursive: true },
+  );
+  const ownStartIdentity = await processStartIdentity(process.pid);
+  if (!ownStartIdentity) {
+    throw new Error(`could not verify current process identity for ${options.label}`);
+  }
+  const order = process.hrtime.bigint().toString().padStart(24, "0");
+  const ownName =
+    `${order}-${process.pid}-${identityHash(ownStartIdentity)}-` +
+    `${randomBytes(8).toString("hex")}.lock`;
+  const ownPath = path.join(
+    /* turbopackIgnore: true */ options.intentsDirectory,
+    ownName,
+  );
+  const handle = await open(
+    /* turbopackIgnore: true */ ownPath,
+    "wx",
+    0o600,
+  );
+  try {
+    await handle.writeFile(`${process.pid} ${new Date().toISOString()}\n`);
+  } finally {
+    await handle.close();
+  }
+  const deadline = Date.now() + timeoutMs;
+
+  try {
+    while (true) {
+      const names = (
+        await readdir(
+          /* turbopackIgnore: true */ options.intentsDirectory,
+        )
+      )
+        .filter((name) => intentOwner(name) !== null)
+        .sort();
+      for (const name of names) {
+        if (name === ownName) continue;
+        const owner = intentOwner(name)!;
+        const currentIdentity = await processStartIdentity(owner.pid);
+        // Never infer death from age: only a dead PID or a demonstrably
+        // different process incarnation can make an intent reclaimable.
+        if (
+          currentIdentity === null ||
+          identityHash(currentIdentity) !== owner.startIdentityHash
+        ) {
+          await removeIntent(
+            path.join(
+              /* turbopackIgnore: true */ options.intentsDirectory,
+              name,
+            ),
+          );
+        }
+      }
+
+      const remaining = (
+        await readdir(
+          /* turbopackIgnore: true */ options.intentsDirectory,
+        )
+      )
+        .filter((name) => intentOwner(name) !== null)
+        .sort();
+      if (remaining[0] === ownName) {
+        let released = false;
+        return async () => {
+          if (released) return;
+          released = true;
+          await removeIntent(ownPath);
+        };
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `timed out waiting for ${options.label} lock: ${options.intentsDirectory}`,
+        );
+      }
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, 10 + Math.floor(Math.random() * 20)),
+      );
+    }
+  } catch (error) {
+    await removeIntent(ownPath);
+    throw error;
+  }
+}

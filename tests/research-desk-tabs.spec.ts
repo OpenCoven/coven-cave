@@ -311,6 +311,42 @@ async function mockResearchApis(page: Page): Promise<BootHandles> {
     route.fulfill({ json: { ok: true, links: LINKS } }),
   );
   await page.route(/\/api\/research\/generations/, async (route) => {
+    if (route.request().url().includes("/readiness")) {
+      await route.fulfill({
+        json: {
+          ok: true,
+          providers: {
+            local: {
+              ready: false,
+              voices: [],
+              hint: "Download a local voice in Settings → Voice.",
+            },
+            elevenlabs: {
+              ready: false,
+              defaultVoiceId: "eleven-default",
+              hint: "Set ELEVENLABS_API_KEY in Vault settings.",
+            },
+          },
+          ffmpeg: {
+            ready: false,
+            hint: "Install ffmpeg and ffprobe.",
+          },
+          podcast: {
+            ready: false,
+            hint: "Download a local voice or configure ElevenLabs.",
+          },
+          shortVideo: {
+            ready: false,
+            hint: "Install ffmpeg and download a local voice.",
+          },
+          longVideo: {
+            ready: false,
+            hint: "Install ffmpeg and download a local voice.",
+          },
+        },
+      });
+      return;
+    }
     if (route.request().method() === "POST") {
       handles.createdGenerationBodies.push(route.request().postDataJSON());
       await route.fulfill({ json: { ok: true, generation: DIAGRAM_GENERATION } });
@@ -544,7 +580,7 @@ test.describe("research desk tabs", () => {
     await expect(page.locator(".research-library")).toBeVisible();
   });
 
-  test("Studio renders 5 creatable + 3 disabled media cards and drafts a diagram from the completed run", async ({ page }) => {
+  test("Studio renders 5 extractive + 3 readiness-gated media cards and drafts a diagram from the completed run", async ({ page }) => {
     const handles = await openResearchDesk(page);
     await deskTab(page, /^Studio/).click();
 
@@ -552,16 +588,16 @@ test.describe("research desk tabs", () => {
     await expect(studio).toBeVisible();
 
     // Five real generation kinds render as enabled buttons (sources exist)…
-    const creatable = studio.locator("button.research-studio-card");
+    const creatable = studio.locator("button.research-studio-card:not([disabled])");
     await expect(creatable).toHaveCount(5);
     for (const label of ["Diagram", "Blog / article", "Slides", "Infographic", "Social thread"]) {
       await expect(creatable.filter({ hasText: label }).first()).toBeEnabled();
     }
-    // …and the three media kinds are honest non-buttons with aria-disabled.
-    const media = studio.locator(".research-studio-card--media[aria-disabled='true']");
+    // …and the three media kinds are honest disabled buttons with actionable hints.
+    const media = studio.locator("button.research-studio-card--media:disabled");
     await expect(media).toHaveCount(3);
     for (const label of ["Podcast", "Short video", "Long video"]) {
-      await expect(media.filter({ hasText: label })).toContainText("not available yet");
+      await expect(media.filter({ hasText: label })).toBeDisabled();
     }
 
     // Create a diagram from the completed mission — the source is a labelled

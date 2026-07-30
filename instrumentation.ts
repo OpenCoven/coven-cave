@@ -11,6 +11,14 @@ export async function register() {
   } catch (error) {
     console.warn("[instrumentation] cave home migration could not start:", error);
   }
+  try {
+    const mediaJobs = await import("@/lib/server/research-media-jobs");
+    void mediaJobs.startResearchMediaJobs().catch((error) => {
+      console.warn("[instrumentation] research media jobs failed to start:", error);
+    });
+  } catch (error) {
+    console.warn("[instrumentation] research media jobs could not start:", error);
+  }
   const mod = await import("@/lib/inbox-scheduler");
   mod.startScheduler();
   const watcher = await import("@/lib/github-watcher");
