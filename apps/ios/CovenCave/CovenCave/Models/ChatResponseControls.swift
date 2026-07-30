@@ -46,6 +46,9 @@ struct ChatModelTurnBinding: Equatable {
         guard let model = pendingModel ?? confirmedSessionModel else {
             return ChatModelTurnBinding(modelOverride: nil, scope: nil)
         }
+        if model.isEmpty {
+            return ChatModelTurnBinding(modelOverride: nil, scope: nil)
+        }
         return ChatModelTurnBinding(
             modelOverride: model,
             scope: hasSession ? .nextMessage : .session
@@ -61,6 +64,10 @@ struct ChatModelTurnBinding: Equatable {
         hasSession: Bool
     ) -> Bool {
         guard hasSession, let pendingModel else { return false }
+        if pendingModel.isEmpty {
+            return confirmedState.source == "runtime-default"
+                && confirmedState.effectiveModel.isEmpty
+        }
         return confirmedState.source == "session"
             && confirmedState.effectiveModel == pendingModel
     }

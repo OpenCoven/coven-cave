@@ -713,7 +713,7 @@ assert.match(
 // the new thread's model/plan; the effects pass () => !cancelled.
 assert.match(
   source,
-  /refreshModelState = useCallback\(async \(shouldApply: \(\) => boolean = \(\) => true\)[\s\S]*?if \(shouldApply\(\)\) setModelState\(next\);/,
+  /refreshModelState = useCallback\(async \(shouldApply: \(\) => boolean = \(\) => true\)[\s\S]*?if \(shouldApply\(\)\) \{\s*\n\s*modelStateRef\.current = next;\s*\n\s*setModelState\(next\);\s*\n\s*\}/,
   "refreshModelState only applies its result when the caller's shouldApply() allows it",
 );
 assert.match(

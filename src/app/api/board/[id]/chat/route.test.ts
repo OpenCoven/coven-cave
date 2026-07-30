@@ -101,8 +101,8 @@ assert.match(
 
 assert.match(
   source,
-  /body:\s*\{[\s\S]{0,160}harness:\s*binding\.harness,[\s\S]{0,100}model:\s*taskModelOverride \?\? binding\.model,/,
-  "task sessions otherwise forward the familiar's resolved model",
+  /\.\.\.\(\(taskModelOverride \?\? binding\.model\)[\s\S]{0,100}\? \{ model: taskModelOverride \?\? binding\.model \}[\s\S]{0,30}: \{\}\)/,
+  "task sessions forward explicit models and omit an absent runtime-owned default",
 );
 
 assert.match(

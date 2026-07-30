@@ -337,7 +337,9 @@ export async function POST(
     body: {
       projectRoot: sessionRoot,
       harness: binding.harness,
-      model: taskModelOverride ?? binding.model,
+      ...((taskModelOverride ?? binding.model)
+        ? { model: taskModelOverride ?? binding.model }
+        : {}),
       prompt: buildInitialTaskChatPrompt(card),
       // Non-interactive launch: the daemon streams the initial prompt's
       // assistant output instead of spawning a fullscreen, never-reaped harness

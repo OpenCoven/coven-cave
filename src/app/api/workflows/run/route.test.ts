@@ -31,7 +31,11 @@ assert.match(source, /engine\.status === 404[\s\S]{0,80}runViaSession\(body\)/, 
 assert.match(source, /buildWorkflowRunPrompt\(workflow, body\.inputs\)/, "session executor compiles the manifest and runtime inputs into a run prompt");
 assert.match(source, /path:\s*"\/api\/v1\/sessions"/, "session executor spawns a daemon agent session");
 assert.match(source, /harness:\s*binding\.harness/, "session executor honors the familiar's harness binding");
-assert.match(source, /model:\s*binding\.model/, "session executor honors the familiar's model binding");
+assert.match(
+  source,
+  /\.\.\.\(binding\.model \? \{ model: binding\.model \} : \{\}\)/,
+  "session executor honors explicit bindings and omits an absent runtime-owned model",
+);
 assert.match(
   source,
   /\{\s*harness:\s*config\.defaults\.harness,\s*model:\s*config\.defaults\.model\s*\}/,

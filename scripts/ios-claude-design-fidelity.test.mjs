@@ -20,6 +20,7 @@ const plugins = await read("apps/ios/CovenCave/CovenCave/Views/PluginsPanel.swif
 const client = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
 const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");
 const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelControl.swift");
+const caveClient = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
 const appModel = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
 const caveApp = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
 const tasks = await read("apps/ios/CovenCave/CovenCave/Views/TasksView.swift");
@@ -211,8 +212,18 @@ assert.match(
 );
 assert.match(
   familiars,
-  /ModelPickerSheet\([\s\S]{0,240}application: \.familiarDefault/,
+  /ModelPickerSheet\([\s\S]{0,400}application: \.familiarDefault/,
   "the familiar default picker labels its real scope",
+);
+assert.match(
+  modelControl,
+  /allowsRuntimeDefault:[\s\S]*?Button \{[\s\S]*?onSelect\(nil\)[\s\S]*?Text\("Runtime default"\)/,
+  "runtime-owned inventories offer an actionable Runtime default choice",
+);
+assert.match(
+  caveClient,
+  /func setChatModel\([\s\S]{0,180}?model: String\?[\s\S]*?encodeNil\(forKey: \.model\)/,
+  "clearing an iOS model sends JSON null instead of omitting the model field",
 );
 assert.match(
   modelControl,
@@ -274,8 +285,8 @@ assert.match(chat, /Picker\("Thinking"/, "session details expose real thinking l
 assert.match(chat, /Picker\("Speed"/, "session details expose real response speeds");
 assert.match(
   chat,
-  /thread\.pendingModelOverride = model/,
-  "a selected model is synchronously retained as the chat's pending intent",
+  /let stagedModel = model \?\? ""[\s\S]{0,220}?thread\.pendingModelOverride = stagedModel/,
+  "a selected model or runtime-default clear is synchronously retained as the chat's pending intent",
 );
 assert.match(
   chat,

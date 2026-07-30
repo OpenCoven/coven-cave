@@ -75,7 +75,7 @@ export async function POST(req: Request) {
     body: {
       projectRoot,
       harness,
-      model: binding.model,
+      ...(binding.model ? { model: binding.model } : {}),
       prompt,
       cols,
       rows,

@@ -6,8 +6,8 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /body:\s*\{[\s\S]{0,160}harness,[\s\S]{0,80}model:\s*binding\.model,/,
-  "direct daemon session launches forward the resolved familiar or global model",
+  /\.\.\.\(binding\.model \? \{ model: binding\.model \} : \{\}\)/,
+  "direct daemon session launches omit an absent runtime-owned model",
 );
 
 assert.match(

@@ -131,6 +131,7 @@ struct FamiliarDetailView: View {
 
     @State private var modelState: ChatModelState?
     @State private var modelOptions: [ChatModelOption] = []
+    @State private var modelAllowsRuntimeDefault = false
     @State private var showModelPicker = false
     @State private var showPermissions = false
     @State private var changingModel = false
@@ -187,6 +188,7 @@ struct FamiliarDetailView: View {
             ModelPickerSheet(
                 options: modelOptions,
                 current: modelState?.effectiveModel ?? familiar.model ?? "",
+                allowsRuntimeDefault: modelAllowsRuntimeDefault,
                 onSelect: { model in Task { await chooseModel(model) } },
                 application: .familiarDefault)
         }
@@ -351,13 +353,15 @@ struct FamiliarDetailView: View {
             let response = try await client.chatModelState(familiarId: familiar.id, sessionId: nil)
             modelState = response.state
             modelOptions = response.options ?? []
+            modelAllowsRuntimeDefault = response.inventory?.allowsRuntimeDefault ?? false
         } catch {
             modelState = nil
             modelOptions = []
+            modelAllowsRuntimeDefault = false
         }
     }
 
-    private func chooseModel(_ model: String) async {
+    private func chooseModel(_ model: String?) async {
         guard let client = app.client else { return }
         changingModel = true
         defer { changingModel = false }
@@ -369,6 +373,8 @@ struct FamiliarDetailView: View {
                 scope: "familiar-default")
             modelState = response.state
             modelOptions = response.options ?? modelOptions
+            modelAllowsRuntimeDefault =
+                response.inventory?.allowsRuntimeDefault ?? modelAllowsRuntimeDefault
             app.showToast("Default model updated", systemImage: "cpu")
         } catch {
             app.showToast("Couldn’t update the model",

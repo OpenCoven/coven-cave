@@ -17,10 +17,21 @@ struct ChatModelState: Codable {
     var reason: String?
 }
 
+struct ChatModelInventory: Codable {
+    let runtime: String
+    let models: [ChatModelOption]
+    let provenance: String
+    let defaultOwner: String
+    let allowCustom: Bool
+
+    var allowsRuntimeDefault: Bool { defaultOwner == "runtime" }
+}
+
 struct ChatModelStateResponse: Codable {
     let ok: Bool
     let state: ChatModelState
     var options: [ChatModelOption]?
+    var inventory: ChatModelInventory?
     var allowCustom: Bool?
 }
 
@@ -34,6 +45,7 @@ struct ChatModelBar: View {
 
     @State private var state: ChatModelState?
     @State private var options: [ChatModelOption] = []
+    @State private var allowsRuntimeDefault = false
     @State private var showPicker = false
     @State private var busy = false
 
@@ -57,6 +69,7 @@ struct ChatModelBar: View {
                 ModelPickerSheet(
                     options: options,
                     current: state?.effectiveModel ?? "",
+                    allowsRuntimeDefault: allowsRuntimeDefault,
                     onSelect: { id in Task { await choose(id) } },
                     application: sessionId == nil ? .familiarDefault : .chat
                 )
@@ -64,7 +77,7 @@ struct ChatModelBar: View {
     }
 
     @ViewBuilder private var chip: some View {
-        if state != nil, !options.isEmpty {
+        if state != nil, allowsRuntimeDefault || !options.isEmpty {
             Button { showPicker = true } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "cpu").font(.system(size: 11, weight: .medium))
@@ -95,13 +108,19 @@ struct ChatModelBar: View {
             let resp = try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
             state = resp.state
             options = resp.options ?? []
+            allowsRuntimeDefault = resp.inventory?.allowsRuntimeDefault ?? false
         } catch {
             // Non-fatal: the bar just stays hidden if the state can't be read.
         }
     }
 
-    private func choose(_ model: String) async {
-        guard let client = app.client, model != state?.effectiveModel else { return }
+    private func choose(_ model: String?) async {
+        guard let client = app.client else { return }
+        if let model {
+            guard model != state?.effectiveModel else { return }
+        } else if state?.source == "runtime-default" && state?.effectiveModel.isEmpty == true {
+            return
+        }
         busy = true
         defer { busy = false }
         // Per-chat when the chat has a server session; otherwise change the
@@ -112,6 +131,7 @@ struct ChatModelBar: View {
                 familiarId: familiarId, sessionId: sessionId, model: model, scope: scope)
             state = resp.state
             if let opts = resp.options { options = opts }
+            allowsRuntimeDefault = resp.inventory?.allowsRuntimeDefault ?? allowsRuntimeDefault
             Haptics.tap()
         } catch {
             // Leave the prior state in place on failure.
@@ -140,7 +160,8 @@ enum ModelPickerApplication {
 struct ModelPickerSheet: View {
     let options: [ChatModelOption]
     let current: String
-    let onSelect: (String) -> Void
+    let allowsRuntimeDefault: Bool
+    let onSelect: (String?) -> Void
     let application: ModelPickerApplication
     /// Optional deeper-configuration hop: shown as a chevron row that hands
     /// off to the familiar picker (the "agent" half of the model/agent pill).
@@ -151,12 +172,14 @@ struct ModelPickerSheet: View {
     init(
         options: [ChatModelOption],
         current: String,
-        onSelect: @escaping (String) -> Void,
+        allowsRuntimeDefault: Bool = false,
+        onSelect: @escaping (String?) -> Void,
         application: ModelPickerApplication = .chat,
         onSwitchFamiliar: (() -> Void)? = nil
     ) {
         self.options = options
         self.current = current
+        self.allowsRuntimeDefault = allowsRuntimeDefault
         self.onSelect = onSelect
         self.application = application
         self.onSwitchFamiliar = onSwitchFamiliar
@@ -187,8 +210,35 @@ struct ModelPickerSheet: View {
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("Current model: \(currentOption.label)")
                     }
+                } else if allowsRuntimeDefault {
+                    Section("Current") {
+                        Label("Runtime default", systemImage: "cpu")
+                            .font(.body.weight(.semibold))
+                            .accessibilityLabel("Current model: Runtime default")
+                    }
                 }
                 Section {
+                    if allowsRuntimeDefault {
+                        Button {
+                            onSelect(nil)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Runtime default").foregroundStyle(.primary)
+                                    Text("Let the runtime choose its configured model")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 8)
+                                if current.isEmpty {
+                                    Image(systemName: "checkmark").foregroundStyle(.tint)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                     ForEach(options) { option in
                         Button {
                             onSelect(option.id)

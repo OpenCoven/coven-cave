@@ -101,13 +101,25 @@ assert.match(
 const selectRuntimeBlock = chatView.match(/const handleSelectRuntime = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
 assert.match(
   selectRuntimeBlock,
-  /setModelState\(\(current\) =>[\s\S]{0,300}?harness: runtime,\s*\n\s*effectiveModel: nextModel/,
+  /const optimistic: ChatModelState = \{[\s\S]{0,300}?harness: runtime,\s*\n\s*effectiveModel: nextModel,[\s\S]{0,300}?modelStateRef\.current = optimistic;\s*\n\s*setModelState\(optimistic\)/,
   "the chip flips optimistically before the network round-trip",
 );
 assert.match(
   selectRuntimeBlock,
   /finally \{\s*\n\s*await refreshModelState\(\);/,
   "the model-state refetch reconciles the optimistic flip (even when the PATCH fails)",
+);
+
+const selectModelBlock = chatView.match(/const handleSelectModel = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
+assert.match(
+  selectModelBlock,
+  /effectiveModel: modelId \?\? "",[\s\S]{0,160}?source: modelId \? \(sessionId \? "session" : "familiar-default"\) : "runtime-default"[\s\S]{0,260}?modelStateRef\.current = optimistic;\s*\n\s*setModelState\(optimistic\)/,
+  "clearing a model synchronously stages the runtime default before its PATCH",
+);
+assert.match(
+  chatView,
+  /const modelOverrideForRequest =[\s\S]{0,300}?modelStateRef\.current\?\.source === "session"/,
+  "send snapshots the synchronously staged model state rather than the prior render",
 );
 
 // ── The chip face: runtime logo + model, one accessible name ─────────────────

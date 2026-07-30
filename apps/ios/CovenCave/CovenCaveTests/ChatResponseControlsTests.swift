@@ -269,6 +269,46 @@ final class ChatResponseControlsTests: XCTestCase {
         ))
     }
 
+    func testRuntimeDefaultClearHasNoTurnOverrideAndClearsAfterConfirmation() {
+        let confirmedRuntimeDefault = ChatModelState(
+            familiarId: "grok",
+            harness: "grok",
+            runtime: nil,
+            effectiveModel: "",
+            source: "runtime-default",
+            applicationState: nil,
+            reason: nil
+        )
+        let staleSession = ChatModelState(
+            familiarId: "grok",
+            harness: "grok",
+            runtime: nil,
+            effectiveModel: "xai/grok-4",
+            source: "session",
+            applicationState: nil,
+            reason: nil
+        )
+
+        let binding = ChatModelTurnBinding.resolve(
+            pendingModel: "",
+            confirmedState: staleSession,
+            hasSession: true
+        )
+
+        XCTAssertNil(binding.modelOverride)
+        XCTAssertNil(binding.scope)
+        XCTAssertFalse(ChatModelTurnBinding.shouldClearPending(
+            "",
+            confirmedState: staleSession,
+            hasSession: true
+        ))
+        XCTAssertTrue(ChatModelTurnBinding.shouldClearPending(
+            "",
+            confirmedState: confirmedRuntimeDefault,
+            hasSession: true
+        ))
+    }
+
     func testPluginReconciliationPermitsOnlyAnAppliedMatchingCatalog() {
         XCTAssertTrue(
             MarketplacePluginMutationReconciliation.isConfirmed(
