@@ -32,6 +32,28 @@ enum BiometricKind: Equatable {
     }
 }
 
+/// Pure classification rule turning hardware/policy facts into a
+/// `BiometricKind`. Extracted from `LAContextBiometricAuthenticator` so it's
+/// testable without a real `LAContext`: `LAContext.biometryType` reflects the
+/// *hardware* present and stays populated even when nothing is
+/// enrolled/available, so it must never be trusted on its own. Only when
+/// `.deviceOwnerAuthenticationWithBiometrics` can currently evaluate (i.e.
+/// biometrics are enrolled and available) does the hardware type become a
+/// trustworthy label; otherwise device-owner auth can still succeed via the
+/// passcode fallback alone, and callers must report that instead of an
+/// incorrect biometric label.
+enum BiometricPolicyClassifier {
+    static func kind(biometryType: LABiometryType, canEvaluateBiometrics: Bool) -> BiometricKind {
+        guard canEvaluateBiometrics else { return .none }
+        switch biometryType {
+        case .faceID: return .faceID
+        case .touchID: return .touchID
+        case .opticID: return .opticID
+        default: return .none
+        }
+    }
+}
+
 /// Abstraction over LocalAuthentication so `AppLock` can be exercised with a
 /// fake in unit tests instead of driving real Face ID/Touch ID prompts.
 protocol BiometricAuthenticating {
@@ -55,7 +77,22 @@ struct LAContextBiometricAuthenticator: BiometricAuthenticating {
         let context = LAContext()
         var error: NSError?
         let canEvaluate = context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error)
-        return (canEvaluate, biometricKind(for: context))
+
+        // `.deviceOwnerAuthentication` alone succeeding (or failing) says
+        // nothing about biometrics specifically — device-owner auth can
+        // still succeed via the passcode fallback with biometric hardware
+        // present but nothing enrolled. Check the biometrics-only policy
+        // separately so the label doesn't lie about that.
+        var biometricsError: NSError?
+        let canEvaluateBiometrics = context.canEvaluatePolicy(
+            .deviceOwnerAuthenticationWithBiometrics,
+            error: &biometricsError
+        )
+        let kind = BiometricPolicyClassifier.kind(
+            biometryType: context.biometryType,
+            canEvaluateBiometrics: canEvaluateBiometrics
+        )
+        return (canEvaluate, kind)
     }
 
     func authenticate(reason: String) async -> Bool {
@@ -68,15 +105,6 @@ struct LAContextBiometricAuthenticator: BiometricAuthenticating {
             context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
                 continuation.resume(returning: success)
             }
-        }
-    }
-
-    private func biometricKind(for context: LAContext) -> BiometricKind {
-        switch context.biometryType {
-        case .faceID: return .faceID
-        case .touchID: return .touchID
-        case .opticID: return .opticID
-        default: return .none
         }
     }
 }
