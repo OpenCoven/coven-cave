@@ -20,9 +20,31 @@ const previousCovenBin = process.env.COVEN_BIN;
 const previousCovenTestLog = process.env.COVEN_TEST_LOG;
 const previousCovenTestMode = process.env.COVEN_TEST_MODE;
 const previousCovenCancelReady = process.env.COVEN_TEST_CANCEL_READY;
+const previousCodexBin = process.env.CODEX_BIN;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.COVEN_TEST_LOG = log;
+
+// Every scenario in this file exercises the GENERIC `coven run codex`
+// transport through the shim above. On a machine with a real Codex CLI on
+// the discovered spawn PATH, direct codex routing can engage instead —
+// bypassing the adapter gate entirely and spawning the real CLI on the test
+// prompt (cave-evrsr: order/timing-dependent, since the capability probes
+// race their timeout). Pin CODEX_BIN to an existing but unlaunchable fixture
+// (mode-0644 file on POSIX, unconvertible .cmd on Windows — the same shape
+// as cave-g3qar's fix in the sibling route-runtime-availability test) so the
+// passive availability gate keeps the direct path off deterministically. A
+// nonexistent override would not do: codexBin() falls back to PATH search.
+const pinnedCodex = path.join(
+  bin,
+  process.platform === "win32" ? "codex-no-exec.cmd" : "codex-no-exec",
+);
+await writeFile(
+  pinnedCodex,
+  process.platform === "win32" ? "@echo off\r\nexit /b 0\r\n" : "#!/bin/sh\nexit 0\n",
+  { mode: 0o644 },
+);
+process.env.CODEX_BIN = pinnedCodex;
 
 const shimScript = path.join(bin, "coven.js");
 const shim = [
@@ -275,6 +297,8 @@ try {
   else process.env.COVEN_TEST_MODE = previousCovenTestMode;
   if (previousCovenCancelReady === undefined) delete process.env.COVEN_TEST_CANCEL_READY;
   else process.env.COVEN_TEST_CANCEL_READY = previousCovenCancelReady;
+  if (previousCodexBin === undefined) delete process.env.CODEX_BIN;
+  else process.env.CODEX_BIN = previousCodexBin;
   await rm(home, { recursive: true, force: true });
 }
 
