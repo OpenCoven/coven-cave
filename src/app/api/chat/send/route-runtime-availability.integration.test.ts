@@ -34,6 +34,26 @@ const pinnedGrok = path.join(
 await writeFile(pinnedGrok, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
 if (process.platform !== "win32") await chmod(pinnedGrok, 0o755);
 
+// Codex direct routing probes a launch-ready CLI with three capability
+// spawns before choosing the generic Coven path, so a developer machine with
+// a real Codex on PATH would turn scenario 0's zero-spawn assertion into a
+// host-dependent failure (cave-g3qar). Pin CODEX_BIN to an existing but
+// unlaunchable fixture — the same shape as scenario 0's blocked Coven: a
+// mode-0644 file on POSIX, an intentionally unconvertible .cmd on Windows —
+// so the passive availability gate reports it before any probe can spawn.
+// (A nonexistent override would not do: codexBin() falls back to searching
+// the launcher's effective PATH.)
+const pinnedCodex = path.join(
+  bin,
+  process.platform === "win32" ? "codex-no-exec.cmd" : "codex-no-exec",
+);
+await writeFile(
+  pinnedCodex,
+  process.platform === "win32" ? "@echo off\r\nexit /b 0\r\n" : "#!/bin/sh\nexit 0\n",
+  { mode: 0o644 },
+);
+if (process.platform !== "win32") await chmod(pinnedCodex, 0o644);
+
 const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousCovenBin = process.env.COVEN_BIN;
@@ -42,6 +62,8 @@ const previousPath = process.env.PATH;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.GROK_BIN = pinnedGrok;
+const previousCodexBin = process.env.CODEX_BIN;
+process.env.CODEX_BIN = pinnedCodex;
 
 async function readSse(response) {
   assert.equal(response.status, 200, await response.clone().text());
@@ -345,6 +367,8 @@ try {
   else process.env.COVEN_BIN = previousCovenBin;
   if (previousGrokBin === undefined) delete process.env.GROK_BIN;
   else process.env.GROK_BIN = previousGrokBin;
+  if (previousCodexBin === undefined) delete process.env.CODEX_BIN;
+  else process.env.CODEX_BIN = previousCodexBin;
   if (previousPath === undefined) delete process.env.PATH;
   else process.env.PATH = previousPath;
   const { refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
