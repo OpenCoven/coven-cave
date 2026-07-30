@@ -58,9 +58,8 @@ struct LockScreenAutoPromptCoordinator {
 /// ("require biometrics to unlock" and "…for approvals") and the transient
 /// `isLocked` state that gates the entire app's content at the root.
 ///
-/// Dependency-injected authenticator, `UserDefaults` suite, and clock keep
-/// this fully unit-testable without touching real biometrics or the wall
-/// clock.
+/// Dependency-injected authenticator, `UserDefaults` suite, and monotonic
+/// clock keep this fully unit-testable without touching real biometrics.
 @Observable
 @MainActor
 final class AppLock {
@@ -93,18 +92,18 @@ final class AppLock {
 
     private let authenticator: BiometricAuthenticating
     private let defaults: UserDefaults
-    private let now: () -> Date
-    private var backgroundedAt: Date?
+    private let monotonicNow: () -> TimeInterval
+    private var backgroundedAt: TimeInterval?
     private var autoPromptCoordinator = LockScreenAutoPromptCoordinator()
 
     init(
         authenticator: BiometricAuthenticating = LAContextBiometricAuthenticator(),
         defaults: UserDefaults = .standard,
-        now: @escaping () -> Date = Date.init
+        monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.authenticator = authenticator
         self.defaults = defaults
-        self.now = now
+        self.monotonicNow = monotonicNow
 
         let availability = authenticator.availability()
         canUseDeviceAuthentication = availability.canEvaluate
@@ -144,7 +143,7 @@ final class AppLock {
     func sceneDidEnterBackground() {
         isPrivacyShielded = true
         guard lockEnabled else { return }
-        backgroundedAt = now()
+        backgroundedAt = monotonicNow()
     }
 
     /// Call when the scene reaches `.active`. Refreshes live authentication
@@ -163,7 +162,13 @@ final class AppLock {
         }
         refreshAvailability()
         guard lockEnabled else { return }
-        let duration = backgroundedAt.map { now().timeIntervalSince($0) }
+        let duration = backgroundedAt.map { start in
+            let end = monotonicNow()
+            guard start.isFinite, end.isFinite, end >= start else {
+                return AppLockPolicy.graceInterval
+            }
+            return end - start
+        }
         let wasLocked = isLocked
         if AppLockPolicy.shouldLock(enabled: lockEnabled, alreadyLocked: isLocked, backgroundDuration: duration) {
             isLocked = true

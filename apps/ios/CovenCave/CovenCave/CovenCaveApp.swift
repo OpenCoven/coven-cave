@@ -9,6 +9,7 @@ struct CovenCaveApp: App {
     /// `AppModel` so its cold-start lock decision is settled before the first
     /// view mounts (see `LockScreenView`, substituted in for the whole root).
     @State private var appLock: AppLock
+    @State private var pairingApprovalFailed = false
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @Environment(\.scenePhase) private var scenePhase
 
@@ -111,7 +112,38 @@ struct CovenCaveApp: App {
                 // the matching destination/sheet. Handled even before connect — the destination is
                 // set so the right surface shows once the desktop is reached.
                 .onOpenURL { app.handleDeepLink($0) }
+                .task { await processPendingPairingIntent() }
+                .onChange(of: app.pendingPairingIntent) {
+                    Task { await processPendingPairingIntent() }
+                }
+                .onChange(of: appLock.isLocked) {
+                    Task { await processPendingPairingIntent() }
+                }
+                .alert("Couldn't confirm it's you", isPresented: $pairingApprovalFailed) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("Authentication failed or was cancelled, so your desktop pairing was not changed.")
+                }
         }
+    }
+
+    @MainActor
+    private func processPendingPairingIntent() async {
+        guard let intent = app.takePendingPairingIntent(isLocked: appLock.isLocked) else { return }
+        let requiresApproval = PairingApprovalPolicy.requiresApproval(
+            hasExistingPairing: app.connection != nil
+        )
+        if !requiresApproval {
+            await app.configure(host: intent.host, token: intent.token)
+            return
+        }
+
+        let approved = await appLock.performApprovedAction(
+            reason: "Confirm it's you to replace your desktop pairing"
+        ) {
+            await app.configure(host: intent.host, token: intent.token)
+        }
+        if !approved { pairingApprovalFailed = true }
     }
 }
 

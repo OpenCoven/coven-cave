@@ -87,9 +87,12 @@ struct PrivacyShieldView: View {
     @Environment(\.chrome) private var chrome
 
     var body: some View {
-        chrome.bgBase
-            .ignoresSafeArea()
-            .accessibilityHidden(true)
-            .transition(.identity)
+        ZStack {
+            Color(uiColor: .systemBackground)
+            chrome.bgBase
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+        .transition(.identity)
     }
 }

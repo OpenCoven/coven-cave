@@ -23,10 +23,10 @@ private final class FakeBiometricAuthenticator: BiometricAuthenticating {
 /// Controllable clock so background-duration boundaries (the 60s grace
 /// window) are deterministic instead of racing a real timer.
 private final class TestClock {
-    var current: Date
-    init(_ date: Date = Date(timeIntervalSinceReferenceDate: 0)) { current = date }
-    func now() -> Date { current }
-    func advance(by seconds: TimeInterval) { current = current.addingTimeInterval(seconds) }
+    var current: TimeInterval
+    init(_ current: TimeInterval = 0) { self.current = current }
+    func now() -> TimeInterval { current }
+    func advance(by seconds: TimeInterval) { current += seconds }
 }
 
 @MainActor
@@ -51,7 +51,7 @@ final class AppLockTests: XCTestCase {
     ) -> AppLock {
         defaults.set(lockEnabled, forKey: AppLock.lockEnabledKey)
         defaults.set(approvalEnabled, forKey: AppLock.approvalEnabledKey)
-        return AppLock(authenticator: authenticator, defaults: defaults, now: clock.now)
+        return AppLock(authenticator: authenticator, defaults: defaults, monotonicNow: clock.now)
     }
 
     // MARK: - Cold start
@@ -102,6 +102,19 @@ final class AppLockTests: XCTestCase {
 
         lock.sceneDidEnterBackground()
         clock.advance(by: 60)
+        lock.sceneDidBecomeActive()
+
+        XCTAssertTrue(lock.isLocked)
+    }
+
+    func testMonotonicClockRollbackLocksConservatively() async {
+        let clock = TestClock(100)
+        let authenticator = FakeBiometricAuthenticator()
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator, clock: clock)
+        _ = await lock.unlock()
+
+        lock.sceneDidEnterBackground()
+        clock.current = 50
         lock.sceneDidBecomeActive()
 
         XCTAssertTrue(lock.isLocked)

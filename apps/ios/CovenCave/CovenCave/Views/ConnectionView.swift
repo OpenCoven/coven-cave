@@ -9,6 +9,7 @@ import UIKit
 /// re-probe) is preserved; only the hierarchy changed.
 struct ConnectionView: View {
     @Environment(AppModel.self) private var app
+    @Environment(AppLock.self) private var appLock
     @Environment(\.chrome) private var chrome
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -27,6 +28,7 @@ struct ConnectionView: View {
     /// advisory: never auto-connects, never persists — Connect stays the
     /// explicit action.
     @State private var liveCheck: LiveCheckState = .idle
+    @State private var approvalFailed = false
     @FocusState private var focused: Bool
 
     enum LiveCheckState: Equatable {
@@ -126,6 +128,11 @@ struct ConnectionView: View {
                     guard !busy, case .unreachable = app.connectionState else { continue }
                     await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
                 }
+            }
+            .alert("Couldn't confirm it's you", isPresented: $approvalFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Authentication failed or was cancelled, so your desktop pairing was not changed.")
             }
         }
     }
@@ -433,9 +440,13 @@ struct ConnectionView: View {
         busy = true
         liveCheck = .idle
         Task {
-            await app.configure(host: invite.host, token: invite.token)
+            let approved = await configurePairing(invite)
             busy = false
-            if app.connectionState == .connected { Haptics.success() }
+            if !approved {
+                approvalFailed = true
+            } else if app.connectionState == .connected {
+                Haptics.success()
+            }
         }
     }
 
@@ -456,13 +467,29 @@ struct ConnectionView: View {
             busy = true
             liveCheck = .idle
             Task {
-                await app.configure(host: invite.host, token: invite.token)
+                let approved = await configurePairing(invite)
                 busy = false
-                if app.connectionState == .connected { Haptics.success() }
+                if !approved {
+                    approvalFailed = true
+                } else if app.connectionState == .connected {
+                    Haptics.success()
+                }
             }
         } else {
             manualEntry = true
             focused = true
+        }
+    }
+
+    private func configurePairing(_ invite: CaveInvite) async -> Bool {
+        guard PairingApprovalPolicy.requiresApproval(hasExistingPairing: app.connection != nil) else {
+            await app.configure(host: invite.host, token: invite.token)
+            return true
+        }
+        return await appLock.performApprovedAction(
+            reason: "Confirm it's you to replace your desktop pairing"
+        ) {
+            await app.configure(host: invite.host, token: invite.token)
         }
     }
 
