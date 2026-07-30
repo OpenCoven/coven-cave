@@ -154,6 +154,20 @@ pub(super) fn start_sidecar_runtime(
             "[cave] bundled Piper is unavailable in development; local voices will use an explicit COVEN_PIPER_BIN or PATH fallback"
         );
     }
+    let kokoro = bundled_kokoro_path(&resource_dir);
+    if !cfg!(debug_assertions) && !kokoro.is_file() {
+        return Err(SidecarStartError::Failed(format!(
+            "bundled Kokoro runtime not found at {}",
+            kokoro.display()
+        )));
+    }
+    if kokoro.is_file() {
+        log::info!("[cave] using bundled Kokoro at {}", kokoro.display());
+    } else {
+        log::warn!(
+            "[cave] bundled Kokoro is unavailable in development; Kokoro voices will use an explicit COVEN_KOKORO_BIN or PATH fallback"
+        );
+    }
     let whisper_cli = find_bundled_whisper_cli(&resource_dir).ok_or_else(|| {
         SidecarStartError::Failed(
             "Could not find the bundled local Whisper runtime. Reinstall CovenCave or contact support."
@@ -273,6 +287,9 @@ pub(super) fn start_sidecar_runtime(
     }
     if piper.is_file() {
         command.env("COVEN_PIPER_BIN", node_arg_path(&piper));
+    }
+    if kokoro.is_file() {
+        command.env("COVEN_KOKORO_BIN", node_arg_path(&kokoro));
     }
 
     // Ubuntu's pinned whisper.cpp archive keeps its shared objects next to the

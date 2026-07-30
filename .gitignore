@@ -22,6 +22,8 @@ src-tauri/resources/whisper/*
 !src-tauri/resources/whisper/placeholder.txt
 src-tauri/resources/piper/*
 !src-tauri/resources/piper/placeholder.txt
+src-tauri/resources/kokoro/*
+!src-tauri/resources/kokoro/placeholder.txt
 
 # Notarized release artifacts
 release/

@@ -246,6 +246,11 @@ test("macOS reachability daemon uses the managed Piper runtime", async () => {
     /\.env\("COVEN_PIPER_BIN", &piper\)/,
     "the background sidecar must pass its managed Piper path to local TTS",
   );
+  assert.match(
+    daemon,
+    /\.env\("COVEN_KOKORO_BIN", &kokoro\)/,
+    "the background sidecar must pass its managed Kokoro path to local TTS",
+  );
 });
 
 test("clean release runners have resource glob placeholders", async () => {
@@ -257,6 +262,7 @@ test("clean release runners have resource glob placeholders", async () => {
     access(new URL("./resources/node/placeholder.txt", import.meta.url)),
     access(new URL("./resources/whisper/placeholder.txt", import.meta.url)),
     access(new URL("./resources/piper/placeholder.txt", import.meta.url)),
+    access(new URL("./resources/kokoro/placeholder.txt", import.meta.url)),
   ]);
 
   assert.match(
@@ -287,6 +293,13 @@ test("clean release runners have resource glob placeholders", async () => {
     /!src-tauri\/resources\/piper\/placeholder\.txt/,
     "Piper placeholder must be tracked so resources/piper/**/* matches in clean CI",
   );
+  assert.match(
+    gitignore,
+    /!src-tauri\/resources\/kokoro\/placeholder\.txt/,
+    "Kokoro placeholder must be tracked so resources/kokoro/**/* matches in clean CI",
+  );
+  assert.match(releaseScript, /KOKORO_CLI=.*resources\/kokoro\/sherpa-onnx-offline-tts/, "macOS release must resolve the bundled Kokoro runtime before signing");
+  assert.match(releaseScript, /"\$KOKORO_CLI" --help/, "macOS release must smoke-test the copied Kokoro runtime");
 });
 
 test("native updater cleanup stops the sidecar before Windows exits", async () => {
