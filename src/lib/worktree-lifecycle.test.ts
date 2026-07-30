@@ -199,7 +199,7 @@ function observation(overrides = {}) {
     protected: 1,
   });
   const text = renderWorktreeLifecycleReport(summary);
-  assert.match(text, /3 registered \| 1 active .* 1 retire after gate/);
+  assert.match(text, /3 registered \| 1 active .* 1 retire after gate .* 1 protected/);
   assert.match(text, /No worktree or branch was changed/);
   assert.match(text, /feat\/old/);
   assert.match(text, /\? live\.ts/, "the routine text report retains exact dirty paths");

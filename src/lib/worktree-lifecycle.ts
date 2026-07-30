@@ -242,7 +242,7 @@ function labelFor(item: WorktreeLifecycleItem): string {
 export function renderWorktreeLifecycleReport(summary: WorktreeLifecycleSummary): string {
   const { counts } = summary;
   const lines = [
-    `Worktree lifecycle: ${summary.items.length} registered | ${counts.active} active | ${counts.recovery} recovery | ${counts.cooldown} cooldown | ${counts["retire-after-gate"]} retire after gate | ${counts.uncertain} uncertain`,
+    `Worktree lifecycle: ${summary.items.length} registered | ${counts.active} active | ${counts.recovery} recovery | ${counts.cooldown} cooldown | ${counts["retire-after-gate"]} retire after gate | ${counts.uncertain} uncertain | ${counts.protected} protected`,
     "Report only. No worktree or branch was changed.",
   ];
 
