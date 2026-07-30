@@ -127,6 +127,102 @@ if (!isWin) {
   assert.equal(res.status, 0, `cleanup from inside the worktree is not blocked — ${why}`);
 }
 
+// ── 3d. A tag ON A REMOTE is retention; a LOCAL-ONLY tag is not ──────────────
+// Archiving a branch as a signed tag and pushing it preserves the OIDs more
+// durably than a branch does — a tag is not auto-deleted on merge. The guard
+// only consulted `branch -r --contains`, so on 2026-07-29 a worktree sweep that
+// archived seven branches as pushed tags had to bypass the guard six times to
+// clean them up. Six bypasses to delete provably-preserved work is how the
+// bypass becomes a reflex.
+// The local/remote distinction is the whole point: a local tag dies with the
+// machine, so it must NOT count.
+{
+  const { dir, wt } = repoWithWorktree({ push: false });
+  const tip = sh("git", ["-C", wt, "rev-parse", "HEAD"], dir).trim();
+
+  // Local-only tag → still blocked.
+  sh("git", ["-C", wt, "tag", "-a", "archive/local-only", "-m", "local", tip], dir);
+  let res = runHook(`git worktree remove ${wt}`, dir);
+  assert.equal(res.status, 2, "a LOCAL-only tag is not retention — still blocked");
+  assert.match(res.stderr, /NO remote ref/, "and says so");
+  res = runHook(`git branch -D feature-x`, wt);
+  assert.equal(res.status, 2, "branch -D also blocked by a local-only tag");
+
+  // Push the tag → now retained, both ops pass.
+  sh("git", ["-C", wt, "push", "-q", "origin", "archive/local-only"], dir);
+  res = runHook(`git worktree remove ${wt}`, dir);
+  assert.equal(
+    res.status,
+    0,
+    `a tag pushed to a remote IS retention — guard said: ${JSON.stringify(res.stderr)}`,
+  );
+  res = runHook(`git branch -D feature-x`, wt);
+  assert.equal(
+    res.status,
+    0,
+    `branch -D allowed once the tip is on a remote tag — guard said: ${JSON.stringify(res.stderr)}`,
+  );
+}
+
+// ── 3d-ii. Unverifiable retention must read as NO retention ──────────────────
+// The tag probe needs the network (git keeps no remote-tracking ref for tags).
+// If that lookup fails, the guard must block: "cannot verify" is not "verified",
+// and this probe gates deletion rather than a warning.
+{
+  const { dir, wt } = repoWithWorktree({ push: false });
+  const tip = sh("git", ["-C", wt, "rev-parse", "HEAD"], dir).trim();
+  sh("git", ["-C", wt, "tag", "-a", "archive/pushed", "-m", "a", tip], dir);
+  sh("git", ["-C", wt, "push", "-q", "origin", "archive/pushed"], dir);
+  assert.equal(runHook(`git worktree remove ${wt}`, dir).status, 0, "baseline: pushed tag allows removal");
+  sh("git", ["-C", dir, "remote", "set-url", "origin", path.join(dir, "does-not-exist.git")], dir);
+  const res = runHook(`git worktree remove ${wt}`, dir);
+  assert.equal(res.status, 2, "an unreachable remote credits no tag — blocks instead of assuming");
+  assert.match(res.stderr, /NO remote ref/);
+}
+
+// ── 3d-iii. A lightweight tag counts the same as an annotated one ─────────────
+{
+  const { dir, wt } = repoWithWorktree({ push: false });
+  sh("git", ["-C", wt, "tag", "archive/lightweight"], dir);
+  sh("git", ["-C", wt, "push", "-q", "origin", "archive/lightweight"], dir);
+  const res = runHook(`git worktree remove ${wt}`, dir);
+  assert.equal(res.status, 0, `lightweight tag is retention too — guard said: ${JSON.stringify(res.stderr)}`);
+}
+
+// ── 3d-iv. EVERY remote is probed, not just the first ────────────────────────
+// A tag pushed to a second remote is exactly as durable as one on origin, so
+// capping the scan would reintroduce the false block this helper removes. The
+// scan is ordered with an early return, so the ordinary one-remote case still
+// costs a single ls-remote; this pins that the cap is gone.
+// Five extra remotes with the tag on the LAST one: this is the case an earlier
+// draft got wrong by scanning only the first four, and a 2-remote fixture would
+// not have caught it.
+if (!isWin) {
+  const { dir, wt } = repoWithWorktree({ push: false });
+  let last = "";
+  for (const n of ["r1", "r2", "r3", "r4", "r5"]) {
+    last = mkdtempSync(path.join(tmpdir(), `wt-guard-${n}-`));
+    sh("git", ["init", "-q", "--bare", last], last);
+    sh("git", ["-C", dir, "remote", "add", n, last], dir);
+  }
+  sh("git", ["-C", wt, "tag", "-a", "archive/last-remote", "-m", "a"], dir);
+  sh("git", ["-C", wt, "push", "-q", "r5", "archive/last-remote"], dir);
+  const res = runHook(`git worktree remove ${wt}`, dir);
+  assert.equal(
+    res.status,
+    0,
+    `a tag on the 6th remote is retention too — guard said: ${JSON.stringify(res.stderr)}`,
+  );
+}
+
+// ── 3e. The block message must teach the archive route ───────────────────────
+{
+  const { dir, wt } = repoWithWorktree({ push: false });
+  const res = runHook(`git branch -D feature-x`, wt);
+  assert.equal(res.status, 2, "unpushed tip is blocked");
+  assert.match(res.stderr, /git tag/, "offers archiving as a tag, not only pushing the branch");
+}
+
 // ── 4. Husk dirs (no .git link) and paths INSIDE a worktree pass ───────────────
 {
   const { dir } = repoWithWorktree({ push: true });
