@@ -107,17 +107,58 @@ test("desk commands map to real destinations only", () => {
   assert.doesNotMatch(deskTab, /"\/task"/);
 });
 
-test("plain text filters the runs rail and is never dropped silently", () => {
+test("desk toolbar is truthful, scoped, and keyboard reachable", () => {
+  assert.match(deskTab, /<SearchInput/);
+  assert.match(deskTab, /placeholder="Filter runs…"/);
+  assert.match(deskTab, /aria-label="Filter research runs"/);
+  assert.match(deskTab, /aria-keyshortcuts="\/"/);
+  assert.match(deskTab, />\s*New research\s*<\/Button>/);
+  assert.match(deskTab, /ResearchMissionScope/);
+  assert.match(
+    deskTab,
+    /researchMissionScopeCounts\(\s*filterResearchMissionsByText\(research\.missions, listFilter\)/,
+  );
+  assert.match(
+    deskTab,
+    /aria-label=\{`\$\{item\.label\}, \$\{scopeCounts\[item\.id\]\} \$\{scopeCounts\[item\.id\] === 1 \? "run" : "runs"\}`\}/,
+  );
+  assert.match(deskTab, /window\.addEventListener\("keydown", onKeyDown\)/);
+  assert.match(
+    deskTab,
+    /target\?\.closest\("input, textarea, select, \[contenteditable='true'\]"\)/,
+  );
+  assert.match(
+    deskTab,
+    /document\.querySelector\('\[role="dialog"\]\[aria-modal="true"\]'\)/,
+  );
+});
+
+test("focus mode persists per familiar and announces both states", () => {
+  assert.match(
+    deskTab,
+    /useEffect\(\(\) => \{\s*setQuery\(""\);\s*setScope\("all"\);\s*setFocusMode\(readFocusMode\(familiarId\)\);/,
+  );
+  assert.match(deskTab, /FOCUS_STORAGE_PREFIX[\s\S]*familiarId/);
+  assert.match(deskTab, /window\.localStorage\.getItem/);
+  assert.match(deskTab, /window\.localStorage\.setItem/);
+  assert.match(
+    deskTab,
+    /announce\(next \? "Focus mode enabled\." : "Workspace rails restored\."\)/,
+  );
+  assert.match(deskTab, /focusMode \? "Show workspace" : "Focus run"/);
+});
+
+test("plain text filters the runs rail and creation stays one action away", () => {
   // "/find rest" and plain text both feed the list filter.
   assert.match(deskTab, /\/\^\\\/find\\s\+\(\.\*\)\$\/i/);
   assert.match(deskTab, /findMatch \? findMatch\[1\] : isCommandText \? "" : query/);
   assert.match(deskTab, /filter=\{listFilter\}/);
-  // The Prompt hand-off is explicit and honest — the tab contract carries a
-  // mode, not a draft, and the hint says so.
-  assert.match(deskTab, /Open in Prompt ↗/);
-  assert.match(deskTab, /isn’t carried over/);
+  // New research is an always-visible, honest destination; the filter no
+  // longer masquerades as a question composer or grows a hand-off hint.
+  assert.match(deskTab, /onNavigate\("prompt"\)/);
+  assert.doesNotMatch(deskTab, /Open in Prompt ↗|isn’t carried over/);
   assert.match(list, /filter\?: string/);
-  assert.match(list, /`\$\{mission\.title\} \$\{mission\.intent\}`\.toLowerCase\(\)\.includes\(query\)/);
+  assert.match(list, /filterResearchMissionsByText\(missions, filter\)/);
   // A filtered-empty rail says the filter is why.
   assert.match(list, /No runs match/);
 });
@@ -140,7 +181,28 @@ test("planning missions read as active work in the runs rail", () => {
   assert.match(list, /queued: "busy"/);
 });
 
+test("mission navigation composes text scope and priority groups", () => {
+  assert.match(list, /scope: ResearchMissionScope/);
+  assert.match(list, /matchesResearchMissionScope\(mission, scope\)/);
+  assert.match(list, /groupResearchMissions\(filteredMissions\)/);
+  assert.match(list, /research-mission-nav__section-title/);
+  assert.match(list, />\s*Clear filters\s*<\/Button>/);
+  assert.match(list, /groups\.flatMap/);
+});
+
 // ── Right rail: state switching + reachable ledger ──────────────────────────
+
+test("focus mode removes both rails without changing mission detail", () => {
+  assert.match(detail, /showEvidence: boolean/);
+  assert.match(detail, /\{showEvidence \? \(\s*<aside/);
+  assert.match(detail, /data-evidence-open=\{showEvidence\}/);
+  assert.match(deskTab, /showEvidence=\{!focusMode\}/);
+  assert.match(deskTab, /data-focus-mode=\{focusMode\}/);
+  assert.match(
+    css,
+    /\.research-desk-tab \.research-desk__workspace\[data-focus-mode="true"\]/,
+  );
+});
 
 test("the right rail is one Artifacts|Sources toggle over a full-height pane", () => {
   // No stacked state panels: a single segmented toggle drives one pane that
@@ -261,7 +323,25 @@ test("archived missions gate automation controls like the schedule button", () =
 test("desk-tab responsive collapses match the existing container breakpoints", () => {
   assert.match(css, /@container research-desk \(max-width: 900px\) \{[\s\S]*?\.research-desk-tab \.research-desk__workspace \{ grid-template-columns: 1fr; \}/);
   assert.match(css, /@container research-desk \(max-width: 760px\) \{[\s\S]*?\.research-desk-tab \.research-mission-detail__body \{ grid-template-columns: 1fr; \}/);
-  assert.match(css, /\.research-desk-rail \{ border-left: 0; border-top: 1px solid var\(--border\); \}/);
+  assert.match(
+    css,
+    /\.research-desk-rail \{[\s\S]*?border-left: 0;[\s\S]*?border-top: 1px solid var\(--border\);/,
+  );
+});
+
+test("narrow desks bound secondary rails while preserving the run surface", () => {
+  assert.match(
+    css,
+    /@container research-desk \(max-width: 900px\)[\s\S]*?max-height: calc\(var\(--space-10\) \* 4\)/,
+  );
+  assert.match(
+    css,
+    /@container research-desk \(max-width: 760px\)[\s\S]*?\.research-desk-rail \{[\s\S]*?max-height: 44vh/,
+  );
+  assert.match(
+    css,
+    /@container research-desk \(max-width: 560px\)[\s\S]*?\.research-desk-toolbar__main/,
+  );
 });
 
 // ── Artifact actions: shared component mounted on rail + saved summary ──────
