@@ -74,3 +74,22 @@ struct LockScreenView: View {
         }
     }
 }
+
+/// Opaque, animation-free shield rendered ABOVE whatever content is
+/// currently mounted while `AppLock.isPrivacyShielded` is `true` (raised on
+/// `.inactive`/`.background`, cleared on `.active`). Unlike `LockScreenView`,
+/// this never replaces the view hierarchy — mounted content (and its
+/// navigation/scroll state) keeps living underneath — it only needs to keep
+/// app-switcher and Control Center snapshots from exposing anything. No
+/// translucency and no animated appearance/disappearance: either could leak
+/// a glimpse of content during the transition.
+struct PrivacyShieldView: View {
+    @Environment(\.chrome) private var chrome
+
+    var body: some View {
+        chrome.bgBase
+            .ignoresSafeArea()
+            .accessibilityHidden(true)
+            .transition(.identity)
+    }
+}

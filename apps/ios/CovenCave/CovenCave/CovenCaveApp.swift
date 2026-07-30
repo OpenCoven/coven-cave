@@ -40,12 +40,22 @@ struct CovenCaveApp: App {
             WideSplitEnabler {
                 // Full replacement, never a translucent overlay: while locked,
                 // RootView (and everything under it) simply isn't mounted, so
-                // a cold launch can never flash app content before auth.
-                if appLock.isLocked {
-                    LockScreenView(appLock: appLock)
-                } else {
-                    RootView()
+                // a cold launch can never flash app content before auth. The
+                // privacy shield is layered separately, above whichever of
+                // these is mounted, so a quick `.inactive`/`.background` blip
+                // shields snapshots without tearing down RootView's
+                // navigation state the way a full lock replacement would.
+                ZStack {
+                    if appLock.isLocked {
+                        LockScreenView(appLock: appLock)
+                    } else {
+                        RootView()
+                    }
+                    if appLock.isPrivacyShielded {
+                        PrivacyShieldView()
+                    }
                 }
+                .animation(nil, value: appLock.isPrivacyShielded)
             }
                 .environment(app)
                 .environment(appLock)
@@ -81,15 +91,19 @@ struct CovenCaveApp: App {
                         Task { await app.validateConnectionOnForeground() }
                     }
                 }
-                // Deliberately ignores `.inactive` — LocalAuthentication's own
-                // prompt (and the app switcher/control center) can bounce the
-                // scene through `.inactive` without a genuine background
-                // stint, which must never count toward the re-lock window.
+                // `.inactive` immediately raises the privacy shield (see
+                // `AppLock.sceneDidBecomeInactive`) so app-switcher/control-
+                // center snapshots never expose content, but deliberately
+                // does NOT count toward the 60s re-lock window or the
+                // auto-prompt cycle — LocalAuthentication's own prompt (and
+                // the app switcher/control center) can bounce the scene
+                // through `.inactive` without a genuine background stint,
+                // which must never force re-authentication on a quick return.
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
                     case .background: appLock.sceneDidEnterBackground()
                     case .active: appLock.sceneDidBecomeActive()
-                    case .inactive: break
+                    case .inactive: appLock.sceneDidBecomeInactive()
                     @unknown default: break
                     }
                 }

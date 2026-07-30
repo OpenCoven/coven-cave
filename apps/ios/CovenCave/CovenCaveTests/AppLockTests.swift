@@ -405,6 +405,157 @@ final class AppLockTests: XCTestCase {
         XCTAssertFalse(lock.isLocked)
     }
 
+    // MARK: - Privacy shield (separate from the authentication lock)
+
+    /// `.inactive` (app switcher / control center / a bounced LocalAuthentication
+    /// sheet) must raise the privacy shield immediately, but must never mark
+    /// `isLocked`, start the background clock, or consume an auto-prompt slot.
+    func testInactiveEnablesPrivacyShieldWithoutLocking() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = true
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator)
+        _ = await lock.unlock()
+        XCTAssertFalse(lock.isLocked)
+        XCTAssertFalse(lock.isPrivacyShielded)
+
+        lock.sceneDidBecomeInactive()
+
+        XCTAssertTrue(lock.isPrivacyShielded)
+        XCTAssertFalse(lock.isLocked)
+    }
+
+    /// A quick `.inactive -> .active` bounce with no genuine background stint
+    /// must clear the shield without ever re-locking.
+    func testQuickInactiveThenActiveClearsShieldWithoutLocking() async {
+        let clock = TestClock()
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = true
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator, clock: clock)
+        _ = await lock.unlock()
+
+        lock.sceneDidBecomeInactive()
+        XCTAssertTrue(lock.isPrivacyShielded)
+
+        lock.sceneDidBecomeActive()
+
+        XCTAssertFalse(lock.isPrivacyShielded)
+        XCTAssertFalse(lock.isLocked)
+    }
+
+    /// `.background` must raise the shield unconditionally, but only starts
+    /// the re-lock clock when locking is actually enabled.
+    func testBackgroundEnablesPrivacyShieldRegardlessOfLockEnabled() {
+        let lock = makeLock(lockEnabled: false)
+
+        lock.sceneDidEnterBackground()
+
+        XCTAssertTrue(lock.isPrivacyShielded)
+        XCTAssertFalse(lock.isLocked)
+    }
+
+    /// A background stint at/over the 60s grace window must clear the shield
+    /// on return to `.active` even though the app is (correctly) left locked.
+    func testGraceWindowExceededActiveClearsShieldButLeavesAppLocked() async {
+        let clock = TestClock()
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = true
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator, clock: clock)
+        _ = await lock.unlock()
+
+        lock.sceneDidEnterBackground()
+        XCTAssertTrue(lock.isPrivacyShielded)
+        clock.advance(by: 60)
+        lock.sceneDidBecomeActive()
+
+        XCTAssertTrue(lock.isLocked)
+        XCTAssertFalse(lock.isPrivacyShielded)
+    }
+
+    // MARK: - Live authentication availability refresh
+
+    /// A genuine `.active` must re-check availability and refresh the
+    /// reported kind — e.g. biometrics got un-enrolled but the device
+    /// passcode fallback remains, so the label must become "Device Passcode".
+    func testActiveRefreshesBiometricKindWhenHardwareChanges() {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.kind = .faceID
+        let lock = makeLock(lockEnabled: false, authenticator: authenticator)
+        XCTAssertEqual(lock.biometricKind, .faceID)
+
+        authenticator.kind = .none
+        lock.sceneDidBecomeActive()
+
+        XCTAssertEqual(lock.biometricKind, .none)
+        XCTAssertEqual(lock.biometricLabel, "Device Passcode")
+    }
+
+    /// If device-owner authentication becomes entirely unavailable (no
+    /// biometrics enrolled and no passcode set) while the app is
+    /// backgrounded, the effective lock preference must go false and any
+    /// lock must clear on `.active` — the user must never be stranded with
+    /// no way to authenticate. The persisted preference itself must survive
+    /// untouched so it can be restored later.
+    func testUnavailableDeviceAuthenticationClearsEffectiveLockAndCannotStrandTheUser() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = true
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator)
+        _ = await lock.unlock()
+        XCTAssertFalse(lock.isLocked)
+
+        authenticator.canEvaluate = false
+        authenticator.kind = .none
+        lock.sceneDidEnterBackground()
+        lock.sceneDidBecomeActive()
+
+        XCTAssertFalse(lock.canUseDeviceAuthentication)
+        XCTAssertFalse(lock.lockEnabled, "effective lockEnabled must go false so the user isn't stranded")
+        XCTAssertFalse(lock.isLocked, "must never re-lock the user out with no way to authenticate")
+        XCTAssertTrue(
+            defaults.bool(forKey: AppLock.lockEnabledKey),
+            "persisted preference must survive a transient unavailability"
+        )
+    }
+
+    /// Once availability returns, the effective preferences must be restored
+    /// from the untouched persisted values rather than staying forced off.
+    func testRestoredAvailabilityRestoresPersistedEffectivePreferences() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = true
+        let lock = makeLock(lockEnabled: true, approvalEnabled: true, authenticator: authenticator)
+        _ = await lock.unlock()
+
+        authenticator.canEvaluate = false
+        authenticator.kind = .none
+        lock.sceneDidBecomeActive()
+        XCTAssertFalse(lock.lockEnabled)
+        XCTAssertFalse(lock.approvalEnabled)
+
+        authenticator.canEvaluate = true
+        authenticator.kind = .faceID
+        lock.sceneDidBecomeActive()
+
+        XCTAssertTrue(lock.canUseDeviceAuthentication)
+        XCTAssertTrue(lock.lockEnabled, "restored availability should restore the persisted effective preference")
+        XCTAssertTrue(lock.approvalEnabled, "restored availability should restore the persisted effective preference")
+        XCTAssertFalse(lock.isLocked, "a quick active with no background stint must not re-lock")
+    }
+
+    /// `.inactive` must never trigger the availability/kind refresh — only a
+    /// genuine `.active` does.
+    func testInactiveDoesNotRefreshAvailabilityOrKind() {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.kind = .faceID
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator)
+
+        authenticator.kind = .touchID
+        authenticator.canEvaluate = false
+        lock.sceneDidBecomeInactive()
+
+        XCTAssertEqual(lock.biometricKind, .faceID, "inactive must not refresh availability")
+        XCTAssertTrue(lock.canUseDeviceAuthentication, "inactive must not refresh availability")
+        XCTAssertTrue(lock.isPrivacyShielded)
+    }
+
     // MARK: - Pure policy
 
     func testAppLockPolicyGraceBoundary() {

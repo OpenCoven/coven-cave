@@ -71,6 +71,14 @@ final class AppLock {
     /// content. Never a translucent overlay — the caller (`CovenCaveApp`)
     /// substitutes this for the entire window content while `true`.
     private(set) var isLocked: Bool
+    /// Opaque privacy shield, independent of `isLocked`. Raised immediately on
+    /// `.inactive`/`.background` (app switcher, control center, an incoming
+    /// call, or a bounced LocalAuthentication sheet) so a snapshot never
+    /// exposes content, and cleared on a genuine `.active`. Unlike
+    /// `isLocked`, this never gates authentication and never affects the
+    /// 60-second re-lock clock — a quick inactive/active blip must not
+    /// destroy navigation state by unmounting the root.
+    private(set) var isPrivacyShielded = false
     private(set) var lockEnabled: Bool
     private(set) var approvalEnabled: Bool
     private(set) var biometricKind: BiometricKind
@@ -116,20 +124,44 @@ final class AppLock {
 
     // MARK: - Scene lifecycle
 
-    /// Call when the scene reaches `.background` — never for `.inactive`,
-    /// which LocalAuthentication prompts (and the app switcher/control
-    /// center) can trigger spuriously without the app actually backgrounding.
+    /// Call when the scene reaches `.inactive` (app switcher, control
+    /// center, an incoming call banner, or the `.inactive -> .active` bounce
+    /// a LocalAuthentication sheet itself causes). Immediately raises the
+    /// privacy shield so no content is visible in a snapshot, but —
+    /// deliberately unlike `.background` — never touches `isLocked`, never
+    /// starts/extends the 60s background clock, and never refreshes
+    /// availability or consumes an auto-prompt slot: a quick inactive/active
+    /// blip must not force re-authentication or restart the grace window.
+    func sceneDidBecomeInactive() {
+        isPrivacyShielded = true
+    }
+
+    /// Call when the scene reaches `.background`. Always ensures the privacy
+    /// shield is up (belt-and-suspenders alongside `.inactive`, and the only
+    /// shield trigger when a scene backgrounds without an observed
+    /// `.inactive` first), but only starts the re-lock clock when locking is
+    /// actually enabled.
     func sceneDidEnterBackground() {
+        isPrivacyShielded = true
         guard lockEnabled else { return }
         backgroundedAt = now()
     }
 
-    /// Call when the scene reaches `.active`. Re-locks only if a genuine
-    /// background stint (not a bare `.inactive` blip) reached the grace
-    /// window, or if the app was already locked (cold start / prior
-    /// re-lock not yet cleared by a successful unlock).
+    /// Call when the scene reaches `.active`. Refreshes live authentication
+    /// availability/kind first (enrollment or passcode can change while
+    /// backgrounded), reconciles the effective lock/approval preferences
+    /// against that availability, then runs the existing re-lock decision —
+    /// re-locking only if a genuine background stint (not a bare `.inactive`
+    /// blip) reached the grace window, or if the app was already locked
+    /// (cold start / prior re-lock not yet cleared by a successful unlock).
+    /// The privacy shield is cleared last, once the correct `isLocked` state
+    /// is settled.
     func sceneDidBecomeActive() {
-        defer { backgroundedAt = nil }
+        defer {
+            backgroundedAt = nil
+            isPrivacyShielded = false
+        }
+        refreshAvailability()
         guard lockEnabled else { return }
         let duration = backgroundedAt.map { now().timeIntervalSince($0) }
         let wasLocked = isLocked
@@ -140,6 +172,26 @@ final class AppLock {
             // `alreadyLocked` branch above) must not grant another
             // automatic prompt — the retry button stays the only retry.
             if !wasLocked { autoPromptCoordinator.presentationBegan() }
+        }
+    }
+
+    /// Re-checks `.deviceOwnerAuthentication` availability/kind and
+    /// reconciles the effective `lockEnabled`/`approvalEnabled` against the
+    /// *persisted* preferences so the UI stays truthful without losing the
+    /// user's actual choice. When device-owner authentication is
+    /// unavailable, effective toggles go false and any lock is cleared so
+    /// the user is never stranded with no way to authenticate; the
+    /// persisted preferences themselves are left untouched so they restore
+    /// automatically once availability returns.
+    private func refreshAvailability() {
+        let availability = authenticator.availability()
+        canUseDeviceAuthentication = availability.canEvaluate
+        biometricKind = availability.kind
+
+        lockEnabled = canUseDeviceAuthentication && defaults.bool(forKey: Self.lockEnabledKey)
+        approvalEnabled = canUseDeviceAuthentication && defaults.bool(forKey: Self.approvalEnabledKey)
+        if !canUseDeviceAuthentication {
+            isLocked = false
         }
     }
 
