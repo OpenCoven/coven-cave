@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -16,6 +16,23 @@ await mkdir(familiarWorkspace, { recursive: true });
 
 const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
+// This route probes a launch-ready Codex CLI before falling back to the generic
+// Coven adapter path, so a developer machine with a real `codex` on PATH takes
+// the direct-Codex branch and never emits the `runtime_missing` event these
+// scenarios assert (cave-evrsr; same host dependency cave-g3qar fixed for the
+// sibling route-runtime-availability test, which this file was missed by).
+// Pin CODEX_BIN to an existing but UNLAUNCHABLE fixture — mode 0644 on POSIX,
+// an unconvertible .cmd on Windows — so the passive availability gate reports it
+// before any probe can spawn. A nonexistent path would not do: codexBin() falls
+// back to searching the launcher's effective PATH.
+const pinnedCodex = path.join(bin, process.platform === "win32" ? "codex-no-exec.cmd" : "codex-no-exec");
+await writeFile(pinnedCodex, process.platform === "win32" ? "@echo off\r\nexit /b 0\r\n" : "#!/bin/sh\nexit 0\n", {
+  mode: 0o644,
+});
+if (process.platform !== "win32") await chmod(pinnedCodex, 0o644);
+
+const previousCodexBin = process.env.CODEX_BIN;
+process.env.CODEX_BIN = pinnedCodex;
 const previousCovenBin = process.env.COVEN_BIN;
 const previousCovenTestLog = process.env.COVEN_TEST_LOG;
 const previousCovenTestMode = process.env.COVEN_TEST_MODE;
@@ -269,6 +286,8 @@ try {
   else process.env.COVEN_CAVE_HOME = previousCaveHome;
   if (previousCovenBin === undefined) delete process.env.COVEN_BIN;
   else process.env.COVEN_BIN = previousCovenBin;
+  if (previousCodexBin === undefined) delete process.env.CODEX_BIN;
+  else process.env.CODEX_BIN = previousCodexBin;
   if (previousCovenTestLog === undefined) delete process.env.COVEN_TEST_LOG;
   else process.env.COVEN_TEST_LOG = previousCovenTestLog;
   if (previousCovenTestMode === undefined) delete process.env.COVEN_TEST_MODE;
