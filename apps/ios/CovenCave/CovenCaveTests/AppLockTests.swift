@@ -23,10 +23,17 @@ private final class FakeBiometricAuthenticator: BiometricAuthenticating {
 /// Controllable clock so background-duration boundaries (the 60s grace
 /// window) are deterministic instead of racing a real timer.
 private final class TestClock {
-    var current: TimeInterval
-    init(_ current: TimeInterval = 0) { self.current = current }
-    func now() -> TimeInterval { current }
-    func advance(by seconds: TimeInterval) { current += seconds }
+    var current: ContinuousClock.Instant
+
+    init(_ current: ContinuousClock.Instant = ContinuousClock().now) {
+        self.current = current
+    }
+
+    func now() -> ContinuousClock.Instant { current }
+
+    func advance(by seconds: TimeInterval) {
+        current = current.advanced(by: .seconds(seconds))
+    }
 }
 
 @MainActor
@@ -51,7 +58,7 @@ final class AppLockTests: XCTestCase {
     ) -> AppLock {
         defaults.set(lockEnabled, forKey: AppLock.lockEnabledKey)
         defaults.set(approvalEnabled, forKey: AppLock.approvalEnabledKey)
-        return AppLock(authenticator: authenticator, defaults: defaults, monotonicNow: clock.now)
+        return AppLock(authenticator: authenticator, defaults: defaults, continuousNow: clock.now)
     }
 
     // MARK: - Cold start
@@ -107,14 +114,14 @@ final class AppLockTests: XCTestCase {
         XCTAssertTrue(lock.isLocked)
     }
 
-    func testMonotonicClockRollbackLocksConservatively() async {
-        let clock = TestClock(100)
+    func testContinuousClockResetLocksConservatively() async {
+        let clock = TestClock()
         let authenticator = FakeBiometricAuthenticator()
         let lock = makeLock(lockEnabled: true, authenticator: authenticator, clock: clock)
         _ = await lock.unlock()
 
         lock.sceneDidEnterBackground()
-        clock.current = 50
+        clock.current = clock.current.advanced(by: .seconds(-50))
         lock.sceneDidBecomeActive()
 
         XCTAssertTrue(lock.isLocked)
@@ -220,6 +227,80 @@ final class AppLockTests: XCTestCase {
         XCTAssertTrue(approved)
         XCTAssertEqual(executionCount, 1)
         XCTAssertEqual(authenticator.authenticateCallCount, 0)
+    }
+
+    func testEnabledApprovalFailsClosedWithoutExecutingWhenAuthenticationBecomesUnavailable() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = true
+        let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
+        var executionCount = 0
+        authenticator.canEvaluate = false
+        authenticator.kind = .none
+
+        let approved = await lock.performApprovedAction(reason: "Replace pairing") {
+            executionCount += 1
+        }
+
+        XCTAssertFalse(approved)
+        XCTAssertTrue(lock.approvalEnabled, "the user's persisted approval choice remains logically enabled")
+        XCTAssertFalse(lock.canUseDeviceAuthentication)
+        XCTAssertEqual(executionCount, 0)
+        XCTAssertEqual(authenticator.authenticateCallCount, 0)
+    }
+
+    func testRestoredAvailabilityStillRequiresApprovalAuthentication() async {
+        let authenticator = FakeBiometricAuthenticator()
+        let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
+        authenticator.canEvaluate = false
+        authenticator.kind = .none
+        let unavailableApproval = await lock.requestApproval(reason: "Replace pairing")
+        XCTAssertFalse(unavailableApproval)
+
+        authenticator.canEvaluate = true
+        authenticator.kind = .faceID
+        authenticator.authenticateResult = false
+        let approved = await lock.requestApproval(reason: "Replace pairing")
+
+        XCTAssertFalse(approved)
+        XCTAssertTrue(lock.approvalEnabled)
+        XCTAssertTrue(lock.canUseDeviceAuthentication)
+        XCTAssertEqual(authenticator.authenticateCallCount, 1)
+    }
+
+    func testDisabledPersistedApprovalPassesThroughWhenAuthenticationIsUnavailable() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.canEvaluate = false
+        authenticator.kind = .none
+        let lock = makeLock(approvalEnabled: false, authenticator: authenticator)
+        var executionCount = 0
+
+        let approved = await lock.performApprovedAction(reason: "Initial pairing") {
+            executionCount += 1
+        }
+
+        XCTAssertTrue(approved)
+        XCTAssertFalse(lock.approvalEnabled)
+        XCTAssertEqual(executionCount, 1)
+        XCTAssertEqual(authenticator.authenticateCallCount, 0)
+    }
+
+    func testApprovalOutcomeDistinguishesUnavailableFromActualDenial() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.canEvaluate = false
+        authenticator.kind = .none
+        let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
+
+        let unavailable = await lock.requestApprovalOutcome(reason: "Replace pairing")
+
+        XCTAssertEqual(unavailable, .unavailable)
+        XCTAssertEqual(authenticator.authenticateCallCount, 0)
+
+        authenticator.canEvaluate = true
+        authenticator.authenticateResult = false
+        let denied = await lock.requestApprovalOutcome(reason: "Replace pairing")
+
+        XCTAssertEqual(denied, .denied)
+        XCTAssertEqual(authenticator.authenticateCallCount, 1)
     }
 
     // MARK: - Toggle gating
@@ -529,9 +610,9 @@ final class AppLockTests: XCTestCase {
         )
     }
 
-    /// Once availability returns, the effective preferences must be restored
-    /// from the untouched persisted values rather than staying forced off.
-    func testRestoredAvailabilityRestoresPersistedEffectivePreferences() async {
+    /// Once availability returns, effective lock must restore while the
+    /// logical approval preference remains enabled throughout.
+    func testRestoredAvailabilityRestoresEffectiveLockAndPreservesLogicalApproval() async {
         let authenticator = FakeBiometricAuthenticator()
         authenticator.authenticateResult = true
         let lock = makeLock(lockEnabled: true, approvalEnabled: true, authenticator: authenticator)
@@ -541,7 +622,7 @@ final class AppLockTests: XCTestCase {
         authenticator.kind = .none
         lock.sceneDidBecomeActive()
         XCTAssertFalse(lock.lockEnabled)
-        XCTAssertFalse(lock.approvalEnabled)
+        XCTAssertTrue(lock.approvalEnabled, "approvalEnabled is the persisted logical preference")
 
         authenticator.canEvaluate = true
         authenticator.kind = .faceID
@@ -572,10 +653,11 @@ final class AppLockTests: XCTestCase {
     // MARK: - Pure policy
 
     func testAppLockPolicyGraceBoundary() {
-        XCTAssertFalse(AppLockPolicy.shouldLock(enabled: false, alreadyLocked: false, backgroundDuration: 600))
+        XCTAssertFalse(AppLockPolicy.shouldLock(enabled: false, alreadyLocked: false, backgroundDuration: .seconds(600)))
         XCTAssertFalse(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, backgroundDuration: nil))
-        XCTAssertFalse(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, backgroundDuration: 59))
-        XCTAssertTrue(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, backgroundDuration: 60))
-        XCTAssertTrue(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: true, backgroundDuration: 1))
+        XCTAssertFalse(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, backgroundDuration: .seconds(59)))
+        XCTAssertTrue(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, backgroundDuration: .seconds(60)))
+        XCTAssertTrue(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: true, backgroundDuration: .seconds(1)))
+        XCTAssertTrue(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, backgroundDuration: .seconds(-1)))
     }
 }

@@ -10,6 +10,7 @@ struct CovenCaveApp: App {
     /// view mounts (see `LockScreenView`, substituted in for the whole root).
     @State private var appLock: AppLock
     @State private var pairingApprovalFailed = false
+    @State private var isProcessingPairingIntent = false
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @Environment(\.scenePhase) private var scenePhase
 
@@ -119,6 +120,14 @@ struct CovenCaveApp: App {
                 .onChange(of: appLock.isLocked) {
                     Task { await processPendingPairingIntent() }
                 }
+                .onChange(of: appLock.isAuthenticating) { _, isAuthenticating in
+                    guard !isAuthenticating else { return }
+                    Task { await processPendingPairingIntent() }
+                }
+                .onChange(of: appLock.canUseDeviceAuthentication) { _, isAvailable in
+                    guard isAvailable else { return }
+                    Task { await processPendingPairingIntent() }
+                }
                 .alert("Couldn't confirm it's you", isPresented: $pairingApprovalFailed) {
                     Button("OK", role: .cancel) {}
                 } message: {
@@ -129,21 +138,43 @@ struct CovenCaveApp: App {
 
     @MainActor
     private func processPendingPairingIntent() async {
-        guard let intent = app.takePendingPairingIntent(isLocked: appLock.isLocked) else { return }
+        guard PendingPairingProcessorPolicy.mayBegin(
+            isLocked: appLock.isLocked,
+            isAuthenticating: appLock.isAuthenticating,
+            isProcessing: isProcessingPairingIntent
+        ), let intent = app.pendingPairingIntent else {
+            return
+        }
+        isProcessingPairingIntent = true
+        defer {
+            isProcessingPairingIntent = false
+            if let pending = app.pendingPairingIntent, pending.id != intent.id {
+                Task { await processPendingPairingIntent() }
+            }
+        }
+
         let requiresApproval = PairingApprovalPolicy.requiresApproval(
             hasExistingPairing: app.connection != nil
         )
         if !requiresApproval {
             await app.configure(host: intent.host, token: intent.token)
+            app.consumePendingPairingIntent(matching: intent.id)
             return
         }
 
-        let approved = await appLock.performApprovedAction(
+        let outcome = await appLock.requestApprovalOutcome(
             reason: "Confirm it's you to replace your desktop pairing"
-        ) {
+        )
+        switch outcome {
+        case .approved:
             await app.configure(host: intent.host, token: intent.token)
+            app.consumePendingPairingIntent(matching: intent.id)
+        case .denied:
+            app.consumePendingPairingIntent(matching: intent.id)
+            pairingApprovalFailed = true
+        case .unavailable, .busy:
+            break
         }
-        if !approved { pairingApprovalFailed = true }
     }
 }
 

@@ -13,13 +13,20 @@ extension AppTab {
 }
 
 struct PairingIntent: Equatable {
-    var host: String
-    var token: String?
+    let id = UUID()
+    let host: String
+    let token: String?
 }
 
 enum PairingApprovalPolicy {
     static func requiresApproval(hasExistingPairing: Bool) -> Bool {
         hasExistingPairing
+    }
+}
+
+enum PendingPairingProcessorPolicy {
+    static func mayBegin(isLocked: Bool, isAuthenticating: Bool, isProcessing: Bool) -> Bool {
+        !isLocked && !isAuthenticating && !isProcessing
     }
 }
 
@@ -719,10 +726,11 @@ final class AppModel {
         deepLink = target
     }
 
-    func takePendingPairingIntent(isLocked: Bool) -> PairingIntent? {
-        guard !isLocked, let pendingPairingIntent else { return nil }
+    @discardableResult
+    func consumePendingPairingIntent(matching id: UUID) -> Bool {
+        guard pendingPairingIntent?.id == id else { return false }
         self.pendingPairingIntent = nil
-        return pendingPairingIntent
+        return true
     }
 
 

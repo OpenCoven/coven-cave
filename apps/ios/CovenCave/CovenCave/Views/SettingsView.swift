@@ -265,6 +265,8 @@ struct SettingsView: View {
         } footer: {
             if appLock.canUseDeviceAuthentication {
                 Text("Unlock guards the app itself on cold start and after being away 60 seconds or more. Approvals re-confirm it's you before changing or disconnecting your paired desktop. Your device passcode always works as a fallback.")
+            } else if appLock.approvalEnabled {
+                Text("Approvals remain required, but device authentication is unavailable. Protected pairing changes are disabled until you turn on a device passcode.")
             } else {
                 Text("Turn on a passcode (Settings → Face ID & Passcode, or Touch ID & Passcode) to enable app lock and approvals.")
             }

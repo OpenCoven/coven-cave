@@ -6,7 +6,7 @@ import Observation
 enum AppLockPolicy {
     /// Quick app switches under this stay unlocked; anything at or beyond it
     /// re-locks on return to the foreground.
-    static let graceInterval: TimeInterval = 60
+    static let graceDuration: Duration = .seconds(60)
 
     /// Whether returning to the foreground should (re)lock the app.
     /// - Parameters:
@@ -14,15 +14,23 @@ enum AppLockPolicy {
     ///   - alreadyLocked: Whether the app is currently locked (e.g. cold start,
     ///     or a previous background stint already locked it and unlock hasn't
     ///     happened since).
-    ///   - backgroundDuration: Seconds spent backgrounded before returning, or
+    ///   - backgroundDuration: Time spent backgrounded before returning, or
     ///     `nil` if the app never left the foreground (only `.inactive`, which
     ///     callers must not report here — see `AppLock.sceneDidEnterBackground`).
-    static func shouldLock(enabled: Bool, alreadyLocked: Bool, backgroundDuration: TimeInterval?) -> Bool {
+    static func shouldLock(enabled: Bool, alreadyLocked: Bool, backgroundDuration: Duration?) -> Bool {
         guard enabled else { return false }
         if alreadyLocked { return true }
         guard let backgroundDuration else { return false }
-        return backgroundDuration >= graceInterval
+        guard backgroundDuration >= .zero else { return true }
+        return backgroundDuration >= graceDuration
     }
+}
+
+enum ApprovalRequestOutcome: Equatable {
+    case approved
+    case denied
+    case unavailable
+    case busy
 }
 
 /// Pure decision logic for whether the lock screen should fire an automatic
@@ -58,7 +66,7 @@ struct LockScreenAutoPromptCoordinator {
 /// ("require biometrics to unlock" and "…for approvals") and the transient
 /// `isLocked` state that gates the entire app's content at the root.
 ///
-/// Dependency-injected authenticator, `UserDefaults` suite, and monotonic
+/// Dependency-injected authenticator, `UserDefaults` suite, and continuous
 /// clock keep this fully unit-testable without touching real biometrics.
 @Observable
 @MainActor
@@ -78,7 +86,12 @@ final class AppLock {
     /// 60-second re-lock clock — a quick inactive/active blip must not
     /// destroy navigation state by unmounting the root.
     private(set) var isPrivacyShielded = false
+    /// Effective unlock preference. This is forced off while device-owner
+    /// authentication is unavailable so the user cannot be stranded.
     private(set) var lockEnabled: Bool
+    /// The user's persisted approval preference. Unlike `lockEnabled`, this
+    /// remains logically enabled while authentication is unavailable so
+    /// protected actions fail closed instead of silently passing through.
     private(set) var approvalEnabled: Bool
     private(set) var biometricKind: BiometricKind
     /// Whether `.deviceOwnerAuthentication` (biometric or device passcode) is
@@ -92,28 +105,29 @@ final class AppLock {
 
     private let authenticator: BiometricAuthenticating
     private let defaults: UserDefaults
-    private let monotonicNow: () -> TimeInterval
-    private var backgroundedAt: TimeInterval?
+    private let continuousNow: () -> ContinuousClock.Instant
+    private var backgroundedAt: ContinuousClock.Instant?
     private var autoPromptCoordinator = LockScreenAutoPromptCoordinator()
 
     init(
         authenticator: BiometricAuthenticating = LAContextBiometricAuthenticator(),
         defaults: UserDefaults = .standard,
-        monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+        continuousNow: @escaping () -> ContinuousClock.Instant = { ContinuousClock().now }
     ) {
         self.authenticator = authenticator
         self.defaults = defaults
-        self.monotonicNow = monotonicNow
+        self.continuousNow = continuousNow
 
         let availability = authenticator.availability()
         canUseDeviceAuthentication = availability.canEvaluate
         biometricKind = availability.kind
 
-        // Preferences are meaningless (and must not silently lock the user
-        // out) if device-owner authentication isn't available at all.
+        // Unlock is an effective preference because an unavailable
+        // authenticator must never strand the user. Approval remains the
+        // persisted logical preference so protected actions fail closed.
         let startLockEnabled = availability.canEvaluate && defaults.bool(forKey: Self.lockEnabledKey)
         lockEnabled = startLockEnabled
-        approvalEnabled = availability.canEvaluate && defaults.bool(forKey: Self.approvalEnabledKey)
+        approvalEnabled = defaults.bool(forKey: Self.approvalEnabledKey)
         isLocked = startLockEnabled
         if startLockEnabled { autoPromptCoordinator.presentationBegan() }
     }
@@ -143,7 +157,7 @@ final class AppLock {
     func sceneDidEnterBackground() {
         isPrivacyShielded = true
         guard lockEnabled else { return }
-        backgroundedAt = monotonicNow()
+        backgroundedAt = continuousNow()
     }
 
     /// Call when the scene reaches `.active`. Refreshes live authentication
@@ -163,11 +177,7 @@ final class AppLock {
         refreshAvailability()
         guard lockEnabled else { return }
         let duration = backgroundedAt.map { start in
-            let end = monotonicNow()
-            guard start.isFinite, end.isFinite, end >= start else {
-                return AppLockPolicy.graceInterval
-            }
-            return end - start
+            start.duration(to: continuousNow())
         }
         let wasLocked = isLocked
         if AppLockPolicy.shouldLock(enabled: lockEnabled, alreadyLocked: isLocked, backgroundDuration: duration) {
@@ -181,20 +191,16 @@ final class AppLock {
     }
 
     /// Re-checks `.deviceOwnerAuthentication` availability/kind and
-    /// reconciles the effective `lockEnabled`/`approvalEnabled` against the
-    /// *persisted* preferences so the UI stays truthful without losing the
-    /// user's actual choice. When device-owner authentication is
-    /// unavailable, effective toggles go false and any lock is cleared so
-    /// the user is never stranded with no way to authenticate; the
-    /// persisted preferences themselves are left untouched so they restore
-    /// automatically once availability returns.
+    /// reconciles effective `lockEnabled` against its persisted preference.
+    /// `approvalEnabled` remains the persisted logical choice even while
+    /// authentication is unavailable, causing protected actions to fail
+    /// closed. Any actual app lock is cleared so the user is never stranded.
     private func refreshAvailability() {
         let availability = authenticator.availability()
         canUseDeviceAuthentication = availability.canEvaluate
         biometricKind = availability.kind
 
         lockEnabled = canUseDeviceAuthentication && defaults.bool(forKey: Self.lockEnabledKey)
-        approvalEnabled = canUseDeviceAuthentication && defaults.bool(forKey: Self.approvalEnabledKey)
         if !canUseDeviceAuthentication {
             isLocked = false
         }
@@ -235,12 +241,20 @@ final class AppLock {
     /// credential changes). Passes through immediately when approvals are
     /// disabled — never touches the authenticator in that case.
     func requestApproval(reason: String) async -> Bool {
-        guard approvalEnabled else { return true }
-        guard !isAuthenticating else { return false }
+        await requestApprovalOutcome(reason: reason) == .approved
+    }
+
+    /// Detailed approval result for callers that must distinguish a real
+    /// denial/cancellation from a request that never started.
+    func requestApprovalOutcome(reason: String) async -> ApprovalRequestOutcome {
+        guard approvalEnabled else { return .approved }
+        refreshAvailability()
+        guard canUseDeviceAuthentication else { return .unavailable }
+        guard !isAuthenticating else { return .busy }
         isAuthenticating = true
         let success = await authenticator.authenticate(reason: reason)
         isAuthenticating = false
-        return success
+        return success ? .approved : .denied
     }
 
     /// Gates an arbitrary async action behind `requestApproval`, running it
