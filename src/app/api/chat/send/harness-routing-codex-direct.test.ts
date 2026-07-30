@@ -146,6 +146,16 @@ try {
   }));
   const { events } = await readSse(response);
 
+  // Diagnose path selection before asserting bubbles: if the capability
+  // probe timed out or failed, the route silently serves the turn through
+  // the generic coven fallback and every tool assertion below would report
+  // an unhelpful empty list.
+  const directExecCalls = (await loggedCalls(codexLog)).filter((args) => args[0] === "exec");
+  assert.ok(
+    directExecCalls.length > 0,
+    `the verified CLI must serve this turn directly, not fall back (coven argv: ${JSON.stringify(await loggedCalls(covenLog))})`,
+  );
+
   const toolEvents = events.filter((event) => event.kind === "tool_use");
   assert.ok(
     toolEvents.some((event) => event.name === "Bash" && event.status === "running"),
