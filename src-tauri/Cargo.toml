@@ -54,6 +54,9 @@ portable-pty = "0.8"
 # desktop-only (mobile updates via the App Store / TestFlight).
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Direct desktop IPC to the locally running Discord client. This remains out
+# of mobile targets because Discord Rich Presence has no mobile client API.
+discord-rich-presence = "1.1.0"
 
 # Windows packages the large Next.js sidecar as one archive instead of one
 # WiX component per file. The launcher verifies and extracts it on first use.
