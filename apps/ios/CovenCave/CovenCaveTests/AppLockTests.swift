@@ -168,6 +168,47 @@ final class AppLockTests: XCTestCase {
         XCTAssertEqual(authenticator.authenticateCallCount, 1)
     }
 
+    // MARK: - Approved action (Settings' protected operations)
+
+    func testPerformApprovedActionDoesNotExecuteActionWhenEnabledApprovalFails() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = false
+        let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
+        var executionCount = 0
+
+        let approved = await lock.performApprovedAction(reason: "Disconnect") { executionCount += 1 }
+
+        XCTAssertFalse(approved)
+        XCTAssertEqual(executionCount, 0)
+        XCTAssertEqual(authenticator.authenticateCallCount, 1)
+    }
+
+    func testPerformApprovedActionExecutesActionExactlyOnceWhenEnabledApprovalSucceeds() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = true
+        let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
+        var executionCount = 0
+
+        let approved = await lock.performApprovedAction(reason: "Disconnect") { executionCount += 1 }
+
+        XCTAssertTrue(approved)
+        XCTAssertEqual(executionCount, 1)
+        XCTAssertEqual(authenticator.authenticateCallCount, 1)
+    }
+
+    func testPerformApprovedActionExecutesActionExactlyOnceWhenApprovalsDisabledWithoutTouchingAuthenticator() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = false
+        let lock = makeLock(approvalEnabled: false, authenticator: authenticator)
+        var executionCount = 0
+
+        let approved = await lock.performApprovedAction(reason: "Disconnect") { executionCount += 1 }
+
+        XCTAssertTrue(approved)
+        XCTAssertEqual(executionCount, 1)
+        XCTAssertEqual(authenticator.authenticateCallCount, 0)
+    }
+
     // MARK: - Toggle gating
 
     func testEnablingLockOnlyTakesEffectAfterSuccessfulAuthentication() async {

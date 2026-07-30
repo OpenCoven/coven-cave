@@ -186,6 +186,20 @@ final class AppLock {
         return success
     }
 
+    /// Gates an arbitrary async action behind `requestApproval`, running it
+    /// only when approved (approvals disabled, or a fresh authentication
+    /// succeeded). Centralizes the "authenticate, then act, else leave
+    /// everything alone" pattern so callers like Settings' credential-
+    /// affecting operations (host change, disconnect) don't duplicate the
+    /// guard/return dance — they just branch on the returned `Bool` to show
+    /// their own failure alert.
+    @discardableResult
+    func performApprovedAction(reason: String, action: () async -> Void) async -> Bool {
+        guard await requestApproval(reason: reason) else { return false }
+        await action()
+        return true
+    }
+
     // MARK: - Settings toggles
 
     /// Enables/disables "require biometrics to unlock". Either direction

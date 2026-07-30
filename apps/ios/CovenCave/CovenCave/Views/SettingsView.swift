@@ -374,11 +374,12 @@ private struct ConnectionSettingsView: View {
                     .font(.callout.monospaced())
                 Button("Save and reconnect") {
                     Task {
-                        guard await appLock.requestApproval(reason: "Confirm it's you to change your desktop connection") else {
-                            approvalFailed = true
-                            return
+                        let approved = await appLock.performApprovedAction(
+                            reason: "Confirm it's you to change your desktop connection"
+                        ) {
+                            await app.configure(host: editingHost)
                         }
-                        await app.configure(host: editingHost)
+                        if !approved { approvalFailed = true }
                     }
                 }
                 .disabled(editingHost.trimmingCharacters(in: .whitespaces).isEmpty
@@ -405,11 +406,12 @@ private struct ConnectionSettingsView: View {
                             titleVisibility: .visible) {
             Button("Disconnect", role: .destructive) {
                 Task {
-                    guard await appLock.requestApproval(reason: "Confirm it's you to disconnect from your desktop") else {
-                        approvalFailed = true
-                        return
+                    let approved = await appLock.performApprovedAction(
+                        reason: "Confirm it's you to disconnect from your desktop"
+                    ) {
+                        app.disconnect()
                     }
-                    app.disconnect()
+                    if !approved { approvalFailed = true }
                 }
             }
             Button("Cancel", role: .cancel) {}
