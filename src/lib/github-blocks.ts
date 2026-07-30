@@ -288,11 +288,47 @@ function hasUnquotedGt(s: string, from: number): boolean {
   return false;
 }
 
+function mergeRanges(ranges: Array<[number, number]>): Array<[number, number]> {
+  const merged: Array<[number, number]> = [];
+  for (const range of ranges.sort(([a], [b]) => a - b)) {
+    const previous = merged[merged.length - 1];
+    if (previous && range[0] <= previous[1]) {
+      previous[1] = Math.max(previous[1], range[1]);
+    } else {
+      merged.push([...range]);
+    }
+  }
+  return merged;
+}
+
+function rendererFenceRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  let offset = 0;
+  let start = -1;
+  let character = "";
+  for (const line of text.split("\n")) {
+    const fence = /^\s*(`{3,}|~{3,})(\w*)?\s*$/.exec(line);
+    if (start === -1) {
+      if (fence) {
+        start = offset;
+        character = fence[1][0];
+      }
+    } else if (fence && fence[1][0] === character) {
+      ranges.push([start, offset + line.length]);
+      start = -1;
+      character = "";
+    }
+    offset += line.length + 1;
+  }
+  if (start !== -1) ranges.push([start, text.length]);
+  return ranges;
+}
+
 /** Character ranges covered by ```/~~~ fences (delimiters included). Fenced
  *  marker syntax is example text, never live cards (review finding,
  *  cave-m0r6); an unclosed trailing fence protects through the text end. */
 export function fencedRanges(text: string): Array<[number, number]> {
-  const ranges: Array<[number, number]> = [];
+  const containerRanges: Array<[number, number]> = [];
   let offset = 0;
   let fenceStart = -1;
   let fenceCharacter = "";
@@ -339,7 +375,7 @@ export function fencedRanges(text: string): Array<[number, number]> {
         && closing[2][0] === fenceCharacter
         && closing[2].length >= fenceLength
       ) {
-        ranges.push([fenceStart, offset + line.length]);
+        containerRanges.push([fenceStart, offset + line.length]);
         fenceStart = -1;
         fenceCharacter = "";
         fenceLength = 0;
@@ -349,42 +385,13 @@ export function fencedRanges(text: string): Array<[number, number]> {
     }
     offset += line.length + 1;
   }
-  if (fenceStart !== -1) ranges.push([fenceStart, text.length]);
+  if (fenceStart !== -1) containerRanges.push([fenceStart, text.length]);
 
   // The shipped parser also recognizes any whitespace-indented raw fence line
   // and closes it with the next same-character fence, regardless of run
   // length. Union that state machine with the container-aware ranges above so
   // parser quirks can never leave rendered code executable as protocol.
-  const rendererRanges: Array<[number, number]> = [];
-  let rendererOffset = 0;
-  let rendererStart = -1;
-  let rendererCharacter = "";
-  for (const line of text.split("\n")) {
-    const fence = /^\s*(`{3,}|~{3,})(\w*)?\s*$/.exec(line);
-    if (rendererStart === -1) {
-      if (fence) {
-        rendererStart = rendererOffset;
-        rendererCharacter = fence[1][0];
-      }
-    } else if (fence && fence[1][0] === rendererCharacter) {
-      rendererRanges.push([rendererStart, rendererOffset + line.length]);
-      rendererStart = -1;
-      rendererCharacter = "";
-    }
-    rendererOffset += line.length + 1;
-  }
-  if (rendererStart !== -1) rendererRanges.push([rendererStart, text.length]);
-
-  const merged: Array<[number, number]> = [];
-  for (const range of [...ranges, ...rendererRanges].sort(([a], [b]) => a - b)) {
-    const previous = merged[merged.length - 1];
-    if (previous && range[0] <= previous[1]) {
-      previous[1] = Math.max(previous[1], range[1]);
-    } else {
-      merged.push([...range]);
-    }
-  }
-  return merged;
+  return mergeRanges([...containerRanges, ...rendererFenceRanges(text)]);
 }
 
 function inRanges(ranges: Array<[number, number]>, index: number): boolean {
@@ -396,10 +403,23 @@ function inRanges(ranges: Array<[number, number]>, index: number): boolean {
  * briefly activate protocol controls before their closing delimiter arrives. */
 export function markdownCodeRanges(text: string): Array<[number, number]> {
   const fences = fencedRanges(text);
+  const rendererFences = rendererFenceRanges(text);
   const inline: Array<[number, number]> = [];
   let cursor = 0;
+  let rendererFenceIndex = 0;
 
   while (cursor < text.length) {
+    while (
+      rendererFenceIndex < rendererFences.length
+      && cursor >= rendererFences[rendererFenceIndex][1]
+    ) {
+      rendererFenceIndex += 1;
+    }
+    const rendererFence = rendererFences[rendererFenceIndex];
+    if (rendererFence && cursor >= rendererFence[0]) {
+      cursor = rendererFence[1];
+      continue;
+    }
     if (text[cursor] !== "`") {
       cursor += 1;
       continue;
@@ -410,8 +430,20 @@ export function markdownCodeRanges(text: string): Array<[number, number]> {
     const delimiterLength = cursor - start;
     let closingEnd = -1;
     let search = cursor;
+    let searchFenceIndex = rendererFenceIndex;
 
     while (search < text.length) {
+      while (
+        searchFenceIndex < rendererFences.length
+        && search >= rendererFences[searchFenceIndex][1]
+      ) {
+        searchFenceIndex += 1;
+      }
+      const searchFence = rendererFences[searchFenceIndex];
+      if (searchFence && search >= searchFence[0]) {
+        search = searchFence[1];
+        continue;
+      }
       if (text[search] !== "`") {
         search += 1;
         continue;
@@ -428,16 +460,7 @@ export function markdownCodeRanges(text: string): Array<[number, number]> {
     cursor = closingEnd === -1 ? text.length : closingEnd;
   }
 
-  const merged: Array<[number, number]> = [];
-  for (const range of [...fences, ...inline].sort(([a], [b]) => a - b)) {
-    const previous = merged[merged.length - 1];
-    if (previous && range[0] <= previous[1]) {
-      previous[1] = Math.max(previous[1], range[1]);
-    } else {
-      merged.push([...range]);
-    }
-  }
-  return merged;
+  return mergeRanges([...fences, ...inline]);
 }
 
 /**

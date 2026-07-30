@@ -278,6 +278,21 @@ test("overlapping quoted fence and inline code ranges stay non-executable", () =
   assert.deepEqual(formatted.pieces, [{ kind: "text", text }]);
 });
 
+test("inline delimiters inside block fences cannot suppress later controls", () => {
+  const marker = '<coven:github kind="pr" repo="OpenCoven/coven-cave" number="3982" />';
+  const text = [
+    "~~~text",
+    "unmatched ` example",
+    "~~~",
+    marker,
+  ].join("\n");
+
+  const formatted = formatQuickChatAssistantMessage(text, false);
+
+  assert.doesNotMatch(formatted.copyText, /coven:github/);
+  assert.ok(formatted.pieces.some((piece) => piece.kind === "card"));
+});
+
 test("a list delimiter that opens renderer code protects following controls", () => {
   const text = [
     "- ```xml",
