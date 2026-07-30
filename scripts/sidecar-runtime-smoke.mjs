@@ -32,6 +32,13 @@ const bundledPiper = path.join(
   "piper",
   process.platform === "win32" ? "piper.exe" : "piper",
 );
+const bundledKokoro = path.join(
+  root,
+  "src-tauri",
+  "resources",
+  "kokoro",
+  process.platform === "win32" ? "sherpa-onnx-offline-tts.exe" : "sherpa-onnx-offline-tts",
+);
 const token = "sidecar-runtime-smoke-token";
 
 function reservePort() {
@@ -120,6 +127,7 @@ function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port, environmen
       COVEN_CAVE_BUNDLE: "1",
       COVEN_WHISPER_CPP_BIN: bundledWhisper,
       COVEN_PIPER_BIN: bundledPiper,
+      COVEN_KOKORO_BIN: bundledKokoro,
       COVEN_CAVE_AUTH_TOKEN: token,
       COVEN_HOME: covenHome,
       NEXT_TELEMETRY_DISABLED: "1",
@@ -319,6 +327,18 @@ async function main() {
     `packaged Piper runtime must launch from resources: ${piperHelp.stderr || piperHelp.error}`,
   );
 
+  const kokoroHelp = spawnSync(bundledKokoro, ["--help"], {
+    encoding: "utf8",
+  });
+  assert.equal(
+    kokoroHelp.status,
+    0,
+    `packaged Kokoro (sherpa-onnx) runtime must launch from resources: ${kokoroHelp.stderr || kokoroHelp.error}`,
+  );
+  // espeak-ng-data must ride beside the Kokoro executable: the Node runner
+  // passes --kokoro-data-dir=<dir-of-executable>/espeak-ng-data.
+  await access(path.join(path.dirname(bundledKokoro), "espeak-ng-data", "phontab"));
+
   const nativeModules = spawnSync(
     bundledNode,
     ["-e", "require('sharp'); require('node-pty')"],
@@ -454,6 +474,11 @@ async function main() {
       engines.runtimes?.piper?.available,
       true,
       "the sidecar must execute the managed Piper resource, not fall back to PATH",
+    );
+    assert.equal(
+      engines.runtimes?.kokoro?.available,
+      true,
+      "the sidecar must execute the managed Kokoro (sherpa-onnx) resource, not fall back to PATH",
     );
 
     const marketplaceResponse = await fetch(`${baseUrl}/api/marketplace`, {

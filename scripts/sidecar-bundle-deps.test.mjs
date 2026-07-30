@@ -144,7 +144,13 @@ assert.doesNotMatch(
 // Tauri assembles the app.
 assert.deepEqual(
   windowsConfig.bundle.resources,
-  ["resources/server-archive/**/*", "resources/node/**/*", "resources/whisper/**/*", "resources/piper/**/*"],
+  [
+    "resources/server-archive/**/*",
+    "resources/node/**/*",
+    "resources/whisper/**/*",
+    "resources/piper/**/*",
+    "resources/kokoro/**/*",
+  ],
   "Windows resources must replace the expanded sidecar with its bounded archive while retaining bundled runtimes",
 );
 assert.ok(
@@ -157,6 +163,27 @@ assert.ok(
 );
 assert.match(src, /bundle_piper_runtime\(\)/, "release bundling must provision the pinned Piper runtime");
 assert.match(src, /Piper runtime checksum mismatch/, "Piper runtime downloads must be integrity-checked");
+assert.ok(
+  baseConfig.bundle.resources.includes("resources/kokoro/**/*"),
+  "desktop bundles must retain the local Kokoro (sherpa-onnx) runtime",
+);
+assert.match(src, /bundle_kokoro_runtime\(\)/, "release bundling must provision the pinned Kokoro runtime");
+assert.match(src, /Kokoro runtime checksum mismatch/, "Kokoro runtime downloads must be integrity-checked");
+assert.match(
+  src,
+  /Kokoro espeak-ng-data checksum mismatch/,
+  "the espeak-ng-data payload that rides with the Kokoro runtime must be integrity-checked",
+);
+assert.match(
+  src,
+  /tar -xjf "\$espeak_archive" -C "\$KOKORO_RUNTIME_DIR"/,
+  "espeak-ng-data must be staged beside the Kokoro executable, not inside the voice-model download",
+);
+assert.doesNotMatch(
+  sourceSection(src, "bundle_kokoro_runtime()", "fix_node_pty_spawn_helpers()", "Kokoro staging section"),
+  /placeholder\.txt/,
+  "the generated Kokoro payload must not spend an MSI row on the source-tree placeholder",
+);
 assert.match(
   src,
   /if \[ -f "\$PIPER_RUNTIME_DIR\/espeak-ng" \]; then[\s\S]*chmod \+x "\$PIPER_RUNTIME_DIR\/espeak-ng"/,

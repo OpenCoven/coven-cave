@@ -1554,6 +1554,13 @@ fn run_sidecar_daemon() -> Result<i32, String> {
             piper.display()
         ));
     }
+    let kokoro = bundled_kokoro_path(&resource_dir);
+    if !kokoro.is_file() {
+        return Err(format!(
+            "bundled Kokoro runtime is unavailable at {}",
+            kokoro.display()
+        ));
+    }
     let port = daemon_port()?;
     let auth_token = sidecar_auth_token();
     let mobile_access_token =
@@ -1582,6 +1589,7 @@ fn run_sidecar_daemon() -> Result<i32, String> {
         .env("NODE_ENV", "production")
         .env("COVEN_CAVE_BUNDLE", "1")
         .env("COVEN_PIPER_BIN", &piper)
+        .env("COVEN_KOKORO_BIN", &kokoro)
         .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
         .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token)
         .stdin(Stdio::null());
