@@ -29,6 +29,7 @@ struct ConnectionView: View {
     /// explicit action.
     @State private var liveCheck: LiveCheckState = .idle
     @State private var approvalFailed = false
+    @State private var approvalUnavailable = false
     @FocusState private var focused: Bool
 
     enum LiveCheckState: Equatable {
@@ -133,6 +134,11 @@ struct ConnectionView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text("Authentication failed or was cancelled, so your desktop pairing was not changed.")
+            }
+            .alert("Device authentication unavailable", isPresented: $approvalUnavailable) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Turn on a device passcode before replacing your desktop pairing.")
             }
         }
     }
@@ -436,21 +442,17 @@ struct ConnectionView: View {
     private func connect() {
         focused = false
         guard let invite = CaveInvite.parse(cleanHost(host)) else { return }
-        // Synchronous guard before spawning the Task: a same-runloop double
-        // tap can otherwise race the `.disabled` modifiers above into a
-        // second call that only fails because a prompt is already in
-        // flight, not because it was actually denied/cancelled — which
-        // would incorrectly show `approvalFailed`.
+        // Avoid redundant work before spawning the Task. The outcome switch
+        // remains authoritative if a same-runloop tap still races this guard.
         guard appLock.canBeginAuthentication else { return }
         host = invite.host
         busy = true
         liveCheck = .idle
         Task {
-            let approved = await configurePairing(invite)
+            let outcome = await configurePairing(invite)
             busy = false
-            if !approved {
-                approvalFailed = true
-            } else if app.connectionState == .connected {
+            handleApprovalOutcome(outcome)
+            if outcome == .authorized, app.connectionState == .connected {
                 Haptics.success()
             }
         }
@@ -470,17 +472,15 @@ struct ConnectionView: View {
         guard let invite = CaveInvite.parse(cleanHost(input)) else { return }
         host = invite.host
         if invite.token != nil {
-            // Same synchronous guard as `connect()` — QR scans route here
-            // too, and a busy no-op must not spawn a Task or show an alert.
+            // Same synchronous fast-path as `connect()`; QR scans route here too.
             guard appLock.canBeginAuthentication else { return }
             busy = true
             liveCheck = .idle
             Task {
-                let approved = await configurePairing(invite)
+                let outcome = await configurePairing(invite)
                 busy = false
-                if !approved {
-                    approvalFailed = true
-                } else if app.connectionState == .connected {
+                handleApprovalOutcome(outcome)
+                if outcome == .authorized, app.connectionState == .connected {
                     Haptics.success()
                 }
             }
@@ -490,15 +490,26 @@ struct ConnectionView: View {
         }
     }
 
-    private func configurePairing(_ invite: CaveInvite) async -> Bool {
+    private func configurePairing(_ invite: CaveInvite) async -> AuthenticationOutcome {
         guard PairingApprovalPolicy.requiresApproval(hasExistingPairing: app.connection != nil) else {
             await app.configure(host: invite.host, token: invite.token)
-            return true
+            return .authorized
         }
         return await appLock.performApprovedAction(
             reason: "Confirm it's you to replace your desktop pairing"
         ) {
             await app.configure(host: invite.host, token: invite.token)
+        }
+    }
+
+    private func handleApprovalOutcome(_ outcome: AuthenticationOutcome) {
+        switch outcome {
+        case .authorized, .busy:
+            break
+        case .denied:
+            approvalFailed = true
+        case .unavailable:
+            approvalUnavailable = true
         }
     }
 

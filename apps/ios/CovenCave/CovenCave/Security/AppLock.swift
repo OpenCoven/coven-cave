@@ -26,11 +26,11 @@ enum AppLockPolicy {
     }
 }
 
-enum ApprovalRequestOutcome: Equatable {
-    case approved
+enum AuthenticationOutcome: Equatable {
+    case authorized
     case denied
-    case unavailable
     case busy
+    case unavailable
 }
 
 /// Pure decision logic for whether the lock screen should fire an automatic
@@ -135,18 +135,10 @@ final class AppLock {
     var biometricLabel: String { biometricKind.label }
     var biometricSystemImage: String { biometricKind.systemImage }
 
-    /// Whether a fresh authentication attempt may begin right now. `unlock`,
-    /// `requestApprovalOutcome`, `setLockEnabled`, and `setApprovalEnabled`
-    /// already no-op (returning `false`/`.busy`) when `isAuthenticating` is
-    /// `true`, but that `Bool`/no-prompt result is indistinguishable from a
-    /// real failure/cancellation to a caller that already committed to
-    /// showing a failure alert. Callers (Settings toggles, Connection's
-    /// direct save/disconnect/re-pair routes) should check this
-    /// synchronously — both to drive `.disabled` and to guard their action
-    /// handlers *before* spawning a `Task`, so a same-runloop double tap
-    /// can't race SwiftUI's disabled-state propagation into a second,
-    /// falsely-reported "authentication failed" alert when no second prompt
-    /// was ever attempted.
+    /// Whether a fresh authentication attempt may begin right now. Callers may
+    /// use this to disable controls synchronously, but correctness still comes
+    /// from the explicit `.busy` outcome returned by every authentication-gated
+    /// operation.
     var canBeginAuthentication: Bool { !isAuthenticating }
 
     // MARK: - Scene lifecycle
@@ -166,11 +158,16 @@ final class AppLock {
     /// Call when the scene reaches `.background`. Always ensures the privacy
     /// shield is up (belt-and-suspenders alongside `.inactive`, and the only
     /// shield trigger when a scene backgrounds without an observed
-    /// `.inactive` first), but only starts the re-lock clock when locking is
-    /// actually enabled.
+    /// `.inactive` first). A persisted lock request owns one continuous
+    /// background instant even while device authentication is temporarily
+    /// unavailable.
     func sceneDidEnterBackground() {
         isPrivacyShielded = true
-        guard lockEnabled else { return }
+        guard defaults.bool(forKey: Self.lockEnabledKey) else {
+            backgroundedAt = nil
+            return
+        }
+        guard backgroundedAt == nil else { return }
         backgroundedAt = continuousNow()
     }
 
@@ -184,15 +181,17 @@ final class AppLock {
     /// The privacy shield is cleared last, once the correct `isLocked` state
     /// is settled.
     func sceneDidBecomeActive() {
-        defer {
-            backgroundedAt = nil
-            isPrivacyShielded = false
-        }
+        defer { isPrivacyShielded = false }
         refreshAvailability()
-        guard lockEnabled else { return }
+        guard defaults.bool(forKey: Self.lockEnabledKey) else {
+            backgroundedAt = nil
+            return
+        }
+        guard canUseDeviceAuthentication else { return }
         let duration = backgroundedAt.map { start in
             start.duration(to: continuousNow())
         }
+        backgroundedAt = nil
         let wasLocked = isLocked
         if AppLockPolicy.shouldLock(enabled: lockEnabled, alreadyLocked: isLocked, backgroundDuration: duration) {
             isLocked = true
@@ -254,21 +253,15 @@ final class AppLock {
     /// Fresh authentication gate for approval-scoped actions (paired-desktop
     /// credential changes). Passes through immediately when approvals are
     /// disabled — never touches the authenticator in that case.
-    func requestApproval(reason: String) async -> Bool {
-        await requestApprovalOutcome(reason: reason) == .approved
-    }
-
-    /// Detailed approval result for callers that must distinguish a real
-    /// denial/cancellation from a request that never started.
-    func requestApprovalOutcome(reason: String) async -> ApprovalRequestOutcome {
-        guard approvalEnabled else { return .approved }
+    func requestApproval(reason: String) async -> AuthenticationOutcome {
+        guard !isAuthenticating else { return .busy }
+        guard approvalEnabled else { return .authorized }
         refreshAvailability()
         guard canUseDeviceAuthentication else { return .unavailable }
-        guard !isAuthenticating else { return .busy }
         isAuthenticating = true
         let success = await authenticator.authenticate(reason: reason)
         isAuthenticating = false
-        return success ? .approved : .denied
+        return success ? .authorized : .denied
     }
 
     /// Gates an arbitrary async action behind `requestApproval`, running it
@@ -276,13 +269,16 @@ final class AppLock {
     /// succeeded). Centralizes the "authenticate, then act, else leave
     /// everything alone" pattern so callers like Settings' credential-
     /// affecting operations (host change, disconnect) don't duplicate the
-    /// guard/return dance — they just branch on the returned `Bool` to show
-    /// their own failure alert.
+    /// guard/return dance.
     @discardableResult
-    func performApprovedAction(reason: String, action: () async -> Void) async -> Bool {
-        guard await requestApproval(reason: reason) else { return false }
+    func performApprovedAction(
+        reason: String,
+        action: () async -> Void
+    ) async -> AuthenticationOutcome {
+        let outcome = await requestApproval(reason: reason)
+        guard outcome == .authorized else { return outcome }
         await action()
-        return true
+        return .authorized
     }
 
     // MARK: - Settings toggles
@@ -291,41 +287,46 @@ final class AppLock {
     /// requires a successful fresh authentication first; on failure/cancel
     /// the preference is left completely unchanged.
     @discardableResult
-    func setLockEnabled(_ enabled: Bool) async -> Bool {
-        guard canUseDeviceAuthentication else { return false }
-        guard enabled != lockEnabled else { return true }
-        guard !isAuthenticating else { return false }
+    func setLockEnabled(_ enabled: Bool) async -> AuthenticationOutcome {
+        guard !isAuthenticating else { return .busy }
+        guard enabled != defaults.bool(forKey: Self.lockEnabledKey) else { return .authorized }
+        refreshAvailability()
+        guard canUseDeviceAuthentication else { return .unavailable }
         isAuthenticating = true
         let reason = enabled
             ? "Enable \(biometricLabel) to unlock Coven Cave"
             : "Disable \(biometricLabel) unlock"
         let success = await authenticator.authenticate(reason: reason)
         isAuthenticating = false
-        guard success else { return false }
+        guard success else { return .denied }
 
         lockEnabled = enabled
         defaults.set(enabled, forKey: Self.lockEnabledKey)
-        if !enabled { isLocked = false }
-        return true
+        if !enabled {
+            isLocked = false
+            backgroundedAt = nil
+        }
+        return .authorized
     }
 
     /// Enables/disables "require biometrics for approvals". Same
     /// authenticate-first-then-commit contract as `setLockEnabled`.
     @discardableResult
-    func setApprovalEnabled(_ enabled: Bool) async -> Bool {
-        guard canUseDeviceAuthentication else { return false }
-        guard enabled != approvalEnabled else { return true }
-        guard !isAuthenticating else { return false }
+    func setApprovalEnabled(_ enabled: Bool) async -> AuthenticationOutcome {
+        guard !isAuthenticating else { return .busy }
+        guard enabled != defaults.bool(forKey: Self.approvalEnabledKey) else { return .authorized }
+        refreshAvailability()
+        guard canUseDeviceAuthentication else { return .unavailable }
         isAuthenticating = true
         let reason = enabled
             ? "Enable \(biometricLabel) for approvals"
             : "Disable \(biometricLabel) approvals"
         let success = await authenticator.authenticate(reason: reason)
         isAuthenticating = false
-        guard success else { return false }
+        guard success else { return .denied }
 
         approvalEnabled = enabled
         defaults.set(enabled, forKey: Self.approvalEnabledKey)
-        return true
+        return .authorized
     }
 }

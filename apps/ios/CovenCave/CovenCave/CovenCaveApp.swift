@@ -10,6 +10,7 @@ struct CovenCaveApp: App {
     /// view mounts (see `LockScreenView`, substituted in for the whole root).
     @State private var appLock: AppLock
     @State private var pairingApprovalFailed = false
+    @State private var pairingAuthenticationUnavailable = false
     @State private var isProcessingPairingIntent = false
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @Environment(\.scenePhase) private var scenePhase
@@ -133,6 +134,11 @@ struct CovenCaveApp: App {
                 } message: {
                     Text("Authentication failed or was cancelled, so your desktop pairing was not changed.")
                 }
+                .alert("Device authentication unavailable", isPresented: $pairingAuthenticationUnavailable) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("Your pairing remains queued. Turn on a device passcode to approve it.")
+                }
         }
     }
 
@@ -162,17 +168,19 @@ struct CovenCaveApp: App {
             return
         }
 
-        let outcome = await appLock.requestApprovalOutcome(
+        let outcome = await appLock.requestApproval(
             reason: "Confirm it's you to replace your desktop pairing"
         )
         switch outcome {
-        case .approved:
+        case .authorized:
             await app.configure(host: intent.host, token: intent.token)
             app.consumePendingPairingIntent(matching: intent.id)
         case .denied:
             app.consumePendingPairingIntent(matching: intent.id)
             pairingApprovalFailed = true
-        case .unavailable, .busy:
+        case .unavailable:
+            pairingAuthenticationUnavailable = true
+        case .busy:
             break
         }
     }

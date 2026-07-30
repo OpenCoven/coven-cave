@@ -185,9 +185,9 @@ final class AppLockTests: XCTestCase {
         authenticator.authenticateResult = false
         let lock = makeLock(lockEnabled: false, approvalEnabled: false, authenticator: authenticator)
 
-        let approved = await lock.requestApproval(reason: "Change host")
+        let outcome = await lock.requestApproval(reason: "Change host")
 
-        XCTAssertTrue(approved)
+        XCTAssertEqual(outcome, .authorized)
         XCTAssertEqual(authenticator.authenticateCallCount, 0)
     }
 
@@ -196,9 +196,9 @@ final class AppLockTests: XCTestCase {
         authenticator.authenticateResult = true
         let lock = makeLock(lockEnabled: false, approvalEnabled: true, authenticator: authenticator)
 
-        let approved = await lock.requestApproval(reason: "Disconnect")
+        let outcome = await lock.requestApproval(reason: "Disconnect")
 
-        XCTAssertTrue(approved)
+        XCTAssertEqual(outcome, .authorized)
         XCTAssertEqual(authenticator.authenticateCallCount, 1)
     }
 
@@ -207,9 +207,9 @@ final class AppLockTests: XCTestCase {
         authenticator.authenticateResult = false
         let lock = makeLock(lockEnabled: false, approvalEnabled: true, authenticator: authenticator)
 
-        let approved = await lock.requestApproval(reason: "Disconnect")
+        let outcome = await lock.requestApproval(reason: "Disconnect")
 
-        XCTAssertFalse(approved)
+        XCTAssertEqual(outcome, .denied)
         XCTAssertEqual(authenticator.authenticateCallCount, 1)
     }
 
@@ -221,9 +221,9 @@ final class AppLockTests: XCTestCase {
         let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
         var executionCount = 0
 
-        let approved = await lock.performApprovedAction(reason: "Disconnect") { executionCount += 1 }
+        let outcome = await lock.performApprovedAction(reason: "Disconnect") { executionCount += 1 }
 
-        XCTAssertFalse(approved)
+        XCTAssertEqual(outcome, .denied)
         XCTAssertEqual(executionCount, 0)
         XCTAssertEqual(authenticator.authenticateCallCount, 1)
     }
@@ -234,9 +234,9 @@ final class AppLockTests: XCTestCase {
         let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
         var executionCount = 0
 
-        let approved = await lock.performApprovedAction(reason: "Disconnect") { executionCount += 1 }
+        let outcome = await lock.performApprovedAction(reason: "Disconnect") { executionCount += 1 }
 
-        XCTAssertTrue(approved)
+        XCTAssertEqual(outcome, .authorized)
         XCTAssertEqual(executionCount, 1)
         XCTAssertEqual(authenticator.authenticateCallCount, 1)
     }
@@ -247,9 +247,9 @@ final class AppLockTests: XCTestCase {
         let lock = makeLock(approvalEnabled: false, authenticator: authenticator)
         var executionCount = 0
 
-        let approved = await lock.performApprovedAction(reason: "Disconnect") { executionCount += 1 }
+        let outcome = await lock.performApprovedAction(reason: "Disconnect") { executionCount += 1 }
 
-        XCTAssertTrue(approved)
+        XCTAssertEqual(outcome, .authorized)
         XCTAssertEqual(executionCount, 1)
         XCTAssertEqual(authenticator.authenticateCallCount, 0)
     }
@@ -262,11 +262,11 @@ final class AppLockTests: XCTestCase {
         authenticator.canEvaluate = false
         authenticator.kind = .none
 
-        let approved = await lock.performApprovedAction(reason: "Replace pairing") {
+        let outcome = await lock.performApprovedAction(reason: "Replace pairing") {
             executionCount += 1
         }
 
-        XCTAssertFalse(approved)
+        XCTAssertEqual(outcome, .unavailable)
         XCTAssertTrue(lock.approvalEnabled, "the user's persisted approval choice remains logically enabled")
         XCTAssertFalse(lock.canUseDeviceAuthentication)
         XCTAssertEqual(executionCount, 0)
@@ -278,15 +278,15 @@ final class AppLockTests: XCTestCase {
         let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
         authenticator.canEvaluate = false
         authenticator.kind = .none
-        let unavailableApproval = await lock.requestApproval(reason: "Replace pairing")
-        XCTAssertFalse(unavailableApproval)
+        let unavailable = await lock.requestApproval(reason: "Replace pairing")
+        XCTAssertEqual(unavailable, .unavailable)
 
         authenticator.canEvaluate = true
         authenticator.kind = .faceID
         authenticator.authenticateResult = false
-        let approved = await lock.requestApproval(reason: "Replace pairing")
+        let denied = await lock.requestApproval(reason: "Replace pairing")
 
-        XCTAssertFalse(approved)
+        XCTAssertEqual(denied, .denied)
         XCTAssertTrue(lock.approvalEnabled)
         XCTAssertTrue(lock.canUseDeviceAuthentication)
         XCTAssertEqual(authenticator.authenticateCallCount, 1)
@@ -299,33 +299,14 @@ final class AppLockTests: XCTestCase {
         let lock = makeLock(approvalEnabled: false, authenticator: authenticator)
         var executionCount = 0
 
-        let approved = await lock.performApprovedAction(reason: "Initial pairing") {
+        let outcome = await lock.performApprovedAction(reason: "Initial pairing") {
             executionCount += 1
         }
 
-        XCTAssertTrue(approved)
+        XCTAssertEqual(outcome, .authorized)
         XCTAssertFalse(lock.approvalEnabled)
         XCTAssertEqual(executionCount, 1)
         XCTAssertEqual(authenticator.authenticateCallCount, 0)
-    }
-
-    func testApprovalOutcomeDistinguishesUnavailableFromActualDenial() async {
-        let authenticator = FakeBiometricAuthenticator()
-        authenticator.canEvaluate = false
-        authenticator.kind = .none
-        let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
-
-        let unavailable = await lock.requestApprovalOutcome(reason: "Replace pairing")
-
-        XCTAssertEqual(unavailable, .unavailable)
-        XCTAssertEqual(authenticator.authenticateCallCount, 0)
-
-        authenticator.canEvaluate = true
-        authenticator.authenticateResult = false
-        let denied = await lock.requestApprovalOutcome(reason: "Replace pairing")
-
-        XCTAssertEqual(denied, .denied)
-        XCTAssertEqual(authenticator.authenticateCallCount, 1)
     }
 
     // MARK: - Toggle gating
@@ -335,9 +316,9 @@ final class AppLockTests: XCTestCase {
         authenticator.authenticateResult = true
         let lock = makeLock(lockEnabled: false, authenticator: authenticator)
 
-        let ok = await lock.setLockEnabled(true)
+        let outcome = await lock.setLockEnabled(true)
 
-        XCTAssertTrue(ok)
+        XCTAssertEqual(outcome, .authorized)
         XCTAssertTrue(lock.lockEnabled)
         XCTAssertTrue(defaults.bool(forKey: AppLock.lockEnabledKey))
     }
@@ -347,9 +328,9 @@ final class AppLockTests: XCTestCase {
         authenticator.authenticateResult = false
         let lock = makeLock(lockEnabled: false, authenticator: authenticator)
 
-        let ok = await lock.setLockEnabled(true)
+        let outcome = await lock.setLockEnabled(true)
 
-        XCTAssertFalse(ok)
+        XCTAssertEqual(outcome, .denied)
         XCTAssertFalse(lock.lockEnabled)
         XCTAssertFalse(defaults.bool(forKey: AppLock.lockEnabledKey))
     }
@@ -359,9 +340,9 @@ final class AppLockTests: XCTestCase {
         authenticator.authenticateResult = false
         let lock = makeLock(lockEnabled: true, authenticator: authenticator)
 
-        let ok = await lock.setLockEnabled(false)
+        let outcome = await lock.setLockEnabled(false)
 
-        XCTAssertFalse(ok)
+        XCTAssertEqual(outcome, .denied)
         XCTAssertTrue(lock.lockEnabled)
         XCTAssertTrue(defaults.bool(forKey: AppLock.lockEnabledKey))
     }
@@ -372,9 +353,9 @@ final class AppLockTests: XCTestCase {
         let lock = makeLock(lockEnabled: true, authenticator: authenticator)
         XCTAssertTrue(lock.isLocked)
 
-        let ok = await lock.setLockEnabled(false)
+        let outcome = await lock.setLockEnabled(false)
 
-        XCTAssertTrue(ok)
+        XCTAssertEqual(outcome, .authorized)
         XCTAssertFalse(lock.lockEnabled)
         XCTAssertFalse(lock.isLocked)
     }
@@ -384,9 +365,9 @@ final class AppLockTests: XCTestCase {
         authenticator.authenticateResult = true
         let lock = makeLock(approvalEnabled: false, authenticator: authenticator)
 
-        let ok = await lock.setApprovalEnabled(true)
+        let outcome = await lock.setApprovalEnabled(true)
 
-        XCTAssertTrue(ok)
+        XCTAssertEqual(outcome, .authorized)
         XCTAssertTrue(lock.approvalEnabled)
         XCTAssertTrue(defaults.bool(forKey: AppLock.approvalEnabledKey))
     }
@@ -396,9 +377,9 @@ final class AppLockTests: XCTestCase {
         authenticator.authenticateResult = false
         let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
 
-        let ok = await lock.setApprovalEnabled(false)
+        let outcome = await lock.setApprovalEnabled(false)
 
-        XCTAssertFalse(ok)
+        XCTAssertEqual(outcome, .denied)
         XCTAssertTrue(lock.approvalEnabled)
         XCTAssertTrue(defaults.bool(forKey: AppLock.approvalEnabledKey))
     }
@@ -414,9 +395,9 @@ final class AppLockTests: XCTestCase {
 
         XCTAssertFalse(lock.canUseDeviceAuthentication)
 
-        let ok = await lock.setLockEnabled(true)
+        let outcome = await lock.setLockEnabled(true)
 
-        XCTAssertFalse(ok)
+        XCTAssertEqual(outcome, .unavailable)
         XCTAssertFalse(lock.lockEnabled)
         XCTAssertEqual(authenticator.authenticateCallCount, 0)
     }
@@ -540,13 +521,13 @@ final class AppLockTests: XCTestCase {
         let started = expectation(description: "first prompt started")
         authenticator.onAuthenticateStart = { started.fulfill() }
 
-        let firstTask = Task { await lock.requestApprovalOutcome(reason: "First") }
+        let firstTask = Task { await lock.requestApproval(reason: "First") }
         await fulfillment(of: [started], timeout: 5)
         XCTAssertFalse(lock.canBeginAuthentication)
 
         authenticator.resumeSuspendedAuthenticate()
         let firstOutcome = await firstTask.value
-        XCTAssertEqual(firstOutcome, .approved)
+        XCTAssertEqual(firstOutcome, .authorized)
         XCTAssertTrue(lock.canBeginAuthentication)
     }
 
@@ -562,17 +543,17 @@ final class AppLockTests: XCTestCase {
         let started = expectation(description: "first prompt started")
         authenticator.onAuthenticateStart = { started.fulfill() }
 
-        let firstTask = Task { await lock.requestApprovalOutcome(reason: "First") }
+        let firstTask = Task { await lock.requestApproval(reason: "First") }
         await fulfillment(of: [started], timeout: 5)
 
-        let busyOutcome = await lock.requestApprovalOutcome(reason: "Second, concurrent")
+        let busyOutcome = await lock.requestApproval(reason: "Second, concurrent")
 
         XCTAssertEqual(busyOutcome, .busy)
         XCTAssertEqual(authenticator.authenticateCallCount, 1, "the concurrent request must not open a second prompt")
 
         authenticator.resumeSuspendedAuthenticate()
         let firstOutcome = await firstTask.value
-        XCTAssertEqual(firstOutcome, .approved, "the first, genuinely in-flight request must still succeed")
+        XCTAssertEqual(firstOutcome, .authorized, "the first, genuinely in-flight request must still succeed")
     }
 
     /// A concurrent toggle flip while another toggle/approval authentication
@@ -594,17 +575,110 @@ final class AppLockTests: XCTestCase {
         await fulfillment(of: [started], timeout: 5)
         XCTAssertFalse(lock.canBeginAuthentication)
 
-        let concurrentResult = await lock.setLockEnabled(true)
+        let concurrentOutcome = await lock.setLockEnabled(true)
 
-        XCTAssertFalse(concurrentResult)
+        XCTAssertEqual(concurrentOutcome, .busy)
         XCTAssertFalse(lock.lockEnabled, "the concurrent, busy call must not mutate the preference")
         XCTAssertFalse(defaults.bool(forKey: AppLock.lockEnabledKey))
         XCTAssertEqual(authenticator.authenticateCallCount, 1, "the concurrent call must not open a second prompt")
 
         authenticator.resumeSuspendedAuthenticate()
-        let firstResult = await firstTask.value
-        XCTAssertTrue(firstResult)
+        let firstOutcome = await firstTask.value
+        XCTAssertEqual(firstOutcome, .authorized)
         XCTAssertTrue(lock.lockEnabled, "the first, genuinely in-flight toggle must still take effect")
+    }
+
+    func testBusyApprovedActionReturnsBusyWithoutExecutingAndFirstRequestMaySucceed() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.suspendsAuthenticate = true
+        authenticator.authenticateResult = true
+        let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
+        var executionCount = 0
+
+        let started = expectation(description: "first approval started")
+        authenticator.onAuthenticateStart = { started.fulfill() }
+        let firstTask = Task { await lock.requestApproval(reason: "First") }
+        await fulfillment(of: [started], timeout: 5)
+
+        let busyOutcome = await lock.performApprovedAction(reason: "Second") {
+            executionCount += 1
+        }
+
+        XCTAssertEqual(busyOutcome, .busy)
+        XCTAssertEqual(executionCount, 0)
+        XCTAssertEqual(authenticator.authenticateCallCount, 1)
+
+        authenticator.resumeSuspendedAuthenticate()
+        let firstOutcome = await firstTask.value
+        XCTAssertEqual(firstOutcome, .authorized)
+    }
+
+    func testBusyApprovedActionDoesNotBypassBusyGuardWhenApprovalsAreDisabled() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.suspendsAuthenticate = true
+        let lock = makeLock(lockEnabled: false, approvalEnabled: false, authenticator: authenticator)
+        var executionCount = 0
+
+        let started = expectation(description: "setting authentication started")
+        authenticator.onAuthenticateStart = { started.fulfill() }
+        let settingTask = Task { await lock.setLockEnabled(true) }
+        await fulfillment(of: [started], timeout: 5)
+
+        let outcome = await lock.performApprovedAction(reason: "Change host") {
+            executionCount += 1
+        }
+
+        XCTAssertEqual(outcome, .busy)
+        XCTAssertEqual(executionCount, 0)
+
+        authenticator.resumeSuspendedAuthenticate()
+        _ = await settingTask.value
+    }
+
+    func testBusyNoOpSettingRequestReturnsBusyBecauseInFlightRequestMayChangeIt() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.suspendsAuthenticate = true
+        let lock = makeLock(lockEnabled: false, authenticator: authenticator)
+
+        let started = expectation(description: "enable authentication started")
+        authenticator.onAuthenticateStart = { started.fulfill() }
+        let enableTask = Task { await lock.setLockEnabled(true) }
+        await fulfillment(of: [started], timeout: 5)
+
+        let outcome = await lock.setLockEnabled(false)
+
+        XCTAssertEqual(outcome, .busy)
+        XCTAssertFalse(lock.lockEnabled)
+        XCTAssertFalse(defaults.bool(forKey: AppLock.lockEnabledKey))
+
+        authenticator.resumeSuspendedAuthenticate()
+        _ = await enableTask.value
+    }
+
+    func testNoOpSettingChangesAreAuthorizedWithoutAuthentication() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.canEvaluate = false
+        let lock = makeLock(lockEnabled: false, approvalEnabled: true, authenticator: authenticator)
+
+        let lockOutcome = await lock.setLockEnabled(false)
+        let approvalOutcome = await lock.setApprovalEnabled(true)
+
+        XCTAssertEqual(lockOutcome, .authorized)
+        XCTAssertEqual(approvalOutcome, .authorized)
+        XCTAssertEqual(authenticator.authenticateCallCount, 0)
+    }
+
+    func testApprovalSettingReportsUnavailableWithoutMutation() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.canEvaluate = false
+        let lock = makeLock(approvalEnabled: false, authenticator: authenticator)
+
+        let outcome = await lock.setApprovalEnabled(true)
+
+        XCTAssertEqual(outcome, .unavailable)
+        XCTAssertFalse(lock.approvalEnabled)
+        XCTAssertFalse(defaults.bool(forKey: AppLock.approvalEnabledKey))
+        XCTAssertEqual(authenticator.authenticateCallCount, 0)
     }
 
     // MARK: - Privacy shield (separate from the authentication lock)
@@ -716,6 +790,127 @@ final class AppLockTests: XCTestCase {
             defaults.bool(forKey: AppLock.lockEnabledKey),
             "persisted preference must survive a transient unavailability"
         )
+    }
+
+    func testUnavailableActiveRetainsElapsedTimerAndRestoredAvailabilityLocksAtTotalSixtySeconds() async {
+        let clock = TestClock()
+        let authenticator = FakeBiometricAuthenticator()
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator, clock: clock)
+        _ = await lock.unlock()
+
+        lock.sceneDidEnterBackground()
+        clock.advance(by: 30)
+        authenticator.canEvaluate = false
+        authenticator.kind = .none
+        lock.sceneDidBecomeActive()
+
+        XCTAssertFalse(lock.isLocked, "unavailable authentication must never strand the user")
+        XCTAssertFalse(lock.lockEnabled)
+
+        clock.advance(by: 30)
+        authenticator.canEvaluate = true
+        authenticator.kind = .faceID
+        lock.sceneDidBecomeActive()
+
+        XCTAssertTrue(lock.lockEnabled)
+        XCTAssertTrue(lock.isLocked, "restored availability must apply the full retained elapsed interval")
+    }
+
+    func testRepeatedBackgroundEntryDoesNotReplaceRetainedEarlierInstant() async {
+        let clock = TestClock()
+        let authenticator = FakeBiometricAuthenticator()
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator, clock: clock)
+        _ = await lock.unlock()
+
+        lock.sceneDidEnterBackground()
+        clock.advance(by: 30)
+        authenticator.canEvaluate = false
+        lock.sceneDidBecomeActive()
+
+        lock.sceneDidEnterBackground()
+        clock.advance(by: 30)
+        authenticator.canEvaluate = true
+        lock.sceneDidBecomeActive()
+
+        XCTAssertTrue(lock.isLocked, "the second background entry must not replace the earlier retained instant")
+    }
+
+    func testRestoredAvailabilityUnderTotalSixtySecondsPreservesGrace() async {
+        let clock = TestClock()
+        let authenticator = FakeBiometricAuthenticator()
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator, clock: clock)
+        _ = await lock.unlock()
+
+        lock.sceneDidEnterBackground()
+        clock.advance(by: 20)
+        authenticator.canEvaluate = false
+        lock.sceneDidBecomeActive()
+        clock.advance(by: 39)
+        authenticator.canEvaluate = true
+        lock.sceneDidBecomeActive()
+
+        XCTAssertTrue(lock.lockEnabled)
+        XCTAssertFalse(lock.isLocked)
+
+        clock.advance(by: 2)
+        lock.sceneDidBecomeActive()
+
+        XCTAssertFalse(lock.isLocked, "an available decision must consume the retained instant")
+    }
+
+    func testPersistedLockDisabledNeverAccumulatesBackgroundElapsedTime() {
+        let clock = TestClock()
+        let lock = makeLock(lockEnabled: false, clock: clock)
+
+        lock.sceneDidEnterBackground()
+        clock.advance(by: 120)
+        defaults.set(true, forKey: AppLock.lockEnabledKey)
+        lock.sceneDidBecomeActive()
+
+        XCTAssertTrue(lock.lockEnabled)
+        XCTAssertFalse(lock.isLocked, "time before the persisted preference was enabled must not count")
+    }
+
+    func testPersistedLockTurningOffClearsAnEarlierRetainedInstant() async {
+        let clock = TestClock()
+        let authenticator = FakeBiometricAuthenticator()
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator, clock: clock)
+        _ = await lock.unlock()
+
+        lock.sceneDidEnterBackground()
+        clock.advance(by: 10)
+        authenticator.canEvaluate = false
+        lock.sceneDidBecomeActive()
+
+        defaults.set(false, forKey: AppLock.lockEnabledKey)
+        lock.sceneDidEnterBackground()
+        clock.advance(by: 100)
+        defaults.set(true, forKey: AppLock.lockEnabledKey)
+        authenticator.canEvaluate = true
+        lock.sceneDidBecomeActive()
+
+        XCTAssertFalse(lock.isLocked, "elapsed time retained before the persisted preference turned off must be discarded")
+    }
+
+    func testSuccessfullyDisablingLockClearsRetainedBackgroundInstant() async {
+        let clock = TestClock()
+        let authenticator = FakeBiometricAuthenticator()
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator, clock: clock)
+        _ = await lock.unlock()
+        lock.sceneDidEnterBackground()
+        clock.advance(by: 10)
+        authenticator.canEvaluate = false
+        lock.sceneDidBecomeActive()
+
+        authenticator.canEvaluate = true
+        let disableOutcome = await lock.setLockEnabled(false)
+        XCTAssertEqual(disableOutcome, .authorized)
+
+        defaults.set(true, forKey: AppLock.lockEnabledKey)
+        clock.advance(by: 100)
+        lock.sceneDidBecomeActive()
+
+        XCTAssertFalse(lock.isLocked, "a retained instant must not survive a successful disable")
     }
 
     /// Once availability returns, effective lock must restore while the
