@@ -23,6 +23,17 @@
  *     post-merge cleanup and husk GC stay frictionless.
  *   • `git branch -D <name>` is blocked when the branch tip is not contained in
  *     any remote-tracking ref (deleting it would orphan unpushed commits).
+ *
+ * "Retained" means a remote BRANCH or a TAG that is present on a remote. Tags
+ * count because archiving a branch as a signed, pushed tag preserves its OIDs
+ * more durably than a branch does — merging deletes the branch, never the tag.
+ * Requiring a branch made the guard block six provably-archived cleanups during
+ * one sweep (2026-07-29), and six bypasses to delete preserved work is how the
+ * bypass stops being read. A LOCAL-only tag never counts: it dies with the
+ * machine. Verifying a tag is remote needs the network (git keeps no
+ * remote-tracking refs for tags), and that probe fails CLOSED — unlike the
+ * warn-only probes here, it gates deletion, so "cannot verify" must not read as
+ * "verified".
  *   • `git push <remote> --delete <branch>` (or `push <remote> :<branch>`) is
  *     blocked when an OPEN PR still has that head (deleting the branch closes
  *     the PR — the #2286 failure). Needs `gh` + network; fails OPEN.
@@ -252,6 +263,86 @@ function liveProcesses(wtPath) {
   return hits;
 }
 
+/** Tag names present on ANY configured remote, fetched at most once per run.
+ *
+ *  Git keeps no remote-tracking refs for tags, so there is no offline way to
+ *  tell a pushed tag from a local one — and the difference is the whole point,
+ *  since a local tag dies with the machine. One `ls-remote` per remote answers
+ *  it for every tag at once. Affordable here because this only runs when a
+ *  destructive command is already in flight, never on the hot edit path.
+ *
+ *  Fails CLOSED: if ls-remote errors (offline, auth, timeout) the set stays
+ *  empty, so no tag is credited and the guard blocks. Every other probe in this
+ *  file fails open, but those decide whether to *warn*; this one decides whether
+ *  deletion is safe, and "cannot verify" must never read as "verified".
+ */
+const remoteTagCache = new Map();
+function remoteTags(cwd) {
+  // Keyed by the repo's COMMON git dir, not by cwd: every worktree of one repo
+  // shares one lookup, while a command that reaches into a second repo (via
+  // `git -C`) never inherits the first repo's tags.
+  let key = cwd || ".";
+  try {
+    key = git(["-C", cwd || ".", "rev-parse", "--path-format=absolute", "--git-common-dir"], undefined).trim() || key;
+  } catch {
+    /* not a repo we can identify — fall back to the raw cwd as the key */
+  }
+  const cached = remoteTagCache.get(key);
+  if (cached) return cached;
+  const found = new Set();
+  remoteTagCache.set(key, found);
+  let names = [];
+  try {
+    names = git(["remote"], cwd).split("\n").map((s) => s.trim()).filter(Boolean);
+  } catch {
+    return found;
+  }
+  for (const remote of names.slice(0, 4)) {
+    try {
+      for (const line of git(["ls-remote", "--tags", remote], cwd).split("\n")) {
+        const m = /refs\/tags\/(.+?)(?:\^\{\})?$/.exec(line.trim());
+        if (m) found.add(m[1]);
+      }
+    } catch {
+      /* this remote is unreachable — credit nothing from it */
+    }
+  }
+  return found;
+}
+
+/** Where `oid` is durably retained, or "" if nowhere. A remote branch is the
+ *  cheap offline answer; a tag pushed to a remote counts too, and is in fact
+ *  the stronger one — merging deletes the branch but never the tag. */
+function retainedOnRemote(oid, cwd) {
+  try {
+    if (git(["branch", "-r", "--contains", oid], cwd).trim()) return "a remote branch";
+  } catch {
+    /* fall through to tags */
+  }
+  let tags = [];
+  try {
+    tags = git(["for-each-ref", "--format=%(refname:short)", "--contains", oid, "refs/tags"], cwd)
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  } catch {
+    return "";
+  }
+  if (!tags.length) return "";
+  const pushed = remoteTags(cwd);
+  const hit = tags.find((t) => pushed.has(t));
+  return hit ? `remote tag ${hit}` : "";
+}
+
+/** Both destructive paths offer the same two ways out, so word them once. */
+function retentionAdvice(ref) {
+  return (
+    `Push it (\`git push -u origin ${ref}\`), or archive the commits as a tag ` +
+    `(\`git tag -s archive/${ref.replace(/\//g, "-")} <oid> && git push origin archive/…\`) — ` +
+    `a pushed tag counts as retention and outlives the branch.`
+  );
+}
+
 function destructionRisk(wtPath) {
   if (!existsSync(wtPath)) return "";
   if (!existsSync(path.join(wtPath, ".git"))) return ""; // husk — GC freely
@@ -263,8 +354,9 @@ function destructionRisk(wtPath) {
       return `\`${wtPath}\` has ${n} uncommitted change(s) — a session may be mid-task in it.`;
     }
     const head = git(["-C", wtPath, "rev-parse", "HEAD"], undefined).trim();
-    const onRemote = git(["-C", wtPath, "branch", "-r", "--contains", head], undefined).trim();
-    if (!onRemote) return `\`${wtPath}\` HEAD (${head.slice(0, 8)}) exists on NO remote ref — removing it orphans unpushed commits.`;
+    if (!retainedOnRemote(head, wtPath)) {
+      return `\`${wtPath}\` HEAD (${head.slice(0, 8)}) exists on NO remote ref — removing it orphans unpushed commits.`;
+    }
     const live = liveProcesses(wtPath);
     if (live.length) {
       const who = live.slice(0, 3).map((h) => `pid ${h.pid} (${h.cmd || "?"})`).join(", ");
@@ -356,11 +448,10 @@ function checkBranchDelete(seg, cwd) {
     try {
       const tip = git(["rev-parse", "--verify", "--quiet", `refs/heads/${name}`], cwd).trim();
       if (!tip) continue;
-      const onRemote = git(["branch", "-r", "--contains", tip], cwd).trim();
-      if (!onRemote) {
+      if (!retainedOnRemote(tip, cwd)) {
         block(
           `\`git branch -D ${name}\` would orphan unpushed commits: its tip (${tip.slice(0, 8)}) exists on no remote ref.\n` +
-            `Push the branch first (\`git push -u origin ${name}\`) or confirm the commits are disposable.`,
+            retentionAdvice(name),
         );
       }
     } catch {
