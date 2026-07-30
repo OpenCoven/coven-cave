@@ -261,6 +261,109 @@ final class AppLockTests: XCTestCase {
         XCTAssertEqual(authenticator.authenticateCallCount, 0)
     }
 
+    // MARK: - Auto-prompt de-duplication (lock screen `.active` lifecycle)
+
+    /// Cold start locked: the first scene activation should trigger exactly
+    /// one automatic authentication attempt.
+    func testAutoPromptOnActiveFiresOnceOnColdStart() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = true
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator)
+
+        let result = await lock.autoPromptOnActive()
+
+        XCTAssertTrue(result)
+        XCTAssertFalse(lock.isLocked)
+        XCTAssertEqual(authenticator.authenticateCallCount, 1)
+    }
+
+    /// Reproduces the reported defect: LocalAuthentication sheets can bounce
+    /// the scene `.active -> .inactive -> .active`. After the user cancels
+    /// or fails, that bounce's resulting `.active` must NOT trigger a second
+    /// automatic prompt — only the explicit retry button may retry.
+    func testAutoPromptDoesNotRepeatAfterCancellationFromInactiveActiveBounce() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = false
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator)
+
+        let first = await lock.autoPromptOnActive()
+        XCTAssertFalse(first)
+        XCTAssertTrue(lock.isLocked)
+        XCTAssertEqual(authenticator.authenticateCallCount, 1)
+
+        // Simulates the `.inactive -> .active` bounce the cancelled/failed
+        // LocalAuthentication sheet itself causes: the view's `.task(id:
+        // scenePhase)` re-runs, calling this again with no genuine new lock
+        // cycle in between.
+        let second = await lock.autoPromptOnActive()
+        XCTAssertFalse(second)
+        XCTAssertTrue(lock.isLocked)
+        XCTAssertEqual(authenticator.authenticateCallCount, 1, "must not stack/repeat an automatic prompt")
+    }
+
+    /// The explicit retry button (which calls `unlock()` directly, not the
+    /// auto-prompt path) must keep working after the auto-prompt has
+    /// declined to fire again.
+    func testExplicitRetryStillWorksAfterAutoPromptDeclines() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = false
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator)
+
+        _ = await lock.autoPromptOnActive()
+        XCTAssertEqual(authenticator.authenticateCallCount, 1)
+
+        // A second bounce still must not auto-prompt.
+        _ = await lock.autoPromptOnActive()
+        XCTAssertEqual(authenticator.authenticateCallCount, 1)
+
+        // But the user tapping the retry button directly always works.
+        authenticator.authenticateResult = true
+        let retried = await lock.unlock()
+
+        XCTAssertTrue(retried)
+        XCTAssertFalse(lock.isLocked)
+        XCTAssertEqual(authenticator.authenticateCallCount, 2)
+    }
+
+    /// A new genuine lock cycle (re-locking after the grace window elapses)
+    /// must get its own fresh automatic prompt.
+    func testAutoPromptFiresAgainForANewGenuineLockCycle() async {
+        let clock = TestClock()
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = true
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator, clock: clock)
+
+        _ = await lock.autoPromptOnActive()
+        XCTAssertFalse(lock.isLocked)
+        XCTAssertEqual(authenticator.authenticateCallCount, 1)
+
+        lock.sceneDidEnterBackground()
+        clock.advance(by: 60)
+        lock.sceneDidBecomeActive()
+        XCTAssertTrue(lock.isLocked)
+
+        let result = await lock.autoPromptOnActive()
+
+        XCTAssertTrue(result)
+        XCTAssertFalse(lock.isLocked)
+        XCTAssertEqual(authenticator.authenticateCallCount, 2, "a new genuine lock cycle gets its own auto-prompt")
+    }
+
+    /// Two concurrent auto-prompt calls (e.g. a fast bounce racing the
+    /// initial `.task`) must never both reach the authenticator.
+    func testAutoPromptOnActiveNeverStacksConcurrentCalls() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = true
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator)
+
+        async let first = lock.autoPromptOnActive()
+        async let second = lock.autoPromptOnActive()
+        _ = await (first, second)
+
+        XCTAssertEqual(authenticator.authenticateCallCount, 1)
+        XCTAssertFalse(lock.isLocked)
+    }
+
     // MARK: - Pure policy
 
     func testAppLockPolicyGraceBoundary() {

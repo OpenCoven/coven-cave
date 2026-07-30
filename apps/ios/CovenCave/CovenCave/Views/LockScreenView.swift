@@ -59,13 +59,18 @@ struct LockScreenView: View {
         .background(chrome.bgBase.ignoresSafeArea())
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Coven Cave is locked")
-        // Prompt automatically once the scene is genuinely active. Re-runs
-        // only when scenePhase itself changes (not on every re-render), and
-        // `AppLock.unlock()`'s own in-flight guard prevents this racing a
-        // manual tap on the button into a second stacked prompt.
+        // Prompt automatically once per genuine lock presentation while the
+        // scene is active. `AppLock.autoPromptOnActive()` de-duplicates
+        // against the `.inactive -> .active` bounce a cancelled/failed
+        // LocalAuthentication sheet itself causes — that bounce re-runs this
+        // `.task` but must not trigger a second automatic prompt; the retry
+        // button above remains the only retry until a new genuine lock
+        // cycle begins. `AppLock.unlock()`'s own in-flight guard additionally
+        // prevents this racing a manual tap on the button into a stacked
+        // prompt.
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
-            await appLock.unlock()
+            await appLock.autoPromptOnActive()
         }
     }
 }

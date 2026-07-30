@@ -25,6 +25,35 @@ enum AppLockPolicy {
     }
 }
 
+/// Pure decision logic for whether the lock screen should fire an automatic
+/// authentication attempt on scene activation. Extracted from
+/// `LockScreenView` so the de-duplication rule is unit-testable without
+/// SwiftUI: a genuine lock presentation gets exactly one automatic prompt,
+/// and the `.inactive -> .active` bounce that presenting the
+/// LocalAuthentication sheet itself causes must never be mistaken for a
+/// second, fresh presentation.
+struct LockScreenAutoPromptCoordinator {
+    private var hasPromptedForCurrentPresentation = false
+
+    /// Call whenever a new genuine lock presentation begins (cold start
+    /// locked, or a real re-lock decision on `.active`) so the next
+    /// activation prompts again exactly once.
+    mutating func presentationBegan() {
+        hasPromptedForCurrentPresentation = false
+    }
+
+    /// Call on every scene activation while (potentially) locked. Returns
+    /// whether this activation should trigger an automatic authentication
+    /// attempt; consumes the "may auto-prompt" state for the current
+    /// presentation so repeat activations (including the bounce the prompt
+    /// itself causes) don't re-fire until `presentationBegan()` runs again.
+    mutating func shouldAutoPrompt(isLocked: Bool) -> Bool {
+        guard isLocked, !hasPromptedForCurrentPresentation else { return false }
+        hasPromptedForCurrentPresentation = true
+        return true
+    }
+}
+
 /// App-wide lock/approval controller. Owns two persisted preferences
 /// ("require biometrics to unlock" and "…for approvals") and the transient
 /// `isLocked` state that gates the entire app's content at the root.
@@ -58,6 +87,7 @@ final class AppLock {
     private let defaults: UserDefaults
     private let now: () -> Date
     private var backgroundedAt: Date?
+    private var autoPromptCoordinator = LockScreenAutoPromptCoordinator()
 
     init(
         authenticator: BiometricAuthenticating = LAContextBiometricAuthenticator(),
@@ -78,6 +108,7 @@ final class AppLock {
         lockEnabled = startLockEnabled
         approvalEnabled = availability.canEvaluate && defaults.bool(forKey: Self.approvalEnabledKey)
         isLocked = startLockEnabled
+        if startLockEnabled { autoPromptCoordinator.presentationBegan() }
     }
 
     var biometricLabel: String { biometricKind.label }
@@ -101,8 +132,14 @@ final class AppLock {
         defer { backgroundedAt = nil }
         guard lockEnabled else { return }
         let duration = backgroundedAt.map { now().timeIntervalSince($0) }
+        let wasLocked = isLocked
         if AppLockPolicy.shouldLock(enabled: lockEnabled, alreadyLocked: isLocked, backgroundDuration: duration) {
             isLocked = true
+            // Only a fresh false -> true transition is a new genuine lock
+            // presentation; re-affirming an already-locked state (the
+            // `alreadyLocked` branch above) must not grant another
+            // automatic prompt — the retry button stays the only retry.
+            if !wasLocked { autoPromptCoordinator.presentationBegan() }
         }
     }
 
@@ -120,6 +157,19 @@ final class AppLock {
         isAuthenticating = false
         if success { isLocked = false }
         return success
+    }
+
+    /// Called by `LockScreenView` on every scene activation. Fires at most
+    /// one automatic authentication attempt per genuine lock presentation:
+    /// the `.inactive -> .active` bounce a cancelled/failed LocalAuthentication
+    /// sheet itself causes is deliberately *not* treated as a new
+    /// presentation, so it never re-triggers a prompt — the explicit retry
+    /// button remains the only way to retry until the next genuine lock
+    /// cycle begins.
+    @discardableResult
+    func autoPromptOnActive() async -> Bool {
+        guard autoPromptCoordinator.shouldAutoPrompt(isLocked: isLocked) else { return false }
+        return await unlock()
     }
 
     // MARK: - Approval (credential-affecting actions)
