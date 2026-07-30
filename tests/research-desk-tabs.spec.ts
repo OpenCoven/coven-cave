@@ -290,6 +290,23 @@ async function mockResearchApis(page: Page): Promise<BootHandles> {
   await page.route(/\/api\/research\/missions\?/, (route) =>
     route.fulfill({ json: { ok: true, missions: MISSIONS } }),
   );
+  await page.route(/\/api\/research\/missions\/[^/]+\/files\/[^/]+$/, (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        file: {
+          key: "draft-1",
+          kind: "findings",
+          title: "Working synthesis",
+          fileName: "draft.md",
+          relativePath: "artifacts/draft.md",
+          content: "# Working synthesis\n\nResearch findings with cited evidence.",
+          workspacePath: "/tmp/research-mission-1",
+          updatedAt: iso(5),
+        },
+      },
+    }),
+  );
   await page.route("**/api/research/links", (route) =>
     route.fulfill({ json: { ok: true, links: LINKS } }),
   );
@@ -404,6 +421,90 @@ test.describe("research desk tabs", () => {
       "The research session crashed before publishing.",
     );
     await expect(desk.locator(".research-mission-actions").getByRole("button", { name: /^Retry/ })).toBeVisible();
+  });
+
+  test("Desk toolbar scopes runs and preserves focus mode", async ({ page }) => {
+    await openResearchDesk(page);
+    const desk = page.locator(".research-desk");
+    const toolbar = desk.locator(".research-desk-toolbar");
+    const rail = desk.getByRole("navigation", { name: "Research missions" });
+    const filter = toolbar.getByRole("searchbox", {
+      name: "Filter research runs",
+    });
+
+    await expect(filter).toHaveAttribute("placeholder", "Filter runs…");
+    await page.keyboard.press("/");
+    await expect(filter).toBeFocused();
+    await expect(filter).toHaveValue("/");
+    await filter.press("Escape");
+    await expect(filter).toHaveValue("");
+
+    const railTabs = desk.getByRole("tablist", { name: "Rail contents" });
+    await railTabs.getByRole("tab", { name: /^Artifacts/ }).click();
+    await desk.getByRole("button", { name: "View Working synthesis" }).click();
+    const reader = page.getByRole("dialog", {
+      name: "Working synthesis — research reader",
+    });
+    await expect(reader).toBeVisible({ timeout: 15_000 });
+    await reader.getByRole("button", { name: "Close" }).focus();
+    await page.keyboard.press("/");
+    await expect(filter).not.toBeFocused();
+    await expect
+      .poll(() => reader.evaluate((node) => node.contains(document.activeElement)))
+      .toBe(true);
+    await reader.getByRole("button", { name: "Close" }).click();
+
+    const scopes = toolbar.getByRole("group", {
+      name: "Filter runs by status",
+    });
+    await expect(
+      scopes.getByRole("button", { name: "Active, 2 runs", exact: true }),
+    ).toBeVisible();
+    await scopes.getByRole("button", { name: "Needs review" }).click();
+    await expect(
+      scopes.getByRole("button", { name: "Needs review" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(rail.getByText("Needs review")).toBeVisible();
+    await expect(
+      rail.getByRole("button", { name: /Agent memory survey/ }),
+    ).toHaveCount(0);
+
+    await filter.fill("no matching research run");
+    await expect(
+      scopes.getByRole("button", { name: "Active, 0 runs", exact: true }),
+    ).toBeVisible();
+    await rail.getByRole("button", { name: "Clear filters" }).click();
+    await expect(filter).toHaveValue("");
+    await expect(
+      scopes.getByRole("button", { name: "All" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      rail.getByRole("button", { name: /Agent memory survey/ }),
+    ).toBeVisible();
+
+    await toolbar.getByRole("button", { name: "Focus run" }).click();
+    await expect(rail).toBeHidden();
+    await expect(desk.getByLabel("Run evidence and links")).toHaveCount(0);
+    await expect(
+      toolbar.getByRole("button", { name: "Show workspace" }),
+    ).toBeVisible();
+    const focusedMain = await desk.locator(".research-desk__main").boundingBox();
+    expect(focusedMain?.width ?? 0).toBeGreaterThan(900);
+
+    await page.reload();
+    await enterResearchDesk(page);
+    await expect(
+      desk.getByRole("button", { name: "Show workspace" }),
+    ).toBeVisible();
+    await desk.getByRole("button", { name: "Show workspace" }).click();
+    await expect(rail).toBeVisible();
+    await expect(desk.getByLabel("Run evidence and links")).toBeVisible();
+
+    await desk.getByRole("button", { name: "New research" }).click();
+    await expect(deskTab(page, /^Prompt/)).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 
   test("Library shows the live ticker and artifact cards; the chosen tab survives a reload", async ({ page }) => {

@@ -47,6 +47,7 @@ import { ResearchEvidenceLedger, type ResearchOutputTab } from "./research-evide
 
 type Props = {
   mission: ResearchMission | null;
+  showEvidence: boolean;
   onOpenSession(sessionId: string): void;
   onOpenUrl(url: string): void;
   /** Quick link to the Resources tab (Saved resources). */
@@ -93,6 +94,7 @@ const LIVE_STATUSES = new Set<ResearchMission["status"]>(["queued", "planning", 
 
 export function ResearchMissionDetail({
   mission,
+  showEvidence,
   onOpenSession,
   onOpenUrl,
   onShowResources,
@@ -341,7 +343,10 @@ export function ResearchMissionDetail({
 
   return (
     <section className="research-mission-detail" aria-labelledby="research-mission-title">
-      <div className="research-mission-detail__body">
+      <div
+        className="research-mission-detail__body"
+        data-evidence-open={showEvidence}
+      >
         <div className="research-desk-center">
           <header className="research-mission-detail__header">
             <div>
@@ -668,56 +673,58 @@ export function ResearchMissionDetail({
               spans the rail, plus pinned quick links. The pane is the full
               evidence ledger — the rail no longer stacks a partial state panel
               above a collapsed copy of the same data. ── */}
-        <aside className="research-desk-rail" aria-label="Run evidence and links">
-          <Tabs<ResearchOutputTab>
-            className="research-desk-rail__toggle"
-            idPrefix="research-output"
-            ariaLabel="Rail contents"
-            variant="segment"
-            size="sm"
-            fill
-            value={railTab}
-            onChange={setRailTab}
-            items={[
-              { id: "artifacts", label: "Artifacts", count: mission.artifacts.length },
-              { id: "sources", label: "Sources", count: mission.sources.length },
-            ]}
-          />
-          <div className="research-desk-rail__pane">
-            <ResearchEvidenceLedger
-              mission={mission}
-              onAction={onAction}
-              onOpenUrl={onOpenUrl}
-              tab={railTab}
-              hint={railHint}
-              triage={isCheckpointLike}
-              highlightLatest={isLive}
+        {showEvidence ? (
+          <aside className="research-desk-rail" aria-label="Run evidence and links">
+            <Tabs<ResearchOutputTab>
+              className="research-desk-rail__toggle"
+              idPrefix="research-output"
+              ariaLabel="Rail contents"
+              variant="segment"
+              size="sm"
+              fill
+              value={railTab}
+              onChange={setRailTab}
+              items={[
+                { id: "artifacts", label: "Artifacts", count: mission.artifacts.length },
+                { id: "sources", label: "Sources", count: mission.sources.length },
+              ]}
             />
-          </div>
+            <div className="research-desk-rail__pane">
+              <ResearchEvidenceLedger
+                mission={mission}
+                onAction={onAction}
+                onOpenUrl={onOpenUrl}
+                tab={railTab}
+                hint={railHint}
+                triage={isCheckpointLike}
+                highlightLatest={isLive}
+              />
+            </div>
 
-          <div className="research-desk-rail__links">
-            {sessionId ? (
+            <div className="research-desk-rail__links">
+              {sessionId ? (
+                <button
+                  type="button"
+                  className="research-desk-rail__link focus-ring"
+                  onClick={() => onOpenSession(sessionId)}
+                >
+                  <Icon name="ph:chat-circle-dots" width={14} height={14} aria-hidden />
+                  <span>Discuss this run in chat</span>
+                  <span className="research-desk-rail__link-chevron" aria-hidden>›</span>
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="research-desk-rail__link focus-ring"
-                onClick={() => onOpenSession(sessionId)}
+                onClick={onShowResources}
               >
-                <Icon name="ph:chat-circle-dots" width={14} height={14} aria-hidden />
-                <span>Discuss this run in chat</span>
+                <Icon name="ph:link" width={14} height={14} aria-hidden />
+                <span>Saved resources</span>
                 <span className="research-desk-rail__link-chevron" aria-hidden>›</span>
               </button>
-            ) : null}
-            <button
-              type="button"
-              className="research-desk-rail__link focus-ring"
-              onClick={onShowResources}
-            >
-              <Icon name="ph:link" width={14} height={14} aria-hidden />
-              <span>Saved resources</span>
-              <span className="research-desk-rail__link-chevron" aria-hidden>›</span>
-            </button>
-          </div>
-        </aside>
+            </div>
+          </aside>
+        ) : null}
       </div>
     </section>
   );
