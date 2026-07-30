@@ -23,6 +23,12 @@
  *     post-merge cleanup and husk GC stay frictionless.
  *   • `git branch -D <name>` is blocked when the branch tip is not contained in
  *     any remote-tracking ref (deleting it would orphan unpushed commits).
+ *   • `git push <remote> --delete <branch>` (or `push <remote> :<branch>`) is
+ *     blocked when an OPEN PR still has that head (deleting the branch closes
+ *     the PR — the #2286 failure). Needs `gh` + network; fails OPEN.
+ *   • `mv .worktrees/<name> <elsewhere>` is blocked on the same risk test:
+ *     git's admin file keeps pointing at the old path, so moving a live
+ *     worktree strands its work exactly like deleting it would.
  *
  * "Retained" means a remote BRANCH or a TAG that is present on a remote. Tags
  * count because archiving a branch as a signed, pushed tag preserves its OIDs
@@ -34,12 +40,6 @@
  * remote-tracking refs for tags), and that probe fails CLOSED — unlike the
  * warn-only probes here, it gates deletion, so "cannot verify" must not read as
  * "verified".
- *   • `git push <remote> --delete <branch>` (or `push <remote> :<branch>`) is
- *     blocked when an OPEN PR still has that head (deleting the branch closes
- *     the PR — the #2286 failure). Needs `gh` + network; fails OPEN.
- *   • `mv .worktrees/<name> <elsewhere>` is blocked on the same risk test:
- *     git's admin file keeps pointing at the old path, so moving a live
- *     worktree strands its work exactly like deleting it would.
  *
  * Paths are resolved against the SEGMENT's effective cwd, which both a leading
  * `cd <dir> &&` and git's `-C <dir>` move. Resolving against the hook's cwd
@@ -277,35 +277,63 @@ function liveProcesses(wtPath) {
  *  deletion is safe, and "cannot verify" must never read as "verified".
  */
 const remoteTagCache = new Map();
-function remoteTags(cwd) {
-  // Keyed by the repo's COMMON git dir, not by cwd: every worktree of one repo
-  // shares one lookup, while a command that reaches into a second repo (via
-  // `git -C`) never inherits the first repo's tags.
-  let key = cwd || ".";
+
+/** Cache key: the repo's COMMON git dir, so every worktree of one repo shares
+ *  one lookup while a command reaching into a second repo (via `git -C`) never
+ *  inherits the first repo's tags. */
+function repoKey(cwd) {
   try {
-    key = git(["-C", cwd || ".", "rev-parse", "--path-format=absolute", "--git-common-dir"], undefined).trim() || key;
+    return (
+      git(["-C", cwd || ".", "rev-parse", "--path-format=absolute", "--git-common-dir"], undefined).trim() ||
+      cwd ||
+      "."
+    );
   } catch {
-    /* not a repo we can identify — fall back to the raw cwd as the key */
+    return cwd || "."; // not a repo we can identify — key on the raw cwd
   }
-  const cached = remoteTagCache.get(key);
+}
+
+function remoteNames(cwd) {
+  try {
+    return git(["remote"], cwd)
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** Tag names present on ONE remote, fetched at most once per repo+remote.
+ *
+ *  Git keeps no remote-tracking refs for tags, so there is no offline way to
+ *  tell a pushed tag from a local one — and that difference is the whole point,
+ *  since a local tag dies with the machine. One `ls-remote` answers it for every
+ *  tag on that remote at once.
+ *
+ *  Fails CLOSED: if ls-remote errors (offline, auth, timeout) the set stays
+ *  empty, so nothing is credited and the guard blocks. Every other probe in this
+ *  file fails open, but those decide whether to *warn*; this one decides whether
+ *  deletion is safe, and "cannot verify" must never read as "verified".
+ */
+function tagsOnRemote(cwd, remote) {
+  const key = repoKey(cwd);
+  let perRemote = remoteTagCache.get(key);
+  if (!perRemote) {
+    perRemote = new Map();
+    remoteTagCache.set(key, perRemote);
+  }
+  const cached = perRemote.get(remote);
   if (cached) return cached;
   const found = new Set();
-  remoteTagCache.set(key, found);
-  let names = [];
+  perRemote.set(remote, found);
   try {
-    names = git(["remote"], cwd).split("\n").map((s) => s.trim()).filter(Boolean);
-  } catch {
-    return found;
-  }
-  for (const remote of names.slice(0, 4)) {
-    try {
-      for (const line of git(["ls-remote", "--tags", remote], cwd).split("\n")) {
-        const m = /refs\/tags\/(.+?)(?:\^\{\})?$/.exec(line.trim());
-        if (m) found.add(m[1]);
-      }
-    } catch {
-      /* this remote is unreachable — credit nothing from it */
+    for (const line of git(["ls-remote", "--tags", remote], cwd).split("\n")) {
+      const m = /refs\/tags\/(.+?)(?:\^\{\})?$/.exec(line.trim());
+      if (m) found.add(m[1]);
     }
+  } catch {
+    /* this remote is unreachable — credit nothing from it */
   }
   return found;
 }
@@ -329,9 +357,16 @@ function retainedOnRemote(oid, cwd) {
     return "";
   }
   if (!tags.length) return "";
-  const pushed = remoteTags(cwd);
-  const hit = tags.find((t) => pushed.has(t));
-  return hit ? `remote tag ${hit}` : "";
+  // Every remote is probed — an archive tag pushed to a second remote is just as
+  // durable as one on origin, and capping the scan would reintroduce exactly the
+  // false block this helper exists to remove. Ordered scan with an early return
+  // keeps the ordinary single-remote case at one ls-remote.
+  for (const remote of remoteNames(cwd)) {
+    const pushed = tagsOnRemote(cwd, remote);
+    const hit = tags.find((t) => pushed.has(t));
+    if (hit) return `remote tag ${hit} on ${remote}`;
+  }
+  return "";
 }
 
 /** Both destructive paths offer the same two ways out, so word them once. */

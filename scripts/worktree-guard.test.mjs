@@ -189,6 +189,32 @@ if (!isWin) {
   assert.equal(res.status, 0, `lightweight tag is retention too — guard said: ${JSON.stringify(res.stderr)}`);
 }
 
+// ── 3d-iv. EVERY remote is probed, not just the first ────────────────────────
+// A tag pushed to a second remote is exactly as durable as one on origin, so
+// capping the scan would reintroduce the false block this helper removes. The
+// scan is ordered with an early return, so the ordinary one-remote case still
+// costs a single ls-remote; this pins that the cap is gone.
+// Five extra remotes with the tag on the LAST one: this is the case an earlier
+// draft got wrong by scanning only the first four, and a 2-remote fixture would
+// not have caught it.
+if (!isWin) {
+  const { dir, wt } = repoWithWorktree({ push: false });
+  let last = "";
+  for (const n of ["r1", "r2", "r3", "r4", "r5"]) {
+    last = mkdtempSync(path.join(tmpdir(), `wt-guard-${n}-`));
+    sh("git", ["init", "-q", "--bare", last], last);
+    sh("git", ["-C", dir, "remote", "add", n, last], dir);
+  }
+  sh("git", ["-C", wt, "tag", "-a", "archive/last-remote", "-m", "a"], dir);
+  sh("git", ["-C", wt, "push", "-q", "r5", "archive/last-remote"], dir);
+  const res = runHook(`git worktree remove ${wt}`, dir);
+  assert.equal(
+    res.status,
+    0,
+    `a tag on the 6th remote is retention too — guard said: ${JSON.stringify(res.stderr)}`,
+  );
+}
+
 // ── 3e. The block message must teach the archive route ───────────────────────
 {
   const { dir, wt } = repoWithWorktree({ push: false });
