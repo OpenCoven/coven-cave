@@ -917,10 +917,21 @@ function codexProbeCacheKey(target: Required<CodexProbeTarget>, env: NodeJS.Proc
   });
 }
 
+/**
+ * The probe launches three concurrent cold `codex` processes; a loaded
+ * machine (or CI runner) routinely needs multiple seconds for cold Node CLI
+ * startups. A timeout here silently downgrades a working install to the
+ * generic fallback for the whole cached window, so it must be generous —
+ * discovery is TTL-cached and single-flight, and a genuinely missing binary
+ * still fails instantly via ENOENT rather than waiting this out. 1.5s
+ * reproducibly fell back on CI ubuntu runners.
+ */
+const CODEX_PROBE_TIMEOUT_MS = 5_000;
+
 /** Safe local discovery; failures become an explicit unavailable report. */
 export async function discoverCodexRuntime(
   command: string | CodexProbeTarget = "codex",
-  timeout = 1_500,
+  timeout = CODEX_PROBE_TIMEOUT_MS,
   env?: NodeJS.ProcessEnv,
 ): Promise<CodexRuntimeReport> {
   try {
@@ -966,7 +977,7 @@ export async function discoverCodexRuntime(
 /** Single-flight, bounded-cadence discovery for chat turns. */
 export async function discoverCachedCodexRuntime(
   command: string | CodexProbeTarget = "codex",
-  timeout = 1_500,
+  timeout = CODEX_PROBE_TIMEOUT_MS,
   env = codexProbeEnv(),
   now = Date.now(),
 ): Promise<CodexRuntimeReport> {
@@ -1012,7 +1023,7 @@ function startCodexRuntimeDiscovery(
  */
 export function peekCachedCodexRuntime(
   command: string | CodexProbeTarget = "codex",
-  timeout = 1_500,
+  timeout = CODEX_PROBE_TIMEOUT_MS,
   env = codexProbeEnv(),
   now = Date.now(),
 ): CodexRuntimeReport {
