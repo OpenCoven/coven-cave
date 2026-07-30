@@ -226,8 +226,8 @@ assert.match(
 
 assert.match(
   openclawBridge,
-  /"agent"[\s\S]*"--agent"[\s\S]*agentId[\s\S]*"--message"[\s\S]*harnessPrompt[\s\S]*"--json"/,
-  "OpenClaw native chat should call openclaw agent with the resolved agent id and JSON output",
+  /"agent"[\s\S]*"--local"[\s\S]*"--agent"[\s\S]*agentId[\s\S]*"--message"[\s\S]*harnessPrompt[\s\S]*"--json"/,
+  "OpenClaw native chat should call the embedded local agent with the resolved id and JSON output",
 );
 
 assert.match(

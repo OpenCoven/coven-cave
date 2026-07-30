@@ -9,6 +9,10 @@ export type OpenClawAgentJson = {
   status?: string;
   summary?: string;
   sessionId?: string;
+  // OpenClaw 2026.7 emits the completed agent result at the top level when
+  // `openclaw agent --json --local` runs the embedded agent. Keep the legacy
+  // nested shape below for older Gateway-backed releases.
+  payloads?: Array<{ text?: string; content?: unknown }>;
   result?: {
     payloads?: Array<{ text?: string; content?: unknown }>;
     sessionId?: string;
@@ -288,7 +292,7 @@ export async function resolveOpenClawAgentBinding(familiarId: string): Promise<O
 }
 
 export function extractOpenClawText(json: OpenClawAgentJson): string {
-  const payloads = json.result?.payloads ?? [];
+  const payloads = json.payloads ?? json.result?.payloads ?? [];
   const text = payloads
     .map((payload) => {
       if (typeof payload.text === "string") return payload.text;
@@ -347,6 +351,10 @@ export function openClawAgentArgs(
 ): string[] {
   return [
     "agent",
+    // Cave is a local desktop host. The TUI and `agent --local` use the
+    // authenticated embedded agent, whereas omitting this flag attempts a
+    // separately paired Gateway connection and fails on local-only installs.
+    "--local",
     "--agent",
     agentId,
     "--message",

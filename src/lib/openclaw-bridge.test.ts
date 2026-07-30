@@ -210,6 +210,7 @@ try {
 assert.equal(openClawSessionKey("ABC_123:Weird"), "cave-abc-123-weird");
 assert.deepEqual(openClawAgentArgs("hi", "nova", "ABC_123"), [
   "agent",
+  "--local",
   "--agent",
   "nova",
   "--message",
@@ -222,6 +223,11 @@ assert.equal(
   openClawAgentArgs("hi", "nova", "ABC_123").includes("--session-id"),
   true,
   "OpenClaw bridge must pass the stable Cave-owned id through --session-id",
+);
+assert.equal(
+  openClawAgentArgs("hi", "nova", "ABC_123").includes("--local"),
+  true,
+  "OpenClaw bridge must use the authenticated embedded local agent when Gateway dispatch is unavailable",
 );
 
 assert.equal(
@@ -236,6 +242,11 @@ assert.equal(
   "first\n\nsecond",
 );
 assert.equal(extractOpenClawText({ summary: "fallback summary" }), "fallback summary");
+assert.equal(
+  extractOpenClawText({ payloads: [{ text: "current local response" }] }),
+  "current local response",
+  "OpenClaw's current embedded --json result should be read from top-level payloads",
+);
 
 assert.equal(extractOpenClawSessionId({ sessionId: "top" }), "top");
 assert.equal(extractOpenClawSessionId({ result: { sessionId: "result" } }), "result");
