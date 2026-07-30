@@ -55,9 +55,9 @@ const contracts: RouteContract[] = [
   { route: "/codex-automations/[id]/runs/[runId]/log", methods: ["GET"], kind: "json" },
   { route: "/codex-automations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/config", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/coven-memory", methods: ["GET"], kind: "json", localOriginGuard: true },
-  { route: "/coven-memory/[id]", methods: ["GET"], kind: "json", localOriginGuard: true },
-  { route: "/coven-memory/overview", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/coven-memory", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
+  { route: "/coven-memory/[id]", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
+  { route: "/coven-memory/overview", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
   { route: "/coven/exec", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/daemon/capabilities", methods: ["GET"], kind: "json" },
   { route: "/daemon/probe", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -135,6 +135,9 @@ const contracts: RouteContract[] = [
   { route: "/launch", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/mobile-handoff", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/mobile-token/refresh", methods: ["POST"], kind: "json" },
+  { route: "/mobile/coven-memory", methods: ["GET", "POST", "HEAD", "OPTIONS"], kind: "json" },
+  { route: "/mobile/coven-memory/[id]", methods: ["GET", "POST", "HEAD", "OPTIONS"], kind: "json" },
+  { route: "/mobile/coven-memory/overview", methods: ["GET", "POST", "HEAD", "OPTIONS"], kind: "json" },
   { route: "/mcp", methods: ["GET"], kind: "json" },
   { route: "/mcp/health", methods: ["GET"], kind: "json" },
   { route: "/marketplace", methods: ["GET"], kind: "json" },
@@ -283,13 +286,18 @@ function routeFromFile(file: string): string {
 }
 
 function exportedMethods(source: string): string[] {
-  const direct = [...source.matchAll(/export async function (GET|POST|PUT|PATCH|DELETE)\b/g)].map((match) => match[1]);
-  const aliases = [...source.matchAll(/^\s*[A-Za-z_$][\w$]*\s+as (GET|POST|PUT|PATCH|DELETE)\b/gm)].map((match) => match[1]);
-  return [...direct, ...aliases];
+  const method = "GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS";
+  const functions = [...source.matchAll(new RegExp(`export (?:async )?function (${method})\\b`, "g"))]
+    .map((match) => match[1]);
+  const constants = [...source.matchAll(new RegExp(`export const (${method})\\b`, "g"))]
+    .map((match) => match[1]);
+  const aliases = [...source.matchAll(new RegExp(`^\\s*[A-Za-z_$][\\w$]*\\s+as (${method})\\b`, "gm"))]
+    .map((match) => match[1]);
+  return [...functions, ...constants, ...aliases];
 }
 
 function usesJsonResponse(source: string): boolean {
-  return /NextResponse\.json|Response\.json|new Response\(|canonicalMemoryJson/.test(source);
+  return /NextResponse\.json|Response\.json|new Response\(|canonicalMemory(?:Json|ListResponse|OverviewResponse|DetailResponse)\s*\(/.test(source);
 }
 
 function effectiveRouteSource(file: string, source: string): string {
