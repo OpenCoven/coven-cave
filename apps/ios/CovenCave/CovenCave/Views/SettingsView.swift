@@ -238,6 +238,12 @@ struct SettingsView: View {
             Toggle(isOn: Binding(
                 get: { appLock.lockEnabled },
                 set: { newValue in
+                    // Synchronous guard ahead of the `Task`: a same-runloop
+                    // double tap can otherwise race `.disabled` below into a
+                    // second call that only comes back `false` because a
+                    // prompt is already in flight, not because it failed —
+                    // which would incorrectly surface `securityAuthFailed`.
+                    guard appLock.canBeginAuthentication else { return }
                     Task {
                         if await !appLock.setLockEnabled(newValue) { securityAuthFailed = true }
                     }
@@ -246,11 +252,12 @@ struct SettingsView: View {
                 Label("Require \(appLock.biometricLabel) to unlock", systemImage: appLock.biometricSystemImage)
                     .foregroundStyle(.primary)
             }
-            .disabled(!appLock.canUseDeviceAuthentication)
+            .disabled(!appLock.canUseDeviceAuthentication || appLock.isAuthenticating)
 
             Toggle(isOn: Binding(
                 get: { appLock.approvalEnabled },
                 set: { newValue in
+                    guard appLock.canBeginAuthentication else { return }
                     Task {
                         if await !appLock.setApprovalEnabled(newValue) { securityAuthFailed = true }
                     }
@@ -259,7 +266,7 @@ struct SettingsView: View {
                 Label("Require \(appLock.biometricLabel) for approvals", systemImage: "checkmark.shield")
                     .foregroundStyle(.primary)
             }
-            .disabled(!appLock.canUseDeviceAuthentication)
+            .disabled(!appLock.canUseDeviceAuthentication || appLock.isAuthenticating)
         } header: {
             Text("Security")
         } footer: {
@@ -375,6 +382,10 @@ private struct ConnectionSettingsView: View {
                     .keyboardType(.URL)
                     .font(.callout.monospaced())
                 Button("Save and reconnect") {
+                    // Guard synchronously so a same-runloop double tap can't
+                    // race `.disabled` below into a second, indistinguishable
+                    // "busy" call that would show `approvalFailed`.
+                    guard appLock.canBeginAuthentication else { return }
                     Task {
                         let approved = await appLock.performApprovedAction(
                             reason: "Confirm it's you to change your desktop connection"
@@ -385,7 +396,8 @@ private struct ConnectionSettingsView: View {
                     }
                 }
                 .disabled(editingHost.trimmingCharacters(in: .whitespaces).isEmpty
-                          || editingHost == app.connection?.host)
+                          || editingHost == app.connection?.host
+                          || appLock.isAuthenticating)
             } header: {
                 Text("Desktop address")
             } footer: {
@@ -407,6 +419,10 @@ private struct ConnectionSettingsView: View {
                             isPresented: $showDisconnectConfirm,
                             titleVisibility: .visible) {
             Button("Disconnect", role: .destructive) {
+                // Same synchronous guard as above: a busy no-op must not
+                // surface `approvalFailed` for a prompt that was never
+                // attempted.
+                guard appLock.canBeginAuthentication else { return }
                 Task {
                     let approved = await appLock.performApprovedAction(
                         reason: "Confirm it's you to disconnect from your desktop"

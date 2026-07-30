@@ -9,6 +9,18 @@ private final class FakeBiometricAuthenticator: BiometricAuthenticating {
     var kind: BiometricKind = .faceID
     var authenticateResult = true
     private(set) var authenticateCallCount = 0
+    /// When `true`, `authenticate` suspends (after recording the call) until
+    /// `resumeSuspendedAuthenticate()` is invoked — simulating a real,
+    /// still-on-screen LocalAuthentication prompt so busy-guard tests can
+    /// deterministically observe `isAuthenticating`/`canBeginAuthentication`
+    /// mid-flight.
+    var suspendsAuthenticate = false
+    /// Fired synchronously the instant `authenticate` is invoked (before
+    /// suspending), so a test can `await fulfillment(of:)` an expectation
+    /// instead of spin-polling `AppLock` state — a busy-poll loop on the
+    /// same `@MainActor` executor as the in-flight call risks starving it.
+    var onAuthenticateStart: (() -> Void)?
+    private var pendingContinuation: CheckedContinuation<Void, Never>?
 
     func availability() -> (canEvaluate: Bool, kind: BiometricKind) {
         (canEvaluate, kind)
@@ -16,7 +28,20 @@ private final class FakeBiometricAuthenticator: BiometricAuthenticating {
 
     func authenticate(reason: String) async -> Bool {
         authenticateCallCount += 1
+        onAuthenticateStart?()
+        if suspendsAuthenticate {
+            await withCheckedContinuation { continuation in
+                pendingContinuation = continuation
+            }
+        }
         return authenticateResult
+    }
+
+    /// Lets a suspended `authenticate` call complete, as if the user had
+    /// just finished (or the system delivered) the prompt.
+    func resumeSuspendedAuthenticate() {
+        pendingContinuation?.resume()
+        pendingContinuation = nil
     }
 }
 
@@ -497,6 +522,89 @@ final class AppLockTests: XCTestCase {
 
         XCTAssertEqual(authenticator.authenticateCallCount, 1)
         XCTAssertFalse(lock.isLocked)
+    }
+
+    // MARK: - Busy guard (concurrent taps while a prompt is in flight)
+
+    /// `canBeginAuthentication` is the synchronous signal Settings/Connection
+    /// use to disable controls and guard action handlers before spawning a
+    /// `Task`. It must flip to `false` for the whole span `isAuthenticating`
+    /// is `true` and back to `true` once the in-flight prompt resolves.
+    func testCanBeginAuthenticationReflectsInFlightAuthentication() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.suspendsAuthenticate = true
+        authenticator.authenticateResult = true
+        let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
+        XCTAssertTrue(lock.canBeginAuthentication)
+
+        let started = expectation(description: "first prompt started")
+        authenticator.onAuthenticateStart = { started.fulfill() }
+
+        let firstTask = Task { await lock.requestApprovalOutcome(reason: "First") }
+        await fulfillment(of: [started], timeout: 5)
+        XCTAssertFalse(lock.canBeginAuthentication)
+
+        authenticator.resumeSuspendedAuthenticate()
+        let firstOutcome = await firstTask.value
+        XCTAssertEqual(firstOutcome, .approved)
+        XCTAssertTrue(lock.canBeginAuthentication)
+    }
+
+    /// A second approval request arriving while the first is still on-screen
+    /// must come back `.busy` without ever prompting a second time and
+    /// without disturbing the first, in-flight attempt.
+    func testConcurrentApprovalRequestWhileAuthenticatingReturnsBusyWithoutSecondPrompt() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.suspendsAuthenticate = true
+        authenticator.authenticateResult = true
+        let lock = makeLock(approvalEnabled: true, authenticator: authenticator)
+
+        let started = expectation(description: "first prompt started")
+        authenticator.onAuthenticateStart = { started.fulfill() }
+
+        let firstTask = Task { await lock.requestApprovalOutcome(reason: "First") }
+        await fulfillment(of: [started], timeout: 5)
+
+        let busyOutcome = await lock.requestApprovalOutcome(reason: "Second, concurrent")
+
+        XCTAssertEqual(busyOutcome, .busy)
+        XCTAssertEqual(authenticator.authenticateCallCount, 1, "the concurrent request must not open a second prompt")
+
+        authenticator.resumeSuspendedAuthenticate()
+        let firstOutcome = await firstTask.value
+        XCTAssertEqual(firstOutcome, .approved, "the first, genuinely in-flight request must still succeed")
+    }
+
+    /// A concurrent toggle flip while another toggle/approval authentication
+    /// is in flight must be rejected without mutating the persisted
+    /// preference or prompting again — this is what a Settings toggle's
+    /// caller-side guard (via `canBeginAuthentication`) relies on to avoid
+    /// showing a false "authentication failed" alert for a tap that was
+    /// never actually attempted.
+    func testConcurrentToggleWhileAuthenticatingDoesNotMutateSettingsOrPromptAgain() async {
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.suspendsAuthenticate = true
+        authenticator.authenticateResult = true
+        let lock = makeLock(lockEnabled: false, authenticator: authenticator)
+
+        let started = expectation(description: "first toggle authentication started")
+        authenticator.onAuthenticateStart = { started.fulfill() }
+
+        let firstTask = Task { await lock.setLockEnabled(true) }
+        await fulfillment(of: [started], timeout: 5)
+        XCTAssertFalse(lock.canBeginAuthentication)
+
+        let concurrentResult = await lock.setLockEnabled(true)
+
+        XCTAssertFalse(concurrentResult)
+        XCTAssertFalse(lock.lockEnabled, "the concurrent, busy call must not mutate the preference")
+        XCTAssertFalse(defaults.bool(forKey: AppLock.lockEnabledKey))
+        XCTAssertEqual(authenticator.authenticateCallCount, 1, "the concurrent call must not open a second prompt")
+
+        authenticator.resumeSuspendedAuthenticate()
+        let firstResult = await firstTask.value
+        XCTAssertTrue(firstResult)
+        XCTAssertTrue(lock.lockEnabled, "the first, genuinely in-flight toggle must still take effect")
     }
 
     // MARK: - Privacy shield (separate from the authentication lock)

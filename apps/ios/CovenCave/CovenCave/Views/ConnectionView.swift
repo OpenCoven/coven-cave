@@ -234,7 +234,7 @@ struct ConnectionView: View {
         .controlSize(.large)
         .tint(.white)
         .foregroundStyle(Color(white: 0.08))
-        .disabled(busy)
+        .disabled(busy || appLock.isAuthenticating)
         .accessibilityHint("Opens the camera to scan the QR code shown in Cave on your desktop")
     }
 
@@ -322,7 +322,7 @@ struct ConnectionView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(!hostPresent || busy)
+            .disabled(!hostPresent || busy || appLock.isAuthenticating)
             .shadow(color: chrome.accent.opacity(hostPresent && !busy ? 0.4 : 0), radius: 14, y: 5)
         }
         .padding(16)
@@ -436,6 +436,12 @@ struct ConnectionView: View {
     private func connect() {
         focused = false
         guard let invite = CaveInvite.parse(cleanHost(host)) else { return }
+        // Synchronous guard before spawning the Task: a same-runloop double
+        // tap can otherwise race the `.disabled` modifiers above into a
+        // second call that only fails because a prompt is already in
+        // flight, not because it was actually denied/cancelled — which
+        // would incorrectly show `approvalFailed`.
+        guard appLock.canBeginAuthentication else { return }
         host = invite.host
         busy = true
         liveCheck = .idle
@@ -464,6 +470,9 @@ struct ConnectionView: View {
         guard let invite = CaveInvite.parse(cleanHost(input)) else { return }
         host = invite.host
         if invite.token != nil {
+            // Same synchronous guard as `connect()` — QR scans route here
+            // too, and a busy no-op must not spawn a Task or show an alert.
+            guard appLock.canBeginAuthentication else { return }
             busy = true
             liveCheck = .idle
             Task {

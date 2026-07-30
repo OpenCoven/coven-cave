@@ -135,6 +135,20 @@ final class AppLock {
     var biometricLabel: String { biometricKind.label }
     var biometricSystemImage: String { biometricKind.systemImage }
 
+    /// Whether a fresh authentication attempt may begin right now. `unlock`,
+    /// `requestApprovalOutcome`, `setLockEnabled`, and `setApprovalEnabled`
+    /// already no-op (returning `false`/`.busy`) when `isAuthenticating` is
+    /// `true`, but that `Bool`/no-prompt result is indistinguishable from a
+    /// real failure/cancellation to a caller that already committed to
+    /// showing a failure alert. Callers (Settings toggles, Connection's
+    /// direct save/disconnect/re-pair routes) should check this
+    /// synchronously — both to drive `.disabled` and to guard their action
+    /// handlers *before* spawning a `Task`, so a same-runloop double tap
+    /// can't race SwiftUI's disabled-state propagation into a second,
+    /// falsely-reported "authentication failed" alert when no second prompt
+    /// was ever attempted.
+    var canBeginAuthentication: Bool { !isAuthenticating }
+
     // MARK: - Scene lifecycle
 
     /// Call when the scene reaches `.inactive` (app switcher, control
