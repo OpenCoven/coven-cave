@@ -16,7 +16,7 @@
  * src/components/skill-stage-card.tsx.
  */
 
-import { fencedRanges } from "./github-blocks.ts";
+import { markdownCodeRanges } from "./github-blocks.ts";
 
 export type SkillStage = "loaded" | "running" | "done" | "error";
 
@@ -57,10 +57,10 @@ export function extractSkillMarkers(text: string): { visible: string; updates: S
   if (text.includes("<coven:skill")) {
     // Fenced markers are example text — stay literal, no updates
     // (review finding, cave-m0r6; same contract as coven:github).
-    const fences = fencedRanges(text);
+    const codeRanges = markdownCodeRanges(text);
     MARKER_RE.lastIndex = 0;
     visible = text.replace(MARKER_RE, (m, rawAttrs: string, index: number) => {
-      if (fences.some(([start, end]) => index >= start && index < end)) return m;
+      if (codeRanges.some(([start, end]) => index >= start && index < end)) return m;
       const attrs = parseAttrs(rawAttrs ?? "");
       const name = attrs.name?.trim();
       const stage = attrs.stage?.trim();
@@ -85,7 +85,7 @@ export function extractSkillMarkers(text: string): { visible: string; updates: S
   if (
     tail !== -1 &&
     !hasUnquotedGtAfter(visible, tail) &&
-    !fencedRanges(visible).some(([start, end]) => tail >= start && tail < end)
+    !markdownCodeRanges(visible).some(([start, end]) => tail >= start && tail < end)
   ) {
     const frag = visible.slice(tail);
     if ("<coven:skill".startsWith(frag.slice(0, "<coven:skill".length))) {

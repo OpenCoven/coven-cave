@@ -26,7 +26,9 @@ export function formatQuickChatAssistantMessage(
   const nextPaths = extractNextPaths(skillSplit.visible);
   const markerSafeText = stripIncompleteGitHubMarker(nextPaths.visible);
   const copyText = stripGitHubMarkers(markerSafeText).trimEnd();
-  const slicedPieces = sliceGitHubBlocks(markerSafeText);
+  const slicedPieces = sliceGitHubBlocks(markerSafeText, {
+    unfurlBareUrls: !streaming,
+  });
   const pieces = slicedPieces.map((piece, index) =>
     piece.kind === "text"
       ? {

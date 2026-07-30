@@ -6,10 +6,16 @@
  * suggestions ride along on the normal turn.
  */
 
+import { markdownCodeRanges } from "./github-blocks.ts";
+
 export const DEFAULT_NEXT_PATHS_COUNT = 4;
 
 const OPEN = "<coven:next-paths>";
 const CLOSE = "</coven:next-paths>";
+const MARKER_PREFIXES = [
+  { prefix: "<coven:", marker: OPEN },
+  { prefix: "</coven:", marker: CLOSE },
+] as const;
 const NEXT_PATH_EXAMPLES = [
   { control: "[reply]", label: "Draft the follow-up message" },
   { control: "[task]", label: "Create a task for the follow-up" },
@@ -41,6 +47,73 @@ function replyFor(title: string): NextPath | null {
   return normalized && !isTemplateSuggestion(normalized)
     ? { kind: "reply", label: normalized, prompt: normalized }
     : null;
+}
+
+function inFencedRange(ranges: Array<[number, number]>, index: number): boolean {
+  return ranges.some(([start, end]) => index >= start && index < end);
+}
+
+function isIncompleteMarkerAt(
+  text: string,
+  index: number,
+  prefix: string,
+  marker: string,
+): boolean {
+  if (text.startsWith(marker, index)) return false;
+  let matched = 0;
+  while (
+    matched < marker.length
+    && index + matched < text.length
+    && text[index + matched] === marker[matched]
+  ) {
+    matched += 1;
+  }
+  if (matched < prefix.length) return false;
+  const mismatch = text[index + matched];
+  return matched > prefix.length || mismatch === undefined || /\s/.test(mismatch);
+}
+
+function stripIncompleteNextPathsMarker(text: string): string {
+  const codeRanges = markdownCodeRanges(text);
+  let cutAt = text.length;
+  for (const { prefix, marker } of MARKER_PREFIXES) {
+    let markerStart = text.indexOf(prefix);
+    while (markerStart !== -1) {
+      if (
+        !inFencedRange(codeRanges, markerStart)
+        && isIncompleteMarkerAt(text, markerStart, prefix, marker)
+      ) {
+        cutAt = Math.min(cutAt, markerStart);
+      }
+      markerStart = text.indexOf(prefix, markerStart + prefix.length);
+    }
+  }
+  return cutAt === text.length ? text : text.slice(0, cutAt);
+}
+
+function lastIndexOutsideFences(
+  text: string,
+  token: string,
+  ranges: Array<[number, number]>,
+): number {
+  let index = text.lastIndexOf(token);
+  while (index !== -1 && inFencedRange(ranges, index)) {
+    index = text.lastIndexOf(token, index - 1);
+  }
+  return index;
+}
+
+function nextIndexOutsideFences(
+  text: string,
+  token: string,
+  from: number,
+  ranges: Array<[number, number]>,
+): number {
+  let index = text.indexOf(token, from);
+  while (index !== -1 && inFencedRange(ranges, index)) {
+    index = text.indexOf(token, index + token.length);
+  }
+  return index;
 }
 
 /**
@@ -104,12 +177,14 @@ export function buildNextPathsDirective(count: number = DEFAULT_NEXT_PATHS_COUNT
  */
 export function extractNextPaths(text: string): { visible: string; suggestions: NextPath[] } {
   if (!text) return { visible: text, suggestions: [] };
-  const open = text.lastIndexOf(OPEN);
-  if (open === -1) return { visible: text, suggestions: [] };
-  const closeAt = text.indexOf(CLOSE, open);
-  const innerEnd = closeAt === -1 ? text.length : closeAt;
-  const blockEnd = closeAt === -1 ? text.length : closeAt + CLOSE.length;
-  const inner = text.slice(open + OPEN.length, innerEnd);
+  const markerSafeText = stripIncompleteNextPathsMarker(text);
+  const codeRanges = markdownCodeRanges(markerSafeText);
+  const open = lastIndexOutsideFences(markerSafeText, OPEN, codeRanges);
+  if (open === -1) return { visible: markerSafeText, suggestions: [] };
+  const closeAt = nextIndexOutsideFences(markerSafeText, CLOSE, open, codeRanges);
+  const innerEnd = closeAt === -1 ? markerSafeText.length : closeAt;
+  const blockEnd = closeAt === -1 ? markerSafeText.length : closeAt + CLOSE.length;
+  const inner = markerSafeText.slice(open + OPEN.length, innerEnd);
   const suggestions = inner
     .split(/\r?\n/)
     .map((l) => l.replace(/^\s*[-*•]\s*/, "").trim())
@@ -118,6 +193,6 @@ export function extractNextPaths(text: string): { visible: string; suggestions: 
     // At most 4 pills ever render — the chip row's product cap (an over-eager
     // agent that lists more gets trimmed, not a fifth row).
     .slice(0, DEFAULT_NEXT_PATHS_COUNT);
-  const visible = (text.slice(0, open) + text.slice(blockEnd)).trimEnd();
+  const visible = (markerSafeText.slice(0, open) + markerSafeText.slice(blockEnd)).trimEnd();
   return { visible, suggestions };
 }
