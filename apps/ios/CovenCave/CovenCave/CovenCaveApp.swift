@@ -105,7 +105,9 @@ struct CovenCaveApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
                     case .background: appLock.sceneDidEnterBackground()
-                    case .active: appLock.sceneDidBecomeActive()
+                    case .active:
+                        appLock.sceneDidBecomeActive()
+                        Task { await processPendingPairingIntent() }
                     case .inactive: appLock.sceneDidBecomeInactive()
                     @unknown default: break
                     }
@@ -147,7 +149,8 @@ struct CovenCaveApp: App {
         guard PendingPairingProcessorPolicy.mayBegin(
             isLocked: appLock.isLocked,
             isAuthenticating: appLock.isAuthenticating,
-            isProcessing: isProcessingPairingIntent
+            isProcessing: isProcessingPairingIntent,
+            isActive: scenePhase == .active
         ), let intent = app.pendingPairingIntent else {
             return
         }
@@ -163,8 +166,10 @@ struct CovenCaveApp: App {
             hasExistingPairing: app.connection != nil
         )
         if !requiresApproval {
-            await app.configure(host: intent.host, token: intent.token)
-            app.consumePendingPairingIntent(matching: intent.id)
+            guard let reservedIntent = app.takePendingPairingIntent(matching: intent.id) else {
+                return
+            }
+            await app.configure(host: reservedIntent.host, token: reservedIntent.token)
             return
         }
 
@@ -173,11 +178,14 @@ struct CovenCaveApp: App {
         )
         switch outcome {
         case .authorized:
-            await app.configure(host: intent.host, token: intent.token)
-            app.consumePendingPairingIntent(matching: intent.id)
+            guard let reservedIntent = app.takePendingPairingIntent(matching: intent.id) else {
+                return
+            }
+            await app.configure(host: reservedIntent.host, token: reservedIntent.token)
         case .denied:
-            app.consumePendingPairingIntent(matching: intent.id)
-            pairingApprovalFailed = true
+            if app.consumePendingPairingIntent(matching: intent.id) {
+                pairingApprovalFailed = true
+            }
         case .unavailable:
             pairingAuthenticationUnavailable = true
         case .busy:

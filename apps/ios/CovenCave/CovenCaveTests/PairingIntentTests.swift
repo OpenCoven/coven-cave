@@ -72,6 +72,47 @@ final class PairingIntentTests: XCTestCase {
         XCTAssertEqual(app.pendingPairingIntent, newIntent)
     }
 
+    func testTakingMatchingPendingPairingIntentReturnsPayloadAndClearsIt() throws {
+        let app = AppModel()
+        let url = try XCTUnwrap(
+            URL(string: "covencave://connect?host=new-desktop.example.ts.net&token=new-secret")
+        )
+        app.handleDeepLink(url)
+        let intent = try XCTUnwrap(app.pendingPairingIntent)
+
+        XCTAssertEqual(app.takePendingPairingIntent(matching: intent.id), intent)
+        XCTAssertNil(app.pendingPairingIntent)
+    }
+
+    func testTakingNonmatchingPendingPairingIntentPreservesIt() throws {
+        let app = AppModel()
+        let url = try XCTUnwrap(
+            URL(string: "covencave://connect?host=new-desktop.example.ts.net&token=new-secret")
+        )
+        app.handleDeepLink(url)
+        let intent = try XCTUnwrap(app.pendingPairingIntent)
+
+        XCTAssertNil(app.takePendingPairingIntent(matching: UUID()))
+        XCTAssertEqual(app.pendingPairingIntent, intent)
+    }
+
+    func testTakingReplacedIntentCannotReturnStalePayload() throws {
+        let app = AppModel()
+        let oldURL = try XCTUnwrap(
+            URL(string: "covencave://connect?host=old-request.example.ts.net&token=old-secret")
+        )
+        let newURL = try XCTUnwrap(
+            URL(string: "covencave://connect?host=new-request.example.ts.net&token=new-secret")
+        )
+        app.handleDeepLink(oldURL)
+        let oldIntent = try XCTUnwrap(app.pendingPairingIntent)
+        app.handleDeepLink(newURL)
+        let newIntent = try XCTUnwrap(app.pendingPairingIntent)
+
+        XCTAssertNil(app.takePendingPairingIntent(matching: oldIntent.id))
+        XCTAssertEqual(app.pendingPairingIntent, newIntent)
+    }
+
     func testPairingIntentIdentityIsUniqueEvenForIdenticalPayloads() {
         let first = PairingIntent(host: "desktop.example.ts.net", token: "secret")
         let second = PairingIntent(host: "desktop.example.ts.net", token: "secret")
@@ -84,22 +125,38 @@ final class PairingIntentTests: XCTestCase {
         XCTAssertFalse(PendingPairingProcessorPolicy.mayBegin(
             isLocked: true,
             isAuthenticating: false,
-            isProcessing: false
+            isProcessing: false,
+            isActive: true
         ))
         XCTAssertFalse(PendingPairingProcessorPolicy.mayBegin(
             isLocked: false,
             isAuthenticating: true,
-            isProcessing: false
+            isProcessing: false,
+            isActive: true
         ))
         XCTAssertFalse(PendingPairingProcessorPolicy.mayBegin(
             isLocked: false,
             isAuthenticating: false,
-            isProcessing: true
+            isProcessing: true,
+            isActive: true
         ))
+    }
+
+    func testPendingPairingProcessorDefersWhileSceneIsInactiveOrBackgrounded() {
+        XCTAssertFalse(PendingPairingProcessorPolicy.mayBegin(
+            isLocked: false,
+            isAuthenticating: false,
+            isProcessing: false,
+            isActive: false
+        ))
+    }
+
+    func testPendingPairingProcessorBeginsWhileUnlockedIdleAndActive() {
         XCTAssertTrue(PendingPairingProcessorPolicy.mayBegin(
             isLocked: false,
             isAuthenticating: false,
-            isProcessing: false
+            isProcessing: false,
+            isActive: true
         ))
     }
 

@@ -25,8 +25,13 @@ enum PairingApprovalPolicy {
 }
 
 enum PendingPairingProcessorPolicy {
-    static func mayBegin(isLocked: Bool, isAuthenticating: Bool, isProcessing: Bool) -> Bool {
-        !isLocked && !isAuthenticating && !isProcessing
+    static func mayBegin(
+        isLocked: Bool,
+        isAuthenticating: Bool,
+        isProcessing: Bool,
+        isActive: Bool
+    ) -> Bool {
+        !isLocked && !isAuthenticating && !isProcessing && isActive
     }
 }
 
@@ -728,9 +733,13 @@ final class AppModel {
 
     @discardableResult
     func consumePendingPairingIntent(matching id: UUID) -> Bool {
-        guard pendingPairingIntent?.id == id else { return false }
-        self.pendingPairingIntent = nil
-        return true
+        takePendingPairingIntent(matching: id) != nil
+    }
+
+    func takePendingPairingIntent(matching id: UUID) -> PairingIntent? {
+        guard let intent = pendingPairingIntent, intent.id == id else { return nil }
+        pendingPairingIntent = nil
+        return intent
     }
 
 
