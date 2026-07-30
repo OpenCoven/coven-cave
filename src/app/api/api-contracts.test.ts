@@ -201,6 +201,10 @@ const contracts: RouteContract[] = [
   { route: "/research/autoloop/document", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/autoloop/stream", methods: ["GET"], kind: "stream", localOriginGuard: true },
   { route: "/research/generations", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/research/generations/cancel", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/research/generations/media", methods: ["GET"], kind: "stream", localOriginGuard: true, pathGuard: true },
+  { route: "/research/generations/readiness", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/generations/render", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/missions/[id]/actions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions/[id]/files/[key]", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
@@ -357,6 +361,23 @@ for (const contract of contracts) {
       assert.match(source, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
     }
   }
+}
+
+{
+  const generationsSource = readFileSync(
+    path.join(apiRoot, "research", "generations", "route.ts"),
+    "utf8",
+  );
+  assert.match(
+    generationsSource,
+    /validateCreateResearchGenerationInput/,
+    "research generations must keep input validation at the API boundary",
+  );
+  assert.match(
+    generationsSource,
+    /"media-not-ready" \? 409/,
+    "research generations must expose media readiness as a conflict, never a fake queued record",
+  );
 }
 
 {

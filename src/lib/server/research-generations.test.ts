@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { after, test } from "node:test";
 
 import type {
@@ -17,15 +19,22 @@ process.env.COVEN_RESEARCH_GENERATIONS_DIR = path.join(tmp, "research-generation
 process.env.COVEN_RESEARCH_MISSIONS_DIR = path.join(tmp, "research-missions");
 
 const {
+  MAX_RESEARCH_GENERATIONS,
   createResearchGenerationFromMission,
+  createResearchMediaGenerationFromMission,
+  draftPodcastContent,
+  draftVideoStoryboardContent,
   draftGenerationContent,
   listResearchGenerations,
   pickGenerationSourceArtifact,
   removeResearchGeneration,
+  removeResearchGenerationIfInactive,
   researchGenerationsPath,
+  transitionResearchGeneration,
 } = await import("./research-generations.ts");
 const { createResearchMissionWorkspace, missionArtifactPath, saveResearchMission } =
   await import("./research-mission-store.ts");
+const execFileAsync = promisify(execFile);
 
 after(async () => {
   if (originalGenerationsDir === undefined) delete process.env.COVEN_RESEARCH_GENERATIONS_DIR;
@@ -439,6 +448,61 @@ test("infographic = numbers regex-extracted with their line context; fences igno
   );
 });
 
+test("podcast drafter creates bounded extractive narration segments", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Heading-less source",
+      "",
+      "A standalone paragraph with a claim.",
+      "",
+      "Another paragraph with enough source material to become narration.",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  assert.ok(content.script.length >= 1, "heading-less artifacts still produce a draft");
+  assert.ok(content.script.every((segment) => segment.text.length > 0));
+  assert.ok(content.script.every((segment) => segment.text.length <= 4_000));
+  assert.ok(content.script[0].text.includes("A standalone paragraph with a claim."));
+});
+
+test("podcast drafter clamps a long source mechanically at the local TTS limit", () => {
+  const longLine = `A ${"verbatim source claim ".repeat(300)}`;
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: `# Long source\n\n${longLine}`,
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  assert.ok(content.script.length > 1, "long narration is split into bounded segments");
+  assert.ok(content.script.every((segment) => segment.text.length <= 4_000));
+  assert.ok(content.script.some((segment) => segment.text.includes("verbatim source claim")));
+});
+
+test("video storyboard drafter maps headings, bullets, and narration without invention", () => {
+  const content = draftVideoStoryboardContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: FINDINGS_MD,
+  }, "standard");
+  assert.equal(content.kind, "short-video");
+  if (content.kind !== "short-video") return;
+  assert.deepEqual(content.storyboard[0], {
+    id: "scene-1",
+    title: "Key numbers",
+    bullets: [
+      "4–9× cost advantage at matched quality",
+      "200K-token synthesis threshold",
+      "fifth bullet caps at four",
+    ],
+    narration: "Key numbers. 4–9× cost advantage at matched quality. 200K-token synthesis threshold. fifth bullet caps at four",
+  });
+  assert.ok(content.storyboard.every((scene) => scene.id.startsWith("scene-")));
+});
+
 // ── directions are forwarded, never interpreted ──────────────────────────────
 
 test("directions are stored verbatim but never steer the extracted content", async () => {
@@ -505,6 +569,312 @@ test("a mission whose markdown artifacts are all rejected fails typed (route map
   assert.match(result.error, /no markdown artifact/);
 });
 
+test("media creation drafts reviewable source content into a queued record", async () => {
+  const result = await createResearchMediaGenerationFromMission({
+    familiarId: "nova",
+    kind: "podcast",
+    sourceMissionId: "mission-alpha",
+    renderConfig: {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "standard",
+    },
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.generation.status, "draft");
+  assert.equal(result.generation.content?.kind, "podcast");
+  assert.deepEqual(result.generation.renderConfig, {
+    provider: "local",
+    voice: "piper-lessac-medium",
+    length: "standard",
+  });
+  assert.equal(result.generation.stage, undefined, "draft records do not invent progress");
+  assert.equal(result.generation.progress, undefined, "draft records do not invent progress units");
+});
+
+test("media creation rejects an artifact with no narratable findings", async () => {
+  await seedMission(
+    "mission-title-only",
+    "title-only-familiar",
+    [
+      artifactRef({
+        key: "primary",
+        title: "Title only",
+        relativePath: "artifacts/primary.md",
+      }),
+    ],
+    { "primary.md": "# Title only\n" },
+  );
+  const result = await createResearchMediaGenerationFromMission({
+    familiarId: "title-only-familiar",
+    kind: "podcast",
+    sourceMissionId: "mission-title-only",
+    renderConfig: {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "brief",
+    },
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.code, "media-not-ready");
+    assert.match(result.error, /no narratable findings/);
+  }
+  assert.deepEqual(
+    await listResearchGenerations("title-only-familiar"),
+    [],
+  );
+});
+
+test("old WIP v2 media rows without render config remain readable but cannot queue", async () => {
+  const familiarId = "wip-v2-familiar";
+  const oldWip = {
+    version: 2,
+    generations: [
+      {
+        version: 2,
+        id: "wip-media-generation",
+        familiarId,
+        kind: "podcast",
+        sourceMissionId: "mission-alpha",
+        sourceTitle: "Old WIP media",
+        status: "draft",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        content: {
+          kind: "podcast",
+          script: [{ id: "segment-1", text: "Verbatim source narration." }],
+        },
+      },
+    ],
+  };
+  await mkdir(path.dirname(researchGenerationsPath(familiarId)), { recursive: true });
+  await writeFile(researchGenerationsPath(familiarId), JSON.stringify(oldWip), "utf8");
+
+  const [generation] = await listResearchGenerations(familiarId);
+  assert.equal(generation.id, "wip-media-generation");
+  assert.equal(generation.renderConfig, undefined);
+
+  const transition = await transitionResearchGeneration(
+    familiarId,
+    generation.id,
+    ["draft"],
+    { status: "queued" },
+  );
+  assert.deepEqual(transition, {
+    ok: false,
+    code: "invalid-state",
+    generation,
+  });
+});
+
+test("long-video drafting groups H2 sections into ordered, preset-bounded chapters", async () => {
+  const markdown = [
+    "# Study",
+    "",
+    "## Context",
+    "",
+    "Context sentence.",
+    "",
+    "### Prior work",
+    "",
+    "- Prior detail",
+    "",
+    "## Methods",
+    "",
+    "- Method A",
+    "",
+    "### Sampling",
+    "",
+    "Sampling detail.",
+    "",
+    "## Results",
+    "",
+    "- Result A",
+    "",
+    "## Limits",
+    "",
+    "- Limit A",
+    "",
+    "## Appendix",
+    "",
+    "- Appendix detail",
+  ].join("\n");
+  await seedMission(
+    "mission-chapters",
+    "chapters-familiar",
+    [
+      artifactRef({
+        key: "primary",
+        title: "Chapter findings",
+        relativePath: "artifacts/primary.md",
+      }),
+    ],
+    { "primary.md": markdown },
+  );
+
+  const result = await createResearchMediaGenerationFromMission({
+    familiarId: "chapters-familiar",
+    kind: "long-video",
+    sourceMissionId: "mission-chapters",
+    renderConfig: {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "brief",
+    },
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok || result.generation.content?.kind !== "long-video") return;
+  assert.deepEqual(
+    result.generation.content.chapters.map((chapter) => chapter.title),
+    ["Context", "Methods", "Results", "Limits"],
+    "brief long video preserves the first four H2 chapters in source order",
+  );
+  assert.deepEqual(
+    result.generation.content.chapters[0].scenes.map((scene) => scene.title),
+    ["Context", "Prior work"],
+    "subordinate sections stay with their H2 chapter",
+  );
+});
+
+test("simultaneous draft compare-and-set transitions produce exactly one winner", async () => {
+  const result = await createResearchMediaGenerationFromMission({
+    familiarId: "nova",
+    kind: "podcast",
+    sourceMissionId: "mission-alpha",
+    renderConfig: {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "brief",
+    },
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const outcomes = await Promise.all([
+    transitionResearchGeneration("nova", result.generation.id, ["draft"], {
+      status: "queued",
+    }),
+    transitionResearchGeneration("nova", result.generation.id, ["draft"], {
+      status: "queued",
+    }),
+  ]);
+  assert.equal(outcomes.filter((outcome) => outcome.ok).length, 1);
+  assert.equal(
+    outcomes.filter((outcome) => !outcome.ok && outcome.code === "invalid-state").length,
+    1,
+  );
+});
+
+test("compare-and-set stays atomic across separate Node processes", async () => {
+  const familiarId = "cross-process-cas";
+  await seedMission(
+    "mission-cross-process-cas",
+    familiarId,
+    [
+      artifactRef({
+        key: "primary",
+        title: "CAS source",
+        relativePath: "artifacts/primary.md",
+      }),
+    ],
+    { "primary.md": FINDINGS_MD },
+  );
+  const result = await createResearchMediaGenerationFromMission({
+    familiarId,
+    kind: "podcast",
+    sourceMissionId: "mission-cross-process-cas",
+    renderConfig: {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "brief",
+    },
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const moduleUrl = new URL("./research-generations.ts", import.meta.url).href;
+  const childSource = [
+    `process.env.COVEN_RESEARCH_GENERATIONS_DIR = ${JSON.stringify(process.env.COVEN_RESEARCH_GENERATIONS_DIR)};`,
+    `const store = await import(${JSON.stringify(moduleUrl)});`,
+    `const result = await store.transitionResearchGeneration(${JSON.stringify(familiarId)}, ${JSON.stringify(result.generation.id)}, ["draft"], { status: "queued" });`,
+    "console.log(JSON.stringify(result));",
+  ].join("\n");
+  const outcomes = await Promise.all(
+    [1, 2].map(async () => {
+      const { stdout } = await execFileAsync(process.execPath, [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "--eval",
+        childSource,
+      ]);
+      return JSON.parse(stdout.trim()) as { ok: boolean; code?: string };
+    }),
+  );
+
+  assert.equal(outcomes.filter((outcome) => outcome.ok).length, 1);
+  assert.equal(
+    outcomes.filter(
+      (outcome) => !outcome.ok && outcome.code === "invalid-state",
+    ).length,
+    1,
+  );
+});
+
+test("atomic removal rejects queued media until it reaches a non-active state", async () => {
+  const result = await createResearchMediaGenerationFromMission({
+    familiarId: "nova",
+    kind: "podcast",
+    sourceMissionId: "mission-alpha",
+    renderConfig: {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "brief",
+    },
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const queued = await transitionResearchGeneration(
+    "nova",
+    result.generation.id,
+    ["draft"],
+    { status: "queued" },
+  );
+  assert.equal(queued.ok, true);
+
+  const activeRemoval = await removeResearchGenerationIfInactive(
+    "nova",
+    result.generation.id,
+  );
+  assert.equal(activeRemoval.ok, false);
+  if (!activeRemoval.ok) assert.equal(activeRemoval.code, "active");
+  assert.ok(
+    (await listResearchGenerations("nova")).some(
+      (generation) => generation.id === result.generation.id,
+    ),
+  );
+
+  const cancelled = await transitionResearchGeneration(
+    "nova",
+    result.generation.id,
+    ["queued"],
+    { status: "cancelled" },
+  );
+  assert.equal(cancelled.ok, true);
+  const removed = await removeResearchGenerationIfInactive(
+    "nova",
+    result.generation.id,
+  );
+  assert.equal(removed.ok, true);
+  assert.ok(
+    !(await listResearchGenerations("nova")).some(
+      (generation) => generation.id === result.generation.id,
+    ),
+  );
+});
+
 
 test("unknown missions and other familiars' missions read as not found", async () => {
   const missing = await createResearchGenerationFromMission({
@@ -524,6 +894,79 @@ test("unknown missions and other familiars' missions read as not found", async (
   if (!foreign.ok) assert.equal(foreign.code, "mission-not-found");
 });
 
+test("a full store returns a typed capacity conflict without evicting any row", async () => {
+  const familiarId = "capacity-familiar";
+  await seedMission(
+    "mission-capacity",
+    familiarId,
+    [
+      artifactRef({
+        key: "primary",
+        title: "Capacity source",
+        relativePath: "artifacts/primary.md",
+      }),
+    ],
+    { "primary.md": FINDINGS_MD },
+  );
+  const originalIds = Array.from(
+    { length: MAX_RESEARCH_GENERATIONS },
+    (_, index) => `capacity-${index + 1}`,
+  );
+  await mkdir(path.dirname(researchGenerationsPath(familiarId)), {
+    recursive: true,
+  });
+  await writeFile(
+    researchGenerationsPath(familiarId),
+    JSON.stringify({
+      version: 2,
+      generations: originalIds.map((id, index) => ({
+        version: 2,
+        id,
+        familiarId,
+        kind: "blog",
+        sourceMissionId: "mission-capacity",
+        sourceTitle: "Capacity source",
+        status: "ready",
+        createdAt: new Date(index).toISOString(),
+        updatedAt: new Date(index).toISOString(),
+        content: { kind: "blog", markdown: `# Existing ${index + 1}` },
+      })),
+    }),
+    "utf8",
+  );
+
+  const extractive = await createResearchGenerationFromMission({
+    familiarId,
+    kind: "blog",
+    sourceMissionId: "mission-capacity",
+  });
+  const media = await createResearchMediaGenerationFromMission({
+    familiarId,
+    kind: "podcast",
+    sourceMissionId: "mission-capacity",
+    renderConfig: {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "brief",
+    },
+  });
+
+  assert.deepEqual(extractive, {
+    ok: false,
+    code: "capacity",
+    error:
+      "Research Studio has reached its 200-generation limit. Remove a generation before creating another.",
+  });
+  assert.equal(media.ok, false);
+  if (!media.ok) assert.equal(media.code, "capacity");
+  const after = await listResearchGenerations(familiarId);
+  assert.equal(after.length, MAX_RESEARCH_GENERATIONS);
+  assert.deepEqual(
+    new Set(after.map((generation) => generation.id)),
+    new Set(originalIds),
+  );
+});
+
 // ── persistence ──────────────────────────────────────────────────────────────
 
 test("generations persist newest-first, per familiar, and remove by id", async () => {
@@ -537,7 +980,7 @@ test("generations persist newest-first, per familiar, and remove by id", async (
     version: number;
     generations: unknown[];
   };
-  assert.equal(onDisk.version, 1);
+  assert.equal(onDisk.version, 2);
   assert.equal(onDisk.generations.length, listed.length);
 
   assert.deepEqual(await listResearchGenerations("someone-else"), [], "files are per familiar");
@@ -547,6 +990,36 @@ test("generations persist newest-first, per familiar, and remove by id", async (
   assert.equal(await removeResearchGeneration("nova", first.id), false, "second removal misses");
   const afterRemove = await listResearchGenerations("nova");
   assert.ok(!afterRemove.some((generation) => generation.id === first.id));
+});
+
+test("v1 records migrate to the v2 contract on read without changing their content", async () => {
+  const familiarId = "legacy-familiar";
+  const legacy = {
+    version: 1,
+    generations: [
+      {
+        version: 1,
+        id: "legacy-generation",
+        familiarId,
+        kind: "blog",
+        sourceMissionId: "mission-alpha",
+        sourceTitle: "Legacy mission",
+        status: "ready",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        content: { kind: "blog", markdown: "# Legacy content" },
+      },
+    ],
+  };
+  await mkdir(path.dirname(researchGenerationsPath(familiarId)), { recursive: true });
+  await writeFile(researchGenerationsPath(familiarId), JSON.stringify(legacy), "utf8");
+
+  const [generation] = await listResearchGenerations(familiarId);
+  assert.equal(generation.version, 2);
+  assert.equal(generation.id, "legacy-generation");
+  assert.equal(generation.status, "ready");
+  assert.deepEqual(generation.content, { kind: "blog", markdown: "# Legacy content" });
+  assert.equal(JSON.parse(await readFile(researchGenerationsPath(familiarId), "utf8")).version, 1);
 });
 
 test("a corrupt store file is preserved aside, never silently wiped", async () => {
