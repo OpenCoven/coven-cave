@@ -74,7 +74,7 @@ assert.match(
 );
 assert.match(
   modelState,
-  /listRuntimeModelOptions\(\s*state\.harness,\s*familiarId,/,
+  /listRuntimeModelInventory\(\s*state\.harness,\s*familiarId,/,
   "the aggregate model-state response gives non-web clients the same inventory",
 );
 

@@ -44,6 +44,7 @@ struct ChatModelBar: View {
 
     private var label: String {
         guard let model = state?.effectiveModel else { return "Model" }
+        if model.isEmpty { return "Runtime default" }
         return options.first(where: { $0.id == model })?.label ?? shortModel(model)
     }
 

@@ -402,6 +402,7 @@ struct ChatView: View {
                 ?? conciseModelName(pendingModelOverride)
         }
         guard let state = sessionModelState else { return thread.isGroup ? "Per familiar" : "Loading…" }
+        if state.effectiveModel.isEmpty { return "Runtime default" }
         return modelPickerOptions.first(where: { $0.id == state.effectiveModel })?.label
             ?? conciseModelName(state.effectiveModel)
     }

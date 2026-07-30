@@ -141,6 +141,7 @@ struct FamiliarDetailView: View {
 
     private var modelLabel: String {
         guard let state = modelState else { return familiar.model ?? "Inherited" }
+        if state.effectiveModel.isEmpty { return "Runtime default" }
         return modelOptions.first(where: { $0.id == state.effectiveModel })?.label
             ?? state.effectiveModel.split(separator: "/").last.map(String.init)
             ?? state.effectiveModel

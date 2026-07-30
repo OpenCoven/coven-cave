@@ -149,8 +149,8 @@ assert.match(
 
 assert.match(
   source,
-  /\.\.\.\(runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?options: runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\),[\s\S]*?handleSelectModel\(id\)/,
-  "the Options menu Model section lists the selected runtime's available inventory and is omitted for runtime-managed runtimes",
+  /\.\.\.\(runtimeOwnsDefault \|\| runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?"Runtime default"[\s\S]*?runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\)[\s\S]*?handleSelectModel\(id \|\| null\)/,
+  "the Options menu Model section lists inventory and exposes the runtime-owned default as a real choice",
 );
 
 assert.match(
@@ -161,8 +161,8 @@ assert.match(
 
 assert.match(
   source,
-  /runtimeModelOptions\.length === 0\s*\?\s*""[\s\S]*?runtimeModelOptions\.some/,
-  "HomeComposer should keep runtime-managed runtimes selected when their catalog has no model options",
+  /effectiveModel &&[\s\S]*?\(runtimeOwnsDefault \|\|[\s\S]*?runtimeModelOptions\.some[\s\S]*?: runtimeOwnsDefault[\s\S]*?\? ""/,
+  "HomeComposer should keep runtime-owned runtimes on their configured default when no explicit model is selected",
 );
 
 assert.doesNotMatch(
@@ -179,7 +179,7 @@ assert.doesNotMatch(
 
 assert.match(
   modelStateHook,
-  /body: JSON\.stringify\(\{[\s\S]*?\[selectedFamiliarId\]: \{ harness: runtime, model: nextModel \},[\s\S]*?\}\)/,
+  /body: JSON\.stringify\(\{[\s\S]*?\[selectedFamiliarId\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel \|\| null,[\s\S]*?\}\)/,
   "useHomeModelState should persist runtime and model together when the combined selector changes runtime",
 );
 
@@ -782,6 +782,6 @@ assert.match(
 
 assert.match(
   source,
-  /selectedRuntime === "opencode"[\s\S]*?modelState\?\.effectiveModel[\s\S]*?: ""[\s\S]*?runtimeModelOptions\.length === 0/,
-  "OpenCode without an explicit model keeps the CLI default instead of displaying the first discovered model",
+  /const runtimeOwnsDefault = runtimeOwnsModelDefault\(selectedRuntime\);[\s\S]*?const effectiveModel =[\s\S]*?const selectedModelId =[\s\S]*?: runtimeOwnsDefault[\s\S]*?\? ""[\s\S]*?: runtimeModelOptions\[0\]\?\.id/,
+  "a runtime-owned adapter without an explicit model keeps its own default instead of displaying the first discovered model",
 );

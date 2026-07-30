@@ -5,8 +5,10 @@ import {
   catalogForRuntime,
   defaultModelForRuntime,
   isModelInCatalog,
+  modelForRuntimeSwitch,
   modelForCaveFromRuntimeEcho,
   modelForRuntimeLaunch,
+  runtimeOwnsModelDefault,
   runtimeModelIdForLaunch,
   transformModelIdForRuntime,
 } from "./runtime-models.ts";
@@ -199,6 +201,14 @@ assert.equal(openclaw.allowCustom, true, "free-text must stay allowed when there
 assert.equal(defaultModelForRuntime("codex"), "openai/gpt-5.6-sol");
 assert.equal(defaultModelForRuntime("hermes"), "openai/gpt-5.6-sol", "Hermes should default to the first authenticated model");
 assert.equal(defaultModelForRuntime("openclaw"), "openai/gpt-5.6-sol", "OpenClaw should inherit a real global default, not openclaw-local");
+assert.equal(runtimeOwnsModelDefault("codex"), false);
+assert.equal(runtimeOwnsModelDefault("hermes"), true);
+assert.equal(runtimeOwnsModelDefault("grok"), true);
+assert.equal(runtimeOwnsModelDefault("opencode"), true);
+assert.equal(runtimeOwnsModelDefault("openclaw"), true);
+assert.equal(modelForRuntimeSwitch("codex"), "openai/gpt-5.6-sol");
+assert.equal(modelForRuntimeSwitch("hermes"), "");
+assert.equal(modelForRuntimeSwitch("hermes", "nous/hermes-4"), "nous/hermes-4");
 
 // Unknown runtimes have no catalog.
 assert.equal(catalogForRuntime("nonexistent"), null);

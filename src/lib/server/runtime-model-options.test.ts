@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { listRuntimeModelOptions } from "./runtime-model-options.ts";
+import {
+  listRuntimeModelInventory,
+  listRuntimeModelOptions,
+} from "./runtime-model-options.ts";
 
 const opus5 = { id: "anthropic/claude-opus-5", label: "Claude Opus 5" };
 let claudeScope: string | null | undefined;
@@ -14,6 +17,18 @@ assert.deepEqual(
   "Claude aliases consume the shared dynamic inventory",
 );
 assert.equal(claudeScope, "sage");
+assert.deepEqual(
+  await listRuntimeModelInventory("claude", "sage", {
+    listClaude: async () => [opus5],
+  }),
+  {
+    runtime: "claude",
+    models: [opus5],
+    provenance: "live",
+    defaultOwner: "cave",
+    allowCustom: true,
+  },
+);
 
 const dynamicCopilot = [
   { id: "github/auto", label: "Auto (Copilot picks)" },
@@ -77,6 +92,22 @@ assert.ok(
     listClaude: async () => { throw new Error("transient"); },
   })).some((model) => model.id === "anthropic/claude-opus-4-8"),
   "a failed Claude resolver preserves the seed",
+);
+assert.equal(
+  (await listRuntimeModelInventory("hermes", "sage")).provenance,
+  "fallback",
+  "Hermes' static menu is explicitly fallback inventory",
+);
+assert.equal(
+  (await listRuntimeModelInventory("hermes", "sage")).defaultOwner,
+  "runtime",
+  "Hermes fallback entries never own the unselected default",
+);
+assert.equal(
+  (await listRuntimeModelInventory("opencode", "sage", {
+    allowOpenCodeInventory: false,
+  })).provenance,
+  "runtime-managed",
 );
 
 console.log("server/runtime-model-options.test.ts: ok");

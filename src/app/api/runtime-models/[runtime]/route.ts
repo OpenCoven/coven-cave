@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
-import { listRuntimeModelOptions } from "@/lib/server/runtime-model-options";
+import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -44,13 +44,11 @@ export async function GET(
       { status: 400 },
     );
   }
-  const models = await listRuntimeModelOptions(runtime, familiarId, {
+  const inventory = await listRuntimeModelInventory(runtime, familiarId, {
     allowOpenCodeInventory: runtime === "opencode",
   });
   return NextResponse.json({
     ok: true,
-    runtime,
-    models,
-    allowCustom: catalog.allowCustom,
+    ...inventory,
   });
 }

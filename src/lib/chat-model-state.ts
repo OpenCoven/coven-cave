@@ -1,4 +1,11 @@
-export type ModelScope = "global-default" | "familiar-default" | "session" | "next-message";
+import { runtimeOwnsModelDefault } from "./runtime-models.ts";
+
+export type ModelScope =
+  | "runtime-default"
+  | "global-default"
+  | "familiar-default"
+  | "session"
+  | "next-message";
 
 export type ModelApplicationState =
   | "unknown"
@@ -44,7 +51,6 @@ export type ResolveChatModelStateInput = {
 const UNSUPPORTED_REASON =
   "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.";
 const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.6-sol";
-const GROK_DEFAULT_MODEL = "grok-4.5";
 const SYNTHETIC_LOCAL_MODELS = new Set([
   "codex-local",
   "claude-local",
@@ -104,15 +110,6 @@ function globalDefaultForHarness(globalDefaultModel: unknown, harness: string): 
   reason: string;
 } {
   const model = effectiveModelForHarness(globalDefaultModel, harness) ?? GLOBAL_DEFAULT_MODEL;
-  // Grok Build cannot run Cave's default OpenAI model. A Grok familiar with no
-  // explicit model (for example, one switched to Grok in Familiar Studio)
-  // must use the CLI's own default instead of forwarding `gpt-5.6-sol`.
-  if (harness === "grok" && !/^(?:xai\/)?grok-/i.test(model)) {
-    return {
-      model: GROK_DEFAULT_MODEL,
-      reason: "Cave's global model is unavailable in Grok Build; using Grok's default.",
-    };
-  }
   return { model, reason: "Inherited from Cave defaults." };
 }
 
@@ -209,17 +206,15 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
-  // OpenCode's authenticated account chooses its own default model.  Its
-  // catalog deliberately has an empty default, so inheriting Cave's global
-  // (usually OpenAI) model here would make an untouched OpenCode familiar run
-  // `opencode --model <unconfigured-global-model>` instead of letting the CLI
-  // select its configured default.
-  if (input.harness === "opencode") {
+  // Runtime-owned defaults are represented by no model id. Inventory entries
+  // may still be offered as explicit choices, but a seed/fallback must never
+  // become an implicit launch override.
+  if (runtimeOwnsModelDefault(input.harness)) {
     return chatModelState(input, {
       effectiveModel: "",
-      source: "global-default",
+      source: "runtime-default",
       applicationState: "saved",
-      reason: "Using OpenCode's authenticated default model.",
+      reason: "Using the runtime's configured default model.",
     });
   }
 

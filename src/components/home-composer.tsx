@@ -55,6 +55,7 @@ import { ComposerContextChips } from "@/components/composer-context-pill";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
 import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
@@ -267,16 +268,18 @@ export function HomeComposer({
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",
   );
   const runtimeModelOptions = useRuntimeModelOptions(selectedRuntime, selectedFamiliarId);
-  const selectedModelId =
-    selectedRuntime === "opencode"
-      ? modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
-        ? modelState.effectiveModel
-        : ""
-      : runtimeModelOptions.length === 0
-        ? ""
-        : runtimeModelOptions.some((model) => model.id === modelState?.effectiveModel)
-          ? modelState!.effectiveModel
-          : runtimeModelOptions[0]?.id ?? "";
+  const runtimeOwnsDefault = runtimeOwnsModelDefault(selectedRuntime);
+  const effectiveModel =
+    modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+      ? modelState.effectiveModel
+      : "";
+  const selectedModelId = effectiveModel &&
+    (runtimeOwnsDefault ||
+      runtimeModelOptions.some((model) => model.id === effectiveModel))
+    ? effectiveModel
+    : runtimeOwnsDefault
+      ? ""
+      : runtimeModelOptions[0]?.id ?? "";
   const keys = useKeySymbols();
   const runtimeSectionOptions = useMemo(
     () =>
@@ -1128,13 +1131,18 @@ export function HomeComposer({
                 options: runtimeSectionOptions,
                 onChange: (id: string) => handleSelectRuntime(id),
               } satisfies ComposerOptionSection,
-              ...(runtimeModelOptions.length > 0
+              ...(runtimeOwnsDefault || runtimeModelOptions.length > 0
                 ? [{
                     id: "model",
                     label: "Model",
                     value: selectedModelId,
-                    options: runtimeModelOptions.map((m) => ({ value: m.id, label: m.label })),
-                    onChange: (id: string) => handleSelectModel(id),
+                    options: [
+                      ...(runtimeOwnsDefault
+                        ? [{ value: "", label: "Runtime default" }]
+                        : []),
+                      ...runtimeModelOptions.map((m) => ({ value: m.id, label: m.label })),
+                    ],
+                    onChange: (id: string) => handleSelectModel(id || null),
                   } satisfies ComposerOptionSection]
                 : []),
               {

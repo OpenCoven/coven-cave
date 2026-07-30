@@ -37,7 +37,7 @@ import { chatProjectById } from "@/lib/chat-projects";
 import { useProjects } from "@/lib/use-projects";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 import { BoardKanbanSkeleton } from "@/components/board-view-display";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
@@ -941,7 +941,12 @@ export function BoardView({
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          familiars: { [familiarId]: { harness: runtime, model: defaultModelForRuntime(runtime) } },
+          familiars: {
+            [familiarId]: {
+              harness: runtime,
+              model: modelForRuntimeSwitch(runtime) || null,
+            },
+          },
         }),
       });
       if (!res.ok) {

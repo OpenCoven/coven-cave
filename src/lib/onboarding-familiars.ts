@@ -4,8 +4,9 @@ import {
   normalizeFamiliarRuntime,
   type FamiliarRuntime,
 } from "./familiar-runtime.ts";
-import { defaultModelForRuntime } from "./runtime-models.ts";
 import { normalizeHermesProfileBinding, type HermesProfileBinding } from "./hermes-profiles.ts";
+import { modelForRuntimeSwitch } from "./runtime-models.ts";
+ 
 
 export type OnboardingFamiliarDraft = {
   id: string;
@@ -103,7 +104,7 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
   if (hermesProfile && harness !== "hermes") {
     throw new Error("A Hermes profile can only be bound to the Hermes runtime.");
   }
-  const model = cleanText(input.model) || defaultModelForRuntime(harness);
+  const model = modelForRuntimeSwitch(harness, cleanText(input.model));
 
   // A runtime request is all-or-nothing: a partial/invalid SSH config must
   // fail loudly here instead of silently degrading to a local familiar the
@@ -157,7 +158,7 @@ export function buildFamiliarsToml(draft: OnboardingFamiliarDraft | null): strin
   ];
 
   lines.push(`harness = ${tomlString(draft.harness)}`);
-  lines.push(`model = ${tomlString(draft.model)}`);
+  if (draft.model) lines.push(`model = ${tomlString(draft.model)}`);
   if (draft.openclawAgentId) lines.push(`openclaw_agent = ${tomlString(draft.openclawAgentId)}`);
 
   return `${lines.join("\n")}\n`;

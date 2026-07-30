@@ -111,7 +111,10 @@ import {
   type PromptOption,
 } from "@/lib/slash-prompt";
 import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippets-modal";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
+import {
+  modelForRuntimeSwitch,
+  runtimeOwnsModelDefault,
+} from "@/lib/runtime-models";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
@@ -2437,7 +2440,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // chat exists (writes the conversation's modelIntent), else familiar-default.
   // No new persistence path — the picker reuses /api/chat/model-state.
   const handleSelectModel = useCallback(
-    (modelId: string) => {
+    (modelId: string | null) => {
       void (async () => {
         try {
           const res = await fetch("/api/chat/model-state", {
@@ -2466,11 +2469,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // re-resolves the familiar's binding from current config on every turn.
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
-      const nextModel = defaultModelForRuntime(runtime);
+      const nextModel = modelForRuntimeSwitch(runtime);
       // Optimistic: the chip flips immediately; the refetch reconciles.
       setModelState((current) =>
         current
-          ? { ...current, harness: runtime, effectiveModel: nextModel, source: "familiar-default", reason: "Selected from the chat composer." }
+          ? {
+              ...current,
+              harness: runtime,
+              effectiveModel: nextModel,
+              source: nextModel ? "familiar-default" : "runtime-default",
+              reason: nextModel
+                ? "Selected from the chat composer."
+                : "Using the runtime's configured default model.",
+            }
           : current,
       );
       void (async () => {
@@ -2479,7 +2490,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             method: "PATCH",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              familiars: { [familiar.id]: { harness: runtime, model: nextModel } },
+              familiars: {
+                [familiar.id]: {
+                  harness: runtime,
+                  model: nextModel || null,
+                },
+              },
             }),
           });
           // The roster's familiar.harness feeds the empty-state identity line
@@ -2940,10 +2956,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete below, which is null outside `/model <arg>` position).
   const composerModelOptions = useRuntimeModelOptions(modelHarness ?? "claude", familiar.id);
+  const composerRuntimeOwnsDefault = runtimeOwnsModelDefault(modelHarness);
   const composerModelValue =
     modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
-      : modelHarness === "opencode"
+      : composerRuntimeOwnsDefault
         ? ""
         : composerModelOptions[0]?.id ?? "";
   const {
@@ -2989,13 +3006,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       options: PERMISSION_MODES.map((m) => ({ value: m.value, label: m.label })),
       onChange: (v: string) => setPermissionMode(v as CommandPermissionMode),
     },
-    ...(composerModelOptions.length > 0
+    ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0
       ? [{
           id: "model",
           label: "Model",
           value: composerModelValue,
-          options: composerModelOptions.map((m) => ({ value: m.id, label: m.label })),
-          onChange: (id: string) => handleSelectModel(id),
+          options: [
+            ...(composerRuntimeOwnsDefault
+              ? [{ value: "", label: "Runtime default" }]
+              : []),
+            ...composerModelOptions.map((m) => ({ value: m.id, label: m.label })),
+          ],
+          onChange: (id: string) => handleSelectModel(id || null),
         }]
       : []),
     {
@@ -4718,12 +4740,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (busy || switchingHarnessRef.current) return;
     switchingHarnessRef.current = true;
     try {
-      const nextModel = defaultModelForRuntime(runtime);
+      const nextModel = modelForRuntimeSwitch(runtime);
       const res = await fetch("/api/config", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          familiars: { [familiar.id]: { harness: runtime, model: nextModel } },
+          familiars: {
+            [familiar.id]: {
+              harness: runtime,
+              model: nextModel || null,
+            },
+          },
         }),
       });
       if (!res.ok) {

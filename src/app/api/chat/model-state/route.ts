@@ -8,9 +8,8 @@ import {
 } from "@/lib/cave-conversations";
 import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
-import { catalogForRuntime } from "@/lib/runtime-models";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
-import { listRuntimeModelOptions } from "@/lib/server/runtime-model-options";
+import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -83,13 +82,12 @@ export async function GET(req: Request) {
   // Also hand back the pickable model menu for this chat's runtime so non-web
   // clients (the iOS app) don't have to mirror runtime capability rules.
   // `allowCustom` means a free-typed id is valid.
-  const catalog = catalogForRuntime(state.harness);
   // OpenCode's inventory is derived from local authenticated providers. Keep
   // that CLI call local-only without denying this aggregate state endpoint to
   // iOS, which still needs the selected model and may free-type a model id.
   const canReadOpenCodeInventory =
     state.harness === "opencode" && !rejectNonLocalRequest(req);
-  const options = await listRuntimeModelOptions(
+  const inventory = await listRuntimeModelInventory(
     state.harness,
     familiarId,
     { allowOpenCodeInventory: canReadOpenCodeInventory },
@@ -97,8 +95,9 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true,
     state,
-    options,
-    allowCustom: catalog?.allowCustom ?? true,
+    options: inventory.models,
+    inventory,
+    allowCustom: inventory.allowCustom,
   });
 }
 
@@ -115,14 +114,15 @@ export async function PATCH(req: Request) {
 
   const familiarId = cleanText(body.familiarId);
   const sessionId = cleanText(body.sessionId);
-  const model = cleanModelId(body.model);
+  const clearModel = body.model === null;
+  const model = clearModel ? null : cleanModelId(body.model);
   const scope = body.scope;
 
   if (!familiarId) return jsonError("familiarId is required", 400);
   if (sessionId && !isSafeConversationSessionId(sessionId)) {
     return jsonError("invalid session id", 400);
   }
-  if (!model) return jsonError("invalid model", 400);
+  if (!clearModel && !model) return jsonError("invalid model", 400);
   if (scope === "next-message") {
     return jsonError("next-message scope is composer-local", 400);
   }
@@ -148,12 +148,16 @@ export async function PATCH(req: Request) {
   const updated = await withConversationLock(sessionId, async () => {
     const conversation = await loadConversation(sessionId);
     if (!conversation || conversation.familiarId !== familiarId) return false;
-    conversation.modelIntent = {
-      model,
-      source: "session",
-      applicationState: "saved",
-      reason: "Saved for this chat.",
-    };
+    if (clearModel) {
+      delete conversation.modelIntent;
+    } else if (model) {
+      conversation.modelIntent = {
+        model,
+        source: "session",
+        applicationState: "saved",
+        reason: "Saved for this chat.",
+      };
+    }
     await saveConversation(conversation);
     return true;
   });

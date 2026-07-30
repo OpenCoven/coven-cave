@@ -16,7 +16,10 @@ import { Icon } from "@/lib/icon";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
+import {
+  defaultModelForRuntime,
+  runtimeOwnsModelDefault,
+} from "@/lib/runtime-models";
 import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { SalemCat, type SalemMood } from "./salem-cat";
 import {
@@ -37,7 +40,8 @@ const INTRO =
 function familiarModelLabel(familiar: Familiar): string {
   if (familiar.model?.trim()) return familiar.model.trim();
   const harness = familiar.harnessOverride ?? familiar.harness ?? familiar.defaultHarness;
-  return harness ? defaultModelForRuntime(harness) : "default model";
+  if (!harness || runtimeOwnsModelDefault(harness)) return "Runtime default";
+  return defaultModelForRuntime(harness);
 }
 
 /** Fetch one local corpus, degrading to null so a single failed source never
