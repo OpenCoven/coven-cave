@@ -53,9 +53,18 @@ async function realpathIfPresent(targetPath: string): Promise<string | null> {
  * a wholesale-symlinked ~/.coven) working.
  */
 async function canonicalContainedPath(candidate: string, rootPath: string): Promise<string | null> {
+  // Lexical pre-guard in the `path.relative` + `..` form a taint tracker
+  // recognizes as a sanitizer. Callers have already classified `candidate`
+  // inside `rootPath`; re-proving it adjacent to the fs sinks below keeps the
+  // guard legible to static analysis (same pattern as archiveMemoryFile's
+  // inline home barrier).
+  const resolvedCandidate = path.resolve(candidate);
+  const resolvedRoot = path.resolve(rootPath);
+  const rel = path.relative(resolvedRoot, resolvedCandidate);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
   const [realCandidate, realRoot] = await Promise.all([
-    realpathIfPresent(candidate),
-    realpathIfPresent(rootPath),
+    realpathIfPresent(resolvedCandidate),
+    realpathIfPresent(resolvedRoot),
   ]);
   if (realCandidate === null || realRoot === null) return null;
   return isWithinRoot(realCandidate, realRoot) ? realCandidate : null;
