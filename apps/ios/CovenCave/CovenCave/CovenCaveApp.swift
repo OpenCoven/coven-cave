@@ -5,6 +5,10 @@ import UserNotifications
 struct CovenCaveApp: App {
     @State private var app: AppModel
     @State private var notificationDelegate: CaveNotificationDelegate
+    /// Owns the biometric app-unlock + approval state. Created alongside
+    /// `AppModel` so its cold-start lock decision is settled before the first
+    /// view mounts (see `LockScreenView`, substituted in for the whole root).
+    @State private var appLock: AppLock
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @Environment(\.scenePhase) private var scenePhase
 
@@ -18,6 +22,7 @@ struct CovenCaveApp: App {
         UNUserNotificationCenter.current().delegate = notificationDelegate
         _app = State(initialValue: app)
         _notificationDelegate = State(initialValue: notificationDelegate)
+        _appLock = State(initialValue: AppLock())
     }
 
     var body: some Scene {
@@ -33,9 +38,17 @@ struct CovenCaveApp: App {
             // columns behaves as regular — the same call Apple makes for Max
             // phones — which engages the existing balanced splits everywhere.
             WideSplitEnabler {
-                RootView()
+                // Full replacement, never a translucent overlay: while locked,
+                // RootView (and everything under it) simply isn't mounted, so
+                // a cold launch can never flash app content before auth.
+                if appLock.isLocked {
+                    LockScreenView(appLock: appLock)
+                } else {
+                    RootView()
+                }
             }
                 .environment(app)
+                .environment(appLock)
                 // Propagate the chrome palette to every view, tint app-wide
                 // controls with its accent, and apply the resolved light/dark mode.
                 .environment(\.chrome, resolved.chrome)
@@ -66,6 +79,18 @@ struct CovenCaveApp: App {
                         Task { await app.connectWithRetry() }
                     } else if app.connectionState == .connected {
                         Task { await app.validateConnectionOnForeground() }
+                    }
+                }
+                // Deliberately ignores `.inactive` — LocalAuthentication's own
+                // prompt (and the app switcher/control center) can bounce the
+                // scene through `.inactive` without a genuine background
+                // stint, which must never count toward the re-lock window.
+                .onChange(of: scenePhase) { _, phase in
+                    switch phase {
+                    case .background: appLock.sceneDidEnterBackground()
+                    case .active: appLock.sceneDidBecomeActive()
+                    case .inactive: break
+                    @unknown default: break
                     }
                 }
                 // Deep links from the home-screen widget (covencave://…) route to

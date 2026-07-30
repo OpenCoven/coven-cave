@@ -2,12 +2,14 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
+    @Environment(AppLock.self) private var appLock
     @Environment(\.chrome) private var chrome
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @AppStorage(ChatNotifications.enabledKey) private var chatNotificationsEnabled = true
     @State private var exportArchive: ExportArchive?
     @State private var exportFailed = false
     @State private var themeError = false
+    @State private var securityAuthFailed = false
     /// Light/Dark used both to preview the theme swatches and as the mode pushed
     /// to the desktop. Seeded from the desktop's published mode on appear.
     @State private var pushMode: ColorScheme = .dark
@@ -30,6 +32,7 @@ struct SettingsView: View {
                 heroSection
                 appearanceSection
                 wardsSection
+                securitySection
                 chatsSection
                 communitySection
                 legalSection
@@ -65,6 +68,11 @@ struct SettingsView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text("Your desktop didn't confirm the change. Check the connection and try again.")
+            }
+            .alert("Couldn't confirm it's you", isPresented: $securityAuthFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Authentication failed or was cancelled, so this setting wasn't changed.")
             }
         }
     }
@@ -217,6 +225,52 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Security (biometric app lock + approvals)
+
+    /// Two persisted toggles gated behind `AppLock`: unlocking the app itself
+    /// and approving credential-affecting actions (desktop host changes,
+    /// disconnect). Both bind straight to `appLock`'s published state rather
+    /// than a locally mirrored `@State`, so a toggle only visibly moves once
+    /// the authentication it requires actually succeeds — a failed/cancelled
+    /// prompt just leaves the row where it was.
+    private var securitySection: some View {
+        Section {
+            Toggle(isOn: Binding(
+                get: { appLock.lockEnabled },
+                set: { newValue in
+                    Task {
+                        if await !appLock.setLockEnabled(newValue) { securityAuthFailed = true }
+                    }
+                }
+            )) {
+                Label("Require \(appLock.biometricLabel) to unlock", systemImage: appLock.biometricSystemImage)
+                    .foregroundStyle(.primary)
+            }
+            .disabled(!appLock.canUseDeviceAuthentication)
+
+            Toggle(isOn: Binding(
+                get: { appLock.approvalEnabled },
+                set: { newValue in
+                    Task {
+                        if await !appLock.setApprovalEnabled(newValue) { securityAuthFailed = true }
+                    }
+                }
+            )) {
+                Label("Require \(appLock.biometricLabel) for approvals", systemImage: "checkmark.shield")
+                    .foregroundStyle(.primary)
+            }
+            .disabled(!appLock.canUseDeviceAuthentication)
+        } header: {
+            Text("Security")
+        } footer: {
+            if appLock.canUseDeviceAuthentication {
+                Text("Unlock guards the app itself on cold start and after being away 60 seconds or more. Approvals re-confirm it's you before changing or disconnecting your paired desktop. Your device passcode always works as a fallback.")
+            } else {
+                Text("Turn on a passcode (Settings → Face ID & Passcode, or Touch ID & Passcode) to enable app lock and approvals.")
+            }
+        }
+    }
+
     // MARK: - Chats
 
     private var chatsSection: some View {
@@ -296,8 +350,10 @@ struct SettingsView: View {
 /// destructive disconnect.
 private struct ConnectionSettingsView: View {
     @Environment(AppModel.self) private var app
+    @Environment(AppLock.self) private var appLock
     @State private var editingHost: String = ""
     @State private var showDisconnectConfirm = false
+    @State private var approvalFailed = false
 
     var body: some View {
         Form {
@@ -317,7 +373,13 @@ private struct ConnectionSettingsView: View {
                     .keyboardType(.URL)
                     .font(.callout.monospaced())
                 Button("Save and reconnect") {
-                    Task { await app.configure(host: editingHost) }
+                    Task {
+                        guard await appLock.requestApproval(reason: "Confirm it's you to change your desktop connection") else {
+                            approvalFailed = true
+                            return
+                        }
+                        await app.configure(host: editingHost)
+                    }
                 }
                 .disabled(editingHost.trimmingCharacters(in: .whitespaces).isEmpty
                           || editingHost == app.connection?.host)
@@ -341,10 +403,23 @@ private struct ConnectionSettingsView: View {
         .confirmationDialog("Disconnect from your desktop?",
                             isPresented: $showDisconnectConfirm,
                             titleVisibility: .visible) {
-            Button("Disconnect", role: .destructive) { app.disconnect() }
+            Button("Disconnect", role: .destructive) {
+                Task {
+                    guard await appLock.requestApproval(reason: "Confirm it's you to disconnect from your desktop") else {
+                        approvalFailed = true
+                        return
+                    }
+                    app.disconnect()
+                }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("You'll need to re-enter your desktop address to reconnect.")
+        }
+        .alert("Couldn't confirm it's you", isPresented: $approvalFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Authentication failed or was cancelled, so nothing changed.")
         }
     }
 
