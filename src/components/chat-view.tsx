@@ -160,8 +160,6 @@ import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import { projectAccessLabel } from "@/lib/project-access-levels";
 import {
   COMMAND_CONTROL_DEFAULTS,
-  COMMAND_RESPONSE_SPEED_OPTIONS,
-  COMMAND_THINKING_OPTIONS,
   DEFAULT_PERMISSION_MODE,
   PERMISSION_MODES,
   normalizeCommandControls,
@@ -397,8 +395,6 @@ const TRANSCRIPT_RENDER_CAP = 60;
 // well under perception threshold (~2-3 frames). Non-chunk events and stream
 // end flush immediately, so ordering and final text are exact.
 const CHUNK_FLUSH_MS = 40;
-const THINKING_OPTIONS = COMMAND_THINKING_OPTIONS;
-const SPEED_OPTIONS = COMMAND_RESPONSE_SPEED_OPTIONS;
 const CHAT_ATTACHMENT_ACCEPT = [
   "image/*",
   "video/*",
@@ -4198,7 +4194,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
           modelControls: controlsOverride?.modelControls ?? modelControls,
           permissionMode: controlsOverride?.permissionMode ?? permissionMode,
-          ...(controlsOverride?.runtimeHost ?? runtimeHost ? { runtimeHost: controlsOverride?.runtimeHost ?? runtimeHost } : {}),
+          ...(controlsOverride?.runtimeHost ?? runtimeHost ? { runtimeHost: (controlsOverride?.runtimeHost ?? runtimeHost) ?? undefined } : {}),
         },
       });
       announce(projectLaunchMessage, "assertive");
@@ -4299,7 +4295,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
         modelControls: controlsOverride?.modelControls ?? modelControls,
         permissionMode: controlsOverride?.permissionMode ?? permissionMode,
-        ...(controlsOverride?.runtimeHost ?? runtimeHost ? { runtimeHost: controlsOverride?.runtimeHost ?? runtimeHost } : {}),
+        ...(controlsOverride?.runtimeHost ?? runtimeHost ? { runtimeHost: (controlsOverride?.runtimeHost ?? runtimeHost) ?? undefined } : {}),
       },
     };
     const projectRootForRequest = requestedProjectRoot;

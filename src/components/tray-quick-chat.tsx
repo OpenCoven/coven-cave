@@ -318,7 +318,6 @@ export function QuickChatTabPane({
         projectsError={projectsError}
         selectedProjectRoot={selectedProjectRoot}
         onPickProjectRoot={setSelectedProjectRoot}
-        sending={sending}
         showFamiliarPicker={showAgentPicker && !pickerDismissed && messages.length === 0}
       />
 

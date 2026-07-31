@@ -98,8 +98,12 @@ export async function GET(req: Request) {
   // Native Hermes controls are available only through its configured Responses
   // API transport. Keep the state response aligned with the send boundary so
   // a client never renders a provider setting that would be rejected later.
-  const hermesApi = state.harness === "hermes"
-    ? hermesApiConfig(harnessSpawnEnv(familiarId))
+  const hermesEnvironment = state.harness === "hermes" ? harnessSpawnEnv(familiarId) : null;
+  const hermesApi = hermesEnvironment
+    ? hermesApiConfig({
+        HERMES_API_URL: hermesEnvironment.HERMES_API_URL,
+        HERMES_API_KEY: hermesEnvironment.HERMES_API_KEY,
+      })
     : null;
   const controls = modelControlCapabilities(state.harness, state.effectiveModel)
     .filter((capability) => capability.delivery !== "native-provider" || hermesApi !== null);

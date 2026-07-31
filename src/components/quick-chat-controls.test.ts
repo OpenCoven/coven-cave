@@ -136,8 +136,8 @@ assert.match(
 );
 assert.match(
   source,
-  /CONTROL_SELECT_CLASS =\s*\n?\s*"[^"]*rounded-\[var\(--radius-control\)\]/,
-  "selector controls use the shared control radius token",
+  /<QuickChatSelect[\s\S]*label="Project"/,
+  "the remaining project selector uses the shared QuickChatSelect primitive",
 );
 assert.doesNotMatch(source, /rounded-md/, "controls avoid hard-coded md radius");
 assert.ok(source.includes('import { Button } from "@/components/ui/button"'), "controls use the shared Button primitive");

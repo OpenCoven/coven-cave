@@ -11,7 +11,6 @@ import type { CaveProject } from "@/lib/cave-projects-types";
 import { projectAccessLabel } from "@/lib/project-access-levels";
 import { Icon, type IconName } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
-import { StandardSelect } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { useReplyRecommendation, type ReplyRecommendationState } from "@/lib/use-reply-recommendation";
@@ -60,11 +59,7 @@ export { QUICK_CHAT_SUGGESTIONS } from "./quick-chat-primitives";
 const EMPTY_MESSAGES: QuickChatMessage[] = [];
 
 // ── Controls row ─────────────────────────────────────────────────────────────
-// Familiar picker + thinking-effort + response-speed selects — identical in the
-// in-app dropdown and the tray window.
-
-const CONTROL_SELECT_CLASS =
-  "min-w-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs outline-none";
+// Familiar/project selection is identical in the in-app dropdown and tray.
 
 export function QuickChatControlsRow({
   loading,
@@ -76,7 +71,6 @@ export function QuickChatControlsRow({
   projectsError,
   selectedProjectRoot,
   onPickProjectRoot,
-  sending,
   showFamiliarPicker = false,
 }: {
   loading: boolean;
@@ -88,7 +82,6 @@ export function QuickChatControlsRow({
   projectsError?: string | null;
   selectedProjectRoot: string | null;
   onPickProjectRoot: (root: string | null) => void;
-  sending: boolean;
   showFamiliarPicker?: boolean;
 }) {
   // Once a project is picked the thread is locked to that context (switching
