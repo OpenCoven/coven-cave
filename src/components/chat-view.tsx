@@ -76,7 +76,6 @@ import { githubIcon, githubLabel, repoName } from "@/components/composer-linked-
 import { LinkedContextRow } from "@/components/composer-linked-work-actions";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import {
-  attachmentIcon,
   cleanImageDataUrl,
   extractAgentAttachmentMarkers,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
@@ -207,7 +206,7 @@ import {
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
-import { AttachmentList, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
+import { AttachmentList, AttachmentThumb, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
 import { preloadMarkdownPreview } from "@/lib/markdown-preview";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
@@ -6415,7 +6414,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     key={attachment.id}
                     className="inline-flex max-w-56 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/50 px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
                   >
-                    <Icon name={attachmentIcon(attachment)} width={12} />
+                    {/* Staged images preview as themselves — a filename chip
+                        gave no way to tell which screenshot you picked. */}
+                    <AttachmentThumb attachment={attachment} />
                     <span className="truncate">{attachment.name}</span>
                     <span className="shrink-0 text-[var(--text-muted)]">{formatAttachmentBytes(attachment.size)}</span>
                     <button
@@ -7185,7 +7186,17 @@ function TurnRowImpl({
                 onOpenUrl={onOpenUrl}
                 branchNav={branchNav}
               />
-              {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
+              {/* An image you attached renders as the image, matching the
+                  assistant path — the chip list only carries what has no
+                  pixels to show (text files, oversize/undelivered images). */}
+              {turn.attachments?.length ? (
+                <>
+                  <InlineImageAttachments attachments={turn.attachments} />
+                  {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
+                    <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                  ) : null}
+                </>
+              ) : null}
               {/* Bare-line GitHub URLs in a user message unfurl into cards
                   beneath the bubble (attachment idiom) — the headline "paste a
                   PR link" gesture (design §1). User turns only, never system. */}

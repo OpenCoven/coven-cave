@@ -104,6 +104,25 @@ export function isInlineImageAttachment(attachment: ChatAttachment): boolean {
 }
 
 /**
+ * Chip-sized preview of a staged attachment: the picture itself for an image
+ * we hold pixels for, the mime glyph otherwise. Used by the composer so an
+ * attached image is recognizable before it is sent, rather than a filename.
+ */
+export function AttachmentThumb({ attachment }: { attachment: ChatAttachment }) {
+  if (!isInlineImageAttachment(attachment)) {
+    return <Icon name={attachmentIcon(attachment)} width={12} className="shrink-0" />;
+  }
+  return (
+    <img
+      src={attachment.dataUrl}
+      alt=""
+      aria-hidden
+      className="h-5 w-5 shrink-0 rounded-sm border border-[var(--border-hairline)] object-cover"
+    />
+  );
+}
+
+/**
  * Full-bleed inline rendering for image attachments a familiar produced
  * (e.g. /image generations) — a bounded picture in the transcript instead of
  * a filename chip. Click opens the same lightbox as the chip list.
