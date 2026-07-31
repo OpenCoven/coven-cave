@@ -112,6 +112,32 @@ assert.deepStrictEqual(
   beta5Profile,
   "beta5 discovery selects the reviewed built-in profile",
 );
+const { priority: _omittedPriority, ...beta5ProfileWithoutPriority } = {
+  ...beta5Profile,
+  id: "openclaw-agent-tool-default-priority",
+  source: { ...beta5Profile.source },
+};
+assert.deepStrictEqual(
+  validateOpenClawToolProfiles([beta5ProfileWithoutPriority]),
+  [{ ...beta5ProfileWithoutPriority, priority: 0 }],
+  "compatible profiles without an explicit priority validate with the default effective priority",
+);
+assert.deepStrictEqual(
+  selectOpenClawToolProfile([beta5ProfileWithoutPriority], beta5Discovery),
+  { ...beta5ProfileWithoutPriority, priority: 0 },
+  "compatible profiles without an explicit priority remain selectable",
+);
+assert.deepStrictEqual(
+  selectOpenClawToolProfile(
+    [
+      beta5ProfileWithoutPriority,
+      { ...beta5Profile, id: "openclaw-agent-tool-priority-1", source: { ...beta5Profile.source }, priority: 1 },
+    ],
+    beta5Discovery,
+  ),
+  { ...beta5Profile, id: "openclaw-agent-tool-priority-1", source: { ...beta5Profile.source }, priority: 1 },
+  "explicit priorities still outrank the default effective priority deterministically",
+);
 assert.equal(
   selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
     ...beta5Discovery,
@@ -353,6 +379,14 @@ assert.equal(
   ]),
   null,
   "duplicate priorities are rejected at the validation boundary",
+);
+assert.equal(
+  validateOpenClawToolProfiles([
+    beta5ProfileWithoutPriority,
+    { ...beta5Profile, id: "openclaw-agent-tool-v2", source: { ...beta5Profile.source }, priority: 0 },
+  ]),
+  null,
+  "omitted and explicit zero priorities collide on the same effective priority",
 );
 assert.equal(
   validateOpenClawToolProfiles([

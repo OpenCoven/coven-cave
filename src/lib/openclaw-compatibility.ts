@@ -56,7 +56,7 @@ export type OpenClawGatewayDiscovery = {
 
 export type OpenClawToolProfile = {
   id: string;
-  priority: number;
+  priority?: number;
   requires: {
     serverVersions: string[];
     protocol: number;
@@ -190,9 +190,14 @@ function hasBucketOverlap(buckets: readonly string[][]): boolean {
   return false;
 }
 
+function effectiveOpenClawToolProfilePriority(profile: Pick<OpenClawToolProfile, "priority">): number {
+  return profile.priority ?? 0;
+}
+
 function validateOpenClawToolProfile(value: unknown): OpenClawToolProfile | null {
   if (!isRecord(value) || !hasOnlyKeys(value, ["id", "priority", "requires", "eventNames", "streams", "phases", "aliases", "errorStates", "source"])) return null;
-  if (!validBoundedString(value.id) || typeof value.priority !== "number" || !Number.isSafeInteger(value.priority)) return null;
+  const priority = effectiveOpenClawToolProfilePriority(value);
+  if (!validBoundedString(value.id) || !Number.isSafeInteger(priority)) return null;
 
   if (!isRecord(value.requires) || !hasOnlyKeys(value.requires, ["serverVersions", "protocol", "agentEventSchemaHash", "methods", "events", "serverCapabilities", "clientCapabilities"])) return null;
   if (typeof value.requires.protocol !== "number" || !Number.isSafeInteger(value.requires.protocol) || value.requires.protocol < 1) return null;
@@ -236,7 +241,7 @@ function validateOpenClawToolProfile(value: unknown): OpenClawToolProfile | null
 
   return {
     id: value.id,
-    priority: value.priority,
+    priority,
     requires: {
       serverVersions,
       protocol: value.requires.protocol,
@@ -268,7 +273,7 @@ export function validateOpenClawToolProfiles(value: unknown): OpenClawToolProfil
     profiles.push(profile);
   }
   const ids = profiles.map((profile) => profile.id);
-  const priorities = profiles.map((profile) => profile.priority);
+  const priorities = profiles.map((profile) => effectiveOpenClawToolProfilePriority(profile));
   if (new Set(ids).size !== ids.length || new Set(priorities).size !== priorities.length) return null;
   return profiles;
 }
@@ -325,7 +330,8 @@ export function selectOpenClawToolProfile(profiles: unknown, discovery: OpenClaw
     && exactSetMatch(discovery.clientCapabilities, profile.requires.clientCapabilities),
   );
   if (!matches.length) return null;
-  return [...matches].sort((left, right) => right.priority - left.priority || left.id.localeCompare(right.id))[0] ?? null;
+  return [...matches].sort((left, right) =>
+    effectiveOpenClawToolProfilePriority(right) - effectiveOpenClawToolProfilePriority(left) || left.id.localeCompare(right.id))[0] ?? null;
 }
 
 function openClawFingerprintShape(input: unknown, depth = 0): unknown {
