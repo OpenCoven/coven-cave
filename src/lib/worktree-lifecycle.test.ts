@@ -281,6 +281,18 @@ function legacyObservation(overrides = {}) {
 {
   const item = classifyLifecycleUnit(
     observation({
+      metadata: metadata({ exception: null }),
+      mergedPr: { number: 51, headOid: "a".repeat(40), url: "https://example.test/51" },
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "retire-after-gate", "null exception behaves like an absent managed creation exception");
+  assert.doesNotMatch(item.reasons.join("\n"), /exception active/i);
+}
+
+{
+  const item = classifyLifecycleUnit(
+    observation({
       metadata: metadata({
         exception: {
           owner: "Kitty",
@@ -482,6 +494,23 @@ function legacyObservation(overrides = {}) {
     },
   });
   assert.deepEqual(allowed, { allowed: true, reasons: [] }, "valid exceptions permit an additional path");
+}
+
+{
+  const allowed = assessManagedWorktreeCreation({
+    beadId: "cave-ox3ky",
+    requestedPath: "/repo/.worktrees/second",
+    nowMs: NOW,
+    existingPaths: [],
+    budgets: calculateLifecycleBudgets({
+      worktreeCount: 1,
+      branchCount: 1,
+      activeExceptions: 0,
+      expiredExceptions: 0,
+    }),
+    exception: null,
+  });
+  assert.deepEqual(allowed, { allowed: true, reasons: [] }, "null exception is treated as absent during admission");
 }
 
 {

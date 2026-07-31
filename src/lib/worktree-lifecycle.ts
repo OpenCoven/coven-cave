@@ -38,7 +38,7 @@ export type WorktreeLifecycleMetadata = {
   createdAt: string;
   reason?: string;
   reviewAfter?: string;
-  exception?: ManagedCreationException;
+  exception?: ManagedCreationException | null;
 };
 
 export type WorktreeRemoteRef = {
@@ -235,7 +235,7 @@ function applicableManagedCreationException({
   requestedPath,
   nowMs,
 }: {
-  exception?: ManagedCreationException;
+  exception?: ManagedCreationException | null;
   requestedPath: string | null;
   nowMs: number;
 }): ManagedCreationException | null {
@@ -581,7 +581,7 @@ export function assessManagedWorktreeCreation({
   nowMs: number;
   existingPaths: string[];
   budgets: WorktreeLifecycleBudgets;
-  exception?: ManagedCreationException;
+  exception?: ManagedCreationException | null;
 }): { allowed: boolean; reasons: string[] } {
   const reasons: string[] = [];
   const validException = applicableManagedCreationException({ exception, requestedPath, nowMs });
