@@ -95,7 +95,9 @@ export function useRuntimeModelInventory(
   }
   return {
     models: DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime) ? [] : staticModels,
-    provenance: DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime) ? null : "live",
+    provenance: DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime)
+      ? null
+      : inventoryFailureProvenance(canonicalRuntime, staticModels),
     loading: DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime),
     key: inventoryKey,
   };

@@ -86,8 +86,8 @@ assert.match(
 
 assert.match(
   replay,
-  /function hasQueuedModelSnapshot[\s\S]*?Object\.keys\(record\(payload\.modelControls\)\)\.length[\s\S]*?if \(hasQueuedModelSnapshot\(payload\)\)[\s\S]*?queued chat with model controls cannot be replayed without its control contract/,
-  "travel replay must fail visibly rather than silently dropping queued model controls",
+  /model: stringValue\(payload\.modelOverride\),[\s\S]*reasoningEffort: stringValue\(payload\.reasoningEffort\),[\s\S]*responseSpeed: stringValue\(payload\.responseSpeed\),[\s\S]*modelControls: record\(payload\.modelControls\)/,
+  "travel replay carries an iOS queued explicit model and capability controls through the daemon session contract",
 );
 
 assert.match(

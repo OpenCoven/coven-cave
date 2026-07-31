@@ -29,6 +29,7 @@ assert.equal(
   true,
   "empty runtime-owned and unknown inventories never masquerade as a fallback catalog",
 );
+assert.match(source, /provenance: DYNAMIC_INVENTORY_RUNTIMES\.has\(canonicalRuntime\)[\s\S]*inventoryFailureProvenance\(canonicalRuntime, staticModels\)/, "static Codex and Hermes catalogs are truthfully reported as fallback inventory");
 assert.match(
   source,
   /new Set\(\["claude", "copilot", "opencode", "grok"\]\)/,

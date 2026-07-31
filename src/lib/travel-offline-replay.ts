@@ -57,16 +57,6 @@ function queuedRuntime(payload: Record<string, unknown>): string | null {
   return stringValue(metadata.runtime);
 }
 
-function hasQueuedModelSnapshot(payload: Record<string, unknown>): boolean {
-  return Boolean(
-    stringValue(payload.modelOverride) ||
-    stringValue(payload.modelOverrideScope) ||
-    stringValue(payload.reasoningEffort) ||
-    stringValue(payload.responseSpeed) ||
-    Object.keys(record(payload.modelControls)).length,
-  );
-}
-
 function replayError(err: unknown): string {
   return err instanceof Error ? err.message : "sync failed";
 }
@@ -82,6 +72,10 @@ async function spawnHubSession(args: {
   familiarId: string | null;
   harness: string;
   prompt: string;
+  model?: string | null;
+  reasoningEffort?: string | null;
+  responseSpeed?: string | null;
+  modelControls?: Record<string, unknown>;
   projectRoot?: string | null;
   title: string;
 }): Promise<string> {
@@ -98,6 +92,10 @@ async function spawnHubSession(args: {
       projectRoot,
       harness: args.harness,
       prompt: args.prompt,
+      ...(args.model ? { model: args.model } : {}),
+      ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
+      ...(args.responseSpeed ? { responseSpeed: args.responseSpeed } : {}),
+      ...(Object.keys(args.modelControls ?? {}).length ? { modelControls: args.modelControls } : {}),
       ...(args.familiarId ? { familiarId: args.familiarId } : {}),
     },
     timeoutMs: 8000,
@@ -119,12 +117,6 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const familiarId = stringValue(payload.familiarId);
   const prompt = stringValue(payload.prompt);
   if (!familiarId || !prompt) throw new Error("queued chat payload missing familiarId or prompt");
-  if (hasQueuedModelSnapshot(payload)) {
-    // The daemon session API does not accept Cave's model/control contract.
-    // Retrying without it would silently change the user's queued request.
-    throw new Error("queued chat with model controls cannot be replayed without its control contract");
-  }
-
   const runtime = queuedRuntime(payload);
   if (runtime?.startsWith("ssh:")) {
     throw new Error("queued SSH-runtime chat cannot be replayed as a local hub session");
@@ -147,6 +139,10 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     familiarId,
     harness: binding.harness,
     prompt: replayPrompt,
+    model: stringValue(payload.modelOverride),
+    reasoningEffort: stringValue(payload.reasoningEffort),
+    responseSpeed: stringValue(payload.responseSpeed),
+    modelControls: record(payload.modelControls),
     projectRoot,
     title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id),
   });
