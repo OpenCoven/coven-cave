@@ -209,17 +209,17 @@ assert.throws(
     readIosReleaseSettings(
       `
 name: Example
+hiddenSegment: &hiddenSegment release
 settings:
-  base: &baseSettings
-    MARKETING_VERSION: "0.2.1"
-    CURRENT_PROJECT_VERSION: "1"
-  ? *baseSettings
-  : MARKETING_VERSION: "9.9.9"
+  base:
+    ? *hiddenSegment
+    : MARKETING_VERSION: "0.2.1"
+      CURRENT_PROJECT_VERSION: "1"
 `,
-      "fixtures/alias-mapping-key.yml",
+      "fixtures/alias-hidden-segment.yml",
     ),
-  /fixtures\/alias-mapping-key\.yml.*string mapping keys/i,
-  "An alias mapping key that hides a MARKETING_VERSION override must be rejected explicitly",
+  /fixtures\/alias-hidden-segment\.yml.*string mapping keys/i,
+  "An alias mapping key that hides an intermediate release path segment must be rejected explicitly",
 );
 
 assert.throws(
