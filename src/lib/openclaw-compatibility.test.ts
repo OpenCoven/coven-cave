@@ -27,11 +27,31 @@ assert.equal(
 const beta4Discovery = openClawDiscoveryFromHello(gatewayBeta4);
 const beta5Discovery = openClawDiscoveryFromHello(gatewayBeta5);
 
-assert.equal(beta4Discovery.serverVersion, "2026.7.2-beta.4");
-assert.equal(beta5Discovery.serverVersion, "2026.7.2-beta.5");
+assert.deepStrictEqual(beta4Discovery, {
+  serverVersion: "2026.7.2-beta.4",
+  protocol: 4,
+  methods: ["chat.send", "chat.abort"],
+  events: ["chat"],
+  serverCapabilities: ["chat-send-routing-contract"],
+  agentEventSchemaHash: OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
+});
+
+assert.deepStrictEqual(beta5Discovery, {
+  serverVersion: "2026.7.2-beta.5",
+  protocol: 4,
+  methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"],
+  events: ["chat", "agent", "session.tool"],
+  serverCapabilities: ["chat-send-routing-contract"],
+  agentEventSchemaHash: OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
+});
 
 assert.ok(Value.Check(HelloOkSchema, gatewayBeta4));
 assert.ok(Value.Check(HelloOkSchema, gatewayBeta5));
+
+assert.deepStrictEqual(
+  toolLifecycleV1.frames.map((frame: { event: string }) => frame.event),
+  ["agent", "agent", "agent", "session.tool"],
+);
 
 for (const frame of toolLifecycleV1.frames) {
   assert.ok(Value.Check(AgentEventSchema, frame.payload), frame.event);
