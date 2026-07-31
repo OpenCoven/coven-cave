@@ -191,12 +191,15 @@ export function buildBipartiteWeaveMap(args: {
 }): BipartiteWeaveMap {
   const staged = pendingThreadIds(args.proposals);
   const writers = [...new Set(args.threads.map((t) => t.writer))];
+  // Index once: an indexOf per thread would rescan the writer lane on every
+  // link, making the whole build quadratic in thread count.
+  const writerIndex = new Map(writers.map((writer, index) => [writer, index]));
   const surfaces = args.threads.map((t) => ({ surface: t.surface, tone: toneForTension(t.tension) }));
   const links = args.threads.map((thread, index) => ({
     threadId: thread.id,
     writer: thread.writer,
     surface: thread.surface,
-    writerIndex: writers.indexOf(thread.writer),
+    writerIndex: writerIndex.get(thread.writer) ?? 0,
     surfaceIndex: index,
     tone: toneForTension(thread.tension),
     strandCount: thread.strandCount,

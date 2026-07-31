@@ -745,6 +745,17 @@
 
 .wv-map { padding: var(--space-2); }
 .wv-map svg { display: block; width: 100%; }
+/* SVG text on the type scale. Presentation attributes cannot carry var(), so
+   the map's labels take their size and family from CSS like every other
+   string on the surface — no fractional px, no second font stack. */
+.wv-map__label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-xs);
+}
+.wv-map__lane {
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-eyebrow);
+}
 .wv-map__blocked {
   margin: 0;
   padding: var(--space-5);

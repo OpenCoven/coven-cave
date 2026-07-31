@@ -284,9 +284,12 @@ export function WeavesView() {
         </p>
         <dl className="wv-tallies" aria-label="Integrity overview">
           {tallies.map((tally) => (
+            // dt before dd in DOM order — the term defines the value, and
+            // assistive tech reads the pair in source order. `order` on
+            // .wv-tally__value/__label puts the number first visually.
             <div key={tally.key} className={`wv-tally wv-tally--${tally.key}`}>
-              <dd className="wv-tally__value">{tally.value}</dd>
               <dt className="wv-tally__label">{tally.label}</dt>
+              <dd className="wv-tally__value">{tally.value}</dd>
             </div>
           ))}
         </dl>

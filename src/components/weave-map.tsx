@@ -30,7 +30,6 @@ const LANE_LEFT = 168;
 const LANE_RIGHT = 552;
 const ROW_HEIGHT = 34;
 const LANE_PAD = 30;
-const MONO_STACK = "var(--font-mono), ui-monospace, monospace";
 
 export function WeaveMapCanvas({
   threads,
@@ -127,8 +126,7 @@ export function WeaveMapCanvas({
                       x={LANE_LEFT - 12}
                       y={y + 4}
                       textAnchor="end"
-                      fontSize={11.5}
-                      fontFamily={MONO_STACK}
+                      className="wv-map__label"
                       fill="var(--text-secondary)"
                     >
                       {writer}
@@ -151,8 +149,7 @@ export function WeaveMapCanvas({
                     <text
                       x={LANE_RIGHT + 14}
                       y={y + 4}
-                      fontSize={11.5}
-                      fontFamily={MONO_STACK}
+                      className="wv-map__label"
                       fill="var(--text-primary)"
                     >
                       {entry.surface}
@@ -164,8 +161,7 @@ export function WeaveMapCanvas({
                 x={LANE_LEFT}
                 y={height - 6}
                 textAnchor="end"
-                fontSize={10}
-                letterSpacing="0.08em"
+                className="wv-map__lane"
                 fill="var(--text-muted)"
               >
                 WRITERS
@@ -173,8 +169,7 @@ export function WeaveMapCanvas({
               <text
                 x={LANE_RIGHT + 14}
                 y={height - 6}
-                fontSize={10}
-                letterSpacing="0.08em"
+                className="wv-map__lane"
                 fill="var(--text-muted)"
               >
                 PROTECTED SURFACES
