@@ -241,7 +241,7 @@ cave-pimgr):
 
 Nothing was destroyed and no file was co-edited, so no hook fired. The cost
 came from *misreading the aftermath*: session A interpreted the (correct)
-gh error as branch corruption, "recovered" a branch that needed no recovery,
+`gh` error as branch corruption, "recovered" a branch that needed no recovery,
 and opened a duplicate PR; a second session doing unrelated GC found the
 branch gone and independently wrote "another session deleted work" into its
 summary — which session A then treated as corroboration. Two agents inferring
@@ -258,11 +258,16 @@ Two habits kill this failure mode outright:
   publication entirely.
 - **Treat `No commits between main and <branch>` as a SIGNAL, not an
   error.** It usually means the work is already ON main. Before concluding
-  anything was lost, run
-  `git merge-base --is-ancestor <your-sha> origin/main` — if it answers yes,
-  your commit landed (someone merged it, or a squash carried it) and the
-  branch deletion was routine post-merge cleanup. That single check would
-  have ended the 2026-07-29 incident in seconds.
+  anything was lost, verify in two steps:
+  `git merge-base --is-ancestor <your-sha> origin/main` answers yes for
+  merge/fast-forward landings, but a SQUASH merge — this repo's default —
+  rewrites the sha, so on "no" continue with
+  `git cherry origin/main <your-sha>` (a leading `-` means a
+  patch-equivalent commit is already upstream) and
+  `gh pr list --state merged --head <branch>` (a merged PR on the branch IS
+  the landing record, whatever the merge style). Any one of the three
+  answering "landed" means the branch deletion was routine post-merge
+  cleanup. That check would have ended the 2026-07-29 incident in seconds.
 
 The corollary for the *reading* side: a vanished branch plus a merged PR
 containing your commit is the signature of **completed publication**, not
@@ -304,10 +309,11 @@ Until any of the above is built, sessions should:
 
 6. **Check the PR layer before publishing and before crying destruction.**
    `gh pr list --state all --head <branch>` before `gh pr create`; and on
-   `No commits between main and <branch>`, run
-   `git merge-base --is-ancestor <sha> origin/main` before concluding
-   anything was lost. See "The PR layer" section above for the incident that
-   made both habits policy.
+   `No commits between main and <branch>`, verify the work landed
+   (`merge-base --is-ancestor`, then `git cherry` for squash merges, then
+   `gh pr list --state merged --head`) before concluding anything was lost.
+   See "The PR layer" section above for the incident that made both habits
+   policy.
 
 ## Open questions
 
