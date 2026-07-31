@@ -1,4 +1,4 @@
-import { isModelInCatalog } from "./runtime-models";
+import { isModelInCatalog } from "./runtime-models.ts";
 
 /**
  * A runtime-neutral description of controls that may be offered for one
