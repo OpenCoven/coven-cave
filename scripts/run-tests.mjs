@@ -1101,6 +1101,7 @@ export const SUITES = {
     "src/lib/hermes-responses-stream.test.ts",
     "src/lib/openclaw-bin.test.ts",
     "src/lib/openclaw-bridge.test.ts",
+    "src/lib/openclaw-compatibility.test.ts",
     "src/lib/openclaw-gateway.test.ts",
     "src/lib/server/openclaw-device-credentials.test.ts",
     "src/lib/coven-identity-canon.test.ts",
