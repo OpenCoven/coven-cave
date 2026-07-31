@@ -413,6 +413,19 @@
 }
 .research-desk-block__abstract { color: var(--text-primary); }
 .research-desk-block__empty { margin: 0; font-size: var(--text-2xs); color: var(--text-muted); }
+
+/* Failure details stay out of the main run narrative until explicitly opened.
+   The modal uses the shared focus trap; these rows only establish the compact,
+   token-driven evidence hierarchy inside it. */
+.research-mission-stop { align-items: center; }
+.research-mission-stop > span { min-width: 0; }
+.research-mission-stop__diagnostics { flex: none; margin-left: auto; }
+.research-mission-diagnostics { display: grid; gap: var(--space-4); }
+.research-mission-diagnostics > p { margin: 0; color: var(--text-secondary); font-size: var(--text-xs); }
+.research-mission-diagnostics dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--space-2); margin: 0; }
+.research-mission-diagnostics dl > div { display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-3); border: 1px solid var(--border-hairline); border-radius: var(--radius-control); background: var(--bg-sunken); }
+.research-mission-diagnostics dt { color: var(--text-muted); font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--text-2xs); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.research-mission-diagnostics dd { margin: 0; color: var(--text-primary); font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--text-xs); overflow-wrap: anywhere; }
 .research-desk-activity {
   display: flex;
   flex-direction: column;
