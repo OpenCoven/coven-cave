@@ -58,13 +58,14 @@ export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
  * The single alias → canonical remap table: where every compatibility mode
  * lands. Two alias classes share it:
  *
- * - Rewritten in Workspace.setMode, so `mode` state never holds them:
- *   `groupchat` opens Chat's Group tab, `journal` opens Memories' Journal
- *   tab, `flow` (retired surface) lands on Rituals, and `code` / `github`
- *   open the Coding familiar's Code Workshop room — old `?mode=code` deep
- *   links and persisted last-surface strings keep landing on the workbench,
- *   now behind the room's role gate. `github` is the extra compatibility
- *   spelling; Workspace.setMode later adds the Activity intent on top.
+ * - Rewritten in Workspace.setMode today: `groupchat` opens Chat's Group tab,
+ *   `journal` opens Memories' Journal tab, `flow` (retired surface) lands on
+ *   Rituals, and `code` opens the Coding familiar's Code Workshop room — old
+ *   `?mode=code` deep links and persisted last-surface strings keep landing on
+ *   the workbench, now behind the room's role gate.
+ * - Declared in the mode model as a `surface:code` compatibility target:
+ *   `github` shares the same code-workshop landing zone, but its Workspace
+ *   rewrite and Activity handoff are implemented later in Task 3.
  * - Kept in `mode` state as tab/section selectors: the render branch mounts
  *   the canonical surface on the matching tab, keyed by the alias so deep
  *   links remount onto it — `calendar` (Rituals' Calendar tab),
