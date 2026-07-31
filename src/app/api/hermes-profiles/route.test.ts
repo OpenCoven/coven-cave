@@ -79,7 +79,6 @@ const expired = await listHermesProfiles({
 });
 assert.deepEqual(expired.profiles, [], "an expired discovery deadline starts no profile metadata work");
 assert.deepEqual(deadlineCalls, [["profile", "list"]]);
-
 const unavailable = await listHermesProfiles({ command: "hermes", run: async () => null });
 assert.deepEqual(unavailable.profiles, [], "a missing or unconfigured CLI returns an empty profile list");
 assert.match(unavailable.hint ?? "", /Couldn't list Hermes profiles/, "the empty failure state explains how to recover");
