@@ -6466,8 +6466,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 busy
                   ? "Streaming… (send to queue · esc to cancel)"
                   : recommendedNextPath
-                    ? `${recommendedNextPath.prompt}  ⇥ to fill`
-                    : `Message ${familiar.display_name}…  ↵ to send`
+                    ? recommendedNextPath.prompt
+                    : `Message ${familiar.display_name}…`
               }
               rows={1}
               inputMode="text"
