@@ -18,7 +18,7 @@ function collectReleaseSettingOccurrences(node, targetKey, path = [], occurrence
       if (YAML.isScalar(keyNode) && typeof keyNode.value === "string") {
         const nextPath = [...path, keyNode.value];
         if (keyNode.value === targetKey) {
-          occurrences.push({ path: nextPath.join("."), valueNode: pair.value });
+          occurrences.push({ path: nextPath, valueNode: pair.value });
         }
         collectReleaseSettingOccurrences(pair.value, targetKey, nextPath, occurrences);
       } else if (pair.value) {
@@ -32,6 +32,14 @@ function collectReleaseSettingOccurrences(node, targetKey, path = [], occurrence
   }
 
   return occurrences;
+}
+
+function samePathSegments(left, right) {
+  return left.length === right.length && left.every((segment, index) => segment === right[index]);
+}
+
+function formatPathSegments(path) {
+  return JSON.stringify(path);
 }
 
 function readIosReleaseSettings(source, sourceLabel = "apps/ios/CovenCave/project.yml") {
@@ -48,21 +56,23 @@ function readIosReleaseSettings(source, sourceLabel = "apps/ios/CovenCave/projec
 }
 
 function readCanonicalReleaseSetting(document, key, sourceLabel) {
-  const canonicalPath = `settings.base.${key}`;
+  const canonicalPath = ["settings", "base", key];
   const occurrences = collectReleaseSettingOccurrences(document.contents, key);
 
-  if (occurrences.length !== 1 || occurrences[0].path !== canonicalPath) {
+  if (occurrences.length !== 1 || !samePathSegments(occurrences[0].path, canonicalPath)) {
     const detail =
       occurrences.length === 0
         ? "was not found"
-        : `was also found at ${occurrences.map((occurrence) => occurrence.path).join(", ")}`;
-    throw new Error(`${sourceLabel} must define ${key} exactly once at ${canonicalPath}; ${detail}`);
+        : `was also found at ${occurrences.map((occurrence) => formatPathSegments(occurrence.path)).join(", ")}`;
+    throw new Error(
+      `${sourceLabel} must define ${key} exactly once at ${formatPathSegments(canonicalPath)}; ${detail}`,
+    );
   }
 
   const valueNode = occurrences[0].valueNode;
 
   if (!YAML.isScalar(valueNode) || typeof valueNode.value !== "string") {
-    throw new Error(`${sourceLabel} must use a string scalar at ${canonicalPath}`);
+    throw new Error(`${sourceLabel} must use a string scalar at ${formatPathSegments(canonicalPath)}`);
   }
 
   return valueNode.value;
@@ -143,8 +153,20 @@ targets:
       base:
         MARKETING_VERSION: "9.9.9"
 `),
-  /settings\.base\.MARKETING_VERSION/,
+  /\["settings","base","MARKETING_VERSION"\]/,
   "A target-level MARKETING_VERSION override must be rejected",
+);
+
+assert.throws(
+  () =>
+    readIosReleaseSettings(`
+name: Example
+"settings.base":
+  MARKETING_VERSION: "0.2.1"
+  CURRENT_PROJECT_VERSION: "1"
+`),
+  /\["settings","base","MARKETING_VERSION"\]/,
+  "A literal dotted settings.base mapping must not satisfy the canonical nested path",
 );
 
 assert.throws(
