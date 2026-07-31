@@ -46,6 +46,7 @@ export const SUITES = {
     "scripts/canonical-memory-smoke-helpers.test.mjs",
     "scripts/canonical-memory-smoke-lifecycle.test.mjs",
     "scripts/test-alias-loader.test.mjs",
+    "scripts/maintenance-gate.test.mjs",
     "src/lib/board-cache-events.test.ts",
     "src/lib/surface-warmup-registry.test.ts",
     "src/components/workspace-surface-warmup.test.ts",
@@ -189,6 +190,7 @@ export const SUITES = {
     "src/lib/chat-session-context.test.ts",
     "src/lib/chat-start-from.test.ts",
     "src/lib/chat-thread-instruments.test.ts",
+    "src/lib/chat-tool-batches.test.ts",
     "src/lib/chat-queue-followups.test.ts",
     "src/lib/chat-review-requests.test.ts",
     "src/lib/chat-starter-suggestions.test.ts",
@@ -433,6 +435,7 @@ export const SUITES = {
     "src/components/chat-siderail-hide-archived.test.ts",
     "src/components/chat-empty-state.test.ts",
     "src/components/chat-session-chrome.test.ts",
+    "src/components/chat-tool-batches-ui.test.ts",
     "src/components/chat-queue-group.test.ts",
     "src/components/chat-reviews-group.test.ts",
     "src/components/chat-new-dashboard.test.ts",
@@ -1357,6 +1360,7 @@ export const SUITES = {
     "scripts/ios-reorder-familiars.test.mjs",
     "scripts/ios-theme.test.mjs",
     "scripts/ios-auto-reconnect.test.mjs",
+    "scripts/ios-ats-protections.test.mjs",
     "scripts/ios-self-healing-sync.test.mjs",
     "scripts/ios-connection-stability.test.mjs",
     "scripts/ios-reconnect-pill.test.mjs",
@@ -1420,6 +1424,8 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  // resolves "@/lib/tool-visual" for the batch band's tint
+  "src/lib/chat-tool-batches.test.ts",
   // reaches @/lib/next-paths and @/lib/familiar-stream through the draft module
   "src/lib/gh-review-draft.test.ts",
   // Imports the module under test, which resolves "@/lib/github-repo-link".
