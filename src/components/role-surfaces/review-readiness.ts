@@ -147,7 +147,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       tone: "warning",
       title: "Changes requested and not yet dismissed",
       fix: "The requesting reviewer re-reviews, or dismisses the review on GitHub.",
-      reveal: "checks",
+      reveal: null,
     });
   }
   if (pr.mergeableState === "dirty") {
