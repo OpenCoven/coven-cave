@@ -2805,6 +2805,7 @@ export function Workspace() {
       return;
     }
     if (!roleSurfaceSession.rolesLoaded) return;
+    if (!roleSurfaceSession.rolesLoadedSuccessfully) return;
     if (!roleSurfaceSession.visibleSurfaces.some((surface) => surface.id === CODE_SURFACE_ID)) {
       clearPendingCodeNavigation();
     }
@@ -2812,6 +2813,7 @@ export function Workspace() {
     mode,
     roleSurfaceSession.context,
     roleSurfaceSession.rolesLoaded,
+    roleSurfaceSession.rolesLoadedSuccessfully,
     roleSurfaceSession.visibleSurfaces,
     activeFamiliarHydrated,
     familiarsLoaded,

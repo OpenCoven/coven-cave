@@ -32,6 +32,20 @@ type RoleEntryWire = FamiliarRoleManifest & {
   mcpServers?: string[];
 };
 
+function isRoleEntryWire(value: unknown): value is RoleEntryWire {
+  if (value == null || typeof value !== "object") return false;
+  const entry = value as Partial<RoleEntryWire>;
+  return (
+    typeof entry.id === "string" &&
+    typeof entry.familiar === "string" &&
+    typeof entry.active === "boolean" &&
+    (entry.name == null || typeof entry.name === "string") &&
+    (entry.tools == null || (Array.isArray(entry.tools) && entry.tools.every((item) => typeof item === "string"))) &&
+    (entry.plugins == null || (Array.isArray(entry.plugins) && entry.plugins.every((item) => typeof item === "string"))) &&
+    (entry.mcpServers == null || (Array.isArray(entry.mcpServers) && entry.mcpServers.every((item) => typeof item === "string")))
+  );
+}
+
 type MemoryEntryWire = {
   relPath: string;
   fullPath: string;
@@ -166,6 +180,8 @@ export type RoleSurfaceSession = {
   visibleSurfaces: RoleSurface[];
   /** False until the role manifests have loaded once for this familiar. */
   rolesLoaded: boolean;
+  /** True only when `/api/roles` settled with valid evidence for this familiar. */
+  rolesLoadedSuccessfully: boolean;
 };
 
 export function useRoleSurfaceSession(input: {
@@ -181,31 +197,73 @@ export function useRoleSurfaceSession(input: {
   const { familiar, sessions, activeSessionId, daemonRunning, openUrl, openSession, focusCard, refreshTasks } = input;
   const familiarId = familiar?.id ?? null;
 
-  const [manifests, setManifests] = useState<RoleEntryWire[]>([]);
-  const [rolesLoaded, setRolesLoaded] = useState(false);
+  const [roleLoadState, setRoleLoadState] = useState<{
+    familiarId: string | null;
+    manifests: RoleEntryWire[];
+    rolesLoaded: boolean;
+    rolesLoadedSuccessfully: boolean;
+  }>({
+    familiarId,
+    manifests: [],
+    rolesLoaded: false,
+    rolesLoadedSuccessfully: false,
+  });
 
   useEffect(() => {
     let cancelled = false;
-    setRolesLoaded(false);
+    setRoleLoadState({
+      familiarId,
+      manifests: [],
+      rolesLoaded: false,
+      rolesLoadedSuccessfully: false,
+    });
     if (!familiarId) {
-      setManifests([]);
       return;
     }
     (async () => {
       try {
         const res = await fetch("/api/roles", { cache: "no-store" });
-        const json = res.ok ? ((await res.json()) as { roles?: RoleEntryWire[] }) : null;
-        if (!cancelled) setManifests(json?.roles ?? []);
+        if (!res.ok) throw new Error(`roles request failed with status ${res.status}`);
+        const json = (await res.json()) as { roles?: unknown };
+        if (!Array.isArray(json.roles) || !json.roles.every(isRoleEntryWire)) {
+          throw new Error("roles response was malformed");
+        }
+        if (!cancelled) {
+          setRoleLoadState({
+            familiarId,
+            manifests: json.roles,
+            rolesLoaded: true,
+            rolesLoadedSuccessfully: true,
+          });
+        }
       } catch {
-        if (!cancelled) setManifests([]);
-      } finally {
-        if (!cancelled) setRolesLoaded(true);
+        if (!cancelled) {
+          setRoleLoadState({
+            familiarId,
+            manifests: [],
+            rolesLoaded: true,
+            rolesLoadedSuccessfully: false,
+          });
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [familiarId]);
+
+  const currentRoleLoadState =
+    roleLoadState.familiarId === familiarId
+      ? roleLoadState
+      : {
+          familiarId,
+          manifests: [],
+          rolesLoaded: false,
+          rolesLoadedSuccessfully: false,
+        };
+  const manifests = currentRoleLoadState.manifests;
+  const rolesLoaded = currentRoleLoadState.rolesLoaded;
+  const rolesLoadedSuccessfully = currentRoleLoadState.rolesLoadedSuccessfully;
 
   const memory = useMemo(() => createMemoryAccess(familiarId), [familiarId]);
 
@@ -272,5 +330,5 @@ export function useRoleSurfaceSession(input: {
     return resolveVisibleRoleSurfaces(listRoleSurfaces(), familiarRoleIds(familiar, manifests), context);
   }, [familiar, manifests, context]);
 
-  return { context, visibleSurfaces, rolesLoaded };
+  return { context, visibleSurfaces, rolesLoaded, rolesLoadedSuccessfully };
 }
