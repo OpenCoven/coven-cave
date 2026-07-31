@@ -16,7 +16,10 @@
  * unauthenticated public API. The PAT is never echoed back.
  */
 
-import { NextResponse } from "next/server";
+// `next/server.js` (not "next/server") so the route resolves under plain Node
+// and route.test.ts can exercise the bounds directly, as the other tested API
+// routes do.
+import { NextResponse } from "next/server.js";
 import { resolveGitHubToken } from "@/lib/github-token";
 
 export const dynamic = "force-dynamic";
@@ -32,12 +35,23 @@ const MAX_FILES = 40;
 const MAX_PATCH_CHARS = 4_000;
 const PATCH_BUDGET = 60_000;
 
+/**
+ * Why a file carries no patch. `null` means it has one.
+ *   - "github"  — GitHub itself returned no patch (binary, or a file too large
+ *                 for its own diff response). Nothing this route can widen.
+ *   - "budget"  — the patch existed but this route's shared budget was spent.
+ * The distinction is the difference between "review it on GitHub" and "the
+ * deck truncated it", which a reader has to be told apart.
+ */
+type NoPatchReason = "github" | "budget";
+
 type DiffFile = {
   filename: string;
   status: string;
   additions: number;
   deletions: number;
   patch: string | null;
+  noPatchReason: NoPatchReason | null;
 };
 
 function num(value: unknown): number {
@@ -88,12 +102,14 @@ export async function GET(req: Request) {
     for (const entry of raw.slice(0, MAX_FILES)) {
       const full = typeof entry.patch === "string" ? entry.patch : null;
       let patch: string | null = null;
+      let noPatchReason: NoPatchReason | null = full === null ? "github" : null;
       if (full !== null) {
         const room = Math.min(MAX_PATCH_CHARS, budget);
         if (room <= 0) {
           // Budget spent — the file still earns its metadata row, which is what
           // tells the model a change exists here that it cannot see.
           truncated = true;
+          noPatchReason = "budget";
         } else {
           patch = full.slice(0, room);
           if (patch.length < full.length) truncated = true;
@@ -106,10 +122,16 @@ export async function GET(req: Request) {
         additions: num(entry.additions),
         deletions: num(entry.deletions),
         patch,
+        noPatchReason,
       });
     }
 
-    return NextResponse.json({ ok: true, truncated, files });
+    // `files.length` is what the caller can list; `total` is how many the first
+    // page carried. A UI that only knows the former reports "40 files" for a
+    // 63-file PR — an undercount that reads as complete. `total` is itself
+    // capped at per_page, so a caller that needs the true count past 100 files
+    // reads `changed_files` from /api/github/item?pull=1.
+    return NextResponse.json({ ok: true, truncated, total: raw.length, files });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "failed to load diff" },

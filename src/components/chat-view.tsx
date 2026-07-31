@@ -44,6 +44,7 @@ import {
   type Turn,
 } from "@/lib/chat-turn-state";
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
+import { generateChatTitle } from "@/lib/chat-title-generation";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
@@ -76,7 +77,6 @@ import { githubIcon, githubLabel, repoName } from "@/components/composer-linked-
 import { LinkedContextRow } from "@/components/composer-linked-work-actions";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import {
-  attachmentIcon,
   cleanImageDataUrl,
   extractAgentAttachmentMarkers,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
@@ -209,7 +209,7 @@ import {
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
-import { AttachmentList, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
+import { AttachmentList, AttachmentThumb, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
 import { preloadMarkdownPreview } from "@/lib/markdown-preview";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
@@ -1454,6 +1454,7 @@ function MetaLine({
   familiar,
   projectRoot,
   onSessionsChanged,
+  generateTitle,
   children,
 }: {
   session: SessionRow | null;
@@ -1472,6 +1473,8 @@ function MetaLine({
   familiar: Familiar;
   projectRoot?: string;
   onSessionsChanged?: () => void;
+  /** Derives a title from the live transcript for the title row's sparkle. */
+  generateTitle?: () => string | null;
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1546,6 +1549,7 @@ function MetaLine({
           session={session}
           displayTitleOverride={titleOverride}
           onSessionsChanged={onSessionsChanged}
+          generateTitle={generateTitle}
         />
       ) : null}
       <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined}>
@@ -3303,6 +3307,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         ),
     [turns],
   );
+
+  // cave-quiva: the title row's sparkle names the chat from the transcript this
+  // view already holds — no titling round-trip, and it works with the daemon
+  // down. Null when the thread has nothing nameable yet; the control then
+  // leaves the current title alone.
+  const generateTitleFromTranscript = useCallback(() => generateChatTitle(turns), [turns]);
 
   // Active branch path: when activeLeafId is set (branched conversation), only
   // the turns on the path from the root to that leaf are rendered. For linear
@@ -5934,6 +5944,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           familiar={familiar}
           projectRoot={projectRoot}
           onSessionsChanged={onSessionsChanged}
+          generateTitle={generateTitleFromTranscript}
         >
           <div className="cave-chat-session-actions">
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
@@ -6568,7 +6579,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     key={attachment.id}
                     className="inline-flex max-w-56 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/50 px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
                   >
-                    <Icon name={attachmentIcon(attachment)} width={12} />
+                    {/* Staged images preview as themselves — a filename chip
+                        gave no way to tell which screenshot you picked. */}
+                    <AttachmentThumb attachment={attachment} />
                     <span className="truncate">{attachment.name}</span>
                     <span className="shrink-0 text-[var(--text-muted)]">{formatAttachmentBytes(attachment.size)}</span>
                     <button
@@ -7338,7 +7351,17 @@ function TurnRowImpl({
                 onOpenUrl={onOpenUrl}
                 branchNav={branchNav}
               />
-              {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
+              {/* An image you attached renders as the image, matching the
+                  assistant path — the chip list only carries what has no
+                  pixels to show (text files, oversize/undelivered images). */}
+              {turn.attachments?.length ? (
+                <>
+                  <InlineImageAttachments attachments={turn.attachments} />
+                  {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
+                    <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                  ) : null}
+                </>
+              ) : null}
               {/* Bare-line GitHub URLs in a user message unfurl into cards
                   beneath the bubble (attachment idiom) — the headline "paste a
                   PR link" gesture (design §1). User turns only, never system. */}
