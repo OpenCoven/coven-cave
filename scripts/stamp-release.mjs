@@ -80,7 +80,7 @@ export function stampContent(kind, content, oldVersion, newVersion) {
 
 export function applyReplacement(kind, contents, nextVersion, relativePath = "<unknown>") {
   if (kind === "yaml-marketing-version") {
-    const matches = contents.match(/^([ \t]*)MARKETING_VERSION:[ \t]*[^\r\n]+$/gm);
+    const matches = contents.match(/^([ \t]*)MARKETING_VERSION:[ \t]*[^\r\n]*$/gm);
     if (!matches) {
       throw new Error(`${relativePath}: expected MARKETING_VERSION key`);
     }
@@ -91,7 +91,7 @@ export function applyReplacement(kind, contents, nextVersion, relativePath = "<u
     }
 
     return contents.replace(
-      /^([ \t]*)MARKETING_VERSION:[ \t]*[^\r\n]+$/m,
+      /^([ \t]*)MARKETING_VERSION:[ \t]*[^\r\n]*$/m,
       `$1MARKETING_VERSION: ${nextVersion}`,
     );
   }

@@ -87,6 +87,16 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
       ),
     /exactly once/,
   );
+  assert.throws(
+    () =>
+      applyReplacement(
+        "yaml-marketing-version",
+        "MARKETING_VERSION: 0.2.1\nMARKETING_VERSION:\n",
+        "0.2.2",
+        "apps/ios/CovenCave/project.yml",
+      ),
+    /exactly once/,
+  );
   assert.equal(
     STAMP_FILES.find(
       (entry) => entry.path === "apps/ios/CovenCave/project.yml",
