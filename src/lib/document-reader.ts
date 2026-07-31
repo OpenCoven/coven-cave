@@ -65,6 +65,18 @@ type FenceMarker = {
   size: number;
 };
 
+type FenceOpen = {
+  indent: string;
+  marker: string;
+  info: string;
+  fence: FenceMarker;
+};
+
+type ThematicBreak = {
+  indent: string;
+  char: "*" | "-" | "_";
+};
+
 function splitMarkdownLines(markdown: string): MarkdownLine[] {
   if (!markdown) return [];
 
@@ -91,13 +103,22 @@ function splitMarkdownLines(markdown: string): MarkdownLine[] {
   return lines;
 }
 
-function matchFenceMarker(text: string): FenceMarker | null {
-  const match = text.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
+function matchFenceOpen(text: string): FenceOpen | null {
+  const match = text.match(/^(\s{0,3})(`{3,}|~{3,})(.*)$/);
   if (!match) return null;
   return {
-    char: match[1][0] as FenceMarker["char"],
-    size: match[1].length,
+    indent: match[1],
+    marker: match[2],
+    info: match[3],
+    fence: {
+      char: match[2][0] as FenceMarker["char"],
+      size: match[2].length,
+    },
   };
+}
+
+function matchFenceMarker(text: string): FenceMarker | null {
+  return matchFenceOpen(text)?.fence ?? null;
 }
 
 function isFenceClose(text: string, fence: FenceMarker): boolean {
@@ -114,12 +135,72 @@ function matchSetextUnderline(text: string): 1 | 2 | null {
   return match[1][0] === "=" ? 1 : 2;
 }
 
+function matchThematicBreakLine(text: string): ThematicBreak | null {
+  const match = text.match(/^(\s{0,3})([ \t*_-]+)$/);
+  if (!match) return null;
+
+  const compact = match[2].replace(/[ \t]/g, "");
+  if (compact.length < 3) return null;
+
+  const char = compact[0];
+  if (
+    (char !== "*" && char !== "-" && char !== "_") ||
+    compact.split("").some((marker) => marker !== char)
+  ) {
+    return null;
+  }
+
+  return { indent: match[1], char };
+}
+
+function isThematicBreakLine(text: string): boolean {
+  return matchThematicBreakLine(text) !== null;
+}
+
 function isSetextContentLine(text: string): boolean {
   if (!text.trim()) return false;
   if (/^\s{4,}/.test(text)) return false;
+  if (matchSetextUnderline(text) !== null) return false;
+  if (isThematicBreakLine(text)) return false;
   return !/^\s{0,3}(?:[-+*](?:\s|$)|\d+[.)](?:\s|$)|>\s*|#{1,6}(?:\s|$)|`{3,}|~{3,})/.test(
     text,
   );
+}
+
+function normalizeFenceOpeners(markdown: string): string {
+  const lines = splitMarkdownLines(markdown);
+  const normalized: MarkdownLine[] = [];
+  let fence: FenceMarker | null = null;
+
+  for (let index = 0; index < lines.length; ) {
+    const line = lines[index];
+
+    if (fence) {
+      normalized.push(line);
+      if (isFenceClose(line.text, fence)) fence = null;
+      index += 1;
+      continue;
+    }
+
+    const fenceOpen = matchFenceOpen(line.text);
+    if (fenceOpen) {
+      const safeLanguage = fenceOpen.info.trimStart().match(/^(\w+)/)?.[1];
+      normalized.push({
+        text: /^\s{0,3}(?:`{3,}|~{3,})(?:\w+)?\s*$/.test(line.text)
+          ? line.text
+          : `${fenceOpen.indent}${fenceOpen.marker}${safeLanguage ?? ""}`,
+        eol: line.eol,
+      });
+      fence = fenceOpen.fence;
+      index += 1;
+      continue;
+    }
+
+    normalized.push(line);
+    index += 1;
+  }
+
+  return normalized.map((line) => line.text + line.eol).join("");
 }
 
 function normalizeSetextHeadings(markdown: string): string {
@@ -145,37 +226,77 @@ function normalizeSetextHeadings(markdown: string): string {
       continue;
     }
 
-    if (!line.text.trim()) {
+    if (!isSetextContentLine(line.text)) {
       normalized.push(line);
       index += 1;
       continue;
     }
 
     let end = index;
-    while (end < lines.length && lines[end].text.trim()) {
-      if (end > index && matchFenceMarker(lines[end].text)) break;
-      end += 1;
-    }
+    while (end < lines.length && isSetextContentLine(lines[end].text)) end += 1;
 
-    const run = lines.slice(index, end);
-    const level =
-      run.length >= 2 ? matchSetextUnderline(run[run.length - 1].text) : null;
-    if (level !== null && run.slice(0, -1).every((candidate) => isSetextContentLine(candidate.text))) {
+    const level = end < lines.length ? matchSetextUnderline(lines[end].text) : null;
+    if (level !== null) {
       normalized.push({
-        text: `${level === 1 ? "#" : "##"} ${run
-          .slice(0, -1)
+        text: `${level === 1 ? "#" : "##"} ${lines
+          .slice(index, end)
           .map((candidate) => candidate.text.trim())
           .join(" ")}`,
-        eol: run[run.length - 1].eol,
+        eol: lines[end].eol,
       });
+      index = end + 1;
     } else {
-      normalized.push(...run);
+      normalized.push(...lines.slice(index, end));
+      index = end;
     }
-
-    index = end;
   }
 
   return normalized.map((line) => line.text + line.eol).join("");
+}
+
+function normalizeThematicBreaks(markdown: string): string {
+  const lines = splitMarkdownLines(markdown);
+  const normalized: MarkdownLine[] = [];
+  let fence: FenceMarker | null = null;
+
+  for (let index = 0; index < lines.length; ) {
+    const line = lines[index];
+
+    if (fence) {
+      normalized.push(line);
+      if (isFenceClose(line.text, fence)) fence = null;
+      index += 1;
+      continue;
+    }
+
+    const fenceOpen = matchFenceMarker(line.text);
+    if (fenceOpen) {
+      normalized.push(line);
+      fence = fenceOpen;
+      index += 1;
+      continue;
+    }
+
+    const thematicBreak = matchThematicBreakLine(line.text);
+    if (thematicBreak) {
+      normalized.push({
+        text: `${thematicBreak.indent}${thematicBreak.char.repeat(3)}`,
+        eol: line.eol,
+      });
+    } else {
+      normalized.push(line);
+    }
+
+    index += 1;
+  }
+
+  return normalized.map((line) => line.text + line.eol).join("");
+}
+
+function normalizeMarkdownForParse(markdown: string): string {
+  return normalizeSetextHeadings(
+    normalizeThematicBreaks(normalizeFenceOpeners(markdown)),
+  );
 }
 
 function blockText(block: Block): string {
@@ -235,7 +356,7 @@ export function parseMarkdownReaderDocument(
 ): MarkdownReaderDocument {
   const parsed = parseMdDocument(raw);
   const body = stripCompleteMarkdownComments(parsed.body);
-  const blocks = parse(normalizeSetextHeadings(body));
+  const blocks = parse(normalizeMarkdownForParse(body));
   const titleHeadingIndex = findTitleHeadingIndex(blocks);
 
   let title = fallbackTitle;
