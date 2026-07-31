@@ -32,7 +32,11 @@ test("the sparkle only renders when a transcript is actually in scope", () => {
 
 test("generation state is exposed to assistive tech, not just as opacity", () => {
   assert.match(header, /aria-busy=\{generating \|\| undefined\}/, "aria-busy carries the run state");
-  assert.match(header, /disabled=\{generating\}/, "the control cannot be re-entered mid-run");
+  // aria-disabled, not the native disabled: a disabled button loses focus the
+  // instant it flips, dropping a keyboard user back to the body mid-run.
+  assert.match(header, /aria-disabled=\{generating \|\| undefined\}/, "state without stealing focus");
+  assert.ok(!/\sdisabled=\{generating\}/.test(header), "the native disable would strand keyboard focus");
+  assert.match(header, /if \(generating\) return;/, "re-entry is blocked in the handler instead");
   for (const label of ["Generate name", "Generating name"]) {
     assert.ok(
       header.includes(`"${label}"`),
@@ -92,7 +96,30 @@ test("the sparkle is hover-revealed and the title dims while it runs", () => {
     "keyboard focus reveals it too — hover alone would strand keyboard users",
   );
 
-  const dim = css.match(/\.cave-chat-title button\[data-generating="true"\] \{[^}]*\}/);
+  const dim = css.match(/\.cave-chat-title button\[data-generating="true"\][^{]*\{[^}]*\}/);
   assert.ok(dim, "the title dims while the rename is in flight");
   assert.match(dim[0], /opacity:\s*0\.35;/, "the design's 0.35 dim");
+  // Regression (PR #4121 review): the sparkle is itself a button inside
+  // .cave-chat-title carrying the same flag, and the dim selector (0,2,1)
+  // outranks the spark's own reveal (0,2,0) — so without this exclusion the
+  // control dims ITSELF the moment it starts working. Hover masks the bug,
+  // which is why only a keyboard run surfaces it.
+  assert.match(
+    dim[0],
+    /:not\(\.cave-chat-title-spark\)/,
+    "the dim must exclude the sparkle or the control fades itself out mid-run",
+  );
+});
+
+test("a refused PATCH does not paint the rename as applied", () => {
+  // Regression (PR #4121 review): a resolved fetch is not a successful one —
+  // the local-origin gate answers 403 and a rejected patch answers
+  // { ok: false }. Refreshing on either would show the new title even though
+  // the server kept the old one.
+  assert.match(header, /if \(!res\.ok \|\| json\?\.ok === false\) return;/, "failure short-circuits");
+  assert.match(
+    header,
+    /if \(!res\.ok \|\| json\?\.ok === false\) return;\s*\n\s*onSessionsChanged\?\.\(\);/,
+    "the refresh happens only after a genuine success",
+  );
 });

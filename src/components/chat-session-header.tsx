@@ -321,13 +321,19 @@ export function ChatTitleEditable({
 
   const display = baseTitle || session.id;
 
+  // A resolved fetch is not a successful one: the local-origin gate answers 403
+  // and a rejected patch answers { ok: false }. Refreshing on those would paint
+  // the rename as applied when the server refused it, so the refresh is gated
+  // on a genuine success and anything else falls through to the sessions poll.
   const patchTitle = async (title: string) => {
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title }),
       });
+      const json = await res.json().catch(() => ({ ok: res.ok }));
+      if (!res.ok || json?.ok === false) return;
       onSessionsChanged?.();
     } catch {
       /* transient — next sessions poll will reconcile */
@@ -408,7 +414,11 @@ export function ChatTitleEditable({
     <span className={headline ? "cave-chat-title flex w-full min-w-0 items-center gap-1.5" : "cave-chat-title flex min-w-0 flex-1 items-center gap-1"}>
       {/* cave-quiva: name-this-chat leads the title row. The glyph stays hidden
           until hover/focus so a settled header reads title-first; the control
-          is only rendered when a transcript is actually in scope. */}
+          is only rendered when a transcript is actually in scope.
+          aria-disabled rather than disabled: a disabled button loses focus the
+          instant it flips, dropping a keyboard user who pressed Enter back to
+          the body. Re-entry is already blocked in the handler, so the native
+          disable buys nothing and costs the focus ring. */}
       {generateTitle ? (
         <button
           type="button"
@@ -417,7 +427,7 @@ export function ChatTitleEditable({
           title={generating ? "Generating name" : "Generate name"}
           aria-label={generating ? "Generating name" : "Generate name"}
           aria-busy={generating || undefined}
-          disabled={generating}
+          aria-disabled={generating || undefined}
           onClick={(e) => {
             e.stopPropagation();
             void generate();

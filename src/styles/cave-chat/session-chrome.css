@@ -46,9 +46,7 @@
   );
   color: var(--accent-presence);
   opacity: 0;
-  transition:
-    opacity var(--duration-fast) var(--ease-standard),
-    background-color var(--duration-fast) var(--ease-standard);
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 .cave-chat-title:hover .cave-chat-title-spark,
@@ -61,7 +59,13 @@
   cursor: progress;
 }
 
-.cave-chat-title button[data-generating="true"] {
+/* The sparkle is itself a button inside .cave-chat-title and carries the same
+   data-generating flag, and `.cave-chat-title button[data-generating]` (0,2,1)
+   outranks the spark's own reveal (0,2,0) — so without this exclusion the
+   control dims itself the moment it starts working. Hover masks it
+   (`.cave-chat-title:hover .cave-chat-title-spark` is (0,3,0)), which is
+   exactly why a pointer-driven check misses it and a keyboard run does not. */
+.cave-chat-title button[data-generating="true"]:not(.cave-chat-title-spark) {
   opacity: 0.35;
 }
 
