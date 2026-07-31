@@ -44,6 +44,7 @@ import {
   type Turn,
 } from "@/lib/chat-turn-state";
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
+import { generateChatTitle } from "@/lib/chat-title-generation";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
@@ -1416,6 +1417,7 @@ function MetaLine({
   familiar,
   projectRoot,
   onSessionsChanged,
+  generateTitle,
   children,
 }: {
   session: SessionRow | null;
@@ -1434,6 +1436,8 @@ function MetaLine({
   familiar: Familiar;
   projectRoot?: string;
   onSessionsChanged?: () => void;
+  /** Derives a title from the live transcript for the title row's sparkle. */
+  generateTitle?: () => string | null;
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1508,6 +1512,7 @@ function MetaLine({
           session={session}
           displayTitleOverride={titleOverride}
           onSessionsChanged={onSessionsChanged}
+          generateTitle={generateTitle}
         />
       ) : null}
       <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined}>
@@ -3192,6 +3197,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         ),
     [turns],
   );
+
+  // cave-quiva: the title row's sparkle names the chat from the transcript this
+  // view already holds — no titling round-trip, and it works with the daemon
+  // down. Null when the thread has nothing nameable yet; the control then
+  // leaves the current title alone.
+  const generateTitleFromTranscript = useCallback(() => generateChatTitle(turns), [turns]);
 
   // Active branch path: when activeLeafId is set (branched conversation), only
   // the turns on the path from the root to that leaf are rendered. For linear
@@ -5780,6 +5791,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           familiar={familiar}
           projectRoot={projectRoot}
           onSessionsChanged={onSessionsChanged}
+          generateTitle={generateTitleFromTranscript}
         >
           <div className="cave-chat-session-actions">
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
