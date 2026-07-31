@@ -446,6 +446,10 @@ function mergeFamiliarConfigs(
         const merged = normalizeFamiliarOmnigent(value as FamiliarOmnigentBinding);
         if (merged) next.omnigent = merged;
         else delete next.omnigent;
+      } else if (key === "hermesProfile") {
+        const profile = normalizeHermesProfileBinding(value);
+        if (!profile) throw new Error("Invalid Hermes profile binding.");
+        next.hermesProfile = profile;
       } else {
         (next as Record<string, unknown>)[key] = value;
       }
@@ -478,6 +482,10 @@ async function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
 export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
   return withConfigLock(async () => {
   const current = await loadConfigUnlocked();
+  const defaults = { ...current.defaults, ...(patch.defaults ?? {}) };
+  // Profiles are always familiar-scoped. Drop legacy/manually supplied global
+  // values before persistence so bare Hermes cannot inherit one.
+  delete (defaults as Record<string, unknown>).hermesProfile;
   const updated: CaveConfig = {
     ...current,
     ...patch,
@@ -502,10 +510,7 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
       ...(patch.omnigent ?? {}),
     }),
     // Deep-merge defaults
-    defaults: {
-      ...current.defaults,
-      ...(patch.defaults ?? {}),
-    },
+    defaults,
     familiars: mergeFamiliarConfigs(current.familiars, patch.familiars),
     // Replace remoteHosts if provided (normalized + deduped, like roles)
     remoteHosts:

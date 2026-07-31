@@ -281,6 +281,11 @@ try {
     undefined,
     "bare Hermes never inherits a profile from global defaults",
   );
+  await assert.rejects(
+    () => config.saveConfig({ familiars: { invalidHermes: { hermesProfile: { id: "../escape", homePath: "/tmp/escape" } } } }),
+    /Invalid Hermes profile binding/,
+    "saveConfig rejects invalid profile bindings before persistence",
+  );
   assert.equal(
     config.bindingFor({
       defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
