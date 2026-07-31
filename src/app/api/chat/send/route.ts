@@ -1310,6 +1310,24 @@ export async function POST(req: Request) {
   }
   const effectiveRuntime = runtimeSelection.runtime ?? binding.runtime;
   const sshRuntime = isSshRuntime(effectiveRuntime) ? effectiveRuntime : null;
+  if (binding.hasInvalidHermesProfileBinding) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "This familiar's Hermes profile binding is invalid. Choose a saved Hermes profile again before starting a chat.",
+      }),
+      { status: 409, headers: { "content-type": "application/json" } },
+    );
+  }
+  if (binding.hermesProfile && (binding.harness !== "hermes" || sshRuntime)) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "This Hermes profile is local-only. Choose the local runtime so Cave can launch it with its explicit profile target.",
+      }),
+      { status: 409, headers: { "content-type": "application/json" } },
+    );
+  }
   // Grok Build is a direct local integration. Do not silently send it through
   // `coven run --stream-json` on SSH: its native JSONL/session protocol is
   // different and Cave does not yet have an equivalent direct SSH bridge.
@@ -1352,7 +1370,12 @@ export async function POST(req: Request) {
   const hermesSpawnEnvironment = hermesDirect
     ? harnessSpawnEnv(body.familiarId)
     : null;
-  const hermesApi = hermesSpawnEnvironment
+  // Hermes's documented `-p` flag scopes the CLI process before its modules
+  // load, which sets the profile's HERMES_HOME without mutating `profile use`.
+  // A configured Responses endpoint has no equivalent profile selector, so a
+  // profile-bound familiar deliberately uses the CLI rather than risk talking
+  // to an API server for the sticky/default profile.
+  const hermesApi = !binding.hermesProfile && hermesSpawnEnvironment
     ? hermesApiConfig(hermesSpawnEnvironment as {
         HERMES_API_URL?: string;
         HERMES_API_KEY?: string;
@@ -2014,7 +2037,9 @@ export async function POST(req: Request) {
       });
     }
     if (hermesDirect) {
-      const a = ["chat", "--source", "coven", "-Q"];
+      const a = binding.hermesProfile
+        ? ["-p", binding.hermesProfile.id, "chat", "--source", "coven", "-Q"]
+        : ["chat", "--source", "coven", "-Q"];
       if (resumeSessionId) a.push("--resume", resumeSessionId);
       if (hermesLaunchModel) a.push("--model", hermesLaunchModel);
       a.push("--query", prompt);

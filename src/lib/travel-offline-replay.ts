@@ -24,6 +24,7 @@ import { startAutomationRun } from "@/lib/server/automation-runner";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
 import { assertProjectRootAccess } from "@/lib/project-permissions";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
+import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
 import { loadLocalWorkflowList } from "@/lib/workflow-source";
@@ -122,6 +123,8 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   });
 
   const binding = bindingFor(config, familiarId);
+  const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (profileBlock) throw new Error(profileBlock);
   const attachments = objectArray<ChatAttachment>(payload.attachments);
   const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
   const sessionId = await spawnHubSession({
@@ -174,6 +177,8 @@ async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Pr
 
   const familiarId = stringValue(body.familiarId) ?? workflow.familiar ?? null;
   const binding = familiarId ? bindingFor(config, familiarId) : { harness: config.defaults.harness };
+  const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (profileBlock) throw new Error(profileBlock);
   const prompt = buildWorkflowRunPrompt(workflow, record(body.inputs));
   const sessionId = await spawnHubSession({
     config,
@@ -232,6 +237,8 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const targetNodeId = stringValue(options.targetNodeId) ?? undefined;
   const familiarId = stringValue(payload.familiarId) ?? flowFamiliar(flow);
   const binding = familiarId ? bindingFor(config, familiarId) : { harness: config.defaults.harness };
+  const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (profileBlock) throw new Error(profileBlock);
   const prompt = compileFlowPrompt(flow, {
     targetNodeId,
     triggerInput: options.triggerInput as never,
