@@ -776,6 +776,20 @@ function trustAnchorJournalEntry(file: string, anchor: OpenClawTrustAnchor): str
   );
 }
 
+function acceptedCacheJournalDir(file: string): string {
+  return `${file}.accepted.journal`;
+}
+
+function acceptedCacheJournalEntry(
+  file: string,
+  bundle: OpenClawSchemaBundle,
+): string {
+  return path.join(
+    acceptedCacheJournalDir(file),
+    `${bundle.sequence}-${openClawSchemaBundlePayloadHash(bundle)}.json`,
+  );
+}
+
 function cacheLockFile(file: string): string {
   return `${file}.lock`;
 }
@@ -979,6 +993,47 @@ async function cacheRecordExists(file: string): Promise<boolean> {
   }
 }
 
+function trustedCacheRecord(
+  cached: unknown,
+  publicKeys: OpenClawRegistryKeyring,
+  checkpoint: OpenClawRegistryCheckpoint | undefined,
+  now: number,
+): CachedOpenClawSchemaBundle | null {
+  if (
+    !isRecord(cached)
+    || !hasOnlyKeys(cached, ["fetchedAt", "verifiedKeyId", "bundle"])
+    || typeof cached.fetchedAt !== "number"
+    || !Number.isSafeInteger(cached.fetchedAt)
+    || cached.fetchedAt < 0
+    || typeof cached.verifiedKeyId !== "string"
+    || !OPENCLAW_KEY_ID_PATTERN.test(cached.verifiedKeyId)
+  ) return null;
+  const bundle = cached.bundle;
+  if (!verifyOpenClawSchemaBundle(
+    bundle,
+    publicKeys,
+    now,
+    { allowExpired: true },
+  )) return null;
+  const verifiedKeyId = verifiedOpenClawBundleKeyId(
+    bundle,
+    publicKeys,
+    now,
+    { allowExpired: true },
+  );
+  if (
+    verifiedKeyId !== cached.verifiedKeyId
+    || !meetsOpenClawGenesisFloor(bundle)
+    || !meetsOpenClawCheckpoint(bundle, checkpoint)
+    || !combinedOpenClawToolProfiles(bundle)
+  ) return null;
+  return {
+    fetchedAt: cached.fetchedAt,
+    verifiedKeyId: cached.verifiedKeyId,
+    bundle,
+  };
+}
+
 async function readTrustedCacheRecord(
   file: string,
   publicKeys: OpenClawRegistryKeyring,
@@ -989,42 +1044,105 @@ async function readTrustedCacheRecord(
     const raw = await readBoundedFile(file, MAX_CACHE_BYTES);
     if (raw === null) return null;
     const cached = JSON.parse(raw) as unknown;
-    if (
-      !isRecord(cached)
-      || !hasOnlyKeys(cached, ["fetchedAt", "verifiedKeyId", "bundle"])
-      || typeof cached.fetchedAt !== "number"
-      || !Number.isSafeInteger(cached.fetchedAt)
-      || cached.fetchedAt < 0
-      || typeof cached.verifiedKeyId !== "string"
-      || !OPENCLAW_KEY_ID_PATTERN.test(cached.verifiedKeyId)
-    ) return null;
-    const bundle = cached.bundle;
-    if (!verifyOpenClawSchemaBundle(
-      bundle,
-      publicKeys,
-      now,
-      { allowExpired: true },
-    )) return null;
-    const verifiedKeyId = verifiedOpenClawBundleKeyId(
-      bundle,
-      publicKeys,
-      now,
-      { allowExpired: true },
-    );
-    if (
-      verifiedKeyId !== cached.verifiedKeyId
-      || !meetsOpenClawGenesisFloor(bundle)
-      || !meetsOpenClawCheckpoint(bundle, checkpoint)
-      || !combinedOpenClawToolProfiles(bundle)
-    ) return null;
-    return {
-      fetchedAt: cached.fetchedAt,
-      verifiedKeyId: cached.verifiedKeyId,
-      bundle,
-    };
+    return trustedCacheRecord(cached, publicKeys, checkpoint, now);
   } catch {
     return null;
   }
+}
+
+type AcceptedCacheJournalRecord = {
+  name: string;
+  cached: CachedOpenClawSchemaBundle;
+};
+
+async function readAcceptedCacheJournal(
+  file: string,
+  publicKeys: OpenClawRegistryKeyring,
+  checkpoint: OpenClawRegistryCheckpoint | undefined,
+  now: number,
+): Promise<AcceptedCacheJournalRecord[] | null> {
+  let directory: Awaited<ReturnType<typeof registryFs.opendir>>;
+  try {
+    directory = await registryFs.opendir(acceptedCacheJournalDir(file));
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? [] : null;
+  }
+  const records: AcceptedCacheJournalRecord[] = [];
+  let count = 0;
+  try {
+    for await (const entry of directory) {
+      count += 1;
+      if (count > MAX_TRUST_ANCHOR_SCAN) return null;
+      const match = /^(\d{1,16})-([a-f0-9]{64})\.json$/.exec(entry.name);
+      if (!entry.isFile() || !match) return null;
+      const raw = await readBoundedFile(
+        path.join(acceptedCacheJournalDir(file), entry.name),
+        MAX_CACHE_BYTES,
+      );
+      const cached = raw === null
+        ? null
+        : trustedCacheRecord(JSON.parse(raw), publicKeys, checkpoint, now);
+      if (
+        !cached
+        || cached.bundle.sequence !== Number(match[1])
+        || openClawSchemaBundlePayloadHash(cached.bundle) !== match[2]
+      ) return null;
+      records.push({ name: entry.name, cached });
+    }
+  } catch {
+    return null;
+  } finally {
+    await directory.close().catch(() => undefined);
+  }
+  return records;
+}
+
+async function writeAcceptedCacheJournal(
+  file: string,
+  publicKeys: OpenClawRegistryKeyring,
+  cached: CachedOpenClawSchemaBundle,
+): Promise<boolean> {
+  const entry = acceptedCacheJournalEntry(file, cached.bundle);
+  await registryFs.mkdir(path.dirname(entry), { recursive: true });
+  try {
+    await registryFs.writeFile(entry, JSON.stringify(cached), {
+      flag: "wx",
+      mode: 0o600,
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") return false;
+    const existing = await readTrustedCacheRecord(
+      entry,
+      publicKeys,
+      undefined,
+      cached.fetchedAt,
+    );
+    if (
+      !existing
+      || openClawSchemaBundleSigningPayload(existing.bundle)
+        !== openClawSchemaBundleSigningPayload(cached.bundle)
+    ) return false;
+  }
+  const records = await readAcceptedCacheJournal(
+    file,
+    publicKeys,
+    undefined,
+    cached.fetchedAt,
+  );
+  if (!records) return false;
+  const retained = new Set(records
+    .sort((left, right) =>
+      right.cached.bundle.sequence - left.cached.bundle.sequence
+      || right.name.localeCompare(left.name))
+    .slice(0, MAX_TRUST_ANCHORS)
+    .map((record) => record.name));
+  await Promise.all(records
+    .filter((record) => !retained.has(record.name))
+    .map((record) => registryFs.rm(
+      path.join(acceptedCacheJournalDir(file), record.name),
+      { force: true },
+    ).catch(() => undefined)));
+  return true;
 }
 
 async function readVerifiedCache(
@@ -1042,6 +1160,24 @@ async function readVerifiedCache(
     || !verifyOpenClawSchemaBundle(cached.bundle, publicKeys, now)
   ) return null;
   return cached;
+}
+
+async function readRecoverableCache(
+  file: string,
+  publicKeys: OpenClawRegistryKeyring,
+  checkpoint: OpenClawRegistryCheckpoint | undefined,
+  now: number,
+  anchor: OpenClawTrustAnchor | null,
+): Promise<CachedOpenClawSchemaBundle | null> {
+  const journal = await readAcceptedCacheJournal(file, publicKeys, checkpoint, now);
+  return (journal ?? [])
+    .map((record) => record.cached)
+    .filter((cached) =>
+      cached.fetchedAt <= now
+      && anchorMatchesBundle(anchor, cached.bundle)
+      && verifyOpenClawSchemaBundle(cached.bundle, publicKeys, now))
+    .sort((left, right) => right.fetchedAt - left.fetchedAt)[0]
+    ?? null;
 }
 
 type OpenClawCacheLock = {
@@ -1114,6 +1250,7 @@ async function writeVerifiedCache(
     const currentAnchor = await readTrustAnchor(file);
     if (!anchorAcceptsBundle(currentAnchor, cached.bundle)) return false;
     if (!await writeTrustAnchor(file, anchorForBundle(cached.bundle))) return false;
+    if (!await writeAcceptedCacheJournal(file, publicKeys, cached)) return false;
     if (!await lock.owns()) return false;
     const acceptedAnchor = await readTrustAnchor(file);
     if (!anchorMatchesBundle(acceptedAnchor, cached.bundle)) return false;
@@ -1131,7 +1268,47 @@ async function writeVerifiedCache(
     ) return false;
     if (!await lock.owns()) return false;
     await writeJsonAtomic(file, cached);
-    return true;
+    if (!await lock.owns()) return false;
+    const finalAnchor = await readTrustAnchor(file);
+    if (!await lock.owns()) return false;
+    return anchorMatchesBundle(finalAnchor, cached.bundle);
+  } finally {
+    await lock.release();
+  }
+}
+
+async function restoreAcceptedCache(
+  file: string,
+  publicKeys: OpenClawRegistryKeyring,
+  checkpoint: OpenClawRegistryCheckpoint | undefined,
+  now: number,
+  cached: CachedOpenClawSchemaBundle,
+): Promise<boolean> {
+  const lock = await acquireOpenClawCacheLock(file);
+  if (!lock) return false;
+  try {
+    if (!await lock.owns()) return false;
+    const anchor = await readTrustAnchor(file);
+    if (!anchorMatchesBundle(anchor, cached.bundle)) return false;
+    const accepted = await readRecoverableCache(file, publicKeys, checkpoint, now, anchor);
+    if (!accepted || !anchorMatchesBundle(anchor, accepted.bundle)) return false;
+    const primary = await readTrustedCacheRecord(file, publicKeys, checkpoint, now);
+    if (
+      primary
+      && primary.fetchedAt <= now
+      && anchorMatchesBundle(anchor, primary.bundle)
+      && verifyOpenClawSchemaBundle(primary.bundle, publicKeys, now)
+    ) return true;
+    if (!await lock.owns()) return false;
+    await writeJsonAtomic(file, accepted);
+    if (!await lock.owns()) return false;
+    const finalAnchor = await readTrustAnchor(file);
+    if (!await lock.owns() || !anchorMatchesBundle(finalAnchor, accepted.bundle)) return false;
+    const restored = await readTrustedCacheRecord(file, publicKeys, checkpoint, now);
+    return !!restored
+      && restored.fetchedAt <= now
+      && anchorMatchesBundle(finalAnchor, restored.bundle)
+      && verifyOpenClawSchemaBundle(restored.bundle, publicKeys, now);
   } finally {
     await lock.release();
   }
@@ -1148,11 +1325,22 @@ async function waitForOpenClawCacheWriter(
   const deadline = Date.now() + CACHE_LOCK_WAIT_MS;
   for (;;) {
     const anchor = await readTrustAnchor(file);
-    const cached = await readVerifiedCache(file, publicKeys, checkpoint, now, anchor);
-    if (cached && cached.bundle.sequence >= minimumSequence) return cached;
+    const cached = await readVerifiedCache(file, publicKeys, checkpoint, now, anchor)
+      ?? await readRecoverableCache(file, publicKeys, checkpoint, now, anchor);
+    let lockExists = true;
     try {
       await registryFs.stat(lock);
     } catch {
+      lockExists = false;
+    }
+    if (cached && cached.bundle.sequence >= minimumSequence && !lockExists) {
+      if (await restoreAcceptedCache(file, publicKeys, checkpoint, now, cached)) {
+        const finalAnchor = await readTrustAnchor(file);
+        const final = await readVerifiedCache(file, publicKeys, checkpoint, now, finalAnchor);
+        if (final && final.bundle.sequence >= cached.bundle.sequence) return final;
+      }
+    }
+    if (!lockExists) {
       const finalAnchor = await readTrustAnchor(file);
       return readVerifiedCache(file, publicKeys, checkpoint, now, finalAnchor);
     }

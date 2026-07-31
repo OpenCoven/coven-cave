@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { readFileSync } from "node:fs";
+import fs, { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 
 import { AgentEventSchema, HelloOkSchema } from "@openclaw/gateway-protocol";
@@ -908,6 +909,100 @@ try {
   const [concurrentResultA, concurrentResultB] = await Promise.all([concurrentA, concurrentB]);
   assert.equal(concurrentResultA.bundleSource, "remote");
   assert.equal(concurrentResultB.bundleSource, "remote");
+
+  const reclaimedWriterCacheDir = await makeCacheDir("reclaimed-writer");
+  const reclaimedWriterCacheFile = cacheFile(reclaimedWriterCacheDir);
+  const originalRename = fs.promises.rename;
+  let cacheRenameIntercepted = false;
+  let resumeWriterA: (() => void) | undefined;
+  let markWriterAStalled: (() => void) | undefined;
+  const writerAResume = new Promise<void>((resolve) => { resumeWriterA = resolve; });
+  const writerAStalled = new Promise<void>((resolve) => { markWriterAStalled = resolve; });
+  fs.promises.rename = async (source, destination) => {
+    if (
+      !cacheRenameIntercepted
+      && String(destination) === reclaimedWriterCacheFile
+      && String(source).endsWith(".tmp")
+    ) {
+      cacheRenameIntercepted = true;
+      markWriterAStalled?.();
+      await writerAResume;
+    }
+    return originalRename(source, destination);
+  };
+  syncBuiltinESMExports();
+  let reclaimedWriterA: Promise<Awaited<ReturnType<typeof loadOpenClawCompatibility>>> | undefined;
+  let writerAFetches = 0;
+  let writerBFetches = 0;
+  try {
+    reclaimedWriterA = loadOpenClawCompatibility(beta5Discovery, {
+      cacheDir: reclaimedWriterCacheDir,
+      url: "https://writer-a.registry.example/openclaw/current.json",
+      publicKeys: registryKeyring,
+      fetchImpl: async () => {
+        writerAFetches += 1;
+        return new Response(JSON.stringify(sequenceTwo), { status: 200 });
+      },
+      now: () => REGISTRY_NOW,
+    });
+    await writerAStalled;
+    await utimes(`${reclaimedWriterCacheFile}.lock`, new Date(0), new Date(0));
+
+    const reclaimedWriterB = await loadOpenClawCompatibility(beta5Discovery, {
+      cacheDir: reclaimedWriterCacheDir,
+      url: "https://writer-b.registry.example/openclaw/current.json",
+      publicKeys: registryKeyring,
+      fetchImpl: async () => {
+        writerBFetches += 1;
+        return new Response(JSON.stringify(highWaterBundle), { status: 200 });
+      },
+      now: () => REGISTRY_NOW,
+    });
+    assert.equal(writerAFetches, 1);
+    assert.equal(writerBFetches, 1);
+    assert.equal(reclaimedWriterB.mode, "structured");
+    assert.equal(reclaimedWriterB.bundleSource, "remote");
+    if (reclaimedWriterB.mode === "structured") {
+      assert.equal(reclaimedWriterB.profile.source.blobSha, highWaterProfile.source.blobSha);
+    }
+
+    resumeWriterA?.();
+    const reclaimedWriterAResult = await reclaimedWriterA;
+    assert.equal(reclaimedWriterAResult.mode, "structured");
+    assert.equal(reclaimedWriterAResult.bundleSource, "cache");
+    if (reclaimedWriterAResult.mode === "structured") {
+      assert.equal(
+        reclaimedWriterAResult.profile.source.blobSha,
+        highWaterProfile.source.blobSha,
+        "a reclaimed writer returns the newer concurrently accepted bundle",
+      );
+    }
+    const reclaimedCache = JSON.parse(await readFile(reclaimedWriterCacheFile, "utf8"));
+    assert.equal(reclaimedCache.bundle.sequence, highWaterBundle.sequence, "the newer writer remains the final cache state");
+
+    let finalRaceFetchCalled = false;
+    const finalRaceLoad = await loadOpenClawCompatibility(beta5Discovery, {
+      cacheDir: reclaimedWriterCacheDir,
+      url: "https://final.registry.example/openclaw/current.json",
+      publicKeys: registryKeyring,
+      fetchImpl: async () => {
+        finalRaceFetchCalled = true;
+        throw new Error("the recovered cache should be fresh");
+      },
+      now: () => REGISTRY_NOW,
+    });
+    assert.equal(finalRaceFetchCalled, false);
+    assert.equal(finalRaceLoad.mode, "structured");
+    assert.equal(finalRaceLoad.bundleSource, "cache");
+    if (finalRaceLoad.mode === "structured") {
+      assert.equal(finalRaceLoad.profile.source.blobSha, highWaterProfile.source.blobSha);
+    }
+  } finally {
+    resumeWriterA?.();
+    await reclaimedWriterA?.catch(() => undefined);
+    fs.promises.rename = originalRename;
+    syncBuiltinESMExports();
+  }
 
   const staleLockCacheDir = await makeCacheDir("stale-lock");
   await loadOpenClawCompatibility(beta5Discovery, {
