@@ -307,6 +307,7 @@ pub fn run() {
 
             app.handle().plugin(tauri_plugin_notification::init())?;
             prepare_gui_reachability(app.handle())?;
+            discord_presence::start();
 
             // Desktop auto-update: updater checks/downloads/installs signed
             // release artifacts; process provides relaunch() after install.

@@ -1,4 +1,5 @@
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
+import { canonicalMemoryMatches, fileMemoryMatches } from "@/lib/memory-search-policy";
 
 export type FileMemoryEntry = {
   root: string;
@@ -50,27 +51,10 @@ export function memoryMatches(
   entry: CanonicalMemorySummary | FileMemoryEntry,
   query: string,
 ): boolean {
-  if (!query) return true;
-  const values = "verification" in entry
-    ? [
-        entry.title,
-        entry.excerpt,
-        entry.familiarId,
-        entry.source.kind,
-        entry.source.label,
-        entry.privacy.classification ?? "",
-        entry.verification.state,
-      ]
-    : [
-        entry.rootLabel,
-        entry.sourceKindLabel,
-        entry.harnessId ?? "",
-        entry.runtimeId ?? "",
-        entry.origin ?? "",
-        entry.familiarId ?? "",
-        entry.relPath,
-        entry.fullPath,
-        entry.sourceContext ?? "",
-      ];
-  return values.some((value) => value.toLowerCase().includes(query));
+  // One policy for every memory surface (cave-she6o.1): canonical summaries
+  // search only the safe field allowlist; files search the unified field
+  // union. See src/lib/memory-search-policy.ts for the rationale.
+  return "verification" in entry
+    ? canonicalMemoryMatches(entry, query)
+    : fileMemoryMatches(entry, query);
 }
