@@ -230,6 +230,45 @@ assert.deepStrictEqual(
   { kind: "tool_end", id: "tool-1", name: "exec", output: 0, isError: false, seq: 9 },
   "explicit falsy tool outputs remain valid raw payloads",
 );
+const invalidIsErrorPayload = {
+  ...toolLifecycleV1.frames[2].payload,
+  data: { ...toolLifecycleV1.frames[2].payload.data, isError: "true" },
+};
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[2].event, invalidIsErrorPayload, beta5Profile),
+  { kind: "unknown", fingerprint: redactedOpenClawToolFingerprint(invalidIsErrorPayload) },
+  "configured isError aliases fail closed on non-boolean values",
+);
+const invalidStatusPayload = {
+  ...toolLifecycleV1.frames[2].payload,
+  data: { ...toolLifecycleV1.frames[2].payload.data, status: 500 },
+};
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[2].event, invalidStatusPayload, beta5Profile),
+  { kind: "unknown", fingerprint: redactedOpenClawToolFingerprint(invalidStatusPayload) },
+  "configured status aliases fail closed on non-string values",
+);
+const invalidDataExitCodePayload = {
+  ...toolLifecycleV1.frames[2].payload,
+  data: { ...toolLifecycleV1.frames[2].payload.data, exitCode: "1" },
+};
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[2].event, invalidDataExitCodePayload, beta5Profile),
+  { kind: "unknown", fingerprint: redactedOpenClawToolFingerprint(invalidDataExitCodePayload) },
+  "configured exitCode aliases fail closed on non-numeric values",
+);
+const invalidNestedExitCodePayload = {
+  ...toolLifecycleV1.frames[2].payload,
+  data: {
+    ...toolLifecycleV1.frames[2].payload.data,
+    result: { text: "bad nested exit code", exitCode: "1" },
+  },
+};
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[2].event, invalidNestedExitCodePayload, beta5Profile),
+  { kind: "unknown", fingerprint: redactedOpenClawToolFingerprint(invalidNestedExitCodePayload) },
+  "nested result.exitCode fails closed on non-numeric values",
+);
 
 assert.equal(
   parseOpenClawToolEvent(
@@ -314,6 +353,36 @@ assert.equal(
   ]),
   null,
   "duplicate priorities are rejected at the validation boundary",
+);
+assert.equal(
+  validateOpenClawToolProfiles([
+    {
+      ...beta5Profile,
+      source: { ...beta5Profile.source },
+      phases: {
+        start: ["start", "shared-phase"],
+        update: ["shared-phase"],
+        result: ["result"],
+      },
+    },
+  ]),
+  null,
+  "phase tokens cannot be reused across semantic buckets",
+);
+assert.equal(
+  validateOpenClawToolProfiles([
+    {
+      ...beta5Profile,
+      source: { ...beta5Profile.source },
+      aliases: {
+        ...beta5Profile.aliases,
+        status: ["sharedAlias"],
+        exitCode: ["sharedAlias"],
+      },
+    },
+  ]),
+  null,
+  "direct field aliases cannot be reused across semantic buckets",
 );
 assert.equal(
   validateOpenClawToolProfiles([

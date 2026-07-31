@@ -12,6 +12,7 @@ const OPENCLAW_ALLOWED_CLIENT_CAPABILITIES = ["tool-events"] as const;
 const OPENCLAW_DIRECT_ALIAS_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,255}$/;
 const OPENCLAW_HEX_40_OR_64 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const OPENCLAW_SHA256_HEX = /^[a-f0-9]{64}$/;
+const INVALID_OPENCLAW_METADATA = Symbol("invalid-openclaw-metadata");
 const OPENCLAW_SAFE_FINGERPRINT_KEYS = new Set([
   "runId",
   "seq",
@@ -24,6 +25,8 @@ const OPENCLAW_SAFE_FINGERPRINT_KEYS = new Set([
   "isError",
   "exitCode",
 ]);
+
+type OpenClawMetadataValue<T> = T | null | typeof INVALID_OPENCLAW_METADATA;
 
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -176,6 +179,17 @@ function validateStringList(
   return new Set(result).size === result.length ? result : null;
 }
 
+function hasBucketOverlap(buckets: readonly string[][]): boolean {
+  const seen = new Set<string>();
+  for (const bucket of buckets) {
+    for (const entry of bucket) {
+      if (seen.has(entry)) return true;
+      seen.add(entry);
+    }
+  }
+  return false;
+}
+
 function validateOpenClawToolProfile(value: unknown): OpenClawToolProfile | null {
   if (!isRecord(value) || !hasOnlyKeys(value, ["id", "priority", "requires", "eventNames", "streams", "phases", "aliases", "errorStates", "source"])) return null;
   if (!validBoundedString(value.id) || typeof value.priority !== "number" || !Number.isSafeInteger(value.priority)) return null;
@@ -199,6 +213,7 @@ function validateOpenClawToolProfile(value: unknown): OpenClawToolProfile | null
   const update = validateStringList(value.phases.update);
   const result = validateStringList(value.phases.result);
   if (!start || !update || !result) return null;
+  if (hasBucketOverlap([start, update, result])) return null;
 
   if (!isRecord(value.aliases) || !hasOnlyKeys(value.aliases, ["phase", "toolCallId", "name", "args", "partialResult", "result", "isError", "status", "exitCode"])) return null;
   const phase = validateStringList(value.aliases.phase, { itemValidator: validDirectAlias });
@@ -211,6 +226,7 @@ function validateOpenClawToolProfile(value: unknown): OpenClawToolProfile | null
   const status = validateStringList(value.aliases.status, { itemValidator: validDirectAlias });
   const exitCode = validateStringList(value.aliases.exitCode, { itemValidator: validDirectAlias });
   if (!phase || !toolCallId || !name || !args || !partialResult || !resultAliases || !isError || !status || !exitCode) return null;
+  if (hasBucketOverlap([phase, toolCallId, name, args, partialResult, resultAliases, isError, status, exitCode])) return null;
 
   const errorStates = validateStringList(value.errorStates);
   if (!errorStates) return null;
@@ -283,9 +299,10 @@ function firstString(record: Record<string, unknown>, aliases: string[]): string
   return validBoundedString(value) ? value : null;
 }
 
-function firstNumber(record: Record<string, unknown>, aliases: string[]): number | null {
-  const value = firstPresent(record, aliases);
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+function firstBooleanMetadata(record: Record<string, unknown>, aliases: string[]): OpenClawMetadataValue<boolean> {
+  const value = firstOwnValue(record, aliases);
+  if (!value.found) return null;
+  return typeof value.value === "boolean" ? value.value : INVALID_OPENCLAW_METADATA;
 }
 
 function exactSetMatch(left: string[], right: string[]): boolean {
@@ -365,19 +382,24 @@ function resultRecord(data: Record<string, unknown>, profile: OpenClawToolProfil
   return isRecord(result) ? result : null;
 }
 
-function toolResultStatus(data: Record<string, unknown>, profile: OpenClawToolProfile): string | null {
-  const direct = firstString(data, profile.aliases.status);
-  if (direct) return direct;
-  return resultRecord(data, profile)?.status && validBoundedString(resultRecord(data, profile)!.status)
-    ? resultRecord(data, profile)!.status as string
-    : null;
+function toolResultStatus(data: Record<string, unknown>, profile: OpenClawToolProfile): OpenClawMetadataValue<string> {
+  const direct = firstOwnValue(data, profile.aliases.status);
+  if (direct.found) return validBoundedString(direct.value) ? direct.value : INVALID_OPENCLAW_METADATA;
+  const result = resultRecord(data, profile);
+  if (result && Object.prototype.hasOwnProperty.call(result, "status")) {
+    return validBoundedString(result.status) ? result.status as string : INVALID_OPENCLAW_METADATA;
+  }
+  return null;
 }
 
-function toolResultExitCode(data: Record<string, unknown>, profile: OpenClawToolProfile): number | null {
-  const direct = firstNumber(data, profile.aliases.exitCode);
-  if (direct !== null) return direct;
-  const nested = resultRecord(data, profile)?.exitCode;
-  return typeof nested === "number" && Number.isFinite(nested) ? nested : null;
+function toolResultExitCode(data: Record<string, unknown>, profile: OpenClawToolProfile): OpenClawMetadataValue<number> {
+  const direct = firstOwnValue(data, profile.aliases.exitCode);
+  if (direct.found) return typeof direct.value === "number" && Number.isFinite(direct.value) ? direct.value : INVALID_OPENCLAW_METADATA;
+  const result = resultRecord(data, profile);
+  if (result && Object.prototype.hasOwnProperty.call(result, "exitCode")) {
+    return typeof result.exitCode === "number" && Number.isFinite(result.exitCode) ? result.exitCode : INVALID_OPENCLAW_METADATA;
+  }
+  return null;
 }
 
 export function parseOpenClawToolEvent(
@@ -406,14 +428,18 @@ export function parseOpenClawToolEvent(
   if (!name) return unknownToolEvent(payload);
   const output = firstOwnValue(data, profile.aliases.result);
   if (!output.found) return unknownToolEvent(payload);
+  const explicitIsError = firstBooleanMetadata(data, profile.aliases.isError);
   const status = toolResultStatus(data, profile);
   const exitCode = toolResultExitCode(data, profile);
+  if (explicitIsError === INVALID_OPENCLAW_METADATA || status === INVALID_OPENCLAW_METADATA || exitCode === INVALID_OPENCLAW_METADATA) {
+    return unknownToolEvent(payload);
+  }
   return {
     kind: "tool_end",
     id,
     name,
     output: output.value,
-    isError: firstPresent(data, profile.aliases.isError) === true
+    isError: explicitIsError === true
       || (status !== null && profile.errorStates.includes(status))
       || (exitCode !== null && exitCode !== 0),
     seq: payload.seq,
