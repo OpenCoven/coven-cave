@@ -241,6 +241,7 @@ import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
   appendMentionedFilesBlock,
   cleanupImageTempFiles,
+  persistImageAttachments,
   resolveMentionedFiles,
   writeImageAttachmentsToTemp,
 } from "./chat-send-attachments";
@@ -1213,8 +1214,14 @@ export async function POST(req: Request) {
     );
   }
   // Persisted transcripts keep attachment metadata only — base64 image
-  // payloads stay out of the conversation store.
-  const persistedAttachments = stripPreviewOnlyAttachmentFields(attachments);
+  // payloads stay out of the conversation store. Images additionally get a
+  // durable copy in the attachment store, and the transcript records its id,
+  // so reopening the thread can show the picture again instead of degrading
+  // to a filename chip (cave-cysu4).
+  const persistedAttachments = await persistImageAttachments(
+    stripPreviewOnlyAttachmentFields(attachments),
+    attachments,
+  );
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
