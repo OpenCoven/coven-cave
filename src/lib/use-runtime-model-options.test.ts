@@ -26,13 +26,13 @@ assert.match(
 );
 assert.match(
   source,
-  /canonicalRuntime !== "grok"[\s\S]*?fetch\("\/api\/harnesses", \{ cache: "no-store" \}\)/,
-  "Grok uses the authenticated local harness catalog rather than a static model list",
+  /new Set\(\["claude", "copilot", "opencode", "grok"\]\)/,
+  "Grok uses the same scoped shared inventory contract as other dynamic runtimes",
 );
 assert.match(
   source,
-  /canonicalRuntime === "grok" && harnessInventory\.runtime === canonicalRuntime[\s\S]*?return harnessInventory\.models/,
-  "Grok only renders models from the inventory for the current runtime request",
+  /runtimeInventory\.key === inventoryKey[\s\S]*?return runtimeInventory\.models/,
+  "dynamic inventories never render a prior familiar/runtime scope while the current request is pending",
 );
 
 console.log("use-runtime-model-options.test.ts: ok");

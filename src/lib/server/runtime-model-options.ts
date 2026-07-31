@@ -3,14 +3,18 @@ import {
   catalogForRuntime,
   type RuntimeModelOption,
 } from "../runtime-models.ts";
-import { listClaudeModels } from "./claude-models.ts";
-import { listCopilotModels } from "./copilot-models.ts";
+import { listClaudeModelInventory, listClaudeModels } from "./claude-models.ts";
+import { listCopilotModelInventory, listCopilotModels } from "./copilot-models.ts";
+import { listGrokModels } from "./grok-models.ts";
 import { listOpenCodeModels } from "./opencode-models.ts";
 
 export type RuntimeModelOptionsDependencies = {
   allowOpenCodeInventory?: boolean;
   listClaude?: typeof listClaudeModels;
   listCopilot?: typeof listCopilotModels;
+  listClaudeInventory?: typeof listClaudeModelInventory;
+  listCopilotInventory?: typeof listCopilotModelInventory;
+  listGrok?: typeof listGrokModels;
   listOpenCode?: typeof listOpenCodeModels;
 };
 
@@ -56,17 +60,23 @@ export async function listRuntimeModelInventory(
   const fallback = fallbackInventory(canonicalRuntime);
   try {
     if (canonicalRuntime === "claude") {
-      const models = await (dependencies.listClaude ?? listClaudeModels)(
-        familiarId,
-      );
-      return models.length > 0
-        ? { ...fallback, models: [...models], provenance: "live" }
+      const result = dependencies.listClaude
+        ? { models: await dependencies.listClaude(familiarId), provenance: "live" as const }
+        : await (dependencies.listClaudeInventory ?? listClaudeModelInventory)(familiarId);
+      return result.models.length > 0
+        ? { ...fallback, models: [...result.models], provenance: result.provenance }
         : fallback;
     }
     if (canonicalRuntime === "copilot") {
-      const models = await (dependencies.listCopilot ?? listCopilotModels)(
-        familiarId,
-      );
+      const result = dependencies.listCopilot
+        ? { models: await dependencies.listCopilot(familiarId), provenance: "live" as const }
+        : await (dependencies.listCopilotInventory ?? listCopilotModelInventory)(familiarId);
+      return result.models.length > 0
+        ? { ...fallback, models: [...result.models], provenance: result.provenance }
+        : fallback;
+    }
+    if (canonicalRuntime === "grok") {
+      const models = await (dependencies.listGrok ?? listGrokModels)(familiarId);
       return models.length > 0
         ? { ...fallback, models: [...models], provenance: "live" }
         : fallback;

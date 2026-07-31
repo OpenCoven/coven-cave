@@ -9,16 +9,7 @@ type RuntimeInventory = {
   key: string | null;
   models: RuntimeModelOption[] | null;
 };
-type HarnessesResponse = {
-  ok?: boolean;
-  harnesses?: Array<{ id?: string; models?: RuntimeModelOption[] }>;
-};
-type HarnessInventory = {
-  runtime: string | null;
-  models: RuntimeModelOption[];
-};
-
-const DYNAMIC_INVENTORY_RUNTIMES = new Set(["claude", "copilot", "opencode"]);
+const DYNAMIC_INVENTORY_RUNTIMES = new Set(["claude", "copilot", "opencode", "grok"]);
 
 /** Static seeds stay synchronous while capable runtimes replace them live. */
 export function useRuntimeModelOptions(
@@ -37,10 +28,6 @@ export function useRuntimeModelOptions(
   const [runtimeInventory, setRuntimeInventory] = useState<RuntimeInventory>({
     key: null,
     models: null,
-  });
-  const [harnessInventory, setHarnessInventory] = useState<HarnessInventory>({
-    runtime: null,
-    models: [],
   });
   const inventoryFamiliarId = familiarId ?? null;
   const inventoryKey = `${canonicalRuntime}\u0000${inventoryFamiliarId ?? ""}`;
@@ -75,25 +62,6 @@ export function useRuntimeModelOptions(
     staticModels,
   ]);
 
-  // Grok's model list is authenticated and installation-specific. Reuse the
-  // same local harness inventory that Familiar Studio uses instead of falling
-  // back to a stale static list (or making task cards free-text-only).
-  useEffect(() => {
-    if (canonicalRuntime !== "grok") return;
-    let cancelled = false;
-    void fetch("/api/harnesses", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json: HarnessesResponse | null) => {
-        if (cancelled || !json?.ok || !Array.isArray(json.harnesses)) return;
-        const models = json.harnesses.find((item) => item.id === canonicalRuntime)?.models;
-        setHarnessInventory({ runtime: canonicalRuntime, models: Array.isArray(models) ? models : [] });
-      })
-      .catch(() => {
-        if (!cancelled) setHarnessInventory({ runtime: canonicalRuntime, models: [] });
-      });
-    return () => { cancelled = true; };
-  }, [canonicalRuntime]);
-
   // A selected familiar can have a different vault scope. Do not briefly show
   // its predecessor's inventory while this scope's request is in flight.
   if (
@@ -102,9 +70,6 @@ export function useRuntimeModelOptions(
     runtimeInventory.models !== null
   ) {
     return runtimeInventory.models;
-  }
-  if (canonicalRuntime === "grok" && harnessInventory.runtime === canonicalRuntime) {
-    return harnessInventory.models;
   }
   return staticModels;
 }

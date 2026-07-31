@@ -306,10 +306,10 @@ async function discoverCopilotModels(
 
 /** Read the authenticated, account-policy-scoped model inventory from Cave's
  * exact resolved Copilot CLI. */
-export async function listCopilotModels(
+export async function listCopilotModelInventory(
   familiarId?: string | null,
   dependencies: CopilotModelDependencies = {},
-): Promise<RuntimeModelOption[]> {
+): Promise<{ models: RuntimeModelOption[]; provenance: "live" | "cached" }> {
   const key = familiarId ?? "";
   const now = dependencies.now ?? Date.now;
   pruneExpiredCache(now());
@@ -317,24 +317,32 @@ export async function listCopilotModels(
   if (cached) {
     cache.delete(key);
     cache.set(key, cached);
-    return [...cached.models];
+    return { models: [...cached.models], provenance: "cached" };
   }
   const pending = inFlight.get(key);
-  if (pending) return [...await pending];
+  if (pending) return { models: [...await pending], provenance: "live" };
   if (
     inFlight.size >= positiveLimit(
       dependencies.maxConcurrentDiscoveries,
       MAX_CONCURRENT_DISCOVERIES,
     )
   ) {
-    return [];
+    return { models: [], provenance: "live" };
   }
 
   const discovery = discoverCopilotModels(familiarId, dependencies).finally(() => {
     if (inFlight.get(key) === discovery) inFlight.delete(key);
   });
   inFlight.set(key, discovery);
-  return [...await discovery];
+  return { models: [...await discovery], provenance: "live" };
+}
+
+/** Compatibility projection for callers that only need the entries. */
+export async function listCopilotModels(
+  familiarId?: string | null,
+  dependencies: CopilotModelDependencies = {},
+): Promise<RuntimeModelOption[]> {
+  return (await listCopilotModelInventory(familiarId, dependencies)).models;
 }
 
 export function clearCopilotModelCache(): void {

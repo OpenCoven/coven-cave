@@ -191,17 +191,17 @@ async function discoverClaudeModels(
 
 /** Return the Claude seed augmented only when this familiar's concrete
  * Claude Code/provider configuration can route Opus 5. */
-export async function listClaudeModels(
+export async function listClaudeModelInventory(
   familiarId?: string | null,
   dependencies: ClaudeModelDependencies = {},
-): Promise<RuntimeModelOption[]> {
+): Promise<{ models: RuntimeModelOption[]; provenance: "live" | "cached" }> {
   let providerEnv: Record<string, string | undefined>;
   try {
     providerEnv = modelEnvironment(
       (dependencies.scopedEnv ?? harnessSpawnEnv)(familiarId),
     );
   } catch {
-    return seedModels();
+    return { models: seedModels(), provenance: "live" };
   }
   const key = cacheKey(familiarId, providerEnv);
   const now = dependencies.now ?? Date.now;
@@ -210,17 +210,17 @@ export async function listClaudeModels(
   if (cached) {
     cache.delete(key);
     cache.set(key, cached);
-    return [...cached.models];
+    return { models: [...cached.models], provenance: "cached" };
   }
   const pending = inFlight.get(key);
-  if (pending) return [...await pending];
+  if (pending) return { models: [...await pending], provenance: "live" };
   if (
     inFlight.size >= positiveLimit(
       dependencies.maxConcurrentDiscoveries,
       MAX_CONCURRENT_DISCOVERIES,
     )
   ) {
-    return seedModels();
+    return { models: seedModels(), provenance: "live" };
   }
 
   const discovery = discoverClaudeModels(
@@ -231,7 +231,15 @@ export async function listClaudeModels(
     if (inFlight.get(key) === discovery) inFlight.delete(key);
   });
   inFlight.set(key, discovery);
-  return [...await discovery];
+  return { models: [...await discovery], provenance: "live" };
+}
+
+/** Compatibility projection for callers that only need the entries. */
+export async function listClaudeModels(
+  familiarId?: string | null,
+  dependencies: ClaudeModelDependencies = {},
+): Promise<RuntimeModelOption[]> {
+  return (await listClaudeModelInventory(familiarId, dependencies)).models;
 }
 
 export function clearClaudeModelCache(): void {

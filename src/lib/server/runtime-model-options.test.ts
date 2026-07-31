@@ -110,4 +110,48 @@ assert.equal(
   "runtime-managed",
 );
 
+assert.deepEqual(
+  await listRuntimeModelInventory("claude", "sage", {
+    listClaudeInventory: async () => ({ models: [opus5], provenance: "cached" }),
+  }),
+  {
+    runtime: "claude",
+    models: [opus5],
+    provenance: "cached",
+    defaultOwner: "cave",
+    allowCustom: true,
+  },
+  "a resolver cache hit remains truthful at the shared API boundary",
+);
+
+const grokModel = { id: "grok-4", label: "Grok 4" };
+assert.deepEqual(
+  await listRuntimeModelInventory("grok", "sage", {
+    listGrok: async (familiarId) => {
+      assert.equal(familiarId, "sage", "Grok discovery stays familiar-scoped");
+      return [grokModel];
+    },
+  }),
+  {
+    runtime: "grok",
+    models: [grokModel],
+    provenance: "live",
+    defaultOwner: "runtime",
+    allowCustom: true,
+  },
+  "an authenticated Grok probe supplies the shared live inventory",
+);
+assert.equal(
+  (await listRuntimeModelInventory("grok", "sage", { listGrok: async () => [] })).provenance,
+  "runtime-managed",
+  "a timed-out Grok probe does not fabricate inventory access",
+);
+assert.equal(
+  (await listRuntimeModelInventory("grok", "sage", {
+    listGrok: async () => { throw new Error("probe failed"); },
+  })).provenance,
+  "runtime-managed",
+  "a failed Grok probe reports the honest runtime-managed fallback",
+);
+
 console.log("server/runtime-model-options.test.ts: ok");
