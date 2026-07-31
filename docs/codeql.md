@@ -39,10 +39,17 @@ the gate permanently unsatisfiable once and cost real recovery work:
 
 > The ruleset's `code_scanning` rule derives the set of *expected* analysis
 > categories from what has been uploaded to `main`. A pull request only
-> satisfies the gate when its head commit has results for **every** expected
-> category. Uploading a category from `main`-only runs while PRs don't produce
-> it means every PR fails with *"Code scanning is still expecting N results
-> from CodeQL"*, and only an admin bypass can merge.
+> satisfies the gate when its **merge commit** has results for **every**
+> expected category. Uploading a category from `main`-only runs while PRs
+> don't produce it means every PR fails with *"Code scanning is still
+> expecting N results from CodeQL"*, and only an admin bypass can merge.
+
+That it is the *merge* commit and not the head commit is what makes the gate
+lag: the merge commit regenerates every time `main` moves, so under a rapid
+merge train the gate trails `main` by roughly one CodeQL run (~10 min). The
+workflow set `cancel-in-progress: false` for exactly this reason — cancelling
+in-flight runs recreates the same deadlock from the other side. Re-running the
+PR's CodeQL workflow, or waiting for the merge-commit run, clears it.
 
 So: every category uploaded on `push` to `main` must also be produced by
 `pull_request` runs, and audit-only legs must keep `upload: never`. Recovery
