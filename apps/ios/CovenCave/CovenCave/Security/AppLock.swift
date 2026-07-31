@@ -14,15 +14,14 @@ enum AppLockPolicy {
     ///   - alreadyLocked: Whether the app is currently locked (e.g. cold start,
     ///     or a previous background stint already locked it and unlock hasn't
     ///     happened since).
-    ///   - backgroundDuration: Time spent backgrounded before returning, or
-    ///     `nil` if the app never left the foreground (only `.inactive`, which
-    ///     callers must not report here — see `AppLock.sceneDidEnterBackground`).
-    static func shouldLock(enabled: Bool, alreadyLocked: Bool, backgroundDuration: Duration?) -> Bool {
+    ///   - awayDuration: Time spent inactive or backgrounded before returning,
+    ///     or `nil` if the app never left the foreground.
+    static func shouldLock(enabled: Bool, alreadyLocked: Bool, awayDuration: Duration?) -> Bool {
         guard enabled else { return false }
         if alreadyLocked { return true }
-        guard let backgroundDuration else { return false }
-        guard backgroundDuration >= .zero else { return true }
-        return backgroundDuration >= graceDuration
+        guard let awayDuration else { return false }
+        guard awayDuration >= .zero else { return true }
+        return awayDuration >= graceDuration
     }
 }
 
@@ -106,7 +105,7 @@ final class AppLock {
     private let authenticator: BiometricAuthenticating
     private let defaults: UserDefaults
     private let continuousNow: () -> ContinuousClock.Instant
-    private var backgroundedAt: ContinuousClock.Instant?
+    private var becameInactiveAt: ContinuousClock.Instant?
     private var autoPromptCoordinator = LockScreenAutoPromptCoordinator()
 
     init(
@@ -146,13 +145,18 @@ final class AppLock {
     /// Call when the scene reaches `.inactive` (app switcher, control
     /// center, an incoming call banner, or the `.inactive -> .active` bounce
     /// a LocalAuthentication sheet itself causes). Immediately raises the
-    /// privacy shield so no content is visible in a snapshot, but —
-    /// deliberately unlike `.background` — never touches `isLocked`, never
-    /// starts/extends the 60s background clock, and never refreshes
-    /// availability or consumes an auto-prompt slot: a quick inactive/active
-    /// blip must not force re-authentication or restart the grace window.
+    /// privacy shield so no content is visible in a snapshot. Starts the
+    /// 60-second away clock unless a LocalAuthentication prompt is already in
+    /// flight; a quick inactive/active blip remains under the grace window,
+    /// while the prompt's own lifecycle bounce must not count as time away.
     func sceneDidBecomeInactive() {
         isPrivacyShielded = true
+        guard defaults.bool(forKey: Self.lockEnabledKey) else {
+            becameInactiveAt = nil
+            return
+        }
+        guard !isAuthenticating, becameInactiveAt == nil else { return }
+        becameInactiveAt = continuousNow()
     }
 
     /// Call when the scene reaches `.background`. Always ensures the privacy
@@ -164,36 +168,36 @@ final class AppLock {
     func sceneDidEnterBackground() {
         isPrivacyShielded = true
         guard defaults.bool(forKey: Self.lockEnabledKey) else {
-            backgroundedAt = nil
+            becameInactiveAt = nil
             return
         }
-        guard backgroundedAt == nil else { return }
-        backgroundedAt = continuousNow()
+        guard becameInactiveAt == nil else { return }
+        becameInactiveAt = continuousNow()
     }
 
     /// Call when the scene reaches `.active`. Refreshes live authentication
     /// availability/kind first (enrollment or passcode can change while
     /// backgrounded), reconciles the effective lock/approval preferences
     /// against that availability, then runs the existing re-lock decision —
-    /// re-locking only if a genuine background stint (not a bare `.inactive`
-    /// blip) reached the grace window, or if the app was already locked
-    /// (cold start / prior re-lock not yet cleared by a successful unlock).
+    /// re-locking only if an inactive/background stint reached the grace
+    /// window, or if the app was already locked (cold start / prior re-lock
+    /// not yet cleared by a successful unlock).
     /// The privacy shield is cleared last, once the correct `isLocked` state
     /// is settled.
     func sceneDidBecomeActive() {
         defer { isPrivacyShielded = false }
         refreshAvailability()
         guard defaults.bool(forKey: Self.lockEnabledKey) else {
-            backgroundedAt = nil
+            becameInactiveAt = nil
             return
         }
         guard canUseDeviceAuthentication else { return }
-        let duration = backgroundedAt.map { start in
+        let duration = becameInactiveAt.map { start in
             start.duration(to: continuousNow())
         }
-        backgroundedAt = nil
+        becameInactiveAt = nil
         let wasLocked = isLocked
-        if AppLockPolicy.shouldLock(enabled: lockEnabled, alreadyLocked: isLocked, backgroundDuration: duration) {
+        if AppLockPolicy.shouldLock(enabled: lockEnabled, alreadyLocked: isLocked, awayDuration: duration) {
             isLocked = true
             // Only a fresh false -> true transition is a new genuine lock
             // presentation; re-affirming an already-locked state (the
@@ -305,7 +309,7 @@ final class AppLock {
         defaults.set(enabled, forKey: Self.lockEnabledKey)
         if !enabled {
             isLocked = false
-            backgroundedAt = nil
+            becameInactiveAt = nil
         }
         return .authorized
     }

@@ -718,6 +718,49 @@ final class AppLockTests: XCTestCase {
         XCTAssertFalse(lock.isLocked)
     }
 
+    func testExtendedInactiveThenActiveRelocks() async {
+        let clock = TestClock()
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = true
+        let lock = makeLock(lockEnabled: true, authenticator: authenticator, clock: clock)
+        _ = await lock.unlock()
+
+        lock.sceneDidBecomeInactive()
+        clock.advance(by: 60)
+        lock.sceneDidBecomeActive()
+
+        XCTAssertTrue(lock.isLocked)
+        XCTAssertFalse(lock.isPrivacyShielded)
+    }
+
+    func testAuthenticationPromptInactiveBounceDoesNotRelock() async {
+        let clock = TestClock()
+        let authenticator = FakeBiometricAuthenticator()
+        authenticator.authenticateResult = true
+        let lock = makeLock(
+            lockEnabled: true,
+            approvalEnabled: true,
+            authenticator: authenticator,
+            clock: clock
+        )
+        _ = await lock.unlock()
+
+        authenticator.suspendsAuthenticate = true
+        let started = expectation(description: "approval authentication started")
+        authenticator.onAuthenticateStart = { started.fulfill() }
+        let approvalTask = Task { await lock.requestApproval(reason: "Approve") }
+        await fulfillment(of: [started], timeout: 5)
+
+        lock.sceneDidBecomeInactive()
+        clock.advance(by: 60)
+        lock.sceneDidBecomeActive()
+
+        XCTAssertFalse(lock.isLocked)
+        authenticator.resumeSuspendedAuthenticate()
+        let approvalOutcome = await approvalTask.value
+        XCTAssertEqual(approvalOutcome, .authorized)
+    }
+
     /// `.background` must raise the shield unconditionally, but only starts
     /// the re-lock clock when locking is actually enabled.
     func testBackgroundEnablesPrivacyShieldRegardlessOfLockEnabled() {
@@ -956,11 +999,11 @@ final class AppLockTests: XCTestCase {
     // MARK: - Pure policy
 
     func testAppLockPolicyGraceBoundary() {
-        XCTAssertFalse(AppLockPolicy.shouldLock(enabled: false, alreadyLocked: false, backgroundDuration: .seconds(600)))
-        XCTAssertFalse(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, backgroundDuration: nil))
-        XCTAssertFalse(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, backgroundDuration: .seconds(59)))
-        XCTAssertTrue(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, backgroundDuration: .seconds(60)))
-        XCTAssertTrue(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: true, backgroundDuration: .seconds(1)))
-        XCTAssertTrue(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, backgroundDuration: .seconds(-1)))
+        XCTAssertFalse(AppLockPolicy.shouldLock(enabled: false, alreadyLocked: false, awayDuration: .seconds(600)))
+        XCTAssertFalse(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, awayDuration: nil))
+        XCTAssertFalse(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, awayDuration: .seconds(59)))
+        XCTAssertTrue(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, awayDuration: .seconds(60)))
+        XCTAssertTrue(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: true, awayDuration: .seconds(1)))
+        XCTAssertTrue(AppLockPolicy.shouldLock(enabled: true, alreadyLocked: false, awayDuration: .seconds(-1)))
     }
 }
