@@ -157,7 +157,7 @@ test("the gate lives in the shared git common dir: linked worktrees see one gate
   rmSync(repo, { recursive: true, force: true });
 });
 
-test("concurrent multi-process acquisition: exactly one winner", () => {
+test("concurrent multi-process acquisition: exactly one winner", async () => {
   const repo = makeRepo();
   const contenders = 6;
   const worker = `
