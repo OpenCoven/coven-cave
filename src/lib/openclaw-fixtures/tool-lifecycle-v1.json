@@ -1,0 +1,89 @@
+{
+  "source": {
+    "repository": "openclaw/openclaw",
+    "commit": "d66b514a7e7565d89c87ab6f1a509623128093f0",
+    "paths": [
+      "src/gateway/server-chat.ts",
+      "src/gateway/server-chat.agent-events.test.ts",
+      "ui/src/pages/activity/tool-activity.ts"
+    ]
+  },
+  "frames": [
+    {
+      "name": "tool-start",
+      "payload": {
+        "runId": "run-tool-lifecycle-v1",
+        "seq": 3,
+        "stream": "chat",
+        "ts": 1710000000000,
+        "data": {
+          "phase": "start",
+          "toolCallId": "tool-call-001",
+          "name": "web.fetch",
+          "args": {
+            "url": "https://example.invalid/tool-start"
+          }
+        }
+      }
+    },
+    {
+      "name": "tool-update",
+      "payload": {
+        "runId": "run-tool-lifecycle-v1",
+        "seq": 7,
+        "stream": "chat",
+        "ts": 1710000005000,
+        "data": {
+          "phase": "update",
+          "toolCallId": "tool-call-001",
+          "name": "web.fetch",
+          "partialResult": {
+            "status": "streaming",
+            "items": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "tool-result",
+      "payload": {
+        "runId": "run-tool-lifecycle-v1",
+        "seq": 9,
+        "stream": "chat",
+        "ts": 1710000010000,
+        "data": {
+          "phase": "result",
+          "toolCallId": "tool-call-001",
+          "name": "web.fetch",
+          "result": {
+            "ok": true,
+            "items": 3
+          },
+          "isError": false
+        }
+      }
+    },
+    {
+      "name": "session-tool-error",
+      "payload": {
+        "runId": "run-tool-lifecycle-v1",
+        "seq": 11,
+        "stream": "session.tool",
+        "ts": 1710000015000,
+        "data": {
+          "phase": "result",
+          "toolCallId": "tool-call-002",
+          "name": "session.tool",
+          "args": {
+            "kind": "audit"
+          },
+          "result": {
+            "ok": false,
+            "message": "Session tool failed"
+          },
+          "isError": true
+        }
+      }
+    }
+  ]
+}
