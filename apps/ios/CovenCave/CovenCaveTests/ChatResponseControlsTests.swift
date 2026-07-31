@@ -106,6 +106,7 @@ final class ChatResponseControlsTests: XCTestCase {
               "modelOverride": "anthropic/claude-opus-4-6",
               "responseMetadata": {
                 "retryModel": "anthropic/claude-sonnet-4-6",
+                "requestedControls": {"reasoning":"medium"},
                 "appliedControls": {"reasoning":"medium"}
               }
             }
@@ -118,6 +119,7 @@ final class ChatResponseControlsTests: XCTestCase {
         XCTAssertEqual(restored.reasoningEffort, .medium)
         XCTAssertEqual(restored.responseSpeed, .careful)
         XCTAssertEqual(restored.modelControls, ["reasoning": "medium"])
+        XCTAssertEqual(restored.requestedControls, ["reasoning": "medium"])
         XCTAssertEqual(restored.appliedControls, ["reasoning": "medium"])
         XCTAssertEqual(restored.modelOverride, "anthropic/claude-sonnet-4-6")
         XCTAssertEqual(restored.retryModel(for: "nyx"), "anthropic/claude-sonnet-4-6")
@@ -128,7 +130,7 @@ final class ChatResponseControlsTests: XCTestCase {
             """
             [
               {"id":"user-1","role":"user","text":"Review the branch","modelControls":{"reasoning":"high"}},
-              {"id":"assistant-1","role":"assistant","text":"Done","responseMetadata":{"retryModel":"openai/gpt-5.6-sol","appliedControls":{"reasoning":"high"}}}
+              {"id":"assistant-1","role":"assistant","text":"Done","responseMetadata":{"retryModel":"openai/gpt-5.6-sol","requestedControls":{"reasoning":"high"},"promptGuidanceControls":{"reasoning":"high"},"rejectedControlFamilies":["verbosity"]}}
             ]
             """.data(using: .utf8)
         )
@@ -136,7 +138,9 @@ final class ChatResponseControlsTests: XCTestCase {
         let messages = DisplayMessage.restoredTranscript(from: turns, familiarId: "nyx")
 
         XCTAssertEqual(messages[0].retryModel(for: "nyx"), "openai/gpt-5.6-sol")
-        XCTAssertEqual(messages[1].appliedControls, ["reasoning": "high"])
+        XCTAssertEqual(messages[1].requestedControls, ["reasoning": "high"])
+        XCTAssertEqual(messages[1].promptGuidanceControls, ["reasoning": "high"])
+        XCTAssertEqual(messages[1].rejectedControlFamilies, ["verbosity"])
     }
 
     func testDuplicatingTurnPreservesRetryControls() {
@@ -167,17 +171,20 @@ final class ChatResponseControlsTests: XCTestCase {
         let event = try XCTUnwrap(StreamEvent.decode(
             """
             {"kind":"done","isError":false,"sessionId":"session-1",
-             "responseMetadata":{"retryModel":"openai/gpt-5.6-sol","appliedControls":{"reasoning":"medium"}}}
+             "responseMetadata":{"retryModel":"openai/gpt-5.6-sol","requestedControls":{"reasoning":"medium"},"appliedControls":{"reasoning":"medium"}}}
             """
         ))
 
-        guard case .done(let isError, let sessionId, let retryModel, let appliedControls) = event else {
+        guard case .done(let isError, let sessionId, let retryModel, let requestedControls, let promptGuidanceControls, let appliedControls, let rejectedControlFamilies) = event else {
             return XCTFail("expected done event")
         }
         XCTAssertFalse(isError)
         XCTAssertEqual(sessionId, "session-1")
         XCTAssertEqual(retryModel, "openai/gpt-5.6-sol")
+        XCTAssertEqual(requestedControls, ["reasoning": "medium"])
+        XCTAssertNil(promptGuidanceControls)
         XCTAssertEqual(appliedControls, ["reasoning": "medium"])
+        XCTAssertNil(rejectedControlFamilies)
     }
 
     func testGroupTurnRetainsOneRetryModelPerFamiliar() {

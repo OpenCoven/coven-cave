@@ -28,6 +28,9 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     var modelControls: [String: String]?
     /// Runtime-confirmed controls reported on the completed assistant turn.
     var appliedControls: [String: String]?
+    var requestedControls: [String: String]?
+    var promptGuidanceControls: [String: String]?
+    var rejectedControlFamilies: [String]?
     /// Explicit model selected for this turn. Persisted so offline replay and
     /// retry preserve the user's choice.
     var modelOverride: String?
@@ -70,7 +73,10 @@ extension DisplayMessage {
             reasoningEffort: turn.reasoningEffort,
             responseSpeed: turn.responseSpeed,
             modelControls: turn.modelControls,
+            requestedControls: turn.responseMetadata?.requestedControls,
+            promptGuidanceControls: turn.responseMetadata?.promptGuidanceControls,
             appliedControls: turn.responseMetadata?.appliedControls,
+            rejectedControlFamilies: turn.responseMetadata?.rejectedControlFamilies,
             modelOverride: turn.responseMetadata?.retryModel ?? turn.modelOverride,
             modelOverridesByFamiliar: (turn.responseMetadata?.retryModel ?? turn.modelOverride).flatMap { model in
                 familiarId.map { [$0: model] }
@@ -106,7 +112,10 @@ extension DisplayMessage {
             reasoningEffort: message.reasoningEffort,
             responseSpeed: message.responseSpeed,
             modelControls: message.modelControls,
+            requestedControls: message.requestedControls,
+            promptGuidanceControls: message.promptGuidanceControls,
             appliedControls: message.appliedControls,
+            rejectedControlFamilies: message.rejectedControlFamilies,
             modelOverride: message.modelOverride,
             modelOverridesByFamiliar: message.modelOverridesByFamiliar,
             activity: message.activity
@@ -640,7 +649,7 @@ final class ChatThread: Identifiable, Hashable {
             flush(coalescer, into: messageId, onChange: onChange)
             mutate(messageId) { $0.text = text; $0.streaming = true }
             onChange()
-        case .done(let isError, let sid, let retryModel, let appliedControls):
+        case .done(let isError, let sid, let retryModel, let requestedControls, let promptGuidanceControls, let appliedControls, let rejectedControlFamilies):
             if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
             flush(coalescer, into: messageId, onChange: onChange)
             if let userMessageId {
@@ -648,7 +657,10 @@ final class ChatThread: Identifiable, Hashable {
             }
             mutate(messageId) {
                 $0.streaming = false
+                $0.requestedControls = requestedControls
+                $0.promptGuidanceControls = promptGuidanceControls
                 $0.appliedControls = appliedControls
+                $0.rejectedControlFamilies = rejectedControlFamilies
                 if isError { $0.isError = true }
                 // A persisted "running" step would spin forever after reload —
                 // the turn is over, so settle the trail with its outcome.

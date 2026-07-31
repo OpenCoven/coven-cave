@@ -15,6 +15,8 @@ export type ChatResponseMetadata = {
   modelApplicationReason?: string;
   /** Controls the client asked Cave to apply for this selected model. */
   requestedControls?: ModelControlValues;
+  /** Requested controls delivered only as explicit prompt guidance. */
+  promptGuidanceControls?: ModelControlValues;
   /** Controls the provider/runtime accepted for this completed attempt. */
   appliedControls?: ModelControlValues;
   /** Capability families rejected before a runtime launch. */

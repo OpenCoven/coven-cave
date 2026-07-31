@@ -236,6 +236,7 @@ struct MessageBubble: View {
                     bubble
                         .contextMenu { messageActions }
                 }
+                if !isUser { responseControlStatus }
 
                 // Rich preview card for the first link in a finished message.
                 if !message.streaming, let link = firstLink(in: parsed.visible) {
@@ -293,6 +294,31 @@ struct MessageBubble: View {
             }
 
             if !isUser { Spacer(minLength: 48) }
+        }
+    }
+
+    @ViewBuilder private var responseControlStatus: some View {
+        let requested = message.requestedControls ?? [:]
+        let rejected = Set(message.rejectedControlFamilies ?? [])
+        let promptGuidance = Set((message.promptGuidanceControls ?? [:]).keys)
+        let applied = Set((message.appliedControls ?? [:]).keys)
+        if !requested.isEmpty || !rejected.isEmpty {
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(Array(requested.keys).sorted(), id: \.self) { family in
+                    let value = requested[family] ?? ""
+                    let status = rejected.contains(family) ? "Rejected" : promptGuidance.contains(family) ? "Prompt guidance" : applied.contains(family) ? "Applied" : "Requested — not confirmed"
+                    Text("\(status): \(family) \(value)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(Array(rejected.subtracting(requested.keys)).sorted(), id: \.self) { family in
+                    Text("Rejected: \(family)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Response controls")
         }
     }
 

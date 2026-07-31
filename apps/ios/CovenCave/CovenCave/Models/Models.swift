@@ -127,7 +127,10 @@ struct TurnUsage: Codable, Hashable {
 /// and runtime configuration never cross the history boundary.
 struct ChatTurnResponseMetadata: Codable, Hashable {
     var retryModel: String?
+    var requestedControls: [String: String]?
+    var promptGuidanceControls: [String: String]?
     var appliedControls: [String: String]?
+    var rejectedControlFamilies: [String]?
 }
 
 /// One message turn within a conversation.

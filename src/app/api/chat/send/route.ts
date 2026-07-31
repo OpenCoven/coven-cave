@@ -1825,6 +1825,7 @@ export async function POST(req: Request) {
     modelApplicationState: modelState.applicationState,
     modelApplicationReason: modelState.reason,
     requestedControls: controlValidation.values,
+    promptGuidanceControls: promptModelControls,
   };
   const offlineChatResponse = await maybeQueueOfflineChat({
     body,

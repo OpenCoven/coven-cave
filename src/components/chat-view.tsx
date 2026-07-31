@@ -1101,6 +1101,38 @@ function responseMetadataModel(metadata?: ChatResponseMetadata): string | null {
   );
 }
 
+/** Per-turn control outcome: requested, prompt guidance, applied, or rejected. */
+function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
+  const requested = Object.entries(metadata?.requestedControls ?? {});
+  const rejected = new Set(metadata?.rejectedControlFamilies ?? []);
+  const promptOnly = new Set(Object.keys(metadata?.promptGuidanceControls ?? {}));
+  const applied = new Set(Object.keys(metadata?.appliedControls ?? {}));
+  if (!requested.length && !rejected.size) return null;
+  const lines = [
+    ...requested.map(([family, value]) => {
+      const prefix = rejected.has(family)
+        ? "Rejected"
+        : promptOnly.has(family)
+          ? "Prompt guidance"
+          : applied.has(family)
+            ? "Applied"
+            : "Requested — not confirmed";
+      return `${prefix}: ${family} ${value}`;
+    }),
+    ...[...rejected].filter((family) => !requested.some(([requestedFamily]) => requestedFamily === family))
+      .map((family) => `Rejected: ${family}`),
+  ];
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response controls. ${lines.join(". ")}`}>
+      {lines.map((line) => (
+        <span key={line} className="ui-pill border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
+          {line}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 type MetaLineState = "complete" | "streaming" | "failed" | "offline";
 
 function metaLineState(args: {
@@ -7525,6 +7557,7 @@ function TurnRowImpl({
                   segments={renderSegments}
                   branchNav={branchNav}
                 />
+                <ResponseControlStatus metadata={turn.responseMetadata} />
               </div>
             )}
             {/* CHAT-D4-01: tools often run BEFORE the first prose chunk
