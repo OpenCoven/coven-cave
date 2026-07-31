@@ -173,8 +173,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*label:\s*"Thinking"[\s\S]*label:\s*"Speed"[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue[\s\S]*sections:\s*composerResponseSections/,
-  "the grouped Response section carries Host, Access, Model, Thinking, and Speed in order",
+  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*\.\.\.modelCapabilities\.map\(\(capability\) => \(\{[\s\S]*Prompt guidance[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue[\s\S]*sections:\s*composerResponseSections/,
+  "the grouped Response section carries Access, Model, and only selected-model capability controls with prompt guidance labelled",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
 // "Both" reconciliation (2026-07-21): the context chips ride the footer
@@ -244,8 +244,8 @@ assert.match(
 );
 assert.match(
   homeComposer,
-  /initialControls: \{ thinkingEffort, responseSpeed, \.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\) \}/,
-  "the home composer threads the host pick into the opened chat's first send",
+  /initialControls: runtimeHost \? \{ runtimeHost \} : undefined/,
+  "the home composer threads only the host pick into the opened chat; selected-model controls resolve in Chat",
 );
 assert.match(
   source,
