@@ -270,6 +270,10 @@
   background: var(--bg-sunken);
   color: var(--text-muted);
 }
+/* No font-size here: the global `input, textarea, select { font-size:
+   max(16px, 1em) }` in foundations.css exists to stop iOS Safari focus-zoom,
+   and a compact override would outrank it. The interface scale is restored
+   under `@media (pointer: fine)` at the end of this sheet. */
 .wv-search input {
   flex: 1 1 auto;
   min-width: 0;
@@ -277,7 +281,6 @@
   outline: none;
   background: none;
   color: var(--text-primary);
-  font-size: var(--text-sm);
 }
 .wv-filters { display: flex; align-items: center; gap: var(--space-2); }
 .wv-select-label {
@@ -293,7 +296,6 @@
   border: 1px solid var(--border-hairline);
   background: var(--bg-raised);
   color: var(--text-primary);
-  font-size: var(--text-xs);
   padding: 0 var(--space-1);
 }
 .wv-seg {
@@ -1257,7 +1259,6 @@
   background: var(--bg-sunken);
   color: var(--text-primary);
   padding: var(--space-2);
-  font-size: var(--text-sm);
   line-height: var(--leading-normal);
 }
 .wv-note-help {
@@ -1399,4 +1400,17 @@
 .wv-reveal-scope:focus-within .wv-reveal { opacity: 1; }
 @media (pointer: coarse) {
   .wv-reveal-scope .wv-reveal { opacity: 1; }
+}
+
+/* Form controls at the interface scale ---------------------------------------
+   The three form controls on these surfaces (rail search, familiar select,
+   decision note) inherit the global `max(16px, 1em)` that exists to stop iOS
+   Safari focus-zoom. 16px reads oversized against a 24-28px control and the
+   12-13px scale around it, so bring them down where focus-zoom cannot happen —
+   fine-pointer devices only. Touch keeps the protective size. Same treatment
+   the board inspector's fields use. */
+@media (pointer: fine) {
+  .wv-search input { font-size: var(--text-sm); }
+  .wv-select { font-size: var(--text-xs); }
+  .wv-note { font-size: var(--text-sm); }
 }

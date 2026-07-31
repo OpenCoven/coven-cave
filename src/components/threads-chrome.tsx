@@ -10,6 +10,11 @@
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import type { SurfaceBanner, SurfaceState } from "@/lib/weave-rail";
+// Imported here rather than from globals.css so the sheet code-splits with the
+// two routes that use it (#3264 pattern) — it is ~22 KB the root layout would
+// otherwise carry on every page, and it pushed the root CSS over budget.
+// Both surfaces mount this module, so one import covers them.
+import "@/styles/globals/surface-weaves.css";
 
 /** The Memories surface is the parent of both routes. */
 export const MEMORIES_HREF = "/?mode=grimoire";
