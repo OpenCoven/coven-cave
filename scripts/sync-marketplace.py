@@ -567,8 +567,8 @@ def knowledge_pack_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
     return manifest
 
 
-def package_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) -> dict[Path, str]:
-    files: dict[Path, str] = {}
+def package_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) -> dict[Path, str | bytes]:
+    files: dict[Path, str | bytes] = {}
     plugin_root = marketplace_dir / "plugins"
     for plugin in catalog["plugins"]:
         package_dir = plugin_root / plugin["name"]
@@ -718,7 +718,7 @@ def marketplace_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLA
     }
 
 
-def expected_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) -> dict[Path, str]:
+def expected_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) -> dict[Path, str | bytes]:
     files = package_files(catalog, marketplace_dir)
     files.update(marketplace_files(catalog, marketplace_dir))
     return files
@@ -795,20 +795,11 @@ def write_files(files: dict[Path, str | bytes], managed_roots: set[Path] | None 
             # Generated manifests and prompt content use LF regardless of the
             # host platform, matching their repository representation and
             # avoiding CRLF-only drift in consumers that parse frontmatter.
-            path.write_bytes(content.encode("utf-8"))
-
-
-def normalize_text_line_endings(value: bytes) -> bytes:
-    """Normalize UTF-8 text without changing the comparison of binary assets."""
-    try:
-        value.decode("utf-8")
-    except UnicodeDecodeError:
-        return value
-    return value.replace(b"\r\n", b"\n")
+            path.write_bytes(content.replace("\r\n", "\n").encode("utf-8"))
 
 
 def check_files(
-    files: dict[Path, str],
+    files: dict[Path, str | bytes],
     display_root: Path = ROOT,
     managed_roots: set[Path] | None = None,
 ) -> list[str]:
@@ -821,14 +812,18 @@ def check_files(
         if not path.exists():
             problems.append(f"missing {display_path}")
             continue
-        expected_bytes = expected if isinstance(expected, bytes) else expected.encode("utf-8")
-        # Git may check text files out as CRLF on Windows even when the
-        # repository's canonical generated content uses LF. Compare UTF-8
-        # text with universal newlines so --check reports actual export drift
-        # rather than a platform checkout convention; keep binary assets
-        # byte-exact.
-        actual = normalize_text_line_endings(path.read_bytes())
-        expected_bytes = normalize_text_line_endings(expected_bytes)
+        if isinstance(expected, bytes):
+            # Bundled assets are copied directly from their source paths,
+            # including valid-UTF-8 binary payloads. Their comparison stays
+            # byte-exact.
+            expected_bytes = expected
+            actual = path.read_bytes()
+        else:
+            # Git may check generated text out as CRLF on Windows even though
+            # the canonical output uses LF. Normalize line endings only for
+            # generator-owned string content.
+            expected_bytes = expected.replace("\r\n", "\n").encode("utf-8")
+            actual = path.read_bytes().replace(b"\r\n", b"\n")
         if actual != expected_bytes:
             problems.append(f"stale {display_path}")
     for path in unexpected_managed_files(files, managed_roots or set()):
