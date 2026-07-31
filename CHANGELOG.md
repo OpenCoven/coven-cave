@@ -5,45 +5,42 @@ All notable changes to CovenCave land here. Format follows
 [SemVer](https://semver.org/) while still in 0.x — minor releases may carry
 breaking config changes; patch releases stay additive.
 
+## [Unreleased]
+
 ## [0.2.2] - 2026-07-31
 
 ### Added
 
-- Added Codex-native session lifecycle integration, a typed companion adapter, and authenticated SSE streaming for live collaboration.
-- Added GitHub repository browsing, familiar-scoped repository binding, and GitHub issue creation from Board tasks.
-- Added an MCP Registry browser plus install flows for Cave and Codex clients.
-- Added chat attachment handoff, follow-up intents, global quick chat, familiar scoping, and richer task-progress presentation.
-- Added an always-on browser pane, a richer terminal workbench, and Sketch canvas shape tooling.
-- Added Mobile Cave task creation, task controls, shareable invite links, typed RPC, and optional internet access.
-- Added CovenWiki generation, coverage reporting, retry and progress feedback, and paginated wiki reading.
-- Added a Grimoire cookbook and stitch template gallery for reusable local knowledge workflows.
-- Added a versioned setup and post-setup flow for first-run configuration.
+- Added privacy-safe Discord Rich Presence for desktop, with automatic recovery after Discord restarts (#4093).
+- Added durable Research Studio podcast, short-video, and long-video generation with readiness checks, cancellation, recovery, and native review/playback (#4091).
+- Added a gated GitHub card composer with comments, merge controls, assignees, labels, familiar-assisted drafts, and interactive reactions (#4068, #4075, #4100).
+- Added wide-transcript navigation with a per-turn run spine and per-event thread minimap (#4046, #4048).
+- Added read-aloud actions for assistant replies, packaged Kokoro support in desktop builds, and selectable named Kokoro speakers (#4027, #4079, #4102).
+- Added verified, read-only canonical-memory access for Mobile Cave and the native iOS live-voice transport foundation (#4081).
+- Added distinct Reply, Task, and Action follow-up cards while keeping compact chats reply-only.
+- Added GitHub artifact attestations for release installers and SHA256SUMS (#4070).
 
 ### Changed
 
-- Reworked the Board, Calendar, Chat, Roster, Familiar Library, Integrations, Plugins, Tasks, and Aesthetic surfaces around shared desktop, mobile, and search patterns.
-- Unified multi-familiar context across chat, terminal, and coding-room workflows, including dedicated-room continuity and focused compact layouts.
-- Improved theme palettes, surface hierarchy, typography, status treatments, syntax colors, and custom titlebar behavior across platforms.
-- Expanded local-first sidecar discovery, launch readiness, daemon reuse, crash recovery, and route navigation hardening.
-- Improved release diagnostics, updater and CI reliability, sidecar bundling, and cross-environment validation.
+- Moved chat settings into the active familiar’s Familiar surface, removed duplicate local familiar switching, and retired the legacy Settings Familiars tab (#4040, #4049).
+- Routed Codex chat tool activity through the verified schema transport, with compatibility drift presented as a notice rather than a runtime failure (#4069, #4064).
+- Refined Research Desk hierarchy with lifecycle scopes, priority groups, persisted focus mode, keyboard handling, and responsive rails (#4085).
+- Refocused Marketplace on owned plugins and local skills, with Crafts remaining available only behind its explicit feature flag.
 
 ### Fixed
 
-- Fixed quick-chat preview parity, mobile group-chat visibility, history rendering, transcript restoration, and JSONL recovery behavior.
-- Fixed Board chat scoping, document and task title persistence, Markdown editor writeback, and timeline rendering.
-- Fixed coding-room layout, multipane resizing, terminal input and paste behavior, preview refresh, and worktree selection.
-- Fixed MCP install actions, registry interactions, credential-form affordances, integration search, and installed-state clarity.
-- Fixed Mobile Cave connectivity, QR and deep-link pairing, RPC timing, and compact-shell navigation.
-- Fixed updater permission and launch behavior, release upload handling, executable bits, architecture metadata, and platform-specific setup failures.
-- Fixed accessibility labels, focus handling, contrast, touch targets, reduced-motion behavior, and responsive overflow across core surfaces.
-- Removed remaining legacy shell, query API, demo, and stale route artifacts that could conflict with current navigation.
+- Fixed native microphone permission recovery, including partial plugin wiring, platform gating, legacy macOS prompts, and late failures after cleanup (#4039).
+- Fixed Copilot replies losing message boundaries around pauses and tool calls (#4031).
+- Fixed iOS chat creation and recovery so authorized project context survives forwarding, retry, import, and replay (#4067).
+- Hardened worktree cleanup against active processes, incomplete ownership evidence, audit gaps, false self-detection, and remotely archived work (#4032, #4052, #4054, #4060, #4080, #4087).
+- Fixed the Board GitHub picker so partial, failed, and truncated sources are disclosed instead of producing misleading empty states (#4056).
+- Fixed new-project selection being overwritten and made repository rows visually distinct from workspaces (#4019).
+- Fixed Familiar grouping appearing outside true multi-selection and corrected Board popover shadows in light themes (#4088).
+- Fixed sidebar navigation so the version opens Settings → About and Dashboard remains available in the collapsed rail (#4013, #4044).
 
 ### Security
 
-- Hardened terminal link handling, WebView navigation, and SVG icon rendering against unsafe external content.
-- Removed deprecated trust-boundary fallbacks from mobile, calendar, chat, release, and sidecar paths.
-
-## [Unreleased]
+- Prevented memory archive and restore operations from escaping through symlinked parents, and stopped GitHub post-merge branch deletion from trusting a request-supplied branch name (#4084, #4068).
 
 ## [0.2.0] - 2026-07-26
 
