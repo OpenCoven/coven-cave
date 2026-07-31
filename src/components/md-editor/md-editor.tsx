@@ -169,11 +169,14 @@ export function MdEditor({
   );
 
   const presentation = useMemo(() => splitLeadingMdComments(doc.body), [doc.body]);
+  const visualHiddenPrefixRef = useRef(presentation.hiddenPrefix);
+  useEffect(() => {
+    visualHiddenPrefixRef.current = presentation.hiddenPrefix;
+  }, [visualEpoch]);
 
   const onBodyChange = useCallback((visibleBody: string) => {
     const next = parseMdDocument(rawRef.current);
-    const currentPresentation = splitLeadingMdComments(next.body);
-    next.body = joinLeadingMdComments(currentPresentation.hiddenPrefix, visibleBody);
+    next.body = joinLeadingMdComments(visualHiddenPrefixRef.current, visibleBody);
     updateRaw(
       next.hasFrontmatter ||
         next.title !== null ||

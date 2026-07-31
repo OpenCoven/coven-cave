@@ -45,8 +45,18 @@ assert.match(
 );
 assert.match(
   shell,
-  /joinLeadingMdComments\(\s*currentPresentation\.hiddenPrefix,\s*visibleBody/,
-  "Visual edits reattach the exact hidden metadata prefix",
+  /const visualHiddenPrefixRef = useRef\(presentation\.hiddenPrefix\)/,
+  "Visual mode keeps a mount-scoped hidden metadata prefix ref",
+);
+assert.match(
+  shell,
+  /useEffect\(\(\) => \{\s*\n\s*visualHiddenPrefixRef\.current = presentation\.hiddenPrefix;\s*\n\s*\}, \[visualEpoch\]\)/,
+  "the hidden metadata prefix refreshes only when the visual mount epoch changes",
+);
+assert.match(
+  shell,
+  /joinLeadingMdComments\(\s*visualHiddenPrefixRef\.current,\s*visibleBody/,
+  "Visual edits reattach the stable hidden metadata prefix",
 );
 
 // ── Visual mode: Milkdown Crepe wiring ───────────────────────────────────────
