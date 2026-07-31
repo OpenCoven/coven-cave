@@ -40,6 +40,27 @@ fn build_activity(started_at: i64) -> activity::Activity<'static> {
         ])
 }
 
+fn publish_activity(client: &mut impl DiscordIpc, started_at: i64) -> Result<(), String> {
+    client
+        .set_activity(build_activity(started_at))
+        .map_err(|error| error.to_string())?;
+    loop {
+        let (opcode, response) = client.recv().map_err(|error| error.to_string())?;
+        match opcode {
+            1 => {
+                if response.get("evt").is_some_and(|event| !event.is_null()) {
+                    return Err("Discord rejected the activity update".into());
+                }
+                return Ok(());
+            }
+            3 => client
+                .send(response, 4)
+                .map_err(|error| error.to_string())?,
+            _ => return Err(format!("unexpected Discord IPC opcode {opcode}")),
+        }
+    }
+}
+
 /// Starts one reconnecting IPC worker for the local Discord desktop client.
 ///
 /// The payload is intentionally generic: it never publishes local projects,
@@ -66,7 +87,7 @@ pub fn start() {
 
                 let mut first_publish = true;
                 loop {
-                    match client.set_activity(build_activity(started_at)) {
+                    match publish_activity(&mut client, started_at) {
                         Ok(()) => {
                             if first_publish {
                                 log::info!("[discord-presence] CovenCave presence published");
@@ -92,7 +113,79 @@ pub fn start() {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_activity, ASSET_KEY};
+    use super::{build_activity, publish_activity, ASSET_KEY};
+    use discord_rich_presence::{activity, error::Error, DiscordIpc};
+    use serde_json::{json, Value};
+    use std::collections::VecDeque;
+
+    struct RecordingClient {
+        activity_published: bool,
+        responses_read: usize,
+        responses: VecDeque<(u32, Value)>,
+        sent_frames: Vec<(u8, Value)>,
+    }
+
+    impl RecordingClient {
+        fn new() -> Self {
+            Self {
+                activity_published: false,
+                responses_read: 0,
+                responses: VecDeque::from([(1, json!({ "evt": null }))]),
+                sent_frames: Vec::new(),
+            }
+        }
+
+        fn with_response(opcode: u32, response: Value) -> Self {
+            Self::with_responses([(opcode, response)])
+        }
+
+        fn with_responses(responses: impl IntoIterator<Item = (u32, Value)>) -> Self {
+            Self {
+                responses: responses.into_iter().collect(),
+                ..Self::new()
+            }
+        }
+    }
+
+    impl DiscordIpc for RecordingClient {
+        fn get_client_id(&self) -> &str {
+            "test-client"
+        }
+
+        fn connect_ipc(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn write(&mut self, _data: &[u8]) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn read(&mut self, _buffer: &mut [u8]) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn send(&mut self, data: Value, opcode: u8) -> Result<(), Error> {
+            self.sent_frames.push((opcode, data));
+            Ok(())
+        }
+
+        fn set_activity(&mut self, _activity_payload: activity::Activity<'_>) -> Result<(), Error> {
+            self.activity_published = true;
+            Ok(())
+        }
+
+        fn recv(&mut self) -> Result<(u32, Value), Error> {
+            self.responses_read += 1;
+            Ok(self
+                .responses
+                .pop_front()
+                .expect("test client needs a queued response"))
+        }
+
+        fn close(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn activity_is_generic_and_uses_the_stable_cave_asset_key() {
@@ -108,5 +201,53 @@ mod tests {
             serialized["buttons"][1]["url"],
             "https://github.com/OpenCoven/coven-cave"
         );
+    }
+
+    #[test]
+    fn publishing_consumes_the_activity_response() {
+        let mut client = RecordingClient::new();
+
+        publish_activity(&mut client, 1_700_000_000).expect("activity should publish");
+
+        assert!(client.activity_published);
+        assert_eq!(client.responses_read, 1);
+    }
+
+    #[test]
+    fn publishing_rejects_non_frame_responses() {
+        let mut client = RecordingClient::with_response(2, json!({ "code": 4000 }));
+
+        let result = publish_activity(&mut client, 1_700_000_000);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn publishing_rejects_discord_error_events() {
+        let mut client = RecordingClient::with_response(
+            1,
+            json!({
+                "evt": "ERROR",
+                "data": { "code": 4000, "message": "invalid activity" }
+            }),
+        );
+
+        let result = publish_activity(&mut client, 1_700_000_000);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn publishing_answers_ping_before_reading_activity_response() {
+        let ping_payload = json!({ "nonce": "ping-1" });
+        let mut client = RecordingClient::with_responses([
+            (3, ping_payload.clone()),
+            (1, json!({ "evt": null })),
+        ]);
+
+        publish_activity(&mut client, 1_700_000_000).expect("activity should publish");
+
+        assert_eq!(client.responses_read, 2);
+        assert_eq!(client.sent_frames, [(4, ping_payload)]);
     }
 }
