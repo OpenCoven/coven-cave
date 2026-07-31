@@ -274,6 +274,263 @@ describe("FamiliarXSection async ownership", () => {
     });
   });
 
+  test("switching familiars after browser handoff closes the active OAuth reservation", async () => {
+    const reservation = {
+      ok: true,
+      kind: "browser",
+      popup: { opener: null, closed: false, location: { replace() {} }, close() {} },
+    };
+    browserMocks.reserve.mockReturnValue(reservation);
+    const renderer = await renderWithConnection(familiarA, false);
+    let flowId = "";
+    const cancelledFlowIds: string[] = [];
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        flowId = (JSON.parse(init.body as string) as { flowId: string }).flowId;
+        return jsonResponse({
+          ok: true,
+          flowId,
+          authorizationUrl: "https://x.com/i/oauth2/authorize",
+        });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        cancelledFlowIds.push(
+          (JSON.parse(init.body as string) as { flowId: string }).flowId,
+        );
+        return jsonResponse({ ok: true });
+      }
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: false,
+          activeFlow: true,
+          oauthFlowId: flowId,
+          oauthOutcome: "pending",
+        });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    await act(async () => {
+      renderer.root.findByType("button").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(browserMocks.open).toHaveBeenCalledWith(
+      "https://x.com/i/oauth2/authorize",
+      reservation,
+    );
+
+    await act(async () => {
+      renderer.update(<FamiliarXSection familiar={familiarB} />);
+    });
+
+    expect(browserMocks.cancel).toHaveBeenCalledWith(reservation);
+    expect(cancelledFlowIds).toContain(flowId);
+  });
+
+  test("unmounting after browser handoff closes the active OAuth reservation", async () => {
+    const reservation = {
+      ok: true,
+      kind: "browser",
+      popup: { opener: null, closed: false, location: { replace() {} }, close() {} },
+    };
+    browserMocks.reserve.mockReturnValue(reservation);
+    const renderer = await renderWithConnection(familiarA, false);
+    let flowId = "";
+    const cancelledFlowIds: string[] = [];
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        flowId = (JSON.parse(init.body as string) as { flowId: string }).flowId;
+        return jsonResponse({
+          ok: true,
+          flowId,
+          authorizationUrl: "https://x.com/i/oauth2/authorize",
+        });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        cancelledFlowIds.push(
+          (JSON.parse(init.body as string) as { flowId: string }).flowId,
+        );
+        return jsonResponse({ ok: true });
+      }
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: false,
+          activeFlow: true,
+          oauthFlowId: flowId,
+          oauthOutcome: "pending",
+        });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    await act(async () => {
+      renderer.root.findByType("button").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      renderer.unmount();
+    });
+
+    expect(browserMocks.cancel).toHaveBeenCalledWith(reservation);
+    expect(cancelledFlowIds).toContain(flowId);
+  });
+
+  test("OAuth polling timeout closes the active browser reservation", async () => {
+    const reservation = {
+      ok: true,
+      kind: "browser",
+      popup: { opener: null, closed: false, location: { replace() {} }, close() {} },
+    };
+    browserMocks.reserve.mockReturnValue(reservation);
+    const renderer = await renderWithConnection(familiarA, false);
+    let timeoutCallback: (() => void) | undefined;
+    window.setInterval = vi.fn(() => 1);
+    window.clearInterval = vi.fn();
+    window.setTimeout = vi.fn((callback: () => void) => {
+      timeoutCallback = callback;
+      return 2;
+    });
+    window.clearTimeout = vi.fn();
+    let flowId = "";
+    const cancelledFlowIds: string[] = [];
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        flowId = (JSON.parse(init.body as string) as { flowId: string }).flowId;
+        return jsonResponse({
+          ok: true,
+          flowId,
+          authorizationUrl: "https://x.com/i/oauth2/authorize",
+        });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        cancelledFlowIds.push(
+          (JSON.parse(init.body as string) as { flowId: string }).flowId,
+        );
+        return jsonResponse({ ok: true });
+      }
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: false,
+          activeFlow: true,
+          oauthFlowId: flowId,
+          oauthOutcome: "pending",
+        });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    await act(async () => {
+      renderer.root.findByType("button").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(timeoutCallback).toBeTypeOf("function");
+
+    await act(async () => {
+      timeoutCallback!();
+      await Promise.resolve();
+    });
+
+    expect(browserMocks.cancel).toHaveBeenCalledWith(reservation);
+    expect(cancelledFlowIds).toContain(flowId);
+    expect(JSON.stringify(renderer.toJSON())).toContain("X authorization timed out");
+  });
+
+  test("OAuth callback failure closes the active browser reservation", async () => {
+    const reservation = {
+      ok: true,
+      kind: "browser",
+      popup: { opener: null, closed: false, location: { replace() {} }, close() {} },
+    };
+    browserMocks.reserve.mockReturnValue(reservation);
+    const renderer = await renderWithConnection(familiarA, false);
+    let flowId = "";
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        flowId = (JSON.parse(init.body as string) as { flowId: string }).flowId;
+        return jsonResponse({
+          ok: true,
+          flowId,
+          authorizationUrl: "https://x.com/i/oauth2/authorize",
+        });
+      }
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: false,
+          activeFlow: false,
+          oauthFlowId: flowId,
+          oauthOutcome: "failed",
+        });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    await act(async () => {
+      renderer.root.findByType("button").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(browserMocks.cancel).toHaveBeenCalledWith(reservation);
+    expect(JSON.stringify(renderer.toJSON())).toContain("X authorization failed");
+  });
+
+  test("successful OAuth callback leaves the navigated X tab to close itself", async () => {
+    const reservation = {
+      ok: true,
+      kind: "browser",
+      popup: { opener: null, closed: false, location: { replace() {} }, close() {} },
+    };
+    browserMocks.reserve.mockReturnValue(reservation);
+    const renderer = await renderWithConnection(familiarA, false);
+    let flowId = "";
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        flowId = (JSON.parse(init.body as string) as { flowId: string }).flowId;
+        return jsonResponse({
+          ok: true,
+          flowId,
+          authorizationUrl: "https://x.com/i/oauth2/authorize",
+        });
+      }
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: true,
+          activeFlow: false,
+          oauthFlowId: flowId,
+          oauthOutcome: "succeeded",
+          account: { id: "42", username: "cave", name: "Cave" },
+          scopes: ["tweet.read", "users.read", "offline.access"],
+        });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    await act(async () => {
+      renderer.root.findByType("button").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      renderer.unmount();
+    });
+
+    expect(browserMocks.open).toHaveBeenCalledWith(
+      "https://x.com/i/oauth2/authorize",
+      reservation,
+    );
+    expect(browserMocks.cancel).not.toHaveBeenCalledWith(reservation);
+  });
+
   test("a failed grant save from the old familiar cannot roll back the new familiar", async () => {
     const renderer = await renderWithConnection(familiarA, true);
     const save = deferred<ReturnType<typeof jsonResponse>>();

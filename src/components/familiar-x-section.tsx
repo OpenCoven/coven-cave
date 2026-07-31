@@ -58,6 +58,11 @@ type PendingOAuthStart = {
   flowId: string;
   generation: number;
 };
+type ActiveOAuthReservation = {
+  reservation: SystemBrowserReservation;
+  familiarId: string;
+  flowId: string;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -213,6 +218,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const pendingOAuthRef = useRef<PendingOAuthStart | null>(null);
+  const activeOAuthReservationRef = useRef<ActiveOAuthReservation | null>(null);
   const familiarIdRef = useRef(familiar.id);
   const familiarGenerationRef = useRef(0);
   if (familiarIdRef.current !== familiar.id) {
@@ -220,18 +226,34 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
     familiarGenerationRef.current += 1;
   }
 
+  const settleOAuthReservation = useCallback((
+    flowId: string,
+    close: boolean,
+  ) => {
+    const active = activeOAuthReservationRef.current;
+    if (!active || active.flowId !== flowId) return false;
+    activeOAuthReservationRef.current = null;
+    if (close) cancelSystemBrowserOpen(active.reservation);
+    return true;
+  }, []);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       const pending = pendingOAuthRef.current;
       pendingOAuthRef.current = null;
-      if (!pending) return;
-      pending.controller.abort();
-      cancelSystemBrowserOpen(pending.reservation);
-      void cancelXOAuthFlow(pending.flowId);
+      if (pending) {
+        pending.controller.abort();
+        cancelSystemBrowserOpen(pending.reservation);
+        void cancelXOAuthFlow(pending.flowId);
+      }
+      const active = activeOAuthReservationRef.current;
+      if (active && settleOAuthReservation(active.flowId, true)) {
+        void cancelXOAuthFlow(active.flowId);
+      }
     };
-  }, []);
+  }, [settleOAuthReservation]);
 
   useEffect(() => {
     const pending = pendingOAuthRef.current;
@@ -240,6 +262,14 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       pending.controller.abort();
       cancelSystemBrowserOpen(pending.reservation);
       void cancelXOAuthFlow(pending.flowId);
+    }
+    const active = activeOAuthReservationRef.current;
+    if (
+      active
+      && active.familiarId !== familiar.id
+      && settleOAuthReservation(active.flowId, true)
+    ) {
+      void cancelXOAuthFlow(active.flowId);
     }
     const nextResearch = familiar.xResearchEnabled === true;
     const nextPublish = familiar.xPublishEnabled === true;
@@ -251,7 +281,12 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
     setStartingOAuth(false);
     setOauthAttempt(null);
     setError(null);
-  }, [familiar.id, familiar.xPublishEnabled, familiar.xResearchEnabled]);
+  }, [
+    familiar.id,
+    familiar.xPublishEnabled,
+    familiar.xResearchEnabled,
+    settleOAuthReservation,
+  ]);
 
   const reloadConnection = useCallback(async (signal?: AbortSignal) => {
     const next = await fetchConnection(signal);
@@ -405,6 +440,12 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
         return;
       }
       if (!opened.ok) throw new Error(opened.error);
+      activeOAuthReservationRef.current = {
+        reservation,
+        familiarId: pending.familiarId,
+        flowId: pending.flowId,
+      };
+      pendingOAuthRef.current = null;
       handedOffToPolling = true;
       setOauthAttempt({
         capability,
@@ -434,10 +475,11 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
 
   useEffect(() => {
     if (!oauthAttempt) return;
-    pendingOAuthRef.current = null;
     if (oauthAttempt.familiarId !== familiar.id) {
       setOauthAttempt(null);
-      void cancelXOAuthFlow(oauthAttempt.flowId);
+      if (settleOAuthReservation(oauthAttempt.flowId, true)) {
+        void cancelXOAuthFlow(oauthAttempt.flowId);
+      }
       return;
     }
     const controller = new AbortController();
@@ -451,6 +493,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       setError(message);
       announce(message, "assertive");
       controller.abort();
+      settleOAuthReservation(oauthAttempt.flowId, true);
       if (cancelFlow) void cancelXOAuthFlow(oauthAttempt.flowId);
     };
 
@@ -480,6 +523,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
               ) return;
               if (!saved) {
                 settled = true;
+                settleOAuthReservation(oauthAttempt.flowId, true);
                 setOauthAttempt(null);
                 controller.abort();
                 return;
@@ -487,6 +531,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
               if (settled) return;
             }
             settled = true;
+            settleOAuthReservation(oauthAttempt.flowId, false);
             setOauthAttempt(null);
             setError(null);
             announce("X connection updated.");
@@ -524,13 +569,25 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       Math.max(0, oauthAttempt.deadline - Date.now()),
     );
     return () => {
-      if (!settled) void cancelXOAuthFlow(oauthAttempt.flowId);
+      if (
+        !settled
+        && settleOAuthReservation(oauthAttempt.flowId, true)
+      ) {
+        void cancelXOAuthFlow(oauthAttempt.flowId);
+      }
       settled = true;
       controller.abort();
       window.clearInterval(interval);
       window.clearTimeout(timeout);
     };
-  }, [announce, familiar.id, oauthAttempt, reloadConnection, saveGrant]);
+  }, [
+    announce,
+    familiar.id,
+    oauthAttempt,
+    reloadConnection,
+    saveGrant,
+    settleOAuthReservation,
+  ]);
 
   async function toggleResearch() {
     if (researchEnabled) {

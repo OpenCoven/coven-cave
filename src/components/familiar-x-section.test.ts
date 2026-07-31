@@ -64,6 +64,21 @@ assert.match(
 assert.match(source, /pendingOAuthRef/, "OAuth startup is tracked before polling begins");
 assert.match(
   source,
+  /activeOAuthReservationRef = useRef<ActiveOAuthReservation \| null>/,
+  "the non-serializable browser reservation stays in a flow-correlated ref",
+);
+assert.match(
+  source,
+  /activeOAuthReservationRef\.current = \{\s*reservation,\s*familiarId: pending\.familiarId,\s*flowId: pending\.flowId,\s*\};[\s\S]{0,120}pendingOAuthRef\.current = null/,
+  "browser ownership transfers atomically from startup to the active attempt",
+);
+assert.match(
+  source,
+  /settleOAuthReservation\(oauthAttempt\.flowId, false\)[\s\S]{0,100}setOauthAttempt\(null\)/,
+  "successful OAuth leaves the navigated X tab to complete its own callback lifecycle",
+);
+assert.match(
+  source,
   /cancelXOAuthFlow\(pending\.flowId\)/,
   "OAuth startup cleanup cancels only its own server-side flow",
 );
