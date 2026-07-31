@@ -9,6 +9,7 @@ import UIKit
 /// re-probe) is preserved; only the hierarchy changed.
 struct ConnectionView: View {
     @Environment(AppModel.self) private var app
+    @Environment(AppLock.self) private var appLock
     @Environment(\.chrome) private var chrome
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -27,6 +28,8 @@ struct ConnectionView: View {
     /// advisory: never auto-connects, never persists — Connect stays the
     /// explicit action.
     @State private var liveCheck: LiveCheckState = .idle
+    @State private var approvalFailed = false
+    @State private var approvalUnavailable = false
     @FocusState private var focused: Bool
 
     enum LiveCheckState: Equatable {
@@ -126,6 +129,16 @@ struct ConnectionView: View {
                     guard !busy, case .unreachable = app.connectionState else { continue }
                     await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
                 }
+            }
+            .alert("Couldn't confirm it's you", isPresented: $approvalFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Authentication failed or was cancelled, so your desktop pairing was not changed.")
+            }
+            .alert("Device authentication unavailable", isPresented: $approvalUnavailable) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Turn on a device passcode before replacing your desktop pairing.")
             }
         }
     }
@@ -227,7 +240,7 @@ struct ConnectionView: View {
         .controlSize(.large)
         .tint(.white)
         .foregroundStyle(Color(white: 0.08))
-        .disabled(busy)
+        .disabled(busy || appLock.isAuthenticating)
         .accessibilityHint("Opens the camera to scan the QR code shown in Cave on your desktop")
     }
 
@@ -315,7 +328,7 @@ struct ConnectionView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(!hostPresent || busy)
+            .disabled(!hostPresent || busy || appLock.isAuthenticating)
             .shadow(color: chrome.accent.opacity(hostPresent && !busy ? 0.4 : 0), radius: 14, y: 5)
         }
         .padding(16)
@@ -429,13 +442,19 @@ struct ConnectionView: View {
     private func connect() {
         focused = false
         guard let invite = CaveInvite.parse(cleanHost(host)) else { return }
+        // Avoid redundant work before spawning the Task. The outcome switch
+        // remains authoritative if a same-runloop tap still races this guard.
+        guard appLock.canBeginAuthentication else { return }
         host = invite.host
         busy = true
         liveCheck = .idle
         Task {
-            await app.configure(host: invite.host, token: invite.token)
+            let outcome = await configurePairing(invite)
             busy = false
-            if app.connectionState == .connected { Haptics.success() }
+            handleApprovalOutcome(outcome)
+            if outcome == .authorized, app.connectionState == .connected {
+                Haptics.success()
+            }
         }
     }
 
@@ -453,16 +472,44 @@ struct ConnectionView: View {
         guard let invite = CaveInvite.parse(cleanHost(input)) else { return }
         host = invite.host
         if invite.token != nil {
+            // Same synchronous fast-path as `connect()`; QR scans route here too.
+            guard appLock.canBeginAuthentication else { return }
             busy = true
             liveCheck = .idle
             Task {
-                await app.configure(host: invite.host, token: invite.token)
+                let outcome = await configurePairing(invite)
                 busy = false
-                if app.connectionState == .connected { Haptics.success() }
+                handleApprovalOutcome(outcome)
+                if outcome == .authorized, app.connectionState == .connected {
+                    Haptics.success()
+                }
             }
         } else {
             manualEntry = true
             focused = true
+        }
+    }
+
+    private func configurePairing(_ invite: CaveInvite) async -> AuthenticationOutcome {
+        guard PairingApprovalPolicy.requiresApproval(hasExistingPairing: app.connection != nil) else {
+            await app.configure(host: invite.host, token: invite.token)
+            return .authorized
+        }
+        return await appLock.performApprovedAction(
+            reason: "Confirm it's you to replace your desktop pairing"
+        ) {
+            await app.configure(host: invite.host, token: invite.token)
+        }
+    }
+
+    private func handleApprovalOutcome(_ outcome: AuthenticationOutcome) {
+        switch outcome {
+        case .authorized, .busy:
+            break
+        case .denied:
+            approvalFailed = true
+        case .unavailable:
+            approvalUnavailable = true
         }
     }
 
