@@ -22,8 +22,10 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { replaceCanonicalYamlStringSetting } from "./release-yaml-settings.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
+const IOS_MARKETING_VERSION_PATH = ["settings", "base", "MARKETING_VERSION"];
 
 // ── pure helpers (exported for scripts/stamp-release.test.mjs) ───────────────
 
@@ -80,19 +82,11 @@ export function stampContent(kind, content, oldVersion, newVersion) {
 
 export function applyReplacement(kind, contents, nextVersion, relativePath = "<unknown>") {
   if (kind === "yaml-marketing-version") {
-    const matches = contents.match(/^([ \t]*)MARKETING_VERSION:[ \t]*[^\r\n]*$/gm);
-    if (!matches) {
-      throw new Error(`${relativePath}: expected MARKETING_VERSION key`);
-    }
-    if (matches.length !== 1) {
-      throw new Error(
-        `${relativePath}: expected MARKETING_VERSION exactly once, found ${matches.length}`,
-      );
-    }
-
-    return contents.replace(
-      /^([ \t]*)MARKETING_VERSION:[ \t]*[^\r\n]*$/m,
-      `$1MARKETING_VERSION: ${nextVersion}`,
+    return replaceCanonicalYamlStringSetting(
+      contents,
+      IOS_MARKETING_VERSION_PATH,
+      nextVersion,
+      relativePath,
     );
   }
 

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import YAML from "yaml";
+import { readCanonicalYamlStringSetting } from "../../scripts/release-yaml-settings.mjs";
 
 const packageJson = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
 const tauriConfig = JSON.parse(await readFile(new URL("../../src-tauri/tauri.conf.json", import.meta.url), "utf8"));
@@ -11,163 +11,19 @@ const appVersionSource = await readFile(new URL("./app-version.ts", import.meta.
 const releaseWorkflow = await readFile(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8");
 const buildInfoRoute = await readFile(new URL("../app/api/app/build-info/route.ts", import.meta.url), "utf8");
 
-function collectReleaseSettingOccurrences(
-  document,
-  node,
-  targetKey,
-  sourceLabel,
-  path = [],
-  occurrences = [],
-  recursionStack = [],
-) {
-  const resolvedNode = resolveReleaseSettingNode(document, node, sourceLabel, path, recursionStack);
-
-  if (recursionStack.includes(resolvedNode)) {
-    throw new Error(
-      `${sourceLabel} release validation found cyclic YAML alias at ${formatPathSegments(path)}`,
-    );
-  }
-
-  if (YAML.isMap(resolvedNode)) {
-    const nextStack = [...recursionStack, resolvedNode];
-
-    for (const pair of resolvedNode.items) {
-      const keyNode = pair.key;
-      if (!YAML.isScalar(keyNode) || typeof keyNode.value !== "string") {
-        throw new Error(
-          `${sourceLabel} release validation requires string mapping keys; found ${describeOpaqueMappingKey(keyNode)} at ${formatPathSegments(path)}`,
-        );
-      }
-
-      const nextPath = [...path, keyNode.value];
-      const valueNode = resolveReleaseSettingNode(document, pair.value, sourceLabel, nextPath, nextStack);
-
-      if (keyNode.value === targetKey) {
-        occurrences.push({ path: nextPath, valueNode });
-      }
-
-      collectReleaseSettingOccurrences(
-        document,
-        valueNode,
-        targetKey,
-        sourceLabel,
-        nextPath,
-        occurrences,
-        nextStack,
-      );
-    }
-  } else if (YAML.isSeq(resolvedNode)) {
-    const nextStack = [...recursionStack, resolvedNode];
-
-    resolvedNode.items.forEach((item, index) => {
-      const nextPath = [...path, String(index)];
-      const itemNode = resolveReleaseSettingNode(document, item, sourceLabel, nextPath, nextStack);
-      collectReleaseSettingOccurrences(
-        document,
-        itemNode,
-        targetKey,
-        sourceLabel,
-        nextPath,
-        occurrences,
-        nextStack,
-      );
-    });
-  }
-
-  return occurrences;
-}
-
-function resolveReleaseSettingNode(document, node, sourceLabel, path, recursionStack) {
-  let currentNode = node;
-  const aliasStack = new Set();
-
-  while (currentNode instanceof YAML.Alias) {
-    if (aliasStack.has(currentNode)) {
-      throw new Error(
-        `${sourceLabel} release validation found cyclic YAML alias *${currentNode.source ?? "?"} at ${formatPathSegments(path)}`,
-      );
-    }
-
-    aliasStack.add(currentNode);
-
-    const resolvedNode = currentNode.resolve(document);
-
-    if (!resolvedNode) {
-      throw new Error(
-        `${sourceLabel} release validation could not resolve YAML alias *${currentNode.source ?? "?"} at ${formatPathSegments(path)}`,
-      );
-    }
-
-    if (recursionStack.includes(resolvedNode)) {
-      throw new Error(
-        `${sourceLabel} release validation found cyclic YAML alias *${currentNode.source ?? "?"} at ${formatPathSegments(path)}`,
-      );
-    }
-
-    currentNode = resolvedNode;
-  }
-
-  return currentNode;
-}
-
-function samePathSegments(left, right) {
-  return left.length === right.length && left.every((segment, index) => segment === right[index]);
-}
-
-function formatPathSegments(path) {
-  return JSON.stringify(path);
-}
-
-function describeOpaqueMappingKey(keyNode) {
-  if (keyNode?.constructor?.name === "Alias") {
-    return "alias mapping key";
-  }
-
-  if (YAML.isSeq(keyNode)) {
-    return "sequence mapping key";
-  }
-
-  if (YAML.isMap(keyNode)) {
-    return "mapping mapping key";
-  }
-
-  return "non-string mapping key";
-}
-
 function readIosReleaseSettings(source, sourceLabel = "apps/ios/CovenCave/project.yml") {
-  const document = YAML.parseDocument(source, { prettyErrors: true });
-
-  if (document.errors.length > 0) {
-    throw document.errors[0];
-  }
-
-  const marketingVersion = readCanonicalReleaseSetting(document, "MARKETING_VERSION", sourceLabel);
-  const buildVersion = readCanonicalReleaseSetting(document, "CURRENT_PROJECT_VERSION", sourceLabel);
+  const marketingVersion = readCanonicalYamlStringSetting(
+    source,
+    ["settings", "base", "MARKETING_VERSION"],
+    sourceLabel,
+  );
+  const buildVersion = readCanonicalYamlStringSetting(
+    source,
+    ["settings", "base", "CURRENT_PROJECT_VERSION"],
+    sourceLabel,
+  );
 
   return { marketingVersion, buildVersion };
-}
-
-function readCanonicalReleaseSetting(document, key, sourceLabel) {
-  const canonicalPath = ["settings", "base", key];
-  const occurrences = collectReleaseSettingOccurrences(document, document.contents, key, sourceLabel);
-
-  if (occurrences.length !== 1 || !samePathSegments(occurrences[0].path, canonicalPath)) {
-    const detail =
-      occurrences.length === 0
-        ? "was not found"
-        : `was also found at ${occurrences.map((occurrence) => formatPathSegments(occurrence.path)).join(", ")}`;
-    throw new Error(
-      `${sourceLabel} must define ${key} exactly once at ${formatPathSegments(canonicalPath)}; ${detail}`,
-    );
-  }
-
-  const valueNode = occurrences[0].valueNode;
-
-  if (!YAML.isScalar(valueNode) || typeof valueNode.value !== "string") {
-    throw new Error(`${sourceLabel} must use a string scalar at ${formatPathSegments(canonicalPath)}`);
-  }
-
-  return valueNode.value;
 }
 
 const cargoVersion = cargoToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1];

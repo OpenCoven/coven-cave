@@ -61,41 +61,113 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
   assert.equal(
     applyReplacement(
       "yaml-marketing-version",
-      "MARKETING_VERSION: 0.2.1\nCURRENT_PROJECT_VERSION: 1\n",
+      [
+        "name: CovenCave",
+        "settings:",
+        "  base:",
+        '    MARKETING_VERSION: "0.2.1"',
+        '    CURRENT_PROJECT_VERSION: "1"',
+        "",
+      ].join("\n"),
       "0.2.2",
       "apps/ios/CovenCave/project.yml",
     ),
-    "MARKETING_VERSION: 0.2.2\nCURRENT_PROJECT_VERSION: 1\n",
+    [
+      "name: CovenCave",
+      "settings:",
+      "  base:",
+      '    MARKETING_VERSION: "0.2.2"',
+      '    CURRENT_PROJECT_VERSION: "1"',
+      "",
+    ].join("\n"),
+    "the canonical scalar is replaced without changing quoting, indentation, or the build version",
   );
   assert.throws(
     () =>
       applyReplacement(
         "yaml-marketing-version",
-        "CURRENT_PROJECT_VERSION: 1\n",
+        [
+          "name: Example",
+          "targets:",
+          "  Example:",
+          "    settings:",
+          "      base:",
+          '        MARKETING_VERSION: "0.2.1"',
+          "",
+        ].join("\n"),
         "0.2.2",
         "apps/ios/CovenCave/project.yml",
       ),
-    /MARKETING_VERSION key/,
+    /must define MARKETING_VERSION exactly once.*\["settings","base","MARKETING_VERSION"\].*was also found at \["targets","Example","settings","base","MARKETING_VERSION"\]/,
+    "a target-only setting is noncanonical and must not be stamped",
   );
   assert.throws(
     () =>
       applyReplacement(
         "yaml-marketing-version",
-        "MARKETING_VERSION: 0.2.1\nMARKETING_VERSION: 0.2.1\n",
+        [
+          "name: Example",
+          "settings:",
+          "  base:",
+          '    MARKETING_VERSION: "0.2.1"',
+          "targets:",
+          "  Example:",
+          "    settings:",
+          "      base:",
+          '        MARKETING_VERSION: "9.9.9"',
+          "",
+        ].join("\n"),
         "0.2.2",
         "apps/ios/CovenCave/project.yml",
       ),
-    /exactly once/,
+    /must define MARKETING_VERSION exactly once/,
+    "a target-level override makes the release setting ambiguous",
   );
   assert.throws(
     () =>
       applyReplacement(
         "yaml-marketing-version",
-        "MARKETING_VERSION: 0.2.1\nMARKETING_VERSION:\n",
+        ["name: Example", "settings:", "  base:", '    CURRENT_PROJECT_VERSION: "1"', ""].join(
+          "\n",
+        ),
         "0.2.2",
         "apps/ios/CovenCave/project.yml",
       ),
-    /exactly once/,
+    /must define MARKETING_VERSION exactly once.*was not found/,
+  );
+  assert.throws(
+    () =>
+      applyReplacement(
+        "yaml-marketing-version",
+        [
+          "name: Example",
+          "settings:",
+          "  base:",
+          '    MARKETING_VERSION: "0.2.1"',
+          '    MARKETING_VERSION: "0.2.1"',
+          "",
+        ].join("\n"),
+        "0.2.2",
+        "apps/ios/CovenCave/project.yml",
+      ),
+    /Map keys must be unique|exactly once/,
+  );
+  assert.throws(
+    () =>
+      applyReplacement(
+        "yaml-marketing-version",
+        [
+          "name: Example",
+          "settings:",
+          "  base:",
+          '    MARKETING_VERSION: "0.2.1"',
+          "    MARKETING_VERSION:",
+          "",
+        ].join("\n"),
+        "0.2.2",
+        "apps/ios/CovenCave/project.yml",
+      ),
+    /Map keys must be unique|exactly once/,
   );
   assert.equal(
     STAMP_FILES.find(
@@ -117,7 +189,7 @@ assert.throws(() => stampContent("nope", "", "a", "b"), /unknown stamp kind/);
     [path.join(REPO_ROOT, "src-tauri/Cargo.lock")]:
       '[[package]]\nname = "app"\nversion = "0.0.159"\n\n[[package]]\nname = "shared"\nversion = "0.0.159"\n',
     [path.join(REPO_ROOT, "apps/ios/CovenCave/project.yml")]:
-      'MARKETING_VERSION: 0.0.159\nCURRENT_PROJECT_VERSION: 1\n',
+      'name: CovenCave\nsettings:\n  base:\n    MARKETING_VERSION: "0.0.159"\n    CURRENT_PROJECT_VERSION: "1"\n',
     [path.join(REPO_ROOT, "CHANGELOG.md")]: "# Changelog\n\n## [Unreleased]\n\n## [0.0.159] - 2026-07-08\n",
   };
   const dryRun = spawnSync(
@@ -142,6 +214,7 @@ childProcess.execFileSync = (cmd, args) => {
 fs.readFileSync = (file, encoding) => {
   if (encoding !== "utf8") return originalReadFileSync(file, encoding);
   if (Object.prototype.hasOwnProperty.call(fixtures, file)) return fixtures[file];
+  if (String(file).includes("/node_modules/")) return originalReadFileSync(file, encoding);
   throw new Error(\`unexpected readFileSync: \${file}\`);
 };
 fs.writeFileSync = () => {
