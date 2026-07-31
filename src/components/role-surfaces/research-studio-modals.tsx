@@ -469,10 +469,16 @@ export function GenerationReviewModal({
               <dd>{generation.renderConfig.voice}</dd>
             </div>
             {generation.renderConfig.voices ? (
-              <div>
-                <dt>Guest voice</dt>
-                <dd>{generation.renderConfig.voices.guest}</dd>
-              </div>
+              <>
+                <div>
+                  <dt>Host voice</dt>
+                  <dd>{generation.renderConfig.voices.host}</dd>
+                </div>
+                <div>
+                  <dt>Guest voice</dt>
+                  <dd>{generation.renderConfig.voices.guest}</dd>
+                </div>
+              </>
             ) : null}
             {generation.renderConfig.style ? (
               <div>
