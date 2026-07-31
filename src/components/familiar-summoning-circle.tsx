@@ -825,7 +825,7 @@ function StageVessel({
     },
     { kind: "ssh", icon: "ph:globe", title: "A remote machine", hint: "Reaches over SSH to a host you name." },
     { kind: "openclaw", icon: "ph:robot", title: "An OpenClaw agent", hint: "Bridge an agent you already keep." },
-    ...(hermesReady ? [{ kind: "hermes" as const, icon: "ph:brain-fill" as IconName, title: "A Hermes profile", hint: "Bring a saved Hermes mind, skills, and SOUL." }] : []),
+    ...(hermesReady ? [{ kind: "hermes" as const, icon: "ph:brain-bold" as IconName, title: "A Hermes profile", hint: "Bring a saved Hermes mind, skills, and SOUL." }] : []),
   ];
   // Grok Build is deliberately local-only until Cave has a native remote
   // launcher. Hide it for SSH rather than letting a selection fall back to an
@@ -1037,7 +1037,7 @@ function StageVessel({
                   onClick={() => onPickHermesProfile(profile)}
                   className={`focus-ring summoning-agent${hermesProfileId === profile.id ? " summoning-agent--active" : ""}`}
                 >
-                  <Icon name="ph:brain-fill" width={16} />
+                  <Icon name="ph:brain-bold" width={16} />
                   <span className="summoning-agent__copy">
                     <span className="summoning-agent__name">{profile.displayName}</span>
                     <span className="summoning-agent__role">{profile.role}</span>
