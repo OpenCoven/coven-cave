@@ -105,6 +105,86 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
       `${label} MARKETING_VERSION should be rejected with an actionable source label`,
     );
   }
+  for (const [label, source] of [
+    [
+      "double-quoted",
+      [
+        "settings:",
+        "  base:",
+        '    MARKETING_VERSION: "0.2.\\',
+        '      2"',
+        "",
+      ].join("\n"),
+    ],
+    [
+      "single-quoted",
+      [
+        "settings:",
+        "  base:",
+        "    MARKETING_VERSION: '0.2.",
+        "      2'",
+        "",
+      ].join("\n"),
+    ],
+    [
+      "plain",
+      ["settings:", "  base:", "    MARKETING_VERSION: 0.2.", "      2", ""].join("\n"),
+    ],
+  ]) {
+    assert.throws(
+      () =>
+        applyReplacement(
+          "yaml-marketing-version",
+          source,
+          "0.2.2",
+          "apps/ios/CovenCave/project.yml",
+        ),
+      (err) => {
+        const message = String(err?.message ?? err);
+        assert.match(message, /apps\/ios\/CovenCave\/project\.yml/);
+        assert.match(message, /\["settings","base","MARKETING_VERSION"\]/);
+        assert.match(message, /single-line/i);
+        return true;
+      },
+      `${label} multiline MARKETING_VERSION should be rejected with a single-line diagnostic`,
+    );
+  }
+  {
+    const depth = 11;
+    const lines = [
+      "settings:",
+      "  base:",
+      '    MARKETING_VERSION: "0.2.1"',
+      "payloads:",
+      "  level0: &level0",
+      "    marker: true",
+    ];
+    for (let level = 1; level <= depth; level += 1) {
+      lines.push(
+        `  level${level}: &level${level}`,
+        `    - *level${level - 1}`,
+        `    - *level${level - 1}`,
+      );
+    }
+    lines.push(`expanded: *level${depth}`, "");
+
+    assert.throws(
+      () =>
+        applyReplacement(
+          "yaml-marketing-version",
+          lines.join("\n"),
+          "0.2.2",
+          "apps/ios/CovenCave/project.yml",
+        ),
+      (err) => {
+        const message = String(err?.message ?? err);
+        assert.match(message, /apps\/ios\/CovenCave\/project\.yml/);
+        assert.match(message, /budget|complex/i);
+        return true;
+      },
+      "an acyclic exponentially amplified alias DAG should exceed the YAML traversal budget",
+    );
+  }
   assert.throws(
     () =>
       applyReplacement(

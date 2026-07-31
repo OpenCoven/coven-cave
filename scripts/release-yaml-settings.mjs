@@ -1,6 +1,7 @@
 import YAML from "yaml";
 
 const ALLOWED_STRING_TYPES = new Set(["PLAIN", "QUOTE_SINGLE", "QUOTE_DOUBLE"]);
+const MAX_SEMANTIC_TRAVERSAL_VISITS = 4096;
 
 export function readCanonicalYamlStringSetting(source, canonicalPathSegments, sourceLabel) {
   return locateCanonicalYamlStringSetting(source, canonicalPathSegments, sourceLabel).valueNode
@@ -54,11 +55,16 @@ function locateCanonicalYamlStringSetting(source, canonicalPathSegments, sourceL
   }
 
   const targetKey = canonicalPathSegments.at(-1);
+  const traversalBudget = { visits: 0 };
   const occurrences = collectSettingOccurrences(
     document,
     document.contents,
     targetKey,
     sourceLabel,
+    [],
+    [],
+    [],
+    traversalBudget,
   );
 
   if (
@@ -76,13 +82,15 @@ function locateCanonicalYamlStringSetting(source, canonicalPathSegments, sourceL
     );
   }
 
-  const { rawValueNode, valueNode } = occurrences[0];
+  const { rawValueNode } = occurrences[0];
 
   if (rawValueNode instanceof YAML.Alias) {
     throw new Error(
       `${sourceLabel} must use a direct string scalar, not an alias, at ${formatPathSegments(canonicalPathSegments)}`,
     );
   }
+
+  const valueNode = rawValueNode;
 
   if (!YAML.isScalar(valueNode) || typeof valueNode.value !== "string") {
     throw new Error(
@@ -93,6 +101,19 @@ function locateCanonicalYamlStringSetting(source, canonicalPathSegments, sourceL
   if (!ALLOWED_STRING_TYPES.has(valueNode.type)) {
     throw new Error(
       `${sourceLabel} must use a single-line plain or quoted string scalar at ${formatPathSegments(canonicalPathSegments)} (found ${valueNode.type})`,
+    );
+  }
+
+  const [start, end] = valueNode.range ?? [];
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    throw new Error(
+      `${sourceLabel} could not locate the source range for ${formatPathSegments(canonicalPathSegments)}`,
+    );
+  }
+
+  if (/[\r\n]/.test(source.slice(start, end))) {
+    throw new Error(
+      `${sourceLabel} must use a direct single-line string scalar at ${formatPathSegments(canonicalPathSegments)}`,
     );
   }
 
@@ -107,8 +128,20 @@ function collectSettingOccurrences(
   path = [],
   occurrences = [],
   recursionStack = [],
+  traversalBudget,
 ) {
-  const resolvedNode = resolveSettingNode(document, node, sourceLabel, path, recursionStack);
+  if (occurrences.length >= 2) {
+    return occurrences;
+  }
+
+  const resolvedNode = resolveSettingNode(
+    document,
+    node,
+    sourceLabel,
+    path,
+    recursionStack,
+    traversalBudget,
+  );
 
   if (recursionStack.includes(resolvedNode)) {
     throw new Error(
@@ -128,58 +161,66 @@ function collectSettingOccurrences(
       }
 
       const nextPath = [...path, keyNode.value];
-      const valueNode = resolveSettingNode(
-        document,
-        pair.value,
-        sourceLabel,
-        nextPath,
-        nextStack,
-      );
 
       if (keyNode.value === targetKey) {
-        occurrences.push({ path: nextPath, rawValueNode: pair.value, valueNode });
+        occurrences.push({ path: nextPath, rawValueNode: pair.value });
+        if (occurrences.length >= 2) {
+          return occurrences;
+        }
       }
 
       collectSettingOccurrences(
         document,
-        valueNode,
+        pair.value,
         targetKey,
         sourceLabel,
         nextPath,
         occurrences,
         nextStack,
+        traversalBudget,
       );
+
+      if (occurrences.length >= 2) {
+        return occurrences;
+      }
     }
   } else if (YAML.isSeq(resolvedNode)) {
     const nextStack = [...recursionStack, resolvedNode];
 
-    resolvedNode.items.forEach((item, index) => {
+    for (const [index, item] of resolvedNode.items.entries()) {
       const nextPath = [...path, String(index)];
-      const itemNode = resolveSettingNode(
-        document,
-        item,
-        sourceLabel,
-        nextPath,
-        nextStack,
-      );
       collectSettingOccurrences(
         document,
-        itemNode,
+        item,
         targetKey,
         sourceLabel,
         nextPath,
         occurrences,
         nextStack,
+        traversalBudget,
       );
-    });
+
+      if (occurrences.length >= 2) {
+        return occurrences;
+      }
+    }
   }
 
   return occurrences;
 }
 
-function resolveSettingNode(document, node, sourceLabel, path, recursionStack) {
+function resolveSettingNode(
+  document,
+  node,
+  sourceLabel,
+  path,
+  recursionStack,
+  traversalBudget,
+) {
   let currentNode = node;
   const aliasStack = new Set();
+
+  consumeTraversalBudget(traversalBudget, sourceLabel, path);
 
   while (currentNode instanceof YAML.Alias) {
     if (aliasStack.has(currentNode)) {
@@ -204,10 +245,20 @@ function resolveSettingNode(document, node, sourceLabel, path, recursionStack) {
       );
     }
 
+    consumeTraversalBudget(traversalBudget, sourceLabel, path);
     currentNode = resolvedNode;
   }
 
   return currentNode;
+}
+
+function consumeTraversalBudget(traversalBudget, sourceLabel, path) {
+  traversalBudget.visits += 1;
+  if (traversalBudget.visits > MAX_SEMANTIC_TRAVERSAL_VISITS) {
+    throw new Error(
+      `${sourceLabel} release validation exceeded the YAML alias/document traversal budget of ${MAX_SEMANTIC_TRAVERSAL_VISITS} visits at ${formatPathSegments(path)}; the document is too complex`,
+    );
+  }
 }
 
 function serializeStringScalar(value, valueNode) {
