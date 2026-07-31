@@ -1,7 +1,7 @@
 import type { IconName } from "@/lib/icon";
 import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 
-export type VesselKind = "local" | "ssh" | "openclaw";
+export type VesselKind = "local" | "ssh" | "openclaw" | "hermes";
 
 export type HarnessReport = {
   id: string;
@@ -16,6 +16,14 @@ export type OpenClawAgent = {
   displayName: string;
   role: string;
   workspacePath: string | null;
+};
+
+export type HermesProfile = {
+  id: string;
+  displayName: string;
+  role: string;
+  description: string;
+  homePath: string;
 };
 
 export type SshCheckState =
