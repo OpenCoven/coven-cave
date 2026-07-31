@@ -92,7 +92,9 @@ function latestSubmittedReview(reviews: CommentsWire["reviews"]): LatestReview |
     const state = typeof raw?.state === "string" ? raw.state.toUpperCase() : "";
     if (!author) continue;
     if (state !== "APPROVED" && state !== "CHANGES_REQUESTED" && state !== "COMMENTED") continue;
-    perAuthor.set(author, { state, author, submittedAt: raw?.submittedAt ?? null });
+    const candidate: LatestReview = { state, author, submittedAt: raw?.submittedAt ?? null };
+    const existing = perAuthor.get(author);
+    if (!existing || (candidate.submittedAt ?? "") > (existing.submittedAt ?? "")) perAuthor.set(author, candidate);
   }
   let latest: LatestReview | null = null;
   for (const review of perAuthor.values()) {
