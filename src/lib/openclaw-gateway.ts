@@ -3,9 +3,17 @@ import {
   ChatEventSchema,
   GATEWAY_SERVER_CAPS,
   HelloOkSchema,
+  type HelloOk,
 } from "@openclaw/gateway-protocol";
 import { PROTOCOL_VERSION } from "@openclaw/gateway-protocol/version";
 import { Value } from "typebox/value";
+import {
+  loadOpenClawCompatibility,
+  openClawDiscoveryFromHello,
+  type OpenClawCompatibilityDiagnostic,
+  type OpenClawCompatibilitySource,
+  type OpenClawGatewayDiscovery,
+} from "./openclaw-compatibility.ts";
 import {
   createOpenClawDeviceCredentialStore,
   openClawPublicKeyRawBase64UrlFromPem,
@@ -23,7 +31,7 @@ import {
 const GATEWAY_DISPATCH_ENV = "OPENCLAW_GATEWAY_DISPATCH";
 const GATEWAY_URL_ENV = "OPENCLAW_GATEWAY_URL";
 const STARTUP_TIMEOUT_MS = 3_000;
-const REQUIRED_GATEWAY_METHODS = ["chat.send", "chat.abort", "sessions.messages.subscribe"];
+const REQUIRED_GATEWAY_METHODS = ["chat.send", "chat.abort"];
 const REQUIRED_GATEWAY_CAPABILITIES = [GATEWAY_SERVER_CAPS.CHAT_SEND_ROUTING_CONTRACT];
 
 export type OpenClawGatewayChatEvent =
@@ -32,6 +40,17 @@ export type OpenClawGatewayChatEvent =
   | { kind: "final"; text?: string }
   | { kind: "aborted"; message?: string }
   | { kind: "error"; message: string };
+
+export type OpenClawGatewayEvent =
+  | OpenClawGatewayChatEvent
+  | { kind: "tool_start"; id: string; name: string; input: unknown; seq: number }
+  | { kind: "tool_progress"; id: string; output: unknown; seq: number }
+  | { kind: "tool_end"; id: string; name: string; output: unknown; isError: boolean; seq: number }
+  | {
+      kind: "compatibility";
+      code: OpenClawCompatibilityDiagnostic | "unknown-tool-event";
+      fingerprint?: string;
+    };
 
 export type OpenClawGatewayDispatch =
   | { kind: "unavailable"; reason: string }
@@ -58,12 +77,6 @@ type GatewayChatPayload = {
   replace?: boolean;
   message?: unknown;
   errorMessage?: string;
-};
-
-type GatewayHello = {
-  protocol: number;
-  features: { methods: string[]; events: string[]; capabilities?: string[] };
-  auth: { role: string; scopes: string[] };
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -112,7 +125,7 @@ function hostDepsForCredentialStore(
   };
 }
 
-function supportedHello(hello: GatewayHello): string | null {
+function supportedHello(hello: HelloOk): string | null {
   if (hello.protocol !== PROTOCOL_VERSION) return `Gateway protocol ${hello.protocol} is not supported`;
   if (hello.auth.role !== "operator") return "Gateway did not grant the operator role";
   const scopes = new Set(hello.auth.scopes);
@@ -121,7 +134,7 @@ function supportedHello(hello: GatewayHello): string | null {
   }
   const methods = new Set(hello.features.methods);
   if (REQUIRED_GATEWAY_METHODS.some((method) => !methods.has(method))) {
-    return "Gateway does not advertise the required chat.send, chat.abort, and sessions.messages.subscribe methods";
+    return "Gateway does not advertise the required chat.send and chat.abort methods";
   }
   const capabilities = new Set(hello.features.capabilities ?? []);
   if (REQUIRED_GATEWAY_CAPABILITIES.some((capability) => !capabilities.has(capability))) {
@@ -129,6 +142,114 @@ function supportedHello(hello: GatewayHello): string | null {
   }
   if (!hello.features.events.includes("chat")) return "Gateway does not advertise the versioned chat event";
   return null;
+}
+
+function sameOpenClawDiscovery(
+  left: OpenClawGatewayDiscovery,
+  right: OpenClawGatewayDiscovery,
+): boolean {
+  const sorted = (values: string[]) => [...values].sort();
+  return left.serverVersion === right.serverVersion
+    && left.protocol === right.protocol
+    && left.agentEventSchemaHash === right.agentEventSchemaHash
+    && JSON.stringify(sorted(left.methods)) === JSON.stringify(sorted(right.methods))
+    && JSON.stringify(sorted(left.events)) === JSON.stringify(sorted(right.events))
+    && JSON.stringify(sorted(left.serverCapabilities))
+      === JSON.stringify(sorted(right.serverCapabilities));
+}
+
+type AuthenticatedGatewayConnection = {
+  client: GatewayClientPort;
+  hello: HelloOk;
+  stop: () => void;
+};
+
+async function connectAuthenticatedOpenClawGateway(args: {
+  url: string;
+  caps?: string[];
+  clientFactory?: GatewayClientFactory;
+  credentialStore?: OpenClawDeviceCredentialStore;
+  deviceIdentity?: OpenClawDeviceIdentity;
+  onReauthenticatedHello?: (hello: HelloOk) => void;
+  onInvalidHello?: (message: string) => void;
+  onReconnectPaused?: ConstructorParameters<typeof GatewayClient>[0]["onReconnectPaused"];
+  onClose?: ConstructorParameters<typeof GatewayClient>[0]["onClose"];
+  onEvent?: ConstructorParameters<typeof GatewayClient>[0]["onEvent"];
+  onGap?: ConstructorParameters<typeof GatewayClient>[0]["onGap"];
+}): Promise<AuthenticatedGatewayConnection> {
+  let client: GatewayClientPort | undefined;
+  let connected = false;
+  let stopRequested = false;
+  let helloResolve!: (hello: HelloOk) => void;
+  let helloReject!: (error: Error) => void;
+  const hello = new Promise<HelloOk>((resolve, reject) => {
+    helloResolve = resolve;
+    helloReject = reject;
+  });
+  const stop = () => {
+    stopRequested = true;
+    client?.stop();
+  };
+  const clientOptions: ConstructorParameters<typeof GatewayClient>[0] = {
+    url: args.url,
+    env: { NODE_ENV: process.env.NODE_ENV ?? "production" },
+    ...(args.deviceIdentity && args.credentialStore
+      ? {
+          deviceIdentity: args.deviceIdentity,
+          hostDeps: hostDepsForCredentialStore(args.credentialStore, args.deviceIdentity),
+        }
+      : {}),
+    ...(args.caps ? { caps: args.caps } : {}),
+    clientName: "gateway-client",
+    clientDisplayName: "Coven Cave",
+    clientVersion: "2026.7.2-beta.5",
+    platform: process.platform,
+    mode: "backend",
+    role: "operator",
+    scopes: ["operator.read", "operator.write"],
+    minProtocol: PROTOCOL_VERSION,
+    maxProtocol: PROTOCOL_VERSION,
+    connectChallengeTimeoutMs: STARTUP_TIMEOUT_MS,
+    requestTimeoutMs: STARTUP_TIMEOUT_MS,
+    onHelloOk: (rawHello) => {
+      const failure = Value.Check(HelloOkSchema, rawHello)
+        ? supportedHello(rawHello)
+        : "Gateway returned an invalid hello response for the pinned v4 schema";
+      if (failure) {
+        if (connected) args.onInvalidHello?.(failure);
+        else helloReject(new Error(failure));
+        stop();
+        return;
+      }
+      if (!connected) {
+        connected = true;
+        helloResolve(rawHello);
+        return;
+      }
+      args.onReauthenticatedHello?.(rawHello);
+    },
+    onConnectError: (error) => {
+      if (!connected) helloReject(error);
+    },
+    onReconnectPaused: args.onReconnectPaused,
+    onClose: args.onClose,
+    onEvent: args.onEvent,
+    onGap: args.onGap,
+  };
+  try {
+    client = args.clientFactory?.(clientOptions) ?? new GatewayClient(clientOptions);
+    if (stopRequested) client.stop();
+    client.start();
+    const authenticatedHello = await withTimeout(
+      hello,
+      STARTUP_TIMEOUT_MS,
+      "Gateway did not complete its authenticated hello",
+    );
+    return { client, hello: authenticatedHello, stop };
+  } catch (error) {
+    stop();
+    throw error;
+  }
 }
 
 /**
@@ -186,12 +307,14 @@ export async function dispatchOpenClawGatewayTurn(args: {
    * fresh value here would make an acknowledgement loss duplicate work.
    */
   idempotencyKey: string;
-  onEvent: (event: OpenClawGatewayChatEvent) => void;
+  onEvent: (event: OpenClawGatewayEvent) => void;
   env?: NodeJS.ProcessEnv;
   /** Injectable only so the official-client lifecycle can be tested without a live Gateway. */
   clientFactory?: GatewayClientFactory;
   /** Injectable only so paired-device credential wiring can be tested without the OS keychain. */
   credentialStore?: OpenClawDeviceCredentialStore;
+  /** Injectable compatibility registry source for deterministic negotiation tests. */
+  compatibilitySource?: OpenClawCompatibilitySource;
 }): Promise<OpenClawGatewayDispatch> {
   const env = args.env ?? process.env;
   if (!gatewayDispatchEnabled(env)) return { kind: "unavailable", reason: "Gateway dispatch is disabled" };
@@ -231,10 +354,34 @@ export async function dispatchOpenClawGatewayTurn(args: {
     }
   }
 
+  let discoveryConnection: AuthenticatedGatewayConnection | undefined;
+  let discovery: OpenClawGatewayDiscovery;
+  let compatibility: Awaited<ReturnType<typeof loadOpenClawCompatibility>>;
+  try {
+    discoveryConnection = await connectAuthenticatedOpenClawGateway({
+      url,
+      clientFactory: args.clientFactory,
+      credentialStore,
+      deviceIdentity,
+    });
+    discovery = openClawDiscoveryFromHello(discoveryConnection.hello);
+    compatibility = await loadOpenClawCompatibility(discovery, args.compatibilitySource);
+  } catch (error) {
+    return {
+      kind: "unavailable",
+      reason: error instanceof Error ? error.message : "Gateway is unavailable",
+    };
+  } finally {
+    discoveryConnection?.stop();
+  }
+  if (compatibility.mode !== "structured") {
+    return {
+      kind: "unavailable",
+      reason: `OpenClaw tool compatibility: ${compatibility.diagnostic}`,
+    };
+  }
+
   let client!: GatewayClientPort;
-  let helloResolve: (() => void) | undefined;
-  let helloReject: ((error: Error) => void) | undefined;
-  let connected = false;
   // Each authenticated hello represents a new transport generation. A
   // subscription completion from an older connection must never make the
   // newest connection's stream trusted again.
@@ -328,110 +475,65 @@ export async function dispatchOpenClawGatewayTurn(args: {
     return true;
   };
 
-  const hello = new Promise<void>((resolve, reject) => {
-    helloResolve = resolve;
-    helloReject = reject;
-  });
-
-  const clientOptions: ConstructorParameters<typeof GatewayClient>[0] = {
-    url,
-    // Never let the Gateway client read Cave's process environment. Identity
-    // and token lifecycle come only from the OS credential store via
-    // hostDeps, never from token/device-token env auth.
-    // `GatewayClientOptions.env` requires NODE_ENV, which is non-secret.
-    env: { NODE_ENV: process.env.NODE_ENV ?? "production" },
-    ...(deviceIdentity && credentialStore
-      ? { deviceIdentity, hostDeps: hostDepsForCredentialStore(credentialStore, deviceIdentity) }
-      : {}),
-    clientName: "gateway-client",
-    clientDisplayName: "Coven Cave",
-    clientVersion: "2026.7.2-beta.4",
-    platform: process.platform,
-    mode: "backend",
-    role: "operator",
-    scopes: ["operator.read", "operator.write"],
-    minProtocol: PROTOCOL_VERSION,
-    maxProtocol: PROTOCOL_VERSION,
-    connectChallengeTimeoutMs: STARTUP_TIMEOUT_MS,
-    requestTimeoutMs: STARTUP_TIMEOUT_MS,
-    onHelloOk: (rawHello) => {
-      const failure = Value.Check(HelloOkSchema, rawHello)
-        ? supportedHello(rawHello as GatewayHello)
-        : "Gateway returned an invalid hello response for the pinned v4 schema";
-      if (failure) {
-        const error = new Error(failure);
-        helloReject?.(error);
-        if (connected) {
-          args.onEvent({ kind: "error", message: failure });
-          settle("error", failure);
-        }
-        client.stop();
-        return;
-      }
-      if (!connected) {
-        connected = true;
-        connectionGeneration += 1;
-        helloResolve?.();
-        return;
-      }
-      // The official client reconnects after a transport loss. Restore the
-      // documented session stream before accepting resumed chat frames. Frames
-      // that arrive during this window remain queued until that subscription
-      // has succeeded, so a reconnect never turns an unverified stream into
-      // accepted lifecycle state.
-      const generation = ++connectionGeneration;
-      void subscribeToSession(generation)
-        .catch(() => {
-          if (generation !== connectionGeneration || settled) return;
-          const message = "Gateway reconnect could not restore the session stream";
-          args.onEvent({ kind: "error", message });
-          settle("error", message);
-          client.stop();
-        });
-    },
-    onConnectError: (error) => {
-      if (!connected) helloReject?.(error);
-      // GatewayClient reports failures while attempting its *next* socket as
-      // onConnectError too. Once the first hello has completed, stopping here
-      // would defeat the client's documented reconnect policy before a later
-      // hello can restore the subscription. A terminal reconnect pause is
-      // handled below instead.
-    },
-    onReconnectPaused: () => {
-      if (settled) return;
-      const message = "Gateway reconnect was paused after dispatch";
-      args.onEvent({ kind: "error", message });
-      settle("error", message);
-      client.stop();
-    },
-    onClose: () => {
-      // A socket close invalidates the subscription immediately, not only
-      // when the next hello arrives. The Gateway client retries in the
-      // background, and a buffered callback from the closed transport must
-      // not be accepted in the interval before that new hello restores the
-      // session subscription.
-      streamReady = false;
-      connectionGeneration += 1;
-    },
-    onEvent: (frame) => {
-      if (frame.event === "chat") processChatEvent(frame.payload);
-    },
-    onGap: () => {
-      if (!expectedRunId || settled) return;
-      const message = "Gateway transport sequence gap";
-      args.onEvent({ kind: "error", message });
-      settle("error", message);
-      client.stop();
-    },
-  };
   try {
-    // Construction and `start()` are both pre-dispatch compatibility steps.
-    // Treat a malformed endpoint or a host-client startup failure exactly like
-    // a failed hello so the caller can retain the CLI fallback before any
-    // `chat.send` request might have left Cave.
-    client = args.clientFactory?.(clientOptions) ?? new GatewayClient(clientOptions);
-    client.start();
-    await withTimeout(hello, STARTUP_TIMEOUT_MS, "Gateway did not complete its authenticated hello");
+    const dispatchConnection = await connectAuthenticatedOpenClawGateway({
+      url,
+      caps: compatibility.profile.requires.clientCapabilities,
+      clientFactory: args.clientFactory,
+      credentialStore,
+      deviceIdentity,
+      onReauthenticatedHello: () => {
+        // The official client reconnects after a transport loss. Restore the
+        // documented session stream before accepting resumed chat frames.
+        const generation = ++connectionGeneration;
+        void subscribeToSession(generation)
+          .catch(() => {
+            if (generation !== connectionGeneration || settled) return;
+            const message = "Gateway reconnect could not restore the session stream";
+            args.onEvent({ kind: "error", message });
+            settle("error", message);
+            client.stop();
+          });
+      },
+      onInvalidHello: (failure) => {
+        args.onEvent({ kind: "error", message: failure });
+        settle("error", failure);
+      },
+      onReconnectPaused: () => {
+        if (settled) return;
+        const message = "Gateway reconnect was paused after dispatch";
+        args.onEvent({ kind: "error", message });
+        settle("error", message);
+        client.stop();
+      },
+      onClose: () => {
+        // A socket close invalidates the subscription immediately, not only
+        // when the next hello arrives. A buffered callback from the closed
+        // transport must not be accepted before the next subscription.
+        streamReady = false;
+        connectionGeneration += 1;
+      },
+      onEvent: (frame) => {
+        if (frame.event === "chat") processChatEvent(frame.payload);
+      },
+      onGap: () => {
+        if (!expectedRunId || settled) return;
+        const message = "Gateway transport sequence gap";
+        args.onEvent({ kind: "error", message });
+        settle("error", message);
+        client.stop();
+      },
+    });
+    const dispatchDiscovery = openClawDiscoveryFromHello(dispatchConnection.hello);
+    if (!sameOpenClawDiscovery(discovery, dispatchDiscovery)) {
+      dispatchConnection.stop();
+      return {
+        kind: "unavailable",
+        reason: "OpenClaw Gateway changed during compatibility negotiation",
+      };
+    }
+    client = dispatchConnection.client;
+    connectionGeneration = 1;
     // A reconnect can arrive while the initial subscription is in flight.
     // Retry until the completion belongs to the latest authenticated hello;
     // an old socket's rejection is similarly irrelevant once a newer hello

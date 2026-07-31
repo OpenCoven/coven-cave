@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   dispatchOpenClawGatewayTurn,
   normalizeOpenClawGatewayChatEvent,
@@ -7,6 +8,13 @@ import {
   textFromOpenClawGatewayMessage,
 } from "./openclaw-gateway.ts";
 import { createOpenClawDeviceCredentialStore } from "./server/openclaw-device-credentials.ts";
+
+const gatewayBeta4 = JSON.parse(
+  readFileSync(new URL("./openclaw-fixtures/gateway-beta4.json", import.meta.url), "utf8"),
+);
+const gatewayBeta5 = JSON.parse(
+  readFileSync(new URL("./openclaw-fixtures/gateway-beta5.json", import.meta.url), "utf8"),
+);
 
 const expected = {
   runId: "run-accepted",
@@ -161,9 +169,12 @@ assert.deepEqual(
 assert.equal(stoppedAfterStartupFailure, true, "a partially started Gateway client is stopped before fallback");
 
 // The direct dispatcher is tested through the same official-client callback
-// contract that production uses: it waits for hello and subscription, binds
-// the acknowledged run id, and ignores a foreign run with the same session.
-let clientOptions;
+// contract that production uses: it discovers without capabilities, reconnects
+// with the selected profile, subscribes before send, binds the acknowledged
+// run id, and ignores a foreign run with the same session.
+const createdOptions = [];
+const gatewayRequests = [];
+const gatewayLifecycle = [];
 const emitted = [];
 const dispatch = await dispatchOpenClawGatewayTurn({
   sessionKey: expected.sessionKey,
@@ -178,7 +189,8 @@ const dispatch = await dispatchOpenClawGatewayTurn({
   },
   onEvent: (event) => emitted.push(event),
   clientFactory: (options) => {
-    clientOptions = options;
+    const clientIndex = createdOptions.push(options) - 1;
+    gatewayLifecycle.push(["construct", clientIndex]);
     assert.equal(options.token, undefined, "Gateway process tokens must not reach the client");
     assert.equal(options.deviceToken, undefined, "Gateway process device tokens must not reach the client");
     assert.deepEqual(
@@ -186,32 +198,17 @@ const dispatch = await dispatchOpenClawGatewayTurn({
       { NODE_ENV: process.env.NODE_ENV ?? "production" },
       "Gateway auth must not inherit Cave's process environment",
     );
-    assert.equal(options.caps, undefined, "chat-only dispatch must not request unpublished tool-event capabilities");
     return {
       start() {
-        queueMicrotask(() =>
-          options.onHelloOk?.({
-            type: "hello-ok",
-            protocol: 4,
-            server: { version: "2026.7.2-beta.4", connId: "test-connection" },
-            features: {
-              methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"],
-              events: ["chat"],
-              capabilities: ["chat-send-routing-contract"],
-            },
-            snapshot: {
-              presence: [],
-              health: {},
-              stateVersion: { presence: 0, health: 0 },
-              uptimeMs: 0,
-            },
-            auth: { role: "operator", scopes: ["operator.read", "operator.write"] },
-            policy: { maxPayload: 1024, maxBufferedBytes: 1024, tickIntervalMs: 1000 },
-          }),
-        );
+        gatewayLifecycle.push(["start", clientIndex]);
+        queueMicrotask(() => options.onHelloOk?.(helloOk()));
       },
-      stop() {},
+      stop() {
+        gatewayLifecycle.push(["stop", clientIndex]);
+      },
       async request(method, params, requestOptions) {
+        gatewayRequests.push({ clientIndex, method, params });
+        gatewayLifecycle.push(["request", clientIndex, method]);
         if (method === "chat.send") {
           assert.equal(params.idempotencyKey, "cave-request-123", "Gateway receives Cave's stable request id");
           requestOptions?.onSent?.();
@@ -248,9 +245,31 @@ const dispatch = await dispatchOpenClawGatewayTurn({
 });
 
 assert.equal(dispatch.kind, "accepted", "a documented accepted run id enables Gateway ownership");
-assert.equal(clientOptions.caps, undefined, "chat-only dispatch must not request unpublished tool-event capabilities");
-assert.equal(clientOptions.minProtocol, 4);
-assert.equal(clientOptions.maxProtocol, 4);
+assert.equal(createdOptions.length, 2, "Gateway dispatch uses separate discovery and dispatch clients");
+assert.equal(createdOptions[0].caps, undefined, "discovery must not advertise tool events");
+assert.deepEqual(createdOptions[1].caps, ["tool-events"], "dispatch advertises only the selected profile capabilities");
+assert.equal(createdOptions[0].minProtocol, 4);
+assert.equal(createdOptions[0].maxProtocol, 4);
+assert.equal(createdOptions[1].minProtocol, 4);
+assert.equal(createdOptions[1].maxProtocol, 4);
+assert.equal(
+  gatewayRequests.some((entry) => entry.clientIndex === 0 && entry.method === "chat.send"),
+  false,
+  "the discovery client can never dispatch",
+);
+assert.deepEqual(
+  gatewayRequests.map(({ clientIndex, method }) => ({ clientIndex, method })),
+  [
+    { clientIndex: 1, method: "sessions.messages.subscribe" },
+    { clientIndex: 1, method: "chat.send" },
+  ],
+  "only the dispatch client subscribes, and subscription completes before chat.send",
+);
+assert.ok(
+  gatewayLifecycle.findIndex(([operation, index]) => operation === "stop" && index === 0)
+    < gatewayLifecycle.findIndex(([operation, index]) => operation === "construct" && index === 1),
+  "discovery is stopped before the capability-enabled client is constructed",
+);
 if (dispatch.kind === "accepted") {
   assert.deepEqual(await dispatch.done, { state: "final" });
 }
@@ -263,6 +282,158 @@ assert.ok(
   emitted.some((event) => event.kind === "final" && !("text" in event)),
   "an opaque final message never becomes assistant-visible text",
 );
+
+async function assertNegotiationUnavailable({
+  id,
+  hellos,
+  compatibilitySource,
+  expectedReason,
+}) {
+  const options = [];
+  const requests = [];
+  const stopped = [];
+  const result = await dispatchOpenClawGatewayTurn({
+    sessionKey: expected.sessionKey,
+    agentId: expected.agentId,
+    message: id,
+    idempotencyKey: `cave-request-${id}`,
+    env: { OPENCLAW_GATEWAY_DISPATCH: "1", OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789" },
+    onEvent: () => assert.fail(`${id} must fail before Gateway event projection`),
+    compatibilitySource,
+    clientFactory: (clientOptions) => {
+      const clientIndex = options.push(clientOptions) - 1;
+      return {
+        start() {
+          const hello = hellos[clientIndex] ?? hellos.at(-1);
+          queueMicrotask(() => clientOptions.onHelloOk?.(structuredClone(hello)));
+        },
+        stop() {
+          stopped.push(clientIndex);
+        },
+        async request(method, params, requestOptions) {
+          requests.push({ clientIndex, method, params });
+          if (method === "chat.send") {
+            requestOptions?.onSent?.();
+            return { runId: expected.runId };
+          }
+          return { subscribed: true };
+        },
+      };
+    },
+  });
+  assert.equal(result.kind, "unavailable", `${id} must retain the CLI fallback`);
+  if (expectedReason) assert.equal(result.reason, expectedReason);
+  assert.equal(
+    requests.some((entry) => entry.method === "chat.send"),
+    false,
+    `${id} must fail before chat.send`,
+  );
+  assert.deepEqual(
+    [...new Set(stopped)].sort(),
+    options.map((_, clientIndex) => clientIndex),
+    `${id} must stop every client it constructed`,
+  );
+  return { options, requests, stopped };
+}
+
+const beta4Unavailable = await assertNegotiationUnavailable({
+  id: "beta4-no-profile",
+  hellos: [gatewayBeta4],
+  expectedReason: "OpenClaw tool compatibility: no-compatible-profile",
+});
+assert.equal(beta4Unavailable.options.length, 1, "an unsupported discovery never creates a dispatch client");
+
+const changedVersion = await assertNegotiationUnavailable({
+  id: "changed-version",
+  hellos: [
+    helloOk(),
+    { ...helloOk(), server: { ...helloOk().server, version: "2026.7.2-beta.6" } },
+  ],
+  expectedReason: "OpenClaw Gateway changed during compatibility negotiation",
+});
+assert.deepEqual(changedVersion.options.map((options) => options.caps), [undefined, ["tool-events"]]);
+
+for (const missingEvent of ["agent", "session.tool"]) {
+  const secondHello = helloOk();
+  secondHello.features.events = secondHello.features.events.filter((event) => event !== missingEvent);
+  const missing = await assertNegotiationUnavailable({
+    id: `missing-${missingEvent}`,
+    hellos: [helloOk(), secondHello],
+    expectedReason: "OpenClaw Gateway changed during compatibility negotiation",
+  });
+  assert.deepEqual(missing.options.map((options) => options.caps), [undefined, ["tool-events"]]);
+}
+
+for (const [id, secondHello] of [
+  ["operator-scope", {
+    ...helloOk(),
+    auth: { ...helloOk().auth, scopes: ["operator.read"] },
+  }],
+  ["chat-abort-method", {
+    ...helloOk(),
+    features: {
+      ...helloOk().features,
+      methods: helloOk().features.methods.filter((method) => method !== "chat.abort"),
+    },
+  }],
+  ["session-subscribe-method", {
+    ...helloOk(),
+    features: {
+      ...helloOk().features,
+      methods: helloOk().features.methods.filter((method) => method !== "sessions.messages.subscribe"),
+    },
+  }],
+  ["routing-capability", {
+    ...helloOk(),
+    features: { ...helloOk().features, capabilities: [] },
+  }],
+]) {
+  const missing = await assertNegotiationUnavailable({
+    id: `missing-${id}`,
+    hellos: [helloOk(), secondHello],
+  });
+  assert.deepEqual(missing.options.map((options) => options.caps), [undefined, ["tool-events"]]);
+}
+
+const beta6Hello = {
+  ...helloOk(),
+  server: { ...helloOk().server, version: "2026.7.2-beta.6" },
+};
+const registryUnavailable = await assertNegotiationUnavailable({
+  id: "registry-unavailable",
+  hellos: [beta6Hello],
+  compatibilitySource: {
+    url: "http://registry.example/openclaw/current.json",
+    publicKeys: { invalid: "not-an-ed25519-public-key" },
+  },
+  expectedReason: "OpenClaw tool compatibility: profile-registry-refresh-rejected",
+});
+assert.equal(registryUnavailable.options.length, 1, "a failed registry with no usable profile never creates dispatch");
+
+let credentialFailureClients = 0;
+const negotiationCredentialFailure = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "credential failure",
+  idempotencyKey: "cave-request-negotiation-credential-failure",
+  env: { OPENCLAW_GATEWAY_DISPATCH: "1", OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789" },
+  onEvent: () => assert.fail("a credential-store failure must not emit events"),
+  credentialStore: {
+    status: () => ({ available: true }),
+    loadOrCreateDeviceIdentity: () => {
+      throw new Error("OpenClaw credential-store failure");
+    },
+  },
+  clientFactory: () => {
+    credentialFailureClients += 1;
+    assert.fail("a credential-store failure must not construct either Gateway client");
+  },
+});
+assert.deepEqual(
+  negotiationCredentialFailure,
+  { kind: "unavailable", reason: "OpenClaw credential-store failure" },
+);
+assert.equal(credentialFailureClients, 0);
 
 const missingRoutingCapability = await dispatchOpenClawGatewayTurn({
   sessionKey: expected.sessionKey,
@@ -376,24 +547,7 @@ const reconnectDispatch = await dispatchOpenClawGatewayTurn({
 });
 
 function helloOk() {
-  return {
-    type: "hello-ok",
-    protocol: 4,
-    server: { version: "2026.7.2-beta.4", connId: "reconnect-connection" },
-    features: {
-      methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"],
-      events: ["chat"],
-      capabilities: ["chat-send-routing-contract"],
-    },
-    snapshot: {
-      presence: [],
-      health: {},
-      stateVersion: { presence: 0, health: 0 },
-      uptimeMs: 0,
-    },
-    auth: { role: "operator", scopes: ["operator.read", "operator.write"] },
-    policy: { maxPayload: 1024, maxBufferedBytes: 1024, tickIntervalMs: 1000 },
-  };
+  return structuredClone(gatewayBeta5);
 }
 
 assert.equal(reconnectDispatch.kind, "accepted");
