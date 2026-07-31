@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import YAML from "yaml";
 
 const packageJson = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
 const tauriConfig = JSON.parse(await readFile(new URL("../../src-tauri/tauri.conf.json", import.meta.url), "utf8"));
@@ -10,15 +11,71 @@ const appVersionSource = await readFile(new URL("./app-version.ts", import.meta.
 const releaseWorkflow = await readFile(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8");
 const buildInfoRoute = await readFile(new URL("../app/api/app/build-info/route.ts", import.meta.url), "utf8");
 
+function collectReleaseSettingOccurrences(node, targetKey, path = [], occurrences = []) {
+  if (YAML.isMap(node)) {
+    for (const pair of node.items) {
+      const keyNode = pair.key;
+      if (YAML.isScalar(keyNode) && typeof keyNode.value === "string") {
+        const nextPath = [...path, keyNode.value];
+        if (keyNode.value === targetKey) {
+          occurrences.push({ path: nextPath.join("."), valueNode: pair.value });
+        }
+        collectReleaseSettingOccurrences(pair.value, targetKey, nextPath, occurrences);
+      } else if (pair.value) {
+        collectReleaseSettingOccurrences(pair.value, targetKey, path, occurrences);
+      }
+    }
+  } else if (YAML.isSeq(node)) {
+    node.items.forEach((item, index) => {
+      collectReleaseSettingOccurrences(item, targetKey, [...path, String(index)], occurrences);
+    });
+  }
+
+  return occurrences;
+}
+
+function readIosReleaseSettings(source, sourceLabel = "apps/ios/CovenCave/project.yml") {
+  const document = YAML.parseDocument(source, { prettyErrors: true });
+
+  if (document.errors.length > 0) {
+    throw document.errors[0];
+  }
+
+  const marketingVersion = readCanonicalReleaseSetting(document, "MARKETING_VERSION", sourceLabel);
+  const buildVersion = readCanonicalReleaseSetting(document, "CURRENT_PROJECT_VERSION", sourceLabel);
+
+  return { marketingVersion, buildVersion };
+}
+
+function readCanonicalReleaseSetting(document, key, sourceLabel) {
+  const canonicalPath = `settings.base.${key}`;
+  const occurrences = collectReleaseSettingOccurrences(document.contents, key);
+
+  if (occurrences.length !== 1 || occurrences[0].path !== canonicalPath) {
+    const detail =
+      occurrences.length === 0
+        ? "was not found"
+        : `was also found at ${occurrences.map((occurrence) => occurrence.path).join(", ")}`;
+    throw new Error(`${sourceLabel} must define ${key} exactly once at ${canonicalPath}; ${detail}`);
+  }
+
+  const valueNode = occurrences[0].valueNode;
+
+  if (!YAML.isScalar(valueNode) || typeof valueNode.value !== "string") {
+    throw new Error(`${sourceLabel} must use a string scalar at ${canonicalPath}`);
+  }
+
+  return valueNode.value;
+}
+
 const cargoVersion = cargoToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
 const cargoDescription = cargoToml.match(/^description\s*=\s*"([^"]+)"/m)?.[1];
 const cargoAuthors = cargoToml.match(/^authors\s*=\s*\[([^\]]+)\]/m)?.[1] ?? "";
 const cargoLicense = cargoToml.match(/^license\s*=\s*"([^"]+)"/m)?.[1];
 const cargoRepository = cargoToml.match(/^repository\s*=\s*"([^"]+)"/m)?.[1];
-const iosMarketingVersionMatch = iosProject.match(/^\s*MARKETING_VERSION:\s*([^\s#]+)\s*$/m);
-const iosBuildVersionMatch = iosProject.match(/^\s*CURRENT_PROJECT_VERSION:\s*([^\s#]+)\s*$/m);
-const iosMarketingVersion = iosMarketingVersionMatch?.[1].replace(/^"|"$/g, "");
-const iosBuildVersion = iosBuildVersionMatch?.[1].replace(/^"|"$/g, "");
+const iosReleaseSettings = readIosReleaseSettings(iosProject);
+const iosMarketingVersion = iosReleaseSettings.marketingVersion;
+const iosBuildVersion = iosReleaseSettings.buildVersion;
 
 assert.equal(tauriConfig.version, packageJson.version, "Tauri bundle version must match package.json");
 assert.equal(cargoVersion, packageJson.version, "Tauri Cargo package version must match package.json");
@@ -72,6 +129,52 @@ assert.equal(
   "1",
   "iOS CURRENT_PROJECT_VERSION must remain 1 for this release",
 );
+
+assert.throws(
+  () =>
+    readIosReleaseSettings(`
+name: Example
+settings:
+  base:
+    MARKETING_VERSION: "0.2.1"
+targets:
+  Example:
+    settings:
+      base:
+        MARKETING_VERSION: "9.9.9"
+`),
+  /settings\.base\.MARKETING_VERSION/,
+  "A target-level MARKETING_VERSION override must be rejected",
+);
+
+assert.throws(
+  () =>
+    readIosReleaseSettings(`
+name: Example
+settings:
+  base:
+    MARKETING_VERSION: "0.2.1
+    CURRENT_PROJECT_VERSION: "1"
+`),
+  /Unexpected end of stream|quoted scalar|parse/i,
+  "An unbalanced quoted marketing version must be rejected by semantic parsing",
+);
+
+assert.deepEqual(
+  readIosReleaseSettings(`
+name: Example
+settings:
+  base:
+    MARKETING_VERSION: "0.2.1"
+    CURRENT_PROJECT_VERSION: "1"
+`),
+  {
+    marketingVersion: "0.2.1",
+    buildVersion: "1",
+  },
+  "A canonical quoted document must yield semantic release values",
+);
+
 assert.match(
   releaseWorkflow,
   /NEXT_PUBLIC_COVEN_CAVE_BUILD_REVISION=\$\(git rev-parse --verify HEAD\)/,
