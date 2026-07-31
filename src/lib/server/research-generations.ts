@@ -802,19 +802,37 @@ function splitMediaDraftText(text: string): string[] {
   return chunks.filter((chunk) => chunk.length <= LOCAL_TTS_MAX_CHARS);
 }
 
-function mediaNarrationUnits(source: GenerationDraftSource): string[] {
+/** Fragment endings that already close a spoken clause — no "." appended. */
+const SPEAKABLE_TERMINAL_RE = /[.!?…;:)\]"'”’]$/;
+
+/** Terminates a fragment for speech without ever doubling punctuation. */
+function speakable(fragment: string): string {
+  const trimmed = fragment.trim();
+  if (!trimmed) return trimmed;
+  return SPEAKABLE_TERMINAL_RE.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+type NarrationUnit = {
+  /** Section heading, or null on the heading-less fallback path. */
+  title: string | null;
+  /** Speakable detail text, punctuation-safe joined. */
+  text: string;
+};
+
+function mediaNarrationSectionUnits(source: GenerationDraftSource): NarrationUnit[] {
   const { sections } = extractMarkdownSections(source.markdown);
   if (sections.length > 0) {
-    return sections.flatMap((section) => {
+    return sections.flatMap((section): NarrationUnit[] => {
       const details = section.bullets.length > 0 ? section.bullets : section.firstLine ? [section.firstLine] : [];
-      return details.length > 0
-        ? [`${section.title}. ${details.join(". ")}`]
-        : [section.title];
+      // Sections whose body is only a table (or nothing) have no speakable
+      // details; a bare spoken heading is worse than silence, so skip them.
+      if (details.length === 0) return [];
+      return [{ title: section.title, text: details.map(speakable).join(" ") }];
     });
   }
   // A heading-less artifact still has useful source lines. Ignore markdown
   // fences and structural blank lines, but retain the artifact's wording.
-  const lines: string[] = [];
+  const lines: NarrationUnit[] = [];
   let inFence = false;
   for (const rawLine of source.markdown.split("\n")) {
     if (/^\s*(```|~~~)/.test(rawLine)) {
@@ -825,9 +843,15 @@ function mediaNarrationUnits(source: GenerationDraftSource): string[] {
     const line = stripInlineMarkdown(
       rawLine.replace(/^\s*[-*+]\s+/, "").replace(/^\s*>\s?/, ""),
     );
-    if (line && !/^#{1,6}\s/.test(line)) lines.push(line);
+    if (line && !/^#{1,6}\s/.test(line)) lines.push({ title: null, text: line });
   }
   return lines;
+}
+
+function mediaNarrationUnits(source: GenerationDraftSource): string[] {
+  return mediaNarrationSectionUnits(source).map((unit) =>
+    unit.title === null ? unit.text : `${speakable(unit.title)} ${unit.text}`,
+  );
 }
 
 /** Drafts a reviewable, extractive host script before any audio is rendered. */

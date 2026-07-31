@@ -468,6 +468,73 @@ test("podcast drafter creates bounded extractive narration segments", () => {
   assert.ok(content.script[0].text.includes("A standalone paragraph with a claim."));
 });
 
+test("podcast drafter joins are punctuation-aware — never a double period", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Punctuated findings",
+      "",
+      "## Key claims (with confidence)",
+      "",
+      "- Formal proofs are blocked (high confidence).",
+      "- Does goal-guarding generalize?",
+      "- Benchmarks bind proxies (the DGM lesson)",
+      "- an unterminated bullet",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const narration = content.script.map((segment) => segment.text).join(" ");
+  assert.ok(!narration.includes(".."), `no double periods (${narration})`);
+  assert.ok(!narration.includes("?."), `no punctuation stacking after ? (${narration})`);
+  assert.ok(
+    narration.includes("(the DGM lesson) an unterminated bullet."),
+    "paren-terminated fragments are not re-punctuated",
+  );
+  assert.ok(
+    narration.includes("Key claims (with confidence)"),
+    "the heading still frames its details",
+  );
+});
+
+test("podcast drafter skips table-only sections instead of speaking bare headings", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Mechanism comparison",
+      "",
+      "| Mechanism | Guarantee |",
+      "|---|---|",
+      "| Proof-gated | formal |",
+      "",
+      "## Empty section",
+      "",
+      "## Detailed findings",
+      "",
+      "- Gates bind proxies, not purposes.",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const texts = content.script.map((segment) => segment.text);
+  assert.ok(
+    texts.every((text) => text !== "Mechanism comparison" && text !== "Mechanism comparison."),
+    "table-only sections never become orphan spoken headings",
+  );
+  assert.ok(
+    texts.every((text) => !text.startsWith("Empty section")),
+    "empty sections are skipped",
+  );
+  assert.ok(
+    texts.some((text) => text.includes("Gates bind proxies, not purposes.")),
+    "sections with speakable details survive",
+  );
+});
+
 test("podcast drafter clamps a long source mechanically at the local TTS limit", () => {
   const longLine = `A ${"verbatim source claim ".repeat(300)}`;
   const content = draftPodcastContent({
