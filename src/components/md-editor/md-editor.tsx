@@ -174,6 +174,10 @@ export function MdEditor({
     visualHiddenPrefixRef.current = presentation.hiddenPrefix;
   }, [visualEpoch]);
 
+  const refreshVisualEpoch = useCallback(() => {
+    setVisualEpoch((n) => n + 1);
+  }, []);
+
   const onBodyChange = useCallback((visibleBody: string) => {
     const next = parseMdDocument(rawRef.current);
     next.body = joinLeadingMdComments(visualHiddenPrefixRef.current, visibleBody);
@@ -234,34 +238,35 @@ export function MdEditor({
   // adopt the disk version and drop the draft. Merge: three-way merge of
   // baseline/draft/disk; overlapping edits get git-style markers to resolve.
   const resolveKeepMine = useCallback(() => {
+    refreshVisualEpoch();
     setConflict(null);
     void save();
-  }, [save]);
+  }, [refreshVisualEpoch, save]);
 
   const resolveTakeTheirs = useCallback(() => {
     setConflict((current) => {
       if (current) {
         updateRaw(current.currentText);
         setBaseline(current.currentText);
-        setVisualEpoch((n) => n + 1);
+        refreshVisualEpoch();
       }
       return null;
     });
-  }, [updateRaw]);
+  }, [refreshVisualEpoch, updateRaw]);
 
   const resolveMerge = useCallback(() => {
     setConflict((current) => {
       if (current) {
         const merged = mergeThreeWay(baseline, rawRef.current, current.currentText);
         updateRaw(merged.text);
-        setVisualEpoch((n) => n + 1);
+        refreshVisualEpoch();
         // Conflict markers are raw-text constructs — resolve them in MARKDOWN
         // mode so the visual editor doesn't normalize them away.
         if (merged.conflicts > 0) switchMode("markdown");
       }
       return null;
     });
-  }, [baseline, switchMode, updateRaw]);
+  }, [baseline, refreshVisualEpoch, switchMode, updateRaw]);
 
   // Autosave: persist a short while after typing stops (idempotent surfaces
   // only — see the `autoSave` prop doc). A ref keeps the effect from
@@ -413,7 +418,10 @@ export function MdEditor({
             onKeepMine={resolveKeepMine}
             onTakeTheirs={resolveTakeTheirs}
             onMerge={resolveMerge}
-            onDismiss={() => setConflict(null)}
+            onDismiss={() => {
+              refreshVisualEpoch();
+              setConflict(null);
+            }}
           />
         ) : mode === "visual" ? (
           <MdEditorVisual
