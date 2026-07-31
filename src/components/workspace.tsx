@@ -1131,7 +1131,8 @@ export function Workspace() {
     // routes compatibility modes (flow, journal, groupchat, …) onto their
     // canonical surface via MODE_ALIASES (cave-nwi8, cave-m4ih.3).
     // A persisted Role Surface mode restores too — if this familiar no longer
-    // holds the role, the visibility effect below falls back generically.
+    // holds the role, the room stays on RoleSurfaceHost's explicit closed-door
+    // state and the persistence guard below preserves the prior valid surface.
     if (last && (isWorkspaceMode(last) || isRoleSurfaceMode(last))) setMode(last as CaveMode);
   }, []);
 
@@ -1318,10 +1319,6 @@ export function Workspace() {
       unlistenNew?.();
     };
   }, []);
-
-  useEffect(() => {
-    if (activeId) setLastSurface(activeId, mode);
-  }, [activeId, mode]);
 
   // Keep prefs accessible to the SSE callback without re-subscribing on every
   // mute toggle.
@@ -2789,6 +2786,26 @@ export function Workspace() {
     focusCard: focusCardFromRoom,
     refreshTasks: refreshTasksFromRoom,
   });
+
+  useEffect(() => {
+    if (!activeId) return;
+    if (!isRoleSurfaceMode(mode)) {
+      setLastSurface(activeId, mode);
+      return;
+    }
+    const roleSurfaceId = parseRoleSurfaceMode(mode);
+    if (!roleSurfaceId) return;
+    if (!roleSurfaceSession.rolesLoaded) return;
+    if (!roleSurfaceSession.rolesLoadedSuccessfully) return;
+    if (!roleSurfaceSession.visibleSurfaces.some((surface) => surface.id === roleSurfaceId)) return;
+    setLastSurface(activeId, mode);
+  }, [
+    activeId,
+    mode,
+    roleSurfaceSession.rolesLoaded,
+    roleSurfaceSession.rolesLoadedSuccessfully,
+    roleSurfaceSession.visibleSurfaces,
+  ]);
 
   useEffect(() => {
     if (mode !== roleSurfaceMode(CODE_SURFACE_ID)) {

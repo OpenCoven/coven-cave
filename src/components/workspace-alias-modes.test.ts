@@ -99,6 +99,11 @@ assert.match(
   /if \(last && \(isWorkspaceMode\(last\) \|\| isRoleSurfaceMode\(last\)\)\) setMode\(last as CaveMode\)/,
   "persisted last-surface restore validates via isWorkspaceMode and lets setMode route aliases",
 );
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*if \(!activeId\) return;\s*if \(!isRoleSurfaceMode\(mode\)\) \{\s*setLastSurface\(activeId, mode\);\s*return;\s*\}\s*const roleSurfaceId = parseRoleSurfaceMode\(mode\);\s*if \(!roleSurfaceId\) return;\s*if \(!roleSurfaceSession\.rolesLoaded\) return;\s*if \(!roleSurfaceSession\.rolesLoadedSuccessfully\) return;\s*if \(!roleSurfaceSession\.visibleSurfaces\.some\(\(surface\) => surface\.id === roleSurfaceId\)\) return;\s*setLastSurface\(activeId, mode\);\s*\}, \[\s*activeId,\s*mode,\s*roleSurfaceSession\.rolesLoaded,\s*roleSurfaceSession\.rolesLoadedSuccessfully,\s*roleSurfaceSession\.visibleSurfaces,\s*\]\);/,
+  "role rooms persist only after successful role resolution confirms the exact room is visible for the active familiar",
+);
 assert.doesNotMatch(
   workspace,
   /last === "flow"|targetMode === "flow"/,
