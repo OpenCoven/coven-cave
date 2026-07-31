@@ -70,7 +70,7 @@ function validCraft(overrides = {}) {
           id: "open-a-research-space",
           name: "Open a research space",
           description: "Generate and rank bounded research directions.",
-          body: "Explore {{topic}} with divergent and convergent research lenses.",
+          body: "Explore {{topic}} with divergent and convergent research lenses.\r\nUse evidence to rank the candidates.",
         },
       ],
       workflows: [
@@ -188,6 +188,15 @@ function expectRejected(catalog, pattern, sourcePaths = true) {
 
 const fixture = writeFixture(fixtureCatalog());
 try {
+  const binarySource = path.join(
+    fixture.marketplace,
+    "craft-sources",
+    "seekers-lens",
+    "brainstorming-research-ideas",
+    "fixture.bin",
+  );
+  const binaryPayload = Buffer.from([0x00, 0x0d, 0x0a, 0x41]);
+  writeFileSync(binarySource, binaryPayload);
   const first = runSync(fixture);
   assert.equal(first.status, 0, first.stderr);
 
@@ -204,7 +213,13 @@ try {
   for (const skill of ["brainstorming-research-ideas", "creative-thinking-for-research"]) {
     assert.match(readFileSync(path.join(pluginRoot, "skills", skill, "SKILL.md"), "utf8"), new RegExp(`name: ${skill}`));
   }
-  assert.match(readFileSync(path.join(pluginRoot, "prompts", "open-a-research-space.md"), "utf8"), /Open a research space/);
+  const generatedPrompt = readFileSync(path.join(pluginRoot, "prompts", "open-a-research-space.md"));
+  assert.match(generatedPrompt.toString("utf8"), /Open a research space/);
+  assert.ok(
+    generatedPrompt.includes(Buffer.from("\nUse evidence to rank the candidates.")),
+    "CRLF prompt bodies are emitted with LF",
+  );
+  assert.equal(generatedPrompt.includes(Buffer.from("\r\n")), false, "generated prompt content uses LF");
   assert.deepEqual(
     JSON.parse(readFileSync(path.join(pluginRoot, "workflows", "diverge-converge-refine.json"), "utf8")).steps,
     ["Generate candidate directions", "Rank with evidence", "Define a pilot"],
@@ -233,6 +248,27 @@ try {
   const second = runSync(fixture);
   assert.equal(second.status, 0, second.stderr);
   assert.deepEqual(generatedDigest(fixture.marketplace), before, "generation should be deterministic");
+
+  const crlfMarketplace = path.join(fixture.marketplace, "marketplace.json");
+  writeFileSync(
+    crlfMarketplace,
+    readFileSync(crlfMarketplace, "utf8").replaceAll("\r\n", "\n").replaceAll("\n", "\r\n"),
+  );
+  const lineEndingCheck = runSync(fixture, ["--check"]);
+  assert.equal(lineEndingCheck.status, 0, lineEndingCheck.stderr);
+
+  const binaryOutput = path.join(pluginRoot, "skills", "brainstorming-research-ideas", "fixture.bin");
+  assert.deepEqual(readFileSync(binaryOutput), binaryPayload, "bundled byte assets are copied exactly");
+  writeFileSync(binaryOutput, Buffer.from([0x00, 0x0a, 0x41]));
+  const binaryDrift = runSync(fixture, ["--check"]);
+  assert.notEqual(binaryDrift.status, 0);
+  assert.match(
+    normalizePathDiagnostics(binaryDrift.stderr),
+    /stale marketplace\/plugins\/seekers-lens\/skills\/brainstorming-research-ideas\/fixture\.bin/,
+  );
+  const repairedBinary = runSync(fixture);
+  assert.equal(repairedBinary.status, 0, repairedBinary.stderr);
+  assert.deepEqual(readFileSync(binaryOutput), binaryPayload, "sync restores bundled byte assets exactly");
 
   writeFileSync(path.join(pluginRoot, "prompts", "open-a-research-space.md"), "stale\n");
   const stale = runSync(fixture, ["--check"]);
