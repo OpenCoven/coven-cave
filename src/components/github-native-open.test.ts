@@ -48,6 +48,11 @@ assert.match(
   /if \(mode !== roleSurfaceMode\(CODE_SURFACE_ID\)\) \{[\s\S]{0,80}?clearPendingCodeNavigation\(\);[\s\S]{0,40}?\}/,
   "leaving Code Workshop discards an unavailable room's unconsumed target",
 );
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*if \(mode !== roleSurfaceMode\(CODE_SURFACE_ID\)\) \{[\s\S]*?clearPendingCodeNavigation\(\);[\s\S]*?return;\s*\}\s*if \(!roleSurfaceSession\.context\) \{[\s\S]*?clearPendingCodeNavigation\(\);[\s\S]*?return;\s*\}\s*if \(!roleSurfaceSession\.rolesLoaded\) return;\s*if \(!roleSurfaceSession\.visibleSurfaces\.some\(\(surface\) => surface\.id === CODE_SURFACE_ID\)\) \{[\s\S]*?clearPendingCodeNavigation\(\);[\s\S]*?\}\s*\}, \[mode, roleSurfaceSession\.context, roleSurfaceSession\.rolesLoaded, roleSurfaceSession\.visibleSurfaces\]\);/,
+  "pending Code navigation waits through loading but clears once context is gone or loaded roles still exclude Code",
+);
 assert.doesNotMatch(workspace, /setGithubTarget|githubTarget/, "Workspace owns no standalone GitHub detail state");
 assert.doesNotMatch(workspace, /<GitHubView/, "Workspace never renders GitHubView directly");
 

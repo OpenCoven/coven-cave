@@ -2793,8 +2793,17 @@ export function Workspace() {
   useEffect(() => {
     if (mode !== roleSurfaceMode(CODE_SURFACE_ID)) {
       clearPendingCodeNavigation();
+      return;
     }
-  }, [mode]);
+    if (!roleSurfaceSession.context) {
+      clearPendingCodeNavigation();
+      return;
+    }
+    if (!roleSurfaceSession.rolesLoaded) return;
+    if (!roleSurfaceSession.visibleSurfaces.some((surface) => surface.id === CODE_SURFACE_ID)) {
+      clearPendingCodeNavigation();
+    }
+  }, [mode, roleSurfaceSession.context, roleSurfaceSession.rolesLoaded, roleSurfaceSession.visibleSurfaces]);
 
   useEffect(() => {
     const openPendingBrowserUrl = () => {
