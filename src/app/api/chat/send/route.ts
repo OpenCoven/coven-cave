@@ -171,7 +171,10 @@ import {
   OpenClawAgentResolutionError,
   extractOpenClawSessionId,
   extractOpenClawText,
+  hasValidOpenClawPayloadEnvelope,
+  isOpenClawGatewayCredentialFailure,
   openClawAgentArgs,
+  openClawCliExecutionMode,
   openClawSessionKey,
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
@@ -876,7 +879,6 @@ function openClawChatResponse(args: {
         close();
         return;
       }
-      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
       const openclawLaunch = openClawLaunchCommand();
       if (openclawLaunch.unresolvedWindowsShim) {
         pushProgress(
@@ -899,22 +901,24 @@ function openClawChatResponse(args: {
         close();
         return;
       }
-      const spawnArgv = [...openclawLaunch.fixedArgs, ...argv];
-      pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
-      const child = spawn(openclawLaunch.command, spawnArgv, {
-        cwd,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: openClawSpawnEnv(),
-        shell: false,
-      });
-      pushProgress("openclaw-start", "OpenClaw bridge started", "done");
-      pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
-
+      let executionMode = openClawCliExecutionMode();
+      let child: ReturnType<typeof spawn> | null = null;
       let stdout = "";
       let stderr = "";
+      let terminal = false;
+      let localRecoveryAttempted = false;
+      const spawnChild = (mode: "gateway" | "local") => {
+        const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode);
+        return spawn(openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
+          cwd,
+          stdio: ["ignore", "pipe", "pipe"],
+          env: openClawSpawnEnv(),
+          shell: false,
+        });
+      };
       const killChild = () => {
         try {
-          child.kill("SIGTERM");
+          child?.kill("SIGTERM");
         } catch {
           /* ignore */
         }
@@ -973,13 +977,9 @@ function openClawChatResponse(args: {
         },
       }).catch(() => undefined);
 
-      child.stdout.on("data", (data: Buffer) => {
-        stdout += data.toString("utf8");
-      });
-      child.stderr.on("data", (data: Buffer) => {
-        stderr += stripAnsi(data.toString("utf8"));
-      });
-      child.on("error", (err: NodeJS.ErrnoException) => {
+      const failChild = (err: NodeJS.ErrnoException) => {
+        if (terminal) return;
+        terminal = true;
         const message =
           err.code === "ENOENT"
             ? "openclaw CLI not found on PATH. Open Setup to install it, then try again."
@@ -997,8 +997,49 @@ function openClawChatResponse(args: {
         unregisterChatRun(runHandle);
         runBuffer?.finish();
         close();
-      });
-      child.on("close", async (code) => {
+      };
+      const attachChild = (launchedChild: ReturnType<typeof spawn>) => {
+        launchedChild.stdout?.on("data", (data: Buffer) => {
+          stdout += data.toString("utf8");
+        });
+        launchedChild.stderr?.on("data", (data: Buffer) => {
+          stderr += stripAnsi(data.toString("utf8"));
+        });
+        launchedChild.on("error", failChild);
+        launchedChild.on("close", (code) => {
+          void finalizeChild(code);
+        });
+      };
+      async function finalizeChild(code: number | null) {
+        if (terminal) return;
+        const cancelledByUser = runHandle.stopRequested;
+        if (
+          !cancelledByUser &&
+          executionMode === "gateway" &&
+          !localRecoveryAttempted &&
+          code !== 0 &&
+          !stdout.trim() &&
+          isOpenClawGatewayCredentialFailure(stderr)
+        ) {
+          // The CLI proved it never owned a Gateway turn: its own credential
+          // gate rejected the connection before assistant output. Keep valid
+          // paired/remote Gateway routing on the first attempt, then recover
+          // a local-only installation with one embedded retry.
+          localRecoveryAttempted = true;
+          executionMode = "local";
+          stdout = "";
+          stderr = "";
+          pushProgress(
+            "openclaw-local-retry",
+            "Gateway CLI is unavailable; retrying embedded local OpenClaw",
+            "running",
+          );
+          child = spawnChild(executionMode);
+          attachChild(child);
+          pushProgress("openclaw-local-retry", "Embedded local OpenClaw started", "done");
+          return;
+        }
+        terminal = true;
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         unregisterChatRun(runHandle);
@@ -1025,11 +1066,10 @@ function openClawChatResponse(args: {
         // the fabricated "returned no text" error diagnostic. A bare transport
         // abort is NOT a cancel: the turn ran to completion above and persists
         // as a normal reply the client recovers on resync.
-        const cancelledByUser = runHandle.stopRequested;
-
         if (stdout.trim()) {
           try {
             const parsed = JSON.parse(stdout.trim()) as OpenClawAgentJson;
+            if (!hasValidOpenClawPayloadEnvelope(parsed)) throw new Error("invalid OpenClaw payload envelope");
             gatewaySessionId = extractOpenClawSessionId(parsed);
             if (gatewaySessionId) responseMetadata.gatewaySessionId = gatewaySessionId;
             assistantText = extractOpenClawText(parsed);
@@ -1176,7 +1216,12 @@ function openClawChatResponse(args: {
         runBuffer?.finish();
         await sleep(20);
         close();
-      });
+      }
+      pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
+      child = spawnChild(executionMode);
+      attachChild(child);
+      pushProgress("openclaw-start", "OpenClaw bridge started", "done");
+      pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
     },
   });
 
