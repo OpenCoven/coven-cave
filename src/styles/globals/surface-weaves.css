@@ -394,6 +394,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A degraded familiar's row explains why nothing is listed. Truncating that to
+   one line loses the point of the row, so it wraps — the surfaces it names
+   above still clip, because those are a list, not a sentence. */
+.wv-row__warn--wrap { align-items: flex-start; }
+.wv-row__warn--wrap svg { margin-top: 2px; }
+.wv-row__warn--wrap span {
+  overflow: visible;
+  white-space: normal;
+  line-height: var(--leading-normal);
+}
 .wv-row__stamp {
   display: flex;
   align-items: center;
@@ -578,6 +588,9 @@
   border-bottom: 1px solid var(--border-hairline);
 }
 .wv-detail-head__main { flex: 1 1 auto; min-width: 0; }
+/* The proposal pane's header is a child of a COLUMN flex body — it must not
+   grow, or it eats the free space above the evidence it introduces. */
+.wv-proposal-head { flex: none; min-width: 0; }
 .wv-detail-title {
   margin: 0;
   display: flex;

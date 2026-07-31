@@ -234,7 +234,7 @@ export function WeaveRail({
                   <span className="wv-row__line">
                     <span className="wv-row__meta">ward unreadable — protection not verifiable</span>
                   </span>
-                  <span className="wv-row__warn">
+                  <span className="wv-row__warn wv-row__warn--wrap">
                     <Icon name="ph:warning" aria-hidden />
                     <span>
                       Thread bindings are withheld rather than listed as an empty set — an empty

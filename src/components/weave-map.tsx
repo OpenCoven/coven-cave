@@ -50,9 +50,12 @@ export function WeaveMapCanvas({
 }) {
   const map = buildBipartiteWeaveMap({ threads, proposals });
   const rows = weaveMapRows({ threads, audit, proposals });
-  const height = Math.max(180, ROW_HEIGHT * Math.max(threads.length, 3) + 46);
+  // Height follows the thread count so a one-thread weave is a short band, not
+  // a mostly-empty panel; a lane with a single node centres rather than pinning
+  // to the top pad, which otherwise reads as a diagram that failed to draw.
+  const height = Math.max(120, ROW_HEIGHT * Math.max(threads.length, 2) + 46);
   const spread = (index: number, count: number) =>
-    LANE_PAD + (index * (height - 2 * LANE_PAD)) / Math.max(count - 1, 1);
+    count <= 1 ? height / 2 : LANE_PAD + (index * (height - 2 * LANE_PAD)) / (count - 1);
 
   return (
     <section aria-label="Weave map">

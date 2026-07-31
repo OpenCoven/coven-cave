@@ -252,7 +252,10 @@ function ProposalDetail({
           Back to queue
         </button>
 
-        <header className="wv-detail-head__main">
+        {/* Not .wv-detail-head__main: that carries flex-grow for the weave
+            header's ROW layout, and in this column it would swallow the free
+            space and push the evidence to the bottom of the pane. */}
+        <header className="wv-proposal-head">
           <h2 className="wv-detail-title">
             {proposal.parse === "corrupt" || !payload
               ? "Corrupt staged file"
