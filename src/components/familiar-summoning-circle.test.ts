@@ -117,8 +117,8 @@ assert.match(
 );
 assert.match(
   source,
-  /vessel === "local"\s*\n\s*\? \{ runtime: \{ kind: "local" \} \}/,
-  "summoning a local familiar explicitly binds it to the Cave host",
+  /vessel === "local" \|\| vessel === "hermes"\s*\n\s*\? \{ runtime: \{ kind: "local" \} \}/,
+  "summoning a local or profile-bound Hermes familiar explicitly binds it to the Cave host",
 );
 assert.match(
   source,

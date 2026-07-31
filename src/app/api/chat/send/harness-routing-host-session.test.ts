@@ -71,7 +71,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const a = \["chat", "--source", "coven", "-Q"\];[\s\S]*a\.push\("--query", prompt\)/,
+  /const a = binding\.hermesProfile[\s\S]*?: \["chat", "--source", "coven", "-Q"\];[\s\S]*a\.push\("--query", prompt\)/,
   "Hermes direct chat must use quiet query mode so stdout contains the actual reply",
 );
 
