@@ -271,6 +271,18 @@ try {
   );
   assert.equal(
     config.bindingFor({
+      defaults: {
+        harness: "hermes",
+        model: "hermes",
+        hermesProfile: { id: "research", homePath: "/home/cave/.hermes/profiles/research" },
+      },
+      familiars: { bareHermes: { harness: "hermes" } },
+    }, "bareHermes").hermesProfile,
+    undefined,
+    "bare Hermes never inherits a profile from global defaults",
+  );
+  assert.equal(
+    config.bindingFor({
       defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
       familiars: {
         malformedHermes: {

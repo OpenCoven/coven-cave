@@ -591,7 +591,10 @@ export async function uninstallMarketplacePlugin(pluginName: string): Promise<vo
 export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBinding {
   const f = config.familiars[familiarId] ?? {};
   const omnigent = normalizeFamiliarOmnigent(f.omnigent ?? config.defaults.omnigent);
-  const rawHermesProfile = f.hermesProfile ?? config.defaults.hermesProfile;
+  // Hermes profiles are intentionally familiar-scoped. A bare Hermes familiar
+  // must remain bare even if an older or manually-edited config has a profile
+  // under defaults; the CLI's sticky default is never Cave's selection.
+  const rawHermesProfile = f.hermesProfile;
   const hermesProfile = normalizeHermesProfileBinding(rawHermesProfile);
   const hasInvalidHermesProfileBinding =
     rawHermesProfile !== undefined && rawHermesProfile !== null && !hermesProfile;
