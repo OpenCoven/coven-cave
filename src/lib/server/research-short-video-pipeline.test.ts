@@ -178,6 +178,34 @@ test("short video rejects a stored storyboard beyond the selected scene budget",
   );
 });
 
+test("short video rejects a stored storyboard beyond the selected narration budget before rendering", async () => {
+  const definition = createShortVideoMediaJobDefinition(
+    {
+      familiarId: "nova",
+      generationId: "short-over-narration-budget",
+      storyboard: [
+        {
+          id: "scene-1",
+          title: "Finding one",
+          bullets: [],
+          narration: "n".repeat(301),
+        },
+      ],
+      renderConfig: renderConfig({ length: "brief" }),
+    },
+    {
+      renderVideoSequence: async () => {
+        assert.fail("an over-budget storyboard must not reach the renderer");
+      },
+    },
+  );
+
+  await assert.rejects(
+    () => definition.run(context()),
+    /brief short-video narration budget \(300\) exceeded/,
+  );
+});
+
 test("short-video source never buffers the rendered MP4 with readFile", async () => {
   const source = await readFile(
     new URL("./research-short-video-pipeline.ts", import.meta.url),
