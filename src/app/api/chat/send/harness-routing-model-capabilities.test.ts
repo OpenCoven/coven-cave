@@ -226,8 +226,26 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /modelApplicationForHarness\(\{ supported: true, confirmed: true \}\)/,
-  "Confirming an echoed model should promote the application state to applied",
+  /else if \(confirmedModel\) \{[\s\S]*?modelApplicationFromRun\(\{[\s\S]*?confirmedModel,/,
+  "a direct runtime echo is evaluated as confirmation only in the native-runtime branch",
+);
+
+const covenModelMetadataStart = chatRoute.indexOf('else if (localRuntimePlan?.runner === "coven" && forwardModel) {');
+const nativeModelMetadataStart = chatRoute.indexOf("else if (confirmedModel) {", covenModelMetadataStart);
+assert.ok(
+  covenModelMetadataStart >= 0 && nativeModelMetadataStart > covenModelMetadataStart,
+  "Coven-forwarded model metadata must be handled before generic harness echoes",
+);
+const covenModelMetadataBlock = chatRoute.slice(covenModelMetadataStart, nativeModelMetadataStart);
+assert.match(
+  covenModelMetadataBlock,
+  /Coven forwarded the selected model; downstream acceptance was not confirmed\./,
+  "forwarding a model through Coven must not be described as downstream acceptance",
+);
+assert.doesNotMatch(
+  covenModelMetadataBlock,
+  /responseMetadata\.confirmedModel = confirmedModel/,
+  "a Coven system-init model echo must not be persisted as a confirmed model",
 );
 
 console.log("model parity routing tests passed");

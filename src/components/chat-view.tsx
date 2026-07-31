@@ -527,6 +527,15 @@ type ErrorStripTool = { id: string; name: string; input?: string; output?: strin
 type ErrorStripStep = { id: string; label: string; detail?: string; status: "running" | "done" | "notice" | "error" };
 type ErrorStripTurn = { tools?: ErrorStripTool[]; progress?: ErrorStripStep[]; lifecycle?: string };
 
+/** Only display the fixed, server-produced runtime-process diagnostic shape.
+ * Progress detail normally can contain project output, so every other value
+ * remains withheld in the error strip. */
+function safeRuntimeProcessDetail(step: ErrorStripStep): string | null {
+  if (step.id !== "runtime-process" || !step.detail) return null;
+  const match = /^Exit code (\d+); (runtime diagnostic output was withheld to protect local data|the runtime did not emit an error message)\.$/.exec(step.detail);
+  return match ? `Exit code ${match[1]}. ${match[2]}.` : null;
+}
+
 /** Inline error/debug strip between the transcript and the composer. Shows the
  *  latest chat error message + code plus metadata-only failure diagnostics.
  *  Tool input/output and step detail can contain project content, paths, or
@@ -800,7 +809,7 @@ function ChatErrorStrip({
             {erroredSteps.map((p) => (
               <div key={p.id}>
                 <div className={kicker}>step failure</div>
-                <pre className={pre}>A runtime step failed. Its detail is withheld to protect project data.</pre>
+                <pre className={pre}>{safeRuntimeProcessDetail(p) ?? "A runtime step failed. Its detail is withheld to protect project data."}</pre>
               </div>
             ))}
             {erroredTools.length === 0 && erroredSteps.length === 0 ? (

@@ -484,6 +484,16 @@ try {
     RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
     "a started Hermes process has a structured error distinct from availability",
   );
+  assert.match(
+    runtimeProcessFailure("codex", { exitCode: 1, emittedDiagnostic: false }).message,
+    /Codex CLI exited with an error \(exit code 1\).*did not emit an error message.*local runtime configuration/i,
+    "a silent Codex/Coven exit names its safe exit code without guessing at authentication",
+  );
+  assert.doesNotMatch(
+    runtimeProcessFailure("codex", { exitCode: 1, emittedDiagnostic: true }).message,
+    /stderr|token|path/i,
+    "runtime process diagnostics report only that output was withheld, never its contents",
+  );
 
   // A resolved npm shim may produce a direct Node + script launch. Both the
   // executable and its fixed package target are part of the exact plan.
