@@ -9,7 +9,6 @@ struct LockScreenView: View {
     var appLock: AppLock
     @Environment(\.chrome) private var chrome
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 28) {

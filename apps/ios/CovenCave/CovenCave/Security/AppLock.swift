@@ -251,8 +251,9 @@ final class AppLock {
     // MARK: - Approval (credential-affecting actions)
 
     /// Fresh authentication gate for approval-scoped actions (paired-desktop
-    /// credential changes). Passes through immediately when approvals are
-    /// disabled — never touches the authenticator in that case.
+    /// credential changes). A concurrent authentication always returns
+    /// `.busy`; otherwise, disabled approvals pass through without touching
+    /// the authenticator.
     func requestApproval(reason: String) async -> AuthenticationOutcome {
         guard !isAuthenticating else { return .busy }
         guard approvalEnabled else { return .authorized }
