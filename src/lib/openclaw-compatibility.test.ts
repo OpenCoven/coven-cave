@@ -713,7 +713,9 @@ try {
   assert.equal(genesisCompatibility.mode, "structured");
   assert.equal(genesisCompatibility.bundleSource, "remote");
 
-  const sequenceTwo = signedBundle(2);
+  const sequenceTwo = signedBundle(2, [revisedProfile("a")], {
+    retiredProfileIds: [beta5Profile.id],
+  });
   const remoteCacheDir = await makeCacheDir("remote");
   const remoteCompatibility = await loadOpenClawCompatibility(beta5Discovery, {
     cacheDir: remoteCacheDir,
@@ -733,7 +735,9 @@ try {
   assert.equal(remoteCache.verifiedKeyId, "openclaw-2026", "the cache records the verified signer");
 
   const highWaterProfile = revisedProfile("c");
-  const highWaterBundle = signedBundle(3, [highWaterProfile]);
+  const highWaterBundle = signedBundle(3, [highWaterProfile], {
+    retiredProfileIds: [beta5Profile.id],
+  });
   const rollbackCacheDir = await makeCacheDir("rollback");
   await loadOpenClawCompatibility(beta5Discovery, {
     cacheDir: rollbackCacheDir,
@@ -762,7 +766,9 @@ try {
     now: () => REGISTRY_NOW,
   });
   const equalRewriteProfile = revisedProfile("b");
-  const equalRewrite = signedBundle(2, [equalRewriteProfile]);
+  const equalRewrite = signedBundle(2, [equalRewriteProfile], {
+    retiredProfileIds: [beta5Profile.id],
+  });
   const equalRewriteResult = await loadOpenClawCompatibility(beta5Discovery, {
     cacheDir: equalRewriteCacheDir,
     url: "https://registry.example/openclaw/current.json",
@@ -845,7 +851,9 @@ try {
   assert.equal(corruptAccepted.diagnostic, "cached-profile-unavailable");
 
   const staleWriterCacheDir = await makeCacheDir("stale-writer");
-  const sequenceFour = signedBundle(4, [revisedProfile("e")]);
+  const sequenceFour = signedBundle(4, [revisedProfile("e")], {
+    retiredProfileIds: [beta5Profile.id],
+  });
   await loadOpenClawCompatibility(beta5Discovery, {
     cacheDir: staleWriterCacheDir,
     url: "https://registry.example/openclaw/current.json",
@@ -1003,6 +1011,70 @@ try {
   });
   assert.equal(genesisMismatch.bundleSource, "built-in", "sequence one must exactly match the shipped genesis payload");
 
+  const collidingBeta6Profile = revisedProfile("6", {
+    id: "openclaw-agent-tool-beta6",
+    priority: beta5Profile.priority,
+    serverVersion: "2026.7.2-beta.6",
+  });
+  const collisionCacheDir = await makeCacheDir("merged-priority-collision");
+  const collision = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: collisionCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(
+      signedBundle(3, [collidingBeta6Profile]),
+    ), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(collision.mode, "structured", "a remote priority collision cannot disable a safe built-in match");
+  assert.equal(collision.bundleSource, "built-in", "a merged-set collision rejects the remote refresh");
+  if (collision.mode === "structured") {
+    assert.equal(collision.profile.id, beta5Profile.id);
+  }
+
+  const validBeta6Profile = revisedProfile("7", {
+    id: "openclaw-agent-tool-beta6-valid",
+    priority: beta5Profile.priority + 1,
+    serverVersion: "2026.7.2-beta.6",
+  });
+  const validAfterCollision = await loadOpenClawCompatibility(
+    { ...beta5Discovery, serverVersion: "2026.7.2-beta.6" },
+    {
+      cacheDir: collisionCacheDir,
+      url: "https://registry.example/openclaw/current.json",
+      publicKeys: registryKeyring,
+      fetchImpl: async () => new Response(JSON.stringify(
+        signedBundle(2, [validBeta6Profile]),
+      ), { status: 200 }),
+      now: () => REGISTRY_NOW + 7 * 60 * 60 * 1000,
+    },
+  );
+  assert.equal(validAfterCollision.mode, "structured", "a rejected collision does not advance the trust high-water mark");
+  assert.equal(validAfterCollision.bundleSource, "remote");
+  if (validAfterCollision.mode === "structured") {
+    assert.equal(validAfterCollision.profile.id, validBeta6Profile.id);
+  }
+
+  const retiredCollision = await loadOpenClawCompatibility(
+    { ...beta5Discovery, serverVersion: "2026.7.2-beta.6" },
+    {
+      cacheDir: await makeCacheDir("retired-priority-collision"),
+      url: "https://registry.example/openclaw/current.json",
+      publicKeys: registryKeyring,
+      fetchImpl: async () => new Response(JSON.stringify(
+        signedBundle(2, [collidingBeta6Profile], {
+          retiredProfileIds: [beta5Profile.id],
+        }),
+      ), { status: 200 }),
+      now: () => REGISTRY_NOW,
+    },
+  );
+  assert.equal(retiredCollision.mode, "structured", "retiring the colliding built-in releases its effective priority");
+  assert.equal(retiredCollision.bundleSource, "remote");
+  if (retiredCollision.mode === "structured") {
+    assert.equal(retiredCollision.profile.id, collidingBeta6Profile.id);
+  }
+
   const retiredBundle = signedBundle(2, [
     revisedProfile("f", {
       id: "openclaw-agent-tool-remote-v3",
@@ -1033,7 +1105,9 @@ try {
     cacheDir: await makeCacheDir("repaired"),
     url: "https://registry.example/openclaw/current.json",
     publicKeys: registryKeyring,
-    fetchImpl: async () => new Response(JSON.stringify(signedBundle(2, [repairedProfile])), { status: 200 }),
+    fetchImpl: async () => new Response(JSON.stringify(signedBundle(2, [repairedProfile], {
+      retiredProfileIds: [beta5Profile.id],
+    })), { status: 200 }),
     now: () => REGISTRY_NOW,
   });
   assert.equal(repaired.mode, "structured", "a higher signed revision with the same profile ID recovers");

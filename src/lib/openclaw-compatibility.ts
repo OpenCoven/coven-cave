@@ -878,6 +878,25 @@ function anchorForBundle(bundle: OpenClawSchemaBundle): OpenClawTrustAnchor {
   };
 }
 
+function combinedOpenClawToolProfiles(
+  bundle: OpenClawSchemaBundle,
+): OpenClawToolProfile[] | null {
+  const builtInProfiles = validateOpenClawToolProfiles(BUILTIN_OPENCLAW_TOOL_PROFILES);
+  if (!builtInProfiles) return null;
+  if (
+    bundle.sequence === BUILTIN_OPENCLAW_SCHEMA_BUNDLE.sequence
+    && openClawSchemaBundlePayloadHash(bundle)
+      === openClawSchemaBundlePayloadHash(BUILTIN_OPENCLAW_SCHEMA_BUNDLE)
+  ) return builtInProfiles;
+  const remoteProfiles = validateOpenClawToolProfiles(bundle.profiles);
+  if (!remoteProfiles) return null;
+  const retiredProfileIds = new Set(bundle.retiredProfileIds ?? []);
+  return validateOpenClawToolProfiles([
+    ...remoteProfiles,
+    ...builtInProfiles.filter((profile) => !retiredProfileIds.has(profile.id)),
+  ]);
+}
+
 function anchorAcceptsBundle(
   anchor: OpenClawTrustAnchor | null,
   bundle: OpenClawSchemaBundle,
@@ -996,6 +1015,7 @@ async function readTrustedCacheRecord(
       verifiedKeyId !== cached.verifiedKeyId
       || !meetsOpenClawGenesisFloor(bundle)
       || !meetsOpenClawCheckpoint(bundle, checkpoint)
+      || !combinedOpenClawToolProfiles(bundle)
     ) return null;
     return {
       fetchedAt: cached.fetchedAt,
@@ -1322,6 +1342,7 @@ async function refreshOpenClawSchemaBundle(
     verifiedKeyId === null
     || !meetsOpenClawGenesisFloor(remote)
     || !meetsOpenClawCheckpoint(remote, checkpoint)
+    || !combinedOpenClawToolProfiles(remote)
   ) throw new Error("Invalid OpenClaw registry bundle");
   const anchor = await readTrustAnchor(file);
   if (!anchorAcceptsBundle(anchor, remote)) {
@@ -1528,16 +1549,9 @@ export async function loadOpenClawCompatibility(
     };
   }
   const remoteProfiles = validateOpenClawToolProfiles(loaded.bundle.profiles) ?? [];
-  const remoteById = new Map(remoteProfiles.map((profile) => [profile.id, profile]));
-  const builtInProfiles = validateOpenClawToolProfiles(BUILTIN_OPENCLAW_TOOL_PROFILES) ?? [];
   const candidates = loaded.source === "built-in"
-    ? builtInProfiles
-    : [
-        ...remoteProfiles,
-        ...builtInProfiles.filter((profile) =>
-          !loaded.bundle.retiredProfileIds?.includes(profile.id)
-          && !remoteById.has(profile.id)),
-      ];
+    ? validateOpenClawToolProfiles(BUILTIN_OPENCLAW_TOOL_PROFILES) ?? []
+    : combinedOpenClawToolProfiles(loaded.bundle) ?? [];
   const profile = selectOpenClawToolProfile(candidates, discovery);
   if (!profile) {
     return {
