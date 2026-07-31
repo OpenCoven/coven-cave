@@ -193,4 +193,35 @@ assert.match(actionCard, /agents propose, humans dispose/i, "proposal cards docu
 assert.doesNotMatch(actionCard, /useEffect\([^)]*fireGitHubAction/s, "no effect ever auto-fires a proposal — taps only");
 assert.match(chatView, /<GitHubActionCard action=\{p\.action\} \/>/, "assistant turns render proposal cards from action pieces");
 
+// ── reaction counts ride the item response; the list hydrates lazily ──────
+// (cave-6p628: one fewer GitHub request per mounted card)
+const itemRoute = readFileSync(new URL("../app/api/github/item/route.ts", import.meta.url), "utf8");
+assert.match(
+  itemRoute,
+  /reactionCounts: reactionCounts\(d\.reactions\)/,
+  "the item route folds per-content reaction counts from the payload GitHub already returns",
+);
+assert.match(card, /reactionCounts: item\.reactionCounts \?\? \{\}/, "the card threads counts into the composer");
+const composerSrc = readFileSync(new URL("./github-card-composer.tsx", import.meta.url), "utf8");
+assert.match(
+  composerSrc,
+  /useState<Reaction\[\]>\(\(\) =>\s*Object\.keys\(REACTION_EMOJI\)/,
+  "the composer seeds chips from the item's counts, not a fetch",
+);
+assert.doesNotMatch(
+  composerSrc,
+  /useEffect\([^}]*\/api\/github\/reactions/s,
+  "no mount-time reactions request — the list is only fetched on interaction",
+);
+assert.match(
+  composerSrc,
+  /onPointerEnter=\{hydrateReactionsOnce\}/,
+  "first pointer contact with a chip hydrates the viewer's own-reaction state",
+);
+assert.match(
+  composerSrc,
+  /if \(!reactionsHydratedRef\.current\) \{[\s\S]{0,400}await rereadReactions\(\)/,
+  "a toggle that beats hydration fetches the list first — never guesses add-vs-remove",
+);
+
 console.log("github chat-card wiring: ok");
