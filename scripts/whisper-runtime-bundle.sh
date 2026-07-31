@@ -13,17 +13,44 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/coven-whisper-runtime.XXXXXX")"
 STAGE_ROOT="$(mktemp -d "$ROOT/src-tauri/resources/.whisper-staging.XXXXXX")"
 STAGE_DEST="$STAGE_ROOT/whisper"
 RUNTIME_ID="$VERSION:$(uname -s):$(uname -m):$MACOS_COMMIT"
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) WHISPER_CLI_NAME="whisper-cli.exe" ;;
+  *) WHISPER_CLI_NAME="whisper-cli" ;;
+esac
+PREVIOUS_DEST=""
 
 cleanup() {
-  rm -rf "$WORK" "$STAGE_ROOT"
+  local status=$?
+  trap - EXIT INT TERM HUP
+  if [ -n "$PREVIOUS_DEST" ] && [ -d "$PREVIOUS_DEST" ]; then
+    if [ ! -e "$LIVE_DEST" ]; then
+      if ! mv "$PREVIOUS_DEST" "$LIVE_DEST"; then
+        echo "ERROR: could not restore the previous bundled Whisper runtime" >&2
+        if [ "$status" -eq 0 ]; then
+          status=1
+        fi
+      fi
+    else
+      if ! rm -rf "$PREVIOUS_DEST"; then
+        echo "WARNING: could not remove the previous bundled Whisper runtime" >&2
+      fi
+    fi
+  fi
+  if ! rm -rf "$WORK" "$STAGE_ROOT"; then
+    echo "WARNING: could not remove temporary Whisper runtime files" >&2
+  fi
+  exit "$status"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 runtime_is_current() {
-  [ -x "$LIVE_DEST/whisper-cli" ] || return 1
+  [ -x "$LIVE_DEST/$WHISPER_CLI_NAME" ] || return 1
   [ -f "$LIVE_DEST/.coven-whisper-runtime-id" ] || return 1
   [ "$(cat "$LIVE_DEST/.coven-whisper-runtime-id")" = "$RUNTIME_ID" ] || return 1
-  "$LIVE_DEST/whisper-cli" --version >/dev/null 2>&1
+  "$LIVE_DEST/$WHISPER_CLI_NAME" --version >/dev/null 2>&1
 }
 
 if [ "${COVEN_CAVE_REFRESH_WHISPER:-0}" != "1" ] && runtime_is_current; then
@@ -159,17 +186,14 @@ esac
 
 printf '%s\n' "$RUNTIME_ID" > "$DEST/.coven-whisper-runtime-id"
 
-previous=""
 if [ -d "$LIVE_DEST" ]; then
-  previous="$(mktemp -d "$ROOT/src-tauri/resources/.whisper-previous.XXXXXX")"
-  rmdir "$previous"
-  mv "$LIVE_DEST" "$previous"
+  PREVIOUS_DEST="$(mktemp -d "$ROOT/src-tauri/resources/.whisper-previous.XXXXXX")"
+  rmdir "$PREVIOUS_DEST"
+  mv "$LIVE_DEST" "$PREVIOUS_DEST"
 fi
 if ! mv "$STAGE_DEST" "$LIVE_DEST"; then
-  if [ -n "$previous" ]; then mv "$previous" "$LIVE_DEST"; fi
   echo "ERROR: could not install bundled Whisper runtime" >&2
   exit 1
 fi
-if [ -n "$previous" ]; then rm -rf "$previous"; fi
 
 echo "==> bundled whisper.cpp $VERSION ($(find "$LIVE_DEST" -maxdepth 1 -type f | wc -l | tr -d ' ') files)"
