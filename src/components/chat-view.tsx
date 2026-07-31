@@ -2501,6 +2501,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           if (json.ok && json.state) {
             modelStateRef.current = json.state;
             setModelState(json.state);
+            await refreshModelState();
           }
           else await refreshModelState();
         } catch {
@@ -4962,7 +4963,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!text.trim() && !prevAttachments?.length) return undefined;
     // null parentId (root user turn) must be forwarded as null, not undefined,
     // so the regenerated answer becomes a root sibling rather than appending.
-    return () => void sendRaw(text, prevAttachments ?? [], [], { parentTurnId: parentId ?? null });
+    const retryModel = turn.responseMetadata?.retryModel;
+    return () => void sendRaw(
+      text,
+      prevAttachments ?? [],
+      [],
+      {
+        parentTurnId: parentId ?? null,
+        ...(retryModel ? { modelOverride: retryModel } : {}),
+      },
+      {
+        thinkingEffort,
+        responseSpeed,
+        modelControls: prevUser.modelControls ?? {},
+        permissionMode,
+        runtimeHost,
+      },
+    );
   }
 
   // Branch navigator: switch to a sibling turn and make its deepest descendant

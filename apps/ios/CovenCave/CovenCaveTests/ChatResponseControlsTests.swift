@@ -103,7 +103,11 @@ final class ChatResponseControlsTests: XCTestCase {
               "reasoningEffort": "medium",
               "responseSpeed": "careful",
               "modelControls": {"reasoning":"medium"},
-              "modelOverride": "anthropic/claude-opus-4-6"
+              "modelOverride": "anthropic/claude-opus-4-6",
+              "responseMetadata": {
+                "retryModel": "anthropic/claude-sonnet-4-6",
+                "appliedControls": {"reasoning":"medium"}
+              }
             }
             """.data(using: .utf8)
         )
@@ -114,8 +118,25 @@ final class ChatResponseControlsTests: XCTestCase {
         XCTAssertEqual(restored.reasoningEffort, .medium)
         XCTAssertEqual(restored.responseSpeed, .careful)
         XCTAssertEqual(restored.modelControls, ["reasoning": "medium"])
-        XCTAssertEqual(restored.modelOverride, "anthropic/claude-opus-4-6")
-        XCTAssertEqual(restored.retryModel(for: "nyx"), "anthropic/claude-opus-4-6")
+        XCTAssertEqual(restored.appliedControls, ["reasoning": "medium"])
+        XCTAssertEqual(restored.modelOverride, "anthropic/claude-sonnet-4-6")
+        XCTAssertEqual(restored.retryModel(for: "nyx"), "anthropic/claude-sonnet-4-6")
+    }
+
+    func testHistoryRestorationBindsAssistantRetryModelToPrecedingUserTurn() throws {
+        let data = try XCTUnwrap(
+            """
+            [
+              {"id":"user-1","role":"user","text":"Review the branch","modelControls":{"reasoning":"high"}},
+              {"id":"assistant-1","role":"assistant","text":"Done","responseMetadata":{"retryModel":"openai/gpt-5.6-sol","appliedControls":{"reasoning":"high"}}}
+            ]
+            """.data(using: .utf8)
+        )
+        let turns = try JSONDecoder().decode([ChatTurn].self, from: data)
+        let messages = DisplayMessage.restoredTranscript(from: turns, familiarId: "nyx")
+
+        XCTAssertEqual(messages[0].retryModel(for: "nyx"), "openai/gpt-5.6-sol")
+        XCTAssertEqual(messages[1].appliedControls, ["reasoning": "high"])
     }
 
     func testDuplicatingTurnPreservesRetryControls() {

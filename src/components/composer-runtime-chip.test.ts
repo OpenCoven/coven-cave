@@ -117,6 +117,11 @@ assert.match(
   "clearing a model synchronously stages the runtime default before its PATCH",
 );
 assert.match(
+  selectModelBlock,
+  /if \(json\.ok && json\.state\) \{[\s\S]*?setModelState\(json\.state\);[\s\S]*?await refreshModelState\(\);/,
+  "a successful model selection refreshes capability controls from the authoritative state response",
+);
+assert.match(
   chatView,
   /const modelOverrideForRequest =[\s\S]{0,300}?modelStateRef\.current\?\.source === "session"/,
   "send snapshots the synchronously staged model state rather than the prior render",

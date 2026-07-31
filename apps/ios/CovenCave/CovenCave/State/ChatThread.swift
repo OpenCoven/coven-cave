@@ -70,14 +70,28 @@ extension DisplayMessage {
             reasoningEffort: turn.reasoningEffort,
             responseSpeed: turn.responseSpeed,
             modelControls: turn.modelControls,
-            appliedControls: nil,
-            modelOverride: turn.modelOverride,
-            modelOverridesByFamiliar: turn.modelOverride.flatMap { model in
+            appliedControls: turn.responseMetadata?.appliedControls,
+            modelOverride: turn.responseMetadata?.retryModel ?? turn.modelOverride,
+            modelOverridesByFamiliar: (turn.responseMetadata?.retryModel ?? turn.modelOverride).flatMap { model in
                 familiarId.map { [$0: model] }
             },
             activity: role == .assistant
                 ? ActivityFold.steps(fromTools: turn.tools) : nil
         )
+    }
+
+    /// Restore the persisted transcript and attach an assistant's authoritative
+    /// retry model to the preceding user request, which owns retry inputs.
+    static func restoredTranscript(from turns: [ChatTurn], familiarId: String?) -> [DisplayMessage] {
+        var messages = turns.map { restored(from: $0, familiarId: familiarId) }
+        for index in turns.indices where turns[index].role == "assistant" {
+            guard let retryModel = turns[index].responseMetadata?.retryModel,
+                  let familiarId,
+                  let userIndex = messages[..<index].lastIndex(where: { $0.role == .user })
+            else { continue }
+            messages[userIndex].recordRetryModel(retryModel, for: familiarId)
+        }
+        return messages
     }
 
     /// Copy transcript content under a fresh message id while retaining the
@@ -392,9 +406,7 @@ final class ChatThread: Identifiable, Hashable {
               let familiarId = familiarIds.first,
               let sessionId = sessionIds[familiarId] else { return }
         guard let convo = try await client.conversation(sessionId: sessionId) else { return }
-        messages = convo.turns.map { turn in
-            DisplayMessage.restored(from: turn, familiarId: familiarId)
-        }
+        messages = DisplayMessage.restoredTranscript(from: convo.turns, familiarId: familiarId)
         updatedAt = Date()
     }
 
@@ -752,13 +764,14 @@ final class ChatThread: Identifiable, Hashable {
         guard !reply.text.isEmpty, reply.text.hasPrefix(streamed) else { return false }
         if let userMessageId {
             mutate(userMessageId) {
-                $0.recordRetryModel(convo.turns[lastUser].modelOverride, for: familiarId)
+                $0.recordRetryModel(reply.responseMetadata?.retryModel ?? convo.turns[lastUser].modelOverride, for: familiarId)
             }
         }
         mutate(messageId) {
             $0.text = reply.text
             $0.isError = reply.isError ?? false
             $0.streaming = false
+            $0.appliedControls = reply.responseMetadata?.appliedControls
             if let settled = ActivityFold.settle($0.activitySteps,
                                                  success: !(reply.isError ?? false)) {
                 $0.activity = settled

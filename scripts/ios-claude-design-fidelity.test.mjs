@@ -105,8 +105,8 @@ assert.match(
 );
 assert.match(
   appModel,
-  /private func loadHistory[\s\S]{0,500}DisplayMessage\.restored\(from: turn, familiarId: assignee\)/,
-  "initial server-history hydration restores retry controls",
+  /private func loadHistory[\s\S]{0,500}DisplayMessage\.restoredTranscript\(from: convo\.turns, familiarId: assignee\)/,
+  "initial server-history hydration restores retry controls from the complete transcript",
 );
 assert.doesNotMatch(
   home,
@@ -273,8 +273,8 @@ assert.match(
 );
 assert.match(
   thread,
-  /DisplayMessage\.restored\(from: turn, familiarId: familiarId\)/,
-  "server reload restores the controls that retry reads",
+  /DisplayMessage\.restoredTranscript\(from: convo\.turns, familiarId: familiarId\)/,
+  "server reload restores applied controls and the retry model from the complete transcript",
 );
 assert.match(
   appModel,

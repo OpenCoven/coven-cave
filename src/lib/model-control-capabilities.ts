@@ -1,3 +1,5 @@
+import { isModelInCatalog } from "./runtime-models";
+
 /**
  * A runtime-neutral description of controls that may be offered for one
  * selected model.  This is deliberately separate from model inventory: an
@@ -83,7 +85,7 @@ export function modelControlCapabilities(
   // Hermes's Responses API transport is OpenAI-compatible only for explicit
   // OpenAI GPT-5 selections. The send route additionally requires that API
   // transport before it emits either parameter.
-  if (canonicalRuntime === "hermes" && /^openai\/gpt-5(?:[.-]|$)/.test(canonicalModel)) {
+  if (canonicalRuntime === "hermes" && isModelInCatalog("hermes", canonicalModel)) {
     return [
       reasoning("native-provider", "reasoning.effort"),
       verbosity("native-provider", "text.verbosity"),

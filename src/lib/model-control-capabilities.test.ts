@@ -16,6 +16,11 @@ test("OpenAI GPT-5 through Hermes declares only its documented native controls",
 
 test("unknown models expose no invented global thinking or speed selector", () => {
   assert.deepEqual(modelControlCapabilities("grok", "grok-4.5"), []);
+  assert.deepEqual(
+    modelControlCapabilities("hermes", "openai/gpt-5-unverified"),
+    [],
+    "provider-looking custom Hermes ids must not manufacture native capabilities",
+  );
 });
 
 test("controls are accepted only for the selected capability values", () => {

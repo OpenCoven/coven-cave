@@ -1585,9 +1585,7 @@ final class AppModel {
         guard let client, thread.messages.isEmpty,
               let convo = try? await client.conversation(sessionId: sessionId) else { return }
         let assignee = thread.familiarIds.first ?? convo.familiarId
-        thread.messages = convo.turns.map { turn in
-            DisplayMessage.restored(from: turn, familiarId: assignee)
-        }
+        thread.messages = DisplayMessage.restoredTranscript(from: convo.turns, familiarId: assignee)
         persistThreads()
     }
 
