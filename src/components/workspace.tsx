@@ -632,7 +632,6 @@ export function Workspace() {
   const manualOnboardingOpenedRef = useRef(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
-  const [githubAssignedCount, setGithubAssignedCount] = useState(0);
   // Open (not-done) board cards, kept with their familiar so the Tasks badge can
   // show a per-familiar count when a familiar is scoped, and the grand total
   // only when "All familiars" is selected.
@@ -1162,7 +1161,6 @@ export function Workspace() {
 
       const tasks = normalizeGitHubTasks(json);
       githubTasksRef.current = tasks;
-      setGithubAssignedCount(Array.isArray(json.tasks) ? json.tasks.length : 0);
       setSessions((currentSessions) => {
         const baseSessions = baseSessionsRef.current.length > 0
           ? baseSessionsRef.current
@@ -1172,8 +1170,8 @@ export function Workspace() {
         return sameSessionList(currentSessions, enriched) ? currentSessions : enriched;
       });
     } catch {
-      // Keep the last-known-good count and session context. The next scheduled
-      // or explicit refresh will retry without blanking GitHub metadata.
+      // Keep the last-known-good session context. The next scheduled or
+      // explicit refresh will retry without blanking GitHub metadata.
     } finally {
       if (force) loadGitHubTasksForceInFlightRef.current -= 1;
     }
@@ -2930,10 +2928,6 @@ export function Workspace() {
       onNotificationPrefsChanged={refreshPrefs}
       boardOpenCount={boardTaskCount}
       scheduleNeedsCount={scheduleNeedsCount}
-      githubAssignedCount={githubAssignedCount}
-      // The Code room carries its own GitHub tab — hide the standalone row
-      // while the room is visible for the active familiar (cave-cc5r).
-      hideGithubRow={roleSurfaceSession.visibleSurfaces.some((s) => s.id === CODE_SURFACE_ID)}
     />
   );
 

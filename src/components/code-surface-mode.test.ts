@@ -92,10 +92,10 @@ assert.doesNotMatch(
   /mode === "github" \?[\s\S]{0,400}?<GitHubView/,
   "Workspace no longer renders a standalone GitHub surface; legacy github requests funnel into the room",
 );
-assert.match(
+assert.doesNotMatch(
   lazySurfaces,
-  /export const GitHubView = dynamic\(\s*timed\("github", loadGitHubView\)/,
-  "GitHubView stays code-split behind lazy-surfaces — its chunk must not join the boot bundle",
+  /loadGitHubView|export const GitHubView|case "github"/,
+  "the standalone GitHub chunk and sidebar preload path are removed",
 );
 assert.doesNotMatch(
   lazySurfaces,
@@ -142,29 +142,23 @@ assert.match(
 
 // ── Sidebar row ──────────────────────────────────────────────────────────────
 
-// One quiet slot, one vocabulary (cave-cc5r): the standalone GitHub row is
-// back for every familiar and keeps the assigned-work badge; the Code room's
-// row arrives via the registry-driven roleSurfaces cluster, and the GitHub
-// row hides while the room is visible (the room carries its own GitHub tab).
-assert.match(
+// One room-driven vocabulary (cave-cc5r): GitHub no longer owns a peer
+// workspace row. The Code room arrives via the registry-driven roleSurfaces
+// cluster and hosts GitHub's demand-loaded tabs itself.
+assert.doesNotMatch(
   navigation,
-  /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"[^}]*quiet: true \}/,
-  "the GitHub quiet row owns the canonical navigation slot",
+  /\{ id: "github", label: "GitHub"/,
+  "GitHub has no peer workspace row",
 );
-assert.match(
-  sidebar,
-  /github: \(props\) => badgeText\(props\.githubAssignedCount\)/,
-  "the sidebar adds the assigned-work badge to the canonical GitHub row",
+assert.doesNotMatch(
+  workspace,
+  /hideGithubRow=|githubAssignedCount=/,
+  "Workspace no longer carries standalone row props",
 );
 assert.doesNotMatch(
   navigation,
   /\{ id: "code", label: "Code"/,
   "no static Code row survives in workspace navigation — the room row is registry-driven",
-);
-assert.match(
-  workspace,
-  /hideGithubRow=\{roleSurfaceSession\.visibleSurfaces\.some\(\(s\) => s\.id === CODE_SURFACE_ID\)\}/,
-  "the GitHub row hides while the Code room is visible for the active familiar",
 );
 assert.doesNotMatch(
   workspace,
