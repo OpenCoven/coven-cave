@@ -38,6 +38,22 @@ assert.match(inspector, /strandsState\.message/, "blocked strand read shows why"
 assert.match(inspector, /auditState\.message/, "blocked audit read shows why");
 assert.match(inspector, /cache: "no-store"/, "reads are never cached");
 
+// The weave reads ward.audit ONCE per weave and passes each thread its own
+// slice; the inspector must not re-fetch what the parent already has (cave-3lklx).
+assert.doesNotMatch(
+  inspector,
+  /\/audit`/,
+  "the inspector takes audit as a prop — re-fetching duplicated one request per opened thread",
+);
+assert.match(inspector, /auditState: SurfaceState<AuditEntryView\[\]>/, "audit arrives as a SurfaceState prop");
+assert.match(
+  view,
+  /useState<Map<string, SurfaceState<AuditEntryView\[\]>>>/,
+  "the view keeps audit per thread, so a blocked read cannot borrow a neighbour's verified-empty",
+);
+assert.match(view, /auditByThread=\{weaveAudit\}/, "the per-thread audit map reaches the pane");
+assert.match(pane, /auditByThread\.get\(thread\.id\)/, "each thread gets its own audit slice");
+
 // the evidence lives inside the thread it explains, not a scroll away
 assert.match(pane, /<StrandInspector/, "the opened thread carries its own strand evidence");
 assert.match(pane, /knownProposalIds=\{knownProposalIds\}/, "the pane supplies known proposal ids for R7 annotation");

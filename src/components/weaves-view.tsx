@@ -133,20 +133,19 @@ export function WeavesView() {
     );
   }, [proposalsState]);
 
-  // Threads with a staged write, and the proposal each one is waiting on. A
-  // blocked read contributes nothing: no thread claims a decision is pending
-  // unless the queue said so.
-  const stagedByThread = useMemo(() => {
+  // Threads with a staged write, the proposal each one is waiting on, and the
+  // count for the header badge — all one pass over the queue. A blocked read
+  // contributes nothing: no thread claims a decision is pending unless the
+  // queue said so, and the badge is omitted rather than shown as zero.
+  const { stagedByThread, pendingCount } = useMemo(() => {
     const map = new Map<string, string>();
-    if (proposalsState.kind !== "ready") return map;
-    for (const proposal of proposalListModel(proposalsState.data).ok) {
+    if (proposalsState.kind !== "ready") return { stagedByThread: map, pendingCount: null };
+    const ok = proposalListModel(proposalsState.data).ok;
+    for (const proposal of ok) {
       if (proposal.payload) map.set(proposal.payload.threadId, proposal.payload.id);
     }
-    return map;
+    return { stagedByThread: map, pendingCount: ok.length };
   }, [proposalsState]);
-
-  const pendingCount =
-    proposalsState.kind === "ready" ? proposalListModel(proposalsState.data).ok.length : null;
 
   useEffect(() => {
     if (!selectedWeaveId) {
@@ -165,29 +164,48 @@ export function WeavesView() {
     };
   }, [selectedWeaveId, paneAttempt]);
 
-  // Audit rows for the weave map's List view — one lazy fetch per thread of the
-  // open weave. A blocked read contributes nothing (a row simply claims less
-  // evidence), never an invented edge.
-  const [weaveAudit, setWeaveAudit] = useState<AuditEntryView[]>([]);
+  // ward.audit rows for the open weave, read once per weave and keyed by thread.
+  // Both consumers share this: the map's List view (which threads carry audited
+  // touches) and the opened thread's lineage. Fetching per thread in each place
+  // meant opening a six-thread weave cost six requests and then a seventh
+  // duplicate the moment you expanded a row.
+  //
+  // Per-thread SurfaceState, not flattened rows: a thread whose audit read is
+  // blocked has to say so in its own lineage rather than borrow a neighbour's
+  // verified-empty. A blocked read still contributes no map edge — it claims
+  // less evidence, never invents any.
+  const [weaveAudit, setWeaveAudit] = useState<Map<string, SurfaceState<AuditEntryView[]>>>(
+    new Map(),
+  );
   useEffect(() => {
     if (paneState?.kind !== "ready") {
-      setWeaveAudit([]);
+      setWeaveAudit(new Map());
       return;
     }
     let cancelled = false;
+    const threads = paneState.data.threads;
     void Promise.all(
-      paneState.data.threads.map((thread) =>
-        fetchSurface<AuditEntryView[]>(`/api/threads/${encodeURIComponent(thread.id)}/audit`).then(
-          (state) => (state.kind === "ready" ? state.data : []),
-        ),
+      threads.map((thread) =>
+        fetchSurface<AuditEntryView[]>(`/api/threads/${encodeURIComponent(thread.id)}/audit`),
       ),
-    ).then((batches) => {
-      if (!cancelled) setWeaveAudit(batches.flat());
+    ).then((states) => {
+      if (cancelled) return;
+      setWeaveAudit(new Map(threads.map((thread, i) => [thread.id, states[i]])));
     });
     return () => {
       cancelled = true;
     };
   }, [paneState]);
+
+  // The map only asks "which threads have audited touches"; flatten for it.
+  const auditRows = useMemo(
+    () => [...weaveAudit.values()].flatMap((state) => (state.kind === "ready" ? state.data : [])),
+    [weaveAudit],
+  );
+
+  // Rebuilt only when the queue changes — a fresh Set every render would give
+  // ThreadPane a new prop identity on each parent render.
+  const stagedThreadIds = useMemo(() => new Set(stagedByThread.keys()), [stagedByThread]);
 
   const rail = railState.kind === "ready" ? railModel(railState.data) : null;
 
@@ -394,7 +412,7 @@ export function WeavesView() {
 
                 <WeaveMapCanvas
                   threads={paneState.data.threads}
-                  audit={weaveAudit}
+                  audit={auditRows}
                   proposals={proposalsState.kind === "ready" ? proposalsState.data : []}
                   asList={mapAsList}
                   onPresentation={setMapAsList}
@@ -432,8 +450,9 @@ export function WeavesView() {
                   <ThreadPane
                     weave={paneState.data}
                     openThreadId={openThreadId}
-                    stagedThreadIds={new Set(stagedByThread.keys())}
+                    stagedThreadIds={stagedThreadIds}
                     knownProposalIds={knownProposalIds}
+                    auditByThread={weaveAudit}
                     onToggleThread={(id) => setOpenThreadId(id === openThreadId ? null : id)}
                     onTraceThread={onTraceThread}
                     onOpenProposal={openProposal}

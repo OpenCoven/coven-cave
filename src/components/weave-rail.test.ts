@@ -66,8 +66,14 @@ assert.match(view, /traceForWeave|traceForTension|traceForDegradedFamiliar/, "tr
 assert.match(view, /weaveSummaryLine\(paneState\.data\)/, "the detail verdict comes from the view-model");
 assert.match(view, /weaveTallies\(entries, pendingCount \?\? 0\)/, "the overview counts come from the view-model");
 // a blocked proposals read must not make a thread claim a decision is pending
-assert.match(view, /if \(proposalsState\.kind !== "ready"\) return map/, "staged threads need a verified queue");
-assert.match(view, /pendingCount =\s*\n?\s*proposalsState\.kind === "ready"/, "the pending badge needs a verified queue");
+assert.match(
+  view,
+  /if \(proposalsState\.kind !== "ready"\)\s*\n?\s*return \{ stagedByThread: map, pendingCount: null \}/,
+  "an unverifiable queue yields neither a staged-thread claim nor a badge count",
+);
+// One pass over the queue feeds both consumers — they cannot disagree about
+// what is pending.
+assert.match(view, /const \{ stagedByThread, pendingCount \} = useMemo/, "queue derivation is memoised once");
 // empty selection guidance keeps the referent binding
 assert.match(view, /binds one protected surface to one\s+writer/, "thread referent stated in empty state");
 

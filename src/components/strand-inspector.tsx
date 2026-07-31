@@ -60,27 +60,29 @@ function DiffBlock({ strand }: { strand: StrandView }) {
 export function StrandInspector({
   thread,
   knownProposalIds,
+  auditState,
   onTraceThread,
 }: {
   thread: ThreadView;
   knownProposalIds: ReadonlySet<string>;
+  /**
+   * ward.audit for THIS thread, read once per weave by the view and passed
+   * down. Re-reading it here duplicated a request the parent had already made
+   * for every thread in the weave. It stays a SurfaceState so a thread whose
+   * audit read was blocked still says so in its own lineage rather than
+   * borrowing a neighbour's verified-empty.
+   */
+  auditState: SurfaceState<AuditEntryView[]>;
   onTraceThread: () => void;
 }) {
   const [strandsState, setStrandsState] = useState<SurfaceState<StrandView[]>>({ kind: "loading" });
-  const [auditState, setAuditState] = useState<SurfaceState<AuditEntryView[]>>({ kind: "loading" });
 
   useEffect(() => {
     let cancelled = false;
     setStrandsState({ kind: "loading" });
-    setAuditState({ kind: "loading" });
     void fetchSurface<StrandView[]>(`/api/threads/${encodeURIComponent(thread.id)}/strands`).then(
       (state) => {
         if (!cancelled) setStrandsState(state);
-      },
-    );
-    void fetchSurface<AuditEntryView[]>(`/api/threads/${encodeURIComponent(thread.id)}/audit`).then(
-      (state) => {
-        if (!cancelled) setAuditState(state);
       },
     );
     return () => {
