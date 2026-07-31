@@ -26,6 +26,8 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// Capability-aware values requested for this selected model. Legacy
     /// fields above stay readable for old snapshots only.
     var modelControls: [String: String]?
+    /// Runtime-confirmed controls reported on the completed assistant turn.
+    var appliedControls: [String: String]?
     /// Explicit model selected for this turn. Persisted so offline replay and
     /// retry preserve the user's choice.
     var modelOverride: String?
@@ -68,6 +70,7 @@ extension DisplayMessage {
             reasoningEffort: turn.reasoningEffort,
             responseSpeed: turn.responseSpeed,
             modelControls: turn.modelControls,
+            appliedControls: nil,
             modelOverride: turn.modelOverride,
             modelOverridesByFamiliar: turn.modelOverride.flatMap { model in
                 familiarId.map { [$0: model] }
@@ -89,6 +92,7 @@ extension DisplayMessage {
             reasoningEffort: message.reasoningEffort,
             responseSpeed: message.responseSpeed,
             modelControls: message.modelControls,
+            appliedControls: message.appliedControls,
             modelOverride: message.modelOverride,
             modelOverridesByFamiliar: message.modelOverridesByFamiliar,
             activity: message.activity
@@ -206,6 +210,7 @@ final class ChatThread: Identifiable, Hashable {
               attachments: [CaveClient.ChatAttachment] = [],
               reasoningEffort: ChatThinkingEffort = .high,
               responseSpeed: ChatResponseSpeed = .fast,
+              modelControls: [String: String] = [:],
               modelOverride: String? = nil,
               modelOverrideScope: ChatModelOverrideScope? = nil,
               client: CaveClient, onChange: @escaping () -> Void) {
@@ -221,6 +226,7 @@ final class ChatThread: Identifiable, Hashable {
             role: .user, familiarId: nil, text: shown,
             attachmentDataUrls: attachments.map(\.dataUrl),
             reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
+            modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope)
         messages.append(userMessage)
@@ -237,6 +243,7 @@ final class ChatThread: Identifiable, Hashable {
                                      userMessageId: userMessage.id,
                                      reasoningEffort: reasoningEffort,
                                      responseSpeed: responseSpeed,
+                                     modelControls: modelControls,
                                      modelOverride: modelOverride,
                                      modelOverrideScope: modelOverride.flatMap {
                                          _ in modelOverrideScope ?? .session
@@ -252,6 +259,7 @@ final class ChatThread: Identifiable, Hashable {
     func enqueue(_ text: String, attachments: [CaveClient.ChatAttachment] = [],
                  reasoningEffort: ChatThinkingEffort = .high,
                  responseSpeed: ChatResponseSpeed = .fast,
+                 modelControls: [String: String] = [:],
                  modelOverride: String? = nil,
                  modelOverrideScope: ChatModelOverrideScope? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -261,6 +269,7 @@ final class ChatThread: Identifiable, Hashable {
             role: .user, familiarId: nil, text: trimmed,
             attachmentDataUrls: attachments.map(\.dataUrl),
             reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
+            modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope)
         message.queued = true
@@ -286,6 +295,7 @@ final class ChatThread: Identifiable, Hashable {
             let attachments = Self.attachments(fromDataUrls: queuedMessage.attachmentDataUrls)
             let reasoningEffort = queuedMessage.reasoningEffort ?? .high
             let responseSpeed = queuedMessage.responseSpeed ?? .fast
+            let modelControls = queuedMessage.modelControls ?? [:]
             mutate(queuedId) { $0.queued = false }
             updatedAt = Date()
             onChange()
@@ -306,6 +316,7 @@ final class ChatThread: Identifiable, Hashable {
                              userMessageId: queuedId,
                              reasoningEffort: reasoningEffort,
                              responseSpeed: responseSpeed,
+                             modelControls: modelControls,
                              modelOverride: queuedMessage.modelOverride,
                              modelOverrideScope: queuedMessage.modelOverride.flatMap {
                                  _ in queuedMessage.modelOverrideScope ?? .session
@@ -344,6 +355,7 @@ final class ChatThread: Identifiable, Hashable {
                                  into: messageId,
                                  reasoningEffort: source?.reasoningEffort ?? .high,
                                  responseSpeed: source?.responseSpeed ?? .fast,
+                                 modelControls: source?.modelControls ?? [:],
                                  modelOverride: retryModel,
                                  modelOverrideScope: retryModel == nil ? nil : .nextMessage,
                                  client: client, onChange: onChange) }
@@ -445,6 +457,7 @@ final class ChatThread: Identifiable, Hashable {
         runId: String,
         reasoningEffort: ChatThinkingEffort = .high,
         responseSpeed: ChatResponseSpeed = .fast,
+        modelControls: [String: String] = [:],
         modelOverride: String? = nil,
         modelOverrideScope: ChatModelOverrideScope? = nil
     ) -> CaveClient.SendBody? {
@@ -463,6 +476,7 @@ final class ChatThread: Identifiable, Hashable {
             runId: runId,
             reasoningEffort: reasoningEffort,
             responseSpeed: responseSpeed,
+            modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope
         )
@@ -494,6 +508,7 @@ final class ChatThread: Identifiable, Hashable {
                         userMessageId: String? = nil,
                         reasoningEffort: ChatThinkingEffort = .high,
                         responseSpeed: ChatResponseSpeed = .fast,
+                        modelControls: [String: String] = [:],
                         modelOverride: String? = nil,
                         modelOverrideScope: ChatModelOverrideScope? = nil,
                         client: CaveClient, onChange: @escaping () -> Void) async {
@@ -508,6 +523,7 @@ final class ChatThread: Identifiable, Hashable {
             runId: runId,
             reasoningEffort: reasoningEffort,
             responseSpeed: responseSpeed,
+            modelControls: modelControls,
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope
         ) else { return }
@@ -616,7 +632,7 @@ final class ChatThread: Identifiable, Hashable {
             flush(coalescer, into: messageId, onChange: onChange)
             mutate(messageId) { $0.text = text; $0.streaming = true }
             onChange()
-        case .done(let isError, let sid, let retryModel):
+        case .done(let isError, let sid, let retryModel, let appliedControls):
             if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
             flush(coalescer, into: messageId, onChange: onChange)
             if let userMessageId {
@@ -624,6 +640,7 @@ final class ChatThread: Identifiable, Hashable {
             }
             mutate(messageId) {
                 $0.streaming = false
+                $0.appliedControls = appliedControls
                 if isError { $0.isError = true }
                 // A persisted "running" step would spin forever after reload —
                 // the turn is over, so settle the trail with its outcome.

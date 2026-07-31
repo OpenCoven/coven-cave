@@ -44,6 +44,8 @@ struct ChatView: View {
     @State private var modelPickerCurrent = ""
     @State private var modelPickerAllowsRuntimeDefault = false
     @State private var sessionModelState: ChatModelState?
+    @State private var modelControlCapabilities: [ChatModelControlCapability] = []
+    @State private var modelControlValues: [String: String] = [:]
     @State private var modelRequests = ChatModelRequestCoordinator()
     @State private var modelMutationQueue = ChatModelMutationQueue()
     @State private var showTasks = false
@@ -345,18 +347,17 @@ struct ChatView: View {
             .padding(.horizontal, 14)
             .frame(minHeight: 44)
             Divider()
-            sessionControlRow(systemImage: "brain") {
-                Picker("Thinking", selection: $thinkingRaw) {
-                    ForEach(ChatThinkingEffort.allCases) { effort in
-                        Text(effort.label).tag(effort.rawValue)
-                    }
-                }
-            }
-            Divider()
-            sessionControlRow(systemImage: "gauge.with.dots.needle.50percent") {
-                Picker("Speed", selection: $responseSpeedRaw) {
-                    ForEach(ChatResponseSpeed.allCases) { speed in
-                        Text(speed.label).tag(speed.rawValue)
+            ForEach(modelControlCapabilities) { capability in
+                Divider()
+                sessionControlRow(systemImage: capability.family == "reasoning" ? "brain" : "slider.horizontal.3") {
+                    Picker(capability.delivery == "prompt-only" ? "\(capability.label) (Prompt guidance)" : capability.label,
+                           selection: Binding(
+                            get: { modelControlValues[capability.family] ?? "" },
+                            set: { modelControlValues[capability.family] = $0 }
+                           )) {
+                        ForEach(capability.values) { option in
+                            Text(option.label).tag(option.value)
+                        }
                     }
                 }
             }
@@ -1183,6 +1184,7 @@ struct ChatView: View {
                 thread.enqueue(outgoing, attachments: attachments,
                                reasoningEffort: thinkingEffort,
                                responseSpeed: responseSpeed,
+                               modelControls: modelControlValues,
                                modelOverride: modelBinding.modelOverride,
                                modelOverrideScope: modelBinding.scope)
                 app.touch(thread)
@@ -1192,6 +1194,7 @@ struct ChatView: View {
             thread.send(outgoing, attachments: attachments,
                         reasoningEffort: thinkingEffort,
                         responseSpeed: responseSpeed,
+                        modelControls: modelControlValues,
                         modelOverride: modelBinding.modelOverride,
                         modelOverrideScope: modelBinding.scope,
                         client: client) { app.touch(thread) }
@@ -1209,6 +1212,7 @@ struct ChatView: View {
         if app.connectionState != .connected {
             thread.enqueue(text, reasoningEffort: thinkingEffort,
                            responseSpeed: responseSpeed,
+                           modelControls: modelControlValues,
                            modelOverride: modelBinding.modelOverride,
                            modelOverrideScope: modelBinding.scope)
             app.touch(thread)
@@ -1217,6 +1221,7 @@ struct ChatView: View {
         }
         thread.send(text, reasoningEffort: thinkingEffort,
                     responseSpeed: responseSpeed,
+                    modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
                     client: client) { app.touch(thread) }
@@ -1524,6 +1529,11 @@ struct ChatView: View {
                 for: request, currentTarget: currentModelRequestTarget, failed: false)
             guard outcome == .applied else { return (outcome, nil) }
             sessionModelState = response.state
+            modelControlCapabilities = response.controls ?? []
+            let allowed = Dictionary(uniqueKeysWithValues: modelControlCapabilities.map {
+                ($0.family, Set($0.values.map(\.value)))
+            })
+            modelControlValues = modelControlValues.filter { allowed[$0.key]?.contains($0.value) == true }
             modelPickerOptions = response.options ?? []
             modelPickerAllowsRuntimeDefault =
                 response.inventory?.allowsRuntimeDefault ?? false
@@ -1566,6 +1576,7 @@ struct ChatView: View {
         let modelBinding = turnModelBinding
         thread.send(trimmed, reasoningEffort: thinkingEffort,
                     responseSpeed: responseSpeed,
+                    modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
                     client: client) { app.touch(thread) }
@@ -1720,6 +1731,7 @@ struct ChatView: View {
                 displayText: displayText,
                 reasoningEffort: thinkingEffort,
                 responseSpeed: responseSpeed,
+                modelControls: modelControlValues,
                 modelOverride: destinationModel,
                 modelOverrideScope: destinationScope,
                 client: client

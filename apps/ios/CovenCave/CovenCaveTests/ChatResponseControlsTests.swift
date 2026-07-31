@@ -46,6 +46,7 @@ final class ChatResponseControlsTests: XCTestCase {
             runId: "run-1",
             reasoningEffort: .medium,
             responseSpeed: .careful,
+            modelControls: ["reasoning": "medium"],
             modelOverride: "anthropic/claude-opus-4-6",
             modelOverrideScope: .session
         )
@@ -55,6 +56,7 @@ final class ChatResponseControlsTests: XCTestCase {
 
         XCTAssertEqual(json["reasoningEffort"] as? String, "medium")
         XCTAssertEqual(json["responseSpeed"] as? String, "careful")
+        XCTAssertEqual(json["modelControls"] as? [String: String], ["reasoning": "medium"])
         XCTAssertEqual(json["projectRoot"] as? String, "/repos/cave")
         XCTAssertNil(json["sessionId"])
         XCTAssertEqual(json["modelOverride"] as? String, "anthropic/claude-opus-4-6")
@@ -100,6 +102,7 @@ final class ChatResponseControlsTests: XCTestCase {
               "text": "Review the branch",
               "reasoningEffort": "medium",
               "responseSpeed": "careful",
+              "modelControls": {"reasoning":"medium"},
               "modelOverride": "anthropic/claude-opus-4-6"
             }
             """.data(using: .utf8)
@@ -110,6 +113,7 @@ final class ChatResponseControlsTests: XCTestCase {
 
         XCTAssertEqual(restored.reasoningEffort, .medium)
         XCTAssertEqual(restored.responseSpeed, .careful)
+        XCTAssertEqual(restored.modelControls, ["reasoning": "medium"])
         XCTAssertEqual(restored.modelOverride, "anthropic/claude-opus-4-6")
         XCTAssertEqual(restored.retryModel(for: "nyx"), "anthropic/claude-opus-4-6")
     }
@@ -142,16 +146,17 @@ final class ChatResponseControlsTests: XCTestCase {
         let event = try XCTUnwrap(StreamEvent.decode(
             """
             {"kind":"done","isError":false,"sessionId":"session-1",
-             "responseMetadata":{"retryModel":"openai/gpt-5.6-sol"}}
+             "responseMetadata":{"retryModel":"openai/gpt-5.6-sol","appliedControls":{"reasoning":"medium"}}}
             """
         ))
 
-        guard case .done(let isError, let sessionId, let retryModel) = event else {
+        guard case .done(let isError, let sessionId, let retryModel, let appliedControls) = event else {
             return XCTFail("expected done event")
         }
         XCTAssertFalse(isError)
         XCTAssertEqual(sessionId, "session-1")
         XCTAssertEqual(retryModel, "openai/gpt-5.6-sol")
+        XCTAssertEqual(appliedControls, ["reasoning": "medium"])
     }
 
     func testGroupTurnRetainsOneRetryModelPerFamiliar() {
