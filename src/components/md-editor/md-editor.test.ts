@@ -33,6 +33,21 @@ assert.match(shell, /savedFlash \? \(\s*\n[\s\S]{0,220}?<span role="status"/, "t
 
 // Untouched docs must round-trip byte-identical: raw is canonical state.
 assert.match(shell, /const \[raw, setRaw\] = useState\(value\)/, "raw document string is the canonical state");
+assert.match(
+  shell,
+  /splitLeadingMdComments\(doc\.body\)/,
+  "Visual mode derives a metadata-free presentation body",
+);
+assert.match(
+  shell,
+  /defaultValue=\{presentation\.visibleBody\}/,
+  "Milkdown never receives the leading metadata comment",
+);
+assert.match(
+  shell,
+  /joinLeadingMdComments\(\s*currentPresentation\.hiddenPrefix,\s*visibleBody/,
+  "Visual edits reattach the exact hidden metadata prefix",
+);
 
 // ── Visual mode: Milkdown Crepe wiring ───────────────────────────────────────
 

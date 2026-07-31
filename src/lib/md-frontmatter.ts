@@ -22,7 +22,14 @@ export type MdDocument = {
   body: string;
 };
 
+export type MdLeadingComments = {
+  hiddenPrefix: string;
+  visibleBody: string;
+};
+
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+const COMPLETE_LEADING_COMMENTS_RE =
+  /^(?:(?:[ \t]*\r?\n)*[ \t]*<!--[\s\S]*?-->[ \t]*(?:\r?\n[ \t]*)*)+/;
 
 export function normalizeMdTags(value: unknown): string[] {
   let tags: string[] = [];
@@ -35,6 +42,22 @@ export function normalizeMdTags(value: unknown): string[] {
   }
   // Dedupe (first occurrence wins): duplicate tags break React keys downstream.
   return [...new Set(tags)];
+}
+
+export function splitLeadingMdComments(body: string): MdLeadingComments {
+  const match = COMPLETE_LEADING_COMMENTS_RE.exec(body);
+  if (!match) return { hiddenPrefix: "", visibleBody: body };
+  return {
+    hiddenPrefix: match[0],
+    visibleBody: body.slice(match[0].length),
+  };
+}
+
+export function joinLeadingMdComments(
+  hiddenPrefix: string,
+  visibleBody: string,
+): string {
+  return `${hiddenPrefix}${visibleBody}`;
 }
 
 /** Parse raw markdown (with optional YAML frontmatter) into an MdDocument.
