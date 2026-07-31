@@ -163,7 +163,8 @@ registry cannot add envelopes.
 
 The OpenClaw registry follows the established OpenCode and Grok model:
 
-- an embedded, signed genesis bundle remains available offline;
+- an embedded, source-trusted genesis payload remains available offline and is
+  byte-equivalent to the publisher's signed sequence-one payload;
 - production builds package a canonical HTTPS URL, public keyring, and
   sequence/payload-hash checkpoint;
 - bundles and cache wrappers have independent byte limits;
@@ -186,14 +187,18 @@ valid URL, keyring, and checkpoint without exposing private signing material.
 
 ## Event Validation and Projection
 
-The Gateway connection listens to `chat` and `session.tool`.
+The Gateway connection listens to `chat`, `agent`, and `session.tool`.
+OpenClaw sends direct-run tool activity to capability-registered recipients on
+`agent`; `session.tool` mirrors the same lifecycle for late session
+subscribers. Cave accepts either only when the selected profile names it and
+deduplicates identical lifecycle frames.
 
 Every tool frame must pass:
 
 1. exact event-name selection by the active profile;
 2. official `AgentEventSchema` validation;
 3. exact `sessionKey`, `agentId`, and accepted `runId` correlation;
-4. existing run sequence and transport-generation fences;
+4. existing chat-run sequence and transport-generation fences;
 5. profile validation of `stream`, lifecycle phase, stable tool-call ID, and
    allowed data fields.
 
@@ -210,8 +215,13 @@ Lifecycle projection:
 - **disconnect or sequence gap:** settle unfinished cards as error because
   Cave lacks a published history-reconciliation contract.
 
-Duplicate or replayed events cannot mutate terminal cards. A late result cannot
-replace cancelled state.
+Tool `AgentEvent.seq` values are monotonic but may be sparse because assistant,
+thinking, and lifecycle events share the upstream counter while Cave receives
+only tool frames from this event family. Cave rejects replay or regression but
+does not require adjacent tool sequence values. The Gateway client's transport
+gap callback remains the authoritative missing-frame signal. Duplicate or
+replayed events cannot mutate terminal cards. A late result cannot replace
+cancelled state.
 
 Unknown or malformed tool data quarantines the selected profile revision,
 stops further tool projection for the turn, emits a safe visible diagnostic,
