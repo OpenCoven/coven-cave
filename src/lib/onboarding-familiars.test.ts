@@ -124,7 +124,7 @@ assert.throws(
   /Choose a valid Hermes profile/,
 );
 assert.throws(
-  () => normalizeFamiliarDraft({ displayName: "Wrong runtime", description: "Binds a profile to another runtime.", harness: "codex", hermesProfile: { id: "research", homePath: "/tmp/research" } }),
+  () => normalizeFamiliarDraft({ displayName: "Wrong runtime", description: "Binds a profile to another runtime.", harness: "codex", hermesProfile: { id: "research", homePath: "/home/cave/.hermes/profiles/research" } }),
   /only be bound to the Hermes runtime/,
 );
 
