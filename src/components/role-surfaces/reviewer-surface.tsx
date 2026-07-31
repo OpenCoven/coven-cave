@@ -490,8 +490,8 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
       <div className="rd-summary-caption">
         <span>
           {deckBuckets.skipped > 0
-            ? `counts from live GitHub review state · ${deckBuckets.skipped} beyond the read cap uncounted`
-            : "counts from live GitHub review state · one bucket per item"}
+            ? `counts from PR state when available · ${deckBuckets.skipped} beyond the read cap uncounted`
+            : "counts from PR state when available · drafts & unread PRs excluded"}
         </span>
         <span className="rd-spacer" />
         <span>
