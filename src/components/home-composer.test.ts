@@ -119,8 +119,8 @@ assert.match(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: \{ thinkingEffort, responseSpeed, \.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\) \},[\s\S]*?\}\)/,
-  "HomeComposer should hand the selected project root, initial command controls, and any host pick to chat start",
+  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: runtimeHost \? \{ runtimeHost \} : undefined,[\s\S]*?\}\)/,
+  "HomeComposer should hand the selected project root and any host pick to chat start without inventing response controls",
 );
 
 assert.match(
@@ -209,8 +209,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: \{ thinkingEffort, responseSpeed, \.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\) \},[\s\S]*?\}\)/,
-  "HomeComposer should hand the selected agent chat prompt, command controls, and any host pick to the workspace, which opens a new chat that auto-sends it",
+  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: runtimeHost \? \{ runtimeHost \} : undefined,[\s\S]*?\}\)/,
+  "HomeComposer should hand the selected agent chat prompt, attachments, and any host pick to the workspace; selected-model controls resolve in Chat",
 );
 
 assert.match(
@@ -245,37 +245,13 @@ assert.doesNotMatch(
   "HomeComposer toolbar dropdowns should be custom popovers, not native selects",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /COMMAND_THINKING_OPTIONS/,
-  "HomeComposer should use shared thinking effort options",
+  /COMMAND_THINKING_OPTIONS|COMMAND_RESPONSE_SPEED_OPTIONS|label: "Speed"/,
+  "HomeComposer must not present retired global Thinking or Speed controls before a model capability is known",
 );
 
-assert.match(
-  source,
-  /const \[thinkingEffort, setThinkingEffort\] = useState<CommandThinkingEffort>\(\s*COMMAND_CONTROL_DEFAULTS\.thinkingEffort,\s*\)/,
-  "HomeComposer should initialise thinking effort from shared command control defaults",
-);
-
-assert.match(
-  source,
-  /const \[responseSpeed, setResponseSpeed\] = useState<CommandResponseSpeed>\(\s*COMMAND_CONTROL_DEFAULTS\.responseSpeed,\s*\)/,
-  "HomeComposer should initialise response speed from shared command control defaults",
-);
-
-assert.match(
-  source,
-  /id: "thinking",[\s\S]*?label: "Thinking",[\s\S]*?COMMAND_THINKING_OPTIONS/,
-  "the Options menu exposes the shared thinking-effort options",
-);
-
-assert.match(
-  source,
-  /id: "speed",[\s\S]*?label: "Speed",[\s\S]*?COMMAND_RESPONSE_SPEED_OPTIONS/,
-  "the Options menu exposes the shared response-speed options",
-);
-
-// Speed control removed from toolbar (response speed passed via initialControls default).
+// Selected-model response controls resolve in Chat after capability negotiation.
 
 assert.match(
   source,

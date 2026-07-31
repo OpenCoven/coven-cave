@@ -324,6 +324,8 @@ type FailedSend = {
   attachments: ChatAttachment[];
   mentionedFiles?: string[];
   promptOverride?: string;
+  /** Snapshot from the attempt, never the controls currently visible later. */
+  controls?: ChatSendControls;
 };
 type ChatSendOptions = {
   promptOverride?: string;
@@ -4191,6 +4193,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         attachments: outgoingAttachments,
         ...(outgoingMentions.length ? { mentionedFiles: outgoingMentions } : {}),
         ...(opts?.promptOverride ? { promptOverride: opts.promptOverride } : {}),
+        controls: {
+          thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
+          responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
+          modelControls: controlsOverride?.modelControls ?? modelControls,
+          permissionMode: controlsOverride?.permissionMode ?? permissionMode,
+          ...(controlsOverride?.runtimeHost ?? runtimeHost ? { runtimeHost: controlsOverride?.runtimeHost ?? runtimeHost } : {}),
+        },
       });
       announce(projectLaunchMessage, "assertive");
       return;
@@ -4285,6 +4294,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       attachments: outgoingAttachments,
       ...(outgoingMentions.length ? { mentionedFiles: outgoingMentions } : {}),
       ...(opts?.promptOverride ? { promptOverride: opts.promptOverride } : {}),
+      controls: {
+        thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
+        responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
+        modelControls: controlsOverride?.modelControls ?? modelControls,
+        permissionMode: controlsOverride?.permissionMode ?? permissionMode,
+        ...(controlsOverride?.runtimeHost ?? runtimeHost ? { runtimeHost: controlsOverride?.runtimeHost ?? runtimeHost } : {}),
+      },
     };
     const projectRootForRequest = requestedProjectRoot;
     const mentionedFilesRootForRequest = opts?.mentionedFilesRoot ?? mentionRoot;
@@ -4318,6 +4334,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       role: "user",
       text: trimmed,
       ...(outgoingAttachments.length ? { attachments: outgoingAttachments } : {}),
+      ...(Object.keys(controlsOverride?.modelControls ?? modelControls).length
+        ? { modelControls: controlsOverride?.modelControls ?? modelControls }
+        : {}),
       createdAt: now,
     };
     const assistantId = crypto.randomUUID();
@@ -4455,8 +4474,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           sessionId: liveGeneration.sessionId,
           ...(startNewConversation ? { startNewConversation: true } : {}),
           projectRoot: projectRootForRequest,
-          reasoningEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
-          responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
           modelControls: controlsOverride?.modelControls ?? modelControls,
           // Advisory permission mode for the picked access level; the daemon may
           // ignore it if the harness doesn't support per-turn permission scoping.
@@ -4777,6 +4794,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       lastFailedSend.attachments,
       lastFailedSend.mentionedFiles ?? [],
       lastFailedSend.promptOverride ? { promptOverride: lastFailedSend.promptOverride } : undefined,
+      lastFailedSend.controls,
     );
   }
 

@@ -67,13 +67,6 @@ import {
   attachmentIcon,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
-import {
-  COMMAND_CONTROL_DEFAULTS,
-  COMMAND_RESPONSE_SPEED_OPTIONS,
-  COMMAND_THINKING_OPTIONS,
-  type CommandResponseSpeed,
-  type CommandThinkingEffort,
-} from "@/lib/command-controls";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
@@ -97,7 +90,7 @@ type Props = {
     familiarId: string,
     projectRoot: string | null,
     opts?: {
-      initialControls?: { thinkingEffort: CommandThinkingEffort; responseSpeed: CommandResponseSpeed; runtimeHost?: string };
+      initialControls?: { runtimeHost?: string };
       /** Files staged in the home composer; the opened chat auto-sends with them. */
       initialAttachments?: ChatAttachment[];
     },
@@ -228,12 +221,6 @@ export function HomeComposer({
     [scopedProjects],
   );
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [thinkingEffort, setThinkingEffort] = useState<CommandThinkingEffort>(
-    COMMAND_CONTROL_DEFAULTS.thinkingEffort,
-  );
-  const [responseSpeed, setResponseSpeed] = useState<CommandResponseSpeed>(
-    COMMAND_CONTROL_DEFAULTS.responseSpeed,
-  );
   // Host chip: where the opened chat should execute. Per-composer state, not a
   // sticky pref — mirrors the chat composer's Host chip (#2337/#2340).
   const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
@@ -377,7 +364,7 @@ export function HomeComposer({
       }
       setText("");
       onStartChat(buildSkillPrompt(skill, args), selectedFamiliarId, selectedProjectRoot, {
-        initialControls: { thinkingEffort, responseSpeed, ...(runtimeHost ? { runtimeHost } : {}) },
+        initialControls: runtimeHost ? { runtimeHost } : undefined,
       });
     },
     [
@@ -386,8 +373,6 @@ export function HomeComposer({
       selectedProjectRoot,
       projectLaunchReady,
       projectLaunchMessage,
-      thinkingEffort,
-      responseSpeed,
       runtimeHost,
       onStartChat,
       onToast,
@@ -672,7 +657,7 @@ export function HomeComposer({
           clearAttachments();
           promptEnhance.reset();
           onStartChat(prompt, selectedFamiliarId, selectedProjectRoot, {
-            initialControls: { thinkingEffort, responseSpeed, ...(runtimeHost ? { runtimeHost } : {}) },
+            initialControls: runtimeHost ? { runtimeHost } : undefined,
             initialAttachments: outgoing,
           });
           break;
@@ -722,8 +707,6 @@ export function HomeComposer({
     projectLaunchMessage,
     modelState,
     modelHarness,
-    thinkingEffort,
-    responseSpeed,
     runtimeHost,
     sending,
     attachments,
@@ -1107,8 +1090,9 @@ export function HomeComposer({
           </div>
 
           {/* Model & tuning panel — the existing Options popover, opened from
-              the "+" menu and anchored to it (host/thinking/speed tuning stays
-              here; the context pill on the footer band carries project ·
+              the "+" menu and anchored to it (host/runtime/model selection stays
+              here; selected-model controls appear in Chat after capability resolution;
+              the context pill on the footer band carries project ·
               model). */}
           <ComposerOptionsMenu
             open={optionsOpen}
@@ -1119,10 +1103,7 @@ export function HomeComposer({
             disabled={sending}
             onSaveAsTemplate={() => setSaveTemplateSeed(text)}
             saveAsTemplateDisabled={!text.trim()}
-            indicator={
-              thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
-              responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed
-            }
+            indicator={Boolean(runtimeHost)}
             sections={[
               {
                 id: "runtime",
@@ -1145,20 +1126,6 @@ export function HomeComposer({
                     onChange: (id: string) => handleSelectModel(id || null),
                   } satisfies ComposerOptionSection]
                 : []),
-              {
-                id: "thinking",
-                label: "Thinking",
-                value: thinkingEffort,
-                options: COMMAND_THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-                onChange: (v: string) => setThinkingEffort(v as CommandThinkingEffort),
-              } satisfies ComposerOptionSection,
-              {
-                id: "speed",
-                label: "Speed",
-                value: responseSpeed,
-                options: COMMAND_RESPONSE_SPEED_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-                onChange: (v: string) => setResponseSpeed(v as CommandResponseSpeed),
-              } satisfies ComposerOptionSection,
             ]}
           />
         </div>

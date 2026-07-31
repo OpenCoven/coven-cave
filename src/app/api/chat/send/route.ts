@@ -528,6 +528,7 @@ async function maybeQueueOfflineChat(args: {
     modelOverrideScope: args.body.modelOverrideScope,
     reasoningEffort: args.body.reasoningEffort,
     responseSpeed: args.body.responseSpeed,
+    modelControls: args.body.modelControls,
     attachments: args.persistedAttachments,
     mentionedFiles: args.body.mentionedFiles,
     mentionedFilesRoot: args.body.mentionedFilesRoot,

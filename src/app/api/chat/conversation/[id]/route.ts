@@ -5,6 +5,7 @@
 // Next's own resolver.
 import { NextResponse } from "next/server.js";
 import { cleanModelId } from "@/lib/chat-model-state";
+import { cleanModelControlValues } from "@/lib/model-control-capabilities";
 import {
   isSafeConversationSessionId,
   deleteConversation,
@@ -85,6 +86,7 @@ function normalizeTurn(input: unknown): ChatTurn | null {
       ? value.responseSpeed
       : undefined;
   const modelOverride = cleanModelId(value.modelOverride);
+  const modelControls = cleanModelControlValues(value.modelControls);
   const progress = Array.isArray(value.progress)
     ? value.progress.flatMap((entry) => {
       if (!entry || typeof entry !== "object") return [];
@@ -131,6 +133,7 @@ function normalizeTurn(input: unknown): ChatTurn | null {
     ...(value.role === "user" && reasoningEffort ? { reasoningEffort } : {}),
     ...(value.role === "user" && responseSpeed ? { responseSpeed } : {}),
     ...(value.role === "user" && modelOverride ? { modelOverride } : {}),
+    ...(value.role === "user" && Object.keys(modelControls).length ? { modelControls } : {}),
   };
 }
 

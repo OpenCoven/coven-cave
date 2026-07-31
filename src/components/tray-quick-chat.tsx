@@ -249,10 +249,6 @@ export function QuickChatTabPane({
     sessionId,
     sendState,
     loading,
-    thinkingEffort,
-    setThinkingEffort,
-    responseSpeed,
-    setResponseSpeed,
     send,
     sendText,
     queued,
@@ -322,10 +318,6 @@ export function QuickChatTabPane({
         projectsError={projectsError}
         selectedProjectRoot={selectedProjectRoot}
         onPickProjectRoot={setSelectedProjectRoot}
-        thinkingEffort={thinkingEffort}
-        onThinkingEffortChange={setThinkingEffort}
-        responseSpeed={responseSpeed}
-        onResponseSpeedChange={setResponseSpeed}
         sending={sending}
         showFamiliarPicker={showAgentPicker && !pickerDismissed && messages.length === 0}
       />
@@ -373,20 +365,14 @@ export function QuickChatTabPane({
               onClick={() => void openFullSession()}
             />
             {selectedFamiliar ? (
-              // Quiet meta chips instead of a "Thinking: high · Speed: fast ·
-              // Model: …" run-on sentence (cave-fdt5). The group carries the
-              // full reading for screen readers; chips get sighted tooltips.
+              // Quick chat has no selected-model capability negotiation. Keep
+              // this compact entry point honest and show only its model intent;
+              // detailed native/prompt controls live in the full Chat surface.
               <span
                 className="quick-chat-meta-chips"
                 role="group"
-                aria-label={`Thinking ${thinkingEffort}, speed ${responseSpeed}, model ${modelLabel}`}
+                aria-label={`Model ${modelLabel}`}
               >
-                <span aria-hidden className="quick-chat-meta-chip" title="Thinking effort">
-                  {thinkingEffort}
-                </span>
-                <span aria-hidden className="quick-chat-meta-chip" title="Response speed">
-                  {responseSpeed}
-                </span>
                 <span aria-hidden className="quick-chat-meta-chip" title="Model">
                   {modelLabel}
                 </span>

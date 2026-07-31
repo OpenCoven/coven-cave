@@ -11,6 +11,8 @@ import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
 import { modelControlCapabilities } from "@/lib/model-control-capabilities";
+import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { hermesApiConfig } from "@/lib/hermes-responses-stream";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -93,10 +95,18 @@ export async function GET(req: Request) {
     familiarId,
     { allowOpenCodeInventory: canReadOpenCodeInventory },
   );
+  // Native Hermes controls are available only through its configured Responses
+  // API transport. Keep the state response aligned with the send boundary so
+  // a client never renders a provider setting that would be rejected later.
+  const hermesApi = state.harness === "hermes"
+    ? hermesApiConfig(harnessSpawnEnv(familiarId))
+    : null;
+  const controls = modelControlCapabilities(state.harness, state.effectiveModel)
+    .filter((capability) => capability.delivery !== "native-provider" || hermesApi !== null);
   return NextResponse.json({
     ok: true,
     state,
-    controls: modelControlCapabilities(state.harness, state.effectiveModel),
+    controls,
     options: inventory.models,
     inventory,
     allowCustom: inventory.allowCustom,

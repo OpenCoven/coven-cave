@@ -34,6 +34,15 @@ export type ModelControlCapability = {
 
 export type ModelControlValues = Partial<Record<ModelControlFamily, string>>;
 
+const MODEL_CONTROL_FAMILIES = new Set<ModelControlFamily>([
+  "reasoning",
+  "performance",
+  "verbosity",
+  "output-limit",
+  "modalities",
+  "tool-support",
+]);
+
 const reasoning = (delivery: ModelControlDelivery, parameter?: string): ModelControlCapability => ({
   family: "reasoning",
   label: delivery === "prompt-only" ? "Reasoning guidance" : "Reasoning",
@@ -115,6 +124,22 @@ export function validateModelControlValues(
     accepted[capability.family] = value;
   }
   return { values: accepted, rejected };
+}
+
+/**
+ * Keep persisted client snapshots structurally safe without pretending that a
+ * historical selection is supported by the model selected later. The send
+ * boundary performs the capability-specific validation before delivery.
+ */
+export function cleanModelControlValues(values: unknown): ModelControlValues {
+  if (!values || typeof values !== "object" || Array.isArray(values)) return {};
+  const clean: ModelControlValues = {};
+  for (const [family, value] of Object.entries(values as Record<string, unknown>)) {
+    if (!MODEL_CONTROL_FAMILIES.has(family as ModelControlFamily)) continue;
+    if (typeof value !== "string" || !value.trim() || value.length > 80) continue;
+    clean[family as ModelControlFamily] = value;
+  }
+  return clean;
 }
 
 export function promptOnlyModelControls(

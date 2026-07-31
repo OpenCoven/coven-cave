@@ -7,12 +7,6 @@ import { useCallback, useRef } from "react";
 // this stylesheet is global-scoped, so importing it here makes the menu render
 // identically in the tray window (which never mounts the home composer).
 import "@/styles/home-composer.css";
-import {
-  COMMAND_RESPONSE_SPEED_OPTIONS,
-  COMMAND_THINKING_OPTIONS,
-  type CommandResponseSpeed,
-  type CommandThinkingEffort,
-} from "@/lib/command-controls";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { projectAccessLabel } from "@/lib/project-access-levels";
 import { Icon, type IconName } from "@/lib/icon";
@@ -82,10 +76,6 @@ export function QuickChatControlsRow({
   projectsError,
   selectedProjectRoot,
   onPickProjectRoot,
-  thinkingEffort,
-  onThinkingEffortChange,
-  responseSpeed,
-  onResponseSpeedChange,
   sending,
   showFamiliarPicker = false,
 }: {
@@ -98,10 +88,6 @@ export function QuickChatControlsRow({
   projectsError?: string | null;
   selectedProjectRoot: string | null;
   onPickProjectRoot: (root: string | null) => void;
-  thinkingEffort: CommandThinkingEffort;
-  onThinkingEffortChange: (value: CommandThinkingEffort) => void;
-  responseSpeed: CommandResponseSpeed;
-  onResponseSpeedChange: (value: CommandResponseSpeed) => void;
   sending: boolean;
   showFamiliarPicker?: boolean;
 }) {
@@ -182,22 +168,6 @@ export function QuickChatControlsRow({
           }
         />
       )}
-      <StandardSelect
-        label="Choose thinking effort"
-        value={thinkingEffort}
-        onChange={(next) => onThinkingEffortChange(next as CommandThinkingEffort)}
-        disabled={sending}
-        className={CONTROL_SELECT_CLASS}
-        options={COMMAND_THINKING_OPTIONS}
-      />
-      <StandardSelect
-        label="Choose response speed"
-        value={responseSpeed}
-        onChange={(next) => onResponseSpeedChange(next as CommandResponseSpeed)}
-        disabled={sending}
-        className={CONTROL_SELECT_CLASS}
-        options={COMMAND_RESPONSE_SPEED_OPTIONS}
-      />
     </div>
   );
 }
