@@ -1,5 +1,7 @@
 import YAML from "yaml";
 
+const ALLOWED_STRING_TYPES = new Set(["PLAIN", "QUOTE_SINGLE", "QUOTE_DOUBLE"]);
+
 export function readCanonicalYamlStringSetting(source, canonicalPathSegments, sourceLabel) {
   return locateCanonicalYamlStringSetting(source, canonicalPathSegments, sourceLabel).valueNode
     .value;
@@ -85,6 +87,12 @@ function locateCanonicalYamlStringSetting(source, canonicalPathSegments, sourceL
   if (!YAML.isScalar(valueNode) || typeof valueNode.value !== "string") {
     throw new Error(
       `${sourceLabel} must use a string scalar at ${formatPathSegments(canonicalPathSegments)}`,
+    );
+  }
+
+  if (!ALLOWED_STRING_TYPES.has(valueNode.type)) {
+    throw new Error(
+      `${sourceLabel} must use a single-line plain or quoted string scalar at ${formatPathSegments(canonicalPathSegments)} (found ${valueNode.type})`,
     );
   }
 

@@ -82,6 +82,29 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
     ].join("\n"),
     "the canonical scalar is replaced without changing quoting, indentation, or the build version",
   );
+  for (const [label, source] of [
+    [
+      "literal block",
+      ["settings:", "  base:", "    MARKETING_VERSION: |", "      0.2.1", ""].join("\n"),
+    ],
+    [
+      "folded block",
+      ["settings:", "  base:", "    MARKETING_VERSION: >", "      0.2.1", ""].join("\n"),
+    ],
+  ]) {
+    assert.throws(
+      () => applyReplacement("yaml-marketing-version", source, "0.2.2", "apps/ios/CovenCave/project.yml"),
+      (err) => {
+        const message = String(err?.message ?? err);
+        assert.match(message, /apps\/ios\/CovenCave\/project\.yml/);
+        assert.match(message, /\["settings","base","MARKETING_VERSION"\]/);
+        assert.match(message, /single-line|plain or quoted/i);
+        assert.doesNotMatch(message, /Unsupported default string type/);
+        return true;
+      },
+      `${label} MARKETING_VERSION should be rejected with an actionable source label`,
+    );
+  }
   assert.throws(
     () =>
       applyReplacement(
