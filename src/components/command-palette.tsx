@@ -11,7 +11,7 @@ import { fuzzyMatch, bestFuzzyScore } from "@/lib/fuzzy-match";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
-import { FOLDER_MODES, type FolderMode } from "@/components/sidebar-minimal";
+import { WORKSPACE_NAV_ITEMS, type WorkspaceNavMode } from "@/lib/workspace-navigation";
 import { useProjects } from "@/lib/use-projects";
 import {
   PALETTE_CATEGORIES,
@@ -33,6 +33,8 @@ import {
 } from "@/components/settings-sections";
 import { paletteGroup, shortProjectRoot } from "@/lib/command-palette-grouping";
 import { buildSalemSearchContext, isSalemContextRow } from "@/lib/command-palette-salem-context";
+import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
+import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 
 // Status → dot class for session rows, mirroring the Sessions tab's colors. Only
 // "notable" states get a dot (running pulses green, failed/queued/paused tint);
@@ -53,16 +55,20 @@ type PaletteIntent =
   | { kind: "open-tui-session"; sessionId: string }
   | { kind: "open-board" }
   | { kind: "set-board-view"; view: "kanban" | "table" | "gantt" }
-  | { kind: "go-to-surface"; mode: FolderMode | `surface:${string}` }
+  | { kind: "go-to-surface"; mode: WorkspaceNavMode | `surface:${string}` }
   | { kind: "open-project"; root: string }
   | { kind: "focus-card"; cardId: string }
   | { kind: "create-task"; title: string }
   | { kind: "open-memory-file"; path: string }
   | {
+      kind: "open-coven-memory";
+      id: string;
+      familiarId: string;
+    }
+  | {
       kind: "open-setting";
       section: SettingsIndexEntry["section"];
       group?: string;
-      familiarTab?: SettingsIndexEntry["familiarTab"];
     };
 
 type Card = {
@@ -75,14 +81,21 @@ type Card = {
   updatedAt?: string;
 };
 
-type CovenMemoryEntry = {
-  id: string;
-  familiar_id: string;
-  title: string;
-  path: string;
-  updated_at: string;
-  excerpt?: string;
-};
+type CanonicalPaletteEntry = Pick<
+  CanonicalMemorySummary,
+  | "id"
+  | "familiarId"
+  | "title"
+  | "excerpt"
+  | "source"
+  | "verification"
+  | "relativeUpdatedAt"
+>;
+
+type CanonicalPaletteState =
+  | { state: "loading"; entries: CanonicalPaletteEntry[] }
+  | { state: "ready"; entries: CanonicalPaletteEntry[] }
+  | { state: "error"; entries: CanonicalPaletteEntry[] };
 
 type FsMemoryEntry = {
   root: string;
@@ -119,7 +132,7 @@ type Row =
   | { id: string; kind: "familiar"; familiar: Familiar }
   | { id: string; kind: "session"; session: SessionRow; familiar: Familiar | null }
   | { id: string; kind: "card"; card: Card; familiar: Familiar | null }
-  | { id: string; kind: "coven-memory"; entry: CovenMemoryEntry; familiar: Familiar | null }
+  | { id: string; kind: "coven-memory"; entry: CanonicalPaletteEntry; familiar: Familiar | null }
   | { id: string; kind: "fs-memory"; entry: FsMemoryEntry }
   | { id: string; kind: "command"; name: string; hint: string; intent: PaletteIntent }
   | { id: string; kind: "shortcut"; label: string; shortcut: string; action: () => void }
@@ -181,7 +194,8 @@ export function CommandPalette({
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [cards, setCards] = useState<Card[]>([]);
-  const [covenMemory, setCovenMemory] = useState<CovenMemoryEntry[]>([]);
+  const [canonicalMemoryState, setCanonicalMemoryState] =
+    useState<CanonicalPaletteState>({ state: "loading", entries: [] });
   const [fsMemory, setFsMemory] = useState<FsMemoryEntry[]>([]);
   const [salemLoading, setSalemLoading] = useState(false);
   const [salemAnswer, setSalemAnswer] = useState<string | null>(null);
@@ -243,25 +257,50 @@ export function CommandPalette({
     const t = setTimeout(() => inputRef.current?.focus(), 10);
 
     let cancelled = false;
-    void (async () => {
+    setCanonicalMemoryState({ state: "loading", entries: [] });
+
+    const loadBoardCorpus = async () => {
       try {
-        const [boardRes, covenRes, fsRes] = await Promise.all([
-          fetch("/api/board", { cache: "no-store" }),
-          fetch("/api/coven-memory", { cache: "no-store" }),
-          fetch("/api/memory", { cache: "no-store" }),
-        ]);
+        const boardRes = await fetch("/api/board", { cache: "no-store" });
         const board = await boardRes.json();
-        const coven = await covenRes.json();
-        const fs = await fsRes.json();
-        // Don't apply a corpus refresh after the palette closed/unmounted.
         if (cancelled) return;
         if (board.ok) setCards(board.cards ?? []);
-        if (coven.ok) setCovenMemory(coven.entries ?? []);
+      } catch {
+        /* board search stays independently usable from its last snapshot */
+      }
+    };
+
+    const loadCanonicalCorpus = async () => {
+      try {
+        const canonical = await loadCanonicalMemoryList();
+        if (cancelled) return;
+        setCanonicalMemoryState(
+          canonical.state === "ready"
+            ? { state: "ready", entries: canonical.entries }
+            : { state: "error", entries: [] },
+        );
+      } catch {
+        if (cancelled) return;
+        setCanonicalMemoryState({ state: "error", entries: [] });
+      }
+    };
+
+    const loadFileMemoryCorpus = async () => {
+      try {
+        const fsRes = await fetch("/api/memory", { cache: "no-store" });
+        const fs = await fsRes.json();
+        if (cancelled) return;
         if (fs.ok) setFsMemory(fs.entries ?? []);
       } catch {
-        /* keep what we had */
+        /* file-memory search stays independently usable from its last snapshot */
       }
-    })();
+    };
+
+    void Promise.allSettled([
+      loadBoardCorpus(),
+      loadCanonicalCorpus(),
+      loadFileMemoryCorpus(),
+    ]);
 
     return () => { cancelled = true; clearTimeout(t); };
   }, [open]);
@@ -370,18 +409,25 @@ export function CommandPalette({
         familiar: c.familiarId ? familiarById.get(c.familiarId) ?? null : null,
       }));
 
-    const covenMemoryRows: Row[] = covenMemory
-      .filter((e) => {
-        if (scoped && !scope!.has(e.familiar_id)) return false;
+    const covenMemoryRows: Row[] = canonicalMemoryState.entries
+      .filter((entry) => {
+        if (scoped && !scope!.has(entry.familiarId)) return false;
         if (!q) return true;
-        return fz(e.title) || (e.excerpt ?? "").toLowerCase().includes(q) || fz(e.familiar_id);
+        return (
+          fz(entry.title) ||
+          entry.excerpt.toLowerCase().includes(q) ||
+          fz(entry.familiarId) ||
+          fz(entry.source.label) ||
+          fz(entry.verification.state) ||
+          fz(entry.relativeUpdatedAt)
+        );
       })
       .slice(0, RESULT_LIMITS.covenMemory)
-      .map((e) => ({
-        id: `cm:${e.id}`,
+      .map((entry) => ({
+        id: `cm:${entry.id}`,
         kind: "coven-memory",
-        entry: e,
-        familiar: e.familiar_id ? familiarById.get(e.familiar_id) ?? null : null,
+        entry,
+        familiar: null,
       }));
 
     // fs-memory, slash commands, and shortcuts are not familiar-scoped, so
@@ -445,7 +491,7 @@ export function CommandPalette({
         )
           .slice(0, RESULT_LIMITS.setting)
           .map((entry) => ({
-            id: `setting:${entry.section}:${entry.group ?? "overview"}:${entry.familiarTab ?? "root"}`,
+            id: `setting:${entry.section}:${entry.group ?? "overview"}`,
             kind: "setting" as const,
             entry,
           }));
@@ -481,14 +527,14 @@ export function CommandPalette({
       ? [{ id: "create-task", kind: "create-task", title: trimmedTitle }]
       : [];
 
-    // "Go to <surface>" rows make ⌘K a launcher for the visible sidebar
-    // surfaces. Hidden while typing a slash command or a familiar scope (where
-    // surface nav would be noise). Role Surface rooms (cave-cc5r) append with
-    // the same treatment so "Go to Code Workshop" works like any surface.
+    // "Go to <surface>" rows make ⌘K a launcher for every canonical workspace
+    // destination, including on-demand rows hidden from the sidebar. Hidden
+    // while typing a slash command or a familiar scope (where surface nav would
+    // be noise). Role Surface rooms (cave-cc5r) append with the same treatment.
     const surfaceRows: Row[] = (scoped || slashToken)
       ? []
       : [
-          ...rank(FOLDER_MODES
+          ...rank(WORKSPACE_NAV_ITEMS
           // Fuzzy on the short label/id; substring-only on the long description
           // (subsequence-matching prose surfaces irrelevant items).
           .filter((fm) => !q || fz(fm.label) || fz(fm.id) || fm.description.toLowerCase().includes(q)),
@@ -604,7 +650,7 @@ export function CommandPalette({
     // Salem row is still rows[0], so unmatched queries keep their one-Enter
     // AI path.
     return [...localRows, ...salemRows];
-  }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, contentHits, query, activeFamiliarId, projects, roleSurfaces]);
+  }, [familiars, familiarById, sessions, cards, canonicalMemoryState.entries, fsMemory, contentHits, query, activeFamiliarId, projects, roleSurfaces]);
 
   const counts = useMemo(() => paletteResultCounts(allRows), [allRows]);
   const rows = useMemo(
@@ -705,7 +751,11 @@ export function CommandPalette({
       // Focus card after the view switches
       setTimeout(() => onIntent({ kind: "focus-card", cardId: row.card.id }), 0);
     } else if (row.kind === "coven-memory") {
-      onIntent({ kind: "open-memory-file", path: row.entry.path });
+      onIntent({
+        kind: "open-coven-memory",
+        id: row.entry.id,
+        familiarId: row.entry.familiarId,
+      });
     } else if (row.kind === "fs-memory") {
       onIntent({ kind: "open-memory-file", path: row.entry.fullPath });
     } else if (row.kind === "shortcut") {
@@ -726,7 +776,6 @@ export function CommandPalette({
         kind: "open-setting",
         section: row.entry.section,
         ...(row.entry.group ? { group: row.entry.group } : {}),
-        ...(row.entry.familiarTab ? { familiarTab: row.entry.familiarTab } : {}),
       });
     } else {
       onIntent(row.intent);
@@ -962,6 +1011,14 @@ export function CommandPalette({
         <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {resultSummary}
         </div>
+        {canonicalMemoryState.state === "error" ? (
+          <div
+            role="status"
+            className="border-b border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-4 py-2 text-[length:var(--text-xs)] text-[var(--color-warning)]"
+          >
+            Familiar memories unavailable. Other local results are still available.
+          </div>
+        ) : null}
         <ul
           id="command-palette-listbox"
           role="listbox"
@@ -1076,8 +1133,12 @@ export function CommandPalette({
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">{row.entry.title}</span>
                         <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                          {row.entry.familiar_id} · {row.entry.updated_at}
-                          {row.entry.excerpt ? ` · ${row.entry.excerpt.slice(0, 70)}` : ""}
+                          {row.entry.familiarId} ·{" "}
+                          {row.entry.source.label} · {row.entry.verification.state} ·{" "}
+                          {row.entry.relativeUpdatedAt}
+                        </span>
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                          {row.entry.excerpt}
                         </span>
                       </span>
                       {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">memory</span> : null}
@@ -1103,7 +1164,7 @@ export function CommandPalette({
                           {row.entry.group ? ` › ${row.entry.group}` : ""}
                         </span>
                         <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                          {row.entry.familiarTab ? `Familiars · ${row.entry.familiarTab}` : row.entry.keywords}
+                          {row.entry.keywords}
                         </span>
                       </span>
                       {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">open</span> : null}

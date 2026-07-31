@@ -17,6 +17,11 @@ struct Familiar: Identifiable, Codable, Hashable {
     var avatarUrl: String?
     var activeSessions: Int?
     var memoryFreshness: String?
+    /// Voice configuration published by Familiar Studio. All three remain
+    /// optional so phones can decode familiars created before voice support.
+    var voiceProvider: String? = nil
+    var voiceModel: String? = nil
+    var voiceName: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -25,6 +30,7 @@ struct Familiar: Identifiable, Codable, Hashable {
         case avatarUrl
         case activeSessions = "active_sessions"
         case memoryFreshness = "memory_freshness"
+        case voiceProvider, voiceModel, voiceName
     }
 }
 
@@ -64,6 +70,8 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var createdAt: String?
     var updatedAt: String?
     var archivedAt: String?
+    /// Launch provenance for first-turn continuity across clients.
+    var projectRoot: String? = nil
     /// Provenance from /api/sessions/list — generator surfaces (journal,
     /// canvas, cron, …) tag their runs so chat lists can hide them.
     var origin: String?
@@ -76,6 +84,7 @@ struct SessionRow: Identifiable, Codable, Hashable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case archivedAt = "archived_at"
+        case projectRoot = "project_root"
         case origin, generated
     }
 

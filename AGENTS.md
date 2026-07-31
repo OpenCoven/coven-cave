@@ -7,6 +7,7 @@
 - Keep durable coordination in tracked workflow artifacts: plans, specs, issues, PR descriptions/checklists, release notes, and handoff docs.
 - Before opening a PR, make the branch PR-shaped: scoped diff, relevant local verification, and a summary of what changed.
 - After a PR merges, delete the remote branch and remove the local worktree/branch. Preserve any intentionally unmerged work as an archive patch or named stash before cleanup.
+- Run `pnpm beads:worktrees` before closing PR-backed work. Record each local worktree as removed and verified or intentionally preserved with an owner and reason; `retire-after-gate` is not deletion authorization.
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
 
@@ -22,8 +23,8 @@ Where the truth lives:
 - `src/styles/globals/foundations.css` — the annotated token contract
   (surfaces, text tiers, borders, radii, 4px spacing grid, type scale, motion,
   focus rings, icon sizes). `src/app/globals.css` is only an import facade.
-- `src/styles/globals/themes.css` — 21 palettes × 2 modes (`data-theme` ×
-  `data-mode` on `:root`). Every surface must survive all 42 combinations.
+- `src/styles/globals/themes.css` — 12 palettes × 2 modes (`data-theme` ×
+  `data-mode` on `:root`). Every surface must survive all 24 combinations.
 - `src/styles/globals/primitives.css` — shared `.ui-*` classes; grep before
   inventing a class.
 - `src/components/ui/` — React primitives (Button, EmptyState, ErrorState,

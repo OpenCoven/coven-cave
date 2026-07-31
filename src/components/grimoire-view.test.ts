@@ -9,6 +9,7 @@ const view = [
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
+const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const warmupRegistry = await readFile(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8");
 
 // ── Surface registration: mode, title, render branch, sidebar row ────────────
@@ -19,8 +20,15 @@ assert.match(workspace, /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{grim
 // Journal is now a tab inside Grimoire: the nav/deep-link `journal` mode opens
 // Grimoire on its Journal tab instead of redirecting to Settings.
 assert.match(workspace, /if \(next === "journal"\) \{[\s\S]{0,400}setGrimoireView\("journal"\);\s*\n\s*commitMode\("grimoire", "journal"\);/, "the journal mode routes into the Grimoire Journal tab and preserves that destination in history");
-assert.match(sidebar, /export type FolderMode = WorkspaceMode/, "the sidebar's FolderMode is the WorkspaceMode union (no drifting copy), so grimoire is a FolderMode");
-assert.match(sidebar, /id: "grimoire", label: "Memories"/, "grimoire has a sidebar row labeled Memories (and ⌘K palette entry via FOLDER_MODES)");
+assert.match(navigation, /export type WorkspaceNavMode = WorkspaceMode/, "the shared registry uses the WorkspaceMode union (no drifting copy)");
+assert.match(navigation, /id: "grimoire", label: "Memories"/, "grimoire has a navigation row labeled Memories (and a ⌘K palette entry)");
+assert.match(sidebar, /VISIBLE_WORKSPACE_NAV_ITEMS/, "the sidebar renders visible rows from the shared registry");
+assert.match(
+  view,
+  /href="\/weaves"/,
+  "Memories exposes its nested protected-memory Weaves destination",
+);
+assert.match(view, />\s*Weaves\s*<\/Link>/, "the protected-memory destination has a visible label");
 
 // ── Navigator: three sources, searchable, new-entry affordance ───────────────
 
@@ -66,6 +74,87 @@ assert.match(
 assert.match(view, /ariaLabel="Stitches"\s+icon="ph:book-open"/, "stitches carry their kind icon");
 assert.match(view, /ariaLabel="Memory files"\s+icon="ph:brain"/, "memory carries its kind icon");
 assert.match(view, /ariaLabel="Journal"\s+icon="ph:calendar-blank"/, "journal carries its kind icon");
+
+// ── Whole navigator collapse (persisted compact rail) ───────────────────────
+assert.match(
+  view,
+  /NAVIGATOR_COLLAPSED_STORAGE_KEY = "cave:grimoire:navigator-collapsed:v1"/,
+  "whole navigator collapse persists locally",
+);
+assert.match(
+  view,
+  /aria-label=\{navigatorCollapsed \? "Expand Memories sidebar" : "Collapse Memories sidebar"\}/,
+  "navigator toggle exposes its resulting action",
+);
+assert.match(
+  view,
+  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[300px\]"/,
+  "collapsed navigator becomes a compact rail instead of disappearing",
+);
+assert.match(view, /aria-label="Open Stitches navigator"/, "compact rail keeps Stitches reachable");
+assert.match(view, /aria-label="Open Memory files navigator"/, "compact rail keeps memory files reachable");
+assert.match(view, /aria-label="Open Journal navigator"/, "compact rail keeps Journal reachable");
+assert.match(
+  view,
+  /const navigatorCollapsedForDisplay = navigatorCollapsed && !q;/,
+  "an active document search forces the whole navigator open without changing its persisted preference",
+);
+assert.match(
+  view,
+  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[300px\]"/,
+  "the rail width uses the search-aware display state",
+);
+assert.match(
+  view,
+  /\{navigatorCollapsedForDisplay \? \(/,
+  "the compact navigator branch is suppressed while searching",
+);
+// Span widened from 240 to 800: the toggle row now carries a Navigator title
+// before the button, so onClick sits further from the opening <div>.
+assert.match(
+  view,
+  /\{!q \? \(\s*<div[\s\S]{0,800}onClick=\{toggleNavigator\}/,
+  "the collapse toggle is hidden while search forces the navigator open",
+);
+
+// The expanded rail's toggle row is titled — a bare right-aligned button gave
+// the sidebar no visible name of its own.
+assert.match(
+  view,
+  /navigatorCollapsed \? null : \(\s*<h2[\s\S]{0,240}>\s*Navigator\s*<\/h2>\s*\)\}\s*<button[\s\S]{0,200}onClick=\{toggleNavigator\}/,
+  "the expanded navigator's toggle row shows a Navigator title to the left of the collapse toggle",
+);
+assert.match(
+  view,
+  /navigatorCollapsed \? "justify-center p-1" : "justify-between gap-2 p-1\.5"/,
+  "the toggle row splits title-left / toggle-right when expanded and centers the toggle when collapsed",
+);
+
+// ── Memory is scoped to the shell's familiar multiselect ────────────────────
+// The Memories surface used to list every familiar's memory files regardless
+// of the sidebar selection. Empty selection is still "All" (familiarInScope).
+assert.match(view, /scopeFamiliarIds\?: ReadonlySet<string>/, "GrimoireView accepts the familiar scope");
+assert.match(
+  view,
+  /const memoryScope = scopeFamiliarIds \?\? EMPTY_FAMILIAR_SCOPE/,
+  "an absent scope falls back to the canonical empty (All) selection",
+);
+assert.match(
+  view,
+  /const scopedMemory = useMemo\(\s*\(\) => \(memory \?\? \[\]\)\.filter\(\(e\) => familiarInScope\(memoryScope, e\.familiarId\)\)/,
+  "memory files are filtered by the selected familiars before search",
+);
+assert.match(view, /memory=\{scopedMemory\}/, "the launcher's memory stats/jumps use the same scoped list as the rail");
+assert.match(
+  view,
+  /No memory for \$\{memoryScopeLabel\} yet/,
+  "a scoped-but-empty Memory section says which familiars it is narrowed to",
+);
+assert.match(
+  workspace,
+  /<GrimoireView[\s\S]{0,240}scopeFamiliarIds=\{scopeIds\}/,
+  "the Workspace hands Memories the same familiar scope as Tasks and Schedules",
+);
 
 // ── Detail: the right transport per source ───────────────────────────────────
 

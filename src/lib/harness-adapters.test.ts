@@ -376,19 +376,46 @@ assert.equal(hermesManifest?.filename, "hermes.json");
   const parsed = JSON.parse(hermesManifest?.contents ?? "{}");
   const adapter = parsed.adapters?.[0];
   assert.equal(adapter?.id, "hermes");
-  assert.equal(adapter?.executable, "hermes-coven", "hermes launches via the hermes-coven shim (hermes chat has no positional prompt slot)");
-  assert.deepEqual(adapter?.interactive_prompt_prefix_args, ["chat", "--source", "coven"], "hermes keeps the coven-source chat entry; the shim maps the prompt to -q");
+  assert.equal(adapter?.executable, "hermes", "Hermes 1.0.3 uses the native executable on every platform");
+  assert.deepEqual(adapter?.interactive_prompt_prefix_args, ["chat", "--source", "coven"]);
   assert.deepEqual(adapter?.non_interactive_prompt_prefix_args, ["chat", "--source", "coven", "-Q"]);
+  assert.equal(adapter?.prompt_flag, "--query", "the accepted registry binds positional prompts natively");
+  assert.equal(adapter?.interactive_prompt_flag, "--query");
+  assert.equal(adapter?.model_id_transform, "preserve");
   assert.ok(typeof adapter?.install_hint === "string" && adapter.install_hint.length > 0);
 }
 {
   const windowsManifest = adapterManifestScaffoldForHarness("hermes", "win32");
   const adapter = JSON.parse(windowsManifest?.contents ?? "{}").adapters?.[0];
-  assert.equal(adapter?.executable, "hermes", "Windows launches Hermes directly, never through a cmd shim");
-  assert.equal(adapter?.prompt_flag, "-q", "Windows binds the prompt as Hermes's query flag");
-  assert.equal(adapter?.interactive_prompt_flag, "-q", "interactive task startup uses the same safe prompt binding");
-  assert.ok(isLegacyWindowsHermesManifest(hermesManifest?.contents ?? "", "win32"));
-  assert.ok(!isLegacyWindowsHermesManifest(windowsManifest?.contents ?? "", "win32"));
+  assert.equal(adapter?.executable, "hermes", "Windows consumes the same accepted native manifest");
+  assert.equal(adapter?.prompt_flag, "--query");
+  assert.equal(adapter?.interactive_prompt_flag, "--query");
+  assert.equal(
+    windowsManifest?.contents,
+    hermesManifest?.contents,
+    "registry scaffolds stay byte-current instead of applying a Cave platform rewrite",
+  );
+  const legacyManifest = `${JSON.stringify({
+    adapters: [{
+      id: "hermes",
+      label: "Hermes Agent",
+      executable: "hermes-coven",
+      interactive_prompt_prefix_args: ["chat", "--source", "coven"],
+      non_interactive_prompt_prefix_args: ["chat", "--source", "coven", "-Q"],
+      install_hint: "Install Hermes Agent, add it to PATH, install the hermes-coven shim, and complete Hermes setup before using this adapter.",
+      model_flag: "--model",
+      capabilities: {
+        stream: false,
+        preassigned_session_id: false,
+        think: false,
+        speed: false,
+      },
+      version: "1.0.2",
+      description: "Hermes adapter with native model forwarding. Uses the hermes-coven shim so the harness trailing positional prompt is remapped to hermes chat -q/--query without changing model arguments.",
+    }],
+  }, null, 2)}\n`;
+  assert.ok(isLegacyWindowsHermesManifest(legacyManifest, "win32"));
+  assert.ok(!isLegacyWindowsHermesManifest(hermesManifest?.contents ?? "", "win32"));
   assert.ok(!isLegacyWindowsHermesManifest(hermesManifest?.contents ?? "", "linux"));
   assert.ok(
     !isLegacyWindowsHermesManifest(

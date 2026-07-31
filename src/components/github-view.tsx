@@ -29,6 +29,14 @@ import { useIsMobile } from "@/lib/use-viewport";
 import { useAppPreferences } from "@/lib/app-preferences";
 import { Icon, type IconName } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
+import {
+  activityCollectionsComplete,
+  activityCollectionsEqual,
+  activityCompletenessNotice,
+  activityCountLabel,
+  activityRetryAfterSeconds,
+  mergeFailedActivityItems,
+} from "@/lib/github-activity";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useArmedConfirm } from "@/lib/use-armed-confirm";
@@ -62,10 +70,14 @@ import { GithubSubscriptionsModal } from "@/components/github-subscriptions-moda
 import { openExternalUrl } from "@/lib/open-external";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useSurfacePreference } from "@/lib/surface-preferences";
-import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import {
+  invalidateSurfaceResources,
+  readSurfaceResource,
+  surfaceWarmupRetryAfterSeconds,
+} from "@/lib/surface-warmup-registry";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
-  GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON, KIND_LABEL, KIND_ORDER, STATUS_DOT_COLOR,
+  GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON, KIND_LABEL, KIND_ORDER,
   linkedCardsForItem, orgOf, useCards, useFamiliars,
   type ActivityResult, type Filter, type GroupBy, type PatStatus, type SortKey,
 } from "./github-view-data";
@@ -84,7 +96,11 @@ type Props = {
   initialFilter?: Filter | null;
 };
 
-type ActivityPayload = ActivityResult | { ok: false; error?: string };
+type ActivityPayload = ActivityResult | {
+  ok: false;
+  error?: string;
+  retryAfterSeconds?: number | null;
+};
 
 // ── Data hooks ─────────────────────────────────────────────────────────────────
 
@@ -330,8 +346,7 @@ function LinkedTaskChip({
       className="gh-task-chip"
     >
       <span
-        className="gh-task-chip-dot"
-        style={{ background: STATUS_DOT_COLOR[card.status] }}
+        className={`gh-task-chip-dot gh-task-chip-dot--${card.status}`}
         aria-hidden
       />
       <span className="gh-task-chip-title">{card.title}</span>
@@ -466,8 +481,7 @@ function OpenChatAction({
                     className="gh-action-popover-item"
                   >
                     <span
-                      className="gh-task-chip-dot"
-                      style={{ background: STATUS_DOT_COLOR[c.status] }}
+                      className={`gh-task-chip-dot gh-task-chip-dot--${c.status}`}
                       aria-hidden
                     />
                     <span className="gh-action-popover-item-title">{c.title}</span>
@@ -2060,7 +2074,7 @@ function GitHubItemGlassPanel({
   cards,
   familiarsFailed = false,
   cardsFailed = false,
-  counts,
+  countLabels,
   onJumpToSession,
   onFocusCard,
   onAfterLink,
@@ -2072,7 +2086,7 @@ function GitHubItemGlassPanel({
   cards: Card[];
   familiarsFailed?: boolean;
   cardsFailed?: boolean;
-  counts: Record<Filter, number>;
+  countLabels: Record<"pr" | "review_request" | "issue", string>;
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard?: (cardId: string) => void;
   onAfterLink: () => void;
@@ -2111,15 +2125,15 @@ function GitHubItemGlassPanel({
         <div className="gh-glass-stat-grid" aria-label="GitHub activity counts">
           <div className="gh-glass-stat">
             <span>PRs</span>
-            <strong>{counts.pr}</strong>
+            <strong>{countLabels.pr}</strong>
           </div>
           <div className="gh-glass-stat">
             <span>Reviews</span>
-            <strong>{counts.review_request}</strong>
+            <strong>{countLabels.review_request}</strong>
           </div>
           <div className="gh-glass-stat">
             <span>Issues</span>
-            <strong>{counts.issue}</strong>
+            <strong>{countLabels.issue}</strong>
           </div>
         </div>
 
@@ -2318,6 +2332,7 @@ export function GitHubView({
   const [groupBy, setGroupBy] = useSurfacePreference(surfacePreferenceSpecs.github.groupBy);
   const [showPatModal, setShowPatModal] = useState(false);
   const [showSubsModal, setShowSubsModal] = useState(false);
+  const [retryBlocked, setRetryBlocked] = useState(false);
   const [sortKey, setSortKey] = useSurfacePreference(surfacePreferenceSpecs.github.sortKey);
   const [sortDir, setSortDir] = useSurfacePreference(surfacePreferenceSpecs.github.sortDir);
   const [selectedTarget, setSelectedTarget] = useSurfacePreference(surfacePreferenceSpecs.github.selected);
@@ -2342,6 +2357,8 @@ export function GitHubView({
       : null);
   }, [activity?.items, setSelectedTarget]);
   const timerRef = useRef<number | null>(null);
+  const retryUnlockTimerRef = useRef<number | null>(null);
+  const retryBlockedUntilRef = useRef(0);
   // Guards against setState after unmount from an in-flight fetch (mirrors useCards).
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -2372,8 +2389,29 @@ export function GitHubView({
   // burning the GitHub rate limit for output nobody's looking at. The
   // visibilitychange effect refetches (and reschedules) on return.
   function schedulePoll(ms: number) {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
     if (typeof document !== "undefined" && document.hidden) return;
-    timerRef.current = window.setTimeout(() => void fetchActivity(true, true), ms);
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      void fetchActivity(true, true);
+    }, ms);
+  }
+
+  function applyRetryCooldown(ms: number) {
+    if (retryUnlockTimerRef.current !== null) {
+      window.clearTimeout(retryUnlockTimerRef.current);
+      retryUnlockTimerRef.current = null;
+    }
+    retryBlockedUntilRef.current = ms > 0 ? Date.now() + ms : 0;
+    setRetryBlocked(ms > 0);
+    if (ms > 0) {
+      retryUnlockTimerRef.current = window.setTimeout(() => {
+        retryUnlockTimerRef.current = null;
+        retryBlockedUntilRef.current = 0;
+        if (mountedRef.current) setRetryBlocked(false);
+      }, ms);
+    }
   }
 
   async function fetchActivity(silent = false, force = false) {
@@ -2385,27 +2423,51 @@ export function GitHubView({
       const { data } = await readSurfaceResource<ActivityPayload>("github:activity", force);
       if (!mountedRef.current) return;
       if (!data.ok) {
+        const retryDelayMs = (data.retryAfterSeconds ?? 0) * 1000;
+        applyRetryCooldown(retryDelayMs);
         if (data.error === "no_user") {
           setError("no_user");
           return;
         }
         setError(data.error ?? "GitHub activity unavailable");
-        schedulePoll(60_000);
+        schedulePoll(Math.max(60_000, retryDelayMs));
         return;
       }
       const nextActivity = data;
-      setActivity((prev) =>
-        prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid
-          && arrayContentEqual(prev.organizations, nextActivity.organizations)
-          && arrayContentEqual(prev.items, nextActivity.items)
+      setActivity((prev) => {
+        const mergedItems = prev
+          && prev.login === nextActivity.login
+          && prev.authed === nextActivity.authed
+          && prev.patInvalid === nextActivity.patInvalid
+          ? mergeFailedActivityItems(prev.items, nextActivity.items, nextActivity.collections)
+          : nextActivity.items;
+        const mergedActivity = mergedItems === nextActivity.items
+          ? nextActivity
+          : { ...nextActivity, items: mergedItems };
+        return prev && prev.authed === mergedActivity.authed
+          && prev.patInvalid === mergedActivity.patInvalid
+          && prev.warning === mergedActivity.warning
+          && prev.retryAfterSeconds === mergedActivity.retryAfterSeconds
+          && arrayContentEqual(prev.organizations, mergedActivity.organizations)
+          && activityCollectionsEqual(prev.collections, mergedActivity.collections)
+          && arrayContentEqual(prev.items, mergedActivity.items)
           ? prev
-          : nextActivity);
+          : mergedActivity;
+      });
       setError(null);
-      schedulePoll(nextActivity.authed ? 90_000 : 120_000);
+      const basePollMs = nextActivity.authed ? 90_000 : 120_000;
+      const retryDelayMs = Math.max(
+        activityRetryAfterSeconds(nextActivity.collections),
+        nextActivity.retryAfterSeconds ?? 0,
+      ) * 1000;
+      applyRetryCooldown(retryDelayMs);
+      schedulePoll(Math.max(basePollMs, retryDelayMs));
     } catch (e) {
       if (!mountedRef.current) return;
+      const retryDelayMs = surfaceWarmupRetryAfterSeconds(e) * 1000;
+      applyRetryCooldown(retryDelayMs);
       setError(e instanceof Error ? e.message : "Failed to load GitHub activity");
-      schedulePoll(60_000);
+      schedulePoll(Math.max(60_000, retryDelayMs));
     } finally {
       if (mountedRef.current) setLoading(false);
     }
@@ -2415,6 +2477,7 @@ export function GitHubView({
   // second self-scheduling timer chain (the error-state Retry used to skip this
   // and leak a chain, doubling the poll rate — and the GitHub rate-limit spend).
   function refreshActivity() {
+    if (Date.now() < retryBlockedUntilRef.current) return;
     if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
     void fetchActivity(false, true);
   }
@@ -2422,7 +2485,10 @@ export function GitHubView({
   useEffect(() => {
     void fetchPatStatus();
     void fetchActivity();
-    return () => { if (timerRef.current !== null) window.clearTimeout(timerRef.current); };
+    return () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      if (retryUnlockTimerRef.current !== null) window.clearTimeout(retryUnlockTimerRef.current);
+    };
   }, []);
 
   // Pause polling while the tab is hidden; refetch (and resume the chain) on
@@ -2432,7 +2498,9 @@ export function GitHubView({
       if (document.hidden) {
         if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
       } else {
-        void fetchActivity(true, true);
+        const retryDelayMs = Math.max(0, retryBlockedUntilRef.current - Date.now());
+        if (retryDelayMs > 0) schedulePoll(retryDelayMs);
+        else void fetchActivity(true, true);
       }
     };
     document.addEventListener("visibilitychange", onVis);
@@ -2565,6 +2633,39 @@ export function GitHubView({
     }),
     [items],
   );
+  const activityIncomplete = activity
+    ? !activityCollectionsComplete(activity.collections)
+    : false;
+  const countLabels = useMemo(
+    () => ({
+      pr: activity ? activityCountLabel(counts.pr, activity.collections.authored) : String(counts.pr),
+      review_request: activity
+        ? activityCountLabel(counts.review_request, activity.collections.reviewRequests)
+        : String(counts.review_request),
+      issue: activity
+        ? activityCountLabel(counts.issue, activity.collections.assignedIssues)
+        : String(counts.issue),
+    }),
+    [activity, counts],
+  );
+  const completenessNotice = activity
+    ? activityCompletenessNotice(activity.collections, { includeUnavailable: !activity.patInvalid })
+    : null;
+  const completenessNeedsRetry = activity
+    ? Object.values(activity.collections).some(
+        (collection) => collection.status === "failed" || collection.githubIncomplete,
+      )
+    : false;
+  const staleErrorNotice = error && activity
+    ? `Couldn't refresh GitHub. Showing last loaded activity. ${error}`
+    : null;
+  const activityNotice = [staleErrorNotice, activity?.warning, completenessNotice]
+    .filter((notice): notice is string => Boolean(notice))
+    .join(" ");
+  const activityNoticeNeedsRetry = Boolean(
+    staleErrorNotice || activity?.warning || completenessNeedsRetry,
+  );
+  const reviewsUnavailable = activity?.collections.reviewRequests.status === "unavailable";
 
   const sameSelectedTarget = useCallback((item: GitHubItem) =>
     selectedTarget !== null &&
@@ -2716,14 +2817,6 @@ export function GitHubView({
               public API
             </span>
           )}
-          {activity?.authed === true && (
-            <span
-              className="gh-compact-auth gh-compact-auth--authed"
-              title="Authenticated — private repos included"
-            >
-              authenticated
-            </span>
-          )}
 
           {activity?.rateLimit && (
             <span
@@ -2861,6 +2954,40 @@ export function GitHubView({
         </div>
       </header>
 
+      {activityNotice && (
+        <div role="status" className="gh-completeness-notice">
+          <Icon
+            name="ph:warning-circle"
+            width={14}
+            className="gh-completeness-notice-icon"
+            aria-hidden
+          />
+          <span>{activityNotice}</span>
+          {activityNoticeNeedsRetry ? (
+            <Button
+              className="gh-completeness-action"
+              size="xs"
+              variant="ghost"
+              leadingIcon="ph:arrow-clockwise"
+              onClick={refreshActivity}
+              disabled={retryBlocked}
+            >
+              {retryBlocked ? "Retry later" : "Retry"}
+            </Button>
+          ) : reviewsUnavailable ? (
+            <Button
+              className="gh-completeness-action"
+              size="xs"
+              variant="ghost"
+              leadingIcon="ph:key"
+              onClick={() => setShowPatModal(true)}
+            >
+              {activity?.patInvalid ? "Update PAT" : "Add PAT"}
+            </Button>
+          ) : null}
+        </div>
+      )}
+
       {/* ── Body ── */}
       <div className="github-surface-body min-h-0 flex-1 overflow-hidden">
 
@@ -2869,7 +2996,7 @@ export function GitHubView({
             <SkeletonRows count={8} />
           </div>
 
-        ) : error === "no_user" ? (
+        ) : error === "no_user" && !activity ? (
           <div className="flex h-full items-center justify-center px-8">
             <EmptyState
               icon="ph:github-logo"
@@ -2883,16 +3010,21 @@ export function GitHubView({
             />
           </div>
 
-        ) : error ? (
+        ) : error && !activity ? (
           <div className="flex h-full items-center justify-center px-8">
             <EmptyState
               icon="ph:warning-circle"
               headline="Couldn't load GitHub"
               subtitle={error}
               actions={
-                <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={refreshActivity}>
-                  Retry
-                </Button>
+              <Button
+                variant="secondary"
+                leadingIcon="ph:arrow-clockwise"
+                onClick={refreshActivity}
+                disabled={retryBlocked}
+              >
+                {retryBlocked ? "Retry later" : "Retry"}
+              </Button>
               }
             />
           </div>
@@ -2902,8 +3034,36 @@ export function GitHubView({
             {query.trim() ? (
               <EmptyState
                 icon="ph:magnifying-glass"
-                headline={`No items match “${query.trim()}”`}
-                subtitle="Try a shorter query, or clear the search to see everything."
+                headline={activityIncomplete
+                  ? `No loaded items match “${query.trim()}”`
+                  : `No items match “${query.trim()}”`}
+                subtitle={activityIncomplete
+                  ? activity?.patInvalid
+                    ? "Only loaded public activity was searched. Update the rejected PAT to search private repos and reviews."
+                    : `Only loaded activity was searched. ${completenessNotice ?? "GitHub activity is incomplete."}`
+                  : "Try a shorter query, or clear the search to see everything."}
+              />
+            ) : completenessNotice ? (
+              <EmptyState
+                icon="ph:warning-circle"
+                headline="GitHub activity is incomplete"
+                subtitle={completenessNotice}
+                actions={
+                  completenessNeedsRetry ? (
+                    <Button
+                      variant="secondary"
+                      leadingIcon="ph:arrow-clockwise"
+                      onClick={refreshActivity}
+                      disabled={retryBlocked}
+                    >
+                      {retryBlocked ? "Retry later" : "Retry"}
+                    </Button>
+                  ) : reviewsUnavailable ? (
+                    <Button variant="secondary" leadingIcon="ph:key" onClick={() => setShowPatModal(true)}>
+                      Add PAT
+                    </Button>
+                  ) : undefined
+                }
               />
             ) : activity?.patInvalid ? (
               // A dead PAT means this emptiness is unverifiable — an all-clear
@@ -2938,7 +3098,7 @@ export function GitHubView({
                 cards={cards}
                 familiarsFailed={familiarsFailed}
                 cardsFailed={cardsFailed}
-                counts={counts}
+                countLabels={countLabels}
                 onJumpToSession={onJumpToSession}
                 onFocusCard={onFocusCard}
                 onAfterLink={refreshLinkedWork}
@@ -3188,9 +3348,8 @@ export function GitHubView({
         )}
       </div>
 
-      {/* Keyboard hints moved to the ⌘/ Shortcuts sheet (§8 chrome diet); the
-          low-rate warning lives beside the header rate chip context, and the
-          auth state is already the header's gh-compact-auth chip. */}
+      {/* Keyboard hints moved to the ⌘/ Shortcuts sheet (§8 chrome diet); only
+          the actionable low-rate warning remains in this footer. */}
       {activity?.rateLimit && activity.rateLimit.remaining < 10 && (
         <footer className="github-surface-footer shrink-0 px-5 py-1.5 text-[length:var(--text-2xs)] flex items-center justify-end">
           <span className="inline-flex items-center gap-1 text-[var(--color-warning)]">

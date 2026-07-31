@@ -1,14 +1,8 @@
 "use client";
 
-// Marketplace hub — the store and your familiars' setup merged into one
-// surface. A single slim header row holds the section tabs (Browse · Crafts ·
-// Skills · Build, with live counts) and the scoped search — no
-// hero. Browse is the plugin store (collections, categories, cards);
-// Crafts sits between Role context and effective capabilities; Skills is
-// the "what my familiars can do" view that used
-// to live on the separate Roles page; Build authors a new SKILL.md into a
-// local skill root. Deep links via WorkspaceMode still work —
-// "roles" and "capabilities" land on Browse while those sections are hidden.
+// Marketplace hub — owned inventory, a curated Skills preview, and local
+// authoring in one surface. Crafts remains an explicitly flag-gated section.
+// Legacy roles/capabilities deep links land on Yours.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
@@ -31,21 +25,18 @@ import {
 } from "@/lib/craft-arrival";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
-import { CollectionStrip } from "@/components/marketplace/collection-strip";
 import { SkillBuilder } from "@/components/marketplace/skill-builder";
+import { SkillsComingSoon } from "@/components/marketplace/skills-coming-soon";
 import { type SkillBrowserEntry } from "@/lib/skill-directory";
 import { type FamiliarForSkill } from "@/components/skill-detail-drawer";
 import { SkillExploreCard } from "@/components/marketplace/skill-explore-card";
 import { SkillExploreDrawer } from "@/components/marketplace/skill-explore-drawer";
-import { sourceTarget } from "@/lib/skill-directory";
 import {
   categoriesFrom,
   filterPlugins,
   sortPlugins,
   pluginBadgeState,
-  normalizeMarketplaceScope,
-  resolveCollection,
-  COLLECTIONS,
+  visibleMarketplacePlugins,
   type KindFilter,
   type SortKey,
   type MarketplacePlugin,
@@ -63,6 +54,7 @@ import {
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { caveCrafts } from "@/lib/feature-flags";
 
 export type { MarketplaceSection } from "@/components/marketplace/marketplace-view-model";
 
@@ -89,33 +81,41 @@ export function MarketplaceViewSurface({
   initialSection = "browse",
   familiars = [],
 }: Props = {}) {
+  const craftsEnabled = caveCrafts();
   // Roles and Capabilities are hidden: their deep links land on Browse.
   const [storedSection, setStoredSection] = useSurfacePreference(surfacePreferenceSpecs.marketplace.section);
   // Alias links are a one-visit destination, not a replacement for a normal
   // return preference.
-  const initialDestination = initialSection === "roles" || initialSection === "capabilities" ? "browse" : initialSection;
+  const initialDestination = initialSection === "roles" || initialSection === "capabilities"
+    ? "browse"
+    : initialSection === "crafts" ? craftsEnabled ? "crafts" : "browse" : initialSection;
   const [deepLinkSection, setDeepLinkSection] = useState<MarketplaceSection | null>(
     initialSection === "roles" || initialSection === "capabilities"
       ? "browse"
       : initialDestination === "browse" ? null : initialDestination,
   );
-  const section = deepLinkSection ?? storedSection;
+  const section = !craftsEnabled && (deepLinkSection ?? storedSection) === "crafts"
+    ? "browse"
+    : deepLinkSection ?? storedSection;
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
 
-  // Store state (Browse section).
+  // Owned Marketplace inventory.
   const [plugins, setPlugins] = useState<MarketplacePlugin[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useSurfacePreference(surfacePreferenceSpecs.marketplace.category);
   const [kind, setKind] = useSurfacePreference(surfacePreferenceSpecs.marketplace.kind);
-  // Explore's rail "Status" segment and its skill "Topics" scope, plus the
-  // card/list layout toggle — all durable so Explore reopens as you left it.
+  useEffect(() => {
+    if (!craftsEnabled && kind === "craft") setKind("all");
+  }, [craftsEnabled, kind, setKind]);
+  // Yours' setup filter and card/list layout remain durable.
   const [status, setStatus] = useSurfacePreference(surfacePreferenceSpecs.marketplace.status);
-  const [topic, setTopic] = useSurfacePreference(surfacePreferenceSpecs.marketplace.topic);
   const [viewMode, setViewMode] = useSurfacePreference(surfacePreferenceSpecs.marketplace.view);
   const [sort, setSort] = useSurfacePreference(surfacePreferenceSpecs.marketplace.sort);
-  const [collectionId, setCollectionId] = useSurfacePreference(surfacePreferenceSpecs.marketplace.collection);
+  useEffect(() => {
+    if (status === "installed") setStatus("all");
+  }, [status, setStatus]);
   const [selected, setSelected] = useState<string | null>(null);
   const [creatingCraft, setCreatingCraft] = useState(false);
   // Editing an existing draft reopens the create drawer pre-seeded (F5).
@@ -144,23 +144,12 @@ export function MarketplaceViewSurface({
     setBusyIds(next);
   }, []);
 
-  // Registry skills merged into Explore's grid (the "Skills" type). The
-  // directory feeds both the card pool and the SkillExploreDrawer.
+  // Locally scanned skills join the owned inventory and its detail drawer.
   const [skills, setSkills] = useState<SkillBrowserEntry[]>([]);
   const [skillsLoaded, setSkillsLoaded] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
-  // The skill opened in the Explore detail drawer.
+  // The skill opened in the Yours detail drawer.
   const [exploreSkill, setExploreSkill] = useState<SkillBrowserEntry | null>(null);
-  // Optimistic install overrides + in-flight ids for registry skills — the
-  // catalog's install state is separate from the plugin `busyIds` set.
-  const [skillInstalled, setSkillInstalled] = useState<Record<string, boolean>>({});
-  const [skillBusyIds, setSkillBusyIds] = useState<ReadonlySet<string>>(new Set());
-  // Synchronous in-flight guard for skill install/remove. `skillBusyIds` drives
-  // the button's disabled state, but that only applies after a re-render — a
-  // fast double-click can fire two toggles in the same frame, reading a stale
-  // `installedNow` and dispatching two conflicting requests. A ref updates
-  // immediately, so it closes that window before the state ever lands.
-  const skillInFlight = useRef<Set<string>>(new Set());
   // Each loader keeps its in-flight controller so a newer load (or unmount)
   // aborts the previous one — a slow response can't land after a fresher one
   // and clobber the list (the useProjects hygiene pattern). A superseded load
@@ -233,22 +222,17 @@ export function MarketplaceViewSurface({
     enabled: craftWatch !== null && !creatingCraft,
   });
 
-  const loadSkills = useCallback(async (search = "") => {
+  const loadSkills = useCallback(async (force = false) => {
     skillsCtl.current?.abort();
     const ctl = new AbortController();
     skillsCtl.current = ctl;
     setSkillsLoaded(false);
     try {
-      const trimmed = search.trim();
-      const json = (trimmed
-        ? await fetch(`/api/skills/directory?q=${encodeURIComponent(trimmed)}`, { cache: "no-store", signal: ctl.signal }).then((res) => res.json())
-        : (await readSurfaceResource("marketplace:skills")).data) as {
+      const { data: json } = await readSurfaceResource<{
         ok?: boolean;
         entries?: SkillBrowserEntry[];
         error?: string;
-        source?: string;
-        fetchedAt?: string;
-      };
+      }>("marketplace:skills", force);
       if (ctl.signal.aborted) return;
       if (!json.ok) throw new Error(json.error ?? "skills unavailable");
       setSkills(json.entries ?? []);
@@ -271,16 +255,6 @@ export function MarketplaceViewSurface({
     };
   }, [load, loadSkills]);
 
-  // Explore searches the registry as you type (the skills half of the pool),
-  // debounced so remote results don't thrash. Only while Skills are in view.
-  useEffect(() => {
-    if (section !== "browse" || kind === "mcp" || kind === "api") return;
-    const timeout = window.setTimeout(() => {
-      void loadSkills(query);
-    }, query.trim() ? 250 : 0);
-    return () => window.clearTimeout(timeout);
-  }, [section, kind, query, loadSkills]);
-
   // "/" focuses the hub search from anywhere on the surface (unless typing).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -296,27 +270,32 @@ export function MarketplaceViewSurface({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Switch sections (clearing the per-section search). Shared by the tab
-  // buttons, the tablist's arrow-key navigation, and cross-section CTAs. The
-  // retired Skills tab folds into Explore pre-filtered to the Skills type, so
-  // its deep links and cross-nav still land somewhere sensible.
+  // Switch sections and clear the per-section search.
   const selectSection = useCallback((next: MarketplaceSection) => {
     setDeepLinkSection(null);
-    if (next === "skills") {
-      setStoredSection("browse");
-      setKind("skill");
-    } else {
-      setStoredSection(next === "roles" || next === "capabilities" ? "browse" : next);
-    }
+    setStoredSection(next === "roles" || next === "capabilities" ? "browse" : next);
     setQuery("");
-  }, [setStoredSection, setKind]);
+  }, [setStoredSection]);
 
-  const categories = useMemo(() => categoriesFrom(plugins), [plugins]);
+  const viewOwnedSkills = useCallback(() => {
+    setDeepLinkSection(null);
+    setStoredSection("browse");
+    setKind("skill");
+    setStatus("all");
+    setCategory("All");
+    setQuery("");
+  }, [setCategory, setKind, setStatus, setStoredSection]);
+
+  const visiblePlugins = useMemo(
+    () => visibleMarketplacePlugins(plugins, craftsEnabled),
+    [plugins, craftsEnabled],
+  );
+  const categories = useMemo(() => categoriesFrom(visiblePlugins), [visiblePlugins]);
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const p of plugins) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+    for (const p of visiblePlugins) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
     return counts;
-  }, [plugins]);
+  }, [visiblePlugins]);
 
   // The slim header's tab items — label plus a live count per section. Counts
   // appear once their loader settles so the header never flashes a stale 0;
@@ -328,116 +307,73 @@ export function MarketplaceViewSurface({
         label: s.label,
         icon: s.icon,
         count:
-          s.id === "browse" && loaded && skillsLoaded ? plugins.length + skills.length
-          : s.id === "browse" && loaded ? plugins.length
-          : s.id === "crafts" && loaded ? plugins.filter((plugin) => plugin.kind === "craft").length
+          s.id === "browse" && loaded && skillsLoaded ? visiblePlugins.length + skills.length
+          : s.id === "browse" && loaded ? visiblePlugins.length
+          : s.id === "crafts" && loaded ? visiblePlugins.filter((plugin) => plugin.kind === "craft").length
           : undefined,
         title: SECTION_HINT[s.id],
       })),
-    [loaded, plugins.length, skillsLoaded, skills.length],
+    [loaded, visiblePlugins, skillsLoaded, skills.length],
   );
 
-  const activeCollection = useMemo(
-    () => COLLECTIONS.find((c) => c.id === collectionId) ?? null,
-    [collectionId],
-  );
-  // Catalog categories are data-driven, so a choice can disappear between
-  // visits. Keep durable filters truthful by dropping only the invalid scope
-  // after the first catalog response has established the available options.
+  // Catalog categories are data-driven. Reset a retired category after the
+  // owned inventory has established the current options.
   useEffect(() => {
     if (!loaded) return;
-    const normalized = normalizeMarketplaceScope(categories, category, collectionId);
-    if (normalized.category !== category) setCategory(normalized.category);
-    if (normalized.collectionId !== collectionId) setCollectionId(normalized.collectionId);
-  }, [loaded, categories, category, collectionId, setCategory, setCollectionId]);
-  const collectionIds = useMemo(
-    () => (activeCollection ? resolveCollection(plugins, activeCollection).map((p) => p.id) : undefined),
-    [plugins, activeCollection],
-  );
+    if (!categories.includes(category)) setCategory("All");
+  }, [loaded, categories, category, setCategory]);
 
-  // Registry-skill install state overlays optimistic local edits on top of the
-  // directory entry's own installed flag.
-  const skillIsInstalled = useCallback(
-    (s: SkillBrowserEntry) => skillInstalled[s.id] ?? Boolean(s.installed ?? s.local?.installed),
-    [skillInstalled],
-  );
-
-  // Skill "Topics" for the collection rail — derived from the loaded directory
-  // (top topics by frequency), so the rail reflects the live catalog.
-  const skillTopics = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const s of skills) for (const t of s.topics ?? s.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
-    const top = [...counts.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, 12)
-      .map(([id, count]) => ({ id, label: id, count }));
-    return [{ id: "all", label: "All topics", count: skills.length }, ...top];
-  }, [skills]);
-  const skillMatchesTopic = useCallback(
-    (s: SkillBrowserEntry) => topic === "all" || (s.topics ?? s.tags ?? []).includes(topic),
-    [topic],
-  );
-
-  // Type filter is the rail's "Type" segment. When Skills is active the
-  // category scope doesn't apply (skills carry topics, not plugin categories).
   const showSkillType = kind === "all" || kind === "skill";
   const statusOkPlugin = useCallback(
-    (p: MarketplacePlugin) => {
-      const state = pluginBadgeState(p);
-      if (status === "installed") return state === "added";
-      if (status === "needs-setup") return state === "needs-setup";
-      return true;
-    },
+    (plugin: MarketplacePlugin) =>
+      status !== "needs-setup" || pluginBadgeState(plugin) === "needs-setup",
     [status],
   );
 
-  // Plugin pool — connectors (mcp/api) plus plugin-kind skills, honoring the
-  // rail's Type + Status + Category/Collection scope and the search box.
   const filteredPlugins = useMemo(() => {
-    const matched = filterPlugins(plugins, {
+    const typeSafePlugins = kind === "skill"
+      ? visiblePlugins.filter((plugin) => !plugin.unlisted)
+      : visiblePlugins;
+    const matched = filterPlugins(typeSafePlugins, {
       query,
-      category: activeCollection || kind === "skill" ? "All" : category,
+      category: kind === "skill" ? "All" : category,
       kind,
-      ids: collectionIds,
     }).filter(statusOkPlugin);
-    return sortPlugins(matched, sort);
-  }, [plugins, query, category, kind, sort, collectionIds, activeCollection, statusOkPlugin]);
+    return sortPlugins(matched, "name");
+  }, [visiblePlugins, query, category, kind, statusOkPlugin]);
 
-  // Registry skills join the pool whenever Skills (or All) is the active type;
-  // a picked plugin category or "needs-setup" status excludes them.
   const q = query.trim().toLowerCase();
   const filteredSkills = useMemo(() => {
-    if (!showSkillType) return [] as SkillBrowserEntry[];
-    if (status === "needs-setup") return [];
-    if (kind !== "skill" && category !== "All" && !activeCollection) return [];
-    return skills.filter((s) => {
-      if (status === "installed" && !skillIsInstalled(s)) return false;
-      if (!skillMatchesTopic(s)) return false;
+    if (!showSkillType || status === "needs-setup") return [] as SkillBrowserEntry[];
+    if (kind === "all" && category !== "All") return [] as SkillBrowserEntry[];
+    return skills.filter((skill) => {
       if (!q) return true;
-      return [s.name, s.description ?? "", s.owner ?? "", (s.topics ?? s.tags ?? []).join(" ")]
-        .join(" ")
-        .toLowerCase()
-        .includes(q);
+      return [
+        skill.name,
+        skill.description ?? "",
+        skill.owner ?? "",
+        (skill.topics ?? skill.tags ?? []).join(" "),
+      ].join(" ").toLowerCase().includes(q);
     });
-  }, [skills, showSkillType, status, kind, category, activeCollection, skillMatchesTopic, skillIsInstalled, q]);
+  }, [skills, showSkillType, status, kind, category, q]);
 
-  // Explore renders plugins and skills as one card pool. In the default,
-  // unfiltered view they split into "Tools & connectors" and "Skills";
-  // otherwise they collapse into a single flat section.
   const exploreGroups = useMemo(() => {
     const connectors = filteredPlugins.filter((p) => p.kind === "mcp" || p.kind === "api");
-    const pluginSkills = filteredPlugins.filter((p) => p.kind === "skill");
-    const otherPlugins = filteredPlugins.filter((p) => p.kind !== "mcp" && p.kind !== "api" && p.kind !== "skill");
-    const grouped = kind === "all" && category === "All" && topic === "all" && !q && status === "all" && !activeCollection;
+    const pluginSkills = filteredPlugins.filter((p) => p.kind === "skill" && !p.unlisted);
+    const otherPlugins = filteredPlugins.filter((p) => (
+      p.unlisted || (p.kind !== "mcp" && p.kind !== "api" && p.kind !== "skill")
+    ));
+    const grouped = kind === "all" && category === "All" && !q && status === "all";
     if (grouped) {
       return [
-        { key: "tools", name: "Tools & connectors", sub: "MCP servers and API endpoints your familiars can call.", plugins: connectors, skills: [] as SkillBrowserEntry[] },
-        { key: "skills", name: "Skills", sub: "SKILL.md procedures loaded on demand while they work.", plugins: pluginSkills, skills: filteredSkills },
+        { key: "tools", name: "Tools & connectors", sub: "Installed services and local integrations.", plugins: connectors, skills: [] as SkillBrowserEntry[] },
+        { key: "skills", name: "Your skills", sub: "Installed and authored SKILL.md procedures.", plugins: pluginSkills, skills: filteredSkills },
+        { key: "other", name: "Other items", sub: "Installed prompts, packs, and preserved local records.", plugins: otherPlugins, skills: [] as SkillBrowserEntry[] },
       ].filter((g) => g.plugins.length + g.skills.length > 0);
     }
     return [{ key: "all", name: "", sub: "", plugins: [...connectors, ...pluginSkills, ...otherPlugins], skills: filteredSkills }]
       .filter((g) => g.plugins.length + g.skills.length > 0);
-  }, [filteredPlugins, filteredSkills, kind, category, topic, q, status, activeCollection]);
+  }, [filteredPlugins, filteredSkills, kind, category, q, status]);
   const exploreCount = useMemo(
     () => exploreGroups.reduce((n, g) => n + g.plugins.length + g.skills.length, 0),
     [exploreGroups],
@@ -446,19 +382,18 @@ export function MarketplaceViewSurface({
   // Rail counts (mock parity): Type spans the whole catalog; Status is global.
   const typeCount = useCallback(
     (id: KindFilter) => {
-      if (id === "all") return plugins.length + skills.length;
-      if (id === "skill") return plugins.filter((p) => p.kind === "skill").length + skills.length;
-      return plugins.filter((p) => p.kind === id).length;
+      if (id === "all") return visiblePlugins.length + skills.length;
+      if (id === "skill") return visiblePlugins.filter((p) => p.kind === "skill" && !p.unlisted).length + skills.length;
+      return visiblePlugins.filter((p) => p.kind === id).length;
     },
-    [plugins, skills],
+    [visiblePlugins, skills],
   );
   const statusCount = useCallback(
-    (id: MarketplaceStatusFilter) => {
-      if (id === "installed") return plugins.filter((p) => pluginBadgeState(p) === "added").length + skills.filter(skillIsInstalled).length;
-      if (id === "needs-setup") return plugins.filter((p) => pluginBadgeState(p) === "needs-setup").length;
-      return plugins.length + skills.length;
-    },
-    [plugins, skills, skillIsInstalled],
+    (id: MarketplaceStatusFilter) =>
+      id === "needs-setup"
+        ? visiblePlugins.filter((plugin) => pluginBadgeState(plugin) === "needs-setup").length
+        : visiblePlugins.length + skills.length,
+    [visiblePlugins, skills],
   );
 
   const craftPlugins = useMemo(
@@ -473,13 +408,9 @@ export function MarketplaceViewSurface({
   const selectedPlugin = useMemo(() => plugins.find((p) => p.id === selected) ?? null, [plugins, selected]);
   const configuringPlugin = useMemo(() => plugins.find((p) => p.id === configuringId) ?? null, [plugins, configuringId]);
 
-  // The featured strip only makes sense on the unfiltered default landing.
-  const showFeatured = !activeCollection && !query && category === "All" && kind === "all";
-
   const selectCategory = useCallback((cat: string) => {
     setCategory(cat);
-    setCollectionId(null);
-  }, []);
+  }, [setCategory]);
 
   const setInstalled = useCallback((id: string, installed: boolean) => {
     setPlugins((prev) => prev.map((p) => (p.id === id ? { ...p, installed } : p)));
@@ -552,6 +483,10 @@ export function MarketplaceViewSurface({
         announce("Added to your setup", "polite");
       }
       invalidateSurfaceResources("marketplace:catalog");
+      // Craft state is already updated above. Avoid replacing the visible
+      // card while its detail dialog owns focus; the next surface load reads
+      // the invalidated owned inventory.
+      if (!isCraft) void load(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "install failed";
       if (isCraft) setCraftErrors((current) => ({ ...current, [id]: { message: msg } }));
@@ -563,7 +498,7 @@ export function MarketplaceViewSurface({
     } finally {
       markBusy(id, false);
     }
-  }, [announce, markBusy, plugins, setInstalled]);
+  }, [announce, load, markBusy, plugins, setInstalled]);
 
   const remove = useCallback(async (id: string) => {
     const plugin = plugins.find((entry) => entry.id === id);
@@ -620,6 +555,7 @@ export function MarketplaceViewSurface({
         announce("Removed from your setup", "polite");
       }
       invalidateSurfaceResources("marketplace:catalog");
+      if (!isCraft) void load(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "uninstall failed";
       if (isCraft) setCraftErrors((current) => ({ ...current, [id]: { message: msg } }));
@@ -631,60 +567,22 @@ export function MarketplaceViewSurface({
     } finally {
       markBusy(id, false);
     }
-  }, [announce, markBusy, plugins, setInstalled]);
-
-  // Install / remove a registry skill from an Explore card or the drawer.
-  // Optimistic, with revert on failure — mirrors the plugin add/remove flow.
-  const toggleSkill = useCallback(async (s: SkillBrowserEntry) => {
-    if (skillInFlight.current.has(s.id)) return;
-    skillInFlight.current.add(s.id);
-    const installedNow = skillInstalled[s.id] ?? Boolean(s.installed ?? s.local?.installed);
-    setSkillBusyIds((prev) => new Set(prev).add(s.id));
-    setSkillInstalled((prev) => ({ ...prev, [s.id]: !installedNow }));
-    try {
-      if (installedNow && s.path) {
-        const res = await fetch(`/api/skills/local?path=${encodeURIComponent(s.path)}`, { method: "DELETE", cache: "no-store" });
-        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-        if (!res.ok || !json.ok) throw new Error(json.error ?? "remove failed");
-        announce("Skill removed", "polite");
-      } else if (!installedNow) {
-        const res = await fetch("/api/skills/directory/install", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: s.id, source: sourceTarget(s) }),
-        });
-        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-        if (!res.ok || !json.ok) throw new Error(json.error ?? "install failed");
-        announce("Skill installed", "polite");
-      }
-      invalidateSurfaceResources("marketplace:skills");
-    } catch (err) {
-      setSkillInstalled((prev) => ({ ...prev, [s.id]: installedNow }));
-      announce(err instanceof Error ? err.message : "action failed", "assertive");
-    } finally {
-      skillInFlight.current.delete(s.id);
-      setSkillBusyIds((prev) => {
-        const next = new Set(prev);
-        next.delete(s.id);
-        return next;
-      });
-    }
-  }, [announce, skillInstalled]);
+  }, [announce, load, markBusy, plugins, setInstalled]);
 
   const activeError =
     section === "browse" ? error ?? skillsError
     : null;
 
-  // Browse toolbar context — names the active scope only when it isn't the
-  // default landing (the rail highlight and search box already show it, and
-  // the collection banner names an open collection).
-  const scopeLabel = activeCollection
-    ? null
-    : query.trim()
-      ? "Search results"
-      : category !== "All"
-        ? category
-        : null;
+  const scopeLabel = query.trim()
+    ? "Search results"
+    : category !== "All"
+      ? category
+      : null;
+  const hasFilters = Boolean(query || category !== "All" || kind !== "all" || status !== "all");
+  const searchLabel =
+    section === "browse" ? SEARCH_LABEL.browse
+    : section === "crafts" ? SEARCH_LABEL.crafts
+    : null;
 
   return (
     // @container/marketplace — layout responds to the PANE width, not the
@@ -710,15 +608,15 @@ export function MarketplaceViewSurface({
           className="surface-compact-tabs"
         />
         <div className="surface-compact-actions">
-          {section !== "capabilities" && section !== "build" ? (
+          {searchLabel ? (
             <SearchInput
               ref={searchRef}
               value={query}
               onValueChange={setQuery}
               onClear={() => setQuery("")}
-              placeholder={SEARCH_LABEL[section]}
+              placeholder={searchLabel}
               containerClassName="surface-compact-search"
-              aria-label={SEARCH_LABEL[section]}
+              aria-label={searchLabel}
             />
           ) : null}
         </div>
@@ -736,12 +634,8 @@ export function MarketplaceViewSurface({
           aria-labelledby="marketplace-tab-browse"
           className="flex min-h-0 flex-1"
         >
-          {/* Explore rail — Type · Status · Categories/Topics. Type is the
-              primary axis (MCP · API · Skill), so tools and skills share one
-              grid; the collection group swaps to skill Topics when Skills is
-              the active type. Hidden in narrow panes, where the Type chip row
-              stands in. */}
-          <aside className="mk-rail hidden shrink-0 @min-[840px]/marketplace:block" aria-label="Filter the catalog">
+          {/* Yours rail — Type · Status · Categories. */}
+          <aside className="mk-rail hidden shrink-0 @min-[840px]/marketplace:block" aria-label="Filter your items">
             <p className="mk-rail__label">Type</p>
             <nav className="mk-rail__group" aria-label="Filter by type">
               {TYPE_RAIL.map((t) => (
@@ -751,7 +645,7 @@ export function MarketplaceViewSurface({
                   label={t.label}
                   count={loaded ? typeCount(t.id) : undefined}
                   active={kind === t.id}
-                  onClick={() => { setKind(t.id); setSelected(null); setCollectionId(null); }}
+                  onClick={() => { setKind(t.id); setSelected(null); }}
                 />
               ))}
             </nav>
@@ -768,37 +662,18 @@ export function MarketplaceViewSurface({
                 />
               ))}
             </nav>
-            {kind === "skill" ? (
-              <>
-                <p className="mk-rail__label">Topics</p>
-                <nav className="mk-rail__group" aria-label="Filter by topic">
-                  {skillTopics.map((t) => (
-                    <ExploreRailRow
-                      key={t.id}
-                      label={t.label}
-                      count={t.count}
-                      active={topic === t.id}
-                      onClick={() => setTopic(t.id)}
-                    />
-                  ))}
-                </nav>
-              </>
-            ) : (
-              <>
-                <p className="mk-rail__label">Categories</p>
-                <nav className="mk-rail__group" aria-label="Filter by category">
-                  {categories.map((cat) => (
-                    <ExploreRailRow
-                      key={cat}
-                      label={cat}
-                      count={cat === "All" ? plugins.length : categoryCounts.get(cat) ?? 0}
-                      active={!activeCollection && category === cat}
-                      onClick={() => selectCategory(cat)}
-                    />
-                  ))}
-                </nav>
-              </>
-            )}
+            <p className="mk-rail__label">Categories</p>
+            <nav className="mk-rail__group" aria-label="Filter by category">
+              {categories.map((cat) => (
+                <ExploreRailRow
+                  key={cat}
+                  label={cat}
+                  count={cat === "All" ? visiblePlugins.length : categoryCounts.get(cat) ?? 0}
+                  active={category === cat}
+                  onClick={() => selectCategory(cat)}
+                />
+              ))}
+            </nav>
           </aside>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 @min-[560px]/marketplace:px-6">
@@ -808,7 +683,7 @@ export function MarketplaceViewSurface({
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => { setKind(t.id); setCollectionId(null); }}
+                  onClick={() => setKind(t.id)}
                   className={`focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-[length:var(--text-sm)] transition-colors ${
                     kind === t.id
                       ? "bg-[var(--text-primary)] text-[var(--bg-base)]"
@@ -822,41 +697,7 @@ export function MarketplaceViewSurface({
               ))}
             </div>
 
-            {showFeatured && plugins.length > 0 ? (
-              <CollectionStrip
-                collections={COLLECTIONS}
-                plugins={plugins}
-                onOpen={(id) => {
-                  setCollectionId(id);
-                  setCategory("All");
-                  setKind("all");
-                }}
-              />
-            ) : null}
-
-            {activeCollection ? (
-              <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-4 py-3">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
-                    <Icon name={activeCollection.icon} width={18} className="text-[var(--text-primary)]" />
-                  </span>
-                  <div>
-                    <p className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">{activeCollection.title}</p>
-                    <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">{activeCollection.description}</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCollectionId(null)}
-                  className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                >
-                  <Icon name="ph:arrow-left" width={12} aria-hidden /> All items
-                </button>
-              </div>
-            ) : null}
-
-            {/* Explore toolbar — result context on the left, a grid/list view
-                toggle and sort on the right. */}
+            {/* Yours toolbar — result context and card layout. */}
             <div className="marketplace-browse-summary mb-4">
               <p className="min-w-0 self-center truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
                 {!loaded ? (
@@ -892,17 +733,6 @@ export function MarketplaceViewSurface({
                     <Icon name="ph:rows" width={15} aria-hidden />
                   </button>
                 </div>
-                <label className="flex items-center gap-2 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-                  <span className="sr-only">Sort listings</span>
-                  <Icon name="ph:sort-ascending" width={14} aria-hidden />
-                  <StandardSelect
-                    label="Sort listings"
-                    value={sort}
-                    onChange={(next) => setSort(next as SortKey)}
-                    className="focus-ring cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)]"
-                    options={SORT_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
-                  />
-                </label>
               </div>
             </div>
 
@@ -910,18 +740,24 @@ export function MarketplaceViewSurface({
               <SkeletonRows count={6} />
             ) : exploreCount === 0 ? (
               <EmptyState
-                icon="ph:magnifying-glass-bold"
-                headline={query || category !== "All" || kind !== "all" || topic !== "all" || status !== "all" || activeCollection ? "No matches" : "Nothing available"}
-                subtitle={query || category !== "All" || kind !== "all" || topic !== "all" || status !== "all" || activeCollection ? "Nothing matches these filters. Try another type, collection, or clear your search." : "The catalog is empty."}
-                actions={query || category !== "All" || kind !== "all" || topic !== "all" || status !== "all" || activeCollection ? (
+                icon={hasFilters ? "ph:magnifying-glass-bold" : "ph:squares-four"}
+                headline={hasFilters ? "No matches" : "Nothing in your Marketplace yet"}
+                subtitle={hasFilters
+                  ? "Nothing matches these filters. Try another type or clear your search."
+                  : "Installed tools and authored skills appear here. Build a skill to start your local collection."}
+                actions={hasFilters ? (
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => { setCategory("All"); setTopic("all"); setKind("all"); setStatus("all"); setCollectionId(null); setQuery(""); }}
+                    onClick={() => { setCategory("All"); setKind("all"); setStatus("all"); setQuery(""); }}
                   >
                     Clear filters
                   </Button>
-                ) : undefined}
+                ) : (
+                  <Button variant="primary" size="sm" leadingIcon="ph:hammer" onClick={() => selectSection("build")}>
+                    Build a skill
+                  </Button>
+                )}
               />
             ) : (
               <div className="marketplace-category-stack">
@@ -952,16 +788,11 @@ export function MarketplaceViewSurface({
                           onConfigure={setConfiguringId}
                         />
                       ))}
-                      {group.skills.map((s) => (
+                      {group.skills.map((skill) => (
                         <SkillExploreCard
-                          // Skill ids are scoped to a publisher. The directory can
-                          // legitimately contain the same id from distinct sources.
-                          key={`skill:${s.slug ?? sourceTarget(s)}:${s.id}`}
-                          skill={s}
-                          installed={skillIsInstalled(s)}
-                          busy={skillBusyIds.has(s.id)}
+                          key={`skill:${skill.local?.path ?? skill.path ?? skill.slug ?? skill.id}:${skill.id}`}
+                          skill={skill}
                           onOpen={setExploreSkill}
-                          onToggleInstall={toggleSkill}
                         />
                       ))}
                     </div>
@@ -971,7 +802,12 @@ export function MarketplaceViewSurface({
             )}
           </div>
         </div>
-      ) : section === "crafts" ? (
+      ) : section === "skills" ? (
+        <SkillsComingSoon
+          onViewOwnedSkills={viewOwnedSkills}
+          onBuildSkill={() => selectSection("build")}
+        />
+      ) : craftsEnabled && section === "crafts" ? (
         <div
           role="tabpanel"
           id="marketplace-panel-crafts"
@@ -1052,8 +888,8 @@ export function MarketplaceViewSurface({
           {!loaded ? <SkeletonRows count={3} /> : craftPlugins.length === 0 ? (
             <EmptyState
               icon="ph:package-bold"
-              headline={query ? "No matching Crafts" : "No public Crafts yet"}
-              subtitle={query ? "Try a different Craft name or capability." : "Audited Research Crafts will appear here when they are enabled."}
+              headline={query ? "No matching Crafts" : "No Crafts in your Marketplace yet"}
+              subtitle={query ? "Try a different Craft name or capability." : "Local drafts and installed Crafts appear here."}
             />
           ) : (
             <>
@@ -1083,10 +919,10 @@ export function MarketplaceViewSurface({
                   {draftCrafts.length > 0 ? (
                     <div className="craft-grid-group__head">
                       <h3 id="craft-published-heading">Published</h3>
-                      <p>Versioned Crafts from the audited catalog, installable and equippable.</p>
+                      <p>Versioned Crafts installed from the audited catalog.</p>
                     </div>
                   ) : null}
-                  <div className="marketplace-category-grid" aria-label="Available Crafts">
+                  <div className="marketplace-category-grid" aria-label="Installed Crafts">
                     {publishedCrafts.map((plugin) => (
                       <MarketplaceCard
                         key={plugin.id}
@@ -1116,9 +952,9 @@ export function MarketplaceViewSurface({
             familiars={familiars}
             onSaved={() => {
               invalidateSurfaceResources("marketplace:skills");
-              void loadSkills("");
+              void loadSkills(true);
             }}
-            onViewSkills={() => selectSection("skills")}
+            onViewSkills={viewOwnedSkills}
           />
         </div>
       )}
@@ -1159,7 +995,7 @@ export function MarketplaceViewSurface({
         />
       ) : null}
 
-      <CraftCreateDrawer
+      {craftsEnabled ? <CraftCreateDrawer
         open={creatingCraft}
         seed={craftSeed}
         onClose={() => {
@@ -1173,18 +1009,15 @@ export function MarketplaceViewSurface({
           void load(true).then(() => setSelected(id));
           announce("Craft draft saved", "polite");
         }}
-      />
+      /> : null}
 
       <SkillExploreDrawer
-        key={exploreSkill?.id ?? "none"}
+        key={exploreSkill?.local?.path ?? exploreSkill?.path ?? exploreSkill?.id ?? "none"}
         skill={exploreSkill}
-        installed={exploreSkill ? skillIsInstalled(exploreSkill) : false}
-        busy={exploreSkill ? skillBusyIds.has(exploreSkill.id) : false}
         onClose={() => setExploreSkill(null)}
-        onInstallToggle={(s) => void toggleSkill(s)}
         onChanged={() => {
           invalidateSurfaceResources("marketplace:skills");
-          void loadSkills(query);
+          void loadSkills(true);
         }}
       />
     </section>

@@ -187,6 +187,10 @@ export function CanvasEditor(props: {
   const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
   const [viewportId, setViewportId] = useState<CanvasViewportPresetId>("fill");
   const [viewportScale, setViewportScale] = useState(1);
+  // Whether the current selection rides along with the next design-chat
+  // message. Picking a component attaches it (that's why you picked it); the
+  // chip's detach lets you ask a general question without losing the pick.
+  const [attached, setAttached] = useState(true);
 
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const frameShellRef = useRef<HTMLDivElement | null>(null);
@@ -199,6 +203,7 @@ export function CanvasEditor(props: {
   const selectionRef = useRef(selection);
   const annotationsRef = useRef(annotations);
   const styleDraftsRef = useRef(styleDrafts);
+  const attachedRef = useRef(attached);
   const styleLabelsRef = useRef<Record<string, string>>({});
   const generatingRef = useRef(false);
   const commentBusyRef = useRef(false);
@@ -214,6 +219,7 @@ export function CanvasEditor(props: {
   selectionRef.current = selection;
   annotationsRef.current = annotations;
   styleDraftsRef.current = styleDrafts;
+  attachedRef.current = attached;
   onArtifactUpdatedRef.current = onArtifactUpdated;
 
   const inspectorGeneration = useMemo(() => crypto.randomUUID(), [kind, code]);
@@ -266,6 +272,8 @@ export function CanvasEditor(props: {
     selectionRef.current = target;
     styleLabelsRef.current[target.selector] = target.label || target.selector;
     setSelection(target);
+    // A fresh pick is the thing you want to talk about, so it arrives attached.
+    setAttached(true);
     setAnnouncement(`Selected ${target.label || target.selector}.`);
   }, []);
 
@@ -516,6 +524,29 @@ export function CanvasEditor(props: {
     [styleDrafts],
   );
 
+  /**
+   * Undo every live override without reloading the sketch. An empty value
+   * removes the inline declaration the override added, so each element falls
+   * back to the sketch's own CSS — a reload would also drop them, but it would
+   * take the sketch's runtime state (open menus, scroll, game state) with it.
+   */
+  const revertStyleEdits = useCallback(() => {
+    for (const [selector, draft] of Object.entries(styleDraftsRef.current)) {
+      if (draft.dirty.length === 0) continue;
+      const cleared: Record<string, string> = {};
+      for (const property of Object.keys(styleOverrideCss(draft, draft.dirty))) cleared[property] = "";
+      try {
+        inspectorChannelRef.current?.applyStyleOverride(selector, cleared);
+      } catch {
+        // Port may be mid-teardown across a srcdoc swap; dropping the drafts is
+        // still right, since that swap drops the inline styles anyway.
+      }
+    }
+    styleDraftsRef.current = {};
+    setStyleDrafts({});
+    setAnnouncement("Style edits reverted.");
+  }, []);
+
   // ── Persistence helpers ───────────────────────────────────────────────────
 
   /**
@@ -616,21 +647,23 @@ export function CanvasEditor(props: {
   const sendChat = useCallback(() => {
     const ask = chatDraft.trim();
     if (!ask || generatingRef.current) return;
-    const attached = selectionRef.current;
-    pushMessage("user", `${attached ? `[${attached.label || attached.selector}] ` : ""}${ask}`);
+    // Only an attached selection scopes the ask — a detached chip means the
+    // question is about the sketch as a whole even though a pick is live.
+    const target = attachedRef.current ? selectionRef.current : null;
+    pushMessage("user", `${target ? `[${target.label || target.selector}] ` : ""}${ask}`);
     setChatDraft("");
     if (!familiarId) {
       pushMessage("agent", "Pick a familiar to run design changes.");
       return;
     }
-    const contextualAsk = attached
+    const contextualAsk = target
       ? [
           ask,
           "",
           "Apply this to the selected component:",
-          `Label: ${attached.label || "(unlabelled)"}`,
-          `Selector: ${attached.selector}`,
-          ...(attached.excerpt ? [`Excerpt: ${attached.excerpt}`] : []),
+          `Label: ${target.label || "(unlabelled)"}`,
+          `Selector: ${target.selector}`,
+          ...(target.excerpt ? [`Excerpt: ${target.excerpt}`] : []),
         ].join("\n")
       : ask;
     void runRefine(contextualAsk, { successText: "Applied — the sketch is updated." });
@@ -791,7 +824,7 @@ export function CanvasEditor(props: {
 
       <div className="canvas-editor__head">
         <button type="button" className="canvas-editor__back focus-ring" onClick={onClose}>
-          ← Gallery
+          <Icon name="ph:caret-left" width={11} aria-hidden /> Gallery
         </button>
         <span className="canvas-editor__title" title={artifact.title}>{artifact.title}</span>
         <span className="canvas-editor__view-controls" role="group" aria-label="Viewport size">
@@ -908,6 +941,27 @@ export function CanvasEditor(props: {
                     {selection.excerpt ? (
                       <span className="canvas-editor__sel-excerpt">{selection.excerpt}</span>
                     ) : null}
+                    <span className="canvas-editor__sel-actions">
+                      <button
+                        type="button"
+                        className="canvas-editor__sel-action focus-ring"
+                        aria-pressed={attached}
+                        title={attached ? "Detach from the design chat" : "Send this component with the next message"}
+                        onClick={() => setAttached((current) => !current)}
+                      >
+                        <Icon name="ph:arrow-bend-up-left" width={11} aria-hidden />
+                        {attached ? "Attached to chat" : "Attach to chat"}
+                      </button>
+                      <button
+                        type="button"
+                        className="canvas-editor__sel-action focus-ring"
+                        title="Open the inspector for this component"
+                        onClick={() => setMode("edit")}
+                      >
+                        <Icon name="ph:sliders-horizontal" width={11} aria-hidden />
+                        Edit styles
+                      </button>
+                    </span>
                   </div>
                 ) : null}
               </>
@@ -915,7 +969,7 @@ export function CanvasEditor(props: {
 
             {mode === "edit" && !selection ? (
               <p className="canvas-editor__hint">
-                Select a component on the canvas to edit its font, color, border, and padding.
+                Select a component first — the inspector edits one element at a time.
               </p>
             ) : null}
 
@@ -961,34 +1015,53 @@ export function CanvasEditor(props: {
                   Style edits preview live — ask the design chat to make them permanent.
                 </p>
                 {dirtyStyleDescription ? (
-                  <button
-                    type="button"
-                    className="canvas-editor__apply focus-ring"
-                    disabled={generating || !familiarId}
-                    title={familiarId ? "Rewrite the sketch with these style edits" : "Pick a familiar to run design changes"}
-                    onClick={applyStyleEdits}
-                  >
-                    <Icon name="ph:sparkle" width={13} aria-hidden />
-                    {generating ? "Applying…" : "Apply via familiar"}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="canvas-editor__apply focus-ring"
+                      disabled={generating || !familiarId}
+                      title={familiarId ? "Rewrite the sketch with these style edits" : "Pick a familiar to run design changes"}
+                      onClick={applyStyleEdits}
+                    >
+                      <Icon name="ph:sparkle" width={13} aria-hidden />
+                      {generating ? "Applying…" : "Apply via familiar"}
+                    </button>
+                    <button
+                      type="button"
+                      className="canvas-editor__revert focus-ring"
+                      disabled={generating}
+                      title="Drop every live override and return to the sketch's own styles"
+                      onClick={revertStyleEdits}
+                    >
+                      <Icon name="ph:arrow-counter-clockwise" width={11} aria-hidden />
+                      Revert style edits
+                    </button>
+                  </>
                 ) : null}
               </>
             ) : null}
 
             {mode === "comment" ? (
               <>
+                <p className="canvas-editor__hint">
+                  Select a component, then pin a comment to it. Pins hold a selector,
+                  not a position, so they survive a re-render.
+                </p>
                 <div className="canvas-editor__comments">
                   {annotations.length === 0 ? (
-                    <p className="canvas-editor__hint">
-                      No comments yet — select a component and pin the first one.
+                    <p className="canvas-editor__comments-empty">
+                      No pins yet — select a component and pin the first one.
                     </p>
                   ) : (
-                    annotations.map((annotation) => (
+                    annotations.map((annotation, index) => (
                       <div key={annotation.id} className="canvas-editor__comment">
-                        <span className="canvas-editor__comment-target">
-                          {annotation.target.label || annotation.target.selector}
+                        <span className="canvas-editor__comment-index" aria-hidden>{index + 1}</span>
+                        <span className="canvas-editor__comment-body">
+                          <span className="canvas-editor__comment-target">
+                            {annotation.target.label || annotation.target.selector}
+                          </span>
+                          <span className="canvas-editor__comment-note">{annotation.note}</span>
                         </span>
-                        <span className="canvas-editor__comment-note">{annotation.note}</span>
                         <button
                           type="button"
                           className="canvas-editor__comment-remove focus-ring"
@@ -1064,9 +1137,20 @@ export function CanvasEditor(props: {
                 </div>
               ) : null}
             </div>
-            {selection ? (
+            {selection && attached ? (
               <span className="canvas-editor__attach">
-                Attached: {selection.label || selection.selector}
+                <span className="canvas-editor__attach-name">
+                  Attached: {selection.label || selection.selector}
+                </span>
+                <button
+                  type="button"
+                  className="canvas-editor__detach focus-ring"
+                  aria-label="Detach the selected component from the design chat"
+                  title="Detach"
+                  onClick={() => setAttached(false)}
+                >
+                  <Icon name="ph:x" width={9} aria-hidden />
+                </button>
               </span>
             ) : null}
             <div className="canvas-editor__chat-row">

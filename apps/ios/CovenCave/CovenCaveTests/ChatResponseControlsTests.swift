@@ -41,6 +41,7 @@ final class ChatResponseControlsTests: XCTestCase {
             familiarId: "nyx",
             prompt: "Review the branch",
             sessionId: nil,
+            projectRoot: "/repos/cave",
             attachments: nil,
             runId: "run-1",
             reasoningEffort: .medium,
@@ -54,6 +55,8 @@ final class ChatResponseControlsTests: XCTestCase {
 
         XCTAssertEqual(json["reasoningEffort"] as? String, "medium")
         XCTAssertEqual(json["responseSpeed"] as? String, "careful")
+        XCTAssertEqual(json["projectRoot"] as? String, "/repos/cave")
+        XCTAssertNil(json["sessionId"])
         XCTAssertEqual(json["modelOverride"] as? String, "anthropic/claude-opus-4-6")
         XCTAssertEqual(json["modelOverrideScope"] as? String, "session")
     }

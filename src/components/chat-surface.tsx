@@ -10,7 +10,6 @@ import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import {
   ChatCanvasView,
   ChatFamiliarView,
-  ChatSettingsView,
   GroupChatView,
   ProjectsView,
   WorkspaceRail,
@@ -59,10 +58,9 @@ const chatStorage = {
 // surface and the Grimoire editor, not as a chat scope (cave-liut).
 // "familiar" is the active familiar's capability panel, promoted from the
 // retired inspector sidepanel to a first-class chat tab.
-// "settings" is the consolidated chat-settings tab (auto-archive policy et al).
 // "canvas" is the gallery of sketches saved from chat artifacts — saves landed
 // in the canvas store with no surface after the standalone Canvas page retired.
-type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar" | "settings" | "canvas";
+type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar" | "canvas";
 
 type Props = {
   familiars: Familiar[];
@@ -71,6 +69,7 @@ type Props = {
   activeFamiliarId: string | null;
   selectedFamiliarIds: ReadonlySet<string>;
   daemonRunning: boolean;
+  localDaemonReady: boolean;
   routerRef: RefObject<ChatRouterHandle | null>;
   sessionsLoaded?: boolean;
   /** Last session-list load failed — chat list shows a can't-load state (cave-x6k5). */
@@ -111,6 +110,7 @@ export function ChatSurface({
   activeFamiliarId,
   selectedFamiliarIds,
   daemonRunning,
+  localDaemonReady,
   routerRef,
   sessionsLoaded,
   sessionsError,
@@ -331,13 +331,13 @@ export function ChatSurface({
     return () => window.removeEventListener(CHAT_OPEN_COVEN_EVENT, open);
   }, []);
 
-  // Composer "+" menu → "Manage skills" lands on the Skills tab (familiar
-  // scope), including from Home where this surface mounts fresh (latch).
+  // Composer "+" menu → "Manage skills" lands on the Familiar scope (Skills
+  // section), including from Home where this surface mounts fresh (latch).
   useEffect(() => {
     if (consumeSkillsTabPending()) setScope("familiar");
     // Consume in the live path too: when chat is already mounted the
     // navigate-mode hop doesn't remount this surface, so a latch left set
-    // here would hijack a LATER fresh mount onto the Skills tab.
+    // here would hijack a LATER fresh mount onto the Familiar scope.
     const open = () => {
       consumeSkillsTabPending();
       setScope("familiar");
@@ -370,8 +370,7 @@ export function ChatSurface({
               { id: "conversation", label: "Sessions" },
               { id: "projects", label: "Projects" },
               { id: "canvas", label: "Canvas" },
-              { id: "familiar", label: "Skills" },
-              { id: "settings", label: "Settings" },
+              { id: "familiar", label: "Familiar" },
             ]}
           />
           <div className="flex shrink-0 items-center gap-1.5">
@@ -434,20 +433,15 @@ export function ChatSurface({
                 familiarsLoaded={familiarsLoaded}
                 familiarsError={familiarsError}
                 daemonRunning={daemonRunning}
+                localDaemonReady={localDaemonReady}
                 onRetryFamiliars={onRetryFamiliars}
                 onCreateFamiliar={requestSummonFamiliar}
                 onOpenOnboarding={onOpenOnboarding}
                 onFamiliarScopeChange={onFamiliarScopeChange}
                 onStartChat={startFamiliarHeroChat}
+                onRosterChanged={onRetryFamiliars}
               />
             </div>
-          </div>
-        ) : scope === "settings" ? (
-          // Consolidated chat settings (cave-wide auto-archive policy, incl.
-          // archive-on-reflection) as a first-class chat tab — the knobs govern
-          // chat behavior, so they live where chats live.
-          <div className="flex min-h-0 min-w-0 flex-1">
-            <ChatSettingsView />
           </div>
         ) : scope === "coven" ? (
           // Group Chat ("coven") lives here as a first-class chat tab instead of

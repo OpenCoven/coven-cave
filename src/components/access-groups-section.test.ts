@@ -7,7 +7,7 @@ const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "ut
 const inline = readFileSync(new URL("./familiar-studio-inline.tsx", import.meta.url), "utf8");
 const sections = readFileSync(new URL("./settings-sections.ts", import.meta.url), "utf8");
 
-// ── Access groups management lives in Settings → Familiars ───────────────────
+// ── Access groups management lives in Chat → Familiar → Settings ─────────────
 assert.match(section, /export function AccessGroupsSection/, "exports the access groups section");
 assert.doesNotMatch(shell, /<AccessGroupsSection/, "the shell does not duplicate access groups below the control sheet");
 assert.match(
@@ -15,7 +15,7 @@ assert.match(
   /<AccessGroupsSection familiars=\{resolved\} \/>/,
   "the Projects tab mounts the access groups manager",
 );
-assert.match(sections, /group: "Access groups"/, "settings search indexes the access groups group");
+assert.doesNotMatch(sections, /group: "Access groups"/, "retired Settings search does not index the access groups group");
 
 // ── Speaks the access-groups API, human-confirmed ─────────────────────────────
 assert.match(section, /fetch\("\/api\/access-groups"/, "loads groups from the list route");

@@ -67,12 +67,13 @@ assert.match(src, /resolveDownloadUrl\(combined\.status\)/, "fallback download U
 // Both surfaces are exported and resolve native-first.
 assert.match(src, /export function UpdateBannerTrigger/, "exports the banner trigger");
 assert.match(src, /export function DaemonReleaseAlignmentTrigger/, "reconciles the daemon after the new Cave version starts");
-assert.match(src, /updateDaemonForCaveUpdate\(APP_VERSION/, "startup reconciliation targets the running Cave version");
+assert.match(src, /updateCovenCli\(\)/, "startup reconciliation checks the independently versioned CLI");
+assert.doesNotMatch(src, /APP_VERSION/, "the running Cave version is never treated as a CLI version requirement");
 assert.match(src, /process\.env\.NODE_ENV !== "production"/, "development launches never mutate the global CLI");
-assert.match(src, /const start = \(confirmInstall = false\)/, "startup reconciliation never silently confirms a global install");
-assert.match(src, /result === "confirmation-required"/, "startup reconciliation offers confirmation instead of reporting a failed install");
-assert.match(src, /start\(true\)/, "the daemon update CTA records the user's install confirmation");
-assert.match(src, /\.then\(\(result\) => \{[\s\S]*dismissBanner\(DAEMON_ALIGNMENT_BANNER_ID\)/, "a successful retry clears the failure banner even when the CLI is already current");
+assert.match(src, /const start = \(\) =>/, "startup reconciliation never silently confirms a global install");
+assert.match(src, /updateCovenCli\(\)\.then\(\(\) =>/, "startup reconciliation is a quiet status check only");
+assert.doesNotMatch(src, /Update Coven CLI/, "ordinary CLI update actions stay out of the chat header");
+assert.match(src, /updateCovenCli\(\)\.then\(\(\) => \{[\s\S]*dismissBanner\(DAEMON_ALIGNMENT_BANNER_ID\)/, "the quiet startup check clears any stale CLI banner");
 assert.match(
   layoutSrc,
   /<ShellBannersProvider>[\s\S]{0,100}<DaemonReleaseAlignmentTrigger \/>/,

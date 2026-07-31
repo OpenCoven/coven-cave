@@ -91,7 +91,12 @@ test("the right companion (agent) panel is no longer mounted", () => {
 
 test("split tiles keep a usability floor (cave-hivd)", () => {
   const host = read("./detail-split-host.tsx");
-  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  // The pane-body rules' owning split module behind the globals.css facade
+  // (cave-xd2kg: source contracts read owning modules, not the facade).
+  const css = readFileSync(
+    new URL("../styles/globals/surface-chat-overlays.css", import.meta.url),
+    "utf8",
+  );
   // Multi-tile panels floor at 300px — a 12% min let dividers crush a tile to
   // ~110px letter soup on wide windows (tiles close via ✕, not drag-past-edge).
   assert.match(host, /id=\{`split-tile-\$\{tile\.id\}`\}[\s\S]{0,500}minSize="300px"/, "multi-tile panels have a pixel min");

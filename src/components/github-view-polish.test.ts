@@ -93,6 +93,16 @@ assert.match(
   /\{patStatus\?\.hasPat \? \(\s*<>\s*<PopoverSeparator \/>\s*<PopoverItem icon="ph:key" onSelect=\{\(\) => setShowPatModal\(true\)\}>/,
   "connected state moves PAT management into the overflow menu",
 );
+assert.doesNotMatch(
+  source,
+  /activity\?\.authed === true|>\s*authenticated\s*</,
+  "authenticated state does not render a persistent status chip",
+);
+assert.doesNotMatch(
+  boardCss,
+  /\.gh-compact-auth--authed/,
+  "the retired authenticated status chip leaves no dead modifier styles",
+);
 
 assert.match(
   source,
@@ -395,7 +405,7 @@ assert.match(
 // ── 2026-07-03 GitHub audit fixes ─────────────────────────────────────────────
 // The activity poll is content-guarded — an unchanged response keeps the prior
 // reference so the whole table + detail panel don't re-render every 90s.
-assert.match(source, /setActivity\(\(prev\) =>[\s\S]*?arrayContentEqual\(prev\.items, nextActivity\.items\)[\s\S]*?\? prev/, "the activity poll guards setActivity with arrayContentEqual");
+assert.match(source, /setActivity\(\(prev\) =>[\s\S]*?arrayContentEqual\(prev\.items, mergedActivity\.items\)[\s\S]*?\? prev/, "the activity poll guards setActivity with arrayContentEqual");
 // A manual refresh with data already on screen keeps the list mounted (so an
 // open composer draft isn't destroyed) — skeleton is initial-load only.
 assert.match(source, /if \(!silent && !activity\) setLoading\(true\)/, "non-silent refresh only skeletons the initial load, preserving the composer");

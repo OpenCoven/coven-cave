@@ -12,6 +12,7 @@ const {
   inferDueDateFromTurns,
   extractSubtasksFromTurns,
   buildTaskDraftFromChat,
+  createTaskFromDraft,
   createSmartTaskFromChat,
 } = await import("./chat-task-autofill.ts");
 
@@ -203,6 +204,41 @@ assert.deepEqual(extractSubtasksFromTurns([t("u1", "user", "- user\n- lists\n- i
   assert.deepEqual(draft.steps, []);
   assert.equal(draft.familiarId, null);
   assert.equal(draft.projectId, null);
+}
+
+// ── createTaskFromDraft posts the supplied draft unchanged ───────────────────
+{
+  const calls = [];
+  const draft = {
+    title: "Preserve the reviewed task",
+    notes: "Reviewed from chat.",
+    status: "inbox",
+    priority: "high",
+    sessionId: "sess-draft",
+    familiarId: "fam-draft",
+    projectId: "proj-draft",
+    labels: ["chat-handoff", "reviewed"],
+    links: ["https://docs.example.com/review"],
+    github: [],
+    endDate: "2026-08-01",
+    steps: [{ text: "Ship the reviewed task" }],
+  };
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return {
+      ok: true,
+      json: async () => ({ ok: true, card: { id: "card-draft", title: draft.title } }),
+    };
+  };
+
+  const result = await createTaskFromDraft(draft);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.card.id, "card-draft");
+  assert.equal(calls.length, 1, "the draft is posted once");
+  assert.equal(calls[0].url, "/api/board");
+  assert.equal(calls[0].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].init.body), draft, "the supplied draft is not rebuilt or altered");
 }
 
 // ── createSmartTaskFromChat posts the draft ──────────────────────────────────

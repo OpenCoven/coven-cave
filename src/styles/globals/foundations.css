@@ -33,6 +33,11 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.245 0.005 291);
   --popover-foreground: oklch(0.985 0 0);
+  /* Base ink for elevation shadows. Themed palettes override this (e.g.
+     claymorphism's soft gray); consumers mix it with transparency via
+     color-mix, so it must be defined here — an undefined var collapses the
+     whole color-mix and silently deletes the shadow (cave-8ppoa). */
+  --shadow-color: oklch(0 0 0);
   --primary: oklch(0.92 0.004 291);
   /* Dark ink, not tied to --card — --primary-foreground also paints text on
      --brand/--accent-presence (a mid-tone violet), which needs a genuinely
@@ -311,6 +316,9 @@
   --card-foreground: oklch(0.18 0.008 291);
   --popover: oklch(0.97 0.005 291);
   --popover-foreground: oklch(0.18 0.008 291);
+  /* Soft graphite instead of pure black: mixed at popover strengths this
+     reads as a paper shadow rather than a smudge (cave-8ppoa). */
+  --shadow-color: oklch(0.45 0.01 291);
   --primary: oklch(0.20 0.008 291);
   --primary-foreground: oklch(0.975 0.004 291);
   --secondary: oklch(0.92 0.007 291);

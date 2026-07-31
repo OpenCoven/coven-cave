@@ -7,6 +7,7 @@ import {
   descriptorUrl,
   parseGitHubUrl,
   sliceGitHubBlocks,
+  stripIncompleteGitHubMarker,
   stripGitHubMarkers,
   unfurlUserMessage,
   type GitHubActionKind,
@@ -227,6 +228,15 @@ test("strip: hides a partial marker at the stream tail", () => {
   assert.equal(stripGitHubMarkers("text <coven:github kind=\"pr"), "text ");
   assert.equal(stripGitHubMarkers("text <coven:githu"), "text ");
   assert.equal(stripGitHubMarkers("text <coven:github-action kind=\"me"), "text ");
+});
+
+test("strip incomplete: removes only a partial tail and preserves complete markers", () => {
+  const complete = '<coven:github kind="pr" repo="a/b" number="1" />';
+  assert.equal(stripIncompleteGitHubMarker(`before\n${complete}`), `before\n${complete}`);
+  assert.equal(
+    stripIncompleteGitHubMarker(`before\n${complete}\n<coven:github-action body="See\nhttps://github.com/a/b/pull/1`),
+    `before\n${complete}\n`,
+  );
 });
 
 test("strip: leaves non-marker text and URLs alone", () => {

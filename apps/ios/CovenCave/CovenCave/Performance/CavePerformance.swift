@@ -46,7 +46,11 @@ final class CavePerformanceRecorder {
     #else
     private static let sharedEnabledByDefault = false
     #endif
-    private static let defaultDistinctKeyLimit = 128
+    // nonisolated: referenced from `init` default arguments, which Swift 6
+    // evaluates in a nonisolated context. An immutable Int is safe to read
+    // from anywhere; without this the references become errors in the
+    // Swift 6 language mode.
+    private nonisolated static let defaultDistinctKeyLimit = 128
 
     static let shared = CavePerformanceRecorder(enabled: sharedEnabledByDefault)
 

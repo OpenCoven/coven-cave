@@ -1,6 +1,4 @@
 import { createHash, verify } from "node:crypto";
-import { REGISTRY_SOURCE } from "./runtime-registry.gen.ts";
-
 /**
  * A deliberately small, data-only compatibility contract for CLI runtimes.
  *
@@ -66,6 +64,15 @@ MCowBQYDK2VwAyEAy/bra+zIoYCVcILpstPd4goiqmy1wnjF5rHnnkwmZI4=
 -----END PUBLIC KEY-----
 `;
 
+// Signed Claude profiles retain the immutable registry snapshot included in
+// their signature. Refreshing Cave's independent runtime-adapter registry must
+// not rewrite this payload and invalidate an otherwise trusted profile.
+const CLAUDE_COMPATIBILITY_SOURCE = {
+  repo: "OpenCoven/coven-runtimes",
+  blobSha: "b1c23ce0d8577f2e808472c39795c6a726b75a7b",
+  keyId: "cave-registry-v1",
+} as const;
+
 function canonicalProfile(profile: Omit<RuntimeCompatibilityProfile, "contentHash" | "signature">): string {
   return JSON.stringify(profile);
 }
@@ -78,9 +85,9 @@ function canonicalSignedProfile(profile: Omit<RuntimeCompatibilityProfile, "sign
   return JSON.stringify(profile);
 }
 
-/** Bundled last-known-good profiles. The generated runtime registry provenance
- * pins the accepted registry snapshot that shipped them. A registry refresh can
- * add another profile, but it may never replace this data with arbitrary code.
+/** Bundled last-known-good profiles. Their signed source pins the accepted
+ * registry snapshot that shipped them. A compatibility-registry refresh can add
+ * another profile, but it may never replace this data with arbitrary code.
  *
  * The hash is intentionally public and only detects accidental corruption. The
  * embedded Ed25519 public key authenticates profile documents, so a caller that
@@ -95,7 +102,7 @@ export const CLAUDE_COMPATIBILITY_PROFILES: RuntimeCompatibilityProfile[] = [
     requires: ["stream-json"],
     parser: "claude-stream-json-v1",
     eventTypes: { assistant: "assistant", toolUse: "tool_use", user: "user", toolResult: "tool_result" },
-    source: { repo: REGISTRY_SOURCE.repo, blobSha: REGISTRY_SOURCE.blobSha, keyId: "cave-registry-v1" },
+    source: CLAUDE_COMPATIBILITY_SOURCE,
     issuedAt: "2025-01-01T00:00:00.000Z",
     expiresAt: "2030-01-01T00:00:00.000Z",
     contentHash: "c5a49fc19813f345bd56686666aa30cffb043b8f3bdd9b0dae2fb74e7d2254c8",
@@ -112,7 +119,7 @@ export const CLAUDE_COMPATIBILITY_PROFILES: RuntimeCompatibilityProfile[] = [
     requires: ["stream-json"],
     parser: "claude-stream-json-v1",
     eventTypes: { assistant: "assistant", toolUse: "tool_use", user: "user", toolResult: "tool_result" },
-    source: { repo: REGISTRY_SOURCE.repo, blobSha: REGISTRY_SOURCE.blobSha, keyId: "cave-registry-v1" },
+    source: CLAUDE_COMPATIBILITY_SOURCE,
     issuedAt: "2025-01-01T00:00:00.000Z",
     expiresAt: "2030-01-01T00:00:00.000Z",
     contentHash: "c88d0ac5818a9934c138e7621880b199229607c6bcf60afb719d6fcd98a754e2",
@@ -147,9 +154,9 @@ export function validateRuntimeCompatibilityProfile(
   if (p.parser !== "claude-stream-json-v1") return false;
   if (p.eventTypes?.assistant !== "assistant" || p.eventTypes?.user !== "user" || p.eventTypes?.toolUse !== "tool_use" || p.eventTypes?.toolResult !== "tool_result") return false;
   if (
-    p.source?.repo !== REGISTRY_SOURCE.repo ||
-    p.source?.blobSha !== REGISTRY_SOURCE.blobSha ||
-    p.source?.keyId !== "cave-registry-v1"
+    p.source?.repo !== CLAUDE_COMPATIBILITY_SOURCE.repo ||
+    p.source?.blobSha !== CLAUDE_COMPATIBILITY_SOURCE.blobSha ||
+    p.source?.keyId !== CLAUDE_COMPATIBILITY_SOURCE.keyId
   ) return false;
   const issued = Date.parse(p.issuedAt);
   const expires = Date.parse(p.expiresAt);

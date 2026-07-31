@@ -290,10 +290,63 @@ async function mockResearchApis(page: Page): Promise<BootHandles> {
   await page.route(/\/api\/research\/missions\?/, (route) =>
     route.fulfill({ json: { ok: true, missions: MISSIONS } }),
   );
+  await page.route(/\/api\/research\/missions\/[^/]+\/files\/[^/]+$/, (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        file: {
+          key: "draft-1",
+          kind: "findings",
+          title: "Working synthesis",
+          fileName: "draft.md",
+          relativePath: "artifacts/draft.md",
+          content: "# Working synthesis\n\nResearch findings with cited evidence.",
+          workspacePath: "/tmp/research-mission-1",
+          updatedAt: iso(5),
+        },
+      },
+    }),
+  );
   await page.route("**/api/research/links", (route) =>
     route.fulfill({ json: { ok: true, links: LINKS } }),
   );
   await page.route(/\/api\/research\/generations/, async (route) => {
+    if (route.request().url().includes("/readiness")) {
+      await route.fulfill({
+        json: {
+          ok: true,
+          providers: {
+            local: {
+              ready: false,
+              voices: [],
+              hint: "Download a local voice in Settings → Voice.",
+            },
+            elevenlabs: {
+              ready: false,
+              defaultVoiceId: "eleven-default",
+              hint: "Set ELEVENLABS_API_KEY in Vault settings.",
+            },
+          },
+          ffmpeg: {
+            ready: false,
+            hint: "Install ffmpeg and ffprobe.",
+          },
+          podcast: {
+            ready: false,
+            hint: "Download a local voice or configure ElevenLabs.",
+          },
+          shortVideo: {
+            ready: false,
+            hint: "Install ffmpeg and download a local voice.",
+          },
+          longVideo: {
+            ready: false,
+            hint: "Install ffmpeg and download a local voice.",
+          },
+        },
+      });
+      return;
+    }
     if (route.request().method() === "POST") {
       handles.createdGenerationBodies.push(route.request().postDataJSON());
       await route.fulfill({ json: { ok: true, generation: DIAGRAM_GENERATION } });
@@ -406,6 +459,90 @@ test.describe("research desk tabs", () => {
     await expect(desk.locator(".research-mission-actions").getByRole("button", { name: /^Retry/ })).toBeVisible();
   });
 
+  test("Desk toolbar scopes runs and preserves focus mode", async ({ page }) => {
+    await openResearchDesk(page);
+    const desk = page.locator(".research-desk");
+    const toolbar = desk.locator(".research-desk-toolbar");
+    const rail = desk.getByRole("navigation", { name: "Research missions" });
+    const filter = toolbar.getByRole("searchbox", {
+      name: "Filter research runs",
+    });
+
+    await expect(filter).toHaveAttribute("placeholder", "Filter runs…");
+    await page.keyboard.press("/");
+    await expect(filter).toBeFocused();
+    await expect(filter).toHaveValue("/");
+    await filter.press("Escape");
+    await expect(filter).toHaveValue("");
+
+    const railTabs = desk.getByRole("tablist", { name: "Rail contents" });
+    await railTabs.getByRole("tab", { name: /^Artifacts/ }).click();
+    await desk.getByRole("button", { name: "View Working synthesis" }).click();
+    const reader = page.getByRole("dialog", {
+      name: "Working synthesis — research reader",
+    });
+    await expect(reader).toBeVisible({ timeout: 15_000 });
+    await reader.getByRole("button", { name: "Close" }).focus();
+    await page.keyboard.press("/");
+    await expect(filter).not.toBeFocused();
+    await expect
+      .poll(() => reader.evaluate((node) => node.contains(document.activeElement)))
+      .toBe(true);
+    await reader.getByRole("button", { name: "Close" }).click();
+
+    const scopes = toolbar.getByRole("group", {
+      name: "Filter runs by status",
+    });
+    await expect(
+      scopes.getByRole("button", { name: "Active, 2 runs", exact: true }),
+    ).toBeVisible();
+    await scopes.getByRole("button", { name: "Needs review" }).click();
+    await expect(
+      scopes.getByRole("button", { name: "Needs review" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(rail.getByText("Needs review")).toBeVisible();
+    await expect(
+      rail.getByRole("button", { name: /Agent memory survey/ }),
+    ).toHaveCount(0);
+
+    await filter.fill("no matching research run");
+    await expect(
+      scopes.getByRole("button", { name: "Active, 0 runs", exact: true }),
+    ).toBeVisible();
+    await rail.getByRole("button", { name: "Clear filters" }).click();
+    await expect(filter).toHaveValue("");
+    await expect(
+      scopes.getByRole("button", { name: "All" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      rail.getByRole("button", { name: /Agent memory survey/ }),
+    ).toBeVisible();
+
+    await toolbar.getByRole("button", { name: "Focus run" }).click();
+    await expect(rail).toBeHidden();
+    await expect(desk.getByLabel("Run evidence and links")).toHaveCount(0);
+    await expect(
+      toolbar.getByRole("button", { name: "Show workspace" }),
+    ).toBeVisible();
+    const focusedMain = await desk.locator(".research-desk__main").boundingBox();
+    expect(focusedMain?.width ?? 0).toBeGreaterThan(900);
+
+    await page.reload();
+    await enterResearchDesk(page);
+    await expect(
+      desk.getByRole("button", { name: "Show workspace" }),
+    ).toBeVisible();
+    await desk.getByRole("button", { name: "Show workspace" }).click();
+    await expect(rail).toBeVisible();
+    await expect(desk.getByLabel("Run evidence and links")).toBeVisible();
+
+    await desk.getByRole("button", { name: "New research" }).click();
+    await expect(deskTab(page, /^Prompt/)).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
   test("Library shows the live ticker and artifact cards; the chosen tab survives a reload", async ({ page }) => {
     await openResearchDesk(page);
     await deskTab(page, /^Library/).click();
@@ -443,7 +580,7 @@ test.describe("research desk tabs", () => {
     await expect(page.locator(".research-library")).toBeVisible();
   });
 
-  test("Studio renders 5 creatable + 3 disabled media cards and drafts a diagram from the completed run", async ({ page }) => {
+  test("Studio renders 5 extractive + 3 readiness-gated media cards and drafts a diagram from the completed run", async ({ page }) => {
     const handles = await openResearchDesk(page);
     await deskTab(page, /^Studio/).click();
 
@@ -451,16 +588,16 @@ test.describe("research desk tabs", () => {
     await expect(studio).toBeVisible();
 
     // Five real generation kinds render as enabled buttons (sources exist)…
-    const creatable = studio.locator("button.research-studio-card");
+    const creatable = studio.locator("button.research-studio-card:not([disabled])");
     await expect(creatable).toHaveCount(5);
     for (const label of ["Diagram", "Blog / article", "Slides", "Infographic", "Social thread"]) {
       await expect(creatable.filter({ hasText: label }).first()).toBeEnabled();
     }
-    // …and the three media kinds are honest non-buttons with aria-disabled.
-    const media = studio.locator(".research-studio-card--media[aria-disabled='true']");
+    // …and the three media kinds are honest disabled buttons with actionable hints.
+    const media = studio.locator("button.research-studio-card--media:disabled");
     await expect(media).toHaveCount(3);
     for (const label of ["Podcast", "Short video", "Long video"]) {
-      await expect(media.filter({ hasText: label })).toContainText("not available yet");
+      await expect(media.filter({ hasText: label })).toBeDisabled();
     }
 
     // Create a diagram from the completed mission — the source is a labelled

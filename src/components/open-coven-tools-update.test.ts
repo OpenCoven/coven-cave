@@ -78,6 +78,7 @@ assert.match(src, /export function OpenCovenToolsBannerTrigger/, "exports a shel
 assert.match(src, /coven-cave:tool-update:dismissed:/, "tool update banners persist dismissal per released tool version");
 assert.match(src, /pushBanner\(/, "tool update trigger publishes through the shared shell banner system");
 assert.match(src, /const incompatibleTools = tools\.filter\(toolNeedsCompatibilityUpdate\)/, "global banner only warns for installed tools below the Cave floor");
+assert.match(src, /tool\.id !== "coven-cli" && tool\.compatible && tool\.outdated/, "ordinary CLI availability is shown only in the detailed About tools surface");
 assert.match(src, /severity: incompatibleTools\.length > 0 \? "warning" : "info"/, "compatibility failures get stronger warning severity than ordinary updates");
 assert.match(src, /Review tools/, "tool update banner sends users to the settings tool surface");
 assert.match(shell, /OpenCovenToolsBannerTrigger/, "Shell imports and mounts the OpenCoven tools banner trigger");

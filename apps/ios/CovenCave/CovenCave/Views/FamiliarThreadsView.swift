@@ -24,6 +24,7 @@ struct FamiliarThreadsView: View {
     @State private var exportArchive: ExportArchive?
     /// Per-familiar permissions sheet (project access scoped to this familiar).
     @State private var showPermissions = false
+    @State private var showNewChat = false
     /// One row in the list: an on-device thread or a server-only session.
     private enum Entry: Identifiable {
         case local(ChatThread)
@@ -136,6 +137,13 @@ struct FamiliarThreadsView: View {
         }
         .sheet(isPresented: $showPermissions) {
             FamiliarPermissionsSheet(familiar: familiar)
+        }
+        .sheet(isPresented: $showNewChat) {
+            NewChatView(initialFamiliarIds: [familiar.id]) { thread in
+                showNewChat = false
+                Haptics.tap()
+                path.append(.thread(thread))
+            }
         }
     }
 
@@ -313,9 +321,7 @@ struct FamiliarThreadsView: View {
     }
 
     private func startNewChat() {
-        let thread = app.startFreshThread(familiarIds: [familiar.id])
-        Haptics.tap()
-        path.append(.thread(thread))
+        showNewChat = true
     }
 
     private var emptyState: some View {

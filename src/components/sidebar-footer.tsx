@@ -45,10 +45,21 @@ export function SidebarFooter({ onOpenSettings }: { onOpenSettings: () => void }
         </button>
       </div>
 
-      {/* Bottommost: app version — one minimal-height muted line. */}
-      <div className="sidebar-version" title={`CovenCave v${APP_VERSION}`}>
+      {/* Bottommost: app version — one minimal-height muted line, and the
+          shortest path to what it's about. "Which version am I on, and is
+          there a newer one?" is answered in Settings → About (version,
+          updates, project links), so the line links there instead of being
+          the one dead label in the footer. A real <a> to the standalone
+          /settings route, matching the Dashboard link above; the #about hash
+          is the section deep-link the settings shell already honours. */}
+      <a
+        className="sidebar-version"
+        href="/settings#about"
+        title={`CovenCave v${APP_VERSION} — version, updates and project links`}
+        aria-label={`CovenCave v${APP_VERSION} — open About in Settings`}
+      >
         v{APP_VERSION}
-      </div>
+      </a>
     </>
   );
 }

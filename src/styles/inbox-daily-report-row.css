@@ -1,0 +1,173 @@
+/* The daily report's row in the Rituals inbox. It sits inside the feed's
+   existing <button> row, so it must not own hover/selection — only the
+   content. Colors from foundations.css; this ships beside 12 themes. */
+
+.dri {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A calendar chip so the day is readable at a glance in a list of "2h ago". */
+.dri__date {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  padding: var(--space-1) 0;
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 35%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  line-height: 1.1;
+}
+
+.dri__date-weekday,
+.dri__date-month {
+  font: 400 9px var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  color: color-mix(in oklch, var(--accent-presence) 70%, var(--text-primary));
+}
+
+.dri__date-day {
+  font: 500 var(--text-md) var(--font-mono);
+  color: var(--text-primary);
+}
+
+.dri__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.dri__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.dri__title {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dri__badge {
+  flex: none;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  font: 500 var(--text-2xs) var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
+.dri__stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+.dri__stat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dri__stat b {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.dri__diff {
+  font-family: var(--font-mono);
+  gap: var(--space-1);
+}
+
+.dri__add {
+  color: var(--color-success);
+}
+
+.dri__del {
+  color: var(--color-danger);
+}
+
+.dri__quiet {
+  font-style: italic;
+}
+
+/* Merge volume by hour — the day's shape, not a second set of numbers. */
+.dri__spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  flex: none;
+  height: 20px;
+  width: 96px;
+}
+
+.dri__bar {
+  flex: 1;
+  border-radius: 1px;
+  background: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+}
+
+.dri__bar[data-level="0"] {
+  height: 2px;
+  background: color-mix(in oklch, var(--text-muted) 22%, transparent);
+}
+
+.dri__bar[data-level="1"] {
+  height: 30%;
+}
+
+.dri__bar[data-level="2"] {
+  height: 55%;
+}
+
+.dri__bar[data-level="3"] {
+  height: 78%;
+}
+
+.dri__bar[data-level="4"] {
+  height: 100%;
+  background: var(--accent-presence);
+}
+
+.dri__read {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  font: 500 var(--text-2xs) var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent-presence);
+}
+
+/* The feed row is a container query context; drop ornament before content. */
+@container (max-width: 640px) {
+  .dri__spark {
+    display: none;
+  }
+}
+
+@container (max-width: 480px) {
+  .dri__read span,
+  .dri__date {
+    display: none;
+  }
+}

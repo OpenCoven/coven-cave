@@ -6,6 +6,7 @@ const read = (rel) => readFile(new URL(rel, import.meta.url), "utf8");
 const card = await read("./salem-pathfinder-card.tsx");
 const widget = await read("./salem-widget.tsx");
 const sidebar = await read("../sidebar-minimal.tsx");
+const navigation = await read("../../lib/workspace-navigation.ts");
 const projects = await read("../projects-view.tsx");
 const boardRoute = await read("../../app/api/board/route.ts");
 
@@ -21,14 +22,14 @@ assert.match(card, /salem-pf__action--save/, "renders a dedicated save button");
 assert.doesNotMatch(widget, /saveCardToBoard|\/api\/board|SalemPathfinderCard/, "rail chat omits dormant Pathfinder save plumbing");
 
 // Sidebar: the Ask Salem entry was removed from the left side panel. The mode
-// exists as a FOLDER_MODES row (object literal, not JSX) but must stay
+// exists in the workspace navigation registry but must stay
 // navHidden so it never renders as a sidebar entry — it's summoned via Home,
 // the ⌘K palette, deep links, or the widget's expand button.
 assert.doesNotMatch(sidebar, /label="Ask Salem"/, "sidebar no longer exposes an Ask Salem entry");
 assert.match(
-  sidebar,
+  navigation,
   /id: "salem", label: "Ask Salem",[^\n]*navHidden: true/,
-  "salem FOLDER_MODES row stays navHidden (palette/deep-link only, no sidebar row)",
+  "salem navigation row stays navHidden (palette/deep-link only, no sidebar row)",
 );
 
 // Projects empty state offers Ask Salem.

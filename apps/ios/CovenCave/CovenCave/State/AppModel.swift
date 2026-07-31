@@ -12,6 +12,29 @@ extension AppTab {
     static let shortcutOrder: [AppTab] = drawerDestinations
 }
 
+struct PairingIntent: Equatable {
+    let id = UUID()
+    let host: String
+    let token: String?
+}
+
+enum PairingApprovalPolicy {
+    static func requiresApproval(hasExistingPairing: Bool) -> Bool {
+        hasExistingPairing
+    }
+}
+
+enum PendingPairingProcessorPolicy {
+    static func mayBegin(
+        isLocked: Bool,
+        isAuthenticating: Bool,
+        isProcessing: Bool,
+        isActive: Bool
+    ) -> Bool {
+        !isLocked && !isAuthenticating && !isProcessing && isActive
+    }
+}
+
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
     enum Style { case success, info, warning, error }
@@ -198,6 +221,16 @@ final class AppModel {
     var projects: [ProjectInfo] = []
     var projectsError: String?
     var projectsLoaded = false
+
+    /// Recently used chat roots, newest first and de-duplicated. Project
+    /// pickers filter this list against the current familiar-scoped response.
+    var recentProjectRoots: [String] {
+        var seen = Set<String>()
+        return threads
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .compactMap(\.projectRoot)
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
 
     // MARK: - Appearance (desktop theme)
 
@@ -673,15 +706,16 @@ final class AppModel {
     enum DeepLink: String { case tasks, reminders }
 
     var deepLink: DeepLink?
+    private(set) var pendingPairingIntent: PairingIntent?
 
     func handleDeepLink(_ url: URL) {
         guard url.scheme == "covencave" else { return }
         // covencave://connect?host=…&token=… — the desktop's pairing invite.
-        // Tapping it (or scanning its QR) configures host + credential in one
-        // step, replacing any previous pairing.
+        // Queue it for the app-level lock/approval processor rather than
+        // mutating credentials beneath a lock or authentication prompt.
         if url.host == "connect" {
             guard let invite = CaveInvite.parse(url.absoluteString) else { return }
-            Task { await configure(host: invite.host, token: invite.token) }
+            pendingPairingIntent = PairingIntent(host: invite.host, token: invite.token)
             return
         }
         // covencave://thread/<id> — a chat notification / Live Activity tap
@@ -695,6 +729,17 @@ final class AppModel {
         guard let target = DeepLink(rawValue: url.host ?? "") else { return }
         selectedTab = .tasks
         deepLink = target
+    }
+
+    @discardableResult
+    func consumePendingPairingIntent(matching id: UUID) -> Bool {
+        takePendingPairingIntent(matching: id) != nil
+    }
+
+    func takePendingPairingIntent(matching id: UUID) -> PairingIntent? {
+        guard let intent = pendingPairingIntent, intent.id == id else { return nil }
+        pendingPairingIntent = nil
+        return intent
     }
 
 
@@ -1406,7 +1451,8 @@ final class AppModel {
         }
         let title = row.title.isEmpty ? (familiar(familiarId)?.displayName ?? familiarId) : row.title
         let thread = ChatThread(title: title, familiarIds: [familiarId],
-                                sessionIds: [familiarId: row.id])
+                                sessionIds: [familiarId: row.id],
+                                projectRoot: row.projectRoot)
         threads.insert(thread, at: 0)
         persistThreads()
         Task { await loadHistory(into: thread, sessionId: row.id) }
@@ -1475,7 +1521,10 @@ final class AppModel {
             // The card already points at a server session (e.g. started on the
             // desktop) but no local thread carries it — bind one and pull history.
             thread = ChatThread(title: title, familiarIds: [familiarId],
-                                sessionIds: [familiarId: sid])
+                                sessionIds: [familiarId: sid],
+                                projectRoot: serverSessions.first {
+                                    $0.id == sid
+                                }?.projectRoot)
             threads.insert(thread, at: 0)
             Task { await loadHistory(into: thread, sessionId: sid) }
         } else {
@@ -1556,10 +1605,18 @@ final class AppModel {
         return thread
     }
 
-    func createGroup(familiarIds: [String], title: String?) -> ChatThread {
+    func createGroup(
+        familiarIds: [String],
+        title: String?,
+        projectRoot: String
+    ) -> ChatThread {
         let names = familiarIds.compactMap { familiar($0)?.displayName ?? $0 }
         let derived = title?.isEmpty == false ? title! : names.joined(separator: ", ")
-        let thread = ChatThread(title: derived, familiarIds: familiarIds)
+        let thread = ChatThread(
+            title: derived,
+            familiarIds: familiarIds,
+            projectRoot: projectRoot
+        )
         threads.insert(thread, at: 0)
         persistThreads()
         return thread
@@ -1567,13 +1624,21 @@ final class AppModel {
 
     /// Always create a brand-new thread (no reuse) — backs `/new`. Works for a
     /// single familiar (direct) or several (group).
-    func startFreshThread(familiarIds: [String], title: String? = nil) -> ChatThread {
+    func startFreshThread(
+        familiarIds: [String],
+        title: String? = nil,
+        projectRoot: String?
+    ) -> ChatThread {
         let names = familiarIds.compactMap { familiar($0)?.displayName ?? $0 }
         let date = Date.now.formatted(.dateTime.month(.abbreviated).day())
         let derived = (title?.isEmpty == false)
             ? title!
             : "Chat with \(names.joined(separator: ", ")) on \(date)"
-        let thread = ChatThread(title: derived, familiarIds: familiarIds)
+        let thread = ChatThread(
+            title: derived,
+            familiarIds: familiarIds,
+            projectRoot: projectRoot
+        )
         threads.insert(thread, at: 0)
         persistThreads()
         return thread
@@ -1663,12 +1728,17 @@ final class AppModel {
     /// become assistant turns, resolved to a familiar by display name when
     /// possible. Inserts at the top and persists.
     @discardableResult
-    func importMarkdown(_ text: String, fallbackTitle: String = "Imported chat") -> ChatThread {
+    func importMarkdown(
+        _ text: String,
+        fallbackTitle: String = "Imported chat",
+        familiarIds preferredFamiliarIds: [String] = [],
+        projectRoot: String? = nil
+    ) -> ChatThread {
         let parsed = parseThreadMarkdown(text)
         func resolve(_ name: String) -> String? {
             familiars.first { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }?.id
         }
-        var familiarIds: [String] = []
+        var discoveredFamiliarIds: [String] = []
         var messages: [DisplayMessage] = []
         for turn in parsed.turns {
             switch turn.who.lowercased() {
@@ -1678,15 +1748,24 @@ final class AppModel {
                 messages.append(DisplayMessage(role: .system, familiarId: nil, text: turn.text))
             default:
                 let fid = resolve(turn.who)
-                if let fid, !familiarIds.contains(fid) { familiarIds.append(fid) }
+                if let fid { discoveredFamiliarIds.append(fid) }
                 messages.append(DisplayMessage(role: .assistant, familiarId: fid, text: turn.text))
             }
         }
         for name in parsed.participants {
-            if let fid = resolve(name), !familiarIds.contains(fid) { familiarIds.append(fid) }
+            if let fid = resolve(name) { discoveredFamiliarIds.append(fid) }
         }
+        let familiarIds = ChatProjectSelection.importedFamiliarIDs(
+            preferred: preferredFamiliarIds,
+            discovered: discoveredFamiliarIds
+        )
         let title = parsed.title.isEmpty ? fallbackTitle : parsed.title
-        let thread = ChatThread(title: title, familiarIds: familiarIds, messages: messages)
+        let thread = ChatThread(
+            title: title,
+            familiarIds: familiarIds,
+            projectRoot: projectRoot,
+            messages: messages
+        )
         threads.insert(thread, at: 0)
         persistThreads()
         return thread
@@ -1702,6 +1781,7 @@ final class AppModel {
         }
         let copy = ChatThread(title: "\(thread.title) (copy)",
                               familiarIds: thread.familiarIds,
+                              projectRoot: thread.projectRoot,
                               messages: copiedMessages)
         threads.insert(copy, at: 0)
         persistThreads()

@@ -1,3 +1,4 @@
+import { waitFor } from "../testing/wait-for.ts";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
@@ -191,7 +192,14 @@ const timedOut = await listClaudeModels("sage", {
   forceKillGraceMs: 5,
 });
 assert.ok(!timedOut.some((model) => model.id === "anthropic/claude-opus-5"));
-await new Promise((resolve) => setTimeout(resolve, 15));
+// The escalation is what's under test — SIGTERM, then SIGKILL once the grace
+// timer expires — not how promptly this host's event loop delivers two 5ms
+// timers. Sleeping a fixed 15ms here left ~2ms of headroom at p99 on an IDLE
+// machine (measured: p50 11.4ms, p99 13.0ms, max 15.5ms), so it failed
+// outright under load. Wait for the signals themselves (cave-2nhfe).
+await waitFor(() => timeoutSignals.length >= 2, {
+  describe: "the probe timeout to escalate SIGTERM to SIGKILL",
+});
 assert.deepEqual(timeoutSignals, ["SIGTERM", "SIGKILL"]);
 
 clearClaudeModelCache();

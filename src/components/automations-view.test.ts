@@ -187,6 +187,7 @@ assert.match(source, /scheduleDelete\(ids, `\$\{ids\.length\} inbox item/, "bulk
 assert.match(source, /groupChecked=\{groupSelected\(group\)\}/, "each group header reflects its selection state");
 assert.match(source, /aria-label=\{`Select every item in \$\{group\.title\}`\}/, "the group checkbox names its group");
 assert.match(source, /role=\{selectMode \? "checkbox" : undefined\}/, "rows become checkboxes in select mode");
+assert.match(source, /<InboxDailyReportRow item=\{item\} showRead=\{!selectMode\} \/>/, "daily report rows hide the read affordance while select mode turns the row into a checkbox");
 assert.match(source, /inboxSelect\.exit\(\); \/\/ selection is an inbox-tab mode, never carried across/, "switching tabs drops the selection");
 
 // ── Polling pauses while hidden + async fetch guards ────────────────────────

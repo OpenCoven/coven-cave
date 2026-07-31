@@ -1281,6 +1281,15 @@ async function ensureCompatibility(
       if ((await statPath(legacyPath)).kind === "symlink") {
         await rm(legacyPath, { recursive: true, force: true });
       }
+      // The legacy path was retired above, so anything present here now was
+      // recreated by a concurrent writer (an older tool still running). The
+      // mirror fallback must fail closed rather than merge canonical bytes
+      // into that foreign directory. fs.cp's errorOnExist only enforces this
+      // on newer Node releases (older 24.x silently merges directories), so
+      // the invariant is checked explicitly instead of delegated to cp.
+      if ((await statPath(legacyPath)).kind !== "missing") {
+        throw new Error("legacy path was recreated before the compatibility mirror could be installed");
+      }
       const fallbackCanonical = await pathInfo(canonicalPath);
       await validateCanonical(entry, canonicalPath, fallbackCanonical);
       if (fallbackCanonical.kind !== canonicalInfo.kind || fallbackCanonical.hash !== canonicalInfo.hash) {

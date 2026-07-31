@@ -92,48 +92,71 @@
   flex-direction: column;
 }
 
-/* ── Query/command bar (design 51–72). ── */
-.research-desk-querybar {
+/* ── Control toolbar: one truthful filter, one primary action, compact view
+   controls, and the existing command menu behind "/". ── */
+.research-desk-toolbar {
   position: relative;
-  padding: var(--space-3) 22px var(--space-3);
-}
-.research-desk-querybar__field {
   display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+}
+.research-desk-toolbar__main {
+  display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--bg-raised);
-  color: var(--text-muted);
+  gap: var(--space-2);
 }
-.research-desk-querybar__field:focus-within {
-  border-color: color-mix(in oklch, var(--research-accent) 45%, transparent);
-}
-.research-desk-querybar__field input {
+.research-desk-toolbar__search {
   flex: 1;
   min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  outline: none;
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-  font-family: inherit;
 }
-.research-desk-querybar__field input::placeholder { color: var(--text-muted); }
-.research-desk-querybar__affordance {
+.research-desk-toolbar__summary {
   flex: none;
-  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-2xs);
   color: var(--text-muted);
 }
+.research-desk-toolbar__scopes {
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.research-desk-toolbar__scopes::-webkit-scrollbar { display: none; }
+.research-desk-scope {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+.research-desk-scope:hover { color: var(--text-secondary); }
+.research-desk-scope[aria-pressed="true"] {
+  border-color: var(--border-hairline);
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+.research-desk-scope > span:last-child {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text-muted);
+}
+.research-desk-tab .research-desk__workspace[data-focus-mode="true"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.research-desk-tab .research-desk__workspace[data-focus-mode="true"] > .research-mission-nav {
+  display: none;
+}
 .research-desk-querybar__popover {
   position: absolute;
-  top: calc(100% - 4px);
-  left: 22px;
-  right: 22px;
+  top: calc(100% - var(--space-1));
+  left: var(--space-5);
+  right: var(--space-5);
   z-index: 20;
   display: flex;
   flex-direction: column;
@@ -188,16 +211,6 @@
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
-.research-desk-querybar__filter-hint {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: 6px 2px 0;
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-}
-.research-desk-querybar__filter-hint span { color: var(--text-muted); }
 
 /* ── Runs rail: 264px per the design; base grid comes from
    .research-desk__workspace in surface-role-workspaces.css. ── */
@@ -215,6 +228,18 @@
   color: oklch(0.8 0.13 75); /* existing desk warn reading */
 }
 .research-mission-nav__waiting time { text-transform: none; }
+.research-mission-nav__section + .research-mission-nav__section {
+  border-top: 1px solid var(--border-hairline);
+}
+.research-mission-nav__section-title {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3) 0;
+  color: var(--text-muted);
+  font: 600 var(--text-2xs)/1.4 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 /* ── Detail: center column + 312px evidence rail. ── */
 .research-desk-tab .research-mission-detail { padding: 0; }
@@ -222,6 +247,9 @@
   grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
   gap: 0;
   flex: 1;
+}
+.research-desk-tab .research-mission-detail__body[data-evidence-open="false"] {
+  grid-template-columns: minmax(0, 1fr);
 }
 .research-desk-center {
   display: flex;
@@ -543,21 +571,39 @@
    collapses are re-declared here for the desk tab. ── */
 @container research-desk (max-width: 900px) {
   .research-desk-tab .research-desk__workspace { grid-template-columns: 1fr; }
-  .research-desk-querybar { padding: 10px 14px; }
-  .research-desk-querybar__popover { left: 14px; right: 14px; }
+  .research-mission-nav { max-height: calc(var(--space-10) * 4); }
+  .research-desk-toolbar { padding: var(--space-3) var(--space-4); }
+  .research-desk-querybar__popover {
+    left: var(--space-4);
+    right: var(--space-4);
+  }
 }
 
 @container research-desk (max-width: 760px) {
   .research-desk__tabs { gap: var(--space-2); }
   .research-desk-tab .research-mission-detail__body { grid-template-columns: 1fr; }
-  .research-desk-rail { border-left: 0; border-top: 1px solid var(--border); }
+  .research-desk-rail {
+    max-height: 44vh;
+    overflow: hidden;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
 }
 
 @container research-desk (max-width: 560px) {
   .research-desk__tabs { padding: 0 12px; }
   .research-tab-placeholder { padding: var(--space-4) 12px; }
-  .research-desk-querybar { padding: 8px 12px; }
-  .research-desk-querybar__affordance { display: none; }
+  .research-desk-toolbar { padding: var(--space-2) var(--space-3); }
+  .research-desk-toolbar__main { flex-wrap: wrap; }
+  .research-desk-toolbar__search {
+    flex-basis: 100%;
+    min-width: 100%;
+  }
+  .research-desk-toolbar__summary { margin-right: auto; }
+  .research-desk-querybar__popover {
+    left: var(--space-3);
+    right: var(--space-3);
+  }
   .research-desk-center { padding: 14px 12px 0; }
   .research-desk-tab .research-mission-actions { margin: auto -12px 0; padding: 10px 12px; flex-wrap: wrap; }
   .research-desk-stepper__track { overflow-x: auto; padding-bottom: 4px; }

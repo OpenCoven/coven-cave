@@ -15,10 +15,13 @@ import { FileLinkResolverContext, MessageBubble, SyntaxBlock, type MessageBubble
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
+import { ChatSessionContextRow } from "@/components/chat-session-context-row";
+import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-instruments";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
-import { segmentTurn } from "@/lib/turn-segments";
+import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
+import { formatBatchDuration, toolBatchSummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
@@ -135,7 +138,9 @@ import {
   type ChatResponseMetadata,
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent } from "@/lib/stream-events";
-import { extractNextPaths } from "@/lib/next-paths";
+import { extractNextPaths, type NextPath } from "@/lib/next-paths";
+import { FollowUpCards } from "@/components/chat-follow-up-cards";
+import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { GitHubCard } from "@/components/github-card";
@@ -448,7 +453,7 @@ function upsertProgressEvent(
     id?: string;
     label: string;
     detail?: string;
-    status?: "running" | "done" | "error";
+    status?: "running" | "done" | "notice" | "error";
     durationMs?: number;
     createdAt?: string;
   },
@@ -514,13 +519,14 @@ function DurationText({ durationMs }: { durationMs?: number }) {
 }
 
 type ErrorStripTool = { id: string; name: string; input?: string; output?: string; status: "running" | "ok" | "error"; durationMs?: number };
-type ErrorStripStep = { id: string; label: string; detail?: string; status: "running" | "done" | "error" };
+type ErrorStripStep = { id: string; label: string; detail?: string; status: "running" | "done" | "notice" | "error" };
 type ErrorStripTurn = { tools?: ErrorStripTool[]; progress?: ErrorStripStep[]; lifecycle?: string };
 
 /** Inline error/debug strip between the transcript and the composer. Shows the
- *  latest chat error message + code, and (expandable) the failing turn's errored
- *  tool/step output so the debug detail is visible without opening the side
- *  Debug pane. Auto-expands on every new error (keyed on `errorSeq`). */
+ *  latest chat error message + code plus metadata-only failure diagnostics.
+ *  Tool input/output and step detail can contain project content, paths, or
+ *  credentials, so they are deliberately never rendered or copied here.
+ *  Auto-expands on every new error (keyed on `errorSeq`). */
 function ChatErrorStrip({
   message,
   code,
@@ -586,7 +592,10 @@ function ChatErrorStrip({
     setOpen(true);
   }, [errorSeq]);
 
-  const detailText = useMemo(() => {
+  // Keep the unredacted failure context in-memory solely for established
+  // recovery classification (adapter switch and sign-in remediation). It must
+  // never be rendered, copied, or included in telemetry/diagnostics.
+  const recoveryText = useMemo(() => {
     const lines: string[] = [message];
     if (code) lines.push(`code: ${code}`);
     for (const t of erroredTools) {
@@ -602,15 +611,26 @@ function ChatErrorStrip({
     return lines.join("\n");
   }, [message, code, erroredTools, erroredSteps]);
 
+  // This is the only diagnostic text that leaves the component. Keep it
+  // deliberately structural: no dynamic tool names, input, output, labels,
+  // or error detail can cross this boundary.
+  const detailText = useMemo(() => {
+    const lines: string[] = ["Chat request did not complete."];
+    if (code && /^[a-z0-9_]{1,80}$/i.test(code)) lines.push(`code: ${code}`);
+    if (erroredTools.length) lines.push(`failed tools: ${erroredTools.length}`);
+    if (erroredSteps.length) lines.push(`failed steps: ${erroredSteps.length}`);
+    return lines.join("\n");
+  }, [code, erroredTools.length, erroredSteps.length]);
+
   // Harness/runtime failures get an inline fix row (switch adapter / copy the
   // quoted `coven adapter …` commands) instead of ending at the message.
-  const harnessFailure = useMemo(() => parseHarnessFailure(detailText), [detailText]);
+  const harnessFailure = useMemo(() => parseHarnessFailure(recoveryText), [recoveryText]);
   // Sign-in failures land here at the FIRST message (the wizard greens on
   // install, never auth) — surface the runtime's login command instead of
   // ending at raw stderr (cave-f6ol).
   const authFailure = useMemo(
-    () => parseHarnessAuthFailure(detailText, harnessId),
-    [detailText, harnessId],
+    () => parseHarnessAuthFailure(recoveryText, harnessId),
+    [recoveryText, harnessId],
   );
   // A preflight-confirmed missing runtime (or the legacy Coven ENOENT path)
   // gets a soft Setup recovery instead of a bare error + generic Retry. The
@@ -766,17 +786,16 @@ function ChatErrorStrip({
             {erroredTools.map((t) => (
               <div key={t.id}>
                 <div className={kicker}>
-                  tool: {t.name}
+                  tool failure
                   {t.durationMs != null ? ` · ${fmtDuration(t.durationMs)}` : ""}
                 </div>
-                {t.input ? <pre className={pre}>{t.input}</pre> : null}
-                {t.output ? <pre className={pre}>{t.output}</pre> : null}
+                <pre className={pre}>A tool failed. Its input and output are withheld to protect project data.</pre>
               </div>
             ))}
             {erroredSteps.map((p) => (
               <div key={p.id}>
-                <div className={kicker}>step{p.detail ? `: ${p.label}` : ""}</div>
-                <pre className={pre}>{p.detail || p.label}</pre>
+                <div className={kicker}>step failure</div>
+                <pre className={pre}>A runtime step failed. Its detail is withheld to protect project data.</pre>
               </div>
             ))}
             {erroredTools.length === 0 && erroredSteps.length === 0 ? (
@@ -1921,6 +1940,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
+  const [taskSuggestion, setTaskSuggestion] = useState<Extract<NextPath, { kind: "task" }> | null>(null);
   const { announce } = useAnnouncer();
   // "Start a task" (card-follows-chat): the starting page arms this, and the
   // stream's "session" event — where the session id is born — creates the
@@ -2116,6 +2136,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
+  // The session's live git branch for the context row. Rides the shared
+  // changes-summary gate (cave-v8hh) that the composer git chip and the header
+  // meta line already subscribe to, so this adds no extra requests.
+  const { branch: sessionGitBranch } = useChangesSummary(
+    session?.project_root ?? projectRoot ?? undefined,
+    Boolean(session?.project_root ?? projectRoot),
+  );
   // The project the most recent chat ran in — the default a brand-new chat
   // inherits (kept live: sessions can land seconds after boot).
   const recentProjectRoot = useMemo(
@@ -3176,25 +3203,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return resolveActivePath(turns, activeLeafId) as Turn[];
   }, [turns, activeLeafId]);
 
-  // The last settled assistant turn's top next-path — the pills flag that one
-  // as "Recommended", and the empty composer mirrors it as its placeholder so
-  // ⇥ / ← can accept it without reaching for the pills.
+  // The last settled assistant turn's first reply next-path. Typed task/action
+  // suggestions are deliberately excluded: keyboard fill may only prepare
+  // editable chat text, never start a task or navigate as a side effect.
   const recommendedNextPath = useMemo(() => {
     const last = [...activePath]
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return null;
-    return extractNextPaths(last.text).suggestions[0] ?? null;
+    return extractNextPaths(last.text).suggestions.find((path) => path.kind === "reply") ?? null;
   }, [activePath]);
 
   // Chat-revamp 1b: the LATEST settled turn's follow-up suggestions render as
-  // a pill row directly above the composer (aligned to the reading column) —
+  // typed cards directly above the composer (aligned to the reading column) —
   // the most actionable element sits closest to the input. That turn's in-turn
-  // pill row is suppressed (followUp.turnId → TurnRow) so the suggestions
+  // card row is suppressed (followUp.turnId → TurnRow) so the suggestions
   // never render twice; older turns keep their in-turn rows. Capped at 4 and
   // laid out on the uniform-rows data-count grammar (never a 3+1 wrap).
   const followUp = useMemo(() => {
-    const empty = { turnId: null as string | null, suggestions: [] as string[] };
+    const empty = { turnId: null as string | null, suggestions: [] as NextPath[] };
     const last = [...activePath]
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
@@ -3202,6 +3229,40 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const suggestions = extractNextPaths(splitReasoning(last.text).visible).suggestions.slice(0, 4);
     return suggestions.length ? { turnId: last.id, suggestions } : empty;
   }, [activePath]);
+
+  const handleFollowUp = useCallback((path: NextPath) => {
+    if (path.kind === "reply") {
+      setInput(path.prompt);
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return;
+    }
+    if (path.kind === "task") {
+      setTaskSuggestion(path);
+      return;
+    }
+    if (path.actionId === "open-tasks") {
+      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "board" } }));
+    }
+  }, []);
+
+  const handleTaskCreated = useCallback((card: Card) => {
+    const linked = {
+      id: card.id,
+      title: card.title,
+      status: card.status,
+      priority: card.priority,
+      lifecycle: card.lifecycle,
+      labels: card.labels,
+      cwd: card.cwd,
+      projectId: card.projectId ?? null,
+      notes: card.notes.trim() || null,
+    };
+    setLinkedContext((previous) => {
+      const context = previous ?? { task: null, tasks: [], github: [] };
+      if (context.tasks.some((task) => task.id === linked.id)) return context;
+      return { ...context, task: context.task ?? linked, tasks: [...context.tasks, linked] };
+    });
+  }, []);
 
   // Branch-nav siblings for EVERY turn, built once per `turns` change instead
   // of scanning the whole array per rendered row (which ran on every stream
@@ -4939,6 +5000,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     regenerateFor,
     replyFor,
     send,
+    activateFollowUp: handleFollowUp,
   };
 
   // Auto-send a prompt handed off from the home composer. Deferred one
@@ -5365,7 +5427,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       id?: string;
       label: string;
       detail?: string;
-      status?: "running" | "done" | "error";
+      status?: "running" | "done" | "notice" | "error";
       durationMs?: number;
     },
     targetSessionId: string | null = currentSessionRef.current,
@@ -5439,7 +5501,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       recommendedNextPath
     ) {
       e.preventDefault();
-      setInput(recommendedNextPath);
+      setInput(recommendedNextPath.prompt);
       return;
     }
     // `isComposing` is true for the Enter that confirms an IME candidate
@@ -5645,6 +5707,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     />
   );
 
+  // Facts for the slim context row. Same derivations the header meta line
+  // uses, hoisted here so the two rows can never disagree about which model
+  // answered or which directory the session runs in.
+  const contextRowProject = projectIdDraft ? chatProjectById(projectIdDraft, projects) : null;
+  const contextRowModel =
+    responseMetadataModel(lastSettledAssistantTurn?.responseMetadata) ??
+    visibleModelId(session?.model ?? undefined, familiar.harness ?? undefined) ??
+    visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined);
+  const contextRowBranch = sessionGitBranch;
+
   return (
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
@@ -5779,6 +5851,29 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </div>
         </MetaLine>
       </header>
+      {/* Chat.dc.html 2a ③: the slim mono context band under the title —
+          project · branch · model · cwd on the left, what the last run cost on
+          the right. Everything here is machine-decided, so it reads in mono
+          and never invents a fact: a chip with no value doesn't render. A
+          brand-new chat (no session yet) renders no band at all (2b): the
+          new-session dashboard already states the harness and model, so a lone
+          model chip here would say it twice. */}
+      {sessionId !== null || turns.length > 0 ? (
+      <ChatSessionContextRow
+        projectName={contextRowProject?.name ?? null}
+        projectRoot={session?.project_root ?? projectRoot ?? null}
+        runtime={lastSettledAssistantTurn?.responseMetadata?.runtime ?? session?.runtime ?? null}
+        branch={contextRowBranch}
+        model={contextRowModel}
+        usage={lastSettledAssistantTurn?.usage}
+        costUsd={lastSettledAssistantTurn?.costUsd}
+        durationMs={lastSettledAssistantTurn?.durationMs}
+        projects={projects}
+        projectId={projectIdDraft}
+        onProjectChange={setProjectIdDraft}
+        onAddProject={overflowAddProject.beginAddProject}
+      />
+      ) : null}
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
@@ -5791,6 +5886,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           hasTurns={turns.length > 0}
           onOpenUrl={onOpenUrl}
         />
+        {/* Thread instruments (Chat.dc.html 2a, cave-j86la): the run spine in
+            the left gutter and the thread minimap on the right edge. Both
+            derive from the SAME activePath the transcript renders and gate
+            themselves to wide panes, so narrow layouts never see them. */}
+        {activePath.length > 0 ? (
+          <>
+            <ChatThreadMinimap
+              turns={activePath}
+              scrollRef={scrollRef}
+              familiarName={familiar.display_name}
+            />
+            <ChatThreadSpine
+              turns={activePath}
+              scrollRef={scrollRef}
+              familiarName={familiar.display_name}
+            />
+          </>
+        ) : null}
         <div
           ref={threadRef}
           className="cave-chat-thread"
@@ -6015,18 +6128,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       >
         {/* Chat-revamp 1b: the latest settled turn's follow-up suggestions sit
             directly above the composer, aligned to the reading column. Same
-            data source (<coven:next-paths>) and pill grammar as the in-turn
+            data source (<coven:next-paths>) and typed-card treatment as the in-turn
             rows; hidden while a response streams so a stale suggestion can't
             be clicked mid-turn. */}
-        {followUp.suggestions.length && !busy ? (
-          <div className="cave-chat-followups" role="group" aria-label="Suggested follow-ups">
-            <div className="cave-next-paths cave-chat-followups__row" data-count={followUp.suggestions.length}>
-              {followUp.suggestions.map((s, i) => (
-                <button key={i} type="button" className="cave-next-path" onClick={() => void send(s)}>
-                  {s}
-                </button>
-              ))}
-            </div>
+        {followUp.suggestions.length > 0 && !busy ? (
+          <div className="cave-chat-followups">
+            <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
           </div>
         ) : null}
         {setupCandidateRoot && !setupBannerDismissed ? (
@@ -6359,8 +6466,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 busy
                   ? "Streaming… (send to queue · esc to cancel)"
                   : recommendedNextPath
-                    ? `${recommendedNextPath}  ⇥ to fill`
-                    : `Message ${familiar.display_name}…  ↵ to send`
+                    ? recommendedNextPath.prompt
+                    : `Message ${familiar.display_name}…`
               }
               rows={1}
               inputMode="text"
@@ -6592,6 +6699,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </div>
         </div>
       </footer>
+      {taskSuggestion && sessionId ? (
+        <FollowUpTaskReview
+          open
+          sessionId={sessionId}
+          suggestion={taskSuggestion}
+          context={{
+            turns: activePath,
+            familiarId: familiar.id,
+            projectId: resolvedProjectId !== NO_PROJECT_ID ? resolvedProjectId : null,
+          }}
+          onCreated={handleTaskCreated}
+          onClose={() => setTaskSuggestion(null)}
+        />
+      ) : null}
       {voiceCallOpen && sessionId && (
         <VoiceCallOverlay
           familiar={familiar}
@@ -6708,6 +6829,9 @@ function splitTextForArtifacts(
 function splitSegmentsForGitHub(
   segments: MessageBubbleSegment[],
   onOpenUrl?: (url: string) => void,
+  /** Threaded through so the card's composer can offer "Draft with <familiar>"
+   *  — the card has no other way to learn who the turn's familiar is. */
+  familiar?: { id: string; name: string } | null,
 ): MessageBubbleSegment[] {
   const out: MessageBubbleSegment[] = [];
   segments.forEach((seg, si) => {
@@ -6735,7 +6859,7 @@ function splitSegmentsForGitHub(
         out.push({
           kind: "block",
           key: `gh-${si}-${pi}-${descriptorUrl(p.descriptor)}`,
-          node: <GitHubCard descriptor={p.descriptor} onOpenUrl={onOpenUrl} />,
+          node: <GitHubCard descriptor={p.descriptor} onOpenUrl={onOpenUrl} familiar={familiar} />,
         });
       }
     });
@@ -6762,6 +6886,7 @@ type TranscriptHandlers = {
   regenerateFor: (turn: Turn) => (() => void) | undefined;
   replyFor: (turn: Turn) => (() => void) | undefined;
   send: (override?: string) => Promise<void>;
+  activateFollowUp: (path: NextPath) => void;
 };
 
 /**
@@ -6856,7 +6981,8 @@ const TranscriptRows = memo(function TranscriptRows({
           onRegenerate={handlers().regenerateFor(t)}
           onReply={handlers().replyFor(t)}
           onOpenUrl={onOpenUrl}
-          onSuggestion={(sug) => void handlers().send(sug)}
+          onSuggestion={(path) => handlers().activateFollowUp(path)}
+          onRequest={(prompt) => void handlers().send(prompt)}
           feedbackContext={feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
@@ -6905,7 +7031,8 @@ const TranscriptRows = memo(function TranscriptRows({
               onRegenerate={handlers().regenerateFor(t)}
               onReply={handlers().replyFor(t)}
               onOpenUrl={onOpenUrl}
-              onSuggestion={(sug) => void handlers().send(sug)}
+              onSuggestion={(path) => handlers().activateFollowUp(path)}
+              onRequest={(prompt) => void handlers().send(prompt)}
               feedbackContext={feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
@@ -6935,12 +7062,15 @@ function TurnRowImpl({
   expanded = false,
   onToggleAvatar,
   onSuggestion,
+  onRequest,
   feedbackContext,
   branchNav,
   suppressSuggestions = false,
 }: {
   turn: Turn;
-  onSuggestion?: (s: string) => void;
+  onSuggestion?: (path: NextPath) => void;
+  /** User-authored artifact feedback remains a normal chat send. */
+  onRequest?: (prompt: string) => void;
   /** Chat-revamp 1b: true for the latest settled turn, whose follow-up pills
    *  render above the composer instead of at the turn's tail. */
   suppressSuggestions?: boolean;
@@ -7007,6 +7137,13 @@ function TurnRowImpl({
     wasAvatarExpandedRef.current = expanded;
   }, [expanded]);
 
+  // Stable identity: the GitHub card's composer keys a useMemo off this object,
+  // so a fresh literal per render would rebuild its command tree every commit.
+  const ghFamiliar = useMemo(
+    () => ({ id: familiar.id, name: familiar.display_name }),
+    [familiar.id, familiar.display_name],
+  );
+
   if (turn.role === "system" || turn.role === "user") {
     const recency = showTimestamp && turn.createdAt ? formatChatRecency(turn.createdAt, dtPrefs) : "";
     const exactTime = turn.createdAt ? formatTimestamp(turn.createdAt, dtPrefs) : "";
@@ -7065,7 +7202,7 @@ function TurnRowImpl({
                       <SkillStageCard name={skillInvocation.name} stage="invoked" note={skillInvocation.args} />
                     ) : null}
                     {ghRefs.map((d) => (
-                      <GitHubCard key={descriptorUrl(d)} descriptor={d} onOpenUrl={onOpenUrl} />
+                      <GitHubCard key={descriptorUrl(d)} descriptor={d} onOpenUrl={onOpenUrl} familiar={ghFamiliar} />
                     ))}
                   </div>
                 ) : null;
@@ -7099,7 +7236,7 @@ function TurnRowImpl({
   // duplicates it — suppress the chip until text flows or the turn settles.
   // Settled chips never hit this (pending is false by then), so the Failed
   // chip that anchors the Retry pill (#416/#420) always renders.
-  const indicatorVisible = Boolean(turn.pending) && !visible;
+  const indicatorVisible = Boolean(turn.pending) && !visible && !reasoning;
 
   // CHAT-D4-01: when every tool event carries a textOffset (live turns from
   // this session), render the turn as ordered segments — prose spans with
@@ -7118,13 +7255,9 @@ function TurnRowImpl({
       : {
           kind: "block" as const,
           key: `tools-${seg.tools[0]?.id ?? i}`,
-          // Reuse the EXISTING collapsed ToolBlock (arg summary + diff
-          // inputs); same-offset tools render consecutively in one group.
-          node: (
-            <div className="space-y-2">
-              {seg.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
-            </div>
-          ),
+          // Each chronology-preserving segment only rolls consecutive calls
+          // with the same name; prose and a new offset stay hard boundaries.
+          node: <ToolRuns tools={seg.tools} />,
         },
   );
 
@@ -7143,7 +7276,7 @@ function TurnRowImpl({
     // below. GitHub splitting runs on visibleWithGh (markers intact) so cards
     // mount at the markers' positions; the `visible` fallback/content path is
     // marker-free either way.
-    const split = splitSegmentsForGitHub(splitTextForArtifacts(visibleWithGh, artifactCtx), onOpenUrl);
+    const split = splitSegmentsForGitHub(splitTextForArtifacts(visibleWithGh, artifactCtx), onOpenUrl, ghFamiliar);
     renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
   }
 
@@ -7253,6 +7386,7 @@ function TurnRowImpl({
           </div>
 
           <div className="cave-linear-turn-body">
+            {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} pending={!!turn.pending} /> : null}
             {/* Chat-revamp 1b: the collapsed agent-work line sits ABOVE the
                 answer, so the reader sees "Worked for … · N steps" first and
                 the prose below reads uninterrupted. */}
@@ -7289,10 +7423,10 @@ function TurnRowImpl({
                 they don't teleport out of a rollup once text arrives. */}
             {indicatorVisible && segments?.length ? (
               <div className="mt-3 space-y-2">
-                {segments.flatMap((seg) =>
+                {segments.map((seg, index) =>
                   seg.kind === "tools"
-                    ? seg.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
-                    : [],
+                    ? <ToolRuns key={`tools-${seg.tools[0]?.id ?? index}`} tools={seg.tools} />
+                    : null,
                 )}
               </div>
             ) : null}
@@ -7318,7 +7452,6 @@ function TurnRowImpl({
               </div>
             ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
-            {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} /> : null}
             {/* Edit cards on settled turns (the work line above the answer
                 already collapsed everything else). */}
             {!turn.pending && turn.tools?.length && editCards.length
@@ -7363,31 +7496,11 @@ function TurnRowImpl({
                   );
                 })()
               : null}
-            {/* Suggested follow-ups render LAST — they're the most actionable
-                element (click to send), so they sit closest to the composer and
-                aren't pushed up the turn by the tool-activity section. */}
-            {nextPaths.length > 0 && !turn.pending && !suppressSuggestions ? (
-              // data-count keys the row layout: pills lay out 1, 2, or 3 per
-              // row — 4 pills pair into a 2×2, never a 3+1 orphan wrap.
-              <div className="cave-next-paths" data-count={nextPaths.length}>
-                {nextPaths.map((s, i) => {
-                  // The agent lists next steps best-first, so flag the top one as
-                  // the recommendation (green pulsing border + leading dot).
-                  const recommended = i === 0;
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      className={`cave-next-path${recommended ? " cave-next-path--recommended" : ""}`}
-                      onClick={() => onSuggestion?.(s)}
-                      aria-label={recommended ? `Recommended: ${s}` : undefined}
-                      title={recommended ? "Recommended next step" : undefined}
-                    >
-                      {s}
-                    </button>
-                  );
-                })}
-              </div>
+            {/* Typed follow-ups render LAST — reply fills the composer, task
+                opens review, and action routes to Tasks; they sit closest to
+                the composer and aren't pushed up by tool activity. */}
+            {nextPaths.length > 0 && !turn.pending && !suppressSuggestions && onSuggestion ? (
+              <FollowUpCards paths={nextPaths} onActivate={onSuggestion} />
             ) : null}
             {/* Comment on the markdown artifact this turn produced: select any
                 passage above to leave a comment, then request a revision that
@@ -7397,7 +7510,7 @@ function TurnRowImpl({
               <ArtifactComments
                 turnId={turn.id}
                 familiarName={familiar.display_name}
-                onRequest={(prompt) => onSuggestion?.(prompt)}
+                onRequest={(prompt) => onRequest?.(prompt)}
               />
             ) : null}
           </div>
@@ -7407,7 +7520,7 @@ function TurnRowImpl({
   );
 }
 
-function ReasoningBlock({ reasoning, durationMs }: { reasoning: string; durationMs?: number }) {
+function ReasoningBlock({ reasoning, durationMs, pending }: { reasoning: string; durationMs?: number; pending: boolean }) {
   // The global "Show thinking" toggle (header) opens every reasoning block at
   // once; an individual block can still be collapsed/expanded locally. The
   // disclosure stays default-collapsed in markup — `open` is driven by the
@@ -7421,9 +7534,10 @@ function ReasoningBlock({ reasoning, durationMs }: { reasoning: string; duration
     <details
       className="cave-reasoning-block mt-3"
       data-default-collapsed="true"
-      open={showThinking || undefined}
+      data-streaming={pending || undefined}
+      open={pending || showThinking || undefined}
     >
-      <summary className="cave-tool-summary">
+      <summary className="cave-tool-summary focus-ring">
         <span className="inline-flex items-center gap-1.5">
           <Icon name="ph:brain" width={12} aria-hidden />
           Thinking
@@ -7458,8 +7572,9 @@ function ProgressGroup({
   pending: boolean;
 }) {
   const running = progress.filter((event) => event.status === "running").length;
+  const notices = progress.filter((event) => event.status === "notice").length;
   const errors = progress.filter((event) => event.status === "error").length;
-  const completed = progress.length - running - errors;
+  const completed = progress.filter((event) => event.status === "done").length;
   const current = currentProgress(progress);
 
   return (
@@ -7476,6 +7591,7 @@ function ProgressGroup({
         ) : null}
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+          {notices ? <span className="cave-tool-count cave-tool-count--notice">{notices} {notices === 1 ? "notice" : "notices"}</span> : null}
           {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "issue" : "issues"}</span> : null}
           {completed ? <span className="cave-tool-count">{completed} done</span> : null}
         </span>
@@ -7498,6 +7614,8 @@ function ProgressRow({ event }: { event: ProgressEvent }) {
   const statusIcon =
     event.status === "error"
       ? "ph:warning-circle"
+      : event.status === "notice"
+        ? "ph:info"
       : event.status === "done"
         ? "ph:check-circle"
         : "ph:circle-dashed";
@@ -7548,30 +7666,154 @@ function ToolGroup({ tools, durationMs }: { tools: ToolEvent[]; durationMs?: num
     .reverse()
     .find((t) => /bash|shell|terminal|command|exec/i.test(t.name));
   const lastCommand = lastShellTool ? toolArgSummary(lastShellTool.name, lastShellTool.input) : "";
+  // Chat.dc.html 2a ④: the quiet rollup on the right of the work line —
+  // "4 batches · 6 ok". Running and failed calls keep their tinted counters
+  // beside it so trouble never reads as neutral mono.
+  const rollup = toolBatchSummary(tools, toolBatches(tools));
+  // The capabilities this turn actually reached for, as the design's SKILLS
+  // eyebrow above the card. Absent when the turn used none — this surface
+  // never shows a label with nothing under it.
+  const skills = useMemo(() => turnSkills(tools), [tools]);
+
+  return (
+    <>
+      {skills.length > 0 ? (
+        <div className="cave-tool-skills" role="group" aria-label="Skills and capabilities used">
+          <span className="cave-tool-skills__label">Skills</span>
+          {skills.map((skill) => (
+            <span
+              key={skill.id}
+              className="cave-tool-skills__chip"
+              data-source={skill.source}
+              title={
+                skill.source === "mcp"
+                  ? `${skill.name} — MCP server, ${skill.calls} ${skill.calls === 1 ? "call" : "calls"} this turn`
+                  : `${skill.name} — skill, ${skill.calls} ${skill.calls === 1 ? "call" : "calls"} this turn`
+              }
+            >
+              <Icon
+                name={skill.source === "mcp" ? "ph:plug" : "ph:flask"}
+                width={11}
+                className="cave-tool-skills__icon"
+                aria-hidden
+              />
+              {skill.name}
+              <span className="cave-tool-skills__count">
+                {skill.calls} {skill.calls === 1 ? "call" : "calls"}
+              </span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <details
+        className="cave-tool-group cave-work-line mt-3"
+        data-default-collapsed="true"
+        onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+      >
+        <summary className="cave-tool-summary" aria-expanded={open} aria-label="Tool activity">
+          <span className="cave-work-line__label">
+            {duration ? `Worked for ${duration} · ` : ""}
+            {tools.length} {tools.length === 1 ? "step" : "steps"}
+          </span>
+          {lastCommand ? (
+            <span className="cave-work-line__ran">
+              {"· ran "}
+              <code className="cave-work-line__cmd">{lastCommand}</code>
+            </span>
+          ) : null}
+          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
+            {rollup ? <span className="cave-tool-rollup">{rollup}</span> : null}
+            {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+            {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+          </span>
+        </summary>
+        <div className="mt-2 space-y-2 border-t border-[var(--border-hairline)]/70 pt-2">
+          <ToolRuns tools={tools} />
+        </div>
+      </details>
+    </>
+  );
+}
+
+function ToolRuns({ tools }: { tools: ToolEvent[] }) {
+  // Chat.dc.html 2a ④: a real agent fires a block of calls, writes some prose,
+  // then fires again. Each block gets its own tinted band so a 30-step turn
+  // reads as four moves instead of one wall. Bands earn their place only when
+  // they chunk something: one block (including every transcript persisted
+  // before textOffset existed) needs no header, and a turn whose every call
+  // stands alone already reads one-move-per-row — a band over each would
+  // repeat the row beneath it.
+  const batches = toolBatches(tools);
+  const bandedBatches =
+    batches.length > 1 && batches.some((batch) => batch.toolIds.length > 1) ? batches : [];
+  const headerByToolId = new Map(bandedBatches.map((batch) => [batch.headToolId, batch]));
+  return groupConsecutiveTools(tools).map((run) => {
+    const key = run.tools.map((tool) => tool.id).join(":");
+    const header = headerByToolId.get(run.tools[0]!.id);
+    // File-mutation cards carry review/undo affordances. Keeping each one
+    // standalone means a repeated edit never hides an actionable change.
+    const containsEdit = run.tools.some((tool) => toolInputAsDiff(tool.name, tool.input) != null);
+    const body =
+      run.tools.length > 1 && !containsEdit ? (
+        <ToolRunGroup name={run.name} tools={run.tools} />
+      ) : (
+        run.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
+      );
+    return (
+      <Fragment key={key}>
+        {header ? <ToolBatchHeader batch={header} /> : null}
+        {body}
+      </Fragment>
+    );
+  });
+}
+
+/** The band above a batch of calls (Chat.dc.html 2a ④): which move this is,
+ *  what ran, how it ran, and how long it took — tinted by the block's dominant
+ *  tool category, the same palette the rows beneath it use. */
+function ToolBatchHeader({ batch }: { batch: ToolBatch }) {
+  const duration = formatBatchDuration(batch.durationMs);
+  return (
+    <div className="cave-tool-batch" data-tool-category={batch.category}>
+      <span className="cave-tool-batch__dot" aria-hidden />
+      <span className="cave-tool-batch__index">batch {batch.index}</span>
+      <span className="cave-tool-batch__label" title={batch.label}>
+        {batch.label}
+      </span>
+      <span className="cave-tool-batch__mode">{batch.mode}</span>
+      <span className="cave-tool-batch__duration">{duration}</span>
+    </div>
+  );
+}
+
+function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
+  const [open, setOpen] = useState(false);
+  const visual = toolVisual(name);
+  const displayName = name.trim() || "Tool";
+  const running = tools.filter((tool) => tool.status === "running").length;
+  const errors = tools.filter((tool) => tool.status === "error").length;
 
   return (
     <details
-      className="cave-tool-group cave-work-line mt-3"
+      className="cave-tool-run"
       data-default-collapsed="true"
-      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+      data-tool-category={visual.category}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary className="cave-tool-summary" aria-expanded={open} aria-label="Tool activity">
-        <span className="cave-work-line__label">
-          {duration ? `Worked for ${duration} · ` : ""}
-          {tools.length} {tools.length === 1 ? "step" : "steps"}
-        </span>
-        {lastCommand ? (
-          <span className="cave-work-line__ran">
-            {"· ran "}
-            <code className="cave-work-line__cmd">{lastCommand}</code>
-          </span>
-        ) : null}
+      <summary
+        className="cave-tool-summary focus-ring"
+        aria-expanded={open}
+        aria-label={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}`}
+      >
+        <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
+        <span className="cave-tool-run__name">{displayName}</span>
+        <span className="cave-tool-count">{tools.length} {tools.length === 1 ? "call" : "calls"}</span>
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
           {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
         </span>
       </summary>
-      <div className="mt-2 space-y-2 border-t border-[var(--border-hairline)]/70 pt-2">
+      <div className="cave-tool-run__list">
         {tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
       </div>
     </details>
@@ -7901,6 +8143,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&
+    Boolean(prev.onRequest) === Boolean(next.onRequest) &&
     // Branch nav: compare by index+total (the displayed position changes when
     // branches are added); skip closure identity — callbacks are recreated on
     // every parent render and would defeat memoization.
@@ -7954,6 +8197,7 @@ function RunActivityStrip({
   const issues =
     tools.filter((t) => t.status === "error").length +
     progress.filter((p) => p.status === "error").length;
+  const notices = progress.filter((p) => p.status === "notice").length;
   const done =
     tools.filter((t) => t.status === "ok").length +
     progress.filter((p) => p.status === "done").length;
@@ -7980,14 +8224,15 @@ function RunActivityStrip({
           aria-label={live ? "Agent activity (running)" : "Last run summary"}
         >
           <Icon
-            name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : "ph:check-circle"}
+            name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices ? "ph:info" : "ph:check-circle"}
             width={13}
-            className={`shrink-0 ${live ? "animate-spin text-[var(--accent-presence)]" : issues ? "text-[var(--color-warning)]" : "text-[var(--color-success)]"}`}
+            className={`shrink-0 ${live ? "animate-spin text-[var(--accent-presence)]" : issues ? "text-[var(--color-warning)]" : notices ? "text-[var(--text-secondary)]" : "text-[var(--color-success)]"}`}
             aria-hidden
           />
           <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">{headline}</span>
           <span className="flex shrink-0 items-center gap-1.5 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+            {notices ? <span className="cave-tool-count cave-tool-count--notice">{notices} {notices === 1 ? "notice" : "notices"}</span> : null}
             {issues ? <span className="cave-tool-count cave-tool-count--error">{issues} {issues === 1 ? "issue" : "issues"}</span> : null}
             {done ? <span className="cave-tool-count">{done} done</span> : null}
           </span>

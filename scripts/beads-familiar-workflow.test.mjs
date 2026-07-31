@@ -23,6 +23,10 @@ assert.deepEqual(
     prs: packageJson.scripts["beads:prs"],
     prsJson: packageJson.scripts["beads:prs:json"],
     prsApply: packageJson.scripts["beads:prs:apply"],
+    worktrees: packageJson.scripts["beads:worktrees"],
+    worktreesJson: packageJson.scripts["beads:worktrees:json"],
+    patrol: packageJson.scripts["beads:patrol"],
+    patrolApply: packageJson.scripts["beads:patrol:apply"],
     sync: packageJson.scripts["beads:sync"],
     doctor: packageJson.scripts["beads:doctor"],
   },
@@ -32,6 +36,10 @@ assert.deepEqual(
     prs: "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave",
     prsJson: "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave --json",
     prsApply: "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave --apply",
+    worktrees: "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave",
+    worktreesJson: "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave --json",
+    patrol: "pnpm beads:prs:patrol && pnpm beads:worktrees",
+    patrolApply: "pnpm beads:prs:patrol:apply && pnpm beads:worktrees",
     sync: "bd dolt pull && bd dolt push",
     doctor: "bd doctor && bd lint",
   },
@@ -67,9 +75,19 @@ assert.match(workflow, /public-scrubbed before committing/, "workflow doc should
 assert.match(workflow, /bd dolt pull[\s\S]*bd dolt push/, "workflow doc should name Dolt sync commands");
 assert.match(workflow, /## Pull Request Management/, "workflow doc should include PR management guidance");
 assert.match(workflow, /pnpm beads:prs[\s\S]*pnpm beads:prs:apply/, "workflow doc should document PR bridge commands");
+assert.match(
+  workflow,
+  /pnpm beads:patrol[\s\S]*pnpm beads:worktrees[\s\S]*retire-after-gate/,
+  "the routine patrol should keep local worktree disposition visible after merge",
+);
 assert.match(workflow, /draft PR[\s\S]*checks\/review loop[\s\S]*merge gate[\s\S]*post-merge cleanup/, "workflow doc should cover the full PR lifecycle");
 assert.match(workflow, /ready-to-merge[\s\S]*needs-review[\s\S]*checks-failing[\s\S]*changes-requested/, "workflow doc should name the PR control lanes");
 assert.match(workflow, /Do not close the bead before the merge or explicit completion/, "workflow doc should protect bead close evidence");
+assert.match(
+  workflow,
+  /Do not close the bead until the local worktree has a recorded disposition/,
+  "closing a bead must not hide an unresolved local worktree",
+);
 assert.doesNotMatch(
   beadsPreCommitHook,
   /info "ok \(\$\{#STAGED_FILES\[@\]\} files scanned\)"\nexit 0[\s\S]*BEGIN BEADS INTEGRATION/,

@@ -9,6 +9,13 @@ import { readFile } from "node:fs/promises";
 // wiring and the fallback that keeps the section from going blank.
 
 const source = await readFile(new URL("./marketplace-detail.tsx", import.meta.url), "utf8");
+const cardSource = await readFile(new URL("./marketplace-card.tsx", import.meta.url), "utf8");
+
+assert.match(source, /plugin\.unlisted/, "detail recognizes local install records without catalog metadata");
+assert.match(source, /Catalog details unavailable/, "unlisted detail states the metadata gap plainly");
+assert.match(cardSource, /plugin\.unlisted/, "cards recognize unlisted local install records");
+assert.match(cardSource, /Installed item/, "unlisted cards do not pretend to be catalog Skills");
+assert.doesNotMatch(source, /plugin\.unlisted[\s\S]{0,800}Primary ways this listing extends a familiar/, "unlisted detail does not invent capability fit");
 
 // ── Previews replace bare ids ────────────────────────────────────────────────
 assert.match(

@@ -6,13 +6,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const transcriptCss = readFileSync(new URL("../styles/cave-chat/transcript.css", import.meta.url), "utf8");
 
 // The recommendation derives from the ACTIVE branch path's last settled
-// assistant turn — same suggestion the pills flag as "Recommended".
+// assistant turn — but only a reply can be keyboard-filled.
 assert.match(
   source,
-  /const recommendedNextPath = useMemo\(\(\) => \{[\s\S]*?extractNextPaths\(last\.text\)\.suggestions\[0\] \?\? null;[\s\S]*?\}, \[activePath\]\);/,
-  "recommendedNextPath memo reads the active path's last settled assistant turn",
+  /const recommendedNextPath = useMemo\(\(\) => \{[\s\S]*?extractNextPaths\(last\.text\)\.suggestions\.find\(\(path\) => path\.kind === "reply"\) \?\? null;[\s\S]*?\}, \[activePath\]\);/,
+  "recommendedNextPath only reads reply suggestions from the active path's last settled assistant turn",
 );
 assert.match(
   source,
@@ -31,16 +32,22 @@ const fillIdx = source.indexOf('e.key === "ArrowLeft"');
 assert.ok(menuKeyIdx !== -1 && fillIdx > menuKeyIdx, "menus keep owning Tab — fill branch comes after handleMenuKey");
 assert.match(
   source,
-  /setInput\(recommendedNextPath\);\n\s*return;/,
+  /setInput\(recommendedNextPath\.prompt\);\n\s*return;/,
   "accepting fills the draft (never sends)",
 );
 
-// Placeholder: the recommendation replaces the idle hint; streaming keeps
-// its own placeholder.
+// Placeholder: the recommendation replaces the idle hint; the input does not
+// carry keyboard-help copy because the send button is the visible affordance.
+assert.match(
+  transcriptCss,
+  /\.cave-chat-linear \.cave-composer-send \{[\s\S]*?border-radius: var\(--radius-control\);[\s\S]*?background: var\(--text-primary\);[\s\S]*?color: var\(--bg-panel\);/,
+  "the send button is the composer’s sole high-contrast square action",
+);
 assert.match(
   source,
-  /: recommendedNextPath\n\s*\? `\$\{recommendedNextPath\}  ⇥ to fill`/,
-  "empty composer shows the recommendation as its placeholder with the ⇥ hint",
+  /: recommendedNextPath\n\s*\? recommendedNextPath\.prompt/,
+  "empty composer shows the recommendation without a key hint",
 );
+assert.doesNotMatch(source, /↵ to send|⇥ to fill/, "the composer renders no visible send or fill key tips");
 
 console.log("chat-composer-rec-autofill: all pins hold");

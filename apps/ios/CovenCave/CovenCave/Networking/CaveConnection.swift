@@ -129,18 +129,53 @@ struct CaveConnection: Codable, Equatable {
 enum CaveError: LocalizedError {
     case notConfigured
     case badResponse(Int)
+    case serverResponse(status: Int, code: String?, message: String?)
     case decoding(String)
     case transport(String)
 
     static func isAuthFailure(_ error: Error) -> Bool {
-        guard case CaveError.badResponse(let code) = error else { return false }
-        return code == 401 || code == 403
+        switch error {
+        case CaveError.badResponse(let status):
+            return status == 401 || status == 403
+        case CaveError.serverResponse(let status, let code, _):
+            if status == 401 { return true }
+            if status == 403 {
+                // A scoped project denial means the pairing is valid; sending
+                // the user back through pairing would hide the actionable fix.
+                return code != "project_access_denied"
+            }
+            return false
+        default:
+            return false
+        }
+    }
+
+    var requiresProjectSelection: Bool {
+        guard case .serverResponse(_, let code, _) = self else { return false }
+        return [
+            "project_root_required",
+            "project_root_unavailable",
+            "project_root_not_directory",
+            "project_root_invalid",
+            "project_not_registered",
+            "project_access_denied",
+        ].contains(code)
+    }
+
+    var isDefinitiveServerResponse: Bool {
+        if case .serverResponse(let status, _, _) = self {
+            return (400..<500).contains(status)
+        }
+        return false
     }
 
     var errorDescription: String? {
         switch self {
         case .notConfigured: return "No host configured."
         case .badResponse(let code): return "Server returned status \(code)."
+        case .serverResponse(let status, _, let message):
+            let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed?.isEmpty == false ? trimmed : "Server returned status \(status)."
         case .decoding(let msg): return "Could not read the response: \(msg)"
         case .transport(let msg): return msg
         }

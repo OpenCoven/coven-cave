@@ -8,11 +8,21 @@ struct NewChatView: View {
     @Environment(\.dismiss) private var dismiss
     var onStart: (ChatThread) -> Void
 
-    @State private var selected: Set<String> = []
+    @State private var selected: Set<String>
     @State private var groupName: String = ""
     @State private var importingFile = false
+    @State private var selectedProjectRoot: String?
+    @State private var projectResolved = false
 
     private var isGroup: Bool { selected.count > 1 }
+
+    init(
+        initialFamiliarIds: [String] = [],
+        onStart: @escaping (ChatThread) -> Void
+    ) {
+        self.onStart = onStart
+        _selected = State(initialValue: Set(initialFamiliarIds))
+    }
 
     var body: some View {
         NavigationStack {
@@ -21,6 +31,11 @@ struct NewChatView: View {
                     Button { importingFile = true } label: {
                         Label("Import from Markdown…", systemImage: "square.and.arrow.down")
                     }
+                    .disabled(
+                        selected.isEmpty
+                            || !projectResolved
+                            || selectedProjectRoot == nil
+                    )
                 }
                 if isGroup {
                     Section("Group name (optional)") {
@@ -53,6 +68,15 @@ struct NewChatView: View {
                         .buttonStyle(.plain)
                     }
                 }
+                Section("Project") {
+                    ChatProjectPicker(
+                        familiarIds: selectedFamiliarIds,
+                        recentRoots: app.recentProjectRoots,
+                        selectedRoot: $selectedProjectRoot,
+                        isResolved: $projectResolved,
+                        locked: false
+                    )
+                }
             }
             .themedListBackground()
             .navigationTitle("New chat")
@@ -63,7 +87,11 @@ struct NewChatView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isGroup ? "Create" : "Start") { start() }
-                        .disabled(selected.isEmpty)
+                        .disabled(
+                            selected.isEmpty
+                                || !projectResolved
+                                || selectedProjectRoot == nil
+                        )
                 }
             }
             .fileImporter(isPresented: $importingFile,
@@ -82,20 +110,42 @@ struct NewChatView: View {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
         let fallback = url.deletingPathExtension().lastPathComponent
-        onStart(app.importMarkdown(text, fallbackTitle: fallback))
+        onStart(
+            app.importMarkdown(
+                text,
+                fallbackTitle: fallback,
+                familiarIds: selectedFamiliarIds,
+                projectRoot: selectedProjectRoot
+            )
+        )
     }
 
     private func toggle(_ id: String) {
         if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
+        projectResolved = false
+    }
+
+    private var selectedFamiliarIds: [String] {
+        app.familiars.map(\.id).filter { selected.contains($0) }
     }
 
     private func start() {
         // Preserve familiar list order for stable group composition.
-        let ids = app.familiars.map(\.id).filter { selected.contains($0) }
-        guard !ids.isEmpty else { return }
+        let ids = selectedFamiliarIds
+        guard !ids.isEmpty,
+              projectResolved,
+              let selectedProjectRoot
+        else { return }
         let thread = ids.count == 1
-            ? app.startFreshThread(familiarIds: ids)
-            : app.createGroup(familiarIds: ids, title: groupName)
+            ? app.startFreshThread(
+                familiarIds: ids,
+                projectRoot: selectedProjectRoot
+            )
+            : app.createGroup(
+                familiarIds: ids,
+                title: groupName,
+                projectRoot: selectedProjectRoot
+            )
         onStart(thread)
     }
 }

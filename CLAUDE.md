@@ -16,7 +16,29 @@
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
 - Required status checks (all must pass): `Frontend build`, `Rust check`, `E2E (Playwright)`, `Cross-environment required`, `Sidecar runtime required`, `CodeQL`. (Require the **aggregate** `CodeQL` check, not the individual `Analyze (<lang>)` jobs — those are matched ambiguously by branch protection and get stuck as "expected", which blocks every PR. The aggregate `CodeQL` context resolves fast on every PR — `pass` in ~2s even when the per-language analyses skip — so it never hangs a PR.) `CodeQL` is enforced in **both** layers: ruleset `19123333` ("main protection (checks + CodeQL)") and classic branch protection (re-added 2026-07-24, cave-1vyi). The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
-- `enforce_admins = true` — admins are **not** exempt.
+- **All review conversations must be resolved** (`required_conversation_resolution`).
+  This is the one that surprises you: it counts threads opened by
+  `copilot-pull-request-reviewer[bot]` and `github-advanced-security[bot]`, not
+  just human review. With every required check green and zero approvals needed,
+  the PR still reports `mergeStateStatus: BLOCKED` and `gh pr merge` fails with
+  the unhelpful *"the base branch policy prohibits the merge"* — no mention of
+  conversations. Resolve the threads (reply naming the fixing commit first, so
+  it is a trail rather than a silent dismissal) and it clears. Read the bot
+  comments before resolving; on PR #4068 two of three were real bugs a fully
+  green suite had passed.
+- Commit signatures are **required** (`required_signatures`) — the server
+  rejects unsigned commits outright, so the global `-S` rule is enforced, not
+  merely advised.
+- Branches do **not** need to be up to date with `main` (`strict: false`), so
+  being behind is never the reason a merge is blocked.
+- `enforce_admins = false` — **deliberate**, not drift. Protection was first
+  enabled with `enforce_admins=true` (see the Why above); it was intentionally
+  relaxed later. Leave it alone. It does **not** loosen the rule this section
+  exists to state: every change still goes through a PR with green checks, and
+  the `--admin` flag `gh` dangles at you on a blocked merge is still not the
+  fix — fix the actual blocker. What the setting buys is an escape hatch for a
+  human to use knowingly, not a shortcut for an agent to take because a merge
+  was inconvenient.
 - Force-pushes and deletion of `main` are blocked.
 
 **How to apply (the only path to `main`):**
@@ -27,9 +49,19 @@ git worktree add -b <branch> .worktrees/<branch> origin/main
 # … commit (signed, per the global -S rule) …
 git push -u origin <branch>
 gh pr create --base main --head <branch> --title "…" --body "…"
-# wait for the 3 required checks to go green, then:
+# wait for the required checks to go green, then resolve every review thread —
+# including the bots' — or the merge stays BLOCKED with a misleading error:
+gh api graphql -f query='{repository(owner:"OpenCoven",name:"coven-cave"){pullRequest(number:<#>){reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved path comments(first:1){nodes{author{login} body}}}}}}}'
+# If hasNextPage is true, page with `reviewThreads(first:100, after:"<endCursor>")`
+# until it is false — an unlisted thread keeps the merge BLOCKED with no hint
+# which one, so a partial listing is worse than no listing.
+# read each one, fix what is real, reply naming the commit, then per thread id:
+gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -f t=<PRRT_…>
 gh pr merge <#> --squash --delete-branch
 ```
+
+`gh pr merge` on a blocked PR suggests `--admin`. Don't. It bypasses the
+protection this section exists to describe; fix the actual blocker instead.
 
 Squash-merge through `gh`/the PR UI still works — it's a merge, not a direct push. Only `git push … main` is blocked. Don't try to "work around" protection (e.g. flipping `enforce_admins` off to push) — if a change can't go through a PR, surface it to the user.
 
@@ -129,7 +161,7 @@ Map PIDs to session JSONLs in `~/.claude/projects/-Users-buns-Documents-GitHub-O
 
 **Surface-claim guard (automatic).** A PreToolUse hook — `scripts/surface-claim-guard.mjs`, wired in `.claude/settings.json` — records each session's claim on the files it edits in the primary checkout (`.claude/claims.json`, gitignored, ~2h TTL) and warns when another live session has already claimed the same file. It's advisory-only (never blocks an edit) and skips `.worktrees/` paths. So if you get a "⚠️ Multi-session collision on `<file>`" message, another session may be editing that file — coordinate or move to a worktree before clobbering it. This operationalizes §1 of the coordination doc; you no longer have to grep claims.json by hand.
 
-**Worktree guard (automatic, BLOCKING).** A second PreToolUse hook — `scripts/worktree-guard.mjs`, matcher Bash — blocks (exit 2) destruction of live work: `git worktree remove`/`rm -rf` of a worktree root that is dirty or whose HEAD is on no remote ref, `git branch -D` of an unpushed tip, and `git push --delete` of a branch that still heads an OPEN PR. Clean+pushed cleanup and husk GC pass silently. If destruction is deliberate, re-run prefixed with `WT_GUARD_BYPASS=1 `. Exists because on 2026-07-03 an actor merged another session's in-progress branch (PR #2290) and its post-merge cleanup destroyed that session's worktree mid-edit (coordination doc §5). Corollary discipline: **push your branch to origin after every commit** — the remote is the only store a local actor can't destroy.
+**Worktree guard (automatic, BLOCKING).** A second PreToolUse hook — `scripts/worktree-guard.mjs`, matcher Bash — blocks (exit 2) destruction of live work: `git worktree remove`/`rm -rf` of a worktree root that is dirty or whose HEAD is on no remote ref, `git branch -D` of an unpushed tip, and `git push --delete` of a branch that still heads an OPEN PR. Clean+pushed cleanup and husk GC pass silently. **"Retained" counts a remote branch OR a tag pushed to a remote** — so the right way to retire a branch whose commits you want kept but off the branch list is to archive it: `git tag -s archive/<branch-with-slashes-as-dashes> <oid> && git push origin <that-tag>`, then delete freely. Flatten the slashes (`fix/foo` → `archive/fix-foo-<date>`) — git cannot hold both a tag `archive/fix` and a tag `archive/fix/foo`, so nested archive names collide as soon as a second branch shares a prefix. A pushed tag is *more* durable than a branch (merging deletes the branch, never the tag); a **local-only tag does not count**, and if the remote is unreachable the tag check fails closed and blocks. If destruction is deliberate, re-run prefixed with `WT_GUARD_BYPASS=1 ` (the prefix must lead the WHOLE command string — a prefix buried inside `bash -c` or after a leading assignment does not reach the hook). Every bypass AND every block is appended to `.claude/worktree-guard-bypass.log` (gitignored, JSON lines with a `verdict` field) — after cave-boor8, where a destroyed worktree's post-mortem couldn't tell an override from a hole. Exists because on 2026-07-03 an actor merged another session's in-progress branch (PR #2290) and its post-merge cleanup destroyed that session's worktree mid-edit (coordination doc §5). Corollary disciplines: **push your branch to origin after every commit** — the remote is the only store a local actor can't destroy — and **any audit of a dirty worktree records `git status --porcelain` paths, never just a count** (cave-boor8: a count is unrecoverable; paths make lost-found search possible).
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->

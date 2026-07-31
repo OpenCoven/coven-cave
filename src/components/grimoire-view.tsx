@@ -19,6 +19,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { Icon, type IconName } from "@/lib/icon";
 import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-editor";
 import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
@@ -27,6 +28,7 @@ import "@/styles/journal.css";
 import "@/styles/grimoire-launcher.css";
 import { GrimoireLauncher } from "@/components/grimoire-launcher";
 import type { Familiar } from "@/lib/types";
+import { familiarInScope } from "@/lib/familiar-multiselect";
 import { serializeMdDocument } from "@/lib/md-frontmatter";
 import { relativeTime } from "@/lib/relative-time";
 import {
@@ -107,6 +109,9 @@ type MemoryEntry = {
 };
 
 type JournalSummary = { date: string; preview: string; reflectedBy: string | null; modified: string | null };
+
+/** The canonical "All familiars" scope — an empty selection filters nothing. */
+const EMPTY_FAMILIAR_SCOPE: ReadonlySet<string> = new Set<string>();
 
 function compactPath(path: string): string {
   const collapsed = path.replace(/^\/Users\/[^/]+/, "~");
@@ -392,6 +397,7 @@ function NavRow({
 // ── Navigator section (collapsible) ──────────────────────────────────────────
 
 const RAIL_COLLAPSED_STORAGE_KEY = "cave:grimoire:rail-collapsed";
+const NAVIGATOR_COLLAPSED_STORAGE_KEY = "cave:grimoire:navigator-collapsed:v1";
 
 type RailSectionId = "knowledge" | "memory" | "journal";
 
@@ -429,6 +435,15 @@ function readCollapsedSections(): Record<RailSectionId, boolean> {
     };
   } catch {
     return none;
+  }
+}
+
+function readNavigatorCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(NAVIGATOR_COLLAPSED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
   }
 }
 
@@ -705,6 +720,7 @@ export function GrimoireView({
   onViewChange,
   familiars = [],
   activeFamiliarId = null,
+  scopeFamiliarIds,
 }: {
   /** Which tab shows. Controlled by the Workspace so the Journal nav row can
    *  route straight into the Journal tab; falls back to internal state when the
@@ -714,6 +730,11 @@ export function GrimoireView({
   /** Roster for the Journal tab (reflection filter + attribution). */
   familiars?: Familiar[];
   activeFamiliarId?: string | null;
+  /** The shell's familiar multiselect. Empty = All. When familiars are
+   *  selected, the Memory navigator shows only those familiars' own memory —
+   *  ownerless shared pools drop out, matching the app-wide familiar-memory
+   *  rule documented in `@/lib/memory-file-scope`. */
+  scopeFamiliarIds?: ReadonlySet<string>;
 } = {}) {
   const [knowledge, setKnowledge] = useState<KnowledgeEntry[] | null>(null);
   const [collections, setCollections] = useState<KnowledgeCollectionSummary[] | null>(null);
@@ -734,6 +755,7 @@ export function GrimoireView({
   const [collapsedSections, setCollapsedSections] = useState<Record<RailSectionId, boolean>>(
     readCollapsedSections,
   );
+  const [navigatorCollapsed, setNavigatorCollapsed] = useState(readNavigatorCollapsed);
   const firstLoadDoneRef = useRef(false);
   const toggleSection = useCallback((id: RailSectionId) => {
     setCollapsedSections((prev) => {
@@ -748,6 +770,38 @@ export function GrimoireView({
   }, []);
   const confirm = useConfirm();
   const { announce } = useAnnouncer();
+  const setNavigatorCollapsedPreference = useCallback(
+    (next: boolean) => {
+      setNavigatorCollapsed(next);
+      try {
+        window.localStorage.setItem(NAVIGATOR_COLLAPSED_STORAGE_KEY, String(next));
+      } catch {
+        /* private mode — collapse stays session-only */
+      }
+      announce(next ? "Memories sidebar collapsed" : "Memories sidebar expanded", "polite");
+    },
+    [announce],
+  );
+  const toggleNavigator = useCallback(
+    () => setNavigatorCollapsedPreference(!navigatorCollapsed),
+    [navigatorCollapsed, setNavigatorCollapsedPreference],
+  );
+  const revealNavigatorSection = useCallback(
+    (id: RailSectionId) => {
+      setNavigatorCollapsedPreference(false);
+      setCollapsedSections((prev) => {
+        if (!prev[id]) return prev;
+        const next = { ...prev, [id]: false };
+        try {
+          window.localStorage.setItem(RAIL_COLLAPSED_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          /* private mode — collapse stays session-only */
+        }
+        return next;
+      });
+    },
+    [setNavigatorCollapsedPreference],
+  );
   const dateTimePrefs = useDateTimePrefs();
   // Selection evicted by an over-cap openDoc, announced post-commit.
   const evictedRef = useRef<GrimoireSelection | null>(null);
@@ -1016,6 +1070,9 @@ export function GrimoireView({
   }, [announce, closeTab, confirm, deleting, load, selection]);
 
   const q = query.trim().toLowerCase();
+  // Search results must stay reachable even when the persisted rail preference
+  // is compact. Clearing the query restores that preference without a write.
+  const navigatorCollapsedForDisplay = navigatorCollapsed && !q;
   const matches = useCallback(
     (...fields: Array<string | undefined | null>) =>
       !q || fields.some((f) => f && f.toLowerCase().includes(q)),
@@ -1043,9 +1100,26 @@ export function GrimoireView({
       return next;
     });
   }, []);
+  // The shell's familiar multiselect scopes the Memory navigator: an empty
+  // selection is "All", otherwise only the selected familiars' own memory
+  // files survive (ownerless shared pools are another familiar's business).
+  const memoryScope = scopeFamiliarIds ?? EMPTY_FAMILIAR_SCOPE;
+  const memoryScoped = memoryScope.size > 0;
+  /** Who the Memory section is currently narrowed to, for scoped empty copy. */
+  const memoryScopeLabel = useMemo(() => {
+    if (memoryScope.size === 0) return null;
+    if (memoryScope.size > 2) return `the ${memoryScope.size} selected familiars`;
+    return [...memoryScope]
+      .map((id) => familiars.find((f) => f.id === id)?.display_name ?? id)
+      .join(" and ");
+  }, [familiars, memoryScope]);
+  const scopedMemory = useMemo(
+    () => (memory ?? []).filter((e) => familiarInScope(memoryScope, e.familiarId)),
+    [memory, memoryScope],
+  );
   const visibleMemory = useMemo(
-    () => (memory ?? []).filter((e) => matches(e.relPath, e.fullPath, e.rootLabel, e.familiarId)),
-    [memory, matches],
+    () => scopedMemory.filter((e) => matches(e.relPath, e.fullPath, e.rootLabel, e.familiarId)),
+    [scopedMemory, matches],
   );
   // Runtime roots write thousands of timestamp-named session files; rendered
   // flat they drown Stitches and Journal. Group memory by its source root —
@@ -1285,7 +1359,7 @@ export function GrimoireView({
       // points — all driven by the lists this view already loaded.
       <GrimoireLauncher
         knowledge={knowledge ?? []}
-        memory={memory ?? []}
+        memory={scopedMemory}
         journal={journal ?? []}
         graph={graph}
         journalTitle={(date) => journalDayLabel(date, dateTimePrefs)}
@@ -1434,6 +1508,13 @@ export function GrimoireView({
               containerClassName="surface-compact-search"
             />
           ) : null}
+          <Link
+            href="/weaves"
+            className="focus-ring inline-flex h-[26px] shrink-0 items-center gap-1 whitespace-nowrap rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:path" width={11} aria-hidden />
+            Weaves
+          </Link>
           {view === "docs" ? (
             <>
               <button
@@ -1458,7 +1539,9 @@ export function GrimoireView({
       </header>
       <div className="flex min-h-0 flex-1 gap-3 p-3">
       <aside
-        className={`flex h-full min-h-0 w-full flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 @min-[880px]/grimoire:w-[300px] @min-[880px]/grimoire:shrink-0 ${
+        className={`flex h-full min-h-0 w-full flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 @min-[880px]/grimoire:shrink-0 ${
+          navigatorCollapsedForDisplay ? "@min-[880px]/grimoire:w-[44px]" : "@min-[880px]/grimoire:w-[300px]"
+        } ${
           // On a narrow container the rail and the main pane both go full-width,
           // so only one may show. Hide the rail when a doc is open OR the graph
           // is up — otherwise the rail wins the width and the graph is pushed
@@ -1467,7 +1550,63 @@ export function GrimoireView({
         }`}
       >
         {/* Title, surface verbs, and the doc search all live in the compact
-            band above — the rail is purely the grouped navigator now. */}
+            band above — the rail is purely the grouped navigator now. Its own
+            header row names the rail so the collapse toggle isn't a floating,
+            unlabelled control. The row is suppressed while a search is running,
+            because the rail force-expands to keep results reachable. */}
+        {!q ? (
+          <div
+            className={`flex shrink-0 items-center ${
+              navigatorCollapsed ? "justify-center p-1" : "justify-between gap-2 p-1.5"
+            }`}
+          >
+            {navigatorCollapsed ? null : (
+              <h2 className="min-w-0 truncate pl-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Navigator
+              </h2>
+            )}
+            <button
+              type="button"
+              onClick={toggleNavigator}
+              aria-label={navigatorCollapsed ? "Expand Memories sidebar" : "Collapse Memories sidebar"}
+              title={navigatorCollapsed ? "Expand Memories sidebar" : "Collapse Memories sidebar"}
+              className="focus-ring-inset inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:sidebar-simple" width={14} aria-hidden />
+            </button>
+          </div>
+        ) : null}
+        {navigatorCollapsedForDisplay ? (
+          <nav aria-label="Collapsed Memories navigator" className="flex min-h-0 flex-1 flex-col items-center gap-1 px-1 pb-2">
+            <button
+              type="button"
+              onClick={() => revealNavigatorSection("knowledge")}
+              aria-label="Open Stitches navigator"
+              title="Open Stitches navigator"
+              className="focus-ring-inset inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:book-open" width={14} aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={() => revealNavigatorSection("memory")}
+              aria-label="Open Memory files navigator"
+              title="Open Memory files navigator"
+              className="focus-ring-inset inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:brain" width={14} aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={() => revealNavigatorSection("journal")}
+              aria-label="Open Journal navigator"
+              title="Open Journal navigator"
+              className="focus-ring-inset inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:calendar-blank" width={14} aria-hidden />
+            </button>
+          </nav>
+        ) : (
         <div ref={railListRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
           {loadError ? (
             <ErrorState compact headline="Couldn't load documents" subtitle={loadError} />
@@ -1581,14 +1720,22 @@ export function GrimoireView({
                 ariaLabel="Memory files"
                 icon="ph:brain"
                 label="Memory"
-                description="Files your familiars and runtimes write as they work — editable in place"
+                description={
+                  memoryScoped
+                    ? `Memory files for ${memoryScopeLabel} — editable in place`
+                    : "Files your familiars and runtimes write as they work — editable in place"
+                }
                 count={visibleMemory.length}
                 collapsed={!q && collapsedSections.memory}
                 onToggle={() => toggleSection("memory")}
               >
                 {visibleMemory.length === 0 ? (
                   <p className="px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                    {q ? "No matches." : "No memory yet — it fills in as your familiars work and remember."}
+                    {q
+                      ? "No matches."
+                      : memoryScoped
+                        ? `No memory for ${memoryScopeLabel} yet — clear the familiar filter to see everything.`
+                        : "No memory yet — it fills in as your familiars work and remember."}
                   </p>
                 ) : (
                   memoryGroups.map((group) => {
@@ -1683,6 +1830,7 @@ export function GrimoireView({
             </>
           )}
         </div>
+        )}
       </aside>
       <main
         className={`h-full min-h-0 min-w-0 flex-1 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 ${

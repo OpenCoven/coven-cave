@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Desk tab — the mission workspace (cave-dl74 B2): query/command bar, runs
+ * Desk tab — the mission workspace (cave-dl74 B2): command toolbar, runs
  * rail, mission detail (center column + evidence rail), and the load-error
  * banner.
  *
@@ -14,15 +14,25 @@
  *                         (offered only when that session actually exists)
  * There is no /task — no board-create destination is reachable from here.
  *
- * Plain text is kept as a live runs filter (the Prompt tab contract carries a
- * mode, not a draft, so navigating cannot take the text along). A hint row
- * offers "Open in Prompt" explicitly and says the question is not carried
- * over — user text is never dropped silently.
+ * Plain text is kept as a live runs filter. New research has one persistent
+ * destination in the toolbar, so filtering never masquerades as composing.
  */
 
-import { useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { Button } from "@/components/ui/button";
-import { Icon } from "@/lib/icon";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { SearchInput } from "@/components/ui/search-input";
+import {
+  filterResearchMissionsByText,
+  researchMissionScopeCounts,
+  type ResearchMissionScope,
+} from "./research-desk-view";
 import { ResearchMissionDetail } from "./research-mission-detail";
 import { ResearchMissionList } from "./research-mission-list";
 import type { ResearchTabProps } from "./researcher-surface";
@@ -36,8 +46,34 @@ type DeskCommand = {
   keepsQuery?: boolean;
 };
 
+const FOCUS_STORAGE_PREFIX = "cave:research:desk-focus:";
+
+const SCOPES: Array<{ id: ResearchMissionScope; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "active", label: "Active" },
+  { id: "needs-review", label: "Needs review" },
+  { id: "finished", label: "Finished" },
+];
+
+function readFocusMode(familiarId: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(
+      `${FOCUS_STORAGE_PREFIX}${familiarId}`,
+    ) === "true";
+  } catch {
+    return false;
+  }
+}
+
 export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabProps) {
   const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<ResearchMissionScope>("all");
+  const familiarId = context.activeFamiliar.id;
+  const [focusMode, setFocusMode] = useState(() =>
+    readFocusMode(familiarId));
+  const queryInputRef = useRef<HTMLInputElement>(null);
+  const { announce } = useAnnouncer();
 
   const selectedSessionId = research.selected?.iterations.at(-1)?.sessionId;
   const openMissionSession = (sessionId: string) => {
@@ -72,18 +108,56 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
   const isCommandText = query.startsWith("/");
   const findMatch = /^\/find\s+(.*)$/i.exec(query);
   const listFilter = findMatch ? findMatch[1] : isCommandText ? "" : query;
+  const scopeCounts = useMemo(
+    () => researchMissionScopeCounts(
+      filterResearchMissionsByText(research.missions, listFilter),
+    ),
+    [research.missions, listFilter],
+  );
   const commandsOpen = isCommandText && !findMatch;
   const commandToken = commandsOpen ? query.slice(1).split(/\s+/)[0].toLowerCase() : "";
   const visibleCommands = commandsOpen
     ? commands.filter((command) => command.cmd.slice(1).startsWith(commandToken))
     : [];
 
+  useEffect(() => {
+    setQuery("");
+    setScope("all");
+    setFocusMode(readFocusMode(familiarId));
+  }, [familiarId]);
+
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (
+        event.key !== "/"
+        || event.metaKey
+        || event.ctrlKey
+        || event.altKey
+        || event.repeat
+      ) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) {
+        return;
+      }
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) {
+        return;
+      }
+      event.preventDefault();
+      setQuery("/");
+      queryInputRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const runCommand = (command: DeskCommand) => {
     command.run();
     if (!command.keepsQuery) setQuery("");
   };
 
-  const onQueryKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+  const onQueryKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape" && query) {
       event.preventDefault();
       setQuery("");
@@ -95,22 +169,56 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
     }
   };
 
+  const toggleFocusMode = () => {
+    const next = !focusMode;
+    setFocusMode(next);
+    try {
+      window.localStorage.setItem(
+        `${FOCUS_STORAGE_PREFIX}${familiarId}`,
+        String(next),
+      );
+    } catch {
+      // The workspace mode still applies for this visit.
+    }
+    announce(next ? "Focus mode enabled." : "Workspace rails restored.");
+  };
+
   return (
     <div className="research-desk-tab">
-      <div className="research-desk-querybar">
-        <div className="research-desk-querybar__field">
-          <Icon name="ph:magnifying-glass" width={13} height={13} aria-hidden />
-          <input
+      <div className="research-desk-toolbar">
+        <div className="research-desk-toolbar__main">
+          <SearchInput
+            ref={queryInputRef}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onValueChange={setQuery}
+            onClear={() => setQuery("")}
             onKeyDown={onQueryKeyDown}
-            placeholder="Ask a new research question — type / for commands"
-            aria-label="Search runs or type a desk command"
+            placeholder="Filter runs…"
+            aria-label="Filter research runs"
+            aria-keyshortcuts="/"
             aria-expanded={commandsOpen}
             aria-controls={commandsOpen ? "research-desk-commands" : undefined}
+            containerClassName="research-desk-toolbar__search"
             spellCheck={false}
           />
-          <span className="research-desk-querybar__affordance" aria-hidden>/ commands</span>
+          <span className="research-desk-toolbar__summary" role="status">
+            {scopeCounts.active} active · {scopeCounts["needs-review"]} need review
+          </span>
+          <Button
+            size="xs"
+            variant="ghost"
+            aria-pressed={focusMode}
+            onClick={toggleFocusMode}
+          >
+            {focusMode ? "Show workspace" : "Focus run"}
+          </Button>
+          <Button
+            size="xs"
+            variant="primary"
+            onClick={() => onNavigate("prompt")}
+          >
+            New research
+          </Button>
         </div>
         {commandsOpen ? (
           <div
@@ -138,24 +246,42 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
             )}
           </div>
         ) : null}
-        {listFilter.trim() && !isCommandText ? (
-          <p className="research-desk-querybar__filter-hint" role="status">
-            Filtering runs by “{listFilter.trim()}”.
-            <Button size="xs" variant="ghost" onClick={() => onNavigate("prompt")}>
-              Open in Prompt ↗
-            </Button>
-            <span>Your question isn’t carried over — the Prompt tab opens fresh.</span>
-          </p>
-        ) : null}
+        <div
+          className="research-desk-toolbar__scopes"
+          role="group"
+          aria-label="Filter runs by status"
+        >
+          {SCOPES.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="research-desk-scope focus-ring"
+              aria-pressed={scope === item.id}
+              aria-label={`${item.label}, ${scopeCounts[item.id]} ${scopeCounts[item.id] === 1 ? "run" : "runs"}`}
+              onClick={() => setScope(item.id)}
+            >
+              <span>{item.label}</span>
+              <span aria-hidden>{scopeCounts[item.id]}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="research-desk__workspace">
+      <div
+        className="research-desk__workspace"
+        data-focus-mode={focusMode}
+      >
         <ResearchMissionList
           missions={research.missions}
           selectedId={research.selectedId}
           loading={research.loading}
           onSelect={research.select}
           filter={listFilter}
+          scope={scope}
+          onClearFilters={() => {
+            setQuery("");
+            setScope("all");
+          }}
         />
         <main className="research-desk__main">
           {research.error ? (
@@ -168,6 +294,7 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
           ) : null}
           <ResearchMissionDetail
             mission={research.selected}
+            showEvidence={!focusMode}
             onOpenSession={(sessionId) => {
               context.openSession(sessionId, context.activeFamiliar.id);
             }}

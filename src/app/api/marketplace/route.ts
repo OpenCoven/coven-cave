@@ -18,6 +18,7 @@ import {
   mergeCatalog,
   sanitizeMarketplaceCatalogCards,
   sanitizeMarketplacePlugins,
+  selectOwnedMarketplacePlugins,
   type MarketplaceJsonPlugin,
   type PluginManifest,
 } from "@/lib/marketplace-catalog";
@@ -54,14 +55,19 @@ export async function GET() {
   const drafts = await readCraftDrafts();
   const marketplaceSafePlugins = sanitizeMarketplacePlugins(marketplacePlugins);
   const merged = mergeCatalog(marketplaceSafePlugins, manifests, cfg.marketplace.installed);
-  const plugins = [
-    ...drafts.map((draft) => draft.plugin),
-    ...sanitizeMarketplaceCatalogCards(merged.map((p) => ({
-    ...p,
+  const renderableCatalog = sanitizeMarketplaceCatalogCards(merged.map((plugin) => ({
+    ...plugin,
     // configured = every required field has a value already in env/.env.local
     // or has vault metadata. This must not resolve or cache secret values.
-    configured: p.requiredConfig.every((f) => hasConfiguredSecretMetadata(f.env)),
-  }))),
+    configured: plugin.requiredConfig.every((field) => hasConfiguredSecretMetadata(field.env)),
+  })));
+  const ownedCatalog = selectOwnedMarketplacePlugins(
+    renderableCatalog,
+    cfg.marketplace.installed,
+  );
+  const plugins = [
+    ...drafts.map((draft) => draft.plugin),
+    ...ownedCatalog,
   ];
   return NextResponse.json({ ok: true, plugins });
 }

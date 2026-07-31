@@ -192,6 +192,15 @@
   padding: 10px var(--space-3);
 }
 
+.cave-reasoning-block[data-streaming] {
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 7%, var(--bg-panel));
+}
+
+.cave-reasoning-block[data-streaming] > .cave-tool-summary {
+  color: var(--accent-presence);
+}
+
 .cave-tool-summary {
   display: flex;
   align-items: center;
@@ -272,6 +281,10 @@ details[open] > .cave-tool-summary::before {
   color: var(--color-danger);
 }
 
+.cave-tool-count--notice {
+  color: var(--text-secondary);
+}
+
 .cave-progress-list {
   display: grid;
   gap: 6px;
@@ -304,6 +317,10 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-muted);
 }
 
+.cave-progress-row--notice {
+  color: var(--text-secondary);
+}
+
 .cave-progress-row--error {
   color: var(--color-danger);
 }
@@ -328,18 +345,144 @@ details[open] > .cave-tool-summary::before {
   --tool-accent: var(--text-muted);
   border-left: 2px solid color-mix(in oklch, var(--tool-accent) 70%, transparent);
 }
+
+.cave-tool-run {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  padding: var(--space-2);
+}
+
+.cave-tool-run > .cave-tool-summary {
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.cave-tool-run__name {
+  min-width: 0;
+  overflow: hidden;
+  color: color-mix(in oklch, var(--tool-accent) 80%, var(--text-secondary));
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cave-tool-run__list {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  border-top: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
+  padding-top: var(--space-2);
+}
+
 .cave-tool-icon { color: var(--tool-accent); }
 .cave-tool-name { color: color-mix(in oklch, var(--tool-accent) 80%, var(--text-secondary)); }
 
-.cave-tool-block[data-tool-category="shell"]  { --tool-accent: oklch(0.80 0.15 150); } /* green */
-.cave-tool-block[data-tool-category="read"]   { --tool-accent: oklch(0.74 0.13 235); } /* blue */
-.cave-tool-block[data-tool-category="search"] { --tool-accent: oklch(0.74 0.16 295); } /* violet */
-.cave-tool-block[data-tool-category="edit"]   { --tool-accent: oklch(0.82 0.14 75); }  /* amber */
-.cave-tool-block[data-tool-category="agent"]  { --tool-accent: oklch(0.74 0.18 350); } /* magenta */
-.cave-tool-block[data-tool-category="web"]    { --tool-accent: oklch(0.78 0.12 200); } /* teal */
-.cave-tool-block[data-tool-category="task"]   { --tool-accent: oklch(0.80 0.13 95); }  /* lime */
-.cave-tool-block[data-tool-category="mcp"]    { --tool-accent: oklch(0.72 0.14 270); } /* indigo */
-.cave-tool-block[data-tool-category="other"]  { --tool-accent: var(--text-muted); }
+/* One tint set for every category-coded surface in the card — the row, the
+   run, and the batch band above them. Grouping with :is() keeps a fourth
+   consumer from costing a fourth selector list. */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="shell"]  { --tool-accent: oklch(0.80 0.15 150); } /* green */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="read"]   { --tool-accent: oklch(0.74 0.13 235); } /* blue */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="search"] { --tool-accent: oklch(0.74 0.16 295); } /* violet */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="edit"]   { --tool-accent: oklch(0.82 0.14 75); }  /* amber */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="agent"]  { --tool-accent: oklch(0.74 0.18 350); } /* magenta */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="web"]    { --tool-accent: oklch(0.78 0.12 200); } /* teal */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="task"]   { --tool-accent: oklch(0.80 0.13 95); }  /* lime */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="mcp"]    { --tool-accent: oklch(0.72 0.14 270); } /* indigo */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="other"]  { --tool-accent: var(--text-muted); }
+
+/* ── Batch band (Chat.dc.html 2a ④) ────────────────────────────────────────
+   A turn's calls arrive in blocks: the agent fires several, writes prose,
+   fires again. Each block gets one thin tinted band — which move this is,
+   what ran, how it ran, how long — so a thirty-step turn reads as four moves
+   instead of one wall. Only rendered when a turn has more than one block. */
+.cave-tool-batch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  --tool-accent: var(--text-muted);
+  border: 1px solid color-mix(in oklch, var(--tool-accent) 22%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--tool-accent) 7%, transparent);
+  padding: 0 var(--space-3);
+  min-height: 25px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.cave-tool-batch__dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--tool-accent);
+}
+.cave-tool-batch__index {
+  flex: none;
+  color: var(--tool-accent);
+}
+/* What ran is the one human phrase in the band, so it drops the mono/caps
+   register the machine-readable parts keep. */
+.cave-tool-batch__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+.cave-tool-batch__mode,
+.cave-tool-batch__duration {
+  flex: none;
+  color: var(--text-muted);
+}
+.cave-tool-batch__duration {
+  min-width: 44px;
+  text-align: right;
+}
+
+/* ── Skills eyebrow (Chat.dc.html 2a ④) ────────────────────────────────────
+   The capabilities the turn actually reached for — skills invoked through the
+   harness's Skill tool, and MCP servers named by their own calls — above the
+   card, with how many calls each took. Absent when the turn used none. */
+.cave-tool-skills {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.cave-tool-skills__label {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.cave-tool-skills__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 22px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  padding: 0 var(--space-2);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+.cave-tool-skills__icon { color: var(--accent-presence); }
+.cave-tool-skills__count { color: var(--text-muted); }
+
+/* The work line's quiet rollup — "4 batches · 6 ok". One phrase, never wrapped
+   away from the tinted running/error counters beside it. */
+.cave-tool-rollup { white-space: nowrap; }
 
 /* CHAT-D4-07: expanded tool I/O is secondary context — clamp it tighter than
    prose code blocks (which cap at min(60vh, 520px), CHAT-D7-03). 360px sits

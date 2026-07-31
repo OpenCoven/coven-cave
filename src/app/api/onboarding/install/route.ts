@@ -192,6 +192,25 @@ function npmBesideDetectedCoven(detected: string): { npmPath: string; prefix: st
   };
 }
 
+/**
+ * A global npm bin commonly contains `coven.cmd` but not `npm.cmd` on
+ * Windows: npm itself lives beside node.exe while its configured global prefix
+ * is user-scoped. Prefer a colocated launcher when one exists, then resolve a
+ * host npm from the refreshed environment while retaining the detected CLI's
+ * prefix. This keeps the update in the same verified global installation
+ * without falsely asking a healthy CLI to be reinstalled.
+ */
+async function npmForDetectedCoven(detected: string): Promise<{ npmPath: string; prefix: string } | null> {
+  const adjacent = npmBesideDetectedCoven(detected);
+  if (adjacent) return adjacent;
+  const resolved = await commandPath("npm", { refresh: true, refreshOnMiss: true });
+  if (!resolved.path || !path.isAbsolute(resolved.path)) return null;
+  return {
+    npmPath: resolved.path,
+    prefix: process.platform === "win32" ? path.dirname(detected) : path.dirname(path.dirname(detected)),
+  };
+}
+
 function hostNpmSpawnEnv(npmPath: string, prefix: string): NodeJS.ProcessEnv {
   const env = caveToolSpawnEnv();
   for (const key of Object.keys(env)) {
@@ -220,18 +239,18 @@ async function spawnPlanFor(
     if (targetName === "coven-cli") {
       const detected = covenBin();
       if (path.isAbsolute(detected)) {
-        const adjacent = npmBesideDetectedCoven(detected);
-        if (!adjacent) return { npmMissing: true };
-        const launch = npmLaunchCommandForPath(adjacent.npmPath);
+        const npm = await npmForDetectedCoven(detected);
+        if (!npm) return { npmMissing: true };
+        const launch = npmLaunchCommandForPath(npm.npmPath);
         if (!launch) return { npmMissing: true };
         return {
           command: launch.command,
           args: [...launch.fixedArgs, "install", "--global", target.packageName],
-          env: hostNpmSpawnEnv(adjacent.npmPath, adjacent.prefix),
+          env: hostNpmSpawnEnv(npm.npmPath, npm.prefix),
           shell: false,
           verificationPath: detected,
           traceLines: [
-            "npm discovery: launcher beside the detected Coven CLI.",
+            "npm discovery: verified host npm for the detected Coven CLI prefix.",
             "Installer launch: host npm with fixed argv; shell disabled.",
           ],
         };
@@ -406,10 +425,9 @@ function daemonLifecycleDependencies(job: InstallJob): DaemonUpdateDependencies 
             : "daemon start completed",
         };
       }
-      const details = "error" in started
-        ? started.error
-        : [started.stderr, started.stdout].filter(Boolean).join("\n") || `exit ${started.exitCode ?? "unknown"}`;
-      return { ok: false, detail: details };
+      // Every non-success result from startLocalDaemon has a stable, redacted
+      // error code/message. Do not fall back to raw launcher output here.
+      return { ok: false, detail: started.error };
     },
     refreshExecutable: () => {
       refreshCovenBin();

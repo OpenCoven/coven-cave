@@ -133,7 +133,6 @@ const featureSheets: Array<[string, string[]]> = [
   ["../styles/cave-md.css", ["cave-table-lightbox__panel"]],
   // flow.css left with the retired FlowView surface (cave-c3yt).
   ["../styles/home-composer.css", ["hc-slash-menu"]],
-  ["../styles/journal.css", ["journal-notice"]],
   ["../styles/summoning-circle.css", ["summoning-dialog"]],
   ["../styles/board.css", ["board-drawer", "gh-pat-dialog", "gh-action-popover", "gh-profile-card"]],
 ];

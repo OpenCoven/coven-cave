@@ -29,7 +29,7 @@ export type ManagedMemoryEntry = {
   source: ManagedSource;
   familiarId: string | null;
   title: string;
-  /** sourceKind for files; "coven" for daemon entries. */
+  /** File source kind. */
   kind: string;
   /** Epoch ms (best-effort), 0 if unknown. */
   updatedAt: number;
@@ -39,18 +39,6 @@ export type ManagedMemoryEntry = {
   /** Excerpt/body used by the stale scorer. */
   bodyHint: string;
   protection: ProtectionTier;
-};
-
-export type RawCovenEntry = {
-  id: string;
-  familiar_id: string;
-  title: string;
-  path: string;
-  updated_at: string;
-  excerpt?: string;
-  source_context?: string;
-  /** Absolute, allow-listed path resolved by /api/coven-memory; reader loads full content from it. */
-  fullPath?: string;
 };
 
 export type RawFileEntry = {
@@ -65,22 +53,6 @@ export type RawFileEntry = {
   familiarId?: string | null;
   excerpt?: string;
 };
-
-export function normalizeCovenEntry(e: RawCovenEntry, now = Date.now()): ManagedMemoryEntry {
-  return {
-    key: e.path,
-    path: e.path,
-    source: "coven",
-    familiarId: e.familiar_id || null,
-    title: e.title,
-    kind: "coven",
-    updatedAt: parseRelativeTime(e.updated_at, now),
-    updatedAtLabel: e.updated_at,
-    size: null,
-    bodyHint: e.excerpt ?? "",
-    protection: classifyProtection(e.path),
-  };
-}
 
 export function normalizeFileEntry(e: RawFileEntry): ManagedMemoryEntry {
   return {

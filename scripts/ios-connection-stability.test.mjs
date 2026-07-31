@@ -140,8 +140,8 @@ assert.match(
 // --- Chat stream interruption: recover the persisted turn, not a raw error --
 assert.match(
   thread,
-  /catch \{[\s\S]*?resyncInterruptedTurn\(familiarId: familiarId, prompt: prompt/,
-  "a transport failure mid-stream should try to resync the persisted turn first",
+  /catch \{[\s\S]*?if serverError\?\.isDefinitiveServerResponse != true \{[\s\S]*?resumeInterruptedStream\([\s\S]*?resyncInterruptedTurn\(\s*familiarId: familiarId,\s*prompt: prompt/,
+  "a transport failure mid-stream should try resume and persisted-turn resync before surfacing an error",
 );
 assert.match(
   thread,

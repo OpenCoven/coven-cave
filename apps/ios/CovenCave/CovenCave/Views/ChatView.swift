@@ -80,6 +80,7 @@ struct ChatView: View {
     @State private var showFileImporter = false
     @State private var showPlugins = false
     @State private var responseReader: ResponseReaderItem?
+    @State private var projectResolved = false
     // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
     @State private var zoomTarget: ZoomTarget?
@@ -160,6 +161,7 @@ struct ChatView: View {
                             .accessibilityAddTraits(.isButton)
                     }
                 }
+            projectContext
             // Model access moved into the header's agent pill (and /model), so
             // the composer anchors the screen with nothing between it and the
             // transcript.
@@ -358,6 +360,23 @@ struct ChatView: View {
         .frame(maxWidth: 420)
         .glass(.raised, cornerRadius: 16)
         .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+    }
+
+    private var projectContext: some View {
+        ChatProjectPicker(
+            familiarIds: thread.familiarIds,
+            recentRoots: app.recentProjectRoots,
+            selectedRoot: $thread.projectRoot,
+            isResolved: $projectResolved,
+            locked: !thread.canChangeProject,
+            requiresExplicitSelection: thread.needsProjectSelection
+        ) {
+            thread.needsProjectSelection = false
+            app.touch(thread)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(chrome.bgRaised)
     }
 
     private func sessionControlRow<Control: View>(
@@ -1097,7 +1116,9 @@ struct ChatView: View {
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty
+        let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !pendingImages.isEmpty
+        return hasContent && (isCommand || thread.canSendMessages)
     }
 
     /// True when the draft is a recognised command — tints the send affordance
@@ -1118,6 +1139,11 @@ struct ChatView: View {
         let raw = draft
         switch SlashInput.parse(raw) {
         case .command(let command, let args):
+            if case .sendAsPrompt = command.action,
+               !thread.canSendMessages {
+                thread.needsProjectSelection = true
+                return
+            }
             draft = ""
             dispatch(command, args: args)
         case .unknown(let token):
@@ -1127,6 +1153,10 @@ struct ChatView: View {
             app.touch(thread)
         case .prose(let text):
             guard let client = app.client else { return }
+            guard thread.canSendMessages else {
+                thread.needsProjectSelection = true
+                return
+            }
             let attachments = pendingImages.map {
                 CaveClient.ChatAttachment(name: $0.name, mimeType: $0.mimeType, dataUrl: $0.dataUrl)
             }
@@ -1164,6 +1194,10 @@ struct ChatView: View {
     /// Tap a follow-up suggestion chip → send it as the next message.
     private func sendSuggestion(_ text: String) {
         guard let client = app.client else { return }
+        guard thread.canSendMessages else {
+            thread.needsProjectSelection = true
+            return
+        }
         let modelBinding = turnModelBinding
         if app.connectionState != .connected {
             thread.enqueue(text, reasoningEffort: thinkingEffort,
@@ -1195,6 +1229,10 @@ struct ChatView: View {
     /// Re-run a reply in place (re-stream its familiar with the original prompt).
     private func retryAssistant(_ assistant: DisplayMessage) {
         guard let client = app.client else { return }
+        guard thread.canSendMessages else {
+            thread.needsProjectSelection = true
+            return
+        }
         Haptics.tap()
         thread.retry(assistant.id, client: client) { app.touch(thread) }
     }
@@ -1237,7 +1275,8 @@ struct ChatView: View {
             dismiss()
         case .newChat:
             let fresh = app.startFreshThread(familiarIds: thread.familiarIds,
-                                             title: thread.isGroup ? thread.title : nil)
+                                             title: thread.isGroup ? thread.title : nil,
+                                             projectRoot: thread.projectRoot)
             app.requestOpen(fresh)
             app.showToast("Started a new chat", systemImage: "square.and.pencil", style: .info)
         case .familiarPicker:
@@ -1484,6 +1523,10 @@ struct ChatView: View {
             return
         }
         guard let client = app.client else { return }
+        guard thread.canSendMessages else {
+            thread.needsProjectSelection = true
+            return
+        }
         let modelBinding = turnModelBinding
         thread.send(trimmed, reasoningEffort: thinkingEffort,
                     responseSpeed: responseSpeed,
@@ -1602,18 +1645,57 @@ struct ChatView: View {
         let destination = app.directThread(for: familiar.id)
         let prompt = forwardPrompt(for: message, to: familiar)
         let displayText = forwardDisplayText(for: message)
-        let destinationModel = destination.pendingModelOverride
-        let destinationScope: ChatModelOverrideScope? = destinationModel.map { _ in
-            destination.sessionIds[familiar.id]?.isEmpty == false ? .nextMessage : .session
+        Task { @MainActor in
+            if !destination.canSendMessages {
+                do {
+                    let accessible = try await client.projects(familiarIds: [familiar.id])
+                    let preferred = [thread.projectRoot].compactMap { $0 }
+                        + app.recentProjectRoots
+                    destination.projectRoot = ChatProjectSelection.resolvedRoot(
+                        current: destination.projectRoot,
+                        recent: preferred,
+                        projects: accessible
+                    )
+                    app.touch(destination)
+                } catch {
+                    destination.needsProjectSelection = true
+                }
+            }
+
+            guard destination.canSendMessages else {
+                destination.needsProjectSelection = true
+                app.requestOpen(destination)
+                app.showToast(
+                    "Choose a project before forwarding",
+                    systemImage: "folder.badge.questionmark",
+                    style: .warning
+                )
+                return
+            }
+
+            let destinationModel = destination.pendingModelOverride
+            let destinationScope: ChatModelOverrideScope? = destinationModel.map { _ in
+                destination.sessionIds[familiar.id]?.isEmpty == false
+                    ? .nextMessage
+                    : .session
+            }
+            destination.send(
+                prompt,
+                displayText: displayText,
+                reasoningEffort: thinkingEffort,
+                responseSpeed: responseSpeed,
+                modelOverride: destinationModel,
+                modelOverrideScope: destinationScope,
+                client: client
+            ) {
+                app.touch(destination)
+            }
+            app.requestOpen(destination)
+            app.showToast(
+                "Forwarded to \(familiar.displayName)",
+                systemImage: "arrowshape.turn.up.right"
+            )
         }
-        destination.send(prompt, displayText: displayText,
-                         reasoningEffort: thinkingEffort,
-                         responseSpeed: responseSpeed,
-                         modelOverride: destinationModel,
-                         modelOverrideScope: destinationScope,
-                         client: client) { app.touch(destination) }
-        app.requestOpen(destination)
-        app.showToast("Forwarded to \(familiar.displayName)", systemImage: "arrowshape.turn.up.right")
     }
 
     private func forwardSenderName(for message: DisplayMessage) -> String {

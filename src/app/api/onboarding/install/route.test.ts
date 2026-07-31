@@ -23,8 +23,13 @@ assert.equal(
 );
 assert.match(
   source,
-  /targetName === "coven-cli"[\s\S]*covenBin\(\)[\s\S]*npmBesideDetectedCoven\(detected\)/,
-  "the Coven CLI update uses npm beside the detected CLI instead of requiring Cave-managed Node",
+  /targetName === "coven-cli"[\s\S]*covenBin\(\)[\s\S]*npmForDetectedCoven\(detected\)/,
+  "the Coven CLI update resolves host npm for the detected CLI instead of requiring Cave-managed Node",
+);
+assert.match(
+  source,
+  /async function npmForDetectedCoven[\s\S]*npmBesideDetectedCoven\(detected\)[\s\S]*commandPath\("npm", \{ refresh: true, refreshOnMiss: true \}\)/,
+  "a user-scoped Coven launcher may use host npm when npm is not colocated with the global bin",
 );
 assert.match(source, /targetName === "coven-cli"[\s\S]*npmLaunchCommandForPath/);
 assert.match(
@@ -48,7 +53,7 @@ assert.match(source, /await probeManagedNodeToolchain\(\)/, "pinned prerequisite
 assert.match(source, /managedNpmLaunch\(managed\.paths\)/, "npm runs through owned node and npm-cli.js");
 assert.match(source, /args: \[\.\.\.launch\.args, "install", "--global", target\.packageName\]/, "npm argv is fixed and reviewed");
 assert.match(source, /shell: false/, "installer spawns never use a shell");
-assert.doesNotMatch(source, /commandPath\("npm"/, "host npm/PATH is not a prerequisite");
+assert.match(source, /commandPath\("npm", \{ refresh: true, refreshOnMiss: true \}\)/, "Coven CLI repair falls back to verified host npm only for its detected prefix");
 assert.match(source, /installManagedNodeToolchain\(/, "managed Node installer is routed through the endpoint");
 assert.match(source, /controller\.abort\(\)/, "managed Node installation supports cancellation");
 assert.match(source, /reserveGlobalNpmInstall\(targetName\)/, "managed toolchain and npm operations serialize");

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { copyFile, link, mkdtemp, mkdir, rm, unlink, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -13,13 +13,30 @@ const familiarWorkspace = path.join(home, "familiars", "ember");
 const bin = path.join(familiarWorkspace, "bin");
 await mkdir(familiarWorkspace, { recursive: true });
 await mkdir(bin, { recursive: true });
+const hermesExecutable = path.join(
+  bin,
+  process.platform === "win32" ? "hermes.exe" : "hermes",
+);
 
 const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
+const previousOsHome = process.env.HOME;
+const previousHermesBin = process.env.HERMES_BIN;
 const previousPath = process.env.PATH;
 const previousPathCase = process.env.Path;
+const previousShell = process.env.SHELL;
+const previousHermesApiUrl = process.env.HERMES_API_URL;
+const previousHermesApiKey = process.env.HERMES_API_KEY;
+const previousHermesArgvCapture = process.env.HERMES_ARGV_CAPTURE;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
+process.env.HERMES_BIN = hermesExecutable;
+// Cave deliberately augments desktop-app PATH from HOME and the login shell.
+// Isolate both so a real host Hermes install cannot defeat the missing case.
+process.env.HOME = home;
+process.env.SHELL = path.join(home, "missing-shell");
+delete process.env.HERMES_API_URL;
+delete process.env.HERMES_API_KEY;
 // A relative PATH entry must resolve from the familiar workspace used by the
 // preflight, model probe, and direct child — not from the test/server cwd.
 if (process.platform === "win32") delete process.env.Path;
@@ -43,10 +60,30 @@ function assertNoFabricatedAssistantResponse(body, events) {
   assert.ok(!events.some((event) => event.kind === "assistant_chunk"));
 }
 
+async function installHermesFixture(posixScript, windowsChatScript) {
+  await rm(hermesExecutable, { force: true });
+  if (process.platform === "win32") {
+    await writeFile(path.join(familiarWorkspace, "chat"), windowsChatScript);
+    try {
+      await link(process.execPath, hermesExecutable);
+    } catch {
+      await copyFile(process.execPath, hermesExecutable);
+    }
+    return;
+  }
+  await writeFile(hermesExecutable, `#!/bin/sh\n${posixScript}\n`, { mode: 0o755 });
+}
+
 try {
   const { refreshCovenBin, refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
   refreshCovenBin();
-  refreshCovenSpawnEnv();
+  const spawnEnv = refreshCovenSpawnEnv();
+  const { resolveHermesLaunch } = await import("@/lib/runtime-availability");
+  assert.equal(
+    resolveHermesLaunch({ env: spawnEnv, cwd: familiarWorkspace }).state,
+    "missing",
+    "the explicit Hermes fixture isolates discovery from every host PATH fallback",
+  );
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
@@ -81,9 +118,8 @@ try {
   // launched. The direct native command differs by platform, yet neither
   // failure may become a generic authentication/no-output assistant message.
   {
-    const brokenName = process.platform === "win32" ? "hermes.exe" : "hermes";
     await writeFile(
-      path.join(bin, brokenName),
+      hermesExecutable,
       process.platform === "win32"
         ? "not an executable\n"
         : `#!${path.join(home, "missing-interpreter")}\nexit 0\n`,
@@ -108,17 +144,14 @@ try {
   // have its `chat` script write to stdout: failed Hermes output must not leak
   // as an assistant reply before the structured runtime error.
   {
-    const executable = path.join(bin, process.platform === "win32" ? "hermes.exe" : "hermes");
-    await unlink(executable);
-    await writeFile(
-      path.join(familiarWorkspace, "chat"),
-      'process.stderr.write("session_id: failed-hermes-session\\n"); process.stdout.write("Hermes authentication failed\\n"); process.exit(1);\\n',
+    await installHermesFixture(
+      [
+        "printf '%s\\n' 'session_id: failed-hermes-session' >&2",
+        "printf '%s\\n' 'Hermes authentication failed'",
+        "exit 1",
+      ].join("\n"),
+      'const { writeSync } = require("node:fs"); writeSync(2, "session_id: failed-hermes-session\\n"); writeSync(1, "Hermes authentication failed\\n"); process.exit(1);\\n',
     );
-    try {
-      await link(process.execPath, executable);
-    } catch {
-      await copyFile(process.execPath, executable);
-    }
     const response = await POST(new Request("http://localhost/api/chat/send", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -145,15 +178,26 @@ try {
   // nor become a terminal runtime-process failure that blocks the retry's
   // successful response from being persisted.
   {
-    await writeFile(
-      path.join(familiarWorkspace, "chat"),
+    await installHermesFixture(
       [
+        'case " $* " in',
+        '  *" --resume "*)',
+        "    printf '%s\\n' 'stale Hermes output'",
+        "    printf '%s\\n' 'session_id: stale-hermes-session' 'Session not found' >&2",
+        "    exit 1",
+        "    ;;",
+        "esac",
+        "printf '%s\\n' 'fresh Hermes response'",
+      ].join("\n"),
+      [
+        'const { writeSync } = require("node:fs");',
         'if (process.argv.includes("--resume")) {',
-        '  process.stdout.write("stale Hermes output\\n");',
-        '  process.stderr.write("session_id: stale-hermes-session\\nSession not found\\n");',
+        '  writeSync(1, "stale Hermes output\\n");',
+        '  writeSync(2, "session_id: stale-hermes-session\\nSession not found\\n");',
         '  process.exit(1);',
         '}',
-        'process.stdout.write("fresh Hermes response\\n");',
+        'writeSync(1, "fresh Hermes response\\n");',
+        'process.exit(0);',
       ].join("\n"),
     );
     const response = await POST(new Request("http://localhost/api/chat/send", {
@@ -184,15 +228,83 @@ try {
       "the successful fresh retry persists instead of being suppressed by the stale attempt",
     );
   }
+
+  // Model parity: capability probing and the successful spawn share the exact
+  // resolved launch plan, while the registry-owned preserve transform keeps
+  // Hermes's provider-qualified model id intact at the argv boundary.
+  {
+    const modelCapture = path.join(home, "hermes-model.txt");
+    process.env.HERMES_ARGV_CAPTURE = modelCapture;
+    await installHermesFixture(
+      [
+        'for arg in "$@"; do',
+        '  if [ "$arg" = "--help" ]; then',
+        "    printf '%s\\n' '  --model <id>'",
+        "    exit 0",
+        "  fi",
+        "done",
+        "previous=",
+        'for arg in "$@"; do',
+        '  if [ "$previous" = "--model" ]; then',
+        '    printf "%s" "$arg" > "$HERMES_ARGV_CAPTURE"',
+        "  fi",
+        '  previous="$arg"',
+        "done",
+        "printf '%s\\n' 'provider-qualified model launch'",
+      ].join("\n"),
+      [
+        'const { writeFileSync, writeSync } = require("node:fs");',
+        'if (process.argv.includes("--help")) {',
+        '  writeSync(1, "  --model <id>\\n");',
+        '  process.exit(0);',
+        '}',
+        'const args = process.argv.slice(2);',
+        'const modelIndex = args.indexOf("--model");',
+        'writeFileSync(process.env.HERMES_ARGV_CAPTURE, args[modelIndex + 1] ?? "");',
+        'writeSync(1, "provider-qualified model launch\\n");',
+      ].join("\n"),
+    );
+    const response = await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        familiarId: "ember",
+        prompt: "use the selected model",
+        projectRoot: familiarWorkspace,
+        modelOverride: "openai/gpt-5.6-sol",
+        modelOverrideScope: "next-message",
+      }),
+    }));
+    const { body, events } = await readSse(response);
+    assert.match(body, /provider-qualified model launch/);
+    assert.ok(!events.some((event) => event.kind === "error"));
+    assert.equal(
+      await readFile(modelCapture, "utf8"),
+      "openai/gpt-5.6-sol",
+      "Hermes receives the provider-qualified model id preserved by registry metadata",
+    );
+  }
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;
   if (previousCaveHome === undefined) delete process.env.COVEN_CAVE_HOME;
   else process.env.COVEN_CAVE_HOME = previousCaveHome;
+  if (previousOsHome === undefined) delete process.env.HOME;
+  else process.env.HOME = previousOsHome;
+  if (previousHermesBin === undefined) delete process.env.HERMES_BIN;
+  else process.env.HERMES_BIN = previousHermesBin;
   if (previousPath === undefined) delete process.env.PATH;
   else process.env.PATH = previousPath;
   if (previousPathCase === undefined) delete process.env.Path;
   else process.env.Path = previousPathCase;
+  if (previousShell === undefined) delete process.env.SHELL;
+  else process.env.SHELL = previousShell;
+  if (previousHermesApiUrl === undefined) delete process.env.HERMES_API_URL;
+  else process.env.HERMES_API_URL = previousHermesApiUrl;
+  if (previousHermesApiKey === undefined) delete process.env.HERMES_API_KEY;
+  else process.env.HERMES_API_KEY = previousHermesApiKey;
+  if (previousHermesArgvCapture === undefined) delete process.env.HERMES_ARGV_CAPTURE;
+  else process.env.HERMES_ARGV_CAPTURE = previousHermesArgvCapture;
   await rm(home, { recursive: true, force: true });
 }
 

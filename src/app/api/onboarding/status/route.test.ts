@@ -39,6 +39,16 @@ assert.match(
   /harness === "openclaw" && openclawAgentCount > 0/,
   "OpenClaw counts as available only when a discoverable agent exists",
 );
+assert.match(
+  source,
+  /listOpenClawAgents\(\)/,
+  "onboarding should use the same live OpenClaw registry as chat resolution",
+);
+assert.doesNotMatch(
+  source,
+  /readdir\([\s\S]*?\.openclaw[\s\S]*?agents/,
+  "stale OpenClaw agent directories must not satisfy onboarding readiness",
+);
 
 assert.match(
   source,

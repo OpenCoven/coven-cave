@@ -1,0 +1,1198 @@
+/* The redesigned daily report — "the chaptered day".
+ *
+ * Colors, type and density come from foundations.css: this surface ships
+ * beside 12 themes × 2 modes, so the handoff's literal oklch/hex ground would
+ * break 23 of those combinations. What the Nocturne system contributes here is
+ * its interaction grammar, not its palette: primary actions are an accent
+ * OUTLINE on transparent (never a flood), and every interactive element
+ * carries the 2px accent :focus-visible ring.
+ *
+ * Tone-carrying elements read --drd-tone, set inline from the model's
+ * semantic DayTone so a row/lane/pip never hardcodes a color. */
+
+.drd {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  overflow: hidden;
+  color: var(--fg-base);
+}
+
+.drd :focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 2px;
+}
+
+/* ── chrome ───────────────────────────────────────────────────────────── */
+
+.drd-chrome {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  flex-wrap: wrap;
+}
+
+.drd-crumbs {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  min-width: 0;
+}
+
+.drd-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.drd-crumb:hover {
+  color: var(--accent-presence);
+}
+
+.drd-crumb__sep {
+  opacity: 0.5;
+}
+
+.drd-crumb__here {
+  color: var(--fg-base);
+  font-weight: 560;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drd-chrome__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* The refresh sweep — a single pass under the chrome while re-reading. */
+.drd-chrome__sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-presence), transparent);
+  animation: drd-sweep 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes drd-sweep {
+  0% {
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+  55% {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+  56% {
+    transform-origin: right;
+  }
+  100% {
+    transform: scaleX(0);
+    transform-origin: right;
+  }
+}
+
+/* ── week strip ───────────────────────────────────────────────────────── */
+
+.drd-week {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 2px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.drd-week__step {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  text-decoration: none;
+  font-size: var(--text-2xs);
+}
+
+.drd-week__step:not([data-disabled]):hover {
+  background: var(--bg-hover);
+  color: var(--fg-base);
+}
+
+/* The current week is the end of the road: forward paging is dead rather than
+   hidden, so the strip keeps its shape and the reason lives in the tooltip. */
+.drd-week__step[data-disabled] {
+  opacity: var(--opacity-disabled);
+  cursor: default;
+  /* Keep hover enabled so the title tooltip ("This is the current week") appears. */
+  pointer-events: auto;
+  user-select: none;
+}
+
+.drd-week__day[data-future] {
+  opacity: var(--opacity-disabled);
+  cursor: default;
+  pointer-events: none;
+}
+
+.drd-week__day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  height: 22px;
+  box-sizing: border-box;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  text-decoration: none;
+  color: var(--fg-muted);
+}
+
+.drd-week__day:hover {
+  background: var(--bg-hover);
+}
+
+.drd-week__day[data-selected] {
+  border-color: color-mix(in oklch, var(--accent-presence) 60%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  color: var(--fg-base);
+}
+
+.drd-week__day[data-empty] {
+  opacity: 0.55;
+}
+
+.drd-week__letter {
+  font: 400 8.5px var(--font-mono);
+  color: var(--fg-muted);
+}
+
+.drd-week__num {
+  font: 500 10.5px var(--font-mono);
+  line-height: 1;
+  color: inherit;
+}
+
+/* The bar is the day's activity level, painted from --drd-level. */
+.drd-week__bar {
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to top,
+    var(--accent-presence) var(--drd-level, 0%),
+    color-mix(in oklch, var(--fg-muted) 25%, transparent) var(--drd-level, 0%)
+  );
+}
+
+.drd-week__label {
+  font: 400 9.5px var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+/* ── buttons ──────────────────────────────────────────────────────────── */
+
+.drd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 11px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+.drd-btn:hover {
+  border-color: var(--accent-presence);
+  color: var(--accent-presence);
+}
+
+/* Primary action: an accent outline, never a flood. */
+.drd-btn--accent {
+  border-color: var(--accent-presence);
+  color: var(--accent-presence);
+  font-weight: 600;
+}
+
+.drd-btn--accent:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
+.drd-btn[data-state="busy"] {
+  color: var(--accent-presence);
+}
+
+.drd-btn[data-state="busy"] svg {
+  animation: drd-spin 0.7s linear infinite;
+}
+
+.drd-btn[data-state="done"] {
+  color: var(--color-success);
+}
+
+@keyframes drd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drd-chrome__sweep,
+  .drd-btn[data-state="busy"] svg {
+    animation: none;
+  }
+}
+
+/* ── stat band ────────────────────────────────────────────────────────── */
+
+.drd-band {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1.05fr 0.95fr;
+  gap: 1px;
+  background: var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.drd-band__lede {
+  background: var(--bg-panel);
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.drd-band__text {
+  min-width: 0;
+}
+
+.drd-band__kicker {
+  font: 400 var(--text-2xs) var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+.drd-band__headline {
+  margin-top: var(--space-1);
+  font-size: var(--text-xl);
+  font-weight: 620;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.15;
+}
+
+.drd-seal {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  margin-left: auto;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  font: 400 var(--text-2xs) var(--font-mono);
+  white-space: nowrap;
+  color: var(--fg-muted);
+  background: color-mix(in oklch, var(--fg-muted) 12%, transparent);
+}
+
+.drd-seal[data-live] {
+  color: var(--color-success);
+  background: color-mix(in oklch, var(--color-success) 12%, transparent);
+}
+
+.drd-seal__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+.drd-stat {
+  background: var(--bg-panel);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.drd-stat__label {
+  font: 400 var(--text-2xs) var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+.drd-stat__row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.drd-stat__value {
+  font: 500 24px var(--font-mono);
+  line-height: 1;
+  text-shadow: var(--glow-numeral);
+}
+
+.drd-stat__delta {
+  white-space: nowrap;
+  font: 400 var(--text-2xs) var(--font-mono);
+  color: var(--drd-tone, var(--fg-muted));
+}
+
+.drd-stat__row--diff {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.drd-stat__add {
+  font-size: var(--text-xl);
+  color: var(--color-success);
+}
+
+.drd-stat__del {
+  font-size: var(--text-md);
+  color: var(--color-danger);
+}
+
+/* The streak cell is the band's one presence move — a soft accent field. */
+.drd-stat--streak {
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--accent-presence) 26%, var(--bg-panel)),
+    color-mix(in oklch, var(--accent-presence) 10%, var(--bg-panel))
+  );
+  gap: 5px;
+}
+
+.drd-streak {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.drd-streak__pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 55%, transparent);
+}
+
+.drd-streak__pip[data-lit] {
+  background: color-mix(in oklch, var(--accent-presence) 72%, var(--fg-base));
+  border-color: transparent;
+}
+
+.drd-streak__best {
+  margin-left: 3px;
+  font: 400 9.5px var(--font-mono);
+  white-space: nowrap;
+  color: color-mix(in oklch, var(--accent-presence) 60%, var(--fg-base));
+}
+
+/* ── panel hosts (carousel / shipped own their own sheets) ────────────── */
+
+.drd-panelhost {
+  position: relative;
+  z-index: 14;
+  padding: var(--space-3) 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.drd-panelhost--shipped {
+  z-index: 12;
+  padding: 14px 18px 18px;
+  border-bottom: 0;
+}
+
+/* ── body: chapters | page | cast ─────────────────────────────────────── */
+
+.drd-body {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) auto;
+  border-bottom: 1px solid var(--border);
+  min-height: 0;
+}
+
+.drd-rail {
+  padding: 22px 14px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.drd-rail__label {
+  padding: 0 var(--space-2) 10px;
+  font: 400 var(--text-2xs) var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+.drd-rail__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 7px var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  color: var(--fg-base);
+  background: transparent;
+  font-family: inherit;
+  min-width: 0;
+}
+
+.drd-rail__item:hover {
+  background: var(--bg-hover);
+}
+
+.drd-rail__item[data-active] {
+  background: color-mix(in oklch, var(--accent-presence) 26%, transparent);
+}
+
+.drd-rail__title {
+  font-size: var(--text-sm);
+  font-weight: 560;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drd-rail__meta {
+  font: 400 var(--text-2xs) var(--font-mono);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drd-rail__all {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: var(--space-2) 9px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  color: var(--accent-presence);
+  font: 500 10.5px var(--font-mono);
+  white-space: nowrap;
+}
+
+.drd-rail__all:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
+.drd-rail__hint {
+  margin: 14px 0 0;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+.drd-rail__reading {
+  margin-top: auto;
+  padding-top: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.drd-rail__readrow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  white-space: nowrap;
+  padding: 0 var(--space-2);
+}
+
+.drd-rail__readnum {
+  font: 500 20px var(--font-mono);
+  line-height: 1;
+}
+
+.drd-rail__readunit {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+/* ── the written page ─────────────────────────────────────────────────── */
+
+.drd-page {
+  padding: 26px 34px 30px;
+  min-width: 0;
+}
+
+.drd-page__title {
+  margin: 0 0 14px;
+  font: 400 2.375rem var(--font-serif);
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.08;
+}
+
+.drd-page__lede,
+.drd-page__prose {
+  margin: 0 0 14px;
+  font: 400 1.1875rem/1.72 var(--font-serif);
+  color: color-mix(in oklch, var(--fg-base) 92%, transparent);
+  max-width: 62ch;
+  text-wrap: pretty;
+}
+
+.drd-page__prose--empty {
+  color: var(--fg-muted);
+}
+
+.drd-page__events {
+  list-style: none;
+  margin: 0 0 var(--space-4);
+  padding: 0 0 0 14px;
+  border-left: 2px solid color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.drd-page__event {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font: 400 var(--text-xs) var(--font-mono);
+  color: var(--fg-muted);
+  min-width: 0;
+}
+
+.drd-page__eventat {
+  color: var(--drd-tone, var(--accent-presence));
+  flex: none;
+}
+
+.drd-page__eventref {
+  color: var(--accent-presence);
+  flex: none;
+}
+
+.drd-page__eventlabel {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drd-more {
+  margin-top: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  font: 400 var(--text-xs) var(--font-mono);
+  color: var(--fg-muted);
+}
+
+.drd-more:hover {
+  border-color: var(--accent-presence);
+  color: var(--accent-presence);
+}
+
+.drd-page__byline {
+  margin: var(--space-4) 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+/* ── the spine ────────────────────────────────────────────────────────── */
+
+.drd-spine__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 30px 0 var(--space-5);
+}
+
+.drd-spine__head .drd-rail__label {
+  padding: 0;
+}
+
+.drd-spine__rule {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.drd-spine__window {
+  font: 400 var(--text-2xs) var(--font-mono);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.drd-spine {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 78px;
+  position: relative;
+}
+
+.drd-spine::before {
+  content: "";
+  position: absolute;
+  left: 54px;
+  top: var(--space-1);
+  bottom: var(--space-1);
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--border-strong) 8%,
+    var(--border-strong) 92%,
+    transparent
+  );
+}
+
+.drd-spine__item {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font-family: inherit;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.drd-spine__item:hover {
+  background: var(--bg-hover);
+}
+
+.drd-spine__item[data-dim] {
+  opacity: 0.28;
+}
+
+.drd-spine__at {
+  position: absolute;
+  left: -78px;
+  top: 1px;
+  width: 42px;
+  text-align: right;
+  font: 400 var(--text-xs) var(--font-mono);
+  color: var(--fg-muted);
+}
+
+.drd-spine__dot {
+  position: absolute;
+  left: -28px;
+  top: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--drd-tone, var(--accent-presence));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--drd-tone, var(--accent-presence)) 18%, transparent);
+}
+
+.drd-spine__body {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: var(--text-base);
+  line-height: 1.5;
+  min-width: 0;
+}
+
+/* The label owns the line and never breaks mid-phrase; the trailing mono
+   detail is what gives way when the column is tight. */
+.drd-spine__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drd-spine__detail {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 400 10.5px var(--font-mono);
+  color: var(--fg-muted);
+}
+
+/* ── the cast ─────────────────────────────────────────────────────────── */
+
+.drd-cast {
+  width: 262px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-raised);
+  display: flex;
+  flex-direction: column;
+}
+
+.drd-cast--rail {
+  width: 46px;
+  padding: var(--space-5) 0;
+  align-items: center;
+}
+
+.drd-cast__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-4) var(--space-3);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: 400 var(--text-2xs) var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+.drd-cast__toggle:hover {
+  color: var(--fg-base);
+}
+
+.drd-cast__toggle--icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-control);
+}
+
+.drd-cast__body {
+  padding: 0 var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.drd-cast__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.drd-cast__member {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.drd-cast__glyph {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  flex: none;
+  font-size: var(--text-sm);
+  color: var(--drd-tone, var(--accent-presence));
+  background: color-mix(in oklch, var(--drd-tone, var(--accent-presence)) 20%, transparent);
+}
+
+.drd-cast__who {
+  min-width: 0;
+}
+
+.drd-cast__name {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 560;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drd-cast__count {
+  margin-left: var(--space-1);
+  font: 400 var(--text-2xs) var(--font-mono);
+  color: var(--fg-muted);
+}
+
+.drd-cast__diff {
+  display: block;
+  margin-top: 2px;
+  font: 400 var(--text-xs) var(--font-mono);
+  color: var(--fg-muted);
+}
+
+.drd-cast__empty {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+.drd-cast__record {
+  padding: 11px var(--space-3);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--accent-presence) 24%, var(--bg-raised)),
+    color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised))
+  );
+}
+
+.drd-cast__recordlabel {
+  font: 400 var(--text-2xs) var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  color: color-mix(in oklch, var(--accent-presence) 72%, var(--fg-base));
+}
+
+.drd-cast__recordbody {
+  margin-top: 5px;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.drd-cast__carries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.drd-cast__carry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--fg-base);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  min-width: 0;
+}
+
+.drd-cast__carry:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
+}
+
+.drd-cast__carry > :last-child {
+  margin-left: auto;
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.drd-cast__share {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  color: var(--fg-base);
+  font-family: inherit;
+  background: linear-gradient(
+    120deg,
+    color-mix(in oklch, var(--accent-presence) 34%, var(--bg-raised)),
+    color-mix(in oklch, var(--accent-presence) 12%, var(--bg-raised))
+  );
+}
+
+.drd-cast__share:hover {
+  border-color: var(--accent-presence);
+}
+
+.drd-cast__shareicon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-control);
+  flex: none;
+  background: color-mix(in oklch, var(--fg-base) 14%, transparent);
+}
+
+.drd-cast__sharetext {
+  min-width: 0;
+}
+
+.drd-cast__sharetitle {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 560;
+  white-space: nowrap;
+}
+
+.drd-cast__sharemeta {
+  display: block;
+  margin-top: 2px;
+  font: 400 var(--text-2xs) var(--font-mono);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.drd-cast__share > :last-child {
+  margin-left: auto;
+  flex: none;
+  color: var(--fg-muted);
+}
+
+/* ── responsive ───────────────────────────────────────────────────────── */
+
+@media (max-width: 1180px) {
+  .drd-band {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+  .drd-band__lede {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1024px) {
+  .drd-body {
+    grid-template-columns: 172px minmax(0, 1fr);
+  }
+  /* The cast folds under the page rather than squeezing the reading column. */
+  .drd-cast {
+    grid-column: 1 / -1;
+    width: auto;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .drd-cast--rail {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .drd-band {
+    grid-template-columns: 1fr 1fr;
+  }
+  .drd-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .drd-rail {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .drd-page {
+    padding: var(--space-5) var(--space-4) var(--space-6);
+  }
+  .drd-spine {
+    padding-left: 62px;
+  }
+  .drd-spine::before {
+    left: 44px;
+  }
+  .drd-spine__at {
+    left: -62px;
+    width: 34px;
+  }
+  .drd-chrome {
+    gap: var(--space-2);
+  }
+}
+
+/* A spine line standing for several merges reads as a thicker mark — the
+   chapter's shape, not one of its commits. */
+.drd-spine__dot[data-many] {
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--drd-tone, var(--accent-presence)) 26%, transparent);
+}
+
+/* The chaptered day is a three-column surface (chapters | page | cast); the
+   1060px reading shell the older report used squeezes the written column to
+   about half the width the design gives it. Widen the shell for this route
+   only and tighten its inset so the card gets the room. */
+.dr-shell--wide {
+  max-width: 1400px;
+  padding: clamp(20px, 2.4vw, 32px) clamp(16px, 2.4vw, 32px);
+  padding-bottom: var(--space-10);
+}
+
+.drd-page__event--rest {
+  color: var(--fg-muted);
+  font-style: italic;
+  white-space: normal;
+}
+
+/* ── the day fills the viewport at md and up ──────────────────────────────
+   From 768px the report is a single screen: the page itself never scrolls,
+   and the three columns each take their own scrollbar instead. Below md the
+   columns stack and the page scrolls normally, which is the right behaviour
+   for a phone.
+
+   `.dr-page` is its own scroll container (surface-reporting.css) nested inside
+   `.aps-main`, which is another one — so the lock has to clamp the day
+   variant, not just the card, or the outer pane picks the scroll back up. */
+@media (min-width: 768px) {
+  .dr-page--day {
+    overflow: hidden;
+  }
+
+  /* Fill the pane. The report it replaced was a centred 1060px reading column,
+     but the chaptered day is a dashboard — three columns plus two full-width
+     panel strips, all of which want every pixel. The gutter stays small and
+     even so the card reads as the surface rather than floating on one. */
+  .dr-page--day .dr-shell--wide {
+    box-sizing: border-box;
+    max-width: none;
+    height: 100%;
+    padding: var(--space-2);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .dr-page--day .drd {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* The body row absorbs whatever the chrome, band and panel strips leave. */
+  .dr-page--day .drd-body {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* Between md and lg the cast folds into a second row, so the body scrolls
+     as one region — per-column scrollbars there would each be a few pixels
+     tall and useless. */
+  .dr-page--day .drd-body {
+    overflow-y: auto;
+  }
+
+  /* On a short viewport the overlay panels must not outgrow the card they are
+     clipped to — they scroll internally instead of being cut off. */
+  .dr-page--day .drd-panelhost [data-panel] {
+    max-height: min(560px, 68vh);
+    overflow-y: auto;
+  }
+}
+
+/* From lg the three columns are side by side again and each takes its own
+   scrollbar, so picking a chapter never scrolls the rail or the cast out of
+   reach. */
+@media (min-width: 1025px) {
+  .dr-page--day .drd-body {
+    overflow: hidden;
+  }
+
+  .dr-page--day .drd-rail,
+  .dr-page--day .drd-page,
+  .dr-page--day .drd-cast {
+    min-height: 0;
+  }
+
+  .dr-page--day .drd-rail,
+  .dr-page--day .drd-page,
+  .dr-page--day .drd-cast__body {
+    overflow-y: auto;
+  }
+}
+
+/* Both overlay panels open across the same band — the carousel downward, the
+   shipped table upward — so whichever is open has to out-rank the other host's
+   strip. Without this the shipped rows render underneath the carousel trigger
+   on a short viewport. */
+.drd-panelhost:has([data-panel]) {
+  z-index: 30;
+}
+
+/* On a very wide window the middle column would balloon while the prose keeps
+   its reading measure. Give the rail and the cast a little more of that space
+   so the three columns stay in proportion instead of stranding it. */
+@media (min-width: 1600px) {
+  .dr-page--day .drd-body {
+    grid-template-columns: 232px minmax(0, 1fr) 320px;
+  }
+
+  .dr-page--day .drd-cast {
+    width: 320px;
+  }
+}
+
+/* A chapter's evidence row opens the PR card when it names a single merge. */
+.drd-page__eventopen {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.drd-page__eventopen:hover .drd-page__eventlabel {
+  color: var(--accent-presence);
+}

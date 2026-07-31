@@ -11,13 +11,9 @@ const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "ut
 const stylesUrl = new URL("../styles/settings-familiars.css", import.meta.url);
 const styles = existsSync(stylesUrl) ? readFileSync(stylesUrl, "utf8") : "";
 
-// Familiars owns the content viewport. The app settings rail remains the first
-// pane; this surface supplies the always-visible roster and detail panes.
-assert.match(
-  shell,
-  /section === "familiars" \? "settings-shell__content--familiars" : ""/,
-  "Settings removes generic page padding/scroll only for the Familiars control sheet",
-);
+// The legacy Settings host is retired; the shared inline primitives remain
+// contract-tested for any remaining non-settings reuse.
+assert.doesNotMatch(shell, /section === "familiars"|FamiliarsSection/, "Settings no longer hosts the retired Familiars control sheet");
 assert.match(
   globals,
   /@import "\.\.\/styles\/settings-familiars\.css";/,
@@ -90,7 +86,7 @@ assert.match(inline, /Test run/, "Hero exposes the smoke-test action");
 assert.match(inline, /breadcrumb=\{\["Familiars", familiar\.display_name, "Test run"\]\}/, "Smoke test opens in the shared modal");
 assert.match(
   inline,
-  /if \(!response\.ok\) throw new Error\("Memory count unavailable"\)/,
+  /if \(canonical\.state !== "ready" \|\| !files\.ok\) \{\s*setCount\(\{ state: "unavailable" \}\)/,
   "Failed memory APIs stay unknown instead of being reported as zero entries",
 );
 assert.match(inline, /<VaultPanel familiarId=\{familiar\.id\}/, "Vault receives the selected familiar scope");

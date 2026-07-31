@@ -1,4 +1,3 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -17,19 +16,20 @@ assert.match(source, /<pre/, "Raw mode must render a <pre> of the source");
 assert.ok(!/Showing first/.test(source), "inline reader must NOT clip long files");
 assert.ok(!/MAX_LINES/.test(source), "inline reader must NOT use a line cap");
 
-// Content comes from the resolved contentPath; entries without one fall back to the
-// excerpt (e.g. agent memories the server couldn't resolve to an allow-listed file).
+// This reader is file-only; canonical content is handled by CanonicalMemoryReader.
 assert.match(source, /useMemoryFile\(fetchPath, \{ refreshToken \}\)/, "reader fetches the resolved contentPath");
 assert.match(source, /row\?\.contentPath \?\? null/, "fetchPath is the row's contentPath");
-assert.match(source, /hasFile \? text \?\? "" : row\.excerpt/, "no contentPath → excerpt fallback");
+assert.match(source, /row: FileMemoryRow \| null/, "reader accepts file rows only");
+assert.match(source, /const content = text \?\? ""/, "file content comes only from the file loader");
+assert.doesNotMatch(source, /CanonicalMemoryRow|row\.excerpt/, "canonical summaries never enter the file reader");
 
 // Edit mode: files (contentPath rows) get an Edit affordance that swaps in the
 // MemoryMdEditor; leaving the row or finishing the session returns to read
 // mode and re-fetches so the reader shows what was saved.
 assert.match(source, /<MemoryMdEditor/, "edit mode uses the shared MemoryMdEditor");
-assert.match(source, /editing && row\.contentPath/, "editor only mounts for rows with a contentPath");
+assert.match(source, /editing \? \([\s\S]*?<MemoryMdEditor[\s\S]*?path=\{row\.contentPath\}/, "editor mounts only after a file row is selected");
 assert.match(source, /setEditing\(false\);?\s*\n?\s*\}, \[fetchPath\]\)/, "switching rows ends the edit session");
-assert.match(source, /setRefreshToken\(\(n\) => n \+ 1\)/, "leaving edit re-fetches the read view");
+assert.match(source, /setRefreshToken\(\(current\) => current \+ 1\)/, "leaving edit re-fetches the read view");
 
 // Copy-path + empty state + open-file + expand.
 assert.match(source, /copyText\(/, "copy-path button must copy the path");

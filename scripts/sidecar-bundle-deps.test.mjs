@@ -24,6 +24,15 @@ const [
 const baseConfig = JSON.parse(baseConfigSource);
 const windowsConfig = JSON.parse(windowsConfigSource);
 
+function sourceSection(source, startMarker, endMarker, label) {
+  const startIndex = source.indexOf(startMarker);
+  const endIndex = source.indexOf(endMarker);
+  assert.notEqual(startIndex, -1, `${label} start marker must exist`);
+  assert.notEqual(endIndex, -1, `${label} end marker must exist`);
+  assert.ok(startIndex < endIndex, `${label} markers must stay in source order`);
+  return source.slice(startIndex, endIndex);
+}
+
 // Must use locked pnpm install (frozen lockfile prevents supply chain attacks)
 assert.match(src, /pnpm install --prod --frozen-lockfile/, "sidecar must install from locked pnpm lockfile");
 
@@ -68,7 +77,7 @@ for (const forbiddenRoot of [
 ]) {
   assert.match(closureSource, new RegExp(forbiddenRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `runtime verifier must exclude ${forbiddenRoot}`);
 }
-assert.match(closureSource, /fileCount: 5_730/, "runtime closure must retain combined cross-platform headroom");
+assert.match(closureSource, /fileCount: 5_814/, "runtime closure must retain combined cross-platform headroom");
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
 
 // App-size: runtime bundles must drop test/dev packages and metadata that are
@@ -135,7 +144,13 @@ assert.doesNotMatch(
 // Tauri assembles the app.
 assert.deepEqual(
   windowsConfig.bundle.resources,
-  ["resources/server-archive/**/*", "resources/node/**/*", "resources/whisper/**/*", "resources/piper/**/*"],
+  [
+    "resources/server-archive/**/*",
+    "resources/node/**/*",
+    "resources/whisper/**/*",
+    "resources/piper/**/*",
+    "resources/kokoro/**/*",
+  ],
   "Windows resources must replace the expanded sidecar with its bounded archive while retaining bundled runtimes",
 );
 assert.ok(
@@ -148,6 +163,47 @@ assert.ok(
 );
 assert.match(src, /bundle_piper_runtime\(\)/, "release bundling must provision the pinned Piper runtime");
 assert.match(src, /Piper runtime checksum mismatch/, "Piper runtime downloads must be integrity-checked");
+assert.ok(
+  baseConfig.bundle.resources.includes("resources/kokoro/**/*"),
+  "desktop bundles must retain the local Kokoro (sherpa-onnx) runtime",
+);
+assert.match(src, /bundle_kokoro_runtime\(\)/, "release bundling must provision the pinned Kokoro runtime");
+assert.match(src, /Kokoro runtime checksum mismatch/, "Kokoro runtime downloads must be integrity-checked");
+assert.match(
+  src,
+  /Kokoro espeak-ng-data checksum mismatch/,
+  "the espeak-ng-data payload that rides with the Kokoro runtime must be integrity-checked",
+);
+assert.match(
+  src,
+  /tar -xjf "\$espeak_archive" -C "\$KOKORO_RUNTIME_DIR"/,
+  "espeak-ng-data must be staged beside the Kokoro executable, not inside the voice-model download",
+);
+assert.doesNotMatch(
+  sourceSection(src, "bundle_kokoro_runtime()", "fix_node_pty_spawn_helpers()", "Kokoro staging section"),
+  /placeholder\.txt/,
+  "the generated Kokoro payload must not spend an MSI row on the source-tree placeholder",
+);
+assert.match(
+  src,
+  /if \[ -f "\$PIPER_RUNTIME_DIR\/espeak-ng" \]; then[\s\S]*chmod \+x "\$PIPER_RUNTIME_DIR\/espeak-ng"/,
+  "Piper's mode-0644 macOS espeak-ng helper must be normalized as executable",
+);
+assert.doesNotMatch(
+  sourceSection(src, "bundle_piper_runtime()", "fix_node_pty_spawn_helpers()", "Piper staging section"),
+  /placeholder\.txt/,
+  "the generated Piper payload must not spend an MSI row on the source-tree placeholder",
+);
+assert.doesNotMatch(
+  sourceSection(
+    src,
+    'echo "==> staging Node runtime',
+    'echo "==> staging bundled Whisper runtime"',
+    "Node staging section",
+  ),
+  /placeholder\.txt/,
+  "the generated Node payload must not spend an MSI row on the source-tree placeholder",
+);
 assert.match(src, /WINDOWS_ARCHIVE/, "Windows sidecar must be emitted as a tar.zst archive");
 assert.match(src, /BUILD_PLATFORM="\$\(node -p 'process\.platform'\)"/, "Windows packaging must derive the host platform from Node, not shell environment");
 assert.match(src, /\[ "\$BUILD_PLATFORM" = "win32" \]/, "Windows archive and node naming must work from Git Bash as well as CI");
@@ -156,6 +212,11 @@ assert.match(src, /piper_linux_x86_64\.tar\.gz/, "Linux sidecar CI builds must p
 assert.match(src, /sidecar-archive-manifest\.mjs/, "archive generation must emit its integrity and size manifest");
 assert.match(src, /\.server\.tar\.zst\.\$\$\.tmp/, "archive generation must use a same-directory staging path");
 assert.match(src, /sidecar-archive-manifest\.mjs" --publish/, "verified archive publication must use the atomic publisher");
+assert.match(
+  src,
+  /sidecar-archive-manifest\.mjs" --publish[\s\S]*rm -f "\$WINDOWS_ARCHIVE_DIR\/placeholder\.txt"/,
+  "a published Windows archive must remove the source-only glob placeholder before WiX counts resources",
+);
 assert.doesNotMatch(
   src,
   /tar -czf "\$WINDOWS_ARCHIVE/,
@@ -181,7 +242,7 @@ assert.match(
 );
 assert.match(
   rustArchiveSource,
-  /const MAX_FILE_COUNT: u64 = 5_730;/,
+  /const MAX_FILE_COUNT: u64 = 5_814;/,
   "Windows archive extractor must accept the shared runtime file-count budget",
 );
 assert.match(manifestSource, /isSymbolicLink\(\)/, "archive input must reject symlinks");

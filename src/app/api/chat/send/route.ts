@@ -80,6 +80,14 @@ import {
   probeCodexRuntimeAvailability,
 } from "@/lib/codex-runtime-availability";
 import {
+  codexProbeEnv,
+  discoverCachedCodexRuntime,
+  parseCodexStreamEvent,
+  productionCodexSchemaSources,
+} from "@/lib/codex-compatibility";
+import { codexLaunchCommand } from "@/lib/codex-bin";
+import { buildCodexExecArgs, prepareCodexChatRouting } from "./codex-routing";
+import {
   evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
@@ -93,6 +101,7 @@ import {
 import {
   modelForCaveFromRuntimeEcho,
   modelForRuntimeLaunch,
+  runtimeModelIdForLaunch,
 } from "@/lib/runtime-models";
 import {
   quarantineOpenCodeSchema,
@@ -589,7 +598,7 @@ function openClawChatResponse(args: {
       const pushProgress = (
         id: string,
         label: string,
-        status: "running" | "done" | "error",
+        status: "running" | "done" | "notice" | "error",
         detail?: string,
         durationMs?: number,
       ) =>
@@ -1258,7 +1267,7 @@ export async function POST(req: Request) {
   const sshRuntime = isSshRuntime(effectiveRuntime) ? effectiveRuntime : null;
   // Grok Build is a direct local integration. Do not silently send it through
   // `coven run --stream-json` on SSH: its native JSONL/session protocol is
-  // different and the proposed registry manifest is not accepted upstream.
+  // different and Cave does not yet have an equivalent direct SSH bridge.
   if (binding.harness === "grok" && sshRuntime) {
     return new Response(
       JSON.stringify({
@@ -1333,6 +1342,53 @@ export async function POST(req: Request) {
   });
   const copilotStream = copilotRouting.spec;
 
+  // Codex tool activity (cave-53iko.1): a verified local Codex CLI streams
+  // its native `codex exec --json` JSONL directly, so tool lifecycles reach
+  // the chat as structured events. Every unverified, remote, prerelease, or
+  // resume-incapable combination retains the existing filtered
+  // `coven run codex` transport unchanged.
+  const codexResumeTarget =
+    binding.harness === "codex" &&
+    body.sessionId &&
+    !(body.startNewConversation && !existingConversation)
+      ? existingConversation?.harnessSessionId ?? body.sessionId
+      : null;
+  const codexSpawnEnv =
+    !sshRuntime && binding.harness === "codex" ? harnessSpawnEnv(body.familiarId) : null;
+  const codexDirectLaunch = codexSpawnEnv ? codexLaunchCommand() : null;
+  // The same passive availability contract every direct runner uses. The
+  // bounded capability probe below only runs against a launch-ready plan,
+  // mirroring how Copilot gates its capability probe on launch readiness.
+  const codexLaunchAvailability =
+    codexDirectLaunch && codexSpawnEnv
+      ? evaluateRuntimeAvailability({
+          runner: "codex",
+          command: codexDirectLaunch.command,
+          env: codexSpawnEnv,
+          unresolvedWindowsShim: codexDirectLaunch.unresolvedWindowsShim === true,
+        })
+      : null;
+  const codexRouting = await prepareCodexChatRouting({
+    harness: binding.harness,
+    isSshRuntime: Boolean(sshRuntime),
+    resumeSessionId: codexResumeTarget,
+    // TTL-cached, single-flight discovery in the scrubbed probe environment:
+    // provider/vault secrets never reach `codex --version` / `--help`.
+    probe: async () =>
+      codexDirectLaunch && codexSpawnEnv && codexLaunchAvailability?.state === "ready"
+        ? discoverCachedCodexRuntime(
+            { command: codexDirectLaunch.command, fixedArgs: codexDirectLaunch.fixedArgs },
+            undefined,
+            codexProbeEnv(codexSpawnEnv),
+          )
+        : null,
+    resolveSources: () => productionCodexSchemaSources(),
+  });
+  const codexDirect = codexRouting.mode === "direct";
+  const codexSchema = codexRouting.mode === "direct" ? codexRouting.schema : null;
+  const codexDirectCapabilities =
+    codexRouting.mode === "direct" ? codexRouting.report.capabilities : null;
+
   let localRuntimePlan: LocalRuntimePlan | null = null;
   if (!sshRuntime && binding.harness !== "openclaw" && !(hermesDirect && hermesApi)) {
     if (
@@ -1371,6 +1427,16 @@ export async function POST(req: Request) {
         runner: "grok",
         launch: grokLaunchCommand(),
         env,
+      });
+    } else if (codexDirect && codexDirectLaunch && codexSpawnEnv) {
+      // The direct plan reuses the exact launch command and availability the
+      // capability probe was gated on, so preflight, probe, and spawn cannot
+      // diverge onto different executables.
+      localRuntimePlan = createLocalRuntimePlan({
+        runner: "codex",
+        launch: codexDirectLaunch,
+        env: codexSpawnEnv,
+        ...(codexLaunchAvailability ? { availability: codexLaunchAvailability } : {}),
       });
     } else if (!hermesDirect) {
       const env = harnessSpawnEnv(body.familiarId);
@@ -1635,8 +1701,10 @@ export async function POST(req: Request) {
         ? openCodeCompatibility?.capabilities.model ?? false
         : copilotStream
           ? true
-          : binding.harness === "grok" ||
-            (binding.harness !== "openclaw" && ((await probeCovenCapability(covenRunSupportsModel)) ?? false));
+          : codexDirect
+            ? codexDirectCapabilities?.model === true
+            : binding.harness === "grok" ||
+              (binding.harness !== "openclaw" && ((await probeCovenCapability(covenRunSupportsModel)) ?? false));
   const permissionForwardingEnabled =
     !openCodeDirect &&
     binding.harness !== "openclaw" &&
@@ -1660,6 +1728,9 @@ export async function POST(req: Request) {
     modelSource: modelState.source,
     globalDefaultModel: config.defaults.model,
   }) ? null : cleanModelId(desiredModel);
+  const grokLaunchModel = grokDirect
+    ? runtimeModelIdForLaunch("grok", grokForwardModel)
+    : null;
   const grantedProjectRoots = sshRuntime
     ? []
     : (await filterProjectsForFamiliar(projects, body.familiarId)).map((project) => project.root);
@@ -1796,6 +1867,18 @@ export async function POST(req: Request) {
     modelForwardingEnabled && selectedModel
       ? modelForRuntimeLaunch(binding.harness, selectedModel)
       : null;
+  // Direct native transports apply the same registry-owned model transform as
+  // Coven. Keep `forwardModel` provider-qualified for SSH/generic delegation
+  // and for persisted requested/confirmed/retry metadata below.
+  const hermesLaunchModel = hermesDirect
+    ? runtimeModelIdForLaunch("hermes", forwardModel)
+    : null;
+  const openCodeLaunchModel = openCodeDirect
+    ? runtimeModelIdForLaunch("opencode", forwardModel)
+    : null;
+  const codexDirectLaunchModel = codexDirect
+    ? runtimeModelIdForLaunch("codex", forwardModel)
+    : null;
   const forwardPermission =
     permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
   // Directory grants: forward every granted project root — plus the familiar's
@@ -1817,12 +1900,10 @@ export async function POST(req: Request) {
       )
     : [];
   const forwardAddDirs = addDirForwardingEnabled && !sshRuntime ? grantDirs : [];
-  // Hermes has a documented one-shot API (`hermes chat -Q -q <prompt>`), but
-  // its Coven adapter convention requires a POSIX shell shim to translate the
-  // positional prompt that `coven run` appends. The shim cannot be installed
-  // beside Hermes's Windows executable, which left Cave showing only a timer.
-  // Spawn Hermes directly for native local chats, as we already do for the
-  // Copilot JSONL adapter, and keep SSH runtimes on their remote Coven path.
+  // The accepted Hermes 1.0.3 adapter binds prompts natively with `--query`.
+  // Cave still spawns Hermes directly for local chats because this path owns
+  // richer local streaming, session, and optional API behavior than the
+  // generic Coven transport. SSH runtimes remain on their remote Coven path.
   // Grok Build has a documented streaming-json headless protocol. It is a
   // direct local integration, deliberately independent of coven's generic
   // `run --stream-json` adapter protocol.
@@ -1890,9 +1971,7 @@ export async function POST(req: Request) {
     if (hermesDirect) {
       const a = ["chat", "--source", "coven", "-Q"];
       if (resumeSessionId) a.push("--resume", resumeSessionId);
-      // Hermes uses the provider-qualified model ID (for example
-      // `openai/gpt-5.6-sol`) to select the provider as well as the model.
-      if (forwardModel) a.push("--model", forwardModel);
+      if (hermesLaunchModel) a.push("--model", hermesLaunchModel);
       a.push("--query", prompt);
       return a;
     }
@@ -1948,12 +2027,27 @@ export async function POST(req: Request) {
           openCodeNativeResumeUsed = true;
         }
       }
-      if (forwardModel) a.push("--model", forwardModel);
+      if (openCodeLaunchModel) a.push("--model", openCodeLaunchModel);
       // OpenCode reads non-TTY stdin verbatim. Keep the full Cave prompt out
       // of argv so Windows' command-line ceiling and positional-message
       // quoting cannot truncate or rewrite it. runAttempt() writes the exact
       // per-attempt prompt after spawning this option-only launch plan.
       return a;
+    }
+    if (codexDirect && codexDirectCapabilities) {
+      // Direct `codex exec --json`: every flag is gated on the exact probed
+      // CLI contract (fresh and resume help are distinct), and the prompt is
+      // a positional behind `--` so it can never be parsed as an option. The
+      // routing gate already forced this turn onto the Coven path when a
+      // resume was requested without JSON resume support.
+      return buildCodexExecArgs({
+        prompt,
+        resumeSessionId,
+        capabilities: codexDirectCapabilities,
+        model: codexDirectLaunchModel,
+        readOnly: body.permissionMode === "read",
+        addDirs: grantDirs,
+      });
     }
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
@@ -2076,11 +2170,11 @@ export async function POST(req: Request) {
       const pushProgress = (
         id: string,
         label: string,
-        status: "running" | "done" | "error",
+        status: "running" | "done" | "notice" | "error",
         detail?: string,
         durationMs?: number,
       ) => {
-        if (id === "opencode-compatibility" || id === "grok-compatibility") {
+        if (id === "opencode-compatibility" || id === "grok-compatibility" || id === "codex-compatibility") {
           persistedCompatibilityDiagnostics.push({
             id,
             label,
@@ -2142,6 +2236,13 @@ export async function POST(req: Request) {
       // ID on resumed turns. Always retain the latest event-provided native ID
       // for the next CLI resume, while only announcing the stable Cave ID.
       let openCodeSessionId: string | null = null;
+      // Codex's native thread id (from `thread.started`) is likewise retained
+      // separately from Cave's stable conversation id on the direct path.
+      let codexSessionId: string | null = null;
+      // Unknown direct-protocol events are counted during the stream and
+      // surfaced once per turn as a shape-only diagnostic — never payloads.
+      let codexUnknownEventCount = 0;
+      const codexUnknownEventFingerprints = new Set<string>();
       // Responses API ids rotate per turn like other harness session ids, but
       // Cave's `sessionId` remains the stable conversation identity. Preserve
       // the latest response id separately so follow-ups send
@@ -2193,6 +2294,18 @@ export async function POST(req: Request) {
       // (a never-launched CLI must not be diagnosed as "installed but not
       // authenticated") and skips persisting a fabricated assistant turn.
       let launchFailure: { code: string; message: string } | null = null;
+      // A Coven-backed child can exit non-zero before it writes even one
+      // stream frame. Defer classifying that condition until all buffered
+      // stdout has passed through the more-specific adapter failure parser.
+      let covenBackedProcessFailed = false;
+      // Coven is the outer launch vehicle. Its cleanup can fail after the
+      // adapter has already supplied a successful structured result; that
+      // completed assistant response remains authoritative for this attempt.
+      let covenCompletedSuccessfulResult = false;
+      // Grok Build is launched directly. Its initial interactive sign-in
+      // failure can exit non-zero without emitting stdout or stderr, so retain
+      // the child outcome until buffered stream text has been fully decoded.
+      let grokProcessFailed = false;
       // Coven can send adapter startup failures through stdout, where Codex's
       // transcript filter intentionally suppresses pre-assistant noise. Keep
       // only the classified, fixed remediation so those failures cannot fall
@@ -2232,7 +2345,7 @@ export async function POST(req: Request) {
       if (claudeDiagnostic) {
         // Emit the fallback state before the child produces output: an absent
         // or immediately-failing CLI must not hide the only useful diagnostic.
-        pushProgress("claude-runtime-compatibility", claudeDiagnostic, "error");
+        pushProgress("claude-runtime-compatibility", claudeDiagnostic, "notice");
       }
       // A fallback reason is already a user-visible compatibility diagnostic.
       // Later malformed frames still get a redacted log fingerprint, but must
@@ -2255,7 +2368,7 @@ export async function POST(req: Request) {
         pushProgress(
           "claude-runtime-compatibility",
           "A Claude Code stream frame could not be decoded; chat text will continue without unverified tool bubbles.",
-          "error",
+          "notice",
         );
       };
       const reportUnsupportedClaudeToolFrame = (frame: unknown) => {
@@ -2273,7 +2386,7 @@ export async function POST(req: Request) {
         pushProgress(
           "claude-runtime-compatibility",
           "A Claude Code tool frame is not supported by the selected compatibility profile; chat text will continue without unverified tool bubbles.",
-          "error",
+          "notice",
         );
       };
       const settleUnfinishedTools = () => {
@@ -2339,7 +2452,7 @@ export async function POST(req: Request) {
         pushProgress(
           "grok-compatibility",
           "Grok Build sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
-          "error",
+          "notice",
           detail,
         );
       };
@@ -2354,7 +2467,7 @@ export async function POST(req: Request) {
         quarantineOpenCodeSchema(openCodeCompatibility?.schema);
         if (openCodeProtocolQuarantineNoticeSent) return;
         openCodeProtocolQuarantineNoticeSent = true;
-        pushProgress("opencode-compatibility", label, "error", detail);
+        pushProgress("opencode-compatibility", label, "notice", detail);
       };
 
       // Model parity: the harness echoes its resolved model on the init/system
@@ -2381,7 +2494,7 @@ export async function POST(req: Request) {
           id: `copilot-protocol-${code}`,
           label: "Copilot tool activity needs an update",
           detail,
-          status: "error",
+          status: "notice",
         });
       };
 
@@ -2572,16 +2685,16 @@ export async function POST(req: Request) {
                   // per-message spans so an interleaved later message survives.
                   assistantText = correctedText;
                   push({ kind: "assistant_replace", text: assistantText });
-                } else if (text) {
-                  if (correctedText === `${previousAssistantText}${text}`) {
-                    assistantText = correctedText;
-                    push({ kind: "assistant_chunk", text });
-                  } else {
-                    assistantText = correctedText;
-                    push({ kind: "assistant_replace", text: assistantText });
-                  }
-                } else {
+                } else if (correctedText === previousAssistantText) {
                   assistantText = correctedText;
+                } else if (correctedText === `${previousAssistantText}${text}`) {
+                  assistantText = correctedText;
+                  push({ kind: "assistant_chunk", text });
+                } else {
+                  // Even an empty message can add a transcript boundary. Send
+                  // the authoritative text so clients retain that separator.
+                  assistantText = correctedText;
+                  push({ kind: "assistant_replace", text: assistantText });
                 }
                 if (ev.malformedToolRequests) {
                   reportCopilotProtocolDiagnostic(
@@ -2671,7 +2784,7 @@ export async function POST(req: Request) {
               : grokCompatibility.diagnostic === "no-compatible-schema"
                 ? "This Grok Build client has no verified tool-event schema; continuing without tool activity"
                 : "Grok Build's structured event protocol is unavailable; continuing without tool activity";
-          pushProgress("grok-compatibility", label, "error", grokCompatibility.diagnostic);
+          pushProgress("grok-compatibility", label, "notice", grokCompatibility.diagnostic);
         }
         if (grokCompatibility?.mode === "plain") {
           // Plain output is safe only while it is prose. A changed client can
@@ -2695,7 +2808,7 @@ export async function POST(req: Request) {
               pushProgress(
                 "grok-compatibility",
                 "Grok Build emitted unverified structured output; continuing without tool activity",
-                "error",
+                "notice",
                 "unverified-structured-output",
               );
             }
@@ -2739,7 +2852,7 @@ export async function POST(req: Request) {
               if (!sessionId && event.sessionId) announceSession(event.sessionId);
               // Grok's end event does not echo model, but successful native
               // launch means its --model contract accepted the selected id.
-              if (!confirmedModel && grokForwardModel) confirmedModel = desiredModel;
+              if (!confirmedModel && grokLaunchModel) confirmedModel = desiredModel;
               result = {
                 is_error: false,
                 usage: parseStreamJsonUsage(event.usage),
@@ -2803,7 +2916,7 @@ export async function POST(req: Request) {
                 pushProgress(
                   "grok-compatibility",
                   "Grok Build sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
-                  "error",
+                  "notice",
                   `unknown-event:${redactedGrokEventFingerprint(raw)}`,
                 );
               }
@@ -2936,7 +3049,7 @@ export async function POST(req: Request) {
               pushProgress(
                 "opencode-compatibility",
                 "OpenCode sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
-                "error",
+                "notice",
                 `${ev.diagnostic ?? "unknown-event"}:${redactedOpenCodeEventFingerprint(rawEvent)}`,
               );
             }
@@ -2948,6 +3061,102 @@ export async function POST(req: Request) {
             );
           },
         });
+      };
+
+      // Codex direct JSONL (cave-53iko.1): `codex exec --json` stdout is
+      // protocol-only. Every line feeds the versioned, capability-gated
+      // parser; prose, malformed frames, and unknown shapes become bounded
+      // shape-only diagnostics — never assistant text or persisted payloads.
+      const MAX_CODEX_JSONL_FRAME_CHARS = 256 * 1024;
+      const recordCodexUnknownEvent = (fingerprint: string) => {
+        codexUnknownEventCount += 1;
+        if (codexUnknownEventFingerprints.size < 3) {
+          codexUnknownEventFingerprints.add(fingerprint);
+        }
+      };
+      const handleCodexDirectLine = (line: string) => {
+        if (!codexSchema) return;
+        if (line.length > MAX_CODEX_JSONL_FRAME_CHARS) {
+          recordCodexUnknownEvent("oversized-jsonl");
+          recordStdoutErrorTail("Codex emitted an oversized protocol frame", true);
+          return;
+        }
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("{")) {
+          // Fixed, payload-free diagnostic, exactly like the Copilot JSONL
+          // path: future CLIs may write prompts or tool data before a frame.
+          recordCodexUnknownEvent("unframed-output");
+          recordStdoutErrorTail("Codex emitted an unrecognized protocol line", true);
+          return;
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(trimmed);
+        } catch {
+          recordCodexUnknownEvent("malformed-jsonl");
+          recordStdoutErrorTail("Codex emitted a malformed protocol frame", true);
+          return;
+        }
+        const event = parseCodexStreamEvent(parsed, codexSchema);
+        if (!event || event.kind === "ignored") return;
+        switch (event.kind) {
+          case "session": {
+            codexSessionId = event.sessionId;
+            if (!sessionId) announceSession(event.sessionId);
+            return;
+          }
+          case "text": {
+            const text = event.text.endsWith("\n") ? event.text : `${event.text}\n`;
+            assistantText += text;
+            push({ kind: "assistant_chunk", text });
+            return;
+          }
+          case "tool_start": {
+            boundarySentinel?.observe(event.name, event.input);
+            const input = formatToolInputValue(event.input);
+            const started = toolTracker.envelopeToolUse(
+              event.id,
+              event.name,
+              input,
+              assistantText.length,
+            );
+            if (started) push({ kind: "tool_use", ...started });
+            else {
+              // item.updated refreshes an already-announced call's input.
+              const updated = toolTracker.envelopeToolInput(event.id, input);
+              if (updated) push({ kind: "tool_use", ...updated });
+            }
+            const reorderedEnd = toolTracker.consumePendingEnvelopeResult(event.id);
+            if (reorderedEnd) push({ kind: "tool_use", ...reorderedEnd });
+            return;
+          }
+          case "tool_end": {
+            boundarySentinel?.observe(event.name, event.input);
+            // A terminal item carries its full description, so a completion
+            // whose start frame was never seen still settles as one bubble.
+            const started = toolTracker.envelopeToolUse(
+              event.id,
+              event.name,
+              formatToolInputValue(event.input),
+              assistantText.length,
+            );
+            if (started) push({ kind: "tool_use", ...started });
+            const ended = toolTracker.envelopeToolResult(event.id, event.output, event.isError);
+            if (ended) push({ kind: "tool_use", ...ended });
+            return;
+          }
+          case "failure": {
+            // Terminal Codex failure: error state only — the engine already
+            // stripped every payload from this event.
+            result = { ...result, is_error: true };
+            recordStdoutErrorTail("Codex reported a failure event", true);
+            return;
+          }
+          case "unknown": {
+            recordCodexUnknownEvent(event.fingerprint);
+            return;
+          }
+        }
       };
 
       const handleLine = (rawLine: string) => {
@@ -2978,9 +3187,7 @@ export async function POST(req: Request) {
           pushProgress(
             "opencode-compatibility",
             diagnostic,
-            openCodeCompatibility.diagnostic === "capability-probe-unavailable" || openCodeCompatibility.diagnostic === "capability-probe-fallback"
-              ? "done"
-              : "error",
+            "notice",
             openCodeCompatibility.diagnostic,
           );
         }
@@ -3009,6 +3216,10 @@ export async function POST(req: Request) {
         }
         if (openCodeDirect) {
           handleOpenCodeLine(line);
+          return;
+        }
+        if (codexDirect) {
+          handleCodexDirectLine(line);
           return;
         }
         if (isJson || isClaudeStreamFrame) {
@@ -3067,6 +3278,7 @@ export async function POST(req: Request) {
                 usage: parseStreamJsonUsage(ev.usage),
                 costUsd: parseCostUsd(ev.total_cost_usd),
               };
+              if (ev.is_error === false) covenCompletedSuccessfulResult = true;
             } else if (
               // `output` belongs to Coven's Windows Codex bridge, not the
               // profile-selected Claude protocol. Let an unexpected Claude
@@ -3088,6 +3300,24 @@ export async function POST(req: Request) {
               if (filtered) {
                 assistantText += filtered;
                 push({ kind: "assistant_chunk", text: filtered });
+              }
+            } else if (
+              // Coven's native stream-json transport represents completed
+              // Codex replies as an `assistant` envelope, just like the
+              // adapter's direct CLI output.  This is structured assistant
+              // content, not raw Codex transcript text, so it must bypass
+              // AssistantFilter's marker-phase gate.  Previously only the
+              // Claude compatibility branch decoded this shape; a successful
+              // Coven Codex reply was therefore discarded and misreported as
+              // an empty/authentication failure.
+              binding.harness !== "claude" &&
+              ev.type === "assistant" &&
+              Array.isArray(ev.message?.content)
+            ) {
+              for (const block of ev.message.content) {
+                if (block?.type !== "text" || typeof block.text !== "string" || !block.text) continue;
+                assistantText += block.text;
+                push({ kind: "assistant_chunk", text: block.text });
               }
             } else if (
               binding.harness === "claude" &&
@@ -3299,7 +3529,7 @@ export async function POST(req: Request) {
               authorization: `Bearer ${hermesApi.apiKey}`,
             },
             body: JSON.stringify({
-              model: forwardModel ?? desiredModel,
+              ...(hermesLaunchModel ? { model: hermesLaunchModel } : {}),
               input: apiPrompt,
               stream: true,
               ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
@@ -3839,6 +4069,15 @@ export async function POST(req: Request) {
             if ((openCodeDirect || copilotStream || grokDirect) && code !== 0) {
               result = { ...result, is_error: true };
             }
+            // Direct Codex can exit non-zero before (or without) a terminal
+            // protocol frame; that failed invocation must not read as a
+            // successful empty turn.
+            if (codexDirect && code !== 0) {
+              result = { ...result, is_error: true };
+            }
+            if (grokDirect && code !== 0 && !runHandle.stopRequested) {
+              grokProcessFailed = true;
+            }
             if (binding.harness === "claude" && claudeInnerLaunchMissing) {
               const message = missingRunnerMessage("claude");
               result = { ...result, is_error: true };
@@ -3883,6 +4122,22 @@ export async function POST(req: Request) {
               assistantText += tail;
               push({ kind: "assistant_chunk", text: tail });
             }
+            // `coven run` is the outer launch vehicle for Codex, Claude, and
+            // compatible Coven-backed adapters. Process every final stdout
+            // fragment first: an adapter failure can arrive without a
+            // trailing newline and has more specific remediation. If the
+            // child was truly silent, a non-zero exit is a real runtime
+            // failure, not a successful-but-empty assistant response.
+            covenBackedProcessFailed ||=
+              !sshRuntime &&
+              localRuntimePlan?.runner === "coven" &&
+              !runHandle.stopRequested &&
+              !covenCompletedSuccessfulResult &&
+              typeof code === "number" &&
+              code !== 0;
+            if (covenBackedProcessFailed) {
+              result = { ...result, is_error: true };
+            }
             req.signal.removeEventListener("abort", onAbort);
             resolve();
           });
@@ -3921,6 +4176,24 @@ export async function POST(req: Request) {
         }
       }
       if (!launchFailure) {
+      // Codex compatibility fallback notice (cave-53iko.1): when a local
+      // Codex chat stays on the generic Coven transport for a noteworthy
+      // reason (probe unavailable, unsupported version, capability mismatch),
+      // say so once — exactly parallel to the OpenCode health notice below.
+      // The turn then continues down the existing `coven run codex` path.
+      if (
+        binding.harness === "codex" &&
+        !sshRuntime &&
+        codexRouting.mode === "fallback" &&
+        codexRouting.compatibilityDiagnostic
+      ) {
+        pushProgress(
+          "codex-compatibility",
+          codexRouting.compatibilityDiagnostic,
+          "notice",
+          codexRouting.diagnosticCode ?? undefined,
+        );
+      }
       // A compatibility decision is meaningful even when the CLI exits before
       // stdout. Announce it before spawning instead of relying on handleLine.
       if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
@@ -3943,9 +4216,7 @@ export async function POST(req: Request) {
         pushProgress(
           "opencode-compatibility",
           diagnostic,
-          openCodeCompatibility.diagnostic === "capability-probe-unavailable" || openCodeCompatibility.diagnostic === "capability-probe-fallback"
-            ? "done"
-            : "error",
+          "notice",
           openCodeCompatibility.diagnostic,
         );
       }
@@ -3961,7 +4232,7 @@ export async function POST(req: Request) {
             : openCodeSessionUnavailable
               ? "This OpenCode client cannot resume sessions; starting a fresh chat"
               : "This conversation has no resumable OpenCode session; starting a fresh chat",
-          "error",
+          "notice",
           "session-unavailable",
         );
       }
@@ -4012,6 +4283,8 @@ export async function POST(req: Request) {
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         codexAdapterFailure = null;
+        covenBackedProcessFailed = false;
+        covenCompletedSuccessfulResult = false;
         resumeFailed = false;
         adapterConflict = null;
         // Settle the heal step BEFORE the retry attempt runs (same shape as
@@ -4052,6 +4325,9 @@ export async function POST(req: Request) {
         // that token would persist it again if the fresh process exits before
         // announcing a replacement session.
         openCodeSessionId = null;
+        // Same for a failed direct Codex resume: the fresh attempt's
+        // thread.started supplies the replacement thread id.
+        codexSessionId = null;
         hermesResponseId = null;
         hermesPreviousResponseId = null;
         assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
@@ -4066,6 +4342,8 @@ export async function POST(req: Request) {
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         codexAdapterFailure = null;
+        covenBackedProcessFailed = false;
+        covenCompletedSuccessfulResult = false;
         resumeFailed = false;
         // Settle the retry step BEFORE the fresh attempt runs, not after it
         // finishes: the step's own work (rebuild context, relaunch) is done
@@ -4084,11 +4362,28 @@ export async function POST(req: Request) {
       }
       }
 
+      // Unknown direct-Codex protocol events surface as ONE safe diagnostic
+      // per turn: a count plus up to three shape fingerprints. The payloads
+      // themselves were never rendered, persisted, or logged.
+      if (codexDirect && codexUnknownEventCount > 0) {
+        pushProgress(
+          "codex-compatibility",
+          codexUnknownEventCount === 1
+            ? "Codex sent an unrecognized protocol event; its content was not shown"
+            : `Codex sent ${codexUnknownEventCount} unrecognized protocol events; their content was not shown`,
+          "notice",
+          [...codexUnknownEventFingerprints].join(", "),
+        );
+      }
+
       // A Codex adapter can disappear or become misconfigured after the
       // bounded preflight passed. Coven has started in this branch, so map
       // only its adapter-level evidence back to the same actionable Codex
       // state; provider/auth errors intentionally remain untouched.
-      if (!launchFailure && binding.harness === "codex" && !assistantText.trim()) {
+      // The adapter-evidence mapping below is about Coven's adapter layer;
+      // the direct spawn has no Coven in front of it and keeps the shared
+      // direct-runner failure diagnostics instead.
+      if (!launchFailure && !runHandle.stopRequested && binding.harness === "codex" && !codexDirect && !assistantText.trim()) {
         const adapterFailure = codexAdapterFailure
           ?? codexAdapterFailureAvailability([...stderrTail, ...stdoutErrTail].join("\n"));
         if (adapterFailure) {
@@ -4097,6 +4392,27 @@ export async function POST(req: Request) {
           pushProgress("harness-start", "codex failed to start", "error", adapterFailure.message);
           push({ kind: "error", code: adapterFailure.code, message: adapterFailure.message });
       }
+      }
+
+      if (!launchFailure && covenBackedProcessFailed && !assistantText.trim()) {
+        const failedRunner = binding.harness === "codex"
+          ? "codex"
+          : binding.harness === "claude"
+            ? "claude"
+            : "coven";
+        const failure = runtimeProcessFailure(failedRunner);
+        launchFailure = failure;
+        result.is_error = true;
+        pushProgress("harness-start", `${binding.harness} exited with an error`, "error", failure.message);
+        push({ kind: "error", code: failure.code, message: failure.message });
+      }
+
+      if (!launchFailure && grokProcessFailed && !assistantText.trim()) {
+        const failure = runtimeProcessFailure("grok");
+        launchFailure = failure;
+        result.is_error = true;
+        pushProgress("harness-start", "Grok Build needs interactive sign-in", "error", failure.message);
+        push({ kind: "error", code: failure.code, message: failure.message });
       }
 
       // User cancel (CHAT-D5-02): when the client stops the response
@@ -4222,6 +4538,10 @@ export async function POST(req: Request) {
           ? openCodeSessionId ?? (openCodeNativeResumeUsed
             ? existingConversation?.harnessSessionId ?? (!existingConversation ? body.sessionId : undefined)
             : undefined)
+          : codexDirect
+            // Direct Codex resumes keep the same thread id; a turn that never
+            // reached thread.started retains the prior native id untouched.
+            ? codexSessionId ?? existingConversation?.harnessSessionId ?? null
           : hermesDirect && hermesApi
             ? !result.is_error && hermesResponseId
               ? hermesResponseId
@@ -4231,7 +4551,7 @@ export async function POST(req: Request) {
       // direct argv proves the selection was forwarded, while a successful
       // exit is the only confirmation it was applied. Preserve an explicit
       // model rejection as failed rather than incorrectly reporting applied.
-      if (openCodeDirect && forwardModel) {
+      if (openCodeDirect && openCodeLaunchModel && forwardModel) {
         const application = modelApplicationForHarness(
           modelApplicationFromRun({
             confirmedModel: forwardModel,
@@ -4259,10 +4579,20 @@ export async function POST(req: Request) {
       const routedTurnModel = copilotStream
         ? cleanModelId(desiredModel)
         : grokDirect
-          ? grokForwardModel
-          : forwardModel && forwardModel !== desiredModel
-            ? desiredModel
-            : forwardModel;
+          ? grokLaunchModel
+            ? grokForwardModel
+            : null
+          : openCodeDirect
+            ? openCodeLaunchModel
+              ? forwardModel
+              : null
+            : hermesDirect
+              ? hermesLaunchModel
+                ? forwardModel
+                : null
+              : forwardModel && forwardModel !== desiredModel
+                ? desiredModel
+                : forwardModel;
       responseMetadata.retryModel = turnRetryModel({
         requestedModel: body.modelOverride,
         confirmedModel: responseMetadata.confirmedModel,

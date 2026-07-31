@@ -178,48 +178,21 @@ assert.match(entries, /aria-label="Older entry"/, "detail header has an older-en
 assert.match(entries, /const hasOlder = dayIndex >= 0 && dayIndex < filteredDays\.length - 1/, "older-entry availability derives from the visible list");
 assert.match(css, /\.journal-entry__sec--nav \{[\s\S]*?justify-content: space-between/, "the heading row lays out the nav controls");
 
-// ── Click-to-automate: suggested next steps become one-click actions ─────────
-// The familiar's `<coven:next-paths>` suggestions are no longer static text —
-// each opens an automate tray (Run now / Add task / Remind me) that turns the
-// step into a real action with no typing.
-assert.match(entries, /function NextPaths\(/, "JournalEntries renders an interactive NextPaths component for suggested steps");
-assert.match(entries, /aria-expanded=\{isOpen\}/, "each suggested step is an expandable automate chip");
-assert.match(
-  entries,
-  /new CustomEvent\("cave:agents-new-chat", \{ detail: \{ familiarId, initialPrompt: text \} \}\)/,
-  "Run now opens a chat that acts on the suggestion (self-contained, no prop threading)",
-);
-assert.match(
-  entries,
-  /fetch\("\/api\/board",\s*\{[\s\S]*?method:\s*"POST"[\s\S]*?title: text/,
-  "Add task files the suggestion on the task board via /api/board POST",
-);
-assert.match(
-  entries,
-  /fetch\("\/api\/inbox",\s*\{[\s\S]*?kind:\s*"reminder"[\s\S]*?title: text[\s\S]*?fireAt: when\.toISOString\(\)/,
-  "Remind me schedules the suggestion as a reminder via /api/inbox POST",
-);
-assert.match(entries, /aria-label=\{`\$\{a\.label\}: \$\{s\}`\}/, "each automate action exposes an accessible label naming the step");
-assert.match(entries, /className=\{`journal-next__act[\s\S]*?\$\{isDone \? " is-done" : ""\}/, "automate actions flash a success state when they land");
-// One-click confirmation toast, with a deep-link to the surface the action wrote to.
-assert.match(entries, /className="journal-notice"[\s\S]*?role="status"[\s\S]*?aria-live="polite"/, "an automate action shows an aria-live confirmation toast");
-assert.match(
-  entries,
-  /new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: notice\.action!\.mode \} \}\)/,
-  "the toast's action deep-links to the surface the automation landed on",
-);
+// ── Reflection follow-up controls are display-only ───────────────────────────
+// Journal is not a task/action owner. It strips the structured trailer before
+// rendering Markdown and does not turn assistant intent into a mutation.
+assert.match(entries, /function JournalReflection\(\{ text \}: \{ text: string \}\)/, "journal keeps a focused reflection renderer");
+assert.match(entries, /const \{ visible \} = useMemo\(\(\) => extractNextPaths\(text\), \[text\]\);/, "journal strips next-path control blocks from reflection text");
+assert.doesNotMatch(entries, /function NextPaths\(/, "journal does not render interactive next-path actions");
+assert.doesNotMatch(entries, /cave:agents-new-chat/, "journal never launches chat from an assistant suggestion");
+assert.doesNotMatch(entries, /body: JSON\.stringify\(\{ title: text/, "journal never files an assistant suggestion as a task");
+assert.doesNotMatch(css, /\.journal-(?:entry__next|next__|notice)/, "journal removes the retired next-path and notice styling with its inactive UI");
 assert.match(entries, /className=\{`journal-entry-gen\$\{generating \? " is-generating" : ""\}`\}/, "the generate button animates while reflecting");
 
-// Engaging click feedback: chips/actions/buttons have press + transition styling,
-// with a reduced-motion fallback.
-assert.match(css, /\.journal-next__chip \{[\s\S]*?cursor: pointer;/, "suggested-step chips are styled, interactive controls");
-assert.match(css, /\.journal-next__act\b/, "automate tray action buttons are styled");
-assert.match(css, /\.journal-next__act\.is-done \{[\s\S]*?animation: journal-act-pop/, "a landed automate action pops with a success animation");
-assert.match(css, /\.journal-notice \{[\s\S]*?position: fixed/, "the automate confirmation toast is styled");
+// Engaging entry controls retain tactile press feedback.
 assert.match(css, /\.journal-entry-gen:active:not\(:disabled\) \{ transform:/, "the generate button has a tactile press");
 assert.match(css, /\.journal-day:active \{ transform:/, "day rows have a tactile press");
 assert.match(css, /\.journal-entry__action:active:not\(:disabled\) \{ transform: scale/, "entry action icons have a tactile press");
-assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.journal-next__chip,/, "the new interactions respect prefers-reduced-motion");
 
 // ── a11y: audible mutations, real headings, visible focus (cave-t1ou) ────────
 assert.match(entries, /const \{ announce \} = useAnnouncer\(\)/, "the surface uses the shared announcer");
@@ -240,7 +213,7 @@ assert.match(entries, /aria-busy=\{generating\}/, "the generate button reports b
 assert.match(entries, /unavailable — select today to generate/, "the disabled reason reaches the accessible name (not just title=)");
 assert.match(entries, /<h3 className="journal-entry__sec-heading">What happened/, "the day section is a real heading");
 assert.match(entries, /<h4 className="journal-entry__sec journal-entry__sec-heading">Reflection<\/h4>/, "the reflection section is a real heading");
-assert.match(entries, /aria-live="polite" aria-atomic="true"/, "the notice toast announces atomically");
+assert.doesNotMatch(entries, /journal-notice/, "journal no longer keeps an action-toast path for assistant suggestions");
 assert.match(css, /\.journal-day:focus-visible \{\n  outline: var\(--ring-width, 2px\) solid var\(--ring-focus\)/, "day-rail rows have a visible focus ring");
 assert.match(css, /\.journal-entry__action:focus-visible \{\n  outline: var\(--ring-width, 2px\) solid var\(--ring-focus\)/, "entry actions have a distinct focus ring");
 

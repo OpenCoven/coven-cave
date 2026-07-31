@@ -8,6 +8,7 @@ const styles = readFileSync(new URL("../styles/settings-familiars.css", import.m
 const identityTab = readFileSync(new URL("./familiar-studio-identity-tab.tsx", import.meta.url), "utf8");
 const memoryTab = readFileSync(new URL("./familiar-studio-memory-tab.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const chatCapabilities = readFileSync(new URL("./chat-familiar-capabilities.tsx", import.meta.url), "utf8");
 
 assert.match(source, /export function FamiliarStudioInlinePanel/, "Exports the inline control sheet");
 assert.match(source, /SettingsFamiliarPicker/, "Renders the persistent familiar roster");
@@ -43,10 +44,11 @@ assert.match(
 assert.match(picker, /data-archived=\{familiar\.archived \|\| undefined\}/, "Archived rows expose a visual state");
 assert.match(picker, /reveal-scope/, "Row actions follow shared progressive disclosure");
 assert.match(
-  shell,
-  /useResolvedFamiliars\(rawFamiliars,\s*\{\s*includeArchived:\s*true\s*\}\)/,
-  "Settings keeps archived familiars in the lifecycle control sheet",
+  chatCapabilities,
+  /useResolvedFamiliars\(familiars,\s*\{\s*includeArchived:\s*true\s*\}\)/,
+  "Chat keeps archived familiars in the lifecycle control sheet",
 );
+assert.doesNotMatch(shell, /useResolvedFamiliars\(/, "the retired Settings shell no longer owns familiar lifecycle state");
 assert.match(
   styles,
   /\.settings-familiar-roster__list\s*\{[\s\S]*?min-height:\s*0[\s\S]*?overflow-y:\s*auto/,
@@ -119,5 +121,51 @@ assert.match(source, /BRAIN_STUDIO_FAMILIAR_KEY/, "Reads the one-shot handoff ke
 
 assert.match(source, /Changes save automatically/, "Shows the autosave footer");
 assert.match(source, /Saved locally, daemon offline/, "Shows daemon-offline state");
+
+assert.match(
+  source,
+  /loadCanonicalMemoryList\(\)/,
+  "Studio memory counts use the shared non-forced canonical list loader",
+);
+assert.match(
+  source,
+  /canonical\.entries\.filter/,
+  "Studio only counts canonical entries from a ready list",
+);
+assert.match(
+  source,
+  /entry\.familiarId === familiarId/,
+  "Studio scopes canonical summaries with the shared camelCase familiar id",
+);
+assert.match(
+  source,
+  /type FamiliarMemoryCountState\s*=[\s\S]*state: "loading"[\s\S]*state: "ready"; count: number[\s\S]*state: "unavailable"/,
+  "Studio memory counts distinguish loading, ready, and terminal unavailability",
+);
+assert.match(
+  source,
+  /setCount\(\{ state: "unavailable" \}\)/,
+  "a failed canonical or file source settles to unavailable",
+);
+assert.match(
+  source,
+  /setCount\(\{\s*state: "ready",\s*count: canonicalCount \+ fileCount,\s*\}\)/,
+  "a complete count settles to ready, including a confirmed zero",
+);
+assert.match(
+  source,
+  /memoryCount\.state === "loading"[\s\S]*"Memories…"[\s\S]*memoryCount\.state === "unavailable"[\s\S]*"Memories unavailable"[\s\S]*memoryCount\.count/,
+  "Studio renders loading and unavailable distinctly before ready counts",
+);
+assert.doesNotMatch(
+  source,
+  /memoryCount === null\s*\?\s*"Memories…"/,
+  "terminal failures cannot remain on the loading label",
+);
+assert.doesNotMatch(
+  source,
+  /fetch\(\s*["'`]\/api\/coven-memory/,
+  "Studio does not bypass the canonical memory cache",
+);
 
 console.log("familiar-studio-inline.test.ts: ok");

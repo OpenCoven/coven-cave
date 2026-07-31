@@ -1,0 +1,461 @@
+/* ── Thread instruments (Chat.dc.html 2a, cave-j86la) ──────────────────────
+   The transcript's two navigation overlays: the run spine in the left gutter
+   (one node per turn + a proportional tool-category stack) and the thread
+   minimap on the right edge (one bar per event, click to jump). Both live in
+   the reading column's existing side gutters — overlays, never layout — and
+   both stay home on narrow panes (gated in the components).
+
+   Category colors deliberately come from the global semantic token contract so
+   every palette and mode can retune them without a component-local palette. */
+
+.cave-thread-spine .is-shell,
+.cave-thread-map .is-shell { --tim: var(--color-success); }
+.cave-thread-spine .is-edit,
+.cave-thread-map .is-edit { --tim: var(--color-warning); }
+.cave-thread-spine .is-search,
+.cave-thread-map .is-search { --tim: var(--accent-presence); }
+.cave-thread-spine .is-wait,
+.cave-thread-map .is-wait { --tim: var(--color-warning); }
+.cave-thread-spine .is-web,
+.cave-thread-map .is-web { --tim: var(--color-info); }
+.cave-thread-spine .is-agent,
+.cave-thread-map .is-agent { --tim: var(--accent-presence); }
+.cave-thread-spine .is-other,
+.cave-thread-map .is-other { --tim: var(--text-muted); }
+.cave-thread-spine .is-read,
+.cave-thread-map .is-read { --tim: var(--color-info); }
+
+/* ── Spine — left gutter, scrolls with the content ───────────────────────── */
+
+.cave-thread-spine {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 64px;
+  z-index: 10;
+  opacity: 0.45;
+  transition: opacity 180ms ease;
+}
+
+.cave-chat-transcript:hover .cave-thread-spine,
+.cave-thread-spine:focus-within {
+  opacity: 1;
+}
+
+.cave-thread-spine__line {
+  position: absolute;
+  top: 0;
+  left: 31px;
+  width: 1px;
+  background: var(--border-hairline);
+}
+
+.cave-thread-spine__node {
+  position: absolute;
+  left: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  /* Hover-card reveal rides one custom property. */
+  --spc: 0;
+}
+
+.cave-thread-spine__node:hover,
+.cave-thread-spine__node:focus-visible {
+  --spc: 1;
+}
+
+.cave-thread-spine__dot {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 48%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 15%, var(--background));
+  color: var(--accent-presence);
+  box-shadow: 0 0 0 3px var(--background);
+  transition: transform 140ms var(--ease-standard, ease);
+}
+
+.cave-thread-spine__node.is-user .cave-thread-spine__dot {
+  width: 22px;
+  height: 22px;
+  border-color: color-mix(in oklch, var(--foreground) 34%, transparent);
+  background: color-mix(in oklch, var(--foreground) 10%, var(--background));
+  color: var(--text-secondary);
+}
+
+.cave-thread-spine__node.is-error .cave-thread-spine__dot {
+  border-color: color-mix(in oklch, var(--color-danger) 55%, transparent);
+  color: var(--color-danger);
+}
+
+.cave-thread-spine__node:hover .cave-thread-spine__dot {
+  transform: scale(1.1);
+}
+
+.cave-thread-spine__time {
+  /* The design overlays the stamp at the gutter's left edge, sliding just
+     under the node's ring — right-anchoring it would clip at the pane edge. */
+  position: absolute;
+  top: 1px;
+  left: -18px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-shadow: 0 0 4px var(--background);
+}
+
+/* This turn's tool calls, rolled up into one proportional stack. */
+.cave-thread-spine__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 5px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  box-shadow: 0 0 0 3px var(--background);
+}
+
+.cave-thread-spine__seg {
+  display: block;
+  width: 100%;
+  background: var(--tim, var(--text-muted));
+  opacity: 0.8;
+}
+
+/* Hover card: who, when, what — and the turn's tool mix. */
+.cave-thread-spine__card {
+  position: absolute;
+  left: 44px;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 176px;
+  max-width: 260px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-elevated) 96%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 28px oklch(0 0 0 / 50%);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  text-align: left;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: var(--spc);
+  transform: translateX(calc(var(--spc) * 3px - 3px));
+  transition: opacity 110ms ease, transform 140ms var(--ease-standard, ease);
+}
+
+.cave-thread-spine__card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cave-thread-spine__card-name {
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-presence);
+}
+
+.cave-thread-spine__node.is-user .cave-thread-spine__card-name {
+  color: var(--text-primary);
+}
+
+.cave-thread-spine__card-time {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+.cave-thread-spine__card-summary {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+
+.cave-thread-spine__card-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--border-hairline);
+}
+
+.cave-thread-spine__card-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cave-thread-spine__card-swatch {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--tim, var(--text-muted));
+}
+
+.cave-thread-spine__card-cat {
+  flex: 1;
+  color: var(--text-muted);
+}
+
+.cave-thread-spine__card-n {
+  color: var(--text-secondary);
+}
+
+/* ── Minimap — right edge, fixed against the pane ────────────────────────── */
+
+/* Sticky h-0 anchor (the env HUD's pattern): the rail hangs from it without
+   entering the scroll flow, so it never scrolls with the thread. */
+.cave-thread-map-anchor {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cave-thread-map {
+  /* Positioned so the shared hover card anchors to the 84px rail, not to the
+     full-width sticky anchor above it. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 84px;
+  border-left: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
+}
+
+.cave-thread-map__head {
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: 26px;
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--border-hairline);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cave-thread-map__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: visible;
+  padding: var(--space-2) var(--space-2) var(--space-3);
+  scrollbar-width: none;
+}
+
+.cave-thread-map__caret {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 15px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  pointer-events: none;
+  transition: top 160ms var(--ease-standard, ease);
+}
+
+.cave-thread-map__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 15px;
+  padding: 0 var(--space-1);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  cursor: pointer;
+}
+
+.cave-thread-map__row:hover,
+.cave-thread-map__row:focus-visible {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+.cave-thread-map .is-turn { --tim: var(--text-primary); }
+.cave-thread-map .is-answer { --tim: var(--color-success); }
+.cave-thread-map .is-error { --tim: var(--color-danger); }
+
+.cave-thread-map__bar {
+  display: block;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--tim, var(--text-muted)) 52%, transparent);
+}
+
+.cave-thread-map__row:hover .cave-thread-map__bar {
+  background: var(--tim, var(--text-muted));
+}
+
+.cave-thread-map__turn-label {
+  position: absolute;
+  right: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+/* One shared hover card, hung off the rail itself (the rows live inside a
+   scroll container, which would clip a per-row card); it opens leftward into
+   the thread at the hovered row's y. */
+.cave-thread-map__card {
+  position: absolute;
+  right: calc(100% + 8px);
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 230px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-left: 2px solid var(--tim, var(--text-muted));
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-elevated) 96%, transparent);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 16px 40px oklch(0 0 0 / 52%);
+  text-align: left;
+  pointer-events: none;
+  animation: cave-thread-map-card-in 130ms var(--ease-standard, ease);
+}
+
+@keyframes cave-thread-map-card-in {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.cave-thread-map__card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tim, var(--text-muted));
+}
+
+.cave-thread-map__card-idx {
+  margin-left: auto;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.cave-thread-map__card-label {
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--text-primary);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cave-thread-map__card-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--border-hairline);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.cave-thread-map__card-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.cave-thread-map__card-k {
+  width: 40px;
+  flex: none;
+}
+
+.cave-thread-map__card-v {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-secondary);
+  white-space: normal;
+}
+
+.cave-thread-map__card-hint {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--text-muted) 60%, transparent);
+}
+
+.cave-thread-map__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  height: 26px;
+  padding: 0 var(--space-1);
+  border-top: 1px solid var(--border-hairline);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.cave-thread-map__step {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.cave-thread-map__step:hover {
+  background: color-mix(in oklch, var(--foreground) 9%, transparent);
+  color: var(--text-primary);
+}
+
+.cave-thread-map__pos {
+  flex: 1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The env HUD floats top-right in the same pane — when the map is up, nudge
+   the HUD left so the two never overlap (the design parks it at right:92px). */
+.cave-chat-transcript:has(.cave-thread-map) [data-chat-env-panel] {
+  padding-right: 92px;
+}

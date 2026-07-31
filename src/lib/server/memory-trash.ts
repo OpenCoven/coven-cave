@@ -1,6 +1,6 @@
 import path from "node:path";
 import { homedir } from "node:os";
-import { mkdir, rename, writeFile, readFile, readdir, rm, access } from "node:fs/promises";
+import { mkdir, realpath, rename, writeFile, readFile, readdir, rm, access } from "node:fs/promises";
 import { classifyMemoryFilePath } from "./memory-file-sources.ts";
 import { isStructuralMemoryPath } from "../memory-management.ts";
 
@@ -30,9 +30,50 @@ function trashRoot(home: string): string {
   return path.join(home, ".coven", TRASH_DIRNAME, "memory");
 }
 
+function isWithinRoot(candidate: string, root: string): boolean {
+  return candidate === root || candidate.startsWith(root + path.sep);
+}
+
+async function realpathIfPresent(targetPath: string): Promise<string | null> {
+  try {
+    return await realpath(/* turbopackIgnore: true */ targetPath);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * classifyMemoryFilePath is lexical, so an allowed parent that is actually a
+ * symlink (a familiar workspace memory dir aliasing canonical storage, or a
+ * path outside the home) passes it while rename() follows the link. Trash
+ * moves therefore require the same realpath-vs-realpath containment the
+ * read/write paths enforce: canonicalize the candidate and its classified
+ * root and demand containment between the canonical forms. Comparing against
+ * the canonical root keeps legitimately symlinked roots (macOS /var,
+ * a wholesale-symlinked ~/.coven) working.
+ */
+async function canonicalContainedPath(candidate: string, rootPath: string): Promise<string | null> {
+  // Lexical pre-guard in the `path.relative` + `..` form a taint tracker
+  // recognizes as a sanitizer. Callers have already classified `candidate`
+  // inside `rootPath`; re-proving it adjacent to the fs sinks below keeps the
+  // guard legible to static analysis (same pattern as archiveMemoryFile's
+  // inline home barrier).
+  const resolvedCandidate = path.resolve(candidate);
+  const resolvedRoot = path.resolve(rootPath);
+  const rel = path.relative(resolvedRoot, resolvedCandidate);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
+  const [realCandidate, realRoot] = await Promise.all([
+    realpathIfPresent(resolvedCandidate),
+    realpathIfPresent(resolvedRoot),
+  ]);
+  if (realCandidate === null || realRoot === null) return null;
+  return isWithinRoot(realCandidate, realRoot) ? realCandidate : null;
+}
+
 export async function archiveMemoryFile(fullPath: string, home = homedir()): Promise<TrashResult> {
   const resolved = path.resolve(fullPath);
-  if (!classifyMemoryFilePath(resolved, home)) return { ok: false, error: "path not allowed" };
+  const classification = classifyMemoryFilePath(resolved, home);
+  if (!classification) return { ok: false, error: "path not allowed" };
   if (isStructuralMemoryPath(resolved)) return { ok: false, error: "protected: structural memory" };
   // Inline containment barrier against `home` (an untainted base):
   // classifyMemoryFilePath above already confines the path to the specific
@@ -43,11 +84,19 @@ export async function archiveMemoryFile(fullPath: string, home = homedir()): Pro
   if (homeRel.startsWith("..") || path.isAbsolute(homeRel)) {
     return { ok: false, error: "path not allowed" };
   }
+  // The existing target must still live inside its classified root after
+  // symlink resolution; a symlinked parent aliasing canonical storage or a
+  // location outside the root fails closed here (cave-c51ij).
+  const realTarget = await canonicalContainedPath(resolved, classification.rootPath);
+  if (realTarget === null) return { ok: false, error: "path not allowed" };
+  // A symlink could also alias a structural artifact under a deletable name.
+  if (isStructuralMemoryPath(realTarget)) return { ok: false, error: "protected: structural memory" };
   const dir = trashRoot(home);
   const trashId = `${Date.now()}-${path.basename(resolved)}`;
   try {
     await mkdir(dir, { recursive: true });
-    await rename(resolved, path.join(dir, trashId));
+    // Rename the canonical path: the checked value is the moved value.
+    await rename(realTarget, path.join(dir, trashId));
     const meta: Sidecar = { originalPath: resolved, deletedAt: new Date().toISOString() };
     await writeFile(path.join(dir, `${trashId}.json`), JSON.stringify(meta), { mode: 0o600 });
     return { ok: true, trashId };
@@ -81,12 +130,22 @@ export async function restoreMemoryFile(trashId: string, home = homedir()): Prom
   try {
     meta = JSON.parse(await readFile(path.join(dir, `${safeId}.json`), "utf8")) as Sidecar;
   } catch { return { ok: false, error: "not found" }; }
-  if (!classifyMemoryFilePath(meta.originalPath, home)) return { ok: false, error: "restore target not allowed" };
-  const occupied = await access(meta.originalPath).then(() => true).catch(() => false);
-  if (occupied) return { ok: false, error: "target already exists" };
+  const destination = path.resolve(meta.originalPath);
+  const classification = classifyMemoryFilePath(destination, home);
+  if (!classification) return { ok: false, error: "restore target not allowed" };
   try {
-    await mkdir(path.dirname(meta.originalPath), { recursive: true });
-    await rename(path.join(dir, safeId), meta.originalPath);
+    await mkdir(path.dirname(destination), { recursive: true });
+    // The classification above is lexical. Canonicalize the destination
+    // parent (which now exists) against the classified root so a symlinked
+    // parent cannot route the restored file into canonical storage or
+    // outside the root (cave-c51ij). Joining the canonical parent with the
+    // basename makes the checked parent the written parent.
+    const realParent = await canonicalContainedPath(path.dirname(destination), classification.rootPath);
+    if (realParent === null) return { ok: false, error: "restore target not allowed" };
+    const realDestination = path.join(realParent, path.basename(destination));
+    const occupied = await access(realDestination).then(() => true).catch(() => false);
+    if (occupied) return { ok: false, error: "target already exists" };
+    await rename(path.join(dir, safeId), realDestination);
     await rm(path.join(dir, `${safeId}.json`), { force: true });
     return { ok: true, trashId };
   } catch (err) {

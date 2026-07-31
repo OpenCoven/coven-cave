@@ -304,6 +304,13 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
                       srcDoc={srcDoc}
                       tabIndex={-1}
                     />
+                    {/* The thumbnail can't advertise itself — it renders the
+                        sketch's own chrome. This says what clicking does. */}
+                    <span className="chat-canvas-card__reveal">
+                      <span className="chat-canvas-card__reveal-pill">
+                        <Icon name="ph:arrows-out-simple" width={11} aria-hidden /> Preview
+                      </span>
+                    </span>
                   </span>
                 </button>
                 <div className="chat-canvas-card__meta">
@@ -329,12 +336,31 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
             );
           })}
         </div>
+        {/* A dead end names what excluded everything and offers the one way
+            back — never a bare "no results". */}
         {filteredArtifacts.length === 0 && galleryArtifacts.length > 0 ? (
-          <p className="chat-canvas-filter-empty" role="status">
-            {trimmedQuery
-              ? <>No sketches match &ldquo;{trimmedQuery}&rdquo;</>
-              : `No ${kindFilter === "react" ? "React" : "HTML"} sketches yet.`}
-          </p>
+          <div className="chat-canvas-empty" role="status">
+            <p className="chat-canvas-empty__headline">
+              {trimmedQuery
+                ? <>Nothing matches &ldquo;{trimmedQuery}&rdquo;</>
+                : `No ${kindFilter === "react" ? "React" : "HTML"} sketches yet`}
+            </p>
+            <p className="chat-canvas-empty__hint">
+              {trimmedQuery
+                ? <>Try a shorter word, or clear the {kindFilter === "all" ? "search" : `${kindFilter === "react" ? "React" : "HTML"} filter`}.</>
+                : "Sketches keep the kind they were created as."}
+            </p>
+            <button
+              type="button"
+              className="chat-canvas-empty__reset focus-ring"
+              onClick={() => {
+                setQ("");
+                setKindFilter("all");
+              }}
+            >
+              Reset filters
+            </button>
+          </div>
         ) : null}
         {artifacts.length === 0 ? (
           <p className="chat-canvas-add__hint">

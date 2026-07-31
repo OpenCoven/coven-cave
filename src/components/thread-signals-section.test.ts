@@ -71,20 +71,21 @@ describe("aggregateThreadSignals", () => {
   it("marks blockers as crit when in >50% of reports", () => {
     const blocker = { id: "x", title: "X", category: "auth" as const, impact: "high" as const, detail: "" };
     const reports = [
-      report({ id: "r1", persistentBlockers: [blocker] }),
-      report({ id: "r2", persistentBlockers: [blocker] }),
-      report({ id: "r3", persistentBlockers: [] }),
+      report({ id: "r1", reportedAt: "2026-06-23T00:00:00.000Z", persistentBlockers: [blocker] }),
+      report({ id: "r2", reportedAt: "2026-06-24T00:00:00.000Z", persistentBlockers: [blocker] }),
+      report({ id: "r3", reportedAt: "2026-06-25T00:00:00.000Z", persistentBlockers: [blocker] }),
     ];
     const agg = aggregateThreadSignals(reports);
-    // x appears in 2/3 = 67% → crit
+    // x appears in 3/3 = 100% → crit
     assert.equal(agg.persistentBlockers[0].crit, true);
   });
 
   it("does not mark blockers as crit when in ≤50% of reports", () => {
     const blocker = { id: "y", title: "Y", category: "tooling" as const, impact: "medium" as const, detail: "" };
     const reports = [
-      report({ id: "r1", persistentBlockers: [blocker] }),
-      report({ id: "r2", persistentBlockers: [] }),
+      report({ id: "r1", reportedAt: "2026-06-23T00:00:00.000Z", persistentBlockers: [] }),
+      report({ id: "r2", reportedAt: "2026-06-24T00:00:00.000Z", persistentBlockers: [] }),
+      report({ id: "r3", reportedAt: "2026-06-25T00:00:00.000Z", persistentBlockers: [blocker] }),
     ];
     const agg = aggregateThreadSignals(reports);
     assert.equal(agg.persistentBlockers[0].crit, false);
@@ -104,16 +105,18 @@ describe("aggregateThreadSignals", () => {
     const reports = [
       report({
         id: "r1",
+        reportedAt: "2026-06-26T00:00:00.000Z",
         contextPressure: "critical",
         skillsNeedingAccess: [{ skillId: "github", reason: "token expired" }],
+        capabilitiesLacking: [{ name: "calendar search", importance: "blocking", detail: "cannot inspect conflicts" }],
         persistentBlockers: [
           { id: "auth", title: "Auth expired", category: "auth", impact: "blocking", detail: "GitHub auth failed" },
         ],
       }),
       report({
         id: "r2",
+        reportedAt: "2026-06-25T00:00:00.000Z",
         contextPressure: "tight",
-        capabilitiesLacking: [{ name: "calendar search", importance: "blocking", detail: "cannot inspect conflicts" }],
       }),
     ];
     const review = buildThreadSignalReviewQueue(aggregateThreadSignals(reports));
@@ -121,6 +124,12 @@ describe("aggregateThreadSignals", () => {
     assert.equal(review[0].severity, "critical");
     assert.match(review[0].title, /Auth expired/);
     assert.ok(review.some((item) => item.kind === "skill-access" && item.title === "github"));
+    assert.ok(
+      review.some(
+        (item) =>
+          item.kind === "capability" && item.sourceId === "calendar search" && item.title === "calendar search",
+      ),
+    );
     assert.ok(review.some((item) => item.kind === "context-pressure" && item.detail.includes("critical")));
   });
 

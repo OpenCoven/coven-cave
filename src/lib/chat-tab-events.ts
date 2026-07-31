@@ -15,6 +15,48 @@ export const CHAT_OPEN_COVEN_EVENT = "cave:chat-open-coven";
  * the ordinary Chat destination without unmounting the surface. */
 export const CHAT_OPEN_CONVERSATION_EVENT = "cave:chat-open-conversation";
 
+/** Nested tab in Chat → Familiar → Settings for a studio handoff. */
+export type FamiliarSettingsTab =
+  | "chat"
+  | "identity"
+  | "brain"
+  | "memory"
+  | "projects"
+  | "vault";
+
+export type FamiliarSettingsTarget = {
+  tab?: FamiliarSettingsTab;
+};
+
+const FAMILIAR_SETTINGS_TARGET_KEY = "cave:familiar-settings-target:v1";
+
+/** Persist a one-shot nested Settings target before Chat mounts. */
+export function markFamiliarSettingsPending(tab?: FamiliarSettingsTab): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      FAMILIAR_SETTINGS_TARGET_KEY,
+      JSON.stringify(tab ? { tab } satisfies FamiliarSettingsTarget : {}),
+    );
+  } catch {
+    /* storage may be unavailable */
+  }
+}
+
+/** Consume the pending nested Settings target exactly once. */
+export function consumeFamiliarSettingsPending(): FamiliarSettingsTarget | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(FAMILIAR_SETTINGS_TARGET_KEY);
+    if (!raw) return null;
+    window.localStorage.removeItem(FAMILIAR_SETTINGS_TARGET_KEY);
+    const parsed = JSON.parse(raw) as FamiliarSettingsTarget;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return null;
+  }
+}
+
 // A retained latch backing CHAT_OPEN_COVEN_EVENT. When the legacy `groupchat`
 // mode is requested from a DIFFERENT surface, ChatSurface mounts fresh — and a
 // fire-and-forget event can race its listener subscription. The Workspace sets

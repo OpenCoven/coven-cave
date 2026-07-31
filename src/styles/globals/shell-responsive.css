@@ -1071,6 +1071,11 @@
 
   .shell-detail {
     padding-bottom: 0;
+    /* The side panes are overlay drawers at this width — nothing sits beside
+       the content pane for a rounded edge to meet, so it goes full-bleed. */
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+    margin-inline-start: 0;
   }
 
   /* Drawer panels: fixed-position overlays that slide in from the side.

@@ -294,7 +294,11 @@ export function OpenCovenToolsBannerTrigger() {
           if (cancelled || !json?.ok) return;
           const tools = (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
           const incompatibleTools = tools.filter(toolNeedsCompatibilityUpdate);
-          const outdatedTools = tools.filter((tool) => tool.compatible && tool.outdated);
+          const outdatedTools = tools
+            // CLI update details and the explicit action live in Settings →
+            // About. Do not duplicate an ordinary availability notice in the
+            // chat header; compatibility failures remain banner-worthy.
+            .filter((tool) => tool.id !== "coven-cli" && tool.compatible && tool.outdated);
           const bannerTools = incompatibleTools.length > 0 ? incompatibleTools : outdatedTools;
           if (bannerTools.length === 0) {
             dismissBanner(TOOL_UPDATE_BANNER_ID);

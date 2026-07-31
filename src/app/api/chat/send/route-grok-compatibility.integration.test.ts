@@ -138,6 +138,28 @@ try {
   const conversation = await loadConversation(structuredDone.sessionId);
   assert.equal(conversation?.harnessSessionId, "native_grok_session", "the route persists Grok's native resume id separately from Cave's id");
 
+  const guardedModel = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      prompt: "guard an unsafe transformed model",
+      projectRoot: familiarWorkspace,
+      modelOverride: "provider/--sandbox",
+      modelOverrideScope: "next-message",
+    }),
+  })));
+  const guardedModelDone = guardedModel.events.findLast((event) => event.kind === "done");
+  assert.equal(
+    guardedModelDone?.responseMetadata?.confirmedModel,
+    undefined,
+    "a model omitted by the post-transform argv guard is never reported as confirmed",
+  );
+  assert.notEqual(
+    guardedModelDone?.responseMetadata?.modelApplicationState,
+    "applied",
+    "a successful default-model run cannot make an omitted model appear applied",
+  );
+
   process.env.GROK_TEST_MODE = "tool-activity";
   const toolActivity = await readSse(await POST(new Request("http://localhost/api/chat/send", {
     method: "POST", headers: { "content-type": "application/json" },
@@ -209,6 +231,10 @@ try {
     body: JSON.stringify({ familiarId: "opal", prompt: "exit error", projectRoot: familiarWorkspace }),
   })));
   assert.equal(exited.events.findLast((event) => event.kind === "done")?.isError, true, "a non-zero Grok process cannot be persisted as a successful turn");
+  const exitFailure = exited.events.find((event) => event.kind === "error");
+  assert.equal(exitFailure?.code, "runtime_process_failed", "a silent Grok process failure is not downgraded to the empty-output fallback");
+  assert.match(exitFailure?.message ?? "", /interactive sign-in.*`grok`/i, "the direct Grok failure gives the actionable first-run sign-in recovery");
+  assert.doesNotMatch(exited.body, /No error output captured|produced no output/i, "Grok's silent exit must not render the ambiguous empty-output diagnosis");
   assert.doesNotMatch(exited.body, /private Grok stderr payload/, "Grok stderr values never enter assistant-visible or persisted diagnostics");
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME; else process.env.COVEN_HOME = previousHome;

@@ -73,6 +73,73 @@ export type ConsoleAuditEntry = {
   requiredAccess?: ProjectAccessLevel;
 };
 
+/**
+ * One entry from the grant-CHANGE log — who widened or narrowed access, and
+ * from what. Distinct from ConsoleAuditEntry, which records access-check
+ * decisions; the two answer different questions and are rendered separately.
+ */
+export type ConsoleGrantChange = {
+  id: string;
+  at: string;
+  familiarId: string;
+  projectId: string;
+  /** Level before the change; null when there was no access. */
+  from: ProjectAccessLevel | null;
+  /** Level after the change; null when access was removed. */
+  to: ProjectAccessLevel | null;
+  actor: "loopback" | "mobile" | "system";
+  kind: "direct" | "group" | "project-removed" | "bootstrap";
+  groupId?: string;
+};
+
+/** Level name for a change log line; null is the no-access end of the range. */
+export function grantLevelLabel(level: ProjectAccessLevel | null): string {
+  if (level === "write") return "Full";
+  if (level === "read") return "Read";
+  return "No access";
+}
+
+/**
+ * How a change reads at a glance. Direction is derived from the levels rather
+ * than stored, so a widening and a narrowing are never mislabeled: rank the
+ * two ends and compare.
+ */
+export function grantChangeMeta(change: Pick<ConsoleGrantChange, "from" | "to">): {
+  label: string;
+  icon: IconName;
+  tone: Tone;
+} {
+  const rank = (level: ProjectAccessLevel | null): number =>
+    level === "write" ? 2 : level === "read" ? 1 : 0;
+  const direction = rank(change.to) - rank(change.from);
+  // The arrow carries the direction; the tone only controls emphasis. A
+  // widening is what you scan an audit log FOR, so it takes the accent — but
+  // not the danger tone, which would cry wolf on every legitimate grant.
+  if (direction > 0) {
+    return { label: "Widened", icon: "ph:arrow-up", tone: "pending" };
+  }
+  if (direction < 0) {
+    return { label: "Narrowed", icon: "ph:arrow-down", tone: "neutral" };
+  }
+  return { label: "Changed", icon: "ph:arrows-clockwise", tone: "neutral" };
+}
+
+/** Where the change came from, in the console's words. */
+export function grantChangeOriginLabel(change: Pick<ConsoleGrantChange, "actor" | "kind">): string {
+  const where =
+    change.actor === "mobile" ? "from the phone" : change.actor === "loopback" ? "on this desktop" : "by the app";
+  switch (change.kind) {
+    case "group":
+      return `via an access group · ${where}`;
+    case "project-removed":
+      return "project removed from the registry";
+    case "bootstrap":
+      return "bootstrap";
+    default:
+      return where;
+  }
+}
+
 export type PermissionTab = "access" | "requests" | "audit";
 export type AuditFilter = "all" | AuditDecision;
 

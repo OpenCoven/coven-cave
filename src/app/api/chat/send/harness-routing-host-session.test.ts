@@ -83,8 +83,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /if \(hermesDirect\) \{[\s\S]*?if \(forwardModel\) a\.push\("--model", forwardModel\);[\s\S]*?a\.push\("--query", prompt\)/,
-  "An advertised Hermes --model flag must receive Cave's provider-qualified model id before the query",
+  /if \(hermesDirect\) \{[\s\S]*?if \(hermesLaunchModel\) a\.push\("--model", hermesLaunchModel\);[\s\S]*?a\.push\("--query", prompt\)/,
+  "An advertised Hermes --model flag must receive the registry-transformed launch id before the query",
 );
 
 assert.match(
@@ -600,8 +600,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const claudeDiagnostic =[\s\S]*?if \(claudeDiagnostic\) \{[\s\S]*?pushProgress\("claude-runtime-compatibility", claudeDiagnostic, "error"\)/,
-  "Claude compatibility diagnostics should be emitted before stdout so an immediately failing CLI still explains the text-only fallback",
+  /const claudeDiagnostic =[\s\S]*?if \(claudeDiagnostic\) \{[\s\S]*?pushProgress\("claude-runtime-compatibility", claudeDiagnostic, "notice"\)/,
+  "Claude compatibility diagnostics should be emitted as neutral notices before stdout so an immediately failing CLI still explains the text-only fallback",
 );
 
 assert.match(
@@ -618,7 +618,7 @@ assert.match(
 
 assert.match(
   streamEvents,
-  /\|\s*\{\s*kind: "progress";\s*id\?: string;\s*label: string;\s*detail\?: string;\s*status\?: "running" \| "done" \| "error";\s*durationMs\?: number;\s*\}/,
+  /\|\s*\{\s*kind: "progress";\s*id\?: string;\s*label: string;\s*detail\?: string;\s*status\?: "running" \| "done" \| "notice" \| "error";\s*durationMs\?: number;\s*\}/,
   "Native chat streams should expose progress SSE events for quiet phases",
 );
 

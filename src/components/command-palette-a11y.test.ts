@@ -12,17 +12,42 @@ assert.match(src, /aria-expanded=\{rows\.length > 0\}/, "the input reports wheth
 assert.match(src, /aria-autocomplete="list"/, "the input advertises list autocomplete");
 
 // ── Corpus loader drops post-close/unmount responses ─────────────────────────
-// The Promise.all of /api/board + /api/coven-memory + /api/memory previously set
-// state with no guard; closing the palette mid-fetch hit a gone component.
+// Each corpus settles independently, and every publisher checks the same
+// close/unmount guard before touching state.
 assert.match(
   src,
-  /let cancelled = false;[\s\S]*?Promise\.all\(\[[\s\S]*?\/api\/board[\s\S]*?\/api\/coven-memory[\s\S]*?\/api\/memory[\s\S]*?if \(cancelled\) return;[\s\S]*?setCards/,
-  "the corpus loader bails out if the palette closed/unmounted before it resolved",
+  /const loadBoardCorpus = async \(\)[\s\S]*?if \(cancelled\) return;[\s\S]*?setCards/,
+  "the board corpus cannot publish after the palette closes",
+);
+assert.match(
+  src,
+  /const loadCanonicalCorpus = async \(\)[\s\S]*?loadCanonicalMemoryList\(\)[\s\S]*?if \(cancelled\) return;[\s\S]*?setCanonicalMemoryState/,
+  "the canonical corpus uses the shared loader and cannot publish after close",
+);
+assert.match(
+  src,
+  /const loadFileMemoryCorpus = async \(\)[\s\S]*?\/api\/memory[\s\S]*?if \(cancelled\) return;[\s\S]*?setFsMemory/,
+  "the file-memory corpus cannot publish after the palette closes",
+);
+assert.match(
+  src,
+  /Promise\.allSettled\(\[\s*loadBoardCorpus\(\),\s*loadCanonicalCorpus\(\),\s*loadFileMemoryCorpus\(\),?\s*\]\)/,
+  "board, canonical, and file-memory corpora settle independently",
+);
+assert.doesNotMatch(
+  src,
+  /Promise\.all\(\[[\s\S]{0,500}\/api\/board[\s\S]{0,500}\/api\/memory/,
+  "one corpus failure cannot suppress unrelated board or file-memory results",
 );
 assert.match(
   src,
   /return \(\) => \{ cancelled = true; clearTimeout\(t\); \};/,
   "closing the palette cancels the in-flight corpus refresh",
+);
+assert.match(
+  src,
+  /role="status"[\s\S]{0,300}Familiar memories unavailable/,
+  "canonical corpus failure is announced without claiming a true empty result",
 );
 
 // ── Active option is scrolled into view on keyboard nav ──────────────────────

@@ -8,8 +8,18 @@ const destinations = await readFile(new URL("./home/home-destinations.ts", impor
 // ───────── Task 1: Destination-aware placeholder + drop subtitle ─────────
 assert.match(
   destinations,
-  /const PLACEHOLDERS: Record<Destination, string> = \{[\s\S]*?chat:[\s\S]*?board:[\s\S]*?\}/,
-  "PLACEHOLDERS must be a Record<Destination, string> with chat/board keys",
+  /export function placeholderFor\([\s\S]*?familiarName: string \| null[\s\S]*?\): string/,
+  "placeholderFor must be a template fn taking (destination, familiarName)",
+);
+assert.doesNotMatch(
+  destinations,
+  /Nova/,
+  "Task placeholder must not hardcode a seed familiar name (#3962)",
+);
+assert.match(
+  destinations,
+  /familiarName\?\.trim\(\) \|\| "a familiar"/,
+  "Empty familiar state falls back to neutral copy, not a name",
 );
 assert.doesNotMatch(
   source,
@@ -18,8 +28,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /placeholder=\{PLACEHOLDERS\[destination\]\}/,
-  "textarea must use placeholder={PLACEHOLDERS[destination]}",
+  /placeholder=\{placeholderFor\(destination, selectedFamiliar\?\.display_name \?\? null\)\}/,
+  "textarea must wire placeholderFor(destination, selectedFamiliar name)",
 );
 assert.doesNotMatch(
   source,

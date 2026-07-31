@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import {
   buildPreviewSrcDoc,
@@ -41,6 +41,30 @@ const CREATE_SUGGESTIONS = [
   "A settings panel with dark mode",
 ] as const;
 
+// The three ways past the familiar. Each row states what it expects from you,
+// because "Blank React component" alone doesn't say you're leaving the
+// describe-it flow for a hand editor.
+const CODE_SOURCES: { mode: AddTileMode; label: string; description: string; icon: IconName }[] = [
+  {
+    mode: "paste",
+    label: "Paste code",
+    icon: "ph:copy",
+    description: "Drop in a self-contained HTML document or React component.",
+  },
+  {
+    mode: "blank-html",
+    label: "Blank HTML",
+    icon: "ph:code",
+    description: "Start from an empty page and write the markup yourself.",
+  },
+  {
+    mode: "blank-react",
+    label: "Blank React component",
+    icon: "ph:file-code",
+    description: "Start from an empty component in the React harness.",
+  },
+];
+
 type ResultTab = "canvas" | "code";
 
 export function CanvasAddTile({
@@ -64,6 +88,7 @@ export function CanvasAddTile({
   const [refineText, setRefineText] = useState("");
   const [resultTab, setResultTab] = useState<ResultTab>("canvas");
   const [codeMenuOpen, setCodeMenuOpen] = useState(false);
+  const [familiarMenuOpen, setFamiliarMenuOpen] = useState(false);
   const [codeSaving, setCodeSaving] = useState(false);
   const [codeSaveError, setCodeSaveError] = useState<string | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
@@ -84,10 +109,15 @@ export function CanvasAddTile({
   const refineInputRef = useRef<HTMLTextAreaElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const codeMenuRef = useRef<HTMLButtonElement | null>(null);
+  const familiarMenuRef = useRef<HTMLButtonElement | null>(null);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const sectionRef = useRef<HTMLElement | null>(null);
 
   const activeFamiliar = chosenFamiliar ?? familiarId;
+  // The roster may still be loading, or the active familiar may predate it —
+  // fall back to the raw id rather than showing an empty trigger.
+  const activeFamiliarRecord = familiars.find((familiar) => familiar.id === activeFamiliar) ?? null;
+  const activeFamiliarLabel = activeFamiliarRecord?.display_name ?? activeFamiliar ?? "Choose a familiar";
   const generationVisible = generation.runId !== null && generation.runId !== hiddenRunId;
   const expanded = state.phase !== "collapsed" || generationVisible;
 
@@ -295,6 +325,7 @@ export function CanvasAddTile({
   const collapse = useCallback(() => {
     if (generation.runId) setHiddenRunId(generation.runId);
     setCodeMenuOpen(false);
+    setFamiliarMenuOpen(false);
     dispatch({ type: "collapse" });
   }, [generation.runId]);
 
@@ -459,7 +490,9 @@ export function CanvasAddTile({
         className={`chat-canvas-add chat-canvas-add--expanded${hero ? " chat-canvas-add--hero" : ""}`}
         aria-label="New sketch"
         onKeyDown={(event) => {
-          if (event.key === "Escape" && !codeMenuOpen) {
+          // An open menu owns Escape first; only a closed one lets it collapse
+          // the whole composer (and lose the typed description).
+          if (event.key === "Escape" && !codeMenuOpen && !familiarMenuOpen) {
             event.preventDefault();
             collapse();
           }
@@ -470,9 +503,9 @@ export function CanvasAddTile({
             <h2 className="chat-canvas-add__heading">
               {state.phase === "result" && !generationVisible ? "Your preview" : "What would you like to create?"}
             </h2>
-            {state.phase === "composing" && state.mode === "describe" ? (
-              <p className="chat-canvas-add__subheading">Describe a screen, component, or interaction.</p>
-            ) : null}
+            {/* No subheading here: it read verbatim the same as the textarea's
+                own placeholder directly beneath it. The heading asks; the
+                placeholder answers what to type. */}
           </div>
           <span className="chat-canvas-add__spacer" />
           <button type="button" className="chat-canvas-add__close focus-ring" aria-label="Close composer" onClick={collapse}>
@@ -679,18 +712,42 @@ export function CanvasAddTile({
               </div>
             ) : null}
             <div className="chat-canvas-add__row">
-              <select
+              {/* Who draws this is an identity, not a form field — the avatar
+                  and name carry it the way the roster does everywhere else. */}
+              <button
+                ref={familiarMenuRef}
+                type="button"
                 className="chat-canvas-add__familiar focus-ring"
-                aria-label="Familiar to create with"
-                value={activeFamiliar ?? ""}
-                onChange={(event) => setChosenFamiliar(event.target.value || null)}
+                aria-haspopup="menu"
+                aria-expanded={familiarMenuOpen}
+                aria-label={`Familiar to create with: ${activeFamiliarLabel}`}
+                onClick={() => setFamiliarMenuOpen((open) => !open)}
               >
-                {!activeFamiliar ? <option value="">Choose a familiar</option> : null}
-                {activeFamiliar && !familiars.some((f) => f.id === activeFamiliar) ? <option value={activeFamiliar}>{activeFamiliar}</option> : null}
-                {familiars.map((familiar) => (
-                  <option key={familiar.id} value={familiar.id}>{familiar.emoji ? `${familiar.emoji} ` : ""}{familiar.display_name}</option>
-                ))}
-              </select>
+                <span className="chat-canvas-add__familiar-av" aria-hidden>{activeFamiliarRecord?.emoji ?? "✦"}</span>
+                <span className="chat-canvas-add__familiar-name">{activeFamiliarLabel}</span>
+                <span className="chat-canvas-add__caret" data-open={familiarMenuOpen || undefined} aria-hidden>
+                  <Icon name="ph:caret-down" width={10} />
+                </span>
+              </button>
+              <Popover open={familiarMenuOpen} onOpenChange={setFamiliarMenuOpen} anchorRef={familiarMenuRef} placement="bottom-start" minWidth={212} ariaLabel="Familiar to create with">
+                <PopoverBody role="menu" ariaLabel="Familiar to create with">
+                  {familiars.length === 0 ? (
+                    <PopoverItem disabled>No familiars available</PopoverItem>
+                  ) : familiars.map((familiar) => (
+                    <PopoverItem
+                      key={familiar.id}
+                      checked={activeFamiliar === familiar.id}
+                      leading={<span className="chat-canvas-add__familiar-av" aria-hidden>{familiar.emoji ?? "✦"}</span>}
+                      onSelect={() => {
+                        setChosenFamiliar(familiar.id);
+                        setFamiliarMenuOpen(false);
+                      }}
+                    >
+                      {familiar.display_name}
+                    </PopoverItem>
+                  ))}
+                </PopoverBody>
+              </Popover>
               <button
                 ref={codeMenuRef}
                 type="button"
@@ -699,13 +756,23 @@ export function CanvasAddTile({
                 aria-expanded={codeMenuOpen}
                 onClick={() => setCodeMenuOpen((open) => !open)}
               >
-                Start from code <Icon name="ph:caret-down" aria-hidden />
+                Start from code
+                <span className="chat-canvas-add__caret" data-open={codeMenuOpen || undefined} aria-hidden>
+                  <Icon name="ph:caret-down" width={10} />
+                </span>
               </button>
-              <Popover open={codeMenuOpen} onOpenChange={setCodeMenuOpen} anchorRef={codeMenuRef} placement="bottom-start" minWidth={210} ariaLabel="Start from code">
+              {/* Each route says what it costs you: paste needs code in hand,
+                  the blanks hand you an editor instead of a familiar. */}
+              <Popover open={codeMenuOpen} onOpenChange={setCodeMenuOpen} anchorRef={codeMenuRef} placement="bottom-start" minWidth={296} ariaLabel="Start from code">
                 <PopoverBody role="menu" ariaLabel="Start from code">
-                  <PopoverItem onSelect={() => chooseCodeMode("paste")}>Paste code</PopoverItem>
-                  <PopoverItem onSelect={() => chooseCodeMode("blank-html")}>Blank HTML</PopoverItem>
-                  <PopoverItem onSelect={() => chooseCodeMode("blank-react")}>Blank React component</PopoverItem>
+                  {CODE_SOURCES.map((source) => (
+                    <PopoverItem key={source.mode} icon={source.icon} onSelect={() => chooseCodeMode(source.mode)}>
+                      <span className="chat-canvas-add__source-item">
+                        {source.label}
+                        <span className="chat-canvas-add__source-desc">{source.description}</span>
+                      </span>
+                    </PopoverItem>
+                  ))}
                 </PopoverBody>
               </Popover>
               <span className="chat-canvas-add__spacer" />
@@ -719,7 +786,23 @@ export function CanvasAddTile({
                 <Icon name="ph:sparkle" aria-hidden /> Create preview
               </button>
             </div>
-            {!activeFamiliar ? <p className="chat-canvas-add__no-familiar" role="status">Choose a familiar to create a preview.</p> : null}
+            {/* Exactly one line under the controls. The missing-familiar case
+                owns it outright — otherwise the tip, this warning and the
+                disabled Create button all said "pick a familiar" at once. With
+                a familiar chosen the line restates what Create will do; the
+                starting suggestions already carry the "what to write" examples,
+                so the generic tip only appears when they aren't shown. */}
+            {!activeFamiliar ? (
+              <p className="chat-canvas-add__no-familiar" role="status">
+                Choose a familiar to create a preview.
+              </p>
+            ) : state.prompt.trim() ? (
+              <p className="chat-canvas-add__tip">{activeFamiliarLabel} will sketch this · ⌘↵ to run</p>
+            ) : !hero ? (
+              <p className="chat-canvas-add__tip">
+                Tip: name the surface and the interaction — “a settings pane with grouped toggles”.
+              </p>
+            ) : null}
           </>
         ) : (
           <>

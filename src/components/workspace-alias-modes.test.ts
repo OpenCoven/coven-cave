@@ -13,6 +13,7 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 const urlState = readFileSync(new URL("../lib/workspace-url-state.ts", import.meta.url), "utf8");
 const navState = readFileSync(new URL("../lib/sidebar-nav-state.ts", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 
 // ── Rewrite aliases: setMode replaces them, so `mode` never holds them ───────
 
@@ -106,9 +107,14 @@ assert.match(
   "sidebar-nav-state derives row highlighting from the shared MODE_ALIASES table",
 );
 assert.match(
+  navigation,
+  /export type WorkspaceNavMode = WorkspaceMode/,
+  "the shared navigation registry reuses the WorkspaceMode union instead of a drifting copy",
+);
+assert.match(
   sidebar,
-  /export type FolderMode = WorkspaceMode/,
-  "the sidebar reuses the WorkspaceMode union instead of a drifting copy",
+  /type WorkspaceNavMode,[\s\S]*from "@\/lib\/workspace-navigation"/,
+  "the sidebar consumes the registry's mode type instead of declaring a component-local alias",
 );
 
 console.log("workspace-alias-modes: ok");

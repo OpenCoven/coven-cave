@@ -109,8 +109,27 @@ registered in `api-contracts.test.ts`, alphabetical):
 | `/api/github/rerun` | POST | Re-run a check run / failed jobs of a run |
 | `/api/github/review` | POST | Submit review {repo, number, event: APPROVE\|REQUEST_CHANGES\|COMMENT, body} |
 | `/api/github/runs` | GET | List recent Actions runs {repo, branch?} or one run {repo, id} |
+| `/api/github/labels` | GET | Repo label palette {repo} — the composer's label picker |
+| `/api/github/diff` | GET | PR changed files {repo, number}, hard-bounded for prompt use |
+| `/api/github/reactions` | GET, POST, DELETE | Reactions on an issue/PR — the card's resting chips |
 
 Existing `comment` and `resolve-thread` routes are reused unchanged.
+
+**Extended for the composer (cave-076kh), all additive:**
+
+- `item` takes an optional `pull=1`, which adds a `pull` block (head/base ref,
+  commit count, latest-review-per-author tally). Omitted by default so the
+  board and daily-report callers pay no extra rate limit.
+- `issue` PATCH takes `assignees` / `labels` alongside `state`, as replace-the-
+  whole-list writes, and now passes GitHub's error through verbatim (a 422
+  names the offending login).
+- `merge` takes an optional `deleteBranch`. It deliberately does NOT take a
+  branch name: the route reads `head.ref` back from GitHub's own PR object after
+  the merge. A request-supplied ref would both let a caller steer the route at an
+  arbitrary ref path (CodeQL `js/request-forgery` — an anchored regex is not a
+  sanitiser CodeQL recognises) and let a caller with a stale ref delete a branch
+  nobody asked about. A failed branch delete never fails the response — the
+  merge already happened and is irreversible.
 
 **Tier classification** lives in one pure function
 (`classifyGitHubAction(kind): "fire" | "confirm"` in `github-blocks.ts`) so
@@ -125,7 +144,48 @@ done | error`. The card states exactly what will fire (repo, number, method,
 body preview). On success it morphs into the result (e.g. merged state +
 squash sha link); on failure it shows the API error with a retry affordance.
 Agent-initiated proposals (`<coven:github-action>`) enter at `proposed` and
-require a user tap even for Tier-1 kinds.
+require a user tap even for Tier-1 kinds. The tier table above governs these
+proposals; `classifyGitHubAction` remains their single source of truth.
+
+### §3a The composer cockpit (2026-07-29, cave-076kh)
+
+USER-initiated writes on an issue/PR card no longer come from a flat action row
+with a tier-2 confirm strip. They come from one bottom-anchored composer
+(`github-card-composer.tsx`), per the Claude Design handoff
+`Final Card Components.dc.html`. Two invariants define it:
+
+1. **The card's footprint never changes.** `.ghc-slot` is a constant-height
+   reply row in every phase; each expanded phase paints into `.ghc-sheet`, a
+   sheet absolutely positioned against the card's bottom edge that grows
+   *upward* over the transcript. This is why the card root carries `relative` —
+   it is the sheet's containing block, not a cosmetic class. Opening a section
+   mid-conversation cannot reflow the chat below the card.
+2. **At most one section is open by construction** — a single state slot, not
+   cleanup after the fact.
+
+Phases: `rest | open | sending | error | merged`. Rest is a reply pill plus
+reaction chips and a gate chip — there is deliberately no bare `Merge` button to
+mis-tap.
+
+**Gating replaces confirmation.** The palette (`gh-card-commands.ts`) is built
+from live card state, so a command the card cannot fire is never offered: a
+merged PR gets no `/merge`, a PR with no open threads no `/thread`, no familiar
+no `/draft`. `parseCommand` re-checks the tree before producing an action, so
+even a hand-synthesised row cannot fire an ungated write. Merge — the one
+irreversible verb — additionally keeps its own arm field: the CTA is inert until
+the user types `merge`.
+
+**Only issue and PR kinds get the composer.** Commit, run and review-thread
+cards stay read-only; their head has to carry all the state on its own.
+
+**"Draft with `<familiar>`" never sends.** Generation rides the client lane
+(`streamFamiliarText`, `permissionMode: "read"`, `origin: "enhance"`) — there is
+no server-side LLM route, and a route would lose the familiar's own context. The
+draft lands in the textarea and only the user's own submit writes. Every scope
+the user opts into (changed files, open threads, failing checks) carries text an
+outside party controls, so all of it goes into one fenced untrusted-data block
+with the disclaimer ahead of the fence and attacker-supplied fences defused —
+see `gh-review-draft.ts` and its tests.
 
 ## §4 Stage header strip
 

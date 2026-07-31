@@ -48,8 +48,19 @@ assert.match(
 
 assert.match(
   streamEvents,
-  /\{\s*kind: "progress";\s*id\?: string;\s*label: string;\s*detail\?: string;\s*status\?: "running" \| "done" \| "error";\s*durationMs\?: number;\s*\}/,
+  /\{\s*kind: "progress";\s*id\?: string;\s*label: string;\s*detail\?: string;\s*status\?: "running" \| "done" \| "notice" \| "error";\s*durationMs\?: number;\s*\}/,
   "Chat streams should expose non-token progress events for quiet phases",
+);
+
+assert.match(
+  source,
+  /event\.status === "notice"[\s\S]*?ph:info/,
+  "neutral progress notices use an informational icon instead of an error icon",
+);
+assert.match(
+  styles,
+  /\.cave-progress-row--notice\s*\{[\s\S]*?var\(--text-secondary\)/,
+  "neutral progress notices use secondary text styling rather than danger color",
 );
 
 assert.match(
@@ -493,14 +504,14 @@ assert.match(
 
 // ── CHAT-D12-01: consolidate simultaneous streaming status signals ──
 
-// (a) While the turn's own live indicator shows (pending, no visible text),
-// the Queued/Connecting/Writing chip in the same meta row is redundant —
-// suppressed until text flows or the turn settles. One shared flag gates both
-// so the chip and the indicator can never double up.
+// (a) While the turn has neither visible text nor streamed reasoning, the
+// generic ThinkingIndicator owns the status. As soon as reasoning arrives,
+// its inline disclosure becomes the live surface instead, avoiding duplicate
+// thinking chrome. One shared flag gates both the chip and the fallback.
 assert.match(
   source,
-  /const indicatorVisible = Boolean\(turn\.pending\) && !visible;/,
-  "TurnRow derives a single indicator-visibility flag from pending + visible text (CHAT-D12-01)",
+  /const indicatorVisible = Boolean\(turn\.pending\) && !visible && !reasoning;/,
+  "TurnRow reserves the generic indicator for pending turns without visible text or streamed reasoning (CHAT-D12-01)",
 );
 assert.match(
   source,

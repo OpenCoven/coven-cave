@@ -420,6 +420,65 @@ try {
     statFile: (candidate) => candidate === "/virtual/workspace/bin/hermes",
   });
   assert.equal(relativeHermes.state, "ready", "relative PATH entries resolve from the direct spawn cwd");
+  const overriddenHermes = resolveHermesLaunch({
+    env: {
+      ...process.env,
+      PATH: "/host/bin",
+      HERMES_BIN: "/fixture/bin/hermes",
+    },
+    platform: "linux",
+    statFile: (candidate) => candidate === "/host/bin/hermes",
+  });
+  assert.equal(
+    overriddenHermes.state,
+    "missing",
+    "an explicit Hermes binary is authoritative instead of falling through to a host PATH install",
+  );
+  const readyOverriddenHermes = resolveHermesLaunch({
+    env: {
+      ...process.env,
+      PATH: "/host/bin",
+      HERMES_BIN: "/fixture/bin/hermes",
+    },
+    platform: "linux",
+    statFile: (candidate) =>
+      candidate === "/host/bin/hermes" || candidate === "/fixture/bin/hermes",
+  });
+  assert.equal(readyOverriddenHermes.state, "ready");
+  assert.equal(
+    readyOverriddenHermes.state === "ready" && readyOverriddenHermes.command,
+    "/fixture/bin/hermes",
+    "the exact overridden Hermes command is the command returned for spawn",
+  );
+  const whitespaceOverriddenHermes = resolveHermesLaunch({
+    env: {
+      ...process.env,
+      PATH: "/host/bin",
+      HERMES_BIN: "   ",
+    },
+    platform: "linux",
+    statFile: (candidate) => candidate === "/host/bin/hermes",
+  });
+  assert.equal(whitespaceOverriddenHermes.state, "ready");
+  assert.equal(
+    whitespaceOverriddenHermes.state === "ready" && whitespaceOverriddenHermes.command,
+    "/host/bin/hermes",
+    "a whitespace-only Hermes override falls back to native PATH discovery",
+  );
+  const windowsShimOverride = resolveHermesLaunch({
+    env: {
+      ...process.env,
+      Path: "C:\\host",
+      HERMES_BIN: "C:\\fixture\\hermes.cmd",
+    },
+    platform: "win32",
+    statFile: winStats(["C:\\fixture\\hermes.cmd"]),
+  });
+  assert.equal(
+    windowsShimOverride.state,
+    "unlaunchable",
+    "an explicit Windows Hermes command shim cannot bypass native launch safety",
+  );
   assert.equal(
     runtimeProcessFailure("hermes").code,
     RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,

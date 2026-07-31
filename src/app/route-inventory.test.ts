@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { isWorkspaceMode } from "../lib/workspace-mode.ts";
 
 const appDir = fileURLToPath(new URL(".", import.meta.url));
 
@@ -22,15 +23,71 @@ const appDir = fileURLToPath(new URL(".", import.meta.url));
 //   dev-only    — design/review reference pages; never linked from nav hosts
 const ROUTE_INVENTORY = {
   "/": { kind: "workspace" },
-  "/dashboard": { kind: "destination" },
-  "/dashboard/familiars/growth": { kind: "destination" },
-  "/dashboard/familiars/[id]/analytics": { kind: "destination" },
-  "/dashboard/familiars/[id]/profile": { kind: "destination" },
-  "/settings": { kind: "destination" },
-  "/weaves": { kind: "destination" },
-  "/proposals": { kind: "destination" },
-  "/profile": { kind: "destination" },
-  "/daily-report/[date]": { kind: "destination" },
+  "/dashboard": {
+    kind: "destination",
+    entry: {
+      file: "../components/sidebar-footer.tsx",
+      pattern: /href="\/dashboard"/,
+    },
+  },
+  "/dashboard/familiars/growth": {
+    kind: "destination",
+    entry: {
+      file: "../components/dashboard/bento-dashboard.tsx",
+      pattern: /href="\/dashboard\/familiars\/growth"/,
+    },
+  },
+  "/dashboard/familiars/[id]/analytics": {
+    kind: "destination",
+    entry: {
+      file: "../components/familiars-view-sections.tsx",
+      pattern: /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(familiar\.id\)\}\/analytics`\}/,
+    },
+  },
+  "/dashboard/familiars/[id]/profile": {
+    kind: "destination",
+    entry: {
+      file: "../components/familiars-view-sections.tsx",
+      pattern: /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(familiar\.id\)\}\/profile`\}/,
+    },
+  },
+  "/settings": {
+    kind: "destination",
+    entry: {
+      file: "../components/workspace.tsx",
+      pattern: /nextRouter\.push\("\/settings"\)/,
+    },
+  },
+  "/weaves": {
+    kind: "destination",
+    entry: {
+      file: "../components/grimoire-view.tsx",
+      pattern: /href="\/weaves"/,
+    },
+  },
+  "/proposals": {
+    kind: "destination",
+    // The Weaves header carries the one primary action into the queue; both
+    // threads surfaces share that header component.
+    entry: {
+      file: "../components/threads-chrome.tsx",
+      pattern: /href="\/proposals"/,
+    },
+  },
+  "/profile": {
+    kind: "destination",
+    entry: {
+      file: "../components/settings-profile.tsx",
+      pattern: /href="\/profile"/,
+    },
+  },
+  "/daily-report/[date]": {
+    kind: "destination",
+    entry: {
+      file: "../lib/daily-summary-notifications.ts",
+      pattern: /return `\/daily-report\/\$\{dateSlug\(now\)\}`/,
+    },
+  },
   "/quick-chat": { kind: "window-host" },
   "/retro": { kind: "redirect", target: "/dashboard/familiars/growth" },
   "/dashboard/retro": { kind: "redirect", target: "/dashboard/familiars/growth" },
@@ -114,6 +171,44 @@ for (const [route, spec] of Object.entries(ROUTE_INVENTORY)) {
     source.includes("AnalyticsPageShell"),
     `${route} is a destination route — it must mount AnalyticsPageShell so the left side-panel is present on every page (cave-4i6u)`,
   );
+  assert.ok(spec.entry, `${route} is a destination route — declare its in-app entry point`);
+  const entrySource = readFileSync(path.resolve(appDir, spec.entry.file), "utf8");
+  assert.match(
+    entrySource,
+    spec.entry.pattern,
+    `${route} must stay reachable from ${spec.entry.file}`,
+  );
+}
+
+// ── Static workspace deep links use the accepted mode vocabulary ────────────
+// A typo such as `/?mode=familiars` silently falls back to the startup surface
+// because readModeParam rejects it. Scan production source strings so invalid
+// links fail here instead of becoming dead-end UI.
+function discoverSourceFiles(dir) {
+  const files = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...discoverSourceFiles(fullPath));
+    else if (
+      (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) &&
+      !entry.name.includes(".test.")
+    ) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+const srcDir = path.resolve(appDir, "..");
+for (const file of discoverSourceFiles(srcDir)) {
+  const source = readFileSync(file, "utf8");
+  for (const match of source.matchAll(/(["'`])\/\?mode=([a-z-]+)(?=[&#"'`])/g)) {
+    const mode = match[2];
+    assert.ok(
+      isWorkspaceMode(mode),
+      `${path.relative(srcDir, file)} links to invalid workspace mode "${mode}"`,
+    );
+  }
 }
 
 // ── Dev-only pages stay out of every navigation host ─────────────────────────

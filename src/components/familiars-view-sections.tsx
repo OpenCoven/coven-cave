@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
   ACTIVITY_DAYS,
+  type CanonicalMemoryAvailability,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
 import { deriveRenown } from "@/lib/familiar-renown";
@@ -32,10 +33,14 @@ import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/component
 import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import type { PendingCanonicalMemorySelection } from "@/lib/canonical-memory";
 
-export function emptyStats(): FamiliarCardStats {
+export function emptyStats(
+  memoryAvailability: CanonicalMemoryAvailability = "unavailable",
+): FamiliarCardStats {
   return {
     memoryCount: 0,
+    memoryAvailability,
     latestMemory: null,
     lastSessionAt: null,
     sessionsTotal: 0,
@@ -100,9 +105,12 @@ export function FamiliarRosterCard({
   // memories), never a synthetic counter. Tier reads as quiet metadata in the
   // microlabel voice; the tooltip carries the score and the next rung.
   const renown = deriveRenown({ sessionsTotal: stats.sessionsTotal, memoryCount: stats.memoryCount });
-  const renownTitle = renown.next
-    ? `${renown.score} renown · ${renown.next.remaining} to ${renown.next.tier.label}`
-    : `${renown.score} renown · top of the ladder`;
+  const renownAvailable = stats.memoryAvailability === "ready";
+  const renownTitle = renownAvailable
+    ? renown.next
+      ? `${renown.score} renown · ${renown.next.remaining} to ${renown.next.tier.label}`
+      : `${renown.score} renown · top of the ladder`
+    : "Renown unavailable";
   const streakTitle =
     stats.streakDays > 0
       ? `${stats.streakDays} consecutive day${stats.streakDays === 1 ? "" : "s"} with sessions`
@@ -133,7 +141,7 @@ export function FamiliarRosterCard({
               <span className="truncate">{familiar.role || familiar.harness || familiar.id}</span>
               <span aria-hidden="true">·</span>
               <span className="shrink-0 text-[var(--text-secondary)]" title={renownTitle}>
-                {renown.tier.label}
+                {renownAvailable ? renown.tier.label : "—"}
               </span>
             </span>
           </span>
@@ -172,7 +180,11 @@ export function FamiliarRosterCard({
           </span>
           <span className="familiars-view__stat">
             <span className="familiars-view__stat-label">memories</span>
-            <span className="familiars-view__stat-value">{compactCount(stats.memoryCount)}</span>
+            <span className="familiars-view__stat-value">
+              {stats.memoryAvailability === "ready"
+                ? compactCount(stats.memoryCount)
+                : "—"}
+            </span>
           </span>
           <span className="familiars-view__stat" title={streakTitle}>
             <span className="familiars-view__stat-label">streak</span>
@@ -257,11 +269,23 @@ type AgentMemoryOverlayProps = {
   familiars: ResolvedFamiliar[];
   familiar: ResolvedFamiliar;
   memoryFeed: MemoryFeed;
+  localDaemonReady: boolean;
+  pendingCanonicalMemorySelection?: PendingCanonicalMemorySelection | null;
+  onCanonicalMemorySelectionApplied?: (id: string) => void;
   onClose: () => void;
   onOpenMemoryFile: (path: string) => void;
 };
 
-export function FamiliarMemoryOverlay({ familiars, familiar, memoryFeed, onClose, onOpenMemoryFile }: AgentMemoryOverlayProps) {
+export function FamiliarMemoryOverlay({
+  familiars,
+  familiar,
+  memoryFeed,
+  localDaemonReady,
+  pendingCanonicalMemorySelection,
+  onCanonicalMemorySelectionApplied,
+  onClose,
+  onOpenMemoryFile,
+}: AgentMemoryOverlayProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   // Trap focus inside the panel + Escape-to-close + restore focus to the opener.
   useFocusTrap(true, panelRef, { onEscape: onClose });
@@ -294,6 +318,9 @@ export function FamiliarMemoryOverlay({ familiars, familiar, memoryFeed, onClose
           activeFamiliar={familiar}
           lockToFamiliar
           feed={memoryFeed}
+          localDaemonReady={localDaemonReady}
+          pendingCanonicalMemorySelection={pendingCanonicalMemorySelection}
+          onCanonicalMemorySelectionApplied={onCanonicalMemorySelectionApplied}
           onOpenMemoryFile={onOpenMemoryFile}
         />
       </div>
@@ -378,6 +405,7 @@ type AgentDetailPanelProps = {
   memoryError: string | null;
   memoryLoaded: boolean;
   memoryFeed: MemoryFeed;
+  localDaemonReady: boolean;
   onClose: () => void;
   onPreview: () => void;
   onStartChat: () => void;
@@ -454,6 +482,7 @@ export function FamiliarDetailPanel({
   memoryError,
   memoryLoaded,
   memoryFeed,
+  localDaemonReady,
   onClose,
   onPreview,
   onStartChat,
@@ -555,6 +584,7 @@ export function FamiliarDetailPanel({
             activeFamiliar={familiar}
             lockToFamiliar
             feed={memoryFeed}
+            localDaemonReady={localDaemonReady}
             onOpenMemoryFile={onOpenMemoryFile}
           />
         ) : tab === "daily-notes" ? (

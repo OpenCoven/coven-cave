@@ -3,11 +3,13 @@
 /**
  * ChatFamiliarView — the chat surface's Familiar tab.
  *
- * Skills-page design handoff (cave-moig): a shared SurfaceRail roster on the
- * left (search, collapse, resize — local selection only, never the app-wide
- * scope) and, on the right, an identity hero (avatar, serif name, presence,
- * live Runtime/Model/Voice selects, Edit in Studio, New chat) over a five-tab
- * band: Identity · Skills · MCP · Analytics · Memory. Capability data still
+ * Skills-page design handoff (cave-moig), scoped to the ACTIVE familiar
+ * (cave-k8b0a): the tab describes who you're chatting with — the app-wide
+ * scope dropdown at the top-left of the sidebar is the ONLY place a familiar
+ * is switched, so the tab hosts no roster of its own. An identity hero
+ * (avatar, serif name, presence,
+ * live Runtime/Model/Voice selects, Edit in Studio, New chat) over a six-tab
+ * band: Identity · Skills · MCP · Analytics · Memory · Settings. Capability data still
  * flows through useCapabilitySnapshot (/api/roles, /api/skills/local,
  * /api/capabilities?harness=, /api/harnesses) and is derived once into a
  * shared section model; the lifecycle/scope state machine
@@ -19,8 +21,6 @@ import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { SurfaceRail } from "@/components/ui/surface-rail";
-import { SearchInput } from "@/components/ui/search-input";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { StandardSelect, type StandardSelectOption } from "@/components/ui/select";
@@ -31,6 +31,7 @@ import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
 import { isBindableRuntimeChoice, type AdapterReport } from "@/lib/harness-adapters";
+import { consumeFamiliarSettingsPending, type FamiliarSettingsTab } from "@/lib/chat-tab-events";
 import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { listVoiceProviders } from "@/lib/voice/registry";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
@@ -40,6 +41,7 @@ import { FamiliarIdentitySection } from "@/components/familiar-tab-identity";
 import { FamiliarMcpSection } from "@/components/familiar-tab-mcp";
 import { FamiliarAnalyticsSection } from "@/components/familiar-tab-analytics";
 import { FamiliarMemorySection } from "@/components/familiar-tab-memory";
+import { FamiliarSettingsSection } from "@/components/familiar-tab-settings";
 import "@/styles/familiar-tab.css";
 
 // ── Identity hero ────────────────────────────────────────────────────────────
@@ -447,21 +449,37 @@ function FamiliarScopeOverview({
 
 // ── Section tabs ─────────────────────────────────────────────────────────────
 
-type FamiliarSectionId = "identity" | "skills" | "mcp" | "analytics" | "memory";
+type FamiliarSectionId = "identity" | "skills" | "mcp" | "analytics" | "memory" | "settings";
 
 function FamiliarCapabilityPanel({
   familiar,
+  familiars,
+  allFamiliars,
   daemonRunning,
+  localDaemonReady,
+  onRosterChanged,
   onStartChat,
 }: {
-  familiar: Familiar;
+  familiar: ResolvedFamiliar;
+  familiars: Familiar[];
+  allFamiliars: ResolvedFamiliar[];
   daemonRunning?: boolean;
+  localDaemonReady: boolean;
+  onRosterChanged?: () => void;
   onStartChat?: (familiarId: string) => void;
 }) {
   const harnessId = familiar.harness ?? "codex";
   const snapshot = useCapabilitySnapshot(harnessId);
   // Skills is the section this handoff is named for — it opens first.
   const [section, setSection] = useState<FamiliarSectionId>("skills");
+  const [settingsTab, setSettingsTab] = useState<FamiliarSettingsTab | undefined>();
+
+  useEffect(() => {
+    const target = consumeFamiliarSettingsPending();
+    if (!target) return;
+    setSection("settings");
+    setSettingsTab(target.tab);
+  }, []);
 
   const data = useMemo(
     () =>
@@ -512,6 +530,7 @@ function FamiliarCapabilityPanel({
             { id: "mcp", label: "MCP" },
             { id: "analytics", label: "Analytics" },
             { id: "memory", label: "Memory" },
+            { id: "settings", label: "Settings" },
           ]}
           value={section}
           onChange={setSection}
@@ -535,83 +554,18 @@ function FamiliarCapabilityPanel({
         )}
         {section === "analytics" ? <FamiliarAnalyticsSection familiar={familiar} /> : null}
         {section === "memory" ? <FamiliarMemorySection familiar={familiar} /> : null}
+        {section === "settings" ? (
+          <FamiliarSettingsSection
+            familiar={familiar}
+            familiars={familiars}
+            allFamiliars={allFamiliars}
+            localDaemonReady={localDaemonReady}
+            initialTab={settingsTab}
+            onRosterChanged={onRosterChanged}
+          />
+        ) : null}
       </div>
     </div>
-  );
-}
-
-// ── Roster rail ──────────────────────────────────────────────────────────────
-
-/**
- * The left-hand roster: a SurfaceRail listing every selectable familiar.
- * Selection here switches the DETAIL only (local state in the surface) — it
- * never mutates the app-wide familiar scope.
- */
-function FamiliarRosterRail({
-  familiars,
-  selectedId,
-  query,
-  onQueryChange,
-  onSelect,
-}: {
-  familiars: ResolvedFamiliar[];
-  selectedId: string;
-  query: string;
-  onQueryChange: (next: string) => void;
-  onSelect: (id: string) => void;
-}) {
-  const needle = query.trim().toLowerCase();
-  const filtered = needle
-    ? familiars.filter(
-        (item) =>
-          item.display_name.toLowerCase().includes(needle) ||
-          (item.role ?? "").toLowerCase().includes(needle),
-      )
-    : familiars;
-  return (
-    <SurfaceRail
-      storageKey="cave:familiar-tab:rail"
-      title="Familiars"
-      ariaLabel="Familiars"
-      search={
-        <SearchInput
-          value={query}
-          onValueChange={onQueryChange}
-          onClear={() => onQueryChange("")}
-          placeholder="Search familiars…"
-          aria-label="Search familiars"
-        />
-      }
-    >
-      {(open) => (
-        <>
-          {filtered.length === 0 ? (
-            <p className="px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-              No familiars match &ldquo;{query.trim()}&rdquo;.
-            </p>
-          ) : null}
-          {filtered.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className="familiar-tab__rail-row focus-ring"
-              aria-current={item.id === selectedId ? "true" : undefined}
-              title={open ? undefined : item.display_name}
-              aria-label={open ? undefined : item.display_name}
-              onClick={() => onSelect(item.id)}
-            >
-              <FamiliarAvatar familiar={item} size="md" />
-              {open ? (
-                <span className="familiar-tab__rail-text">
-                  <span className="familiar-tab__rail-name">{item.display_name}</span>
-                  <span className="familiar-tab__rail-role">{item.role || "No role"}</span>
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </>
-      )}
-    </SurfaceRail>
   );
 }
 
@@ -626,6 +580,7 @@ export function ChatFamiliarCapabilities({
   familiar,
   familiars,
   selectedFamiliarIds,
+  localDaemonReady,
   familiarsLoaded = true,
   familiarsError,
   daemonRunning,
@@ -634,10 +589,12 @@ export function ChatFamiliarCapabilities({
   onOpenOnboarding,
   onFamiliarScopeChange,
   onStartChat,
+  onRosterChanged,
 }: {
   familiar: Familiar | null;
   familiars: Familiar[];
   selectedFamiliarIds: ReadonlySet<string>;
+  localDaemonReady: boolean;
   familiarsLoaded?: boolean;
   familiarsError?: string | null;
   daemonRunning?: boolean;
@@ -646,22 +603,13 @@ export function ChatFamiliarCapabilities({
   onOpenOnboarding?: () => void;
   onFamiliarScopeChange: (id: string | null, opts?: { preserveSurface?: boolean }) => void;
   onStartChat?: (familiarId: string) => void;
+  onRosterChanged?: () => void;
 }) {
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
   const selectableFamiliars = resolvedFamiliars.filter((item) => !item.archived);
   const selectedFamiliar = familiar
     ? resolvedFamiliars.find((item) => item.id === familiar.id) ?? null
     : null;
-
-  // Rail-local detail selection: browsing the roster switches the detail pane
-  // only; the app-wide active familiar (and saved scope) never changes from
-  // here. A new app-wide selection re-anchors the detail.
-  const [detailId, setDetailId] = useState<string | null>(null);
-  const [railQuery, setRailQuery] = useState("");
-  const activeFamiliarId = familiar?.id ?? null;
-  useEffect(() => {
-    setDetailId(null);
-  }, [activeFamiliarId]);
 
   const state = deriveFamiliarTabState({
     familiars: selectableFamiliars,
@@ -761,27 +709,26 @@ export function ChatFamiliarCapabilities({
     );
   }
 
-  const detailFamiliar =
-    (detailId ? selectableFamiliars.find((item) => item.id === detailId) : null) ?? state.familiar;
+  // The tab always describes the app-wide ACTIVE familiar (cave-k8b0a) — the
+  // sidebar's scope dropdown is the only switching surface, so no local
+  // detail selection exists to diverge from it.
+  const detailFamiliar = state.familiar;
 
   return (
     <section
       className="chat-familiar-view familiar-tab flex h-full min-h-0 flex-row"
       aria-label="Familiar profile"
     >
-      <FamiliarRosterRail
-        familiars={selectableFamiliars}
-        selectedId={detailFamiliar.id}
-        query={railQuery}
-        onQueryChange={setRailQuery}
-        onSelect={setDetailId}
-      />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {state.rosterWarning ? <FamiliarRosterWarning message={state.rosterWarning} onRetry={onRetryFamiliars} /> : null}
         <FamiliarCapabilityPanel
           key={detailFamiliar.id}
           familiar={detailFamiliar}
+          familiars={familiars}
+          allFamiliars={resolvedFamiliars}
           daemonRunning={daemonRunning}
+          localDaemonReady={localDaemonReady}
+          onRosterChanged={onRosterChanged}
           onStartChat={onStartChat}
         />
       </div>

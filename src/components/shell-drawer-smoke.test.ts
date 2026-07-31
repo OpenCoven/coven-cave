@@ -13,8 +13,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+// The drawer rules' owning split module behind the globals.css facade
+// (cave-xd2kg: source contracts read owning modules, not the facade).
 const globals = readFileSync(
-  new URL("../app/globals.css", import.meta.url),
+  new URL("../styles/globals/shell-responsive.css", import.meta.url),
   "utf8",
 );
 const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");

@@ -29,7 +29,7 @@ export type ProgressEvent = {
   id: string;
   label: string;
   detail?: string;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "notice" | "error";
   createdAt: string;
   durationMs?: number;
 };

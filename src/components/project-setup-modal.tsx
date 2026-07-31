@@ -1,12 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/lib/icon";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { projectNameForRoot, type CreateProjectOptions } from "@/lib/chat-add-project";
 import { projectTint } from "@/lib/comux-projects";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
+import type { RepoItem } from "@/lib/home-feed";
+import {
+  applyRepoSuggestion,
+  filterRepoSuggestions,
+  formatPushedAt,
+  projectSetupBlocked,
+  validateProjectName,
+  validateRepoDraft,
+} from "@/lib/project-setup-validation";
+import { Popover, PopoverBody } from "@/components/ui/popover";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
 import { emitProjectRegistryMutation } from "@/lib/project-registry-events";
 import { PROJECT_SETUP_COLOR_CHOICES } from "@/lib/project-setup-offer";
@@ -71,6 +81,14 @@ export function ProjectSetupModal({
   const [createdProject, setCreatedProject] = useState<CaveProject | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Field messages appear only once a field has been touched, so a freshly
+  // opened modal never greets you in red — but the submit gate below applies
+  // from the first render regardless.
+  const [touched, setTouched] = useState<{ name: boolean; repo: boolean }>({ name: false, repo: false });
+  const [repoPickerOpen, setRepoPickerOpen] = useState(false);
+  const [repos, setRepos] = useState<RepoItem[] | null>(null);
+  const [reposState, setReposState] = useState<"idle" | "loading" | "error" | "unconfigured">("idle");
+  const repoPickerRef = useRef<HTMLButtonElement | null>(null);
 
   // Re-seed per folder: prefill the name from the leaf, probe groups +
   // supreme (one grants fetch) and the git origin (GitHub prefill). Both
@@ -86,6 +104,8 @@ export function ProjectSetupModal({
     setCreatedProject(null);
     setBusy(false);
     setError(null);
+    setTouched({ name: false, repo: false });
+    setRepoPickerOpen(false);
     let cancelled = false;
     void (async () => {
       try {
@@ -123,8 +143,45 @@ export function ProjectSetupModal({
     };
   }, [root]);
 
+  // The repo list is fetched the first time the picker opens, never on mount —
+  // opening this modal shouldn't spend a GitHub round-trip you may not want.
+  useEffect(() => {
+    if (!repoPickerOpen || repos !== null || reposState === "loading") return;
+    let cancelled = false;
+    setReposState("loading");
+    void (async () => {
+      try {
+        const res = await fetch("/api/github/repos", { cache: "no-store" });
+        const data = (await res.json()) as { items?: RepoItem[]; configured?: boolean };
+        if (cancelled) return;
+        // No token: say so plainly instead of showing an empty list that reads
+        // as "you have no repositories".
+        if (data?.configured === false) {
+          setReposState("unconfigured");
+          return;
+        }
+        setRepos(Array.isArray(data?.items) ? data.items : []);
+        setReposState("idle");
+      } catch {
+        if (!cancelled) setReposState("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [repoPickerOpen, repos, reposState]);
+
+  const suggestions = useMemo(
+    () => (repos ? filterRepoSuggestions(repos, repoDraft) : []),
+    [repos, repoDraft],
+  );
+
   if (!root) return null;
 
+  const nameError = validateProjectName(name);
+  const repoError = validateRepoDraft(repoDraft);
+  // Gates submit from the first render; the messages wait for a touch.
+  const blocked = projectSetupBlocked(name, repoDraft);
   const isSupremeFamiliar = Boolean(familiar.id) && familiar.id === supremeFamiliarId;
   const memberGroups = familiar.id
     ? groups.filter((group) => group.memberFamiliarIds.includes(familiar.id as string))
@@ -237,7 +294,13 @@ export function ProjectSetupModal({
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => void submit()} loading={busy}>
+          <Button
+            variant="primary"
+            onClick={() => void submit()}
+            loading={busy}
+            disabled={blocked}
+            title={blocked ? (nameError ?? repoError ?? undefined) : undefined}
+          >
             {busy ? "Creating…" : "Create project"}
           </Button>
         </>
@@ -263,11 +326,21 @@ export function ProjectSetupModal({
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
+          onBlur={() => setTouched((prev) => ({ ...prev, name: true }))}
           aria-label="Project name"
+          aria-invalid={touched.name && nameError ? true : undefined}
+          aria-describedby={touched.name && nameError ? "project-setup-name-error" : undefined}
           spellCheck={false}
-          className="focus-ring w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none"
+          className={`focus-ring w-full rounded-[var(--radius-control)] border bg-[var(--bg-base)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none ${
+            touched.name && nameError ? "border-[var(--danger-border)]" : "border-[var(--border-hairline)]"
+          }`}
         />
       </label>
+      {touched.name && nameError ? (
+        <p id="project-setup-name-error" className="mt-1.5 text-[length:var(--text-xs)] text-[var(--danger-text)]">
+          {nameError}
+        </p>
+      ) : null}
 
       <div className="mt-4">
         <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-muted)]">
@@ -305,27 +378,112 @@ export function ProjectSetupModal({
         </p>
       </div>
 
-      <label className="mt-4 block">
-        <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-muted)]">
-          GitHub repository
-        </div>
-        <input
-          value={repoDraft}
-          onChange={(e) => {
-            setRepoDraft(e.target.value);
-            setError(null);
-          }}
-          placeholder="owner/repo or https://github.com/owner/repo"
-          aria-label="GitHub repository"
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          className="focus-ring w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
-        />
-      </label>
-      <p className="mt-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-        Optional — ties the project to a repository. Leave empty to skip.
-      </p>
+      <div className="mt-4">
+        <label className="block">
+          <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-muted)]">
+            GitHub repository
+          </div>
+          <div
+            className={`focus-within:ring-1 flex items-center rounded-[var(--radius-control)] border bg-[var(--bg-base)] ${
+              touched.repo && repoError ? "border-[var(--danger-border)]" : "border-[var(--border-hairline)]"
+            }`}
+          >
+            <input
+              value={repoDraft}
+              onChange={(e) => {
+                setRepoDraft(e.target.value);
+                setError(null);
+              }}
+              onBlur={() => setTouched((prev) => ({ ...prev, repo: true }))}
+              placeholder="owner/repo or https://github.com/owner/repo"
+              aria-label="GitHub repository"
+              aria-invalid={touched.repo && repoError ? true : undefined}
+              aria-describedby={touched.repo && repoError ? "project-setup-repo-error" : undefined}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] bg-transparent px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+            />
+            {/* Typing owner/repo from memory is the slow path; this is the list. */}
+            <button
+              ref={repoPickerRef}
+              type="button"
+              className="focus-ring flex flex-none items-center gap-1.5 self-stretch border-l border-[var(--border-hairline)] px-2.5 text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              aria-haspopup="menu"
+              aria-expanded={repoPickerOpen}
+              aria-label="Pick from your GitHub repositories"
+              title="Pick from your GitHub repositories"
+              onClick={() => setRepoPickerOpen((open) => !open)}
+            >
+              <Icon name="ph:github-logo" width={13} aria-hidden />
+              Pick
+            </button>
+          </div>
+        </label>
+        <Popover
+          open={repoPickerOpen}
+          onOpenChange={setRepoPickerOpen}
+          anchorRef={repoPickerRef}
+          placement="bottom-end"
+          minWidth={320}
+          ariaLabel="Your GitHub repositories"
+        >
+          <PopoverBody role="menu" ariaLabel="Your GitHub repositories">
+            {reposState === "loading" ? (
+              <p className="px-2 py-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">Loading repositories…</p>
+            ) : reposState === "unconfigured" ? (
+              <p className="px-2 py-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                Add a GitHub token in Settings to pick from your repositories.
+              </p>
+            ) : reposState === "error" ? (
+              <p className="px-2 py-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                Couldn’t reach GitHub — type <code>owner/repo</code> instead.
+              </p>
+            ) : suggestions.length === 0 ? (
+              <p className="px-2 py-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                No repository matches — keep typing <code>owner/repo</code>, or paste a link.
+              </p>
+            ) : (
+              suggestions.slice(0, 12).map((repo) => (
+                <button
+                  key={repo.id}
+                  type="button"
+                  role="menuitem"
+                  className="focus-ring flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-left hover:bg-[var(--bg-hover)]"
+                  onClick={() => {
+                    const next = applyRepoSuggestion(repo, name);
+                    setRepoDraft(next.repoDraft);
+                    setName(next.name);
+                    setError(null);
+                    setRepoPickerOpen(false);
+                  }}
+                >
+                  <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--text-xs)] text-[var(--text-primary)]">
+                    {repo.fullName}
+                  </span>
+                  {repo.language ? (
+                    <span className="flex-none text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                      {repo.language}
+                    </span>
+                  ) : null}
+                  <span className="w-16 flex-none text-right text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                    {formatPushedAt(repo.pushedAt, Date.now())}
+                  </span>
+                </button>
+              ))
+            )}
+          </PopoverBody>
+        </Popover>
+        {touched.repo && repoError ? (
+          <p id="project-setup-repo-error" className="mt-1.5 text-[length:var(--text-xs)] text-[var(--danger-text)]">
+            {repoError}
+          </p>
+        ) : (
+          <p className="mt-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+            Optional — ties the project to a repository. Leave empty to skip.
+          </p>
+        )}
+      </div>
 
       <div className="mt-4">
         <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-muted)]">

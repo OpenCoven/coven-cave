@@ -20,6 +20,7 @@ type RouteContract = {
 const contracts: RouteContract[] = [
   { route: "/access-groups", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/access-groups/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/app/build-info", methods: ["GET"], kind: "json" },
   { route: "/app/latest-release", methods: ["GET"], kind: "json" },
   { route: "/asana/assigned", methods: ["GET"], kind: "json" },
   { route: "/asana/workspaces", methods: ["GET"], kind: "json" },
@@ -54,7 +55,9 @@ const contracts: RouteContract[] = [
   { route: "/codex-automations/[id]/runs/[runId]/log", methods: ["GET"], kind: "json" },
   { route: "/codex-automations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/config", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/coven-memory", methods: ["GET"], kind: "json" },
+  { route: "/coven-memory", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
+  { route: "/coven-memory/[id]", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
+  { route: "/coven-memory/overview", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
   { route: "/coven/exec", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/daemon/capabilities", methods: ["GET"], kind: "json" },
   { route: "/daemon/probe", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -95,10 +98,13 @@ const contracts: RouteContract[] = [
   { route: "/github/comment", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/comments", methods: ["GET"], kind: "json" },
   { route: "/github/commit", methods: ["GET"], kind: "json" },
+  { route: "/github/diff", methods: ["GET"], kind: "json" },
   { route: "/github/dispatch", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/issue", methods: ["POST", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/item", methods: ["GET"], kind: "json" },
+  { route: "/github/labels", methods: ["GET"], kind: "json" },
   { route: "/github/merge", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/github/reactions", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/rerun", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/resolve-thread", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/review", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -129,6 +135,9 @@ const contracts: RouteContract[] = [
   { route: "/launch", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/mobile-handoff", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/mobile-token/refresh", methods: ["POST"], kind: "json" },
+  { route: "/mobile/coven-memory", methods: ["GET", "POST", "HEAD", "OPTIONS"], kind: "json" },
+  { route: "/mobile/coven-memory/[id]", methods: ["GET", "POST", "HEAD", "OPTIONS"], kind: "json" },
+  { route: "/mobile/coven-memory/overview", methods: ["GET", "POST", "HEAD", "OPTIONS"], kind: "json" },
   { route: "/mcp", methods: ["GET"], kind: "json" },
   { route: "/mcp/health", methods: ["GET"], kind: "json" },
   { route: "/marketplace", methods: ["GET"], kind: "json" },
@@ -192,6 +201,10 @@ const contracts: RouteContract[] = [
   { route: "/research/autoloop/document", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/autoloop/stream", methods: ["GET"], kind: "stream", localOriginGuard: true },
   { route: "/research/generations", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/research/generations/cancel", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/research/generations/media", methods: ["GET"], kind: "stream", localOriginGuard: true, pathGuard: true },
+  { route: "/research/generations/readiness", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/generations/render", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/missions/[id]/actions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions/[id]/files/[key]", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
@@ -279,13 +292,18 @@ function routeFromFile(file: string): string {
 }
 
 function exportedMethods(source: string): string[] {
-  const direct = [...source.matchAll(/export async function (GET|POST|PUT|PATCH|DELETE)\b/g)].map((match) => match[1]);
-  const aliases = [...source.matchAll(/^\s*[A-Za-z_$][\w$]*\s+as (GET|POST|PUT|PATCH|DELETE)\b/gm)].map((match) => match[1]);
-  return [...direct, ...aliases];
+  const method = "GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS";
+  const functions = [...source.matchAll(new RegExp(`export (?:async )?function (${method})\\b`, "g"))]
+    .map((match) => match[1]);
+  const constants = [...source.matchAll(new RegExp(`export const (${method})\\b`, "g"))]
+    .map((match) => match[1]);
+  const aliases = [...source.matchAll(new RegExp(`^\\s*[A-Za-z_$][\\w$]*\\s+as (${method})\\b`, "gm"))]
+    .map((match) => match[1]);
+  return [...functions, ...constants, ...aliases];
 }
 
 function usesJsonResponse(source: string): boolean {
-  return /NextResponse\.json|Response\.json|new Response\(/.test(source);
+  return /NextResponse\.json|Response\.json|new Response\(|canonicalMemory(?:Json|ListResponse|OverviewResponse|DetailResponse)\s*\(/.test(source);
 }
 
 function effectiveRouteSource(file: string, source: string): string {
@@ -348,6 +366,23 @@ for (const contract of contracts) {
 }
 
 {
+  const generationsSource = readFileSync(
+    path.join(apiRoot, "research", "generations", "route.ts"),
+    "utf8",
+  );
+  assert.match(
+    generationsSource,
+    /validateCreateResearchGenerationInput/,
+    "research generations must keep input validation at the API boundary",
+  );
+  assert.match(
+    generationsSource,
+    /"media-not-ready" \? 409/,
+    "research generations must expose media readiness as a conflict, never a fake queued record",
+  );
+}
+
+{
   const dailySummarySource = readFileSync(
     path.join(apiRoot, "inbox", "daily-summary", "route.ts"),
     "utf8",
@@ -359,8 +394,8 @@ for (const contract of contracts) {
   );
   assert.match(
     dailySummarySource,
-    /media:\s*draft\.media/,
-    "/inbox/daily-summary should persist the generated media card",
+    /media:\s*\{\s*\n\s*\.\.\.draft\.media,/,
+    "/inbox/daily-summary should persist the generated media card (spread, so a backfill can stamp a truthful generatedAt over it)",
   );
   assert.match(
     dailySummarySource,
@@ -374,8 +409,13 @@ for (const contract of contracts) {
   );
   assert.match(
     dailySummarySource,
-    /fetchMergedPrsForDay\(now\)\.catch\(/,
-    "/inbox/daily-summary should gather merged PRs server-side, degrading to absent on failure",
+    /fetchMergedPrsForDay\(target\)\.catch\(/,
+    "/inbox/daily-summary should gather merged PRs server-side for the TARGET day (today, or a backfilled past day), degrading to absent on failure",
+  );
+  assert.match(
+    dailySummarySource,
+    /body\.backfill !== true/,
+    "/inbox/daily-summary must keep the midnight-rollover guard on the automatic path — only an explicit backfill may target another day",
   );
   assert.match(
     dailySummarySource,

@@ -15,17 +15,18 @@ assert.match(parser, /trimmed\.hasPrefix\("_Chat with "\)/, "parses the particip
 assert.match(parser, /trimmed\.hasPrefix\("\*\*"\), trimmed\.hasSuffix\("\*\*"\)/, "detects author headers");
 
 // Model maps turns to roles and resolves familiars by name.
-assert.match(model, /func importMarkdown\(_ text: String, fallbackTitle: String = "Imported chat"\) -> ChatThread/, "AppModel should import Markdown");
+assert.match(model, /func importMarkdown\([\s\S]*fallbackTitle: String = "Imported chat",[\s\S]*familiarIds preferredFamiliarIds: \[String\] = \[\],[\s\S]*projectRoot: String\? = nil[\s\S]*\) -> ChatThread/, "AppModel should import Markdown with optional launch context");
 assert.match(model, /case "you":\s*messages\.append\(DisplayMessage\(role: \.user/, "You maps to a user turn");
 assert.match(model, /case "system":\s*messages\.append\(DisplayMessage\(role: \.system/, "System maps to a system turn");
 assert.match(model, /displayName\.caseInsensitiveCompare\(name\) == \.orderedSame/, "resolves a familiar by display name");
+assert.match(model, /ChatProjectSelection\.importedFamiliarIDs\([\s\S]*preferred: preferredFamiliarIds,[\s\S]*discovered: discoveredFamiliarIds/, "explicit picker participants remain the project-authorized send scope");
 assert.match(model, /threads\.insert\(thread, at: 0\)\s*persistThreads\(\)/, "inserts and persists the imported thread");
 
 // NewChatView offers a file importer wired to importMarkdown.
 assert.match(newChat, /import UniformTypeIdentifiers/, "imports UTType");
 assert.match(newChat, /\.fileImporter\(isPresented: \$importingFile/, "presents a file importer");
 assert.match(newChat, /Label\("Import from Markdown…", systemImage: "square\.and\.arrow\.down"\)/, "shows an Import action");
-assert.match(newChat, /onStart\(app\.importMarkdown\(text, fallbackTitle: fallback\)\)/, "imports then opens the thread");
+assert.match(newChat, /app\.importMarkdown\([\s\S]*fallbackTitle: fallback,[\s\S]*familiarIds: selectedFamiliarIds,[\s\S]*projectRoot: selectedProjectRoot/, "imports with familiar and project context, then opens the thread");
 assert.match(newChat, /startAccessingSecurityScopedResource\(\)/, "accesses the security-scoped file");
 
 console.log("ios-import-markdown.test.mjs: ok");

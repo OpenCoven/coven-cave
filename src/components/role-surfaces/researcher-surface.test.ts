@@ -233,11 +233,14 @@ test("mission list uses roving tabindex keyboard navigation", () => {
   assert.match(list, /research-mission-row focus-ring/);
 });
 
-test("archived missions collapse into a disclosure group below active work", () => {
-  // Partition: archived rows leave the working ledger…
-  assert.match(list, /mission\.status === "archived" \? archived : active/);
-  // …the header counts active missions only…
-  assert.match(list, /<span>\{activeMissions\.length\}<\/span>/);
+test("archived missions collapse below the priority groups", () => {
+  // The shared view model partitions filtered missions into review, progress,
+  // recent, and archived groups while the rail keeps archived rows separate.
+  assert.match(list, /groupResearchMissions\(filteredMissions\)/);
+  assert.match(list, /group\.id !== "archived"/);
+  assert.match(list, /group\.id === "archived"/);
+  // The header counts visible, non-archived missions only.
+  assert.match(list, /<span>\{nonArchivedCount\}<\/span>/);
   // …and the group is a real count-labeled disclosure.
   assert.match(list, /aria-expanded=\{archivedOpen\}/);
   assert.match(list, /research-mission-nav__group-toggle focus-ring/);

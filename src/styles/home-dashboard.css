@@ -38,11 +38,47 @@
   align-items: stretch;
 }
 .home-dash__section-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   font: 600 10px var(--font-jetbrains-mono), monospace;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
+
+/* Chat.dc.html 2b: each launcher group states how much of its source is on
+   screen ("3 of 12"), so a capped strip never reads as the whole set. */
+.home-dash__section-count {
+  display: inline-flex;
+  align-items: center;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+/* The band that turns the board into a launcher: a mono label, a rule out to
+   the edge, and the promise the tiles keep. */
+.home-dash__startfrom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 600 10px var(--font-jetbrains-mono), monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.home-dash__startfrom-rule {
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--border-hairline);
+}
+
 
 /* ── Work board ─────────────────────────────────────────────────────────── */
 .home-dash__board {
@@ -343,6 +379,15 @@
    .home-dash__board (an element can never match its own @container query),
    and stay last in the file so these equal-specificity overrides win the
    cascade. */
+/* Shed order follows the design's priority: the mock encodes it as width
+   (chats widest, queue smallest), so the Queue group goes first and the
+   recent threads follow one tier down (cave-3lonn). */
+@container (max-height: 760px) {
+  .home-dash__section--queue,
+  .home-dash__section--reviews {
+    display: none;
+  }
+}
 @container (max-height: 650px) {
   .home-dash__section--recent {
     display: none;

@@ -261,6 +261,10 @@ pub fn run() {
             shell_open_path,
             shell_pick_directory,
             set_traffic_lights_visible,
+            #[cfg(target_os = "macos")]
+            microphone::microphone_permission_request,
+            #[cfg(target_os = "macos")]
+            microphone::microphone_settings_open,
             speech::speech_stt_available,
             speech::speech_stt_start,
             speech::speech_stt_finish,
@@ -303,6 +307,7 @@ pub fn run() {
 
             app.handle().plugin(tauri_plugin_notification::init())?;
             prepare_gui_reachability(app.handle())?;
+            discord_presence::start();
 
             // Desktop auto-update: updater checks/downloads/installs signed
             // release artifacts; process provides relaunch() after install.

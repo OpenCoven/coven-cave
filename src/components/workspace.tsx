@@ -27,8 +27,8 @@ import {
   restoreWorkspaceNavigation,
 } from "@/lib/workspace-navigation-history";
 import type { PaletteIntent } from "@/components/command-palette";
-// Journal retired as an in-shell surface (redirects to Settings → Familiars),
-// so JournalView is gone; Grimoire is a new in-shell surface from main.
+// Journal retired as an in-shell surface, so JournalView is gone; Grimoire is
+// a new in-shell surface from main.
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
@@ -59,6 +59,15 @@ import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
+import { useCanonicalMemoryWarmup } from "@/lib/use-canonical-memory-warmup";
+import { canonicalMemoryLocalAccessEligible } from "@/lib/canonical-memory-local-access";
+import {
+  acknowledgePendingCanonicalMemorySelection,
+  isLatestFamiliarRosterRequest,
+  reconcilePendingCanonicalRosterSettlement,
+  rejectPendingCanonicalMemorySelection,
+  type PendingCanonicalMemorySelection,
+} from "@/lib/canonical-memory";
 import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
 import {
   createDaemonDesktopAutoStartCoordinator,
@@ -246,9 +255,16 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
 
 export function Workspace() {
-  useSurfaceWarmup();
+  const [acceptedLocalDaemonHealthy, setAcceptedLocalDaemonHealthy] = useState(false);
   const nextRouter = useRouter();
   const tauriPlatform = useTauriPlatform();
+  const localDaemonReady = acceptedLocalDaemonHealthy &&
+    canonicalMemoryLocalAccessEligible({
+      platform: tauriPlatform,
+      hostname: typeof window === "undefined" ? null : window.location.hostname,
+    });
+  useCanonicalMemoryWarmup(localDaemonReady);
+  useSurfaceWarmup();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
   // ⌘J quick-chat launcher (cave-xsq.6): a ref so the global keydown effect
@@ -294,6 +310,17 @@ export function Workspace() {
     reload: reloadProjects,
     createProjectOrThrow,
   } = useProjects();
+  // The global registry answers "does a project exist?"; chat readiness is
+  // stricter and must be evaluated for the familiar that will run the turn.
+  // Keep the two reads separate so an inaccessible project never suppresses
+  // the recovery gate for this familiar.
+  const projectGateCandidateFamiliarId = activeId ?? visibleFamiliars[0]?.id ?? null;
+  const {
+    projects: accessibleGateProjects,
+    loading: accessibleGateProjectsLoading,
+    error: accessibleGateProjectsError,
+    loadedSuccessfully: accessibleGateProjectsLoadedSuccessfully,
+  } = useProjects({ familiarId: projectGateCandidateFamiliarId });
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   // false until the first /api/sessions/list fetch settles — lets the chat
@@ -306,6 +333,7 @@ export function Workspace() {
   // change, so a stale in-flight load must not paint the previous familiar's
   // sessions.
   const loadSessionsReqRef = useRef(0);
+  const loadFamiliarsReqRef = useRef(0);
   const loadGitHubTasksReqRef = useRef(0);
   const loadGitHubTasksForceEpochRef = useRef(0);
   const loadGitHubTasksForceInFlightRef = useRef(0);
@@ -317,6 +345,16 @@ export function Workspace() {
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topSearchQuery, setTopSearchQuery] = useState("");
+  const [
+    pendingCanonicalMemorySelection,
+    setPendingCanonicalMemorySelection,
+  ] = useState<PendingCanonicalMemorySelection | null>(null);
+  const pendingCanonicalMemorySelectionRef =
+    useRef<PendingCanonicalMemorySelection | null>(null);
+  const [
+    rosterSettledPendingCanonicalMemorySelection,
+    setRosterSettledPendingCanonicalMemorySelection,
+  ] = useState<PendingCanonicalMemorySelection | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Home-first boot: every fresh launch (desktop app window or web tab)
   // opens on the Home surface — the daily overview with the universal
@@ -739,6 +777,11 @@ export function Workspace() {
     // The coordinator pins this first accepted decision. Later polls may update
     // live UI state, but can never turn into a delayed automatic restart.
     daemonAutoStartCoordinatorRef.current!.observeStatus(result);
+    if (result.kind === "running") {
+      setAcceptedLocalDaemonHealthy(result.targetMode === "local");
+    } else {
+      setAcceptedLocalDaemonHealthy(false);
+    }
     if (credentialAccepted) setAuthExpired(false);
 
     setDaemonStatusResolved(true);
@@ -999,25 +1042,59 @@ export function Workspace() {
   }, [authExpired, pushBanner, dismissBanner]);
 
   const loadFamiliars = useCallback(async () => {
+    const requestGeneration = ++loadFamiliarsReqRef.current;
+    const isCurrent = () =>
+      isLatestFamiliarRosterRequest(
+        requestGeneration,
+        loadFamiliarsReqRef.current,
+      );
+    const pendingSelectionAtStart =
+      pendingCanonicalMemorySelectionRef.current;
     try {
       const res = await fetch("/api/familiars", { cache: "no-store" });
       const json = await res.json();
+      if (!isCurrent()) return;
       if (!json.ok) {
         // Keep the last-known-good roster: a failed load means "can't see the
         // familiars right now", not "there are none". Clearing here made three
         // surfaces show first-run copy over an intact roster (cave-atzv).
         setFamiliarsError(json.error ?? "daemon offline");
         setFamiliarRosterLoadedSuccessfully(false);
+        setRosterSettledPendingCanonicalMemorySelection((settled) =>
+          reconcilePendingCanonicalRosterSettlement({
+            settled,
+            current: pendingCanonicalMemorySelectionRef.current,
+            startedFor: pendingSelectionAtStart,
+            succeeded: false,
+          })
+        );
         return;
       }
       setFamiliarsError(null);
       setFamiliars((json.familiars ?? []) as Familiar[]);
       setFamiliarRosterLoadedSuccessfully(true);
+      setRosterSettledPendingCanonicalMemorySelection((settled) =>
+        reconcilePendingCanonicalRosterSettlement({
+          settled,
+          current: pendingCanonicalMemorySelectionRef.current,
+          startedFor: pendingSelectionAtStart,
+          succeeded: true,
+        })
+      );
     } catch (err) {
+      if (!isCurrent()) return;
       setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
       setFamiliarRosterLoadedSuccessfully(false);
+      setRosterSettledPendingCanonicalMemorySelection((settled) =>
+        reconcilePendingCanonicalRosterSettlement({
+          settled,
+          current: pendingCanonicalMemorySelectionRef.current,
+          startedFor: pendingSelectionAtStart,
+          succeeded: false,
+        })
+      );
     } finally {
-      setFamiliarsLoaded(true);
+      if (isCurrent()) setFamiliarsLoaded(true);
     }
   }, []);
 
@@ -2376,6 +2453,19 @@ export function Workspace() {
       })();
       return;
     }
+    if (intent.kind === "open-coven-memory") {
+      const selection = {
+        id: intent.id,
+        familiarId: intent.familiarId,
+      };
+      setRosterSettledPendingCanonicalMemorySelection(null);
+      pendingCanonicalMemorySelectionRef.current = selection;
+      setPendingCanonicalMemorySelection(selection);
+      void loadFamiliars();
+      setMode("agents");
+      shellRef.current?.dismissNavMobile();
+      return;
+    }
     if (intent.kind === "open-memory-file") {
       // Land on the Grimoire editor with the file selected. (The old
       // `#memory:` hash had no consumer anywhere — picking a memory result
@@ -2386,7 +2476,6 @@ export function Workspace() {
     if (intent.kind === "open-setting") {
       const params = new URLSearchParams();
       if (intent.group) params.set("group", intent.group);
-      if (intent.familiarTab) params.set("familiarTab", intent.familiarTab);
       const search = params.size > 0 ? `?${params.toString()}` : "";
       nextRouter.push(`/settings${search}#${intent.section}`);
       return;
@@ -2396,6 +2485,53 @@ export function Workspace() {
       return;
     }
   };
+
+  const acknowledgeCanonicalMemorySelection = useCallback(
+    (appliedId: string) => {
+      const expected = pendingCanonicalMemorySelection;
+      const current = pendingCanonicalMemorySelectionRef.current;
+      const next = acknowledgePendingCanonicalMemorySelection(
+        current,
+        expected,
+        appliedId,
+      );
+      if (next === current) return;
+      pendingCanonicalMemorySelectionRef.current = next;
+      setRosterSettledPendingCanonicalMemorySelection((settled) =>
+        settled === expected ? null : settled
+      );
+      setPendingCanonicalMemorySelection((selection) =>
+        acknowledgePendingCanonicalMemorySelection(
+          selection,
+          expected,
+          appliedId,
+        )
+      );
+    },
+    [pendingCanonicalMemorySelection],
+  );
+
+  const rejectUnavailableCanonicalMemorySelection = useCallback(
+    (expected: PendingCanonicalMemorySelection) => {
+      const current = pendingCanonicalMemorySelectionRef.current;
+      const next = rejectPendingCanonicalMemorySelection(
+        current,
+        expected,
+      );
+      if (next === current) return;
+      pendingCanonicalMemorySelectionRef.current = next;
+      setRosterSettledPendingCanonicalMemorySelection((settled) =>
+        settled === expected ? null : settled
+      );
+      setPendingCanonicalMemorySelection((selection) =>
+        rejectPendingCanonicalMemorySelection(selection, expected)
+      );
+      pushToast(
+        "Couldn't open memory — that familiar isn't available. Refresh Familiars and try again.",
+      );
+    },
+    [pushToast],
+  );
 
   // Map slash commands directly to local actions. Returns false for commands
   // this surface doesn't know so the chat composer can show its
@@ -2515,6 +2651,7 @@ export function Workspace() {
     activeFamiliarId: activeId,
     visibleFamiliars,
     registeredProjects,
+    accessibleProjects: accessibleGateProjects,
     pendingGrant: reconciledPendingFirstProjectGrant,
     onboardingResolved,
     onboardingOpen,
@@ -2522,6 +2659,8 @@ export function Workspace() {
     familiarsLoaded,
     familiarRosterLoadedSuccessfully,
     projectsInitiallyResolved,
+    accessibleProjectsInitiallyResolved:
+      !accessibleGateProjectsLoading && !accessibleGateProjectsError && accessibleGateProjectsLoadedSuccessfully,
   });
   const chatProjectBlockedRef = useRef(chatProjectBlocked);
   chatProjectBlockedRef.current = chatProjectBlocked;
@@ -2821,6 +2960,16 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliar={active}
         daemonRunning={daemonRunning}
+        localDaemonReady={localDaemonReady}
+        pendingRosterSettledSuccessfully={
+          rosterSettledPendingCanonicalMemorySelection ===
+          pendingCanonicalMemorySelection
+        }
+        pendingCanonicalMemorySelection={pendingCanonicalMemorySelection}
+        onCanonicalMemorySelectionApplied={acknowledgeCanonicalMemorySelection}
+        onCanonicalMemorySelectionUnavailable={
+          rejectUnavailableCanonicalMemorySelection
+        }
         responseNeeded={responseNeeded}
         onStartChat={(familiarId) => startFamiliarChat(familiarId)}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
@@ -2846,6 +2995,7 @@ export function Workspace() {
         activeFamiliarId={activeId}
         selectedFamiliarIds={scopeIds}
         daemonRunning={daemonRunning}
+        localDaemonReady={localDaemonReady}
         routerRef={routerRef}
         hideThreadRail
         sessionsLoaded={sessionsLoaded}
@@ -2895,6 +3045,7 @@ export function Workspace() {
         onViewChange={selectGrimoireView}
         familiars={familiars}
         activeFamiliarId={activeId}
+        scopeFamiliarIds={scopeIds}
       />
     ) : mode === "inbox" || mode === "calendar" ? (
       // Calendar and crons are one Schedules surface. The "calendar" mode still resolves
@@ -3042,6 +3193,7 @@ export function Workspace() {
           onPendingGrantChange={setPendingFirstProjectGrant}
           loadingProjects={projectsLoading}
           projectsError={projectsError}
+          registeredProjects={registeredProjects}
           createProjectOrThrow={createProjectOrThrow}
           reloadProjects={reloadProjects}
         />
@@ -3075,7 +3227,11 @@ export function Workspace() {
         model={active?.model ?? familiars.find((f) => f.id === "salem")?.model ?? null}
       />
     ) : target.kind === "memory" ? (
-      <RailInspector familiar={active} onOpenFullView={() => setMode("agents")} />
+      <RailInspector
+        familiar={active}
+        localDaemonReady={localDaemonReady}
+        onOpenFullView={() => setMode("agents")}
+      />
     ) : (
       <BrowserPane label="companion" active={browserVisible} />
     );
@@ -3095,11 +3251,11 @@ export function Workspace() {
       inboxBadgeCount={inboxBadgeCount}
     />
   );
-  // The standalone "Manage familiars" drawer is gone — Settings → Familiars is
-  // the single source of truth. `redirectToSettings` routes every
+  // The standalone "Manage familiars" drawer is gone — Chat → Familiar →
+  // Settings is the single source of truth. `redirectToChat` routes every
   // openFamiliarStudio(...) trigger (cards, switcher, onboarding) there.
   return (
-    <FamiliarStudioProvider redirectToSettings>
+    <FamiliarStudioProvider redirectToChat>
       {/* Backdrop vibe: the user's image behind Home + Chat, painted under
           the shell; the derived accent applies document-wide from the same
           store (cave-backdrop.ts). In chat, a single-familiar scope with its

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusIcon } from "@/components/automations/status-icon";
+import { InboxDailyReportRow } from "@/components/automations/inbox-daily-report-row";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { repoFromGithubSubTag } from "@/lib/github-sub-tags";
 import type { IconName } from "@/lib/icon";
@@ -85,11 +86,17 @@ export function RitualItemRow({ item, familiarLabel, onSelect, quiet = false, ti
     : date ? date.toISOString() : item.updatedAt;
   return (
     <button type="button" className={`rituals-overview__row focus-ring-inset${quiet ? " rituals-overview__row--quiet" : ""}`} onClick={() => onSelect(item)}>
-      <StatusIcon item={item} />
-      <span className="rituals-overview__row-title">{item.title}</span>
-      <span className="rituals-overview__kind">{inboxKindLabel(item.kind)}</span>
-      {familiar ? <span className="rituals-overview__meta">{familiar}</span> : null}
-      <span className="rituals-overview__spacer" />
+      {item.kind === "daily-summary" ? (
+        <InboxDailyReportRow item={item} />
+      ) : (
+        <>
+          <StatusIcon item={item} />
+          <span className="rituals-overview__row-title">{item.title}</span>
+          <span className="rituals-overview__kind">{inboxKindLabel(item.kind)}</span>
+          {familiar ? <span className="rituals-overview__meta">{familiar}</span> : null}
+          <span className="rituals-overview__spacer" />
+        </>
+      )}
       <span className="rituals-overview__meta">{relativeTime(shownIso)}</span>
     </button>
   );
@@ -101,9 +108,15 @@ export function RitualNeedsRow({ item, familiarLabel, onSelect, onDone, onSnooze
   return (
     <li className="rituals-overview__need-row">
       <button type="button" className="rituals-overview__need-main focus-ring-inset" onClick={() => onSelect(item)}>
-        <span aria-hidden className="rituals-overview__live-dot" />
-        <span className="rituals-overview__row-title">{item.title}</span>
-        {familiar ? <span className="rituals-overview__meta">{familiar}</span> : null}
+        {item.kind === "daily-summary" ? (
+          <InboxDailyReportRow item={item} />
+        ) : (
+          <>
+            <span aria-hidden className="rituals-overview__live-dot" />
+            <span className="rituals-overview__row-title">{item.title}</span>
+            {familiar ? <span className="rituals-overview__meta">{familiar}</span> : null}
+          </>
+        )}
         <span className="rituals-overview__meta">{item.firedAt ? relativeTime(item.firedAt) : relativeTime(item.updatedAt)}</span>
       </button>
       <RitualActions>

@@ -215,8 +215,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /if \(!confirmedModel && grokForwardModel\) confirmedModel = desiredModel;/,
-  "Cave must not claim an inherited fallback model was applied when it deliberately used Grok's CLI default",
+  /if \(!confirmedModel && grokLaunchModel\) confirmedModel = desiredModel;/,
+  "Cave must confirm a Grok model only when the post-transform argv guard forwarded it",
 );
 assert.match(
   chatRoute,
@@ -303,6 +303,11 @@ assert.match(
   chatRoute,
   /kind: "assistant_replace", text: assistantText/,
   "an authoritative Copilot full frame replaces divergent streamed text in the live and persisted turn",
+);
+assert.match(
+  chatRoute,
+  /if \(correctedText === previousAssistantText\) \{[\s\S]*?\} else if \(correctedText === `\$\{previousAssistantText\}\$\{text\}`\) \{[\s\S]*?kind: "assistant_chunk", text[\s\S]*?\} else \{[\s\S]*?kind: "assistant_replace", text: assistantText/,
+  "a boundary-only Copilot message update replaces the live transcript instead of being dropped",
 );
 
 assert.match(

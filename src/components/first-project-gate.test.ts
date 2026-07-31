@@ -24,15 +24,17 @@ test("the first-project gate is a non-modal detail-scoped panel with no dismiss 
 
 test("the gate copy makes project creation mandatory for chat", () => {
   const src = read("./first-project-gate.tsx");
-  assert.match(src, />\s*Create your first project\s*</, "headline names the first-project task directly");
+  assert.match(src, /Create your first project/, "the no-project state names the first-project task directly");
+  assert.match(src, /Give this familiar project access/, "an existing project gets an explicit access-recovery state");
   assert.match(src, /Chat requires a project/, "copy explains that chat cannot proceed without a project");
+  assert.match(src, /Grant access so this familiar can use it in chat/, "registered-but-inaccessible projects are explained truthfully");
 });
 
 test("the gate stays prop-driven and focuses the correct first control on first visibility", () => {
   const src = read("./first-project-gate.tsx");
   assert.match(
     src,
-    /type FirstProjectGateProps = \{[\s\S]*open: boolean;[\s\S]*familiarId: string \| null;[\s\S]*pendingGrant: PendingFirstProjectAccessSnapshot \| null;[\s\S]*onPendingGrantChange: \(snapshot: PendingFirstProjectAccessSnapshot \| null\) => void;[\s\S]*loadingProjects: boolean;[\s\S]*projectsError: string \| null;[\s\S]*createProjectOrThrow: \(\s*name: string,\s*root: string,\s*options\?: CreateProjectOptions,\s*\) => Promise<CaveProject>;\s*reloadProjects: \(\) => void;/,
+    /type FirstProjectGateProps = \{[\s\S]*open: boolean;[\s\S]*familiarId: string \| null;[\s\S]*pendingGrant: PendingFirstProjectAccessSnapshot \| null;[\s\S]*onPendingGrantChange: \(snapshot: PendingFirstProjectAccessSnapshot \| null\) => void;[\s\S]*loadingProjects: boolean;[\s\S]*projectsError: string \| null;[\s\S]*registeredProjects: CaveProject\[\];[\s\S]*createProjectOrThrow: \(\s*name: string,\s*root: string,\s*options\?: CreateProjectOptions,\s*\) => Promise<CaveProject>;\s*reloadProjects: \(\) => void;/,
     "the gate stays prop-driven with the required integration fields",
   );
   assert.match(src, /const nameInputRef = useRef<HTMLInputElement \| null>\(null\);/, "keeps a stable ref for the project-name field");
@@ -44,12 +46,31 @@ test("the gate stays prop-driven and focuses the correct first control on first 
   );
   assert.match(
     src,
-    /const initialFocusTarget = registeredProject \? submitButtonRef\.current : nameInputRef\.current;[\s\S]*window\.requestAnimationFrame\(\(\) => \{\s*initialFocusTarget\?\.focus\(\{ preventScroll: true \}\);\s*\}\);/,
-    "requestAnimationFrame restores initial focus to Retry access when pending, otherwise the name field",
+    /const initialFocusTarget = lockedProject \? submitButtonRef\.current : nameInputRef\.current;[\s\S]*window\.requestAnimationFrame\(\(\) => \{\s*initialFocusTarget\?\.focus\(\{ preventScroll: true \}\);\s*\}\);/,
+    "requestAnimationFrame restores initial focus to a grant or retry action when a project is selected, otherwise the name field",
   );
   assert.match(src, /ref=\{nameInputRef\}/, "the stable focus ref is wired to the project-name input");
   assert.match(src, /ref=\{submitButtonRef\}/, "the stable submit ref is wired to the primary action");
   assert.doesNotMatch(src, /autoFocus/, "initial focus no longer depends on DOM-order-sensitive autoFocus");
+});
+
+test("the registered-project default never overwrites an explicit create-new selection", () => {
+  const src = read("./first-project-gate.tsx");
+  assert.match(
+    src,
+    /const existingProjectSelectionInitializedRef = useRef\(false\);/,
+    "tracks whether the automatic existing-project default has already run",
+  );
+  assert.match(
+    src,
+    /if \(registeredProject \|\| availableProjects\.length === 0 \|\| existingProjectSelectionInitializedRef\.current\) return;\s*existingProjectSelectionInitializedRef\.current = true;\s*setSelectedExistingProjectId\(availableProjects\[0\]!\.id\);/,
+    "defaults once when projects arrive, then preserves the explicit empty create-new option",
+  );
+  assert.doesNotMatch(
+    src,
+    /registeredProject \|\| selectedExistingProjectId \|\| availableProjects\.length === 0/,
+    "does not mistake the intentional empty select value for an uninitialized selection",
+  );
 });
 
 test("workspace wires the first-project gate through pending-aware policy and renders it inside the detail area", () => {
@@ -158,7 +179,7 @@ test("the gate keeps drafts through failures, blocks blank or busy submits, and 
   assert.match(src, /const submitRoot = lockedProject\?\.root \?\? rootDraft\.trim\(\);/, "retries use the stored project root instead of mutable drafts");
   assert.match(
     src,
-    /if \(submitFamiliarId && !pendingGrant && !canPersistPendingFirstProjectAccessSnapshot\(\)\) \{[\s\S]*setSubmitError\(STORAGE_REQUIRED_ERROR\);[\s\S]*return;[\s\S]*\}/,
+    /if \(submitFamiliarId && !pendingGrant && !lockedProject && !canPersistPendingFirstProjectAccessSnapshot\(\)\) \{[\s\S]*setSubmitError\(STORAGE_REQUIRED_ERROR\);[\s\S]*return;[\s\S]*\}/,
     "first-time create is blocked before project registration when session storage cannot durably hold the retry snapshot",
   );
   assert.match(
@@ -166,13 +187,11 @@ test("the gate keeps drafts through failures, blocks blank or busy submits, and 
     /if \(submitFamiliarId && pendingGrant && !writePendingFirstProjectAccessSnapshot\(pendingGrant\)\) \{[\s\S]*setSubmitError\(STORAGE_RETRY_ERROR\);[\s\S]*return;[\s\S]*\}/,
     "retry access re-attempts persistence before the grant call and stays blocked when storage is still unavailable",
   );
-  assert.match(src, /existingProjectId: pendingGrant\?\.project\.id/, "retries grant against the already-created project instead of creating a duplicate");
+  assert.match(src, /existingProjectId: lockedProject\?\.id/, "retries and existing-project grants use the registered id instead of creating a duplicate");
   assert.match(src, /name: submitName/, "passes the stored-or-drafted name through addChatProject");
-  assert.match(
-    src,
-    /if \(result\.ok\) \{[\s\S]*const createdProjectName = registeredProject\?\.name \?\? submitName;[\s\S]*clearPendingFirstProjectAccessSnapshot\(\);[\s\S]*onPendingGrantChange\(null\);[\s\S]*announce\(`Created project \$\{createdProjectName\}\. Chat is ready\.`\);/,
-    "announces the stored project name on success and clears persisted retry state only after the grant succeeds",
-  );
+  assert.match(src, /const createdProjectName = lockedProject\?\.name \?\? submitName;/, "success uses the existing project name when granting access");
+  assert.match(src, /clearPendingFirstProjectAccessSnapshot\(\);[\s\S]*onPendingGrantChange\(null\);/, "success clears persisted retry state only after the grant succeeds");
+  assert.match(src, /lockedProject \? "Granted" : "Created"/, "the live announcement distinguishes a grant from project creation");
   assert.match(src, /if \(submitting \|\| loadingProjects \|\| Boolean\(projectsError\)\) return;/, "the submit handler rejects busy or registry-blocked submits before any mutation");
   assert.match(src, /if \(!lockedProject && !submitName\) \{[\s\S]*setSubmitError\("Enter a project name\."\);/, "blank project names are blocked before the first registration");
   assert.match(src, /if \(!lockedProject && !submitRoot\) \{[\s\S]*setSubmitError\("Enter an absolute project root\."\);/, "blank project roots are blocked before the first registration");
@@ -183,7 +202,7 @@ test("the gate keeps drafts through failures, blocks blank or busy submits, and 
   assert.match(src, /onClick=\{reloadProjects\}/, "project-list failures expose a Retry action");
   assert.match(src, /disabled=\{submitting \|\| loadingProjects \|\| Boolean\(projectsError\) \|\| !canSubmit\}/, "creation stays blocked while the registry is still loading or errored");
   assert.match(src, /disabled=\{Boolean\(registeredProject\) \|\| submitting\}/, "name, root, and Browse controls lock once only the access grant needs retry");
-  assert.match(src, /\{registeredProject \? "Retry access" : "Create"\}/, "the submit action relabels to Retry access for partial-grant retries");
+  assert.match(src, /\{registeredProject \? "Retry access" : lockedProject \? "Grant access" : "Create"\}/, "the submit action distinguishes retry, existing-project grant, and creation");
   assert.match(src, /ref=\{submitButtonRef\}/, "Retry access can receive initial focus via the enabled submit button");
   assert.match(src, /Project <span className="font-medium text-\[var\(--text-primary\)\]">\{registeredProject\.name\}<\/span> was[\s\S]*Retry access so the required familiar can use[\s\S]*\{registeredProject\.root\}/, "copy explains that the project was created and only access still needs retry without rebinding to another familiar");
   assert.doesNotMatch(src, /Project created, but chat still needs access:/, "retry context lives in the descriptive copy, not as a prefixed error wrapper");
@@ -199,7 +218,7 @@ test("the gate exposes the exact root field plus Browse and Create-or-retry acti
   assert.match(src, /placeholder="\/absolute\/path\/to\/project"/, "the root field explains the required absolute-path format");
   assert.match(src, />\s*Browse\s*</, "the gate exposes a Browse action next to the root field");
   assert.match(src, /"Create"/, "the gate exposes a Create action for the first project");
-  assert.match(src, /\{registeredProject \? "Retry access" : "Create"\}/, "the primary action swaps from Create to Retry access after registration succeeds");
+  assert.match(src, /\{registeredProject \? "Retry access" : lockedProject \? "Grant access" : "Create"\}/, "the primary action distinguishes Create, Grant access, and Retry access");
 });
 
 console.log("first-project-gate.test.ts OK");

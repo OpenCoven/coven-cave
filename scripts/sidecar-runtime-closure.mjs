@@ -133,7 +133,22 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-26 (scheduled backup sync): the /backup/sync (+/run) routes and
   // the backup-sync scheduler trace at 5,718 on Linux and 5,720 on Windows.
   // Retain the established ten-file cross-platform buffer.
-  fileCount: 5_730,
+  // 2026-07-27 (canonical Coven Memory): path-free list/overview/detail routes
+  // and their browser readers/resources traced the packaged runtime at 5,769
+  // on Linux and 5,772 on Windows. Retain the established ten-file buffer.
+  // 2026-07-29 (typed chat follow-ups): the reusable Reply/Task/Action
+  // components trace two additional Windows runtime files (5,784). Preserve
+  // the established ten-file cross-platform headroom without relaxing bytes.
+  // 2026-07-29 (daemon launch cleanup): Windows packaging of the owned
+  // readiness-timeout path measured 5,789 files. Retain the established ten
+  // files of cross-platform headroom without relaxing the byte ceiling.
+  // 2026-07-29 (Node 24 LTS dependency refresh): the Windows runtime measured
+  // 5,801 files. Retain the same ten-file headroom without relaxing the byte
+  // ceiling.
+  // 2026-07-29 (Chat Familiar settings): the nested Familiar settings
+  // writers trace 5,804 files on Windows. Retain the established ten files
+  // of cross-platform headroom without relaxing the byte ceiling.
+  fileCount: 5_814,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

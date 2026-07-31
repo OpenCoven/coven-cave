@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "CovenCave",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "identifier": "ai.opencoven.cave",
   "build": {
     "frontendDist": "../src-tauri/frontend-stub",
@@ -45,7 +45,8 @@
       "resources/server/**/*",
       "resources/node/**/*",
       "resources/whisper/**/*",
-      "resources/piper/**/*"
+      "resources/piper/**/*",
+      "resources/kokoro/**/*"
     ],
     "icon": [
       "icons/32x32.png",

@@ -1507,7 +1507,13 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                           // reply, mirroring the single-chat surface; otherwise
                           // the raw control markup leaks into the coven bubble.
                           // The parsed lines render as click-to-send chips below.
-                          const { visible: withoutNextPaths, suggestions } = extractNextPaths(r.text);
+                          const { visible: withoutNextPaths, suggestions: typedSuggestions } = extractNextPaths(r.text);
+                          // Group chat has no task-review or action router.
+                          // Never offer task/action suggestions here: a click
+                          // sends an ordinary group message, not a side effect.
+                          const suggestions = typedSuggestions
+                            .filter((path) => path.kind === "reply")
+                            .map((path) => path.prompt);
                           const { visible: visibleText } = extractCovenDelegations(withoutNextPaths);
                           const replyTargets = parseMentions(visibleText, mentionable)
                             .map((id) => byId.get(id))

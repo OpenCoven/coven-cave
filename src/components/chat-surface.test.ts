@@ -61,11 +61,16 @@ assert.doesNotMatch(
 // The chat surface no longer hosts a memory scope — familiar memory lives in
 // the Familiars surface and the Grimoire editor (cave-liut). The "familiar"
 // scope is the capability panel promoted out of the retired inspector
-// sidepanel, sitting immediately left of Settings.
+// sidepanel; chat settings now live inside the Familiar surface.
 assert.match(
   chatSurface,
-  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar" \| "settings"/,
-  "ChatSurface scope union should carry the promoted familiar tab (and no dead memory scope)",
+  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar" \| "canvas"/,
+  "ChatSurface scope union should carry the promoted familiar tab and canvas",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /\{\s*id:\s*"settings",\s*label:\s*"Settings"\s*\}/,
+  "ChatSurface should merge chat Settings into the Familiar tab instead of keeping a fifth top-level tab",
 );
 assert.doesNotMatch(
   chatSurface,
@@ -119,6 +124,17 @@ assert.match(
 
 assert.match(
   chatSurface,
+  /\{\s*id:\s*"familiar",\s*label:\s*"Familiar"\s*\}/,
+  "ChatSurface should name the familiar-focused scope Familiar",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /\{\s*id:\s*"familiar",\s*label:\s*"Skills"\s*\}/,
+  "ChatSurface should not leave the merged familiar scope labeled Skills",
+);
+
+assert.match(
+  chatSurface,
   /useState<FamiliarsScope>\("conversation"\)/,
   "ChatSurface should default the scope to conversation so the ChatList shows when Chat is selected",
 );
@@ -137,14 +153,14 @@ assert.doesNotMatch(
 
 assert.match(
   agentsMemoryView,
-  /fetch\("\/api\/coven-memory"/,
-  "Agents memory view should load daemon-backed Coven memory",
+  /loadCanonicalMemoryList\(\)[\s\S]*loadCanonicalMemoryOverview\(\)/,
+  "Familiars memory should load daemon-backed canonical landing resources",
 );
 
 assert.match(
   agentsMemoryView,
-  /fetch\("\/api\/memory"/,
-  "Agents memory view should load filesystem memory indexes",
+  /readSurfaceResource<FileMemoryResponse>\(\s*"memory:list",\s*force,\s*\)/,
+  "Familiars memory should load filesystem memory through the shared resource",
 );
 
 assert.match(
@@ -215,13 +231,18 @@ assert.doesNotMatch(
 );
 
 // The inspector sidepanel is retired: its Familiar section is a first-class
-// chat scope tab (left of Settings), Analytics/Automations are gone from chat,
+// chat scope tab, Analytics/Automations are gone from chat,
 // and the code rail is the only right sidepanel. Canvas (saved sketches) sits
-// between Projects and Familiar.
+// between Projects and Familiar; chat settings live inside Familiar.
 assert.match(
   chatSurface,
-  /\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Skills" \},\s*\{ id: "settings", label: "Settings" \},/,
-  "the Skills tab (familiar scope) sits immediately left of Settings (after Canvas)",
+  /\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Familiar" \},/,
+  "the Familiar tab is the final primary scope after Canvas",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /scope === "settings"|<ChatSettingsView\s*\/>/,
+  "ChatSurface should no longer own a standalone chat-settings branch",
 );
 // The skills-tab latch must be consumed on the LIVE event path too: "Manage
 // skills" from an already-mounted chat doesn't remount this surface, so a
