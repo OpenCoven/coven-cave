@@ -81,6 +81,8 @@ mod windows_process_job;
 use desktop_reachability::*;
 #[cfg(desktop)]
 use platform_lifecycle::*;
+#[cfg(all(test, desktop))]
+use shell_open_commands::launch_x_oauth_url_with;
 #[cfg(desktop)]
 use shell_open_commands::{open_x_oauth_url, shell_open, shell_open_path, shell_pick_directory};
 #[cfg(desktop)]

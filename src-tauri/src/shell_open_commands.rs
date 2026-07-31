@@ -26,6 +26,48 @@ fn open_url_in_system_browser(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(desktop)]
+fn wait_for_x_oauth_browser_launcher(url: &str) -> std::io::Result<bool> {
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = std::process::Command::new("open");
+        command.arg(url);
+        command
+    };
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = std::process::Command::new(windows_system32_binary("rundll32.exe"));
+        command.args(["url.dll,FileProtocolHandler", url]);
+        command
+    };
+    #[cfg(target_os = "linux")]
+    let mut command = {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(url);
+        command
+    };
+
+    let status = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()?;
+    Ok(status.success())
+}
+
+#[cfg(desktop)]
+pub(super) fn launch_x_oauth_url_with<F>(url: &str, runner: F) -> Result<(), String>
+where
+    F: FnOnce(&str) -> std::io::Result<bool>,
+{
+    validate_x_oauth_url(url)?;
+    match runner(url) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err("System browser launcher exited unsuccessfully.".to_string()),
+        Err(_) => Err("Could not start the system browser launcher.".to_string()),
+    }
+}
+
 /// Open an http(s) URL in the system default browser.
 #[cfg(desktop)]
 #[tauri::command]
@@ -37,9 +79,12 @@ pub(super) fn shell_open(url: String) -> Result<(), String> {
 /// Open only a complete X OAuth authorization URL in the system browser.
 #[cfg(desktop)]
 #[tauri::command]
-pub(super) fn open_x_oauth_url(url: String) -> Result<(), String> {
-    validate_x_oauth_url(&url)?;
-    open_url_in_system_browser(&url)
+pub(super) async fn open_x_oauth_url(url: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        launch_x_oauth_url_with(&url, wait_for_x_oauth_browser_launcher)
+    })
+    .await
+    .map_err(|_| "System browser launcher task did not complete.".to_string())?
 }
 
 /// Open an absolute local directory in the system file explorer.

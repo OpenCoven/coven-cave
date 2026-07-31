@@ -1,4 +1,5 @@
-use super::{validate_shell_open_url, validate_x_oauth_url};
+use super::{launch_x_oauth_url_with, validate_shell_open_url, validate_x_oauth_url};
+use std::{cell::Cell, io};
 
 #[test]
 fn validates_http_and_https_urls() {
@@ -51,6 +52,83 @@ fn rejects_arbitrary_or_malformed_x_oauth_navigation() {
         assert!(validate_x_oauth_url(denied).is_err(), "{denied}");
     }
     assert!(validate_x_oauth_url(&format!("{valid}&next=https%3A%2F%2Fevil.example")).is_err());
+}
+
+#[test]
+fn x_oauth_launcher_reports_successful_exit() {
+    let url = valid_x_oauth_url();
+    let received = Cell::new(false);
+
+    assert!(launch_x_oauth_url_with(&url, |candidate| {
+        received.set(candidate == url);
+        Ok(true)
+    })
+    .is_ok());
+    assert!(received.get(), "the validated URL must reach the launcher");
+}
+
+#[test]
+fn x_oauth_launcher_reports_nonzero_exit_without_url_details() {
+    let url = valid_x_oauth_url();
+    let error = launch_x_oauth_url_with(&url, |_| Ok(false)).unwrap_err();
+
+    assert_eq!(error, "System browser launcher exited unsuccessfully.");
+    assert!(!error.contains(&url));
+}
+
+#[test]
+fn x_oauth_launcher_sanitizes_spawn_failures() {
+    let url = valid_x_oauth_url();
+    let error = launch_x_oauth_url_with(&url, |_| {
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "secret-bearing launcher detail",
+        ))
+    })
+    .unwrap_err();
+
+    assert_eq!(error, "Could not start the system browser launcher.");
+    assert!(!error.contains("secret-bearing"));
+    assert!(!error.contains(&url));
+}
+
+#[test]
+fn x_oauth_launcher_rejects_arbitrary_urls_before_running_command() {
+    let called = Cell::new(false);
+    let error = launch_x_oauth_url_with("https://example.com/", |_| {
+        called.set(true);
+        Ok(true)
+    })
+    .unwrap_err();
+
+    assert_eq!(error, "X OAuth URL is not trusted");
+    assert!(
+        !called.get(),
+        "untrusted URLs must never reach the launcher"
+    );
+}
+
+#[test]
+fn native_x_oauth_launcher_waits_off_the_async_runtime() {
+    let src = include_str!("shell_open_commands.rs");
+
+    assert!(
+        src.contains("pub(super) async fn open_x_oauth_url")
+            && src.contains("tauri::async_runtime::spawn_blocking")
+            && src.contains(".status()"),
+        "the X OAuth launcher must wait/reap in a blocking worker",
+    );
+}
+
+#[test]
+fn native_x_oauth_launcher_suppresses_secret_bearing_process_output() {
+    let src = include_str!("shell_open_commands.rs");
+
+    assert!(
+        src.contains(".stdout(std::process::Stdio::null())")
+            && src.contains(".stderr(std::process::Stdio::null())"),
+        "the native launcher must not forward output that could contain the authorization URL",
+    );
 }
 
 #[test]
