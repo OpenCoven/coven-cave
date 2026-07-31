@@ -92,10 +92,19 @@ assert.match(
   "Image temp files should be best-effort deleted after the harness child has exited",
 );
 
+// The transcript still never receives a base64 payload. Since cave-cysu4 the
+// stripped record additionally carries a `storedId` pointing at the durable
+// copy, so a reopened thread can render the image — but the strip stays the
+// inner call, i.e. nothing reaches persistence that the strip did not pass.
 assert.match(
   chatRoute,
-  /const persistedAttachments = stripPreviewOnlyAttachmentFields\(attachments\);/,
+  /const persistedAttachments = await persistImageAttachments\(\s*stripPreviewOnlyAttachmentFields\(attachments\),\s*attachments,\s*\);/,
   "Persisted transcripts should keep attachment metadata only, not base64 image payloads",
+);
+assert.match(
+  chatRoute,
+  /import \{[\s\S]*?persistImageAttachments,[\s\S]*?\} from "\.\/chat-send-attachments";/,
+  "The durable-copy step lives with the other attachment helpers",
 );
 
 // Behavioral coverage: normalization keeps bounded image payloads and rejects

@@ -244,6 +244,7 @@ import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
   appendMentionedFilesBlock,
   cleanupImageTempFiles,
+  persistImageAttachments,
   resolveMentionedFiles,
   writeImageAttachmentsToTemp,
 } from "./chat-send-attachments";
@@ -1258,25 +1259,38 @@ export async function POST(req: Request) {
     );
   }
   // Persisted transcripts keep attachment metadata only — base64 image
-  // payloads stay out of the conversation store.
-  const persistedAttachments = stripPreviewOnlyAttachmentFields(attachments);
+  // payloads stay out of the conversation store. Images additionally get a
+  // durable copy in the attachment store, and the transcript records its id,
+  // so reopening the thread can show the picture again instead of degrading
+  // to a filename chip (cave-cysu4).
+  const persistedAttachments = await persistImageAttachments(
+    stripPreviewOnlyAttachmentFields(attachments),
+    attachments,
+  );
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
+  const existingConversation = body.sessionId
+    ? await loadConversation(body.sessionId).catch(() => null)
+    : null;
   // Canonicalize the bound harness id up front so a familiar carrying a
   // package/alias id (e.g. "hermes-agent" for Hermes) is recognized as the
   // trusted "hermes" adapter — otherwise the trust gate below 403s and `coven
   // run` is invoked with an unknown harness name. Every downstream check and
   // the spawn use this canonical id.
   binding.harness = canonicalHarnessId(binding.harness);
-  const existingConversation = body.sessionId
-    ? await loadConversation(body.sessionId).catch(() => null)
-    : null;
   if (existingConversation && existingConversation.familiarId !== body.familiarId) {
     return new Response(
       JSON.stringify({ ok: false, error: "not found" }),
       { status: 404, headers: { "content-type": "application/json" } },
     );
+  }
+  // On resume, the persisted conversation is the execution contract: a later
+  // familiar edit must not silently move an in-progress OpenClaw (or other
+  // runtime) conversation to a different harness. The trust gate below still
+  // rejects any malformed legacy value.
+  if (existingConversation) {
+    binding.harness = canonicalHarnessId(existingConversation.harness);
   }
   // Native Board handoffs reserve Cave's conversation id before the harness
   // writes its transcript. Bind that pre-transcript id to the server-owned

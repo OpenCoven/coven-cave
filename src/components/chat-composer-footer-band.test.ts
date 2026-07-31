@@ -184,6 +184,29 @@ assert.match(
   "typing should still add the accent tint fill to the send button",
 );
 
+// The busy/cancel circle paints its glyph ON the danger fill, so the only
+// legible foreground is the on-danger token. `--danger-text` resolves to
+// `var(--color-danger)` — red type meant for neutral surfaces — and painting
+// the ✕ with it left a solid red square with no visible icon (cave-xrvns).
+for (const [sheet, label] of [
+  [css, "cave-composer.css"],
+  [transcriptCss, "transcript.css"],
+] as const) {
+  const busy = sheet.match(/\.cave-composer-send--busy[^{]*\{[^}]*\}/g) ?? [];
+  assert.ok(busy.length > 0, `${label} should style the busy send button`);
+  for (const rule of busy) {
+    assert.doesNotMatch(
+      rule,
+      /color:\s*var\(--danger-text\)/,
+      `${label}: the busy glyph must not reuse --danger-text (same value as the danger fill)`,
+    );
+  }
+  assert.ok(
+    busy.some((rule) => /color:\s*var\(--color-danger-foreground\)/.test(rule)),
+    `${label}: the busy glyph should use the on-danger foreground token`,
+  );
+}
+
 // The "↵ send · ⇧↵ newline" typing hint is gone from the chat composer
 // (2026-07-21): the tinted send button already signals sendability. The
 // home composer dropped its hint in the same day's parity pass, so the

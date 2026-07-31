@@ -111,11 +111,37 @@ export const RESEARCH_GENERATION_CREATABLE_KINDS = [
 
 export type ResearchMediaProvider = "local" | "elevenlabs";
 export type ResearchMediaLength = "brief" | "standard" | "extended";
+export type ResearchPodcastSpeaker = "host" | "guest";
+
+export const RESEARCH_PODCAST_STYLES = [
+  "breakdown",
+  "debate",
+  "interview",
+  "recap",
+] as const;
+export type ResearchPodcastStyle = (typeof RESEARCH_PODCAST_STYLES)[number];
+
+export function isResearchPodcastStyle(
+  value: unknown,
+): value is ResearchPodcastStyle {
+  return RESEARCH_PODCAST_STYLES.includes(value as ResearchPodcastStyle);
+}
 
 export type ResearchMediaRenderConfig = {
   provider: ResearchMediaProvider;
+  /** Primary voice; also the fallback for any segment without a speaker map. */
   voice: string;
   length: ResearchMediaLength;
+  /**
+   * Podcast only: per-speaker voices for dialogue scripts. Absent means every
+   * segment renders with `voice`, which keeps single-voice configs unchanged.
+   */
+  voices?: { host: string; guest: string };
+  /**
+   * Podcast only: drafting style. Absent means "breakdown" — old stored
+   * configs keep validating and re-draft exactly as the default style.
+   */
+  style?: ResearchPodcastStyle;
 };
 
 export type ResearchGenerationProgress = {
@@ -177,12 +203,46 @@ export function validateResearchMediaRenderConfig(
   if (kind === "short-video" && value.length === "extended") {
     return { ok: false, error: "short video length must be brief or standard" };
   }
+  let voices: { host: string; guest: string } | undefined;
+  if (value.voices !== undefined) {
+    if (kind !== "podcast") {
+      return { ok: false, error: "per-speaker voices are only valid for podcasts" };
+    }
+    if (!value.voices || typeof value.voices !== "object" || Array.isArray(value.voices)) {
+      return { ok: false, error: "media voices must map host and guest voices" };
+    }
+    const pair = value.voices as Record<string, unknown>;
+    const host = typeof pair.host === "string" ? pair.host.trim() : "";
+    const guest = typeof pair.guest === "string" ? pair.guest.trim() : "";
+    if (!host || host.length > 128 || !guest || guest.length > 128) {
+      return {
+        ok: false,
+        error: "host and guest voices must be between 1 and 128 characters",
+      };
+    }
+    voices = { host, guest };
+  }
+  let style: ResearchPodcastStyle | undefined;
+  if (value.style !== undefined) {
+    if (kind !== "podcast") {
+      return { ok: false, error: "podcast style is only valid for podcasts" };
+    }
+    if (!isResearchPodcastStyle(value.style)) {
+      return {
+        ok: false,
+        error: "podcast style must be breakdown, debate, interview, or recap",
+      };
+    }
+    style = value.style;
+  }
   return {
     ok: true,
     value: {
       provider: value.provider,
       voice,
       length: value.length,
+      ...(voices ? { voices } : {}),
+      ...(style ? { style } : {}),
     },
   };
 }
@@ -244,6 +304,11 @@ export type ResearchGenerationScriptSegment = {
   id: string;
   /** Extracted narration text, never generated from directions. */
   text: string;
+  /**
+   * Dialogue speaker for two-voice podcasts. Absent on single-narrator
+   * scripts, which render entirely with the config's primary voice.
+   */
+  speaker?: ResearchPodcastSpeaker;
 };
 
 export type ResearchGenerationStoryboardScene = {
@@ -366,7 +431,10 @@ export function isResearchGenerationContent(
         typeof segment === "object" &&
         typeof (segment as ResearchGenerationScriptSegment).id === "string" &&
         (segment as ResearchGenerationScriptSegment).id.length > 0 &&
-        typeof (segment as ResearchGenerationScriptSegment).text === "string",
+        typeof (segment as ResearchGenerationScriptSegment).text === "string" &&
+        ((segment as ResearchGenerationScriptSegment).speaker === undefined ||
+          (segment as ResearchGenerationScriptSegment).speaker === "host" ||
+          (segment as ResearchGenerationScriptSegment).speaker === "guest"),
     );
   const isStoryboard = (candidate: unknown): candidate is ResearchGenerationStoryboardScene[] =>
     Array.isArray(candidate) &&
