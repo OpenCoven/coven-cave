@@ -45,13 +45,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /if \(mode !== roleSurfaceMode\(CODE_SURFACE_ID\)\) \{[\s\S]{0,80}?clearPendingCodeNavigation\(\);[\s\S]{0,40}?\}/,
+  /if \(modeRef\.current !== roleSurfaceMode\(CODE_SURFACE_ID\)\) \{[\s\S]{0,80}?clearPendingCodeNavigation\(\);[\s\S]{0,40}?\}/,
   "leaving Code Workshop discards an unavailable room's unconsumed target",
 );
 assert.match(
   workspace,
-  /useEffect\(\(\) => \{\s*if \(mode !== roleSurfaceMode\(CODE_SURFACE_ID\)\) \{[\s\S]*?clearPendingCodeNavigation\(\);[\s\S]*?return;\s*\}\s*if \(!roleSurfaceSession\.context\) \{\s*if \(\s*!activeFamiliarHydrated\s*\|\|\s*!familiarsLoaded\s*\|\|\s*!familiarRosterLoadedSuccessfully\s*\) return;\s*clearPendingCodeNavigation\(\);[\s\S]*?return;\s*\}\s*if \(!roleSurfaceSession\.rolesLoaded\) return;\s*if \(!roleSurfaceSession\.rolesLoadedSuccessfully\) return;\s*if \(!roleSurfaceSession\.visibleSurfaces\.some\(\(surface\) => surface\.id === CODE_SURFACE_ID\)\) \{[\s\S]*?clearPendingCodeNavigation\(\);[\s\S]*?\}\s*\}, \[\s*mode,\s*roleSurfaceSession\.context,\s*roleSurfaceSession\.rolesLoaded,\s*roleSurfaceSession\.rolesLoadedSuccessfully,\s*roleSurfaceSession\.visibleSurfaces,\s*activeFamiliarHydrated,\s*familiarsLoaded,\s*familiarRosterLoadedSuccessfully,\s*\]\);/,
-  "pending Code navigation survives cold-load familiar settlement and only clears once no-context is definitive or successfully loaded roles still exclude Code",
+  /useEffect\(\(\) => \{[\s\S]{0,300}?if \(modeRef\.current !== roleSurfaceMode\(CODE_SURFACE_ID\)\) \{[\s\S]*?clearPendingCodeNavigation\(\);[\s\S]*?return;\s*\}\s*if \(!roleSurfaceSession\.context\) \{\s*if \(\s*!activeFamiliarHydrated\s*\|\|\s*!familiarsLoaded\s*\|\|\s*!familiarRosterLoadedSuccessfully\s*\) return;\s*clearPendingCodeNavigation\(\);[\s\S]*?return;\s*\}\s*if \(!roleSurfaceSession\.rolesLoaded\) return;\s*if \(!roleSurfaceSession\.rolesLoadedSuccessfully\) return;\s*if \(!roleSurfaceSession\.visibleSurfaces\.some\(\(surface\) => surface\.id === CODE_SURFACE_ID\)\) \{[\s\S]*?clearPendingCodeNavigation\(\);[\s\S]*?\}\s*\}, \[\s*mode,\s*roleSurfaceSession\.context,\s*roleSurfaceSession\.rolesLoaded,\s*roleSurfaceSession\.rolesLoadedSuccessfully,\s*roleSurfaceSession\.visibleSurfaces,\s*activeFamiliarHydrated,\s*familiarsLoaded,\s*familiarRosterLoadedSuccessfully,\s*\]\);/,
+  "pending Code navigation uses modeRef.current as the synchronous same-flush authority while still rerunning for committed mode, roster, role, and visibility changes",
 );
 assert.doesNotMatch(workspace, /setGithubTarget|githubTarget/, "Workspace owns no standalone GitHub detail state");
 assert.doesNotMatch(workspace, /<GitHubView/, "Workspace never renders GitHubView directly");

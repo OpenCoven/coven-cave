@@ -2808,7 +2808,10 @@ export function Workspace() {
   ]);
 
   useEffect(() => {
-    if (mode !== roleSurfaceMode(CODE_SURFACE_ID)) {
+    // setMode("github") updates modeRef.current synchronously before React
+    // rerenders. Use that authoritative intent here because other passive
+    // effects from the old render can still flush in the same batch.
+    if (modeRef.current !== roleSurfaceMode(CODE_SURFACE_ID)) {
       clearPendingCodeNavigation();
       return;
     }
