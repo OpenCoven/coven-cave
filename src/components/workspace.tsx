@@ -2796,6 +2796,11 @@ export function Workspace() {
       return;
     }
     if (!roleSurfaceSession.context) {
+      if (
+        !activeFamiliarHydrated
+        || !familiarsLoaded
+        || !familiarRosterLoadedSuccessfully
+      ) return;
       clearPendingCodeNavigation();
       return;
     }
@@ -2803,7 +2808,15 @@ export function Workspace() {
     if (!roleSurfaceSession.visibleSurfaces.some((surface) => surface.id === CODE_SURFACE_ID)) {
       clearPendingCodeNavigation();
     }
-  }, [mode, roleSurfaceSession.context, roleSurfaceSession.rolesLoaded, roleSurfaceSession.visibleSurfaces]);
+  }, [
+    mode,
+    roleSurfaceSession.context,
+    roleSurfaceSession.rolesLoaded,
+    roleSurfaceSession.visibleSurfaces,
+    activeFamiliarHydrated,
+    familiarsLoaded,
+    familiarRosterLoadedSuccessfully,
+  ]);
 
   useEffect(() => {
     const openPendingBrowserUrl = () => {
