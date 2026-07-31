@@ -234,6 +234,14 @@ try {
   assert.equal(second.status, 0, second.stderr);
   assert.deepEqual(generatedDigest(fixture.marketplace), before, "generation should be deterministic");
 
+  const crlfMarketplace = path.join(fixture.marketplace, "marketplace.json");
+  writeFileSync(
+    crlfMarketplace,
+    readFileSync(crlfMarketplace, "utf8").replaceAll("\r\n", "\n").replaceAll("\n", "\r\n"),
+  );
+  const lineEndingCheck = runSync(fixture, ["--check"]);
+  assert.equal(lineEndingCheck.status, 0, lineEndingCheck.stderr);
+
   writeFileSync(path.join(pluginRoot, "prompts", "open-a-research-space.md"), "stale\n");
   const stale = runSync(fixture, ["--check"]);
   assert.notEqual(stale.status, 0);

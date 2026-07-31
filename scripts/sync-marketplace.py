@@ -792,7 +792,19 @@ def write_files(files: dict[Path, str | bytes], managed_roots: set[Path] | None 
         if isinstance(content, bytes):
             path.write_bytes(content)
         else:
-            path.write_text(content, encoding="utf-8")
+            # Generated manifests and prompt content use LF regardless of the
+            # host platform, matching their repository representation and
+            # avoiding CRLF-only drift in consumers that parse frontmatter.
+            path.write_bytes(content.encode("utf-8"))
+
+
+def normalize_text_line_endings(value: bytes) -> bytes:
+    """Normalize UTF-8 text without changing the comparison of binary assets."""
+    try:
+        value.decode("utf-8")
+    except UnicodeDecodeError:
+        return value
+    return value.replace(b"\r\n", b"\n")
 
 
 def check_files(
@@ -809,8 +821,14 @@ def check_files(
         if not path.exists():
             problems.append(f"missing {display_path}")
             continue
-        actual = path.read_bytes()
         expected_bytes = expected if isinstance(expected, bytes) else expected.encode("utf-8")
+        # Git may check text files out as CRLF on Windows even when the
+        # repository's canonical generated content uses LF. Compare UTF-8
+        # text with universal newlines so --check reports actual export drift
+        # rather than a platform checkout convention; keep binary assets
+        # byte-exact.
+        actual = normalize_text_line_endings(path.read_bytes())
+        expected_bytes = normalize_text_line_endings(expected_bytes)
         if actual != expected_bytes:
             problems.append(f"stale {display_path}")
     for path in unexpected_managed_files(files, managed_roots or set()):
