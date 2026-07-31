@@ -78,6 +78,19 @@ function observation(overrides = {}) {
   };
 }
 
+function legacyObservation(overrides = {}) {
+  const {
+    kind,
+    ref,
+    metadata,
+    metadataErrors,
+    remoteRef,
+    sessionIds,
+    ...legacy
+  } = observation(overrides);
+  return legacy;
+}
+
 {
   const item = classifyLifecycleUnit(
     observation({
@@ -212,14 +225,27 @@ function observation(overrides = {}) {
 
 {
   const item = classifyWorktree(
-    observation({
-      metadata: metadata({ disposition: "pr" }),
+    legacyObservation({
       mergedPr: { number: 47, headOid: "a".repeat(40), url: "https://example.test/47" },
     }),
     NOW,
   );
   assert.equal(item.lane, "retire-after-gate", "old exact merged heads become owner-actionable");
   assert.match(item.reasons.join("\n"), /maintenance gate/);
+}
+
+{
+  const item = classifyWorktree(
+    observation({
+      metadata: null,
+      branch: "feat/missing-metadata-wrapper",
+      ref: "refs/heads/feat/missing-metadata-wrapper",
+      headOnDefaultBranch: true,
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "uncertain", "new callers stay fail-closed when metadata is explicitly missing");
+  assert.match(item.reasons.join("\n"), /metadata backfill/i);
 }
 
 {

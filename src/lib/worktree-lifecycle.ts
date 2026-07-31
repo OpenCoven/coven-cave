@@ -74,7 +74,39 @@ export type WorktreeLifecycleObservation = {
   sessionIds: string[];
 };
 
-export type WorktreeObservation = WorktreeLifecycleObservation;
+type LegacyWorktreeObservation = Pick<
+  WorktreeLifecycleObservation,
+  | "branch"
+  | "head"
+  | "isPrimary"
+  | "protectedBranch"
+  | "changes"
+  | "ignoredPaths"
+  | "nonDisposableIgnoredPaths"
+  | "indexFlags"
+  | "processOwners"
+  | "claimOwners"
+  | "taskIds"
+  | "openPrs"
+  | "mergedPr"
+  | "activeWorkflowUrls"
+  | "headOnDefaultBranch"
+  | "remoteRefsContainingHead"
+  | "updatedAtMs"
+  | "probeErrors"
+> & {
+  path: string;
+};
+
+type WorktreeObservationCompatibilityFields = Partial<
+  Pick<
+    WorktreeLifecycleObservation,
+    "kind" | "ref" | "metadata" | "metadataErrors" | "remoteRef" | "sessionIds"
+  >
+>;
+
+export type WorktreeObservation = LegacyWorktreeObservation &
+  WorktreeObservationCompatibilityFields;
 
 export type WorktreeLifecycleItem = WorktreeLifecycleObservation & {
   lane: WorktreeLifecycleLane;
@@ -219,9 +251,14 @@ function withReasons(item: WorktreeLifecycleObservation, lane: WorktreeLifecycle
   };
 }
 
-export function classifyLifecycleUnit(
+type ClassifyLifecycleUnitOptions = {
+  allowLegacyMissingMetadata: boolean;
+};
+
+function classifyLifecycleUnitInternal(
   observation: WorktreeLifecycleObservation,
-  nowMs = Date.now(),
+  nowMs: number,
+  options: ClassifyLifecycleUnitOptions,
 ): WorktreeLifecycleItem {
   if (observation.isPrimary || observation.protectedBranch) {
     return withReasons(observation, "protected", [
@@ -245,7 +282,11 @@ export function classifyLifecycleUnit(
     return withReasons(observation, "uncertain", observation.metadataErrors);
   }
 
+  const legacyMissingMetadata = options.allowLegacyMissingMetadata && observation.metadata === null;
   if (!observation.metadata) {
+    if (legacyMissingMetadata) {
+      return classifyLifecycleUnitWithoutMetadata(observation, nowMs);
+    }
     return withReasons(observation, "uncertain", [metadataBackfillReason()]);
   }
 
@@ -311,7 +352,115 @@ export function classifyLifecycleUnit(
   ]);
 }
 
-export const classifyWorktree = classifyLifecycleUnit;
+function classifyLifecycleUnitWithoutMetadata(
+  observation: WorktreeLifecycleObservation,
+  nowMs: number,
+): WorktreeLifecycleItem {
+  if (!observation.branch) {
+    return withReasons(observation, "recovery", ["detached HEAD"]);
+  }
+
+  if (RECOVERY_BRANCH.test(observation.branch) || WIP_BRANCH.test(observation.branch)) {
+    return withReasons(observation, "recovery", [
+      "branch name identifies a recovery or WIP snapshot",
+    ]);
+  }
+
+  if (observation.mergedPr && observation.mergedPr.headOid !== observation.head) {
+    return withReasons(observation, "recovery", [
+      `local HEAD does not match merged PR #${observation.mergedPr.number} head`,
+    ]);
+  }
+
+  const landed = observation.headOnDefaultBranch || observation.mergedPr !== null;
+  if (!landed) {
+    return withReasons(observation, "recovery", [
+      "HEAD is not proven landed on the default branch or an exact merged PR",
+    ]);
+  }
+
+  if (observation.updatedAtMs === null || !Number.isFinite(observation.updatedAtMs)) {
+    return withReasons(observation, "uncertain", ["branch/worktree recency is unavailable"]);
+  }
+
+  const ageMs = nowMs - observation.updatedAtMs;
+  if (ageMs < DAY_MS) {
+    return withReasons(observation, "cooldown", [
+      "landed work remains inside the mandatory 24-hour cooldown",
+    ]);
+  }
+
+  return withReasons(observation, "retire-after-gate", [
+    "clean landed work is older than 24 hours",
+    "removal still requires the repository-wide maintenance gate and final deletion proof",
+  ]);
+}
+
+export function classifyLifecycleUnit(
+  observation: WorktreeLifecycleObservation,
+  nowMs = Date.now(),
+): WorktreeLifecycleItem {
+  return classifyLifecycleUnitInternal(observation, nowMs, {
+    allowLegacyMissingMetadata: false,
+  });
+}
+
+function normalizeLegacyRef(branch: string | null, ref: string | null | undefined): string | null {
+  return ref ?? (branch ? `refs/heads/${branch}` : null);
+}
+
+function hasOwnProperty(value: object, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function normalizeWorktreeObservation(
+  observation: WorktreeObservation,
+): {
+  observation: WorktreeLifecycleObservation;
+  allowLegacyMissingMetadata: boolean;
+} {
+  const allowLegacyMissingMetadata = !hasOwnProperty(observation, "metadata");
+  return {
+    allowLegacyMissingMetadata,
+    observation: {
+      kind: observation.kind ?? "worktree",
+      path: observation.path,
+      ref: normalizeLegacyRef(observation.branch, observation.ref),
+      branch: observation.branch,
+      head: observation.head,
+      isPrimary: observation.isPrimary,
+      protectedBranch: observation.protectedBranch,
+      changes: observation.changes,
+      ignoredPaths: observation.ignoredPaths,
+      nonDisposableIgnoredPaths: observation.nonDisposableIgnoredPaths,
+      indexFlags: observation.indexFlags,
+      processOwners: observation.processOwners,
+      claimOwners: observation.claimOwners,
+      taskIds: observation.taskIds,
+      openPrs: observation.openPrs,
+      mergedPr: observation.mergedPr,
+      activeWorkflowUrls: observation.activeWorkflowUrls,
+      headOnDefaultBranch: observation.headOnDefaultBranch,
+      remoteRefsContainingHead: observation.remoteRefsContainingHead,
+      updatedAtMs: observation.updatedAtMs,
+      probeErrors: observation.probeErrors,
+      metadata: observation.metadata ?? null,
+      metadataErrors: observation.metadataErrors ?? [],
+      remoteRef: observation.remoteRef ?? null,
+      sessionIds: observation.sessionIds ?? [],
+    },
+  };
+}
+
+export function classifyWorktree(
+  observation: WorktreeObservation,
+  nowMs = Date.now(),
+): WorktreeLifecycleItem {
+  const normalized = normalizeWorktreeObservation(observation);
+  return classifyLifecycleUnitInternal(normalized.observation, nowMs, {
+    allowLegacyMissingMetadata: normalized.allowLegacyMissingMetadata,
+  });
+}
 
 const LANE_ORDER: WorktreeLifecycleLane[] = [
   "active",
