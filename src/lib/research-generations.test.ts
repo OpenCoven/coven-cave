@@ -110,6 +110,61 @@ test("media render configuration is kind-aware, trimmed, and bounded", () => {
   );
 });
 
+test("per-speaker podcast voices are podcast-only, trimmed, and bounded", () => {
+  assert.deepEqual(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "standard",
+      voices: { host: " piper-lessac-medium ", guest: " piper-amy " },
+    }),
+    {
+      ok: true,
+      value: {
+        provider: "local",
+        voice: "piper-lessac-medium",
+        length: "standard",
+        voices: { host: "piper-lessac-medium", guest: "piper-amy" },
+      },
+    },
+  );
+  // Single-voice configs stay exactly as before — no voices key appears.
+  const single = validateResearchMediaRenderConfig("podcast", {
+    provider: "local",
+    voice: "piper-lessac-medium",
+    length: "standard",
+  });
+  assert.ok(single.ok);
+  if (single.ok) assert.equal("voices" in single.value, false);
+  assert.equal(
+    validateResearchMediaRenderConfig("short-video", {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "brief",
+      voices: { host: "piper-lessac-medium", guest: "piper-amy" },
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "standard",
+      voices: { host: "piper-lessac-medium", guest: "  " },
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "standard",
+      voices: { host: "x".repeat(129), guest: "piper-amy" },
+    }).ok,
+    false,
+  );
+});
+
 test("chapter progress accepts bounded real units and rejects invented ranges", () => {
   assert.equal(
     isResearchGenerationProgress({
@@ -267,6 +322,22 @@ test("content guard enforces the per-kind discriminated union", () => {
       kind: "podcast",
       script: [{ id: "segment-1", text: "A source-grounded narration." }],
     }),
+  );
+  assert.ok(
+    isResearchGenerationContent({
+      kind: "podcast",
+      script: [
+        { id: "segment-1", text: "Welcome in.", speaker: "host" },
+        { id: "segment-2", text: "A source-grounded finding.", speaker: "guest" },
+      ],
+    }),
+  );
+  assert.equal(
+    isResearchGenerationContent({
+      kind: "podcast",
+      script: [{ id: "segment-1", text: "Narration.", speaker: "narrator" }],
+    }),
+    false,
   );
   assert.ok(
     isResearchGenerationContent({

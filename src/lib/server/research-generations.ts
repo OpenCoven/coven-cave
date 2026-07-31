@@ -56,6 +56,7 @@ import {
   type ResearchGenerationVideoChapter,
   type ResearchMediaLength,
   type ResearchMediaRenderConfig,
+  type ResearchPodcastSpeaker,
 } from "../research-generations.ts";
 import { LOCAL_TTS_MAX_CHARS } from "../voice/local-tts.ts";
 import type { ResearchArtifactRef, ResearchMission } from "../research-missions.ts";
@@ -860,17 +861,72 @@ export function draftPodcastContent(
   length: ResearchMediaLength,
 ): ResearchGenerationContent {
   const budget = RESEARCH_MEDIA_LENGTH_LIMITS.podcast[length].maxCharacters;
-  const candidates: ResearchGenerationScriptSegment[] = mediaNarrationUnits(source)
-    .flatMap(splitMediaDraftText)
-    .map((text, index) => ({ id: `segment-${index + 1}`, text }));
-  const script: ResearchGenerationScriptSegment[] = [];
-  let usedCharacters = 0;
-  for (const segment of candidates) {
-    if (usedCharacters + segment.text.length > budget) break;
-    script.push(segment);
-    usedCharacters += segment.text.length;
+  return {
+    kind: "podcast",
+    script: draftDialogueScript(mediaNarrationSectionUnits(source), {
+      budget,
+      opening: `Welcome in — today we're breaking down “${source.mission.title}”, finding by finding.`,
+      framing: (title) => `Next up — ${speakable(title)}`,
+    }),
+  };
+}
+
+type DialogueTemplate = {
+  budget: number;
+  /** Templated host opener; counts against the character budget. */
+  opening: string;
+  /** Templated host bridge into a titled section; structure, never findings. */
+  framing: (title: string) => string;
+};
+
+/**
+ * Turns narration units into alternating host/guest turns. Framing lines are
+ * templated structure; every findings turn stays verbatim artifact text.
+ */
+function draftDialogueScript(
+  units: NarrationUnit[],
+  template: DialogueTemplate,
+): ResearchGenerationScriptSegment[] {
+  const turns: { text: string; speaker: ResearchPodcastSpeaker }[] = [];
+  let used = 0;
+  const push = (text: string, speaker: ResearchPodcastSpeaker) => {
+    turns.push({ text, speaker });
+    used += text.length;
+  };
+  if (units.length === 0 || template.opening.length > template.budget) {
+    return [];
   }
-  return { kind: "podcast", script };
+  push(template.opening, "host");
+  // Heading-less lines have no title to frame, so delivery alternates.
+  let alternate: ResearchPodcastSpeaker = "guest";
+  outer: for (const unit of units) {
+    const chunks = splitMediaDraftText(unit.text);
+    if (chunks.length === 0) continue;
+    if (unit.title !== null) {
+      const framing = template.framing(unit.title);
+      // Never leave an orphan host question: the framing line only enters
+      // when at least its first findings chunk also fits the budget.
+      if (used + framing.length + chunks[0].length > template.budget) break;
+      push(framing, "host");
+      for (const chunk of chunks) {
+        if (used + chunk.length > template.budget) break outer;
+        push(chunk, "guest");
+      }
+    } else {
+      for (const chunk of chunks) {
+        if (used + chunk.length > template.budget) break outer;
+        push(chunk, alternate);
+        alternate = alternate === "guest" ? "host" : "guest";
+      }
+    }
+  }
+  // An opening with nothing to deliver is not a podcast.
+  if (turns.length < 2) return [];
+  return turns.map((turn, index) => ({
+    id: `segment-${index + 1}`,
+    text: turn.text,
+    speaker: turn.speaker,
+  }));
 }
 
 function storyboardSceneFromSection(

@@ -252,7 +252,11 @@ export function generationContentToMarkdown(generation: ResearchGeneration): str
       return `${content.stats.map((stat) => `- **${stat.value}** — ${stat.context}`).join("\n")}\n`;
     case "podcast":
       return `# ${generationTitle(generation)}\n\n${content.script
-        .map((segment) => segment.text)
+        .map((segment) =>
+          segment.speaker
+            ? `**${segment.speaker === "host" ? "Host" : "Guest"}:** ${segment.text}`
+            : segment.text,
+        )
         .join("\n\n")}\n`;
     case "short-video":
       return `# ${generationTitle(generation)}\n\n${content.storyboard
@@ -463,6 +467,12 @@ export function GenerationReviewModal({
               <dt>Voice</dt>
               <dd>{generation.renderConfig.voice}</dd>
             </div>
+            {generation.renderConfig.voices ? (
+              <div>
+                <dt>Guest voice</dt>
+                <dd>{generation.renderConfig.voices.guest}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>Length</dt>
               <dd>{generation.renderConfig.length}</dd>
@@ -471,7 +481,14 @@ export function GenerationReviewModal({
         ) : null}
         {content?.kind === "podcast" ? (
           <ol className="research-studio-review__list">
-            {content.script.map((segment) => <li key={segment.id}>{segment.text}</li>)}
+            {content.script.map((segment) => (
+              <li key={segment.id}>
+                {segment.speaker ? (
+                  <strong>{segment.speaker === "host" ? "Host" : "Guest"}</strong>
+                ) : null}
+                <span>{segment.text}</span>
+              </li>
+            ))}
           </ol>
         ) : content?.kind === "short-video" ? (
           <ol className="research-studio-review__list">
@@ -513,6 +530,8 @@ export function GenerationConfigModal({
   onMediaProviderChange,
   mediaVoice,
   onMediaVoiceChange,
+  mediaGuestVoice,
+  onMediaGuestVoiceChange,
   mediaLength,
   onMediaLengthChange,
   error,
@@ -531,6 +550,9 @@ export function GenerationConfigModal({
   onMediaProviderChange: (provider: ResearchMediaProvider) => void;
   mediaVoice: string;
   onMediaVoiceChange: (voice: string) => void;
+  /** Podcast-only guest voice; empty string means one voice for both speakers. */
+  mediaGuestVoice: string;
+  onMediaGuestVoiceChange: (voice: string) => void;
   mediaLength: ResearchMediaLength;
   onMediaLengthChange: (length: ResearchMediaLength) => void;
   /** Server-side create failure — e.g. the 409 "no markdown artifact" message. */
@@ -558,6 +580,15 @@ export function GenerationConfigModal({
         )
       ) {
         return "Choose a ready local voice.";
+      }
+      if (
+        kind === "podcast" &&
+        mediaGuestVoice &&
+        !readiness.providers.local.voices.some(
+          (voice) => voice.id === mediaGuestVoice,
+        )
+      ) {
+        return "Choose a ready local voice for the guest.";
       }
     } else {
       if (!readiness.providers.elevenlabs.ready) {
@@ -751,6 +782,64 @@ export function GenerationConfigModal({
                 </span>
               </div>
             )}
+
+            {kind === "podcast" ? (
+              <div className="research-studio-config__field">
+                <label
+                  className="research-studio-config__label"
+                  htmlFor="research-studio-config-guest-voice"
+                >
+                  Guest voice (optional)
+                </label>
+                {mediaProvider === "local" ? (
+                  <select
+                    id="research-studio-config-guest-voice"
+                    className="research-studio__select focus-ring"
+                    value={mediaGuestVoice}
+                    aria-describedby="research-studio-config-guest-voice-help"
+                    aria-invalid={mediaConfigurationError ? true : undefined}
+                    aria-errormessage={
+                      mediaConfigurationError
+                        ? "research-studio-config-media-error"
+                        : undefined
+                    }
+                    onChange={(event) =>
+                      onMediaGuestVoiceChange(event.target.value)
+                    }
+                  >
+                    <option value="">Same as host voice</option>
+                    {readiness?.providers.local.voices.map((voice) => (
+                      <option key={voice.id} value={voice.id}>
+                        {voice.name} · {voice.engine}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="research-studio-config-guest-voice"
+                    className="research-studio-config__input focus-ring"
+                    value={mediaGuestVoice}
+                    placeholder="Same as host voice"
+                    aria-describedby="research-studio-config-guest-voice-help"
+                    aria-invalid={mediaConfigurationError ? true : undefined}
+                    aria-errormessage={
+                      mediaConfigurationError
+                        ? "research-studio-config-media-error"
+                        : undefined
+                    }
+                    onChange={(event) =>
+                      onMediaGuestVoiceChange(event.target.value)
+                    }
+                  />
+                )}
+                <span
+                  id="research-studio-config-guest-voice-help"
+                  className="research-studio-config__hint"
+                >
+                  A second voice makes the podcast a host/guest dialogue.
+                </span>
+              </div>
+            ) : null}
 
             <div className="research-studio-config__field">
               <label

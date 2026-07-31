@@ -271,9 +271,15 @@ export function createPodcastMediaJobDefinition(
   input: PodcastMediaJobInput,
   dependencies: PodcastPipelineDependencies = {},
 ): ResearchMediaJobDefinition {
-  const { provider, voice, length } = input.renderConfig;
+  const { provider, voice, voices, length } = input.renderConfig;
   const synthesize =
     dependencies.synthesize ?? synthesizeResearchPodcastSegment;
+  const voiceForSegment = (segment: ResearchGenerationScriptSegment): string =>
+    segment.speaker === "guest"
+      ? (voices?.guest ?? voice)
+      : segment.speaker === "host"
+        ? (voices?.host ?? voice)
+        : voice;
   return {
     familiarId: input.familiarId,
     generationId: input.generationId,
@@ -314,14 +320,15 @@ export function createPodcastMediaJobDefinition(
             throw new Error("podcast render cancelled");
           }
           await context.reportStage("synthesizing");
+          const segmentVoice = voiceForSegment(segment);
           try {
             const synthesized = await synthesize(
               segment.text,
               provider,
-              voice,
+              segmentVoice,
               context.signal,
             );
-            if (synthesized.voice !== voice) {
+            if (synthesized.voice !== segmentVoice) {
               throw new Error(
                 `selected ${provider} voice changed during synthesis`,
               );

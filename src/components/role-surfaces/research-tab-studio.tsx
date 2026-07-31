@@ -68,6 +68,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const [mediaProvider, setMediaProvider] =
     useState<ResearchMediaProvider>("local");
   const [mediaVoice, setMediaVoice] = useState("");
+  const [mediaGuestVoice, setMediaGuestVoice] = useState("");
   const [mediaLength, setMediaLength] =
     useState<ResearchMediaLength>("standard");
   const [createError, setCreateError] = useState<string | null>(null);
@@ -303,6 +304,14 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
               provider: mediaProvider,
               voice: mediaVoice,
               length: mediaLength,
+              ...(configKind === "podcast" && mediaGuestVoice.trim().length > 0
+                ? {
+                    voices: {
+                      host: mediaVoice,
+                      guest: mediaGuestVoice.trim(),
+                    },
+                  }
+                : {}),
             },
           }
         : {}),
@@ -335,6 +344,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     directions,
     effectiveSourceId,
     familiarId,
+    mediaGuestVoice,
     mediaLength,
     mediaProvider,
     mediaVoice,
@@ -775,9 +785,16 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           onDirectionsChange={setDirections}
           readiness={readiness}
           mediaProvider={mediaProvider}
-          onMediaProviderChange={setMediaProvider}
+          onMediaProviderChange={(provider) => {
+            setMediaProvider(provider);
+            // Guest voices are provider-specific; a stale one must not leak
+            // into the other provider's render config.
+            setMediaGuestVoice("");
+          }}
           mediaVoice={mediaVoice}
           onMediaVoiceChange={setMediaVoice}
+          mediaGuestVoice={mediaGuestVoice}
+          onMediaGuestVoiceChange={setMediaGuestVoice}
           mediaLength={mediaLength}
           onMediaLengthChange={setMediaLength}
           error={createError}

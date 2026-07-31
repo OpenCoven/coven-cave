@@ -462,10 +462,67 @@ test("podcast drafter creates bounded extractive narration segments", () => {
   }, "standard");
   assert.equal(content.kind, "podcast");
   if (content.kind !== "podcast") return;
-  assert.ok(content.script.length >= 1, "heading-less artifacts still produce a draft");
+  assert.ok(content.script.length >= 2, "heading-less artifacts still produce a draft");
   assert.ok(content.script.every((segment) => segment.text.length > 0));
   assert.ok(content.script.every((segment) => segment.text.length <= 4_000));
-  assert.ok(content.script[0].text.includes("A standalone paragraph with a claim."));
+  assert.equal(content.script[0].speaker, "host", "a host opening frames the episode");
+  assert.ok(content.script[1].text.includes("A standalone paragraph with a claim."));
+  assert.ok(
+    content.script.every(
+      (segment) => segment.speaker === "host" || segment.speaker === "guest",
+    ),
+    "every drafted segment carries a dialogue speaker",
+  );
+});
+
+test("podcast drafter drafts a host/guest dialogue with templated framing only", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Key claims",
+      "",
+      "- Gates bind proxies, not purposes.",
+      "",
+      "## Open questions",
+      "",
+      "- Does goal-guarding generalize?",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const script = content.script;
+  assert.equal(script[0].speaker, "host");
+  assert.ok(
+    script[0].text.includes(mission.title),
+    "the opening names the mission title, nothing invented",
+  );
+  const framing = script.filter((segment) => segment.text.startsWith("Next up — "));
+  assert.deepEqual(
+    framing.map((segment) => segment.speaker),
+    ["host", "host"],
+    "each titled section gets one host framing line",
+  );
+  assert.ok(
+    framing.every((segment) => !segment.text.includes("..")),
+    "framing reuses punctuation-aware headings",
+  );
+  const guests = script.filter((segment) => segment.speaker === "guest");
+  assert.ok(
+    guests.some((segment) => segment.text.includes("Gates bind proxies, not purposes.")),
+    "findings are delivered verbatim by the guest",
+  );
+  assert.deepEqual(
+    script.map((segment) => segment.id),
+    script.map((_, index) => `segment-${index + 1}`),
+    "segment ids stay sequential",
+  );
+  // A host framing line is never the last thing in the script — framing only
+  // enters alongside the findings it introduces.
+  const last = script[script.length - 1];
+  assert.notEqual(last.text.startsWith("Next up — "), true);
 });
 
 test("podcast drafter joins are punctuation-aware — never a double period", () => {
