@@ -31,9 +31,6 @@
   map legacy `ctab=github` to Activity.
 - Modify `src/lib/code-surface.test.ts`: pin the five tabs and compatibility
   normalization.
-- Modify `src/lib/workspace-mode.ts`: move `github` from canonical mode to a
-  compatibility alias targeting `surface:code`.
-- Modify `src/lib/workspace-mode.test.ts`: pin GitHub's alias status.
 - Modify `scripts/run-tests.mjs`: register the new behavioral test.
 
 ### Code Workshop host
@@ -49,6 +46,9 @@
 
 ### Workspace routing and access boundary
 
+- Modify `src/lib/workspace-mode.ts`: move `github` from canonical mode to a
+  compatibility alias targeting `surface:code`.
+- Modify `src/lib/workspace-mode.test.ts`: pin GitHub's alias status.
 - Modify `src/components/workspace.tsx`: enqueue Code navigation for legacy
   GitHub mode and PR/issue URLs, remove standalone state/rendering, discard
   unconsumed requests on exit, and let `RoleSurfaceHost` show unavailable rooms.
@@ -83,8 +83,6 @@
 - Create: `src/lib/pending-code-navigation.test.ts`
 - Modify: `src/lib/code-surface.ts`
 - Modify: `src/lib/code-surface.test.ts`
-- Modify: `src/lib/workspace-mode.ts`
-- Modify: `src/lib/workspace-mode.test.ts`
 - Modify: `scripts/run-tests.mjs`
 
 - [ ] **Step 1: Install this worktree's dependencies**
@@ -99,7 +97,7 @@ pnpm install --frozen-lockfile
 Expected: installation succeeds and `git status --short` shows no manifest or
 lockfile changes.
 
-- [ ] **Step 2: Write the failing Activity and mode-alias assertions**
+- [ ] **Step 2: Write the failing Activity assertions**
 
 Replace the deep-link and tab-vocabulary expectations in
 `src/lib/code-surface.test.ts` with:
@@ -137,23 +135,6 @@ test("normalizeCodeTopTab maps legacy + unknown values", () => {
   assert.equal(normalizeCodeTopTab("bogus"), "sessions");
   assert.equal(normalizeCodeTopTab(null), "sessions");
 });
-```
-
-Replace the standalone GitHub test in `src/lib/workspace-mode.test.ts` with:
-
-```ts
-test("github remains valid only as a Code Workshop compatibility alias", () => {
-  assert.ok(!(CANONICAL_WORKSPACE_MODES as readonly string[]).includes("github"));
-  assert.ok(isAliasWorkspaceMode("github"));
-  assert.equal(MODE_ALIASES.github, "surface:code");
-  assert.equal(resolveWorkspaceModeAlias("github"), "surface:code");
-});
-```
-
-Add this assertion to `"the documented alias landings hold"`:
-
-```ts
-assert.equal(MODE_ALIASES.github, "surface:code", "GitHub is an Activity intent inside Code Workshop");
 ```
 
 - [ ] **Step 3: Add the failing one-shot store tests**
@@ -236,13 +217,13 @@ Run:
 ```bash
 node --experimental-strip-types --test \
   src/lib/code-surface.test.ts \
-  src/lib/workspace-mode.test.ts \
   src/lib/pending-code-navigation.test.ts
 ```
 
 Expected: the existing Code tests fail because Activity is absent and legacy
 GitHub still maps to PRs; the new test fails because
-`pending-code-navigation.ts` does not exist.
+`pending-code-navigation.ts` does not exist. Workspace mode vocabulary remains
+unchanged until Task 3 can update the producer and alias atomically.
 
 - [ ] **Step 5: Add Activity to the pure Code model**
 
@@ -330,31 +311,13 @@ export function subscribePendingCodeNavigation(listener: () => void): () => void
 }
 ```
 
-- [ ] **Step 7: Convert GitHub from canonical mode to compatibility alias**
-
-In `src/lib/workspace-mode.ts`:
-
-1. Remove `"github"` from `CanonicalWorkspaceMode`.
-2. Remove `"github"` from `CANONICAL_WORKSPACE_MODES`.
-3. Add `"github"` to `AliasWorkspaceMode`.
-4. Add this mapping to `MODE_ALIASES`:
-
-```ts
-github: "surface:code",
-```
-
-Update the surrounding comments to describe both `code` and `github` as
-rewritten aliases into the coding-role room; `github` additionally requests
-Activity in `Workspace.setMode`.
-
-- [ ] **Step 8: Run the pure tests and registration guard**
+- [ ] **Step 7: Run the pure tests and registration guard**
 
 Run:
 
 ```bash
 node --experimental-strip-types --test \
   src/lib/code-surface.test.ts \
-  src/lib/workspace-mode.test.ts \
   src/lib/pending-code-navigation.test.ts
 pnpm check:tests-wired
 ```
@@ -362,7 +325,7 @@ pnpm check:tests-wired
 Expected: all tests pass and the test-registration guard reports every test
 wired into CI.
 
-- [ ] **Step 9: Commit the navigation model**
+- [ ] **Step 8: Commit the navigation model**
 
 Run:
 
@@ -371,8 +334,6 @@ git add src/lib/pending-code-navigation.ts \
   src/lib/pending-code-navigation.test.ts \
   src/lib/code-surface.ts \
   src/lib/code-surface.test.ts \
-  src/lib/workspace-mode.ts \
-  src/lib/workspace-mode.test.ts \
   scripts/run-tests.mjs
 git commit -S -m "feat: model GitHub navigation in Code Workshop"
 ```
@@ -631,6 +592,8 @@ lifecycle, without Workspace or sidebar removal yet.
 ## Task 3: Route Workspace GitHub intents into the role-gated room
 
 **Files:**
+- Modify: `src/lib/workspace-mode.ts`
+- Modify: `src/lib/workspace-mode.test.ts`
 - Modify: `src/components/workspace.tsx`
 - Modify: `src/components/workspace-alias-modes.test.ts`
 - Modify: `src/components/github-native-open.test.ts`
@@ -653,6 +616,23 @@ assert.doesNotMatch(
   /mode === "github" \?/,
   "github is compatibility intent, never a standalone render branch",
 );
+```
+
+Replace the standalone GitHub test in `src/lib/workspace-mode.test.ts` with:
+
+```ts
+test("github remains valid only as a Code Workshop compatibility alias", () => {
+  assert.ok(!(CANONICAL_WORKSPACE_MODES as readonly string[]).includes("github"));
+  assert.ok(isAliasWorkspaceMode("github"));
+  assert.equal(MODE_ALIASES.github, "surface:code");
+  assert.equal(resolveWorkspaceModeAlias("github"), "surface:code");
+});
+```
+
+Add this assertion to `"the documented alias landings hold"`:
+
+```ts
+assert.equal(MODE_ALIASES.github, "surface:code", "GitHub is an Activity intent inside Code Workshop");
 ```
 
 In `src/components/github-native-open.test.ts`, read the pending store:
@@ -706,6 +686,7 @@ Run:
 
 ```bash
 node --experimental-strip-types --test \
+  src/lib/workspace-mode.test.ts \
   src/components/workspace-alias-modes.test.ts \
   src/components/github-native-open.test.ts \
   src/components/code-surface-mode.test.ts
@@ -714,7 +695,22 @@ node --experimental-strip-types --test \
 Expected: failures point to the old `setGithubTarget`, `setMode("github")`,
 standalone render branch, and automatic Home redirect.
 
-- [ ] **Step 3: Import the Code navigation handoff and remove standalone state**
+- [ ] **Step 3: Migrate the mode vocabulary and remove standalone state**
+
+In `src/lib/workspace-mode.ts`:
+
+1. Remove `"github"` from `CanonicalWorkspaceMode`.
+2. Remove `"github"` from `CANONICAL_WORKSPACE_MODES`.
+3. Add `"github"` to `AliasWorkspaceMode`.
+4. Add this mapping to `MODE_ALIASES`:
+
+```ts
+github: "surface:code",
+```
+
+Update the surrounding comments to describe both `code` and `github` as
+rewritten aliases into the coding-role room; `github` additionally requests
+Activity in `Workspace.setMode`.
 
 In `src/components/workspace.tsx`:
 
@@ -830,6 +826,8 @@ Run:
 
 ```bash
 git add src/components/workspace.tsx \
+  src/lib/workspace-mode.ts \
+  src/lib/workspace-mode.test.ts \
   src/components/workspace-alias-modes.test.ts \
   src/components/github-native-open.test.ts \
   src/components/code-surface-mode.test.ts
