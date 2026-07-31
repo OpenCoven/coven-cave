@@ -21,6 +21,7 @@ import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
+import { formatBatchDuration, toolBatchSummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
@@ -7665,50 +7666,124 @@ function ToolGroup({ tools, durationMs }: { tools: ToolEvent[]; durationMs?: num
     .reverse()
     .find((t) => /bash|shell|terminal|command|exec/i.test(t.name));
   const lastCommand = lastShellTool ? toolArgSummary(lastShellTool.name, lastShellTool.input) : "";
+  // Chat.dc.html 2a ④: the quiet rollup on the right of the work line —
+  // "4 batches · 6 ok". Running and failed calls keep their tinted counters
+  // beside it so trouble never reads as neutral mono.
+  const rollup = toolBatchSummary(tools, toolBatches(tools));
+  // The capabilities this turn actually reached for, as the design's SKILLS
+  // eyebrow above the card. Absent when the turn used none — this surface
+  // never shows a label with nothing under it.
+  const skills = useMemo(() => turnSkills(tools), [tools]);
 
   return (
-    <details
-      className="cave-tool-group cave-work-line mt-3"
-      data-default-collapsed="true"
-      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
-    >
-      <summary className="cave-tool-summary" aria-expanded={open} aria-label="Tool activity">
-        <span className="cave-work-line__label">
-          {duration ? `Worked for ${duration} · ` : ""}
-          {tools.length} {tools.length === 1 ? "step" : "steps"}
-        </span>
-        {lastCommand ? (
-          <span className="cave-work-line__ran">
-            {"· ran "}
-            <code className="cave-work-line__cmd">{lastCommand}</code>
+    <>
+      {skills.length > 0 ? (
+        <div className="cave-tool-skills" role="group" aria-label="Skills and capabilities used">
+          <span className="cave-tool-skills__label">Skills</span>
+          {skills.map((skill) => (
+            <span
+              key={skill.id}
+              className="cave-tool-skills__chip"
+              data-source={skill.source}
+              title={
+                skill.source === "mcp"
+                  ? `${skill.name} — MCP server, ${skill.calls} ${skill.calls === 1 ? "call" : "calls"} this turn`
+                  : `${skill.name} — skill, ${skill.calls} ${skill.calls === 1 ? "call" : "calls"} this turn`
+              }
+            >
+              <Icon
+                name={skill.source === "mcp" ? "ph:plug" : "ph:flask"}
+                width={11}
+                className="cave-tool-skills__icon"
+                aria-hidden
+              />
+              {skill.name}
+              <span className="cave-tool-skills__count">
+                {skill.calls} {skill.calls === 1 ? "call" : "calls"}
+              </span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <details
+        className="cave-tool-group cave-work-line mt-3"
+        data-default-collapsed="true"
+        onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+      >
+        <summary className="cave-tool-summary" aria-expanded={open} aria-label="Tool activity">
+          <span className="cave-work-line__label">
+            {duration ? `Worked for ${duration} · ` : ""}
+            {tools.length} {tools.length === 1 ? "step" : "steps"}
           </span>
-        ) : null}
-        <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
-          {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
-          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
-        </span>
-      </summary>
-      <div className="mt-2 space-y-2 border-t border-[var(--border-hairline)]/70 pt-2">
-        <ToolRuns tools={tools} />
-      </div>
-    </details>
+          {lastCommand ? (
+            <span className="cave-work-line__ran">
+              {"· ran "}
+              <code className="cave-work-line__cmd">{lastCommand}</code>
+            </span>
+          ) : null}
+          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
+            {rollup ? <span className="cave-tool-rollup">{rollup}</span> : null}
+            {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+            {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+          </span>
+        </summary>
+        <div className="mt-2 space-y-2 border-t border-[var(--border-hairline)]/70 pt-2">
+          <ToolRuns tools={tools} />
+        </div>
+      </details>
+    </>
   );
 }
 
 function ToolRuns({ tools }: { tools: ToolEvent[] }) {
+  // Chat.dc.html 2a ④: a real agent fires a block of calls, writes some prose,
+  // then fires again. Each block gets its own tinted band so a 30-step turn
+  // reads as four moves instead of one wall. Bands earn their place only when
+  // they chunk something: one block (including every transcript persisted
+  // before textOffset existed) needs no header, and a turn whose every call
+  // stands alone already reads one-move-per-row — a band over each would
+  // repeat the row beneath it.
+  const batches = toolBatches(tools);
+  const bandedBatches =
+    batches.length > 1 && batches.some((batch) => batch.toolIds.length > 1) ? batches : [];
+  const headerByToolId = new Map(bandedBatches.map((batch) => [batch.headToolId, batch]));
   return groupConsecutiveTools(tools).map((run) => {
+    const key = run.tools.map((tool) => tool.id).join(":");
+    const header = headerByToolId.get(run.tools[0]!.id);
     // File-mutation cards carry review/undo affordances. Keeping each one
     // standalone means a repeated edit never hides an actionable change.
     const containsEdit = run.tools.some((tool) => toolInputAsDiff(tool.name, tool.input) != null);
-    if (run.tools.length > 1 && !containsEdit) {
-      return <ToolRunGroup key={run.tools.map((tool) => tool.id).join(":")} name={run.name} tools={run.tools} />;
-    }
+    const body =
+      run.tools.length > 1 && !containsEdit ? (
+        <ToolRunGroup name={run.name} tools={run.tools} />
+      ) : (
+        run.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
+      );
     return (
-      <Fragment key={run.tools.map((tool) => tool.id).join(":")}>
-        {run.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+      <Fragment key={key}>
+        {header ? <ToolBatchHeader batch={header} /> : null}
+        {body}
       </Fragment>
     );
   });
+}
+
+/** The band above a batch of calls (Chat.dc.html 2a ④): which move this is,
+ *  what ran, how it ran, and how long it took — tinted by the block's dominant
+ *  tool category, the same palette the rows beneath it use. */
+function ToolBatchHeader({ batch }: { batch: ToolBatch }) {
+  const duration = formatBatchDuration(batch.durationMs);
+  return (
+    <div className="cave-tool-batch" data-tool-category={batch.category}>
+      <span className="cave-tool-batch__dot" aria-hidden />
+      <span className="cave-tool-batch__index">batch {batch.index}</span>
+      <span className="cave-tool-batch__label" title={batch.label}>
+        {batch.label}
+      </span>
+      <span className="cave-tool-batch__mode">{batch.mode}</span>
+      <span className="cave-tool-batch__duration">{duration}</span>
+    </div>
+  );
 }
 
 function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
