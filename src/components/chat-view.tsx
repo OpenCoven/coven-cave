@@ -5182,14 +5182,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // The home composer's host pick rides the first send explicitly (state
       // set below lands too late for this closure) and seeds the chip.
       if (initialControls?.runtimeHost) setRuntimeHost(initialControls.runtimeHost);
+      const initialSendOptions = initialModelOverride ? { modelOverride: initialModelOverride } : undefined;
       void sendRaw(
         initialPrompt,
         initialAttachments ?? [],
         [],
-        undefined,
+        initialSendOptions,
         normalized
-          ? { ...normalized, permissionMode, runtimeHost: initialControls?.runtimeHost, modelOverride: initialModelOverride }
-          : initialModelOverride ? { modelOverride: initialModelOverride } : undefined,
+          ? { ...normalized, permissionMode, runtimeHost: initialControls?.runtimeHost }
+          : undefined,
       );
     }, 0);
     return () => window.clearTimeout(timer);
