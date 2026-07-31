@@ -93,11 +93,12 @@ type ChangesWire =
 
 const STATUSES: readonly ReviewFileStatus[] = ["modified", "added", "deleted", "renamed", "untracked"];
 
-/** GitHub's file statuses include `changed`/`copied`; map them onto ours. */
+/** GitHub's file statuses include `changed`/`copied`/`removed`; map them onto ours. */
 function fileStatus(raw: unknown): ReviewFileStatus {
   const value = typeof raw === "string" ? raw : "";
   if ((STATUSES as readonly string[]).includes(value)) return value as ReviewFileStatus;
   if (value === "copied") return "added";
+  if (value === "removed") return "deleted";
   return "modified";
 }
 
