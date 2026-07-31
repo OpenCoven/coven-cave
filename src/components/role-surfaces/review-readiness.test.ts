@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   checksMeta,
+  countedTotal,
   DECK_BUCKETS,
+  deckCaption,
   deckSummary,
   draftChangeRequest,
   evidenceItems,
@@ -182,6 +184,54 @@ test("buckets are exclusive and follow GitHub's own verdict", () => {
 test("changes-requested outranks blocked so a row lands in exactly one bucket", () => {
   const both = { ...facts(), reviews: { approved: 0, changesRequested: 1, commented: 0 }, mergeableState: "dirty" };
   assert.equal(reviewBucket(both, true), "changes");
+});
+
+test("the reveal control names the row it sends the reader to", () => {
+  // The "checks" disclosure is the whole PR detail panel, so a review-state
+  // blocker that opens it must not offer "show the checks".
+  const blockers = prBlockers(
+    facts({
+      checks: { rollup: "failing", runs: [run("Rust check", "failure")] },
+      reviews: { approved: 0, changesRequested: 1, commented: 0 },
+      threads: { unresolved: 1, total: 1, canResolve: true, items: [] },
+    }),
+  );
+  const by = new Map(blockers.map((blocker) => [blocker.id, blocker]));
+  assert.equal(by.get("checks")!.revealLabel, "show the checks");
+  assert.equal(by.get("reviews")!.revealLabel, "show the reviews");
+  assert.equal(by.get("threads")!.revealLabel, "show the threads");
+  // A blocker with nothing to reveal offers no control at all.
+  for (const blocker of prBlockers(facts({ mergeableState: "dirty" }))) {
+    assert.equal(blocker.reveal, null);
+    assert.equal(blocker.revealLabel, null);
+  }
+});
+
+test("the caption never claims coverage the strip does not have", () => {
+  // Nothing outside the counts: the plain claim is allowed.
+  assert.equal(
+    deckCaption({ counted: 4, local: 0, drafts: 0, unread: 0, skipped: 0 }),
+    "4 counted from live GitHub review state",
+  );
+  // Local sessions are counted but are not GitHub state, so the lead drops the claim.
+  assert.equal(
+    deckCaption({ counted: 3, local: 1, drafts: 0, unread: 0, skipped: 0 }),
+    "3 counted · 1 local session with no GitHub state",
+  );
+  // Drafts, unread rows, and rows past the cap are named rather than hidden.
+  assert.equal(
+    deckCaption({ counted: 5, local: 0, drafts: 2, unread: 1, skipped: 3 }),
+    "5 counted from live GitHub review state · outside the counts: 2 drafts, 1 still being read, 3 past the read cap",
+  );
+  assert.match(deckCaption({ counted: 1, local: 2, drafts: 1, unread: 0, skipped: 0 }), /2 local sessions/);
+  assert.match(deckCaption({ counted: 1, local: 0, drafts: 1, unread: 0, skipped: 0 }), /outside the counts: 1 draft$/);
+});
+
+test("the counted total is the strip's own denominator, not the deck size", () => {
+  const summary = deckSummary(["awaiting", "changes", "draft", "unread", "ready"]);
+  // Five items on the deck, three of them bucketed — shares must divide by three.
+  assert.equal(countedTotal(summary), 3);
+  assert.equal(countedTotal({ awaiting: 0, changes: 0, blocked: 0, ready: 0 }), 0);
 });
 
 test("the summary counts add up to the deck, leaving drafts and unreads out", () => {

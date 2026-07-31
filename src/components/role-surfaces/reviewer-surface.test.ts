@@ -20,6 +20,8 @@ import {
 
 const surface = readFileSync(new URL("./reviewer-surface.tsx", import.meta.url), "utf8");
 const reviewSource = readFileSync(new URL("./use-review-source.ts", import.meta.url), "utf8");
+const prReadiness = readFileSync(new URL("./use-pr-readiness.ts", import.meta.url), "utf8");
+const deckBuckets = readFileSync(new URL("./use-deck-buckets.ts", import.meta.url), "utf8");
 const navigator = readFileSync(new URL("./review-file-navigator.tsx", import.meta.url), "utf8");
 const register = readFileSync(new URL("./register.tsx", import.meta.url), "utf8");
 const docs = readFileSync(new URL("../../../docs/role-surfaces.md", import.meta.url), "utf8");
@@ -363,4 +365,85 @@ test("the announcer owns assertive verdict failures while visible error copy sta
   // The visible copy stays passive — the announcer already owns the assertion.
   assert.match(surface, /\{actionError \? <span className="rd-error">\{actionError\}<\/span> : null\}/);
   assert.doesNotMatch(surface, /<span role="alert" className="rd-error">/);
+});
+
+// ── Review-feedback fixes (hook internals; the helpers are module-private) ───
+
+test("GitHub's `removed` status maps to deleted, not modified", () => {
+  // git says "deleted", GitHub says "removed". Falling through to the default
+  // painted every deleted file in a pull request as modified.
+  assert.match(reviewSource, /removed: "deleted"/);
+  assert.match(reviewSource, /copied: "added"/);
+  assert.match(reviewSource, /changed: "modified"/);
+  assert.match(reviewSource, /unchanged: "modified"/);
+  assert.match(reviewSource, /return GITHUB_STATUS\[value\] \?\? "modified"/);
+});
+
+test("an author's standing review is their latest by timestamp, not by array order", () => {
+  assert.match(prReadiness, /const held = perAuthor\.get\(author\)/);
+  assert.match(
+    prReadiness,
+    /if \(held && \(held\.submittedAt \?\? ""\) > \(candidate\.submittedAt \?\? ""\)\) continue/,
+  );
+});
+
+test("the bucket reader clears loading on teardown so it cannot stick on", () => {
+  // The `.then` skips its own reset when cancelled and the next run early-
+  // returns on a fully cached queue, so teardown is the only path that always
+  // runs between the two.
+  assert.match(
+    deckBuckets,
+    /return \(\) => \{\s*cancelled = true;[\s\S]{0,200}?setLoading\(false\);\s*\};/,
+  );
+});
+
+// ── Style coverage ───────────────────────────────────────────────────────────
+
+test("every deck class the markup renders has a rule in the deck's stylesheet", () => {
+  // The gap this closes: the redesign replaced the tab strip with a file
+  // navigator, a readiness rail, a composer and a merge dialog, and shipped
+  // none of their CSS — 113 of 183 classes rendered with no rule at all. No
+  // other gate sees it: the drift ratchet counts values rather than coverage,
+  // the e2e job mocks its routes, and nothing else asserts a rendered style.
+  const classes = new Set<string>();
+  for (const source of [surface, navigator]) {
+    for (const match of source.matchAll(/className="([^"]*)"/g)) {
+      for (const name of match[1].split(/\s+/)) if (name.startsWith("rd-")) classes.add(name);
+    }
+    for (const match of source.matchAll(/className=\{`([^`]*)`\}/g)) {
+      for (const name of match[1].match(/rd-[a-z0-9-]+/g) ?? []) classes.add(name);
+    }
+  }
+  assert.ok(classes.size > 100, `expected the deck to render many classes, saw ${classes.size}`);
+
+  const styled = new Set(
+    [...reviewDeckCss.matchAll(/\.(rd-[a-z0-9-]+)/g)].map((match) => match[1]),
+  );
+  const missing = [...classes].filter((name) => !styled.has(name)).sort();
+  assert.deepEqual(missing, [], `deck classes rendered with no CSS rule: ${missing.join(", ")}`);
+});
+
+test("the stylesheet carries no rules for markup the deck no longer renders", () => {
+  // The retired tab strip's rules outlived it by a whole redesign. Dead CSS
+  // reads as coverage on the next audit, so the sweep runs both ways.
+  const classes = new Set<string>();
+  for (const source of [surface, navigator]) {
+    for (const match of source.matchAll(/className="([^"]*)"/g)) {
+      for (const name of match[1].split(/\s+/)) if (name.startsWith("rd-")) classes.add(name);
+    }
+    for (const match of source.matchAll(/className=\{`([^`]*)`\}/g)) {
+      for (const name of match[1].match(/rd-[a-z0-9-]+/g) ?? []) classes.add(name);
+    }
+  }
+  const styled = [...new Set([...reviewDeckCss.matchAll(/\.(rd-[a-z0-9-]+)/g)].map((m) => m[1]))];
+  const dead = styled.filter((name) => !classes.has(name)).sort();
+  assert.deepEqual(dead, [], `stylesheet rules with no markup: ${dead.join(", ")}`);
+});
+
+test("the file navigator is styled as a keyboard widget, not a list of buttons", () => {
+  // The container owns the tab stop and the focus ring; the cursor marks the
+  // active row. Both halves have to exist or the roving model is invisible.
+  assert.match(reviewDeckCss, /\.rd-nav-list:focus-visible \{\s*outline: none;\s*\}/);
+  assert.match(reviewDeckCss, /\.rd-nav-dir\[data-cursor="true"\],\s*\.rd-nav-file\[data-cursor="true"\]/);
+  assert.match(navigator, /tabIndex=\{0\}/);
 });

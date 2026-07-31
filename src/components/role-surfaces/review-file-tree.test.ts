@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   buildNavRows,
+  dirRowId,
   fileRowId,
   filterFiles,
   navigableFiles,
+  navigableTargets,
   nextNavPath,
   noPatchCopy,
   ROOT_GROUP,
@@ -128,9 +130,45 @@ test("an empty or blank filter returns a copy of every file, not the original ar
 
 // ── Roving focus ─────────────────────────────────────────────────────────────
 
-test("only file rows are navigable — headers and directories are not targets", () => {
+test("only file rows can be opened — headers and directories are not files", () => {
   const rows = buildNavRows([file("src/a.ts"), file("docs/b.md")], { mode: "flat" });
   assert.deepEqual(navigableFiles(rows), ["src/a.ts", "docs/b.md"]);
+});
+
+test("the cursor can reach directories, so they are not mouse-only", () => {
+  const rows = buildNavRows([file("src/app/page.tsx"), file("src/top.ts")], { mode: "tree" });
+  assert.deepEqual(navigableTargets(rows), [
+    { path: "src", kind: "dir" },
+    { path: "src/app", kind: "dir" },
+    { path: "src/app/page.tsx", kind: "file" },
+    { path: "src/top.ts", kind: "file" },
+  ]);
+  // A collapsed directory stays reachable — otherwise nothing could reopen it.
+  const collapsed = buildNavRows([file("src/app/page.tsx")], {
+    mode: "tree",
+    collapsedDirs: new Set(["src"]),
+  });
+  assert.deepEqual(navigableTargets(collapsed), [{ path: "src", kind: "dir" }]);
+});
+
+test("group headers are labels, never cursor targets", () => {
+  const rows = buildNavRows([file("src/a.ts")], { mode: "flat" });
+  assert.ok(rows.some((row) => row.kind === "group"));
+  assert.deepEqual(navigableTargets(rows), [{ path: "src/a.ts", kind: "file" }]);
+});
+
+test("movement runs over directories and files alike", () => {
+  const rows = buildNavRows([file("src/app/page.tsx"), file("src/top.ts")], { mode: "tree" });
+  const paths = navigableTargets(rows).map((target) => target.path);
+  assert.equal(nextNavPath(paths, "src", "j"), "src/app");
+  assert.equal(nextNavPath(paths, "src/app", "j"), "src/app/page.tsx");
+  assert.equal(nextNavPath(paths, "src/app", "k"), "src");
+});
+
+test("row ids are stable and distinct per kind", () => {
+  assert.equal(dirRowId("src/app"), "rd-dir-src/app");
+  assert.equal(fileRowId("src/app"), "rd-file-src/app");
+  assert.notEqual(dirRowId("x"), fileRowId("x"));
 });
 
 test("j/k mirror the arrows and the ends clamp instead of wrapping", () => {

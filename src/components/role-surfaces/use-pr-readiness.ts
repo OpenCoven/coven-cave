@@ -93,8 +93,13 @@ function latestSubmittedReview(reviews: CommentsWire["reviews"]): LatestReview |
     if (!author) continue;
     if (state !== "APPROVED" && state !== "CHANGES_REQUESTED" && state !== "COMMENTED") continue;
     const candidate: LatestReview = { state, author, submittedAt: raw?.submittedAt ?? null };
-    const existing = perAuthor.get(author);
-    if (!existing || (candidate.submittedAt ?? "") > (existing.submittedAt ?? "")) perAuthor.set(author, candidate);
+    // "The author's own latest state wins" has to mean latest by timestamp, not
+    // last in the array: GitHub's ordering is not a guarantee we should hang a
+    // standing review state on, and a stale APPROVED outranking a later
+    // CHANGES_REQUESTED is exactly the mistake that matters here.
+    const held = perAuthor.get(author);
+    if (held && (held.submittedAt ?? "") > (candidate.submittedAt ?? "")) continue;
+    perAuthor.set(author, candidate);
   }
   let latest: LatestReview | null = null;
   for (const review of perAuthor.values()) {

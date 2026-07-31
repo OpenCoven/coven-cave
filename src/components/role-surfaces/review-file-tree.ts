@@ -41,6 +41,10 @@ export function fileRowId(path: string): string {
   return `rd-file-${path}`;
 }
 
+export function dirRowId(path: string): string {
+  return `rd-dir-${path}`;
+}
+
 function basename(path: string): string {
   return path.split("/").pop() ?? path;
 }
@@ -137,7 +141,7 @@ export function buildNavRows(
     for (const [dir, child] of node.dirs) {
       const path = prefix ? `${prefix}/${dir}` : dir;
       const isCollapsed = collapsed.has(path);
-      rows.push({ kind: "dir", id: `rd-dir-${path}`, path, label: dir, level, collapsed: isCollapsed });
+      rows.push({ kind: "dir", id: dirRowId(path), path, label: dir, level, collapsed: isCollapsed });
       if (!isCollapsed) walk(child, level + 1, path);
     }
     for (const file of node.files) rows.push(fileRow(file, level, false));
@@ -146,9 +150,26 @@ export function buildNavRows(
   return rows;
 }
 
-/** Only file rows are navigable — group headers and directories aren't targets. */
+/** Only file rows can be opened — group headers and directories aren't files. */
 export function navigableFiles(rows: readonly NavRow[]): string[] {
   return rows.filter((row): row is Extract<NavRow, { kind: "file" }> => row.kind === "file").map((row) => row.path);
+}
+
+export type NavTarget = { path: string; kind: "dir" | "file" };
+
+/**
+ * Every row the roving cursor can land on. Directories are targets too: they
+ * are the only way to collapse a subtree, and leaving them out of the cursor
+ * made them mouse-only — the container is the single tab stop, so a directory
+ * the cursor can never reach cannot be opened or closed from the keyboard.
+ * Group headers stay out; they are labels, not controls.
+ */
+export function navigableTargets(rows: readonly NavRow[]): NavTarget[] {
+  const out: NavTarget[] = [];
+  for (const row of rows) {
+    if (row.kind === "dir" || row.kind === "file") out.push({ path: row.path, kind: row.kind });
+  }
+  return out;
 }
 
 /**

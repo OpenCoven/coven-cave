@@ -93,13 +93,24 @@ type ChangesWire =
 
 const STATUSES: readonly ReviewFileStatus[] = ["modified", "added", "deleted", "renamed", "untracked"];
 
-/** GitHub's file statuses include `changed`/`copied`/`removed`; map them onto ours. */
+/**
+ * GitHub's pull-request file statuses are `added`, `removed`, `modified`,
+ * `renamed`, `copied`, `changed`, and `unchanged` — only some of which match
+ * ours. `removed` is the one that matters: git says "deleted", GitHub says
+ * "removed", and falling through to the default painted every deleted file in
+ * a pull request as modified.
+ */
+const GITHUB_STATUS: Record<string, ReviewFileStatus> = {
+  removed: "deleted",
+  copied: "added",
+  changed: "modified",
+  unchanged: "modified",
+};
+
 function fileStatus(raw: unknown): ReviewFileStatus {
   const value = typeof raw === "string" ? raw : "";
   if ((STATUSES as readonly string[]).includes(value)) return value as ReviewFileStatus;
-  if (value === "copied") return "added";
-  if (value === "removed") return "deleted";
-  return "modified";
+  return GITHUB_STATUS[value] ?? "modified";
 }
 
 function num(value: unknown): number {

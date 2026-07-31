@@ -116,6 +116,10 @@ export function useDeckBuckets(pullRequests: ReadonlyArray<{ repo: string; numbe
       if (!cancelled) setLoading(false);
     });
 
+    // Clearing `loading` on teardown is what keeps it from sticking on: the
+    // `.then` above deliberately skips its own reset when cancelled, and the
+    // next run early-returns when every row is already cached, so without this
+    // the caption reads "reading GitHub…" forever after a queue reshuffle.
     return () => {
       cancelled = true;
       for (const entry of queue) inFlight.current.delete(entry.key);

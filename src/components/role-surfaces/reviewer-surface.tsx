@@ -46,7 +46,9 @@ import {
 } from "./review-deck";
 import {
   checksMeta,
+  countedTotal,
   DECK_BUCKETS,
+  deckCaption,
   deckSummary,
   draftChangeRequest,
   evidenceItems,
@@ -427,6 +429,22 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   const noPatch = openFile ? noPatchCopy(openFile.noPatchReason) : null;
   const selectedPrUrl = prUrl(sessionPr);
   const deckTotal = fullQueue.length;
+  // The strip's denominator is what the four buckets actually account for, not
+  // the whole deck: dividing by the deck while excluding drafts and unread
+  // pull requests makes the shares silently fail to reach 100%.
+  const deckCounted = useMemo(() => countedTotal(summary), [summary]);
+  const outsideCounts = useMemo(() => {
+    let drafts = 0;
+    let unread = 0;
+    let local = 0;
+    for (const item of fullQueue) {
+      const bucket = bucketOf(item.session);
+      if (bucket === "draft") drafts += 1;
+      else if (bucket === "unread") unread += 1;
+      if (item.session.pullRequest?.number == null) local += 1;
+    }
+    return { drafts, unread, local };
+  }, [fullQueue, bucketOf]);
   const sourceLabel = !selected ? "No session" : isPr ? "Pull request diff" : "Local working tree";
   const sourceExplain = !selected
     ? "Pick a session in the queue to read what it changed."
@@ -458,7 +476,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
       <div className="rd-summary" role="group" aria-label="Deck summary">
         {DECK_BUCKETS.map((bucket) => {
           const value = summary[bucket];
-          const share = deckTotal === 0 ? 0 : Math.round((value / deckTotal) * 100);
+          const share = deckCounted === 0 ? 0 : Math.round((value / deckCounted) * 100);
           const active = bucketFilter === bucket;
           return (
             <button
@@ -469,7 +487,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
               data-active={active ? "true" : undefined}
               data-empty={value === 0 ? "true" : undefined}
               aria-pressed={active}
-              title={`${BUCKET_TITLES[bucket]} ${value} of ${deckTotal} on the deck. Click to filter the queue.`}
+              title={`${BUCKET_TITLES[bucket]} ${value} of ${deckCounted} counted. Click to filter the queue.`}
               onClick={() => toggleBucket(bucket)}
             >
               <span className="rd-stat-head">
@@ -489,9 +507,13 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
       </div>
       <div className="rd-summary-caption">
         <span>
-          {deckBuckets.skipped > 0
-            ? `counts from PR state when available · ${deckBuckets.skipped} beyond the read cap uncounted`
-            : "counts from PR state when available · drafts & unread PRs excluded"}
+          {deckCaption({
+            counted: deckCounted,
+            local: outsideCounts.local,
+            drafts: outsideCounts.drafts,
+            unread: outsideCounts.unread,
+            skipped: deckBuckets.skipped,
+          })}
         </span>
         <span className="rd-spacer" />
         <span>
@@ -1100,12 +1122,14 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
                                   if (blocker.reveal === "threads") setThreadsOpen(true);
                                   else setDetailOpen(true);
                                   announce(
-                                    blocker.reveal === "threads" ? "Review threads expanded." : "Check detail expanded.",
+                                    blocker.reveal === "threads"
+                                      ? "Review threads expanded."
+                                      : "Pull request detail expanded.",
                                   );
                                 }}
                               >
                                 <Icon name="ph:caret-right" width={10} height={10} aria-hidden />
-                                {blocker.reveal === "threads" ? "show the threads" : "show the checks"}
+                                {blocker.revealLabel}
                               </button>
                             ) : null}
                           </span>

@@ -80,6 +80,13 @@ export type Blocker = {
   fix: string;
   /** Which rail disclosure reveals the evidence, when there is one. */
   reveal: "checks" | "threads" | null;
+  /**
+   * What the reveal control says. The "checks" disclosure is really the pull
+   * request's detail panel — state, mergeability, reviews, and checks — so a
+   * blocker that reveals it must name the row the reader is being sent to,
+   * rather than offering "show the checks" for a review-state problem.
+   */
+  revealLabel: string | null;
 };
 
 /** Check-run names that GitHub reports as a genuine, blocking failure. */
@@ -104,6 +111,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       title: "Pull request is a draft",
       fix: "The author marks it ready for review before a verdict counts.",
       reveal: null,
+      revealLabel: null,
     });
   }
   if (pr.state !== "open") {
@@ -114,6 +122,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       title: `Pull request is ${pr.merged ? "merged" : pr.state}`,
       fix: "Closed and merged pull requests leave the deck on the next read.",
       reveal: null,
+      revealLabel: null,
     });
   }
 
@@ -126,6 +135,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       title: `${failing.length} required check ${failing.length === 1 ? "is" : "are"} failing`,
       fix: `${failing.join(", ")} — the author pushes a fix; the deck can't merge past a red check.`,
       reveal: "checks",
+      revealLabel: "show the checks",
     });
   }
   if (pr.threads.unresolved > 0) {
@@ -138,6 +148,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
         ? "Resolve them on GitHub, or ask the author to address them."
         : "Resolving threads needs a GitHub token — read-only here.",
       reveal: "threads",
+      revealLabel: "show the threads",
     });
   }
   if (pr.reviews.changesRequested > 0) {
@@ -147,7 +158,8 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       tone: "warning",
       title: "Changes requested and not yet dismissed",
       fix: "The requesting reviewer re-reviews, or dismisses the review on GitHub.",
-      reveal: null,
+      reveal: "checks",
+      revealLabel: "show the reviews",
     });
   }
   if (pr.mergeableState === "dirty") {
@@ -158,6 +170,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       title: `Merge conflicts with ${pr.baseRef}`,
       fix: "The author resolves conflicts locally — the deck never edits a working tree.",
       reveal: null,
+      revealLabel: null,
     });
   }
   if (pr.mergeableState === "behind") {
@@ -168,6 +181,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       title: `Branch is behind ${pr.baseRef}`,
       fix: `Update the branch on GitHub so checks run against current ${pr.baseRef}.`,
       reveal: null,
+      revealLabel: null,
     });
   }
   return out;
@@ -504,6 +518,42 @@ export const DECK_BUCKETS: readonly (keyof DeckSummary)[] = ["awaiting", "change
  * not have — both sit outside the four buckets rather than padding "awaiting",
  * which would make the strip claim knowledge it hasn't fetched.
  */
+/** How many items the four buckets actually account for. */
+export function countedTotal(summary: DeckSummary): number {
+  return DECK_BUCKETS.reduce((sum, bucket) => sum + summary[bucket], 0);
+}
+
+/**
+ * What the strip is allowed to claim about itself.
+ *
+ * Three kinds of item sit on the deck but outside the four counts — drafts,
+ * pull requests not yet read, and rows past the read cap — and a fourth,
+ * sessions with no pull request at all, is counted but is not GitHub state.
+ * Saying "counts from live GitHub review state · one bucket per item" while any
+ * of those is true claims a coverage the deck does not have, so the caption
+ * names them instead.
+ */
+export function deckCaption(input: {
+  counted: number;
+  local: number;
+  drafts: number;
+  unread: number;
+  skipped: number;
+}): string {
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const outside: string[] = [];
+  if (input.drafts > 0) outside.push(plural(input.drafts, "draft"));
+  if (input.unread > 0) outside.push(`${input.unread} still being read`);
+  if (input.skipped > 0) outside.push(`${input.skipped} past the read cap`);
+
+  const lead =
+    input.local > 0
+      ? `${input.counted} counted · ${plural(input.local, "local session")} with no GitHub state`
+      : `${input.counted} counted from live GitHub review state`;
+
+  return outside.length > 0 ? `${lead} · outside the counts: ${outside.join(", ")}` : lead;
+}
+
 export function deckSummary(buckets: readonly ReviewBucket[]): DeckSummary {
   const summary: DeckSummary = { awaiting: 0, changes: 0, blocked: 0, ready: 0 };
   for (const bucket of buckets) {

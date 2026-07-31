@@ -15,9 +15,10 @@ import { Icon } from "@/lib/icon";
 import { SearchInput } from "@/components/ui/search-input";
 import {
   buildNavRows,
+  dirRowId,
   fileRowId,
   filterFiles,
-  navigableFiles,
+  navigableTargets,
   nextNavPath,
   STATUS_GLYPH,
   type NavMode,
@@ -102,17 +103,24 @@ export function ReviewFileNavigator({
 
   const visible = useMemo(() => filterFiles(files, query), [files, query]);
   const rows = useMemo(() => buildNavRows(visible, { mode, collapsedDirs }), [visible, mode, collapsedDirs]);
-  const paths = useMemo(() => navigableFiles(rows), [rows]);
+  const targets = useMemo(() => navigableTargets(rows), [rows]);
+  const targetPaths = useMemo(() => targets.map((target) => target.path), [targets]);
 
-  const onKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      const next = nextNavPath(paths, openPath, e.key);
-      if (next == null) return;
-      e.preventDefault();
-      onOpen(next);
-    },
-    [paths, openPath, onOpen],
+  // The roving cursor. It starts on whatever file is open, so arriving at the
+  // navigator and pressing a key continues from what you are reading; it only
+  // diverges once you move onto a directory.
+  const [cursor, setCursor] = useState<string | null>(null);
+  const active = cursor ?? openPath;
+  const activeKind = useMemo(
+    () => targets.find((target) => target.path === active)?.kind ?? null,
+    [targets, active],
   );
+
+  // A new change means a new list — don't strand the cursor on a path that is
+  // no longer in it.
+  useEffect(() => {
+    setCursor(null);
+  }, [files]);
 
   const toggleDir = useCallback((path: string) => {
     setCollapsedDirs((prev) => {
@@ -122,6 +130,39 @@ export function ReviewFileNavigator({
       return next;
     });
   }, []);
+
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      // Left/right open and close the subtree under the cursor, the tree-widget
+      // convention — and the only keyboard route into a collapsed directory.
+      if (activeKind === "dir" && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+        const isCollapsed = collapsedDirs.has(active as string);
+        if (e.key === "ArrowRight" ? isCollapsed : !isCollapsed) {
+          e.preventDefault();
+          toggleDir(active as string);
+        }
+        return;
+      }
+
+      const next = nextNavPath(targetPaths, active, e.key);
+      if (next == null) return;
+      e.preventDefault();
+      const kind = targets.find((target) => target.path === next)?.kind ?? "file";
+
+      if (e.key === "Enter" || e.key === " ") {
+        if (kind === "dir") toggleDir(next);
+        else onOpen(next);
+        setCursor(next);
+        return;
+      }
+
+      setCursor(next);
+      // Moving through files reads them as you go; moving onto a directory just
+      // moves the cursor, since there is nothing to show until it is opened.
+      if (kind === "file") onOpen(next);
+    },
+    [targetPaths, targets, active, activeKind, collapsedDirs, onOpen, toggleDir],
+  );
 
   const additions = files.reduce((sum, file) => sum + file.additions, 0);
   const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
@@ -215,7 +256,9 @@ export function ReviewFileNavigator({
         className="rd-nav-list rd-scroll"
         role={mode === "tree" ? "tree" : "listbox"}
         aria-label="Changed files"
-        aria-activedescendant={openPath ? fileRowId(openPath) : undefined}
+        aria-activedescendant={
+          active ? (activeKind === "dir" ? dirRowId(active) : fileRowId(active)) : undefined
+        }
         tabIndex={0}
         onKeyDown={onKeyDown}
         onFocus={() => setFocused(true)}
@@ -238,9 +281,14 @@ export function ReviewFileNavigator({
                 role="treeitem"
                 aria-expanded={!row.collapsed}
                 aria-level={row.level + 1}
+                aria-selected={row.path === active}
                 title={row.path}
                 data-level={row.level}
-                onClick={() => toggleDir(row.path)}
+                data-cursor={row.path === active ? "true" : undefined}
+                onClick={() => {
+                  setCursor(row.path);
+                  toggleDir(row.path);
+                }}
               >
                 <span className="rd-nav-dir-caret" aria-hidden>
                   <Icon name={row.collapsed ? "ph:caret-right" : "ph:caret-down"} width={10} height={10} />
@@ -259,9 +307,13 @@ export function ReviewFileNavigator({
               aria-selected={open}
               aria-level={mode === "tree" ? row.level + 1 : undefined}
               data-open={open ? "true" : undefined}
+              data-cursor={row.path === active ? "true" : undefined}
               data-level={row.level}
               title={row.path}
-              onClick={() => onOpen(row.path)}
+              onClick={() => {
+                setCursor(row.path);
+                onOpen(row.path);
+              }}
             >
               <span className="rd-nav-glyph" data-status={row.file.status} aria-hidden>
                 {STATUS_GLYPH[row.file.status]}
@@ -282,7 +334,9 @@ export function ReviewFileNavigator({
         })}
       </div>
 
-      {focused ? <p className="rd-nav-hint">↑↓ or j/k to move · enter to open</p> : null}
+      {focused ? (
+        <p className="rd-nav-hint">↑↓ or j/k to move · ←→ to fold · enter to open</p>
+      ) : null}
     </div>
   );
 }
