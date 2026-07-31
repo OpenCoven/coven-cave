@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const packageJson = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
 const tauriConfig = JSON.parse(await readFile(new URL("../../src-tauri/tauri.conf.json", import.meta.url), "utf8"));
 const cargoToml = await readFile(new URL("../../src-tauri/Cargo.toml", import.meta.url), "utf8");
+const iosProject = await readFile(new URL("../../apps/ios/CovenCave/project.yml", import.meta.url), "utf8");
 const appVersionSource = await readFile(new URL("./app-version.ts", import.meta.url), "utf8");
 const releaseWorkflow = await readFile(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8");
 const buildInfoRoute = await readFile(new URL("../app/api/app/build-info/route.ts", import.meta.url), "utf8");
@@ -14,6 +15,10 @@ const cargoDescription = cargoToml.match(/^description\s*=\s*"([^"]+)"/m)?.[1];
 const cargoAuthors = cargoToml.match(/^authors\s*=\s*\[([^\]]+)\]/m)?.[1] ?? "";
 const cargoLicense = cargoToml.match(/^license\s*=\s*"([^"]+)"/m)?.[1];
 const cargoRepository = cargoToml.match(/^repository\s*=\s*"([^"]+)"/m)?.[1];
+const iosMarketingVersionMatch = iosProject.match(/^\s*MARKETING_VERSION:\s*([^\s#]+)\s*$/m);
+const iosBuildVersionMatch = iosProject.match(/^\s*CURRENT_PROJECT_VERSION:\s*([^\s#]+)\s*$/m);
+const iosMarketingVersion = iosMarketingVersionMatch?.[1].replace(/^"|"$/g, "");
+const iosBuildVersion = iosBuildVersionMatch?.[1].replace(/^"|"$/g, "");
 
 assert.equal(tauriConfig.version, packageJson.version, "Tauri bundle version must match package.json");
 assert.equal(cargoVersion, packageJson.version, "Tauri Cargo package version must match package.json");
@@ -53,6 +58,20 @@ assert.match(
 );
 assert.match(appVersionSource, /export const APP_BUILD_REVISION/, "App build revision must be available to diagnostics");
 assert.match(appVersionSource, /export const APP_BUILD_IDENTITY/, "App build identity must combine version and revision");
+assert.ok(
+  iosMarketingVersion,
+  "apps/ios/CovenCave/project.yml must define MARKETING_VERSION",
+);
+assert.equal(
+  iosMarketingVersion,
+  packageJson.version,
+  "iOS MARKETING_VERSION must match package.json version",
+);
+assert.equal(
+  iosBuildVersion,
+  "1",
+  "iOS CURRENT_PROJECT_VERSION must remain 1 for this release",
+);
 assert.match(
   releaseWorkflow,
   /NEXT_PUBLIC_COVEN_CAVE_BUILD_REVISION=\$\(git rev-parse --verify HEAD\)/,
