@@ -52,6 +52,8 @@
 	<string>Coven Cave uses the microphone so you can dictate messages to your familiars.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Coven Cave transcribes your speech into the message field when you dictate.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Coven Cave uses Face ID to unlock the app and to confirm changes to your desktop connection.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_tailscale._tcp</string>
