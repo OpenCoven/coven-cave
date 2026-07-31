@@ -4340,7 +4340,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const modelOverrideForRequest =
       opts?.modelOverride !== undefined
         ? opts.modelOverride
-        : modelStateRef.current?.source === "session" &&
+        : (modelStateRef.current?.source === "session" || modelStateRef.current?.source === "familiar-default") &&
             modelStateRef.current.effectiveModel &&
             modelStateRef.current.effectiveModel !== "unknown"
           ? modelStateRef.current.effectiveModel

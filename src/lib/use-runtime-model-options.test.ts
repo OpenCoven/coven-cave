@@ -6,7 +6,7 @@ const source = readFileSync(new URL("./use-runtime-model-options.ts", import.met
 
 assert.match(
   source,
-  /runtimeInventory\.key === inventoryKey[\s\S]*?runtimeInventory\.models !== null[\s\S]*?return runtimeInventory\.models/,
+  /runtimeInventory\.key === inventoryKey[\s\S]*?runtimeInventory\.models !== null[\s\S]*?return \{ models: runtimeInventory\.models, provenance: runtimeInventory\.provenance, loading: false, key: inventoryKey \}/,
   "dynamic model menus never expose a previous runtime or familiar's scoped inventory",
 );
 assert.match(
@@ -21,7 +21,7 @@ assert.match(
 );
 assert.match(
   source,
-  /setRuntimeInventory\(\{ key: inventoryKey, models: staticModels \}\)/,
+  /setRuntimeInventory\(\{ key: inventoryKey, models: staticModels, provenance: "fallback" \}\)/,
   "a failed dynamic request falls back to the safe static seed",
 );
 assert.match(
@@ -31,7 +31,7 @@ assert.match(
 );
 assert.match(
   source,
-  /runtimeInventory\.key === inventoryKey[\s\S]*?return runtimeInventory\.models/,
+  /DYNAMIC_INVENTORY_RUNTIMES\.has\(canonicalRuntime\) \? \[\] : staticModels[\s\S]*?loading: DYNAMIC_INVENTORY_RUNTIMES\.has\(canonicalRuntime\)/,
   "dynamic inventories never render a prior familiar/runtime scope while the current request is pending",
 );
 

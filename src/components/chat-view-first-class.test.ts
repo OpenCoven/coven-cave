@@ -143,6 +143,11 @@ assert.match(
   /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*\.\.\.modelCapabilities\.map\([\s\S]*capability\.delivery === "prompt-only" \? "Prompt guidance" : "Native"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
   "The grouped Response section exposes access, model, and capability-aware controls with an honest delivery label",
 );
+assert.match(
+  source,
+  /const modelOverrideForRequest =[\s\S]*?source === "session" \|\| modelStateRef\.current\?\.source === "familiar-default"[\s\S]*?modelOverrideScope: "session" as const/,
+  "a model selected before the first session exists is synchronously sent as a session override while its familiar-default PATCH is pending",
+);
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
 // "Both" reconciliation (2026-07-21): the context pill returned with the
 // footer band — but only there, never back in the control row.
