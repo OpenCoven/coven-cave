@@ -12,7 +12,8 @@ import { Icon } from "@/lib/icon";
 import { StatusPill } from "@/components/weave-rail";
 import { StrandInspector } from "@/components/strand-inspector";
 import { channelLabel, paneModel, pillForTension } from "@/lib/weave-rail";
-import type { ThreadView, WeaveDetail } from "@/lib/threads-read";
+import type { AuditEntryView, ThreadView, WeaveDetail } from "@/lib/threads-read";
+import type { SurfaceState } from "@/lib/weave-rail";
 
 function ChannelChips({ thread }: { thread: ThreadView }) {
   if (thread.holdsUnder.length === 0) {
@@ -77,6 +78,7 @@ export function ThreadPane({
   openThreadId,
   stagedThreadIds,
   knownProposalIds,
+  auditByThread,
   onToggleThread,
   onTraceThread,
   onOpenProposal,
@@ -86,6 +88,8 @@ export function ThreadPane({
   /** Threads with a staged write awaiting a decision, from /api/proposals. */
   stagedThreadIds: ReadonlySet<string>;
   knownProposalIds: ReadonlySet<string>;
+  /** ward.audit read once per weave by the view, keyed by thread id. */
+  auditByThread: ReadonlyMap<string, SurfaceState<AuditEntryView[]>>;
   onToggleThread: (id: string) => void;
   onTraceThread: (thread: ThreadView) => void;
   onOpenProposal: (threadId: string) => void;
@@ -157,6 +161,7 @@ export function ThreadPane({
                 <StrandInspector
                   thread={thread}
                   knownProposalIds={knownProposalIds}
+                  auditState={auditByThread.get(thread.id) ?? { kind: "loading" }}
                   onTraceThread={() => onTraceThread(thread)}
                 />
               ) : null}
