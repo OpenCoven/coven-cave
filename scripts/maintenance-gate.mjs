@@ -106,11 +106,17 @@ const GATE_KEYS = ["generation", "ownerId", "token", "phase", "acquiredAt", "hea
 const INTENT_KEYS = ["writerId", "token", "registeredAt", "ttlMs", "purpose"];
 
 function gateExpired(gate, now) {
-  return now > Date.parse(gate.heartbeatAt) + gate.ttlMs;
+  const heartbeatAt = Date.parse(gate.heartbeatAt);
+  const ttlMs = Number(gate.ttlMs);
+  if (!Number.isFinite(heartbeatAt) || !Number.isFinite(ttlMs) || ttlMs <= 0) return true;
+  return now > heartbeatAt + ttlMs;
 }
 
 function intentExpired(intent, now) {
-  return now > Date.parse(intent.registeredAt) + intent.ttlMs;
+  const registeredAt = Date.parse(intent.registeredAt);
+  const ttlMs = Number(intent.ttlMs);
+  if (!Number.isFinite(registeredAt) || !Number.isFinite(ttlMs) || ttlMs <= 0) return true;
+  return now > registeredAt + ttlMs;
 }
 
 function writeExclusive(filePath, value) {
