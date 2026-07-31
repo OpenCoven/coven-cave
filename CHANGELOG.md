@@ -5,6 +5,44 @@ All notable changes to CovenCave land here. Format follows
 [SemVer](https://semver.org/) while still in 0.x — minor releases may carry
 breaking config changes; patch releases stay additive.
 
+## [0.2.2] - 2026-07-31
+
+### Added
+
+- Added Codex-native session lifecycle integration, a typed companion adapter, and authenticated SSE streaming for live collaboration.
+- Added GitHub repository browsing, familiar-scoped repository binding, and GitHub issue creation from Board tasks.
+- Added an MCP Registry browser plus install flows for Cave and Codex clients.
+- Added chat attachment handoff, follow-up intents, global quick chat, familiar scoping, and richer task-progress presentation.
+- Added an always-on browser pane, a richer terminal workbench, and Sketch canvas shape tooling.
+- Added Mobile Cave task creation, task controls, shareable invite links, typed RPC, and optional internet access.
+- Added CovenWiki generation, coverage reporting, retry and progress feedback, and paginated wiki reading.
+- Added a Grimoire cookbook and stitch template gallery for reusable local knowledge workflows.
+- Added a versioned setup and post-setup flow for first-run configuration.
+
+### Changed
+
+- Reworked the Board, Calendar, Chat, Roster, Familiar Library, Integrations, Plugins, Tasks, and Aesthetic surfaces around shared desktop, mobile, and search patterns.
+- Unified multi-familiar context across chat, terminal, and coding-room workflows, including dedicated-room continuity and focused compact layouts.
+- Improved theme palettes, surface hierarchy, typography, status treatments, syntax colors, and custom titlebar behavior across platforms.
+- Expanded local-first sidecar discovery, launch readiness, daemon reuse, crash recovery, and route navigation hardening.
+- Improved release diagnostics, updater and CI reliability, sidecar bundling, and cross-environment validation.
+
+### Fixed
+
+- Fixed quick-chat preview parity, mobile group-chat visibility, history rendering, transcript restoration, and JSONL recovery behavior.
+- Fixed Board chat scoping, document and task title persistence, Markdown editor writeback, and timeline rendering.
+- Fixed coding-room layout, multipane resizing, terminal input and paste behavior, preview refresh, and worktree selection.
+- Fixed MCP install actions, registry interactions, credential-form affordances, integration search, and installed-state clarity.
+- Fixed Mobile Cave connectivity, QR and deep-link pairing, RPC timing, and compact-shell navigation.
+- Fixed updater permission and launch behavior, release upload handling, executable bits, architecture metadata, and platform-specific setup failures.
+- Fixed accessibility labels, focus handling, contrast, touch targets, reduced-motion behavior, and responsive overflow across core surfaces.
+- Removed remaining legacy shell, query API, demo, and stale route artifacts that could conflict with current navigation.
+
+### Security
+
+- Hardened terminal link handling, WebView navigation, and SVG icon rendering against unsafe external content.
+- Removed deprecated trust-boundary fallbacks from mobile, calendar, chat, release, and sidecar paths.
+
 ## [Unreleased]
 
 ## [0.2.0] - 2026-07-26
