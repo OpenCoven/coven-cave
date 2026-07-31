@@ -2,10 +2,11 @@ import AppIntents
 import Foundation
 
 /// Create a reminder by voice / Spotlight / Shortcuts — e.g. "New Coven reminder".
-/// Runs without opening the app: it reads the saved connection and POSTs directly.
+/// Requires local device authentication, then uses the saved connection directly.
 struct NewReminderIntent: AppIntent {
     static var title: LocalizedStringResource = "New Reminder"
     static var description = IntentDescription("Create a reminder in Coven Cave.")
+    static var authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
 
     @Parameter(title: "Reminder", requestValueDialog: "What's the reminder?")
     var text: String
@@ -34,10 +35,11 @@ struct NewReminderIntent: AppIntent {
     }
 }
 
-/// Ask what's running — e.g. "What's running in Coven Cave". Read-only summary.
+/// Authenticated task summary — e.g. "What's running in Coven Cave".
 struct RunningTasksIntent: AppIntent {
     static var title: LocalizedStringResource = "Running Tasks"
     static var description = IntentDescription("Summarize the tasks currently running.")
+    static var authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {

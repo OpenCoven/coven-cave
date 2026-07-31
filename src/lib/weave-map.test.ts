@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildWeaveMap, surfaceNodeId, threadNodeId, toneForTension } from "./weave-map.ts";
+import { buildBipartiteWeaveMap, toneForTension, weaveMapRows } from "./weave-map.ts";
 import type { AuditEntryView, ProposalView, ThreadView } from "./threads-read.ts";
 
 function thread(id: string, surface: string, writer = "familiar:sage", state: "holds" | "frayed" | "snapped" | "unknown" = "holds"): ThreadView {
@@ -74,61 +74,84 @@ describe("toneForTension", () => {
   });
 });
 
-describe("buildWeaveMap", () => {
-  it("builds authority edges from the thread contract", () => {
-    const map = buildWeaveMap({ threads: [thread("t1", "SOUL.md")], audit: [], proposals: [] });
-    assert.equal(map.nodes.length, 2);
-    const threadNode = map.nodes.find((n) => n.kind === "thread");
-    assert.equal(threadNode?.label, "sage", "familiar: prefix stripped for display");
+describe("buildBipartiteWeaveMap", () => {
+  it("deduplicates the writer lane but keeps one surface row per thread", () => {
+    const map = buildBipartiteWeaveMap({
+      threads: [
+        thread("t1", "SOUL.md", "familiar:sage"),
+        thread("t2", "IDENTITY.md", "familiar:sage"),
+        thread("t3", "ward.toml", "daemon:ward"),
+      ],
+      proposals: [],
+    });
+    assert.deepEqual(map.writers, ["familiar:sage", "daemon:ward"]);
+    assert.equal(map.surfaces.length, 3, "one right-lane row per thread, never deduped");
     assert.deepEqual(
-      map.edges.map((e) => [e.from, e.to, e.style, e.count]),
-      [[threadNodeId("t1"), surfaceNodeId("SOUL.md"), "authority", 1]],
+      map.links.map((l) => l.writerIndex),
+      [0, 0, 1],
+      "both sage threads point at the same writer node",
     );
+    assert.deepEqual(map.links.map((l) => l.surfaceIndex), [0, 1, 2]);
   });
 
-  it("aggregates audited touches per (thread, file) with counts", () => {
-    const map = buildWeaveMap({
+  it("marks only threads the queue actually staged a write for", () => {
+    const map = buildBipartiteWeaveMap({
+      threads: [thread("t1", "SOUL.md"), thread("t2", "IDENTITY.md")],
+      proposals: [proposal("t1", ["SOUL.md"])],
+    });
+    assert.deepEqual(map.links.map((l) => l.pending), [true, false]);
+  });
+
+  it("ignores a corrupt staged file — it can never claim a pending edge", () => {
+    const map = buildBipartiteWeaveMap({
       threads: [thread("t1", "SOUL.md")],
-      audit: [auditRow("t1", ["MEMORY.md"], 1), auditRow("t1", ["MEMORY.md", "SOUL.md"], 2)],
+      proposals: [proposal("t1", ["SOUL.md"], "corrupt")],
+    });
+    assert.equal(map.links[0].pending, false);
+  });
+
+  it("carries the thread tension through to both the edge and its surface", () => {
+    const map = buildBipartiteWeaveMap({
+      threads: [thread("t1", "SOUL.md", "familiar:sage", "snapped")],
       proposals: [],
     });
-    const touched = map.edges.filter((e) => e.style === "touched");
-    const memoryEdge = touched.find((e) => e.to === surfaceNodeId("MEMORY.md"));
-    assert.equal(memoryEdge?.count, 2);
-    assert.match(memoryEdge?.detail ?? "", /2 audited decisions/);
-    assert.ok(map.nodes.some((n) => n.kind === "surface" && n.surface === "MEMORY.md"));
+    assert.equal(map.links[0].tone, "snapped");
+    assert.equal(map.surfaces[0].tone, "snapped");
   });
+});
 
-  it("skips unattributable audit rows — no thread id, no edge", () => {
-    const map = buildWeaveMap({
-      threads: [thread("t1", "SOUL.md")],
-      audit: [auditRow(null, ["MEMORY.md"]), auditRow("t-foreign", ["MEMORY.md"])],
+describe("weaveMapRows", () => {
+  it("claims audited only for a thread the audit rows attribute", () => {
+    const rows = weaveMapRows({
+      threads: [thread("t1", "SOUL.md"), thread("t2", "IDENTITY.md")],
+      audit: [auditRow("t1", ["SOUL.md"])],
       proposals: [],
     });
-    assert.equal(map.edges.filter((e) => e.style === "touched").length, 0);
-    assert.ok(!map.nodes.some((n) => n.kind === "surface" && n.surface === "MEMORY.md"));
+    assert.match(rows[0].evidence, /audited/);
+    assert.doesNotMatch(rows[1].evidence, /audited/);
   });
 
-  it("staged proposals ride as pending edges; corrupt proposals are ignored", () => {
-    const map = buildWeaveMap({
+  it("does not attribute an audit row that carries no thread id", () => {
+    const rows = weaveMapRows({
       threads: [thread("t1", "SOUL.md")],
+      audit: [auditRow(null, ["SOUL.md"])],
+      proposals: [],
+    });
+    assert.doesNotMatch(rows[0].evidence, /audited/, "unattributable rows are skipped, never guessed");
+  });
+
+  it("names the staged proposal and keeps the surface → writer referent", () => {
+    const rows = weaveMapRows({
+      threads: [thread("t1", "SOUL.md", "familiar:sage")],
       audit: [],
-      proposals: [proposal("t1", ["IDENTITY.md", "IDENTITY.md"]), proposal("t1", ["x"], "corrupt")],
+      proposals: [proposal("t1", ["SOUL.md"])],
     });
-    const pending = map.edges.filter((e) => e.style === "pending");
-    assert.equal(pending.length, 1);
-    assert.equal(pending[0].count, 2);
-    assert.match(pending[0].detail, /2 staged edits/);
+    assert.equal(rows[0].label, "SOUL.md → familiar:sage");
+    assert.match(rows[0].evidence, /1 staged proposal/);
   });
 
-  it("thread tone follows tension, failing closed", () => {
-    const map = buildWeaveMap({
-      threads: [thread("t1", "a", "familiar:sage", "frayed"), thread("t2", "b", "familiar:echo", "unknown")],
-      audit: [],
-      proposals: [],
-    });
-    const tones = new Map(map.nodes.filter((n) => n.kind === "thread").map((n) => [n.threadId, n.tone]));
-    assert.equal(tones.get("t1"), "frayed");
-    assert.equal(tones.get("t2"), "blocked");
+  it("emits one row per thread so the List view is never a reduced set", () => {
+    const threads = [thread("t1", "a"), thread("t2", "b"), thread("t3", "c")];
+    assert.equal(weaveMapRows({ threads, audit: [], proposals: [] }).length, threads.length);
   });
 });
