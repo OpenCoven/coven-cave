@@ -201,7 +201,7 @@ export async function listClaudeModelInventory(
       (dependencies.scopedEnv ?? harnessSpawnEnv)(familiarId),
     );
   } catch {
-    return { models: seedModels(), provenance: "live" };
+    return { models: seedModels(), provenance: "fallback" };
   }
   const key = cacheKey(familiarId, providerEnv);
   const now = dependencies.now ?? Date.now;

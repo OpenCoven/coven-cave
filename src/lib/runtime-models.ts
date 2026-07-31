@@ -206,7 +206,8 @@ export function defaultModelForRuntime(runtime: string): string {
 
 /** Whether an unselected launch must defer to the runtime/provider config. */
 export function runtimeOwnsModelDefault(runtime: string): boolean {
-  return catalogForRuntime(runtime)?.defaultOwner === "runtime";
+  const canonical = runtime.trim().toLowerCase() === "hermes-agent" ? "hermes" : runtime;
+  return catalogForRuntime(canonical)?.defaultOwner === "runtime";
 }
 
 /**
