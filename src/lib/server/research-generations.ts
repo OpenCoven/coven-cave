@@ -866,23 +866,65 @@ function storyboardSceneFromSection(
   };
 }
 
+function shortVideoStoryboardSceneFromSection(
+  section: MarkdownSection,
+  index: number,
+  maxNarrationCharacters: number,
+): ResearchGenerationStoryboardScene | null {
+  const availableBullets = (section.bullets.length > 0
+    ? section.bullets
+    : section.firstLine
+      ? [section.firstLine]
+      : []).slice(0, MAX_SLIDE_BULLETS);
+  const bullets: string[] = [];
+  for (const bullet of availableBullets) {
+    const narration = [section.title, ...bullets, bullet].join(". ");
+    if (narration.length > maxNarrationCharacters) break;
+    bullets.push(bullet);
+  }
+  if (bullets.length === 0 && section.title.length > maxNarrationCharacters) return null;
+  return {
+    id: `scene-${index}`,
+    title: section.title,
+    bullets,
+    narration: [section.title, ...bullets].join(". "),
+  };
+}
+
 /** Drafts the bounded storyboard consumed by the short-video path. */
 export function draftVideoStoryboardContent(
   source: GenerationDraftSource,
   length: "brief" | "standard",
 ): ResearchGenerationContent {
   const { documentTitle, sections } = extractMarkdownSections(source.markdown);
-  const maxScenes = RESEARCH_MEDIA_LENGTH_LIMITS["short-video"][length].maxScenes;
-  const scenes: ResearchGenerationStoryboardScene[] = sections.length > 0
-    ? sections
-        .slice(0, maxScenes)
-        .map((section, index) => storyboardSceneFromSection(section, index + 1))
-    : mediaNarrationUnits(source).slice(0, maxScenes).map((unit, index) => ({
-        id: `scene-${index + 1}`,
+  const limits = RESEARCH_MEDIA_LENGTH_LIMITS["short-video"][length];
+  const scenes: ResearchGenerationStoryboardScene[] = [];
+  let remainingCharacters = limits.maxCharacters;
+  if (sections.length > 0) {
+    for (const section of sections) {
+      if (scenes.length >= limits.maxScenes || remainingCharacters <= 0) break;
+      const scene = shortVideoStoryboardSceneFromSection(
+        section,
+        scenes.length + 1,
+        remainingCharacters,
+      );
+      if (!scene) continue;
+      scenes.push(scene);
+      remainingCharacters -= scene.narration.length;
+    }
+  } else {
+    for (const unit of mediaNarrationUnits(source)) {
+      if (scenes.length >= limits.maxScenes || remainingCharacters <= 0) break;
+      if (unit.length > remainingCharacters) continue;
+      scenes.push({
+        id: `scene-${scenes.length + 1}`,
         title: documentTitle ?? source.artifact.title,
-        bullets: [unit].slice(0, MAX_SLIDE_BULLETS),
+        bullets: [unit],
         narration: unit,
-      }));
+      });
+      remainingCharacters -= unit.length;
+    }
+  }
   return { kind: "short-video", storyboard: scenes };
 }
 
