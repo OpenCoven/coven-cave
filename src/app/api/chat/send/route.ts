@@ -261,6 +261,7 @@ import {
   turnRetryModel,
 } from "./chat-send-models";
 import {
+  appliedModelControls,
   modelControlCapabilities,
   promptOnlyModelControls,
   validateModelControlValues,
@@ -1783,6 +1784,7 @@ export async function POST(req: Request) {
   }
   body.modelControls = controlValidation.values;
   const promptModelControls = promptOnlyModelControls(controlCapabilities, controlValidation.values);
+  const appliedModelControlValues = appliedModelControls(controlCapabilities, controlValidation.values);
   const hermesReasoningEffort = controlCapabilities.some(
     (capability) => capability.parameter === "reasoning.effort",
   ) ? controlValidation.values.reasoning : undefined;
@@ -4640,8 +4642,8 @@ export async function POST(req: Request) {
         modelState.applicationState = application.state;
         modelState.reason = application.reason;
       }
-      if (!result.is_error && Object.keys(controlValidation.values).length > 0) {
-        responseMetadata.appliedControls = controlValidation.values;
+      if (!result.is_error && Object.keys(appliedModelControlValues).length > 0) {
+        responseMetadata.appliedControls = appliedModelControlValues;
       }
       const routedTurnModel = copilotStream
         ? cleanModelId(desiredModel)

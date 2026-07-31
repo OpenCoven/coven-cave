@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  appliedModelControls,
   modelControlCapabilities,
   promptOnlyModelControls,
   validateModelControlValues,
@@ -33,10 +34,20 @@ test("controls are accepted only for the selected capability values", () => {
     validateModelControlValues(capabilities, { reasoning: "xhigh", performance: "fast" }),
     { values: {}, rejected: ["reasoning", "performance"] },
   );
+  assert.deepEqual(
+    validateModelControlValues(capabilities, ["reasoning"]),
+    { values: {}, rejected: ["modelControls"] },
+    "a present malformed payload fails closed instead of silently dropping controls",
+  );
 });
 
 test("prompt-only controls remain distinct from native delivery", () => {
   const capabilities = modelControlCapabilities("claude", "anthropic/claude-sonnet-4-6");
   const validated = validateModelControlValues(capabilities, { reasoning: "medium" });
   assert.deepEqual(promptOnlyModelControls(capabilities, validated.values), { reasoning: "medium" });
+  assert.deepEqual(
+    appliedModelControls(capabilities, validated.values),
+    {},
+    "prompt guidance is never reported as provider-applied",
+  );
 });

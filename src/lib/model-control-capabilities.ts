@@ -106,8 +106,11 @@ export function validateModelControlValues(
   capabilities: readonly ModelControlCapability[],
   values: unknown,
 ): { values: ModelControlValues; rejected: string[] } {
-  if (!values || typeof values !== "object" || Array.isArray(values)) {
+  if (values === undefined) {
     return { values: {}, rejected: [] };
+  }
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    return { values: {}, rejected: ["modelControls"] };
   }
   const requested = values as Record<string, unknown>;
   const allowed = new Map(capabilities.map((capability) => [capability.family, capability]));
@@ -126,6 +129,27 @@ export function validateModelControlValues(
     accepted[capability.family] = value;
   }
   return { values: accepted, rejected };
+}
+
+/**
+ * Prompt-only controls are recorded as guidance, not as a runtime/provider
+ * acknowledgement. Only capabilities Cave can verify at the delivery boundary
+ * may appear in `appliedControls` after a successful run.
+ */
+export function appliedModelControls(
+  capabilities: readonly ModelControlCapability[],
+  values: ModelControlValues,
+): ModelControlValues {
+  const appliedFamilies = new Set(
+    capabilities
+      .filter((capability) =>
+        capability.delivery === "native-provider" || capability.delivery === "runtime-cli",
+      )
+      .map((capability) => capability.family),
+  );
+  return Object.fromEntries(
+    Object.entries(values).filter(([family]) => appliedFamilies.has(family as ModelControlFamily)),
+  ) as ModelControlValues;
 }
 
 /**
