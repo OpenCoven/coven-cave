@@ -22,6 +22,11 @@ assert.match(route, /resolveChatModelState/);
 assert.match(route, /loadConversation\(sessionId\)/);
 assert.match(route, /saveConfig/);
 assert.match(route, /saveConversation/);
+assert.match(
+  route,
+  /const hermesDirect =[\s\S]*?!isSshRuntime\(bindingFor\(await loadConfig\(\), familiarId\)\.runtime\)[\s\S]*?hermesDirect && hermesApi !== null/,
+  "SSH-bound Hermes chats must not advertise native Responses controls",
+);
 assert.equal(
   route.match(/sessionId && !isSafeConversationSessionId\(sessionId\)/g)?.length,
   2,
@@ -37,8 +42,8 @@ assert.match(route, /next-message scope is composer-local/);
 assert.match(route, /const clearModel = body\.model === null/);
 assert.match(
   route,
-  /if \(clearModel\) \{\s*delete conversation\.modelIntent/,
-  "model: null restores the inherited/runtime default for a session",
+  /if \(clearModel\) \{[\s\S]*?conversation\.modelIntent = \{[\s\S]*?model: "",[\s\S]*?source: "session"/,
+  "model: null records an explicit empty session intent for the runtime default",
 );
 assert.match(
   route,

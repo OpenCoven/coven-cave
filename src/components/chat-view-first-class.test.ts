@@ -148,6 +148,11 @@ assert.match(
   /const modelOverrideForRequest =[\s\S]*?source === "session" \|\| modelStateRef\.current\?\.source === "familiar-default"[\s\S]*?modelOverrideScope: "session" as const/,
   "a model selected before the first session exists is synchronously sent as a session override while its familiar-default PATCH is pending",
 );
+assert.match(
+  source,
+  /const handleSelectRuntime = useCallback\([\s\S]*?setModelCapabilities\(\[\]\);[\s\S]*?setModelControls\(\{\}\);/,
+  "runtime switches clear the previous runtime's controls before async capability refresh",
+);
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
 // "Both" reconciliation (2026-07-21): the context pill returned with the
 // footer band — but only there, never back in the control row.

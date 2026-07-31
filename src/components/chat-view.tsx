@@ -2554,6 +2554,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
       const nextModel = modelForRuntimeSwitch(runtime);
+      // A runtime switch invalidates the previous runtime's controls before
+      // the async scoped capability refresh returns.
+      setModelCapabilities([]);
+      setModelControls({});
       // Optimistic: the chip flips immediately; the refetch reconciles.
       const current = modelStateRef.current;
       if (current) {

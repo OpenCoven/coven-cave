@@ -27,6 +27,11 @@ test("unknown models expose no invented global thinking or speed selector", () =
     [],
     "custom Claude ids must not manufacture prompt guidance capabilities",
   );
+  assert.deepEqual(
+    modelControlCapabilities("hermes", "openai/codex-auto-review"),
+    [],
+    "catalog entries without verified GPT-5 Responses support must not expose native controls",
+  );
 });
 
 test("controls are accepted only for the selected capability values", () => {

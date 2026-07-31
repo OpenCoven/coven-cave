@@ -13,6 +13,7 @@ import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
 import { modelControlCapabilities } from "@/lib/model-control-capabilities";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { hermesApiConfig } from "@/lib/hermes-responses-stream";
+import { isSshRuntime } from "@/lib/familiar-runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -105,8 +106,11 @@ export async function GET(req: Request) {
         HERMES_API_KEY: hermesEnvironment.HERMES_API_KEY,
       })
     : null;
+  const hermesDirect =
+    state.harness === "hermes" &&
+    !isSshRuntime(bindingFor(await loadConfig(), familiarId).runtime);
   const controls = modelControlCapabilities(state.harness, state.effectiveModel)
-    .filter((capability) => capability.delivery !== "native-provider" || hermesApi !== null);
+    .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null));
   return NextResponse.json({
     ok: true,
     state,

@@ -85,7 +85,11 @@ export function modelControlCapabilities(
   // Hermes's Responses API transport is OpenAI-compatible only for explicit
   // OpenAI GPT-5 selections. The send route additionally requires that API
   // transport before it emits either parameter.
-  if (canonicalRuntime === "hermes" && isModelInCatalog("hermes", canonicalModel)) {
+  if (
+    canonicalRuntime === "hermes" &&
+    isModelInCatalog("hermes", canonicalModel) &&
+    /^openai\/gpt-5(?:[.-]|$)/.test(canonicalModel)
+  ) {
     return [
       reasoning("native-provider", "reasoning.effort"),
       verbosity("native-provider", "text.verbosity"),
