@@ -56,6 +56,7 @@ export const MAX_LEASE_TTL_MS = 24 * 60 * 60_000;
 const QUIESCE_POLL_MS = 100;
 const MUTATION_LOCK_POLL_MS = 10;
 const MUTATION_LOCK_WAIT_MS = 1_000;
+const GATE_CLEANUP_TIMEOUT_MS = 5_000;
 
 /** Synchronous sleep without CPU spin (callers are sync CLI/hook processes). */
 function sleepSync(ms) {
@@ -182,6 +183,10 @@ function gateExpired(gate, now) {
   return now > Date.parse(gate.heartbeatAt) + gate.ttlMs;
 }
 
+function clockRegressed(lease, now) {
+  return now < Date.parse(lease.heartbeatAt);
+}
+
 function intentExpired(intent, now) {
   return now > Date.parse(intent.heartbeatAt) + intent.ttlMs;
 }
@@ -296,15 +301,19 @@ function listIntents(root, now) {
   try {
     names = readdirSync(intentsDir(root));
   } catch (error) {
-    if (error?.code === "ENOENT") return { live: [], malformed: [], unreadable: null };
+    if (error?.code === "ENOENT") {
+      return { live: [], malformed: [], clockRegressed: [], unreadable: null };
+    }
     return {
       live: [],
       malformed: [],
+      clockRegressed: [],
       unreadable: error?.code ?? "unknown",
     };
   }
   const live = [];
   const malformed = [];
+  const regressed = [];
   for (const name of names) {
     if (!name.endsWith(".json")) continue;
     const filePath = path.join(intentsDir(root), name);
@@ -312,6 +321,10 @@ function listIntents(root, now) {
     if (!parsed.ok) {
       if (parsed.malformed) malformed.push(name);
       continue; // vanished mid-scan = released
+    }
+    if (clockRegressed(parsed.value, now)) {
+      regressed.push(parsed.value);
+      continue;
     }
     if (intentExpired(parsed.value, now)) {
       // An expired lease no longer blocks the gate; leave the file for the
@@ -321,7 +334,7 @@ function listIntents(root, now) {
     }
     live.push(parsed.value);
   }
-  return { live, malformed, unreadable: null };
+  return { live, malformed, clockRegressed: regressed, unreadable: null };
 }
 
 /**
@@ -545,13 +558,42 @@ export function acquireMaintenanceGate({
         sleepSync(drainPollMs);
         continue;
       }
+      if (
+        refreshed.reason === "state-busy" ||
+        refreshed.reason === "expired" ||
+        refreshed.reason === "clock-regressed"
+      ) {
+        const released = cleanupOwnedGate(handle);
+        if (!released.ok) {
+          return {
+            ok: false,
+            reason: "gate-cleanup-failed",
+            detail: released.reason,
+            recoveryHandle: handle,
+          };
+        }
+        const reason = refreshed.reason === "state-busy"
+          ? "quiesce-timeout"
+          : refreshed.reason;
+        audit(root, "acquire-rejected", { ownerId, generation, reason });
+        return reason === "quiesce-timeout"
+          ? { ok: false, reason, blockers: [] }
+          : { ok: false, reason };
+      }
       return refreshed;
     }
     const current = Date.now();
-    const { live, malformed, unreadable } = listIntents(root, current);
+    const { live, malformed, clockRegressed: regressed, unreadable } = listIntents(root, current);
     if (unreadable) {
-      const released = removeOwnedGate(handle);
-      if (!released.ok) return { ok: false, reason: "gate-cleanup-failed", detail: released.reason };
+      const released = cleanupOwnedGate(handle);
+      if (!released.ok) {
+        return {
+          ok: false,
+          reason: "gate-cleanup-failed",
+          detail: released.reason,
+          recoveryHandle: handle,
+        };
+      }
       audit(root, "acquire-rejected", {
         ownerId,
         generation,
@@ -560,9 +602,35 @@ export function acquireMaintenanceGate({
       });
       return { ok: false, reason: "intent-scan-failed", code: unreadable };
     }
+    if (regressed.length > 0) {
+      const released = cleanupOwnedGate(handle);
+      if (!released.ok) {
+        return {
+          ok: false,
+          reason: "gate-cleanup-failed",
+          detail: released.reason,
+          recoveryHandle: handle,
+        };
+      }
+      const writers = regressed.map((intent) => intent.writerId);
+      audit(root, "acquire-rejected", {
+        ownerId,
+        generation,
+        reason: "intent-clock-regressed",
+        writers,
+      });
+      return { ok: false, reason: "intent-clock-regressed", writers };
+    }
     if (malformed.length > 0) {
-      const released = removeOwnedGate(handle);
-      if (!released.ok) return { ok: false, reason: "gate-cleanup-failed", detail: released.reason };
+      const released = cleanupOwnedGate(handle);
+      if (!released.ok) {
+        return {
+          ok: false,
+          reason: "gate-cleanup-failed",
+          detail: released.reason,
+          recoveryHandle: handle,
+        };
+      }
       audit(root, "acquire-rejected", { ownerId, generation, reason: "malformed-intent", files: malformed });
       return { ok: false, reason: "malformed-intent", files: malformed };
     }
@@ -571,8 +639,15 @@ export function acquireMaintenanceGate({
         sleepSync(drainPollMs);
         continue;
       }
-      const released = removeOwnedGate(handle);
-      if (!released.ok) return { ok: false, reason: "gate-cleanup-failed", detail: released.reason };
+      const released = cleanupOwnedGate(handle);
+      if (!released.ok) {
+        return {
+          ok: false,
+          reason: "gate-cleanup-failed",
+          detail: released.reason,
+          recoveryHandle: handle,
+        };
+      }
       const blockers = live.map((intent) => intent.writerId);
       audit(root, "acquire-rejected", { ownerId, generation, reason: "quiesce-timeout", blockers });
       return { ok: false, reason: "quiesce-timeout", blockers };
@@ -584,12 +659,22 @@ export function acquireMaintenanceGate({
       if (owned.gate.phase !== "draining") return { ok: false, reason: "not-draining" };
 
       const finalScanAt = Date.now();
+      if (clockRegressed(owned.gate, finalScanAt)) {
+        return { ok: false, reason: "clock-regressed" };
+      }
       if (gateExpired(owned.gate, finalScanAt)) {
         return { ok: false, reason: "expired" };
       }
       const finalScan = listIntents(root, finalScanAt);
       if (finalScan.unreadable) {
         return { ok: false, reason: "intent-scan-failed", code: finalScan.unreadable };
+      }
+      if (finalScan.clockRegressed.length > 0) {
+        return {
+          ok: false,
+          reason: "intent-clock-regressed",
+          writers: finalScan.clockRegressed.map((intent) => intent.writerId),
+        };
       }
       if (finalScan.malformed.length > 0) {
         return { ok: false, reason: "malformed-intent", files: finalScan.malformed };
@@ -618,15 +703,35 @@ export function acquireMaintenanceGate({
         sleepSync(drainPollMs);
         continue;
       }
-      const released = removeOwnedGate(handle);
-      if (!released.ok) return { ok: false, reason: "gate-cleanup-failed", detail: released.reason };
+      const released = cleanupOwnedGate(handle);
+      if (!released.ok) {
+        return {
+          ok: false,
+          reason: "gate-cleanup-failed",
+          detail: released.reason,
+          recoveryHandle: handle,
+        };
+      }
       const blockers = promoted.blockers ?? [];
       audit(root, "acquire-rejected", { ownerId, generation, reason: "quiesce-timeout", blockers });
       return { ok: false, reason: "quiesce-timeout", blockers };
     }
-    if (promoted.reason === "malformed-intent" || promoted.reason === "intent-scan-failed") {
-      const released = removeOwnedGate(handle);
-      if (!released.ok) return { ok: false, reason: "gate-cleanup-failed", detail: released.reason };
+    if (
+      promoted.reason === "malformed-intent" ||
+      promoted.reason === "intent-scan-failed" ||
+      promoted.reason === "intent-clock-regressed" ||
+      promoted.reason === "clock-regressed" ||
+      promoted.reason === "expired"
+    ) {
+      const released = cleanupOwnedGate(handle);
+      if (!released.ok) {
+        return {
+          ok: false,
+          reason: "gate-cleanup-failed",
+          detail: released.reason,
+          recoveryHandle: handle,
+        };
+      }
       audit(root, "acquire-rejected", { ownerId, generation, ...promoted });
       return promoted;
     }
@@ -636,6 +741,22 @@ export function acquireMaintenanceGate({
   audit(root, "gate-acquired", { ownerId, generation });
   const finalOwnership = verifyMaintenanceGateOwnership(handle);
   if (!finalOwnership.ok) {
+    if (finalOwnership.reason !== "not-owner" && finalOwnership.reason !== "gate-missing") {
+      const released = cleanupOwnedGate(handle);
+      if (!released.ok) {
+        return {
+          ok: false,
+          reason: "gate-cleanup-failed",
+          detail: released.reason,
+          recoveryHandle: handle,
+        };
+      }
+      audit(root, "acquire-rejected", {
+        ownerId,
+        generation,
+        reason: finalOwnership.reason,
+      });
+    }
     return {
       ok: false,
       reason: finalOwnership.reason === "expired" ? "expired-before-return" : finalOwnership.reason,
@@ -674,14 +795,24 @@ function removeOwnedGate(handle) {
   });
 }
 
+function cleanupOwnedGate(handle) {
+  const deadline = Date.now() + GATE_CLEANUP_TIMEOUT_MS;
+  for (;;) {
+    const released = removeOwnedGate(handle);
+    if (released.reason !== "state-busy" || Date.now() > deadline) return released;
+    sleepSync(MUTATION_LOCK_POLL_MS);
+  }
+}
+
 function refreshDrainingGate(handle) {
   return mutateState(handle.root, () => {
     const owned = readOwnedGate(handle);
     if (!owned.ok) return { ok: false, reason: owned.reason };
     if (owned.gate.phase !== "draining") return { ok: false, reason: "not-draining" };
     const now = Date.now();
+    if (clockRegressed(owned.gate, now)) return { ok: false, reason: "clock-regressed" };
     if (gateExpired(owned.gate, now)) return { ok: false, reason: "expired" };
-    if (now <= Date.parse(owned.gate.heartbeatAt)) return { ok: true };
+    if (now === Date.parse(owned.gate.heartbeatAt)) return { ok: true };
     replaceAtomically(gatePath(handle.root), {
       ...owned.gate,
       heartbeatAt: new Date(now).toISOString(),
@@ -700,7 +831,9 @@ export function verifyMaintenanceGateOwnership(handle) {
   const owned = readOwnedGate(handle);
   if (!owned.ok) return { ok: false, reason: owned.reason };
   if (owned.gate.phase !== "held") return { ok: false, reason: "not-held" };
-  if (gateExpired(owned.gate, Date.now())) return { ok: false, reason: "expired" };
+  const now = Date.now();
+  if (clockRegressed(owned.gate, now)) return { ok: false, reason: "clock-regressed" };
+  if (gateExpired(owned.gate, now)) return { ok: false, reason: "expired" };
   return { ok: true };
 }
 
@@ -741,15 +874,25 @@ export function maintenanceGateStatus(repoDir = process.cwd()) {
   const now = Date.now();
   const root = maintenanceGateRoot(repoDir);
   const gate = readJsonState(gatePath(root), validateGate);
-  const { live, malformed, unreadable } = listIntents(root, now);
+  const {
+    live,
+    malformed,
+    clockRegressed: regressed,
+    unreadable,
+  } = listIntents(root, now);
   return {
     gate: gate.ok
-      ? { ...gate.value, expired: gateExpired(gate.value, now) }
+      ? {
+          ...gate.value,
+          expired: gateExpired(gate.value, now),
+          clockRegressed: clockRegressed(gate.value, now),
+        }
       : gate.missing
         ? null
         : { malformed: true },
     liveIntents: live.map((intent) => intent.writerId),
     malformedIntents: malformed,
+    clockRegressedIntents: regressed.map((intent) => intent.writerId),
     intentScanError: unreadable,
   };
 }
