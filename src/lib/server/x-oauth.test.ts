@@ -16,10 +16,12 @@ type Callback = (request: { method?: string; url?: string }, response: {
 function deferredListener() {
   const callbacks: Callback[] = [];
   let closes = 0;
+  let listens = 0;
   return {
     listen: async (options: { host: string; port: number; onRequest: Callback }) => {
       assert.equal(options.host, "127.0.0.1");
       assert.equal(options.port, 1456);
+      listens += 1;
       callbacks.push(options.onRequest);
       return { close: () => { closes += 1; } };
     },
@@ -29,6 +31,7 @@ function deferredListener() {
       return callback;
     },
     closes: () => closes,
+    listens: () => listens,
   };
 }
 
@@ -167,6 +170,61 @@ test("cancelling while listener creation is pending prevents an orphaned flow", 
   );
   assert.deepEqual(oauth.status(), { activeFlow: false });
   assert.equal(closes, 1);
+});
+
+test("cancelling before start consumes one tombstone without creating an OAuth listener", async () => {
+  const { oauth, listener } = service();
+  const flowId = "A".repeat(43);
+
+  assert.equal(oauth.cancel(flowId), false);
+  assert.equal(oauth.cancel(flowId), false);
+  await assert.rejects(
+    oauth.start({ capability: "research", flowId }),
+    (error: unknown) => error instanceof XApiError && error.code === "oauth-expired",
+  );
+
+  assert.deepEqual(oauth.status(), { activeFlow: false });
+  assert.equal(listener.listens(), 0);
+
+  assert.equal(oauth.cancel(flowId), false);
+  const normal = await oauth.start({
+    capability: "research",
+    flowId: "B".repeat(43),
+  });
+  assert.equal(normal.flowId, "B".repeat(43));
+  assert.equal(listener.listens(), 1);
+});
+
+test("pre-start cancellation tombstones expire and stay bounded", async () => {
+  const { oauth, listener, advance } = service();
+  const expiringFlowId = "A".repeat(43);
+  oauth.cancel(expiringFlowId);
+  advance(10 * 60 * 1000 + 1);
+
+  const expiredTombstoneStart = await oauth.start({
+    capability: "research",
+    flowId: expiringFlowId,
+  });
+  assert.equal(expiredTombstoneStart.flowId, expiringFlowId);
+  assert.equal(oauth.cancel(expiringFlowId), true);
+
+  for (let index = 0; index < 129; index += 1) {
+    const flowId = index.toString(36).padStart(43, "0");
+    assert.equal(oauth.cancel(flowId), false);
+  }
+  const evictedFlowId = (0).toString(36).padStart(43, "0");
+  const boundedStart = await oauth.start({
+    capability: "research",
+    flowId: evictedFlowId,
+  });
+  assert.equal(boundedStart.flowId, evictedFlowId);
+  assert.equal(oauth.cancel(evictedFlowId), true);
+  const retainedFlowId = (128).toString(36).padStart(43, "0");
+  await assert.rejects(
+    oauth.start({ capability: "research", flowId: retainedFlowId }),
+    (error: unknown) => error instanceof XApiError && error.code === "oauth-expired",
+  );
+  assert.equal(listener.listens(), 2);
 });
 
 test("a stale cancellation cannot cancel a newer OAuth flow", async () => {

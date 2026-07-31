@@ -13,8 +13,10 @@ import { exchangeXAuthorizationCode, fetchXAccount, type XAccount, type XTokenRe
 import { xCredentialService, type XCredentialService, type XTokenBundle } from "./x-credentials.ts";
 
 const FLOW_TTL_MS = 10 * 60 * 1000;
+const MAX_CANCELLATION_TOMBSTONES = 128;
 const CALLBACK_PATH = "/x/oauth/callback";
 const CALLBACK_ORIGIN = "http://127.0.0.1:1456";
+const FLOW_ID_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const PORT_IN_USE_MESSAGE = "X OAuth callback port 1456 is already in use. Run `lsof -nP -iTCP:1456 -sTCP:LISTEN` to identify the listener.";
 
 type XCapability = "research" | "publish";
@@ -131,8 +133,37 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
   const configuredClientId = dependencies.clientId;
   let active: ActiveFlow | null = null;
   let startingFlowId: string | null = null;
-  const cancelledStarts = new Set<string>();
+  const cancellationTombstones = new Map<string, { expiresAt: number; consumed: boolean }>();
   let latestFlow: Omit<XOAuthFlowStatus, "activeFlow"> | null = null;
+
+  function pruneCancellationTombstones(): void {
+    const currentTime = now();
+    for (const [flowId, tombstone] of cancellationTombstones) {
+      if (tombstone.expiresAt <= currentTime) cancellationTombstones.delete(flowId);
+    }
+  }
+
+  function rememberCancellation(flowId: string): void {
+    if (!FLOW_ID_PATTERN.test(flowId)) return;
+    pruneCancellationTombstones();
+    if (cancellationTombstones.has(flowId)) return;
+    if (cancellationTombstones.size >= MAX_CANCELLATION_TOMBSTONES) {
+      const oldestFlowId = cancellationTombstones.keys().next().value;
+      if (oldestFlowId) cancellationTombstones.delete(oldestFlowId);
+    }
+    cancellationTombstones.set(flowId, {
+      expiresAt: now() + FLOW_TTL_MS,
+      consumed: false,
+    });
+  }
+
+  function consumeCancellation(flowId: string): boolean {
+    pruneCancellationTombstones();
+    const tombstone = cancellationTombstones.get(flowId);
+    if (!tombstone || tombstone.consumed) return false;
+    tombstone.consumed = true;
+    return true;
+  }
 
   function finish(
     flow: ActiveFlow,
@@ -233,6 +264,15 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
       if (active || startingFlowId) {
         throw new XApiError("oauth-in-progress", "X authorization is already in progress");
       }
+      if (requestedFlowId !== undefined) {
+        if (!FLOW_ID_PATTERN.test(requestedFlowId)) {
+          throw new XApiError("invalid-request", "X OAuth flow ID is invalid");
+        }
+        if (consumeCancellation(requestedFlowId)) {
+          latestFlow = { flowId: requestedFlowId, outcome: "failed" };
+          throw new XApiError("oauth-expired", "X authorization was cancelled");
+        }
+      }
       const clientId = configuredClientId ?? getXClientId();
       const scopes = requestedScopes(capability);
       const verifier = base64url(randomBytes(32));
@@ -240,7 +280,7 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
       const flowId = requestedFlowId ?? createHash("sha256")
         .update(`coven-x-flow:${state}`)
         .digest("base64url");
-      if (!/^[A-Za-z0-9_-]{43}$/.test(flowId)) {
+      if (!FLOW_ID_PATTERN.test(flowId)) {
         throw new XApiError("invalid-request", "X OAuth flow ID is invalid");
       }
       const expiresAt = now() + FLOW_TTL_MS;
@@ -257,7 +297,7 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
             onCallback(callbackOwner, request, response),
         });
       } catch (error) {
-        if (cancelledStarts.delete(flowId)) {
+        if (consumeCancellation(flowId)) {
           latestFlow = { flowId, outcome: "failed" };
           throw new XApiError("oauth-expired", "X authorization was cancelled");
         }
@@ -268,7 +308,7 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
       } finally {
         if (startingFlowId === flowId) startingFlowId = null;
       }
-      if (cancelledStarts.delete(flowId)) {
+      if (consumeCancellation(flowId)) {
         await Promise.resolve(listener.close()).catch(() => {});
         latestFlow = { flowId, outcome: "failed" };
         throw new XApiError("oauth-expired", "X authorization was cancelled");
@@ -312,18 +352,21 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
 
     cancel(flowId: string): boolean {
       if (startingFlowId === flowId) {
-        cancelledStarts.add(flowId);
+        rememberCancellation(flowId);
         latestFlow = { flowId, outcome: "failed" };
         return true;
       }
-      if (active?.flowId !== flowId) return false;
-      finish(active);
-      return true;
+      if (active?.flowId === flowId) {
+        finish(active);
+        return true;
+      }
+      rememberCancellation(flowId);
+      return false;
     },
 
     cancelAll(): void {
       if (startingFlowId) {
-        cancelledStarts.add(startingFlowId);
+        rememberCancellation(startingFlowId);
         latestFlow = { flowId: startingFlowId, outcome: "failed" };
       }
       if (active) finish(active);
