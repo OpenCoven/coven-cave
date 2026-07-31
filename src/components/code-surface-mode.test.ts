@@ -176,6 +176,21 @@ assert.match(
   "CodeView drops the host target after GitHubView captures it",
 );
 assert.match(
+  codeView,
+  /const \[githubNavigationKey, setGithubNavigationKey\] = useState\(\s*navigationRequest\?\.nonce \?\? 0,\s*\);/,
+  "CodeView tracks a GitHub remount key from the current request nonce so a newer null-target tab request can clear stale detail",
+);
+assert.match(
+  codeView,
+  /setInitialGithubTarget\([\s\S]*?\);\s*setGithubNavigationKey\(navigationRequest\.nonce\);[\s\S]*?onNavigationHandled\?\.\(navigationRequest\.nonce\)/,
+  "each newly handled GitHub navigation request refreshes the remount key before acknowledgement",
+);
+assert.match(
+  codeView,
+  /<LazyGitHubView\s+key=\{githubNavigationKey\}[\s\S]*initialTarget=\{initialGithubTarget\}/,
+  "GitHubView remounts only on a newer request nonce, so clearing the captured target alone cannot leave stale detail authoritative",
+);
+assert.match(
   githubView,
   /if \(!initialTarget\) return;[\s\S]*setDeepLink\(initialTarget\);[\s\S]*onInitialTargetHandled\?\.\(\)/,
   "clearing the host prop does not erase GitHubView's local deep-linked detail",

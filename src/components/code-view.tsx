@@ -119,6 +119,9 @@ export function CodeView({
   const [initialGithubTarget, setInitialGithubTarget] = useState<GitHubItemTarget | null>(
     navigationRequest?.kind === "github-item" ? navigationRequest.target : null,
   );
+  const [githubNavigationKey, setGithubNavigationKey] = useState(
+    navigationRequest?.nonce ?? 0,
+  );
   const handledNavigationNonceRef = useRef<number | null>(null);
   useEffect(() => {
     if (!navigationRequest) return;
@@ -127,6 +130,7 @@ export function CodeView({
     setInitialGithubTarget(
       navigationRequest.kind === "github-item" ? navigationRequest.target : null,
     );
+    setGithubNavigationKey(navigationRequest.nonce);
     handledNavigationNonceRef.current = navigationRequest.nonce;
     onNavigationHandled?.(navigationRequest.nonce);
   }, [navigationRequest, onNavigationHandled]);
@@ -250,6 +254,7 @@ export function CodeView({
       {githubTab ? (
         <div className="min-h-0 flex-1">
           <LazyGitHubView
+            key={githubNavigationKey}
             onJumpToSession={onJumpToSession}
             onFocusCard={onFocusCard}
             initialTarget={initialGithubTarget}
