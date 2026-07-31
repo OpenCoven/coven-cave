@@ -241,8 +241,8 @@ assert.match(
 
 assert.match(
   openclawBridge,
-  /"agent"[\s\S]*"--agent"[\s\S]*agentId[\s\S]*"--message"[\s\S]*harnessPrompt[\s\S]*"--json"/,
-  "OpenClaw native chat should call openclaw agent with the resolved agent id and JSON output",
+  /executionMode === "local" \? \["--local"\] : \[\]/,
+  "OpenClaw native chat should keep the CLI Gateway route by default and select embedded mode explicitly",
 );
 
 assert.match(
@@ -266,7 +266,7 @@ assert.doesNotMatch(
 
 assert.match(
   chatRoute,
-  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*const spawnArgv = \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\];[\s\S]*spawn\(openclawLaunch\.command, spawnArgv,[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: false/,
+  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode\)[\s\S]*spawn\(openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: false/,
   "OpenClaw chat should invoke resolved npm shims through Node without shell parsing untrusted prompts",
 );
 
