@@ -214,6 +214,8 @@ fi
 if [ "$1" = "sessions" ] && [ "$2" = "--json" ]; then
   if [ "\${LIFECYCLE_BAD_SESSIONS:-0}" = "1" ]; then
     printf '%s\n' '{"sessions":[{"id":[],"project_root":"${old}","status":"running"}]}'
+  elif [ "\${LIFECYCLE_KILLED_SESSION:-0}" = "1" ]; then
+    printf '%s\n' '{"sessions":[{"id":"session-fixture","project_root":"${old}","status":"killed"}]}'
   elif [ "\${LIFECYCLE_ACTIVE_SESSION:-0}" = "1" ]; then
     printf '%s\n' '{"sessions":[{"id":"session-fixture","project_root":"${old}","status":"created"}]}'
   else
@@ -370,6 +372,17 @@ exit 0
   const sessionOwnedOld = activeSessionReport.items.find((item) => item.branch === "feat/old");
   assert.equal(sessionOwnedOld.lane, "active", "a nonterminal Coven session owns its path");
   assert.deepEqual(sessionOwnedOld.sessionIds, ["session-fixture"]);
+
+  const killedSessionReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_KILLED_SESSION: "1" }),
+  );
+  const killedSessionOld = killedSessionReport.items.find((item) => item.branch === "feat/old");
+  assert.equal(
+    killedSessionOld.lane,
+    "retire-after-gate",
+    "a killed Coven session does not keep the worktree active",
+  );
+  assert.deepEqual(killedSessionOld.sessionIds, []);
 
   const missingMetadataReport = JSON.parse(
     patrol(["--json"], { LIFECYCLE_MISSING_BRANCH_METADATA: "1" }),

@@ -96,7 +96,7 @@ const ACTIVE_WORKFLOW_STATES = [
 const PROTECTED_BRANCHES = new Set(["main", "__dolt_remote_info__"]);
 const BEAD_STATUSES = new Set(["open", "in_progress", "blocked", "deferred", "closed"]);
 const CLAIM_STATES = new Set(["active", "expired"]);
-const TERMINAL_SESSION_STATUSES = new Set(["completed", "failed", "orphaned"]);
+const TERMINAL_SESSION_STATUSES = new Set(["completed", "failed", "killed", "orphaned"]);
 const DISPOSITIONS = new Set(["active", "pr", "recovery", "archive"]);
 const OID = /^[0-9a-f]{40,64}$/;
 
