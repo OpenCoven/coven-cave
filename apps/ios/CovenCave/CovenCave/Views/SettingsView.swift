@@ -2,12 +2,15 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
+    @Environment(AppLock.self) private var appLock
     @Environment(\.chrome) private var chrome
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @AppStorage(ChatNotifications.enabledKey) private var chatNotificationsEnabled = true
     @State private var exportArchive: ExportArchive?
     @State private var exportFailed = false
     @State private var themeError = false
+    @State private var securityAuthFailed = false
+    @State private var securityAuthUnavailable = false
     /// Light/Dark used both to preview the theme swatches and as the mode pushed
     /// to the desktop. Seeded from the desktop's published mode on appear.
     @State private var pushMode: ColorScheme = .dark
@@ -30,6 +33,7 @@ struct SettingsView: View {
                 heroSection
                 appearanceSection
                 wardsSection
+                securitySection
                 chatsSection
                 communitySection
                 legalSection
@@ -65,6 +69,16 @@ struct SettingsView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text("Your desktop didn't confirm the change. Check the connection and try again.")
+            }
+            .alert("Couldn't confirm it's you", isPresented: $securityAuthFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Authentication failed or was cancelled, so this setting wasn't changed.")
+            }
+            .alert("Device authentication unavailable", isPresented: $securityAuthUnavailable) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Turn on a device passcode before changing this security setting.")
             }
         }
     }
@@ -217,6 +231,69 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Security (biometric app lock + approvals)
+
+    /// Two persisted toggles gated behind `AppLock`: unlocking the app itself
+    /// and approving credential-affecting actions (desktop host changes,
+    /// disconnect). Both bind straight to `appLock`'s published state rather
+    /// than a locally mirrored `@State`, so a toggle only visibly moves once
+    /// the authentication it requires actually succeeds — a failed/cancelled
+    /// prompt just leaves the row where it was.
+    private var securitySection: some View {
+        Section {
+            Toggle(isOn: Binding(
+                get: { appLock.lockEnabled },
+                set: { newValue in
+                    // Avoid redundant work before spawning the Task. The
+                    // outcome switch still handles any same-runloop race.
+                    guard appLock.canBeginAuthentication else { return }
+                    Task {
+                        handleSecurityOutcome(await appLock.setLockEnabled(newValue))
+                    }
+                }
+            )) {
+                Label("Require \(appLock.biometricLabel) to unlock", systemImage: appLock.biometricSystemImage)
+                    .foregroundStyle(.primary)
+            }
+            .disabled(!appLock.canUseDeviceAuthentication || appLock.isAuthenticating)
+
+            Toggle(isOn: Binding(
+                get: { appLock.approvalEnabled },
+                set: { newValue in
+                    guard appLock.canBeginAuthentication else { return }
+                    Task {
+                        handleSecurityOutcome(await appLock.setApprovalEnabled(newValue))
+                    }
+                }
+            )) {
+                Label("Require \(appLock.biometricLabel) for approvals", systemImage: "checkmark.shield")
+                    .foregroundStyle(.primary)
+            }
+            .disabled(!appLock.canUseDeviceAuthentication || appLock.isAuthenticating)
+        } header: {
+            Text("Security")
+        } footer: {
+            if appLock.canUseDeviceAuthentication {
+                Text("Unlock guards the app itself on cold start and after being away 60 seconds or more. Approvals re-confirm it's you before changing or disconnecting your paired desktop. Your device passcode always works as a fallback.")
+            } else if appLock.approvalEnabled {
+                Text("Approvals remain required, but device authentication is unavailable. Protected pairing changes are disabled until you turn on a device passcode.")
+            } else {
+                Text("Turn on a passcode (Settings → Face ID & Passcode, or Touch ID & Passcode) to enable app lock and approvals.")
+            }
+        }
+    }
+
+    private func handleSecurityOutcome(_ outcome: AuthenticationOutcome) {
+        switch outcome {
+        case .authorized, .busy:
+            break
+        case .denied:
+            securityAuthFailed = true
+        case .unavailable:
+            securityAuthUnavailable = true
+        }
+    }
+
     // MARK: - Chats
 
     private var chatsSection: some View {
@@ -296,8 +373,11 @@ struct SettingsView: View {
 /// destructive disconnect.
 private struct ConnectionSettingsView: View {
     @Environment(AppModel.self) private var app
+    @Environment(AppLock.self) private var appLock
     @State private var editingHost: String = ""
     @State private var showDisconnectConfirm = false
+    @State private var approvalFailed = false
+    @State private var approvalUnavailable = false
 
     var body: some View {
         Form {
@@ -317,10 +397,21 @@ private struct ConnectionSettingsView: View {
                     .keyboardType(.URL)
                     .font(.callout.monospaced())
                 Button("Save and reconnect") {
-                    Task { await app.configure(host: editingHost) }
+                    // Avoid redundant work before spawning the Task; `.busy`
+                    // remains a no-op if a same-runloop tap races this guard.
+                    guard appLock.canBeginAuthentication else { return }
+                    Task {
+                        let outcome = await appLock.performApprovedAction(
+                            reason: "Confirm it's you to change your desktop connection"
+                        ) {
+                            await app.configure(host: editingHost)
+                        }
+                        handleApprovalOutcome(outcome)
+                    }
                 }
                 .disabled(editingHost.trimmingCharacters(in: .whitespaces).isEmpty
-                          || editingHost == app.connection?.host)
+                          || editingHost == app.connection?.host
+                          || appLock.isAuthenticating)
             } header: {
                 Text("Desktop address")
             } footer: {
@@ -341,10 +432,42 @@ private struct ConnectionSettingsView: View {
         .confirmationDialog("Disconnect from your desktop?",
                             isPresented: $showDisconnectConfirm,
                             titleVisibility: .visible) {
-            Button("Disconnect", role: .destructive) { app.disconnect() }
+            Button("Disconnect", role: .destructive) {
+                // Same synchronous fast-path as above; `.busy` remains a no-op.
+                guard appLock.canBeginAuthentication else { return }
+                Task {
+                    let outcome = await appLock.performApprovedAction(
+                        reason: "Confirm it's you to disconnect from your desktop"
+                    ) {
+                        app.disconnect()
+                    }
+                    handleApprovalOutcome(outcome)
+                }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("You'll need to re-enter your desktop address to reconnect.")
+        }
+        .alert("Couldn't confirm it's you", isPresented: $approvalFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Authentication failed or was cancelled, so nothing changed.")
+        }
+        .alert("Device authentication unavailable", isPresented: $approvalUnavailable) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Turn on a device passcode before changing your desktop connection.")
+        }
+    }
+
+    private func handleApprovalOutcome(_ outcome: AuthenticationOutcome) {
+        switch outcome {
+        case .authorized, .busy:
+            break
+        case .denied:
+            approvalFailed = true
+        case .unavailable:
+            approvalUnavailable = true
         }
     }
 
