@@ -9,7 +9,7 @@
 // - decision failure                          -> visible refusal with its queue consequence
 
 import type { ProposalView } from "./threads-read.ts";
-import type { SurfaceState } from "./weave-rail.ts";
+import type { SurfaceState, TensionPill } from "./weave-rail.ts";
 import { decisionsEnabled } from "./weave-rail.ts";
 
 export type ProposalListModel = {
@@ -25,6 +25,92 @@ export function proposalListModel(proposals: ProposalView[]): ProposalListModel 
     .sort((a, b) => (a.payload?.stagedAt ?? "").localeCompare(b.payload?.stagedAt ?? ""));
   const corrupt = proposals.filter((p) => p.parse === "corrupt");
   return { ok, corrupt };
+}
+
+// ---------------------------------------------------------------------------
+// Queue presentation
+//
+// The pill answers "what does this row want from me?", derived from the
+// daemon's own lifecycle — never from a local clock or a guess. A proposal
+// whose authority envelope is missing or blocked reads blocked, same rule as
+// everywhere else on these surfaces.
+
+export function proposalPill(proposal: ProposalView): TensionPill {
+  if (proposal.parse === "corrupt" || !proposal.payload) {
+    return {
+      tone: "blocked",
+      label: "Corrupt",
+      detail: "Does not parse as a proposal — inspect it on disk.",
+      icon: "ph:shield-slash",
+    };
+  }
+  const authority = proposal.authority;
+  if (!authority || authority.state === "blocked") {
+    return {
+      tone: "blocked",
+      label: "Blocked",
+      detail: "No verified authority envelope — no decision is available.",
+      icon: "ph:shield-slash",
+    };
+  }
+  if (authority.state === "legacy") {
+    return {
+      tone: "awaiting",
+      label: "Decide",
+      detail: "A legacy review path — approve or reject it here.",
+      icon: "ph:caret-right",
+    };
+  }
+  switch (authority.lifecycle) {
+    case "blocked":
+      return {
+        tone: "snapped",
+        label: "Blocked",
+        detail: "The daemon reports this proposal blocked — no decision is available.",
+        icon: "ph:x-circle",
+      };
+    case "veto-window-open":
+      return {
+        tone: "frayed",
+        label: "Veto window",
+        detail: "This auto-approves unless you veto it before the daemon's deadline.",
+        icon: "ph:clock-countdown",
+      };
+    case "ready-for-replay":
+      return {
+        tone: "neutral",
+        label: "Replay",
+        detail: "Ready for replay — no human decision is available.",
+        icon: "ph:clock",
+      };
+    default:
+      return {
+        tone: "awaiting",
+        label: "Decide",
+        detail: "A decision is available on fresh daemon evidence.",
+        icon: "ph:caret-right",
+      };
+  }
+}
+
+/** One queue row: what it touches and when it was staged, never a diff stat. */
+export function proposalRow(proposal: ProposalView): {
+  key: string;
+  title: string;
+  surfaces: string;
+  stagedAt: string | null;
+} {
+  const payload = proposal.payload;
+  if (proposal.parse === "corrupt" || !payload) {
+    return { key: proposal.file, title: "Corrupt staged file", surfaces: proposal.file, stagedAt: null };
+  }
+  const edits = payload.edits.length;
+  return {
+    key: proposal.file,
+    title: `${payload.writer} → ${payload.familiarId}`,
+    surfaces: `${edits} edit${edits === 1 ? "" : "s"} · ${payload.edits.map((e) => e.surface).join(", ")}`,
+    stagedAt: payload.stagedAt,
+  };
 }
 
 // ---------------------------------------------------------------------------
