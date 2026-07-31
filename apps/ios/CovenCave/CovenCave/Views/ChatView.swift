@@ -350,7 +350,7 @@ struct ChatView: View {
             ForEach(modelControlCapabilities) { capability in
                 Divider()
                 sessionControlRow(systemImage: capability.family == "reasoning" ? "brain" : "slider.horizontal.3") {
-                    Picker(capability.delivery == "prompt-only" ? "\(capability.label) (Prompt guidance)" : capability.label,
+                    Picker(capability.delivery == "prompt-only" ? "\(capability.label) (Prompt guidance)" : "\(capability.label) (Native)",
                            selection: Binding(
                             get: { modelControlValues[capability.family] ?? "" },
                             set: { modelControlValues[capability.family] = $0 }

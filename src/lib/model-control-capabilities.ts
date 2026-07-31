@@ -95,7 +95,7 @@ export function modelControlCapabilities(
   // Claude currently has no verified non-interactive per-turn CLI flag in the
   // Cave launch contract. Keep an opt-in guidance control distinct from a
   // native setting until that capability is explicitly probed and mapped.
-  if (canonicalRuntime === "claude" && canonicalModel) {
+  if (canonicalRuntime === "claude" && isModelInCatalog("claude", canonicalModel)) {
     return [reasoning("prompt-only")];
   }
 

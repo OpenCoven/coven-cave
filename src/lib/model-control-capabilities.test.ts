@@ -22,6 +22,11 @@ test("unknown models expose no invented global thinking or speed selector", () =
     [],
     "provider-looking custom Hermes ids must not manufacture native capabilities",
   );
+  assert.deepEqual(
+    modelControlCapabilities("claude", "anthropic/claude-preview-foo"),
+    [],
+    "custom Claude ids must not manufacture prompt guidance capabilities",
+  );
 });
 
 test("controls are accepted only for the selected capability values", () => {
