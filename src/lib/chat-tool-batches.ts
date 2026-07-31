@@ -11,8 +11,8 @@
 // plumbing, no fetch, no invented facts. `textOffset` (the length of the turn
 // text when a tool's first event arrived) is the honest batch signal: calls
 // issued in one block share an offset, and the offset only moves once the
-// model has streamed more prose. Legacy turns persisted before the field land
-// in a single batch, which the card renders without any batch chrome at all.
+// model has streamed more prose. Turns persisted before that field existed all
+// land in one batch, which the card renders without any batch chrome at all.
 //
 // Deliberately dependency-free apart from the shared tool-category map, so it
 // is unit-testable with bare node and can never disagree with the rows it
