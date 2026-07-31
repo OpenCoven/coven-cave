@@ -814,6 +814,7 @@ export const SUITES = {
     "src/lib/onboarding-setup-failure.test.ts",
     "src/app/onboarding-install-route.test.ts",
     "src/lib/openclaw-agents.test.ts",
+    "src/lib/hermes-profiles.test.ts",
     "src/lib/openclaw-conversation-tools.test.ts",
     "src/lib/shell-banners.test.ts",
     "src/lib/task-chat-context.test.ts",
@@ -1061,6 +1062,7 @@ export const SUITES = {
     "src/app/api/chat/conversation/[id]/route.test.ts",
     "src/app/api/canvas/route.test.ts",
     "src/app/api/api-contracts.test.ts",
+    "src/app/api/hermes-profiles/route.test.ts",
     "src/app/api/coven-memory/route.test.ts",
     "src/app/api/daemon/probe/route.test.ts",
     "src/app/api/tailscale/devices/route.test.ts",
@@ -1586,6 +1588,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/chat-task-autofill.test.ts",
   "src/lib/voice/hydrate-instructions.test.ts",
   "src/app/api/voice/session/route.test.ts",
+  "src/app/api/hermes-profiles/route.test.ts",
   "src/app/api/chat/conversation/[id]/route.test.ts",
   // familiar-brain imports familiar-stream, whose graph reaches "@/lib/…".
   "src/lib/voice/familiar-brain.test.ts",
