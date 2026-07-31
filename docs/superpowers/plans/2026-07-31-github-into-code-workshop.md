@@ -853,7 +853,32 @@ native deep-link behavior.
 - Modify: `src/lib/surface-warmup-registry.test.ts`
 - Modify: `tests/code-surface.spec.ts`
 
-- [ ] **Step 1: Write the failing dead-path and Activity E2E contracts**
+- [ ] **Step 1: Repair the stale sidebar CSS source fixture**
+
+`src/styles/sidebar-minimal.css` is now an import facade, so
+`src/components/sidebar-minimal.test.ts` must read the owned modules before
+asserting their rules. Replace its `styles` declaration with:
+
+```ts
+const styles = [
+ readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8"),
+ readFileSync(new URL("../styles/sidebar-minimal/shell-chrome.css", import.meta.url), "utf8"),
+ readFileSync(new URL("../styles/sidebar-minimal/navigation-recents.css", import.meta.url), "utf8"),
+ readFileSync(new URL("../styles/sidebar-minimal/familiars.css", import.meta.url), "utf8"),
+ readFileSync(new URL("../styles/sidebar-minimal/activity-rail.css", import.meta.url), "utf8"),
+].join("\n");
+```
+
+Run:
+
+```bash
+node --experimental-strip-types --test src/components/sidebar-minimal.test.ts
+```
+
+Expected: the pre-existing compact-row source pin passes before the GitHub row
+assertions are changed.
+
+- [ ] **Step 2: Write the failing dead-path and Activity E2E contracts**
 
 In `src/components/sidebar-minimal.test.ts`, replace the conditional-row and
 standalone-row assertions with:
@@ -1030,7 +1055,7 @@ test("a non-coding familiar sees the closed Code Workshop door", async ({ page }
 });
 ```
 
-- [ ] **Step 2: Run the source tests and verify the old plumbing fails**
+- [ ] **Step 3: Run the source tests and verify the old plumbing fails**
 
 Run:
 
@@ -1044,7 +1069,7 @@ node --experimental-strip-types --test \
 Expected: failures identify the GitHub row, row props, standalone lazy export,
 preload case, and background warmup entry.
 
-- [ ] **Step 3: Remove the GitHub sidebar row and badge state**
+- [ ] **Step 4: Remove the GitHub sidebar row and badge state**
 
 Delete the GitHub item from `WORKSPACE_NAV_ITEMS` in
 `src/lib/workspace-navigation.ts`.
@@ -1070,7 +1095,7 @@ In `src/components/workspace.tsx`:
 3. Remove `githubAssignedCount` and `hideGithubRow` from the
    `SidebarMinimal` props.
 
-- [ ] **Step 4: Remove the standalone lazy export and background warm**
+- [ ] **Step 5: Remove the standalone lazy export and background warm**
 
 In `src/components/lazy-surfaces.tsx`, remove:
 
@@ -1107,7 +1132,7 @@ const ORDER: readonly SurfaceWarmupSurface[] = [
 Keep `onFamiliarsRefresh`; it invalidates an already-read GitHub roster cache
 even though that cache is no longer prewarmed.
 
-- [ ] **Step 5: Run the focused source and unit tests**
+- [ ] **Step 6: Run the focused source and unit tests**
 
 Run:
 
@@ -1126,7 +1151,7 @@ node --experimental-strip-types --test \
 Expected: every focused test passes with no standalone GitHub row, render
 branch, lazy export, or background landing.
 
-- [ ] **Step 6: Run the Code Workshop browser tests**
+- [ ] **Step 7: Run the Code Workshop browser tests**
 
 Run:
 
@@ -1141,7 +1166,7 @@ Expected: the Code Workshop suite passes, including:
 - a notification appears in Activity;
 - a general familiar remains on the closed-room state.
 
-- [ ] **Step 7: Commit standalone-path removal**
+- [ ] **Step 8: Commit standalone-path removal**
 
 Run:
 
