@@ -16,17 +16,27 @@ function isAbsoluteProfileHome(value: string): boolean {
   return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
 }
 
+function trimPathSeparators(value: string, fromEnd: boolean): string {
+  let index = fromEnd ? value.length : 0;
+  if (fromEnd) {
+    while (index > 0 && (value[index - 1] === "/" || value[index - 1] === "\\")) index--;
+    return value.slice(0, index);
+  }
+  while (index < value.length && (value[index] === "/" || value[index] === "\\")) index++;
+  return value.slice(index);
+}
+
 function isPermittedHermesProfileHome(value: string, expectedId?: string): boolean {
   if (!isAbsoluteProfileHome(value)) return false;
   const segments = value.split(/[\\/]+/).filter(Boolean);
   if (segments.some((segment) => segment === "." || segment === "..")) return false;
-  const match = value.replace(/\\/g, "/").replace(/\/+$/, "").match(/\/\.hermes\/profiles\/([A-Za-z0-9_-]+)$/);
+  const match = trimPathSeparators(value.replace(/\\/g, "/"), true).match(/\/\.hermes\/profiles\/([A-Za-z0-9_-]+)$/);
   return Boolean(match?.[1] && (!expectedId || match[1] === expectedId));
 }
 
 function joinProfileHome(homePath: string, relativePath: string): string {
   const separator = homePath.includes("\\") ? "\\" : "/";
-  return `${homePath.replace(/[\\/]+$/, "")}${separator}${relativePath.replace(/^[\\/]+/, "")}`;
+  return `${trimPathSeparators(homePath, true)}${separator}${trimPathSeparators(relativePath, false)}`;
 }
 
 export function isSafeHermesProfileId(value: string): boolean {

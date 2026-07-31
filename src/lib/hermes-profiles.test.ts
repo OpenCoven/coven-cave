@@ -22,6 +22,11 @@ assert.equal(normalizeHermesProfileBinding({ id: "../work", homePath: "/tmp/work
 assert.equal(normalizeHermesProfileBinding({ id: "work", homePath: "relative" }), undefined);
 assert.equal(normalizeHermesProfileBinding({ id: "work", homePath: "/tmp/profile/../../private" }), undefined);
 assert.equal(normalizeHermesProfileBinding({ id: "work", homePath: "/tmp/arbitrary-work" }), undefined);
+assert.equal(
+  normalizeHermesProfileBinding({ id: "work", homePath: "/" + "/".repeat(20_000) + "not-a-profile" }),
+  undefined,
+  "a slash-heavy untrusted profile home is rejected without regex backtracking",
+);
 assert.deepEqual(summarizeHermesProfile({ id: "research-lane", homePath: "/profiles/research-lane", soulMarkdown: "# SOUL\n\nResearches sources." }), {
   id: "research-lane", displayName: "Research Lane", role: "Researches sources.", description: "Researches sources.", homePath: "/profiles/research-lane",
 });
