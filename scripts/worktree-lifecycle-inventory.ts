@@ -771,7 +771,16 @@ function parseStructuredMetadata(taskId: string, value: unknown): StructuredMeta
 function fetchTasks(root: string): { tasks: BeadTask[]; error: string | null } {
   const result = command(
     "bd",
-    ["list", "--limit", "0", "--include-gates", "--include-infra", "--include-templates", "--json"],
+    [
+      "list",
+      "--all",
+      "--limit",
+      "0",
+      "--include-gates",
+      "--include-infra",
+      "--include-templates",
+      "--json",
+    ],
     root,
     120_000,
   );
@@ -1164,6 +1173,13 @@ export function collectWorktreeLifecycleInventory(
     .filter(
       (record) =>
         structuredRecords.filter((candidate) => candidate.branch === record.branch).length === 1,
+    )
+    .filter((record) =>
+      units.some(
+        (unit) =>
+          unit.branch === record.branch &&
+          (unit.kind === "branch-only" || record.path === unit.path),
+      ),
     );
   const exceptions = validMetadata.flatMap((record) =>
     record.metadata.exception ? [record.metadata.exception] : [],
