@@ -18,9 +18,20 @@ const coldCalls = join(home, "cold-calls");
 const coldMarker = join(home, "cold-marker");
 const badCalls = join(home, "bad-calls");
 
-// Fake `op`: the Cold ref sleeps far past every timeout on its first call
-// (cold daemon) and answers instantly afterwards; the Bad ref fails fast.
-// Absolute state paths are baked in so the script needs no env plumbing.
+// Fake `op`: the FIRST Cold call (no marker yet) sleeps past the base
+// window but WITHIN the retry window; later calls answer instantly. The Bad
+// ref fails fast. Absolute state paths are baked in so the script needs no
+// env plumbing.
+//
+// The sleep sits BETWEEN the two windows on purpose (cave-u5eyw). Under
+// full-suite load the resolver's kill can fire before this shell even
+// starts, so the killed first attempt may leave no marker — in which case
+// the RETRY becomes the cold call. Both interleavings must pass:
+//   marker written before the kill  → retry answers instantly;
+//   shell never ran before the kill → retry sleeps 4s, still inside the 15s
+//                                     retry window, and resolves.
+// A sleep longer than the retry window (the old 10s vs 8s) turned that
+// second interleaving into a false failure no timeout bump can outrun.
 const opPath = join(fakeBin, "op");
 writeFileSync(opPath, `#!/bin/sh
 ref="$2"
@@ -29,7 +40,7 @@ case "$ref" in
     echo x >> "${coldCalls}"
     if [ ! -f "${coldMarker}" ]; then
       : > "${coldMarker}"
-      sleep 10
+      sleep 4
     fi
     echo cold-secret
     ;;
@@ -45,16 +56,14 @@ process.env.COVEN_HOME = home;
 process.env.COVEN_VAULT_FILE = vaultYaml;
 process.env.COVEN_CAVE_ENV_FILE = join(home, ".env.local"); // nonexistent — isolates from the repo's .env.local
 process.env.PATH = `${fakeBin}${delimiter}${process.env.PATH ?? ""}`;
-// Tight base timeout so the cold call is killed quickly — but with enough
-// headroom that the fake `op` reliably STARTS (and drops its marker) before
-// the kill, even on a loaded machine. At 300ms the kill raced shell spawn +
-// marker write under full-suite load: the killed first attempt left no
-// marker, so the RETRY became the "cold" call, slept 10s past its own
-// window, and the read resolved undefined (cave-6azx). The unfixed code
-// ignores these and uses its fixed 8s timeout — the 10s sleep outlasts it,
-// so this test is red without the retry.
+// The base window is deliberately smaller than the fake op's 4s cold sleep
+// (so a started first attempt is always killed) and the retry window is
+// deliberately larger than it (so the retry resolves even when IT is the
+// cold call — see the interleaving note above). Unlike the earlier
+// 300ms/2000ms attempts, correctness no longer depends on the child winning
+// a spawn race against the kill, so machine load cannot flip the outcome.
 process.env.COVEN_CAVE_REF_READ_TIMEOUT_MS = "2000";
-process.env.COVEN_CAVE_REF_READ_RETRY_TIMEOUT_MS = "8000";
+process.env.COVEN_CAVE_REF_READ_RETRY_TIMEOUT_MS = "15000";
 delete process.env.COVEN_CAVE_BUNDLE;
 delete process.env.COLD_START_KEY;
 delete process.env.BAD_REF_KEY;
@@ -77,9 +86,19 @@ const countLines = (file) => {
   }
 };
 
-// 1. A cold-start timeout is retried once and resolves.
+// 1. A cold-start timeout is retried once and resolves. Without the retry,
+// the resolver reports undefined the moment the first attempt is killed —
+// in EVERY interleaving — so this assertion alone stays a sharp regression
+// signal for the production fix.
 assert.equal(resolveSecret("COLD_START_KEY"), "cold-secret", "first read after launch survives a cold-start timeout via one retry");
-assert.equal(countLines(coldCalls), 2, "cold ref was attempted exactly twice (timed-out attempt + retry)");
+// Attempt count: 2 when the killed first attempt got far enough to log
+// itself, 1 when the kill won the spawn race and only the retry ran. The
+// UPPER bound is the real pin — a retry loop would show 3+.
+const coldAttempts = countLines(coldCalls);
+assert.ok(
+  coldAttempts >= 1 && coldAttempts <= 2,
+  `cold ref is attempted at most twice (timed-out attempt + one retry), saw ${coldAttempts}`,
+);
 
 // 2. A fast non-timeout failure is not retried.
 assert.equal(resolveSecret("BAD_REF_KEY"), undefined, "genuine failure still resolves to undefined");

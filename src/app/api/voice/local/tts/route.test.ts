@@ -276,3 +276,50 @@ test("POST local TTS preserves runner machine codes and hints", async () => {
     hint: "Install piper-tts or set COVEN_PIPER_BIN.",
   });
 });
+
+test("POST local TTS routes a derived named speaker to the shared bundle with its sid", async () => {
+  let invocation = null;
+  const req = request({ text: "Hello Emma.", voiceName: "kokoro-en-v0-19-emma" });
+  const res = await handleLocalTtsPost(
+    req,
+    {
+      readiness: async (voiceName) => {
+        // The dependency still receives the SELECTED name; resolution to the
+        // shared base bundle is the route's job (cave-xopgb).
+        assert.equal(voiceName, "kokoro-en-v0-19-emma");
+        return {
+          ...readyVoice,
+          id: "kokoro-en-v0-19",
+          engine: "kokoro",
+          companionPaths: ["C:\\voice-models\\voices.bin", "C:\\voice-models\\tokens.txt"],
+        };
+      },
+      kokoro: async (assets, text, signal) => {
+        invocation = { assets, text, signal };
+        return new Uint8Array([82, 73, 70, 70]);
+      },
+    },
+  );
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(invocation.assets, {
+    modelPath: readyVoice.path,
+    voicesPath: "C:\\voice-models\\voices.bin",
+    tokensPath: "C:\\voice-models\\tokens.txt",
+    // sid 7 = bf_emma in the sherpa-onnx voices.bin generation order.
+    speakerId: 7,
+  });
+});
+
+test("POST local TTS rejects an unknown derived Kokoro speaker", async () => {
+  const res = await handleLocalTtsPost(
+    request({ text: "hello", voiceName: "kokoro-en-v0-19-nonexistent" }),
+    {
+      readiness: async () => {
+        assert.fail("an unregistered speaker must never reach readiness");
+      },
+    },
+  );
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, "invalid_voice_name");
+});

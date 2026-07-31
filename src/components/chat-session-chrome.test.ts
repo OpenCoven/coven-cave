@@ -91,14 +91,23 @@ test("2a — the title row and turn names wear the display serif", () => {
   );
 });
 
-test("2a ⑤ — follow-up suggestions spread the composer's width in ONE row", () => {
-  // The typed follow-up cards carry the design's geometry: equal shares of a
-  // single row (auto-flow column), never a count-blind grid that leaves a
-  // ragged 2+1 tail (#2672). next-paths caps the strip at 4.
+test("2a ⑤ — composer follow-ups are equal-width recommendation pills", () => {
+  // The typed follow-ups keep their equal-width one-row geometry, but their
+  // composer placement reads as quiet single-line recommendation pills.
   assert.match(
     styles,
     /\.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: minmax\(0, 1fr\);/,
     "follow-up cards take equal shares of one row",
+  );
+  assert.match(
+    styles,
+    /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?border-radius: var\(--radius-pill\);[\s\S]*?text-align: center;/,
+    "composer follow-ups use the shared pill radius and centered label",
+  );
+  assert.match(
+    styles,
+    /\.cave-chat-followups \.cave-followup-card__type,\s*\.cave-chat-followups \.cave-followup-card__outcome \{[\s\S]*?display: none;/,
+    "composer pills suppress visual metadata while preserving their accessible name",
   );
   // The pill-era override is gone: nothing renders .cave-next-path inside the
   // follow-up strip, so the orphaned selector must not linger in the cascade.
@@ -206,4 +215,14 @@ test("rail — rows carry a state tick and groups carry a count and a rule", () 
     "ticks borrow the running colour but never the pulse — a rail of breathing bars is noise",
   );
   assert.match(sidebar, /<kbd className="cnav__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
+});
+
+test("rail — the selected chat is a raised card with one accent rail", () => {
+  const activeRow = shellNav.match(/\.cnav__thread\.is-active \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const activeRail = shellNav.match(/\.cnav__thread\.is-active::before \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(activeRow, /margin: 0 var\(--space-2\);/, "the selection is inset from the list edge");
+  assert.match(activeRow, /border-radius: var\(--radius-card\)/, "the selection reads as a rounded raised card");
+  assert.match(activeRow, /background: var\(--bg-raised\)/, "the selection uses the raised surface rather than a second accent tint");
+  assert.match(activeRail, /background: var\(--accent-presence\)/, "the selection keeps one lavender identity rail");
 });
