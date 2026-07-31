@@ -91,14 +91,23 @@ test("2a — the title row and turn names wear the display serif", () => {
   );
 });
 
-test("2a ⑤ — follow-up suggestions spread the composer's width in ONE row", () => {
-  // The typed follow-up cards carry the design's geometry: equal shares of a
-  // single row (auto-flow column), never a count-blind grid that leaves a
-  // ragged 2+1 tail (#2672). next-paths caps the strip at 4.
+test("2a ⑤ — composer follow-ups are equal-width recommendation pills", () => {
+  // The typed follow-ups keep their equal-width one-row geometry, but their
+  // composer placement reads as quiet single-line recommendation pills.
   assert.match(
     styles,
     /\.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: minmax\(0, 1fr\);/,
     "follow-up cards take equal shares of one row",
+  );
+  assert.match(
+    styles,
+    /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?border-radius: var\(--radius-pill\);[\s\S]*?text-align: center;/,
+    "composer follow-ups use the shared pill radius and centered label",
+  );
+  assert.match(
+    styles,
+    /\.cave-chat-followups \.cave-followup-card__type,\s*\.cave-chat-followups \.cave-followup-card__outcome \{[\s\S]*?display: none;/,
+    "composer pills suppress visual metadata while preserving their accessible name",
   );
   // The pill-era override is gone: nothing renders .cave-next-path inside the
   // follow-up strip, so the orphaned selector must not linger in the cascade.

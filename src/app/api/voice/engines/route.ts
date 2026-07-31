@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server.js";
-import { speechEnginesReadiness } from "../../../../lib/voice/speech-models.ts";
+import {
+  selectableLocalTtsVoices,
+  speechEnginesReadiness,
+} from "../../../../lib/voice/speech-models.ts";
 import {
   kokoroRuntimeAvailability,
   piperRuntimeAvailability,
@@ -19,6 +22,10 @@ export async function GET() {
   return NextResponse.json(
     {
       ...engines,
+      // Selection catalog for voice pickers: expands named Kokoro speakers
+      // that share the one downloaded bundle (cave-xopgb). Management
+      // surfaces keep reading `tts`, which stays one row per download.
+      ttsVoices: selectableLocalTtsVoices(engines.tts),
       runtimes: { piper, kokoro, whisper: { available: whisperAvailable } },
     },
     { headers: { "cache-control": "no-store" } },

@@ -105,13 +105,17 @@ assert.doesNotMatch(
   "Composer dock model pill should be removed — header meta line carries the model",
 );
 
-// The steady-state hint survives behind the recommended-next-path ghost fill
-// (cave-h62k): with a recommendation the placeholder mirrors it (`⇥ to fill`),
-// without one the classic `Message <familiar>…  ↵ to send` remains.
+// The composer keeps the prompt-oriented ghost fill but leaves submission to
+// its high-contrast send button — no keyboard legend is rendered in the input.
 assert.match(
   source,
-  /: `Message \$\{familiar\.display_name\}…  ↵ to send`/,
-  "Composer placeholder should include ↵ to send hint in steady state",
+  /: `Message \$\{familiar\.display_name\}…`/,
+  "Composer placeholder should remain a concise familiar prompt in steady state",
+);
+assert.doesNotMatch(
+  source,
+  /↵ to send|⇥ to fill/,
+  "Composer should rely on its send button, without inline keyboard legends",
 );
 assert.match(
   source,

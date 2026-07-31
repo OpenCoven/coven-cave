@@ -112,8 +112,8 @@ assert.match(
 // --- Connected moment ----------------------------------------------------------
 assert.match(
   src,
-  /if app\.connectionState == \.connected \{ Haptics\.success\(\) \}/,
-  "a successful connect lands with success haptics",
+  /if outcome == \.authorized, app\.connectionState == \.connected \{\s*Haptics\.success\(\)\s*\}/,
+  "an approved successful connect lands with success haptics",
 );
 assert.match(
   src,

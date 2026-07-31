@@ -507,7 +507,11 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
         // version mismatch only leads to a failing preview/call.
         const runtimeAvailable = (engine: LocalTtsVoice["engine"]) =>
           runtimes?.[engine]?.available === true;
-        const verifiedVoices = json.tts.filter(
+        // Prefer the selection catalog, which expands named Kokoro speakers
+        // sharing one downloaded bundle (cave-xopgb); `tts` stays one row
+        // per download for the management surface (and older sidecars).
+        const voiceCatalog: LocalTtsVoice[] = Array.isArray(json.ttsVoices) ? json.ttsVoices : json.tts;
+        const verifiedVoices = voiceCatalog.filter(
           (voice: LocalTtsVoice) =>
             voice?.ready === true &&
             voice?.verified === true &&
