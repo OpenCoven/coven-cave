@@ -1357,6 +1357,7 @@ export const SUITES = {
     "scripts/ios-reorder-familiars.test.mjs",
     "scripts/ios-theme.test.mjs",
     "scripts/ios-auto-reconnect.test.mjs",
+    "scripts/ios-ats-protections.test.mjs",
     "scripts/ios-self-healing-sync.test.mjs",
     "scripts/ios-connection-stability.test.mjs",
     "scripts/ios-reconnect-pill.test.mjs",
