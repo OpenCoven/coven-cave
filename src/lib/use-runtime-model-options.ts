@@ -4,15 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { catalogForRuntime, type RuntimeModelOption } from "@/lib/runtime-models";
 
-type ModelResponse = { ok?: boolean; models?: RuntimeModelOption[] };
+export type ModelInventoryProvenance = "live" | "cached" | "fallback" | "runtime-managed" | "unavailable";
+type ModelResponse = { ok?: boolean; models?: RuntimeModelOption[]; provenance?: ModelInventoryProvenance };
 type RuntimeInventory = {
   key: string | null;
   models: RuntimeModelOption[] | null;
+  provenance: ModelInventoryProvenance | null;
 };
 const DYNAMIC_INVENTORY_RUNTIMES = new Set(["claude", "copilot", "opencode", "grok"]);
 
 /** Static seeds stay synchronous while capable runtimes replace them live. */
-export function useRuntimeModelOptions(
+export function useRuntimeModelInventory(
   runtime: string,
   familiarId?: string | null,
 ): RuntimeModelOption[] {
@@ -25,17 +27,14 @@ export function useRuntimeModelOptions(
     () => catalogForRuntime(canonicalRuntime)?.models ?? [],
     [canonicalRuntime],
   );
-  const [runtimeInventory, setRuntimeInventory] = useState<RuntimeInventory>({
-    key: null,
-    models: null,
-  });
+  const [runtimeInventory, setRuntimeInventory] = useState<RuntimeInventory>({ key: null, models: null, provenance: null });
   const inventoryFamiliarId = familiarId ?? null;
   const inventoryKey = `${canonicalRuntime}\u0000${inventoryFamiliarId ?? ""}`;
 
   useEffect(() => {
     if (!DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime)) return;
     let cancelled = false;
-    setRuntimeInventory({ key: inventoryKey, models: null });
+    setRuntimeInventory({ key: inventoryKey, models: null, provenance: null });
     const params = new URLSearchParams();
     if (inventoryFamiliarId) params.set("familiarId", inventoryFamiliarId);
     const base = `/api/runtime-models/${encodeURIComponent(canonicalRuntime)}`;
@@ -44,14 +43,14 @@ export function useRuntimeModelOptions(
       .then((res) => (res.ok ? res.json() : null))
       .then((json: ModelResponse | null) => {
         if (!cancelled && json?.ok && Array.isArray(json.models)) {
-          setRuntimeInventory({ key: inventoryKey, models: json.models });
+          setRuntimeInventory({ key: inventoryKey, models: json.models, provenance: json.provenance ?? "unavailable" });
         } else if (!cancelled) {
-          setRuntimeInventory({ key: inventoryKey, models: staticModels });
+          setRuntimeInventory({ key: inventoryKey, models: staticModels, provenance: "fallback" });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setRuntimeInventory({ key: inventoryKey, models: staticModels });
+          setRuntimeInventory({ key: inventoryKey, models: staticModels, provenance: "fallback" });
         }
       });
     return () => { cancelled = true; };
@@ -69,7 +68,17 @@ export function useRuntimeModelOptions(
     runtimeInventory.key === inventoryKey &&
     runtimeInventory.models !== null
   ) {
-    return runtimeInventory.models;
+    return { models: runtimeInventory.models, provenance: runtimeInventory.provenance, loading: false, key: inventoryKey };
   }
-  return staticModels;
+  return {
+    models: DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime) ? [] : staticModels,
+    provenance: DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime) ? null : "live",
+    loading: DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime),
+    key: inventoryKey,
+  };
+}
+
+/** Compatibility projection for menus that do not yet render provenance. */
+export function useRuntimeModelOptions(runtime: string, familiarId?: string | null): RuntimeModelOption[] {
+  return useRuntimeModelInventory(runtime, familiarId).models;
 }

@@ -39,7 +39,7 @@ type ClaudeModelDependencies = {
 
 type CacheEntry = { expiresAt: number; models: RuntimeModelOption[] };
 const cache = new Map<string, CacheEntry>();
-const inFlight = new Map<string, Promise<RuntimeModelOption[]>>();
+const inFlight = new Map<string, Promise<{ models: RuntimeModelOption[]; discovered: boolean }>>();
 
 function positiveLimit(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0
@@ -167,7 +167,7 @@ async function discoverClaudeModels(
   familiarId: string | null | undefined,
   providerEnv: Record<string, string | undefined>,
   dependencies: ClaudeModelDependencies,
-): Promise<RuntimeModelOption[]> {
+): Promise<{ models: RuntimeModelOption[]; discovered: boolean }> {
   const versionOutput = await readVersion(dependencies);
   const models = withClaudeOpus5(seedModels(), {
     versionOutput,
@@ -186,7 +186,7 @@ async function discoverClaudeModels(
       positiveLimit(dependencies.maxCacheEntries, MAX_CACHE_ENTRIES),
     );
   }
-  return models;
+  return { models, discovered: Boolean(parseClaudeCodeVersion(versionOutput)) };
 }
 
 /** Return the Claude seed augmented only when this familiar's concrete
@@ -213,14 +213,17 @@ export async function listClaudeModelInventory(
     return { models: [...cached.models], provenance: "cached" };
   }
   const pending = inFlight.get(key);
-  if (pending) return { models: [...await pending], provenance: "live" };
+  if (pending) {
+    const result = await pending;
+    return { models: [...result.models], provenance: result.discovered ? "live" : "fallback" };
+  }
   if (
     inFlight.size >= positiveLimit(
       dependencies.maxConcurrentDiscoveries,
       MAX_CONCURRENT_DISCOVERIES,
     )
   ) {
-    return { models: seedModels(), provenance: "live" };
+    return { models: seedModels(), provenance: "fallback" };
   }
 
   const discovery = discoverClaudeModels(
@@ -231,7 +234,11 @@ export async function listClaudeModelInventory(
     if (inFlight.get(key) === discovery) inFlight.delete(key);
   });
   inFlight.set(key, discovery);
-  return { models: [...await discovery], provenance: "live" };
+  const result = await discovery;
+  return {
+    models: [...result.models],
+    provenance: result.discovered ? "live" : "fallback",
+  };
 }
 
 /** Compatibility projection for callers that only need the entries. */

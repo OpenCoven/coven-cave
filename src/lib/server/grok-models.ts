@@ -5,6 +5,7 @@ import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
 
 const MODEL_LIST_TIMEOUT_MS = 2_500;
+const MAX_MODEL_LIST_OUTPUT_BYTES = 64 * 1024;
 
 /** Bounded, credential-scoped Grok Build model discovery for shared clients. */
 export function listGrokModels(
@@ -38,8 +39,18 @@ export function listGrokModels(
       clearTimeout(timeout);
       resolve(models);
     };
-    child.stdout.on("data", (data) => (output += data.toString()));
-    child.stderr.on("data", (data) => (output += data.toString()));
+    const capture = (data: Buffer | string) => {
+      if (settled) return;
+      const chunk = String(data);
+      if (Buffer.byteLength(output) + Buffer.byteLength(chunk) > MAX_MODEL_LIST_OUTPUT_BYTES) {
+        try { child.kill("SIGTERM"); } catch { /* unavailable */ }
+        done([]);
+        return;
+      }
+      output += chunk;
+    };
+    child.stdout.on("data", capture);
+    child.stderr.on("data", capture);
     const timeout = setTimeout(() => {
       try { child.kill("SIGTERM"); } catch { /* discovery stays unavailable */ }
       done([]);
