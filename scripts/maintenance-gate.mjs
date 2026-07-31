@@ -576,7 +576,9 @@ export function acquireMaintenanceGate({
           ? "quiesce-timeout"
           : refreshed.reason;
         audit(root, "acquire-rejected", { ownerId, generation, reason });
-        return { ok: false, reason, blockers: [] };
+        return reason === "quiesce-timeout"
+          ? { ok: false, reason, blockers: [] }
+          : { ok: false, reason };
       }
       return refreshed;
     }
