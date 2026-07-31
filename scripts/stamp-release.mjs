@@ -8,8 +8,8 @@
 // on 2026-07-08 alone, and every cut re-derives the same version
 // locations by hand. This script:
 //   1. REFUSES when another stamp PR is already open (the collision guard);
-//   2. bumps the four version locations (package.json, tauri.conf.json,
-//      Cargo.toml, Cargo.lock's `app` package);
+//   2. bumps the five version locations (package.json, tauri.conf.json,
+//      Cargo.toml, Cargo.lock's `app` package, apps/ios/CovenCave/project.yml);
 //   3. drafts the CHANGELOG section from `git log v<prev>..HEAD` subjects —
 //      a starting point to edit in the PR, not prose to trust blindly;
 //   4. branches, commits SIGNED (-S), pushes, and opens the PR via the REST
@@ -37,12 +37,13 @@ export function bumpVersion(current, level = "patch") {
   throw new Error(`unknown bump level: "${level}"`);
 }
 
-/** The four stamp locations and how each encodes the version. */
+/** The five stamp locations and how each encodes the version. */
 export const STAMP_FILES = [
-  { file: "package.json", kind: "json-version" },
-  { file: "src-tauri/tauri.conf.json", kind: "json-version" },
-  { file: "src-tauri/Cargo.toml", kind: "toml-version" },
-  { file: "src-tauri/Cargo.lock", kind: "cargo-lock-app" },
+  { path: "package.json", kind: "json-version" },
+  { path: "src-tauri/tauri.conf.json", kind: "json-version" },
+  { path: "src-tauri/Cargo.toml", kind: "toml-version" },
+  { path: "src-tauri/Cargo.lock", kind: "cargo-lock-app" },
+  { path: "apps/ios/CovenCave/project.yml", kind: "yaml-marketing-version" },
 ];
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -75,6 +76,27 @@ export function stampContent(kind, content, oldVersion, newVersion) {
       throw new Error(`unknown stamp kind: "${kind}"`);
   }
   return { content, replaced };
+}
+
+export function applyReplacement(kind, contents, nextVersion, relativePath = "<unknown>") {
+  if (kind === "yaml-marketing-version") {
+    const matches = contents.match(/^([ \t]*)MARKETING_VERSION:[ \t]*[^\r\n]+$/gm);
+    if (!matches) {
+      throw new Error(`${relativePath}: expected MARKETING_VERSION key`);
+    }
+    if (matches.length !== 1) {
+      throw new Error(
+        `${relativePath}: expected MARKETING_VERSION exactly once, found ${matches.length}`,
+      );
+    }
+
+    return contents.replace(
+      /^([ \t]*)MARKETING_VERSION:[ \t]*[^\r\n]+$/m,
+      `$1MARKETING_VERSION: ${nextVersion}`,
+    );
+  }
+
+  throw new Error(`unknown replacement kind: "${kind}"`);
 }
 
 /** Keep-a-Changelog section drafted from commit subjects since the last tag. */
@@ -163,21 +185,31 @@ function main() {
   console.log(`stamp: v${current} → v${next} (${subjects.length} commits since ${prevTag})`);
 
   const edits = [];
-  for (const { file, kind } of STAMP_FILES) {
-    const abs = path.join(ROOT, file);
+  for (const { path: relativePath, kind } of STAMP_FILES) {
+    const abs = path.join(ROOT, relativePath);
     const before = readFileSync(abs, "utf8");
-    const { content, replaced } = stampContent(kind, before, current, next);
-    if (replaced === 0) {
-      console.error(`✗ ${file}: found no "${current}" to stamp (${kind}) — aborting, nothing written`);
-      process.exit(1);
+    let content;
+    let replaced;
+    if (kind === "yaml-marketing-version") {
+      content = applyReplacement(kind, before, next, relativePath);
+      replaced = 1;
+    } else {
+      ({ content, replaced } = stampContent(kind, before, current, next));
+      if (replaced === 0) {
+        console.error(
+          `✗ ${relativePath}: found no "${current}" to stamp (${kind}) — aborting, nothing written`,
+        );
+        process.exit(1);
+      }
     }
-    edits.push({ abs, file, content, replaced });
+    edits.push({ abs, file: relativePath, content, replaced });
   }
   const changelogAbs = path.join(ROOT, "CHANGELOG.md");
   const changelog = insertChangelogSection(readFileSync(changelogAbs, "utf8"), section);
 
   if (dryRun) {
-    for (const e of edits) console.log(`  would stamp ${e.file} (${e.replaced} occurrence${e.replaced === 1 ? "" : "s"})`);
+    for (const e of edits)
+      console.log(`  would stamp ${e.file} (${e.replaced} occurrence${e.replaced === 1 ? "" : "s"})`);
     console.log("  would insert CHANGELOG section:\n");
     console.log(section.replace(/^/gm, "    "));
     console.log("\n(dry run — nothing written)");
@@ -186,13 +218,18 @@ function main() {
 
   for (const e of edits) writeFileSync(e.abs, e.content);
   writeFileSync(changelogAbs, changelog);
-  console.log("✓ four locations stamped + CHANGELOG drafted");
+  console.log("✓ five locations stamped + CHANGELOG drafted");
 
   const branch = `release/stamp-v${next}`;
   run("git", ["checkout", "-b", branch]);
-  run("git", ["add", "CHANGELOG.md", ...STAMP_FILES.map((f) => f.file)]);
+  run("git", ["add", "CHANGELOG.md", ...STAMP_FILES.map((f) => f.path)]);
   // -S: repo rule — every commit lands Verified.
-  run("git", ["commit", "-S", "-m", `chore(release): stamp v${next}\n\nPatch release on top of v${current}. Bumps all four version locations and\ndrafts the v${next} CHANGELOG entry for the ${subjects.length} commits since ${prevTag}.`]);
+  run("git", [
+    "commit",
+    "-S",
+    "-m",
+    `chore(release): stamp v${next}\n\nPatch release on top of v${current}. Bumps all five version locations and\ndrafts the v${next} CHANGELOG entry for the ${subjects.length} commits since ${prevTag}.`,
+  ]);
   run("git", ["push", "-u", "origin", branch]);
   console.log(`✓ committed + pushed ${branch}`);
 

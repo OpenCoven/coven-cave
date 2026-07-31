@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import {
   bumpVersion,
   STAMP_FILES,
+  applyReplacement,
   stampContent,
   buildChangelogSection,
   insertChangelogSection,
@@ -43,7 +44,44 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
   const { replaced } = stampContent("toml-version", `[package]\nname = "app"\nversion = "0.0.159"\n`, "0.0.159", "0.0.160");
   assert.equal(replaced, 1);
 }
-assert.equal(STAMP_FILES.length, 4, "exactly the four stamp locations");
+{
+  assert.equal(
+    applyReplacement(
+      "yaml-marketing-version",
+      "MARKETING_VERSION: 0.2.1\nCURRENT_PROJECT_VERSION: 1\n",
+      "0.2.2",
+      "apps/ios/CovenCave/project.yml",
+    ),
+    "MARKETING_VERSION: 0.2.2\nCURRENT_PROJECT_VERSION: 1\n",
+  );
+  assert.throws(
+    () =>
+      applyReplacement(
+        "yaml-marketing-version",
+        "CURRENT_PROJECT_VERSION: 1\n",
+        "0.2.2",
+        "apps/ios/CovenCave/project.yml",
+      ),
+    /MARKETING_VERSION key/,
+  );
+  assert.throws(
+    () =>
+      applyReplacement(
+        "yaml-marketing-version",
+        "MARKETING_VERSION: 0.2.1\nMARKETING_VERSION: 0.2.1\n",
+        "0.2.2",
+        "apps/ios/CovenCave/project.yml",
+      ),
+    /exactly once/,
+  );
+  assert.equal(
+    STAMP_FILES.find(
+      (entry) => entry.path === "apps/ios/CovenCave/project.yml",
+    )?.kind,
+    "yaml-marketing-version",
+  );
+}
+assert.equal(STAMP_FILES.length, 5, "exactly the five stamp locations");
 assert.throws(() => stampContent("nope", "", "a", "b"), /unknown stamp kind/);
 
 // ── changelog ─────────────────────────────────────────────────────────────────
