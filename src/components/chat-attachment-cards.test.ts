@@ -42,13 +42,42 @@ assert.match(
 );
 assert.match(
   cards,
-  /export function AttachmentThumb[\s\S]*?if \(!isInlineImageAttachment\(attachment\)\) \{[\s\S]*?<Icon name=\{attachmentIcon\(attachment\)\}/,
+  /export function AttachmentThumb[\s\S]*?const glyph = <Icon name=\{attachmentIcon\(attachment\)\}[\s\S]*?if \(!isInlineImageAttachment\(attachment\)\) return glyph;/,
   "attachments with no pixels fall back to the mime glyph",
 );
 assert.match(
   cards,
-  /export function AttachmentThumb[\s\S]*?<img\s*src=\{attachment\.dataUrl\}/,
+  /<AuthedImage[\s\S]*?fallback=\{glyph\}/,
+  "the glyph also stands in while the authenticated fetch is in flight or fails",
+);
+assert.match(
+  cards,
+  /export function AttachmentThumb[\s\S]*?<AuthedImage\s*src=\{chatAttachmentSrc\(attachment\)\}/,
   "an image we hold pixels for previews as the picture itself",
+);
+
+// Durable images (cave-cysu4). A reopened transcript has no dataUrl — the
+// payload is stripped at persistence — so every image render resolves its
+// source through chatAttachmentSrc, which falls back to the stored copy.
+assert.doesNotMatch(
+  cards,
+  /<img\s+src=\{attachment\.dataUrl\}/,
+  "no render site reads dataUrl directly; a stored-only image would show nothing",
+);
+assert.equal(
+  (cards.match(/<AuthedImage/g) ?? []).length,
+  3,
+  "thumb, inline image, and lightbox all render through AuthedImage",
+);
+assert.doesNotMatch(
+  cards,
+  /<img src="\/api\//,
+  "an API-served image must never be a native <img> load — the packaged sidecar 401s it (cave-wgc2)",
+);
+assert.match(
+  cards,
+  /isInlineImageAttachment[\s\S]*?startsWith\("image\/"\) &&\s*chatAttachmentSrc\(attachment\)/,
+  "an image counts as inline-able when EITHER the payload or the stored copy can supply it",
 );
 
 console.log("chat-attachment-cards.test.ts: ok");

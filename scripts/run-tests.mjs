@@ -272,6 +272,7 @@ export const SUITES = {
     "src/lib/server/process-intent-lock.test.ts",
     "src/lib/server/research-generations.test.ts",
     "src/lib/server/research-media-store.test.ts",
+    "src/lib/server/chat-attachment-store.test.ts",
     "src/lib/server/research-podcast-pipeline.test.ts",
     "src/lib/server/research-video-renderer.test.ts",
     "src/lib/server/research-short-video-pipeline.test.ts",
@@ -1174,6 +1175,8 @@ export const SUITES = {
     "src/app/api/research/generations/route.test.ts",
     "src/app/api/research/generations/cancel/route.test.ts",
     "src/app/api/research/generations/media/route.test.ts",
+    "src/app/api/chat/attachment/route.test.ts",
+    "src/app/api/chat/send/chat-send-image-persistence.test.ts",
     "src/app/api/research/generations/readiness/route.test.ts",
     "src/app/api/research/generations/render/route.test.ts",
     "src/app/api/research/autoloop/routes.test.ts",
@@ -1574,6 +1577,9 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/run-history-guards.test.ts",
   // conversation-write-guards imports ChatTurn via "@/lib/…" alias
   "src/lib/server/conversation-write-guards.test.ts",
+  // the attachment route imports the local-origin gate and the store via "@/…"
+  "src/app/api/chat/attachment/route.test.ts",
+  "src/app/api/chat/send/chat-send-image-persistence.test.ts",
   "src/components/thread-signal-card.test.ts",
   "src/components/thread-signals-section.test.ts",
   "src/components/chat-view.test.ts",

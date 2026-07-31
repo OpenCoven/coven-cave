@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { attachmentIcon, type ChatAttachment } from "@/lib/chat-attachments";
+import { AuthedImage } from "@/components/ui/authed-image";
+import { attachmentIcon, chatAttachmentSrc, type ChatAttachment } from "@/lib/chat-attachments";
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 
@@ -18,6 +19,7 @@ export function formatAttachmentBytes(size?: number): string {
 
 function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachment; onClose: () => void }) {
   const isImage = (attachment.mimeType ?? attachment.type)?.startsWith("image/");
+  const imageSrc = chatAttachmentSrc(attachment);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   // This component only mounts while open: trap Tab/Shift+Tab and restore the
   // chip trigger on dismissal, including Escape.
@@ -53,9 +55,9 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
             <Icon name="ph:x-bold" width={11} />
           </button>
         </div>
-        {isImage && attachment.dataUrl ? (
+        {isImage && imageSrc ? (
           <div className="flex items-center justify-center overflow-hidden p-4">
-            <img src={attachment.dataUrl} alt={attachment.name} className="rounded-lg object-contain block [max-height:75vh]! [max-width:min(85vw,_100%)]! [width:auto]! [height:auto]!" />
+            <AuthedImage src={imageSrc} alt={attachment.name} className="rounded-lg object-contain block [max-height:75vh]! [max-width:min(85vw,_100%)]! [width:auto]! [height:auto]!" />
           </div>
         ) : attachment.text ? (
           <pre className="max-h-[70vh] overflow-auto p-4 font-mono text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">{attachment.text}</pre>
@@ -96,10 +98,15 @@ export function AttachmentList({ attachments }: { attachments: ChatAttachment[] 
   );
 }
 
-/** True when the attachment is an image that can render inline (has a data URL). */
+/**
+ * True when the attachment is an image we can actually show — either we still
+ * hold the payload (the turn you just sent) or the server kept a durable copy
+ * (a reopened transcript). An image with neither stays a chip.
+ */
 export function isInlineImageAttachment(attachment: ChatAttachment): boolean {
   return Boolean(
-    (attachment.mimeType ?? attachment.type)?.startsWith("image/") && attachment.dataUrl,
+    (attachment.mimeType ?? attachment.type)?.startsWith("image/") &&
+      chatAttachmentSrc(attachment),
   );
 }
 
@@ -109,14 +116,14 @@ export function isInlineImageAttachment(attachment: ChatAttachment): boolean {
  * attached image is recognizable before it is sent, rather than a filename.
  */
 export function AttachmentThumb({ attachment }: { attachment: ChatAttachment }) {
-  if (!isInlineImageAttachment(attachment)) {
-    return <Icon name={attachmentIcon(attachment)} width={12} className="shrink-0" />;
-  }
+  const glyph = <Icon name={attachmentIcon(attachment)} width={12} className="shrink-0" />;
+  if (!isInlineImageAttachment(attachment)) return glyph;
   return (
-    <img
-      src={attachment.dataUrl}
+    <AuthedImage
+      src={chatAttachmentSrc(attachment)}
       alt=""
       aria-hidden
+      fallback={glyph}
       className="h-5 w-5 shrink-0 rounded-sm border border-[var(--border-hairline)] object-cover"
     />
   );
@@ -142,8 +149,8 @@ export function InlineImageAttachments({ attachments }: { attachments: ChatAttac
             title={`View ${attachment.name}`}
             onClick={() => setSelected(attachment)}
           >
-            <img
-              src={attachment.dataUrl}
+            <AuthedImage
+              src={chatAttachmentSrc(attachment)}
               alt={attachment.name}
               loading="lazy"
               className="block max-h-80 max-w-full object-contain"
