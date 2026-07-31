@@ -35,6 +35,7 @@ import {
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { copilotStreamSpec } from "@/lib/copilot-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
 import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
 
@@ -145,6 +146,8 @@ export async function startFlowSession(
       status: 409,
     };
   }
+  const hermesProfileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (hermesProfileBlock) return { ok: false, status: 409, error: hermesProfileBlock };
   const travelStatus = await travelLocalQueueStatus(config);
   if (travelStatus) {
     const order = options.targetNodeId ? flowPartialExecutionOrder(flow, options.targetNodeId) : flowExecutionOrder(flow);

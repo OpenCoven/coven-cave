@@ -116,6 +116,7 @@ const contracts: RouteContract[] = [
   { route: "/grant-proposals", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/grimoire/graph", methods: ["GET"], kind: "json" },
   { route: "/harnesses", methods: ["GET"], kind: "json" },
+  { route: "/hermes-profiles", methods: ["GET"], kind: "json" },
   { route: "/home-tweets", methods: ["GET"], kind: "json" },
   { route: "/inbox/[id]/dismiss", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/inbox/[id]/done", methods: ["POST"], kind: "json", localOriginGuard: true },
