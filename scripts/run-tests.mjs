@@ -1579,6 +1579,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/chat-task-autofill.test.ts",
   "src/lib/voice/hydrate-instructions.test.ts",
   "src/app/api/voice/session/route.test.ts",
+  "src/app/api/hermes-profiles/route.test.ts",
   "src/app/api/chat/conversation/[id]/route.test.ts",
   // familiar-brain imports familiar-stream, whose graph reaches "@/lib/…".
   "src/lib/voice/familiar-brain.test.ts",

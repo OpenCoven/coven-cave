@@ -1,5 +1,3 @@
-import path from "node:path";
-
 export type HermesProfileSummary = {
   id: string;
   displayName: string;
@@ -14,6 +12,15 @@ export type HermesProfileBinding = Pick<HermesProfileSummary, "id" | "homePath">
 
 const PROFILE_ID_RE = /^[A-Za-z0-9_-]+$/;
 
+function isAbsoluteProfileHome(value: string): boolean {
+  return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
+}
+
+function joinProfileHome(homePath: string, relativePath: string): string {
+  const separator = homePath.includes("\\") ? "\\" : "/";
+  return `${homePath.replace(/[\\/]+$/, "")}${separator}${relativePath.replace(/^[\\/]+/, "")}`;
+}
+
 export function isSafeHermesProfileId(value: string): boolean {
   return PROFILE_ID_RE.test(value);
 }
@@ -25,7 +32,7 @@ export function normalizeHermesProfileBinding(value: unknown): HermesProfileBind
   const homePath = typeof candidate.homePath === "string" ? candidate.homePath.trim() : "";
   // A relative path would make the selected profile depend on Cave's launch
   // cwd. Reject it instead of silently drifting to Hermes's sticky default.
-  if (!isSafeHermesProfileId(id) || !homePath || !path.isAbsolute(homePath)) return undefined;
+  if (!isSafeHermesProfileId(id) || !homePath || !isAbsoluteProfileHome(homePath)) return undefined;
   return { id, homePath };
 }
 
@@ -46,9 +53,9 @@ export function parseHermesProfileHome(output: string, homeDir: string): string 
   if (!match?.[1]) return null;
   const printed = match[1].trim();
   const expanded = printed === "~" ? homeDir : printed.startsWith("~/") || printed.startsWith("~\\")
-    ? path.join(homeDir, printed.slice(2))
+    ? joinProfileHome(homeDir, printed.slice(2))
     : printed;
-  return path.isAbsolute(expanded) ? path.normalize(expanded) : null;
+  return isAbsoluteProfileHome(expanded) ? expanded : null;
 }
 
 export function soulDescription(markdown: string | null): string | null {
