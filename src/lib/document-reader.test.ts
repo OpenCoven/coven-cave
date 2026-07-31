@@ -155,6 +155,105 @@ test("frontmatter title still wins when a later h1 appears, and the h1 is remove
   assert.equal(blockText(doc.sections[0].blocks[1]), "After.");
 });
 
+test("a Setext h1 title uses heading precedence and is removed from content", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+  const doc = parseMarkdownReaderDocument(
+    "Setext title\n============\n\nParagraph body.",
+    "Fallback title",
+  );
+
+  assert.deepEqual(
+    { title: doc.title, titleSource: doc.titleSource },
+    { title: "Setext title", titleSource: "heading" },
+  );
+  assert.equal(doc.sections.length, 1);
+  assert.equal(doc.sections[0].heading, "");
+  assert.deepEqual(doc.sections[0].blocks.map((block) => block.type), ["paragraph"]);
+  assert.equal(blockText(doc.sections[0].blocks[0]), "Paragraph body.");
+});
+
+test("Setext h2 headings create sections without leaving duplicate paragraph blocks", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+  const doc = parseMarkdownReaderDocument(
+    "First section\n-------------\n\nBody one.\n\nSecond section\n--------------\n\nBody two.",
+    "Fallback title",
+  );
+
+  assert.deepEqual(
+    doc.sections.map((section) => ({
+      heading: section.heading,
+      level: section.level,
+      blockTypes: section.blocks.map((block) => block.type),
+      text: section.blocks.map((block) => blockText(block)),
+    })),
+    [
+      {
+        heading: "First section",
+        level: 2,
+        blockTypes: ["paragraph"],
+        text: ["Body one."],
+      },
+      {
+        heading: "Second section",
+        level: 2,
+        blockTypes: ["paragraph"],
+        text: ["Body two."],
+      },
+    ],
+  );
+});
+
+test("a real paragraph followed by an identical ATX heading keeps both blocks", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+  const doc = parseMarkdownReaderDocument("Same\n\n## Same\n\nBody.", "Fallback title");
+
+  assert.equal(doc.title, "Fallback title");
+  assert.equal(doc.sections.length, 2);
+  assert.deepEqual(
+    doc.sections.map((section) => ({
+      heading: section.heading,
+      level: section.level,
+      text: section.blocks.map((block) => blockText(block)),
+    })),
+    [
+      { heading: "", level: 0, text: ["Same"] },
+      { heading: "Same", level: 2, text: ["Body."] },
+    ],
+  );
+});
+
+test("setext-looking lines inside fenced code blocks stay literal", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+  const doc = parseMarkdownReaderDocument(
+    "```md\nCode sample\n-----------\n```\n\nReal section\n------------\n\nAfter.",
+    "Fallback title",
+  );
+
+  assert.equal(doc.sections.length, 2);
+  assert.deepEqual(
+    doc.sections.map((section) => ({
+      heading: section.heading,
+      level: section.level,
+      blockTypes: section.blocks.map((block) => block.type),
+      text: section.blocks.map((block) => blockText(block)),
+    })),
+    [
+      {
+        heading: "",
+        level: 0,
+        blockTypes: ["codeBlock"],
+        text: ["Code sample\n-----------"],
+      },
+      {
+        heading: "Real section",
+        level: 2,
+        blockTypes: ["paragraph"],
+        text: ["After."],
+      },
+    ],
+  );
+});
+
 test("headingless prose stays in one headingless overview section", async () => {
   const { parseMarkdownReaderDocument } = await loadDocumentReader();
   const doc = parseMarkdownReaderDocument("Paragraph one.\n\nParagraph two.", "Fallback title");

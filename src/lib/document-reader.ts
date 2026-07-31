@@ -55,6 +55,129 @@ export function hasUnclosedMarkdownComment(markdown: string): boolean {
   return false;
 }
 
+type MarkdownLine = {
+  text: string;
+  eol: string;
+};
+
+type FenceMarker = {
+  char: "`" | "~";
+  size: number;
+};
+
+function splitMarkdownLines(markdown: string): MarkdownLine[] {
+  if (!markdown) return [];
+
+  const lines: MarkdownLine[] = [];
+  let cursor = 0;
+  while (cursor < markdown.length) {
+    const newlineIndex = markdown.indexOf("\n", cursor);
+    if (newlineIndex === -1) {
+      lines.push({ text: markdown.slice(cursor), eol: "" });
+      break;
+    }
+
+    const textEnd =
+      newlineIndex > cursor && markdown[newlineIndex - 1] === "\r"
+        ? newlineIndex - 1
+        : newlineIndex;
+    lines.push({
+      text: markdown.slice(cursor, textEnd),
+      eol: markdown.slice(textEnd, newlineIndex + 1),
+    });
+    cursor = newlineIndex + 1;
+  }
+
+  return lines;
+}
+
+function matchFenceMarker(text: string): FenceMarker | null {
+  const match = text.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
+  if (!match) return null;
+  return {
+    char: match[1][0] as FenceMarker["char"],
+    size: match[1].length,
+  };
+}
+
+function isFenceClose(text: string, fence: FenceMarker): boolean {
+  const pattern =
+    fence.char === "`"
+      ? new RegExp(`^\\s{0,3}\`{${fence.size},}\\s*$`)
+      : new RegExp(`^\\s{0,3}~{${fence.size},}\\s*$`);
+  return pattern.test(text);
+}
+
+function matchSetextUnderline(text: string): 1 | 2 | null {
+  const match = text.match(/^\s{0,3}(=+|-+)\s*$/);
+  if (!match) return null;
+  return match[1][0] === "=" ? 1 : 2;
+}
+
+function isSetextContentLine(text: string): boolean {
+  if (!text.trim()) return false;
+  if (/^\s{4,}/.test(text)) return false;
+  return !/^\s{0,3}(?:[-+*](?:\s|$)|\d+[.)](?:\s|$)|>\s*|#{1,6}(?:\s|$)|`{3,}|~{3,})/.test(
+    text,
+  );
+}
+
+function normalizeSetextHeadings(markdown: string): string {
+  const lines = splitMarkdownLines(markdown);
+  const normalized: MarkdownLine[] = [];
+  let fence: FenceMarker | null = null;
+
+  for (let index = 0; index < lines.length; ) {
+    const line = lines[index];
+
+    if (fence) {
+      normalized.push(line);
+      if (isFenceClose(line.text, fence)) fence = null;
+      index += 1;
+      continue;
+    }
+
+    const fenceOpen = matchFenceMarker(line.text);
+    if (fenceOpen) {
+      normalized.push(line);
+      fence = fenceOpen;
+      index += 1;
+      continue;
+    }
+
+    if (!line.text.trim()) {
+      normalized.push(line);
+      index += 1;
+      continue;
+    }
+
+    let end = index;
+    while (end < lines.length && lines[end].text.trim()) {
+      if (end > index && matchFenceMarker(lines[end].text)) break;
+      end += 1;
+    }
+
+    const run = lines.slice(index, end);
+    const level =
+      run.length >= 2 ? matchSetextUnderline(run[run.length - 1].text) : null;
+    if (level !== null && run.slice(0, -1).every((candidate) => isSetextContentLine(candidate.text))) {
+      normalized.push({
+        text: `${level === 1 ? "#" : "##"} ${run
+          .slice(0, -1)
+          .map((candidate) => candidate.text.trim())
+          .join(" ")}`,
+        eol: run[run.length - 1].eol,
+      });
+    } else {
+      normalized.push(...run);
+    }
+
+    index = end;
+  }
+
+  return normalized.map((line) => line.text + line.eol).join("");
+}
+
 function blockText(block: Block): string {
   return block.content.map((span) => span.text).join("").trim();
 }
@@ -112,7 +235,7 @@ export function parseMarkdownReaderDocument(
 ): MarkdownReaderDocument {
   const parsed = parseMdDocument(raw);
   const body = stripCompleteMarkdownComments(parsed.body);
-  const blocks = parse(body);
+  const blocks = parse(normalizeSetextHeadings(body));
   const titleHeadingIndex = findTitleHeadingIndex(blocks);
 
   let title = fallbackTitle;
