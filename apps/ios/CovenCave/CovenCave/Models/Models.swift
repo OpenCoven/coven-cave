@@ -136,6 +136,7 @@ struct ChatTurn: Identifiable, Codable, Hashable {
     /// the exact turn semantics. Older conversations decode these as nil.
     var reasoningEffort: ChatThinkingEffort?
     var responseSpeed: ChatResponseSpeed?
+    var modelControls: [String: String]?
     var modelOverride: String?
 
     enum CodingKeys: String, CodingKey {
@@ -143,7 +144,7 @@ struct ChatTurn: Identifiable, Codable, Hashable {
         case createdAt
         case isError
         case usage
-        case reasoningEffort, responseSpeed, modelOverride
+        case reasoningEffort, responseSpeed, modelControls, modelOverride
     }
 }
 

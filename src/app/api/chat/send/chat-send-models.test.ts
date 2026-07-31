@@ -45,14 +45,13 @@ assert.equal(
 );
 assert.deepEqual(
   persistedTurnControls(
-    { reasoningEffort: "medium", responseSpeed: "careful" },
+    { modelControls: { reasoning: "medium" } },
     undefined,
   ),
   {
-    reasoningEffort: "medium",
-    responseSpeed: "careful",
+    modelControls: { reasoning: "medium" },
   },
-  "persisted controls never invent a model for a dynamic default",
+  "persisted selected-model controls never invent a model for a dynamic default",
 );
 
 const conversation = {

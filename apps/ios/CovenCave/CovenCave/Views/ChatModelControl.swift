@@ -7,6 +7,20 @@ struct ChatModelOption: Codable, Hashable, Identifiable {
     let label: String
 }
 
+struct ChatModelControlValue: Codable, Hashable, Identifiable {
+    let value: String
+    let label: String
+    var id: String { value }
+}
+
+struct ChatModelControlCapability: Codable, Hashable, Identifiable {
+    let family: String
+    let label: String
+    let delivery: String
+    let values: [ChatModelControlValue]
+    var id: String { family }
+}
+
 struct ChatModelState: Codable {
     let familiarId: String
     let harness: String
@@ -32,6 +46,7 @@ struct ChatModelStateResponse: Codable {
     let state: ChatModelState
     var options: [ChatModelOption]?
     var inventory: ChatModelInventory?
+    var controls: [ChatModelControlCapability]?
     var allowCustom: Bool?
 }
 

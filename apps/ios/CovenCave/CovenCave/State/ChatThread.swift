@@ -23,6 +23,9 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// controls shipped remain decodable and replay with current defaults.
     var reasoningEffort: ChatThinkingEffort?
     var responseSpeed: ChatResponseSpeed?
+    /// Capability-aware values requested for this selected model. Legacy
+    /// fields above stay readable for old snapshots only.
+    var modelControls: [String: String]?
     /// Explicit model selected for this turn. Persisted so offline replay and
     /// retry preserve the user's choice.
     var modelOverride: String?
@@ -64,6 +67,7 @@ extension DisplayMessage {
             isError: turn.isError ?? false,
             reasoningEffort: turn.reasoningEffort,
             responseSpeed: turn.responseSpeed,
+            modelControls: turn.modelControls,
             modelOverride: turn.modelOverride,
             modelOverridesByFamiliar: turn.modelOverride.flatMap { model in
                 familiarId.map { [$0: model] }
@@ -84,6 +88,7 @@ extension DisplayMessage {
             attachmentDataUrls: message.attachmentDataUrls,
             reasoningEffort: message.reasoningEffort,
             responseSpeed: message.responseSpeed,
+            modelControls: message.modelControls,
             modelOverride: message.modelOverride,
             modelOverridesByFamiliar: message.modelOverridesByFamiliar,
             activity: message.activity

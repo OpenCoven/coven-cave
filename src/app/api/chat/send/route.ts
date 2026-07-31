@@ -259,6 +259,12 @@ import {
   resolveSendModelMetadata,
   turnRetryModel,
 } from "./chat-send-models";
+import {
+  modelControlCapabilities,
+  promptOnlyModelControls,
+  validateModelControlValues,
+  type ModelControlValues,
+} from "@/lib/model-control-capabilities";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 import { conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
 
@@ -347,6 +353,9 @@ type SendBody = {
   modelOverrideScope?: "next-message" | "session";
   reasoningEffort?: string;
   responseSpeed?: string;
+  /** Selected-model capability controls. Legacy fields above are accepted for
+   * historical clients but are never treated as universal provider settings. */
+  modelControls?: ModelControlValues;
   /** Composer Access chip: "full" (default) or "read". Forwarded to
    *  `coven run --permission` (mapped to the harness's native sandbox flag)
    *  only when the installed CLI advertises it; "full" is left implicit so the
@@ -383,6 +392,7 @@ type OfflineChatQueuePayload = Pick<
   | "modelOverrideScope"
   | "reasoningEffort"
   | "responseSpeed"
+  | "modelControls"
   | "mentionedFiles"
   | "mentionedFilesRoot"
   | "parentTurnId"
@@ -1754,6 +1764,29 @@ export async function POST(req: Request) {
   const grokLaunchModel = grokDirect
     ? runtimeModelIdForLaunch("grok", grokForwardModel)
     : null;
+  // Controls are negotiated after model resolution and before any prompt or
+  // argv is built. A native Hermes control is available only for its verified
+  // Responses API transport; the CLI path must fail closed rather than quietly
+  // turning a provider setting into prompt prose.
+  const controlCapabilities = modelControlCapabilities(binding.harness, desiredModel)
+    .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null));
+  const controlValidation = validateModelControlValues(controlCapabilities, body.modelControls);
+  if (controlValidation.rejected.length > 0) {
+    return NextResponse.json({
+      ok: false,
+      code: "model_control_unsupported",
+      error: `The selected model cannot apply: ${controlValidation.rejected.join(", ")}.`,
+      rejectedControlFamilies: controlValidation.rejected,
+    }, { status: 400 });
+  }
+  body.modelControls = controlValidation.values;
+  const promptModelControls = promptOnlyModelControls(controlCapabilities, controlValidation.values);
+  const hermesReasoningEffort = controlCapabilities.some(
+    (capability) => capability.parameter === "reasoning.effort",
+  ) ? controlValidation.values.reasoning : undefined;
+  const hermesVerbosity = controlCapabilities.some(
+    (capability) => capability.parameter === "text.verbosity",
+  ) ? controlValidation.values.verbosity : undefined;
   const grantedProjectRoots = sshRuntime
     ? []
     : (await filterProjectsForFamiliar(projects, body.familiarId)).map((project) => project.root);
@@ -1789,6 +1822,7 @@ export async function POST(req: Request) {
     modelSource: modelState.source,
     modelApplicationState: modelState.applicationState,
     modelApplicationReason: modelState.reason,
+    requestedControls: controlValidation.values,
   };
   const offlineChatResponse = await maybeQueueOfflineChat({
     body,
@@ -1845,7 +1879,7 @@ export async function POST(req: Request) {
                   imagesSupported,
                   imageFilePaths,
                 }),
-                body,
+                { modelControls: promptModelControls },
               ),
               mentionedFiles,
             ),
@@ -3557,6 +3591,8 @@ export async function POST(req: Request) {
               ...(hermesLaunchModel ? { model: hermesLaunchModel } : {}),
               input: apiPrompt,
               stream: true,
+              ...(hermesReasoningEffort ? { reasoning: { effort: hermesReasoningEffort } } : {}),
+              ...(hermesVerbosity ? { text: { verbosity: hermesVerbosity } } : {}),
               ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
             }),
           });
@@ -4600,6 +4636,9 @@ export async function POST(req: Request) {
         responseMetadata.modelApplicationReason = application.reason;
         modelState.applicationState = application.state;
         modelState.reason = application.reason;
+      }
+      if (!result.is_error && Object.keys(controlValidation.values).length > 0) {
+        responseMetadata.appliedControls = controlValidation.values;
       }
       const routedTurnModel = copilotStream
         ? cleanModelId(desiredModel)

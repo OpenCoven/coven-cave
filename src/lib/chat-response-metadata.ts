@@ -1,4 +1,5 @@
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
+import type { ModelControlValues } from "./model-control-capabilities.ts";
 
 export type ChatResponseMetadata = {
   familiarId: string;
@@ -12,6 +13,12 @@ export type ChatResponseMetadata = {
   modelSource?: ModelScope;
   modelApplicationState?: ModelApplicationState;
   modelApplicationReason?: string;
+  /** Controls the client asked Cave to apply for this selected model. */
+  requestedControls?: ModelControlValues;
+  /** Controls the provider/runtime accepted for this completed attempt. */
+  appliedControls?: ModelControlValues;
+  /** Capability families rejected before a runtime launch. */
+  rejectedControlFamilies?: string[];
   openclawAgentId?: string;
   openclawAgentSource?: "explicit" | "id-match" | "name-match" | "default" | "fallback";
   caveSessionId?: string;

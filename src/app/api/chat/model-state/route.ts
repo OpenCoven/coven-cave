@@ -10,6 +10,7 @@ import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
+import { modelControlCapabilities } from "@/lib/model-control-capabilities";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -95,6 +96,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true,
     state,
+    controls: modelControlCapabilities(state.harness, state.effectiveModel),
     options: inventory.models,
     inventory,
     allowCustom: inventory.allowCustom,

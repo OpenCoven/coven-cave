@@ -170,6 +170,7 @@ import {
   type CommandThinkingEffort,
   type InitialCommandControls,
 } from "@/lib/command-controls";
+import type { ModelControlCapability, ModelControlValues } from "@/lib/model-control-capabilities";
 import { useProjects } from "@/lib/use-projects";
 import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
@@ -336,6 +337,7 @@ type ChatSendOptions = {
 type ChatSendControls = {
   thinkingEffort: ComposerThinkingEffort;
   responseSpeed: ComposerResponseSpeed;
+  modelControls?: ModelControlValues;
   permissionMode: CommandPermissionMode;
   runtimeHost?: string;
   /** Present only for queued messages: null means preserve the queue-time
@@ -1970,6 +1972,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const [archivingChat, setArchivingChat] = useState(false);
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
+  const [modelCapabilities, setModelCapabilities] = useState<readonly ModelControlCapability[]>([]);
+  const [modelControls, setModelControls] = useState<ModelControlValues>({});
   // Send paths need the model selection synchronously. React state alone can
   // still expose the previous render between a picker action and its PATCH.
   const modelStateRef = useRef<ChatModelState | null>(null);
@@ -2382,17 +2386,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (sessionId) params.set("sessionId", sessionId);
     try {
       const res = await fetch(`/api/chat/model-state?${params.toString()}`, { cache: "no-store" });
-      const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
+      const json = (await res.json()) as {
+        ok?: boolean;
+        state?: ChatModelState;
+        controls?: ModelControlCapability[];
+      };
       const next = json.ok && json.state ? json.state : null;
       if (shouldApply()) {
         modelStateRef.current = next;
         setModelState(next);
+        setModelCapabilities(json.ok && Array.isArray(json.controls) ? json.controls : []);
       }
       return next;
     } catch {
       if (shouldApply()) {
         modelStateRef.current = null;
         setModelState(null);
+        setModelCapabilities([]);
       }
       return null;
     }
@@ -2432,6 +2442,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       cancelled = true;
     };
   }, [refreshModelState]);
+
+  // A model switch can change the available families or values. Keep only
+  // explicit selections that remain valid; do not silently substitute a
+  // prompt value or a provider default.
+  useEffect(() => {
+    setModelControls((current) => Object.fromEntries(
+      Object.entries(current).filter(([family, value]) =>
+        modelCapabilities.some((capability) =>
+          capability.family === family && capability.values.some((option) => option.value === value),
+        ),
+      ),
+    ) as ModelControlValues);
+  }, [modelCapabilities]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3047,20 +3070,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onChange: (id: string) => handleSelectModel(id || null),
         }]
       : []),
-    {
-      id: "thinking",
-      label: "Thinking",
-      value: thinkingEffort,
-      options: THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-      onChange: (v: string) => setThinkingEffort(v as ComposerThinkingEffort),
-    },
-    {
-      id: "speed",
-      label: "Speed",
-      value: responseSpeed,
-      options: SPEED_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-      onChange: (v: string) => setResponseSpeed(v as ComposerResponseSpeed),
-    },
+    ...modelCapabilities.map((capability) => ({
+      id: `model-control-${capability.family}`,
+      label: `${capability.label} — ${capability.delivery === "prompt-only" ? "Prompt guidance" : "Native"}`,
+      value: modelControls[capability.family] ?? "",
+      options: capability.values.map((option) => ({ value: option.value, label: option.label })),
+      onChange: (value: string) => setModelControls((current) => ({
+        ...current,
+        [capability.family]: value,
+      })),
+    })),
   ];
 
   // Thumbs votes are stamped with what produced the response (user-requested)
@@ -4210,6 +4229,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         controls: {
           thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
           responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
+          modelControls: controlsOverride?.modelControls ?? modelControls,
           permissionMode: controlsOverride?.permissionMode ?? permissionMode,
           queuedRuntimeHost:
             controlsOverride && "queuedRuntimeHost" in controlsOverride
@@ -4437,6 +4457,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           projectRoot: projectRootForRequest,
           reasoningEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
           responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
+          modelControls: controlsOverride?.modelControls ?? modelControls,
           // Advisory permission mode for the picked access level; the daemon may
           // ignore it if the harness doesn't support per-turn permission scoping.
           permissionMode: controlsOverride?.permissionMode ?? permissionMode,
@@ -5033,6 +5054,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         controls: {
           thinkingEffort,
           responseSpeed,
+          modelControls,
           permissionMode,
           queuedRuntimeHost: runtimeHost,
         },

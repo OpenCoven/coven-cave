@@ -6,6 +6,7 @@ import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
+import type { ModelControlValues } from "./model-control-capabilities.ts";
 import type { GrokSandboxProfile } from "./grok-build.ts";
 import type { SessionOrigin } from "./types.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
@@ -63,6 +64,9 @@ export type ChatTurn = {
    *  refresh/duplicate a transcript and still retry with the original intent. */
   reasoningEffort?: "low" | "medium" | "high";
   responseSpeed?: "fast" | "balanced" | "careful";
+  /** Selected-model controls. Legacy reasoningEffort/responseSpeed remain
+   * readable for old transcripts but new turns persist this typed map. */
+  modelControls?: ModelControlValues;
   modelOverride?: string;
   responseMetadata?: ChatResponseMetadata;
   origin?: "chat" | "voice";
