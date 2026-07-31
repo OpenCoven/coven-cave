@@ -511,10 +511,13 @@
   background: var(--text-primary);
 }
 
+/* The glyph rides ON the danger fill, so it needs the on-danger foreground —
+   --danger-text is `var(--color-danger)` (red type for neutral surfaces) and
+   painted the cancel ✕ the same color as the button, leaving a blank square. */
 .cave-chat-linear .cave-composer-send--busy,
 .cave-chat-linear .cave-composer-send--busy:hover {
   background: var(--color-danger);
-  color: var(--danger-text);
+  color: var(--color-danger-foreground);
 }
 
 @media (max-width: 720px) {
