@@ -5,12 +5,12 @@
  * multi-session coding tab. Reverses the earlier Code-mode retirement on the
  * owner's request; default-on since phase 2 (cave-m6ys).
  *
- * Phase 3+ (this shape): top-level Sessions/GitHub tabs, the session rail
+ * Phase 3+ (this shape): top-level Sessions/Activity/PRs/Issues/Reviews tabs, the session rail
  * (grouped by project, git-attribution badges, + New session) and the
  * per-session workbench (Diff | Files | Terminal | PR) with the follow-up
  * composer (code-composer.tsx). New sessions start via code-new-session.tsx —
  * project + familiar + optional fresh worktree. The inspector and mobile
- * layout land in follow-up PRs. GitHub mounts whole under the GitHub tab
+ * layout land in follow-up PRs. GitHub mounts whole under the Activity/PRs/Issues/Reviews tabs
  * (the standalone GitHub surface and its sidebar row were absorbed; the
  * "github" workspace mode is now a tab alias landing here).
  */
@@ -37,7 +37,7 @@ import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import type { SessionRow } from "@/lib/types";
 
 // GitHubView keeps its own chunk: CodeView opens far more often than its
-// GitHub tab, and github-view is a 3k-line surface (same split posture as
+// GitHub tabs, and github-view is a 3k-line surface (same split posture as
 // lazy-surfaces.tsx, done locally to avoid a lazy-surfaces ↔ code-view cycle).
 const LazyGitHubView = dynamic(
   () => import("@/components/github-view").then((m) => m.GitHubView),
@@ -46,6 +46,7 @@ const LazyGitHubView = dynamic(
 
 // The GitHub content tabs and the GitHubView filter each one drives.
 const GITHUB_TAB_FILTER: Record<CodeGithubTab, GitHubFilter> = {
+  activity: "all",
   prs: "pr",
   issues: "issue",
   reviews: "review_request",
@@ -54,6 +55,7 @@ const GITHUB_TAB_META: Record<
   CodeGithubTab,
   { label: string; icon: Parameters<typeof Icon>[0]["name"] }
 > = {
+  activity: { label: "Activity", icon: "ph:bell" },
   prs: { label: "PRs", icon: "ph:git-pull-request" },
   issues: { label: "Issues", icon: "ph:circle-dashed" },
   reviews: { label: "Reviews", icon: "ph:check-circle" },
@@ -62,7 +64,7 @@ const GITHUB_TAB_META: Record<
 export type CodeViewProps = {
   sessions: SessionRow[];
   /** Landing tab override — the "github" mode alias mounts CodeView on its
-   *  GitHub tab (deep-link continuity for the absorbed standalone surface). */
+   *  Activity tab (deep-link continuity for the absorbed standalone surface). */
   initialTopTab?: CodeTopTab;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard: (cardId: string) => void;
@@ -85,7 +87,7 @@ export function CodeView({
   onPendingOpenHandled,
   onTasksRefresh,
 }: CodeViewProps) {
-  // `?mode=code&session=<id>&ctab=<sessions|github>&wtab=<diff|files|terminal|pr>`
+  // `?mode=code&session=<id>&ctab=<sessions|activity|prs|issues|reviews>&wtab=<diff|files|terminal|pr>`
   // deep link — parsed once (initializer stays PURE: React StrictMode runs it
   // twice, so stripping here would feed the second run an already-stripped
   // URL and lose the target), then stripped in a mount effect (the
