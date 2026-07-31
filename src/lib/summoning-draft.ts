@@ -12,6 +12,7 @@ export type SummoningDraft = {
   vessel: string | null;
   harness: string | null;
   agentId: string | null;
+  hermesProfileId: string | null;
   sshHost: string;
   sshCwd: string;
   sshCommand: string;
@@ -53,6 +54,7 @@ export function readSummoningDraft(store: StringStore | null = defaultStore()): 
       vessel: strOrNull(parsed.vessel),
       harness: strOrNull(parsed.harness),
       agentId: strOrNull(parsed.agentId),
+      hermesProfileId: strOrNull(parsed.hermesProfileId),
       sshHost: str(parsed.sshHost),
       sshCwd: str(parsed.sshCwd),
       sshCommand: str(parsed.sshCommand),

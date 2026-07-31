@@ -71,7 +71,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const a = \["chat", "--source", "coven", "-Q"\];[\s\S]*a\.push\("--query", prompt\)/,
+  /const a = binding\.hermesProfile[\s\S]*?: \["chat", "--source", "coven", "-Q"\];[\s\S]*a\.push\("--query", prompt\)/,
   "Hermes direct chat must use quiet query mode so stdout contains the actual reply",
 );
 
@@ -85,6 +85,21 @@ assert.match(
   chatRoute,
   /if \(hermesDirect\) \{[\s\S]*?if \(hermesLaunchModel\) a\.push\("--model", hermesLaunchModel\);[\s\S]*?a\.push\("--query", prompt\)/,
   "An advertised Hermes --model flag must receive the registry-transformed launch id before the query",
+);
+assert.match(
+  chatRoute,
+  /binding\.hermesProfile[\s\S]*?\["-p", binding\.hermesProfile\.id, "chat", "--source", "coven", "-Q"\]/,
+  "a profile-bound Hermes familiar receives the documented per-command profile flag",
+);
+assert.match(
+  chatRoute,
+  /binding\.hermesProfile && \(binding\.harness !== "hermes" \|\| sshRuntime\)[\s\S]*?Hermes profile is local-only/,
+  "a persisted but unsupported Hermes profile binding fails instead of launching the wrong runtime",
+);
+assert.match(
+  chatRoute,
+  /if \(binding\.hasInvalidHermesProfileBinding\)[\s\S]*?Hermes profile binding is invalid/,
+  "a malformed persisted Hermes profile binding fails closed instead of falling back to Hermes's sticky profile",
 );
 
 assert.match(
