@@ -86,6 +86,16 @@ assert.match(
   /if \(hermesDirect\) \{[\s\S]*?if \(hermesLaunchModel\) a\.push\("--model", hermesLaunchModel\);[\s\S]*?a\.push\("--query", prompt\)/,
   "An advertised Hermes --model flag must receive the registry-transformed launch id before the query",
 );
+assert.match(
+  chatRoute,
+  /binding\.hermesProfile[\s\S]*?\["-p", binding\.hermesProfile\.id, "chat", "--source", "coven", "-Q"\]/,
+  "a profile-bound Hermes familiar receives the documented per-command profile flag",
+);
+assert.match(
+  chatRoute,
+  /binding\.hermesProfile && \(binding\.harness !== "hermes" \|\| sshRuntime\)[\s\S]*?Hermes profile is local-only/,
+  "a persisted but unsupported Hermes profile binding fails instead of launching the wrong runtime",
+);
 
 assert.match(
   chatRoute,

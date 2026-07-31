@@ -294,6 +294,20 @@ export async function POST(
     return reserveNativeChatTask();
   }
 
+  // The daemon session API has no Hermes `-p` field. Reserve the native chat
+  // path instead so the first task turn reaches /api/chat/send, which applies
+  // the stored per-command profile target; never fall back to the daemon's
+  // sticky/default Hermes profile.
+  if (binding.hermesProfile) {
+    if (isSshRuntime(binding.runtime)) {
+      return NextResponse.json(
+        { ok: false, error: "Hermes profiles currently run on this Cave host. Select a local runtime for this familiar." },
+        { status: 409 },
+      );
+    }
+    return reserveNativeChatTask();
+  }
+
   // Copilot's daemon session is the worst offender behind cave-aikv: the daemon
   // spawns `copilot --interactive=<prompt>` as an immortal PTY child whose
   // redraw output pumps millions of events into coven.sqlite3, and nothing in

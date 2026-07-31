@@ -39,11 +39,11 @@ assert.doesNotMatch(
   "the circle must not call the onboarding setup route",
 );
 
-// ── All three vessels (connection paths) ────────────────────────────────────
+// ── All vessels (connection paths) ──────────────────────────────────────────
 assert.match(
   source,
-  /type VesselKind = "local" \| "ssh" \| "openclaw"/,
-  "the vessel choice covers local, SSH, and OpenClaw",
+  /type VesselKind = "local" \| "ssh" \| "openclaw" \| "hermes"/,
+  "the vessel choice covers local, SSH, OpenClaw, and Hermes profiles",
 );
 assert.match(
   source,
@@ -90,6 +90,11 @@ assert.match(
   /fetch\("\/api\/openclaw-agents"/,
   "the OpenClaw vessel discovers agents from /api/openclaw-agents",
 );
+assert.match(source, /fetch\("\/api\/hermes-profiles"/, "the Hermes vessel discovers profiles from /api/hermes-profiles");
+assert.match(source, /hermesReady=\{\(harnesses \?\? \[\]\)\.some\(/, "Hermes profiles are offered only when the local Hermes runtime is ready");
+assert.match(source, /if \(!description\.trim\(\)\) setDescription\(profile\.description\)/, "Hermes identity seeding preserves an entered description");
+assert.match(source, /hermesProfile: \{ id: selectedHermesProfile\.id, homePath: selectedHermesProfile\.homePath \}/, "Hermes selection posts an explicit profile binding");
+assert.match(source, /No saved Hermes profiles found\. You can still summon bare local Hermes\./, "empty Hermes profiles preserve bare-runtime fallback copy");
 assert.match(
   source,
   /fetch\("\/api\/onboarding\/ssh-check"/,

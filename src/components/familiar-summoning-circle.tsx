@@ -26,6 +26,7 @@ import {
   STARTER_GLYPHS,
   STAGES,
   type HarnessReport,
+  type HermesProfile,
   type OpenClawAgent,
   type SshCheckState,
   type StageIndex,
@@ -35,8 +36,9 @@ import {
 /**
  * The Familiar Summoning Circle — the app's one creation (and enhancement)
  * ritual for familiars. Replaces the plain "New familiar" form dialog with a
- * staged rite: choose a vessel (this machine, a remote host over SSH, or an
- * existing OpenClaw agent), name the familiar, give it form, then summon.
+ * staged rite: choose a vessel (this machine, a remote host over SSH, an
+ * existing OpenClaw agent, or an existing Hermes profile), name the familiar,
+ * give it form, then summon.
  *
  * Connection paths that previously lived only in first-run onboarding (SSH
  * runtimes, OpenClaw agents) are first-class vessels here; the server side
@@ -204,7 +206,7 @@ function SummoningRite({
   // restart the rite. Read once per mount; cleared on a successful summon.
   const draft = useRef(readSummoningDraft()).current;
   const draftVessel: VesselKind | null =
-    draft?.vessel === "local" || draft?.vessel === "ssh" || draft?.vessel === "openclaw"
+    draft?.vessel === "local" || draft?.vessel === "ssh" || draft?.vessel === "openclaw" || draft?.vessel === "hermes"
       ? draft.vessel
       : null;
   const [stage, setStage] = useState<StageIndex>((draft?.stage ?? 0) as StageIndex);
@@ -227,6 +229,9 @@ function SummoningRite({
   const [agents, setAgents] = useState<OpenClawAgent[] | null>(null);
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const [agentId, setAgentId] = useState<string | null>(draft?.agentId ?? null);
+  const [hermesProfiles, setHermesProfiles] = useState<HermesProfile[] | null>(null);
+  const [hermesProfilesHint, setHermesProfilesHint] = useState<string | null>(null);
+  const [hermesProfileId, setHermesProfileId] = useState<string | null>(draft?.hermesProfileId ?? null);
   const [sshHost, setSshHost] = useState(draft?.sshHost ?? "");
   const [sshCwd, setSshCwd] = useState(draft?.sshCwd ?? "");
   const [sshCommand, setSshCommand] = useState(draft?.sshCommand ?? "");
@@ -257,6 +262,7 @@ function SummoningRite({
       vessel,
       harness,
       agentId,
+      hermesProfileId,
       sshHost,
       sshCwd,
       sshCommand,
@@ -268,7 +274,7 @@ function SummoningRite({
       aura,
       model,
     });
-  }, [summoned, stage, maxVisited, vessel, harness, agentId, sshHost, sshCwd, sshCommand, name, role, description, idOverride, glyph, aura, model]);
+  }, [summoned, stage, maxVisited, vessel, harness, agentId, hermesProfileId, sshHost, sshCwd, sshCommand, name, role, description, idOverride, glyph, aura, model]);
 
   // Load installed runtimes like onboarding did; fall back to the static
   // adapter catalog (installed state unknown) if the probe fails, so the
@@ -328,6 +334,24 @@ function SummoningRite({
     if (vessel === "openclaw" && agents === null) void loadAgents();
   }, [vessel, agents, loadAgents]);
 
+  const loadHermesProfiles = useCallback(async () => {
+    setHermesProfilesHint(null);
+    try {
+      const res = await fetch("/api/hermes-profiles", { cache: "no-store" });
+      const json = (await res.json()) as { ok?: boolean; profiles?: HermesProfile[]; hint?: string };
+      if (!res.ok || json.ok === false) throw new Error("Couldn't list Hermes profiles");
+      setHermesProfiles(json.profiles ?? []);
+      setHermesProfilesHint(json.hint ?? null);
+    } catch {
+      setHermesProfiles([]);
+      setHermesProfilesHint("Couldn't load Hermes profiles. Check Hermes setup, then try again.");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (vessel === "hermes" && hermesProfiles === null) void loadHermesProfiles();
+  }, [vessel, hermesProfiles, loadHermesProfiles]);
+
   const testSsh = useCallback(async () => {
     const host = sshHost.trim();
     if (!host) {
@@ -370,6 +394,10 @@ function SummoningRite({
     () => (agents ?? []).find((a) => a.id === agentId) ?? null,
     [agents, agentId],
   );
+  const selectedHermesProfile = useMemo(
+    () => (hermesProfiles ?? []).find((profile) => profile.id === hermesProfileId) ?? null,
+    [hermesProfiles, hermesProfileId],
+  );
 
   const derivedId =
     vessel === "openclaw" && selectedAgent
@@ -388,6 +416,8 @@ function SummoningRite({
           sshCwd.trim().length > 0
         : vessel === "openclaw"
           ? agentId !== null
+          : vessel === "hermes"
+            ? selectedHermesProfile !== null
           : false;
   const nameComplete = name.trim().length > 0 && derivedId.length > 0 && !idTaken;
   const descriptionComplete = description.trim().length > 0;
@@ -444,7 +474,9 @@ function SummoningRite({
             ...(role.trim() ? { role: role.trim() } : {}),
             ...(vessel === "openclaw" && selectedAgent
               ? { openclawAgentId: selectedAgent.id }
-              : { harness }),
+              : vessel === "hermes" && selectedHermesProfile
+                ? { harness: "hermes", hermesProfile: { id: selectedHermesProfile.id, homePath: selectedHermesProfile.homePath } }
+                : { harness }),
             ...(vessel !== "openclaw" && model.trim() ? { model: model.trim() } : {}),
             ...(vessel === "ssh"
               ? {
@@ -455,7 +487,7 @@ function SummoningRite({
                     command: sshCommand.trim(),
                   },
                 }
-              : vessel === "local"
+              : vessel === "local" || vessel === "hermes"
                 ? { runtime: { kind: "local" } }
                 : {}),
           },
@@ -597,6 +629,18 @@ function SummoningRite({
                       if (!role.trim()) setRole(agent.role);
                     }}
                     onRefreshAgents={() => void loadAgents()}
+                    hermesReady={(harnesses ?? []).some((candidate) => candidate.id === "hermes" && candidate.installed && candidate.availability?.state === "ready")}
+                    hermesProfiles={hermesProfiles}
+                    hermesProfilesHint={hermesProfilesHint}
+                    hermesProfileId={hermesProfileId}
+                    onPickHermesProfile={(profile) => {
+                      setHermesProfileId(profile.id);
+                      setHarness("hermes");
+                      if (!name.trim()) setName(profile.displayName);
+                      if (!role.trim()) setRole(profile.role);
+                      if (!description.trim()) setDescription(profile.description);
+                    }}
+                    onRefreshHermesProfiles={() => void loadHermesProfiles()}
                     sshHost={sshHost}
                     setSshHost={(v) => {
                       setSshHost(v);
@@ -638,6 +682,8 @@ function SummoningRite({
                     harnessLabel={
                       vessel === "openclaw"
                         ? `OpenClaw · ${selectedAgent?.displayName ?? agentId ?? ""}`
+                        : vessel === "hermes"
+                          ? `Hermes profile · ${selectedHermesProfile?.displayName ?? hermesProfileId ?? ""}`
                         : `${(harnesses ?? []).find((h) => h.id === harness)?.label ?? harness ?? ""}${
                             vessel === "ssh"
                               ? ` over SSH · ${sshHost.trim()}`
@@ -727,6 +773,12 @@ function StageVessel({
   agentId,
   onPickAgent,
   onRefreshAgents,
+  hermesReady,
+  hermesProfiles,
+  hermesProfilesHint,
+  hermesProfileId,
+  onPickHermesProfile,
+  onRefreshHermesProfiles,
   sshHost,
   setSshHost,
   sshCwd,
@@ -747,6 +799,12 @@ function StageVessel({
   agentId: string | null;
   onPickAgent: (agent: OpenClawAgent) => void;
   onRefreshAgents: () => void;
+  hermesReady: boolean;
+  hermesProfiles: HermesProfile[] | null;
+  hermesProfilesHint: string | null;
+  hermesProfileId: string | null;
+  onPickHermesProfile: (profile: HermesProfile) => void;
+  onRefreshHermesProfiles: () => void;
   sshHost: string;
   setSshHost: (v: string) => void;
   sshCwd: string;
@@ -767,6 +825,7 @@ function StageVessel({
     },
     { kind: "ssh", icon: "ph:globe", title: "A remote machine", hint: "Reaches over SSH to a host you name." },
     { kind: "openclaw", icon: "ph:robot", title: "An OpenClaw agent", hint: "Bridge an agent you already keep." },
+    ...(hermesReady ? [{ kind: "hermes" as const, icon: "ph:brain-fill" as IconName, title: "A Hermes profile", hint: "Bring a saved Hermes mind, skills, and SOUL." }] : []),
   ];
   // Grok Build is deliberately local-only until Cave has a native remote
   // launcher. Hide it for SSH rather than letting a selection fall back to an
@@ -802,6 +861,7 @@ function StageVessel({
               // A previously selected local Grok runtime must not survive a
               // switch to SSH: native Grok sessions are deliberately local-only.
               if (v.kind === "ssh" && harness === "grok") setHarness(null);
+              if (v.kind === "hermes") setHarness("hermes");
             }}
             className={`focus-ring summoning-vessel${vessel === v.kind ? " summoning-vessel--active" : ""}`}
           >
@@ -946,6 +1006,43 @@ function StageVessel({
                       {agent.role || agent.id}
                     </span>
                   </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {vessel === "hermes" ? (
+        <div className="summoning-subcard">
+          {hermesProfiles === null ? (
+            <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]" role="status">Looking for Hermes profiles…</p>
+          ) : hermesProfiles.length === 0 ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">
+                {hermesProfilesHint ?? "No saved Hermes profiles found. You can still summon bare local Hermes."}
+              </p>
+              <Button variant="secondary" size="xs" leadingIcon="ph:arrows-clockwise" onClick={onRefreshHermesProfiles}>
+                Look again
+              </Button>
+            </div>
+          ) : (
+            <div role="radiogroup" aria-label="Hermes profile" className="flex flex-col gap-1.5">
+              {hermesProfiles.map((profile) => (
+                <button
+                  key={profile.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={hermesProfileId === profile.id}
+                  onClick={() => onPickHermesProfile(profile)}
+                  className={`focus-ring summoning-agent${hermesProfileId === profile.id ? " summoning-agent--active" : ""}`}
+                >
+                  <Icon name="ph:brain-fill" width={16} />
+                  <span className="summoning-agent__copy">
+                    <span className="summoning-agent__name">{profile.displayName}</span>
+                    <span className="summoning-agent__role">{profile.role}</span>
+                  </span>
+                  {hermesProfileId === profile.id ? <Icon name="ph:check" width={16} aria-hidden /> : null}
                 </button>
               ))}
             </div>

@@ -257,6 +257,21 @@ try {
 
   await config.saveConfig({
     familiars: {
+      hermesResearch: {
+        harness: "hermes",
+        hermesProfile: { id: "research", homePath: "/home/cave/.hermes/profiles/research" },
+      },
+    },
+  });
+  cfg = await config.loadConfig();
+  assert.deepEqual(
+    config.bindingFor(cfg, "hermesResearch").hermesProfile,
+    { id: "research", homePath: "/home/cave/.hermes/profiles/research" },
+    "an explicit Hermes profile binding survives config persistence and resolution",
+  );
+
+  await config.saveConfig({
+    familiars: {
       nova: {
         voiceProvider: null,
       },

@@ -259,6 +259,7 @@ export async function POST(req: Request) {
       [draft.id]: {
         harness: draft.harness,
         model: draft.model,
+        ...(draft.hermesProfile ? { hermesProfile: draft.hermesProfile } : {}),
         ...(draft.runtime ? { runtime: draft.runtime } : {}),
       },
     },

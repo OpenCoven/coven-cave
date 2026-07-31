@@ -123,5 +123,10 @@ assert.ok(
   source.indexOf("await ensureAdapterManifestScaffold(binding.harness)") < source.indexOf("const res = await callDaemon"),
   "route repairs the trusted harness manifest before daemon session creation",
 );
+assert.match(
+  source,
+  /if \(binding\.hermesProfile\) \{[\s\S]*?return reserveNativeChatTask\(\);/,
+  "profile-bound Hermes tasks reserve native chat so their first turn receives the explicit profile argv",
+);
 
 console.log("board chat route.test.ts: ok");

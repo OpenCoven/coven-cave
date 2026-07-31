@@ -23,6 +23,7 @@ import {
   type FamiliarRuntime,
   normalizeFamiliarRuntime,
 } from "./familiar-runtime.ts";
+import { normalizeHermesProfileBinding, type HermesProfileBinding } from "./hermes-profiles.ts";
 import type { UserProfile } from "./user-profile-shared.ts";
 import {
   defaultTravelState,
@@ -172,6 +173,8 @@ export type FamiliarBinding = {
    *  the connected user's workspaces). */
   asanaWorkspaceGid?: string;
   runtime?: FamiliarRuntime;
+  /** Explicit Hermes profile target. Never infer this from the sticky CLI profile. */
+  hermesProfile?: HermesProfileBinding;
   /** Per-familiar Omnigent fleet defaults (agent/host/workspace). */
   omnigent?: FamiliarOmnigentBinding;
 };
@@ -585,6 +588,7 @@ export async function uninstallMarketplacePlugin(pluginName: string): Promise<vo
 export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBinding {
   const f = config.familiars[familiarId] ?? {};
   const omnigent = normalizeFamiliarOmnigent(f.omnigent ?? config.defaults.omnigent);
+  const hermesProfile = normalizeHermesProfileBinding(f.hermesProfile ?? config.defaults.hermesProfile);
   return {
     harness: f.harness ?? config.defaults.harness,
     model: f.model ?? config.defaults.model,
@@ -606,6 +610,7 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     asanaEnabled: f.asanaEnabled,
     asanaWorkspaceGid: f.asanaWorkspaceGid,
     runtime: normalizeFamiliarRuntime(f.runtime ?? config.defaults.runtime),
+    ...(hermesProfile ? { hermesProfile } : {}),
     ...(omnigent ? { omnigent } : {}),
   };
 }

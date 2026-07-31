@@ -27,6 +27,7 @@ const full = {
   vessel: "local",
   harness: "claude-code",
   agentId: null,
+  hermesProfileId: null,
   sshHost: "",
   sshCwd: "",
   sshCommand: "",
