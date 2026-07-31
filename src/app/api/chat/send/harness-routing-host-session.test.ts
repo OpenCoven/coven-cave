@@ -406,8 +406,8 @@ assert.equal(
       /\.\.\.persistedTurnControls\((?:args\.body|body), responseMetadata\.retryModel\)/g,
     ) ?? []
   ).length,
-  4,
-  "OpenClaw and native stub plus transcript writers should persist retry controls",
+  5,
+  "OpenClaw, native stubs, and transcript writers should persist retry controls",
 );
 assert.match(
   chatRoute,
