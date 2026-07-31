@@ -9,6 +9,7 @@ import {
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { copilotStreamSpec, type RuntimeEventProtocolSchema } from "@/lib/copilot-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { familiarWorkspace } from "@/lib/coven-paths";
 import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
 import {
@@ -156,6 +157,11 @@ export async function POST(req: Request) {
     if (blocked) {
       return NextResponse.json({ ok: false, error: blocked }, { status: 400 });
     }
+  }
+  const workflowFamiliarId = body.familiarId ?? gateWorkflow?.familiar ?? null;
+  if (workflowFamiliarId) {
+    const profileBlock = hermesProfileDaemonLaunchBlockReason(bindingFor(await loadConfig(), workflowFamiliarId));
+    if (profileBlock) return NextResponse.json({ ok: false, error: profileBlock }, { status: 409 });
   }
   const offlineWorkflowResponse = await maybeQueueOfflineWorkflow(body, gateWorkflow);
   if (offlineWorkflowResponse) return offlineWorkflowResponse;

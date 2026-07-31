@@ -100,6 +100,22 @@ assert.deepEqual(hermesDraft, {
 assert.match(buildFamiliarsToml(hermesDraft), /description = "Plans and coordinates work\."/);
 assert.match(buildFamiliarsToml(hermesDraft), /harness = "hermes"/);
 
+const profiledHermesDraft = normalizeFamiliarDraft({
+  displayName: "Hermes Research",
+  description: "Researches from its own saved Hermes profile.",
+  harness: "hermes",
+  hermesProfile: { id: "research", homePath: "/home/cave/.hermes/profiles/research" },
+});
+assert.deepEqual(profiledHermesDraft.hermesProfile, { id: "research", homePath: "/home/cave/.hermes/profiles/research" });
+assert.throws(
+  () => normalizeFamiliarDraft({ displayName: "Wrong", description: "Has an invalid profile.", harness: "hermes", hermesProfile: { id: "../wrong", homePath: "/tmp/wrong" } }),
+  /Choose a valid Hermes profile/,
+);
+assert.throws(
+  () => normalizeFamiliarDraft({ displayName: "Wrong runtime", description: "Binds a profile to another runtime.", harness: "codex", hermesProfile: { id: "research", homePath: "/home/cave/.hermes/profiles/research" } }),
+  /only be bound to the Hermes runtime/,
+);
+
 const escapedDescriptionToml = buildFamiliarsToml(
   normalizeFamiliarDraft({
     displayName: "Escaped",
