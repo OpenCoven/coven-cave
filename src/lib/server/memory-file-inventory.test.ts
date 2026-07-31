@@ -71,6 +71,18 @@ try {
 
   // ── readExcerpt operates on a bounded head string ──────────────────────────
   assert.equal(readExcerpt("---\nx: y\n---\nBody here."), "Body here.");
+  assert.equal(
+    readExcerpt(
+      "---\nsource_context: chat with sage\n---\n\n<!-- research-provenance\nmission: research-1\n-->\n# Findings\n\nReadable body.",
+    ),
+    "# Findings\n\nReadable body.",
+  );
+  assert.equal(
+    readExcerpt(
+      "---\nsource_context: chat with sage\n---\n\n<!-- research-provenance\nmission: research-1",
+    ),
+    undefined,
+  );
   assert.equal(readExcerpt("   "), undefined);
   assert.equal(readExcerpt(`Long ${"x".repeat(400)}`)?.length, 200, "excerpt capped at 200 chars");
 
