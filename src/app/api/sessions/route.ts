@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
 import { bindingFor, loadConfig, recordOwnedSession, recordSessionFamiliar } from "@/lib/cave-config";
+import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   boundedInt,
@@ -50,6 +51,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid harness" }, { status: 400 });
   }
   const harness = binding.harness;
+  const hermesProfileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (hermesProfileBlock) {
+    return NextResponse.json({ ok: false, error: hermesProfileBlock }, { status: 409 });
+  }
   if (!isAllowedHarness(harness)) {
     return NextResponse.json({ ok: false, error: "unsupported harness" }, { status: 400 });
   }

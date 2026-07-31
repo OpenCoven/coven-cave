@@ -257,6 +257,51 @@ try {
 
   await config.saveConfig({
     familiars: {
+      hermesResearch: {
+        harness: "hermes",
+        hermesProfile: { id: "research", homePath: "/home/cave/.hermes/profiles/research" },
+      },
+    },
+  });
+  cfg = await config.loadConfig();
+  assert.deepEqual(
+    config.bindingFor(cfg, "hermesResearch").hermesProfile,
+    { id: "research", homePath: "/home/cave/.hermes/profiles/research" },
+    "an explicit Hermes profile binding survives config persistence and resolution",
+  );
+  assert.equal(
+    config.bindingFor({
+      defaults: {
+        harness: "hermes",
+        model: "hermes",
+        hermesProfile: { id: "research", homePath: "/home/cave/.hermes/profiles/research" },
+      },
+      familiars: { bareHermes: { harness: "hermes" } },
+    }, "bareHermes").hermesProfile,
+    undefined,
+    "bare Hermes never inherits a profile from global defaults",
+  );
+  await assert.rejects(
+    () => config.saveConfig({ familiars: { invalidHermes: { hermesProfile: { id: "../escape", homePath: "/tmp/escape" } } } }),
+    /Invalid Hermes profile binding/,
+    "saveConfig rejects invalid profile bindings before persistence",
+  );
+  assert.equal(
+    config.bindingFor({
+      defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
+      familiars: {
+        malformedHermes: {
+          harness: "hermes",
+          hermesProfile: { id: "research", homePath: "relative/profile-home" },
+        },
+      },
+    }, "malformedHermes").hasInvalidHermesProfileBinding,
+    true,
+    "a malformed persisted Hermes profile binding remains visible to launch routes instead of degrading to bare Hermes",
+  );
+
+  await config.saveConfig({
+    familiars: {
       nova: {
         voiceProvider: null,
       },
