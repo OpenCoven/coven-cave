@@ -205,6 +205,7 @@ assert.equal(runtimeOwnsModelDefault("codex"), false);
 assert.equal(runtimeOwnsModelDefault("hermes"), true);
 assert.equal(runtimeOwnsModelDefault("grok"), true);
 assert.equal(runtimeOwnsModelDefault("opencode"), true);
+assert.equal(runtimeOwnsModelDefault("opencode-ai"), true, "OpenCode package aliases preserve runtime-owned defaults");
 assert.equal(runtimeOwnsModelDefault("openclaw"), true);
 assert.equal(modelForRuntimeSwitch("codex"), "openai/gpt-5.6-sol");
 assert.equal(modelForRuntimeSwitch("hermes"), "");

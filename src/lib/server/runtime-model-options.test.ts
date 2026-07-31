@@ -93,11 +93,9 @@ assert.ok(
   })).some((model) => model.id === "anthropic/claude-opus-4-8"),
   "a failed Claude resolver preserves the seed",
 );
-assert.equal(
-  (await listRuntimeModelInventory("hermes", "sage")).provenance,
-  "fallback",
-  "Hermes' static menu is explicitly fallback inventory",
-);
+const hermesInventory = await listRuntimeModelInventory("hermes", "sage");
+assert.equal(hermesInventory.provenance, "runtime-managed", "Hermes never claims the static OpenAI seed for a scoped familiar");
+assert.deepEqual(hermesInventory.models, [], "Hermes scoped inventory omits the OpenAI seed until its provider can be discovered");
 assert.equal(
   (await listRuntimeModelInventory("hermes", "sage")).defaultOwner,
   "runtime",

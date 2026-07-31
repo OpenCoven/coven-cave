@@ -20,6 +20,7 @@ import {
   CLAUDE_OPUS_5_NATIVE_MODEL,
 } from "./claude-models.ts";
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
+import { canonicalHarnessId } from "./harness-adapters.ts";
 
 export type RuntimeModelOption = { id: string; label: string };
 
@@ -206,7 +207,7 @@ export function defaultModelForRuntime(runtime: string): string {
 
 /** Whether an unselected launch must defer to the runtime/provider config. */
 export function runtimeOwnsModelDefault(runtime: string): boolean {
-  const canonical = runtime.trim().toLowerCase() === "hermes-agent" ? "hermes" : runtime;
+  const canonical = canonicalHarnessId(runtime);
   return catalogForRuntime(canonical)?.defaultOwner === "runtime";
 }
 
