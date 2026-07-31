@@ -54,6 +54,8 @@ export type GhComposerItem = {
   author: string | null;
   assignees: string[];
   labels: { name: string; color: string }[];
+  /** Per-content counts the item response carries for free (cave-6p628). */
+  reactionCounts?: Record<string, number>;
   pull: {
     headRef: string | null;
     baseRef: string | null;
@@ -179,7 +181,16 @@ export function GitHubCardComposer({
   const [merged, setMerged] = useState<{ sha: string | null; branchDeleted: boolean } | null>(null);
   const [restored, setRestored] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [reactions, setReactions] = useState<Reaction[]>([]);
+  // Seeded from the counts the item response already carries — zero extra
+  // requests at rest. `mine` stays null until the full list is hydrated
+  // lazily on first interaction with the chip row, because only the
+  // reactions endpoint knows the viewer's own reaction ids (cave-6p628).
+  const [reactions, setReactions] = useState<Reaction[]>(() =>
+    Object.keys(REACTION_EMOJI)
+      .filter((content) => (item.reactionCounts?.[content] ?? 0) > 0)
+      .map((content) => ({ content, count: item.reactionCounts?.[content] ?? 0, mine: null })),
+  );
+  const reactionsHydratedRef = useRef(false);
   const [palette, setPalette] = useState<{ name: string; color: string }[]>([]);
   const [scopes, setScopes] = useState<GhDraftScopes>({ files: true, threads: true, checks: false });
   const [drafting, setDrafting] = useState(false);
@@ -295,26 +306,9 @@ export function GitHubCardComposer({
     if (pick === "") setLabels(item.labels.map((l) => l.name));
   }, [item.labels, pick]);
 
-  // ── reactions + label palette, fetched once the composer is reachable ─────
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(
-          `/api/github/reactions?repo=${encodeURIComponent(repo)}&number=${number}`,
-          { cache: "no-store" },
-        );
-        const data = (await res.json().catch(() => null)) as { ok?: boolean; reactions?: Reaction[] } | null;
-        if (!cancelled && res.ok && data?.ok && Array.isArray(data.reactions)) setReactions(data.reactions);
-      } catch {
-        /* reactions are decoration — a failure leaves the row empty */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [repo, number]);
+  // ── reactions: no mount fetch — counts ride in on the item response, and
+  // the full list (which carries the viewer's own reaction ids) hydrates
+  // lazily on first pointer/keyboard contact with a chip (cave-6p628). ──────
 
   // The label palette is only needed once the user opens the picker.
   useEffect(() => {
@@ -472,20 +466,51 @@ export function GitHubCardComposer({
     onRefreshThreads?.();
   };
 
-  const rereadReactions = async () => {
+  const rereadReactions = async (): Promise<Reaction[] | null> => {
     try {
       const r = await fetch(`/api/github/reactions?repo=${encodeURIComponent(repo)}&number=${number}`, {
         cache: "no-store",
       });
       const data = (await r.json().catch(() => null)) as { ok?: boolean; reactions?: Reaction[] } | null;
-      if (data?.ok && Array.isArray(data.reactions)) setReactions(data.reactions);
+      if (data?.ok && Array.isArray(data.reactions)) {
+        reactionsHydratedRef.current = true;
+        setReactions(data.reactions);
+        return data.reactions;
+      }
+      return null;
     } catch {
-      /* leave the optimistic state; the next mount corrects it */
+      /* leave the seeded/optimistic state; a later interaction retries */
+      return null;
     }
   };
 
+  // First pointer/keyboard contact with a chip fetches the full list so the
+  // viewer's own reactions highlight and become removable. One-shot: after
+  // hydration (or any toggle) the state is authoritative.
+  const hydrateReactionsOnce = () => {
+    if (reactionsHydratedRef.current) return;
+    reactionsHydratedRef.current = true;
+    void rereadReactions().then((list) => {
+      if (list === null) reactionsHydratedRef.current = false;
+    });
+  };
+
   const toggleReaction = async (content: string) => {
-    const existing = reactions.find((r) => r.content === content);
+    // A tap that beats hover hydration (touch, keyboard) must not guess:
+    // without the viewer's reaction ids a second 👍 on an already-reacted
+    // item would double-add. Hydrate first, then decide add vs remove.
+    let current = reactions;
+    if (!reactionsHydratedRef.current) {
+      reactionsHydratedRef.current = true;
+      const hydrated = await rereadReactions();
+      if (hydrated === null) {
+        reactionsHydratedRef.current = false;
+        announce("That reaction did not stick.");
+        return;
+      }
+      current = hydrated;
+    }
+    const existing = current.find((r) => r.content === content);
     const removing = existing?.mine != null;
     // Optimistic: the chip is a toggle and a round-trip would make it feel dead.
     setReactions((prev) =>
@@ -916,6 +941,8 @@ export function GitHubCardComposer({
                 type="button"
                 className={`ghc-reaction focus-ring${r.mine ? " ghc-reaction--mine" : ""}`}
                 onClick={() => void toggleReaction(r.content)}
+                onPointerEnter={hydrateReactionsOnce}
+                onFocus={hydrateReactionsOnce}
                 aria-pressed={Boolean(r.mine)}
                 aria-label={`${r.content} reaction, ${r.count}`}
               >
