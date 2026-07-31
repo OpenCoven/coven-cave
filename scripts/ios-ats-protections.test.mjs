@@ -22,7 +22,9 @@ assert.match(
   ats,
   /<key>NSAllowsArbitraryLoads<\/key>\s*<false\/>/,
   "NSAllowsArbitraryLoads must stay false — the global ATS bypass blocks App Store review and was removed by #3820. " +
-    "Numeric-IP connections (the bare 100.x pairing flow) do NOT need it: ATS applies only to public hostnames.",
+    "Note: whether ATS blocks the bare numeric-IP cleartext pairing flow (http://100.x:3000) is iOS-version-dependent " +
+    "(Apple's current docs treat IPs as exception-listable, unlike the old full-exemption technote); if on-device " +
+    "verification shows that flow blocked, fix the CONNECTION UX (e.g. steer to .ts.net HTTPS) — do not restore the bypass.",
 );
 assert.doesNotMatch(
   ats,
