@@ -112,6 +112,30 @@ assert.deepStrictEqual(
   beta5Profile,
   "beta5 discovery selects the reviewed built-in profile",
 );
+assert.equal(
+  selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
+    ...beta5Discovery,
+    methods: [...beta5Discovery.methods, "chat.extra"],
+  }),
+  null,
+  "beta5 discovery with any extra method is unselectable",
+);
+assert.equal(
+  selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
+    ...beta5Discovery,
+    events: [...beta5Discovery.events, "session.extra"],
+  }),
+  null,
+  "beta5 discovery with any extra event is unselectable",
+);
+assert.equal(
+  selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
+    ...beta5Discovery,
+    serverCapabilities: [...beta5Discovery.serverCapabilities, "extra-capability"],
+  }),
+  null,
+  "beta5 discovery with any extra server capability is unselectable",
+);
 
 assert.deepStrictEqual(
   parseOpenClawToolEvent(toolLifecycleV1.frames[0].event, toolLifecycleV1.frames[0].payload, beta5Profile),
@@ -155,6 +179,57 @@ const unknownPhase = parseOpenClawToolEvent(
   beta5Profile,
 );
 assert.equal(unknownPhase.kind, "unknown");
+
+const { args: _missingArgs, ...startWithoutArgs } = toolLifecycleV1.frames[0].payload.data;
+const missingStartInputPayload = { ...toolLifecycleV1.frames[0].payload, data: startWithoutArgs };
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[0].event, missingStartInputPayload, beta5Profile),
+  { kind: "unknown", fingerprint: redactedOpenClawToolFingerprint(missingStartInputPayload) },
+  "tool starts without a raw input payload are malformed",
+);
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(
+    toolLifecycleV1.frames[0].event,
+    { ...toolLifecycleV1.frames[0].payload, data: { ...toolLifecycleV1.frames[0].payload.data, args: null } },
+    beta5Profile,
+  ),
+  { kind: "tool_start", id: "tool-1", name: "exec", input: null, seq: 3 },
+  "explicit null tool inputs remain valid raw payloads",
+);
+
+const { partialResult: _missingPartialResult, ...updateWithoutPartialResult } = toolLifecycleV1.frames[1].payload.data;
+const missingProgressPayload = { ...toolLifecycleV1.frames[1].payload, data: updateWithoutPartialResult };
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[1].event, missingProgressPayload, beta5Profile),
+  { kind: "unknown", fingerprint: redactedOpenClawToolFingerprint(missingProgressPayload) },
+  "tool updates without a raw progress payload are malformed",
+);
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(
+    toolLifecycleV1.frames[1].event,
+    { ...toolLifecycleV1.frames[1].payload, data: { ...toolLifecycleV1.frames[1].payload.data, partialResult: false } },
+    beta5Profile,
+  ),
+  { kind: "tool_progress", id: "tool-1", output: false, seq: 7 },
+  "explicit falsy tool progress remains a valid raw payload",
+);
+
+const { result: _missingResult, ...resultWithoutOutput } = toolLifecycleV1.frames[2].payload.data;
+const missingResultOutputPayload = { ...toolLifecycleV1.frames[2].payload, data: resultWithoutOutput };
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[2].event, missingResultOutputPayload, beta5Profile),
+  { kind: "unknown", fingerprint: redactedOpenClawToolFingerprint(missingResultOutputPayload) },
+  "tool results without a raw output payload are malformed",
+);
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(
+    toolLifecycleV1.frames[2].event,
+    { ...toolLifecycleV1.frames[2].payload, data: { ...toolLifecycleV1.frames[2].payload.data, result: 0 } },
+    beta5Profile,
+  ),
+  { kind: "tool_end", id: "tool-1", name: "exec", output: 0, isError: false, seq: 9 },
+  "explicit falsy tool outputs remain valid raw payloads",
+);
 
 assert.equal(
   parseOpenClawToolEvent(

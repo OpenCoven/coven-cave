@@ -264,6 +264,15 @@ function firstPresent(record: Record<string, unknown>, aliases: string[]): unkno
   return undefined;
 }
 
+function firstOwnValue(record: Record<string, unknown>, aliases: string[]): { found: boolean; value: unknown } {
+  for (const alias of aliases) {
+    if (Object.prototype.hasOwnProperty.call(record, alias)) {
+      return { found: true, value: record[alias] };
+    }
+  }
+  return { found: false, value: undefined };
+}
+
 function firstNonEmptyString(record: Record<string, unknown>, aliases: string[]): string | null {
   const value = firstPresent(record, aliases);
   return validBoundedString(value) ? value : null;
@@ -280,11 +289,10 @@ function firstNumber(record: Record<string, unknown>, aliases: string[]): number
 }
 
 function exactSetMatch(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((entry) => right.includes(entry));
-}
-
-function includesAll(values: string[], required: string[]): boolean {
-  return required.every((entry) => values.includes(entry));
+  return left.length === right.length
+    && new Set(left).size === left.length
+    && new Set(right).size === right.length
+    && left.every((entry) => right.includes(entry));
 }
 
 export function selectOpenClawToolProfile(profiles: unknown, discovery: OpenClawGatewayDiscovery): OpenClawToolProfile | null {
@@ -294,9 +302,9 @@ export function selectOpenClawToolProfile(profiles: unknown, discovery: OpenClaw
     profile.requires.serverVersions.includes(discovery.serverVersion)
     && profile.requires.protocol === discovery.protocol
     && profile.requires.agentEventSchemaHash === discovery.agentEventSchemaHash
-    && includesAll(discovery.methods, profile.requires.methods)
-    && includesAll(discovery.events, profile.requires.events)
-    && includesAll(discovery.serverCapabilities, profile.requires.serverCapabilities)
+    && exactSetMatch(discovery.methods, profile.requires.methods)
+    && exactSetMatch(discovery.events, profile.requires.events)
+    && exactSetMatch(discovery.serverCapabilities, profile.requires.serverCapabilities)
     && exactSetMatch(discovery.clientCapabilities, profile.requires.clientCapabilities),
   );
   if (!matches.length) return null;
@@ -387,18 +395,24 @@ export function parseOpenClawToolEvent(
   if (!id || !phase) return unknownToolEvent(payload);
   if (phase === "start") {
     const name = firstNonEmptyString(data, profile.aliases.name);
-    return name ? { kind: "tool_start", id, name, input: firstPresent(data, profile.aliases.args), seq: payload.seq } : unknownToolEvent(payload);
+    const input = firstOwnValue(data, profile.aliases.args);
+    return name && input.found ? { kind: "tool_start", id, name, input: input.value, seq: payload.seq } : unknownToolEvent(payload);
   }
-  if (phase === "update") return { kind: "tool_progress", id, output: firstPresent(data, profile.aliases.partialResult), seq: payload.seq };
+  if (phase === "update") {
+    const progress = firstOwnValue(data, profile.aliases.partialResult);
+    return progress.found ? { kind: "tool_progress", id, output: progress.value, seq: payload.seq } : unknownToolEvent(payload);
+  }
   const name = firstNonEmptyString(data, profile.aliases.name);
   if (!name) return unknownToolEvent(payload);
+  const output = firstOwnValue(data, profile.aliases.result);
+  if (!output.found) return unknownToolEvent(payload);
   const status = toolResultStatus(data, profile);
   const exitCode = toolResultExitCode(data, profile);
   return {
     kind: "tool_end",
     id,
     name,
-    output: firstPresent(data, profile.aliases.result),
+    output: output.value,
     isError: firstPresent(data, profile.aliases.isError) === true
       || (status !== null && profile.errorStates.includes(status))
       || (exitCode !== null && exitCode !== 0),
