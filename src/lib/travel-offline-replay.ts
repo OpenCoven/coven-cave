@@ -57,6 +57,16 @@ function queuedRuntime(payload: Record<string, unknown>): string | null {
   return stringValue(metadata.runtime);
 }
 
+function hasQueuedModelSnapshot(payload: Record<string, unknown>): boolean {
+  return Boolean(
+    stringValue(payload.modelOverride) ||
+    stringValue(payload.modelOverrideScope) ||
+    stringValue(payload.reasoningEffort) ||
+    stringValue(payload.responseSpeed) ||
+    Object.keys(record(payload.modelControls)).length,
+  );
+}
+
 function replayError(err: unknown): string {
   return err instanceof Error ? err.message : "sync failed";
 }
@@ -109,6 +119,11 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const familiarId = stringValue(payload.familiarId);
   const prompt = stringValue(payload.prompt);
   if (!familiarId || !prompt) throw new Error("queued chat payload missing familiarId or prompt");
+  if (hasQueuedModelSnapshot(payload)) {
+    // The daemon session API does not accept Cave's model/control contract.
+    // Retrying without it would silently change the user's queued request.
+    throw new Error("queued chat with model controls cannot be replayed without its control contract");
+  }
 
   const runtime = queuedRuntime(payload);
   if (runtime?.startsWith("ssh:")) {

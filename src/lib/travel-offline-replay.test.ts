@@ -86,6 +86,12 @@ assert.match(
 
 assert.match(
   replay,
+  /function hasQueuedModelSnapshot[\s\S]*?Object\.keys\(record\(payload\.modelControls\)\)\.length[\s\S]*?if \(hasQueuedModelSnapshot\(payload\)\)[\s\S]*?queued chat with model controls cannot be replayed without its control contract/,
+  "travel replay must fail visibly rather than silently dropping queued model controls",
+);
+
+assert.match(
+  replay,
   /const payloadProjectRoot = stringValue\(payload\.projectRoot\)[\s\S]*const projectRoot = payloadProjectRoot \?\? runtimeCwd \?\? process\.cwd\(\)/,
   "chat replay should derive projectRoot from queued local runtime when payload omits it",
 );

@@ -1418,6 +1418,8 @@ struct ChatView: View {
         modelRequests.beginIntent(for: target)
         thread.pendingModelOverride = stagedModel
         modelPickerCurrent = stagedModel
+        modelControlCapabilities = []
+        modelControlValues = [:]
         app.touch(thread)
         Haptics.tap()
 
@@ -1731,7 +1733,7 @@ struct ChatView: View {
                 displayText: displayText,
                 reasoningEffort: thinkingEffort,
                 responseSpeed: responseSpeed,
-                modelControls: modelControlValues,
+                modelControls: [:],
                 modelOverride: destinationModel,
                 modelOverrideScope: destinationScope,
                 client: client
