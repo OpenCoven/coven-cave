@@ -262,6 +262,115 @@ function legacyObservation(overrides = {}) {
 {
   const item = classifyLifecycleUnit(
     observation({
+      metadata: metadata({
+        exception: {
+          owner: "Kitty",
+          reason: "Primary checkout is conflicted and user-owned",
+          expiresAt: "2026-07-30T00:00:00Z",
+          additionalPaths: ["/repo/.worktrees/feat-x"],
+        },
+      }),
+      mergedPr: { number: 52, headOid: "a".repeat(40), url: "https://example.test/52" },
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "active", "a live exception keeps its exact worktree path active");
+  assert.match(item.reasons.join("\n"), /Primary checkout is conflicted and user-owned/);
+}
+
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      metadata: metadata({
+        exception: {
+          owner: "Kitty",
+          reason: "Primary checkout is conflicted and user-owned",
+          expiresAt: "2026-07-29T21:59:59Z",
+          additionalPaths: ["/repo/.worktrees/feat-x"],
+        },
+      }),
+      mergedPr: { number: 53, headOid: "a".repeat(40), url: "https://example.test/53" },
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "retire-after-gate", "expired exceptions stop blocking cleanup-ready classification");
+}
+
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      metadata: metadata({
+        exception: {
+          owner: "Kitty",
+          reason: "Primary checkout is conflicted and user-owned",
+          expiresAt: "2026-07-30T00:00:00Z",
+          additionalPaths: ["/repo/.worktrees/other"],
+        },
+      }),
+      mergedPr: { number: 54, headOid: "a".repeat(40), url: "https://example.test/54" },
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "retire-after-gate", "exceptions only apply to their exact requested paths");
+}
+
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      kind: "branch-only",
+      path: null,
+      metadata: metadata({
+        exception: {
+          owner: "Kitty",
+          reason: "Primary checkout is conflicted and user-owned",
+          expiresAt: "2026-07-30T00:00:00Z",
+          additionalPaths: ["/repo/.worktrees/feat-x"],
+        },
+      }),
+      mergedPr: { number: 55, headOid: "a".repeat(40), url: "https://example.test/55" },
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "retire-after-gate", "branch-only units cannot apply path-bounded exceptions");
+}
+
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      remoteRef: { ref: "refs/remotes/origin/feat/x", oid: "a".repeat(40) },
+      mergedPr: { number: 56, headOid: "a".repeat(40), url: "https://example.test/56" },
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "retire-after-gate", "equal remote refs do not change normal eligibility");
+}
+
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      remoteRef: null,
+      mergedPr: { number: 57, headOid: "a".repeat(40), url: "https://example.test/57" },
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "retire-after-gate", "missing same-name remote refs do not block normal eligibility");
+}
+
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      remoteRef: { ref: "refs/remotes/origin/feat/x", oid: "b".repeat(40) },
+      mergedPr: { number: 58, headOid: "a".repeat(40), url: "https://example.test/58" },
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "recovery", "divergent same-name remote refs stay preserved for recovery");
+  assert.match(item.reasons.join("\n"), /same-named remote ref .* diverges from local HEAD/i);
+}
+
+{
+  const item = classifyLifecycleUnit(
+    observation({
       mergedPr: { number: 49, headOid: "b".repeat(40), url: "https://example.test/49" },
     }),
     NOW,
