@@ -503,6 +503,76 @@ test("video storyboard drafter maps headings, bullets, and narration without inv
   assert.ok(content.storyboard.every((scene) => scene.id.startsWith("scene-")));
 });
 
+test("short-video drafts keep complete source bullets within each preset narration budget", () => {
+  const source = {
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Bounded video source",
+      "",
+      "## Executive summary",
+      "",
+      `- ${"First evidence-backed finding ".repeat(6).trim()}.`,
+      `- ${"Second evidence-backed finding ".repeat(6).trim()}.`,
+      `- ${"Third evidence-backed finding ".repeat(6).trim()}.`,
+      "",
+      "## Next steps",
+      "",
+      `- ${"Follow-up finding ".repeat(6).trim()}.`,
+    ].join("\n"),
+  };
+
+  const brief = draftVideoStoryboardContent(source, "brief");
+  const standard = draftVideoStoryboardContent(source, "standard");
+  assert.equal(brief.kind, "short-video");
+  assert.equal(standard.kind, "short-video");
+  if (brief.kind !== "short-video" || standard.kind !== "short-video") return;
+
+  const narrationLength = (content: typeof brief) =>
+    content.storyboard.reduce((total, scene) => total + scene.narration.length, 0);
+  assert.ok(narrationLength(brief) <= 300, "brief narration must fit its 30-second budget");
+  assert.ok(narrationLength(standard) <= 600, "standard narration must fit its 60-second budget");
+  assert.ok(brief.storyboard.length > 0, "brief keeps the leading fitting source bullet");
+  assert.ok(
+    narrationLength(standard) > narrationLength(brief),
+    "standard admits more source detail",
+  );
+  assert.ok(brief.storyboard.length <= standard.storyboard.length);
+  for (const content of [brief, standard]) {
+    for (const scene of content.storyboard) {
+      assert.equal(scene.narration, [scene.title, ...scene.bullets].join(". "));
+      assert.ok(source.markdown.includes(scene.title), "scene heading remains source-extractive");
+      assert.ok(
+        scene.bullets.every((bullet) => source.markdown.includes(bullet)),
+        "scene bullets remain source-extractive",
+      );
+    }
+  }
+});
+
+test("short-video drafts retain a fitting title when its source detail exceeds the remaining budget", () => {
+  const content = draftVideoStoryboardContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Bounded video source",
+      "",
+      "## Fitting heading",
+      "",
+      `- ${"Oversized source detail ".repeat(20).trim()}.`,
+    ].join("\n"),
+  }, "brief");
+
+  assert.equal(content.kind, "short-video");
+  if (content.kind !== "short-video") return;
+  assert.deepEqual(content.storyboard, [{
+    id: "scene-1",
+    title: "Fitting heading",
+    bullets: [],
+    narration: "Fitting heading",
+  }]);
+});
+
 // ── directions are forwarded, never interpreted ──────────────────────────────
 
 test("directions are stored verbatim but never steer the extracted content", async () => {

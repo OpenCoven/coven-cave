@@ -30,8 +30,8 @@
 /* cave-quiva: name-this-chat. A presence-tinted chip leads the title row; its
    glyph stays transparent until hover/focus so a settled header reads
    title-first, and the title itself dims while the rename is in flight so the
-   feedback lands on the thing being changed. Disabled + aria-busy carry the
-   state for assistive tech, which never sees the opacity at all. */
+   feedback lands on the thing being changed. aria-busy + aria-disabled carry
+   the state for assistive tech, which never sees the opacity at all. */
 .cave-chat-title-spark {
   display: grid;
   place-items: center;

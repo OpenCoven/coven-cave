@@ -5,6 +5,7 @@ import {
   type FamiliarRuntime,
 } from "./familiar-runtime.ts";
 import { defaultModelForRuntime } from "./runtime-models.ts";
+import { normalizeHermesProfileBinding, type HermesProfileBinding } from "./hermes-profiles.ts";
 
 export type OnboardingFamiliarDraft = {
   id: string;
@@ -15,6 +16,7 @@ export type OnboardingFamiliarDraft = {
   harness: string;
   model: string;
   openclawAgentId?: string;
+  hermesProfile?: HermesProfileBinding;
   /** Optional runtime override. Persisted to cave-config.json (the binding
    *  source chat reads), never to familiars.toml. */
   runtime?: FamiliarRuntime;
@@ -29,6 +31,7 @@ export type OnboardingFamiliarInput = {
   harness?: string | null;
   model?: string | null;
   openclawAgentId?: string | null;
+  hermesProfile?: { id?: string | null; homePath?: string | null } | null;
   runtime?: {
     kind?: string | null;
     host?: string | null;
@@ -89,9 +92,16 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
   if (!description) throw new Error("Familiar description is required.");
 
   const openclawAgentId = slugifyFamiliarId(cleanText(input.openclawAgentId));
+  const hermesProfile = normalizeHermesProfileBinding(input.hermesProfile);
+  if (input.hermesProfile && !hermesProfile) {
+    throw new Error("Choose a valid Hermes profile before summoning this familiar.");
+  }
   const harness = cleanText(input.harness) || (openclawAgentId ? "openclaw" : "codex");
   if (!isTrustedOnboardingHarness(harness)) {
     throw new Error(`Unsupported harness: ${harness}.`);
+  }
+  if (hermesProfile && harness !== "hermes") {
+    throw new Error("A Hermes profile can only be bound to the Hermes runtime.");
   }
   const model = cleanText(input.model) || defaultModelForRuntime(harness);
 
@@ -126,6 +136,7 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
     harness,
     model,
     openclawAgentId: openclawAgentId || undefined,
+    ...(hermesProfile ? { hermesProfile } : {}),
     runtime,
   };
 }
