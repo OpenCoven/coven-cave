@@ -67,7 +67,29 @@ type ItemDetail = {
   updatedAt: string | null;
   htmlUrl: string | null;
   comments: number;
+  /**
+   * Per-content reaction counts, straight from the issue payload GitHub
+   * already returns — no extra request. Deliberately counts-only: the issue
+   * payload has no viewer-reaction ids, so "mine" state and removal still
+   * require the reactions route, which the card fetches lazily on first
+   * interaction (cave-6p628).
+   */
+  reactionCounts: Record<string, number>;
 };
+
+/** GitHub's eight reaction contents, in the order its own UI shows them. */
+const REACTION_CONTENTS = ["+1", "-1", "laugh", "hooray", "confused", "heart", "rocket", "eyes"] as const;
+
+function reactionCounts(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object") return {};
+  const source = raw as Record<string, unknown>;
+  const counts: Record<string, number> = {};
+  for (const content of REACTION_CONTENTS) {
+    const count = source[content];
+    if (typeof count === "number" && Number.isFinite(count) && count > 0) counts[content] = count;
+  }
+  return counts;
+}
 
 function person(raw: unknown): Person | null {
   if (!raw || typeof raw !== "object") return null;
@@ -212,6 +234,7 @@ export async function GET(req: Request) {
       updatedAt: typeof d.updated_at === "string" ? d.updated_at : null,
       htmlUrl: typeof d.html_url === "string" ? d.html_url : null,
       comments: Number(d.comments ?? 0),
+      reactionCounts: reactionCounts(d.reactions),
     };
 
     // Absent `pull=1` the payload stays byte-identical to what every existing

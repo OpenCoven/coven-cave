@@ -883,6 +883,7 @@ export const SUITES = {
     "src/components/chat-surface-projects-tab.test.ts",
     "src/components/composer-density.test.ts",
     "src/lib/memory-rows.test.ts",
+    "src/lib/memory-search-policy.test.ts",
     "src/lib/memory-feed-request-gate.test.ts",
     "src/lib/local-daemon-readiness.test.ts",
     "src/lib/memory-file-scope.test.ts",
