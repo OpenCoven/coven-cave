@@ -175,6 +175,9 @@ export type FamiliarBinding = {
   runtime?: FamiliarRuntime;
   /** Explicit Hermes profile target. Never infer this from the sticky CLI profile. */
   hermesProfile?: HermesProfileBinding;
+  /** A persisted profile target was present but failed validation. Launch
+   * routes must reject it rather than silently using Hermes's sticky profile. */
+  hasInvalidHermesProfileBinding?: boolean;
   /** Per-familiar Omnigent fleet defaults (agent/host/workspace). */
   omnigent?: FamiliarOmnigentBinding;
 };
@@ -588,7 +591,10 @@ export async function uninstallMarketplacePlugin(pluginName: string): Promise<vo
 export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBinding {
   const f = config.familiars[familiarId] ?? {};
   const omnigent = normalizeFamiliarOmnigent(f.omnigent ?? config.defaults.omnigent);
-  const hermesProfile = normalizeHermesProfileBinding(f.hermesProfile ?? config.defaults.hermesProfile);
+  const rawHermesProfile = f.hermesProfile ?? config.defaults.hermesProfile;
+  const hermesProfile = normalizeHermesProfileBinding(rawHermesProfile);
+  const hasInvalidHermesProfileBinding =
+    rawHermesProfile !== undefined && rawHermesProfile !== null && !hermesProfile;
   return {
     harness: f.harness ?? config.defaults.harness,
     model: f.model ?? config.defaults.model,
@@ -611,6 +617,7 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     asanaWorkspaceGid: f.asanaWorkspaceGid,
     runtime: normalizeFamiliarRuntime(f.runtime ?? config.defaults.runtime),
     ...(hermesProfile ? { hermesProfile } : {}),
+    ...(hasInvalidHermesProfileBinding ? { hasInvalidHermesProfileBinding: true } : {}),
     ...(omnigent ? { omnigent } : {}),
   };
 }

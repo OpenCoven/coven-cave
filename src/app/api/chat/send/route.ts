@@ -1265,6 +1265,15 @@ export async function POST(req: Request) {
   }
   const effectiveRuntime = runtimeSelection.runtime ?? binding.runtime;
   const sshRuntime = isSshRuntime(effectiveRuntime) ? effectiveRuntime : null;
+  if (binding.hasInvalidHermesProfileBinding) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "This familiar's Hermes profile binding is invalid. Choose a saved Hermes profile again before starting a chat.",
+      }),
+      { status: 409, headers: { "content-type": "application/json" } },
+    );
+  }
   if (binding.hermesProfile && (binding.harness !== "hermes" || sshRuntime)) {
     return new Response(
       JSON.stringify({

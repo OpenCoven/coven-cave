@@ -269,6 +269,19 @@ try {
     { id: "research", homePath: "/home/cave/.hermes/profiles/research" },
     "an explicit Hermes profile binding survives config persistence and resolution",
   );
+  assert.equal(
+    config.bindingFor({
+      defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
+      familiars: {
+        malformedHermes: {
+          harness: "hermes",
+          hermesProfile: { id: "research", homePath: "relative/profile-home" },
+        },
+      },
+    }, "malformedHermes").hasInvalidHermesProfileBinding,
+    true,
+    "a malformed persisted Hermes profile binding remains visible to launch routes instead of degrading to bare Hermes",
+  );
 
   await config.saveConfig({
     familiars: {

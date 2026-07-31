@@ -96,6 +96,11 @@ assert.match(
   /binding\.hermesProfile && \(binding\.harness !== "hermes" \|\| sshRuntime\)[\s\S]*?Hermes profile is local-only/,
   "a persisted but unsupported Hermes profile binding fails instead of launching the wrong runtime",
 );
+assert.match(
+  chatRoute,
+  /if \(binding\.hasInvalidHermesProfileBinding\)[\s\S]*?Hermes profile binding is invalid/,
+  "a malformed persisted Hermes profile binding fails closed instead of falling back to Hermes's sticky profile",
+);
 
 assert.match(
   chatRoute,

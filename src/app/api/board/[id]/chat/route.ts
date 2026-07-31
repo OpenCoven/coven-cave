@@ -64,6 +64,15 @@ export async function POST(
   // both model-override validation and bridge routing so the task inspector,
   // Chat, and Board all select the same runtime behavior.
   binding.harness = canonicalHarnessId(binding.harness);
+  if (binding.hasInvalidHermesProfileBinding) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "This familiar's Hermes profile binding is invalid. Choose a saved Hermes profile again before starting a task chat.",
+      },
+      { status: 409 },
+    );
+  }
 
   // Resolve the project the task chat will run in. Security-critical: when the
   // card is assigned to a project we resolve the root SERVER-SIDE from
