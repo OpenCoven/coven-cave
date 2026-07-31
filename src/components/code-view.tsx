@@ -10,9 +10,9 @@
  * per-session workbench (Diff | Files | Terminal | PR) with the follow-up
  * composer (code-composer.tsx). New sessions start via code-new-session.tsx —
  * project + familiar + optional fresh worktree. The inspector and mobile
- * layout land in follow-up PRs. GitHub mounts whole under the Activity/PRs/Issues/Reviews tabs
- * (the standalone GitHub surface and its sidebar row were absorbed; the
- * "github" workspace mode is now a tab alias landing here).
+ * layout land in follow-up PRs. CodeView hosts the whole GitHubView under the
+ * Activity/PRs/Issues/Reviews tabs; workspace routing lives outside this
+ * component.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -63,8 +63,7 @@ const GITHUB_TAB_META: Record<
 
 export type CodeViewProps = {
   sessions: SessionRow[];
-  /** Landing tab override — the "github" mode alias mounts CodeView on its
-   *  Activity tab (deep-link continuity for the absorbed standalone surface). */
+  /** Landing-tab override for hosts that need a non-session default. */
   initialTopTab?: CodeTopTab;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard: (cardId: string) => void;
