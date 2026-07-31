@@ -26,7 +26,9 @@ cleanup() {
     if [ ! -e "$LIVE_DEST" ]; then
       if ! mv "$PREVIOUS_DEST" "$LIVE_DEST"; then
         echo "ERROR: could not restore the previous bundled Whisper runtime" >&2
-        status=1
+        if [ "$status" -eq 0 ]; then
+          status=1
+        fi
       fi
     else
       if ! rm -rf "$PREVIOUS_DEST"; then

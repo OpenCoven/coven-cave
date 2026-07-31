@@ -231,6 +231,11 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     /local status=\$\?[\s\S]*?if ! rm -rf "\$PREVIOUS_DEST"[\s\S]*?if ! rm -rf "\$WORK" "\$STAGE_ROOT"[\s\S]*?exit "\$status"/,
     "non-restoration cleanup failures must be reported without replacing the original exit status",
   );
+  assert.match(
+    whisperBundleScript,
+    /could not restore the previous bundled Whisper runtime[\s\S]*?if \[ "\$status" -eq 0 \]; then[\s\S]*?status=1/,
+    "rollback failure must preserve an existing failure or signal status while making a successful exit fail",
+  );
   assert.doesNotMatch(
     whisperBundleScript,
     /rm -rf "\$DEST"/,
