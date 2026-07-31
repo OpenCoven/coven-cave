@@ -16,6 +16,14 @@ function isAbsoluteProfileHome(value: string): boolean {
   return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
 }
 
+function isPermittedHermesProfileHome(value: string, expectedId?: string): boolean {
+  if (!isAbsoluteProfileHome(value)) return false;
+  const segments = value.split(/[\\/]+/).filter(Boolean);
+  if (segments.some((segment) => segment === "." || segment === "..")) return false;
+  const match = value.replace(/\\/g, "/").replace(/\/+$/, "").match(/\/\.hermes\/profiles\/([A-Za-z0-9_-]+)$/);
+  return Boolean(match?.[1] && (!expectedId || match[1] === expectedId));
+}
+
 function joinProfileHome(homePath: string, relativePath: string): string {
   const separator = homePath.includes("\\") ? "\\" : "/";
   return `${homePath.replace(/[\\/]+$/, "")}${separator}${relativePath.replace(/^[\\/]+/, "")}`;
@@ -30,9 +38,10 @@ export function normalizeHermesProfileBinding(value: unknown): HermesProfileBind
   const candidate = value as Record<string, unknown>;
   const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
   const homePath = typeof candidate.homePath === "string" ? candidate.homePath.trim() : "";
-  // A relative path would make the selected profile depend on Cave's launch
-  // cwd. Reject it instead of silently drifting to Hermes's sticky default.
-  if (!isSafeHermesProfileId(id) || !homePath || !isAbsoluteProfileHome(homePath)) return undefined;
+  // Reject relative, traversal-bearing, or arbitrary homes instead of allowing
+  // a persisted binding to read outside Hermes's profile registry or silently
+  // drift to Hermes's sticky default.
+  if (!isSafeHermesProfileId(id) || !homePath || !isPermittedHermesProfileHome(homePath, id)) return undefined;
   return { id, homePath };
 }
 
@@ -48,14 +57,14 @@ export function parseHermesProfileList(output: string): string[] {
 }
 
 /** `hermes profile show` prints `Path: ~/.hermes/profiles/<name>` today. */
-export function parseHermesProfileHome(output: string, homeDir: string): string | null {
+export function parseHermesProfileHome(output: string, homeDir: string, profileId?: string): string | null {
   const match = output.match(/^\s*Path:\s*(.+?)\s*$/im);
   if (!match?.[1]) return null;
   const printed = match[1].trim();
   const expanded = printed === "~" ? homeDir : printed.startsWith("~/") || printed.startsWith("~\\")
     ? joinProfileHome(homeDir, printed.slice(2))
     : printed;
-  return isAbsoluteProfileHome(expanded) ? expanded : null;
+  return isPermittedHermesProfileHome(expanded, profileId) ? expanded : null;
 }
 
 export function soulDescription(markdown: string | null): string | null {

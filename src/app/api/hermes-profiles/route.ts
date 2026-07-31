@@ -103,7 +103,7 @@ export async function listHermesProfiles(options: {
       run(launch.command, ["profile", "describe", id], env),
     ]);
     if (shown === null) return null;
-    const homePath = parseHermesProfileHome(shown, options.homeDir ?? homedir());
+    const homePath = parseHermesProfileHome(shown, options.homeDir ?? homedir(), id);
     if (!homePath) return null;
     return summarizeHermesProfile({
       id,
