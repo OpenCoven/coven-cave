@@ -1,6 +1,6 @@
 {
   "source": {
-    "repository": "openclaw/openclaw",
+    "repo": "openclaw/openclaw",
     "commit": "d66b514a7e7565d89c87ab6f1a509623128093f0",
     "paths": [
       "src/gateway/server-chat.ts",
@@ -10,77 +10,63 @@
   },
   "frames": [
     {
-      "name": "tool-start",
+      "event": "agent",
       "payload": {
-        "runId": "run-tool-lifecycle-v1",
+        "runId": "run-1",
         "seq": 3,
         "stream": "tool",
-        "ts": 1710000000000,
+        "ts": 1000,
         "data": {
           "phase": "start",
-          "toolCallId": "tool-call-001",
-          "name": "web.fetch",
-          "args": {
-            "url": "https://example.invalid/tool-start"
-          }
+          "toolCallId": "tool-1",
+          "name": "exec",
+          "args": { "command": "echo hi" }
         }
       }
     },
     {
-      "name": "tool-update",
+      "event": "agent",
       "payload": {
-        "runId": "run-tool-lifecycle-v1",
+        "runId": "run-1",
         "seq": 7,
         "stream": "tool",
-        "ts": 1710000005000,
+        "ts": 1100,
         "data": {
           "phase": "update",
-          "toolCallId": "tool-call-001",
-          "name": "web.fetch",
-          "partialResult": {
-            "status": "streaming",
-            "items": 2
-          }
+          "toolCallId": "tool-1",
+          "name": "exec",
+          "partialResult": "hi"
         }
       }
     },
     {
-      "name": "tool-result",
+      "event": "agent",
       "payload": {
-        "runId": "run-tool-lifecycle-v1",
+        "runId": "run-1",
         "seq": 9,
         "stream": "tool",
-        "ts": 1710000010000,
+        "ts": 1200,
         "data": {
           "phase": "result",
-          "toolCallId": "tool-call-001",
-          "name": "web.fetch",
-          "result": {
-            "ok": true,
-            "items": 3
-          },
+          "toolCallId": "tool-1",
+          "name": "exec",
+          "result": { "text": "hi", "exitCode": 0 },
           "isError": false
         }
       }
     },
     {
-      "name": "session-tool-error",
+      "event": "session.tool",
       "payload": {
-        "runId": "run-tool-lifecycle-v1",
-        "seq": 11,
+        "runId": "run-2",
+        "seq": 5,
         "stream": "tool",
-        "ts": 1710000015000,
+        "ts": 1300,
         "data": {
           "phase": "result",
-          "toolCallId": "tool-call-002",
-          "name": "session.tool",
-          "args": {
-            "kind": "audit"
-          },
-          "result": {
-            "ok": false,
-            "message": "Session tool failed"
-          },
+          "toolCallId": "tool-2",
+          "name": "edit",
+          "result": { "status": "failed", "text": "validation failed" },
           "isError": true
         }
       }

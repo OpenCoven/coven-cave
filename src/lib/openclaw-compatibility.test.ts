@@ -34,5 +34,5 @@ assert.ok(Value.Check(HelloOkSchema, gatewayBeta4));
 assert.ok(Value.Check(HelloOkSchema, gatewayBeta5));
 
 for (const frame of toolLifecycleV1.frames) {
-  assert.ok(Value.Check(AgentEventSchema, frame.payload), frame.name);
+  assert.ok(Value.Check(AgentEventSchema, frame.payload), frame.event);
 }
