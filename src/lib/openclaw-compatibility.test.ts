@@ -5,7 +5,12 @@ import { AgentEventSchema, HelloOkSchema } from "@openclaw/gateway-protocol";
 import { Value } from "typebox/value";
 
 import {
+  BUILTIN_OPENCLAW_TOOL_PROFILES,
   OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
+  parseOpenClawToolEvent,
+  redactedOpenClawToolFingerprint,
+  selectOpenClawToolProfile,
+  validateOpenClawToolProfiles,
   openClawDiscoveryFromHello,
 } from "./openclaw-compatibility.ts";
 
@@ -33,6 +38,7 @@ assert.deepStrictEqual(beta4Discovery, {
   methods: ["chat.send", "chat.abort"],
   events: ["chat"],
   serverCapabilities: ["chat-send-routing-contract"],
+  clientCapabilities: ["tool-events"],
   agentEventSchemaHash: OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
 });
 
@@ -42,6 +48,7 @@ assert.deepStrictEqual(beta5Discovery, {
   methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"],
   events: ["chat", "agent", "session.tool"],
   serverCapabilities: ["chat-send-routing-contract"],
+  clientCapabilities: ["tool-events"],
   agentEventSchemaHash: OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
 });
 
@@ -56,3 +63,288 @@ assert.deepStrictEqual(
 for (const frame of toolLifecycleV1.frames) {
   assert.ok(Value.Check(AgentEventSchema, frame.payload), frame.event);
 }
+
+const profiles = validateOpenClawToolProfiles(BUILTIN_OPENCLAW_TOOL_PROFILES);
+assert.ok(profiles, "the built-in OpenClaw tool profiles must pass structural validation");
+const [beta5Profile] = profiles;
+
+assert.deepStrictEqual(beta5Profile, {
+  id: "openclaw-agent-tool-v1",
+  priority: 100,
+  requires: {
+    serverVersions: ["2026.7.2-beta.5"],
+    protocol: 4,
+    agentEventSchemaHash: OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
+    methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"],
+    events: ["chat", "agent", "session.tool"],
+    serverCapabilities: ["chat-send-routing-contract"],
+    clientCapabilities: ["tool-events"],
+  },
+  eventNames: ["agent", "session.tool"],
+  streams: ["tool"],
+  phases: {
+    start: ["start"],
+    update: ["update"],
+    result: ["result"],
+  },
+  aliases: {
+    phase: ["phase"],
+    toolCallId: ["toolCallId"],
+    name: ["name"],
+    args: ["args"],
+    partialResult: ["partialResult"],
+    result: ["result"],
+    isError: ["isError"],
+    status: ["status"],
+    exitCode: ["exitCode"],
+  },
+  errorStates: ["error", "failed", "failure"],
+  source: {
+    repo: "openclaw/openclaw",
+    package: "@openclaw/gateway-protocol@2026.7.2-beta.5",
+    blobSha: "d66b514a7e7565d89c87ab6f1a509623128093f0",
+  },
+});
+
+assert.equal(selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, beta4Discovery), null, "beta4 must not match the beta5-only tool profile");
+assert.deepStrictEqual(
+  selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, beta5Discovery),
+  beta5Profile,
+  "beta5 discovery selects the reviewed built-in profile",
+);
+
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[0].event, toolLifecycleV1.frames[0].payload, beta5Profile),
+  { kind: "tool_start", id: "tool-1", name: "exec", input: { command: "echo hi" }, seq: 3 },
+);
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[1].event, toolLifecycleV1.frames[1].payload, beta5Profile),
+  { kind: "tool_progress", id: "tool-1", output: "hi", seq: 7 },
+);
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[2].event, toolLifecycleV1.frames[2].payload, beta5Profile),
+  { kind: "tool_end", id: "tool-1", name: "exec", output: { text: "hi", exitCode: 0 }, isError: false, seq: 9 },
+);
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[3].event, toolLifecycleV1.frames[3].payload, beta5Profile),
+  {
+    kind: "tool_end",
+    id: "tool-2",
+    name: "edit",
+    output: { status: "failed", text: "validation failed" },
+    isError: true,
+    seq: 5,
+  },
+  "nested result.status is only consulted through the Cave-owned bounded envelope logic",
+);
+
+const unknownEvent = parseOpenClawToolEvent("chat", toolLifecycleV1.frames[0].payload, beta5Profile);
+assert.equal(unknownEvent.kind, "unknown");
+assert.match(unknownEvent.fingerprint, /^[a-f0-9]{16}$/);
+
+const unknownStream = parseOpenClawToolEvent(
+  toolLifecycleV1.frames[0].event,
+  { ...toolLifecycleV1.frames[0].payload, stream: "chat" },
+  beta5Profile,
+);
+assert.equal(unknownStream.kind, "unknown");
+
+const unknownPhase = parseOpenClawToolEvent(
+  toolLifecycleV1.frames[0].event,
+  { ...toolLifecycleV1.frames[0].payload, data: { ...toolLifecycleV1.frames[0].payload.data, phase: "mystery" } },
+  beta5Profile,
+);
+assert.equal(unknownPhase.kind, "unknown");
+
+assert.equal(
+  parseOpenClawToolEvent(
+    toolLifecycleV1.frames[0].event,
+    { ...toolLifecycleV1.frames[0].payload, data: { ...toolLifecycleV1.frames[0].payload.data, toolCallId: "" } },
+    beta5Profile,
+  ).kind,
+  "unknown",
+  "tool starts without a non-empty id are malformed",
+);
+assert.equal(
+  parseOpenClawToolEvent(
+    toolLifecycleV1.frames[2].event,
+    { ...toolLifecycleV1.frames[2].payload, data: { ...toolLifecycleV1.frames[2].payload.data, name: "" } },
+    beta5Profile,
+  ).kind,
+  "unknown",
+  "tool results without a non-empty name are malformed",
+);
+
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(
+    "agent",
+    {
+      ...toolLifecycleV1.frames[2].payload,
+      data: {
+        phase: "result",
+        toolCallId: "tool-3",
+        name: "exec",
+        result: { text: "failed with status only", status: "failure" },
+      },
+    },
+    beta5Profile,
+  ),
+  {
+    kind: "tool_end",
+    id: "tool-3",
+    name: "exec",
+    output: { text: "failed with status only", status: "failure" },
+    isError: true,
+    seq: 9,
+  },
+  "nested result.status participates only through the bounded parser logic",
+);
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(
+    "agent",
+    {
+      ...toolLifecycleV1.frames[2].payload,
+      data: {
+        phase: "result",
+        toolCallId: "tool-4",
+        name: "exec",
+        result: { text: "boom", exitCode: 17 },
+      },
+    },
+    beta5Profile,
+  ),
+  {
+    kind: "tool_end",
+    id: "tool-4",
+    name: "exec",
+    output: { text: "boom", exitCode: 17 },
+    isError: true,
+    seq: 9,
+  },
+  "nonzero nested result.exitCode settles tool activity as an error",
+);
+
+assert.equal(
+  validateOpenClawToolProfiles([
+    beta5Profile,
+    { ...beta5Profile, source: { ...beta5Profile.source }, priority: 101 },
+  ]),
+  null,
+  "duplicate profile ids are rejected at the validation boundary",
+);
+assert.equal(
+  validateOpenClawToolProfiles([
+    beta5Profile,
+    { ...beta5Profile, id: "openclaw-agent-tool-v2", source: { ...beta5Profile.source } },
+  ]),
+  null,
+  "duplicate priorities are rejected at the validation boundary",
+);
+assert.equal(
+  validateOpenClawToolProfiles([
+    {
+      ...beta5Profile,
+      source: { ...beta5Profile.source },
+      aliases: { ...beta5Profile.aliases, status: ["result.status"] },
+    },
+  ]),
+  null,
+  "nested registry paths are not valid direct field aliases",
+);
+assert.equal(
+  validateOpenClawToolProfiles([
+    {
+      ...beta5Profile,
+      source: { ...beta5Profile.source },
+      requires: { ...beta5Profile.requires, clientCapabilities: ["tool-events", "other"] },
+    },
+  ]),
+  null,
+  "only the reviewed tool-events client capability is allowed",
+);
+assert.equal(
+  validateOpenClawToolProfiles([
+    {
+      ...beta5Profile,
+      source: { ...beta5Profile.source },
+      unexpected: true,
+    },
+  ]),
+  null,
+  "closed profile validation rejects unexpected top-level keys",
+);
+assert.equal(
+  validateOpenClawToolProfiles([
+    {
+      ...beta5Profile,
+      id: "é".repeat(129),
+      source: { ...beta5Profile.source },
+    },
+  ]),
+  null,
+  "profile strings are bounded by UTF-8 bytes, not characters",
+);
+assert.equal(
+  validateOpenClawToolProfiles([
+    {
+      ...beta5Profile,
+      source: { ...beta5Profile.source },
+      errorStates: Array.from({ length: 17 }, (_, index) => `error-${index}`),
+    },
+  ]),
+  null,
+  "bounded lists reject more than sixteen entries",
+);
+assert.equal(
+  selectOpenClawToolProfile(
+    [
+      beta5Profile,
+      { ...beta5Profile, id: "openclaw-agent-tool-v2", source: { ...beta5Profile.source }, priority: 100 },
+    ],
+    beta5Discovery,
+  ),
+  null,
+  "invalid profile lists are not selectable",
+);
+
+const secretFingerprintA = redactedOpenClawToolFingerprint({
+  runId: "run-1",
+  seq: 9,
+  stream: "tool",
+  ts: 1200,
+  data: {
+    phase: "result",
+    toolCallId: "tool-9",
+    name: "exec",
+    result: {
+      status: "failed",
+      exitCode: 1,
+      secret: "token-a",
+      "/Users/buns/private.txt": "never log me",
+      nested: { prompt: "alpha" },
+    },
+  },
+});
+const secretFingerprintB = redactedOpenClawToolFingerprint({
+  runId: "run-2",
+  seq: 9,
+  stream: "tool",
+  ts: 1300,
+  data: {
+    phase: "result",
+    toolCallId: "tool-9",
+    name: "exec",
+    result: {
+      status: "failed",
+      exitCode: 1,
+      apiKey: "token-b",
+      "/Users/buns/other.txt": "still secret",
+      nested: { prompt: "beta" },
+    },
+  },
+});
+assert.equal(secretFingerprintA, secretFingerprintB, "tool fingerprints capture only the reviewed envelope shape");
+assert.doesNotMatch(secretFingerprintA, /token|private|alpha|beta/, "fingerprints must not retain secret values or dynamic keys");
+assert.match(secretFingerprintA, /^[a-f0-9]{16}$/);
+
+console.log("openclaw-compatibility: ok");
