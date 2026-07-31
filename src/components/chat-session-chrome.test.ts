@@ -216,3 +216,13 @@ test("rail — rows carry a state tick and groups carry a count and a rule", () 
   );
   assert.match(sidebar, /<kbd className="cnav__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
 });
+
+test("rail — the selected chat is a raised card with one accent rail", () => {
+  const activeRow = shellNav.match(/\.cnav__thread\.is-active \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const activeRail = shellNav.match(/\.cnav__thread\.is-active::before \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(activeRow, /margin: 0 var\(--space-2\);/, "the selection is inset from the list edge");
+  assert.match(activeRow, /border-radius: var\(--radius-card\)/, "the selection reads as a rounded raised card");
+  assert.match(activeRow, /background: var\(--bg-raised\)/, "the selection uses the raised surface rather than a second accent tint");
+  assert.match(activeRail, /background: var\(--accent-presence\)/, "the selection keeps one lavender identity rail");
+});
