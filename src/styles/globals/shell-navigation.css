@@ -673,13 +673,15 @@
   color: var(--text-primary);
 }
 .cnav__thread.is-active {
-  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  margin: 0 var(--space-2);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
   color: var(--text-primary);
 }
 .cnav__thread.is-active::before {
   content: "";
   position: absolute;
-  left: 7px;
+  left: var(--space-2);
   top: 7px;
   bottom: 7px;
   width: 2.5px;

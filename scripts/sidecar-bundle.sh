@@ -446,7 +446,7 @@ copy_node_shared_runtime "$NODE_BIN" "$BUNDLED_NODE_DIR"
 "$BUNDLED_NODE_DIR/bin/$NODE_NAME" -e "process.exit(0)" >/dev/null
 
 echo "==> staging bundled Whisper runtime"
-bash "$ROOT/scripts/whisper-runtime-bundle.sh"
+COVEN_CAVE_REFRESH_WHISPER=1 bash "$ROOT/scripts/whisper-runtime-bundle.sh"
 
 # Next.js + pnpm leaves a node_modules full of pnpm-style symlinks
 # (.pnpm/* paths) that don't survive the copy into the .app bundle. Recreate

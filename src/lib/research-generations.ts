@@ -132,8 +132,11 @@ export const RESEARCH_MEDIA_LENGTH_LIMITS = {
     extended: { maxCharacters: 13_500 },
   },
   "short-video": {
-    brief: { maxDurationMs: 30_000, maxScenes: 6 },
-    standard: { maxDurationMs: 60_000, maxScenes: 12 },
+    // These conservative source budgets leave time for slow technical terms,
+    // citations, and provider-specific pacing. The renderer still measures the
+    // real audio and enforces the duration cap before publication.
+    brief: { maxDurationMs: 30_000, maxScenes: 6, maxCharacters: 300 },
+    standard: { maxDurationMs: 60_000, maxScenes: 12, maxCharacters: 600 },
   },
   "long-video": {
     brief: { maxDurationMs: 300_000, maxChapters: 4, maxScenes: 20 },
