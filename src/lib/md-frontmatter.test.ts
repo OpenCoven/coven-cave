@@ -86,6 +86,22 @@ assert.deepEqual(normalizeMdTags(["a", "a", "b"]), ["a", "b"], "array tags dedup
   );
 }
 
+// Leading comments must not consume indentation from the first visible line.
+{
+  const body = "<!-- meta -->\n    code";
+  const split = splitLeadingMdComments(body);
+  assert.equal(split.hiddenPrefix, "<!-- meta -->\n");
+  assert.equal(split.visibleBody, "    code");
+}
+
+// Multiple leading comments keep blank lines hidden without touching content.
+{
+  const body = "<!-- a -->\r\n\r\n<!-- b -->\r\n\r\ncode";
+  const split = splitLeadingMdComments(body);
+  assert.equal(split.hiddenPrefix, "<!-- a -->\r\n\r\n<!-- b -->\r\n\r\n");
+  assert.equal(split.visibleBody, "code");
+}
+
 // Unclosed leading comments stay visible instead of being hidden.
 {
   const body = "<!-- research-provenance\nmission: research-1\n# Findings\n\nBody.\n";
