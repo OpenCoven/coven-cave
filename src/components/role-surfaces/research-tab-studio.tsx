@@ -34,6 +34,7 @@ import {
   type ResearchGenerationReadiness,
   type ResearchMediaLength,
   type ResearchMediaProvider,
+  type ResearchPodcastStyle,
 } from "@/lib/research-generations";
 import type { ResearchTabProps } from "./researcher-surface";
 import {
@@ -69,6 +70,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     useState<ResearchMediaProvider>("local");
   const [mediaVoice, setMediaVoice] = useState("");
   const [mediaGuestVoice, setMediaGuestVoice] = useState("");
+  const [mediaStyle, setMediaStyle] = useState<ResearchPodcastStyle>("breakdown");
   const [mediaLength, setMediaLength] =
     useState<ResearchMediaLength>("standard");
   const [createError, setCreateError] = useState<string | null>(null);
@@ -304,7 +306,9 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
               provider: mediaProvider,
               voice: mediaVoice,
               length: mediaLength,
-              ...(configKind === "podcast" && mediaGuestVoice.trim().length > 0
+              ...(configKind === "podcast" &&
+              mediaStyle !== "recap" &&
+              mediaGuestVoice.trim().length > 0
                 ? {
                     voices: {
                       host: mediaVoice,
@@ -312,6 +316,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
                     },
                   }
                 : {}),
+              ...(configKind === "podcast" ? { style: mediaStyle } : {}),
             },
           }
         : {}),
@@ -347,6 +352,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     mediaGuestVoice,
     mediaLength,
     mediaProvider,
+    mediaStyle,
     mediaVoice,
   ]);
 
@@ -795,6 +801,8 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           onMediaVoiceChange={setMediaVoice}
           mediaGuestVoice={mediaGuestVoice}
           onMediaGuestVoiceChange={setMediaGuestVoice}
+          mediaStyle={mediaStyle}
+          onMediaStyleChange={setMediaStyle}
           mediaLength={mediaLength}
           onMediaLengthChange={setMediaLength}
           error={createError}

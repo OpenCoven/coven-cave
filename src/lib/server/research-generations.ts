@@ -57,6 +57,7 @@ import {
   type ResearchMediaLength,
   type ResearchMediaRenderConfig,
   type ResearchPodcastSpeaker,
+  type ResearchPodcastStyle,
 } from "../research-generations.ts";
 import { LOCAL_TTS_MAX_CHARS } from "../voice/local-tts.ts";
 import type { ResearchArtifactRef, ResearchMission } from "../research-missions.ts";
@@ -859,17 +860,72 @@ function mediaNarrationUnits(source: GenerationDraftSource): string[] {
 export function draftPodcastContent(
   source: GenerationDraftSource,
   length: ResearchMediaLength,
+  style: ResearchPodcastStyle = "breakdown",
 ): ResearchGenerationContent {
   const budget = RESEARCH_MEDIA_LENGTH_LIMITS.podcast[length].maxCharacters;
+  const units = mediaNarrationSectionUnits(source);
+  if (style === "recap") {
+    // Recap is the original single-narrator read-through: one voice, no
+    // dialogue turns, findings in source order.
+    const candidates = units
+      .map((unit) =>
+        unit.title !== null ? `${speakable(unit.title)} ${unit.text}` : unit.text,
+      )
+      .flatMap(splitMediaDraftText);
+    const script: ResearchGenerationScriptSegment[] = [];
+    let used = 0;
+    for (const [index, text] of candidates.entries()) {
+      if (used + text.length > budget) break;
+      script.push({ id: `segment-${index + 1}`, text });
+      used += text.length;
+    }
+    return { kind: "podcast", script };
+  }
   return {
     kind: "podcast",
-    script: draftDialogueScript(mediaNarrationSectionUnits(source), {
-      budget,
-      opening: `Welcome in — today we're breaking down “${source.mission.title}”, finding by finding.`,
-      framing: (title) => `Next up — ${speakable(title)}`,
-    }),
+    script: draftDialogueScript(
+      style === "debate" ? contestedSectionsFirst(units) : units,
+      { budget, ...PODCAST_DIALOGUE_TEMPLATES[style](source.mission.title) },
+    ),
   };
 }
+
+/**
+ * Section titles that signal disagreement or open ground. Debate episodes
+ * lead with these so the contested findings get the airtime.
+ */
+const CONTESTED_TITLE_RE =
+  /conflict|contradiction|open question|unresolved|challenge|risk|limitation/i;
+
+function contestedSectionsFirst(units: NarrationUnit[]): NarrationUnit[] {
+  const contested = units.filter(
+    (unit) => unit.title !== null && CONTESTED_TITLE_RE.test(unit.title),
+  );
+  if (contested.length === 0) return units;
+  return [...contested, ...units.filter((unit) => !contested.includes(unit))];
+}
+
+/**
+ * Per-style templated copy — episode structure only. Every findings turn the
+ * templates introduce stays verbatim artifact text.
+ */
+const PODCAST_DIALOGUE_TEMPLATES: Record<
+  Exclude<ResearchPodcastStyle, "recap">,
+  (missionTitle: string) => Omit<DialogueTemplate, "budget">
+> = {
+  breakdown: (missionTitle) => ({
+    opening: `Welcome in — today we're breaking down “${missionTitle}”, finding by finding.`,
+    framing: (title) => `Next up — ${speakable(title)}`,
+  }),
+  debate: (missionTitle) => ({
+    opening: `Welcome to the debate — today we're stress-testing “${missionTitle}”, starting where the findings are most contested.`,
+    framing: (title) => `Where do we actually stand on this one? ${speakable(title)}`,
+  }),
+  interview: (missionTitle) => ({
+    opening: `Today my guest walks us through “${missionTitle}”. Let's get into it.`,
+    framing: (title) => `Walk me through this part — ${speakable(title)}`,
+  }),
+};
 
 type DialogueTemplate = {
   budget: number;
@@ -1197,7 +1253,7 @@ export async function createResearchMediaGenerationFromMission(
   let content: ResearchGenerationContent;
   switch (input.kind) {
     case "podcast":
-      content = draftPodcastContent(draftSource, renderConfig.length);
+      content = draftPodcastContent(draftSource, renderConfig.length, renderConfig.style);
       break;
     case "short-video":
       if (renderConfig.length === "extended") {

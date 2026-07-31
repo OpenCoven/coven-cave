@@ -44,6 +44,7 @@ import {
   type ResearchGenerationReadiness,
   type ResearchMediaLength,
   type ResearchMediaProvider,
+  type ResearchPodcastStyle,
 } from "@/lib/research-generations";
 import type { ResearchMission } from "@/lib/research-missions";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -473,6 +474,12 @@ export function GenerationReviewModal({
                 <dd>{generation.renderConfig.voices.guest}</dd>
               </div>
             ) : null}
+            {generation.renderConfig.style ? (
+              <div>
+                <dt>Style</dt>
+                <dd>{generation.renderConfig.style}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>Length</dt>
               <dd>{generation.renderConfig.length}</dd>
@@ -532,6 +539,8 @@ export function GenerationConfigModal({
   onMediaVoiceChange,
   mediaGuestVoice,
   onMediaGuestVoiceChange,
+  mediaStyle,
+  onMediaStyleChange,
   mediaLength,
   onMediaLengthChange,
   error,
@@ -553,6 +562,9 @@ export function GenerationConfigModal({
   /** Podcast-only guest voice; empty string means one voice for both speakers. */
   mediaGuestVoice: string;
   onMediaGuestVoiceChange: (voice: string) => void;
+  /** Podcast-only drafting style; ignored for video kinds. */
+  mediaStyle: ResearchPodcastStyle;
+  onMediaStyleChange: (style: ResearchPodcastStyle) => void;
   mediaLength: ResearchMediaLength;
   onMediaLengthChange: (length: ResearchMediaLength) => void;
   /** Server-side create failure — e.g. the 409 "no markdown artifact" message. */
@@ -583,6 +595,7 @@ export function GenerationConfigModal({
       }
       if (
         kind === "podcast" &&
+        mediaStyle !== "recap" &&
         mediaGuestVoice &&
         !readiness.providers.local.voices.some(
           (voice) => voice.id === mediaGuestVoice,
@@ -784,6 +797,43 @@ export function GenerationConfigModal({
             )}
 
             {kind === "podcast" ? (
+              <div className="research-studio-config__field">
+                <label
+                  className="research-studio-config__label"
+                  htmlFor="research-studio-config-style"
+                >
+                  Style
+                </label>
+                <select
+                  id="research-studio-config-style"
+                  className="research-studio__select focus-ring"
+                  value={mediaStyle}
+                  aria-describedby="research-studio-config-style-help"
+                  onChange={(event) =>
+                    onMediaStyleChange(event.target.value as ResearchPodcastStyle)
+                  }
+                >
+                  <option value="breakdown">Breakdown</option>
+                  <option value="debate">Debate</option>
+                  <option value="interview">Interview</option>
+                  <option value="recap">Recap</option>
+                </select>
+                <span
+                  id="research-studio-config-style-help"
+                  className="research-studio-config__hint"
+                >
+                  {mediaStyle === "breakdown"
+                    ? "A host and guest walk the findings section by section."
+                    : mediaStyle === "debate"
+                      ? "Contested findings lead; the host pushes, the guest defends."
+                      : mediaStyle === "interview"
+                        ? "The host asks; the guest answers with the findings."
+                        : "One narrator reads the findings straight through."}
+                </span>
+              </div>
+            ) : null}
+
+            {kind === "podcast" && mediaStyle !== "recap" ? (
               <div className="research-studio-config__field">
                 <label
                   className="research-studio-config__label"

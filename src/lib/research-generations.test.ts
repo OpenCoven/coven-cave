@@ -165,6 +165,50 @@ test("per-speaker podcast voices are podcast-only, trimmed, and bounded", () => 
   );
 });
 
+test("podcast style is podcast-only with an explicit vocabulary", () => {
+  const styled = validateResearchMediaRenderConfig("podcast", {
+    provider: "local",
+    voice: "piper-lessac-medium",
+    length: "standard",
+    style: "debate",
+  });
+  assert.deepEqual(styled, {
+    ok: true,
+    value: {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "standard",
+      style: "debate",
+    },
+  });
+  // Absent style stays absent — old stored configs revalidate byte-identical.
+  const unstyled = validateResearchMediaRenderConfig("podcast", {
+    provider: "local",
+    voice: "piper-lessac-medium",
+    length: "standard",
+  });
+  assert.ok(unstyled.ok);
+  if (unstyled.ok) assert.equal("style" in unstyled.value, false);
+  assert.equal(
+    validateResearchMediaRenderConfig("short-video", {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "brief",
+      style: "breakdown",
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "standard",
+      style: "freestyle",
+    }).ok,
+    false,
+  );
+});
+
 test("chapter progress accepts bounded real units and rejects invented ranges", () => {
   assert.equal(
     isResearchGenerationProgress({
