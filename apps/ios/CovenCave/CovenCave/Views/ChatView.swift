@@ -42,7 +42,10 @@ struct ChatView: View {
     @State private var showModelPicker = false
     @State private var modelPickerOptions: [ChatModelOption] = []
     @State private var modelPickerCurrent = ""
+    @State private var modelPickerAllowsRuntimeDefault = false
     @State private var sessionModelState: ChatModelState?
+    @State private var modelControlCapabilities: [ChatModelControlCapability] = []
+    @State private var modelControlValues: [String: String] = [:]
     @State private var modelRequests = ChatModelRequestCoordinator()
     @State private var modelMutationQueue = ChatModelMutationQueue()
     @State private var showTasks = false
@@ -221,7 +224,11 @@ struct ChatView: View {
             }
         }
         .sheet(isPresented: $showModelPicker) {
-            ModelPickerSheet(options: modelPickerOptions, current: modelPickerCurrent, onSelect: { id in
+            ModelPickerSheet(
+                options: modelPickerOptions,
+                current: modelPickerCurrent,
+                allowsRuntimeDefault: modelPickerAllowsRuntimeDefault,
+                onSelect: { id in
                 guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return }
                 _ = selectModel(id, familiarId: familiarId, sessionId: modelSessionId(familiarId))
             }, onSwitchFamiliar: { showFamiliarPicker = true })
@@ -340,18 +347,17 @@ struct ChatView: View {
             .padding(.horizontal, 14)
             .frame(minHeight: 44)
             Divider()
-            sessionControlRow(systemImage: "brain") {
-                Picker("Thinking", selection: $thinkingRaw) {
-                    ForEach(ChatThinkingEffort.allCases) { effort in
-                        Text(effort.label).tag(effort.rawValue)
-                    }
-                }
-            }
-            Divider()
-            sessionControlRow(systemImage: "gauge.with.dots.needle.50percent") {
-                Picker("Speed", selection: $responseSpeedRaw) {
-                    ForEach(ChatResponseSpeed.allCases) { speed in
-                        Text(speed.label).tag(speed.rawValue)
+            ForEach(modelControlCapabilities) { capability in
+                Divider()
+                sessionControlRow(systemImage: capability.family == "reasoning" ? "brain" : "slider.horizontal.3") {
+                    Picker(capability.delivery == "prompt-only" ? "\(capability.label) (Prompt guidance)" : "\(capability.label) (Native)",
+                           selection: Binding(
+                            get: { modelControlValues[capability.family] ?? "" },
+                            set: { modelControlValues[capability.family] = $0 }
+                           )) {
+                        ForEach(capability.values) { option in
+                            Text(option.label).tag(option.value)
+                        }
                     }
                 }
             }
@@ -398,10 +404,12 @@ struct ChatView: View {
 
     private var sessionModelLabel: String {
         if let pendingModelOverride = thread.pendingModelOverride {
+            if pendingModelOverride.isEmpty { return "Runtime default" }
             return modelPickerOptions.first(where: { $0.id == pendingModelOverride })?.label
                 ?? conciseModelName(pendingModelOverride)
         }
         guard let state = sessionModelState else { return thread.isGroup ? "Per familiar" : "Loading…" }
+        if state.effectiveModel.isEmpty { return "Runtime default" }
         return modelPickerOptions.first(where: { $0.id == state.effectiveModel })?.label
             ?? conciseModelName(state.effectiveModel)
     }
@@ -1176,6 +1184,7 @@ struct ChatView: View {
                 thread.enqueue(outgoing, attachments: attachments,
                                reasoningEffort: thinkingEffort,
                                responseSpeed: responseSpeed,
+                               modelControls: modelControlValues,
                                modelOverride: modelBinding.modelOverride,
                                modelOverrideScope: modelBinding.scope)
                 app.touch(thread)
@@ -1185,6 +1194,7 @@ struct ChatView: View {
             thread.send(outgoing, attachments: attachments,
                         reasoningEffort: thinkingEffort,
                         responseSpeed: responseSpeed,
+                        modelControls: modelControlValues,
                         modelOverride: modelBinding.modelOverride,
                         modelOverrideScope: modelBinding.scope,
                         client: client) { app.touch(thread) }
@@ -1202,6 +1212,7 @@ struct ChatView: View {
         if app.connectionState != .connected {
             thread.enqueue(text, reasoningEffort: thinkingEffort,
                            responseSpeed: responseSpeed,
+                           modelControls: modelControlValues,
                            modelOverride: modelBinding.modelOverride,
                            modelOverrideScope: modelBinding.scope)
             app.touch(thread)
@@ -1210,6 +1221,7 @@ struct ChatView: View {
         }
         thread.send(text, reasoningEffort: thinkingEffort,
                     responseSpeed: responseSpeed,
+                    modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
                     client: client) { app.touch(thread) }
@@ -1344,6 +1356,8 @@ struct ChatView: View {
             guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget) else { return }
             sessionModelState = resp.state
             modelPickerOptions = resp.options ?? []
+            modelPickerAllowsRuntimeDefault =
+                resp.inventory?.allowsRuntimeDefault ?? false
             if ChatModelTurnBinding.shouldClearPending(
                 thread.pendingModelOverride,
                 confirmedState: resp.state,
@@ -1363,7 +1377,7 @@ struct ChatView: View {
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmed.isEmpty {
-            guard !options.isEmpty else {
+            guard modelPickerAllowsRuntimeDefault || !options.isEmpty else {
                 thread.appendSystem("This runtime has no model menu — type /model <id> to set one.")
                 app.touch(thread)
                 return
@@ -1395,18 +1409,21 @@ struct ChatView: View {
     /// turn as a one-message override until GET confirms durable session state.
     @discardableResult
     private func selectModel(
-        _ model: String,
+        _ model: String?,
         familiarId: String,
         sessionId: String?
     ) -> Task<Void, Never>? {
+        let stagedModel = model ?? ""
         let target = ChatModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
         modelRequests.beginIntent(for: target)
-        thread.pendingModelOverride = model
-        modelPickerCurrent = model
+        thread.pendingModelOverride = stagedModel
+        modelPickerCurrent = stagedModel
+        modelControlCapabilities = []
+        modelControlValues = [:]
         app.touch(thread)
         Haptics.tap()
 
-        guard sessionId != nil else {
+        guard sessionId != nil || model == nil else {
             app.showToast("Model set for this chat", systemImage: "cpu", style: .info)
             return nil
         }
@@ -1419,13 +1436,16 @@ struct ChatView: View {
             var mutationFailed = false
             do {
                 _ = try await client.setChatModel(
-                    familiarId: familiarId, sessionId: sessionId, model: model, scope: "session")
+                    familiarId: familiarId,
+                    sessionId: sessionId,
+                    model: model,
+                    scope: sessionId == nil ? "familiar-default" : "session")
             } catch {
                 mutationFailed = true
             }
             await finishModelMutation(
                 mutation,
-                model: model,
+                model: stagedModel,
                 mutationFailed: mutationFailed
             )
         }
@@ -1448,9 +1468,7 @@ struct ChatView: View {
         case .success:
             break
         }
-        guard let finalState = reconciliation.response,
-              finalState.state.source == "session",
-              finalState.state.effectiveModel == model else {
+        guard let finalState = reconciliation.response else {
             thread.appendSystem(
                 mutationFailed
                     ? "Couldn't switch the model."
@@ -1458,6 +1476,28 @@ struct ChatView: View {
                 isError: true
             )
             app.touch(thread)
+            return
+        }
+        let confirmed = model.isEmpty
+            ? finalState.state.source == "runtime-default"
+                && finalState.state.effectiveModel.isEmpty
+            : finalState.state.source == "session"
+                && finalState.state.effectiveModel == model
+        guard confirmed else {
+            thread.appendSystem(
+                mutationFailed
+                    ? "Couldn't switch the model."
+                    : "Couldn't confirm the model change.",
+                isError: true
+            )
+            app.touch(thread)
+            return
+        }
+        if model.isEmpty {
+            thread.pendingModelOverride = nil
+            thread.appendSystem("Model reset to runtime default.")
+            app.touch(thread)
+            Haptics.tap()
             return
         }
         let label = finalState.options?.first { $0.id == finalState.state.effectiveModel }?.label
@@ -1476,6 +1516,7 @@ struct ChatView: View {
               let familiarId = thread.familiarIds.first else {
             sessionModelState = nil
             modelPickerOptions = []
+            modelPickerAllowsRuntimeDefault = false
             return expectedTarget == nil ? (.failed, nil) : (.superseded, nil)
         }
         let sessionId = modelSessionId(familiarId)
@@ -1490,7 +1531,14 @@ struct ChatView: View {
                 for: request, currentTarget: currentModelRequestTarget, failed: false)
             guard outcome == .applied else { return (outcome, nil) }
             sessionModelState = response.state
+            modelControlCapabilities = response.controls ?? []
+            let allowed = Dictionary(uniqueKeysWithValues: modelControlCapabilities.map {
+                ($0.family, Set($0.values.map(\.value)))
+            })
+            modelControlValues = modelControlValues.filter { allowed[$0.key]?.contains($0.value) == true }
             modelPickerOptions = response.options ?? []
+            modelPickerAllowsRuntimeDefault =
+                response.inventory?.allowsRuntimeDefault ?? false
             if ChatModelTurnBinding.shouldClearPending(
                 thread.pendingModelOverride,
                 confirmedState: response.state,
@@ -1530,6 +1578,7 @@ struct ChatView: View {
         let modelBinding = turnModelBinding
         thread.send(trimmed, reasoningEffort: thinkingEffort,
                     responseSpeed: responseSpeed,
+                    modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
                     client: client) { app.touch(thread) }
@@ -1684,6 +1733,7 @@ struct ChatView: View {
                 displayText: displayText,
                 reasoningEffort: thinkingEffort,
                 responseSpeed: responseSpeed,
+                modelControls: [:],
                 modelOverride: destinationModel,
                 modelOverrideScope: destinationScope,
                 client: client

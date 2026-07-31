@@ -12,7 +12,10 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { COMPATIBILITY_ADAPTERS, isSummonableLocalHarness } from "@/lib/harness-adapters";
 import { slugifyFamiliarId } from "@/lib/onboarding-familiars";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
+import {
+  defaultModelForRuntime,
+  runtimeOwnsModelDefault,
+} from "@/lib/runtime-models";
 import { setFamiliarOverride } from "@/lib/cave-familiar-overrides";
 import { clearSummoningDraft, readSummoningDraft, saveSummoningDraft } from "@/lib/summoning-draft";
 import { setGlyphOverride } from "@/lib/cave-glyph-overrides";
@@ -455,7 +458,10 @@ function SummoningRite({
   const modelPreview =
     vessel === "openclaw"
       ? "chosen by the agent"
-      : model.trim() || (harness ? defaultModelForRuntime(harness) : "runtime default");
+      : model.trim() ||
+        (harness && !runtimeOwnsModelDefault(harness)
+          ? defaultModelForRuntime(harness)
+          : "Runtime default");
 
   async function handleSummon() {
     if (!vesselComplete || !identityComplete || submitting) return;

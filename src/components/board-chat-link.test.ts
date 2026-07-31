@@ -165,6 +165,11 @@ assert.match(
 );
 assert.match(
   chatView,
+  /const initialSendOptions = initialModelOverride \? \{ modelOverride: initialModelOverride \} : undefined;[\s\S]{0,350}sendRaw\([\s\S]{0,180}initialSendOptions,[\s\S]{0,220}runtimeHost: initialControls\?\.runtimeHost \}/,
+  "an auto-sent Board prompt passes its model through ChatSendOptions, not the typed controls payload",
+);
+assert.match(
+  chatView,
   /case "done":[\s\S]{0,6000}startNewConversation && ev\.sessionId\) onSessionsChanged\?\.\(\)/,
   "A completed Board bridge refreshes sessions so the cockpit leaves its one-shot handoff mode",
 );

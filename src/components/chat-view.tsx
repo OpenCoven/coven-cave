@@ -111,9 +111,12 @@ import {
   type PromptOption,
 } from "@/lib/slash-prompt";
 import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippets-modal";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
+import {
+  modelForRuntimeSwitch,
+  runtimeOwnsModelDefault,
+} from "@/lib/runtime-models";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import {
@@ -157,8 +160,6 @@ import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import { projectAccessLabel } from "@/lib/project-access-levels";
 import {
   COMMAND_CONTROL_DEFAULTS,
-  COMMAND_RESPONSE_SPEED_OPTIONS,
-  COMMAND_THINKING_OPTIONS,
   DEFAULT_PERMISSION_MODE,
   PERMISSION_MODES,
   normalizeCommandControls,
@@ -167,6 +168,7 @@ import {
   type CommandThinkingEffort,
   type InitialCommandControls,
 } from "@/lib/command-controls";
+import type { ModelControlCapability, ModelControlValues } from "@/lib/model-control-capabilities";
 import { useProjects } from "@/lib/use-projects";
 import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
@@ -237,6 +239,8 @@ type Props = {
   /** Prompt handed off from the home composer. Auto-sent once on mount so the
    *  send runs through this view's streaming path instead of a detached fetch. */
   initialPrompt?: string;
+  /** Explicit task-card model forwarded through a native Board handoff. */
+  initialModelOverride?: string;
   /** Task work can reserve its conversation id before mounting the bridge.
    * Allow that one first prompt to send into the reserved, otherwise-empty
    * conversation instead of treating it as a resumed thread. */
@@ -320,6 +324,8 @@ type FailedSend = {
   attachments: ChatAttachment[];
   mentionedFiles?: string[];
   promptOverride?: string;
+  /** Snapshot from the attempt, never the controls currently visible later. */
+  controls?: ChatSendControls;
 };
 type ChatSendOptions = {
   promptOverride?: string;
@@ -333,6 +339,7 @@ type ChatSendOptions = {
 type ChatSendControls = {
   thinkingEffort: ComposerThinkingEffort;
   responseSpeed: ComposerResponseSpeed;
+  modelControls?: ModelControlValues;
   permissionMode: CommandPermissionMode;
   runtimeHost?: string;
   /** Present only for queued messages: null means preserve the queue-time
@@ -390,8 +397,6 @@ const TRANSCRIPT_RENDER_CAP = 60;
 // well under perception threshold (~2-3 frames). Non-chunk events and stream
 // end flush immediately, so ordering and final text are exact.
 const CHUNK_FLUSH_MS = 40;
-const THINKING_OPTIONS = COMMAND_THINKING_OPTIONS;
-const SPEED_OPTIONS = COMMAND_RESPONSE_SPEED_OPTIONS;
 const CHAT_ATTACHMENT_ACCEPT = [
   "image/*",
   "video/*",
@@ -1098,6 +1103,38 @@ function responseMetadataModel(metadata?: ChatResponseMetadata): string | null {
   );
 }
 
+/** Per-turn control outcome: requested, prompt guidance, applied, or rejected. */
+function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
+  const requested = Object.entries(metadata?.requestedControls ?? {});
+  const rejected = new Set(metadata?.rejectedControlFamilies ?? []);
+  const promptOnly = new Set(Object.keys(metadata?.promptGuidanceControls ?? {}));
+  const applied = new Set(Object.keys(metadata?.appliedControls ?? {}));
+  if (!requested.length && !rejected.size) return null;
+  const lines = [
+    ...requested.map(([family, value]) => {
+      const prefix = rejected.has(family)
+        ? "Rejected"
+        : promptOnly.has(family)
+          ? "Prompt guidance"
+          : applied.has(family)
+            ? "Applied"
+            : "Requested — not confirmed";
+      return `${prefix}: ${family} ${value}`;
+    }),
+    ...[...rejected].filter((family) => !requested.some(([requestedFamily]) => requestedFamily === family))
+      .map((family) => `Rejected: ${family}`),
+  ];
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response controls. ${lines.join(". ")}`}>
+      {lines.map((line) => (
+        <span key={line} className="ui-pill border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
+          {line}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 type MetaLineState = "complete" | "streaming" | "failed" | "offline";
 
 function metaLineState(args: {
@@ -1778,7 +1815,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -1971,6 +2008,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const [archivingChat, setArchivingChat] = useState(false);
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
+  const [modelCapabilities, setModelCapabilities] = useState<readonly ModelControlCapability[]>([]);
+  const [modelControls, setModelControls] = useState<ModelControlValues>({});
+  // Send paths need the model selection synchronously. React state alone can
+  // still expose the previous render between a picker action and its PATCH.
+  const modelStateRef = useRef<ChatModelState | null>(null);
   const [usagePlan, setUsagePlan] = useState<ChatUsagePlanSnapshot | null>(null);
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).responseSpeed);
@@ -2380,12 +2422,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (sessionId) params.set("sessionId", sessionId);
     try {
       const res = await fetch(`/api/chat/model-state?${params.toString()}`, { cache: "no-store" });
-      const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
+      const json = (await res.json()) as {
+        ok?: boolean;
+        state?: ChatModelState;
+        controls?: ModelControlCapability[];
+      };
       const next = json.ok && json.state ? json.state : null;
-      if (shouldApply()) setModelState(next);
+      if (shouldApply()) {
+        modelStateRef.current = next;
+        setModelState(next);
+        setModelCapabilities(json.ok && Array.isArray(json.controls) ? json.controls : []);
+      }
       return next;
     } catch {
-      if (shouldApply()) setModelState(null);
+      if (shouldApply()) {
+        modelStateRef.current = null;
+        setModelState(null);
+        setModelCapabilities([]);
+      }
       return null;
     }
   }, [familiar.id, sessionId]);
@@ -2425,6 +2479,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
   }, [refreshModelState]);
 
+  // A model switch can change the available families or values. Keep only
+  // explicit selections that remain valid; do not silently substitute a
+  // prompt value or a provider default.
+  useEffect(() => {
+    setModelControls((current) => Object.fromEntries(
+      Object.entries(current).filter(([family, value]) =>
+        modelCapabilities.some((capability) =>
+          capability.family === family && capability.values.some((option) => option.value === value),
+        ),
+      ),
+    ) as ModelControlValues);
+  }, [modelCapabilities]);
+
   useEffect(() => {
     let cancelled = false;
     void refreshUsagePlan(undefined, () => !cancelled);
@@ -2441,7 +2508,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // chat exists (writes the conversation's modelIntent), else familiar-default.
   // No new persistence path — the picker reuses /api/chat/model-state.
   const handleSelectModel = useCallback(
-    (modelId: string) => {
+    (modelId: string | null) => {
+      // A staged model switch invalidates every prior model's controls until
+      // the scoped capability response arrives; never render/send stale native values.
+      setModelCapabilities([]);
+      setModelControls({});
+      const current = modelStateRef.current;
+      if (current) {
+        const optimistic: ChatModelState = {
+          ...current,
+          effectiveModel: modelId ?? "",
+          source: modelId ? (sessionId ? "session" : "familiar-default") : "runtime-default",
+          applicationState: "pending",
+          reason: modelId
+            ? "Applying the selected model."
+            : "Using the runtime's configured default model.",
+        };
+        modelStateRef.current = optimistic;
+        setModelState(optimistic);
+      }
       void (async () => {
         try {
           const res = await fetch("/api/chat/model-state", {
@@ -2455,7 +2540,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             }),
           });
           const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
-          if (json.ok && json.state) setModelState(json.state);
+          if (json.ok && json.state) {
+            modelStateRef.current = json.state;
+            setModelState(json.state);
+            await refreshModelState();
+          }
           else await refreshModelState();
         } catch {
           await refreshModelState();
@@ -2470,20 +2559,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // re-resolves the familiar's binding from current config on every turn.
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
-      const nextModel = defaultModelForRuntime(runtime);
+      const nextModel = modelForRuntimeSwitch(runtime);
+      // A runtime switch invalidates the previous runtime's controls before
+      // the async scoped capability refresh returns.
+      setModelCapabilities([]);
+      setModelControls({});
       // Optimistic: the chip flips immediately; the refetch reconciles.
-      setModelState((current) =>
-        current
-          ? { ...current, harness: runtime, effectiveModel: nextModel, source: "familiar-default", reason: "Selected from the chat composer." }
-          : current,
-      );
+      const current = modelStateRef.current;
+      if (current) {
+        const optimistic: ChatModelState = {
+          ...current,
+          harness: runtime,
+          effectiveModel: nextModel,
+          source: nextModel ? "familiar-default" : "runtime-default",
+          reason: nextModel
+            ? "Selected from the chat composer."
+            : "Using the runtime's configured default model.",
+        };
+        modelStateRef.current = optimistic;
+        setModelState(optimistic);
+      }
       void (async () => {
         try {
           const res = await fetch("/api/config", {
             method: "PATCH",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              familiars: { [familiar.id]: { harness: runtime, model: nextModel } },
+              familiars: {
+                [familiar.id]: {
+                  harness: runtime,
+                  model: nextModel || null,
+                },
+              },
             }),
           });
           // The roster's familiar.harness feeds the empty-state identity line
@@ -2943,11 +3050,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const modelHarness = canonicalHarnessId(modelState?.harness ?? familiar.harness ?? "claude");
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete below, which is null outside `/model <arg>` position).
-  const composerModelOptions = useRuntimeModelOptions(modelHarness ?? "claude", familiar.id);
+  const composerModelInventory = useRuntimeModelInventory(modelHarness ?? "claude", familiar.id);
+  const composerModelOptions = composerModelInventory.models;
+  const composerRuntimeOwnsDefault = runtimeOwnsModelDefault(modelHarness);
   const composerModelValue =
     modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
-      : modelHarness === "opencode"
+      : composerRuntimeOwnsDefault
         ? ""
         : composerModelOptions[0]?.id ?? "";
   const {
@@ -2993,29 +3102,30 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       options: PERMISSION_MODES.map((m) => ({ value: m.value, label: m.label })),
       onChange: (v: string) => setPermissionMode(v as CommandPermissionMode),
     },
-    ...(composerModelOptions.length > 0
+    ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0
       ? [{
           id: "model",
-          label: "Model",
+          label: `Model · ${inventoryProvenanceLabel(composerModelInventory.provenance, composerModelInventory.loading)}`,
           value: composerModelValue,
-          options: composerModelOptions.map((m) => ({ value: m.id, label: m.label })),
-          onChange: (id: string) => handleSelectModel(id),
+          options: [
+            ...(composerRuntimeOwnsDefault
+              ? [{ value: "", label: "Runtime default" }]
+              : []),
+            ...composerModelOptions.map((m) => ({ value: m.id, label: m.label })),
+          ],
+          onChange: (id: string) => handleSelectModel(id || null),
         }]
       : []),
-    {
-      id: "thinking",
-      label: "Thinking",
-      value: thinkingEffort,
-      options: THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-      onChange: (v: string) => setThinkingEffort(v as ComposerThinkingEffort),
-    },
-    {
-      id: "speed",
-      label: "Speed",
-      value: responseSpeed,
-      options: SPEED_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-      onChange: (v: string) => setResponseSpeed(v as ComposerResponseSpeed),
-    },
+    ...modelCapabilities.map((capability) => ({
+      id: `model-control-${capability.family}`,
+      label: `${capability.label} — ${capability.delivery === "prompt-only" ? "Prompt guidance" : "Native"}`,
+      value: modelControls[capability.family] ?? "",
+      options: capability.values.map((option) => ({ value: option.value, label: option.label })),
+      onChange: (value: string) => setModelControls((current) => ({
+        ...current,
+        [capability.family]: value,
+      })),
+    })),
   ];
 
   // Thumbs votes are stamped with what produced the response (user-requested)
@@ -4133,6 +4243,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         attachments: outgoingAttachments,
         ...(outgoingMentions.length ? { mentionedFiles: outgoingMentions } : {}),
         ...(opts?.promptOverride ? { promptOverride: opts.promptOverride } : {}),
+        controls: {
+          thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
+          responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
+          modelControls: controlsOverride?.modelControls ?? modelControls,
+          permissionMode: controlsOverride?.permissionMode ?? permissionMode,
+          ...(controlsOverride?.runtimeHost ?? runtimeHost ? { runtimeHost: (controlsOverride?.runtimeHost ?? runtimeHost) ?? undefined } : {}),
+        },
       });
       announce(projectLaunchMessage, "assertive");
       return;
@@ -4145,10 +4262,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       const queuedModelOverride =
         opts?.modelOverride !== undefined
           ? opts.modelOverride
-          : modelState?.source === "session" &&
-              modelState.effectiveModel &&
-              modelState.effectiveModel !== "unknown"
-            ? modelState.effectiveModel
+          : modelStateRef.current?.source === "session" &&
+              modelStateRef.current.effectiveModel &&
+              modelStateRef.current.effectiveModel !== "unknown"
+            ? modelStateRef.current.effectiveModel
             : null;
       enqueueMessage({
         text,
@@ -4171,6 +4288,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         controls: {
           thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
           responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
+          modelControls: controlsOverride?.modelControls ?? modelControls,
           permissionMode: controlsOverride?.permissionMode ?? permissionMode,
           queuedRuntimeHost:
             controlsOverride && "queuedRuntimeHost" in controlsOverride
@@ -4226,16 +4344,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       attachments: outgoingAttachments,
       ...(outgoingMentions.length ? { mentionedFiles: outgoingMentions } : {}),
       ...(opts?.promptOverride ? { promptOverride: opts.promptOverride } : {}),
+      controls: {
+        thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
+        responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
+        modelControls: controlsOverride?.modelControls ?? modelControls,
+        permissionMode: controlsOverride?.permissionMode ?? permissionMode,
+        ...(controlsOverride?.runtimeHost ?? runtimeHost ? { runtimeHost: (controlsOverride?.runtimeHost ?? runtimeHost) ?? undefined } : {}),
+      },
     };
     const projectRootForRequest = requestedProjectRoot;
     const mentionedFilesRootForRequest = opts?.mentionedFilesRoot ?? mentionRoot;
     const modelOverrideForRequest =
       opts?.modelOverride !== undefined
         ? opts.modelOverride
-        : modelState?.source === "session" &&
-            modelState.effectiveModel &&
-            modelState.effectiveModel !== "unknown"
-          ? modelState.effectiveModel
+        : (modelStateRef.current?.source === "session" || modelStateRef.current?.source === "familiar-default") &&
+            modelStateRef.current.effectiveModel &&
+            modelStateRef.current.effectiveModel !== "unknown"
+          ? modelStateRef.current.effectiveModel
           : null;
     setBusy(true);
     setError(null);
@@ -4259,6 +4384,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       role: "user",
       text: trimmed,
       ...(outgoingAttachments.length ? { attachments: outgoingAttachments } : {}),
+      ...(Object.keys(controlsOverride?.modelControls ?? modelControls).length
+        ? { modelControls: controlsOverride?.modelControls ?? modelControls }
+        : {}),
       createdAt: now,
     };
     const assistantId = crypto.randomUUID();
@@ -4396,8 +4524,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           sessionId: liveGeneration.sessionId,
           ...(startNewConversation ? { startNewConversation: true } : {}),
           projectRoot: projectRootForRequest,
-          reasoningEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
-          responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
+          modelControls: controlsOverride?.modelControls ?? modelControls,
           // Advisory permission mode for the picked access level; the daemon may
           // ignore it if the harness doesn't support per-turn permission scoping.
           permissionMode: controlsOverride?.permissionMode ?? permissionMode,
@@ -4410,7 +4537,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // race), and so a brand-new chat (no sessionId yet) still pins its
           // session model. Only session-scoped picks need this; familiar- and
           // global-default models already resolve server-side from config.
-          ...(modelOverrideForRequest
+          ...(modelStateRef.current?.source === "runtime-default"
+            ? { modelOverrideScope: "runtime-default" as const }
+            : modelOverrideForRequest
             ? {
                 modelOverride: modelOverrideForRequest,
                 modelOverrideScope: "session" as const,
@@ -4717,6 +4846,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       lastFailedSend.attachments,
       lastFailedSend.mentionedFiles ?? [],
       lastFailedSend.promptOverride ? { promptOverride: lastFailedSend.promptOverride } : undefined,
+      lastFailedSend.controls,
     );
   }
 
@@ -4728,12 +4858,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (busy || switchingHarnessRef.current) return;
     switchingHarnessRef.current = true;
     try {
-      const nextModel = defaultModelForRuntime(runtime);
+      const nextModel = modelForRuntimeSwitch(runtime);
       const res = await fetch("/api/config", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          familiars: { [familiar.id]: { harness: runtime, model: nextModel } },
+          familiars: {
+            [familiar.id]: {
+              harness: runtime,
+              model: nextModel || null,
+            },
+          },
         }),
       });
       if (!res.ok) {
@@ -4881,7 +5016,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!text.trim() && !prevAttachments?.length) return undefined;
     // null parentId (root user turn) must be forwarded as null, not undefined,
     // so the regenerated answer becomes a root sibling rather than appending.
-    return () => void sendRaw(text, prevAttachments ?? [], [], { parentTurnId: parentId ?? null });
+    const retryModel = turn.responseMetadata?.retryModel;
+    return () => void sendRaw(
+      text,
+      prevAttachments ?? [],
+      [],
+      {
+        parentTurnId: parentId ?? null,
+        ...(retryModel ? { modelOverride: retryModel } : {}),
+      },
+      {
+        thinkingEffort,
+        responseSpeed,
+        modelControls: prevUser.modelControls ?? {},
+        permissionMode,
+        runtimeHost: runtimeHost ?? undefined,
+      },
+    );
   }
 
   // Branch navigator: switch to a sibling turn and make its deepest descendant
@@ -4989,6 +5140,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         controls: {
           thinkingEffort,
           responseSpeed,
+          modelControls,
           permissionMode,
           queuedRuntimeHost: runtimeHost,
         },
@@ -5040,11 +5192,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // The home composer's host pick rides the first send explicitly (state
       // set below lands too late for this closure) and seeds the chip.
       if (initialControls?.runtimeHost) setRuntimeHost(initialControls.runtimeHost);
+      const initialSendOptions = initialModelOverride ? { modelOverride: initialModelOverride } : undefined;
       void sendRaw(
         initialPrompt,
         initialAttachments ?? [],
         [],
-        undefined,
+        initialSendOptions,
         normalized
           ? { ...normalized, permissionMode, runtimeHost: initialControls?.runtimeHost }
           : undefined,
@@ -7439,6 +7592,7 @@ function TurnRowImpl({
                   segments={renderSegments}
                   branchNav={branchNav}
                 />
+                <ResponseControlStatus metadata={turn.responseMetadata} />
               </div>
             )}
             {/* CHAT-D4-01: tools often run BEFORE the first prose chunk

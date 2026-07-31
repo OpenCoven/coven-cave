@@ -11,20 +11,18 @@ import {
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { buildCovenMarkersDirective } from "@/lib/coven-marker-directive";
 import { buildCitationsDirective } from "@/lib/citations-directive";
+import type { ModelControlValues } from "@/lib/model-control-capabilities";
 
 type ModelRequest = {
   familiarId: string;
   modelOverride?: string;
-  modelOverrideScope?: "next-message" | "session";
+  modelOverrideScope?: "next-message" | "session" | "runtime-default";
 };
 
 type ResponseControlRequest = {
-  reasoningEffort?: string;
-  responseSpeed?: string;
+  modelControls?: ModelControlValues;
 };
 
-type ReasoningEffort = "low" | "medium" | "high";
-type ResponseSpeed = "fast" | "balanced" | "careful";
 
 export function resolveSendModelMetadata(args: {
   body: ModelRequest;
@@ -35,7 +33,9 @@ export function resolveSendModelMetadata(args: {
 }): { desiredModel: string; modelState: ChatModelState } {
   const requestedModel = cleanModelId(args.body.modelOverride);
   const sessionModel =
-    args.body.modelOverrideScope === "session"
+    args.body.modelOverrideScope === "runtime-default"
+      ? ""
+      : args.body.modelOverrideScope === "session"
       ? requestedModel
       : args.existingConversation?.modelIntent?.model ?? null;
   const modelState = resolveChatModelState({
@@ -56,6 +56,14 @@ export function modelIntentForSend(
   body: ModelRequest,
   modelState: ChatModelState,
 ): ConversationModelIntent | undefined {
+  if (body.modelOverrideScope === "runtime-default") {
+    return {
+      model: "",
+      source: "session",
+      applicationState: "saved",
+      reason: "Using the runtime's configured default model.",
+    };
+  }
   if (body.modelOverrideScope !== "session" || modelState.source !== "session") return undefined;
   return {
     model: modelState.effectiveModel,
@@ -82,26 +90,18 @@ export function persistSendModelIntent(
   return true;
 }
 
-function normalizeReasoningEffort(value: unknown): ReasoningEffort {
-  return value === "low" || value === "medium" || value === "high" ? value : "high";
-}
-
-function normalizeResponseSpeed(value: unknown): ResponseSpeed {
-  return value === "fast" || value === "balanced" || value === "careful" ? value : "fast";
-}
-
 /** Stable user-turn metadata consumed by retry-capable clients after refresh. */
 export function persistedTurnControls(
   body: ResponseControlRequest,
   retryModel?: string | null,
 ): {
-  reasoningEffort: ReasoningEffort;
-  responseSpeed: ResponseSpeed;
+  modelControls?: ModelControlValues;
   modelOverride?: string;
 } {
   return {
-    reasoningEffort: normalizeReasoningEffort(body.reasoningEffort),
-    responseSpeed: normalizeResponseSpeed(body.responseSpeed),
+    ...(body.modelControls && Object.keys(body.modelControls).length > 0
+      ? { modelControls: body.modelControls }
+      : {}),
     ...(cleanModelId(retryModel) ? { modelOverride: cleanModelId(retryModel)! } : {}),
   };
 }
@@ -119,27 +119,21 @@ export function turnRetryModel(input: {
     ?? undefined;
 }
 
-/** Add the stable, non-user-visible response-control and next-path directives. */
+/** Add only explicitly selected prompt-only guidance. Native controls must
+ * never be duplicated as prose, and unsupported controls never reach here. */
 export function buildPromptWithResponseControls(prompt: string, body: ResponseControlRequest): string {
-  const effort = normalizeReasoningEffort(body.reasoningEffort);
-  const speed = normalizeResponseSpeed(body.responseSpeed);
-  const effortInstruction: Record<ReasoningEffort, string> = {
-    low: "Use minimal internal planning and answer directly.",
-    medium: "Balance planning with a concise answer.",
-    high: "Spend extra internal planning on correctness before answering.",
-  };
-  const speedInstruction: Record<ResponseSpeed, string> = {
-    fast: "Prioritize a fast, terse, action-first response.",
-    balanced: "Balance speed, detail, and clarity.",
-    careful: "Prioritize careful completeness over speed.",
-  };
+  const controls = Object.entries(body.modelControls ?? {});
+  const guidance = controls.length > 0
+    ? [
+        "<response_controls>",
+        ...controls.map(([family, value]) => `${family}: ${value}`),
+        "These are user-selected prompt guidance, not provider settings. Do not mention them unless asked.",
+        "</response_controls>",
+        "",
+      ]
+    : [];
   return [
-    "<response_controls>",
-    `thinking: ${effort} — ${effortInstruction[effort]}`,
-    `speed: ${speed} — ${speedInstruction[speed]}`,
-    "Do not mention these controls unless the user asks about them.",
-    "</response_controls>",
-    "",
+    ...guidance,
     buildNextPathsDirective(),
     "",
     buildCovenMarkersDirective(),

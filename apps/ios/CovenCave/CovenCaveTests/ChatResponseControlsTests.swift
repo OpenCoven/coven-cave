@@ -46,6 +46,7 @@ final class ChatResponseControlsTests: XCTestCase {
             runId: "run-1",
             reasoningEffort: .medium,
             responseSpeed: .careful,
+            modelControls: ["reasoning": "medium"],
             modelOverride: "anthropic/claude-opus-4-6",
             modelOverrideScope: .session
         )
@@ -55,6 +56,7 @@ final class ChatResponseControlsTests: XCTestCase {
 
         XCTAssertEqual(json["reasoningEffort"] as? String, "medium")
         XCTAssertEqual(json["responseSpeed"] as? String, "careful")
+        XCTAssertEqual(json["modelControls"] as? [String: String], ["reasoning": "medium"])
         XCTAssertEqual(json["projectRoot"] as? String, "/repos/cave")
         XCTAssertNil(json["sessionId"])
         XCTAssertEqual(json["modelOverride"] as? String, "anthropic/claude-opus-4-6")
@@ -100,7 +102,13 @@ final class ChatResponseControlsTests: XCTestCase {
               "text": "Review the branch",
               "reasoningEffort": "medium",
               "responseSpeed": "careful",
-              "modelOverride": "anthropic/claude-opus-4-6"
+              "modelControls": {"reasoning":"medium"},
+              "modelOverride": "anthropic/claude-opus-4-6",
+              "responseMetadata": {
+                "retryModel": "anthropic/claude-sonnet-4-6",
+                "requestedControls": {"reasoning":"medium"},
+                "appliedControls": {"reasoning":"medium"}
+              }
             }
             """.data(using: .utf8)
         )
@@ -110,8 +118,29 @@ final class ChatResponseControlsTests: XCTestCase {
 
         XCTAssertEqual(restored.reasoningEffort, .medium)
         XCTAssertEqual(restored.responseSpeed, .careful)
-        XCTAssertEqual(restored.modelOverride, "anthropic/claude-opus-4-6")
-        XCTAssertEqual(restored.retryModel(for: "nyx"), "anthropic/claude-opus-4-6")
+        XCTAssertEqual(restored.modelControls, ["reasoning": "medium"])
+        XCTAssertEqual(restored.requestedControls, ["reasoning": "medium"])
+        XCTAssertEqual(restored.appliedControls, ["reasoning": "medium"])
+        XCTAssertEqual(restored.modelOverride, "anthropic/claude-sonnet-4-6")
+        XCTAssertEqual(restored.retryModel(for: "nyx"), "anthropic/claude-sonnet-4-6")
+    }
+
+    func testHistoryRestorationBindsAssistantRetryModelToPrecedingUserTurn() throws {
+        let data = try XCTUnwrap(
+            """
+            [
+              {"id":"user-1","role":"user","text":"Review the branch","modelControls":{"reasoning":"high"}},
+              {"id":"assistant-1","role":"assistant","text":"Done","responseMetadata":{"retryModel":"openai/gpt-5.6-sol","requestedControls":{"reasoning":"high"},"promptGuidanceControls":{"reasoning":"high"},"rejectedControlFamilies":["verbosity"]}}
+            ]
+            """.data(using: .utf8)
+        )
+        let turns = try JSONDecoder().decode([ChatTurn].self, from: data)
+        let messages = DisplayMessage.restoredTranscript(from: turns, familiarId: "nyx")
+
+        XCTAssertEqual(messages[0].retryModel(for: "nyx"), "openai/gpt-5.6-sol")
+        XCTAssertEqual(messages[1].requestedControls, ["reasoning": "high"])
+        XCTAssertEqual(messages[1].promptGuidanceControls, ["reasoning": "high"])
+        XCTAssertEqual(messages[1].rejectedControlFamilies, ["verbosity"])
     }
 
     func testDuplicatingTurnPreservesRetryControls() {
@@ -142,16 +171,20 @@ final class ChatResponseControlsTests: XCTestCase {
         let event = try XCTUnwrap(StreamEvent.decode(
             """
             {"kind":"done","isError":false,"sessionId":"session-1",
-             "responseMetadata":{"retryModel":"openai/gpt-5.6-sol"}}
+             "responseMetadata":{"retryModel":"openai/gpt-5.6-sol","requestedControls":{"reasoning":"medium"},"appliedControls":{"reasoning":"medium"}}}
             """
         ))
 
-        guard case .done(let isError, let sessionId, let retryModel) = event else {
+        guard case .done(let isError, let sessionId, let retryModel, let requestedControls, let promptGuidanceControls, let appliedControls, let rejectedControlFamilies) = event else {
             return XCTFail("expected done event")
         }
         XCTAssertFalse(isError)
         XCTAssertEqual(sessionId, "session-1")
         XCTAssertEqual(retryModel, "openai/gpt-5.6-sol")
+        XCTAssertEqual(requestedControls, ["reasoning": "medium"])
+        XCTAssertNil(promptGuidanceControls)
+        XCTAssertEqual(appliedControls, ["reasoning": "medium"])
+        XCTAssertNil(rejectedControlFamilies)
     }
 
     func testGroupTurnRetainsOneRetryModelPerFamiliar() {
@@ -265,6 +298,47 @@ final class ChatResponseControlsTests: XCTestCase {
         XCTAssertTrue(ChatModelTurnBinding.shouldClearPending(
             pending,
             confirmedState: confirmedSession,
+            hasSession: true
+        ))
+    }
+
+    func testRuntimeDefaultClearHasNoTurnOverrideAndClearsAfterConfirmation() {
+        let confirmedRuntimeDefault = ChatModelState(
+            familiarId: "grok",
+            harness: "grok",
+            runtime: nil,
+            effectiveModel: "",
+            source: "runtime-default",
+            applicationState: nil,
+            reason: nil
+        )
+        let staleSession = ChatModelState(
+            familiarId: "grok",
+            harness: "grok",
+            runtime: nil,
+            effectiveModel: "xai/grok-4",
+            source: "session",
+            applicationState: nil,
+            reason: nil
+        )
+
+        let binding = ChatModelTurnBinding.resolve(
+            pendingModel: "",
+            confirmedState: staleSession,
+            hasSession: true
+        )
+
+        XCTAssertNil(binding.modelOverride)
+        XCTAssertEqual(binding.scope, .runtimeDefault,
+                       "clear followed immediately by send must carry an explicit runtime-default intent")
+        XCTAssertFalse(ChatModelTurnBinding.shouldClearPending(
+            "",
+            confirmedState: staleSession,
+            hasSession: true
+        ))
+        XCTAssertTrue(ChatModelTurnBinding.shouldClearPending(
+            "",
+            confirmedState: confirmedRuntimeDefault,
             hasSession: true
         ))
     }

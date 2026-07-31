@@ -6,9 +6,10 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 assert.match(source, /canonicalHarnessId\(rawRuntime\)/, "runtime aliases are canonicalized");
 assert.match(
   source,
-  /listRuntimeModelOptions\(runtime, familiarId,\s*\{[\s\S]*?allowOpenCodeInventory:/,
-  "the runtime endpoint consumes the shared server inventory",
+  /listRuntimeModelInventory\(runtime, familiarId,\s*\{[\s\S]*?allowOpenCodeInventory:/,
+  "the runtime endpoint consumes the shared capability-aware inventory",
 );
+assert.match(source, /\.\.\.inventory/, "the endpoint returns provenance and default ownership");
 assert.match(
   source,
   /runtime === "opencode"[\s\S]*?rejectNonLocalRequest\(req\)/,

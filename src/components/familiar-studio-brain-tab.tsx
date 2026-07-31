@@ -12,7 +12,7 @@ import { isBindableRuntimeChoice } from "@/lib/harness-adapters";
 import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import type { RuntimeModelOption } from "@/lib/grok-build";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
@@ -281,12 +281,11 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   // provider catalog the chat picker uses. allowCustom keeps the free-text
   // field as the escape hatch for ids not in the curated seed.
   const modelCatalog = catalogForRuntime(harnessId);
-  const liveRuntimeModels = harnesses.find((item) => item.id === harnessId)?.models ?? [];
   // Grok Build exposes models from the authenticated local CLI. Prefer that
   // catalog over a compile-time seed so Studio never offers unavailable xAI
   // models; OpenCode retains its own authenticated runtime inventory.
-  const runtimeModelOptions = useRuntimeModelOptions(harnessId, familiar.id);
-  const modelOptions = harnessId === "grok" ? liveRuntimeModels : runtimeModelOptions;
+  const runtimeModelInventory = useRuntimeModelInventory(harnessId, familiar.id);
+  const modelOptions = runtimeModelInventory.models;
   const allowCustomModel = modelCatalog?.allowCustom ?? true;
   const draftModelIsListed = modelOptions.some((option) => option.id === draftModel);
   // "" means Inherit default — only a non-empty unlisted id (or the user
@@ -875,7 +874,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               </label>
 
               <label className="familiar-studio-brain__row">
-                <span className="familiar-studio-brain__label">Model</span>
+                <span className="familiar-studio-brain__label">Model · {inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}</span>
                 <div className="familiar-studio-brain__control">
                   {modelOptions.length > 0 ? (
                     <StandardSelect

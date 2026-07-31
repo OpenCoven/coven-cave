@@ -29,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { ProjectPicker } from "@/components/project-picker";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Popover } from "@/components/ui/popover";
 import { SearchInput } from "@/components/ui/search-input";
@@ -985,7 +985,12 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            familiars: { [reply.familiarId]: { harness: runtime, model: defaultModelForRuntime(runtime) } },
+            familiars: {
+              [reply.familiarId]: {
+                harness: runtime,
+                model: modelForRuntimeSwitch(runtime) || null,
+              },
+            },
           }),
         });
         if (!res.ok) {

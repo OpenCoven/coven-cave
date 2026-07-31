@@ -6,7 +6,7 @@ const source = readFileSync(new URL("./use-runtime-model-options.ts", import.met
 
 assert.match(
   source,
-  /runtimeInventory\.key === inventoryKey[\s\S]*?runtimeInventory\.models !== null[\s\S]*?return runtimeInventory\.models/,
+  /runtimeInventory\.key === inventoryKey[\s\S]*?runtimeInventory\.models !== null[\s\S]*?return \{ models: runtimeInventory\.models, provenance: runtimeInventory\.provenance, loading: false, key: inventoryKey \}/,
   "dynamic model menus never expose a previous runtime or familiar's scoped inventory",
 );
 assert.match(
@@ -21,18 +21,24 @@ assert.match(
 );
 assert.match(
   source,
-  /setRuntimeInventory\(\{ key: inventoryKey, models: staticModels \}\)/,
-  "a failed dynamic request falls back to the safe static seed",
+  /inventoryFailureProvenance\(canonicalRuntime, staticModels\)/,
+  "a failed dynamic request derives truthful fallback, runtime-managed, or unavailable provenance",
+);
+assert.equal(
+  source.includes('staticModels.length > 0) return "fallback"') && source.includes('defaultOwner === "runtime" ? "runtime-managed" : "unavailable"'),
+  true,
+  "empty runtime-owned and unknown inventories never masquerade as a fallback catalog",
+);
+assert.match(source, /provenance: DYNAMIC_INVENTORY_RUNTIMES\.has\(canonicalRuntime\)[\s\S]*inventoryFailureProvenance\(canonicalRuntime, staticModels\)/, "static Codex and Hermes catalogs are truthfully reported as fallback inventory");
+assert.match(
+  source,
+  /new Set\(\["claude", "copilot", "opencode", "grok", "hermes"\]\)/,
+  "Grok and Hermes use the same scoped shared inventory contract as other dynamic runtimes",
 );
 assert.match(
   source,
-  /canonicalRuntime !== "grok"[\s\S]*?fetch\("\/api\/harnesses", \{ cache: "no-store" \}\)/,
-  "Grok uses the authenticated local harness catalog rather than a static model list",
-);
-assert.match(
-  source,
-  /canonicalRuntime === "grok" && harnessInventory\.runtime === canonicalRuntime[\s\S]*?return harnessInventory\.models/,
-  "Grok only renders models from the inventory for the current runtime request",
+  /DYNAMIC_INVENTORY_RUNTIMES\.has\(canonicalRuntime\) \? \[\] : staticModels[\s\S]*?loading: DYNAMIC_INVENTORY_RUNTIMES\.has\(canonicalRuntime\)/,
+  "dynamic inventories never render a prior familiar/runtime scope while the current request is pending",
 );
 
 console.log("use-runtime-model-options.test.ts: ok");

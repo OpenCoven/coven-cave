@@ -228,6 +228,30 @@ try {
   assert.equal(novaBinding.role, "review familiar");
   assert.equal(novaBinding.autoSelfReport, true);
   assert.equal(config.bindingFor(cfg, "missing").autoSelfReport, false);
+  const modelOwnershipConfig = {
+    ...cfg,
+    familiars: {
+      ...cfg.familiars,
+      grokDefault: { harness: "grok" },
+      grokExplicit: { harness: "grok", model: "xai/grok-4" },
+      claudeDefault: { harness: "claude" },
+    },
+  };
+  assert.equal(
+    config.bindingFor(modelOwnershipConfig, "grokDefault").model,
+    "",
+    "a runtime-owned default must remain absent during binding resolution",
+  );
+  assert.equal(
+    config.bindingFor(modelOwnershipConfig, "grokExplicit").model,
+    "xai/grok-4",
+    "an explicit model remains authoritative for a runtime-owned default",
+  );
+  assert.equal(
+    config.bindingFor(modelOwnershipConfig, "claudeDefault").model,
+    cfg.defaults.model,
+    "a Cave-owned runtime still inherits the global default model",
+  );
 
   await config.saveConfig({
     defaults: {

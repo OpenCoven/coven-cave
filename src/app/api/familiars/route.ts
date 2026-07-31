@@ -272,7 +272,6 @@ export async function POST(req: Request) {
   // Re-creating a removed id must clear its tombstone: the roster GET hides
   // tombstoned ids, so a stale entry would make the new familiar invisible.
   await takeTombstone(draft.id).catch(() => {});
-
   // Scaffold the Familiar Contract (SOUL.md / IDENTITY.md / ward.toml /
   // MEMORY.md) so the new familiar is contract-compliant from birth instead of
   // showing up for "rehabilitation" in the Studio Contract tab. Best-effort and

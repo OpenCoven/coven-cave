@@ -1,6 +1,7 @@
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import type { ModelControlValues } from "@/lib/model-control-capabilities";
 import type { ChatStreamClientHealth } from "@/lib/chat-stream-health";
 import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
 import type { TurnUsage } from "@/lib/usage-format";
@@ -61,6 +62,8 @@ export type Turn = {
   usage?: TurnUsage;
   costUsd?: number;
   responseMetadata?: ChatResponseMetadata;
+  /** Selected-model controls requested with this user turn. */
+  modelControls?: ModelControlValues;
   origin?: "chat" | "voice";
   voiceCallId?: string;
 };
@@ -79,6 +82,7 @@ export type ConversationHistoryTurn = {
   usage?: TurnUsage;
   costUsd?: number;
   responseMetadata?: ChatResponseMetadata;
+  modelControls?: ModelControlValues;
   cancelled?: boolean;
   createdAt?: string;
   origin?: "chat" | "voice";
@@ -114,6 +118,7 @@ export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[])
       usage: turn.usage,
       costUsd: turn.costUsd,
       responseMetadata: turn.responseMetadata,
+      modelControls: turn.modelControls,
       error: turn.isError,
       lifecycle: turn.cancelled ? ("cancelled" as const) : undefined,
       createdAt: turn.createdAt ?? new Date().toISOString(),

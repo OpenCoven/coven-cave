@@ -371,29 +371,19 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  chatRoute,
-  /reasoningEffort\?: string;/,
-  "Send body should accept the composer thinking control value",
-);
-assert.match(
-  chatRoute,
-  /responseSpeed\?: string;/,
-  "Send body should accept the composer speed control value",
-);
-assert.match(
   chatView,
-  /fetch\("\/api\/chat\/send"[\s\S]*body: JSON\.stringify\(\{[\s\S]*reasoningEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed/,
-  "ChatView should send selected Thinking and Speed controls through the existing chat send body",
+  /fetch\("\/api\/chat\/send"[\s\S]*body: JSON\.stringify\(\{[\s\S]*modelControls: controlsOverride\?\.modelControls \?\? modelControls/,
+  "ChatView should send the selected-model capability map through the chat send body",
 );
 assert.match(
   chatRoute,
-  /type OfflineChatQueuePayload = Pick<[\s\S]*\|\s*"reasoningEffort"[\s\S]*\|\s*"responseSpeed"/,
-  "Offline queued sends should preserve response controls from any composer surface",
+  /type OfflineChatQueuePayload = Pick<[\s\S]*\|\s*"modelControls"/,
+  "Offline queued sends should preserve selected-model controls",
 );
 assert.match(
   chatRoute,
-  /const payload: OfflineChatQueuePayload = \{[\s\S]*reasoningEffort: args\.body\.reasoningEffort,[\s\S]*responseSpeed: args\.body\.responseSpeed/,
-  "The send route should carry composer responseSpeed through offline queue payloads",
+  /const payload: OfflineChatQueuePayload = \{[\s\S]*modelControls: args\.body\.modelControls/,
+  "The send route should carry selected-model controls through offline queue payloads",
 );
 assert.match(
   modelHelpers,
@@ -401,14 +391,14 @@ assert.match(
   "Chat send model helpers should turn composer controls into harness-visible instructions",
 );
 assert.match(
-  modelHelpers,
-  /const speed = normalizeResponseSpeed\(body\.responseSpeed\)/,
-  "Chat send model helpers should continue accepting responseSpeed from all composer send bodies",
+  chatRoute,
+  /promptOnlyModelControls/,
+  "Chat send route should only turn explicitly prompt-only capabilities into prompt guidance",
 );
 assert.match(
   modelHelpers,
-  /export function persistedTurnControls\([\s\S]*reasoningEffort: normalizeReasoningEffort\(body\.reasoningEffort\),[\s\S]*responseSpeed: normalizeResponseSpeed\(body\.responseSpeed\),[\s\S]*cleanModelId\(retryModel\)/,
-  "Completed user turns should retain normalized controls and only a confirmed or routed retry model",
+  /export function persistedTurnControls\([\s\S]*body\.modelControls[\s\S]*modelControls: body\.modelControls[\s\S]*cleanModelId\(retryModel\)/,
+  "Completed user turns should retain the selected-model snapshot and only a confirmed or routed retry model",
 );
 assert.equal(
   (
@@ -416,8 +406,8 @@ assert.equal(
       /\.\.\.persistedTurnControls\((?:args\.body|body), responseMetadata\.retryModel\)/g,
     ) ?? []
   ).length,
-  4,
-  "OpenClaw and native stub plus transcript writers should persist retry controls",
+  5,
+  "OpenClaw, native stubs, and transcript writers should persist retry controls",
 );
 assert.match(
   chatRoute,

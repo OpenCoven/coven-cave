@@ -61,6 +61,25 @@ assert.equal(
 assert.equal(resolveChatModelState({ ...base, familiarModel: null }).source, "global-default");
 assert.deepEqual(
   resolveChatModelState({
+    familiarId: "hermes",
+    harness: "hermes",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: null,
+  }),
+  {
+    familiarId: "hermes",
+    harness: "hermes",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "",
+    source: "runtime-default",
+    applicationState: "saved",
+    reason: "Using the runtime's configured default model.",
+  },
+  "a fallback Hermes inventory must not become an implicit launch override",
+);
+assert.deepEqual(
+  resolveChatModelState({
     familiarId: "local-openclaw",
     harness: "openclaw",
     runtime: "local:/tmp/coven-cave",
@@ -71,12 +90,12 @@ assert.deepEqual(
     familiarId: "local-openclaw",
     harness: "openclaw",
     runtime: "local:/tmp/coven-cave",
-    effectiveModel: "openai/gpt-5.5",
-    source: "global-default",
+    effectiveModel: "",
+    source: "runtime-default",
     applicationState: "saved",
-    reason: "Inherited from Cave defaults.",
+    reason: "Using the runtime's configured default model.",
   },
-  "legacy synthetic runtime-local placeholders should not become the effective model",
+  "legacy synthetic runtime-local placeholders should defer to the runtime default",
 );
 assert.deepEqual(
   resolveChatModelState({
@@ -109,12 +128,12 @@ assert.deepEqual(
     familiarId: "grok-nova",
     harness: "grok",
     runtime: "local:/tmp/coven-cave",
-    effectiveModel: "grok-4.5",
-    source: "global-default",
+    effectiveModel: "",
+    source: "runtime-default",
     applicationState: "saved",
-    reason: "Cave's global model is unavailable in Grok Build; using Grok's default.",
+    reason: "Using the runtime's configured default model.",
   },
-  "a Grok familiar that inherits Cave's OpenAI default must not forward it to Grok",
+  "an unconfigured Grok familiar must defer to Grok Build's configured default",
 );
 assert.equal(
   resolveChatModelState({
@@ -124,8 +143,8 @@ assert.equal(
     globalDefaultModel: "xai/grok-code-fast-1",
     familiarModel: null,
   }).effectiveModel,
-  "xai/grok-code-fast-1",
-  "an explicitly configured global Grok model remains selectable",
+  "",
+  "a Cave-wide fallback does not become an implicit Grok launch override",
 );
 assert.deepEqual(
   resolveChatModelState({
@@ -141,10 +160,10 @@ assert.deepEqual(
     familiarId: "grok-nova",
     harness: "grok",
     runtime: "local:/tmp/coven-cave",
-    effectiveModel: "grok-4.5",
-    source: "global-default",
+    effectiveModel: "",
+    source: "runtime-default",
     applicationState: "saved",
-    reason: "Cave's global model is unavailable in Grok Build; using Grok's default.",
+    reason: "Using the runtime's configured default model.",
   },
   "stale models from a prior runtime must not be forwarded after switching a familiar to Grok",
 );
@@ -183,9 +202,9 @@ assert.deepEqual(
     harness: "opencode",
     runtime: "local:/tmp/coven-cave",
     effectiveModel: "",
-    source: "global-default",
+    source: "runtime-default",
     applicationState: "saved",
-    reason: "Using OpenCode's authenticated default model.",
+    reason: "Using the runtime's configured default model.",
   },
   "OpenCode must defer an unconfigured familiar to its authenticated CLI default",
 );

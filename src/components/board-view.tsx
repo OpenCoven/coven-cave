@@ -37,7 +37,7 @@ import { chatProjectById } from "@/lib/chat-projects";
 import { useProjects } from "@/lib/use-projects";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 import { BoardKanbanSkeleton } from "@/components/board-view-display";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
@@ -139,6 +139,7 @@ export function BoardView({
     cardId: string;
     sessionId: string;
     initialPrompt: string;
+    initialModelOverride?: string;
   } | null>(null);
   const pendingWorkFocusIdRef = useRef<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -827,6 +828,7 @@ export function BoardView({
     sessionId: string;
     familiarId: string | null;
     initialPrompt?: string;
+    initialModelOverride?: string;
     bridge?: string;
   } | null> => {
     const card = cards.find((candidate) => candidate.id === id);
@@ -860,6 +862,7 @@ export function BoardView({
         sessionId?: string;
         familiarId?: string | null;
         initialPrompt?: string;
+        initialModelOverride?: string;
         bridge?: string;
       };
       if (!res.ok || !json.ok || !json.sessionId) {
@@ -874,6 +877,7 @@ export function BoardView({
         sessionId: json.sessionId,
         familiarId: json.familiarId ?? null,
         initialPrompt: json.initialPrompt,
+        initialModelOverride: json.initialModelOverride,
         bridge: json.bridge,
       };
     } catch (err) {
@@ -913,7 +917,7 @@ export function BoardView({
     const started = await startTaskChat(id, project?.root);
     if (!started) return;
     if (started.bridge === "native-chat" && started.initialPrompt) {
-      setPendingBridgeStart({ cardId: id, sessionId: started.sessionId, initialPrompt: started.initialPrompt });
+      setPendingBridgeStart({ cardId: id, sessionId: started.sessionId, initialPrompt: started.initialPrompt, initialModelOverride: started.initialModelOverride });
     }
     // Native Chat needs TaskWorkCockpit to hand the first prompt to ChatView.
     // Jumping straight to the mobile session view would discard that one-shot
@@ -941,7 +945,12 @@ export function BoardView({
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          familiars: { [familiarId]: { harness: runtime, model: defaultModelForRuntime(runtime) } },
+          familiars: {
+            [familiarId]: {
+              harness: runtime,
+              model: modelForRuntimeSwitch(runtime) || null,
+            },
+          },
         }),
       });
       if (!res.ok) {
@@ -995,6 +1004,11 @@ export function BoardView({
           pendingBridgeStart?.cardId === workCard.id && pendingBridgeStart.sessionId === workCard.sessionId
             ? pendingBridgeStart.initialPrompt
             : null
+        }
+        initialModelOverride={
+          pendingBridgeStart?.cardId === workCard.id && pendingBridgeStart.sessionId === workCard.sessionId
+            ? pendingBridgeStart.initialModelOverride
+            : undefined
         }
         onSlashCommand={onSlashFromChat}
         onOpenOnboarding={onOpenOnboarding}

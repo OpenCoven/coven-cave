@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   persistedTurnControls,
   persistSendModelIntent,
+  resolveSendModelMetadata,
   turnRetryModel,
 } from "./chat-send-models.ts";
 
@@ -45,14 +46,13 @@ assert.equal(
 );
 assert.deepEqual(
   persistedTurnControls(
-    { reasoningEffort: "medium", responseSpeed: "careful" },
+    { modelControls: { reasoning: "medium" } },
     undefined,
   ),
   {
-    reasoningEffort: "medium",
-    responseSpeed: "careful",
+    modelControls: { reasoning: "medium" },
   },
-  "persisted controls never invent a model for a dynamic default",
+  "persisted selected-model controls never invent a model for a dynamic default",
 );
 
 const conversation = {
@@ -101,5 +101,14 @@ assert.equal(
   "an end-of-stream save cannot overwrite a newer mid-stream model PATCH",
 );
 assert.equal(conversation.modelIntent.model, "anthropic/claude-haiku-4-5");
+
+const runtimeDefault = resolveSendModelMetadata({
+  body: { familiarId: "nyx", modelOverrideScope: "runtime-default" },
+  config: { defaults: { model: "openai/gpt-5.6-sol" }, familiars: { nyx: { model: "anthropic/claude-opus-4-6" } } },
+  binding: { harness: "claude", model: "anthropic/claude-opus-4-6" },
+  existingConversation: conversation,
+  modelForwardingEnabled: true,
+});
+assert.equal(runtimeDefault.desiredModel, "", "an immediate clear send must not forward the old session or familiar model");
 
 console.log("chat-send-models.test.ts: ok");

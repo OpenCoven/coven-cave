@@ -26,6 +26,7 @@ enum ChatResponseSpeed: String, CaseIterable, Codable, Identifiable {
 enum ChatModelOverrideScope: String, Codable {
     case nextMessage = "next-message"
     case session
+    case runtimeDefault = "runtime-default"
 }
 
 /// The model intent attached to one user turn. A pending choice wins over the
@@ -46,6 +47,9 @@ struct ChatModelTurnBinding: Equatable {
         guard let model = pendingModel ?? confirmedSessionModel else {
             return ChatModelTurnBinding(modelOverride: nil, scope: nil)
         }
+        if model.isEmpty {
+            return ChatModelTurnBinding(modelOverride: nil, scope: .runtimeDefault)
+        }
         return ChatModelTurnBinding(
             modelOverride: model,
             scope: hasSession ? .nextMessage : .session
@@ -61,6 +65,10 @@ struct ChatModelTurnBinding: Equatable {
         hasSession: Bool
     ) -> Bool {
         guard hasSession, let pendingModel else { return false }
+        if pendingModel.isEmpty {
+            return confirmedState.source == "runtime-default"
+                && confirmedState.effectiveModel.isEmpty
+        }
         return confirmedState.source == "session"
             && confirmedState.effectiveModel == pendingModel
     }
