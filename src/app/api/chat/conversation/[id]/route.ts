@@ -1,9 +1,4 @@
-// The explicit .js extension (matching src/app/api/voice/**/route.ts) lets
-// route.test.ts import this module directly under plain Node ESM resolution,
-// which — unlike Next's bundler — needs the real subpath: `next` ships no
-// "exports" map, so the extensionless "next/server" specifier 404s outside
-// Next's own resolver.
-import { NextResponse } from "next/server.js";
+import { NextResponse } from "next/server";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { cleanModelControlValues } from "@/lib/model-control-capabilities";
 import {
