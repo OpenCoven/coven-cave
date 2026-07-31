@@ -214,7 +214,10 @@ export function localRuntimeLaunchError(
 /** A process that did start but exited unsuccessfully is distinct from a
  * missing or unlaunchable CLI. Its copy is safe to surface without provider
  * output, executable paths, or scoped environment values. */
-export function runtimeProcessFailure(runner: DirectRunnerId | CovenBackedRunnerId): {
+export function runtimeProcessFailure(
+  runner: DirectRunnerId | CovenBackedRunnerId,
+  options: { exitCode?: number | null; emittedDiagnostic?: boolean } = {},
+): {
   code: typeof RUNTIME_AVAILABILITY_ERROR_CODES.process_failed;
   message: string;
 } {
@@ -225,9 +228,16 @@ export function runtimeProcessFailure(runner: DirectRunnerId | CovenBackedRunner
     };
   }
   const label = runner === "hermes" ? "Hermes" : RUNNER_LABELS[runner];
+  const exitCode =
+    typeof options.exitCode === "number" && Number.isInteger(options.exitCode)
+      ? ` (exit code ${options.exitCode})`
+      : "";
+  const diagnostic = options.emittedDiagnostic
+    ? " The runtime emitted diagnostic output, which Cave withheld to protect local data."
+    : " The runtime did not emit an error message.";
   return {
     code: RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
-    message: `${label} exited with an error before returning a response. Check ${label} sign-in and configuration, then try again.`,
+    message: `${label} exited with an error${exitCode} before returning a response.${diagnostic} Check the local runtime configuration, then try again.`,
   };
 }
 

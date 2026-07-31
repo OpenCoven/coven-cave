@@ -2258,7 +2258,11 @@ export async function POST(req: Request) {
         detail?: string,
         durationMs?: number,
       ) => {
-        if (id === "opencode-compatibility" || id === "grok-compatibility" || id === "codex-compatibility") {
+        if (
+          (id === "opencode-compatibility" || id === "grok-compatibility") ||
+          id === "codex-compatibility" ||
+          id === "runtime-process"
+        ) {
           persistedCompatibilityDiagnostics.push({
             id,
             label,
@@ -2382,6 +2386,7 @@ export async function POST(req: Request) {
       // stream frame. Defer classifying that condition until all buffered
       // stdout has passed through the more-specific adapter failure parser.
       let covenBackedProcessFailed = false;
+      let covenBackedExitCode: number | null = null;
       // Coven is the outer launch vehicle. Its cleanup can fail after the
       // adapter has already supplied a successful structured result; that
       // completed assistant response remains authoritative for this attempt.
@@ -4219,6 +4224,9 @@ export async function POST(req: Request) {
               !covenCompletedSuccessfulResult &&
               typeof code === "number" &&
               code !== 0;
+            if (covenBackedProcessFailed && typeof code === "number" && code !== 0) {
+              covenBackedExitCode = code;
+            }
             if (covenBackedProcessFailed) {
               result = { ...result, is_error: true };
             }
@@ -4368,6 +4376,7 @@ export async function POST(req: Request) {
         stdoutErrTail.length = 0;
         codexAdapterFailure = null;
         covenBackedProcessFailed = false;
+        covenBackedExitCode = null;
         covenCompletedSuccessfulResult = false;
         resumeFailed = false;
         adapterConflict = null;
@@ -4427,6 +4436,7 @@ export async function POST(req: Request) {
         stdoutErrTail.length = 0;
         codexAdapterFailure = null;
         covenBackedProcessFailed = false;
+        covenBackedExitCode = null;
         covenCompletedSuccessfulResult = false;
         resumeFailed = false;
         // Settle the retry step BEFORE the fresh attempt runs, not after it
@@ -4484,10 +4494,22 @@ export async function POST(req: Request) {
           : binding.harness === "claude"
             ? "claude"
             : "coven";
-        const failure = runtimeProcessFailure(failedRunner);
+        const emittedDiagnostic = stderrTail.length > 0 || stdoutErrTail.length > 0;
+        const detail = covenBackedExitCode == null
+          ? emittedDiagnostic
+            ? "Runtime diagnostic output was withheld to protect local data."
+            : "The runtime did not emit an error message."
+          : emittedDiagnostic
+            ? `Exit code ${covenBackedExitCode}; runtime diagnostic output was withheld to protect local data.`
+            : `Exit code ${covenBackedExitCode}; the runtime did not emit an error message.`;
+        const failure = runtimeProcessFailure(failedRunner, {
+          exitCode: covenBackedExitCode,
+          emittedDiagnostic,
+        });
         launchFailure = failure;
         result.is_error = true;
         pushProgress("harness-start", `${binding.harness} exited with an error`, "error", failure.message);
+        pushProgress("runtime-process", `${binding.harness} process failure`, "error", detail);
         push({ kind: "error", code: failure.code, message: failure.message });
       }
 
@@ -4649,12 +4671,37 @@ export async function POST(req: Request) {
         modelState.applicationState = application.state;
         modelState.reason = application.reason;
       }
-      // Model parity: if the harness echoed its resolved model, promote the
-      // application state from `pending` to `applied` and record what actually
-      // ran. No echo ⇒ leave the honest `pending`/`unsupported` state untouched.
+      // `coven run` can echo the forwarded model in system.init before it has
+      // started the downstream harness. That establishes argv forwarding, not
+      // downstream acceptance, so keep the model pending unless the error
+      // itself safely identifies a rejected model. In particular, do not mark
+      // a successful wrapper response as proof that Codex accepted `--model`.
+      else if (localRuntimePlan?.runner === "coven" && forwardModel) {
+        const rejected = result.is_error === true && modelRejectionInError(
+          [...stderrTail, ...stdoutErrTail].join("\n"),
+        );
+        const application = modelApplicationForHarness(
+          rejected ? { failed: true } : { supported: true },
+        );
+        responseMetadata.modelApplicationState = application.state;
+        responseMetadata.modelApplicationReason = rejected
+          ? application.reason
+          : "Coven forwarded the selected model; downstream acceptance was not confirmed.";
+        modelState.applicationState = application.state;
+        modelState.reason = responseMetadata.modelApplicationReason;
+      }
+      // Direct/native runtime echoes can identify the resolved model. A
+      // successful run confirms it; a model rejection becomes failed rather
+      // than incorrectly reporting the selected model as applied.
       else if (confirmedModel) {
-        const application = modelApplicationForHarness({ supported: true, confirmed: true });
-        responseMetadata.confirmedModel = confirmedModel;
+        const application = modelApplicationForHarness(
+          modelApplicationFromRun({
+            confirmedModel,
+            isError: result.is_error === true,
+            errorText: [...stderrTail, ...stdoutErrTail].join("\n"),
+          }),
+        );
+        if (!result.is_error) responseMetadata.confirmedModel = confirmedModel;
         responseMetadata.modelApplicationState = application.state;
         responseMetadata.modelApplicationReason = application.reason;
         modelState.applicationState = application.state;
@@ -4689,11 +4736,15 @@ export async function POST(req: Request) {
       // early-exiting harness never supplied a session id and therefore has
       // no conversation file to persist.
       settleUnfinishedTools();
-      // Launch failures never produced a real assistant response: the client
-      // already received the structured error above, so persist nothing
-      // (matching the OpenClaw no-spawn precedent) instead of writing a
-      // fabricated turn the user would rediscover on reload.
-      if (finalSessionId && !launchFailure) {
+      // Preflight/spawn failures never produced a real assistant response, so
+      // preserve the established no-transcript behavior for them. A Coven
+      // child that did start and then exited non-zero is different: persist a
+      // clearly marked failure when the conversation already has an id, so a
+      // reload retains the safe exit diagnostics instead of looking complete.
+      const persistCovenProcessFailure = Boolean(
+        finalSessionId && launchFailure && covenBackedProcessFailed,
+      );
+      if (finalSessionId && (!launchFailure || persistCovenProcessFailure)) {
         pushProgress("save-transcript", "Saving transcript", "running");
         await recordSessionFamiliar(finalSessionId, body.familiarId);
         // Settle any in-flight stub write first so it can never race (and
@@ -4738,10 +4789,13 @@ export async function POST(req: Request) {
           const persistedTools = toPersistedTools([...priorAttemptTools, ...toolTracker.snapshot()],
             assistantText.length - assistantText.trimStart().length,
           );
+          const persistedAssistantText = persistCovenProcessFailure && !cleanedAssistantText
+            ? launchFailure!.message
+            : cleanedAssistantText;
           const assistantTurn: ChatTurn = {
             id: assistantTurnId,
             role: "assistant",
-            text: cleanedAssistantText,
+            text: persistedAssistantText,
             ...(agentAttachments.length ? { attachments: agentAttachments } : {}),
             createdAt: new Date().toISOString(),
             durationMs: result.duration_ms,
@@ -4783,7 +4837,7 @@ export async function POST(req: Request) {
           if (workBranch) conv.branch = workBranch;
           // Transcript PR snapshot: the reply's last reported PR URL (fallback
           // attribution for chats whose work happens in agent worktrees).
-          const reportedPrUrl = latestPrUrlFromText(cleanedAssistantText);
+          const reportedPrUrl = latestPrUrlFromText(persistedAssistantText);
           if (reportedPrUrl) conv.prUrl = reportedPrUrl;
           if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
           else if (openCodeDirect && existingConversation && !openCodeNativeResumeUsed) {
