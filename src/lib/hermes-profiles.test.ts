@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   normalizeHermesProfileBinding,
+  hermesProfileDaemonLaunchBlockReason,
   parseHermesProfileDescription,
   parseHermesProfileHome,
   parseHermesProfileList,
@@ -22,6 +23,11 @@ assert.equal(normalizeHermesProfileBinding({ id: "../work", homePath: "/tmp/work
 assert.equal(normalizeHermesProfileBinding({ id: "work", homePath: "relative" }), undefined);
 assert.equal(normalizeHermesProfileBinding({ id: "work", homePath: "/tmp/profile/../../private" }), undefined);
 assert.equal(normalizeHermesProfileBinding({ id: "work", homePath: "/tmp/arbitrary-work" }), undefined);
+assert.match(
+  hermesProfileDaemonLaunchBlockReason({ harness: "hermes", hermesProfile: { id: "work", homePath: "/home/cave/.hermes/profiles/work" } }) ?? "",
+  /cannot pass that profile to Hermes/,
+);
+assert.match(hermesProfileDaemonLaunchBlockReason({ hasInvalidHermesProfileBinding: true }) ?? "", /binding is invalid/);
 assert.equal(
   normalizeHermesProfileBinding({ id: "work", homePath: "/" + "/".repeat(20_000) + "not-a-profile" }),
   undefined,

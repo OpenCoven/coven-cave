@@ -10,6 +10,21 @@ export type HermesProfileSummary = {
  * home, skills, SOUL, and sessions. */
 export type HermesProfileBinding = Pick<HermesProfileSummary, "id" | "homePath">;
 
+/** Daemon sessions cannot express Hermes's explicit `-p` profile selector. */
+export function hermesProfileDaemonLaunchBlockReason(binding: {
+  harness?: string;
+  hermesProfile?: HermesProfileBinding;
+  hasInvalidHermesProfileBinding?: boolean;
+}): string | null {
+  if (binding.hasInvalidHermesProfileBinding) {
+    return "This familiar's Hermes profile binding is invalid. Choose a saved Hermes profile again before launching it.";
+  }
+  if (binding.hermesProfile) {
+    return "This familiar uses an explicit Hermes profile. This launch surface cannot pass that profile to Hermes; start it from Chat instead.";
+  }
+  return null;
+}
+
 const PROFILE_ID_RE = /^[A-Za-z0-9_-]+$/;
 
 function isAbsoluteProfileHome(value: string): boolean {

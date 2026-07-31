@@ -35,6 +35,7 @@ import {
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { copilotStreamSpec } from "@/lib/copilot-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
 import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
 
@@ -259,6 +260,8 @@ export async function startFlowSession(
   // session id, which is where the flow transcript endpoint and the
   // research-mission reconcile already look first.
   const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
+  const hermesProfileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (hermesProfileBlock) return { ok: false, status: 409, error: hermesProfileBlock };
   const hubAuthority = config.multiHost?.mode === "hub";
   if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
     const [capability, compatibility] = await Promise.all([
