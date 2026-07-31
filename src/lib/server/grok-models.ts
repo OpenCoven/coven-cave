@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
 import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
@@ -18,7 +19,7 @@ export function listGrokModels(
   return new Promise((resolve) => {
     const launch = grokLaunchCommandForBinary((dependencies.binary ?? grokBin)());
     const env = (dependencies.env ?? harnessSpawnEnv)(familiarId);
-    let child: ChildProcessWithoutNullStreams;
+    let child: ChildProcessByStdio<null, Readable, Readable>;
     try {
       child = (dependencies.spawnImpl ?? spawn)(launch.command, [...launch.fixedArgs, "--no-auto-update", "models"], {
         env,

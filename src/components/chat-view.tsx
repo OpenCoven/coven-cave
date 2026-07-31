@@ -5009,7 +5009,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         responseSpeed,
         modelControls: prevUser.modelControls ?? {},
         permissionMode,
-        runtimeHost,
+        runtimeHost: runtimeHost ?? undefined,
       },
     );
   }
