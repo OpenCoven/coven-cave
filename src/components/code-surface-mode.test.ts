@@ -11,9 +11,10 @@ import { readFile } from "node:fs/promises";
 // absorbed as a tab — so the mode returned behind caveCodeSurface(). Phase 2
 // (cave-m6ys) made it default-on. Phase 3 (cave-cc5r) moved the surface into
 // the Coding familiar's Role Surface room: "code" is now an alias landing on
-// `surface:code` (role-gated, explicit familiar Type picker in the Studio),
-// while the standalone GitHub surface returned as a canonical mode every
-// familiar keeps. These pins document that sanctioned shape.
+// `surface:code` (role-gated, explicit familiar Type picker in the Studio).
+// Legacy "github" entry points are now compatibility routing into that same
+// room while the sidebar row still exists. These pins document that sanctioned
+// shape.
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
@@ -82,9 +83,14 @@ assert.match(
   "setMode funnels every code entry point (deep links, palette, navigate-mode, persisted restore) into the room",
 );
 assert.match(
+  modeType,
+  /github: "surface:code"/,
+  "MODE_ALIASES routes the github compatibility alias onto the Coding familiar's room",
+);
+assert.doesNotMatch(
   workspace,
   /mode === "github" \?[\s\S]{0,400}?<GitHubView/,
-  "Workspace renders the standalone GitHub surface on the canonical github mode",
+  "Workspace no longer renders a standalone GitHub surface; legacy github requests funnel into the room",
 );
 assert.match(
   lazySurfaces,
@@ -159,6 +165,11 @@ assert.match(
   workspace,
   /hideGithubRow=\{roleSurfaceSession\.visibleSurfaces\.some\(\(s\) => s\.id === CODE_SURFACE_ID\)\}/,
   "the GitHub row hides while the Code room is visible for the active familiar",
+);
+assert.doesNotMatch(
+  workspace,
+  /visibleSurfaces\.some\(\(s\) => s\.id === surfaceId\)\) setMode\("home"\)/,
+  "Workspace lets RoleSurfaceHost render the explicit wrong-role closed-room state",
 );
 assert.match(
   codeView,

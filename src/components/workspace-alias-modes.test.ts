@@ -69,10 +69,16 @@ assert.match(
   /if \(next === "code"\) \{[\s\S]{0,700}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\)\)/,
   'setMode\'s "code" branch must land on the Coding familiar\'s room (MODE_ALIASES.code = "surface:code", cave-cc5r)',
 );
+assert.equal(MODE_ALIASES.github, "surface:code");
 assert.match(
   workspace,
-  /mode === "github" \?[\s\S]{0,500}?<GitHubView[\s\S]{0,300}?initialTarget=\{githubTarget\}/,
-  "the canonical github mode renders the standalone GitHub surface with its deep-link target (cave-cc5r)",
+  /if \(next === "github"\) \{[\s\S]{0,500}?enqueuePendingCodeNavigation\(\{\s*kind: "tab",\s*topTab: "activity",\s*nonce: Date\.now\(\),?\s*\}\);[\s\S]{0,300}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\), "github"\)/,
+  'setMode migrates legacy "github" requests to Code Workshop Activity',
+);
+assert.doesNotMatch(
+  workspace,
+  /mode === "github" \?/,
+  "github is compatibility intent, never a standalone render branch",
 );
 assert.doesNotMatch(
   workspace,
