@@ -42,6 +42,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
 import { Segmented } from "@/components/ui/settings-controls";
+import { consumeCovenGroupPending } from "@/lib/chat-tab-events";
 import { formatChatRecency, useDateTimePrefs } from "@/lib/datetime-format";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -254,7 +255,13 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   useEffect(() => {
     const loaded = loadGroups();
     setGroups(loaded);
-    if (loaded.length > 0) setActiveId(loaded[0].id);
+    // A chat promoted from the title row (cave-9xadi) names the coven it just
+    // created. Honour that explicitly rather than leaning on the most-recently-
+    // updated-first sort to put it at index 0 — the sort is a display order,
+    // not a promise about which coven the user asked for.
+    const requested = consumeCovenGroupPending();
+    const target = requested && loaded.some((g) => g.id === requested) ? requested : loaded[0]?.id;
+    if (target) setActiveId(target);
   }, []);
 
   // --- swap transcript when the active group changes ----------------------

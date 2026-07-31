@@ -22,7 +22,14 @@ import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
 import { formatBatchDuration, toolBatchSummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
-import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
+import {
+  CHAT_OPEN_COVEN_EVENT,
+  CHAT_OPEN_PROJECTS_EVENT,
+  markCovenGroupPending,
+  markCovenTabPending,
+} from "@/lib/chat-tab-events";
+import { promoteSessionToCoven } from "@/lib/coven-promotion";
+import { loadGroups, saveGroups } from "@/lib/group-chat";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
 import { publishBoardChanged } from "@/lib/board-cache-events";
@@ -56,6 +63,7 @@ import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
+import { ChatParticipants } from "@/components/chat-participants";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ChatEmptyState } from "@/components/chat-empty-state";
 import { ChatNewDashboard } from "@/components/chat-new-dashboard";
@@ -268,6 +276,9 @@ type Props = {
    *  switched this view to a different session. */
   openVoiceSessionId?: string;
   daemonRunning?: boolean;
+  /** Roster behind the title row's participants cluster — who you could add to
+   *  this chat to make it a coven (cave-9xadi). */
+  familiars?: Familiar[];
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
   sessions?: SessionRow[];
@@ -1815,7 +1826,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, familiars = [], sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -5798,6 +5809,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // are archive-free by default — chat-siderail-hide-archived) but the
   // transcript survives, reachable via the chat list's "Show archived" toggle
   // where the same menu item unarchives it back onto the rail.
+  // Participants cluster (cave-9xadi): adding a familiar turns this solo
+  // thread into a coven. A coven is a set of ordinary per-familiar sessions,
+  // so nothing migrates — the group pins THIS session as the host's, and the
+  // coven surface resumes it. The latch pair (tab + group id) mirrors how the
+  // Projects/Skills tabs hand off, so the surface lands on the new coven
+  // rather than its empty state.
+  const promoteToCoven = useCallback(
+    (addedId: string) => {
+      const added = familiars.find((f) => f.id === addedId);
+      if (!added) return;
+      const { groups, group, carriedSession } = promoteSessionToCoven({
+        groups: loadGroups(),
+        host: { id: familiar.id, name: familiar.display_name },
+        added: [{ id: added.id, name: added.display_name }],
+        sessionId,
+        projectId: resolvedProjectId !== NO_PROJECT_ID ? resolvedProjectId : null,
+        now: new Date().toISOString(),
+        groupId: crypto.randomUUID(),
+      });
+      saveGroups(groups);
+      markCovenTabPending();
+      markCovenGroupPending(group.id);
+      window.dispatchEvent(new CustomEvent(CHAT_OPEN_COVEN_EVENT));
+      announce(
+        carriedSession
+          ? `Added ${added.display_name}. This conversation continues as ${familiar.display_name}'s thread in the coven.`
+          : `Started a coven with ${familiar.display_name} and ${added.display_name}.`,
+      );
+    },
+    [announce, familiar.display_name, familiar.id, familiars, resolvedProjectId, sessionId],
+  );
+
   const setChatArchived = async (archived: boolean) => {
     if (!sessionId || archiving) return;
     setArchiving(true);
@@ -5947,6 +5990,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           generateTitle={generateTitleFromTranscript}
         >
           <div className="cave-chat-session-actions">
+            {/* cave-9xadi: the participants cluster leads the action group —
+                who is in this conversation reads before what you can do to it.
+                The dashed + is the coven entry point, per the design's own
+                note: "a solo session becomes a coven by adding someone here." */}
+            <ChatParticipants
+              familiar={familiar}
+              familiars={familiars}
+              daemonRunning={daemonRunning ?? null}
+              onAddFamiliar={promoteToCoven}
+            />
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
                 no longer hides them). Voice joins the hover-reveal quick set;
                 Archive stays always-visible (the design's "Mark done" slot,

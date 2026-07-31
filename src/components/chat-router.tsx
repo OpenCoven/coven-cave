@@ -764,6 +764,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     <ChatView
       ref={viewHandle}
       familiar={chatFamiliar}
+      familiars={familiars}
       sessionId={view.sessionId}
       session={activeSession}
       projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
