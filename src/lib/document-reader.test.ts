@@ -328,7 +328,10 @@ test("unsupported code-fence info strings stay fenced and never create reader he
       ["codeBlock", "paragraph"],
       `${label} remains one fenced code block`,
     );
-    assert.equal(blockText(doc.sections[0].blocks[0]), "Inside\n---");
+    assert.equal(
+      doc.sections[0].blocks[0].content.map((span) => span.text).join(""),
+      "Inside\n---",
+    );
     assert.equal(blockText(doc.sections[0].blocks[1]), "After.");
   }
 });
@@ -358,8 +361,168 @@ test("tilde and longer fences with unsupported info strings keep Setext-looking 
       ["codeBlock", "paragraph"],
       `${label} remains fenced`,
     );
-    assert.equal(blockText(doc.sections[0].blocks[0]), "Title\n===");
+    assert.equal(
+      doc.sections[0].blocks[0].content.map((span) => span.text).join(""),
+      "Title\n===",
+    );
     assert.equal(blockText(doc.sections[0].blocks[1]), "After.");
+  }
+});
+
+test("unmatched multiline comments stay one visible literal block", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+  const source = "<!-- note\n## Hidden?\n- list item\n`inline code`";
+  const doc = parseMarkdownReaderDocument(source, "Fallback title");
+
+  assert.deepEqual(
+    { title: doc.title, titleSource: doc.titleSource },
+    { title: "Fallback title", titleSource: "fallback" },
+  );
+  assert.equal(doc.sections.length, 1);
+  assert.deepEqual(
+    {
+      heading: doc.sections[0].heading,
+      level: doc.sections[0].level,
+      blockTypes: doc.sections[0].blocks.map((block) => block.type),
+    },
+    { heading: "", level: 0, blockTypes: ["paragraph"] },
+  );
+  assert.deepEqual(doc.sections[0].blocks[0].content, [
+    { text: source, styles: {} },
+  ]);
+});
+
+test("comments inside fenced and inline code survive while real comments are stripped", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+  const doc = parseMarkdownReaderDocument(
+    "```html\n<!-- fenced keep -->\n```\n\n`<!-- inline keep -->`\n\n<!-- remove me -->\n\nAfter.",
+    "Fallback title",
+  );
+
+  assert.equal(doc.sections.length, 1);
+  assert.deepEqual(
+    doc.sections[0].blocks.map((block) => block.type),
+    ["codeBlock", "paragraph", "paragraph"],
+  );
+  assert.equal(blockText(doc.sections[0].blocks[0]), "<!-- fenced keep -->");
+  assert.deepEqual(doc.sections[0].blocks[1].content, [
+    { text: "<!-- inline keep -->", styles: { code: true } },
+  ]);
+  assert.equal(blockText(doc.sections[0].blocks[2]), "After.");
+  assert.doesNotMatch(JSON.stringify(doc), /remove me/);
+});
+
+test("compact hyphens after blockquotes and lists stay dividers instead of sections", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+
+  const afterQuote = parseMarkdownReaderDocument(
+    "> Quoted text\n---\n\nAfter.",
+    "Fallback title",
+  );
+  assert.equal(blockText(afterQuote.lede), "Quoted text");
+  assert.deepEqual(
+    afterQuote.sections.map((section) => ({
+      heading: section.heading,
+      level: section.level,
+      blockTypes: section.blocks.map((block) => block.type),
+    })),
+    [{ heading: "", level: 0, blockTypes: ["divider", "paragraph"] }],
+  );
+
+  const afterList = parseMarkdownReaderDocument(
+    "- Item one\n---\n\nAfter.",
+    "Fallback title",
+  );
+  assert.deepEqual(
+    afterList.sections.map((section) => ({
+      heading: section.heading,
+      level: section.level,
+      blockTypes: section.blocks.map((block) => block.type),
+    })),
+    [
+      {
+        heading: "",
+        level: 0,
+        blockTypes: ["bulletList", "divider", "paragraph"],
+      },
+    ],
+  );
+
+  const realSetext = parseMarkdownReaderDocument(
+    "Paragraph\n---",
+    "Fallback title",
+  );
+  assert.deepEqual(
+    realSetext.sections.map((section) => ({
+      heading: section.heading,
+      level: section.level,
+      blockTypes: section.blocks.map((block) => block.type),
+    })),
+    [{ heading: "Paragraph", level: 2, blockTypes: [] }],
+  );
+});
+
+test("compact hyphens after other non-paragraph blocks stay dividers", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+
+  for (const { label, source, blockTypes } of [
+    {
+      label: "image",
+      source: "![Diagram](https://example.com/diagram.png)\n---\n\nAfter.",
+      blockTypes: ["image", "divider", "paragraph"],
+    },
+    {
+      label: "table",
+      source: "| Name |\n| --- |\n| Coven |\n---\n\nAfter.",
+      blockTypes: ["table", "divider", "paragraph"],
+    },
+  ]) {
+    const doc = parseMarkdownReaderDocument(source, "Fallback title");
+    assert.deepEqual(
+      doc.sections.map((section) => ({
+        heading: section.heading,
+        level: section.level,
+        blockTypes: section.blocks.map((block) => block.type),
+      })),
+      [{ heading: "", level: 0, blockTypes }],
+      `${label} remains a non-paragraph block before the divider`,
+    );
+  }
+});
+
+test("long fences keep shorter same-character fences and headings in one code block", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+
+  for (const { label, source, expected } of [
+    {
+      label: "backtick fence",
+      source:
+        "````markdown\n```\n## Hidden backtick heading\n<!-- keep -->\n```\n````\n\nAfter.",
+      expected: "```\n## Hidden backtick heading\n<!-- keep -->\n```",
+    },
+    {
+      label: "tilde fence",
+      source:
+        "~~~~markdown\n~~~\n## Hidden tilde heading\n<!-- keep -->\n~~~\n~~~~\n\nAfter.",
+      expected: "~~~\n## Hidden tilde heading\n<!-- keep -->\n~~~",
+    },
+  ]) {
+    const doc = parseMarkdownReaderDocument(source, "Fallback title");
+    assert.equal(doc.sections.length, 1, `${label} stays in one section`);
+    assert.deepEqual(
+      doc.sections[0].blocks.map((block) => block.type),
+      ["codeBlock", "paragraph"],
+      `${label} stays one code block`,
+    );
+    assert.equal(
+      doc.sections[0].blocks[0].content.map((span) => span.text).join(""),
+      expected,
+    );
+    assert.equal(blockText(doc.sections[0].blocks[1]), "After.");
+    assert.doesNotMatch(
+      doc.sections.map((section) => section.heading).join("\n"),
+      /Hidden/,
+    );
   }
 });
 

@@ -1,4 +1,9 @@
-import { parse, type Block } from "@create-markdown/core";
+import {
+  codeBlock,
+  paragraph,
+  parse,
+  type Block,
+} from "@create-markdown/core";
 import { parseMdDocument } from "./md-frontmatter.ts";
 
 export type ReaderSection<TBlock> = {
@@ -18,46 +23,18 @@ export type ReaderDocument<TBlock, TLede = TBlock> = {
 export type MarkdownReaderDocument = ReaderDocument<Block, Block>;
 
 export function stripCompleteMarkdownComments(markdown: string): string {
-  let cursor = 0;
-  let output = "";
-
-  while (cursor < markdown.length) {
-    const start = markdown.indexOf("<!--", cursor);
-    if (start === -1) {
-      output += markdown.slice(cursor);
-      break;
-    }
-
-    const close = markdown.indexOf("-->", start + 4);
-    if (close === -1) {
-      output += markdown.slice(cursor);
-      break;
-    }
-
-    output += markdown.slice(cursor, start);
-    cursor = close + 3;
-  }
-
-  return output;
+  return scanMarkdownComments(markdown).stripped;
 }
 
 export function hasUnclosedMarkdownComment(markdown: string): boolean {
-  let cursor = 0;
-
-  while (cursor < markdown.length) {
-    const start = markdown.indexOf("<!--", cursor);
-    if (start === -1) return false;
-    const close = markdown.indexOf("-->", start + 4);
-    if (close === -1) return true;
-    cursor = close + 3;
-  }
-
-  return false;
+  return scanMarkdownComments(markdown).unclosedStart !== null;
 }
 
 type MarkdownLine = {
   text: string;
   eol: string;
+  start: number;
+  end: number;
 };
 
 type FenceMarker = {
@@ -67,9 +44,24 @@ type FenceMarker = {
 
 type FenceOpen = {
   indent: string;
-  marker: string;
   info: string;
   fence: FenceMarker;
+};
+
+type MarkdownRange = {
+  start: number;
+  end: number;
+};
+
+type FencedCodeRegion = MarkdownRange & {
+  code: string;
+  language?: string;
+};
+
+type ProtectedBlockStore = {
+  nextIndex: number;
+  sentinel: string;
+  blocks: Map<string, Block>;
 };
 
 type ThematicBreak = {
@@ -86,7 +78,12 @@ function splitMarkdownLines(markdown: string): MarkdownLine[] {
   while (cursor < markdown.length) {
     const newlineIndex = markdown.indexOf("\n", cursor);
     if (newlineIndex === -1) {
-      lines.push({ text: markdown.slice(cursor), eol: "" });
+      lines.push({
+        text: markdown.slice(cursor),
+        eol: "",
+        start: cursor,
+        end: markdown.length,
+      });
       break;
     }
 
@@ -97,6 +94,8 @@ function splitMarkdownLines(markdown: string): MarkdownLine[] {
     lines.push({
       text: markdown.slice(cursor, textEnd),
       eol: markdown.slice(textEnd, newlineIndex + 1),
+      start: cursor,
+      end: newlineIndex + 1,
     });
     cursor = newlineIndex + 1;
   }
@@ -105,11 +104,11 @@ function splitMarkdownLines(markdown: string): MarkdownLine[] {
 }
 
 function matchFenceOpen(text: string): FenceOpen | null {
-  const match = text.match(/^(\s{0,3})(`{3,}|~{3,})(.*)$/);
+  const match = text.match(/^( {0,3})(`{3,}|~{3,})(.*)$/);
   if (!match) return null;
+  if (match[2][0] === "`" && match[3].includes("`")) return null;
   return {
     indent: match[1],
-    marker: match[2],
     info: match[3],
     fence: {
       char: match[2][0] as FenceMarker["char"],
@@ -118,26 +117,319 @@ function matchFenceOpen(text: string): FenceOpen | null {
   };
 }
 
-function matchFenceMarker(text: string): FenceMarker | null {
-  return matchFenceOpen(text)?.fence ?? null;
-}
-
 function isFenceClose(text: string, fence: FenceMarker): boolean {
-  const pattern =
-    fence.char === "`"
-      ? new RegExp(`^\\s{0,3}\`{${fence.size},}\\s*$`)
-      : new RegExp(`^\\s{0,3}~{${fence.size},}\\s*$`);
+  const pattern = new RegExp(
+    `^ {0,3}${fence.char}{${fence.size},}[\\t ]*$`,
+  );
   return pattern.test(text);
 }
 
+function safeFenceLanguage(info: string): string | undefined {
+  return info.trim().match(/^([A-Za-z0-9_+-]{1,64})/)?.[1];
+}
+
+function removeFenceIndent(text: string, indent: number): string {
+  let remove = 0;
+  while (remove < indent && text[remove] === " ") remove += 1;
+  return text.slice(remove);
+}
+
+function findFencedCodeRegions(markdown: string): FencedCodeRegion[] {
+  const lines = splitMarkdownLines(markdown);
+  const regions: FencedCodeRegion[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const open = matchFenceOpen(lines[index].text);
+    if (!open) continue;
+
+    let closeIndex = index + 1;
+    while (
+      closeIndex < lines.length &&
+      !isFenceClose(lines[closeIndex].text, open.fence)
+    ) {
+      closeIndex += 1;
+    }
+
+    const isClosed = closeIndex < lines.length;
+    const contentLines = lines.slice(
+      index + 1,
+      isClosed ? closeIndex : lines.length,
+    );
+    let code = contentLines
+      .map((line) => removeFenceIndent(line.text, open.indent.length))
+      .join("\n");
+    if (
+      !isClosed &&
+      contentLines.length > 0 &&
+      contentLines.at(-1)?.eol
+    ) {
+      code += "\n";
+    }
+
+    regions.push({
+      start: lines[index].start,
+      end: isClosed ? lines[closeIndex].end : markdown.length,
+      code,
+      language: safeFenceLanguage(open.info),
+    });
+    index = isClosed ? closeIndex : lines.length;
+  }
+
+  return regions;
+}
+
+function isEscapedBacktick(markdown: string, index: number): boolean {
+  let slashCount = 0;
+  for (
+    let cursor = index - 1;
+    cursor >= 0 && markdown[cursor] === "\\";
+    cursor -= 1
+  ) {
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
+}
+
+function backtickRunLength(markdown: string, index: number): number {
+  let end = index;
+  while (markdown[end] === "`") end += 1;
+  return end - index;
+}
+
+function rangeContaining(
+  ranges: MarkdownRange[],
+  index: number,
+): MarkdownRange | null {
+  for (const range of ranges) {
+    if (index < range.start) return null;
+    if (index < range.end) return range;
+  }
+  return null;
+}
+
+function nextRangeStart(ranges: MarkdownRange[], index: number): number {
+  return (
+    ranges.find((range) => range.start >= index)?.start ??
+    Number.POSITIVE_INFINITY
+  );
+}
+
+function findInlineCodeSpanRanges(
+  markdown: string,
+  excludedRanges: MarkdownRange[],
+): MarkdownRange[] {
+  const ranges: MarkdownRange[] = [];
+  let cursor = 0;
+
+  while (cursor < markdown.length) {
+    const excluded = rangeContaining(excludedRanges, cursor);
+    if (excluded) {
+      cursor = excluded.end;
+      continue;
+    }
+
+    const openStart = markdown.indexOf("`", cursor);
+    if (openStart === -1) break;
+    const openExcluded = rangeContaining(excludedRanges, openStart);
+    if (openExcluded) {
+      cursor = openExcluded.end;
+      continue;
+    }
+
+    const openSize = backtickRunLength(markdown, openStart);
+    if (isEscapedBacktick(markdown, openStart)) {
+      cursor = openStart + openSize;
+      continue;
+    }
+
+    const searchLimit = nextRangeStart(excludedRanges, openStart + openSize);
+    let closeStart = openStart + openSize;
+    let closeEnd = -1;
+    while (closeStart < markdown.length && closeStart < searchLimit) {
+      closeStart = markdown.indexOf("`", closeStart);
+      if (closeStart === -1 || closeStart >= searchLimit) break;
+      const closeSize = backtickRunLength(markdown, closeStart);
+      if (
+        closeSize === openSize &&
+        !isEscapedBacktick(markdown, closeStart)
+      ) {
+        closeEnd = closeStart + closeSize;
+        break;
+      }
+      closeStart += closeSize;
+    }
+
+    if (closeEnd === -1) {
+      cursor = openStart + openSize;
+      continue;
+    }
+
+    ranges.push({ start: openStart, end: closeEnd });
+    cursor = closeEnd;
+  }
+
+  return ranges;
+}
+
+function markdownCodeRanges(markdown: string): MarkdownRange[] {
+  const fences = findFencedCodeRegions(markdown);
+  return [
+    ...fences,
+    ...findInlineCodeSpanRanges(markdown, fences),
+  ].sort((left, right) => left.start - right.start);
+}
+
+function scanMarkdownComments(markdown: string): {
+  stripped: string;
+  unclosedStart: number | null;
+} {
+  const codeRanges = markdownCodeRanges(markdown);
+  let rangeIndex = 0;
+  let cursor = 0;
+  let output = "";
+
+  while (cursor < markdown.length) {
+    while (
+      rangeIndex < codeRanges.length &&
+      codeRanges[rangeIndex].end <= cursor
+    ) {
+      rangeIndex += 1;
+    }
+
+    const codeRange = codeRanges[rangeIndex];
+    if (
+      codeRange &&
+      cursor >= codeRange.start &&
+      cursor < codeRange.end
+    ) {
+      output += markdown.slice(cursor, codeRange.end);
+      cursor = codeRange.end;
+      continue;
+    }
+
+    const protectedStart = codeRange?.start ?? markdown.length;
+    const commentStart = markdown.indexOf("<!--", cursor);
+    if (commentStart === -1 || commentStart >= protectedStart) {
+      output += markdown.slice(cursor, protectedStart);
+      cursor = protectedStart;
+      continue;
+    }
+
+    output += markdown.slice(cursor, commentStart);
+    const close = markdown.indexOf("-->", commentStart + 4);
+    if (close === -1) {
+      output += markdown.slice(commentStart);
+      return { stripped: output, unclosedStart: commentStart };
+    }
+    cursor = close + 3;
+  }
+
+  return { stripped: output, unclosedStart: null };
+}
+
+function placeholderSentinel(markdown: string): string {
+  for (let codePoint = 0xe000; codePoint <= 0xe0ff; codePoint += 1) {
+    const candidate = String.fromCodePoint(codePoint);
+    if (!markdown.includes(candidate)) return candidate;
+  }
+
+  let length = 2;
+  while (markdown.includes("\ue000".repeat(length))) length += 1;
+  return "\ue000".repeat(length);
+}
+
+function createProtectedBlockStore(markdown: string): ProtectedBlockStore {
+  return {
+    nextIndex: 0,
+    sentinel: placeholderSentinel(markdown),
+    blocks: new Map(),
+  };
+}
+
+function addProtectedBlock(store: ProtectedBlockStore, block: Block): string {
+  const placeholder = `COVEN${store.sentinel}PROTECTEDBLOCK${store.nextIndex}`;
+  store.nextIndex += 1;
+  store.blocks.set(placeholder, block);
+  return placeholder;
+}
+
+function preferredLineEnding(markdown: string): string {
+  return markdown.match(/\r\n|\n/)?.[0] ?? "\n";
+}
+
+function standalonePlaceholder(placeholder: string, eol: string): string {
+  return `${eol}${eol}${placeholder}${eol}${eol}`;
+}
+
+function protectUnclosedCommentTail(
+  markdown: string,
+  store: ProtectedBlockStore,
+): string {
+  const unclosedStart = scanMarkdownComments(markdown).unclosedStart;
+  if (unclosedStart === null) return markdown;
+
+  const placeholder = addProtectedBlock(
+    store,
+    paragraph(markdown.slice(unclosedStart)),
+  );
+  return (
+    markdown.slice(0, unclosedStart) +
+    standalonePlaceholder(placeholder, preferredLineEnding(markdown))
+  );
+}
+
+function protectFencedCodeBlocks(
+  markdown: string,
+  store: ProtectedBlockStore,
+): string {
+  const regions = findFencedCodeRegions(markdown);
+  if (regions.length === 0) return markdown;
+
+  const eol = preferredLineEnding(markdown);
+  let cursor = 0;
+  let protectedMarkdown = "";
+  for (const region of regions) {
+    protectedMarkdown += markdown.slice(cursor, region.start);
+    protectedMarkdown += standalonePlaceholder(
+      addProtectedBlock(store, codeBlock(region.code, region.language)),
+      eol,
+    );
+    cursor = region.end;
+  }
+  return protectedMarkdown + markdown.slice(cursor);
+}
+
+function protectedPlaceholderText(block: Block): string | null {
+  if (block.type !== "paragraph" || block.children.length > 0) return null;
+  return block.content.map((span) => span.text).join("");
+}
+
+function restoreProtectedBlocks(
+  blocks: Block[],
+  store: ProtectedBlockStore,
+): Block[] {
+  return blocks.map((block) => {
+    const placeholder = protectedPlaceholderText(block);
+    const protectedBlock = placeholder
+      ? store.blocks.get(placeholder)
+      : undefined;
+    if (protectedBlock) return protectedBlock;
+    if (block.children.length === 0) return block;
+    return {
+      ...block,
+      children: restoreProtectedBlocks(block.children, store),
+    };
+  });
+}
+
 function matchSetextUnderline(text: string): 1 | 2 | null {
-  const match = text.match(/^\s{0,3}(=+|-+)\s*$/);
+  const match = text.match(/^ {0,3}(=+|-+)[\t ]*$/);
   if (!match) return null;
   return match[1][0] === "=" ? 1 : 2;
 }
 
 function matchThematicBreakLine(text: string): ThematicBreak | null {
-  const match = text.match(/^(\s{0,3})([ \t*_-]+)$/);
+  const match = text.match(/^( {0,3})([ \t*_-]+)$/);
   if (!match) return null;
 
   const markers = match[2];
@@ -159,96 +451,115 @@ function isThematicBreakLine(text: string): boolean {
   return matchThematicBreakLine(text) !== null;
 }
 
-function isSetextContentLine(text: string): boolean {
+function isSetextContentLine(
+  text: string,
+  protectedBlocks: ProtectedBlockStore,
+): boolean {
   if (!text.trim()) return false;
-  if (/^\s{4,}/.test(text)) return false;
+  if (protectedBlocks.blocks.has(text.trim())) return false;
+  if (/^ {4,}/.test(text)) return false;
   if (matchSetextUnderline(text) !== null) return false;
   if (isThematicBreakLine(text)) return false;
-  return !/^\s{0,3}(?:[-+*](?:\s|$)|\d+[.)](?:\s|$)|>\s*|#{1,6}(?:\s|$)|`{3,}|~{3,})/.test(
+  return !/^ {0,3}(?:[-+*](?:\s|$)|\d+[.)](?:\s|$)|>\s*|#{1,6}(?:\s|$)|`{3,}|~{3,})/.test(
     text,
   );
 }
 
-function normalizeFenceOpeners(markdown: string): string {
-  const lines = splitMarkdownLines(markdown);
-  const normalized: MarkdownLine[] = [];
-  let fence: FenceMarker | null = null;
-
-  for (let index = 0; index < lines.length; ) {
-    const line = lines[index];
-
-    if (fence) {
-      normalized.push(line);
-      if (isFenceClose(line.text, fence)) fence = null;
-      index += 1;
-      continue;
-    }
-
-    const fenceOpen = matchFenceOpen(line.text);
-    if (fenceOpen) {
-      const safeLanguage = fenceOpen.info.trimStart().match(/^(\w+)/)?.[1];
-      normalized.push({
-        text: /^\s{0,3}(?:`{3,}|~{3,})(?:\w+)?\s*$/.test(line.text)
-          ? line.text
-          : `${fenceOpen.indent}${fenceOpen.marker}${safeLanguage ?? ""}`,
-        eol: line.eol,
-      });
-      fence = fenceOpen.fence;
-      index += 1;
-      continue;
-    }
-
-    normalized.push(line);
-    index += 1;
-  }
-
-  return normalized.map((line) => line.text + line.eol).join("");
+function isSetextContainerBoundary(text: string): boolean {
+  return /^(?: {4,}| {0,3}(?:[-+*](?:\s|$)|\d+[.)](?:\s|$)|>\s*))/.test(
+    text,
+  );
 }
 
-function normalizeSetextHeadings(markdown: string): string {
+function isValidSetextParagraphRun(
+  lines: MarkdownLine[],
+  previousLine: MarkdownLine | undefined,
+): boolean {
+  if (
+    previousLine &&
+    previousLine.text.trim() !== "" &&
+    isSetextContainerBoundary(previousLine.text)
+  ) {
+    return false;
+  }
+
+  const candidateBlocks = parse(lines.map((line) => line.text).join("\n"));
+  return (
+    candidateBlocks.length === 1 &&
+    candidateBlocks[0].type === "paragraph" &&
+    candidateBlocks[0].children.length === 0
+  );
+}
+
+function normalizeSetextHeadings(
+  markdown: string,
+  protectedBlocks: ProtectedBlockStore,
+): string {
   const lines = splitMarkdownLines(markdown);
   const normalized: MarkdownLine[] = [];
-  let fence: FenceMarker | null = null;
 
   for (let index = 0; index < lines.length; ) {
     const line = lines[index];
 
-    if (fence) {
-      normalized.push(line);
-      if (isFenceClose(line.text, fence)) fence = null;
-      index += 1;
-      continue;
-    }
-
-    const fenceOpen = matchFenceMarker(line.text);
-    if (fenceOpen) {
-      normalized.push(line);
-      fence = fenceOpen;
-      index += 1;
-      continue;
-    }
-
-    if (!isSetextContentLine(line.text)) {
+    if (!isSetextContentLine(line.text, protectedBlocks)) {
+      if (
+        matchSetextUnderline(line.text) === 2 &&
+        isThematicBreakLine(line.text)
+      ) {
+        const previous = normalized.at(-1);
+        if (previous && previous.text.trim() !== "") {
+          normalized.push({
+            text: "",
+            eol: previous.eol || line.eol || "\n",
+            start: line.start,
+            end: line.start,
+          });
+        }
+      }
       normalized.push(line);
       index += 1;
       continue;
     }
 
     let end = index;
-    while (end < lines.length && isSetextContentLine(lines[end].text)) end += 1;
+    while (
+      end < lines.length &&
+      isSetextContentLine(lines[end].text, protectedBlocks)
+    ) {
+      end += 1;
+    }
 
-    const level = end < lines.length ? matchSetextUnderline(lines[end].text) : null;
-    if (level !== null) {
+    const level =
+      end < lines.length ? matchSetextUnderline(lines[end].text) : null;
+    const candidateLines = lines.slice(index, end);
+    if (
+      level !== null &&
+      isValidSetextParagraphRun(candidateLines, lines[index - 1])
+    ) {
       normalized.push({
-        text: `${level === 1 ? "#" : "##"} ${lines
-          .slice(index, end)
+        text: `${level === 1 ? "#" : "##"} ${candidateLines
           .map((candidate) => candidate.text.trim())
           .join(" ")}`,
         eol: lines[end].eol,
+        start: line.start,
+        end: lines[end].end,
       });
       index = end + 1;
+    } else if (level !== null) {
+      normalized.push(...candidateLines);
+      const previous = normalized.at(-1);
+      if (previous && previous.text.trim() !== "") {
+        normalized.push({
+          text: "",
+          eol: previous.eol || lines[end].eol || "\n",
+          start: lines[end].start,
+          end: lines[end].start,
+        });
+      }
+      normalized.push(lines[end]);
+      index = end + 1;
     } else {
-      normalized.push(...lines.slice(index, end));
+      normalized.push(...candidateLines);
       index = end;
     }
   }
@@ -259,25 +570,9 @@ function normalizeSetextHeadings(markdown: string): string {
 function normalizeThematicBreaks(markdown: string): string {
   const lines = splitMarkdownLines(markdown);
   const normalized: MarkdownLine[] = [];
-  let fence: FenceMarker | null = null;
 
   for (let index = 0; index < lines.length; ) {
     const line = lines[index];
-
-    if (fence) {
-      normalized.push(line);
-      if (isFenceClose(line.text, fence)) fence = null;
-      index += 1;
-      continue;
-    }
-
-    const fenceOpen = matchFenceMarker(line.text);
-    if (fenceOpen) {
-      normalized.push(line);
-      fence = fenceOpen;
-      index += 1;
-      continue;
-    }
 
     const thematicBreak = matchThematicBreakLine(line.text);
     if (thematicBreak && (thematicBreak.char !== "-" || thematicBreak.spaced)) {
@@ -286,11 +581,15 @@ function normalizeThematicBreaks(markdown: string): string {
         normalized.push({
           text: "",
           eol: previous.eol || line.eol || "\n",
+          start: line.start,
+          end: line.start,
         });
       }
       normalized.push({
         text: `${thematicBreak.indent}---`,
         eol: line.eol,
+        start: line.start,
+        end: line.end,
       });
     } else {
       normalized.push(line);
@@ -302,9 +601,13 @@ function normalizeThematicBreaks(markdown: string): string {
   return normalized.map((line) => line.text + line.eol).join("");
 }
 
-function normalizeMarkdownForParse(markdown: string): string {
+function normalizeMarkdownForParse(
+  markdown: string,
+  protectedBlocks: ProtectedBlockStore,
+): string {
   return normalizeSetextHeadings(
-    normalizeThematicBreaks(normalizeFenceOpeners(markdown)),
+    normalizeThematicBreaks(markdown),
+    protectedBlocks,
   );
 }
 
@@ -364,8 +667,20 @@ export function parseMarkdownReaderDocument(
   fallbackTitle: string,
 ): MarkdownReaderDocument {
   const parsed = parseMdDocument(raw);
-  const body = stripCompleteMarkdownComments(parsed.body);
-  const blocks = parse(normalizeMarkdownForParse(body));
+  const protectedBlocks = createProtectedBlockStore(parsed.body);
+  const withProtectedTail = protectUnclosedCommentTail(
+    parsed.body,
+    protectedBlocks,
+  );
+  const withProtectedFences = protectFencedCodeBlocks(
+    withProtectedTail,
+    protectedBlocks,
+  );
+  const body = stripCompleteMarkdownComments(withProtectedFences);
+  const blocks = restoreProtectedBlocks(
+    parse(normalizeMarkdownForParse(body, protectedBlocks)),
+    protectedBlocks,
+  );
   const titleHeadingIndex = findTitleHeadingIndex(blocks);
 
   let title = fallbackTitle;
