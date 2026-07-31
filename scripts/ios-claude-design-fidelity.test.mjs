@@ -281,8 +281,9 @@ assert.match(
   /DisplayMessage\.duplicate\(of: message\)/,
   "thread duplication preserves the controls that retry reads",
 );
-assert.match(chat, /Picker\("Thinking"/, "session details expose real thinking levels");
-assert.match(chat, /Picker\("Speed"/, "session details expose real response speeds");
+assert.match(chat, /ForEach\(modelControlCapabilities\)/, "session details expose only selected-model controls");
+assert.match(chat, /capability\.delivery == "prompt-only"/, "prompt-only controls are identified as guidance, not native settings");
+assert.doesNotMatch(chat, /Picker\("Thinking"|Picker\("Speed"/, "session details do not present global Thinking or Speed controls");
 assert.match(
   chat,
   /let stagedModel = model \?\? ""[\s\S]{0,220}?thread\.pendingModelOverride = stagedModel/,
