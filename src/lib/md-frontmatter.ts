@@ -28,8 +28,32 @@ export type MdLeadingComments = {
 };
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
-const COMPLETE_LEADING_COMMENTS_RE =
-  /^(?:(?:[ \t]*\r?\n)*[ \t]*<!--[\s\S]*?-->[ \t]*(?:\r?\n[ \t]*)*)+/;
+
+function isLineBreak(text: string, index: number): boolean {
+  return text[index] === "\n" || (text[index] === "\r" && text[index + 1] === "\n");
+}
+
+function consumeLineBreak(text: string, index: number): number {
+  if (text[index] === "\r" && text[index + 1] === "\n") return index + 2;
+  if (text[index] === "\n") return index + 1;
+  return index;
+}
+
+function consumeCompleteComment(text: string, index: number): number | null {
+  let cursor = index;
+  while (text[cursor] === " " || text[cursor] === "\t") cursor++;
+  if (!text.startsWith("<!--", cursor)) return null;
+
+  const close = text.indexOf("-->", cursor + 4);
+  if (close === -1) return null;
+
+  cursor = close + 3;
+  let trail = cursor;
+  while (text[trail] === " " || text[trail] === "\t") trail++;
+  if (trail === text.length) return trail;
+  if (isLineBreak(text, trail)) return consumeLineBreak(text, trail);
+  return cursor;
+}
 
 export function normalizeMdTags(value: unknown): string[] {
   let tags: string[] = [];
@@ -45,12 +69,40 @@ export function normalizeMdTags(value: unknown): string[] {
 }
 
 export function splitLeadingMdComments(body: string): MdLeadingComments {
-  const match = COMPLETE_LEADING_COMMENTS_RE.exec(body);
-  if (!match) return { hiddenPrefix: "", visibleBody: body };
-  return {
-    hiddenPrefix: match[0],
-    visibleBody: body.slice(match[0].length),
-  };
+  let cursor = 0;
+  let hiddenEnd = 0;
+  let sawComment = false;
+
+  while (cursor < body.length) {
+    let lineEnd = cursor;
+    while (lineEnd < body.length && !isLineBreak(body, lineEnd)) lineEnd++;
+
+    const line = body.slice(cursor, lineEnd);
+    if (line.trim().length === 0) {
+      const next = lineEnd < body.length ? consumeLineBreak(body, lineEnd) : lineEnd;
+      if (!sawComment) {
+        const commentEnd = consumeCompleteComment(body, next);
+        if (commentEnd === null) return { hiddenPrefix: "", visibleBody: body };
+      }
+      cursor = next;
+      hiddenEnd = cursor;
+      continue;
+    }
+
+    const commentEnd = consumeCompleteComment(body, cursor);
+    if (commentEnd === null) {
+      if (!sawComment) return { hiddenPrefix: "", visibleBody: body };
+      break;
+    }
+
+    sawComment = true;
+    cursor = commentEnd;
+    hiddenEnd = cursor;
+  }
+
+  return sawComment
+    ? { hiddenPrefix: body.slice(0, hiddenEnd), visibleBody: body.slice(hiddenEnd) }
+    : { hiddenPrefix: "", visibleBody: body };
 }
 
 export function joinLeadingMdComments(
