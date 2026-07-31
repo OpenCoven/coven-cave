@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   LONG_RUNNING_BATCH_MS,
+  formatBatchDuration,
   toolBatchSummary,
   toolBatches,
   turnSkills,
@@ -125,6 +126,15 @@ test("the rollup counts batches and settled calls, leaving trouble to the tinted
 
   const running = [tool({ id: "a", name: "Bash", textOffset: 0, status: "running" })];
   assert.equal(toolBatchSummary(running, toolBatches(running)), "", "nothing has settled yet");
+});
+
+test("a band's duration keeps the precision the number deserves", () => {
+  assert.equal(formatBatchDuration(400), "0.4s", "a fast batch never reads as taking no time");
+  assert.equal(formatBatchDuration(20), "0.1s", "work that happened is never rounded away to zero");
+  assert.equal(formatBatchDuration(1600), "2s");
+  assert.equal(formatBatchDuration(19 * 60_000 + 4000), "19m 4s");
+  assert.equal(formatBatchDuration(2 * 3_600_000), "2h");
+  assert.equal(formatBatchDuration(undefined), "", "no reported time renders no time");
 });
 
 test("skills are the capabilities the turn actually reached for", () => {

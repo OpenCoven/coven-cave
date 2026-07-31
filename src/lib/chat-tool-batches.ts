@@ -155,6 +155,23 @@ export function toolBatchSummary(
   return parts.join(" · ");
 }
 
+/** The band's own duration, to the precision the number deserves: a batch of
+ *  fast calls reads "0.4s" rather than the shared formatter's "0s", which
+ *  claims the work took no time at all. Absent when nothing was reported. */
+export function formatBatchDuration(durationMs: number | undefined): string {
+  if (!Number.isFinite(durationMs) || (durationMs as number) < 0) return "";
+  const ms = durationMs as number;
+  if (ms < 1000) return `${Math.max(0.1, Math.round(ms / 100) / 10)}s`;
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return restMinutes ? `${hours}h ${restMinutes}m` : `${hours}h`;
+}
+
 export type TurnSkill = {
   /** Stable chip key — `skill:<name>` or `mcp:<server>`. */
   id: string;

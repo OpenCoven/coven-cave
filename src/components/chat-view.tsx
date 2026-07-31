@@ -21,7 +21,7 @@ import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
-import { toolBatchSummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
+import { formatBatchDuration, toolBatchSummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
@@ -7772,7 +7772,7 @@ function ToolRuns({ tools }: { tools: ToolEvent[] }) {
  *  what ran, how it ran, and how long it took — tinted by the block's dominant
  *  tool category, the same palette the rows beneath it use. */
 function ToolBatchHeader({ batch }: { batch: ToolBatch }) {
-  const duration = fmtDuration(batch.durationMs);
+  const duration = formatBatchDuration(batch.durationMs);
   return (
     <div className="cave-tool-batch" data-tool-category={batch.category}>
       <span className="cave-tool-batch__dot" aria-hidden />
