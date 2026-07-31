@@ -81,6 +81,13 @@ export async function listRuntimeModelInventory(
         ? { ...fallback, models: [...models], provenance: "live" }
         : fallback;
     }
+    // Hermes can be configured against providers other than OpenAI (notably
+    // OpenRouter). Its static OpenAI seed is therefore never an authenticated
+    // inventory for a familiar-scoped request; defer to the configured CLI
+    // rather than exposing the wrong provider's models.
+    if (canonicalRuntime === "hermes") {
+      return { ...fallback, models: [], provenance: "runtime-managed" };
+    }
     if (
       canonicalRuntime === "opencode" &&
       dependencies.allowOpenCodeInventory === true

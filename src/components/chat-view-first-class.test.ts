@@ -140,7 +140,7 @@ assert.match(
 
 assert.match(
   source,
-  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*\.\.\.modelCapabilities\.map\([\s\S]*capability\.delivery === "prompt-only" \? "Prompt guidance" : "Native"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
+  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*`Model · \$\{inventoryProvenanceLabel\([\s\S]*\.\.\.modelCapabilities\.map\([\s\S]*capability\.delivery === "prompt-only" \? "Prompt guidance" : "Native"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
   "The grouped Response section exposes access, model, and capability-aware controls with an honest delivery label",
 );
 assert.match(
