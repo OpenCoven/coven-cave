@@ -412,10 +412,10 @@ export function assessManagedWorktreeCreation({
   if (existingPaths.length > 0 && !validException) {
     reasons.push(`active Bead ${beadId} already owns a registered worktree`);
   }
-  if (budgets.worktrees.count >= budgets.worktrees.warning) {
+  if (!validException && budgets.worktrees.count >= budgets.worktrees.warning) {
     reasons.push(`creating a worktree would exceed the ${WORKTREE_WARNING_BUDGET}-worktree warning budget`);
   }
-  if (budgets.branches.count >= budgets.branches.warning) {
+  if (!validException && budgets.branches.count >= budgets.branches.warning) {
     reasons.push(
       `creating a branch would exceed the ${BRANCH_WARNING_BUDGET}-local-branch warning budget`,
     );

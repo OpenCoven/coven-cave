@@ -334,8 +334,8 @@ function observation(overrides = {}) {
     nowMs: NOW,
     existingPaths: ["/repo/.worktrees/first"],
     budgets: calculateLifecycleBudgets({
-      worktreeCount: 4,
-      branchCount: 8,
+      worktreeCount: WORKTREE_WARNING_BUDGET,
+      branchCount: BRANCH_WARNING_BUDGET,
       activeExceptions: 1,
       expiredExceptions: 0,
     }),
