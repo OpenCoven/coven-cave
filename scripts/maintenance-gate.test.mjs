@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import {
   acquireMaintenanceGate,
@@ -17,12 +24,131 @@ import {
 } from "./maintenance-gate.mjs";
 
 const moduleUrl = new URL("./maintenance-gate.mjs", import.meta.url);
-const modulePath = fileURLToPath(moduleUrl);
+const MAX_SAFE_TEST_OFFSET = 60 * 60_000;
 
 function makeRepo() {
   const repo = mkdtempSync(path.join(tmpdir(), "cave-gate-"));
   execFileSync("git", ["init", "-q", repo]);
   return repo;
+}
+
+function intentFileForLease(lease) {
+  const directory = path.join(lease.root, "intents");
+  for (const name of readdirSync(directory)) {
+    if (!name.endsWith(".json")) continue;
+    const filePath = path.join(directory, name);
+    const state = JSON.parse(readFileSync(filePath, "utf8"));
+    if (state.token === lease.token) return filePath;
+  }
+  assert.fail(`intent file not found for ${lease.writerId}`);
+}
+
+function expireGate(repo) {
+  const filePath = path.join(maintenanceGateRoot(repo), "gate.json");
+  const original = JSON.parse(readFileSync(filePath, "utf8"));
+  const heartbeat = Date.now() - original.ttlMs - 1_000;
+  writeFileSync(
+    filePath,
+    JSON.stringify({
+      ...original,
+      acquiredAt: new Date(heartbeat - 1).toISOString(),
+      heartbeatAt: new Date(heartbeat).toISOString(),
+    }),
+  );
+  return { filePath, original };
+}
+
+function expireIntent(lease) {
+  const filePath = intentFileForLease(lease);
+  const original = JSON.parse(readFileSync(filePath, "utf8"));
+  const heartbeat = Date.now() - original.ttlMs - 1_000;
+  writeFileSync(
+    filePath,
+    JSON.stringify({
+      ...original,
+      registeredAt: new Date(heartbeat - 1).toISOString(),
+      heartbeatAt: new Date(heartbeat).toISOString(),
+    }),
+  );
+  return { filePath, original };
+}
+
+async function waitUntil(predicate, message, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) assert.fail(message);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+function collectChild(child) {
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  return new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", (status) => {
+      if (status !== 0) {
+        reject(new Error(`child exited ${status}: ${stderr}`));
+        return;
+      }
+      resolve(JSON.parse(stdout.trim().split("\n").pop()));
+    });
+  });
+}
+
+function spawnPausedMutation({ mode, ready, proceed, payload }) {
+  const worker = `
+    import fs from "node:fs";
+    import { syncBuiltinESMExports } from "node:module";
+    import path from "node:path";
+    const config = JSON.parse(process.env.CAVE_GATE_RACE_CONFIG);
+    const pause = () => {
+      fs.writeFileSync(config.ready, "ready");
+      while (!fs.existsSync(config.proceed)) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      }
+    };
+    const originalRename = fs.renameSync;
+    const originalRemove = fs.rmSync;
+    fs.renameSync = (source, target) => {
+      const targetIsGate = path.basename(target) === "gate.json";
+      const targetIsIntent = path.basename(path.dirname(target)) === "intents";
+      if (config.mode === "gate-heartbeat" && targetIsGate && source.endsWith(".tmp")) pause();
+      if (config.mode === "intent-heartbeat" && targetIsIntent && source.endsWith(".tmp")) pause();
+      return originalRename(source, target);
+    };
+    fs.rmSync = (target, options) => {
+      if (config.mode === "intent-release" && path.basename(path.dirname(target)) === "intents") pause();
+      return originalRemove(target, options);
+    };
+    syncBuiltinESMExports();
+    const gate = await import(config.moduleUrl);
+    const result = config.mode === "gate-heartbeat"
+      ? gate.heartbeatMaintenanceGate(config.payload.handle)
+      : config.mode === "intent-heartbeat"
+        ? gate.heartbeatWriterIntent(config.payload.lease)
+        : gate.releaseWriterIntent(config.payload.lease);
+    console.log(JSON.stringify(result));
+  `;
+  return spawn(process.execPath, ["--input-type=module", "-e", worker], {
+    env: {
+      ...process.env,
+      CAVE_GATE_RACE_CONFIG: JSON.stringify({
+        mode,
+        ready,
+        proceed,
+        payload,
+        moduleUrl: moduleUrl.href,
+      }),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 }
 
 test("writer-before-gate drains: acquisition waits for the live intent to release", () => {
@@ -82,16 +208,149 @@ test("malformed ownership fails closed everywhere — never silently reclaimed",
   rmSync(repo, { recursive: true, force: true });
 });
 
+test("semantically malformed gate state fails closed", () => {
+  const repo = makeRepo();
+  const root = maintenanceGateRoot(repo);
+  const acquired = acquireMaintenanceGate({ ownerId: "curator", repoDir: repo });
+  assert.equal(acquired.ok, true);
+  const gateFile = path.join(root, "gate.json");
+  const onDisk = JSON.parse(readFileSync(gateFile, "utf8"));
+  writeFileSync(gateFile, JSON.stringify({ ...onDisk, heartbeatAt: "not-a-date", ttlMs: "nan" }));
+
+  assert.equal(verifyMaintenanceGateOwnership(acquired.handle).reason, "malformed-gate");
+  assert.equal(acquireMaintenanceGate({ ownerId: "second", repoDir: repo }).reason, "malformed-gate");
+  assert.equal(registerWriterIntent({ writerId: "w", repoDir: repo }).reason, "maintenance-gate-unreadable");
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("semantically malformed writer intent blocks acquisition", () => {
+  const repo = makeRepo();
+  const root = maintenanceGateRoot(repo);
+  mkdirSync(path.join(root, "intents"), { recursive: true });
+  writeFileSync(
+    path.join(root, "intents", "broken.json"),
+    JSON.stringify({
+      writerId: "broken",
+      token: "0123456789abcdef",
+      registeredAt: new Date().toISOString(),
+      heartbeatAt: "not-a-date",
+      ttlMs: "nan",
+      purpose: "",
+      pid: process.pid,
+    }),
+  );
+
+  const acquired = acquireMaintenanceGate({ ownerId: "curator", repoDir: repo, quiesceTimeoutMs: 100 });
+  assert.equal(acquired.reason, "malformed-intent");
+  assert.deepEqual(acquired.files, ["broken.json"]);
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("an unreadable intent scan fails closed and releases the draining gate", async () => {
+  const repo = makeRepo();
+  const worker = `
+    import fs from "node:fs";
+    import path from "node:path";
+    import { syncBuiltinESMExports } from "node:module";
+    const originalReadDir = fs.readdirSync;
+    fs.readdirSync = (target, options) => {
+      if (path.basename(target) === "intents") {
+        const error = new Error("injected unreadable intent directory");
+        error.code = "EACCES";
+        throw error;
+      }
+      return originalReadDir(target, options);
+    };
+    syncBuiltinESMExports();
+    const gate = await import(${JSON.stringify(moduleUrl.href)});
+    const result = gate.acquireMaintenanceGate({ ownerId: "curator", repoDir: process.argv[1] });
+    console.log(JSON.stringify(result));
+  `;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", worker, repo], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const acquired = await collectChild(child);
+  assert.equal(acquired.reason, "intent-scan-failed");
+  assert.equal(maintenanceGateStatus(repo).gate, null);
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("a transiently incomplete mutation lock is treated as contention, not malformed state", async () => {
+  const repo = makeRepo();
+  const root = maintenanceGateRoot(repo);
+  mkdirSync(root, { recursive: true });
+  const lockFile = path.join(root, "mutation.lock");
+  writeFileSync(lockFile, "");
+  const readyFile = path.join(repo, "lock-contender-ready");
+
+  const worker = `
+    import { writeFileSync } from "node:fs";
+    import { registerWriterIntent } from ${JSON.stringify(moduleUrl.href)};
+    writeFileSync(process.argv[2], "ready");
+    const result = registerWriterIntent({ writerId: "waiting-writer", repoDir: process.argv[1] });
+    console.log(JSON.stringify(result));
+  `;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", worker, repo, readyFile], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const result = collectChild(child);
+  await waitUntil(() => existsSync(readyFile), "lock contender never started");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  writeFileSync(
+    lockFile,
+    JSON.stringify({
+      token: "0123456789abcdef01234567",
+      acquiredAt: new Date().toISOString(),
+      pid: process.pid,
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  rmSync(lockFile);
+
+  const registered = await result;
+  assert.equal(registered.ok, true);
+  assert.equal(releaseWriterIntent(registered.lease).ok, true);
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("caller-controlled time cannot force takeover or publish a future lease", () => {
+  const repo = makeRepo();
+  const acquired = acquireMaintenanceGate({ ownerId: "first", repoDir: repo });
+  assert.equal(acquired.ok, true);
+  const forced = acquireMaintenanceGate({
+    ownerId: "second",
+    repoDir: repo,
+    takeoverStale: true,
+    now: Date.now() + MAX_SAFE_TEST_OFFSET,
+  });
+  assert.equal(forced.reason, "gate-held");
+  assert.equal(releaseMaintenanceGate(acquired.handle).ok, true);
+
+  const intent = registerWriterIntent({
+    writerId: "writer",
+    repoDir: repo,
+    now: Date.now() + MAX_SAFE_TEST_OFFSET,
+  });
+  assert.equal(intent.ok, true);
+  const intentState = JSON.parse(
+    readFileSync(intentFileForLease(intent.lease), "utf8"),
+  );
+  assert.ok(Date.parse(intentState.heartbeatAt) <= Date.now());
+  assert.equal(releaseWriterIntent(intent.lease).ok, true);
+  rmSync(repo, { recursive: true, force: true });
+});
+
 test("stale takeover fences out the previous owner's every capability", () => {
   const repo = makeRepo();
-  const first = acquireMaintenanceGate({ ownerId: "first", repoDir: repo, ttlMs: 1 });
+  const first = acquireMaintenanceGate({ ownerId: "first", repoDir: repo });
   assert.equal(first.ok, true);
+  expireGate(repo);
 
   // Expired but well-formed: plain acquisition reports staleness...
-  const stale = acquireMaintenanceGate({ ownerId: "second", repoDir: repo, now: Date.now() + 50 });
+  const stale = acquireMaintenanceGate({ ownerId: "second", repoDir: repo });
   assert.equal(stale.reason, "gate-stale");
   // ...and only an explicit takeover proceeds, bumping the generation.
-  const second = acquireMaintenanceGate({ ownerId: "second", repoDir: repo, takeoverStale: true, now: Date.now() + 50 });
+  const second = acquireMaintenanceGate({ ownerId: "second", repoDir: repo, takeoverStale: true });
   assert.equal(second.ok, true);
   assert.ok(second.handle.generation > first.handle.generation, "takeover advances the fenced generation");
 
@@ -110,26 +369,199 @@ test("owner capability holds through postconditions and dies on tampering, expir
   assert.equal(acquired.ok, true);
   assert.equal(verifyMaintenanceGateOwnership(acquired.handle).ok, true);
 
-  // Heartbeat extends the lease into the future.
-  const nearExpiry = Date.now() + 59_000;
-  assert.equal(heartbeatMaintenanceGate(acquired.handle, nearExpiry).ok, true);
-  assert.equal(verifyMaintenanceGateOwnership(acquired.handle, nearExpiry + 30_000).ok, true, "heartbeat extended ownership");
+  assert.equal(heartbeatMaintenanceGate(acquired.handle).ok, true);
+  const gateFile = path.join(root, "gate.json");
+  const heartbeated = JSON.parse(readFileSync(gateFile, "utf8"));
+  writeFileSync(
+    gateFile,
+    JSON.stringify({
+      ...heartbeated,
+      heartbeatAt: new Date(Date.now() + MAX_SAFE_TEST_OFFSET).toISOString(),
+    }),
+  );
+  assert.equal(
+    heartbeatMaintenanceGate(acquired.handle).reason,
+    "heartbeat-regressed",
+  );
+  writeFileSync(gateFile, JSON.stringify(heartbeated));
+  assert.equal(verifyMaintenanceGateOwnership(acquired.handle).ok, true);
 
   // External tampering with the token invalidates the capability.
-  const gateFile = path.join(root, "gate.json");
-  const onDisk = JSON.parse(readFileSync(gateFile, "utf8"));
-  writeFileSync(gateFile, JSON.stringify({ ...onDisk, token: "forged" }));
-  assert.equal(verifyMaintenanceGateOwnership(acquired.handle).reason, "not-owner");
+  writeFileSync(gateFile, JSON.stringify({ ...heartbeated, token: "forged" }));
+  assert.equal(verifyMaintenanceGateOwnership(acquired.handle).reason, "malformed-gate");
 
-  writeFileSync(gateFile, JSON.stringify(onDisk));
+  writeFileSync(gateFile, JSON.stringify(heartbeated));
   assert.equal(verifyMaintenanceGateOwnership(acquired.handle).ok, true);
-  assert.equal(
-    verifyMaintenanceGateOwnership(acquired.handle, Date.now() + 10 * 60_000).reason,
-    "expired",
-    "an expired gate is no capability even for its owner",
-  );
+  expireGate(repo);
+  assert.equal(verifyMaintenanceGateOwnership(acquired.handle).reason, "expired");
+
+  writeFileSync(gateFile, JSON.stringify(heartbeated));
   assert.equal(releaseMaintenanceGate(acquired.handle).ok, true);
   assert.equal(verifyMaintenanceGateOwnership(acquired.handle).reason, "gate-missing");
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("a fenced owner cannot overwrite a successful stale takeover", async () => {
+  const repo = makeRepo();
+  const root = maintenanceGateRoot(repo);
+  const first = acquireMaintenanceGate({ ownerId: "first", repoDir: repo });
+  assert.equal(first.ok, true);
+
+  const ready = path.join(repo, "heartbeat-ready");
+  const proceed = path.join(repo, "heartbeat-proceed");
+  const child = spawnPausedMutation({
+    mode: "gate-heartbeat",
+    ready,
+    proceed,
+    payload: { handle: first.handle },
+  });
+  const childResult = collectChild(child);
+  await waitUntil(() => existsSync(ready), "old owner never reached its final heartbeat mutation");
+  expireGate(repo);
+
+  const second = acquireMaintenanceGate({
+    ownerId: "second",
+    repoDir: repo,
+    takeoverStale: true,
+  });
+  writeFileSync(proceed, "proceed");
+  const heartbeat = await childResult;
+
+  assert.equal(
+    second.ok && heartbeat.ok,
+    false,
+    "takeover and the fenced owner's later pathname mutation must not both succeed",
+  );
+  const status = maintenanceGateStatus(repo);
+  if (second.ok) {
+    assert.equal(status.gate.ownerId, "second");
+  } else if (heartbeat.ok) {
+    assert.equal(status.gate.ownerId, "first");
+  }
+  rmSync(root, { recursive: true, force: true });
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("promotion rechecks intents after a concurrent writer heartbeat", async () => {
+  const repo = makeRepo();
+  const intent = registerWriterIntent({
+    writerId: "promotion-writer",
+    repoDir: repo,
+  });
+  assert.equal(intent.ok, true);
+
+  const acquireWorker = `
+    import { acquireMaintenanceGate } from ${JSON.stringify(moduleUrl.href)};
+    const result = acquireMaintenanceGate({
+      ownerId: "curator",
+      repoDir: process.argv[1],
+      quiesceTimeoutMs: 5000,
+    });
+    console.log(JSON.stringify(result));
+  `;
+  const acquireChild = spawn(
+    process.execPath,
+    ["--input-type=module", "-e", acquireWorker, repo],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  const acquiredResult = collectChild(acquireChild);
+  await waitUntil(
+    () => maintenanceGateStatus(repo).gate?.phase === "draining",
+    "gate never entered draining phase",
+    30_000,
+  );
+
+  const ready = path.join(repo, "intent-heartbeat-ready");
+  const proceed = path.join(repo, "intent-heartbeat-proceed");
+  const heartbeatChild = spawnPausedMutation({
+    mode: "intent-heartbeat",
+    ready,
+    proceed,
+    payload: { lease: intent.lease },
+  });
+  const heartbeatResult = collectChild(heartbeatChild);
+  await waitUntil(() => existsSync(ready), "writer heartbeat never reached its final mutation");
+  expireIntent(intent.lease);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  writeFileSync(proceed, "proceed");
+  assert.equal((await heartbeatResult).ok, true);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
+  const duringRenewedWrite = maintenanceGateStatus(repo);
+  assert.equal(duringRenewedWrite.gate?.phase, "draining");
+  assert.deepEqual(duringRenewedWrite.liveIntents, ["promotion-writer"]);
+
+  assert.equal(releaseWriterIntent(intent.lease).ok, true);
+  const acquired = await acquiredResult;
+  assert.equal(acquired.ok, true);
+  assert.equal(releaseMaintenanceGate(acquired.handle).ok, true);
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("a gate is active when acquisition returns after a slow drain", async () => {
+  const repo = makeRepo();
+  const intent = registerWriterIntent({ writerId: "slow-writer", repoDir: repo });
+  assert.equal(intent.ok, true);
+  const worker = `
+    import { acquireMaintenanceGate } from ${JSON.stringify(moduleUrl.href)};
+    const result = acquireMaintenanceGate({
+      ownerId: "curator",
+      repoDir: process.argv[1],
+      ttlMs: 500,
+      quiesceTimeoutMs: 5000,
+    });
+    console.log(JSON.stringify(result));
+  `;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", worker, repo], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const acquiredResult = collectChild(child);
+  await waitUntil(
+    () => maintenanceGateStatus(repo).gate?.phase === "draining",
+    "gate never entered draining phase",
+    30_000,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  assert.equal(
+    maintenanceGateStatus(repo).gate?.expired,
+    false,
+    "the active acquirer keeps its draining lease alive",
+  );
+  assert.equal(releaseWriterIntent(intent.lease).ok, true);
+  const acquired = await acquiredResult;
+  assert.equal(acquired.ok, true);
+  assert.equal(verifyMaintenanceGateOwnership(acquired.handle).ok, true);
+  assert.equal(releaseMaintenanceGate(acquired.handle).ok, true);
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("acquisition does not return success after its final audit outlives the lease", async () => {
+  const repo = makeRepo();
+  const worker = `
+    import fs from "node:fs";
+    import { syncBuiltinESMExports } from "node:module";
+    const originalAppend = fs.appendFileSync;
+    fs.appendFileSync = (target, content, options) => {
+      if (String(content).includes('"event":"gate-acquired"')) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+      }
+      return originalAppend(target, content, options);
+    };
+    syncBuiltinESMExports();
+    const gate = await import(${JSON.stringify(moduleUrl.href)});
+    const result = gate.acquireMaintenanceGate({
+      ownerId: "curator",
+      repoDir: process.argv[1],
+      ttlMs: 100,
+    });
+    console.log(JSON.stringify(result));
+  `;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", worker, repo], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const acquired = await collectChild(child);
+  assert.equal(acquired.ok, false);
+  assert.equal(acquired.reason, "expired-before-return");
   rmSync(repo, { recursive: true, force: true });
 });
 
@@ -157,33 +589,111 @@ test("the gate lives in the shared git common dir: linked worktrees see one gate
   rmSync(repo, { recursive: true, force: true });
 });
 
-test("concurrent multi-process acquisition: exactly one winner", () => {
+test("concurrent multi-process acquisition: exactly one winner", async () => {
   const repo = makeRepo();
   const contenders = 6;
+  const barrier = path.join(repo, "barrier");
+  mkdirSync(barrier);
   const worker = `
+    import { existsSync, writeFileSync } from "node:fs";
+    import path from "node:path";
     import { acquireMaintenanceGate } from ${JSON.stringify(moduleUrl.href)};
-    const result = acquireMaintenanceGate({ ownerId: process.argv[1], repoDir: process.argv[2], quiesceTimeoutMs: 2000 });
+    const [ownerId, repoDir, barrier] = process.argv.slice(1);
+    writeFileSync(path.join(barrier, ownerId + ".ready"), "ready");
+    while (!existsSync(path.join(barrier, "start"))) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+    const result = acquireMaintenanceGate({ ownerId, repoDir, quiesceTimeoutMs: 2000 });
     console.log(JSON.stringify({ ok: result.ok, reason: result.reason ?? null }));
   `;
   const results = [];
-  const children = [];
   for (let i = 0; i < contenders; i += 1) {
-    children.push(
-      spawnSync(process.execPath, ["--input-type=module", "-e", worker, `owner-${i}`, repo], {
-        encoding: "utf8",
-      }),
+    const child = spawn(
+      process.execPath,
+      ["--input-type=module", "-e", worker, `owner-${i}`, repo, barrier],
+      { stdio: ["ignore", "pipe", "pipe"] },
     );
+    results.push(collectChild(child));
   }
-  for (const child of children) {
-    assert.equal(child.status, 0, child.stderr);
-    results.push(JSON.parse(child.stdout.trim().split("\n").pop()));
-  }
-  const winners = results.filter((result) => result.ok);
-  assert.equal(winners.length, 1, `exactly one of ${contenders} concurrent acquirers wins: ${JSON.stringify(results)}`);
+  await waitUntil(
+    () => readdirSync(barrier).filter((name) => name.endsWith(".ready")).length === contenders,
+    "not every acquisition contender reached the start barrier",
+  );
+  writeFileSync(path.join(barrier, "start"), "start");
+  const settled = await Promise.all(results);
+  const winners = settled.filter((result) => result.ok);
+  assert.equal(winners.length, 1, `exactly one of ${contenders} concurrent acquirers wins: ${JSON.stringify(settled)}`);
   assert.ok(
-    results.filter((result) => !result.ok).every((result) => result.reason === "gate-held"),
+    settled.filter((result) => !result.ok).every((result) => result.reason === "gate-held"),
     "every loser sees gate-held",
   );
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("writer lease heartbeat keeps a long-running mutation live", async () => {
+  const gate = await import("./maintenance-gate.mjs");
+  assert.equal(typeof gate.heartbeatWriterIntent, "function", "writer leases need a token-fenced heartbeat");
+
+  const repo = makeRepo();
+  const intent = registerWriterIntent({ writerId: "long-writer", repoDir: repo });
+  assert.equal(intent.ok, true);
+  assert.equal(gate.heartbeatWriterIntent(intent.lease).ok, true);
+  const intentFile = intentFileForLease(intent.lease);
+  const heartbeated = JSON.parse(readFileSync(intentFile, "utf8"));
+  writeFileSync(
+    intentFile,
+    JSON.stringify({
+      ...heartbeated,
+      heartbeatAt: new Date(Date.now() + MAX_SAFE_TEST_OFFSET).toISOString(),
+    }),
+  );
+  assert.equal(
+    gate.heartbeatWriterIntent(intent.lease).reason,
+    "heartbeat-regressed",
+  );
+  writeFileSync(intentFile, JSON.stringify(heartbeated));
+  assert.deepEqual(maintenanceGateStatus(repo).liveIntents, ["long-writer"]);
+  assert.equal(releaseWriterIntent(intent.lease).ok, true);
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("a stale writer cannot delete a successfully renewed lease", async () => {
+  const repo = makeRepo();
+  const first = registerWriterIntent({
+    writerId: "writer-race",
+    repoDir: repo,
+  });
+  assert.equal(first.ok, true);
+
+  const ready = path.join(repo, "release-ready");
+  const proceed = path.join(repo, "release-proceed");
+  const child = spawnPausedMutation({
+    mode: "intent-release",
+    ready,
+    proceed,
+    payload: { lease: first.lease },
+  });
+  const childResult = collectChild(child);
+  await waitUntil(() => existsSync(ready), "stale writer never reached its final release mutation");
+  expireIntent(first.lease);
+
+  const renewed = registerWriterIntent({
+    writerId: "writer-race",
+    repoDir: repo,
+  });
+  writeFileSync(proceed, "proceed");
+  const released = await childResult;
+
+  assert.equal(
+    renewed.ok && released.ok,
+    false,
+    "renewal and the stale writer's later pathname removal must not both succeed",
+  );
+  if (renewed.ok) {
+    assert.deepEqual(maintenanceGateStatus(repo).liveIntents, ["writer-race"]);
+  } else {
+    assert.equal(released.ok, true);
+  }
   rmSync(repo, { recursive: true, force: true });
 });
 
@@ -192,14 +702,20 @@ test("writer lease lifecycle: duplicate ids rejected, expiry renews, wrong token
   const first = registerWriterIntent({ writerId: "w1", repoDir: repo, ttlMs: 60_000 });
   assert.equal(first.ok, true);
   assert.equal(registerWriterIntent({ writerId: "w1", repoDir: repo }).reason, "writer-already-active");
-  assert.equal(releaseWriterIntent({ ...first.lease, token: "wrong" }).reason, "not-owner");
+  assert.equal(releaseWriterIntent({ ...first.lease, token: "0000000000000000" }).reason, "not-owner");
 
   // An expired lease renews in place for the same writer id.
-  const expired = registerWriterIntent({ writerId: "w2", repoDir: repo, ttlMs: 1 });
+  const expired = registerWriterIntent({ writerId: "w2", repoDir: repo });
   assert.equal(expired.ok, true);
-  const renewed = registerWriterIntent({ writerId: "w2", repoDir: repo, now: Date.now() + 50 });
+  expireIntent(expired.lease);
+  const renewed = registerWriterIntent({ writerId: "w2", repoDir: repo });
   assert.equal(renewed.ok, true);
   assert.notEqual(renewed.lease.token, expired.lease.token);
+
+  const portable = registerWriterIntent({ writerId: "writer:CON", repoDir: repo });
+  assert.equal(portable.ok, true);
+  assert.ok(maintenanceGateStatus(repo).liveIntents.includes("writer:CON"));
+  assert.equal(releaseWriterIntent(portable.lease).ok, true);
 
   assert.equal(registerWriterIntent({ writerId: "../escape", repoDir: repo }).reason, "invalid-writer-id");
   rmSync(repo, { recursive: true, force: true });
