@@ -2503,6 +2503,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // No new persistence path — the picker reuses /api/chat/model-state.
   const handleSelectModel = useCallback(
     (modelId: string | null) => {
+      // A staged model switch invalidates every prior model's controls until
+      // the scoped capability response arrives; never render/send stale native values.
+      setModelCapabilities([]);
+      setModelControls({});
       const current = modelStateRef.current;
       if (current) {
         const optimistic: ChatModelState = {
