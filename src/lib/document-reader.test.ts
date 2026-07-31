@@ -97,6 +97,64 @@ test("an h1 title beats the fallback and is removed from section content", async
   assert.equal(blockText(doc.sections[0].blocks[0]), "Paragraph body.");
 });
 
+test("a late h1 becomes the title, is removed from content, and h3-h6 each form sections", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+  const doc = parseMarkdownReaderDocument(
+    "## Before\n\nSection body.\n\n# Late title\n\nAfter.\n\n### Alpha\n\nAlpha body.\n\n#### Beta\n\nBeta body.\n\n##### Gamma\n\nGamma body.\n\n###### Delta\n\nDelta body.",
+    "Fallback title",
+  );
+
+  assert.deepEqual(
+    { title: doc.title, titleSource: doc.titleSource },
+    { title: "Late title", titleSource: "heading" },
+  );
+  assert.equal(doc.sections.length, 5);
+  assert.deepEqual(
+    doc.sections.map((section) => ({
+      id: section.id,
+      heading: section.heading,
+      level: section.level,
+    })),
+    [
+      { id: "section-before-1", heading: "Before", level: 2 },
+      { id: "section-alpha-1", heading: "Alpha", level: 3 },
+      { id: "section-beta-1", heading: "Beta", level: 4 },
+      { id: "section-gamma-1", heading: "Gamma", level: 5 },
+      { id: "section-delta-1", heading: "Delta", level: 6 },
+    ],
+  );
+  assert.deepEqual(doc.sections[0].blocks.map((block) => block.type), [
+    "paragraph",
+    "paragraph",
+  ]);
+  assert.equal(blockText(doc.sections[0].blocks[0]), "Section body.");
+  assert.equal(blockText(doc.sections[0].blocks[1]), "After.");
+  assert.deepEqual(doc.sections[1].blocks.map((block) => block.type), ["paragraph"]);
+  assert.equal(blockText(doc.sections[1].blocks[0]), "Alpha body.");
+  assert.deepEqual(doc.sections[4].blocks.map((block) => block.type), ["paragraph"]);
+  assert.equal(blockText(doc.sections[4].blocks[0]), "Delta body.");
+});
+
+test("frontmatter title still wins when a later h1 appears, and the h1 is removed from content", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+  const doc = parseMarkdownReaderDocument(
+    "---\ntitle: Findings\n---\n\n## Before\n\nSection body.\n\n# Late title\n\nAfter.",
+    "Fallback title",
+  );
+
+  assert.deepEqual(
+    { title: doc.title, titleSource: doc.titleSource },
+    { title: "Findings", titleSource: "frontmatter" },
+  );
+  assert.equal(doc.sections.length, 1);
+  assert.deepEqual(doc.sections[0].blocks.map((block) => block.type), [
+    "paragraph",
+    "paragraph",
+  ]);
+  assert.equal(blockText(doc.sections[0].blocks[0]), "Section body.");
+  assert.equal(blockText(doc.sections[0].blocks[1]), "After.");
+});
+
 test("headingless prose stays in one headingless overview section", async () => {
   const { parseMarkdownReaderDocument } = await loadDocumentReader();
   const doc = parseMarkdownReaderDocument("Paragraph one.\n\nParagraph two.", "Fallback title");
@@ -152,4 +210,3 @@ test("comment helpers strip only complete comments and detect later unmatched op
     true,
   );
 });
-
