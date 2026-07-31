@@ -11,23 +11,25 @@ const appVersionSource = await readFile(new URL("./app-version.ts", import.meta.
 const releaseWorkflow = await readFile(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8");
 const buildInfoRoute = await readFile(new URL("../app/api/app/build-info/route.ts", import.meta.url), "utf8");
 
-function collectReleaseSettingOccurrences(node, targetKey, path = [], occurrences = []) {
+function collectReleaseSettingOccurrences(node, targetKey, sourceLabel, path = [], occurrences = []) {
   if (YAML.isMap(node)) {
     for (const pair of node.items) {
       const keyNode = pair.key;
-      if (YAML.isScalar(keyNode) && typeof keyNode.value === "string") {
-        const nextPath = [...path, keyNode.value];
-        if (keyNode.value === targetKey) {
-          occurrences.push({ path: nextPath, valueNode: pair.value });
-        }
-        collectReleaseSettingOccurrences(pair.value, targetKey, nextPath, occurrences);
-      } else if (pair.value) {
-        collectReleaseSettingOccurrences(pair.value, targetKey, path, occurrences);
+      if (!YAML.isScalar(keyNode) || typeof keyNode.value !== "string") {
+        throw new Error(
+          `${sourceLabel} release validation requires string mapping keys; found ${describeOpaqueMappingKey(keyNode)} at ${formatPathSegments(path)}`,
+        );
       }
+
+      const nextPath = [...path, keyNode.value];
+      if (keyNode.value === targetKey) {
+        occurrences.push({ path: nextPath, valueNode: pair.value });
+      }
+      collectReleaseSettingOccurrences(pair.value, targetKey, sourceLabel, nextPath, occurrences);
     }
   } else if (YAML.isSeq(node)) {
     node.items.forEach((item, index) => {
-      collectReleaseSettingOccurrences(item, targetKey, [...path, String(index)], occurrences);
+      collectReleaseSettingOccurrences(item, targetKey, sourceLabel, [...path, String(index)], occurrences);
     });
   }
 
@@ -40,6 +42,22 @@ function samePathSegments(left, right) {
 
 function formatPathSegments(path) {
   return JSON.stringify(path);
+}
+
+function describeOpaqueMappingKey(keyNode) {
+  if (keyNode?.constructor?.name === "Alias") {
+    return "alias mapping key";
+  }
+
+  if (YAML.isSeq(keyNode)) {
+    return "sequence mapping key";
+  }
+
+  if (YAML.isMap(keyNode)) {
+    return "mapping mapping key";
+  }
+
+  return "non-string mapping key";
 }
 
 function readIosReleaseSettings(source, sourceLabel = "apps/ios/CovenCave/project.yml") {
@@ -57,7 +75,7 @@ function readIosReleaseSettings(source, sourceLabel = "apps/ios/CovenCave/projec
 
 function readCanonicalReleaseSetting(document, key, sourceLabel) {
   const canonicalPath = ["settings", "base", key];
-  const occurrences = collectReleaseSettingOccurrences(document.contents, key);
+  const occurrences = collectReleaseSettingOccurrences(document.contents, key, sourceLabel);
 
   if (occurrences.length !== 1 || !samePathSegments(occurrences[0].path, canonicalPath)) {
     const detail =
@@ -167,6 +185,41 @@ name: Example
 `),
   /\["settings","base","MARKETING_VERSION"\]/,
   "A literal dotted settings.base mapping must not satisfy the canonical nested path",
+);
+
+assert.throws(
+  () =>
+    readIosReleaseSettings(
+      `
+name: Example
+settings:
+  ? [ignored]
+  : base:
+      MARKETING_VERSION: "0.2.1"
+      CURRENT_PROJECT_VERSION: "1"
+`,
+      "fixtures/complex-mapping-key.yml",
+    ),
+  /fixtures\/complex-mapping-key\.yml.*string mapping keys/i,
+  "A complex mapping key on the release path must be rejected explicitly",
+);
+
+assert.throws(
+  () =>
+    readIosReleaseSettings(
+      `
+name: Example
+settings:
+  base: &baseSettings
+    MARKETING_VERSION: "0.2.1"
+    CURRENT_PROJECT_VERSION: "1"
+  ? *baseSettings
+  : MARKETING_VERSION: "9.9.9"
+`,
+      "fixtures/alias-mapping-key.yml",
+    ),
+  /fixtures\/alias-mapping-key\.yml.*string mapping keys/i,
+  "An alias mapping key that hides a MARKETING_VERSION override must be rejected explicitly",
 );
 
 assert.throws(
