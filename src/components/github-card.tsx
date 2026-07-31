@@ -57,6 +57,9 @@ type ItemDetail = {
   updatedAt: string | null;
   htmlUrl: string | null;
   comments: number;
+  /** Per-content counts folded into the item response (cave-6p628); absent on
+   *  older payloads, in which case the composer starts with an empty row. */
+  reactionCounts?: Record<string, number>;
   pull: PullDetail | null;
 };
 
@@ -717,6 +720,7 @@ export function GitHubCard({
               author: item.author?.login ?? null,
               assignees: item.assignees.map((a) => a.login),
               labels: item.labels,
+              reactionCounts: item.reactionCounts ?? {},
               // Absent whenever the response predates `pull=1` (or the item is
               // an issue) — the composer treats null as "no PR facts yet".
               pull: item.pull ?? null,
