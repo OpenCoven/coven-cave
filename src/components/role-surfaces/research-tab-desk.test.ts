@@ -74,6 +74,18 @@ test("running and completed blocks stay honest about their data", () => {
   assert.doesNotMatch(detail, /Finding 1|compFindings/);
 });
 
+test("run failures disclose persisted diagnostics without fabricating a cause", () => {
+  assert.match(detail, /View diagnostics/);
+  assert.match(detail, /<Modal[\s\S]*?breadcrumb=\{\["Research", "Diagnostics"\]\}/);
+  assert.match(detail, /\["Error", mission\.lastError \?\? "No current error"\]/);
+  assert.match(detail, /\["Flow run", iteration\?\.flowRunId \?\? "No flow run recorded"\]/);
+  assert.match(detail, /\["Session", sessionId \?\? "No session recorded"\]/);
+  assert.match(detail, /primaryArtifact\.relativePath/);
+  assert.match(detail, /\["Sources", `\$\{mission\.sources\.length\} recorded/);
+  assert.match(css, /\.research-mission-diagnostics/);
+  assert.match(css, /var\(--bg-sunken\)/);
+});
+
 // ── Evidence triage: exact ledger source-update mechanism ──────────────────
 // Triage lives in the ledger now — the rail's Sources pane IS the ledger, so
 // the checkpoint verdicts ride the same source cards as the full list.

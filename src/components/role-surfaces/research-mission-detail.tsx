@@ -22,6 +22,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { Modal } from "@/components/ui/modal";
 import { CitationSources } from "@/components/ui/citation";
 import { ClampedText } from "@/components/ui/clamped-text";
 import { Tabs } from "@/components/ui/tabs";
@@ -109,6 +110,7 @@ export function ResearchMissionDetail({
   const [busy, setBusy] = useState(false);
   const [direction, setDirection] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   // null = untouched; the retry payload then adapts to the failure instead.
   const [retryRoot, setRetryRoot] = useState<string | null>(null);
   // Toggles the "Saved" summary's copy-workspace-path button label; reverted
@@ -147,6 +149,13 @@ export function ResearchMissionDetail({
     setRetryRoot(null);
     setActionError(null);
     setDirection("");
+  }, [missionId]);
+
+  // A diagnostics dialog belongs to the selected run. Close it when the user
+  // moves to another mission so its details cannot be mistaken for the new
+  // selection.
+  useEffect(() => {
+    setDiagnosticsOpen(false);
   }, [missionId]);
 
   // The copied-path confirmation is per-mission UI state too. Its cleanup
@@ -191,6 +200,24 @@ export function ResearchMissionDetail({
   const draftArtifact = mission.artifacts.find(
     (artifact) => artifact.relativePath === "artifacts/primary.md" && artifact.state === "working",
   );
+  const primaryArtifact = mission.artifacts.find(
+    (artifact) => artifact.relativePath === "artifacts/primary.md",
+  );
+  const diagnostics = [
+    ["Error", mission.lastError ?? "No current error"],
+    ["Status", mission.status],
+    ["Pass", iteration ? `${iteration.number} of ${mission.bounds.maxIterations}` : "No pass recorded"],
+    ["Control", iteration?.decisionReason ?? "No control decision recorded"],
+    ["Flow run", iteration?.flowRunId ?? "No flow run recorded"],
+    ["Session", sessionId ?? "No session recorded"],
+    [
+      "Primary artifact",
+      primaryArtifact
+        ? `${primaryArtifact.relativePath} · ${primaryArtifact.state}`
+        : "No primary artifact reference",
+    ],
+    ["Sources", `${mission.sources.length} recorded · ${sourceCounts.used} used`],
+  ] as const;
   const isCheckpointLike = mission.status === "checkpoint" || mission.status === "paused";
   const isLive = LIVE_STATUSES.has(mission.status);
   // One line of run context above the open pane — the state the two stacked
@@ -424,6 +451,15 @@ export function ResearchMissionDetail({
             <div className="research-mission-stop" role="status">
               <Icon name="ph:warning" width={14} height={14} aria-hidden />
               <span>{mission.lastError}</span>
+              <Button
+                className="research-mission-stop__diagnostics"
+                size="xs"
+                variant="ghost"
+                leadingIcon="ph:terminal-window"
+                onClick={() => setDiagnosticsOpen(true)}
+              >
+                View diagnostics
+              </Button>
             </div>
           ) : iteration?.decisionReason ? (
             <div className="research-mission-decision" role="status">
@@ -431,6 +467,29 @@ export function ResearchMissionDetail({
               <p>{iteration.decisionReason}</p>
             </div>
           ) : null}
+
+          <Modal
+            open={diagnosticsOpen}
+            onClose={() => setDiagnosticsOpen(false)}
+            breadcrumb={["Research", "Diagnostics"]}
+            footerActions={(
+              <Button variant="secondary" onClick={() => setDiagnosticsOpen(false)}>
+                Close
+              </Button>
+            )}
+          >
+            <div className="research-mission-diagnostics">
+              <p>Run details are local to this research mission.</p>
+              <dl>
+                {diagnostics.map(([label, value]) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </Modal>
 
           {/* ── Checkpoint / paused: what changed + refine box.
                 Tiles derive from real data only — a tile whose datum is

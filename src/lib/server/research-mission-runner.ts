@@ -404,23 +404,44 @@ async function reconcileCompletedRun(
     summary: control.reason,
     ...(costUsd === undefined ? {} : { costUsd }),
   };
+  // A missing or unreadable primary artifact is an execution failure, not a
+  // review checkpoint. A checkpoint means the agent completed a bounded pass
+  // and left a reviewable draft behind. Without that draft (often alongside a
+  // missing terminal control record), rendering it as a checkpoint falsely
+  // turns every stale phase green and offers Continue instead of Retry.
+  const failedIteration = {
+    ...iteration,
+    status: "failed" as const,
+    finishedAt: timestamp,
+    summary: "Research output unavailable",
+    ...(costUsd === undefined ? {} : { costUsd }),
+  };
   let markdown: string | null;
+  try {
+    markdown = await deps.readMissionFile(mission.id, "artifacts/primary.md");
+  } catch (error) {
+    return {
+      ...mission,
+      status: "failed",
+      updatedAt: timestamp,
+      lastError: error instanceof Error ? error.message : "Research evidence could not be read",
+      iterations: mission.iterations.map((item, index) => index === iterationIndex ? failedIteration : item),
+    };
+  }
+
   let fileSources: ResearchSourceRef[];
   try {
-    [markdown, fileSources] = await Promise.all([
-      deps.readMissionFile(mission.id, "artifacts/primary.md"),
-      deps.readSources(mission.id),
-    ]);
+    fileSources = await deps.readSources(mission.id);
   } catch (error) {
+    // A primary draft exists but its ledger needs repair. Keep this as a
+    // checkpoint: the user can inspect the draft and correct/reject evidence
+    // instead of discarding a useful pass as an execution failure.
     return {
       ...mission,
       status: "checkpoint",
       updatedAt: timestamp,
-      lastError: error instanceof Error ? error.message : "Research evidence could not be read",
-      iterations: mission.iterations.map((item, index) => index === iterationIndex ? {
-        ...nextIteration,
-        status: "checkpoint",
-      } : item),
+      lastError: error instanceof Error ? error.message : "Research sources could not be read",
+      iterations: mission.iterations.map((item, index) => index === iterationIndex ? nextIteration : item),
     };
   }
   const sources = mergeFileSources(mission.sources, fileSources);
@@ -428,11 +449,11 @@ async function reconcileCompletedRun(
   if (!markdown) {
     return {
       ...mission,
-      status: "checkpoint",
+      status: "failed",
       updatedAt: timestamp,
       lastError: "Research run completed without artifacts/primary.md",
       sources,
-      iterations: mission.iterations.map((item, index) => index === iterationIndex ? nextIteration : item),
+      iterations: mission.iterations.map((item, index) => index === iterationIndex ? failedIteration : item),
     };
   }
   // Primary lookup by path, not index — backfilled legacy arrays and the
@@ -811,33 +832,50 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       }
       if (input.action === "finish") {
         mission = await pauseAutomation(mission, "Mission finished");
-        // Read the primary defensively — like the `complete` path does. A
-        // symlinked/oversized/escaping primary must NOT throw here: pauseAutomation
-        // has already flipped the automation store, so a raw throw would 500 the
-        // whole finish and leave automation paused while the mission never
-        // settles (status divergence, cave-v73d). An unreadable primary degrades:
-        // publishFinalArtifacts isolates it as a named publish failure and the
-        // mission still finishes.
+        const finishedMission = mission;
+        // Read the primary defensively. A symlinked/oversized/escaping primary
+        // must NOT throw after pauseAutomation has changed the schedule state,
+        // but it also cannot be treated as a completed research result. A
+        // primary artifact is the deliverable that makes a Finish finalization
+        // meaningful; without it, leave every ref un-published and offer Retry.
         let primaryMarkdown: string | null = null;
+        let primaryError: string | null = null;
         try {
-          primaryMarkdown = await deps.readMissionFile(mission.id, "artifacts/primary.md");
-        } catch {
-          primaryMarkdown = null;
+          primaryMarkdown = await deps.readMissionFile(finishedMission.id, "artifacts/primary.md");
+        } catch (error) {
+          primaryError = error instanceof Error ? error.message : "Research evidence could not be read";
+        }
+        if (!primaryMarkdown) {
+          return saveUpdated({
+            ...finishedMission,
+            status: "failed",
+            lastError: primaryError ?? "Research run completed without artifacts/primary.md",
+            iterations: finishedMission.iterations.map((iteration, index) => {
+              if (index !== finishedMission.iterations.length - 1) return iteration;
+              const { decision: _decision, decisionReason: _decisionReason, ...failedIteration } = iteration;
+              return {
+                ...failedIteration,
+                status: "failed" as const,
+                finishedAt: timestamp,
+                summary: "Research output unavailable",
+              };
+            }),
+          });
         }
         // Finishing by hand saves the same final artifacts a `complete`
         // decision would — the checkpointed files are the deliverables.
         const outcome = await publishFinalArtifacts({
-          mission,
-          artifacts: mission.artifacts.map((artifact) => (
+          mission: finishedMission,
+          artifacts: finishedMission.artifacts.map((artifact) => (
             artifact.state === "rejected" ? artifact : { ...artifact, updatedAt: timestamp }
           )),
-          sources: mission.sources,
+          sources: finishedMission.sources,
           primaryMarkdown,
-          provenance: latestIterationProvenance(mission, timestamp),
+          provenance: latestIterationProvenance(finishedMission, timestamp),
           deps,
         });
         return saveUpdated({
-          ...mission,
+          ...finishedMission,
           status: "completed",
           finishedAt: timestamp,
           artifacts: outcome.artifacts,
