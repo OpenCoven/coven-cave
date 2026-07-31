@@ -46,6 +46,8 @@ mod app_lifecycle_tests;
 #[cfg(desktop)]
 pub mod browser;
 #[cfg(desktop)]
+mod discord_presence;
+#[cfg(desktop)]
 mod desktop_reachability;
 #[cfg(desktop)]
 mod platform_lifecycle;
