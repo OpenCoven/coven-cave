@@ -4,7 +4,16 @@ import {
   serializeMdDocument,
   updateMdDocumentHeader,
   normalizeMdTags,
+  splitLeadingMdComments,
+  joinLeadingMdComments,
 } from "./md-frontmatter.ts";
+
+const provenance = `<!-- research-provenance
+mission: research-1
+iteration: 1
+-->
+
+`;
 
 // No frontmatter: body passes through untouched.
 {
@@ -64,5 +73,35 @@ import {
 assert.deepEqual(normalizeMdTags(undefined), []);
 assert.deepEqual(normalizeMdTags([1, " b ", ""]), ["1", "b"]);
 assert.deepEqual(normalizeMdTags(["a", "a", "b"]), ["a", "b"], "array tags dedupe");
+
+// Leading provenance comments are hidden from the visual presentation only.
+{
+  const body = `${provenance}# Findings\n\nBody.\n`;
+  const split = splitLeadingMdComments(body);
+  assert.equal(split.hiddenPrefix, provenance);
+  assert.equal(split.visibleBody, "# Findings\n\nBody.\n");
+  assert.equal(
+    joinLeadingMdComments(split.hiddenPrefix, "Edited body.\n"),
+    `${provenance}Edited body.\n`,
+  );
+}
+
+// Unclosed leading comments stay visible instead of being hidden.
+{
+  const body = "<!-- research-provenance\nmission: research-1\n# Findings\n\nBody.\n";
+  assert.deepEqual(splitLeadingMdComments(body), {
+    hiddenPrefix: "",
+    visibleBody: body,
+  });
+}
+
+// Internal comments that are not leading metadata stay visible.
+{
+  const body = `# Findings\n\n${provenance.trimEnd()}Body.\n`;
+  assert.deepEqual(splitLeadingMdComments(body), {
+    hiddenPrefix: "",
+    visibleBody: body,
+  });
+}
 
 console.log("md-frontmatter.test: ok");

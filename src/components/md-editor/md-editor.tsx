@@ -34,7 +34,9 @@ import { shouldFlare } from "@/lib/flare-cooldown";
 import { CodeEditor } from "@/components/code-editor";
 import {
   normalizeMdTags,
+  joinLeadingMdComments,
   parseMdDocument,
+  splitLeadingMdComments,
   serializeMdDocument,
 } from "@/lib/md-frontmatter";
 import { computeMdDocStats, formatMdDocStats } from "@/lib/md-doc-stats";
@@ -166,13 +168,20 @@ export function MdEditor({
     [updateRaw],
   );
 
-  const onBodyChange = useCallback((body: string) => {
+  const presentation = useMemo(() => splitLeadingMdComments(doc.body), [doc.body]);
+
+  const onBodyChange = useCallback((visibleBody: string) => {
     const next = parseMdDocument(rawRef.current);
-    // Crepe reports the body it was mounted with; only the body changes here.
-    next.body = body;
-    updateRaw(next.hasFrontmatter || next.title !== null || next.tags.length > 0 || Object.keys(next.rest).length > 0
-      ? serializeMdDocument(next)
-      : body);
+    const currentPresentation = splitLeadingMdComments(next.body);
+    next.body = joinLeadingMdComments(currentPresentation.hiddenPrefix, visibleBody);
+    updateRaw(
+      next.hasFrontmatter ||
+        next.title !== null ||
+        next.tags.length > 0 ||
+        Object.keys(next.rest).length > 0
+        ? serializeMdDocument(next)
+        : next.body,
+    );
   }, [updateRaw]);
 
   const switchMode = useCallback((next: MdEditorMode) => {
@@ -406,7 +415,7 @@ export function MdEditor({
         ) : mode === "visual" ? (
           <MdEditorVisual
             key={visualEpoch}
-            defaultValue={doc.body}
+            defaultValue={presentation.visibleBody}
             readOnly={readOnly}
             onChange={onBodyChange}
             onSave={() => void save()}
