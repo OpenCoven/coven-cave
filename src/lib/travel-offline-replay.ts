@@ -237,6 +237,8 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const targetNodeId = stringValue(options.targetNodeId) ?? undefined;
   const familiarId = stringValue(payload.familiarId) ?? flowFamiliar(flow);
   const binding = familiarId ? bindingFor(config, familiarId) : { harness: config.defaults.harness };
+  const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (profileBlock) throw new Error(profileBlock);
   const prompt = compileFlowPrompt(flow, {
     targetNodeId,
     triggerInput: options.triggerInput as never,

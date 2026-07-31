@@ -146,6 +146,8 @@ export async function startFlowSession(
       status: 409,
     };
   }
+  const hermesProfileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (hermesProfileBlock) return { ok: false, status: 409, error: hermesProfileBlock };
   const travelStatus = await travelLocalQueueStatus(config);
   if (travelStatus) {
     const order = options.targetNodeId ? flowPartialExecutionOrder(flow, options.targetNodeId) : flowExecutionOrder(flow);
@@ -260,8 +262,6 @@ export async function startFlowSession(
   // session id, which is where the flow transcript endpoint and the
   // research-mission reconcile already look first.
   const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
-  const hermesProfileBlock = hermesProfileDaemonLaunchBlockReason(binding);
-  if (hermesProfileBlock) return { ok: false, status: 409, error: hermesProfileBlock };
   const hubAuthority = config.multiHost?.mode === "hub";
   if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
     const [capability, compatibility] = await Promise.all([
