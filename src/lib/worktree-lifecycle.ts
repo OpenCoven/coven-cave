@@ -38,7 +38,7 @@ export type WorktreeLifecycleMetadata = {
   createdAt: string;
   reason?: string;
   reviewAfter?: string;
-  exception?: ManagedCreationException;
+  exception?: ManagedCreationException | null;
 };
 
 export type WorktreeRemoteRef = {
@@ -230,6 +230,28 @@ function reviewAfterReasons(metadata: WorktreeLifecycleMetadata, nowMs: number):
   return [`owner follow-up: ${metadata.owner} reviewAfter ${reviewAfter} is overdue`];
 }
 
+function applicableManagedCreationException({
+  exception,
+  requestedPath,
+  nowMs,
+}: {
+  exception?: ManagedCreationException | null;
+  requestedPath: string | null;
+  nowMs: number;
+}): ManagedCreationException | null {
+  if (!exception || requestedPath === null) return null;
+  if (exception.owner.trim().length === 0 || exception.reason.trim().length === 0) {
+    return null;
+  }
+  const expiresAtMs = Date.parse(exception.expiresAt);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs) return null;
+  return exception.additionalPaths.includes(requestedPath) ? exception : null;
+}
+
+function managedCreationExceptionReasons(exception: ManagedCreationException): string[] {
+  return [`owner exception active until ${exception.expiresAt}: ${exception.owner} — ${exception.reason}`];
+}
+
 function recoveryDispositionReasons(
   metadata: WorktreeLifecycleMetadata,
   nowMs: number,
@@ -249,6 +271,10 @@ function withReasons(item: WorktreeLifecycleObservation, lane: WorktreeLifecycle
     lane,
     reasons,
   };
+}
+
+function divergentRemoteRefReason(remoteRef: WorktreeRemoteRef): string {
+  return `same-named remote ref ${remoteRef.ref} diverges from local HEAD`;
 }
 
 type ClassifyLifecycleUnitOptions = {
@@ -330,6 +356,22 @@ function classifyLifecycleUnitInternal(
     ]);
   }
 
+  const activeException = applicableManagedCreationException({
+    exception: observation.metadata.exception,
+    requestedPath: observation.path,
+    nowMs,
+  });
+  if (activeException) {
+    return withReasons(observation, "active", managedCreationExceptionReasons(activeException));
+  }
+
+  if (observation.remoteRef && observation.remoteRef.oid !== observation.head) {
+    return withReasons(observation, "recovery", [
+      divergentRemoteRefReason(observation.remoteRef),
+      ...reviewAfterReasons(observation.metadata, nowMs),
+    ]);
+  }
+
   if (observation.updatedAtMs === null || !Number.isFinite(observation.updatedAtMs)) {
     return withReasons(observation, "uncertain", [
       "branch/worktree recency is unavailable",
@@ -377,6 +419,10 @@ function classifyLifecycleUnitWithoutMetadata(
     return withReasons(observation, "recovery", [
       "HEAD is not proven landed on the default branch or an exact merged PR",
     ]);
+  }
+
+  if (observation.remoteRef && observation.remoteRef.oid !== observation.head) {
+    return withReasons(observation, "recovery", [divergentRemoteRefReason(observation.remoteRef)]);
   }
 
   if (observation.updatedAtMs === null || !Number.isFinite(observation.updatedAtMs)) {
@@ -522,24 +568,6 @@ export function calculateLifecycleBudgets({
   };
 }
 
-function hasValidManagedCreationException({
-  exception,
-  requestedPath,
-  nowMs,
-}: {
-  exception?: ManagedCreationException;
-  requestedPath: string;
-  nowMs: number;
-}): boolean {
-  if (!exception) return false;
-  if (exception.owner.trim().length === 0 || exception.reason.trim().length === 0) {
-    return false;
-  }
-  const expiresAtMs = Date.parse(exception.expiresAt);
-  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs) return false;
-  return exception.additionalPaths.includes(requestedPath);
-}
-
 export function assessManagedWorktreeCreation({
   beadId,
   requestedPath,
@@ -553,10 +581,10 @@ export function assessManagedWorktreeCreation({
   nowMs: number;
   existingPaths: string[];
   budgets: WorktreeLifecycleBudgets;
-  exception?: ManagedCreationException;
+  exception?: ManagedCreationException | null;
 }): { allowed: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  const validException = hasValidManagedCreationException({ exception, requestedPath, nowMs });
+  const validException = applicableManagedCreationException({ exception, requestedPath, nowMs });
 
   if (existingPaths.length > 0 && !validException) {
     reasons.push(`active Bead ${beadId} already owns a registered worktree`);

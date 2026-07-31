@@ -645,7 +645,7 @@ function parseException(
   value: unknown,
   errors: string[],
 ): ManagedCreationException | undefined {
-  if (value === undefined) return undefined;
+  if (value === undefined || value === null) return undefined;
   if (!isRecord(value)) {
     errors.push("exception must be an object");
     return undefined;
