@@ -54,7 +54,9 @@ type OAuthAttempt = {
 type PendingOAuthStart = {
   controller: AbortController;
   reservation: SystemBrowserReservation;
-  flowStarted: boolean;
+  familiarId: string;
+  flowId: string;
+  generation: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -164,8 +166,22 @@ async function fetchConnection(signal?: AbortSignal): Promise<XConnection> {
   return connection;
 }
 
-async function cancelXOAuthFlow(): Promise<void> {
-  await fetch("/api/x/oauth/start", { method: "DELETE" }).catch(() => null);
+function createOAuthFlowId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+async function cancelXOAuthFlow(flowId: string): Promise<void> {
+  await fetch("/api/x/oauth/start", {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ flowId }),
+  }).catch(() => null);
 }
 
 function requiredScope(capability: XCapability): XScope {
@@ -197,6 +213,12 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const pendingOAuthRef = useRef<PendingOAuthStart | null>(null);
+  const familiarIdRef = useRef(familiar.id);
+  const familiarGenerationRef = useRef(0);
+  if (familiarIdRef.current !== familiar.id) {
+    familiarIdRef.current = familiar.id;
+    familiarGenerationRef.current += 1;
+  }
 
   useEffect(() => {
     mountedRef.current = true;
@@ -207,17 +229,28 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       if (!pending) return;
       pending.controller.abort();
       cancelSystemBrowserOpen(pending.reservation);
-      void cancelXOAuthFlow();
+      void cancelXOAuthFlow(pending.flowId);
     };
   }, []);
 
   useEffect(() => {
+    const pending = pendingOAuthRef.current;
+    if (pending && pending.familiarId !== familiar.id) {
+      pendingOAuthRef.current = null;
+      pending.controller.abort();
+      cancelSystemBrowserOpen(pending.reservation);
+      void cancelXOAuthFlow(pending.flowId);
+    }
     const nextResearch = familiar.xResearchEnabled === true;
     const nextPublish = familiar.xPublishEnabled === true;
     researchEnabledRef.current = nextResearch;
     publishEnabledRef.current = nextPublish;
     setResearchEnabled(nextResearch);
     setPublishEnabled(nextPublish);
+    setSavingGrant(null);
+    setStartingOAuth(false);
+    setOauthAttempt(null);
+    setError(null);
   }, [familiar.id, familiar.xPublishEnabled, familiar.xResearchEnabled]);
 
   const reloadConnection = useCallback(async (signal?: AbortSignal) => {
@@ -240,6 +273,12 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
   }, [reloadConnection]);
 
   const saveGrant = useCallback(async (grant: XGrant, enabled: boolean) => {
+    const familiarId = familiar.id;
+    const generation = familiarGenerationRef.current;
+    const isCurrent = () =>
+      mountedRef.current
+      && familiarIdRef.current === familiarId
+      && familiarGenerationRef.current === generation;
     const previous = grant === "xResearchEnabled"
       ? researchEnabledRef.current
       : publishEnabledRef.current;
@@ -266,6 +305,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       if (!response.ok || !isRecord(result) || result.ok !== true) {
         throw new Error(`Couldn't save ${grantLabel(grant).toLowerCase()}.`);
       }
+      if (!isCurrent()) return false;
       window.dispatchEvent(new Event("cave:familiars-refresh"));
       announce(
         enabled
@@ -274,6 +314,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       );
       return true;
     } catch (saveError) {
+      if (!isCurrent()) return false;
       if (grant === "xResearchEnabled") {
         researchEnabledRef.current = previous;
         setResearchEnabled(previous);
@@ -286,7 +327,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       announce(message, "assertive");
       return false;
     } finally {
-      setSavingGrant(null);
+      if (isCurrent()) setSavingGrant(null);
     }
   }, [
     announce,
@@ -309,10 +350,13 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       return;
     }
 
+    const flowId = createOAuthFlowId();
     const pending: PendingOAuthStart = {
       controller: new AbortController(),
       reservation,
-      flowStarted: false,
+      familiarId: familiar.id,
+      flowId,
+      generation: familiarGenerationRef.current,
     };
     pendingOAuthRef.current = pending;
     let handedOffToPolling = false;
@@ -322,7 +366,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       const response = await fetch("/api/x/oauth/start", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ capability }),
+        body: JSON.stringify({ capability, flowId }),
         signal: pending.controller.signal,
       });
       const result = await response.json().catch(() => null) as unknown;
@@ -331,8 +375,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
         || !isRecord(result)
         || result.ok !== true
         || typeof result.authorizationUrl !== "string"
-        || typeof result.flowId !== "string"
-        || !/^[A-Za-z0-9_-]{43}$/.test(result.flowId)
+        || result.flowId !== pending.flowId
       ) {
         cancelSystemBrowserOpen(reservation);
         throw new Error(
@@ -341,25 +384,39 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
             : "Couldn't start X authorization.",
         );
       }
-      pending.flowStarted = true;
-      if (!mountedRef.current || pendingOAuthRef.current !== pending) return;
+      if (
+        !mountedRef.current
+        || pending.familiarId !== familiarIdRef.current
+        || pending.generation !== familiarGenerationRef.current
+        || pendingOAuthRef.current !== pending
+      ) return;
       const authorizationUrl = result.authorizationUrl;
       const opened = await openSystemBrowser(authorizationUrl, reservation);
-      if (!mountedRef.current || pendingOAuthRef.current !== pending) return;
+      if (
+        !mountedRef.current
+        || pending.familiarId !== familiarIdRef.current
+        || pending.generation !== familiarGenerationRef.current
+        || pendingOAuthRef.current !== pending
+      ) return;
       if (!opened.ok) throw new Error(opened.error);
       handedOffToPolling = true;
       setOauthAttempt({
         capability,
         grant,
-        familiarId: familiar.id,
-        flowId: result.flowId,
+        familiarId: pending.familiarId,
+        flowId: pending.flowId,
         deadline: Date.now() + OAUTH_POLL_LIMIT_MS,
       });
       announce("X authorization opened in the system browser.");
     } catch (startError) {
       cancelSystemBrowserOpen(reservation);
-      if (pending.flowStarted) await cancelXOAuthFlow();
-      if (!mountedRef.current || pendingOAuthRef.current !== pending) return;
+      await cancelXOAuthFlow(pending.flowId);
+      if (
+        !mountedRef.current
+        || pending.familiarId !== familiarIdRef.current
+        || pending.generation !== familiarGenerationRef.current
+        || pendingOAuthRef.current !== pending
+      ) return;
       const message = (startError as Error).message;
       setError(message);
       announce(message, "assertive");
@@ -367,7 +424,11 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       if (!handedOffToPolling && pendingOAuthRef.current === pending) {
         pendingOAuthRef.current = null;
       }
-      if (mountedRef.current) setStartingOAuth(false);
+      if (
+        mountedRef.current
+        && pending.familiarId === familiarIdRef.current
+        && pending.generation === familiarGenerationRef.current
+      ) setStartingOAuth(false);
     }
   }, [announce, familiar.id, platform]);
 
@@ -376,7 +437,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
     pendingOAuthRef.current = null;
     if (oauthAttempt.familiarId !== familiar.id) {
       setOauthAttempt(null);
-      void cancelXOAuthFlow();
+      void cancelXOAuthFlow(oauthAttempt.flowId);
       return;
     }
     const controller = new AbortController();
@@ -390,7 +451,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       setError(message);
       announce(message, "assertive");
       controller.abort();
-      if (cancelFlow) void cancelXOAuthFlow();
+      if (cancelFlow) void cancelXOAuthFlow(oauthAttempt.flowId);
     };
 
     const poll = async () => {
@@ -413,6 +474,10 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
           ) {
             if (oauthAttempt.grant) {
               const saved = await saveGrant(oauthAttempt.grant, true);
+              if (
+                settled
+                || oauthAttempt.familiarId !== familiarIdRef.current
+              ) return;
               if (!saved) {
                 settled = true;
                 setOauthAttempt(null);
@@ -459,7 +524,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       Math.max(0, oauthAttempt.deadline - Date.now()),
     );
     return () => {
-      if (!settled) void cancelXOAuthFlow();
+      if (!settled) void cancelXOAuthFlow(oauthAttempt.flowId);
       settled = true;
       controller.abort();
       window.clearInterval(interval);

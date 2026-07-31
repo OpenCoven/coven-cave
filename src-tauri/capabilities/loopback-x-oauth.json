@@ -10,5 +10,5 @@
       "http://[\\:\\:1]:*/*"
     ]
   },
-  "permissions": ["allow-shell-open"]
+  "permissions": ["allow-open-x-oauth-url"]
 }

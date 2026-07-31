@@ -1,4 +1,4 @@
-use super::validate_shell_open_url;
+use super::{validate_shell_open_url, validate_x_oauth_url};
 
 #[test]
 fn validates_http_and_https_urls() {
@@ -16,6 +16,41 @@ fn rejects_non_http_schemes() {
 fn rejects_invalid_urls() {
     assert!(validate_shell_open_url("example.test").is_err());
     assert!(validate_shell_open_url("https://").is_err());
+}
+
+fn valid_x_oauth_url() -> String {
+    let mut url = tauri::Url::parse("https://x.com/i/oauth2/authorize").unwrap();
+    url.query_pairs_mut()
+        .append_pair("response_type", "code")
+        .append_pair("client_id", "public-client-id")
+        .append_pair("redirect_uri", "http://127.0.0.1:1456/x/oauth/callback")
+        .append_pair("scope", "tweet.read users.read offline.access")
+        .append_pair("state", &"A".repeat(43))
+        .append_pair("code_challenge", &"B".repeat(43))
+        .append_pair("code_challenge_method", "S256");
+    url.to_string()
+}
+
+#[test]
+fn allows_only_complete_x_oauth_authorization_urls() {
+    assert!(validate_x_oauth_url(&valid_x_oauth_url()).is_ok());
+}
+
+#[test]
+fn rejects_arbitrary_or_malformed_x_oauth_navigation() {
+    let valid = valid_x_oauth_url();
+    for denied in [
+        "http://x.com/i/oauth2/authorize",
+        "https://example.com/i/oauth2/authorize",
+        "https://user:pass@x.com/i/oauth2/authorize",
+        "https://x.com/i/oauth2/authorize#fragment",
+        "https://x.com/other",
+        "https://x.com/i/oauth2/authorize",
+        "not a URL",
+    ] {
+        assert!(validate_x_oauth_url(denied).is_err(), "{denied}");
+    }
+    assert!(validate_x_oauth_url(&format!("{valid}&next=https%3A%2F%2Fevil.example")).is_err());
 }
 
 #[test]

@@ -64,13 +64,13 @@ assert.match(
 assert.match(source, /pendingOAuthRef/, "OAuth startup is tracked before polling begins");
 assert.match(
   source,
-  /return \(\) => \{[\s\S]{0,300}pending\.controller\.abort\(\)[\s\S]{0,300}cancelSystemBrowserOpen\(pending\.reservation\)[\s\S]{0,300}cancelXOAuthFlow\(\)/,
-  "unmount aborts and cancels an OAuth start that has not reached polling",
+  /cancelXOAuthFlow\(pending\.flowId\)/,
+  "OAuth startup cleanup cancels only its own server-side flow",
 );
 assert.match(
   source,
-  /!mountedRef\.current \|\| pendingOAuthRef\.current !== pending/,
-  "post-await startup work cannot navigate or update an unmounted Studio",
+  /pending\.familiarId !== familiarIdRef\.current[\s\S]{0,160}pendingOAuthRef\.current !== pending/,
+  "post-await startup work cannot navigate after the Studio switches familiars",
 );
 assert.match(source, /10 \* 60 \* 1000/, "OAuth polling is bounded to ten minutes");
 assert.match(source, /window\.clearInterval/);
@@ -88,11 +88,12 @@ assert.match(source, /cancelSystemBrowserOpen\(reservation\)/, "start failure cl
 assert.match(source, /openSystemBrowser\(authorizationUrl, reservation\)/);
 assert.match(
   source,
-  /cancelXOAuthFlow\(\)/,
-  "post-start browser failures cancel the server-side OAuth listener",
+  /cancelXOAuthFlow\(pending\.flowId\)/,
+  "post-start browser failures cancel only their server-side OAuth listener",
 );
 assert.match(oauthStartRoute, /export async function DELETE\(req: Request\)/);
-assert.match(oauthStartRoute, /xOAuthService\.cancel\(\)/);
+assert.match(oauthStartRoute, /xOAuthService\.cancel\(flowId\)/);
+assert.doesNotMatch(oauthStartRoute, /xOAuthService\.cancel\(\)/);
 
 assert.match(brain, /import \{ FamiliarXSection \} from "@\/components\/familiar-x-section"/);
 assert.match(

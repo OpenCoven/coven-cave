@@ -61,6 +61,7 @@ const requiredPermissionIds = [
   "allow-browser-close-all",
   "allow-browser-reload",
   "allow-shell-open",
+  "allow-open-x-oauth-url",
   "allow-sidecar-startup-status",
   "allow-retry-sidecar-startup",
   "allow-cancel-sidecar-startup",
@@ -88,6 +89,7 @@ const requiredCommands = [
   "browser_close_all",
   "browser_reload",
   "shell_open",
+  "open_x_oauth_url",
   "sidecar_startup_status",
   "retry_sidecar_startup",
   "cancel_sidecar_startup",
@@ -549,8 +551,9 @@ test("X OAuth grants only system-browser opening to the trusted main loopback we
     capabilityAllowsOrigin(loopbackXOAuthCapability, "http://example.com:3000/"),
     false,
   );
-  assert.deepEqual(loopbackXOAuthCapability.permissions, ["allow-shell-open"]);
+  assert.deepEqual(loopbackXOAuthCapability.permissions, ["allow-open-x-oauth-url"]);
   assertCapabilityDoesNotGrant(loopbackXOAuthCapability, [
+    "allow-shell-open",
     "allow-pty-start",
     "allow-browser-navigate",
     "updater:default",

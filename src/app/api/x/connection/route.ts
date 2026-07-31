@@ -35,7 +35,7 @@ export async function GET(req: Request) {
 export async function DELETE(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
-  xOAuthService.cancel();
+  xOAuthService.cancelAll();
   xCredentialService.disconnect();
   return NextResponse.json({ ok: true });
 }

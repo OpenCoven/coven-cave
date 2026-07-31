@@ -120,7 +120,7 @@ test("only one flow may be active and expiry closes its listener", async () => {
 test("cancelling an active flow closes its listener", async () => {
   const { oauth, listener } = service();
   const started = await oauth.start({ capability: "research" });
-  oauth.cancel();
+  oauth.cancel(started.flowId);
   assert.deepEqual(oauth.status(), { activeFlow: false });
   assert.deepEqual(oauth.flowStatus(), {
     activeFlow: false,
@@ -154,9 +154,10 @@ test("cancelling while listener creation is pending prevents an orphaned flow", 
     clientId: "public-client-id",
   });
 
-  const starting = oauth.start({ capability: "research" });
+  const flowId = "A".repeat(43);
+  const starting = oauth.start({ capability: "research", flowId });
   await listening;
-  oauth.cancel();
+  oauth.cancel(flowId);
   releaseListener();
 
   await assert.rejects(
@@ -165,6 +166,26 @@ test("cancelling while listener creation is pending prevents an orphaned flow", 
   );
   assert.deepEqual(oauth.status(), { activeFlow: false });
   assert.equal(closes, 1);
+});
+
+test("a stale cancellation cannot cancel a newer OAuth flow", async () => {
+  const { oauth } = service();
+  const first = await oauth.start({
+    capability: "research",
+    flowId: "A".repeat(43),
+  });
+  assert.equal(oauth.cancel(first.flowId), true);
+
+  const second = await oauth.start({
+    capability: "publish",
+    flowId: "B".repeat(43),
+  });
+  assert.equal(oauth.cancel(first.flowId), false);
+  assert.deepEqual(oauth.flowStatus(), {
+    activeFlow: true,
+    flowId: second.flowId,
+    outcome: "pending",
+  });
 });
 
 test("rejects wrong method, path, missing code, and state mismatch without replacing credentials", async () => {
@@ -246,7 +267,7 @@ test("keeps a consumed callback active until its exchange finishes", async () =>
   );
   releaseExchange();
   await callback;
-  oauth.cancel();
+  oauth.cancel(started.flowId);
   assert.equal(activeDuringExchange, true);
   assert.equal(startRejected, true);
   assert.equal(credentialService.replacements.length, 1);
@@ -274,7 +295,7 @@ test("cancelling a consumed callback prevents its late exchange from replacing c
   }, callbackResult.response);
   await Promise.resolve();
 
-  oauth.cancel();
+  oauth.cancel(started.flowId);
   releaseExchange();
   await callback;
 

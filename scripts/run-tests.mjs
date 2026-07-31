@@ -104,6 +104,7 @@ export const SUITES = {
     "src/lib/server/x-access.test.ts",
     "src/lib/open-system-browser.test.ts",
     "src/components/familiar-x-section.test.ts",
+    "src/components/familiar-x-section-behavior.test.tsx",
     "src/lib/mcp-doctor.test.ts",
     "src/lib/settings-profile-form.test.ts",
     "src/lib/user-profile-shared.test.ts",
@@ -1619,6 +1620,7 @@ const VITEST_TESTS = new Set([
   "src/components/workspace-canonical-memory-navigation-behavior.test.tsx",
   "src/components/workspace-canonical-memory-lazy-familiar.test.tsx",
   "src/components/projects-view-repair-behavior.test.tsx",
+  "src/components/familiar-x-section-behavior.test.tsx",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

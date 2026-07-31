@@ -16,6 +16,7 @@ permissions = [
   "allow-browser-close-all",
   "allow-browser-reload",
   "allow-shell-open",
+  "allow-open-x-oauth-url",
   "allow-sidecar-startup-status",
   "allow-retry-sidecar-startup",
   "allow-cancel-sidecar-startup",

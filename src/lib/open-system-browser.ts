@@ -45,7 +45,44 @@ function defaultOpenWindow(): PopupHandle | null {
 function authorizationUrl(raw: string): string | null {
   try {
     const url = new URL(raw);
-    if (url.protocol !== "https:" || url.username || url.password) return null;
+    if (
+      url.protocol !== "https:"
+      || url.hostname !== "x.com"
+      || url.port
+      || url.pathname !== "/i/oauth2/authorize"
+      || url.username
+      || url.password
+      || url.hash
+    ) {
+      return null;
+    }
+    const entries = [...url.searchParams.entries()];
+    const expectedKeys = new Set([
+      "response_type",
+      "client_id",
+      "redirect_uri",
+      "scope",
+      "state",
+      "code_challenge",
+      "code_challenge_method",
+    ]);
+    if (
+      entries.length !== expectedKeys.size
+      || entries.some(([key]) => !expectedKeys.has(key))
+      || new Set(entries.map(([key]) => key)).size !== expectedKeys.size
+      || url.searchParams.get("response_type") !== "code"
+      || url.searchParams.get("redirect_uri") !== "http://127.0.0.1:1456/x/oauth/callback"
+      || url.searchParams.get("code_challenge_method") !== "S256"
+      || !/^[A-Za-z0-9._~-]{1,256}$/.test(url.searchParams.get("client_id") ?? "")
+      || !/^[A-Za-z0-9_-]{43}$/.test(url.searchParams.get("state") ?? "")
+      || !/^[A-Za-z0-9_-]{43}$/.test(url.searchParams.get("code_challenge") ?? "")
+      || ![
+        "tweet.read users.read offline.access",
+        "tweet.read users.read offline.access tweet.write",
+      ].includes(url.searchParams.get("scope") ?? "")
+    ) {
+      return null;
+    }
     return url.toString();
   } catch {
     return null;
@@ -107,7 +144,7 @@ export async function openSystemBrowser(
     }
 
     const invoke = dependencies.invoke ?? (await import("@tauri-apps/api/core")).invoke;
-    await invoke("shell_open", { url });
+    await invoke("open_x_oauth_url", { url });
     return { ok: true };
   } catch {
     cancelSystemBrowserOpen(reservation);

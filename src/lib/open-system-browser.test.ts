@@ -33,6 +33,17 @@ function popup() {
   };
 }
 
+const validAuthorizationUrl = new URL("https://x.com/i/oauth2/authorize");
+validAuthorizationUrl.search = new URLSearchParams({
+  response_type: "code",
+  client_id: "public-client-id",
+  redirect_uri: "http://127.0.0.1:1456/x/oauth/callback",
+  scope: "tweet.read users.read offline.access",
+  state: "A".repeat(43),
+  code_challenge: "B".repeat(43),
+  code_challenge_method: "S256",
+}).toString();
+
 test("loopback browser reserves a blank window synchronously and navigates only later", async () => {
   const reservedPopup = popup();
   let opens = 0;
@@ -51,12 +62,12 @@ test("loopback browser reserves a blank window synchronously and navigates only 
   assert.deepEqual(reservedPopup.navigated, []);
 
   const result = await openSystemBrowser(
-    "https://x.com/i/oauth2/authorize?state=safe",
+    validAuthorizationUrl.toString(),
     reservation,
   );
   assert.deepEqual(result, { ok: true });
   assert.deepEqual(reservedPopup.navigated, [
-    "https://x.com/i/oauth2/authorize?state=safe",
+    validAuthorizationUrl.toString(),
   ]);
 });
 
@@ -72,7 +83,7 @@ test("a reserved browser window closes when guarded OAuth start fails", () => {
   assert.equal(reservedPopup.isClosed(), true);
 });
 
-test("desktop Tauri invokes only shell_open and does not reserve a browser window", async () => {
+test("desktop Tauri invokes only the scoped X OAuth opener and does not reserve a browser window", async () => {
   let opens = 0;
   const calls: Array<[string, unknown]> = [];
   const reservation = reserveSystemBrowserWindow({
@@ -86,7 +97,7 @@ test("desktop Tauri invokes only shell_open and does not reserve a browser windo
 
   assert.equal(opens, 0);
   const result = await openSystemBrowser(
-    "https://x.com/i/oauth2/authorize",
+    validAuthorizationUrl.toString(),
     reservation,
     {
       invoke: async (command, args) => {
@@ -96,9 +107,35 @@ test("desktop Tauri invokes only shell_open and does not reserve a browser windo
   );
   assert.deepEqual(result, { ok: true });
   assert.deepEqual(calls, [[
-    "shell_open",
-    { url: "https://x.com/i/oauth2/authorize" },
+    "open_x_oauth_url",
+    { url: validAuthorizationUrl.toString() },
   ]]);
+});
+
+test("rejects arbitrary or malformed authorization navigation", async () => {
+  for (const url of [
+    "http://x.com/i/oauth2/authorize",
+    "https://example.com/i/oauth2/authorize",
+    "https://user:pass@x.com/i/oauth2/authorize",
+    "https://x.com/i/oauth2/authorize#fragment",
+    "https://x.com/other",
+    "https://x.com/i/oauth2/authorize",
+    `${validAuthorizationUrl.toString()}&next=https%3A%2F%2Fevil.example`,
+    "not a URL",
+  ]) {
+    const reservedPopup = popup();
+    const result = await openSystemBrowser(url, {
+      ok: true,
+      kind: "browser",
+      popup: reservedPopup.handle,
+    });
+    assert.deepEqual(result, {
+      ok: false,
+      error: "X returned an invalid authorization URL.",
+    }, url);
+    assert.equal(reservedPopup.isClosed(), true, url);
+    assert.deepEqual(reservedPopup.navigated, [], url);
+  }
 });
 
 test("Tauri mobile and non-loopback web origins require desktop Cave", async () => {
@@ -119,7 +156,7 @@ test("Tauri mobile and non-loopback web origins require desktop Cave", async () 
       assert.match(reservation.error, /localhost/i);
     }
     assert.equal(
-      (await openSystemBrowser("https://x.com/i/oauth2/authorize", reservation)).ok,
+      (await openSystemBrowser(validAuthorizationUrl.toString(), reservation)).ok,
       false,
     );
   }

@@ -52,8 +52,9 @@ export type XOAuthFlowStatus = {
 };
 
 export type XOAuthService = {
-  start(input: { capability: XCapability }): Promise<XOAuthStartResult>;
-  cancel(): void;
+  start(input: { capability: XCapability; flowId?: string }): Promise<XOAuthStartResult>;
+  cancel(flowId: string): boolean;
+  cancelAll(): void;
   status(): { activeFlow: boolean };
   flowStatus(): XOAuthFlowStatus;
 };
@@ -128,8 +129,8 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
   const credentials = dependencies.credentialService ?? xCredentialService;
   const configuredClientId = dependencies.clientId;
   let active: ActiveFlow | null = null;
-  let starting = false;
-  let startGeneration = 0;
+  let startingFlowId: string | null = null;
+  const cancelledStarts = new Set<string>();
   let latestFlow: Omit<XOAuthFlowStatus, "activeFlow"> | null = null;
 
   function finish(
@@ -217,33 +218,43 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
   }
 
   return {
-    async start({ capability }): Promise<XOAuthStartResult> {
+    async start({ capability, flowId: requestedFlowId }): Promise<XOAuthStartResult> {
       expire();
-      if (active || starting) throw new XApiError("oauth-in-progress", "X authorization is already in progress");
+      if (active || startingFlowId) {
+        throw new XApiError("oauth-in-progress", "X authorization is already in progress");
+      }
       const clientId = configuredClientId ?? getXClientId();
       const scopes = requestedScopes(capability);
       const verifier = base64url(randomBytes(32));
       const state = base64url(randomBytes(32));
-      const flowId = createHash("sha256")
+      const flowId = requestedFlowId ?? createHash("sha256")
         .update(`coven-x-flow:${state}`)
         .digest("base64url");
+      if (!/^[A-Za-z0-9_-]{43}$/.test(flowId)) {
+        throw new XApiError("invalid-request", "X OAuth flow ID is invalid");
+      }
       const expiresAt = now() + FLOW_TTL_MS;
       const challenge = createHash("sha256").update(verifier).digest("base64url");
-      const generation = startGeneration;
       let listener: XOAuthListener;
-      starting = true;
+      startingFlowId = flowId;
+      latestFlow = { flowId, outcome: "pending" };
       try {
         listener = await listen({ host: "127.0.0.1", port: X_OAUTH_CALLBACK_PORT, onRequest: onCallback });
       } catch (error) {
+        if (cancelledStarts.delete(flowId)) {
+          latestFlow = { flowId, outcome: "failed" };
+          throw new XApiError("oauth-expired", "X authorization was cancelled");
+        }
         if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
           throw new XApiError("oauth-port-in-use", PORT_IN_USE_MESSAGE);
         }
         throw new XApiError("upstream-unavailable", "X OAuth callback could not be started");
       } finally {
-        starting = false;
+        if (startingFlowId === flowId) startingFlowId = null;
       }
-      if (generation !== startGeneration) {
+      if (cancelledStarts.delete(flowId)) {
         await Promise.resolve(listener.close()).catch(() => {});
+        latestFlow = { flowId, outcome: "failed" };
         throw new XApiError("oauth-expired", "X authorization was cancelled");
       }
       let flow!: ActiveFlow;
@@ -282,20 +293,34 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
       };
     },
 
-    cancel(): void {
-      startGeneration += 1;
+    cancel(flowId: string): boolean {
+      if (startingFlowId === flowId) {
+        cancelledStarts.add(flowId);
+        latestFlow = { flowId, outcome: "failed" };
+        return true;
+      }
+      if (active?.flowId !== flowId) return false;
+      finish(active);
+      return true;
+    },
+
+    cancelAll(): void {
+      if (startingFlowId) {
+        cancelledStarts.add(startingFlowId);
+        latestFlow = { flowId: startingFlowId, outcome: "failed" };
+      }
       if (active) finish(active);
     },
 
     status(): { activeFlow: boolean } {
       expire();
-      return { activeFlow: active !== null };
+      return { activeFlow: active !== null || startingFlowId !== null };
     },
 
     flowStatus(): XOAuthFlowStatus {
       expire();
       return {
-        activeFlow: active !== null,
+        activeFlow: active !== null || startingFlowId !== null,
         ...(latestFlow ?? {}),
       };
     },
