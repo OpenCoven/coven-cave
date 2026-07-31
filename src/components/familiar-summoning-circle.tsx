@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, ReactNode, RefObject } from "react";
+import type { CSSProperties, KeyboardEvent, ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";
 import "@/styles/summoning-circle.css";
 import { Icon, type IconName } from "@/lib/icon";
@@ -814,6 +814,7 @@ function StageVessel({
   sshCheck: SshCheckState;
   onTestSsh: () => void;
 }) {
+  const hermesProfileRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const vessels: { kind: VesselKind; icon: IconName; title: string; hint: string }[] = [
     {
       kind: "local",
@@ -847,6 +848,35 @@ function StageVessel({
   const unavailableRuntimeMessage = unavailableAvailability && unavailableAvailability.state !== "ready"
     ? unavailableAvailability.message
     : "No chat-capable runtime found. Run setup to install one (Codex, Claude Code, Copilot…), then return to the circle.";
+
+  const handleHermesProfileKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (!hermesProfiles || hermesProfiles.length === 0) return;
+
+    let nextIndex: number | null = null;
+    switch (event.key) {
+      case "ArrowDown":
+      case "ArrowRight":
+        nextIndex = (index + 1) % hermesProfiles.length;
+        break;
+      case "ArrowUp":
+      case "ArrowLeft":
+        nextIndex = (index - 1 + hermesProfiles.length) % hermesProfiles.length;
+        break;
+      case "Home":
+        nextIndex = 0;
+        break;
+      case "End":
+        nextIndex = hermesProfiles.length - 1;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    onPickHermesProfile(hermesProfiles[nextIndex]);
+    hermesProfileRefs.current[nextIndex]?.focus();
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <div role="radiogroup" aria-label="Vessel" className="summoning-vessels">
@@ -1028,13 +1058,18 @@ function StageVessel({
             </div>
           ) : (
             <div role="radiogroup" aria-label="Hermes profile" className="flex flex-col gap-1.5">
-              {hermesProfiles.map((profile) => (
+              {hermesProfiles.map((profile, index) => (
                 <button
                   key={profile.id}
+                  ref={(element) => {
+                    hermesProfileRefs.current[index] = element;
+                  }}
                   type="button"
                   role="radio"
                   aria-checked={hermesProfileId === profile.id}
+                  tabIndex={hermesProfileId === profile.id || (!hermesProfileId && index === 0) ? 0 : -1}
                   onClick={() => onPickHermesProfile(profile)}
+                  onKeyDown={(event) => handleHermesProfileKeyDown(event, index)}
                   className={`focus-ring summoning-agent${hermesProfileId === profile.id ? " summoning-agent--active" : ""}`}
                 >
                   <Icon name="ph:brain-bold" width={16} />

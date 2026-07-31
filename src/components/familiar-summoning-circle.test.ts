@@ -97,6 +97,16 @@ assert.match(source, /hermesProfile: \{ id: selectedHermesProfile\.id, homePath:
 assert.match(source, /No saved Hermes profiles found\. You can still summon bare local Hermes\./, "empty Hermes profiles preserve bare-runtime fallback copy");
 assert.match(
   source,
+  /role="radiogroup" aria-label="Hermes profile"[\s\S]*?tabIndex=\{hermesProfileId === profile\.id \|\| \(!hermesProfileId && index === 0\) \? 0 : -1\}[\s\S]*?onKeyDown=\{\(event\) => handleHermesProfileKeyDown\(event, index\)\}/,
+  "Hermes profile radios use roving tabindex and keyboard navigation",
+);
+assert.match(
+  source,
+  /case "ArrowDown":[\s\S]*?case "ArrowRight":[\s\S]*?case "ArrowUp":[\s\S]*?case "ArrowLeft":[\s\S]*?case "Home":[\s\S]*?case "End":/,
+  "Hermes profile radios support standard arrow, Home, and End keys",
+);
+assert.match(
+  source,
   /fetch\("\/api\/onboarding\/ssh-check"/,
   "SSH connections are testable before summoning",
 );
