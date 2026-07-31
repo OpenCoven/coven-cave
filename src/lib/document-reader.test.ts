@@ -172,6 +172,27 @@ test("a Setext h1 title uses heading precedence and is removed from content", as
   assert.equal(blockText(doc.sections[0].blocks[0]), "Paragraph body.");
 });
 
+test("standard thematic breaks stay separate from following Setext titles", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+
+  for (const divider of ["---", "***", "___", "  - - -", "   * * *", "  _ _ _"]) {
+    const doc = parseMarkdownReaderDocument(`${divider}\nTitle\n===\n\nAfter.`, "Fallback title");
+
+    assert.deepEqual(
+      { title: doc.title, titleSource: doc.titleSource },
+      { title: "Title", titleSource: "heading" },
+      `${divider} stays out of the title text`,
+    );
+    assert.equal(doc.sections.length, 1, `${divider} stays in one overview section`);
+    assert.deepEqual(
+      doc.sections[0].blocks.map((block) => block.type),
+      ["divider", "paragraph"],
+      `${divider} remains a standalone block`,
+    );
+    assert.equal(blockText(doc.sections[0].blocks[1]), "After.");
+  }
+});
+
 test("Setext h2 headings create sections without leaving duplicate paragraph blocks", async () => {
   const { parseMarkdownReaderDocument } = await loadDocumentReader();
   const doc = parseMarkdownReaderDocument(
@@ -201,6 +222,66 @@ test("Setext h2 headings create sections without leaving duplicate paragraph blo
       },
     ],
   );
+});
+
+test("unsupported code-fence info strings stay fenced and never create reader headings", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+
+  for (const { label, source } of [
+    {
+      label: "colon info",
+      source: "```ts:foo\nInside\n---\n```\n\nAfter.",
+    },
+    {
+      label: "attribute info",
+      source: "```ts foo=bar\nInside\n---\n```\n\nAfter.",
+    },
+  ]) {
+    const doc = parseMarkdownReaderDocument(source, "Fallback title");
+    assert.deepEqual(
+      { title: doc.title, titleSource: doc.titleSource },
+      { title: "Fallback title", titleSource: "fallback" },
+      `${label} does not invent a title`,
+    );
+    assert.equal(doc.sections.length, 1, `${label} stays in one overview section`);
+    assert.deepEqual(
+      doc.sections[0].blocks.map((block) => block.type),
+      ["codeBlock", "paragraph"],
+      `${label} remains one fenced code block`,
+    );
+    assert.equal(blockText(doc.sections[0].blocks[0]), "Inside\n---");
+    assert.equal(blockText(doc.sections[0].blocks[1]), "After.");
+  }
+});
+
+test("tilde and longer fences with unsupported info strings keep Setext-looking code literal", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+
+  for (const { label, source } of [
+    {
+      label: "tilde fence",
+      source: "~~~ts:foo\r\nTitle\r\n===\r\n~~~\r\n\r\nAfter.",
+    },
+    {
+      label: "long fence",
+      source: "````ts foo=bar\nTitle\n===\n````\n\nAfter.",
+    },
+  ]) {
+    const doc = parseMarkdownReaderDocument(source, "Fallback title");
+    assert.deepEqual(
+      { title: doc.title, titleSource: doc.titleSource },
+      { title: "Fallback title", titleSource: "fallback" },
+      `${label} does not let fenced code become a title`,
+    );
+    assert.equal(doc.sections.length, 1, `${label} stays in one overview section`);
+    assert.deepEqual(
+      doc.sections[0].blocks.map((block) => block.type),
+      ["codeBlock", "paragraph"],
+      `${label} remains fenced`,
+    );
+    assert.equal(blockText(doc.sections[0].blocks[0]), "Title\n===");
+    assert.equal(blockText(doc.sections[0].blocks[1]), "After.");
+  }
 });
 
 test("a real paragraph followed by an identical ATX heading keeps both blocks", async () => {

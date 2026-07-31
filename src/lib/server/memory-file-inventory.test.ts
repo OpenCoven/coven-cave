@@ -34,6 +34,7 @@ const openclawFamiliarFile = path.join(
 );
 const openclawIndexFile = path.join(home, ".openclaw", "workspace", "MEMORY.md");
 const codexRuntimeFile = path.join(home, ".codex", "memories", "runtime.md");
+const largeFrontmatterFile = path.join(home, ".codex", "memories", "large-frontmatter.md");
 const otherHomeFile = path.join(otherHome, ".codex", "memories", "other-runtime.md");
 const nestedHome = path.join(home, "nested-home");
 const nestedHomeFile = path.join(nestedHome, ".codex", "memories", "nested-runtime.md");
@@ -46,6 +47,7 @@ try {
     openclawFamiliarFile,
     openclawIndexFile,
     codexRuntimeFile,
+    largeFrontmatterFile,
     otherHomeFile,
     nestedHomeFile,
   ]) {
@@ -61,6 +63,11 @@ try {
   await writeFile(openclawFamiliarFile, "OpenClaw familiar body.", "utf8");
   await writeFile(openclawIndexFile, "# OpenClaw index", "utf8");
   await writeFile(codexRuntimeFile, "Codex runtime body.", "utf8");
+  await writeFile(
+    largeFrontmatterFile,
+    `---\nsource_context: ${"x".repeat(9000)}\n---\n\nBody that should stay hidden.`,
+    "utf8",
+  );
   await writeFile(otherHomeFile, "Other home runtime body.", "utf8");
   await writeFile(nestedHomeFile, "Nested home runtime body.", "utf8");
   await utimes(
@@ -81,6 +88,10 @@ try {
     readExcerpt(
       "---\nsource_context: chat with sage\n---\n\n<!-- research-provenance\nmission: research-1",
     ),
+    undefined,
+  );
+  assert.equal(
+    readExcerpt("---\nsource_context: still opening\nnotes: no closer in this head"),
     undefined,
   );
   assert.equal(readExcerpt("   "), undefined);
@@ -110,6 +121,18 @@ try {
       `${retainedPath} remains in the inventory`,
     );
   }
+  const largeFrontmatter = first.find((entry) => entry.fullPath === largeFrontmatterFile);
+  assert.ok(largeFrontmatter, "bounded-head frontmatter files are inventoried");
+  assert.equal(
+    largeFrontmatter.excerpt,
+    undefined,
+    "an ambiguous leading frontmatter head never leaks into excerpts",
+  );
+  assert.equal(
+    largeFrontmatter.sourceContext,
+    undefined,
+    "a truncated leading frontmatter block is treated as unsafe metadata",
+  );
 
   // ── Concurrent callers share scans only within the same home ───────────────
   {
