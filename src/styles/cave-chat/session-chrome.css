@@ -61,7 +61,7 @@
   cursor: progress;
 }
 
-.cave-chat-title button[data-generating="true"] {
+.cave-chat-title button[data-generating="true"]:not(.cave-chat-title-spark) {
   opacity: 0.35;
 }
 
