@@ -1111,7 +1111,7 @@
 .cave-composer-send--busy {
   border-color: transparent;
   background: color-mix(in oklch, var(--color-danger) 90%, transparent);
-  color: white;
+  color: var(--color-danger-foreground);
 }
 
 .cave-composer-send--busy:hover {

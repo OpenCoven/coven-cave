@@ -132,6 +132,47 @@ test("selection validation freezes exact voices and video prerequisites", async 
   assert.equal(invalidElevenLabs.ok, false);
   if (!invalidElevenLabs.ok) assert.match(invalidElevenLabs.error, /voice id/i);
 
+  assert.deepEqual(
+    validateResearchMediaSelection(
+      "podcast",
+      {
+        provider: "local",
+        voice: "piper-lessac-medium",
+        length: "standard",
+        voices: {
+          host: "piper-lessac-medium",
+          guest: "piper-lessac-medium",
+        },
+      },
+      ready,
+    ),
+    { ok: true },
+  );
+  const missingGuest = validateResearchMediaSelection(
+    "podcast",
+    {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "standard",
+      voices: { host: "piper-lessac-medium", guest: "piper-not-installed" },
+    },
+    ready,
+  );
+  assert.equal(missingGuest.ok, false);
+  if (!missingGuest.ok) assert.match(missingGuest.error, /host and guest/i);
+  const invalidGuestId = validateResearchMediaSelection(
+    "podcast",
+    {
+      provider: "elevenlabs",
+      voice: DEFAULT_ELEVENLABS_VOICE_ID,
+      length: "brief",
+      voices: { host: DEFAULT_ELEVENLABS_VOICE_ID, guest: "bad id" },
+    },
+    ready,
+  );
+  assert.equal(invalidGuestId.ok, false);
+  if (!invalidGuestId.ok) assert.match(invalidGuestId.error, /host and guest/i);
+
   const noFfprobe = await getResearchMediaReadiness({
     speechReadiness: async () => ({ tts: [readyLocalVoice] }),
     elevenLabsKey: () => undefined,

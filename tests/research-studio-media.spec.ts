@@ -55,6 +55,8 @@ type RenderConfig = {
   provider: "local" | "elevenlabs";
   voice: string;
   length: "brief" | "standard" | "extended";
+  voices?: { host: string; guest: string };
+  style?: "breakdown" | "debate" | "interview" | "recap";
 };
 
 function generation(
@@ -339,11 +341,7 @@ async function boot(
       if (method === "POST") {
         const body = route.request().postDataJSON() as {
           kind: MediaKind;
-          renderConfig: {
-            provider: "local" | "elevenlabs";
-            voice: string;
-            length: "brief" | "standard" | "extended";
-          };
+          renderConfig: RenderConfig;
         };
         createBodies.push(body as unknown as Record<string, unknown>);
         sequence += 1;
@@ -417,15 +415,30 @@ test.describe("Research Studio media honesty and playback", () => {
       "eleven-default",
     );
     await expect(config.getByLabel("Length").locator("option")).toHaveCount(3);
+    await expect(config.getByLabel("Style").locator("option")).toHaveText([
+      "Breakdown",
+      "Debate",
+      "Interview",
+      "Recap",
+    ]);
+    // Recap is single-narrator, so the guest voice field leaves with it.
+    await expect(config.getByLabel("Guest voice (optional)")).toBeVisible();
+    await config.getByLabel("Style").selectOption("recap");
+    await expect(config.getByLabel("Guest voice (optional)")).toHaveCount(0);
+    await config.getByLabel("Style").selectOption("breakdown");
     await page.keyboard.press("Escape");
     await expect(podcastCard).toBeFocused();
 
     await podcastCard.click();
+    await config.getByLabel("Style").selectOption("debate");
+    await config.getByLabel("Guest voice (optional)").fill("eleven-guest");
     await config.getByRole("button", { name: /Draft for review Podcast/ }).click();
     expect(controls.createBodies.at(-1)?.renderConfig).toEqual({
       provider: "elevenlabs",
       voice: "eleven-default",
       length: "standard",
+      voices: { host: "eleven-default", guest: "eleven-guest" },
+      style: "debate",
     });
     let review = page.getByRole("dialog", {
       name: "Review before rendering",
@@ -434,6 +447,8 @@ test.describe("Research Studio media honesty and playback", () => {
       "An extracted finding for the podcast.",
     );
     await expect(review).toContainText("ElevenLabs");
+    await expect(review).toContainText("eleven-guest");
+    await expect(review).toContainText("debate");
     await review.getByRole("button", { name: "Keep draft" }).click();
     const row = studio.locator(".research-studio-row").first();
     await row.getByRole("button", { name: "Review draft" }).click();

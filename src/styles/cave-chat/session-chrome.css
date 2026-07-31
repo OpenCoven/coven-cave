@@ -27,6 +27,48 @@
   line-height: 1.15;
 }
 
+/* cave-quiva: name-this-chat. A presence-tinted chip leads the title row; its
+   glyph stays transparent until hover/focus so a settled header reads
+   title-first, and the title itself dims while the rename is in flight so the
+   feedback lands on the thing being changed. aria-busy + aria-disabled carry
+   the state for assistive tech, which never sees the opacity at all. */
+.cave-chat-title-spark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--space-5);
+  height: var(--space-5);
+  border-radius: var(--radius-control);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--accent-presence) 24%, transparent),
+    transparent
+  );
+  color: var(--accent-presence);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-title:hover .cave-chat-title-spark,
+.cave-chat-title-spark:focus-visible,
+.cave-chat-title-spark[data-generating="true"] {
+  opacity: 1;
+}
+
+.cave-chat-title-spark[data-generating="true"] {
+  cursor: progress;
+}
+
+/* The sparkle is itself a button inside .cave-chat-title and carries the same
+   data-generating flag, and `.cave-chat-title button[data-generating]` (0,2,1)
+   outranks the spark's own reveal (0,2,0) — so without this exclusion the
+   control dims itself the moment it starts working. Hover masks it
+   (`.cave-chat-title:hover .cave-chat-title-spark` is (0,3,0)), which is
+   exactly why a pointer-driven check misses it and a keyboard run does not. */
+.cave-chat-title button[data-generating="true"]:not(.cave-chat-title-spark) {
+  opacity: 0.35;
+}
+
 /* ── ③ Slim context row ─────────────────────────────────────────────────────
    Machine-readable facts only, in mono, on a 30px band closed by hairlines
    top and bottom — the design's "everything the machine decided" register. */

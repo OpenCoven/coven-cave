@@ -118,15 +118,22 @@ export function validateResearchMediaSelection(
   config: ResearchMediaRenderConfig,
   readiness: ResearchMediaReadiness,
 ): ResearchMediaSelectionValidation {
+  const configuredVoices = config.voices
+    ? [config.voice, config.voices.host, config.voices.guest]
+    : [config.voice];
   if (config.provider === "local") {
+    const readyIds = new Set(
+      readiness.providers.local.voices.map((voice) => voice.id),
+    );
     if (
       !readiness.providers.local.ready ||
-      !readiness.providers.local.voices.some((voice) => voice.id === config.voice)
+      !configuredVoices.every((voice) => readyIds.has(voice))
     ) {
       return {
         ok: false,
-        error:
-          "The selected local voice is not ready. Download it in Settings → Voice or choose another ready voice.",
+        error: config.voices
+          ? "Host and guest voices must both be ready local voices. Download another voice in Settings → Voice or use one voice for both speakers."
+          : "The selected local voice is not ready. Download it in Settings → Voice or choose another ready voice.",
       };
     }
   } else {
@@ -136,10 +143,12 @@ export function validateResearchMediaSelection(
         error: "Set ELEVENLABS_API_KEY in Vault settings before rendering.",
       };
     }
-    if (!isValidElevenLabsVoiceId(config.voice)) {
+    if (!configuredVoices.every((voice) => isValidElevenLabsVoiceId(voice))) {
       return {
         ok: false,
-        error: "Enter a valid ElevenLabs voice id.",
+        error: config.voices
+          ? "Enter valid ElevenLabs voice ids for the host and guest voices."
+          : "Enter a valid ElevenLabs voice id.",
       };
     }
   }
