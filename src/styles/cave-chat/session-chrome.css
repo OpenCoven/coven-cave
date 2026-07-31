@@ -27,6 +27,44 @@
   line-height: 1.15;
 }
 
+/* cave-quiva: name-this-chat. A presence-tinted chip leads the title row; its
+   glyph stays transparent until hover/focus so a settled header reads
+   title-first, and the title itself dims while the rename is in flight so the
+   feedback lands on the thing being changed. Disabled + aria-busy carry the
+   state for assistive tech, which never sees the opacity at all. */
+.cave-chat-title-spark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--space-5);
+  height: var(--space-5);
+  border-radius: var(--radius-control);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--accent-presence) 24%, transparent),
+    transparent
+  );
+  color: var(--accent-presence);
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-title:hover .cave-chat-title-spark,
+.cave-chat-title-spark:focus-visible,
+.cave-chat-title-spark[data-generating="true"] {
+  opacity: 1;
+}
+
+.cave-chat-title-spark[data-generating="true"] {
+  cursor: progress;
+}
+
+.cave-chat-title button[data-generating="true"] {
+  opacity: 0.35;
+}
+
 /* ── ③ Slim context row ─────────────────────────────────────────────────────
    Machine-readable facts only, in mono, on a 30px band closed by hairlines
    top and bottom — the design's "everything the machine decided" register. */

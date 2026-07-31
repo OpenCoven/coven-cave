@@ -823,6 +823,8 @@ export const SUITES = {
     "src/lib/chat-archive-nudge.test.ts",
     "src/lib/chat-auto-archive.test.ts",
     "src/lib/chat-auto-rename.test.ts",
+    "src/lib/chat-title-generation.test.ts",
+    "src/components/chat-title-sparkle.test.ts",
     "src/components/chat-archive-nudge.test.ts",
     "src/lib/theme-palettes.test.ts",
     "src/lib/theme-contrast-audit.test.ts",
