@@ -87,6 +87,8 @@ export const SUITES = {
     "src/components/role-surfaces/navigator-surface.test.ts",
     "src/components/role-surfaces/indexer-surface.test.ts",
     "src/components/role-surfaces/reviewer-surface.test.ts",
+    "src/components/role-surfaces/review-readiness.test.ts",
+    "src/components/role-surfaces/review-file-tree.test.ts",
     "src/components/chat-view-render-cap.test.ts",
     "src/components/chat-view-transcript-memo.test.ts",
     "src/lib/chat-composer-prefs.test.ts",
@@ -1263,6 +1265,7 @@ export const SUITES = {
     "src/app/api/github/assigned/route.test.ts",
     "src/lib/github-assigned-meta.test.ts",
     "src/app/api/github/commit/route.test.ts",
+    "src/app/api/github/diff/route.test.ts",
     "src/app/api/github/dispatch/route.test.ts",
     "src/app/api/github/merge/route.test.ts",
     "src/app/api/github/rerun/route.test.ts",
@@ -1427,6 +1430,10 @@ const ALIAS_LOADER = new Set([
   "src/lib/project-setup-validation.test.ts",
   "src/lib/use-role-surfaces-loader.test.ts",
   "src/components/role-surfaces/researcher-status.test.ts",
+  // review-readiness resolves "@/lib/github-checks" for its check rollups.
+  "src/components/role-surfaces/review-readiness.test.ts",
+  // the diff route resolves "@/lib/github-token".
+  "src/app/api/github/diff/route.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-compatibility.test.ts",
   "src/lib/opencode-stream.test.ts",
