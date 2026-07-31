@@ -3,27 +3,25 @@
 // threads — tension (Holds / Frayed / Snapped, plus the UI-only blocked and
 // stale treatments), strand list, and channel bindings. A thread here is one
 // authority relationship, surface → writer; the copy keeps that referent.
+//
+// Threads are an accordion ordered worst-first: the closed row carries the
+// verdict and its consequence, the open row carries the evidence (strands,
+// diff, ward.audit lineage) directly underneath, so a fray is never explained
+// somewhere other than where it is named.
 import { Icon } from "@/lib/icon";
 import { StatusPill } from "@/components/weave-rail";
-import {
-  channelLabel,
-  paneModel,
-  pillForCoherence,
-  pillForTension,
-  shortHash,
-} from "@/lib/weave-rail";
-import type { ThreadsMeta, ThreadView, WeaveDetail } from "@/lib/threads-read";
+import { StrandInspector } from "@/components/strand-inspector";
+import { channelLabel, paneModel, pillForTension } from "@/lib/weave-rail";
+import type { ThreadView, WeaveDetail } from "@/lib/threads-read";
 
 function ChannelChips({ thread }: { thread: ThreadView }) {
   if (thread.holdsUnder.length === 0) {
     return (
-      <span className="text-xs text-[var(--text-muted)]">
-        covers no channels — every mutation fails closed
-      </span>
+      <span className="wv-chips__none">covers no channels — every mutation fails closed</span>
     );
   }
   return (
-    <span className="flex flex-wrap items-center gap-1">
+    <>
       {thread.holdsUnder.map((channel) => {
         const required = thread.requiredStrands[channel] ?? [];
         return (
@@ -34,117 +32,138 @@ function ChannelChips({ thread }: { thread: ThreadView }) {
                 ? `Holding under ${channelLabel(channel)} requires: ${required.join(", ")}`
                 : `${channelLabel(channel)} has no structural strand floor`
             }
-            className="inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]"
+            className="wv-chip"
           >
             <Icon name="ph:waveform" aria-hidden />
             {channelLabel(channel)}
           </span>
         );
       })}
-    </span>
+    </>
   );
+}
+
+/** The consequence of this thread's tension, stated where the pill is. */
+function threadVerdict(thread: ThreadView): { tone: string; icon: "ph:warning" | "ph:x-circle" | "ph:shield-slash"; text: string } | null {
+  const tension = thread.tension;
+  if (tension.state === "frayed") {
+    return {
+      tone: "wv-verdict--frayed",
+      icon: "ph:warning",
+      text: `Frayed at ${tension.strand ?? "a missing required strand"} on ${
+        tension.channel ? channelLabel(tension.channel) : "an unrecognized channel"
+      } (${tension.reason.kind}) — repairable; inspect the strand below for the current-vs-expected diff. Writes to this surface degrade to proposals until a predicate passes.`,
+    };
+  }
+  if (tension.state === "snapped") {
+    return {
+      tone: "wv-verdict--snapped",
+      icon: "ph:x-circle",
+      text: `Snapped (${tension.reason.kind}) — ${thread.surface} is read-only until a fresh authority ceremony.`,
+    };
+  }
+  if (tension.state === "unknown") {
+    return {
+      tone: "wv-verdict--blocked",
+      icon: "ph:shield-slash",
+      text: "Cannot verify this thread — rendered blocked. No write through it will be treated as authorized.",
+    };
+  }
+  return null;
 }
 
 export function ThreadPane({
   weave,
-  meta,
-  selectedThreadId,
-  onSelectThread,
+  openThreadId,
+  stagedThreadIds,
+  knownProposalIds,
+  onToggleThread,
   onTraceThread,
+  onOpenProposal,
 }: {
   weave: WeaveDetail;
-  meta: ThreadsMeta;
-  selectedThreadId: string | null;
-  onSelectThread: (id: string) => void;
+  openThreadId: string | null;
+  /** Threads with a staged write awaiting a decision, from /api/proposals. */
+  stagedThreadIds: ReadonlySet<string>;
+  knownProposalIds: ReadonlySet<string>;
+  onToggleThread: (id: string) => void;
   onTraceThread: (thread: ThreadView) => void;
+  onOpenProposal: (threadId: string) => void;
 }) {
   const model = paneModel(weave);
-  const coherencePill = pillForCoherence(weave.coherence);
   return (
-    <section aria-label="Thread pane" className="flex min-w-0 flex-col gap-3">
-      <header className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">
-            {weave.familiarId} · weave {shortHash(weave.weaveHash)}
-          </h2>
-          <p className="text-xs text-[var(--text-muted)]">
-            An enforced pattern of {weave.threadCount} thread{weave.threadCount === 1 ? "" : "s"} —
-            each one an authority relationship, surface → writer.
-          </p>
-        </div>
-        <StatusPill pill={coherencePill} />
-      </header>
-
-      {weave.patternDescriptor ? (
-        <aside
-          aria-label="Pattern descriptor (derived)"
-          className="rounded border border-dashed border-[var(--border-hairline)] px-2 py-1.5 text-xs text-[var(--text-muted)]"
-        >
-          <span className="mr-1 inline-flex items-center gap-1 rounded bg-[var(--bg-raised)] px-1 py-0.5 text-[length:var(--text-2xs)] uppercase tracking-wide">
-            <Icon name="ph:info" aria-hidden />
-            derived
-          </span>
-          Pattern “{weave.patternDescriptor.name}” names {weave.patternDescriptor.protectedSurfaces.join(", ") || "no surfaces"} —
-          a summary for legibility, never what decided. The verdicts above come from the predicate.
-        </aside>
-      ) : null}
-
-      <ul className="flex flex-col gap-1">
+    <section aria-label="Threads" className="wv-section--ruled">
+      <div className="wv-section__head">
+        <h3 className="wv-eyebrow">Threads — worst first</h3>
+        <span className="wv-section__aside">
+          One thread binds one protected surface to one writer
+        </span>
+      </div>
+      <ul className="wv-threads">
         {model.threads.map((thread) => {
-          const pill = pillForTension(thread.tension);
-          const selected = thread.id === selectedThreadId;
+          const open = thread.id === openThreadId;
+          const verdict = threadVerdict(thread);
+          const staged = stagedThreadIds.has(thread.id);
           return (
-            <li
-              key={thread.id}
-              className={`rounded border-l-2 px-2 py-2 ${
-                selected
-                  ? "border-[var(--accent-presence)] bg-[var(--bg-raised)]/60"
-                  : "border-transparent hover:bg-[var(--bg-raised)]"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => onSelectThread(thread.id)}
-                  aria-current={selected ? "true" : undefined}
-                  className="focus-ring-inset min-w-0 flex-1 text-left"
-                >
-                  <span className="block truncate text-sm text-[var(--text-primary)]">
-                    {thread.surface} <span className="text-[var(--text-muted)]">→</span> {thread.writer}
+            <li key={thread.id} className={`wv-thread${open ? " wv-thread--open" : ""}`}>
+              <button
+                type="button"
+                className="wv-thread__btn focus-ring-inset"
+                aria-expanded={open}
+                onClick={() => onToggleThread(thread.id)}
+              >
+                <span className="wv-thread__line">
+                  <Icon name="ph:caret-right" className="wv-thread__caret" aria-hidden />
+                  <span className="wv-thread__ident">
+                    <span className="wv-thread__surface">{thread.surface}</span>
+                    <span className="wv-thread__arrow" aria-label="written by">
+                      →
+                    </span>
+                    <span className="wv-thread__writer">{thread.writer}</span>
                   </span>
-                  <span className="block text-xs text-[var(--text-muted)]">
+                  <span className="wv-thread__count">
                     {thread.strandCount} strand{thread.strandCount === 1 ? "" : "s"} of commitment
-                    {thread.createdAt ? ` · woven ${thread.createdAt}` : ""}
                   </span>
-                </button>
-                <StatusPill
-                  pill={pill}
-                  onTrace={() => onTraceThread(thread)}
-                  traceLabel={`Trace ${thread.surface} tension to source`}
-                />
-              </div>
-              <div className="mt-1">
-                <ChannelChips thread={thread} />
-              </div>
-              {thread.tension.state === "frayed" ? (
-                <p className="mt-1 text-xs text-[var(--color-warning)]">
-                  Frayed at {thread.tension.strand ?? "a missing required strand"} on{" "}
-                  {thread.tension.channel ?? "an unrecognized channel"} ({thread.tension.reason.kind}) —
-                  repairable; inspect the strand for the current-vs-expected diff.
-                </p>
+                  <StatusPill pill={pillForTension(thread.tension)} />
+                </span>
+                {open ? (
+                  <span className="wv-chips">
+                    <ChannelChips thread={thread} />
+                  </span>
+                ) : null}
+                {verdict ? (
+                  <span className={`wv-verdict ${verdict.tone}`}>
+                    <Icon name={verdict.icon} aria-hidden />
+                    <span>{verdict.text}</span>
+                  </span>
+                ) : null}
+              </button>
+
+              {staged ? (
+                <div className="wv-thread__cta">
+                  <p>A write to this surface is staged and waiting on your decision.</p>
+                  <button
+                    type="button"
+                    className="wv-cta wv-cta--sm focus-ring"
+                    onClick={() => onOpenProposal(thread.id)}
+                  >
+                    Review it
+                    <Icon name="ph:caret-right" aria-hidden />
+                  </button>
+                </div>
               ) : null}
-              {thread.tension.state === "snapped" ? (
-                <p className="mt-1 text-xs text-[var(--color-danger)]">
-                  Snapped ({thread.tension.reason.kind}) — read-only until a fresh authority ceremony.
-                </p>
+
+              {open ? (
+                <StrandInspector
+                  thread={thread}
+                  knownProposalIds={knownProposalIds}
+                  onTraceThread={() => onTraceThread(thread)}
+                />
               ) : null}
             </li>
           );
         })}
       </ul>
-      <footer className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-        observed {meta.observedAt} · cursor {meta.sourceCursor}
-      </footer>
     </section>
   );
 }
