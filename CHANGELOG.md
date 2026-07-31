@@ -17,14 +17,17 @@ breaking config changes; patch releases stay additive.
 - Added wide-transcript navigation with a per-turn run spine and per-event thread minimap (#4046, #4048).
 - Added read-aloud actions for assistant replies, packaged Kokoro support in desktop builds, and selectable named Kokoro speakers (#4027, #4079, #4102).
 - Added verified, read-only canonical-memory access for Mobile Cave and the native iOS live-voice transport foundation (#4081).
+- Added optional device-owner authentication to iOS for app unlock and sensitive desktop-connection approvals, with app-switcher privacy shielding and a 60-second relock window (#4092).
 - Added distinct Reply, Task, and Action follow-up cards while keeping compact chats reply-only.
 - Added GitHub artifact attestations for release installers and SHA256SUMS (#4070).
 
 ### Changed
 
 - Moved chat settings into the active familiar’s Familiar surface, removed duplicate local familiar switching, and retired the legacy Settings Familiars tab (#4040, #4049).
+- Unified familiar-memory search across compact and master-detail views, preserving local file discovery while keeping canonical matching per-field and path-free (#4105).
 - Routed Codex chat tool activity through the verified schema transport, with compatibility drift presented as a notice rather than a runtime failure (#4069, #4064).
 - Refined Research Desk hierarchy with lifecycle scopes, priority groups, persisted focus mode, keyboard handling, and responsive rails (#4085).
+- Rebuilt Weaves and Proposals as one fail-closed decision flow with shared list/detail chrome, scoped worst-first inspection, evidence-backed maps, deep-linked staged writes, and shared audit reads (#4108, #4113).
 - Refocused Marketplace on owned plugins and local skills, with Crafts remaining available only behind its explicit feature flag.
 
 ### Fixed
@@ -40,7 +43,7 @@ breaking config changes; patch releases stay additive.
 
 ### Security
 
-- Prevented memory archive and restore operations from escaping through symlinked parents, and stopped GitHub post-merge branch deletion from trusting a request-supplied branch name (#4084, #4068).
+- Prevented memory archive and restore operations from escaping through symlinked parents, stopped GitHub post-merge branch deletion from trusting a request-supplied branch name, and added the repository-local maintenance-gate core with fenced writer leases and race-safe owner cleanup for branch/worktree curation (#4084, #4068, #4107, #4111).
 
 ## [0.2.0] - 2026-07-26
 
