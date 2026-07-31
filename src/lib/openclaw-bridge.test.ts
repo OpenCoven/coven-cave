@@ -7,8 +7,11 @@ import {
   OpenClawAgentResolutionError,
   extractOpenClawSessionId,
   extractOpenClawText,
+  hasValidOpenClawPayloadEnvelope,
+  isOpenClawGatewayCredentialFailure,
   openClawBridgeCapabilities,
   openClawAgentArgs,
+  openClawCliExecutionMode,
   openClawSessionKey,
   parseOpenClawAgentList,
   readTomlString,
@@ -223,6 +226,28 @@ assert.equal(
   true,
   "OpenClaw bridge must pass the stable Cave-owned id through --session-id",
 );
+assert.equal(
+  openClawAgentArgs("hi", "nova", "ABC_123").includes("--local"),
+  false,
+  "OpenClaw bridge must preserve the configured CLI Gateway route by default",
+);
+assert.equal(
+  openClawAgentArgs("hi", "nova", "ABC_123", "local").includes("--local"),
+  true,
+  "OpenClaw bridge adds --local only for an explicit embedded attempt",
+);
+assert.equal(openClawCliExecutionMode({}), "gateway");
+assert.equal(openClawCliExecutionMode({ OPENCLAW_EMBEDDED_LOCAL: "true" }), "local");
+assert.equal(
+  isOpenClawGatewayCredentialFailure("GatewayCredentialsRequiredError: gateway agent requires credentials before opening a websocket"),
+  true,
+  "only the CLI's credential-gate signature can trigger a local recovery",
+);
+assert.equal(
+  isOpenClawGatewayCredentialFailure("connection timed out"),
+  false,
+  "an ambiguous Gateway failure must not bypass a configured remote session",
+);
 
 assert.equal(
   extractOpenClawText({
@@ -236,6 +261,17 @@ assert.equal(
   "first\n\nsecond",
 );
 assert.equal(extractOpenClawText({ summary: "fallback summary" }), "fallback summary");
+assert.equal(
+  extractOpenClawText({ payloads: [{ text: "current local response" }] }),
+  "current local response",
+  "OpenClaw's current embedded --json result should be read from top-level payloads",
+);
+assert.equal(hasValidOpenClawPayloadEnvelope({ payloads: [{ text: "valid" }] }), true);
+assert.equal(hasValidOpenClawPayloadEnvelope({ payloads: {} as any }), false);
+assert.equal(hasValidOpenClawPayloadEnvelope({ payloads: [null] as any }), false);
+assert.equal(hasValidOpenClawPayloadEnvelope({ result: { payloads: {} as any } }), false);
+assert.equal(hasValidOpenClawPayloadEnvelope(null as any), false);
+assert.equal(hasValidOpenClawPayloadEnvelope({ result: [] as any }), false);
 
 assert.equal(extractOpenClawSessionId({ sessionId: "top" }), "top");
 assert.equal(extractOpenClawSessionId({ result: { sessionId: "result" } }), "result");
