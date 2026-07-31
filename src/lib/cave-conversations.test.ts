@@ -61,6 +61,7 @@ assert.deepEqual(
     usage: undefined,
     costUsd: undefined,
     responseMetadata: undefined,
+    modelControls: undefined,
     error: undefined,
     lifecycle: undefined,
     createdAt: "2026-07-25T00:00:00.000Z",
