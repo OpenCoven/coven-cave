@@ -75,6 +75,7 @@ type FenceOpen = {
 type ThematicBreak = {
   indent: string;
   char: "*" | "-" | "_";
+  spaced: boolean;
 };
 
 function splitMarkdownLines(markdown: string): MarkdownLine[] {
@@ -139,7 +140,8 @@ function matchThematicBreakLine(text: string): ThematicBreak | null {
   const match = text.match(/^(\s{0,3})([ \t*_-]+)$/);
   if (!match) return null;
 
-  const compact = match[2].replace(/[ \t]/g, "");
+  const markers = match[2];
+  const compact = markers.replace(/[ \t]/g, "");
   if (compact.length < 3) return null;
 
   const char = compact[0];
@@ -150,7 +152,7 @@ function matchThematicBreakLine(text: string): ThematicBreak | null {
     return null;
   }
 
-  return { indent: match[1], char };
+  return { indent: match[1], char, spaced: /[ \t]/.test(markers) };
 }
 
 function isThematicBreakLine(text: string): boolean {
@@ -278,9 +280,16 @@ function normalizeThematicBreaks(markdown: string): string {
     }
 
     const thematicBreak = matchThematicBreakLine(line.text);
-    if (thematicBreak) {
+    if (thematicBreak && (thematicBreak.char !== "-" || thematicBreak.spaced)) {
+      const previous = normalized.at(-1);
+      if (previous && previous.text.trim() !== "") {
+        normalized.push({
+          text: "",
+          eol: previous.eol || line.eol || "\n",
+        });
+      }
       normalized.push({
-        text: `${thematicBreak.indent}${thematicBreak.char.repeat(3)}`,
+        text: `${thematicBreak.indent}---`,
         eol: line.eol,
       });
     } else {

@@ -193,6 +193,85 @@ test("standard thematic breaks stay separate from following Setext titles", asyn
   }
 });
 
+test("a spaced hyphen thematic break after prose stays an overview divider", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+  const doc = parseMarkdownReaderDocument("Paragraph\n- - -", "Fallback title");
+
+  assert.deepEqual(
+    { title: doc.title, titleSource: doc.titleSource },
+    { title: "Fallback title", titleSource: "fallback" },
+  );
+  assert.equal(doc.sections.length, 1);
+  assert.deepEqual(
+    {
+      heading: doc.sections[0].heading,
+      level: doc.sections[0].level,
+      blockTypes: doc.sections[0].blocks.map((block) => block.type),
+    },
+    { heading: "", level: 0, blockTypes: ["paragraph", "divider"] },
+  );
+  assert.equal(blockText(doc.sections[0].blocks[0]), "Paragraph");
+});
+
+test("a star thematic break after prose stays an overview divider", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+  const doc = parseMarkdownReaderDocument("Paragraph\n* * *", "Fallback title");
+
+  assert.deepEqual(
+    { title: doc.title, titleSource: doc.titleSource },
+    { title: "Fallback title", titleSource: "fallback" },
+  );
+  assert.equal(doc.sections.length, 1);
+  assert.deepEqual(
+    {
+      heading: doc.sections[0].heading,
+      level: doc.sections[0].level,
+      blockTypes: doc.sections[0].blocks.map((block) => block.type),
+    },
+    { heading: "", level: 0, blockTypes: ["paragraph", "divider"] },
+  );
+  assert.equal(blockText(doc.sections[0].blocks[0]), "Paragraph");
+});
+
+test("an underscore thematic break after prose stays an overview divider", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+  const doc = parseMarkdownReaderDocument("Paragraph\n_ _ _", "Fallback title");
+
+  assert.deepEqual(
+    { title: doc.title, titleSource: doc.titleSource },
+    { title: "Fallback title", titleSource: "fallback" },
+  );
+  assert.equal(doc.sections.length, 1);
+  assert.deepEqual(
+    {
+      heading: doc.sections[0].heading,
+      level: doc.sections[0].level,
+      blockTypes: doc.sections[0].blocks.map((block) => block.type),
+    },
+    { heading: "", level: 0, blockTypes: ["paragraph", "divider"] },
+  );
+  assert.equal(blockText(doc.sections[0].blocks[0]), "Paragraph");
+});
+
+test("a compact hyphen underline after prose stays a Setext h2 section", async () => {
+  const { parseMarkdownReaderDocument } = await loadDocumentReader();
+  const doc = parseMarkdownReaderDocument("Paragraph\n---", "Fallback title");
+
+  assert.deepEqual(
+    { title: doc.title, titleSource: doc.titleSource },
+    { title: "Fallback title", titleSource: "fallback" },
+  );
+  assert.equal(doc.sections.length, 1);
+  assert.deepEqual(
+    {
+      heading: doc.sections[0].heading,
+      level: doc.sections[0].level,
+      blockTypes: doc.sections[0].blocks.map((block) => block.type),
+    },
+    { heading: "Paragraph", level: 2, blockTypes: [] },
+  );
+});
+
 test("Setext h2 headings create sections without leaving duplicate paragraph blocks", async () => {
   const { parseMarkdownReaderDocument } = await loadDocumentReader();
   const doc = parseMarkdownReaderDocument(
