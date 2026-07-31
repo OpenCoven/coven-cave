@@ -61,6 +61,7 @@ export type XOAuthService = {
 
 type ActiveFlow = {
   flowId: string;
+  callbackOwner: symbol;
   state: string;
   verifier: string;
   expiresAt: number;
@@ -156,10 +157,19 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
     if (active && !active.consumed && now() >= active.expiresAt) finish(active);
   }
 
-  async function onCallback(request: CallbackRequest, response: CallbackResponse): Promise<void> {
+  async function onCallback(
+    callbackOwner: symbol,
+    request: CallbackRequest,
+    response: CallbackResponse,
+  ): Promise<void> {
     const flow = active;
-    if (!flow || now() >= flow.expiresAt) {
-      if (flow) finish(flow);
+    if (!flow || flow.callbackOwner !== callbackOwner) {
+      response.writeHead(400, { "content-type": "text/html; charset=utf-8" });
+      response.end(callbackHtml(false));
+      return;
+    }
+    if (now() >= flow.expiresAt) {
+      finish(flow);
       response.writeHead(400, { "content-type": "text/html; charset=utf-8" });
       response.end(callbackHtml(false));
       return;
@@ -235,11 +245,17 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
       }
       const expiresAt = now() + FLOW_TTL_MS;
       const challenge = createHash("sha256").update(verifier).digest("base64url");
+      const callbackOwner = Symbol(flowId);
       let listener: XOAuthListener;
       startingFlowId = flowId;
       latestFlow = { flowId, outcome: "pending" };
       try {
-        listener = await listen({ host: "127.0.0.1", port: X_OAUTH_CALLBACK_PORT, onRequest: onCallback });
+        listener = await listen({
+          host: "127.0.0.1",
+          port: X_OAUTH_CALLBACK_PORT,
+          onRequest: (request, response) =>
+            onCallback(callbackOwner, request, response),
+        });
       } catch (error) {
         if (cancelledStarts.delete(flowId)) {
           latestFlow = { flowId, outcome: "failed" };
@@ -264,6 +280,7 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
       expiryTimer.unref?.();
       flow = {
         flowId,
+        callbackOwner,
         state,
         verifier,
         expiresAt,

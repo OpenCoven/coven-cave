@@ -180,6 +180,100 @@ describe("FamiliarXSection async ownership", () => {
     expect(browserMocks.open).not.toHaveBeenCalled();
   });
 
+  test("a familiar switch racing OAuth POST completion cleans up only the old returned flow", async () => {
+    const renderer = await renderWithConnection(familiarA, false);
+    const startA = deferred<ReturnType<typeof jsonResponse>>();
+    const startBodies: Array<{ flowId: string }> = [];
+    const cancelledFlowIds: string[] = [];
+    let connectionPolls = 0;
+    const reservationA = {
+      ok: true,
+      kind: "browser",
+      popup: { opener: null, closed: false, location: { replace() {} }, close() {} },
+    };
+    const reservationB = {
+      ok: true,
+      kind: "browser",
+      popup: { opener: null, closed: false, location: { replace() {} }, close() {} },
+    };
+    browserMocks.reserve
+      .mockReturnValueOnce(reservationA)
+      .mockReturnValueOnce(reservationB);
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        const body = JSON.parse(init.body as string) as { flowId: string };
+        startBodies.push(body);
+        if (startBodies.length === 1) return startA.promise;
+        return jsonResponse({
+          ok: true,
+          flowId: body.flowId,
+          authorizationUrl: "https://x.com/i/oauth2/authorize?flow=new",
+        });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        cancelledFlowIds.push(
+          (JSON.parse(init.body as string) as { flowId: string }).flowId,
+        );
+        return jsonResponse({ ok: true });
+      }
+      if (url === "/api/x/connection" && !init?.method) {
+        connectionPolls += 1;
+        return jsonResponse({
+          configured: true,
+          connected: false,
+          activeFlow: true,
+          oauthFlowId: startBodies[1].flowId,
+          oauthOutcome: "pending",
+        });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    await act(async () => {
+      renderer.root.findByType("button").props.onClick();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      renderer.update(<FamiliarXSection familiar={familiarB} />);
+    });
+    await act(async () => {
+      renderer.root.findByType("button").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const oldFlowId = startBodies[0].flowId;
+    const newFlowId = startBodies[1].flowId;
+    const pollsBeforeOldCompletion = connectionPolls;
+    await act(async () => {
+      startA.resolve(jsonResponse({
+        ok: true,
+        flowId: oldFlowId,
+        authorizationUrl: "https://x.com/i/oauth2/authorize?flow=old",
+      }));
+      await startA.promise;
+      await Promise.resolve();
+    });
+
+    expect(browserMocks.cancel).toHaveBeenCalledWith(reservationA);
+    expect(browserMocks.cancel).not.toHaveBeenCalledWith(reservationB);
+    expect(cancelledFlowIds.filter((flowId) => flowId === oldFlowId)).toHaveLength(2);
+    expect(cancelledFlowIds).not.toContain(newFlowId);
+    expect(browserMocks.open).toHaveBeenCalledTimes(1);
+    expect(browserMocks.open).toHaveBeenCalledWith(
+      "https://x.com/i/oauth2/authorize?flow=new",
+      reservationB,
+    );
+    expect(connectionPolls).toBe(pollsBeforeOldCompletion);
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith("X authorization opened in the system browser.");
+    expect(JSON.stringify(renderer.toJSON())).toContain("Waiting for authorization");
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
   test("a failed grant save from the old familiar cannot roll back the new familiar", async () => {
     const renderer = await renderWithConnection(familiarA, true);
     const save = deferred<ReturnType<typeof jsonResponse>>();

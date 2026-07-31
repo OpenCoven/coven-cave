@@ -14,16 +14,17 @@ type Callback = (request: { method?: string; url?: string }, response: {
 }) => Promise<void>;
 
 function deferredListener() {
-  let callback: Callback | undefined;
+  const callbacks: Callback[] = [];
   let closes = 0;
   return {
     listen: async (options: { host: string; port: number; onRequest: Callback }) => {
       assert.equal(options.host, "127.0.0.1");
       assert.equal(options.port, 1456);
-      callback = options.onRequest;
+      callbacks.push(options.onRequest);
       return { close: () => { closes += 1; } };
     },
-    callback: () => {
+    callback: (index = callbacks.length - 1) => {
+      const callback = callbacks[index];
       assert.ok(callback, "OAuth listener must receive a callback handler");
       return callback;
     },
@@ -188,6 +189,47 @@ test("a stale cancellation cannot cancel a newer OAuth flow", async () => {
   });
 });
 
+test("a stale callback from a cancelled flow cannot cancel the newer active flow", async () => {
+  let entropyCall = 0;
+  const { oauth, listener, credentialService } = service({
+    randomBytes: (size) => new Uint8Array(size).fill(++entropyCall),
+  });
+  const first = await oauth.start({
+    capability: "research",
+    flowId: "A".repeat(43),
+  });
+  const firstState = new URL(first.authorizationUrl).searchParams.get("state")!;
+  const firstCallback = listener.callback(0);
+  assert.equal(oauth.cancel(first.flowId), true);
+
+  const second = await oauth.start({
+    capability: "research",
+    flowId: "B".repeat(43),
+  });
+  const secondState = new URL(second.authorizationUrl).searchParams.get("state")!;
+  const stale = response();
+  await firstCallback({
+    method: "GET",
+    url: `/x/oauth/callback?code=stale-code&state=${firstState}`,
+  }, stale.response);
+
+  assert.equal(stale.result().status, 400);
+  assert.deepEqual(oauth.flowStatus(), {
+    activeFlow: true,
+    flowId: second.flowId,
+    outcome: "pending",
+  });
+  assert.equal(credentialService.replacements.length, 0);
+
+  const current = response();
+  await listener.callback(1)({
+    method: "GET",
+    url: `/x/oauth/callback?code=current-code&state=${secondState}`,
+  }, current.response);
+  assert.equal(current.result().status, 200);
+  assert.equal(credentialService.replacements.length, 1);
+});
+
 test("rejects wrong method, path, missing code, and state mismatch without replacing credentials", async () => {
   for (const request of [
     { method: "POST", path: "/x/oauth/callback?code=code&state=STATE" },
@@ -202,6 +244,12 @@ test("rejects wrong method, path, missing code, and state mismatch without repla
     await listener.callback()({ method: request.method, url: request.path.replace("STATE", state) }, rejected.response);
     assert.equal(rejected.result().status, 400, request.path);
     assert.equal(credentialService.replacements.length, 0, request.path);
+    assert.deepEqual(oauth.flowStatus(), {
+      activeFlow: false,
+      flowId: started.flowId,
+      outcome: "failed",
+    }, request.path);
+    assert.equal(listener.closes(), 1, request.path);
   }
 });
 

@@ -69,8 +69,13 @@ assert.match(
 );
 assert.match(
   source,
-  /pending\.familiarId !== familiarIdRef\.current[\s\S]{0,160}pendingOAuthRef\.current !== pending/,
+  /const ownsPending = \(\) =>[\s\S]{0,240}pending\.familiarId === familiarIdRef\.current[\s\S]{0,160}pendingOAuthRef\.current === pending/,
   "post-await startup work cannot navigate after the Studio switches familiars",
+);
+assert.match(
+  source,
+  /if \(!ownsPending\(\)\) \{\s*await cancelPending\(\);\s*return;/,
+  "ownership loss closes the reserved browser and cancels the returned old flow",
 );
 assert.match(source, /10 \* 60 \* 1000/, "OAuth polling is bounded to ten minutes");
 assert.match(source, /window\.clearInterval/);

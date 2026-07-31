@@ -359,6 +359,16 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       generation: familiarGenerationRef.current,
     };
     pendingOAuthRef.current = pending;
+    const ownsPending = () =>
+      mountedRef.current
+      && pending.familiarId === familiarIdRef.current
+      && pending.generation === familiarGenerationRef.current
+      && pendingOAuthRef.current === pending;
+    const cancelPending = async () => {
+      pending.controller.abort();
+      cancelSystemBrowserOpen(reservation);
+      await cancelXOAuthFlow(pending.flowId);
+    };
     let handedOffToPolling = false;
     setStartingOAuth(true);
     setError(null);
@@ -384,20 +394,16 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
             : "Couldn't start X authorization.",
         );
       }
-      if (
-        !mountedRef.current
-        || pending.familiarId !== familiarIdRef.current
-        || pending.generation !== familiarGenerationRef.current
-        || pendingOAuthRef.current !== pending
-      ) return;
+      if (!ownsPending()) {
+        await cancelPending();
+        return;
+      }
       const authorizationUrl = result.authorizationUrl;
       const opened = await openSystemBrowser(authorizationUrl, reservation);
-      if (
-        !mountedRef.current
-        || pending.familiarId !== familiarIdRef.current
-        || pending.generation !== familiarGenerationRef.current
-        || pendingOAuthRef.current !== pending
-      ) return;
+      if (!ownsPending()) {
+        await cancelPending();
+        return;
+      }
       if (!opened.ok) throw new Error(opened.error);
       handedOffToPolling = true;
       setOauthAttempt({
@@ -409,14 +415,8 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       });
       announce("X authorization opened in the system browser.");
     } catch (startError) {
-      cancelSystemBrowserOpen(reservation);
-      await cancelXOAuthFlow(pending.flowId);
-      if (
-        !mountedRef.current
-        || pending.familiarId !== familiarIdRef.current
-        || pending.generation !== familiarGenerationRef.current
-        || pendingOAuthRef.current !== pending
-      ) return;
+      await cancelPending();
+      if (!ownsPending()) return;
       const message = (startError as Error).message;
       setError(message);
       announce(message, "assertive");
