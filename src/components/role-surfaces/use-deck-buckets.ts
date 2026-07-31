@@ -119,6 +119,7 @@ export function useDeckBuckets(pullRequests: ReadonlyArray<{ repo: string; numbe
     return () => {
       cancelled = true;
       for (const entry of queue) inFlight.current.delete(entry.key);
+      setLoading(false);
     };
     // `signature` is the identity of the queue — the array itself is rebuilt
     // every render, and depending on it would restart the pool endlessly.
