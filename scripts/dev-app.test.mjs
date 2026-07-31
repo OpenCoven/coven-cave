@@ -12,21 +12,26 @@ assert.match(
   /source scripts\/whisper-runtime-dev-env\.sh/,
   "the development launcher must stage and export Whisper before starting Tauri",
 );
+assert.match(
+  source,
+  /if \[ -n "\$\{PORT:-\}" \]; then[\s\S]*?dev_port="\$PORT"[\s\S]*?for candidate in \$\(seq 3000 3010\)/,
+  "explicit PORT and automatic 3000-3010 discovery must remain part of the launcher contract",
+);
+assert.match(
+  source,
+  /dev_url="http:\/\/127\.0\.0\.1:\$\{dev_port\}"[\s\S]*?origin_is_ready "\$dev_port" "\$initial_timeout_ms"/,
+  "the configured loopback devUrl and initial readiness probe must always target the same selected port",
+);
 
 assert.match(
   source,
-  /MINGW\*\|MSYS\*\|CYGWIN\*\) before_dev_command="set HOSTNAME=127\.0\.0\.1&& set PORT=\$\{dev_port\}&& pnpm dev"/,
-  "Windows Tauri launches must bind loopback and use cmd.exe's set syntax",
+  /HOSTNAME=127\.0\.0\.1 PORT="\$dev_port" pnpm dev &/,
+  "the launcher must bind its owned dev server to the Tauri loopback devUrl on Windows and POSIX",
 );
 assert.match(
   source,
-  /before_dev_command="HOSTNAME=127\.0\.0\.1 PORT=\$\{dev_port\} pnpm dev"/,
-  "POSIX launches must bind the dev server to the desktop shell's loopback devUrl",
-);
-assert.match(
-  source,
-  /beforeDevCommand":"\$\{before_dev_command\}"/,
-  "the generated Tauri override must use the platform-correct command",
+  /"beforeDevCommand":null,"devUrl":"\$\{dev_url\}"/,
+  "Tauri must not launch a second server after the launcher has verified the first root document",
 );
 
 assert.match(
@@ -57,18 +62,28 @@ assert.match(
 );
 assert.match(
   source,
-  /cleanup\(\) \{[\s\S]*?terminate_process_tree "\$tauri_pid"[\s\S]*?rm -f "\$TAURI_OVERRIDE_CONFIG"/,
-  "cleanup must reap the Tauri tree and remove the generated override config",
+  /cleanup\(\) \{[\s\S]*?terminate_process_tree "\$tauri_pid"[\s\S]*?terminate_process_tree "\$server_pid"[\s\S]*?rm -f "\$TAURI_OVERRIDE_CONFIG"/,
+  "cleanup must reap only its Tauri and owned server trees before removing the generated override config",
 );
 assert.match(
   source,
-  /DEV_SERVER_GRACE_SECONDS="\$\{COVEN_CAVE_DEV_SERVER_GRACE_SECONDS:-30\}"/,
+  /DEV_SERVER_GRACE_SECONDS="\$\{COVEN_CAVE_DEV_SERVER_GRACE_SECONDS:-180\}"/,
   "the dev-server watchdog must have a documented, overridable grace window",
 );
 assert.match(
   source,
-  /watch_dev_server\(\) \{[\s\S]*?down_for=\$\(\(down_for \+ 2\)\)[\s\S]*?terminate_process_tree "\$tauri_pid"/,
-  "the shell must not outlive a loopback dev server that is never coming back",
+  /origin_is_ready\(\) \{[\s\S]*?node scripts\/dev-app-origin-health\.mjs --port "\$1" --timeout-ms "\$\{2:-1500\}"/,
+  "the launcher must require a bounded HTTP response rather than only a TCP socket",
+);
+assert.match(
+  source,
+  /initial_timeout_ms=\$\(\(DEV_SERVER_GRACE_SECONDS \* 1000\)\)[\s\S]*?origin_is_ready "\$dev_port" "\$initial_timeout_ms"[\s\S]*?desktop shell was not opened[\s\S]*?beforeDevCommand":null[\s\S]*?pnpm exec tauri dev/,
+  "the launcher must validate the root document before opening Tauri, avoiding an initial black window",
+);
+assert.match(
+  source,
+  /watch_dev_server\(\) \{[\s\S]*?if origin_is_ready "\$dev_port"; then[\s\S]*?down_for=\$\(\(down_for \+ 2\)\)[\s\S]*?terminate_process_tree "\$tauri_pid"/,
+  "the running shell must still tear down its owned Tauri tree when the loopback origin later becomes unavailable or HTTP-hung",
 );
 
 console.log("dev-app: ok");

@@ -1030,6 +1030,7 @@ export const SUITES = {
     "scripts/dependency-policy.test.mjs",
     "scripts/build-sandbox-runtime.test.mjs",
     "scripts/dev-app.test.mjs",
+    "scripts/dev-app-origin-health.test.mjs",
     "scripts/dev-app-teardown.test.mjs",
     "scripts/sync-runtimes.test.mjs",
     "scripts/surface-claim-guard.test.mjs",
