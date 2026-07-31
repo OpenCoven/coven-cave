@@ -18,12 +18,37 @@
 // The codemod's px→token tables are pinned against the live definitions in
 // src/app/globals.css, so a token retune fails loudly instead of letting the
 // codemod silently rewrite to stale values.
+//
+// RUN THIS FILE WITHOUT THE CSS FACADE HOOK. This gate measures the PHYSICAL
+// CSS tree, so scripts/run-tests.mjs deliberately runs it without
+// `--require ./scripts/css-source-contract-hook.cjs` (RAW_SOURCE_SCANNER_TESTS).
+// Under the hook — the incantation every OTHER source-contract test wants —
+// fs.readFileSync inlines import facades and every imported sheet is counted
+// twice, inflating the ratchets ~1.6x into convincing but bogus "went UP"
+// failures. The guard below fails fast instead (cave-d1a0p).
 
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import cssContract from "../../scripts/css-source-contract.cjs";
+
+// Self-defense: compare a facade read through (possibly patched) fs against
+// the contract module's raw reader, which bound the original readFileSync
+// before any hook could patch it. A mismatch means the facade hook is active
+// and every number this gate would produce is wrong.
+{
+  const probe = new URL("../app/globals.css", import.meta.url);
+  // assert.ok, not assert.equal: on failure the message is the diagnosis —
+  // dumping two copies of the expanded stylesheet as a diff would bury it.
+  assert.ok(
+    readFileSync(probe, "utf8") === cssContract.readRawCssSync(probe, "utf8"),
+    "design-token-drift.test.ts must run WITHOUT --require ./scripts/css-source-contract-hook.cjs " +
+      "(see RAW_SOURCE_SCANNER_TESTS in scripts/run-tests.mjs). The facade hook inlines CSS imports, " +
+      "double-counting every imported sheet and inflating the ratchets with false drift. " +
+      "Run: node --experimental-strip-types --import ./scripts/test-alias-register.mjs --test src/lib/design-token-drift.test.ts",
+  );
+}
 
 import {
   tokenizeCss,
