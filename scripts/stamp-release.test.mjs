@@ -3,7 +3,9 @@
 // Pure tests exercise the exported stamp helpers; source pins hold the
 // release.yml resilience and the verify script's --allow-partial contract.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import {
   bumpVersion,
   STAMP_FILES,
@@ -13,6 +15,17 @@ import {
   insertChangelogSection,
   findOpenStampPr,
 } from "./stamp-release.mjs";
+import { fileURLToPath } from "node:url";
+
+const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const STAMP_RELEASE = fileURLToPath(new URL("./stamp-release.mjs", import.meta.url));
+const expectedChangedFiles = [
+  "package.json",
+  "src-tauri/tauri.conf.json",
+  "src-tauri/Cargo.toml",
+  "src-tauri/Cargo.lock",
+  "apps/ios/CovenCave/project.yml",
+];
 
 // ── bumpVersion ───────────────────────────────────────────────────────────────
 assert.equal(bumpVersion("0.0.159"), "0.0.160");
@@ -83,6 +96,65 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
 }
 assert.equal(STAMP_FILES.length, 5, "exactly the five stamp locations");
 assert.throws(() => stampContent("nope", "", "a", "b"), /unknown stamp kind/);
+
+// ── dry-run contract ─────────────────────────────────────────────────────────
+{
+  const fixtures = {
+    [path.join(REPO_ROOT, "package.json")]: '{"version":"0.0.159"}\n',
+    [path.join(REPO_ROOT, "src-tauri/tauri.conf.json")]:
+      '{"package":{"productVersion":"0.0.159"},"version":"0.0.159"}\n',
+    [path.join(REPO_ROOT, "src-tauri/Cargo.toml")]: '[package]\nversion = "0.0.159"\n',
+    [path.join(REPO_ROOT, "src-tauri/Cargo.lock")]:
+      '[[package]]\nname = "app"\nversion = "0.0.159"\n\n[[package]]\nname = "shared"\nversion = "0.0.159"\n',
+    [path.join(REPO_ROOT, "apps/ios/CovenCave/project.yml")]:
+      'MARKETING_VERSION: 0.0.159\nCURRENT_PROJECT_VERSION: 1\n',
+    [path.join(REPO_ROOT, "CHANGELOG.md")]: "# Changelog\n\n## [Unreleased]\n\n## [0.0.159] - 2026-07-08\n",
+  };
+  const dryRun = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+import { createRequire, syncBuiltinESMExports } from "node:module";
+const require = createRequire(import.meta.url);
+const childProcess = require("node:child_process");
+const fs = require("node:fs");
+const originalReadFileSync = fs.readFileSync.bind(fs);
+const fixtures = ${JSON.stringify(fixtures)};
+const script = ${JSON.stringify(STAMP_RELEASE)};
+childProcess.execFileSync = (cmd, args) => {
+  if (cmd === "git" && args[0] === "status" && args[1] === "--porcelain") return "";
+  if (cmd === "gh" && args[0] === "api" && String(args[1]).includes("/pulls")) return "[]";
+  if (cmd === "git" && args[0] === "log") return "feat(release): polish dry run\\nfix(release): cover files\\n";
+  throw new Error(\`unexpected execFileSync: \${cmd} \${args.join(" ")}\`);
+};
+fs.readFileSync = (file, encoding) => {
+  if (encoding !== "utf8") return originalReadFileSync(file, encoding);
+  if (Object.prototype.hasOwnProperty.call(fixtures, file)) return fixtures[file];
+  throw new Error(\`unexpected readFileSync: \${file}\`);
+};
+fs.writeFileSync = () => {
+  throw new Error("dry run must not write");
+};
+syncBuiltinESMExports();
+process.argv = [process.argv[0], script, "--dry-run"];
+await import(new URL(script, "file://"));
+`,
+    ],
+    { cwd: REPO_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  );
+  assert.equal(dryRun.status, 0, `dry run failed:\n${dryRun.stderr}\n${dryRun.stdout}`);
+  const changedFiles = [...dryRun.stdout.matchAll(/^  would stamp (.+?) \(/gm)].map(
+    (match) => match[1],
+  );
+  assert.deepEqual(
+    changedFiles,
+    expectedChangedFiles,
+    `dry run should report exactly the five stamped manifests:\n${dryRun.stdout}`,
+  );
+  assert.match(dryRun.stdout, /\(dry run — nothing written\)/, "dry run banner is preserved");
+}
 
 // ── changelog ─────────────────────────────────────────────────────────────────
 {
