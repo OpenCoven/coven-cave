@@ -32,8 +32,8 @@ assert.equal(
 assert.match(source, /provenance: DYNAMIC_INVENTORY_RUNTIMES\.has\(canonicalRuntime\)[\s\S]*inventoryFailureProvenance\(canonicalRuntime, staticModels\)/, "static Codex and Hermes catalogs are truthfully reported as fallback inventory");
 assert.match(
   source,
-  /new Set\(\["claude", "copilot", "opencode", "grok"\]\)/,
-  "Grok uses the same scoped shared inventory contract as other dynamic runtimes",
+  /new Set\(\["claude", "copilot", "opencode", "grok", "hermes"\]\)/,
+  "Grok and Hermes use the same scoped shared inventory contract as other dynamic runtimes",
 );
 assert.match(
   source,

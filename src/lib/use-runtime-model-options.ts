@@ -17,7 +17,7 @@ export type RuntimeModelInventoryResult = {
   loading: boolean;
   key: string;
 };
-const DYNAMIC_INVENTORY_RUNTIMES = new Set(["claude", "copilot", "opencode", "grok"]);
+const DYNAMIC_INVENTORY_RUNTIMES = new Set(["claude", "copilot", "opencode", "grok", "hermes"]);
 
 export function inventoryFailureProvenance(runtime: string, staticModels: readonly RuntimeModelOption[]): ModelInventoryProvenance {
   if (staticModels.length > 0) return "fallback";
