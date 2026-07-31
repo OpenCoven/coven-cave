@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const glass = readFileSync(new URL("../styles/quick-chat-glass.css", import.meta.url), "utf8");
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const overlayStyles = readFileSync(new URL("../styles/globals/surface-chat-overlays.css", import.meta.url), "utf8");
+const foundations = readFileSync(new URL("../styles/globals/foundations.css", import.meta.url), "utf8");
 const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
 
 // ── Readable measure ─────────────────────────────────────────────────────────
@@ -17,7 +18,7 @@ assert.match(
 
 // ── Meta chips ───────────────────────────────────────────────────────────────
 assert.match(
-  globals,
+  overlayStyles,
   /\.quick-chat-meta-chip \{[\s\S]{0,400}?border-radius: var\(--radius-pill\);[\s\S]{0,200}?background: var\(--bg-subtle\);/,
   "Meta chips are quiet token pills",
 );
@@ -26,10 +27,10 @@ assert.doesNotMatch(
   /Thinking: \$\{thinkingEffort\}/,
   "The status run-on sentence is gone from the composer hint area",
 );
-assert.match(
+assert.doesNotMatch(
   tray,
-  /className="quick-chat-meta-chip" title="Thinking effort"/,
-  "Thinking chip labels itself via tooltip",
+  /title="Thinking effort"/,
+  "Quick chat does not imply a universal thinking control when model capabilities are unavailable",
 );
 assert.match(
   tray,
@@ -39,14 +40,14 @@ assert.match(
 
 // ── Disabled Send stays visible ──────────────────────────────────────────────
 assert.match(
-  globals,
+  overlayStyles,
   /\.quick-chat-overlay__actions \.ui-btn--primary:disabled \{\s*\n\s*opacity: 1;\s*\n\s*border-color: var\(--border-hairline\);\s*\n\s*background: var\(--bg-subtle\);\s*\n\s*color: var\(--text-muted\);/,
   "Disabled Send renders as a visible 'present but not ready' control, not a 50% ghost",
 );
 
 // ── The composer input keeps its visible focus treatment ────────────────────
 assert.match(
-  globals,
+  overlayStyles,
   /\.quick-chat-overlay__input:focus \{\s*\n\s*border-color: var\(--accent-presence\);/,
   "Composer input keeps the accent focus treatment",
 );
@@ -56,7 +57,7 @@ assert.match(
 // theme defined it — every one rendered transparent. It now derives from
 // --bg-raised so it tracks all themes through one definition.
 assert.match(
-  globals,
+  foundations,
   /--bg-subtle: color-mix\(in oklch, var\(--bg-raised\) 72%, transparent\);/,
   "--bg-subtle is defined (derived from --bg-raised)",
 );
