@@ -194,7 +194,7 @@ async function discoverClaudeModels(
 export async function listClaudeModelInventory(
   familiarId?: string | null,
   dependencies: ClaudeModelDependencies = {},
-): Promise<{ models: RuntimeModelOption[]; provenance: "live" | "cached" }> {
+): Promise<{ models: RuntimeModelOption[]; provenance: "live" | "cached" | "fallback" }> {
   let providerEnv: Record<string, string | undefined>;
   try {
     providerEnv = modelEnvironment(

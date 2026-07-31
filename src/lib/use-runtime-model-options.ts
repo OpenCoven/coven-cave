@@ -11,13 +11,16 @@ type RuntimeInventory = {
   models: RuntimeModelOption[] | null;
   provenance: ModelInventoryProvenance | null;
 };
+export type RuntimeModelInventory = RuntimeInventory & {
+  loading: boolean;
+};
 const DYNAMIC_INVENTORY_RUNTIMES = new Set(["claude", "copilot", "opencode", "grok"]);
 
 /** Static seeds stay synchronous while capable runtimes replace them live. */
 export function useRuntimeModelInventory(
   runtime: string,
   familiarId?: string | null,
-): RuntimeModelOption[] {
+): RuntimeModelInventory {
   // Configs created by older/package-based setup flows can retain an alias
   // such as `opencode-ai`. Keep the local inventory on the same canonical
   // runtime that the send route uses, rather than falling back to an empty
