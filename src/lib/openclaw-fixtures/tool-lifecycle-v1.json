@@ -14,7 +14,7 @@
       "payload": {
         "runId": "run-tool-lifecycle-v1",
         "seq": 3,
-        "stream": "chat",
+        "stream": "tool",
         "ts": 1710000000000,
         "data": {
           "phase": "start",
@@ -31,7 +31,7 @@
       "payload": {
         "runId": "run-tool-lifecycle-v1",
         "seq": 7,
-        "stream": "chat",
+        "stream": "tool",
         "ts": 1710000005000,
         "data": {
           "phase": "update",
@@ -49,7 +49,7 @@
       "payload": {
         "runId": "run-tool-lifecycle-v1",
         "seq": 9,
-        "stream": "chat",
+        "stream": "tool",
         "ts": 1710000010000,
         "data": {
           "phase": "result",
@@ -68,7 +68,7 @@
       "payload": {
         "runId": "run-tool-lifecycle-v1",
         "seq": 11,
-        "stream": "session.tool",
+        "stream": "tool",
         "ts": 1710000015000,
         "data": {
           "phase": "result",
