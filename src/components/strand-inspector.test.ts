@@ -1,11 +1,13 @@
 // @ts-nocheck
-// Source pins for the strand inspection wiring (threads-986.17.5). Behavior
-// lives in src/lib/strand-inspect.test.ts; these pins hold the React layer
-// to the fail-closed diff treatment and the lineage deep-link.
+// Source pins for the strand inspection wiring (threads-986.17.5, redesigned
+// in cave-f8rdi). Behavior lives in src/lib/strand-inspect.test.ts; these pins
+// hold the React layer to the fail-closed diff treatment and the lineage
+// deep-link.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const inspector = await readFile(new URL("./strand-inspector.tsx", import.meta.url), "utf8");
+const pane = await readFile(new URL("./thread-pane.tsx", import.meta.url), "utf8");
 const view = await readFile(new URL("./weaves-view.tsx", import.meta.url), "utf8");
 
 assert.match(inspector, /export function StrandInspector\(/, "StrandInspector must be exported");
@@ -36,8 +38,14 @@ assert.match(inspector, /strandsState\.message/, "blocked strand read shows why"
 assert.match(inspector, /auditState\.message/, "blocked audit read shows why");
 assert.match(inspector, /cache: "no-store"/, "reads are never cached");
 
-// wired into the weaves view under the selected thread
-assert.match(view, /StrandInspector/, "weaves view renders the inspector");
+// the evidence lives inside the thread it explains, not a scroll away
+assert.match(pane, /<StrandInspector/, "the opened thread carries its own strand evidence");
+assert.match(pane, /knownProposalIds=\{knownProposalIds\}/, "the pane supplies known proposal ids for R7 annotation");
 assert.match(view, /knownProposalIds/, "view supplies known proposal ids for R7 annotation");
+assert.match(
+  view,
+  /if \(proposalsState\.kind !== "ready"\) return new Set<string>\(\)/,
+  "an unverifiable queue annotates every reference unresolved, never resolved-by-default",
+);
 
 console.log("strand-inspector wiring: all assertions passed");
