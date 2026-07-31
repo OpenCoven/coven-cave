@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
 import { bindingFor, loadConfig, recordOwnedSession, recordSessionFamiliar } from "@/lib/cave-config";
 import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
+import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   boundedInt,
@@ -44,9 +45,12 @@ export async function POST(req: Request) {
   if (requestedHarness === null) {
     return NextResponse.json({ ok: false, error: "invalid harness" }, { status: 400 });
   }
-  const binding = familiarId
+  const initialBinding = familiarId
     ? bindingFor(config, familiarId)
     : { harness: requestedHarness ?? "codex", model: config.defaults.model };
+  const binding = !familiarId && runtimeOwnsModelDefault(initialBinding.harness)
+    ? { ...initialBinding, model: "" }
+    : initialBinding;
   if (requestedHarness !== undefined && familiarId && requestedHarness !== binding.harness) {
     return NextResponse.json({ ok: false, error: "invalid harness" }, { status: 400 });
   }

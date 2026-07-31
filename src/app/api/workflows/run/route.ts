@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
 import {
   bindingFor,
   enqueueOfflineTravelItem,
@@ -111,9 +112,12 @@ async function usesLocalCopilotWorkflowRuntime(
 ): Promise<boolean> {
   const config = await loadConfig();
   const familiarId = body.familiarId ?? workflow?.familiar ?? null;
-  const binding = familiarId
+  const initialBinding = familiarId
     ? bindingFor(config, familiarId)
     : { harness: config.defaults.harness, model: config.defaults.model };
+  const binding = !familiarId && runtimeOwnsModelDefault(initialBinding.harness)
+    ? { ...initialBinding, model: "" }
+    : initialBinding;
   const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
   const hubAuthority = config.multiHost?.mode === "hub";
   return binding.harness === "copilot" && !sshBound && !hubAuthority;
@@ -266,9 +270,12 @@ async function runViaSession(body: RunBody) {
 
   const config = await loadConfig();
   const familiarId = body.familiarId ?? workflow.familiar ?? null;
-  const binding = familiarId
+  const initialBinding = familiarId
     ? bindingFor(config, familiarId)
     : { harness: config.defaults.harness, model: config.defaults.model };
+  const binding = !familiarId && runtimeOwnsModelDefault(initialBinding.harness)
+    ? { ...initialBinding, model: "" }
+    : initialBinding;
   if (!isAllowedHarness(binding.harness)) {
     return NextResponse.json(
       { ok: false, error: `harness '${binding.harness}' can't run as an agent session` },

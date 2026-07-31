@@ -245,9 +245,7 @@ final class ChatThread: Identifiable, Hashable {
                                      responseSpeed: responseSpeed,
                                      modelControls: modelControls,
                                      modelOverride: modelOverride,
-                                     modelOverrideScope: modelOverride.flatMap {
-                                         _ in modelOverrideScope ?? .session
-                                     },
+                                     modelOverrideScope: modelOverrideScope ?? (modelOverride == nil ? nil : .session),
                                      client: client, onChange: onChange) }
         }
     }
@@ -318,9 +316,7 @@ final class ChatThread: Identifiable, Hashable {
                              responseSpeed: responseSpeed,
                              modelControls: modelControls,
                              modelOverride: queuedMessage.modelOverride,
-                             modelOverrideScope: queuedMessage.modelOverride.flatMap {
-                                 _ in queuedMessage.modelOverrideScope ?? .session
-                             },
+                             modelOverrideScope: queuedMessage.modelOverrideScope ?? (queuedMessage.modelOverride == nil ? nil : .session),
                              client: client, onChange: onChange)
                 // Re-queued mid-replay (offline again) — stop; don't spin.
                 if messages.first(where: { $0.id == queuedId })?.isQueued == true { return }

@@ -351,7 +351,7 @@ type SendBody = {
   startNewConversation?: boolean;
   projectRoot?: string;
   modelOverride?: string;
-  modelOverrideScope?: "next-message" | "session";
+  modelOverrideScope?: "next-message" | "session" | "runtime-default";
   reasoningEffort?: string;
   responseSpeed?: string;
   /** Selected-model capability controls. Legacy fields above are accepted for

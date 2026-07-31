@@ -165,7 +165,14 @@ export async function PATCH(req: Request) {
     const conversation = await loadConversation(sessionId);
     if (!conversation || conversation.familiarId !== familiarId) return false;
     if (clearModel) {
-      delete conversation.modelIntent;
+      // Keep an explicit empty session intent. Deleting it would immediately
+      // re-expose a familiar/global model and makes clear → send race-prone.
+      conversation.modelIntent = {
+        model: "",
+        source: "session",
+        applicationState: "saved",
+        reason: "Using the runtime's configured default model.",
+      };
     } else if (model) {
       conversation.modelIntent = {
         model,

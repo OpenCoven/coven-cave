@@ -38,8 +38,8 @@ assert.match(
 );
 assert.match(
   source,
-  /\{\s*harness:\s*config\.defaults\.harness,\s*model:\s*config\.defaults\.model\s*\}/,
-  "unassigned workflows inherit both default harness and default model",
+  /runtimeOwnsModelDefault\(initialBinding\.harness\)[\s\S]{0,120}model:\s*""/,
+  "unbound runtime-owned workflow sessions defer to the daemon default instead of Cave's global model",
 );
 assert.match(source, /\{\s*familiarId\s*\}/, "session executor passes the familiar to the daemon natively (camelCase familiarId, as the daemon keys on)");
 assert.match(source, /isAllowedHarness\(binding\.harness\)/, "session executor guards the harness allow-list");

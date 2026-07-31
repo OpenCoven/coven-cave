@@ -195,6 +195,18 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
+  // An empty persisted session intent is deliberately distinct from an absent
+  // intent: it is the user's durable request to defer to the runtime, even
+  // when the familiar or Cave has a concrete fallback model.
+  if (input.sessionModel === "") {
+    return chatModelState(input, {
+      effectiveModel: "",
+      source: "runtime-default",
+      applicationState: "saved",
+      reason: "Using the runtime's configured default model.",
+    });
+  }
+
   const familiarModel = effectiveModelForHarness(input.familiarModel, input.harness);
   if (familiarModel) {
     const application = input.application ? modelApplicationForHarness(input.application) : null;

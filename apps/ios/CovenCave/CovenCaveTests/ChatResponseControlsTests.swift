@@ -301,7 +301,8 @@ final class ChatResponseControlsTests: XCTestCase {
         )
 
         XCTAssertNil(binding.modelOverride)
-        XCTAssertNil(binding.scope)
+        XCTAssertEqual(binding.scope, .runtimeDefault,
+                       "clear followed immediately by send must carry an explicit runtime-default intent")
         XCTAssertFalse(ChatModelTurnBinding.shouldClearPending(
             "",
             confirmedState: staleSession,

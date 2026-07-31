@@ -4483,7 +4483,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // race), and so a brand-new chat (no sessionId yet) still pins its
           // session model. Only session-scoped picks need this; familiar- and
           // global-default models already resolve server-side from config.
-          ...(modelOverrideForRequest
+          ...(modelStateRef.current?.source === "runtime-default"
+            ? { modelOverrideScope: "runtime-default" as const }
+            : modelOverrideForRequest
             ? {
                 modelOverride: modelOverrideForRequest,
                 modelOverrideScope: "session" as const,

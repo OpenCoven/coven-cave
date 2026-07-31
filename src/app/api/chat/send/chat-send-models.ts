@@ -16,7 +16,7 @@ import type { ModelControlValues } from "@/lib/model-control-capabilities";
 type ModelRequest = {
   familiarId: string;
   modelOverride?: string;
-  modelOverrideScope?: "next-message" | "session";
+  modelOverrideScope?: "next-message" | "session" | "runtime-default";
 };
 
 type ResponseControlRequest = {
@@ -33,7 +33,9 @@ export function resolveSendModelMetadata(args: {
 }): { desiredModel: string; modelState: ChatModelState } {
   const requestedModel = cleanModelId(args.body.modelOverride);
   const sessionModel =
-    args.body.modelOverrideScope === "session"
+    args.body.modelOverrideScope === "runtime-default"
+      ? ""
+      : args.body.modelOverrideScope === "session"
       ? requestedModel
       : args.existingConversation?.modelIntent?.model ?? null;
   const modelState = resolveChatModelState({
@@ -54,6 +56,14 @@ export function modelIntentForSend(
   body: ModelRequest,
   modelState: ChatModelState,
 ): ConversationModelIntent | undefined {
+  if (body.modelOverrideScope === "runtime-default") {
+    return {
+      model: "",
+      source: "session",
+      applicationState: "saved",
+      reason: "Using the runtime's configured default model.",
+    };
+  }
   if (body.modelOverrideScope !== "session" || modelState.source !== "session") return undefined;
   return {
     model: modelState.effectiveModel,
