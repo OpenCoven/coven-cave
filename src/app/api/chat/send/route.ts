@@ -771,6 +771,7 @@ function openClawChatResponse(args: {
             id: pendingUserTurnId,
             text: args.promptText,
             ...(args.attachments.length ? { attachments: args.attachments } : {}),
+            ...persistedTurnControls(args.body, responseMetadata.retryModel),
           },
         }).catch(() => undefined);
         const stopGateway = () => {

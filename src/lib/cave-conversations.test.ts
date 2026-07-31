@@ -611,6 +611,7 @@ console.log("cave-conversations.test.ts: ok");
       text: "fix the flaky test please",
       reasoningEffort: "medium",
       responseSpeed: "careful",
+      modelControls: { reasoning: "medium" },
       modelOverride: "anthropic/claude-opus-4-6",
     },
   });
@@ -623,6 +624,7 @@ console.log("cave-conversations.test.ts: ok");
   assert.equal(stub?.turns[0]?.text, "fix the flaky test please");
   assert.equal(stub?.turns[0]?.reasoningEffort, "medium");
   assert.equal(stub?.turns[0]?.responseSpeed, "careful");
+  assert.deepEqual(stub?.turns[0]?.modelControls, { reasoning: "medium" });
   assert.equal(stub?.turns[0]?.modelOverride, "anthropic/claude-opus-4-6");
   assert.equal(stub?.modelIntent?.model, "anthropic/claude-opus-4-6");
   assert.equal(stub?.activeLeafId, "pending-user-turn");

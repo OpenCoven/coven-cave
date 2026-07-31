@@ -320,6 +320,7 @@ export type ConversationStubSeed = {
     attachments?: import("./chat-attachments").ChatAttachment[];
     reasoningEffort?: ChatTurn["reasoningEffort"];
     responseSpeed?: ChatTurn["responseSpeed"];
+    modelControls?: ChatTurn["modelControls"];
     modelOverride?: string;
   };
 };
@@ -364,6 +365,9 @@ export async function createConversationStub(seed: ConversationStubSeed): Promis
             : {}),
           ...(seed.userTurn.responseSpeed
             ? { responseSpeed: seed.userTurn.responseSpeed }
+            : {}),
+          ...(seed.userTurn.modelControls && Object.keys(seed.userTurn.modelControls).length > 0
+            ? { modelControls: seed.userTurn.modelControls }
             : {}),
           ...(seed.userTurn.modelOverride
             ? { modelOverride: seed.userTurn.modelOverride }
