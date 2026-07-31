@@ -116,6 +116,7 @@ export type WorktreeLifecycleItem = WorktreeLifecycleObservation & {
 export type WorktreeLifecycleSummary = {
   items: WorktreeLifecycleItem[];
   counts: Record<WorktreeLifecycleLane, number>;
+  budgets: WorktreeLifecycleBudgets;
 };
 
 export const WORKTREE_WARNING_BUDGET = 12;
@@ -519,13 +520,14 @@ const LANE_ORDER: WorktreeLifecycleLane[] = [
 
 export function summarizeWorktreeLifecycle(
   items: WorktreeLifecycleItem[],
+  budgets: WorktreeLifecycleBudgets,
 ): WorktreeLifecycleSummary {
   const counts = Object.fromEntries(LANE_ORDER.map((lane) => [lane, 0])) as Record<
     WorktreeLifecycleLane,
     number
   >;
   for (const item of items) counts[item.lane] += 1;
-  return { items, counts };
+  return { items, counts, budgets };
 }
 
 function assertNonnegativeInteger(name: string, value: number): void {
@@ -608,11 +610,27 @@ function labelFor(item: WorktreeLifecycleItem): string {
   return item.branch ?? item.ref ?? "(detached)";
 }
 
+function humanReason(item: WorktreeLifecycleItem, reason: string): string {
+  if (
+    item.lane === "recovery" &&
+    reason.startsWith("owner follow-up:") &&
+    reason.endsWith(" is overdue")
+  ) {
+    return `overdue recovery review: ${reason}`;
+  }
+  if (reason.startsWith("duplicate structured worktree metadata records for ")) {
+    return `duplicate Bead ownership: ${reason}`;
+  }
+  return reason;
+}
+
 export function renderWorktreeLifecycleReport(summary: WorktreeLifecycleSummary): string {
   const { counts } = summary;
   const lines = [
     `Worktree lifecycle: ${summary.items.length} registered | ${counts.active} active | ${counts.recovery} recovery | ${counts.cooldown} cooldown | ${counts["retire-after-gate"]} cleanup-ready | ${counts.uncertain} uncertain | ${counts.protected} protected`,
-    "Report only. No worktree or branch was changed.",
+    `Worktree budget: ${summary.budgets.worktrees.count}/${summary.budgets.worktrees.warning} (${summary.budgets.worktrees.exceeded ? "exceeded" : "within budget"})`,
+    `Local branch budget: ${summary.budgets.branches.count}/${summary.budgets.branches.warning} (${summary.budgets.branches.exceeded ? "exceeded" : "within budget"})`,
+    `Managed exceptions: ${summary.budgets.exceptions.active} active | ${summary.budgets.exceptions.expired} expired`,
   ];
 
   for (const lane of LANE_ORDER) {
@@ -621,8 +639,9 @@ export function renderWorktreeLifecycleReport(summary: WorktreeLifecycleSummary)
     lines.push("", HUMAN_LANE_LABELS[lane]);
     for (const item of items) {
       const location = item.kind === "branch-only" || !item.path ? "" : ` @ ${item.path}`;
-      lines.push(`- ${labelFor(item)}${location}`);
-      for (const reason of item.reasons) lines.push(`  ${reason}`);
+      const kind = item.kind === "branch-only" ? " [branch-only]" : "";
+      lines.push(`- ${labelFor(item)}${kind}${location}`);
+      for (const reason of item.reasons) lines.push(`  ${humanReason(item, reason)}`);
       for (const change of item.changes) lines.push(`  change: ${change}`);
       for (const ignoredPath of item.nonDisposableIgnoredPaths) {
         lines.push(`  non-disposable ignored: ${ignoredPath}`);
@@ -631,5 +650,6 @@ export function renderWorktreeLifecycleReport(summary: WorktreeLifecycleSummary)
     }
   }
 
+  lines.push("", "Report only. No worktree or branch was changed.");
   return lines.join("\n");
 }

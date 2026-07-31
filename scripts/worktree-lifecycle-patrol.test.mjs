@@ -328,13 +328,23 @@ exit 0
     ref: "refs/heads/feat/branch-only",
     oid: branchOnlyHead,
   });
-  assert.equal(branchOnly.metadata.beadId, "cave-branch-only");
+  assert.deepEqual(
+    branchOnly.metadata,
+    {
+      beadId: "cave-branch-only",
+      owner: "Kitty",
+      purpose: "Removed worktree fixture",
+      disposition: "pr",
+      createdAt: "2026-07-20T12:00:00Z",
+    },
+    "exact structured metadata survives patrol JSON serialization",
+  );
   assert.equal(branchOnly.lane, "retire-after-gate");
   assert.deepEqual(report.budgets, {
     worktrees: { count: 7, warning: 12, exceeded: false },
     branches: { count: 7, warning: 30, exceeded: false },
     exceptions: { active: 0, expired: 0 },
-  });
+  }, "the exact budget object survives patrol JSON serialization");
   const nullExceptionReport = JSON.parse(
     patrol(["--json"], { LIFECYCLE_NULL_EXCEPTION: "1" }),
   );
@@ -369,7 +379,23 @@ exit 0
   );
   assert.equal(typeof report.inventoryFingerprint, "string");
   assert.ok(report.inventoryFingerprint.length > 0);
-  assert.match(patrol(), /uncommitted\.txt/, "the routine report includes exact dirty paths");
+  const humanReport = patrol();
+  assert.match(humanReport, /uncommitted\.txt/, "the routine report includes exact dirty paths");
+  assert.match(
+    humanReport,
+    /^Worktree budget: 7\/12 \(within budget\)$/m,
+    "the routine report uses the lifecycle renderer's exact worktree budget line",
+  );
+  assert.match(
+    humanReport,
+    /^Local branch budget: 7\/30 \(within budget\)$/m,
+    "the routine report uses the lifecycle renderer's exact local branch budget line",
+  );
+  assert.doesNotMatch(
+    humanReport,
+    /^Budgets:/m,
+    "the routine report does not append the legacy combined budget block",
+  );
 
   for (const [environment, expectedReason] of [
     ["LIFECYCLE_LSOF_FAIL", /process cwd inventory unavailable/],
@@ -417,6 +443,11 @@ exit 0
     missingMetadataBranch.lane,
     "uncertain",
     "branch-only cleanup requires valid structured metadata",
+  );
+  assert.notEqual(
+    missingMetadataBranch.lane,
+    "retire-after-gate",
+    "missing structured metadata is never cleanup-ready",
   );
   assert.match(missingMetadataBranch.reasons.join("\n"), /metadata backfill/i);
 

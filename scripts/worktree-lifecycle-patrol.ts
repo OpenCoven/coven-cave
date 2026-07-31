@@ -3,7 +3,6 @@ import path from "node:path";
 import {
   renderWorktreeLifecycleReport,
   summarizeWorktreeLifecycle,
-  type WorktreeLifecycleBudgets,
 } from "../src/lib/worktree-lifecycle.ts";
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 
@@ -65,13 +64,6 @@ sessions, pull requests, workflow runs, and live process cwd ownership. It never
 removes worktrees or branches.`);
 }
 
-function renderBudgets(budgets: WorktreeLifecycleBudgets): string {
-  return [
-    `Budgets: ${budgets.worktrees.count}/${budgets.worktrees.warning} worktrees | ${budgets.branches.count}/${budgets.branches.warning} local branches`,
-    `Managed exceptions: ${budgets.exceptions.active} active | ${budgets.exceptions.expired} expired`,
-  ].join("\n");
-}
-
 try {
   const options = parseArgs(process.argv.slice(2));
   const inventory = collectWorktreeLifecycleInventory({
@@ -79,7 +71,7 @@ try {
     root: options.root,
     nowMs: options.nowMs,
   });
-  const summary = summarizeWorktreeLifecycle(inventory.items);
+  const summary = summarizeWorktreeLifecycle(inventory.items, inventory.budgets);
   console.log(
     options.json
       ? JSON.stringify(
@@ -87,13 +79,12 @@ try {
             ok: true,
             generatedAt: new Date(options.nowMs).toISOString(),
             ...summary,
-            budgets: inventory.budgets,
             inventoryFingerprint: inventory.inventoryFingerprint,
           },
           null,
           2,
         )
-      : `${renderWorktreeLifecycleReport(summary)}\n\n${renderBudgets(inventory.budgets)}`,
+      : renderWorktreeLifecycleReport(summary),
   );
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);

@@ -569,7 +569,12 @@ function legacyObservation(overrides = {}) {
       NOW,
     ),
   ];
-  const summary = summarizeWorktreeLifecycle(items);
+  const budgets = {
+    worktrees: { count: 13, warning: 12, exceeded: true },
+    branches: { count: 31, warning: 30, exceeded: true },
+    exceptions: { active: 1, expired: 2 },
+  };
+  const summary = summarizeWorktreeLifecycle(items, budgets);
   assert.deepEqual(summary.counts, {
     active: 1,
     recovery: 0,
@@ -578,14 +583,80 @@ function legacyObservation(overrides = {}) {
     uncertain: 0,
     protected: 1,
   });
+  assert.deepEqual(summary.budgets, budgets, "the exact prevention budget object survives summary creation");
+  assert.equal(summary.budgets, budgets, "summary creation preserves the supplied budget object");
   const text = renderWorktreeLifecycleReport(summary);
   assert.match(text, /3 registered \| 1 active .* 1 cleanup-ready .* 1 protected/);
+  assert.match(text, /Worktree budget: 13\/12 \(exceeded\)/);
+  assert.match(text, /Local branch budget: 31\/30 \(exceeded\)/);
   assert.doesNotMatch(text, /retire after gate/i, "human report renames the lane");
   assert.match(text, /cleanup-ready/);
+  assert.match(text, /branch-only/);
   assert.match(text, /No worktree or branch was changed/);
-  assert.match(text, /- feat\/old\n/, "branch-only items render without a path suffix");
+  assert.match(text, /- feat\/old \[branch-only\]\n/, "branch-only items render with their unit kind");
   assert.doesNotMatch(text, /feat\/old @/, "branch-only items omit the @ path marker");
   assert.match(text, /\? live\.ts/, "the routine text report retains exact dirty paths");
+  assert.ok(
+    text.endsWith("Report only. No worktree or branch was changed."),
+    "the final safety line remains exact and final",
+  );
+}
+
+{
+  const items = [
+    classifyLifecycleUnit(
+      observation({
+        branch: "feat/metadata-backfill",
+        ref: "refs/heads/feat/metadata-backfill",
+        metadata: null,
+        headOnDefaultBranch: true,
+      }),
+      NOW,
+    ),
+    classifyLifecycleUnit(
+      observation({
+        branch: "recovery/overdue",
+        ref: "refs/heads/recovery/overdue",
+        metadata: metadata({
+          disposition: "recovery",
+          reason: "Preserve operator recovery state",
+          reviewAfter: "2026-07-28T12:00:00Z",
+        }),
+      }),
+      NOW,
+    ),
+    classifyLifecycleUnit(
+      observation({
+        branch: "feat/duplicate-owner",
+        ref: "refs/heads/feat/duplicate-owner",
+        metadata: null,
+        metadataErrors: [
+          "duplicate structured worktree metadata records for feat/duplicate-owner",
+        ],
+      }),
+      NOW,
+    ),
+    classifyLifecycleUnit(
+      observation({
+        branch: "feat/dirty-paths",
+        ref: "refs/heads/feat/dirty-paths",
+        changes: ["1 .M N... src/exact-dirty.ts", "? docs/exact-untracked.md"],
+      }),
+      NOW,
+    ),
+  ];
+  const text = renderWorktreeLifecycleReport(
+    summarizeWorktreeLifecycle(items, {
+      worktrees: { count: 4, warning: 12, exceeded: false },
+      branches: { count: 4, warning: 30, exceeded: false },
+      exceptions: { active: 0, expired: 0 },
+    }),
+  );
+  assert.match(text, /metadata backfill required/i);
+  assert.match(text, /overdue recovery review/i);
+  assert.match(text, /duplicate Bead ownership/i);
+  assert.match(text, /src\/exact-dirty\.ts/);
+  assert.match(text, /docs\/exact-untracked\.md/);
 }
 
 console.log("worktree-lifecycle.test.ts: ok");
