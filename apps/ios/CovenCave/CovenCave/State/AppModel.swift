@@ -12,6 +12,29 @@ extension AppTab {
     static let shortcutOrder: [AppTab] = drawerDestinations
 }
 
+struct PairingIntent: Equatable {
+    let id = UUID()
+    let host: String
+    let token: String?
+}
+
+enum PairingApprovalPolicy {
+    static func requiresApproval(hasExistingPairing: Bool) -> Bool {
+        hasExistingPairing
+    }
+}
+
+enum PendingPairingProcessorPolicy {
+    static func mayBegin(
+        isLocked: Bool,
+        isAuthenticating: Bool,
+        isProcessing: Bool,
+        isActive: Bool
+    ) -> Bool {
+        !isLocked && !isAuthenticating && !isProcessing && isActive
+    }
+}
+
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
     enum Style { case success, info, warning, error }
@@ -683,15 +706,16 @@ final class AppModel {
     enum DeepLink: String { case tasks, reminders }
 
     var deepLink: DeepLink?
+    private(set) var pendingPairingIntent: PairingIntent?
 
     func handleDeepLink(_ url: URL) {
         guard url.scheme == "covencave" else { return }
         // covencave://connect?host=…&token=… — the desktop's pairing invite.
-        // Tapping it (or scanning its QR) configures host + credential in one
-        // step, replacing any previous pairing.
+        // Queue it for the app-level lock/approval processor rather than
+        // mutating credentials beneath a lock or authentication prompt.
         if url.host == "connect" {
             guard let invite = CaveInvite.parse(url.absoluteString) else { return }
-            Task { await configure(host: invite.host, token: invite.token) }
+            pendingPairingIntent = PairingIntent(host: invite.host, token: invite.token)
             return
         }
         // covencave://thread/<id> — a chat notification / Live Activity tap
@@ -705,6 +729,17 @@ final class AppModel {
         guard let target = DeepLink(rawValue: url.host ?? "") else { return }
         selectedTab = .tasks
         deepLink = target
+    }
+
+    @discardableResult
+    func consumePendingPairingIntent(matching id: UUID) -> Bool {
+        takePendingPairingIntent(matching: id) != nil
+    }
+
+    func takePendingPairingIntent(matching id: UUID) -> PairingIntent? {
+        guard let intent = pendingPairingIntent, intent.id == id else { return nil }
+        pendingPairingIntent = nil
+        return intent
     }
 
 
