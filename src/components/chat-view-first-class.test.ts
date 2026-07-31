@@ -140,8 +140,8 @@ assert.match(
 
 assert.match(
   source,
-  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*label:\s*"Thinking"[\s\S]*label:\s*"Speed"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
-  "The grouped Response section exposes Access, Model, Thinking, and Speed controls in order",
+  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*\.\.\.modelCapabilities\.map\([\s\S]*capability\.delivery === "prompt-only" \? "Prompt guidance" : "Native"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
+  "The grouped Response section exposes access, model, and capability-aware controls with an honest delivery label",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
 // "Both" reconciliation (2026-07-21): the context pill returned with the
@@ -170,8 +170,8 @@ assert.doesNotMatch(source, /StandardSelect/, "the composer no longer wraps cont
 
 assert.match(
   source,
-  /reasoningEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed,/,
-  "Send payload should include thinking and speed control values",
+  /thinkingEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed,[\s\S]*modelControls: controlsOverride\?\.modelControls \?\? modelControls,/,
+  "Send payload should preserve legacy command controls and the selected model-control snapshot",
 );
 
 assert.match(
