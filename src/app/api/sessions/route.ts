@@ -3,7 +3,6 @@ import { callDaemon } from "@/lib/coven-daemon";
 import { bindingFor, loadConfig, recordOwnedSession, recordSessionFamiliar } from "@/lib/cave-config";
 import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
-import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   boundedInt,
