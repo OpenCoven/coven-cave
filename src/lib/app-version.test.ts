@@ -11,9 +11,27 @@ const appVersionSource = await readFile(new URL("./app-version.ts", import.meta.
 const releaseWorkflow = await readFile(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8");
 const buildInfoRoute = await readFile(new URL("../app/api/app/build-info/route.ts", import.meta.url), "utf8");
 
-function collectReleaseSettingOccurrences(node, targetKey, sourceLabel, path = [], occurrences = []) {
-  if (YAML.isMap(node)) {
-    for (const pair of node.items) {
+function collectReleaseSettingOccurrences(
+  document,
+  node,
+  targetKey,
+  sourceLabel,
+  path = [],
+  occurrences = [],
+  recursionStack = [],
+) {
+  const resolvedNode = resolveReleaseSettingNode(document, node, sourceLabel, path, recursionStack);
+
+  if (recursionStack.includes(resolvedNode)) {
+    throw new Error(
+      `${sourceLabel} release validation found cyclic YAML alias at ${formatPathSegments(path)}`,
+    );
+  }
+
+  if (YAML.isMap(resolvedNode)) {
+    const nextStack = [...recursionStack, resolvedNode];
+
+    for (const pair of resolvedNode.items) {
       const keyNode = pair.key;
       if (!YAML.isScalar(keyNode) || typeof keyNode.value !== "string") {
         throw new Error(
@@ -22,18 +40,74 @@ function collectReleaseSettingOccurrences(node, targetKey, sourceLabel, path = [
       }
 
       const nextPath = [...path, keyNode.value];
+      const valueNode = resolveReleaseSettingNode(document, pair.value, sourceLabel, nextPath, nextStack);
+
       if (keyNode.value === targetKey) {
-        occurrences.push({ path: nextPath, valueNode: pair.value });
+        occurrences.push({ path: nextPath, valueNode });
       }
-      collectReleaseSettingOccurrences(pair.value, targetKey, sourceLabel, nextPath, occurrences);
+
+      collectReleaseSettingOccurrences(
+        document,
+        valueNode,
+        targetKey,
+        sourceLabel,
+        nextPath,
+        occurrences,
+        nextStack,
+      );
     }
-  } else if (YAML.isSeq(node)) {
-    node.items.forEach((item, index) => {
-      collectReleaseSettingOccurrences(item, targetKey, sourceLabel, [...path, String(index)], occurrences);
+  } else if (YAML.isSeq(resolvedNode)) {
+    const nextStack = [...recursionStack, resolvedNode];
+
+    resolvedNode.items.forEach((item, index) => {
+      const nextPath = [...path, String(index)];
+      const itemNode = resolveReleaseSettingNode(document, item, sourceLabel, nextPath, nextStack);
+      collectReleaseSettingOccurrences(
+        document,
+        itemNode,
+        targetKey,
+        sourceLabel,
+        nextPath,
+        occurrences,
+        nextStack,
+      );
     });
   }
 
   return occurrences;
+}
+
+function resolveReleaseSettingNode(document, node, sourceLabel, path, recursionStack) {
+  let currentNode = node;
+  const aliasStack = new Set();
+
+  while (currentNode instanceof YAML.Alias) {
+    if (aliasStack.has(currentNode)) {
+      throw new Error(
+        `${sourceLabel} release validation found cyclic YAML alias *${currentNode.source ?? "?"} at ${formatPathSegments(path)}`,
+      );
+    }
+
+    aliasStack.add(currentNode);
+
+    const resolvedNode = currentNode.resolve(document);
+
+    if (!resolvedNode) {
+      throw new Error(
+        `${sourceLabel} release validation could not resolve YAML alias *${currentNode.source ?? "?"} at ${formatPathSegments(path)}`,
+      );
+    }
+
+    if (recursionStack.includes(resolvedNode)) {
+      throw new Error(
+        `${sourceLabel} release validation found cyclic YAML alias *${currentNode.source ?? "?"} at ${formatPathSegments(path)}`,
+      );
+    }
+
+    currentNode = resolvedNode;
+  }
+
+  return currentNode;
 }
 
 function samePathSegments(left, right) {
@@ -75,7 +149,7 @@ function readIosReleaseSettings(source, sourceLabel = "apps/ios/CovenCave/projec
 
 function readCanonicalReleaseSetting(document, key, sourceLabel) {
   const canonicalPath = ["settings", "base", key];
-  const occurrences = collectReleaseSettingOccurrences(document.contents, key, sourceLabel);
+  const occurrences = collectReleaseSettingOccurrences(document, document.contents, key, sourceLabel);
 
   if (occurrences.length !== 1 || !samePathSegments(occurrences[0].path, canonicalPath)) {
     const detail =
@@ -173,6 +247,37 @@ targets:
 `),
   /\["settings","base","MARKETING_VERSION"\]/,
   "A target-level MARKETING_VERSION override must be rejected",
+);
+
+assert.throws(
+  () =>
+    readIosReleaseSettings(`
+name: Example
+settings:
+  base: &releaseSettings
+    MARKETING_VERSION: "0.2.1"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Example:
+    settings:
+      base: *releaseSettings
+`),
+  /must define MARKETING_VERSION exactly once/,
+  "An aliased target-level settings.base mapping must count as a release-setting occurrence and be rejected",
+);
+
+assert.throws(
+  () =>
+    readIosReleaseSettings(`
+name: Example
+settings:
+  base: &releaseSettings
+    MARKETING_VERSION: "0.2.1"
+    CURRENT_PROJECT_VERSION: "1"
+    RECURSE: *releaseSettings
+`),
+  /cyclic YAML alias/i,
+  "A recursive aliased release-settings mapping must be rejected before it can recurse forever",
 );
 
 assert.throws(
