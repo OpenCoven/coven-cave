@@ -112,12 +112,18 @@ export function CodeView({
     window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
   }, []);
   const [topTab, setTopTab] = useState<CodeTopTab>(
-    navigationRequest
-      ? topTabForNavigation(navigationRequest)
-      : deepLink?.topTab ?? "sessions",
+    pendingOpen
+      ? "sessions"
+      : navigationRequest
+        ? topTabForNavigation(navigationRequest)
+        : deepLink?.topTab ?? "sessions",
   );
   const [initialGithubTarget, setInitialGithubTarget] = useState<GitHubItemTarget | null>(
-    navigationRequest?.kind === "github-item" ? navigationRequest.target : null,
+    pendingOpen
+      ? null
+      : navigationRequest?.kind === "github-item"
+        ? navigationRequest.target
+        : null,
   );
   const [githubNavigationKey, setGithubNavigationKey] = useState(
     navigationRequest?.nonce ?? 0,

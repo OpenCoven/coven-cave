@@ -172,6 +172,16 @@ assert.match(
 );
 assert.match(
   codeView,
+  /const \[topTab, setTopTab\] = useState<CodeTopTab>\(\s*pendingOpen\s*\?\s*"sessions"\s*:\s*navigationRequest\s*\?\s*topTabForNavigation\(navigationRequest\)\s*:\s*deepLink\?\.topTab \?\? "sessions",\s*\);/,
+  "simultaneous file/diff navigation prevents even the first stale GitHub render.",
+);
+assert.match(
+  codeView,
+  /const \[initialGithubTarget, setInitialGithubTarget\] = useState<GitHubItemTarget \| null>\(\s*pendingOpen\s*\?\s*null\s*:\s*navigationRequest\?\.kind === "github-item"\s*\?\s*navigationRequest\.target\s*:\s*null,\s*\);/,
+  "simultaneous file/diff navigation prevents even the first stale GitHub render.",
+);
+assert.match(
+  codeView,
   /onInitialTargetHandled=\{\(\) => setInitialGithubTarget\(null\)\}/,
   "CodeView drops the host target after GitHubView captures it",
 );
