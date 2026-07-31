@@ -1,16 +1,27 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 import { AgentEventSchema, HelloOkSchema } from "@openclaw/gateway-protocol";
 import { Value } from "typebox/value";
 
 import {
+  BUILTIN_OPENCLAW_SCHEMA_BUNDLE,
   BUILTIN_OPENCLAW_TOOL_PROFILES,
   OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
+  clearOpenClawProfileQuarantineForTests,
+  loadOpenClawCompatibility,
+  openClawSchemaBundlePayloadHash,
+  openClawSchemaBundleSigningPayload,
   parseOpenClawToolEvent,
+  quarantineOpenClawProfile,
   redactedOpenClawToolFingerprint,
   selectOpenClawToolProfile,
+  type OpenClawSchemaBundle,
   validateOpenClawToolProfiles,
+  verifyOpenClawSchemaBundle,
   openClawDiscoveryFromHello,
 } from "./openclaw-compatibility.ts";
 
@@ -524,5 +535,513 @@ const secretFingerprintB = redactedOpenClawToolFingerprint({
 assert.equal(secretFingerprintA, secretFingerprintB, "tool fingerprints capture only the reviewed envelope shape");
 assert.doesNotMatch(secretFingerprintA, /token|private|alpha|beta/, "fingerprints must not retain secret values or dynamic keys");
 assert.match(secretFingerprintA, /^[a-f0-9]{16}$/);
+
+const REGISTRY_NOW = Date.parse("2026-07-31T18:00:00.000Z");
+const registryTestRoot = await mkdtemp(path.join(process.cwd(), ".openclaw-registry-test-"));
+const cacheFile = (cacheDir: string) => path.join(cacheDir, "openclaw-schema-bundle-v1.json");
+const makeCacheDir = async (name: string): Promise<string> => {
+  const cacheDir = path.join(registryTestRoot, name);
+  await mkdir(cacheDir, { recursive: true });
+  return cacheDir;
+};
+
+const registryKeyPair = generateKeyPairSync("ed25519");
+const registryPublicKey = registryKeyPair.publicKey.export({ type: "spki", format: "pem" }).toString();
+const registryKeyring = { "openclaw-2026": registryPublicKey };
+const signBundle = (bundle: OpenClawSchemaBundle): OpenClawSchemaBundle => {
+  const unsigned = structuredClone(bundle);
+  delete unsigned.signature;
+  return {
+    ...unsigned,
+    signature: {
+      algorithm: "ed25519",
+      value: sign(
+        null,
+        Buffer.from(openClawSchemaBundleSigningPayload(unsigned)),
+        registryKeyPair.privateKey,
+      ).toString("base64"),
+    },
+  };
+};
+const revisedProfile = (
+  marker: string,
+  {
+    id = beta5Profile.id,
+    priority = beta5Profile.priority,
+    serverVersion = beta5Discovery.serverVersion,
+  }: { id?: string; priority?: number; serverVersion?: string } = {},
+) => ({
+  ...structuredClone(beta5Profile),
+  id,
+  priority,
+  requires: {
+    ...structuredClone(beta5Profile.requires),
+    serverVersions: [serverVersion],
+  },
+  errorStates: [...beta5Profile.errorStates, `error-${marker}`],
+  source: {
+    ...beta5Profile.source,
+    blobSha: marker.repeat(40),
+  },
+});
+const signedBundle = (
+  sequence: number,
+  profiles = [revisedProfile("a")],
+  overrides: Partial<OpenClawSchemaBundle> = {},
+): OpenClawSchemaBundle => signBundle({
+  format: 1,
+  runtime: "openclaw",
+  sequence,
+  issuedAt: "2026-07-31T00:00:00.000Z",
+  expiresAt: "2027-07-31T00:00:00.000Z",
+  keyId: "openclaw-2026",
+  profiles,
+  ...overrides,
+});
+
+try {
+  const signedGenesis = signBundle(structuredClone(BUILTIN_OPENCLAW_SCHEMA_BUNDLE));
+  assert.equal(
+    openClawSchemaBundleSigningPayload({
+      z: "last",
+      runtime: "openclaw",
+      sequence: 1,
+      format: 1,
+      issuedAt: "2026-07-31T00:00:00.000Z",
+      expiresAt: "2030-01-01T00:00:00.000Z",
+      profiles: [],
+      signature: { algorithm: "ed25519", value: "excluded" },
+    } as unknown as OpenClawSchemaBundle),
+    `{"expiresAt":"2030-01-01T00:00:00.000Z","format":1,"issuedAt":"2026-07-31T00:00:00.000Z","profiles":[],"runtime":"openclaw","sequence":1,"z":"last"}`,
+    "OpenClaw signing bytes recursively sort object keys and exclude the signature",
+  );
+  assert.equal(
+    verifyOpenClawSchemaBundle(signedGenesis, registryPublicKey, REGISTRY_NOW),
+    true,
+    "a canonical Ed25519-signed genesis bundle verifies",
+  );
+  assert.equal(
+    verifyOpenClawSchemaBundle({ ...signedGenesis, sequence: 0 }, registryPublicKey, REGISTRY_NOW),
+    false,
+    "registry sequence zero is invalid",
+  );
+  const tamperedGenesis = structuredClone(signedGenesis);
+  tamperedGenesis.profiles[0].errorStates.push("tampered");
+  assert.equal(
+    verifyOpenClawSchemaBundle(tamperedGenesis, registryPublicKey, REGISTRY_NOW),
+    false,
+    "signed profile tampering invalidates the bundle",
+  );
+  const expiredGenesis = signBundle({
+    ...structuredClone(BUILTIN_OPENCLAW_SCHEMA_BUNDLE),
+    expiresAt: "2026-07-31T12:00:00.000Z",
+  });
+  assert.equal(verifyOpenClawSchemaBundle(expiredGenesis, registryPublicKey, REGISTRY_NOW), false);
+  assert.equal(
+    verifyOpenClawSchemaBundle(expiredGenesis, registryPublicKey, REGISTRY_NOW, { allowExpired: true }),
+    true,
+    "allowExpired verifies immutable trust history without selecting it",
+  );
+
+  const otherKey = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString();
+  assert.equal(
+    verifyOpenClawSchemaBundle(signedGenesis, { one: registryPublicKey, two: otherKey }, REGISTRY_NOW),
+    false,
+    "a rotating keyring requires a signed keyId",
+  );
+  assert.equal(
+    verifyOpenClawSchemaBundle(
+      signedBundle(2),
+      Object.fromEntries(Array.from({ length: 17 }, (_, index) => [
+        index === 0 ? "openclaw-2026" : `key-${index}`,
+        registryPublicKey,
+      ])),
+      REGISTRY_NOW,
+    ),
+    false,
+    "the registry keyring is bounded",
+  );
+  assert.equal(
+    verifyOpenClawSchemaBundle(
+      { ...signedBundle(2), unexpected: true },
+      registryKeyring,
+      REGISTRY_NOW,
+    ),
+    false,
+    "unknown bundle fields fail closed",
+  );
+  assert.equal(
+    verifyOpenClawSchemaBundle(
+      signBundle({
+        ...structuredClone(BUILTIN_OPENCLAW_SCHEMA_BUNDLE),
+        sequence: 2,
+        keyId: "openclaw-2026",
+        retiredProfileIds: ["not-a-built-in-profile"],
+      }),
+      registryKeyring,
+      REGISTRY_NOW,
+    ),
+    false,
+    "signed retirement is limited to compiled profile IDs",
+  );
+  assert.equal(
+    verifyOpenClawSchemaBundle(
+      signedBundle(2, Array.from({ length: 33 }, (_, index) =>
+        revisedProfile(index.toString(16).slice(-1), {
+          id: `openclaw-profile-${index}`,
+          priority: index,
+        }))),
+      registryKeyring,
+      REGISTRY_NOW,
+    ),
+    false,
+    "a bundle cannot contain more than 32 profiles",
+  );
+
+  const genesisCacheDir = await makeCacheDir("genesis");
+  const genesisCompatibility = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: genesisCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    checkpoint: {
+      sequence: 1,
+      payloadHash: openClawSchemaBundlePayloadHash(signedGenesis),
+    },
+    fetchImpl: async () => new Response(JSON.stringify(signedGenesis), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(genesisCompatibility.mode, "structured");
+  assert.equal(genesisCompatibility.bundleSource, "remote");
+
+  const sequenceTwo = signedBundle(2);
+  const remoteCacheDir = await makeCacheDir("remote");
+  const remoteCompatibility = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: remoteCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async (_url, init) => {
+      assert.equal(init?.credentials, "omit", "registry refreshes omit credentials");
+      assert.equal(init?.redirect, "error", "registry refreshes reject redirects");
+      return new Response(JSON.stringify(sequenceTwo), { status: 200 });
+    },
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(remoteCompatibility.mode, "structured");
+  assert.equal(remoteCompatibility.bundleSource, "remote");
+  const remoteCache = JSON.parse(await readFile(cacheFile(remoteCacheDir), "utf8"));
+  assert.equal(remoteCache.fetchedAt, REGISTRY_NOW, "the cache records verified fetch time");
+  assert.equal(remoteCache.verifiedKeyId, "openclaw-2026", "the cache records the verified signer");
+
+  const highWaterProfile = revisedProfile("c");
+  const highWaterBundle = signedBundle(3, [highWaterProfile]);
+  const rollbackCacheDir = await makeCacheDir("rollback");
+  await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: rollbackCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(highWaterBundle), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  const rollback = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: rollbackCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(sequenceTwo), { status: 200 }),
+    now: () => REGISTRY_NOW + 7 * 60 * 60 * 1000,
+  });
+  assert.equal(rollback.mode, "structured");
+  assert.equal(rollback.bundleSource, "cache", "a lower signed sequence cannot replace the high-water cache");
+  assert.equal(rollback.profile.source.blobSha, highWaterProfile.source.blobSha);
+
+  const equalRewriteCacheDir = await makeCacheDir("equal-rewrite");
+  await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: equalRewriteCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(sequenceTwo), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  const equalRewriteProfile = revisedProfile("b");
+  const equalRewrite = signedBundle(2, [equalRewriteProfile]);
+  const equalRewriteResult = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: equalRewriteCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(equalRewrite), { status: 200 }),
+    now: () => REGISTRY_NOW + 7 * 60 * 60 * 1000,
+  });
+  assert.equal(equalRewriteResult.mode, "structured");
+  assert.equal(equalRewriteResult.bundleSource, "cache", "an equal-sequence payload rewrite is rejected");
+  assert.equal(equalRewriteResult.profile.source.blobSha, revisedProfile("a").source.blobSha);
+
+  const checkpointMismatch = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: await makeCacheDir("checkpoint-mismatch"),
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    checkpoint: { sequence: 2, payloadHash: "0".repeat(64) },
+    fetchImpl: async () => new Response(JSON.stringify(sequenceTwo), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(checkpointMismatch.mode, "structured");
+  assert.equal(checkpointMismatch.bundleSource, "built-in", "checkpoint mismatches retain the source-trusted baseline");
+
+  const corruptCacheDir = await makeCacheDir("corrupt");
+  await writeFile(cacheFile(corruptCacheDir), "{corrupted-cache");
+  const corruptedCache = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: corruptCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => { throw new Error("offline"); },
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(corruptedCache.mode, "structured");
+  assert.equal(corruptedCache.bundleSource, "built-in", "a corrupt first-use cache safely falls back to the built-in profile");
+
+  const expiredRemoteProfile = revisedProfile("d", {
+    id: "openclaw-agent-tool-remote-v2",
+    priority: 101,
+    serverVersion: "2026.7.2-beta.6",
+  });
+  const expiredRemoteBundle = signedBundle(2, [expiredRemoteProfile], {
+    expiresAt: "2026-08-01T00:00:00.000Z",
+  });
+  const beta6Discovery = { ...beta5Discovery, serverVersion: "2026.7.2-beta.6" };
+  const expiredRemoteCacheDir = await makeCacheDir("expired-remote");
+  const liveRemoteOnly = await loadOpenClawCompatibility(beta6Discovery, {
+    cacheDir: expiredRemoteCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(expiredRemoteBundle), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(liveRemoteOnly.mode, "structured");
+  const expiredRemoteOnly = await loadOpenClawCompatibility(beta6Discovery, {
+    cacheDir: expiredRemoteCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => { throw new Error("offline"); },
+    now: () => Date.parse("2026-08-02T00:00:00.000Z"),
+  });
+  assert.equal(expiredRemoteOnly.mode, "plain", "an expired remote-only profile disables structured mode");
+  assert.equal(expiredRemoteOnly.diagnostic, "cached-profile-unavailable");
+
+  const corruptAcceptedCacheDir = await makeCacheDir("corrupt-accepted");
+  await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: corruptAcceptedCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(highWaterBundle), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  await writeFile(cacheFile(corruptAcceptedCacheDir), "{corrupted-cache");
+  const corruptAccepted = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: corruptAcceptedCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => { throw new Error("offline"); },
+    now: () => REGISTRY_NOW + 7 * 60 * 60 * 1000,
+  });
+  assert.equal(corruptAccepted.mode, "plain", "accepted newer history cannot revive an older built-in after cache corruption");
+  assert.equal(corruptAccepted.diagnostic, "cached-profile-unavailable");
+
+  const staleWriterCacheDir = await makeCacheDir("stale-writer");
+  const sequenceFour = signedBundle(4, [revisedProfile("e")]);
+  await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: staleWriterCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(sequenceFour), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  await writeFile(cacheFile(staleWriterCacheDir), JSON.stringify({
+    fetchedAt: REGISTRY_NOW,
+    verifiedKeyId: "openclaw-2026",
+    bundle: highWaterBundle,
+  }));
+  const staleWriterRecovery = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: staleWriterCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(highWaterBundle), { status: 200 }),
+    now: () => REGISTRY_NOW + 7 * 60 * 60 * 1000,
+  });
+  assert.equal(staleWriterRecovery.mode, "plain", "a stale writer cannot lower the immutable accepted anchor");
+
+  const concurrentCacheDir = await makeCacheDir("concurrent");
+  await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: concurrentCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(sequenceTwo), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  let fetchCalls = 0;
+  let releaseRefresh: (() => void) | undefined;
+  let markFetchStarted: (() => void) | undefined;
+  const refreshReleased = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+  const refreshStarted = new Promise<void>((resolve) => { markFetchStarted = resolve; });
+  const concurrentSource = {
+    cacheDir: concurrentCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      markFetchStarted?.();
+      await refreshReleased;
+      return new Response(JSON.stringify(highWaterBundle), { status: 200 });
+    },
+    now: () => REGISTRY_NOW + 7 * 60 * 60 * 1000,
+  };
+  const concurrentA = loadOpenClawCompatibility(beta5Discovery, concurrentSource);
+  const concurrentB = loadOpenClawCompatibility(beta5Discovery, concurrentSource);
+  await refreshStarted;
+  assert.equal(fetchCalls, 1, "concurrent callers share one registry refresh flight");
+  releaseRefresh?.();
+  const [concurrentResultA, concurrentResultB] = await Promise.all([concurrentA, concurrentB]);
+  assert.equal(concurrentResultA.bundleSource, "remote");
+  assert.equal(concurrentResultB.bundleSource, "remote");
+
+  const staleLockCacheDir = await makeCacheDir("stale-lock");
+  await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: staleLockCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(sequenceTwo), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  const staleLockFile = `${cacheFile(staleLockCacheDir)}.lock`;
+  await writeFile(staleLockFile, "stale-owner");
+  await utimes(staleLockFile, new Date(0), new Date(0));
+  const staleLockResult = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: staleLockCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(highWaterBundle), { status: 200 }),
+    now: () => REGISTRY_NOW + 7 * 60 * 60 * 1000,
+  });
+  assert.equal(staleLockResult.bundleSource, "remote", "a stale cache lock is reclaimed");
+
+  const overfullJournalCacheDir = await makeCacheDir("overfull-journal");
+  const journalDir = `${cacheFile(overfullJournalCacheDir)}.anchor.journal`;
+  await mkdir(journalDir, { recursive: true });
+  await Promise.all(Array.from({ length: 33 }, (_, index) =>
+    writeFile(path.join(journalDir, `junk-${index}.json`), "{}")));
+  let overfullFetched = false;
+  const overfullJournal = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: overfullJournalCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => {
+      overfullFetched = true;
+      return new Response(JSON.stringify(sequenceTwo), { status: 200 });
+    },
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(overfullFetched, false, "the trust journal never enumerates beyond 32 entries");
+  assert.equal(overfullJournal.mode, "plain");
+
+  let credentialFetchCalled = false;
+  const credentialUrl = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: await makeCacheDir("credential-url"),
+    url: "https://user:password@registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => {
+      credentialFetchCalled = true;
+      return new Response(JSON.stringify(sequenceTwo), { status: 200 });
+    },
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(credentialFetchCalled, false, "credential-bearing registry URLs are rejected before fetch");
+  assert.equal(credentialUrl.bundleSource, "built-in");
+
+  const redirectResponse = new Response(JSON.stringify(sequenceTwo), { status: 200 });
+  Object.defineProperty(redirectResponse, "redirected", { value: true });
+  const redirectResult = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: await makeCacheDir("redirect"),
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => redirectResponse,
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(redirectResult.bundleSource, "built-in", "redirected registry responses are rejected");
+
+  const oversizedResult = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: await makeCacheDir("oversized"),
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response("x".repeat(256 * 1024 + 1), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(oversizedResult.bundleSource, "built-in", "oversized registry bodies fail closed");
+
+  const oversizedCacheDir = await makeCacheDir("oversized-cache");
+  await writeFile(cacheFile(oversizedCacheDir), "x".repeat(512 * 1024 + 1));
+  const oversizedCache = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: oversizedCacheDir,
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => { throw new Error("offline"); },
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(oversizedCache.bundleSource, "built-in", "oversized cache records are ignored");
+
+  const mismatchedGenesis = signBundle({
+    ...structuredClone(BUILTIN_OPENCLAW_SCHEMA_BUNDLE),
+    expiresAt: "2031-01-01T00:00:00.000Z",
+  });
+  assert.equal(
+    verifyOpenClawSchemaBundle(mismatchedGenesis, registryPublicKey, REGISTRY_NOW),
+    true,
+    "the genesis mismatch fixture is independently well-signed",
+  );
+  const genesisMismatch = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: await makeCacheDir("genesis-mismatch"),
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(mismatchedGenesis), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(genesisMismatch.bundleSource, "built-in", "sequence one must exactly match the shipped genesis payload");
+
+  const retiredBundle = signedBundle(2, [
+    revisedProfile("f", {
+      id: "openclaw-agent-tool-remote-v3",
+      priority: 101,
+      serverVersion: "2026.7.2-beta.6",
+    }),
+  ], {
+    retiredProfileIds: [beta5Profile.id],
+  });
+  const retired = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: await makeCacheDir("retired"),
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(retiredBundle), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(retired.mode, "plain", "a signed retirement prevents unsafe built-in revival");
+  assert.equal(retired.diagnostic, "no-compatible-profile");
+
+  clearOpenClawProfileQuarantineForTests();
+  quarantineOpenClawProfile(beta5Profile);
+  const quarantined = await loadOpenClawCompatibility(beta5Discovery);
+  assert.equal(quarantined.mode, "plain");
+  assert.equal(quarantined.diagnostic, "profile-quarantined");
+
+  const repairedProfile = revisedProfile("1");
+  const repaired = await loadOpenClawCompatibility(beta5Discovery, {
+    cacheDir: await makeCacheDir("repaired"),
+    url: "https://registry.example/openclaw/current.json",
+    publicKeys: registryKeyring,
+    fetchImpl: async () => new Response(JSON.stringify(signedBundle(2, [repairedProfile])), { status: 200 }),
+    now: () => REGISTRY_NOW,
+  });
+  assert.equal(repaired.mode, "structured", "a higher signed revision with the same profile ID recovers");
+  assert.equal(repaired.profile.source.blobSha, repairedProfile.source.blobSha);
+  clearOpenClawProfileQuarantineForTests();
+} finally {
+  clearOpenClawProfileQuarantineForTests();
+  await rm(registryTestRoot, { recursive: true, force: true });
+}
 
 console.log("openclaw-compatibility: ok");
