@@ -176,6 +176,7 @@ export function CodeView({
         : undefined;
     const target = byId ?? byRoot;
     setTopTab("sessions");
+    setInitialGithubTarget(null);
     if (target) setSelectedId(target.id);
     // Root browse with no matching session: there is no workbench to focus —
     // land on the surface and leave the rail/selection as-is.
