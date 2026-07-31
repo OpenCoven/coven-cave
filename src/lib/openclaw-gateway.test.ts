@@ -601,6 +601,329 @@ if (reconnectDispatch.kind === "accepted") {
   assert.deepEqual(await reconnectDispatch.done, { state: "final" });
 }
 
+let pendingAckOptions;
+let resolvePendingAckSend;
+let markPendingAckSendStarted;
+let pendingAckClientCount = 0;
+const pendingAckEvents = [];
+const pendingAckSendStarted = new Promise((resolve) => {
+  markPendingAckSendStarted = resolve;
+});
+const pendingAckDispatchPromise = dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "pending acknowledgement reconnect",
+  idempotencyKey: "cave-request-pending-ack-reconnect",
+  env: {
+    OPENCLAW_GATEWAY_DISPATCH: "1",
+    OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+  },
+  onEvent: (event) => pendingAckEvents.push(event),
+  clientFactory: (options) => {
+    const clientIndex = pendingAckClientCount++;
+    if (clientIndex === 1) pendingAckOptions = options;
+    return {
+      start() {
+        queueMicrotask(() => options.onHelloOk?.(helloOk()));
+      },
+      stop() {},
+      async request(method, _params, requestOptions) {
+        if (method === "sessions.messages.subscribe") return { subscribed: true };
+        if (method === "chat.send") {
+          requestOptions?.onSent?.();
+          markPendingAckSendStarted();
+          return new Promise((resolve) => {
+            resolvePendingAckSend = resolve;
+          });
+        }
+        return {};
+      },
+    };
+  },
+});
+
+await pendingAckSendStarted;
+pendingAckOptions.onClose?.(1006, "network reset before acknowledgement");
+pendingAckOptions.onEvent?.({
+  type: "event",
+  event: "chat",
+  payload: { ...delta, seq: 0 },
+});
+pendingAckOptions.onHelloOk?.(helloOk());
+await Promise.resolve();
+await Promise.resolve();
+resolvePendingAckSend({ runId: expected.runId });
+const pendingAckDispatch = await pendingAckDispatchPromise;
+assert.equal(pendingAckDispatch.kind, "accepted");
+assert.deepEqual(
+  pendingAckEvents,
+  [],
+  "a closed transport's pre-acknowledgement frame is never drained after reconnect",
+);
+pendingAckOptions.onEvent?.({
+  type: "event",
+  event: "chat",
+  payload: { ...delta, seq: 0 },
+});
+pendingAckOptions.onEvent?.({
+  type: "event",
+  event: "chat",
+  payload: {
+    runId: expected.runId,
+    sessionKey: expected.sessionKey,
+    agentId: expected.agentId,
+    seq: 1,
+    state: "final",
+  },
+});
+if (pendingAckDispatch.kind === "accepted") {
+  assert.deepEqual(await pendingAckDispatch.done, { state: "final" });
+}
+
+let overflowClientCount = 0;
+let overflowDispatchStops = 0;
+const overflowEvents = [];
+const overflowDispatch = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "overflow pre-acknowledgement queue",
+  idempotencyKey: "cave-request-pre-ack-overflow",
+  env: {
+    OPENCLAW_GATEWAY_DISPATCH: "1",
+    OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+  },
+  onEvent: (event) => overflowEvents.push(event),
+  clientFactory: (options) => {
+    const clientIndex = overflowClientCount++;
+    return {
+      start() {
+        queueMicrotask(() => options.onHelloOk?.(helloOk()));
+      },
+      stop() {
+        if (clientIndex === 1) overflowDispatchStops += 1;
+      },
+      async request(method, _params, requestOptions) {
+        if (method === "sessions.messages.subscribe") return { subscribed: true };
+        if (method === "chat.send") {
+          requestOptions?.onSent?.();
+          for (let seq = 0; seq <= 128; seq += 1) {
+            options.onEvent?.({
+              type: "event",
+              event: "chat",
+              payload: seq === 128
+                ? {
+                    runId: expected.runId,
+                    sessionKey: expected.sessionKey,
+                    agentId: expected.agentId,
+                    seq,
+                    state: "final",
+                  }
+                : { ...delta, seq, deltaText: `chunk-${seq}` },
+            });
+          }
+          return { runId: expected.runId };
+        }
+        return {};
+      },
+    };
+  },
+});
+
+assert.equal(overflowDispatch.kind, "accepted");
+assert.deepEqual(
+  overflowEvents.filter((event) => event.kind === "error"),
+  [{ kind: "error", message: "Gateway pre-acknowledgement event buffer overflow" }],
+  "an accepted dispatch reports pre-acknowledgement overflow instead of silently dropping its terminal frame",
+);
+assert.equal(
+  overflowEvents.some((event) => event.kind === "delta"),
+  false,
+  "an overflowed pre-acknowledgement queue does not project a partial response",
+);
+if (overflowDispatch.kind === "accepted") {
+  assert.deepEqual(
+    await overflowDispatch.done,
+    { state: "error", message: "Gateway pre-acknowledgement event buffer overflow" },
+  );
+}
+assert.ok(overflowDispatchStops > 0, "pre-acknowledgement overflow stops the dispatch client");
+
+let abortClientCount = 0;
+let abortDispatchStops = 0;
+const abortEvents = [];
+const abortRejectingDispatch = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "abort rejection",
+  idempotencyKey: "cave-request-abort-rejection",
+  env: {
+    OPENCLAW_GATEWAY_DISPATCH: "1",
+    OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+  },
+  onEvent: (event) => abortEvents.push(event),
+  clientFactory: (options) => {
+    const clientIndex = abortClientCount++;
+    return {
+      start() {
+        queueMicrotask(() => options.onHelloOk?.(helloOk()));
+      },
+      stop() {
+        if (clientIndex === 1) abortDispatchStops += 1;
+      },
+      async request(method, _params, requestOptions) {
+        if (method === "sessions.messages.subscribe") return { subscribed: true };
+        if (method === "chat.send") {
+          requestOptions?.onSent?.();
+          return { runId: expected.runId };
+        }
+        if (method === "chat.abort") throw new Error("Gateway abort transport failed");
+        return {};
+      },
+    };
+  },
+});
+
+assert.equal(abortRejectingDispatch.kind, "accepted");
+if (abortRejectingDispatch.kind === "accepted") {
+  await assert.doesNotReject(
+    () => abortRejectingDispatch.abort(),
+    "abort remains fire-and-forget after the turn has settled locally",
+  );
+  assert.deepEqual(
+    await abortRejectingDispatch.done,
+    { state: "aborted", message: "Cancelled by user" },
+  );
+}
+assert.deepEqual(abortEvents, [{ kind: "aborted", message: "Cancelled by user" }]);
+assert.ok(abortDispatchStops > 0, "an abort transport rejection still stops the dispatch client");
+
+for (const [driftId, driftHello] of [
+  ["version", {
+    ...helloOk(),
+    server: { ...helloOk().server, version: "2026.7.2-beta.6" },
+  }],
+  ["events", {
+    ...helloOk(),
+    features: {
+      ...helloOk().features,
+      events: helloOk().features.events.filter((event) => event !== "agent"),
+    },
+  }],
+  ["methods", {
+    ...helloOk(),
+    features: {
+      ...helloOk().features,
+      methods: helloOk().features.methods.filter((method) => method !== "chat.abort"),
+    },
+  }],
+]) {
+  let dispatchOptions;
+  let clientCount = 0;
+  let dispatchStops = 0;
+  let subscriptionCalls = 0;
+  const driftEvents = [];
+  const driftDispatch = await dispatchOpenClawGatewayTurn({
+    sessionKey: expected.sessionKey,
+    agentId: expected.agentId,
+    message: `reconnect ${driftId} drift`,
+    idempotencyKey: `cave-request-reconnect-${driftId}-drift`,
+    env: {
+      OPENCLAW_GATEWAY_DISPATCH: "1",
+      OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+    },
+    onEvent: (event) => driftEvents.push(event),
+    clientFactory: (options) => {
+      const clientIndex = clientCount++;
+      if (clientIndex === 1) dispatchOptions = options;
+      return {
+        start() {
+          queueMicrotask(() => options.onHelloOk?.(helloOk()));
+        },
+        stop() {
+          if (clientIndex === 1) dispatchStops += 1;
+        },
+        async request(method, _params, requestOptions) {
+          if (method === "sessions.messages.subscribe") {
+            subscriptionCalls += 1;
+            return { subscribed: true };
+          }
+          if (method === "chat.send") {
+            requestOptions?.onSent?.();
+            return { runId: expected.runId };
+          }
+          return {};
+        },
+      };
+    },
+  });
+
+  assert.equal(driftDispatch.kind, "accepted");
+  const subscriptionsBeforeDrift = subscriptionCalls;
+  dispatchOptions.onClose?.(1006, "network reset");
+  dispatchOptions.onHelloOk?.(structuredClone(driftHello));
+  assert.deepEqual(
+    driftEvents,
+    [{ kind: "error", message: "OpenClaw Gateway changed during compatibility negotiation" }],
+    `a reconnect ${driftId} drift fails the Gateway-owned turn safely`,
+  );
+  if (driftDispatch.kind === "accepted") {
+    assert.deepEqual(
+      await driftDispatch.done,
+      { state: "error", message: "OpenClaw Gateway changed during compatibility negotiation" },
+    );
+  }
+  assert.equal(
+    subscriptionCalls,
+    subscriptionsBeforeDrift,
+    `a reconnect ${driftId} drift must never resubscribe`,
+  );
+  assert.ok(dispatchStops > 0, `a reconnect ${driftId} drift stops the dispatch client`);
+}
+
+let preSendDriftClientCount = 0;
+let preSendDriftChatSends = 0;
+let preSendDriftStops = 0;
+const preSendDrift = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "pre-send reconnect drift",
+  idempotencyKey: "cave-request-pre-send-reconnect-drift",
+  env: {
+    OPENCLAW_GATEWAY_DISPATCH: "1",
+    OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+  },
+  onEvent: () => assert.fail("a pre-send compatibility drift retains fallback without emitting"),
+  clientFactory: (options) => {
+    const clientIndex = preSendDriftClientCount++;
+    return {
+      start() {
+        queueMicrotask(() => options.onHelloOk?.(helloOk()));
+      },
+      stop() {
+        if (clientIndex === 1) preSendDriftStops += 1;
+      },
+      async request(method) {
+        if (method === "sessions.messages.subscribe") {
+          options.onHelloOk?.({
+            ...helloOk(),
+            server: { ...helloOk().server, version: "2026.7.2-beta.6" },
+          });
+          return { subscribed: true };
+        }
+        if (method === "chat.send") preSendDriftChatSends += 1;
+        return { runId: expected.runId };
+      },
+    };
+  },
+});
+assert.deepEqual(
+  preSendDrift,
+  { kind: "unavailable", reason: "OpenClaw Gateway changed during compatibility negotiation" },
+  "a compatibility drift during initial subscription fails before dispatch ownership",
+);
+assert.equal(preSendDriftChatSends, 0, "a pre-send compatibility drift never calls chat.send");
+assert.ok(preSendDriftStops > 0, "a pre-send compatibility drift stops the dispatch client");
+
 // --- paired-device credential wiring -------------------------------------
 
 // Opaque placeholders: nothing in the wiring path parses key material.

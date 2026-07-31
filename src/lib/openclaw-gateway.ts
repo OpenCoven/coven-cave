@@ -212,21 +212,33 @@ async function connectAuthenticatedOpenClawGateway(args: {
     connectChallengeTimeoutMs: STARTUP_TIMEOUT_MS,
     requestTimeoutMs: STARTUP_TIMEOUT_MS,
     onHelloOk: (rawHello) => {
-      const failure = Value.Check(HelloOkSchema, rawHello)
-        ? supportedHello(rawHello)
-        : "Gateway returned an invalid hello response for the pinned v4 schema";
-      if (failure) {
+      if (!Value.Check(HelloOkSchema, rawHello)) {
+        const failure = "Gateway returned an invalid hello response for the pinned v4 schema";
         if (connected) args.onInvalidHello?.(failure);
         else helloReject(new Error(failure));
         stop();
         return;
       }
       if (!connected) {
+        const failure = supportedHello(rawHello);
+        if (failure) {
+          helloReject(new Error(failure));
+          stop();
+          return;
+        }
         connected = true;
         helloResolve(rawHello);
         return;
       }
-      args.onReauthenticatedHello?.(rawHello);
+      if (args.onReauthenticatedHello) {
+        args.onReauthenticatedHello(rawHello);
+        return;
+      }
+      const failure = supportedHello(rawHello);
+      if (failure) {
+        args.onInvalidHello?.(failure);
+        stop();
+      }
     },
     onConnectError: (error) => {
       if (!connected) helloReject(error);
@@ -391,7 +403,9 @@ export async function dispatchOpenClawGatewayTurn(args: {
   let highestSequence = -1;
   let dispatchSent = false;
   let settled = false;
-  const queuedChatEvents: unknown[] = [];
+  let lifecycleFailure: string | undefined;
+  let preAcknowledgementOverflowGeneration: number | undefined;
+  const queuedChatEvents: Array<{ generation: number; payload: unknown }> = [];
   let doneResolve!: (value: { state: "final" | "aborted" | "error"; message?: string }) => void;
   const done = new Promise<{ state: "final" | "aborted" | "error"; message?: string }>((resolve) => {
     doneResolve = resolve;
@@ -403,9 +417,38 @@ export async function dispatchOpenClawGatewayTurn(args: {
     doneResolve({ state, ...(message ? { message } : {}) });
   };
 
+  const failDispatchLifecycle = (message: string) => {
+    lifecycleFailure = message;
+    streamReady = false;
+    connectionGeneration += 1;
+    queuedChatEvents.splice(0);
+    preAcknowledgementOverflowGeneration = undefined;
+    if (expectedRunId) {
+      args.onEvent({ kind: "error", message });
+      settle("error", message);
+    }
+    client?.stop();
+  };
+
+  const failForCompatibilityDrift = () => {
+    failDispatchLifecycle("OpenClaw Gateway changed during compatibility negotiation");
+  };
+
   const drainQueuedChatEvents = () => {
     if (!expectedRunId || !streamReady || settled) return;
-    for (const queued of queuedChatEvents.splice(0)) processChatEvent(queued);
+    const overflowed = preAcknowledgementOverflowGeneration === connectionGeneration;
+    preAcknowledgementOverflowGeneration = undefined;
+    if (overflowed) {
+      queuedChatEvents.splice(0);
+      const message = "Gateway pre-acknowledgement event buffer overflow";
+      args.onEvent({ kind: "error", message });
+      settle("error", message);
+      client.stop();
+      return;
+    }
+    for (const queued of queuedChatEvents.splice(0)) {
+      if (queued.generation === connectionGeneration) processChatEvent(queued.payload);
+    }
   };
 
   const processChatEvent = (payload: unknown) => {
@@ -417,7 +460,12 @@ export async function dispatchOpenClawGatewayTurn(args: {
     // transport-generation provenance, so accepting it after the next hello
     // could expose a late frame buffered by the old socket.
     if (!expectedRunId) {
-      if (queuedChatEvents.length < 128) queuedChatEvents.push(payload);
+      if (!streamReady) return;
+      if (queuedChatEvents.length < 128) {
+        queuedChatEvents.push({ generation: connectionGeneration, payload });
+      } else {
+        preAcknowledgementOverflowGeneration = connectionGeneration;
+      }
       return;
     }
     if (!streamReady) {
@@ -482,9 +530,20 @@ export async function dispatchOpenClawGatewayTurn(args: {
       clientFactory: args.clientFactory,
       credentialStore,
       deviceIdentity,
-      onReauthenticatedHello: () => {
+      onReauthenticatedHello: (hello) => {
+        if (!sameOpenClawDiscovery(discovery, openClawDiscoveryFromHello(hello))) {
+          failForCompatibilityDrift();
+          return;
+        }
+        const failure = supportedHello(hello);
+        if (failure) {
+          failDispatchLifecycle(failure);
+          return;
+        }
         // The official client reconnects after a transport loss. Restore the
         // documented session stream before accepting resumed chat frames.
+        queuedChatEvents.splice(0);
+        preAcknowledgementOverflowGeneration = undefined;
         const generation = ++connectionGeneration;
         void subscribeToSession(generation)
           .catch(() => {
@@ -511,6 +570,8 @@ export async function dispatchOpenClawGatewayTurn(args: {
         // when the next hello arrives. A buffered callback from the closed
         // transport must not be accepted before the next subscription.
         streamReady = false;
+        queuedChatEvents.splice(0);
+        preAcknowledgementOverflowGeneration = undefined;
         connectionGeneration += 1;
       },
       onEvent: (frame) => {
@@ -533,12 +594,17 @@ export async function dispatchOpenClawGatewayTurn(args: {
       };
     }
     client = dispatchConnection.client;
+    if (lifecycleFailure) {
+      dispatchConnection.stop();
+      return { kind: "unavailable", reason: lifecycleFailure };
+    }
     connectionGeneration = 1;
     // A reconnect can arrive while the initial subscription is in flight.
     // Retry until the completion belongs to the latest authenticated hello;
     // an old socket's rejection is similarly irrelevant once a newer hello
     // has already arrived.
     for (;;) {
+      if (lifecycleFailure) throw new Error(lifecycleFailure);
       const generation = connectionGeneration;
       try {
         if (await subscribeToSession(generation)) break;
@@ -571,9 +637,22 @@ export async function dispatchOpenClawGatewayTurn(args: {
         reason: "Gateway dispatch acknowledgement was lost; Cave will not start a duplicate CLI turn",
       };
     }
-    return { kind: "unavailable", reason: error instanceof Error ? error.message : "Gateway dispatch failed" };
+    return {
+      kind: "unavailable",
+      reason: lifecycleFailure
+        ?? (error instanceof Error ? error.message : "Gateway dispatch failed"),
+    };
   }
 
+  if (lifecycleFailure) {
+    client.stop();
+    return dispatchSent
+      ? {
+          kind: "indeterminate",
+          reason: "Gateway dispatch acknowledgement was lost; Cave will not start a duplicate CLI turn",
+        }
+      : { kind: "unavailable", reason: lifecycleFailure };
+  }
   const runId = isRecord(response) && nonEmptyString(response.runId) ? response.runId : undefined;
   if (!runId) {
     client.stop();
@@ -601,6 +680,8 @@ export async function dispatchOpenClawGatewayTurn(args: {
           agentId: args.agentId,
           runId,
         });
+      } catch {
+        // Local cancellation is authoritative; the transport request is fire-and-forget.
       } finally {
         client.stop();
       }
