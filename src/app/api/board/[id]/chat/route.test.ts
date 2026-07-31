@@ -18,6 +18,13 @@ assert.match(
 );
 assert.match(
   source,
+  /taskModelOverride \? \{ initialModelOverride: taskModelOverride \} : \{\}/,
+  "native OpenClaw and local Copilot task handoffs retain the validated card model for their first Chat send",
+);
+assert.match(source, /binding\.harness === "openclaw"[\s\S]*?return reserveNativeChatTask\(\)/, "OpenClaw uses the override-preserving native handoff");
+assert.match(source, /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]*?return reserveNativeChatTask\(\)/, "local Copilot uses the override-preserving native handoff");
+assert.match(
+  source,
   /validateProjectRoot:\s*validateCaveProjectRoot/,
   "Board task chat should reject a project root that no longer resolves to a directory",
 );

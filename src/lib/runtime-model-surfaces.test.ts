@@ -59,17 +59,17 @@ assert.match(
 
 assert.match(
   hero,
-  /useRuntimeModelOptions\(effectiveHarness, familiar\.id\)/,
+  /useRuntimeModelInventory\(effectiveHarness, familiar\.id\)[\s\S]*inventoryProvenanceLabel/,
   "the Familiar identity model picker uses the familiar-scoped live inventory",
 );
 assert.match(
   studio,
-  /useRuntimeModelOptions\(harnessId, familiar\.id\)/,
+  /useRuntimeModelInventory\(harnessId, familiar\.id\)[\s\S]*inventoryProvenanceLabel/,
   "Familiar Studio uses the same familiar-scoped live inventory",
 );
 assert.match(
   board,
-  /useRuntimeModelOptions\(modelHarness, currentFamiliar\?\.id \?\? null\)/,
+  /useRuntimeModelInventory\(modelHarness, currentFamiliar\?\.id \?\? null\)[\s\S]*inventoryProvenanceLabel/,
   "task model selection uses the live runtime inventory",
 );
 assert.match(

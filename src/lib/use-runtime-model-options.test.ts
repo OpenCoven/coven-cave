@@ -21,8 +21,13 @@ assert.match(
 );
 assert.match(
   source,
-  /setRuntimeInventory\(\{ key: inventoryKey, models: staticModels, provenance: "fallback" \}\)/,
-  "a failed dynamic request falls back to the safe static seed",
+  /inventoryFailureProvenance\(canonicalRuntime, staticModels\)/,
+  "a failed dynamic request derives truthful fallback, runtime-managed, or unavailable provenance",
+);
+assert.equal(
+  source.includes('staticModels.length > 0) return "fallback"') && source.includes('defaultOwner === "runtime" ? "runtime-managed" : "unavailable"'),
+  true,
+  "empty runtime-owned and unknown inventories never masquerade as a fallback catalog",
 );
 assert.match(
   source,

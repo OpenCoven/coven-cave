@@ -116,7 +116,7 @@ import {
   runtimeOwnsModelDefault,
 } from "@/lib/runtime-models";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import {
@@ -239,6 +239,8 @@ type Props = {
   /** Prompt handed off from the home composer. Auto-sent once on mount so the
    *  send runs through this view's streaming path instead of a detached fetch. */
   initialPrompt?: string;
+  /** Explicit task-card model forwarded through a native Board handoff. */
+  initialModelOverride?: string;
   /** Task work can reserve its conversation id before mounting the bridge.
    * Allow that one first prompt to send into the reserved, otherwise-empty
    * conversation instead of treating it as a resumed thread. */
@@ -1809,7 +1811,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -3044,7 +3046,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const modelHarness = canonicalHarnessId(modelState?.harness ?? familiar.harness ?? "claude");
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete below, which is null outside `/model <arg>` position).
-  const composerModelOptions = useRuntimeModelOptions(modelHarness ?? "claude", familiar.id);
+  const composerModelInventory = useRuntimeModelInventory(modelHarness ?? "claude", familiar.id);
+  const composerModelOptions = composerModelInventory.models;
   const composerRuntimeOwnsDefault = runtimeOwnsModelDefault(modelHarness);
   const composerModelValue =
     modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
@@ -3098,7 +3101,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0
       ? [{
           id: "model",
-          label: "Model",
+          label: `Model · ${inventoryProvenanceLabel(composerModelInventory.provenance, composerModelInventory.loading)}`,
           value: composerModelValue,
           options: [
             ...(composerRuntimeOwnsDefault
@@ -5185,8 +5188,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         [],
         undefined,
         normalized
-          ? { ...normalized, permissionMode, runtimeHost: initialControls?.runtimeHost }
-          : undefined,
+          ? { ...normalized, permissionMode, runtimeHost: initialControls?.runtimeHost, modelOverride: initialModelOverride }
+          : initialModelOverride ? { modelOverride: initialModelOverride } : undefined,
       );
     }, 0);
     return () => window.clearTimeout(timer);

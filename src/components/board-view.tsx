@@ -139,6 +139,7 @@ export function BoardView({
     cardId: string;
     sessionId: string;
     initialPrompt: string;
+    initialModelOverride?: string;
   } | null>(null);
   const pendingWorkFocusIdRef = useRef<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -827,6 +828,7 @@ export function BoardView({
     sessionId: string;
     familiarId: string | null;
     initialPrompt?: string;
+    initialModelOverride?: string;
     bridge?: string;
   } | null> => {
     const card = cards.find((candidate) => candidate.id === id);
@@ -860,6 +862,7 @@ export function BoardView({
         sessionId?: string;
         familiarId?: string | null;
         initialPrompt?: string;
+        initialModelOverride?: string;
         bridge?: string;
       };
       if (!res.ok || !json.ok || !json.sessionId) {
@@ -874,6 +877,7 @@ export function BoardView({
         sessionId: json.sessionId,
         familiarId: json.familiarId ?? null,
         initialPrompt: json.initialPrompt,
+        initialModelOverride: json.initialModelOverride,
         bridge: json.bridge,
       };
     } catch (err) {
@@ -913,7 +917,7 @@ export function BoardView({
     const started = await startTaskChat(id, project?.root);
     if (!started) return;
     if (started.bridge === "native-chat" && started.initialPrompt) {
-      setPendingBridgeStart({ cardId: id, sessionId: started.sessionId, initialPrompt: started.initialPrompt });
+      setPendingBridgeStart({ cardId: id, sessionId: started.sessionId, initialPrompt: started.initialPrompt, initialModelOverride: started.initialModelOverride });
     }
     // Native Chat needs TaskWorkCockpit to hand the first prompt to ChatView.
     // Jumping straight to the mobile session view would discard that one-shot
@@ -1000,6 +1004,11 @@ export function BoardView({
           pendingBridgeStart?.cardId === workCard.id && pendingBridgeStart.sessionId === workCard.sessionId
             ? pendingBridgeStart.initialPrompt
             : null
+        }
+        initialModelOverride={
+          pendingBridgeStart?.cardId === workCard.id && pendingBridgeStart.sessionId === workCard.sessionId
+            ? pendingBridgeStart.initialModelOverride
+            : undefined
         }
         onSlashCommand={onSlashFromChat}
         onOpenOnboarding={onOpenOnboarding}

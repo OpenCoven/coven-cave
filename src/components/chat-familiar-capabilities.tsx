@@ -34,7 +34,7 @@ import { isBindableRuntimeChoice, type AdapterReport } from "@/lib/harness-adapt
 import { consumeFamiliarSettingsPending, type FamiliarSettingsTab } from "@/lib/chat-tab-events";
 import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { listVoiceProviders } from "@/lib/voice/registry";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { relativeTime } from "@/lib/relative-time";
 import { FamiliarSkillsSection } from "@/components/familiar-tab-skills";
 import { FamiliarIdentitySection } from "@/components/familiar-tab-identity";
@@ -125,7 +125,8 @@ function FamiliarIdentityHero({
   // Model select: sourced from the same runtime → provider catalog the chat
   // picker uses; a saved id outside the curated seed stays selectable.
   const effectiveHarness = familiar.harness ?? defaultHarnessId;
-  const runtimeModelOptions = useRuntimeModelOptions(effectiveHarness, familiar.id);
+  const runtimeModelInventory = useRuntimeModelInventory(effectiveHarness, familiar.id);
+  const runtimeModelOptions = runtimeModelInventory.models;
   const modelValue = familiar.model ?? "";
   const modelOptions: StandardSelectOption<string>[] = [
     { value: "", label: "Provider default", detail: "Runtime picks the model" },
@@ -204,7 +205,7 @@ function FamiliarIdentityHero({
             options={runtimeOptions}
           />
           <StandardSelect
-            label="Model"
+            label={`Model · ${inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}`}
             value={modelValue}
             onChange={(v) => void bind({ model: v })}
             options={modelOptions}

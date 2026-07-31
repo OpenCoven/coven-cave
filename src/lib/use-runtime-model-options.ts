@@ -19,6 +19,23 @@ export type RuntimeModelInventoryResult = {
 };
 const DYNAMIC_INVENTORY_RUNTIMES = new Set(["claude", "copilot", "opencode", "grok"]);
 
+export function inventoryFailureProvenance(runtime: string, staticModels: readonly RuntimeModelOption[]): ModelInventoryProvenance {
+  if (staticModels.length > 0) return "fallback";
+  return catalogForRuntime(runtime)?.defaultOwner === "runtime" ? "runtime-managed" : "unavailable";
+}
+
+export function inventoryProvenanceLabel(provenance: ModelInventoryProvenance | null, loading = false): string {
+  if (loading) return "Loading inventory";
+  switch (provenance) {
+    case "live": return "Live inventory";
+    case "cached": return "Cached inventory";
+    case "fallback": return "Fallback inventory";
+    case "runtime-managed": return "Runtime-managed models";
+    case "unavailable": return "Inventory unavailable";
+    default: return "Model inventory";
+  }
+}
+
 /** Static seeds stay synchronous while capable runtimes replace them live. */
 export function useRuntimeModelInventory(
   runtime: string,
@@ -51,12 +68,12 @@ export function useRuntimeModelInventory(
         if (!cancelled && json?.ok && Array.isArray(json.models)) {
           setRuntimeInventory({ key: inventoryKey, models: json.models, provenance: json.provenance ?? "unavailable" });
         } else if (!cancelled) {
-          setRuntimeInventory({ key: inventoryKey, models: staticModels, provenance: "fallback" });
+          setRuntimeInventory({ key: inventoryKey, models: staticModels, provenance: inventoryFailureProvenance(canonicalRuntime, staticModels) });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setRuntimeInventory({ key: inventoryKey, models: staticModels, provenance: "fallback" });
+          setRuntimeInventory({ key: inventoryKey, models: staticModels, provenance: inventoryFailureProvenance(canonicalRuntime, staticModels) });
         }
       });
     return () => { cancelled = true; };

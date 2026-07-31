@@ -32,7 +32,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { StandardSelect } from "@/components/ui/select";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
@@ -1176,7 +1176,8 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   const modelHarness = canonicalHarnessId(
     currentFamiliar?.harness ?? currentFamiliar?.defaultHarness ?? "",
   );
-  const runtimeModelOptions = useRuntimeModelOptions(modelHarness, currentFamiliar?.id ?? null);
+  const runtimeModelInventory = useRuntimeModelInventory(modelHarness, currentFamiliar?.id ?? null);
+  const runtimeModelOptions = runtimeModelInventory.models;
   const [modelCustomMode, setModelCustomMode] = useState(false);
   const [customModelDraft, setCustomModelDraft] = useState(card.modelOverride ?? "");
   const taskModelIsCustom = Boolean(
@@ -1465,7 +1466,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
             </div>
 
             <div className="board-drawer-field">
-              <div className="board-drawer-field-label">Model</div>
+              <div className="board-drawer-field-label">Model · {inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}</div>
               {runtimeModelOptions.length > 0 && !modelCustomMode && !taskModelIsCustom && !hasUnsavedCustomModelDraft ? (
                 <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
                   <span className="board-drawer-project-icon" aria-hidden>

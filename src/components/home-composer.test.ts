@@ -155,7 +155,7 @@ assert.match(
 
 assert.match(
   source,
-  /const runtimeModelOptions = useRuntimeModelOptions\(selectedRuntime, selectedFamiliarId\);/,
+  /const runtimeModelInventory = useRuntimeModelInventory\(selectedRuntime, selectedFamiliarId\);[\s\S]*const runtimeModelOptions = runtimeModelInventory\.models;/,
   "HomeComposer discovers OpenCode models with the selected familiar's scoped credentials",
 );
 

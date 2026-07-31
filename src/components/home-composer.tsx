@@ -54,7 +54,7 @@ import { sortProjectsAlphabetically } from "@/lib/cave-projects-types";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
 import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
@@ -254,7 +254,8 @@ export function HomeComposer({
   const selectedRuntime = canonicalHarnessId(
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",
   );
-  const runtimeModelOptions = useRuntimeModelOptions(selectedRuntime, selectedFamiliarId);
+  const runtimeModelInventory = useRuntimeModelInventory(selectedRuntime, selectedFamiliarId);
+  const runtimeModelOptions = runtimeModelInventory.models;
   const runtimeOwnsDefault = runtimeOwnsModelDefault(selectedRuntime);
   const effectiveModel =
     modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
@@ -1115,7 +1116,7 @@ export function HomeComposer({
               ...(runtimeOwnsDefault || runtimeModelOptions.length > 0
                 ? [{
                     id: "model",
-                    label: "Model",
+                    label: `Model · ${inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}`,
                     value: selectedModelId,
                     options: [
                       ...(runtimeOwnsDefault

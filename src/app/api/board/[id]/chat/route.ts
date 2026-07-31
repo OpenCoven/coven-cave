@@ -281,6 +281,10 @@ export async function POST(
       projectRoot: sessionRoot,
       worktree,
       initialPrompt: buildInitialTaskChatPrompt(card),
+      // Native Chat owns the first launch for local OpenClaw and Copilot.
+      // Carry only the card's validated explicit choice; ChatView sends it as
+      // a session override, which persists the conversation intent on send.
+      ...(taskModelOverride ? { initialModelOverride: taskModelOverride } : {}),
       bridge: "native-chat",
     });
   };
