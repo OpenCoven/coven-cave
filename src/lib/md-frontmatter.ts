@@ -39,6 +39,18 @@ function consumeLineBreak(text: string, index: number): number {
   return index;
 }
 
+function consumeBlankLines(text: string, index: number): number {
+  let cursor = index;
+  while (cursor < text.length) {
+    let lineEnd = cursor;
+    while (lineEnd < text.length && !isLineBreak(text, lineEnd)) lineEnd++;
+    if (text.slice(cursor, lineEnd).trim().length !== 0) break;
+    if (lineEnd === text.length) return lineEnd;
+    cursor = consumeLineBreak(text, lineEnd);
+  }
+  return cursor;
+}
+
 function consumeCompleteComment(text: string, index: number): number | null {
   let cursor = index;
   while (text[cursor] === " " || text[cursor] === "\t") cursor++;
@@ -74,24 +86,11 @@ export function splitLeadingMdComments(body: string): MdLeadingComments {
   let sawComment = false;
 
   while (cursor < body.length) {
-    let lineEnd = cursor;
-    while (lineEnd < body.length && !isLineBreak(body, lineEnd)) lineEnd++;
-
-    const line = body.slice(cursor, lineEnd);
-    if (line.trim().length === 0) {
-      const next = lineEnd < body.length ? consumeLineBreak(body, lineEnd) : lineEnd;
-      if (!sawComment) {
-        const commentEnd = consumeCompleteComment(body, next);
-        if (commentEnd === null) return { hiddenPrefix: "", visibleBody: body };
-      }
-      cursor = next;
-      hiddenEnd = cursor;
-      continue;
-    }
-
-    const commentEnd = consumeCompleteComment(body, cursor);
+    const blankEnd = consumeBlankLines(body, cursor);
+    const commentEnd = consumeCompleteComment(body, blankEnd);
     if (commentEnd === null) {
       if (!sawComment) return { hiddenPrefix: "", visibleBody: body };
+      if (blankEnd > cursor) hiddenEnd = blankEnd;
       break;
     }
 
