@@ -65,11 +65,6 @@ function headingLevel(block: Block): number | null {
   return typeof level === "number" ? level : null;
 }
 
-function isSectionHeading(block: Block): boolean {
-  const level = headingLevel(block);
-  return level !== null && level >= 2 && level <= 6;
-}
-
 function slugPart(value: string): string {
   const ascii = value
     .normalize("NFKD")
@@ -108,11 +103,7 @@ function pushSection(
 }
 
 function findTitleHeadingIndex(blocks: Block[]): number {
-  const firstSectionIndex = blocks.findIndex(isSectionHeading);
-  const titleIndex = blocks.findIndex((block) => headingLevel(block) === 1);
-  if (titleIndex === -1) return -1;
-  if (firstSectionIndex === -1) return titleIndex;
-  return titleIndex < firstSectionIndex ? titleIndex : -1;
+  return blocks.findIndex((block) => headingLevel(block) === 1);
 }
 
 export function parseMarkdownReaderDocument(
