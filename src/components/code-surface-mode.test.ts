@@ -20,12 +20,14 @@ const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url)
 const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const codeView = await readFile(new URL("./code-view.tsx", import.meta.url), "utf8");
+const githubView = await readFile(new URL("./github-view.tsx", import.meta.url), "utf8");
 const lazySurfaces = await readFile(new URL("./lazy-surfaces.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const registerRooms = await readFile(new URL("./role-surfaces/register.tsx", import.meta.url), "utf8");
 const codeRoom = await readFile(new URL("./role-surfaces/code-room.tsx", import.meta.url), "utf8");
+const pendingNavigation = await readFile(new URL("../lib/pending-code-navigation.ts", import.meta.url), "utf8");
 
 // ── Mode vocabulary ──────────────────────────────────────────────────────────
 
@@ -55,6 +57,16 @@ assert.match(
   codeRoom,
   /pendingOpen=\{pendingOpen\}\s+onPendingOpenHandled=\{clearPendingCodeOpen\}/,
   "the room consumes pending file/diff opens from the module store and clears them",
+);
+assert.match(
+  pendingNavigation,
+  /export type PendingCodeNavigation =[\s\S]*kind: "tab"[\s\S]*kind: "github-item"/,
+  "Code navigation has one shared tab/item handoff contract",
+);
+assert.match(
+  codeRoom,
+  /subscribePendingCodeNavigation[\s\S]*getPendingCodeNavigation[\s\S]*navigationRequest=\{pendingNavigation\}[\s\S]*onNavigationHandled=\{acknowledgePendingCodeNavigation\}/,
+  "the room consumes pending GitHub navigation after the role surface mounts",
 );
 
 // ── Workspace wiring ─────────────────────────────────────────────────────────
@@ -152,6 +164,21 @@ assert.match(
   codeView,
   /import\("@\/components\/github-view"\)\.then\(\(m\) => m\.GitHubView\)/,
   "the Code surface mounts GitHubView whole under its GitHub tab",
+);
+assert.match(
+  codeView,
+  /activity: "all"[\s\S]*prs: "pr"[\s\S]*issues: "issue"[\s\S]*reviews: "review_request"/,
+  "Code Workshop preserves the former all feed and each specialized filter",
+);
+assert.match(
+  codeView,
+  /onInitialTargetHandled=\{\(\) => setInitialGithubTarget\(null\)\}/,
+  "CodeView drops the host target after GitHubView captures it",
+);
+assert.match(
+  githubView,
+  /if \(!initialTarget\) return;[\s\S]*setDeepLink\(initialTarget\);[\s\S]*onInitialTargetHandled\?\.\(\)/,
+  "clearing the host prop does not erase GitHubView's local deep-linked detail",
 );
 
 // ── Workbench (Diff | Files | Terminal) ──────────────────────────────────────

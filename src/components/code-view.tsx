@@ -34,6 +34,7 @@ import { CodeNewSession } from "@/components/code-new-session";
 import { GithubOrganizationSettings } from "@/components/settings-github";
 import type { GitHubItemTarget } from "@/lib/github-item-url";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
+import { codeTopTabForGitHubTarget, type PendingCodeNavigation } from "@/lib/pending-code-navigation";
 import type { SessionRow } from "@/lib/types";
 
 // GitHubView keeps its own chunk: CodeView opens far more often than its
@@ -61,13 +62,18 @@ const GITHUB_TAB_META: Record<
   reviews: { label: "Reviews", icon: "ph:check-circle" },
 };
 
+function topTabForNavigation(request: PendingCodeNavigation): CodeTopTab {
+  return request.kind === "github-item"
+    ? codeTopTabForGitHubTarget(request.target)
+    : request.topTab;
+}
+
 export type CodeViewProps = {
   sessions: SessionRow[];
-  /** Landing-tab override for hosts that need a non-session default. */
-  initialTopTab?: CodeTopTab;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard: (cardId: string) => void;
-  githubTarget?: GitHubItemTarget | null;
+  navigationRequest?: PendingCodeNavigation | null;
+  onNavigationHandled?: (nonce: number) => void;
   /** A file/diff open raised anywhere in the app (cave-ohcj): the workspace
    *  routes cave:open-project-file / cave:open-file-diff /
    *  cave:browse-project-files here instead of Chat's code rail. */
@@ -78,10 +84,10 @@ export type CodeViewProps = {
 
 export function CodeView({
   sessions,
-  initialTopTab,
   onJumpToSession,
   onFocusCard,
-  githubTarget,
+  navigationRequest,
+  onNavigationHandled,
   pendingOpen,
   onPendingOpenHandled,
   onTasksRefresh,
@@ -106,8 +112,24 @@ export function CodeView({
     window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
   }, []);
   const [topTab, setTopTab] = useState<CodeTopTab>(
-    githubTarget ? "prs" : deepLink?.topTab ?? initialTopTab ?? "sessions",
+    navigationRequest
+      ? topTabForNavigation(navigationRequest)
+      : deepLink?.topTab ?? "sessions",
   );
+  const [initialGithubTarget, setInitialGithubTarget] = useState<GitHubItemTarget | null>(
+    navigationRequest?.kind === "github-item" ? navigationRequest.target : null,
+  );
+  const handledNavigationNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!navigationRequest) return;
+    if (handledNavigationNonceRef.current === navigationRequest.nonce) return;
+    setTopTab(topTabForNavigation(navigationRequest));
+    setInitialGithubTarget(
+      navigationRequest.kind === "github-item" ? navigationRequest.target : null,
+    );
+    handledNavigationNonceRef.current = navigationRequest.nonce;
+    onNavigationHandled?.(navigationRequest.nonce);
+  }, [navigationRequest, onNavigationHandled]);
   const githubTab: CodeGithubTab | null = isCodeGithubTab(topTab) ? topTab : null;
   // Selection is tri-state for the mobile drill-in: `undefined` = nothing
   // chosen yet (auto-pick allowed), `null` = the user explicitly went Back to
@@ -230,7 +252,8 @@ export function CodeView({
           <LazyGitHubView
             onJumpToSession={onJumpToSession}
             onFocusCard={onFocusCard}
-            initialTarget={githubTarget}
+            initialTarget={initialGithubTarget}
+            onInitialTargetHandled={() => setInitialGithubTarget(null)}
             initialFilter={GITHUB_TAB_FILTER[githubTab]}
             onTasksRefresh={onTasksRefresh}
           />
