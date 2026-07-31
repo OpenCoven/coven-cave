@@ -118,6 +118,16 @@ assert.match(
 );
 assert.match(
   source,
+  /import \{ FamiliarXSection \} from "@\/components\/familiar-x-section"/,
+  "Brain tab should load the familiar-scoped X controls",
+);
+assert.match(
+  source,
+  /<FamiliarAsanaSection familiar=\{familiar\} \/>\s*<FamiliarXSection familiar=\{familiar\} \/>/,
+  "X account and grants should render beside the existing Asana integration",
+);
+assert.match(
+  source,
   /Runtime & model/,
   "Brain tab should group runtime and model controls under a single section",
 );

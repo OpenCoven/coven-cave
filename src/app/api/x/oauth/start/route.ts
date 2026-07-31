@@ -27,3 +27,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "X authorization could not be started" }, { status: 500 });
   }
 }
+
+export async function DELETE(req: Request) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+  xOAuthService.cancel();
+  return NextResponse.json({ ok: true });
+}

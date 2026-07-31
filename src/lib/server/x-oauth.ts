@@ -42,15 +42,24 @@ export type XOAuthStartResult = {
   authorizationUrl: string;
   expiresAt: string;
   requestedScopes: XScope[];
+  flowId: string;
+};
+
+export type XOAuthFlowStatus = {
+  activeFlow: boolean;
+  flowId?: string;
+  outcome?: "pending" | "succeeded" | "failed";
 };
 
 export type XOAuthService = {
   start(input: { capability: XCapability }): Promise<XOAuthStartResult>;
   cancel(): void;
   status(): { activeFlow: boolean };
+  flowStatus(): XOAuthFlowStatus;
 };
 
 type ActiveFlow = {
+  flowId: string;
   state: string;
   verifier: string;
   expiresAt: number;
@@ -120,12 +129,18 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
   const configuredClientId = dependencies.clientId;
   let active: ActiveFlow | null = null;
   let starting = false;
+  let startGeneration = 0;
+  let latestFlow: Omit<XOAuthFlowStatus, "activeFlow"> | null = null;
 
-  function finish(flow: ActiveFlow): void {
+  function finish(
+    flow: ActiveFlow,
+    outcome: "succeeded" | "failed" = "failed",
+  ): void {
     if (flow.closed) return;
     if (active === flow) active = null;
     clearTimeout(flow.expiryTimer);
     flow.closed = true;
+    latestFlow = { flowId: flow.flowId, outcome };
     void Promise.resolve(flow.listener.close()).catch(() => {});
   }
 
@@ -180,6 +195,9 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
         throw new XApiError("invalid-response", "X authorization response is invalid");
       }
       const identity = await account(token.accessToken);
+      if (active !== flow || flow.closed) {
+        throw new XApiError("oauth-expired", "X authorization was cancelled");
+      }
       const bundle: XTokenBundle = {
         accessToken: token.accessToken,
         refreshToken: token.refreshToken,
@@ -188,7 +206,7 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
         account: identity,
       };
       credentials.replaceBundle(bundle);
-      finish(flow);
+      finish(flow, "succeeded");
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       response.end(callbackHtml(true));
     } catch {
@@ -206,8 +224,12 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
       const scopes = requestedScopes(capability);
       const verifier = base64url(randomBytes(32));
       const state = base64url(randomBytes(32));
+      const flowId = createHash("sha256")
+        .update(`coven-x-flow:${state}`)
+        .digest("base64url");
       const expiresAt = now() + FLOW_TTL_MS;
       const challenge = createHash("sha256").update(verifier).digest("base64url");
+      const generation = startGeneration;
       let listener: XOAuthListener;
       starting = true;
       try {
@@ -220,12 +242,17 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
       } finally {
         starting = false;
       }
+      if (generation !== startGeneration) {
+        await Promise.resolve(listener.close()).catch(() => {});
+        throw new XApiError("oauth-expired", "X authorization was cancelled");
+      }
       let flow!: ActiveFlow;
       const expiryTimer = setTimeout(() => {
         if (active === flow) finish(flow);
       }, FLOW_TTL_MS);
       expiryTimer.unref?.();
       flow = {
+        flowId,
         state,
         verifier,
         expiresAt,
@@ -236,6 +263,7 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
         closed: false,
       };
       active = flow;
+      latestFlow = { flowId, outcome: "pending" };
       const authorization = new URL(X_AUTHORIZE_URL);
       authorization.search = new URLSearchParams({
         response_type: "code",
@@ -246,16 +274,30 @@ export function createXOAuthService(dependencies: XOAuthServiceDependencies = {}
         code_challenge: challenge,
         code_challenge_method: "S256",
       }).toString();
-      return { authorizationUrl: authorization.toString(), expiresAt: new Date(expiresAt).toISOString(), requestedScopes: [...scopes] };
+      return {
+        authorizationUrl: authorization.toString(),
+        expiresAt: new Date(expiresAt).toISOString(),
+        requestedScopes: [...scopes],
+        flowId,
+      };
     },
 
     cancel(): void {
+      startGeneration += 1;
       if (active) finish(active);
     },
 
     status(): { activeFlow: boolean } {
       expire();
       return { activeFlow: active !== null };
+    },
+
+    flowStatus(): XOAuthFlowStatus {
+      expire();
+      return {
+        activeFlow: active !== null,
+        ...(latestFlow ?? {}),
+      };
     },
   };
 }

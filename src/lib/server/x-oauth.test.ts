@@ -100,6 +100,12 @@ test("start uses 32-byte PKCE verifier entropy, S256 challenge, fixed redirect, 
   assert.ok(authorization.searchParams.get("state"));
   assert.deepEqual(result.requestedScopes, RESEARCH);
   assert.equal(result.expiresAt, "2026-07-27T12:10:00.000Z");
+  assert.match(result.flowId, /^[A-Za-z0-9_-]{43}$/);
+  assert.deepEqual(oauth.flowStatus(), {
+    activeFlow: true,
+    flowId: result.flowId,
+    outcome: "pending",
+  });
 });
 
 test("only one flow may be active and expiry closes its listener", async () => {
@@ -113,10 +119,52 @@ test("only one flow may be active and expiry closes its listener", async () => {
 
 test("cancelling an active flow closes its listener", async () => {
   const { oauth, listener } = service();
-  await oauth.start({ capability: "research" });
+  const started = await oauth.start({ capability: "research" });
   oauth.cancel();
   assert.deepEqual(oauth.status(), { activeFlow: false });
+  assert.deepEqual(oauth.flowStatus(), {
+    activeFlow: false,
+    flowId: started.flowId,
+    outcome: "failed",
+  });
   assert.equal(listener.closes(), 1);
+});
+
+test("cancelling while listener creation is pending prevents an orphaned flow", async () => {
+  let releaseListener!: () => void;
+  let markListening!: () => void;
+  let closes = 0;
+  const listening = new Promise<void>((resolve) => {
+    markListening = resolve;
+  });
+  const oauth = createXOAuthService({
+    now: () => NOW,
+    randomBytes: (size) => new Uint8Array(size),
+    listen: async () => {
+      markListening();
+      return new Promise((resolve) => {
+        releaseListener = () => resolve({
+          close: () => {
+            closes += 1;
+          },
+        });
+      });
+    },
+    credentialService: credentials(),
+    clientId: "public-client-id",
+  });
+
+  const starting = oauth.start({ capability: "research" });
+  await listening;
+  oauth.cancel();
+  releaseListener();
+
+  await assert.rejects(
+    starting,
+    (error: unknown) => error instanceof XApiError && error.code === "oauth-expired",
+  );
+  assert.deepEqual(oauth.status(), { activeFlow: false });
+  assert.equal(closes, 1);
 });
 
 test("rejects wrong method, path, missing code, and state mismatch without replacing credentials", async () => {
@@ -205,6 +253,36 @@ test("keeps a consumed callback active until its exchange finishes", async () =>
   assert.equal(oauth.status().activeFlow, false);
 });
 
+test("cancelling a consumed callback prevents its late exchange from replacing credentials", async () => {
+  let releaseExchange!: () => void;
+  const { oauth, listener, credentialService } = service({
+    exchangeAuthorizationCode: async () => new Promise((resolve) => {
+      releaseExchange = () => resolve({
+        accessToken: "cancelled-access",
+        refreshToken: "cancelled-refresh",
+        expiresAt: "2026-07-27T13:00:00.000Z",
+        scopes: RESEARCH,
+      });
+    }),
+  });
+  const started = await oauth.start({ capability: "research" });
+  const state = new URL(started.authorizationUrl).searchParams.get("state")!;
+  const callbackResult = response();
+  const callback = listener.callback()({
+    method: "GET",
+    url: `/x/oauth/callback?code=code&state=${state}`,
+  }, callbackResult.response);
+  await Promise.resolve();
+
+  oauth.cancel();
+  releaseExchange();
+  await callback;
+
+  assert.equal(callbackResult.result().status, 400);
+  assert.equal(credentialService.replacements.length, 0);
+  assert.deepEqual(oauth.status(), { activeFlow: false });
+});
+
 test("rejects replay and expired callbacks", async () => {
   const first = service();
   const started = await first.oauth.start({ capability: "research" });
@@ -245,6 +323,11 @@ test("successful callback exchanges, validates account, stores only then, and cl
   assert.equal(done.result().status, 200);
   assert.match(done.result().body, /Return to Cave/);
   assert.equal(oauth.status().activeFlow, false);
+  assert.deepEqual(oauth.flowStatus(), {
+    activeFlow: false,
+    flowId: started.flowId,
+    outcome: "succeeded",
+  });
   assert.equal(listener.closes(), 1);
 });
 

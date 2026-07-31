@@ -22,11 +22,13 @@ export async function GET(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
   const connection = xCredentialService.getConnectionStatus();
+  const oauth = xOAuthService.flowStatus();
   return NextResponse.json({
     configured: configured(),
     connected: connection.connected,
     ...(connection.connected ? { account: connection.account, scopes: connection.scopes, expiry: connection.expiresAt } : {}),
-    activeFlow: xOAuthService.status().activeFlow,
+    activeFlow: oauth.activeFlow,
+    ...(oauth.flowId ? { oauthFlowId: oauth.flowId, oauthOutcome: oauth.outcome } : {}),
   });
 }
 
