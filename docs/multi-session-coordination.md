@@ -224,6 +224,56 @@ between "recovery impossible" and a targeted `lost-found` search — and for
 UNSTAGED edits (which never enter the object store) it is the only record that
 the work existed at all.
 
+## The PR layer: duplicate publication of the same work
+
+Every guard above assumes the collision happens locally — worktree-guard
+blocks destruction, surface-claim-guard warns on co-edited files, and the
+sections above cover duplicate and orphaned *work*. A fourth failure mode
+happens entirely on GitHub, where none of them can see (observed 2026-07-29,
+cave-pimgr):
+
+1. Session A commits on `feat/grant-audit-console` and pushes.
+2. Nine minutes later a different actor opens a PR on that same branch —
+   same commit, same title — and merges it. The repo's auto-delete setting
+   removes the head branch.
+3. Session A's own `gh pr create` now fails with
+   `No commits between main and feat/grant-audit-console`.
+
+Nothing was destroyed and no file was co-edited, so no hook fired. The cost
+came from *misreading the aftermath*: session A interpreted the (correct)
+gh error as branch corruption, "recovered" a branch that needed no recovery,
+and opened a duplicate PR; a second session doing unrelated GC found the
+branch gone and independently wrote "another session deleted work" into its
+summary — which session A then treated as corroboration. Two agents inferring
+destruction from identical ambiguous evidence is not confirmation. Net: a
+false destructive-actor incident report, a duplicate PR, and an hour of
+investigation. Across the preceding 200 PRs, four head refs carried more
+than one PR — rare, not unique.
+
+Two habits kill this failure mode outright:
+
+- **Before `gh pr create`, check whether the branch already has one:**
+  `gh pr list --state all --head <branch>`. If a PR exists — open or merged —
+  report it instead of creating a second. One command ends duplicate
+  publication entirely.
+- **Treat `No commits between main and <branch>` as a SIGNAL, not an
+  error.** It usually means the work is already ON main. Before concluding
+  anything was lost, run
+  `git merge-base --is-ancestor <your-sha> origin/main` — if it answers yes,
+  your commit landed (someone merged it, or a squash carried it) and the
+  branch deletion was routine post-merge cleanup. That single check would
+  have ended the 2026-07-29 incident in seconds.
+
+The corollary for the *reading* side: a vanished branch plus a merged PR
+containing your commit is the signature of **completed publication**, not
+destruction. Check the PR history for the branch before writing
+"another session deleted my work" into any summary — the next session will
+believe you.
+
+A heavier option — a branch-claim mechanism mirroring surface-claim-guard so
+a session can see another owns a pushed branch — remains unbuilt; the two
+habits above have so far been sufficient.
+
 ## Practical recommendations for sessions
 
 Until any of the above is built, sessions should:
@@ -251,6 +301,13 @@ Until any of the above is built, sessions should:
    or any structural change. The worktree itself is a cheap signal —
    `git worktree list` is one of the only places where "Session B is working
    on branch C" is visible to Session A.
+
+6. **Check the PR layer before publishing and before crying destruction.**
+   `gh pr list --state all --head <branch>` before `gh pr create`; and on
+   `No commits between main and <branch>`, run
+   `git merge-base --is-ancestor <sha> origin/main` before concluding
+   anything was lost. See "The PR layer" section above for the incident that
+   made both habits policy.
 
 ## Open questions
 
