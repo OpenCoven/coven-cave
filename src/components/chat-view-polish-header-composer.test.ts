@@ -173,7 +173,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*\.\.\.modelCapabilities\.map\(\(capability\) => \(\{[\s\S]*Prompt guidance[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue[\s\S]*sections:\s*composerResponseSections/,
+  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*`Model · \$\{inventoryProvenanceLabel\([\s\S]*\.\.\.modelCapabilities\.map\(\(capability\) => \(\{[\s\S]*Prompt guidance[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue[\s\S]*sections:\s*composerResponseSections/,
   "the grouped Response section carries Access, Model, and only selected-model capability controls with prompt guidance labelled",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
