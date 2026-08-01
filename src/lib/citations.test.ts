@@ -229,6 +229,20 @@ test("renderCitationReferences enhances split chat spans using definitions from 
   );
 });
 
+test("renderCitationReferences preserves trailing markdown whitespace in split chat spans", () => {
+  const parsed = parseCitations([
+    "The paper introduced the architecture[^paper].",
+    "",
+    '[^paper]: https://arxiv.org/abs/1706.03762 "Attention Is All You Need"',
+  ].join("\n"));
+  const segment = "The paper introduced the architecture[^paper].  \n\n\n";
+
+  assert.equal(
+    renderCitationReferences(segment, parsed),
+    "The paper introduced the architecture[arXiv](#cite-1).  \n\n\n",
+  );
+});
+
 test("parseCitations is a no-op without footnotes and ignores unreferenced defs", () => {
   const plain = "just a normal message with [a link](https://x.example).";
   assert.deepEqual(parseCitations(plain), { body: plain, citations: [], order: new Map() });

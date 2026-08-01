@@ -267,15 +267,15 @@ export function renderCitationReferences(
 ): string {
   if (parsed.citations.length === 0) return text;
   const byNumber = new Map(parsed.citations.map((citation) => [citation.n, citation]));
-  return text
-    .replace(DEF_RE, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trimEnd()
-    .replace(REF_RE, (whole, label: string) => {
-      const n = parsed.order.get(label);
-      const citation = n ? byNumber.get(n) : undefined;
-      return citation ? `[${citationInlineLabel(citation)}](#cite-${n})` : whole;
-    });
+  const withoutDefinitions = text.replace(DEF_RE, "");
+  const body = withoutDefinitions === text
+    ? text
+    : withoutDefinitions.replace(/\n{3,}/g, "\n\n").trimEnd();
+  return body.replace(REF_RE, (whole, label: string) => {
+    const n = parsed.order.get(label);
+    const citation = n ? byNumber.get(n) : undefined;
+    return citation ? `[${citationInlineLabel(citation)}](#cite-${n})` : whole;
+  });
 }
 
 /**
