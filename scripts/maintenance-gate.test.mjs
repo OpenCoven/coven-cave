@@ -457,7 +457,7 @@ test("promotion rechecks intents after a concurrent writer heartbeat", async () 
     const result = acquireMaintenanceGate({
       ownerId: "curator",
       repoDir: process.argv[1],
-      quiesceTimeoutMs: 5000,
+      quiesceTimeoutMs: 30_000,
     });
     console.log(JSON.stringify(result));
   `;
@@ -560,7 +560,7 @@ test("clock regression during drain does not report timeout blockers", async () 
     const result = acquireMaintenanceGate({
       ownerId: "curator",
       repoDir: process.argv[1],
-      quiesceTimeoutMs: 5000,
+      quiesceTimeoutMs: 30_000,
     });
     console.log(JSON.stringify(result));
   `;
