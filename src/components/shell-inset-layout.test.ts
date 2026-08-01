@@ -42,4 +42,22 @@ assert.match(
   "mobile detail should remain full-bleed without desktop card chrome",
 );
 
+// Carried over from sidebar-floating-edge.test.ts, which this file replaced.
+// That test encoded the older "Dia-style floating sidebar edge" contract, which
+// the inset layout deliberately reversed — its central assertion is the exact
+// negation of the doesNotMatch above, so the two could never pass together. Most
+// of it went with the design, but these two claims are orthogonal to whether the
+// sidebar floats or sits flush, still hold, and were covered nowhere else. They
+// are kept so retiring the obsolete file is not a silent loss of coverage.
+assert.match(
+  shellCss,
+  /\.shell-nav \{[\s\S]*?overflow-y: auto;/,
+  "the shared sidebar remains vertically scrollable",
+);
+assert.doesNotMatch(
+  shellCss,
+  /\.shell-nav--rail \{[^}]*?(?:margin|border-radius|box-shadow):/,
+  "collapsed icon rail does not become a second floating card",
+);
+
 console.log("shell-inset-layout.test.ts: ok");
