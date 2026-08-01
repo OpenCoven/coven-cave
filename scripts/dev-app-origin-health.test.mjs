@@ -77,7 +77,8 @@ assert.equal(transientAttempts, 2, "transient readiness succeeds on exactly the 
 
 let nonSuccessAttempts = 0;
 let responseBodyCancelled = false;
-let cancellationObservedBeforeRetry = false;
+let bodyCancellationAwaited = false;
+let cancellationAwaitAssertion = null;
 assert.equal(
   await loopbackOriginResponds({
     port: 3000,
@@ -90,11 +91,25 @@ assert.equal(
           body: {
             cancel() {
               responseBodyCancelled = true;
+              return {
+                then(resolve) {
+                  bodyCancellationAwaited = true;
+                  resolve();
+                },
+              };
             },
           },
         };
       }
-      cancellationObservedBeforeRetry = responseBodyCancelled;
+      try {
+        assert.equal(
+          bodyCancellationAwaited,
+          true,
+          "a non-success response body cancellation is awaited before retrying",
+        );
+      } catch (error) {
+        cancellationAwaitAssertion = error;
+      }
       return new Response(null, { status: 204 });
     },
   }),
@@ -103,10 +118,11 @@ assert.equal(
 );
 assert.equal(nonSuccessAttempts, 2, "non-success readiness succeeds on exactly the second attempt");
 assert.equal(
-  cancellationObservedBeforeRetry,
+  responseBodyCancelled,
   true,
-  "a non-success response body is cancelled before retrying",
+  "a non-success response body is cancelled",
 );
+if (cancellationAwaitAssertion) throw cancellationAwaitAssertion;
 
 const hungSockets = new Set();
 const hung = net.createServer((socket) => {
