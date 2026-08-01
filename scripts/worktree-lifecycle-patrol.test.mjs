@@ -224,6 +224,16 @@ try {
   git(["merge", "-q", "--ff-only", "feat/fast-forward"], repo);
 
   git(["push", "-q", "origin", "main"], repo);
+  writeFileSync(path.join(repo, "after-fast-forward.txt"), "later default work\n");
+  git(["add", "after-fast-forward.txt"], repo);
+  git(["commit", "-q", "-m", "later default work"], repo, {
+    env: {
+      ...process.env,
+      GIT_AUTHOR_DATE: "2026-08-10T21:45:00Z",
+      GIT_COMMITTER_DATE: "2026-08-10T21:45:00Z",
+    },
+  });
+  git(["push", "-q", "origin", "main"], repo);
 
   const detached = path.join(repo, ".worktrees", "detached");
   git(["worktree", "add", "-q", "--detach", detached, "origin/main"], repo);
@@ -452,6 +462,7 @@ try {
     `#!/bin/sh
 DEFAULT_OID=${JSON.stringify(defaultHead)}
 DIRECT_LANDING_OID=${JSON.stringify(directLandingHead)}
+OLD_OID=${JSON.stringify(oldHead)}
 BRANCH_ONLY_OID=${JSON.stringify(branchOnlyHead)}
 
 STALE_OID=${JSON.stringify("a".repeat(defaultHead.length))}
@@ -586,6 +597,91 @@ if [ "\${LIFECYCLE_REMOTE_ABSENCE_STDERR:-0}" = "1" ]; then
     *" ls-remote --exit-code --heads origin refs/heads/feat/old "*)
       printf '%s\\n' 'same-named remote ref absence is untrustworthy' >&2
       exit 2
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_CONTAINMENT_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" branch -r --contains $OLD_OID --format=%(refname:short) "*)
+      PATH=\${PATH#${gitBin}:}
+      export PATH
+      git "$@"
+      STATUS=$?
+      printf '%s\\n' 'remote containment omitted refs' >&2
+      exit "$STATUS"
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_ANCESTOR_TRUE_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" merge-base --is-ancestor $BRANCH_ONLY_OID $DEFAULT_OID "*)
+      PATH=\${PATH#${gitBin}:}
+      export PATH
+      git "$@"
+      STATUS=$?
+      printf '%s\\n' 'ancestor success is untrustworthy' >&2
+      exit "$STATUS"
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_ANCESTOR_FALSE_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" merge-base --is-ancestor $OLD_OID $DEFAULT_OID "*)
+      PATH=\${PATH#${gitBin}:}
+      export PATH
+      git "$@"
+      STATUS=$?
+      printf '%s\\n' 'ancestor absence is untrustworthy' >&2
+      exit "$STATUS"
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_LOCAL_SYMBOLIC_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" symbolic-ref -q refs/heads/feat/old "*)
+      printf '%s\\n' 'refs/heads/main'
+      printf '%s\\n' 'local symbolic-ref success is untrustworthy' >&2
+      exit 0
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_LOCAL_DIRECT_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" symbolic-ref -q refs/heads/feat/old "*)
+      PATH=\${PATH#${gitBin}:}
+      export PATH
+      git "$@"
+      STATUS=$?
+      printf '%s\\n' 'local symbolic-ref absence is untrustworthy' >&2
+      exit "$STATUS"
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_DEFAULT_TRACKING_SYMBOLIC_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" symbolic-ref -q refs/remotes/origin/main "*)
+      printf '%s\\n' 'refs/remotes/origin/other'
+      printf '%s\\n' 'tracking symbolic-ref success is untrustworthy' >&2
+      exit 0
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_DEFAULT_TRACKING_DIRECT_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" symbolic-ref -q refs/remotes/origin/main "*)
+      PATH=\${PATH#${gitBin}:}
+      export PATH
+      git "$@"
+      STATUS=$?
+      printf '%s\\n' 'tracking symbolic-ref absence is untrustworthy' >&2
+      exit "$STATUS"
       ;;
   esac
 fi
@@ -1243,6 +1339,20 @@ elif [ "\${LIFECYCLE_BAD_CLAIMS:-0}" = "1" ]; then
   printf '%s\n' '{"claims":[{}]}'
 elif [ "\${LIFECYCLE_UNKNOWN_CLAIM_STATE:-0}" = "1" ]; then
   printf '%s\n' '{"claims":[{"branch":"feat/old","agent_id":"fixture","state":"actve"}]}'
+elif [ "\${LIFECYCLE_BRANCH_CLAIM:-0}" = "1" ]; then
+  printf '%s\n' '{"claims":[{"branch":"feat/old","agent_id":"branch-owner","state":"active","head":"${"b".repeat(oldHead.length)}"}]}'
+elif [ "\${LIFECYCLE_OID_CLAIM:-0}" = "1" ]; then
+  printf '%s\n' '{"claims":[{"branch":"feat/renamed","agent_id":"oid-owner","state":"active","head":"${oldHead}"}]}'
+elif [ "\${LIFECYCLE_SHORT_ACTIVE_CLAIM_HEAD:-0}" = "1" ]; then
+  printf '%s\n' '{"claims":[{"branch":"feat/old","agent_id":"fixture","state":"active","head":"${oldHead.slice(0, 12)}"}]}'
+elif [ "\${LIFECYCLE_MALFORMED_ACTIVE_CLAIM_HEAD:-0}" = "1" ]; then
+  printf '%s\n' '{"claims":[{"branch":"feat/old","agent_id":"fixture","state":"active","head":"not-an-oid"}]}'
+elif [ "\${LIFECYCLE_MISSING_ACTIVE_CLAIM_HEAD:-0}" = "1" ]; then
+  printf '%s\n' '{"claims":[{"branch":"feat/old","agent_id":"fixture","state":"active"}]}'
+elif [ "\${LIFECYCLE_NULL_ACTIVE_CLAIM_HEAD:-0}" = "1" ]; then
+  printf '%s\n' '{"claims":[{"branch":"feat/old","agent_id":"fixture","state":"active","head":null}]}'
+elif [ "\${LIFECYCLE_EXPIRED_OID_CLAIM:-0}" = "1" ]; then
+  printf '%s\n' '{"claims":[{"branch":"feat/renamed","agent_id":"expired-owner","state":"expired","head":"${oldHead}"}]}'
 else
   printf '%s\n' '{"claims":[]}'
 fi
@@ -1303,6 +1413,13 @@ exit 0
       "LIFECYCLE_DUPLICATE_LOCAL_REF_CONFLICT",
       "LIFECYCLE_REMOTE_SUCCESS_STDERR",
       "LIFECYCLE_REMOTE_ABSENCE_STDERR",
+      "LIFECYCLE_CONTAINMENT_STDERR",
+      "LIFECYCLE_ANCESTOR_TRUE_STDERR",
+      "LIFECYCLE_ANCESTOR_FALSE_STDERR",
+      "LIFECYCLE_LOCAL_SYMBOLIC_STDERR",
+      "LIFECYCLE_LOCAL_DIRECT_STDERR",
+      "LIFECYCLE_DEFAULT_TRACKING_SYMBOLIC_STDERR",
+      "LIFECYCLE_DEFAULT_TRACKING_DIRECT_STDERR",
       "LIFECYCLE_REQUIRE_SAFE_GIT",
       "LIFECYCLE_WORKTREE_INVENTORY_STDERR",
       "LIFECYCLE_REF_INVENTORY_STDERR",
@@ -1575,7 +1692,7 @@ exit 0
 
   verifySafetyRegression("unprovable fast-forward landing time", () => {
     const fastForward = byBranch.get("feat/fast-forward");
-    assert.equal(fastForward.head, defaultHead);
+    assert.notEqual(fastForward.head, defaultHead);
     assert.equal(fastForward.lane, "uncertain");
     assert.notEqual(fastForward.lane, "retire-after-gate");
     assert.match(
@@ -1636,6 +1753,85 @@ exit 0
       assert.equal(warnedRemoteOld.lane, "uncertain");
       assert.equal(warnedRemoteOld.remoteRef, null);
       assert.match(warnedRemoteOld.probeErrors.join("\n"), warning);
+    });
+  }
+
+
+  verifySafetyRegression("exact branch claim ownership", () => {
+    const claimedReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_BRANCH_CLAIM: "1" }),
+    );
+    const claimedOld = claimedReport.items.find((item) => item.branch === "feat/old");
+    assert.equal(claimedOld.lane, "active");
+    assert.deepEqual(claimedOld.claimOwners, ["branch-owner"]);
+  });
+
+  verifySafetyRegression("exact OID claim ownership survives branch rename", () => {
+    const claimedReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_OID_CLAIM: "1" }),
+    );
+    const claimedOld = claimedReport.items.find((item) => item.branch === "feat/old");
+    assert.equal(claimedOld.lane, "active");
+    assert.deepEqual(claimedOld.claimOwners, ["oid-owner"]);
+  });
+
+  for (const environment of [
+    "LIFECYCLE_SHORT_ACTIVE_CLAIM_HEAD",
+    "LIFECYCLE_MALFORMED_ACTIVE_CLAIM_HEAD",
+    "LIFECYCLE_MISSING_ACTIVE_CLAIM_HEAD",
+    "LIFECYCLE_NULL_ACTIVE_CLAIM_HEAD",
+  ]) {
+    verifySafetyRegression(`${environment} fails the claim inventory closed`, () => {
+      const malformedReport = JSON.parse(
+        patrol(["--json"], { [environment]: "1" }),
+      );
+      for (const item of malformedReport.items) {
+        assert.match(
+          item.probeErrors.join("\n"),
+          /Coven claims returned malformed data/,
+          `${environment} is a global claim inventory error`,
+        );
+      }
+      assert.equal(
+        malformedReport.items.find((item) => item.branch === "feat/old").lane,
+        "uncertain",
+      );
+    });
+  }
+
+  verifySafetyRegression("expired exact OID claim does not own a unit", () => {
+    const expiredReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_EXPIRED_OID_CLAIM: "1" }),
+    );
+    const expiredOld = expiredReport.items.find((item) => item.branch === "feat/old");
+    assert.equal(expiredOld.lane, "retire-after-gate");
+    assert.deepEqual(expiredOld.claimOwners, []);
+  });
+
+  for (const [environment, branch, warning] of [
+    ["LIFECYCLE_CONTAINMENT_STDERR", "feat/old", /remote containment omitted refs/],
+    ["LIFECYCLE_ANCESTOR_TRUE_STDERR", "feat/branch-only", /ancestor success is untrustworthy/],
+    ["LIFECYCLE_ANCESTOR_FALSE_STDERR", "feat/old", /ancestor absence is untrustworthy/],
+    ["LIFECYCLE_LOCAL_SYMBOLIC_STDERR", "feat/old", /local symbolic-ref success is untrustworthy/],
+    ["LIFECYCLE_LOCAL_DIRECT_STDERR", "feat/old", /local symbolic-ref absence is untrustworthy/],
+    [
+      "LIFECYCLE_DEFAULT_TRACKING_SYMBOLIC_STDERR",
+      "feat/branch-only",
+      /tracking symbolic-ref success is untrustworthy/,
+    ],
+    [
+      "LIFECYCLE_DEFAULT_TRACKING_DIRECT_STDERR",
+      "feat/branch-only",
+      /tracking symbolic-ref absence is untrustworthy/,
+    ],
+  ]) {
+    verifySafetyRegression(`${environment} rejects status evidence with stderr`, () => {
+      const warnedReport = JSON.parse(
+        patrol(["--json"], { [environment]: "1" }),
+      );
+      const warnedItem = warnedReport.items.find((item) => item.branch === branch);
+      assert.equal(warnedItem.lane, "uncertain");
+      assert.match(warnedItem.probeErrors.join("\n"), warning);
     });
   }
 
