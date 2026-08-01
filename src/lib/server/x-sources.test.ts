@@ -34,7 +34,9 @@ const {
   markXPostAvailability,
   purgeXSourceCache,
   reconcileXSourceMissionAttachments,
+  refreshSavedXSourceFromPost,
   removeSavedXSource,
+  saveCachedXPostAsSource,
   setXSourceMissionAttached,
   sweepExpiredXCache,
   upsertSavedXSource,
@@ -55,6 +57,20 @@ const normalizedPost = (
   createdAt: "2026-07-31T12:00:00.000Z",
   ...overrides,
 });
+
+async function waitForFile(target: string, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await readFile(target, "utf8");
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${path.basename(target)}`);
+}
 
 beforeEach(async () => {
   process.env.COVEN_X_SOURCES_DIR = sourcesDir;
@@ -370,6 +386,157 @@ test("cache entries contain exactly the normalized fields and expire within 24 h
     author: { id: "42", username: "opencoven" },
     createdAt: "2026-07-31T12:00:00.000Z",
   });
+});
+
+test("cached save and deletion serialize without restoring an available source after cache purge", async () => {
+  await cacheNormalizedXPosts([normalizedPost("100")]);
+  let releaseSave!: () => void;
+  const saveCanFinish = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
+  let saveReachedSplitWindow!: () => void;
+  const splitWindowReached = new Promise<void>((resolve) => {
+    saveReachedSplitWindow = resolve;
+  });
+
+  const saving = saveCachedXPostAsSource({
+    familiarId: "nova",
+    postId: "100",
+    originalUrl: "https://twitter.com/OpenCoven/status/100",
+    note: "Primary source",
+    tags: ["research"],
+  }, new Date(), {
+    beforeSourceUpsert: async () => {
+      saveReachedSplitWindow();
+      await saveCanFinish;
+    },
+  });
+  await splitWindowReached;
+
+  let deletionSettled = false;
+  const deleting = markXPostAvailability("100", "deleted").finally(() => {
+    deletionSettled = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(deletionSettled, false, "deletion must wait for the composite cache/source lock");
+
+  releaseSave();
+  await saving;
+  await deleting;
+
+  assert.equal(await getCachedXPost("100"), null);
+  const [source] = await listSavedXSources("nova");
+  assert.equal(source.availability, "deleted");
+});
+
+test("refresh restores the prior cache entry when source persistence fails", async () => {
+  const { source } = await upsertSavedXSource({
+    familiarId: "nova",
+    postId: "100",
+    canonicalUrl: "https://x.com/opencoven/status/100",
+    originalUrl: "https://x.com/opencoven/status/100",
+    note: "Primary source",
+    tags: ["research"],
+  });
+  await cacheNormalizedXPosts([normalizedPost("100", { text: "prior text" })]);
+
+  await assert.rejects(
+    () => refreshSavedXSourceFromPost(
+      "nova",
+      source.id,
+      normalizedPost("100", { text: "refreshed text" }),
+      new Date(),
+      {
+        beforeSourceUpsert: () => {
+          throw new Error("injected source persistence failure");
+        },
+      },
+    ),
+    /injected source persistence failure/,
+  );
+
+  assert.equal((await getCachedXPost("100"))?.text, "prior text");
+  assert.equal((await listSavedXSources("nova"))[0].availability, "available");
+});
+
+test("cross-process refresh and deletion cannot leave an available source without cache", async () => {
+  const { source } = await upsertSavedXSource({
+    familiarId: "nova",
+    postId: "100",
+    canonicalUrl: "https://x.com/opencoven/status/100",
+    originalUrl: "https://x.com/opencoven/status/100",
+    note: "Primary source",
+    tags: ["research"],
+  });
+  await markXPostAvailability("100", "deleted");
+
+  const readyPath = path.join(root, "refresh-race-ready");
+  const releasePath = path.join(root, "refresh-race-release");
+  const loaderUrl = pathToFileURL(path.resolve("scripts/test-alias-register.mjs")).href;
+  const moduleUrl = pathToFileURL(path.resolve("src/lib/server/x-sources.ts")).href;
+  const worker = `
+    const { readFile, writeFile } = await import("node:fs/promises");
+    const sourceModule = await import(${JSON.stringify(moduleUrl)});
+    const post = JSON.parse(process.env.CAVE_TEST_POST);
+    await sourceModule.refreshSavedXSourceFromPost(
+      "nova",
+      process.env.CAVE_TEST_SOURCE_ID,
+      post,
+      new Date(),
+      {
+        beforeSourceUpsert: async () => {
+          await writeFile(process.env.CAVE_TEST_READY_PATH, "ready", "utf8");
+          while (true) {
+            try {
+              await readFile(process.env.CAVE_TEST_RELEASE_PATH, "utf8");
+              break;
+            } catch (error) {
+              if (error?.code !== "ENOENT") throw error;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+        },
+      },
+    );
+  `;
+  const refreshing = execFileAsync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--import", loaderUrl,
+      "--input-type=module",
+      "--eval", worker,
+    ],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        COVEN_X_SOURCES_DIR: sourcesDir,
+        COVEN_X_CACHE_DIR: cacheDir,
+        CAVE_TEST_POST: JSON.stringify(normalizedPost("100")),
+        CAVE_TEST_SOURCE_ID: source.id,
+        CAVE_TEST_READY_PATH: readyPath,
+        CAVE_TEST_RELEASE_PATH: releasePath,
+      },
+      windowsHide: true,
+    },
+  );
+  await waitForFile(readyPath);
+
+  let deletionSettled = false;
+  const deleting = markXPostAvailability("100", "deleted").finally(() => {
+    deletionSettled = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(deletionSettled, false, "cross-process deletion must wait for refresh");
+
+  await writeFile(releasePath, "release", "utf8");
+  await refreshing;
+  await deleting;
+
+  assert.equal(await getCachedXPost("100"), null);
+  const [refreshedSource] = await listSavedXSources("nova");
+  assert.equal(refreshedSource.availability, "deleted");
 });
 
 test("expired cache entries are never returned and are swept from disk", async () => {

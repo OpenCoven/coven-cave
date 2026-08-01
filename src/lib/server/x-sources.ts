@@ -70,6 +70,15 @@ export type UpsertSavedXSourceInput = {
   tags: string[];
 };
 
+export type SaveCachedXPostAsSourceInput = Omit<
+  UpsertSavedXSourceInput,
+  "canonicalUrl"
+>;
+
+export type XSourceCompositeHooks = {
+  beforeSourceUpsert?: () => void | Promise<void>;
+};
+
 const MAX_NOTE_CHARS = 2_000;
 const MAX_TAGS = 25;
 const MAX_TAG_CHARS = 64;
@@ -120,6 +129,12 @@ function assertFamiliarId(familiarId: string): void {
 function assertPostId(postId: string): void {
   if (!POST_ID.test(postId)) {
     throw new XApiError("invalid-request", "X post id is invalid");
+  }
+}
+
+function assertSourceId(sourceId: string): void {
+  if (typeof sourceId !== "string" || sourceId.length === 0 || sourceId.length > 128) {
+    throw new XApiError("invalid-request", "Saved X source id is invalid");
   }
 }
 
@@ -480,6 +495,15 @@ function withCacheLock<T>(operation: () => Promise<T>): Promise<T> {
   return withTransactionLock(cacheRoot(), "X cache", operation);
 }
 
+function withCacheSourceMutationLock<T>(
+  familiarId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return withCacheLock(
+    () => withSourceMutationLock(familiarId, operation),
+  );
+}
+
 function validatedInput(input: UpsertSavedXSourceInput): UpsertSavedXSourceInput {
   assertFamiliarId(input.familiarId);
   assertPostId(input.postId);
@@ -509,48 +533,55 @@ export async function upsertSavedXSource(
   rawInput: UpsertSavedXSourceInput,
 ): Promise<{ source: SavedXSource; created: boolean }> {
   const input = validatedInput(rawInput);
-  return withSourceMutationLock(input.familiarId, async () => {
-    const file = await loadSourcesFile(input.familiarId);
-    const existingIndex = file.sources.findIndex((source) => source.postId === input.postId);
-    const now = new Date().toISOString();
-    if (existingIndex >= 0) {
-      const existing = file.sources[existingIndex];
-      const source: SavedXSource = {
-        ...existing,
-        canonicalUrl: input.canonicalUrl,
-        originalUrl: input.originalUrl,
-        note: input.note,
-        tags: input.tags,
-        updatedAt: now,
-        availability: "available",
-      };
-      file.sources[existingIndex] = source;
-      await saveSourcesFile(input.familiarId, file);
-      return { source, created: false };
-    }
-    if (file.sources.length >= MAX_SOURCES_PER_FAMILIAR) {
-      throw new XApiError(
-        "invalid-request",
-        "This familiar has reached the 500 saved X source limit",
-      );
-    }
+  return withSourceMutationLock(
+    input.familiarId,
+    () => upsertSavedXSourceUnlocked(input),
+  );
+}
+
+async function upsertSavedXSourceUnlocked(
+  input: UpsertSavedXSourceInput,
+): Promise<{ source: SavedXSource; created: boolean }> {
+  const file = await loadSourcesFile(input.familiarId);
+  const existingIndex = file.sources.findIndex((source) => source.postId === input.postId);
+  const now = new Date().toISOString();
+  if (existingIndex >= 0) {
+    const existing = file.sources[existingIndex];
     const source: SavedXSource = {
-      id: randomUUID(),
-      familiarId: input.familiarId,
-      postId: input.postId,
+      ...existing,
       canonicalUrl: input.canonicalUrl,
       originalUrl: input.originalUrl,
       note: input.note,
       tags: input.tags,
-      addedAt: now,
       updatedAt: now,
-      attachedMissionIds: [],
       availability: "available",
     };
-    file.sources.unshift(source);
+    file.sources[existingIndex] = source;
     await saveSourcesFile(input.familiarId, file);
-    return { source, created: true };
-  });
+    return { source, created: false };
+  }
+  if (file.sources.length >= MAX_SOURCES_PER_FAMILIAR) {
+    throw new XApiError(
+      "invalid-request",
+      "This familiar has reached the 500 saved X source limit",
+    );
+  }
+  const source: SavedXSource = {
+    id: randomUUID(),
+    familiarId: input.familiarId,
+    postId: input.postId,
+    canonicalUrl: input.canonicalUrl,
+    originalUrl: input.originalUrl,
+    note: input.note,
+    tags: input.tags,
+    addedAt: now,
+    updatedAt: now,
+    attachedMissionIds: [],
+    availability: "available",
+  };
+  file.sources.unshift(source);
+  await saveSourcesFile(input.familiarId, file);
+  return { source, created: true };
 }
 
 export async function removeSavedXSource(
@@ -625,16 +656,16 @@ export async function reconcileXSourceMissionAttachments(
   });
 }
 
-export async function cacheNormalizedXPosts(
+function normalizedCacheEntries(
   posts: NormalizedXPost[],
-  now: Date = new Date(),
-): Promise<void> {
+  now: Date,
+): XPostCacheEntry[] {
   if (!Number.isFinite(now.getTime())) {
     throw new XApiError("invalid-request", "X cache time is invalid");
   }
   const fetchedAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + CACHE_TTL_MS).toISOString();
-  const entries = posts.map((post): XPostCacheEntry => {
+  return posts.map((post): XPostCacheEntry => {
     assertPostId(post.id);
     if (!isCanonicalXPostUrlForId(post.canonicalUrl, post.id)
       || typeof post.text !== "string"
@@ -654,15 +685,60 @@ export async function cacheNormalizedXPosts(
       expiresAt,
     };
   });
+}
+
+async function writeCacheEntriesUnlocked(entries: XPostCacheEntry[]): Promise<void> {
+  await ensureRealDirectory(cacheRoot());
+  for (const entry of entries) {
+    await assertRegularFileOrMissing(cachePath(entry.postId));
+    await writeJsonAtomic(
+      /* turbopackIgnore: true */ cachePath(entry.postId),
+      entry,
+    );
+  }
+}
+
+function normalizedPostFromCacheEntry(entry: XPostCacheEntry): NormalizedXPost {
+  return {
+    id: entry.postId,
+    canonicalUrl: entry.canonicalUrl,
+    text: entry.text,
+    author: {
+      id: entry.authorId,
+      username: entry.authorUsername,
+    },
+    createdAt: entry.createdAt,
+  };
+}
+
+async function getCachedXPostUnlocked(
+  postId: string,
+  now: Date,
+): Promise<NormalizedXPost | null> {
+  const entry = await loadLiveCacheEntryUnlocked(postId, now);
+  return entry ? normalizedPostFromCacheEntry(entry) : null;
+}
+
+async function loadLiveCacheEntryUnlocked(
+  postId: string,
+  now: Date,
+): Promise<XPostCacheEntry | null> {
+  const entry = await loadCacheEntry(postId);
+  if (!entry) return null;
+  if (Date.parse(entry.expiresAt) <= now.getTime()) {
+    await removeCacheEntry(postId);
+    return null;
+  }
+  return entry;
+}
+
+export async function cacheNormalizedXPosts(
+  posts: NormalizedXPost[],
+  now: Date = new Date(),
+): Promise<void> {
+  const entries = normalizedCacheEntries(posts, now);
   await withCacheLock(async () => {
-    await ensureRealDirectory(cacheRoot());
-    for (const entry of entries) {
-      await assertRegularFileOrMissing(cachePath(entry.postId));
-      await writeJsonAtomic(
-        /* turbopackIgnore: true */ cachePath(entry.postId),
-        entry,
-      );
-    }
+    await writeCacheEntriesUnlocked(entries);
   });
 }
 
@@ -674,23 +750,85 @@ export async function getCachedXPost(
   if (!Number.isFinite(now.getTime())) {
     throw new XApiError("invalid-request", "X cache time is invalid");
   }
-  return withCacheLock(async () => {
-    const entry = await loadCacheEntry(postId);
-    if (!entry) return null;
-    if (Date.parse(entry.expiresAt) <= now.getTime()) {
-      await removeCacheEntry(postId);
-      return null;
+  return withCacheLock(
+    () => getCachedXPostUnlocked(postId, now),
+  );
+}
+
+export async function saveCachedXPostAsSource(
+  rawInput: SaveCachedXPostAsSourceInput,
+  now: Date = new Date(),
+  hooks: XSourceCompositeHooks = {},
+): Promise<{ source: SavedXSource; created: boolean }> {
+  assertFamiliarId(rawInput.familiarId);
+  assertPostId(rawInput.postId);
+  if (!Number.isFinite(now.getTime())) {
+    throw new XApiError("invalid-request", "X cache time is invalid");
+  }
+  return withCacheSourceMutationLock(rawInput.familiarId, async () => {
+    const cached = await getCachedXPostUnlocked(rawInput.postId, now);
+    if (!cached) {
+      throw new XApiError(
+        "not-found",
+        "Look up or search for this X post before saving it",
+      );
     }
-    return {
-      id: entry.postId,
-      canonicalUrl: entry.canonicalUrl,
-      text: entry.text,
-      author: {
-        id: entry.authorId,
-        username: entry.authorUsername,
-      },
-      createdAt: entry.createdAt,
-    };
+    const input = validatedInput({
+      ...rawInput,
+      canonicalUrl: cached.canonicalUrl,
+    });
+    await hooks.beforeSourceUpsert?.();
+    return upsertSavedXSourceUnlocked(input);
+  });
+}
+
+export async function refreshSavedXSourceFromPost(
+  familiarId: string,
+  sourceId: string,
+  post: NormalizedXPost,
+  now: Date = new Date(),
+  hooks: XSourceCompositeHooks = {},
+): Promise<{ source: SavedXSource; created: false }> {
+  assertFamiliarId(familiarId);
+  assertSourceId(sourceId);
+  const [entry] = normalizedCacheEntries([post], now);
+  return withCacheSourceMutationLock(familiarId, async () => {
+    const file = await loadSourcesFile(familiarId);
+    const source = file.sources.find((candidate) => candidate.id === sourceId);
+    if (!source) {
+      throw new XApiError("not-found", "Saved X source was not found");
+    }
+    if (source.postId !== post.id) {
+      throw new XApiError("invalid-request", "Refreshed X post does not match saved source");
+    }
+    const previousCacheEntry = await loadLiveCacheEntryUnlocked(post.id, now);
+    await writeCacheEntriesUnlocked([entry]);
+    try {
+      await hooks.beforeSourceUpsert?.();
+      const result = await upsertSavedXSourceUnlocked(validatedInput({
+        familiarId,
+        postId: source.postId,
+        canonicalUrl: post.canonicalUrl,
+        originalUrl: source.originalUrl,
+        note: source.note,
+        tags: source.tags,
+      }));
+      return { source: result.source, created: false };
+    } catch (error) {
+      try {
+        if (previousCacheEntry) {
+          await writeCacheEntriesUnlocked([previousCacheEntry]);
+        } else {
+          await removeCacheEntry(post.id);
+        }
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          "X source refresh failed and cache rollback was incomplete",
+        );
+      }
+      throw error;
+    }
   });
 }
 

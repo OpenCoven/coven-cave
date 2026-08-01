@@ -256,7 +256,8 @@ function sourceDependencies(overrides: Record<string, unknown> = {}) {
     requireResearch: async () => {},
     listSources: async () => [savedSource],
     getCachedPost: async () => post(),
-    upsertSource: async () => ({ source: savedSource, created: true }),
+    saveCachedSource: async () => ({ source: savedSource, created: true }),
+    refreshSource: async () => ({ source: savedSource, created: false as const }),
     removeSource: async () => true,
     markAvailability: async () => {},
     reconcileAttachments: async () => [savedSource],
@@ -270,7 +271,6 @@ function sourceDependencies(overrides: Record<string, unknown> = {}) {
       operation: (token: string) => Promise<NormalizedXPost>,
     ) => operation("access-token"),
     lookupPost: async () => post(),
-    cachePosts: async () => {},
     errorResponse: safeError,
     ...overrides,
   };
@@ -287,7 +287,7 @@ test("sources save is bounded, requires a cached normalized post, and persists i
       note: "Primary source",
       tags: ["research"],
     }),
-    upsertSource: async (input: Record<string, unknown>) => {
+    saveCachedSource: async (input: Record<string, unknown>) => {
       upsertInput = input;
       return { source: savedSource, created: true };
     },
@@ -298,7 +298,6 @@ test("sources save is bounded, requires a cached normalized post, and persists i
   assert.deepEqual(upsertInput, {
     familiarId: "nova",
     postId: "100",
-    canonicalUrl: "https://x.com/opencoven/status/100",
     originalUrl: "https://twitter.com/OpenCoven/status/100",
     note: "Primary source",
     tags: ["research"],
@@ -420,6 +419,64 @@ test("a source-store failure after mission attach is explicit and GET reconcilia
   assert.deepEqual(body.sources[0].attachedMissionIds, ["mission-one"]);
 });
 
+test("attach then GET reconciles a runner-preserved same-URL mission source id", async () => {
+  const mission = {
+    id: "mission-one",
+    familiarId: "nova",
+    sources: [{
+      id: "pre-existing-source",
+      url: savedSource.canonicalUrl,
+    }],
+  };
+  let attachedMissionIds: string[] = [];
+  let reconcileInput: ReadonlyMap<string, readonly string[]> | undefined;
+  const handlers = createXSourcesHandlers(sourceDependencies({
+    readJsonBody: parsedBody({
+      action: "attach",
+      familiarId: "nova",
+      sourceId: savedSource.id,
+      missionId: mission.id,
+    }),
+    listSources: async () => [{ ...savedSource, attachedMissionIds }],
+    loadMission: async () => mission,
+    makeRunner: () => ({
+      act: async (_missionId: string, input: {
+        source?: { url?: string };
+      }) => {
+        assert.equal(input.source?.url, savedSource.canonicalUrl);
+        return mission;
+      },
+    }),
+    setMissionAttached: async (_familiarId: string, _sourceId: string, missionId: string) => {
+      attachedMissionIds = [missionId];
+    },
+    listMissions: async () => [mission],
+    reconcileAttachments: async (
+      _familiarId: string,
+      attachments: ReadonlyMap<string, readonly string[]>,
+    ) => {
+      reconcileInput = attachments;
+      attachedMissionIds = [...(attachments.get(savedSource.id) ?? [])];
+      return [{ ...savedSource, attachedMissionIds }];
+    },
+  }));
+
+  const attachResponse = await handlers.POST(jsonRequest("/api/x/sources", {}));
+  assert.equal(attachResponse.status, 200);
+  const getResponse = await handlers.GET(
+    new Request("http://127.0.0.1/api/x/sources?familiarId=nova"),
+  );
+  assert.equal(getResponse.status, 200);
+  assert.deepEqual(
+    reconcileInput && [...reconcileInput],
+    [[savedSource.id, [mission.id]]],
+  );
+  const body = await getResponse.json() as {
+    sources: Array<{ attachedMissionIds: string[] }>;
+  };
+  assert.deepEqual(body.sources[0].attachedMissionIds, [mission.id]);
+});
+
 test("sources attach hides cross-familiar missions and does not invoke the runner", async () => {
   let acts = 0;
   const handlers = createXSourcesHandlers(sourceDependencies({
@@ -466,18 +523,15 @@ test("sources refresh uses the read helper, caches success, and restores availab
       calls.push("lookup");
       return refreshed;
     },
-    cachePosts: async () => {
-      calls.push("cache");
-    },
-    upsertSource: async () => {
-      calls.push("upsert");
-      return { source: savedSource, created: false };
+    refreshSource: async () => {
+      calls.push("persist");
+      return { source: savedSource, created: false as const };
     },
   }));
 
   const response = await handlers.POST(jsonRequest("/api/x/sources", {}));
   assert.equal(response.status, 200);
-  assert.deepEqual(calls, ["read", "lookup", "cache", "upsert"]);
+  assert.deepEqual(calls, ["read", "lookup", "persist"]);
 });
 
 test("sources refresh 404 purges cache and marks durable availability", async () => {

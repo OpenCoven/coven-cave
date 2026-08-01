@@ -16,17 +16,17 @@ import {
   loadResearchMission,
 } from "@/lib/server/research-mission-store";
 import {
-  cacheNormalizedXPosts,
   getCachedXPost,
   listSavedXSources,
   markXPostAvailability,
   reconcileXSourceMissionAttachments,
+  refreshSavedXSourceFromPost,
   removeSavedXSource,
+  saveCachedXPostAsSource,
   setXSourceMissionAttached,
   sweepExpiredXCache,
-  upsertSavedXSource,
   type SavedXSource,
-  type UpsertSavedXSourceInput,
+  type SaveCachedXPostAsSourceInput,
 } from "@/lib/server/x-sources";
 import {
   requireXCapability,
@@ -49,7 +49,7 @@ const READ_SCOPES: XScope[] = ["tweet.read", "users.read"];
 type MissionLedger = {
   id: string;
   familiarId: string;
-  sources: Array<{ id: string }>;
+  sources: Array<{ id: string; url?: string }>;
 };
 
 type SourcesDependencies = {
@@ -59,7 +59,14 @@ type SourcesDependencies = {
   requireResearch(familiarId: string): Promise<void>;
   listSources(familiarId: string): Promise<SavedXSource[]>;
   getCachedPost(postId: string): Promise<NormalizedXPost | null>;
-  upsertSource(input: UpsertSavedXSourceInput): Promise<{ source: SavedXSource; created: boolean }>;
+  saveCachedSource(
+    input: SaveCachedXPostAsSourceInput,
+  ): Promise<{ source: SavedXSource; created: boolean }>;
+  refreshSource(
+    familiarId: string,
+    sourceId: string,
+    post: NormalizedXPost,
+  ): Promise<{ source: SavedXSource; created: false }>;
   removeSource(familiarId: string, sourceId: string): Promise<boolean>;
   markAvailability(postId: string, availability: "deleted"): Promise<void>;
   reconcileAttachments(
@@ -78,7 +85,6 @@ type SourcesDependencies = {
     operation: (accessToken: string) => Promise<NormalizedXPost>,
   ): Promise<NormalizedXPost>;
   lookupPost(accessToken: string, postId: string): Promise<NormalizedXPost>;
-  cachePosts(posts: NormalizedXPost[]): Promise<void>;
   errorResponse(error: unknown): Response;
 };
 
@@ -188,15 +194,30 @@ export function createXSourcesHandlers(dependencies: SourcesDependencies) {
       if (familiarValues.length !== 1) invalidRequest("Familiar id is invalid");
       const scopedFamiliarId = familiarId(familiarValues[0]);
       await dependencies.requireResearch(scopedFamiliarId);
+      const savedSources = await dependencies.listSources(scopedFamiliarId);
+      const savedIds = new Set(savedSources.map((source) => source.id));
+      const savedIdsByCanonicalUrl = new Map<string, string | null>();
+      for (const source of savedSources) {
+        savedIdsByCanonicalUrl.set(
+          source.canonicalUrl,
+          savedIdsByCanonicalUrl.has(source.canonicalUrl) ? null : source.id,
+        );
+      }
       const missions = (await dependencies.listMissions()).filter(
         (mission) => mission.familiarId === scopedFamiliarId,
       );
       const attachments = new Map<string, string[]>();
       for (const mission of missions) {
         for (const source of mission.sources) {
-          const missionIds = attachments.get(source.id) ?? [];
+          const matchedSourceId = savedIds.has(source.id)
+            ? source.id
+            : typeof source.url === "string"
+              ? savedIdsByCanonicalUrl.get(source.url)
+              : undefined;
+          if (!matchedSourceId) continue;
+          const missionIds = attachments.get(matchedSourceId) ?? [];
           if (!missionIds.includes(mission.id)) missionIds.push(mission.id);
-          attachments.set(source.id, missionIds);
+          attachments.set(matchedSourceId, missionIds);
         }
       }
       const sources = await dependencies.reconcileAttachments(scopedFamiliarId, attachments);
@@ -228,17 +249,9 @@ export function createXSourcesHandlers(dependencies: SourcesDependencies) {
         const scopedNote = note(parsed.body.note);
         const scopedTags = tags(parsed.body.tags);
         await dependencies.requireResearch(scopedFamiliarId);
-        const preview = await dependencies.getCachedPost(scopedPostId);
-        if (!preview) {
-          throw new XApiError(
-            "not-found",
-            "Look up or search for this X post before saving it",
-          );
-        }
-        const result = await dependencies.upsertSource({
+        const result = await dependencies.saveCachedSource({
           familiarId: scopedFamiliarId,
           postId: scopedPostId,
-          canonicalUrl: preview.canonicalUrl,
           originalUrl: scopedOriginalUrl,
           note: scopedNote,
           tags: scopedTags,
@@ -300,15 +313,11 @@ export function createXSourcesHandlers(dependencies: SourcesDependencies) {
         ).catch((error: unknown) => (
           markDeletedOnNotFound(error, source.postId, dependencies)
         ));
-        await dependencies.cachePosts([refreshed]);
-        const result = await dependencies.upsertSource({
-          familiarId: scopedFamiliarId,
-          postId: source.postId,
-          canonicalUrl: refreshed.canonicalUrl,
-          originalUrl: source.originalUrl,
-          note: source.note,
-          tags: source.tags,
-        });
+        const result = await dependencies.refreshSource(
+          scopedFamiliarId,
+          scopedSourceId,
+          refreshed,
+        );
         return NextResponse.json({ ok: true, source: result.source, post: refreshed });
       }
 
@@ -349,7 +358,8 @@ const handlers = createXSourcesHandlers({
   requireResearch: (familiarId) => requireXCapability(familiarId, "research"),
   listSources: listSavedXSources,
   getCachedPost: getCachedXPost,
-  upsertSource: upsertSavedXSource,
+  saveCachedSource: saveCachedXPostAsSource,
+  refreshSource: refreshSavedXSourceFromPost,
   removeSource: removeSavedXSource,
   markAvailability: (postId, availability) => markXPostAvailability(postId, availability),
   reconcileAttachments: reconcileXSourceMissionAttachments,
@@ -366,7 +376,6 @@ const handlers = createXSourcesHandlers({
     withXAuthenticatedRead(familiarId, scopes, operation)
   ),
   lookupPost: lookupXPost,
-  cachePosts: cacheNormalizedXPosts,
   errorResponse: toXErrorResponse,
 });
 
