@@ -1120,6 +1120,7 @@ export const SUITES = {
     "src/lib/hermes-shim.test.ts",
     "src/lib/hermes-responses-stream.test.ts",
     "src/lib/hermes-api-settings.test.ts",
+    "src/lib/thread-instruments-visibility.test.ts",
     "src/lib/openclaw-bin.test.ts",
     "src/lib/openclaw-bridge.test.ts",
     "src/lib/openclaw-gateway.test.ts",
