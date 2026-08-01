@@ -247,9 +247,29 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /hermesDirect && !hermesApi[\s\S]*?Hermes tool activity unavailable[\s\S]*?HERMES_API_URL/,
-  "the CLI fallback must disclose that structured tool activity is unavailable and how to enable it",
+  /hermesDirect && !hermesApi[\s\S]*?"Hermes tool activity unavailable[^"]*",\s*"notice",\s*"Configure valid HERMES_API_URL/,
+  "the CLI fallback must disclose that structured tool activity is unavailable and how to enable it — as an informational notice, not an error: the turn itself runs fine and only its tool bubbles are missing",
 );
+
+// Every runtime that degrades to text-only chat reports the same fact, so they
+// must report it at the same severity. A degradation row styled as an error
+// paints a red step and an "N issues" count onto a turn that never failed.
+for (const [id, label] of [
+  ["hermes-tool-activity", "Hermes"],
+  ["claude-runtime-compatibility", "Claude"],
+  ["opencode-compatibility", "OpenCode"],
+  ["grok-compatibility", "Grok Build"],
+  ["codex-compatibility", "Codex"],
+] as const) {
+  const call = new RegExp(`pushProgress\\(\\s*"${id}",[\\s\\S]{0,400}?\\)\\;`);
+  const match = call.exec(chatRoute);
+  assert.ok(match, `${label}'s tool-activity diagnostic must still be emitted`);
+  assert.equal(
+    /"error"/.test(match[0]),
+    false,
+    `${label}'s tool-activity degradation must be informational, not an error`,
+  );
+}
 
 assert.match(
   chatRoute,
