@@ -238,6 +238,9 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
   const [loading, setLoading] = useState(true);
   const [savingGrant, setSavingGrant] = useState<XGrant | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const disconnectingRef = useRef(false);
+  const disconnectGenerationRef = useRef(0);
+  const oauthAttemptGenerationRef = useRef(0);
   const [cancellingActiveFlow, setCancellingActiveFlow] = useState(false);
   const [startingOAuth, setStartingOAuth] = useState(false);
   const [oauthAttempt, setOauthAttempt] = useState<OAuthAttempt | null>(null);
@@ -376,6 +379,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
   }, [reloadConnection]);
 
   const saveGrant = useCallback(async (grant: XGrant, enabled: boolean) => {
+    if (disconnectingRef.current) return false;
     const familiarId = familiar.id;
     const generation = familiarGenerationRef.current;
     const isCurrent = () =>
@@ -443,7 +447,8 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
     grant: XGrant | null,
   ) => {
     if (
-      pendingOAuthRef.current
+      disconnectingRef.current
+      || pendingOAuthRef.current
       || activeOAuthReservationRef.current
       || connection?.activeFlow
     ) return;
@@ -509,6 +514,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
         return;
       }
       const authorizationUrl = result.authorizationUrl;
+      oauthAttemptGenerationRef.current += 1;
       const opened = await openSystemBrowser(authorizationUrl, reservation);
       if (!ownsPending()) {
         await cancelPending();
@@ -522,6 +528,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       };
       pendingOAuthRef.current = null;
       handedOffToPolling = true;
+      oauthAttemptGenerationRef.current += 1;
       setOauthAttempt({
         capability,
         grant,
@@ -701,27 +708,42 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
   }
 
   async function disconnect() {
-    if (disconnecting) return;
+    if (disconnectingRef.current) return;
+    const disconnectGeneration = ++disconnectGenerationRef.current;
+    const oauthAttemptGeneration = oauthAttemptGenerationRef.current;
+    const ownsDisconnect = () =>
+      mountedRef.current
+      && disconnectGenerationRef.current === disconnectGeneration;
+    const canApplyResult = () =>
+      ownsDisconnect()
+      && oauthAttemptGenerationRef.current === oauthAttemptGeneration;
+    disconnectingRef.current = true;
     setDisconnecting(true);
     setError(null);
     try {
       const response = await fetch("/api/x/connection", { method: "DELETE" });
       if (!response.ok) throw new Error("Couldn't disconnect X.");
+      if (!canApplyResult()) return;
       setOauthAttempt(null);
       setConnection({ configured: true, connected: false, activeFlow: false });
       announce("X disconnected.");
     } catch (disconnectError) {
+      if (!canApplyResult()) return;
       const message = (disconnectError as Error).message;
       setError(message);
       announce(message, "assertive");
     } finally {
-      setDisconnecting(false);
+      if (ownsDisconnect()) {
+        disconnectingRef.current = false;
+        setDisconnecting(false);
+      }
     }
   }
 
   async function cancelInheritedFlow() {
     if (
-      cancellingActiveFlow
+      disconnectingRef.current
+      || cancellingActiveFlow
       || !connection
       || !connection.activeFlow
       || !connection.oauthFlowId
@@ -756,7 +778,8 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
   const busy = savingGrant !== null
     || startingOAuth
     || oauthAttempt !== null
-    || cancellingActiveFlow;
+    || cancellingActiveFlow
+    || disconnecting;
   const ownsConnectionFlow = oauthAttempt !== null
     && connection?.oauthFlowId === oauthAttempt.flowId;
   const inheritedActiveFlow = connection?.activeFlow === true
@@ -803,6 +826,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
               className="focus-ring"
               aria-label="Cancel connection attempt"
               loading={cancellingActiveFlow}
+              disabled={busy}
               onClick={() => void cancelInheritedFlow()}
             >
               Cancel connection attempt

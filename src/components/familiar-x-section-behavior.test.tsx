@@ -772,6 +772,399 @@ describe("FamiliarXSection async ownership", () => {
     expect(connectionDeletes).toEqual([]);
   });
 
+  test("disconnecting disables reconnect and both grants and their handlers cannot start OAuth or patch config", async () => {
+    const disconnectRequest = deferred<ReturnType<typeof jsonResponse>>();
+    let oauthStarts = 0;
+    let configPatches = 0;
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: true,
+          activeFlow: false,
+          account: { id: "42", username: "cave", name: "Cave" },
+          scopes: ["tweet.read", "users.read", "offline.access"],
+        });
+      }
+      if (url === "/api/x/connection" && init?.method === "DELETE") {
+        return disconnectRequest.promise;
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        oauthStarts += 1;
+        return jsonResponse({ ok: false }, false);
+      }
+      if (url === "/api/config" && init?.method === "PATCH") {
+        configPatches += 1;
+        return jsonResponse({ ok: true });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FamiliarXSection familiar={familiarA} />);
+    });
+    const disconnect = renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Disconnect"),
+    );
+
+    await act(async () => {
+      disconnect.props.onClick();
+      await Promise.resolve();
+    });
+
+    const reconnect = renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Reconnect"),
+    );
+    const research = button(renderer, "Allow X research for A");
+    const publishing = button(renderer, "Allow X publishing for A");
+    expect(reconnect.props.disabled).toBe(true);
+    expect(research.props.disabled).toBe(true);
+    expect(publishing.props.disabled).toBe(true);
+
+    await act(async () => {
+      reconnect.props.onClick();
+      research.props.onClick();
+      publishing.props.onClick();
+      await Promise.resolve();
+    });
+
+    expect(oauthStarts).toBe(0);
+    expect(configPatches).toBe(0);
+
+    await act(async () => {
+      disconnectRequest.resolve(jsonResponse({ ok: true }));
+      await disconnectRequest.promise;
+      await Promise.resolve();
+    });
+  });
+
+  test("disconnecting disables inherited-flow cancellation and its handler cannot cancel the flow", async () => {
+    const inheritedFlowId = "D".repeat(43);
+    const disconnectRequest = deferred<ReturnType<typeof jsonResponse>>();
+    let flowCancellations = 0;
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: true,
+          activeFlow: true,
+          oauthFlowId: inheritedFlowId,
+          oauthOutcome: "pending",
+          account: { id: "42", username: "cave", name: "Cave" },
+          scopes: ["tweet.read", "users.read", "offline.access"],
+        });
+      }
+      if (url === "/api/x/connection" && init?.method === "DELETE") {
+        return disconnectRequest.promise;
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        flowCancellations += 1;
+        return jsonResponse({ ok: true, cancelled: true });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FamiliarXSection familiar={familiarA} />);
+    });
+    const disconnect = renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Disconnect"),
+    );
+
+    await act(async () => {
+      disconnect.props.onClick();
+      await Promise.resolve();
+    });
+
+    const cancel = button(renderer, "Cancel connection attempt");
+    expect(cancel.props.disabled).toBe(true);
+    await act(async () => {
+      cancel.props.onClick();
+      await Promise.resolve();
+    });
+    expect(flowCancellations).toBe(0);
+
+    await act(async () => {
+      disconnectRequest.resolve(jsonResponse({ ok: true }));
+      await disconnectRequest.promise;
+      await Promise.resolve();
+    });
+  });
+
+  test("disconnect completion cannot clear a newer OAuth attempt that finishes starting after it", async () => {
+    const oauthStart = deferred<ReturnType<typeof jsonResponse>>();
+    const browserOpen = deferred<{ ok: true }>();
+    const disconnectRequest = deferred<ReturnType<typeof jsonResponse>>();
+    let flowId = "";
+    browserMocks.open.mockReturnValue(browserOpen.promise);
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: true,
+          activeFlow: flowId.length > 0,
+          oauthFlowId: flowId || undefined,
+          oauthOutcome: flowId ? "pending" : undefined,
+          account: { id: "42", username: "cave", name: "Cave" },
+          scopes: ["tweet.read", "users.read", "offline.access"],
+        });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        flowId = (JSON.parse(init.body as string) as { flowId: string }).flowId;
+        return oauthStart.promise;
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        return jsonResponse({ ok: true });
+      }
+      if (url === "/api/x/connection" && init?.method === "DELETE") {
+        return disconnectRequest.promise;
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FamiliarXSection familiar={familiarA} />);
+    });
+    const reconnect = renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Reconnect"),
+    );
+    const disconnect = renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Disconnect"),
+    );
+
+    await act(async () => {
+      reconnect.props.onClick();
+      disconnect.props.onClick();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      oauthStart.resolve(jsonResponse({
+        ok: true,
+        flowId,
+        authorizationUrl: "https://x.com/i/oauth2/authorize",
+      }));
+      await oauthStart.promise;
+      await Promise.resolve();
+    });
+    await act(async () => {
+      disconnectRequest.resolve(jsonResponse({ ok: true }));
+      await disconnectRequest.promise;
+      await Promise.resolve();
+    });
+    await act(async () => {
+      browserOpen.resolve({ ok: true });
+      await browserOpen.promise;
+      await Promise.resolve();
+    });
+
+    expect(JSON.stringify(renderer.toJSON())).toContain("Waiting for authorization");
+    expect(
+      renderer.root.findByProps({
+        className: "familiar-x-section__account-name",
+      }).children.join(""),
+    ).toBe("Cave · @cave");
+    expect(announce).not.toHaveBeenCalledWith("X disconnected.");
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  test("disconnect failure cannot surface over a newer OAuth attempt that finishes starting after it", async () => {
+    const oauthStart = deferred<ReturnType<typeof jsonResponse>>();
+    const browserOpen = deferred<{ ok: true }>();
+    const disconnectRequest = deferred<ReturnType<typeof jsonResponse>>();
+    let flowId = "";
+    browserMocks.open.mockReturnValue(browserOpen.promise);
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: true,
+          activeFlow: flowId.length > 0,
+          oauthFlowId: flowId || undefined,
+          oauthOutcome: flowId ? "pending" : undefined,
+          account: { id: "42", username: "cave", name: "Cave" },
+          scopes: ["tweet.read", "users.read", "offline.access"],
+        });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        flowId = (JSON.parse(init.body as string) as { flowId: string }).flowId;
+        return oauthStart.promise;
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        return jsonResponse({ ok: true });
+      }
+      if (url === "/api/x/connection" && init?.method === "DELETE") {
+        return disconnectRequest.promise;
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FamiliarXSection familiar={familiarA} />);
+    });
+    const reconnect = renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Reconnect"),
+    );
+    const disconnect = renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Disconnect"),
+    );
+
+    await act(async () => {
+      reconnect.props.onClick();
+      disconnect.props.onClick();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      oauthStart.resolve(jsonResponse({
+        ok: true,
+        flowId,
+        authorizationUrl: "https://x.com/i/oauth2/authorize",
+      }));
+      await oauthStart.promise;
+      await Promise.resolve();
+    });
+    await act(async () => {
+      disconnectRequest.resolve(jsonResponse({ ok: false }, false));
+      await disconnectRequest.promise;
+      await Promise.resolve();
+    });
+    await act(async () => {
+      browserOpen.resolve({ ok: true });
+      await browserOpen.promise;
+      await Promise.resolve();
+    });
+
+    expect(JSON.stringify(renderer.toJSON())).toContain("Waiting for authorization");
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("Couldn't disconnect X.");
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  test("disconnect started during browser handoff cannot clear the OAuth attempt committed afterward", async () => {
+    const browserOpen = deferred<{ ok: true }>();
+    const disconnectRequest = deferred<ReturnType<typeof jsonResponse>>();
+    let flowId = "";
+    browserMocks.open.mockReturnValue(browserOpen.promise);
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: true,
+          activeFlow: flowId.length > 0,
+          oauthFlowId: flowId || undefined,
+          oauthOutcome: flowId ? "pending" : undefined,
+          account: { id: "42", username: "cave", name: "Cave" },
+          scopes: ["tweet.read", "users.read", "offline.access"],
+        });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        flowId = (JSON.parse(init.body as string) as { flowId: string }).flowId;
+        return jsonResponse({
+          ok: true,
+          flowId,
+          authorizationUrl: "https://x.com/i/oauth2/authorize",
+        });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        return jsonResponse({ ok: true });
+      }
+      if (url === "/api/x/connection" && init?.method === "DELETE") {
+        return disconnectRequest.promise;
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FamiliarXSection familiar={familiarA} />);
+    });
+    const reconnect = renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Reconnect"),
+    );
+    const disconnect = renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Disconnect"),
+    );
+
+    await act(async () => {
+      reconnect.props.onClick();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      disconnect.props.onClick();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      browserOpen.resolve({ ok: true });
+      await browserOpen.promise;
+      await Promise.resolve();
+    });
+    await act(async () => {
+      disconnectRequest.resolve(jsonResponse({ ok: true }));
+      await disconnectRequest.promise;
+      await Promise.resolve();
+    });
+
+    expect(JSON.stringify(renderer.toJSON())).toContain("Waiting for authorization");
+    expect(announce).not.toHaveBeenCalledWith("X disconnected.");
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  test("a successful global disconnect still updates connection state after switching familiars", async () => {
+    const disconnectRequest = deferred<ReturnType<typeof jsonResponse>>();
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: true,
+          activeFlow: false,
+          account: { id: "42", username: "cave", name: "Cave" },
+          scopes: ["tweet.read", "users.read", "offline.access"],
+        });
+      }
+      if (url === "/api/x/connection" && init?.method === "DELETE") {
+        return disconnectRequest.promise;
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FamiliarXSection familiar={familiarA} />);
+    });
+    const disconnect = renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Disconnect"),
+    );
+
+    await act(async () => {
+      disconnect.props.onClick();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      renderer.update(<FamiliarXSection familiar={familiarB} />);
+    });
+    await act(async () => {
+      disconnectRequest.resolve(jsonResponse({ ok: true }));
+      await disconnectRequest.promise;
+      await Promise.resolve();
+    });
+
+    expect(renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Connect X"),
+    )).toBeDefined();
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("Cave · @cave");
+  });
+
   test("an inherited-flow cancellation from the old familiar cannot surface an error on the new familiar", async () => {
     const inheritedFlowId = "S".repeat(43);
     const cancellation = deferred<ReturnType<typeof jsonResponse>>();

@@ -39,6 +39,16 @@ assert.match(
 );
 assert.match(source, /disconnectConfirm\.trigger/);
 assert.match(source, /Really disconnect X\?/);
+assert.match(
+  source,
+  /const busy =[\s\S]{0,180}\|\| disconnecting/,
+  "disconnecting interlocks every connection and grant control",
+);
+assert.match(
+  source,
+  /disconnectGenerationRef[\s\S]{0,800}oauthAttemptGenerationRef/,
+  "disconnect completion is correlated against both its request and OAuth generation",
+);
 
 assert.match(
   source,
