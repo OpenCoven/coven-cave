@@ -1932,8 +1932,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // still expose the previous render between a picker action and its PATCH.
   const modelStateRef = useRef<ChatModelState | null>(null);
   const [usagePlan, setUsagePlan] = useState<ChatUsagePlanSnapshot | null>(null);
-  // "Save as default" (Chat.dc.html 2b): pins the current project + model so a
-  // brand-new chat stops inferring them from the most recent chat. Read once —
+  // "Save as default" (Chat.dc.html 2b): pins the current project so a
+  // brand-new chat stops inferring it from the most recent chat. Project only —
+  // see chat-new-session-defaults for why model is deferred (cave-x0k78). Read once —
   // the value only matters at session start, and re-reading would fight a
   // picker the user is actively using.
   const [savedDefaults, setSavedDefaults] = useState(() =>
@@ -2142,23 +2143,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   const currentNewSessionDefaults = {
     projectId: resolvedProjectId === NO_PROJECT_ID ? null : resolvedProjectId,
-    model:
-      modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
-        ? modelState.effectiveModel
-        : familiar.model ?? null,
   };
   const defaultsAlreadySaved = newSessionDefaultsMatch(savedDefaults, currentNewSessionDefaults);
   const saveNewSessionDefaults = useCallback(() => {
-    const next = {
-      projectId: resolvedProjectId === NO_PROJECT_ID ? null : resolvedProjectId,
-      model:
-        modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
-          ? modelState.effectiveModel
-          : familiar.model ?? null,
-    };
+    const next = { projectId: resolvedProjectId === NO_PROJECT_ID ? null : resolvedProjectId };
     writeNewSessionDefaults(typeof window === "undefined" ? null : window.localStorage, next);
     setSavedDefaults(next);
-  }, [resolvedProjectId, modelState?.effectiveModel, familiar.model]);
+  }, [resolvedProjectId]);
 
   // A registered project's worktree keeps its checkout root for execution
   // while the parent project remains the visible, authorized selection.

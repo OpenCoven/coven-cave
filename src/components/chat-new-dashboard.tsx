@@ -148,8 +148,8 @@ export function ChatNewDashboard({
    *  there is exactly one draft, one project/model/branch selection and one
    *  enhance flow — a second composer would fork all of them. */
   composer?: ReactNode;
-  /** Pins the current project + model as the new-session default (2b's "Save
-   *  as default"). Absent when the surface has nothing to pin. */
+  /** Pins the current project as the new-session default (2b's "Save as
+   *  default"). Absent when the surface has nothing to pin. */
   onSaveDefaults?: () => void;
   /** True when the saved default already matches the current selection — the
    *  control reports state instead of inviting a no-op click. */
@@ -377,8 +377,8 @@ export function ChatNewDashboard({
                     disabled={defaultsSaved}
                     title={
                       defaultsSaved
-                        ? "New sessions already start with this project and model"
-                        : "Start new sessions with this project and model"
+                        ? "New sessions already start in this project"
+                        : "Start new sessions in this project"
                     }
                   >
                     <Icon name="ph:sliders-horizontal" width={12} height={12} aria-hidden />

@@ -26,10 +26,20 @@ function storage(seed = {}) {
 }
 const KEY = "cave:chat:new-session-defaults:v1";
 
+// The record is project-only on purpose: a `model` field that nothing consumed
+// would make the button's promise decorative (caught in review on #4194).
+// Deferred to cave-x0k78 — the model subsystem has override-scope semantics a
+// persisted default has to choose between.
+test("the stored record carries the project and nothing it cannot honour", () => {
+  const s = storage();
+  writeNewSessionDefaults(s, { projectId: "p1" });
+  assert.deepEqual(JSON.parse(s.getItem(KEY)), { projectId: "p1" }, "no unconsumed fields");
+});
+
 test("round-trips a saved selection", () => {
   const s = storage();
-  writeNewSessionDefaults(s, { projectId: "p1", model: "sonnet-5" });
-  assert.deepEqual(readNewSessionDefaults(s), { projectId: "p1", model: "sonnet-5" });
+  writeNewSessionDefaults(s, { projectId: "p1" });
+  assert.deepEqual(readNewSessionDefaults(s), { projectId: "p1" });
 });
 
 test("no storage, absent key and corrupt JSON all mean 'no opinion'", () => {
@@ -42,30 +52,29 @@ test("no storage, absent key and corrupt JSON all mean 'no opinion'", () => {
 
 test("a default naming something that no longer exists is dropped, not honoured", () => {
   const s = storage();
-  writeNewSessionDefaults(s, { projectId: "deleted", model: "retired" });
-  const read = readNewSessionDefaults(s, { projectIds: ["p1"], models: ["sonnet-5"] });
+  writeNewSessionDefaults(s, { projectId: "deleted" });
+  const read = readNewSessionDefaults(s, { projectIds: ["p1"] });
   assert.equal(read.projectId, null, "a deleted project falls back to inference");
-  assert.equal(read.model, null, "a retired model falls back to the familiar's own");
   // Unvalidated reads (no known lists) still return the raw value.
   assert.equal(readNewSessionDefaults(s).projectId, "deleted");
 });
 
 test("writes survive a storage that throws (private mode / quota)", () => {
   const hostile = { setItem: () => { throw new Error("quota"); } };
-  assert.doesNotThrow(() => writeNewSessionDefaults(hostile, { projectId: "p1", model: null }));
+  assert.doesNotThrow(() => writeNewSessionDefaults(hostile, { projectId: "p1" }));
 });
 
 test("match reports when saving would be a no-op", () => {
-  const saved = { projectId: "p1", model: "sonnet-5" };
-  assert.equal(newSessionDefaultsMatch(saved, { projectId: "p1", model: "sonnet-5" }), true);
-  assert.equal(newSessionDefaultsMatch(saved, { projectId: "p2", model: "sonnet-5" }), false);
+  const saved = { projectId: "p1" };
+  assert.equal(newSessionDefaultsMatch(saved, { projectId: "p1" }), true);
+  assert.equal(newSessionDefaultsMatch(saved, { projectId: "p2" }), false);
   // undefined and null are the same "unset" to the caller.
-  assert.equal(newSessionDefaultsMatch({ projectId: null, model: null }, {}), true);
+  assert.equal(newSessionDefaultsMatch({ projectId: null }, {}), true);
 });
 
 test("clear removes the key entirely rather than writing nulls", () => {
   const s = storage();
-  writeNewSessionDefaults(s, { projectId: "p1", model: null });
+  writeNewSessionDefaults(s, { projectId: "p1" });
   clearNewSessionDefaults(s);
   assert.equal(s._map.has(KEY), false);
 });
