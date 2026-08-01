@@ -278,6 +278,21 @@ assert.deepEqual(
   "shortening shifts only tools at or after the corrected suffix",
 );
 
+const substantialShortening = new ToolCallTracker(() => 1_000);
+substantialShortening.envelopeToolUse("before-boundary", "read", undefined, 6);
+substantialShortening.envelopeToolUse("at-boundary", "write", undefined, 7);
+substantialShortening.envelopeToolUse("after-boundary", "bash", undefined, 12);
+substantialShortening.rebaseTextOffsets(7, -100);
+assert.deepEqual(
+  substantialShortening.snapshot().map((event) => [event.id, event.textOffset]),
+  [
+    ["before-boundary", 6],
+    ["at-boundary", 7],
+    ["after-boundary", 7],
+  ],
+  "substantial shortening keeps prefix tools fixed, clamps corrected-suffix tools at the boundary, and preserves insertion order",
+);
+
 const duplicateFinal = new ToolCallTracker(() => 1_000);
 duplicateFinal.envelopeToolUse("duplicate-final", "read", undefined, 4);
 assert.equal(

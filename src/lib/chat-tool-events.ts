@@ -401,7 +401,7 @@ export class ToolCallTracker {
     if (!delta) return;
     for (const [id, event] of this.recorded) {
       if (event.textOffset !== undefined && event.textOffset >= after) {
-        this.recorded.set(id, { ...event, textOffset: Math.max(0, event.textOffset + delta) });
+        this.recorded.set(id, { ...event, textOffset: Math.max(after, event.textOffset + delta) });
       }
     }
   }

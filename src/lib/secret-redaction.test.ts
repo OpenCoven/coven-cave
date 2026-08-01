@@ -50,8 +50,23 @@ assert.equal(
 );
 assert.equal(
   redactSecretText('OPENAI_API_KEY="example-openai-key-value"'),
-  `OPENAI_API_KEY="${REDACTED_SECRET}"`,
-  "quoted assignment values retain their quote syntax",
+  `OPENAI_API_KEY=${REDACTED_SECRET}`,
+  "quoted assignment values are replaced as one complete value",
+);
+assert.equal(
+  redactSecretText('GOOGLE_CREDENTIALS="{\\"private_key\\":\\"short-private-secret\\"}"'),
+  `GOOGLE_CREDENTIALS=${REDACTED_SECRET}`,
+  "escaped quotes in a double-quoted assignment do not leave secret fragments behind",
+);
+assert.equal(
+  redactSecretText('GOOGLE_CREDENTIALS="{\\"type\\": \\"service_account\\", \\"private_key\\": \\"short private secret\\"}" && echo done'),
+  `GOOGLE_CREDENTIALS=${REDACTED_SECRET} && echo done`,
+  "spaces and commas inside quoted JSON are consumed while trailing shell text is preserved",
+);
+assert.equal(
+  redactSecretText("CLIENT_SECRET='escaped \\'quote\\', path \\\\ value' ; echo done"),
+  `CLIENT_SECRET=${REDACTED_SECRET} ; echo done`,
+  "single-quoted escaped content is consumed through its actual closing quote",
 );
 assert.equal(
   redactSecretText("env NPM_TOKEN=npm_example-token-123456789 npm publish"),
