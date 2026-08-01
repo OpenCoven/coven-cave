@@ -187,7 +187,16 @@ function createGitFixture() {
   const repo = realpathSync(repoEntry);
 
   git(["init", "-q", "-b", "main"], repo);
-  git(["init", "-q", "--bare", "-b", "main"], origin);
+  // `-b main` on the bare origin too, not just the work repo above. Without it
+  // the origin's HEAD follows whatever init.defaultBranch the host has, and this
+  // fixture only ever pushes `main`. On a runner that still defaults to `master`,
+  // origin/HEAD names a branch that does not exist, so
+  // `git ls-remote --symref origin HEAD` does not return the symref+oid pair the
+  // default-branch probe requires — it reports "malformed origin HEAD symref
+  // data" and every candidate falls into the `uncertain` lane. That is precisely
+  // how this file passed on macOS and failed on Linux CI. A fixture has to pin
+  // its own default branch rather than inherit the host's.
+  git(["init", "-q", "-b", "main", "--bare"], origin);
   git(["config", "user.name", "Cave Test"], repo);
   git(["config", "user.email", "cave@example.invalid"], repo);
   git(["config", "commit.gpgsign", "false"], repo);
@@ -1161,7 +1170,17 @@ process.stdout.write(JSON.stringify(output) + "\\n");
       }),
     );
     const item = findItem(inventory.items, `refs/heads/${branch}`);
-    assert.equal(item.lane, "retire-after-gate");
+    // Carry the classifier's own reasons into the failure. This assertion fails
+    // on Linux CI with lane "uncertain" while passing on macOS, and the bare
+    // equality told us nothing about which probe went unavailable — the lane is
+    // uncertain for several distinct causes (probe errors, missing metadata,
+    // unavailable branch/worktree recency). Without this, diagnosing it costs a
+    // CI round trip per guess.
+    assert.equal(
+      item.lane,
+      "retire-after-gate",
+      `lane was ${item.lane}; reasons: ${JSON.stringify(item.reasons)}`,
+    );
 
     writeFileSync(path.join(worktreePath, "README.md"), "dirty\n");
 
@@ -1358,7 +1377,17 @@ process.stdout.write(JSON.stringify(output) + "\\n");
       }),
     );
     const item = findItem(inventory.items, `refs/heads/${branch}`);
-    assert.equal(item.lane, "retire-after-gate");
+    // Carry the classifier's own reasons into the failure. This assertion fails
+    // on Linux CI with lane "uncertain" while passing on macOS, and the bare
+    // equality told us nothing about which probe went unavailable — the lane is
+    // uncertain for several distinct causes (probe errors, missing metadata,
+    // unavailable branch/worktree recency). Without this, diagnosing it costs a
+    // CI round trip per guess.
+    assert.equal(
+      item.lane,
+      "retire-after-gate",
+      `lane was ${item.lane}; reasons: ${JSON.stringify(item.reasons)}`,
+    );
     assert.deepEqual(item.ignoredPaths, [".next/"]);
 
     const operations = createGitRetirementOperations({

@@ -42,7 +42,9 @@ function repoWithWorktree({ push = false, dirty = false } = {}) {
   sh("git", ["add", "."], dir);
   sh("git", ["commit", "-q", "-m", "init"], dir);
   const bare = mkdtempSync(path.join(tmpdir(), "wt-guard-origin-"));
-  sh("git", ["init", "-q", "--bare", bare], bare);
+  // `-b main` so the bare origin's HEAD does not follow the host's
+  // init.defaultBranch; this fixture pushes `main` and nothing else.
+  sh("git", ["init", "-q", "-b", "main", "--bare", bare], bare);
   sh("git", ["remote", "add", "origin", bare], dir);
   sh("git", ["push", "-q", "-u", "origin", "main"], dir);
   const wt = path.join(dir, ".worktrees", "feature-x");
@@ -202,7 +204,7 @@ if (!isWin) {
   let last = "";
   for (const n of ["r1", "r2", "r3", "r4", "r5"]) {
     last = mkdtempSync(path.join(tmpdir(), `wt-guard-${n}-`));
-    sh("git", ["init", "-q", "--bare", last], last);
+    sh("git", ["init", "-q", "-b", "main", "--bare", last], last);
     sh("git", ["-C", dir, "remote", "add", n, last], dir);
   }
   sh("git", ["-C", wt, "tag", "-a", "archive/last-remote", "-m", "a"], dir);

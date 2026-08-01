@@ -53,7 +53,11 @@ try {
   mkdirSync(gitBin);
 
   git(["init", "-q", "-b", "main"], repo);
-  git(["init", "-q", "--bare"], origin);
+  // `-b main` on the bare origin too — same class of bug as the create and
+  // retirement fixtures. The origin's HEAD otherwise follows the host's
+  // init.defaultBranch while this fixture only pushes `main`, so on a host still
+  // defaulting to `master` origin/HEAD names a branch that never exists.
+  git(["init", "-q", "-b", "main", "--bare"], origin);
   git(["config", "user.name", "Cave Test"], repo);
   git(["config", "user.email", "cave@example.invalid"], repo);
   git(["config", "commit.gpgsign", "false"], repo);
