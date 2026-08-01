@@ -1560,7 +1560,7 @@ git commit -S -m "docs: integrate branch lifecycle patrol"
 **Files:**
 - No new files
 
-- [ ] **Step 1: Run all lifecycle and gate tests together**
+- [x] **Step 1: Run all lifecycle and gate tests together**
 
 Run:
 
@@ -1574,7 +1574,7 @@ node scripts/maintenance-gate.test.mjs
 
 Expected: five `: ok` lines.
 
-- [ ] **Step 2: Run type checking**
+- [x] **Step 2: Run type checking**
 
 Run:
 
@@ -1584,7 +1584,7 @@ pnpm typecheck
 
 Expected: exit 0 with no TypeScript errors.
 
-- [ ] **Step 3: Run test wiring**
+- [x] **Step 3: Run test wiring**
 
 Run:
 
@@ -1594,7 +1594,7 @@ pnpm check:tests-wired
 
 Expected: all test files are wired into CI.
 
-- [ ] **Step 4: Run the relevant app suite**
+- [x] **Step 4: Run the relevant app suite**
 
 Run:
 
@@ -1605,12 +1605,12 @@ pnpm test:app
 Expected: all app tests pass, including lifecycle, maintenance gate, patrol,
 and retirement fixtures.
 
-- [ ] **Step 5: Prove the real checkout remains read-only**
+- [x] **Step 5: Prove the real checkout remains read-only**
 
 Run:
 
 ```bash
-pnpm beads:worktrees:json > /tmp/cave-ox3ky-worktrees.json
+pnpm --silent beads:worktrees:json > /tmp/cave-ox3ky-worktrees.json
 jq -e '.ok == true and (.items | type == "array") and (.budgets | type == "object")' /tmp/cave-ox3ky-worktrees.json
 git status --short
 ```
@@ -1622,13 +1622,13 @@ temporary output:
 rm /tmp/cave-ox3ky-worktrees.json
 ```
 
-- [ ] **Step 6: Prove production apply is disabled**
+- [x] **Step 6: Prove production apply is disabled**
 
 Run:
 
 ```bash
 set +e
-pnpm beads:worktrees:apply -- --json > /tmp/cave-ox3ky-apply.json
+pnpm --silent beads:worktrees:apply -- --json > /tmp/cave-ox3ky-apply.json
 status=$?
 set -e
 test "$status" -eq 2
@@ -1638,7 +1638,7 @@ rm /tmp/cave-ox3ky-apply.json
 
 Expected: all checks exit 0 and no branch or worktree is changed.
 
-- [ ] **Step 7: Record verification and the activation dependency**
+- [x] **Step 7: Record verification and the activation dependency**
 
 Run:
 
@@ -1646,7 +1646,7 @@ Run:
 bd update cave-ox3ky --append-notes "Foundation verification passed: lifecycle unit, patrol, retirement, and maintenance-gate tests; typecheck; test wiring; app suite; real report-only patrol. Production apply remains correctly disabled pending cave-wqa0b.2, cave-wqa0b.3, and cave-wqa0b.4."
 ```
 
-- [ ] **Step 8: Commit any verification-only corrections**
+- [x] **Step 8: Commit any verification-only corrections**
 
 If verification required tracked corrections, commit only those files:
 
