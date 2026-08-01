@@ -115,4 +115,3 @@ assert.doesNotMatch(
   /function headroom\([\s\S]{0,400}?failed = true/,
   "headroom() reports without failing the build",
 );
-
