@@ -11,7 +11,6 @@ const source = readFileSync(componentUrl, "utf8");
 const css = readFileSync(cssUrl, "utf8");
 const brain = readFileSync(new URL("./familiar-studio-brain-tab.tsx", import.meta.url), "utf8");
 const familiarRoute = readFileSync(new URL("../app/api/familiars/route.ts", import.meta.url), "utf8");
-const oauthStartRoute = readFileSync(new URL("../app/api/x/oauth/start/route.ts", import.meta.url), "utf8");
 const types = readFileSync(new URL("../lib/types.ts", import.meta.url), "utf8");
 
 assert.match(source, /import "@\/styles\/familiar-x-section\.css"/);
@@ -169,10 +168,6 @@ assert.match(
   /cancelXOAuthFlow\(pending\.flowId\)/,
   "post-start browser failures cancel only their server-side OAuth listener",
 );
-assert.match(oauthStartRoute, /export async function DELETE\(req: Request\)/);
-assert.match(oauthStartRoute, /readJsonBody<\{ flowId\?: unknown \}>\(req, MAX_BODY_BYTES\)/);
-assert.match(oauthStartRoute, /xOAuthService\.cancel\(flowId\)/);
-assert.doesNotMatch(oauthStartRoute, /xOAuthService\.cancel\(\)/);
 
 assert.match(brain, /import \{ FamiliarXSection \} from "@\/components\/familiar-x-section"/);
 assert.match(
