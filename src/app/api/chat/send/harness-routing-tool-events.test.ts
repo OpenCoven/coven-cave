@@ -59,13 +59,18 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /if \(event\.replace\) \{[\s\S]*?gatewayAssistantText = event\.text;[\s\S]*?kind: "assistant_replace"/,
-  "a published Gateway replacement delta corrects both the live stream and persisted transcript",
+  /if \(event\.replace\) \{\s*const previousTextLength = gatewayAssistantText\.length;\s*gatewayToolTracker\.rebaseTextOffsets\(\s*0,\s*event\.text\.length - previousTextLength,\s*\);\s*gatewayAssistantText = event\.text;[\s\S]*?kind: "assistant_replace"/,
+  "a published Gateway replacement delta rebases tool positions before correcting the live stream and persisted transcript",
 );
 assert.match(
   chatRoute,
-  /event\.kind === "final" && event\.text[\s\S]*?gatewayAssistantText !== event\.text[\s\S]*?kind: "assistant_replace"/,
-  "the terminal Gateway message reconciles divergent streamed text for connected clients",
+  /event\.kind === "final" && event\.text\) \{\s*if \(gatewayAssistantText !== event\.text\) \{\s*const previousTextLength = gatewayAssistantText\.length;\s*gatewayToolTracker\.rebaseTextOffsets\(\s*0,\s*event\.text\.length - previousTextLength,\s*\);\s*if \(gatewayAssistantTextEmitted\) \{[\s\S]*?kind: "assistant_replace"[\s\S]*?\}\s*\}\s*gatewayAssistantText = event\.text;/,
+  "a divergent terminal Gateway message rebases tool positions before assigning persisted text and only replaces an emitted stream",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /if \(gatewayAssistantTextEmitted && gatewayAssistantText !== event\.text\)/,
+  "final offset rebasing must depend on text divergence, while live replacement separately depends on prior emission",
 );
 assert.match(
   chatRoute,
@@ -74,18 +79,23 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /event\.kind === "tool_start" && gatewayToolProjectionEnabled[\s\S]*?gatewayToolTracker\.envelopeToolUse\([\s\S]*?formatToolInputValue\(event\.input\)[\s\S]*?gatewayAssistantText\.length[\s\S]*?kind: "tool_use"[\s\S]*?consumePendingEnvelopeProgress\(event\.id\)[\s\S]*?consumePendingEnvelopeResult\(event\.id\)/,
-  "Gateway tool starts must emit a running card and reconcile progress or results that arrived first",
+  /event\.kind === "tool_start" && gatewayToolProjectionEnabled[\s\S]*?formatToolInputValue\(redactSecretsDeep\(event\.input\)\)[\s\S]*?redactSecretText\([\s\S]*?gatewayToolTracker\.envelopeToolUse\([\s\S]*?input,[\s\S]*?gatewayAssistantText\.length[\s\S]*?kind: "tool_use"[\s\S]*?consumePendingEnvelopeProgress\(event\.id\)[\s\S]*?consumePendingEnvelopeResult\(event\.id\)/,
+  "Gateway tool starts must deeply redact and text-redact input before tracking, then reconcile progress or results that arrived first",
 );
 assert.match(
   chatRoute,
-  /event\.kind === "tool_progress" && gatewayToolProjectionEnabled[\s\S]*?gatewayToolTracker\.envelopeToolProgress\([\s\S]*?formatToolInputValue\(event\.output\)[\s\S]*?kind: "tool_use"/,
-  "Gateway tool progress must update the stable running card through ToolCallTracker",
+  /event\.kind === "tool_progress" && gatewayToolProjectionEnabled[\s\S]*?const safeOutput = redactSecretsDeep\(event\.output\);[\s\S]*?flattenToolResultContent\(safeOutput\) \?\? formatToolInputValue\(safeOutput\)[\s\S]*?redactSecretText\(rawOutput\)[\s\S]*?gatewayToolTracker\.envelopeToolProgress\([\s\S]*?output,[\s\S]*?kind: "tool_use"/,
+  "Gateway tool progress must deeply redact, flatten, and text-redact output before tracker retention",
 );
 assert.match(
   chatRoute,
-  /event\.kind === "tool_end" && gatewayToolProjectionEnabled[\s\S]*?gatewayToolTracker\.envelopeToolResult\([\s\S]*?formatToolInputValue\(event\.output\)[\s\S]*?event\.isError[\s\S]*?gatewayToolTracker\.envelopeToolUse\([\s\S]*?consumePendingEnvelopeResult\(event\.id\)/,
-  "a Gateway result that arrives before its start must still produce one settled card",
+  /event\.kind === "tool_end" && gatewayToolProjectionEnabled[\s\S]*?const safeOutput = redactSecretsDeep\(event\.output\);[\s\S]*?flattenToolResultContent\(safeOutput\) \?\? formatToolInputValue\(safeOutput\)[\s\S]*?redactSecretText\(rawOutput\)[\s\S]*?gatewayToolTracker\.envelopeToolResult\([\s\S]*?output,[\s\S]*?event\.isError[\s\S]*?gatewayToolTracker\.envelopeToolUse\([\s\S]*?consumePendingEnvelopeResult\(event\.id\)/,
+  "a Gateway result must be redacted before retention and still produce one settled card when it arrives before its start",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /gatewayToolTracker\.envelopeTool(?:Use|Progress|Result)\(\s*event\.id,[\s\S]{0,160}?event\.(?:input|output)/,
+  "raw Gateway event payloads must never reach ToolCallTracker",
 );
 assert.match(
   chatRoute,

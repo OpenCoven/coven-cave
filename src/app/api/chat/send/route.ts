@@ -733,10 +733,12 @@ function openClawChatResponse(args: {
             return;
           }
           if (event.kind === "tool_start" && gatewayToolProjectionEnabled) {
+            const rawInput = formatToolInputValue(redactSecretsDeep(event.input));
+            const input = rawInput === undefined ? undefined : redactSecretText(rawInput);
             const tool = gatewayToolTracker.envelopeToolUse(
               event.id,
               event.name,
-              formatToolInputValue(event.input),
+              input,
               gatewayAssistantText.length,
             );
             if (tool) push({ kind: "tool_use", ...tool });
@@ -747,17 +749,23 @@ function openClawChatResponse(args: {
             return;
           }
           if (event.kind === "tool_progress" && gatewayToolProjectionEnabled) {
+            const safeOutput = redactSecretsDeep(event.output);
+            const rawOutput = flattenToolResultContent(safeOutput) ?? formatToolInputValue(safeOutput);
+            const output = rawOutput === undefined ? undefined : redactSecretText(rawOutput);
             const tool = gatewayToolTracker.envelopeToolProgress(
               event.id,
-              formatToolInputValue(event.output),
+              output,
             );
             if (tool) push({ kind: "tool_use", ...tool });
             return;
           }
           if (event.kind === "tool_end" && gatewayToolProjectionEnabled) {
+            const safeOutput = redactSecretsDeep(event.output);
+            const rawOutput = flattenToolResultContent(safeOutput) ?? formatToolInputValue(safeOutput);
+            const output = rawOutput === undefined ? undefined : redactSecretText(rawOutput);
             const tool = gatewayToolTracker.envelopeToolResult(
               event.id,
-              formatToolInputValue(event.output),
+              output,
               event.isError,
             );
             if (tool) {
@@ -785,6 +793,11 @@ function openClawChatResponse(args: {
           }
           if (event.kind === "delta") {
             if (event.replace) {
+              const previousTextLength = gatewayAssistantText.length;
+              gatewayToolTracker.rebaseTextOffsets(
+                0,
+                event.text.length - previousTextLength,
+              );
               gatewayAssistantText = event.text;
               gatewayAssistantTextEmitted = true;
               push({ kind: "assistant_replace", text: event.text });
@@ -796,8 +809,15 @@ function openClawChatResponse(args: {
             return;
           }
           if (event.kind === "final" && event.text) {
-            if (gatewayAssistantTextEmitted && gatewayAssistantText !== event.text) {
-              push({ kind: "assistant_replace", text: event.text });
+            if (gatewayAssistantText !== event.text) {
+              const previousTextLength = gatewayAssistantText.length;
+              gatewayToolTracker.rebaseTextOffsets(
+                0,
+                event.text.length - previousTextLength,
+              );
+              if (gatewayAssistantTextEmitted) {
+                push({ kind: "assistant_replace", text: event.text });
+              }
             }
             gatewayAssistantText = event.text;
           }
