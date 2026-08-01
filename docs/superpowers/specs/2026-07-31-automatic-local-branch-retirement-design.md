@@ -78,6 +78,7 @@ machine value.
 
 - `pnpm beads:worktrees` remains read-only.
 - `pnpm beads:worktrees:json` remains read-only.
+- Add `pnpm beads:worktrees:create` for fail-closed managed creation.
 - Add `pnpm beads:worktrees:apply` for bounded local retirement.
 - Update `pnpm beads:patrol:apply` to run PR reconciliation followed by the
   worktree apply command.
@@ -105,10 +106,33 @@ Managed worktree creation records structured metadata on its active Bead:
       "purpose": "Short scoped purpose",
       "disposition": "active",
       "createdAt": "2026-07-31T16:00:00.000Z"
-    }
+    },
+    "worktrees": [
+      {
+        "branch": "fix/cave-123-parallel",
+        "path": "/absolute/repository/path/.worktrees/cave-123-parallel",
+        "owner": "familiar-or-human-id",
+        "purpose": "Explicit coordinated parallel scope",
+        "disposition": "active",
+        "createdAt": "2026-07-31T16:05:00.000Z",
+        "exception": {
+          "owner": "familiar-or-human-id",
+          "reason": "Bounded parallel implementation",
+          "expiresAt": "2026-08-01T16:05:00.000Z",
+          "additionalPaths": [
+            "/absolute/repository/path/.worktrees/cave-123-parallel"
+          ]
+        }
+      }
+    ]
   }
 }
 ```
+
+`coven.worktree` is the primary full record. When a current bounded exception
+authorizes parallel work, `coven.worktrees` stores each additional full record;
+it is invalid without a primary record. Branches and normalized paths must be
+unique across both fields.
 
 Allowed dispositions are `active`, `pr`, `recovery`, and `archive`.
 `recovery` and `archive` additionally require:
