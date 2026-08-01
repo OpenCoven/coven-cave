@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import type { CaveConfig } from "../cave-config.ts";
 import { daemonTargetForConfig, type DaemonResponse, type DaemonTarget } from "../coven-daemon.ts";
+import { daemonHealthRequest } from "./daemon-health-request.ts";
 import {
   createDaemonConnectionSnapshotBroker,
   daemonConnectionTargetKey,
   daemonConnectionTargetSummary,
   type DaemonConnectionSnapshot,
 } from "./daemon-connection-snapshot.ts";
+
+const source = await readFile(new URL("./daemon-connection-snapshot.ts", import.meta.url), "utf8");
 
 type SnapshotConfig = Pick<CaveConfig, "multiHost">;
 type Deferred<T> = {
@@ -286,7 +290,20 @@ test("clear while pending prevents the older completion from repopulating cache"
   }));
 });
 
-test("configured targets use the exact health request timeout and retry options", async () => {
+test("connection snapshot broker imports and uses the shared daemon health request contract", () => {
+  assert.match(
+    source,
+    /import \{[^}]*daemonHealthRequest[^}]*\} from "\.\/daemon-health-request\.ts";/,
+    "the snapshot broker should import the shared daemon health request helper",
+  );
+  assert.match(
+    source,
+    /dependencies\.callTarget\(target, daemonHealthRequest\(\)\)/,
+    "the snapshot broker should call the daemon with the shared health request contract",
+  );
+});
+
+test("configured targets use the exact shared health request contract", async () => {
   const seenRequests: unknown[] = [];
   const broker = createDaemonConnectionSnapshotBroker({
     loadConfig: async () => hubConfig(),
@@ -298,11 +315,7 @@ test("configured targets use the exact health request timeout and retry options"
   });
 
   await broker.read();
-  assert.deepEqual(seenRequests, [{
-    path: "/api/v1/health",
-    timeoutMs: 750,
-    retryTransportFailure: false,
-  }]);
+  assert.deepEqual(seenRequests, [daemonHealthRequest()]);
 });
 
 test("classifies local and hub outcomes without extra daemon side effects", async () => {

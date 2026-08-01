@@ -11,14 +11,10 @@ import {
   classifyDaemonFailureAvailability,
   type DaemonAvailability,
 } from "../daemon-status-classification.ts";
+import { daemonHealthRequest } from "./daemon-health-request.ts";
 import { classifyHubFailure } from "./daemon-probe.ts";
 
 const CACHE_TTL_MS = 1_000;
-const HEALTH_REQUEST = {
-  path: "/api/v1/health",
-  timeoutMs: 750,
-  retryTransportFailure: false,
-} satisfies Pick<DaemonRequest, "path" | "timeoutMs" | "retryTransportFailure">;
 
 type DaemonConnectionTargetSummary =
   | { mode: "local"; label: "Local daemon"; socket: string }
@@ -144,7 +140,7 @@ export function createDaemonConnectionSnapshotBroker(
       };
     }
 
-    const response = await dependencies.callTarget(target, HEALTH_REQUEST);
+    const response = await dependencies.callTarget(target, daemonHealthRequest());
     const completedAt = now();
     if (response.ok && response.data) {
       return {

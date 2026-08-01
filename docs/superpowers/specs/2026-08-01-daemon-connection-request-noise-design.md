@@ -65,6 +65,13 @@ POST boundary may be slow without delaying connection state, and it must not
 probe executors, resolve installed version metadata, or construct the broader
 diagnostics payload.
 
+The framework-free travel reconcile requester owns an independent outage
+cadence. When an accepted hub snapshot reports `availability: "unreachable"`,
+Workspace flips the requester into outage mode, which immediately POSTs once
+and then re-arms a one-shot ten-second timer until a non-unreachable hub
+snapshot clears the cadence. This keeps recovery/replay checks within the
+travel-local threshold even while the connection supervisor backs off.
+
 The travel helper executes behind a per-target serial boundary keyed by the
 sanitized target identity. Equivalent concurrent calls share one in-flight
 reconcile; non-equivalent calls serialize and reload current state before
@@ -80,8 +87,11 @@ cannot reuse a result for the wrong destination.
 
 Background heartbeat probes do not perform the generic GET transport retry:
 the next supervised poll is already the retry, and doubling a failed health
-request is what lets one poll exceed the interval. Explicit trusted refreshes
-after Start bypass stale cache and request a fresh probe.
+request is what lets one poll exceed the interval. The connection snapshot and
+the detailed `/api/daemon/status` route share the exact same 1500ms no-retry
+health probe contract so Workspace and Settings classify the same answered-slow
+hub deterministically. Explicit trusted refreshes after Start bypass stale
+cache and request a fresh probe.
 
 The broker exposes test-only dependency seams and reset/invalidation helpers;
 it never caches indefinitely or converts failures into successful responses.

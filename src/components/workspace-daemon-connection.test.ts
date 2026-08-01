@@ -105,9 +105,14 @@ test("Workspace applies connection polls through the existing classifier-driven 
   )?.[0] ?? "";
   assert.ok(applyPoll.length > 0, "Workspace should centralize daemon connection publication in a stable apply callback");
   assert.match(
+    workspace,
+    /function daemonConnectionPayloadHubAvailability\([\s\S]*return availability === "online" \|\| availability === "unreachable" \|\| availability === "unhealthy" \|\| availability === "unauthorized" \? availability : null;\n\}/,
+    "Workspace should structurally map accepted hub snapshot availability before reconciling travel cadence",
+  );
+  assert.match(
     applyPoll,
-    /if \(daemonConnectionPayloadTargetMode\(poll\.payload\) === "hub"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.trigger\(\);[\s\S]*\}/,
-    "accepted hub snapshots should trigger the separate travel reconcile requester without awaiting it",
+    /const hubAvailability = daemonConnectionPayloadHubAvailability\(poll\.payload\);[\s\S]*if \(hubAvailability === "unreachable"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.setHubOutageActive\(true\);[\s\S]*\} else \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.setHubOutageActive\(false\);[\s\S]*if \(hubAvailability !== null\) daemonTravelReconcileRequesterRef\.current\?\.trigger\(\);[\s\S]*\}/,
+    "accepted hub snapshots should own outage cadence on unreachable and otherwise trigger one reconcile without double-firing",
   );
   assert.match(applyPoll, /const result = classifyDaemonStatusPoll\(poll\)/, "the shared classifier remains authoritative");
   assert.match(

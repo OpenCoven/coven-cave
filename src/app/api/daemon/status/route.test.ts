@@ -18,6 +18,12 @@ assert.match(
 
 assert.match(
   source,
+  /import \{[^}]*daemonHealthRequest[^}]*\} from "@\/lib\/server\/daemon-health-request"/,
+  "daemon status should import the shared daemon health request contract",
+);
+
+assert.match(
+  source,
   /snapshot = await loadDaemonStatusSnapshot\(\)[\s\S]*?return caveHomeStatusUnavailable\(\)/,
   "Cave home lock failures should return a structured status response instead of HTTP 500",
 );
@@ -36,7 +42,7 @@ assert.match(
 
 assert.match(
   source,
-  /callDaemonTarget<Health>\(target,/,
+  /callDaemonTarget<Health>\(target, daemonHealthRequest\(\)\)/,
   "the health request and status metadata should use the same resolved daemon target",
 );
 

@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { daemonHealthRequest } from "./daemon-health-request.ts";
 import { probeDaemonUrl } from "./daemon-probe.ts";
 
 test("reports a reachable healthy hub with latency", async () => {
   const result = await probeDaemonUrl("server.tailnet:8787", async (target, request) => {
     assert.equal(target.mode, "hub");
     assert.equal(target.url, "http://server.tailnet:8787");
-    assert.deepEqual(request, { path: "/api/v1/health", timeoutMs: 1500 });
+    assert.deepEqual(request, daemonHealthRequest());
     return { ok: true, status: 200, data: { ok: true } };
   }, () => 42);
   assert.deepEqual(result, { ok: true, reachable: true, status: 200, latencyMs: 0 });

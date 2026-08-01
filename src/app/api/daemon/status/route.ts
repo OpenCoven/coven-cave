@@ -13,6 +13,7 @@ import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
 import { classifyDaemonFailureAvailability } from "@/lib/daemon-status-classification";
 import { executorStatusesForConfig } from "@/lib/executor-status";
+import { daemonHealthRequest } from "@/lib/server/daemon-health-request";
 import { classifyHubFailure } from "@/lib/server/daemon-probe";
 import { reconcileDaemonTravelState } from "@/lib/server/daemon-travel-reconcile";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
@@ -112,7 +113,7 @@ export async function GET() {
   // and failure classification. Reloading config inside callDaemon() created
   // a race where a connection-mode change could query one target while the
   // response claimed (and classified) another.
-  const res = await callDaemonTarget<Health>(target, { path: "/api/v1/health", timeoutMs: 1500 });
+  const res = await callDaemonTarget<Health>(target, daemonHealthRequest());
   const { travelStatus, travelReplay } = await reconcileDaemonTravelState({
     config,
     travelState,

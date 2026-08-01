@@ -275,6 +275,16 @@ function daemonConnectionPayloadTargetMode(
   return mode === "local" || mode === "hub" || mode === "unconfigured-hub" ? mode : null;
 }
 
+function daemonConnectionPayloadHubAvailability(
+  payload: unknown,
+): "online" | "unreachable" | "unhealthy" | "unauthorized" | null {
+  if (daemonConnectionPayloadTargetMode(payload) !== "hub") return null;
+  const availability = payload && typeof payload === "object" && "availability" in payload
+    ? (payload as { availability?: unknown }).availability
+    : null;
+  return availability === "online" || availability === "unreachable" || availability === "unhealthy" || availability === "unauthorized" ? availability : null;
+}
+
 export function Workspace() {
   const [acceptedLocalDaemonHealthy, setAcceptedLocalDaemonHealthy] = useState(false);
   const nextRouter = useRouter();
@@ -776,8 +786,12 @@ export function Workspace() {
   useMilestoneWatch();
 
   const applyDaemonConnectionPoll = useCallback((poll: DaemonConnectionPoll, context: { fresh: boolean }) => {
-    if (daemonConnectionPayloadTargetMode(poll.payload) === "hub") {
-      daemonTravelReconcileRequesterRef.current?.trigger();
+    const hubAvailability = daemonConnectionPayloadHubAvailability(poll.payload);
+    if (hubAvailability === "unreachable") {
+      daemonTravelReconcileRequesterRef.current?.setHubOutageActive(true);
+    } else {
+      daemonTravelReconcileRequesterRef.current?.setHubOutageActive(false);
+      if (hubAvailability !== null) daemonTravelReconcileRequesterRef.current?.trigger();
     }
     const result = classifyDaemonStatusPoll(poll);
     // The coordinator pins this first accepted decision. Later polls may update

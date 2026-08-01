@@ -6,6 +6,7 @@ import {
   type DaemonResponse,
   type DaemonTarget,
 } from "../coven-daemon.ts";
+import { daemonHealthRequest } from "./daemon-health-request.ts";
 
 export type DaemonProbeResult = {
   ok: true;
@@ -34,7 +35,7 @@ export async function probeDaemonUrl(
     throw new Error(target.mode === "unconfigured-hub" ? target.error : "invalid hub URL");
   }
   const startedAt = now();
-  const response = await call(target, { path: "/api/v1/health", timeoutMs: 1500 });
+  const response = await call(target, daemonHealthRequest());
   const latencyMs = Math.max(0, now() - startedAt);
   if (response.ok && response.data) {
     return { ok: true, reachable: true, status: response.status, latencyMs };
