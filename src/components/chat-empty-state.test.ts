@@ -27,12 +27,12 @@ test("open-work rail resumes through the board chat route and the open-session e
   );
   assert.match(
     emptyState,
-    /aria-label=\{`\$\{action\} '\$\{card\.title\}' — \$\{card\.status\}, \$\{card\.priority\} priority`\}/,
-    "rail rows carry a full-context accessible name",
+    /ariaLabel: `\$\{action\} '\$\{card\.title\}' — \$\{card\.status\}, \$\{card\.priority\} priority`/,
+    "rail tiles carry a full-context accessible name",
   );
   assert.match(
     emptyState,
-    /\{card\.status\}/,
+    /sub: startFromSub\(\[card\.status, card\.priority\]\)/,
     "status is rendered as a word — color never carries the meaning alone",
   );
 });
@@ -109,8 +109,8 @@ test("chat-first landing: mono eyebrow, serif hero, always-visible launcher", ()
     "the disclosure state is gone with the disclosure",
   );
   assert.match(
-    emptyState,
-    /className="cave-chat-startfrom" aria-label="Start from existing work"/,
+    readFileSync(new URL("./chat-start-from-bands.tsx", import.meta.url), "utf8"),
+    /className="cave-sf" aria-label="Start from existing work"/,
     "the launcher is a labelled landmark rather than a collapsed panel",
   );
 
@@ -125,7 +125,7 @@ test("chat-first landing: mono eyebrow, serif hero, always-visible launcher", ()
     "the hero sits above the familiar identity",
   );
   assert.ok(
-    emptyState.indexOf("cave-chat-empty-prompts") < emptyState.indexOf('className="cave-chat-startfrom"'),
+    emptyState.indexOf("cave-chat-empty-prompts") < emptyState.indexOf("<ChatStartFromBands"),
     "starter suggestions paint ahead of the launcher",
   );
 
