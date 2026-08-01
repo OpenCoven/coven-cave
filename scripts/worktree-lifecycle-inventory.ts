@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import {
   calculateLifecycleBudgets,
@@ -190,9 +190,11 @@ function command(
   args: string[],
   cwd: string,
   timeout = 30_000,
+  env: NodeJS.ProcessEnv = process.env,
 ): CommandResult {
   const result = spawnSync(executable, args, {
     cwd,
+    env,
     encoding: "utf8",
     timeout,
     maxBuffer: 64 * 1024 * 1024,
@@ -206,8 +208,64 @@ function command(
   };
 }
 
+const UNSAFE_GIT_ENVIRONMENT = new Set([
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_NAMESPACE",
+  "GIT_PREFIX",
+  "GIT_CEILING_DIRECTORIES",
+  "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+  "GIT_IMPLICIT_WORK_TREE",
+  "GIT_EXEC_PATH",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_GRAFT_FILE",
+  "GIT_SHALLOW_FILE",
+  "GIT_QUARANTINE_PATH",
+  "GIT_LITERAL_PATHSPECS",
+  "GIT_GLOB_PATHSPECS",
+  "GIT_NOGLOB_PATHSPECS",
+  "GIT_ICASE_PATHSPECS",
+  "GIT_ATTR_NOSYSTEM",
+  "GIT_EXTERNAL_DIFF",
+  "GIT_DIFF_OPTS",
+  "GIT_REF_PARANOIA",
+  "GIT_CONFIG",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_SYSTEM",
+  "GIT_CONFIG_NOSYSTEM",
+  "GIT_CONFIG_COUNT",
+  "GIT_NO_REPLACE_OBJECTS",
+  "GIT_OPTIONAL_LOCKS",
+]);
+
+function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (
+      UNSAFE_GIT_ENVIRONMENT.has(key) ||
+      /^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(key)
+    ) {
+      delete env[key];
+    }
+  }
+  env.GIT_NO_REPLACE_OBJECTS = "1";
+  env.GIT_OPTIONAL_LOCKS = "0";
+  return env;
+}
+
 function git(root: string, args: string[], timeout?: number): CommandResult {
-  return command("git", ["-C", root, ...args], root, timeout);
+  return command(
+    "git",
+    ["--no-optional-locks", "--no-replace-objects", "-C", root, ...args],
+    root,
+    timeout,
+    sanitizedGitEnvironment(),
+  );
 }
 
 function requiredGit(root: string, args: string[]): string {
@@ -1474,6 +1532,63 @@ function directRefError(root: string, ref: string): string | null {
   return result.stderr || `local ref directness check failed for ${ref}`;
 }
 
+type HistoryOverrideProbe = {
+  replaceRefsState: string;
+  graftState: string;
+  errors: string[];
+};
+
+function historyOverrideProbe(root: string, commonGitDir: string): HistoryOverrideProbe {
+  const errors: string[] = [];
+  const replaceRefs = git(root, [
+    "for-each-ref",
+    "--format=%(refname)",
+    "refs/replace",
+  ]);
+  let replaceRefsState: string;
+  if (!replaceRefs.ok || replaceRefs.stderr) {
+    replaceRefsState = `error:${replaceRefs.status ?? "unknown"}:${replaceRefs.stderr}`;
+    errors.push(
+      `Git replacement ref inventory failed: ${
+        replaceRefs.stderr || `status ${replaceRefs.status ?? "unknown"}`
+      }`,
+    );
+  } else {
+    replaceRefsState = replaceRefs.stdout;
+    const refs = replaceRefs.stdout.split("\n").filter(Boolean);
+    if (refs.some((ref) => !ref.startsWith("refs/replace/"))) {
+      errors.push("Git replacement ref inventory returned malformed data");
+    } else if (refs.length > 0) {
+      errors.push(`Git replacement refs are present: ${refs.join(", ")}`);
+    }
+  }
+
+  const graftPath = path.join(commonGitDir, "info", "grafts");
+  let graftState: string;
+  try {
+    const grafts = readFileSync(graftPath);
+    graftState = `present:${createHash("sha256").update(grafts).digest("hex")}`;
+    if (grafts.length > 0) {
+      errors.push(`legacy Git graft file is nonempty: ${graftPath}`);
+    }
+  } catch (error) {
+    if (
+      error !== null &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      graftState = "absent";
+    } else {
+      const detail = error instanceof Error ? error.message : "unknown read error";
+      graftState = `unreadable:${detail}`;
+      errors.push(`legacy Git graft file is unreadable: ${graftPath}: ${detail}`);
+    }
+  }
+
+  return { replaceRefsState, graftState, errors };
+}
+
 function exactRemoteRef(
   root: string,
   ref: string,
@@ -1610,13 +1725,14 @@ function remoteDefaultBranch(root: string): RemoteDefaultBranch {
 function matchingTasks(
   branch: string | null,
   worktreePath: string | null,
+  head: string,
   tasks: BeadTask[],
 ): string[] {
-  if (branch === null && worktreePath === null) return [];
   const matchedBranch =
     branch !== null && !PROTECTED_BRANCHES.has(branch) ? branch : null;
   const branchBeadIds = new Set(matchedBranch ? beadIdsInText(matchedBranch) : []);
   const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
+  const exactOid = new RegExp(`(?:^|[^0-9a-f])${head}(?:$|[^0-9a-f])`, "i");
   return tasks
     .filter((task) => task.status !== "closed")
     .filter(
@@ -1628,6 +1744,7 @@ function matchingTasks(
               normalizeAbsoluteWorktreePath(record.path) === normalizedWorktreePath),
         ) ||
         branchBeadIds.has(task.id.toLowerCase()) ||
+        exactOid.test(task.text) ||
         (matchedBranch !== null && task.text.includes(matchedBranch)) ||
         (matchedBranch !== null &&
           worktreePath !== null &&
@@ -1760,15 +1877,12 @@ function assignActiveSessions(
   return { sessionIdsByPath, probeErrorsByPath };
 }
 
-function fingerprint(worktreeRaw: string, refsRaw: string): string {
-  return createHash("sha256")
-    .update(String(Buffer.byteLength(worktreeRaw)))
-    .update("\0")
-    .update(worktreeRaw)
-    .update(String(Buffer.byteLength(refsRaw)))
-    .update("\0")
-    .update(refsRaw)
-    .digest("hex");
+function fingerprint(...evidence: string[]): string {
+  const hash = createHash("sha256");
+  for (const value of evidence) {
+    hash.update(String(Buffer.byteLength(value))).update("\0").update(value);
+  }
+  return hash.digest("hex");
 }
 
 function classifyInventoryObservation(
@@ -1792,6 +1906,7 @@ export function collectWorktreeLifecycleInventory(
     "--git-common-dir",
   ]).trim();
   const primaryPath = normalizePath(path.dirname(commonGitDir));
+  const initialHistoryOverrides = historyOverrideProbe(root, commonGitDir);
   const initialWorktreeRaw = requiredGit(root, ["worktree", "list", "--porcelain", "-z"]);
   const initialRefsRaw = requiredGit(root, [
     "for-each-ref",
@@ -1801,6 +1916,13 @@ export function collectWorktreeLifecycleInventory(
   const entries = parseWorktrees(initialWorktreeRaw);
   const localRefs = parseLocalBranchRefs(initialRefsRaw);
   const localRefByName = new Map(localRefs.map((localRef) => [localRef.ref, localRef]));
+  const registeredPathsByRef = new Map<string, string[]>();
+  for (const entry of entries) {
+    if (entry.ref === null || entry.refError !== null) continue;
+    const paths = registeredPathsByRef.get(entry.ref) ?? [];
+    paths.push(entry.path);
+    registeredPathsByRef.set(entry.ref, paths);
+  }
   const registeredRefs = new Set(entries.flatMap((entry) => (entry.ref ? [entry.ref] : [])));
 
   const units = [
@@ -1819,6 +1941,13 @@ export function collectWorktreeLifecycleInventory(
         localRefByName.has(entry.ref) &&
         localRefByName.get(entry.ref)!.oid !== entry.head
           ? `registered worktree HEAD differs from local branch ref: ${entry.ref}`
+          : null,
+        entry.ref &&
+        entry.refError === null &&
+        (registeredPathsByRef.get(entry.ref)?.length ?? 0) > 1
+          ? `registered local branch ref ${entry.ref} appears in more than one worktree: ${registeredPathsByRef
+              .get(entry.ref)!
+              .join(", ")}`
           : null,
       ].filter((error): error is string => error !== null),
     })),
@@ -1858,6 +1987,7 @@ export function collectWorktreeLifecycleInventory(
           probeErrorsByPath: new Map<string, string[]>(),
         };
   const branchGlobalErrors = [
+    ...initialHistoryOverrides.errors,
     ...prs.globalErrors,
     workflows.error,
     claims.error,
@@ -1964,7 +2094,7 @@ export function collectWorktreeLifecycleInventory(
             .filter((claim) => claim.branch === unit.branch && claim.state === "active")
             .map((claim) => claim.agent_id)
         : [],
-      taskIds: matchingTasks(unit.branch, unit.path, tasks.tasks),
+      taskIds: matchingTasks(unit.branch, unit.path, unit.head, tasks.tasks),
       openPrs,
       mergedPr: exactMerged
         ? {
@@ -1993,7 +2123,13 @@ export function collectWorktreeLifecycleInventory(
     "--format=%(refname)%0a%(objectname)%00",
     "refs/heads",
   ]);
-  if (finalWorktreeRaw !== initialWorktreeRaw || finalRefsRaw !== initialRefsRaw) {
+  const finalHistoryOverrides = historyOverrideProbe(root, commonGitDir);
+  if (
+    finalWorktreeRaw !== initialWorktreeRaw ||
+    finalRefsRaw !== initialRefsRaw ||
+    finalHistoryOverrides.replaceRefsState !== initialHistoryOverrides.replaceRefsState ||
+    finalHistoryOverrides.graftState !== initialHistoryOverrides.graftState
+  ) {
     throw new Error("worktree or branch inventory changed during patrol");
   }
 
@@ -2071,6 +2207,11 @@ export function collectWorktreeLifecycleInventory(
       classifyInventoryObservation(observation, options.nowMs),
     ),
     budgets,
-    inventoryFingerprint: fingerprint(initialWorktreeRaw, initialRefsRaw),
+    inventoryFingerprint: fingerprint(
+      initialWorktreeRaw,
+      initialRefsRaw,
+      initialHistoryOverrides.replaceRefsState,
+      initialHistoryOverrides.graftState,
+    ),
   };
 }
