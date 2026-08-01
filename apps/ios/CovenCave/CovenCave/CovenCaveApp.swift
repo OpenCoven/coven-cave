@@ -91,13 +91,23 @@ struct CovenCaveApp: App {
                     // freeze the process before the bytes landed — the comment
                     // here claimed a durability the code never provided.
                     if phase != .active {
-                        Task {
-                            let assertion = UIApplication.shared
-                                .beginBackgroundTask(withName: "cave.flushThreads")
-                            await app.flushThreadsAndWait()
-                            if assertion != .invalid {
+                        Task { @MainActor in
+                            // The assertion MUST be released on every path. If
+                            // background time runs out first the system kills
+                            // the app for over-holding it, so an expiration
+                            // handler releases it early; `defer` covers the
+                            // normal and cancelled paths. `release()` is
+                            // idempotent because both can fire.
+                            var assertion: UIBackgroundTaskIdentifier = .invalid
+                            func release() {
+                                guard assertion != .invalid else { return }
                                 UIApplication.shared.endBackgroundTask(assertion)
+                                assertion = .invalid
                             }
+                            assertion = UIApplication.shared
+                                .beginBackgroundTask(withName: "cave.flushThreads") { release() }
+                            defer { release() }
+                            await app.flushThreadsAndWait()
                         }
                     }
                     guard phase == .active, app.connection != nil else { return }

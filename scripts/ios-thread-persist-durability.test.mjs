@@ -92,6 +92,31 @@ assert.match(
   /endBackgroundTask/,
   "the assertion must be released or the app is killed for over-holding it",
 );
+// Review finding on PR #4135: releasing it on the happy path alone is not
+// enough. If background time expires first the system kills the app for
+// over-holding, and an early return or cancellation leaks it the same way — so
+// an expiration handler AND a defer are both required, with an idempotent
+// release because either can fire first.
+assert.match(
+  scenePhaseBlock,
+  /beginBackgroundTask\(withName: "[^"]+"\) \{ release\(\) \}/,
+  "an expiration handler must release the assertion when background time runs out",
+);
+assert.match(
+  scenePhaseBlock,
+  /defer \{ release\(\) \}/,
+  "a defer must release the assertion on the cancelled/early-return paths",
+);
+assert.match(
+  scenePhaseBlock,
+  /guard assertion != \.invalid else \{ return \}/,
+  "release() must be idempotent — the expiration handler and the defer can both fire",
+);
+assert.match(
+  scenePhaseBlock,
+  /Task \{ @MainActor in/,
+  "UIApplication calls must be explicitly main-actor isolated, not inherited by accident",
+);
 assert.ok(
   !/if phase != \.active \{ app\.flushThreads\(\) \}/.test(appEntry),
   "the old fire-and-forget lifecycle flush must not come back",
