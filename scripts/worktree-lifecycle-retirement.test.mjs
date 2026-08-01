@@ -187,7 +187,16 @@ function createGitFixture() {
   const repo = realpathSync(repoEntry);
 
   git(["init", "-q", "-b", "main"], repo);
-  git(["init", "-q", "--bare"], origin);
+  // `-b main` on the bare origin too, not just the work repo above. Without it
+  // the origin's HEAD follows whatever init.defaultBranch the host has, and this
+  // fixture only ever pushes `main`. On a runner that still defaults to `master`,
+  // origin/HEAD names a branch that does not exist, so
+  // `git ls-remote --symref origin HEAD` does not return the symref+oid pair the
+  // default-branch probe requires — it reports "malformed origin HEAD symref
+  // data" and every candidate falls into the `uncertain` lane. That is precisely
+  // how this file passed on macOS and failed on Linux CI. A fixture has to pin
+  // its own default branch rather than inherit the host's.
+  git(["init", "-q", "-b", "main", "--bare"], origin);
   git(["config", "user.name", "Cave Test"], repo);
   git(["config", "user.email", "cave@example.invalid"], repo);
   git(["config", "commit.gpgsign", "false"], repo);
