@@ -19,6 +19,7 @@ const fixtureRoot = mkdtempSync(path.join(sourceRoot, ".worktree-lifecycle-fixtu
 const repo = path.join(fixtureRoot, "repo");
 const origin = path.join(fixtureRoot, "origin.git");
 const bin = path.join(fixtureRoot, "bin");
+const gitBin = path.join(fixtureRoot, "git-bin");
 const registeredDrift = path.join(fixtureRoot, "registered-drift");
 
 function run(command, args, cwd, options = {}) {
@@ -43,6 +44,7 @@ try {
   mkdirSync(repo);
   mkdirSync(origin);
   mkdirSync(bin);
+  mkdirSync(gitBin);
 
   git(["init", "-q", "-b", "main"], repo);
   git(["init", "-q", "--bare"], origin);
@@ -54,6 +56,7 @@ try {
   git(["commit", "-q", "-m", "initial"], repo);
   git(["remote", "add", "origin", origin], repo);
   git(["push", "-q", "-u", "origin", "main"], repo);
+  git(["--git-dir", origin, "symbolic-ref", "HEAD", "refs/heads/main"], fixtureRoot);
 
   const old = path.join(repo, ".worktrees", "old");
   git(["worktree", "add", "-q", "-b", "feat/old", old], repo);
@@ -135,6 +138,8 @@ try {
 
   const detached = path.join(repo, ".worktrees", "detached");
   git(["worktree", "add", "-q", "--detach", detached, "origin/main"], repo);
+  const defaultHead = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
+  git(["update-ref", "refs/remotes/origin/trunk", defaultHead], repo);
 
   const validMetadata = {
     branch: "feat/old",
@@ -198,29 +203,257 @@ try {
   }
 
   executable(
-    path.join(bin, "gh"),
+    path.join(gitBin, "git"),
     `#!/bin/sh
-case "$*" in
-  *"pr list"*"--head feat/old"*)
-    if [ "\${LIFECYCLE_PR_CAP:-0}" = "1" ]; then
-      node -e 'const pr={number:42,url:"https://example.test/42",state:"CLOSED",isDraft:false,mergedAt:null,baseRefName:"main",headRefName:"feat/old",headRefOid:"${oldHead}"}; console.log(JSON.stringify(Array.from({length:101},(_,index)=>({...pr,number:index+1}))))'
-    elif [ "\${LIFECYCLE_CLOSED_DRAFT:-0}" = "1" ]; then
-      printf '%s\n' '[{"number":42,"url":"https://example.test/42","state":"CLOSED","isDraft":true,"mergedAt":null,"baseRefName":"main","headRefName":"feat/old","headRefOid":"${oldHead}"}]'
-    else
-      BASE=main
-      if [ "\${LIFECYCLE_NON_MAIN_MERGE:-0}" = "1" ]; then BASE=staging; fi
-      node -e 'const pr={number:42,url:"https://example.test/42",state:"MERGED",isDraft:false,mergedAt:"2026-07-21T12:00:00Z",baseRefName:process.argv[1],headRefName:"feat/old",headRefOid:"${oldHead}",filler:"x".repeat(2*1024*1024)}; console.log(JSON.stringify([pr]))' "$BASE"
+DEFAULT_OID=${JSON.stringify(defaultHead)}
+STALE_OID=${JSON.stringify("a".repeat(defaultHead.length))}
+OTHER_OID=${JSON.stringify("b".repeat(defaultHead.length))}
+MARKER_PREFIX=${JSON.stringify(path.join(fixtureRoot, "invalid-default-merge-base-"))}
+
+case " $* " in
+  *" ls-remote --symref origin HEAD "*)
+    if [ "\${LIFECYCLE_MALFORMED_DEFAULT:-0}" = "1" ]; then
+      printf 'ref: refs/heads/main\\tHEAD\\nref: refs/heads/trunk\\tHEAD\\n%s\\tHEAD\\n' "$DEFAULT_OID"
+      exit 0
+    elif [ "\${LIFECYCLE_STALE_DEFAULT:-0}" = "1" ]; then
+      printf 'ref: refs/heads/main\\tHEAD\\n%s\\tHEAD\\n' "$STALE_OID"
+      exit 0
+    elif [ "\${LIFECYCLE_MISMATCHED_DEFAULT_TARGET:-0}" = "1" ]; then
+      printf 'ref: refs/heads/main\\tHEAD\\n%s\\tHEAD\\n' "$DEFAULT_OID"
+      exit 0
+    elif [ "\${LIFECYCLE_DEFAULT_TRUNK:-0}" = "1" ]; then
+      printf 'ref: refs/heads/trunk\\tHEAD\\n%s\\tHEAD\\n' "$DEFAULT_OID"
+      exit 0
     fi
     ;;
-  *"pr list"*"--head feat/recent-merge"*)
-    printf '%s\n' '[{"number":43,"url":"https://example.test/43","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:00:00Z","baseRefName":"main","headRefName":"feat/recent-merge","headRefOid":"${recentMergeHead}"}]'
+esac
+
+case " $* " in
+  *" ls-remote --exit-code origin refs/heads/main "*|*" ls-remote --exit-code --heads origin refs/heads/main "*)
+    if [ -n "\${LIFECYCLE_MALFORMED_LIVE_MAIN_CASE:-}" ]; then
+      case "\${LIFECYCLE_MALFORMED_LIVE_MAIN_CASE}" in
+        malformed)
+          printf '%s\\n' 'not-a-ls-remote-record'
+          exit 0
+          ;;
+        wrong-ref)
+          printf '%s\\trefs/heads/not-main\\n' "$DEFAULT_OID"
+          exit 0
+          ;;
+        multi-record)
+          printf '%s\\trefs/heads/main\\n%s\\trefs/heads/other\\n' "$DEFAULT_OID" "$OTHER_OID"
+          exit 0
+          ;;
+        *)
+          printf '%s\\n' 'unknown LIFECYCLE_MALFORMED_LIVE_MAIN_CASE' >&2
+          exit 95
+          ;;
+      esac
+    elif [ "\${LIFECYCLE_STALE_DEFAULT:-0}" = "1" ]; then
+      printf '%s\\trefs/heads/main\\n' "$STALE_OID"
+      exit 0
+    elif [ "\${LIFECYCLE_MISMATCHED_DEFAULT_TARGET:-0}" = "1" ]; then
+      printf '%s\\trefs/heads/main\\n' "$OTHER_OID"
+      exit 0
+    fi
     ;;
-  *"pr list"*"--head feat/recent-reflog"*)
-    printf '%s\n' '[{"number":44,"url":"https://example.test/44","state":"MERGED","isDraft":false,"mergedAt":"2026-07-21T12:00:00Z","baseRefName":"main","headRefName":"feat/recent-reflog","headRefOid":"${recentReflogHead}"}]'
+  *" ls-remote --exit-code origin refs/heads/trunk "*|*" ls-remote --exit-code --heads origin refs/heads/trunk "*)
+    if [ "\${LIFECYCLE_DEFAULT_TRUNK:-0}" = "1" ]; then
+      printf '%s\\trefs/heads/trunk\\n' "$DEFAULT_OID"
+      exit 0
+    fi
     ;;
-  *"pr list"*)
-    printf '%s\n' '[]'
+esac
+
+if [ "\${LIFECYCLE_MISSING_DEFAULT_TRACKING:-0}" = "1" ]; then
+  case " $* " in
+    *" rev-parse --verify refs/remotes/origin/main^{commit} "*)
+      printf '%s\\n' 'missing default tracking ref' >&2
+      exit 1
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_MALFORMED_DEFAULT_TRACKING:-0}" = "1" ]; then
+  case " $* " in
+    *" rev-parse --verify refs/remotes/origin/main^{commit} "*)
+      printf '%s\\n' 'refs/remotes/origin/main'
+      exit 0
+      ;;
+  esac
+fi
+
+case "\${LIFECYCLE_STALE_DEFAULT:-0}\${LIFECYCLE_MALFORMED_DEFAULT:-0}\${LIFECYCLE_MISSING_DEFAULT_TRACKING:-0}\${LIFECYCLE_MISMATCHED_DEFAULT_TARGET:-0}\${LIFECYCLE_MALFORMED_DEFAULT_TRACKING:-0}\${LIFECYCLE_MALFORMED_LIVE_MAIN_CASE:-}" in
+  *1*)
+    case " $* " in
+      *" merge-base --is-ancestor "*)
+        printf '%s\\n' "$*" > "$MARKER_PREFIX\${LIFECYCLE_TEST_INVOCATION:-unknown}"
+        ;;
+    esac
     ;;
+  *[!0]*)
+    case " $* " in
+      *" merge-base --is-ancestor "*)
+        printf '%s\\n' "$*" > "$MARKER_PREFIX\${LIFECYCLE_TEST_INVOCATION:-unknown}"
+        ;;
+    esac
+    ;;
+esac
+
+if [ "\${LIFECYCLE_DEFAULT_TRUNK:-0}" = "1" ]; then
+  case " $* " in
+    *" merge-base --is-ancestor "*" refs/remotes/origin/main "*)
+      printf '%s\\n' 'hard-coded origin/main ancestry probe' >&2
+      exit 91
+      ;;
+  esac
+fi
+
+PATH=\${PATH#${gitBin}:}
+export PATH
+exec git "$@"
+`,
+  );
+
+  executable(
+    path.join(bin, "gh"),
+    `#!/bin/sh
+fail() {
+  printf '%s\\n' "$1" >&2
+  exit 2
+}
+require_query() {
+  case "$QUERY" in
+    *"$1"*) ;;
+    *) fail "GraphQL query missing required field: $1" ;;
+  esac
+}
+
+if [ "$1" = "api" ] &&
+   [ "$2" = "--hostname" ] &&
+   [ "$3" = "github.com" ] &&
+   [ "$4" = "graphql" ] &&
+   [ "$5" = "--paginate" ] &&
+   [ "$6" = "--slurp" ]; then
+  shift 6
+  OWNER=
+  NAME=
+  OID_ARG=
+  SEARCH_QUERY=
+  QUERY=
+  FIELD_COUNT=0
+  QUERY_COUNT=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -F)
+        [ "$#" -ge 2 ] || fail "GraphQL -F is missing a value"
+        FIELD_COUNT=$((FIELD_COUNT + 1))
+        case "$2" in
+          owner=*) OWNER=\${2#owner=} ;;
+          name=*) NAME=\${2#name=} ;;
+          oid=*) OID_ARG=\${2#oid=} ;;
+          searchQuery=*) SEARCH_QUERY=\${2#searchQuery=} ;;
+          *) fail "unexpected GraphQL variable: $2" ;;
+        esac
+        shift 2
+        ;;
+      -f)
+        [ "$#" -ge 2 ] || fail "GraphQL -f is missing a value"
+        QUERY_COUNT=$((QUERY_COUNT + 1))
+        case "$2" in
+          query=*) QUERY=\${2#query=} ;;
+          *) fail "unexpected GraphQL field: $2" ;;
+        esac
+        shift 2
+        ;;
+      *) fail "unexpected GraphQL argument: $1" ;;
+    esac
+  done
+  [ "$QUERY_COUNT" -eq 1 ] || fail "GraphQL requires exactly one query"
+
+  if [ -n "$OID_ARG" ]; then
+    [ "$FIELD_COUNT" -eq 3 ] || fail "associated PR query has the wrong variable count"
+    [ "$OWNER" = "OpenCoven" ] || fail "associated PR query has the wrong owner"
+    [ "$NAME" = "coven-cave" ] || fail "associated PR query has the wrong repository"
+    [ -z "$SEARCH_QUERY" ] || fail "associated PR query included search variables"
+    require_query 'repository(owner: $owner, name: $name)'
+    require_query 'object(oid: $oid)'
+    require_query 'associatedPullRequests(first: 100, after: $endCursor)'
+    for field in number url state isDraft mergedAt headRefName headRefOid headRepository baseRefName baseRepository pageInfo hasNextPage endCursor; do
+      require_query "$field"
+    done
+    ASSOCIATION_MARKER=${JSON.stringify(
+      path.join(fixtureRoot, "associated-query-"),
+    )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}-$OID_ARG"
+    [ ! -e "$ASSOCIATION_MARKER" ] ||
+      fail "associated PR query repeated for duplicate OID $OID_ARG"
+    : > "$ASSOCIATION_MARKER"
+
+    REPOSITORY="OpenCoven/coven-cave"
+    if [ "\${LIFECYCLE_BAD_CANONICAL_REPO:-0}" = "1" ] &&
+       [ "$OID_ARG" = "${oldHead}" ]; then
+      REPOSITORY="Wrong/repository"
+    fi
+    BASE_REF=main
+    if [ "\${LIFECYCLE_DEFAULT_TRUNK:-0}" = "1" ]; then BASE_REF=trunk; fi
+
+    if [ "$OID_ARG" = "${oldHead}" ]; then
+      if [ "\${LIFECYCLE_INCOMPLETE_ASSOCIATED_PAGINATION:-0}" = "1" ]; then
+        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"assoc-1"}}}}}}]'
+      elif [ "\${LIFECYCLE_MALFORMED_ASSOCIATED_PAGINATION:-0}" = "1" ]; then
+        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"repeat"}}}}}},{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"repeat"}}}}}},{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
+      elif [ "\${LIFECYCLE_MISMATCHED_ASSOCIATED_OID:-0}" = "1" ]; then
+        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[{"number":42,"url":"https://github.com/OpenCoven/coven-cave/pull/42","state":"MERGED","isDraft":false,"mergedAt":"2026-07-21T12:00:00Z","headRefName":"feat/old","headRefOid":"${"c".repeat(oldHead.length)}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"bad-oid"}}}}}}]'
+      elif [ "\${LIFECYCLE_OUTBOUND_OPEN:-0}" = "1" ]; then
+        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[{"number":142,"url":"https://github.com/ArchiveOrg/archive/pull/142","state":"CLOSED","isDraft":false,"mergedAt":null,"headRefName":"archived-name","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"archive","baseRepository":{"nameWithOwner":"ArchiveOrg/archive"}}],"pageInfo":{"hasNextPage":true,"endCursor":"assoc-1"}}}}}},{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[{"number":99,"url":"https://github.com/OtherOrg/other-repo/pull/99","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"different-head-name","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OtherOrg/other-repo"}}],"pageInfo":{"hasNextPage":false,"endCursor":"assoc-2"}}}}}}]'
+      elif [ "\${LIFECYCLE_EXACT_MERGED_DIFFERENT_HEAD:-0}" = "1" ]; then
+        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[{"number":98,"url":"https://github.com/OpenCoven/coven-cave/pull/98","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:30:00Z","headRefName":"different-merged-head","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"merged-different"}}}}}}]'
+      elif [ "\${LIFECYCLE_CLOSED_UNMERGED:-0}" = "1" ]; then
+        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[{"number":97,"url":"https://github.com/OpenCoven/coven-cave/pull/97","state":"CLOSED","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"closed"}}}}}}]'
+      elif [ "\${LIFECYCLE_CLOSED_DRAFT:-0}" = "1" ]; then
+        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[{"number":96,"url":"https://github.com/OpenCoven/coven-cave/pull/96","state":"CLOSED","isDraft":true,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"draft"}}}}}}]'
+      elif [ "\${LIFECYCLE_DUPLICATE_PR:-0}" = "1" ]; then
+        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[{"number":77,"url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"duplicate"}}}}}}]'
+      else
+        if [ "\${LIFECYCLE_NON_MAIN_MERGE:-0}" = "1" ]; then BASE_REF=staging; fi
+        printf '[{"data":{"repository":{"nameWithOwner":"%s","object":{"associatedPullRequests":{"nodes":[{"number":42,"url":"https://github.com/OpenCoven/coven-cave/pull/42","state":"MERGED","isDraft":false,"mergedAt":"2026-07-21T12:00:00Z","headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"old"}}}}}}]\\n' "$REPOSITORY" "$BASE_REF"
+      fi
+    elif [ "$OID_ARG" = "${recentMergeHead}" ]; then
+      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[{"number":43,"url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:00:00Z","headRefName":"feat/recent-merge","headRefOid":"${recentMergeHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"recent"}}}}}}]\\n' "$BASE_REF"
+    elif [ "$OID_ARG" = "${recentReflogHead}" ]; then
+      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"nodes":[{"number":44,"url":"https://github.com/OpenCoven/coven-cave/pull/44","state":"MERGED","isDraft":false,"mergedAt":"2026-07-21T12:00:00Z","headRefName":"feat/recent-reflog","headRefOid":"${recentReflogHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"reflog"}}}}}}]\\n' "$BASE_REF"
+    else
+      printf '[{"data":{"repository":{"nameWithOwner":"%s","object":{"associatedPullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]\\n' "$REPOSITORY"
+    fi
+    exit 0
+  fi
+
+  if [ -n "$SEARCH_QUERY" ]; then
+    [ "$FIELD_COUNT" -eq 1 ] || fail "exact-head search has the wrong variable count"
+    [ -z "$OWNER$NAME$OID_ARG" ] || fail "exact-head search included repository variables"
+    require_query 'search(query: $searchQuery, type: ISSUE, first: 100, after: $endCursor)'
+    for field in issueCount number url state isDraft mergedAt headRefName headRefOid headRepository baseRefName baseRepository pageInfo hasNextPage endCursor; do
+      require_query "$field"
+    done
+    if [ "$SEARCH_QUERY" = "is:pr head:OpenCoven:feat/old" ] &&
+       [ "\${LIFECYCLE_PR_CAP:-0}" = "1" ]; then
+      printf '%s\\n' '[{"data":{"search":{"issueCount":1001,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}]'
+    elif [ "$SEARCH_QUERY" = "is:pr head:OpenCoven:feat/old" ] &&
+         [ "\${LIFECYCLE_MALFORMED_HEAD_SEARCH:-0}" = "1" ]; then
+      printf '%s\\n' '[{"data":{"search":{"issueCount":1,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}]'
+    elif [ "$SEARCH_QUERY" = "is:pr head:OpenCoven:feat/old" ] &&
+         { [ "\${LIFECYCLE_SAME_NAME_OPEN_SEARCH:-0}" = "1" ] ||
+           [ "\${LIFECYCLE_DUPLICATE_PR:-0}" = "1" ]; }; then
+      printf '%s\\n' '[{"data":{"search":{"issueCount":1,"nodes":[{"number":77,"url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"search-old"}}}}]'
+    else
+      printf '%s\\n' '[{"data":{"search":{"issueCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}]'
+    fi
+    exit 0
+  fi
+  fail "GraphQL request did not select associated PRs or exact-head search"
+fi
+
+case "$*" in
   *"/actions/runs"*)
     if [ "\${LIFECYCLE_BAD_WORKFLOW:-0}" = "1" ]; then
       printf '%s\n' '[{"total_count":1,"workflow_runs":[{}]}]'
@@ -282,7 +515,7 @@ elif [ "\${LIFECYCLE_OPEN_CONFLICTING_STRUCTURED_PATH:-0}" = "1" ]; then
 elif [ "\${LIFECYCLE_CLOSED_CONFLICTING_STRUCTURED_PATH:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-other-owner","status":"closed","title":"Other branch owner","metadata":{"coven":{"worktree":{"branch":"feat/other-owner","path":"${old}","owner":"Kitty","purpose":"Conflicting fixture","disposition":"archive","createdAt":"2026-07-20T12:00:00Z","reason":"Closed conflict fixture","reviewAfter":"2026-08-11"}}}}]'
 elif [ "\${LIFECYCLE_SIBLING_STRUCTURED_PATH:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-sibling","status":"closed","title":"Sibling path","metadata":{"coven":{"worktree":{"branch":"feat/sibling","path":"${old}-sibling","owner":"Kitty","purpose":"Sibling fixture","disposition":"archive","createdAt":"2026-07-20T12:00:00Z","reason":"Sibling fixture","reviewAfter":"2026-08-11"}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-sibling","status":"open","title":"Open sibling path","metadata":{"coven":{"worktree":{"branch":"feat/sibling","path":"${old}-sibling","owner":"Kitty","purpose":"Sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_NULL_EXCEPTION:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":null}}}}]'
 else
@@ -356,8 +589,22 @@ exit 0
     ["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads"],
     repo,
   );
-  const patrol = (extraArgs = [], extraEnv = {}) =>
-    run(
+  const beforeRemoteRefs = git(
+    ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes"],
+    repo,
+  );
+  let patrolInvocation = 0;
+  let lastPatrolInvocation = "";
+  const patrol = (extraArgs = [], extraEnv = {}) => {
+    lastPatrolInvocation = String(++patrolInvocation);
+    const needsGitFixture = [
+      "LIFECYCLE_DEFAULT_TRUNK",
+      "LIFECYCLE_STALE_DEFAULT",
+      "LIFECYCLE_MALFORMED_DEFAULT",
+      "LIFECYCLE_MISSING_DEFAULT_TRACKING",
+      "LIFECYCLE_MISMATCHED_DEFAULT_TARGET",
+    ].some((name) => extraEnv[name] === "1");
+    return run(
       process.execPath,
       [
         "--experimental-strip-types",
@@ -374,11 +621,13 @@ exit 0
       {
         env: {
           ...process.env,
-          PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+          PATH: `${needsGitFixture ? `${gitBin}${path.delimiter}` : ""}${bin}${path.delimiter}${process.env.PATH}`,
+          LIFECYCLE_TEST_INVOCATION: lastPatrolInvocation,
           ...extraEnv,
         },
       },
     );
+  };
   const stdout = patrol(["--json"]);
   const report = JSON.parse(stdout);
 
@@ -390,7 +639,16 @@ exit 0
     ["uncommitted.txt"],
     "the report retains dirty paths instead of reducing them to a count",
   );
-  assert.equal(byBranch.get("feat/old").lane, "retire-after-gate");
+  assert.equal(
+    byBranch.get("feat/old").lane,
+    "retire-after-gate",
+    JSON.stringify({
+      probeErrors: byBranch.get("feat/old").probeErrors,
+      metadataErrors: byBranch.get("feat/old").metadataErrors,
+      reasons: byBranch.get("feat/old").reasons,
+      mergedPr: byBranch.get("feat/old").mergedPr,
+    }),
+  );
   assert.equal(byBranch.get("feat/old").mergedPr.number, 42);
   assert.match(
     byBranch.get("feat/old").reasons.join("\n"),
@@ -536,7 +794,20 @@ exit 0
     ["LIFECYCLE_PARTIAL_WORKFLOW", /workflow inventory returned partial data/],
     ["LIFECYCLE_CAPPED_WORKFLOW", /workflow inventory reached GitHub's 1000-run cap/],
     ["LIFECYCLE_BAD_TASKS", /Beads inventory returned malformed data/],
-    ["LIFECYCLE_PR_CAP", /pull request inventory exceeded the safe per-branch limit/],
+    ["LIFECYCLE_PR_CAP", /exact-head PR search.*(?:cap|1000)/i],
+    [
+      "LIFECYCLE_INCOMPLETE_ASSOCIATED_PAGINATION",
+      /associated PR inventory.*(?:incomplete|pagination)/i,
+    ],
+    [
+      "LIFECYCLE_MALFORMED_ASSOCIATED_PAGINATION",
+      /associated PR inventory.*(?:cursor|pagination|malformed)/i,
+    ],
+    [
+      "LIFECYCLE_MISMATCHED_ASSOCIATED_OID",
+      /associated PR inventory.*(?:OID|malformed)/i,
+    ],
+    ["LIFECYCLE_MALFORMED_HEAD_SEARCH", /exact-head PR search.*(?:incomplete|malformed)/i],
   ]) {
     const failedReport = JSON.parse(patrol(["--json"], { [environment]: "1" }));
     const failedOld = failedReport.items.find((item) => item.branch === "feat/old");
@@ -779,8 +1050,86 @@ exit 0
     patrol(["--json"], { LIFECYCLE_CLOSED_DRAFT: "1" }),
   );
   const closedDraftOld = closedDraftReport.items.find((item) => item.branch === "feat/old");
-  assert.equal(closedDraftOld.lane, "recovery", "a closed draft PR is not an active owner");
-  assert.deepEqual(closedDraftOld.openPrs, []);
+  assert.equal(closedDraftOld.lane, "active", "an exact-OID draft PR remains an active owner");
+  assert.deepEqual(closedDraftOld.openPrs, [
+    { number: 96, url: "https://github.com/OpenCoven/coven-cave/pull/96" },
+  ]);
+
+  const outboundOpenReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_OUTBOUND_OPEN: "1" }),
+  );
+  const outboundOpenOld = outboundOpenReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(
+    outboundOpenOld.lane,
+    "active",
+    "an outbound exact-OID PR owns the branch despite a different head repository and name",
+  );
+  assert.deepEqual(outboundOpenOld.openPrs, [
+    { number: 99, url: "https://github.com/OtherOrg/other-repo/pull/99" },
+  ]);
+
+  const exactMergedReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_EXACT_MERGED_DIFFERENT_HEAD: "1" }),
+  );
+  const exactMergedOld = exactMergedReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(
+    exactMergedOld.lane,
+    "cooldown",
+    "an exact OID merged into the authoritative default branch supplies cooldown evidence",
+  );
+  assert.deepEqual(exactMergedOld.mergedPr, {
+    number: 98,
+    url: "https://github.com/OpenCoven/coven-cave/pull/98",
+    headOid: oldHead,
+  });
+
+  const closedUnmergedReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_CLOSED_UNMERGED: "1" }),
+  );
+  const closedUnmergedOld = closedUnmergedReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(
+    closedUnmergedOld.lane,
+    "recovery",
+    "a closed unmerged non-draft PR is neither an owner nor landing proof",
+  );
+  assert.deepEqual(closedUnmergedOld.openPrs, []);
+  assert.equal(closedUnmergedOld.mergedPr, null);
+
+  const sameNameSearchReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_SAME_NAME_OPEN_SEARCH: "1" }),
+  );
+  const sameNameSearchOld = sameNameSearchReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(
+    sameNameSearchOld.lane,
+    "active",
+    "the exhaustive exact-head search retains same-name open PR ownership",
+  );
+
+  const duplicatePrReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_DUPLICATE_PR: "1" }),
+  );
+  assert.deepEqual(
+    duplicatePrReport.items.find((item) => item.branch === "feat/old").openPrs,
+    [{ number: 77, url: "https://github.com/OpenCoven/coven-cave/pull/77" }],
+    "associated and exact-head PR records deduplicate stably",
+  );
+
+  const badCanonicalReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_BAD_CANONICAL_REPO: "1" }),
+  );
+  for (const branch of ["feat/old", "feat/branch-only"]) {
+    const item = badCanonicalReport.items.find((candidate) => candidate.branch === branch);
+    assert.equal(item.lane, "uncertain", "canonical repository failure is global");
+    assert.match(item.probeErrors.join("\n"), /canonical.*repository/i);
+  }
 
   const linkedReport = JSON.parse(patrol(["--json"], { LIFECYCLE_LINKED_TASK: "1" }));
   const linkedItem = linkedReport.items.find(
@@ -789,51 +1138,72 @@ exit 0
   assert.equal(linkedItem.lane, "active", "a Bead ID embedded in the branch proves ownership");
   assert.deepEqual(linkedItem.taskIds, ["CAVE-LINK1"]);
 
-  const remoteMainWriter = path.join(fixtureRoot, "remote-main-writer");
-  git(["clone", "-q", "-b", "main", origin, remoteMainWriter], fixtureRoot);
-  git(["config", "user.name", "Remote Main Writer"], remoteMainWriter);
-  git(["config", "user.email", "remote-main@example.invalid"], remoteMainWriter);
-  git(["config", "commit.gpgsign", "false"], remoteMainWriter);
-  writeFileSync(path.join(remoteMainWriter, "remote-main.txt"), "remote main advanced\n");
-  git(["add", "remote-main.txt"], remoteMainWriter);
-  git(["commit", "-q", "-m", "advance remote main"], remoteMainWriter);
-  git(["push", "-q", "origin", "main"], remoteMainWriter);
-  const staleTrackingMain = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
-  const liveRemoteMain = git(["rev-parse", "HEAD"], remoteMainWriter).trim();
-  assert.notEqual(staleTrackingMain, liveRemoteMain, "the fixture leaves origin/main stale");
-
-  const staleMainReport = JSON.parse(patrol(["--json"]));
-  const staleMainOld = staleMainReport.items.find((item) => item.branch === "feat/old");
-  assert.equal(staleMainOld.lane, "uncertain", "stale default-main tracking data fails closed");
-  assert.match(
-    staleMainOld.probeErrors.join("\n"),
-    /live.*refs\/heads\/main|refs\/remotes\/origin\/main.*(?:stale|diverg)/i,
+  const trunkDefaultReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_DEFAULT_TRUNK: "1" }),
   );
   assert.equal(
-    git(["rev-parse", "refs/remotes/origin/main"], repo).trim(),
-    staleTrackingMain,
-    "the live default-main probe does not fetch or mutate the tracking ref",
+    trunkDefaultReport.items.find((item) => item.branch === "feat/branch-only").lane,
+    "retire-after-gate",
+    "the authoritative remote default branch is discovered instead of hard-coding main",
   );
-  git(["fetch", "-q", "origin", "main:refs/remotes/origin/main"], repo);
+  assert.equal(
+    trunkDefaultReport.items.find((item) => item.branch === "main").lane,
+    "protected",
+    "main remains protected when the remote default branch has another name",
+  );
 
-  const unavailableOrigin = path.join(fixtureRoot, "unavailable-origin.git");
-  git(["remote", "set-url", "origin", unavailableOrigin], repo);
-  try {
-    const unavailableMainReport = JSON.parse(patrol(["--json"]));
-    const unavailableMainOld = unavailableMainReport.items.find(
+  for (const [environment, expectedError] of [
+    ["LIFECYCLE_STALE_DEFAULT", /default branch inventory.*(?:stale|mismatch)/i],
+    ["LIFECYCLE_MALFORMED_DEFAULT", /default branch inventory.*malformed/i],
+    ["LIFECYCLE_MISSING_DEFAULT_TRACKING", /default branch inventory.*tracking/i],
+    ["LIFECYCLE_MISMATCHED_DEFAULT_TARGET", /default branch inventory.*target.*mismatch/i],
+    ["LIFECYCLE_MALFORMED_DEFAULT_TRACKING", /default branch inventory.*tracking.*malformed/i],
+  ]) {
+    const invalidDefaultReport = JSON.parse(
+      patrol(["--json"], { [environment]: "1" }),
+    );
+    const invalidDefaultOld = invalidDefaultReport.items.find(
       (item) => item.branch === "feat/old",
     );
+    assert.equal(invalidDefaultOld.lane, "uncertain", `${environment} fails closed`);
+    assert.notEqual(
+      invalidDefaultOld.lane,
+      "retire-after-gate",
+      `${environment} is never cleanup-ready`,
+    );
+    assert.match(invalidDefaultOld.probeErrors.join("\n"), expectedError);
     assert.equal(
-      unavailableMainOld.lane,
-      "uncertain",
-      "an unavailable live default-main ref fails closed",
+      existsSync(
+        path.join(fixtureRoot, `invalid-default-merge-base-${lastPatrolInvocation}`),
+      ),
+      false,
+      `${environment} does not run ancestry before default OID equality proof`,
+    );
+  }
+  for (const liveMainCase of ["malformed", "wrong-ref", "multi-record"]) {
+    const malformedLiveMainReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_MALFORMED_LIVE_MAIN_CASE: liveMainCase }),
+    );
+    const malformedLiveMainOld = malformedLiveMainReport.items.find(
+      (item) => item.branch === "feat/old",
+    );
+    assert.equal(malformedLiveMainOld.lane, "uncertain", `${liveMainCase} live main fails closed`);
+    assert.notEqual(
+      malformedLiveMainOld.lane,
+      "retire-after-gate",
+      `${liveMainCase} live main is never cleanup-ready`,
     );
     assert.match(
-      unavailableMainOld.probeErrors.join("\n"),
-      /live.*refs\/heads\/main|default.*main.*probe/i,
+      malformedLiveMainOld.probeErrors.join("\n"),
+      /default branch inventory.*target ref.*malformed/i,
     );
-  } finally {
-    git(["remote", "set-url", "origin", origin], repo);
+    assert.equal(
+      existsSync(
+        path.join(fixtureRoot, `invalid-default-merge-base-${lastPatrolInvocation}`),
+      ),
+      false,
+      `${liveMainCase} live main does not run ancestry before default OID equality proof`,
+    );
   }
 
   assert.equal(
@@ -845,6 +1215,11 @@ exit 0
     git(["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads"], repo),
     beforeBranches,
     "the patrol never changes branch refs",
+  );
+  assert.equal(
+    git(["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes"], repo),
+    beforeRemoteRefs,
+    "the patrol never changes remote-tracking refs",
   );
   assert.equal(readFileSync(path.join(live, "uncommitted.txt"), "utf8"), "live\n");
 

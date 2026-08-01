@@ -51,13 +51,34 @@ type LocalBranchRef = {
   oid: string;
 };
 
+type RemoteDefaultBranch = {
+  branch: string | null;
+  remoteRef: string | null;
+  localTrackingRef: string | null;
+  oid: string | null;
+  error: string | null;
+};
+
 type PullRequest = {
   number: number;
-  html_url: string;
-  state: "open" | "closed";
-  draft: boolean;
-  merged_at: string | null;
-  head: { ref: string; sha: string };
+  url: string;
+  state: "OPEN" | "CLOSED" | "MERGED";
+  isDraft: boolean;
+  mergedAt: string | null;
+  headRefName: string;
+  headRefOid: string;
+  headRepository: string | null;
+  baseRefName: string;
+  baseRepository: string;
+};
+
+type PullRequestInventory = {
+  byOid: Map<string, PullRequest[]>;
+  byBranch: Map<string, PullRequest[]>;
+  errorsByOid: Map<string, string>;
+  errorsByBranch: Map<string, string>;
+  globalErrors: string[];
+  canonicalRepo: string | null;
 };
 
 type WorkflowRun = {
@@ -110,7 +131,8 @@ const TERMINAL_SESSION_STATUSES = new Set([
   "orphaned",
 ]);
 const DISPOSITIONS = new Set(["active", "pr", "recovery", "archive"]);
-const OID = /^[0-9a-f]{40,64}$/;
+const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const GITHUB_REPOSITORY = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const RFC3339_INSTANT =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-](\d{2}):(\d{2}))$/;
 const ISO_CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -456,97 +478,415 @@ function updatedAt(
   return { value: Math.max(...epochs), error: null };
 }
 
+const ASSOCIATED_PULL_REQUESTS_QUERY = `
+query($owner: String!, $name: String!, $oid: GitObjectID!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    nameWithOwner
+    object(oid: $oid) {
+      ... on Commit {
+        associatedPullRequests(first: 100, after: $endCursor) {
+          nodes {
+            number
+            url
+            state
+            isDraft
+            mergedAt
+            headRefName
+            headRefOid
+            headRepository { nameWithOwner }
+            baseRefName
+            baseRepository { nameWithOwner }
+          }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+  }
+}`;
+
+const EXACT_HEAD_PULL_REQUESTS_QUERY = `
+query($searchQuery: String!, $endCursor: String) {
+  search(query: $searchQuery, type: ISSUE, first: 100, after: $endCursor) {
+    issueCount
+    nodes {
+      ... on PullRequest {
+        number
+        url
+        state
+        isDraft
+        mergedAt
+        headRefName
+        headRefOid
+        headRepository { nameWithOwner }
+        baseRefName
+        baseRepository { nameWithOwner }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}`;
+
+function repositoryName(value: unknown): string | null {
+  if (!isRecord(value) || typeof value.nameWithOwner !== "string") return null;
+  return GITHUB_REPOSITORY.test(value.nameWithOwner) ? value.nameWithOwner : null;
+}
+
+function isPullRequestUrl(value: unknown, repo: string, number: number): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const parsed = new URL(value);
+    return (
+      parsed.protocol === "https:" &&
+      parsed.hostname === "github.com" &&
+      parsed.port === "" &&
+      parsed.username === "" &&
+      parsed.password === "" &&
+      parsed.search === "" &&
+      parsed.hash === "" &&
+      parsed.pathname === `/${repo}/pull/${number}`
+    );
+  } catch {
+    return false;
+  }
+}
+
+function parsePullRequestNode(value: unknown, expectedOid: string | null): PullRequest {
+  if (!isRecord(value)) throw new Error("pull request node is not an object");
+  const baseRepository = repositoryName(value.baseRepository);
+  const headRepository =
+    value.headRepository === null ? null : repositoryName(value.headRepository);
+  if (
+    !Number.isInteger(value.number) ||
+    (value.number as number) <= 0 ||
+    (value.state !== "OPEN" && value.state !== "CLOSED" && value.state !== "MERGED") ||
+    typeof value.isDraft !== "boolean" ||
+    (value.state === "MERGED"
+      ? typeof value.mergedAt === "string" &&
+        isCanonicalRfc3339Instant(value.mergedAt)
+      : value.mergedAt === null) === false ||
+    typeof value.headRefName !== "string" ||
+    value.headRefName.length === 0 ||
+    typeof value.headRefOid !== "string" ||
+    !OID.test(value.headRefOid) ||
+    (expectedOid !== null && value.headRefOid !== expectedOid) ||
+    (value.headRepository !== null && headRepository === null) ||
+    (value.state === "OPEN" && headRepository === null) ||
+    typeof value.baseRefName !== "string" ||
+    value.baseRefName.length === 0 ||
+    baseRepository === null ||
+    !isPullRequestUrl(value.url, baseRepository, value.number as number)
+  ) {
+    throw new Error("pull request node returned malformed fields or a mismatched head OID");
+  }
+  return {
+    number: value.number as number,
+    url: value.url,
+    state: value.state,
+    isDraft: value.isDraft,
+    mergedAt: value.mergedAt as string | null,
+    headRefName: value.headRefName,
+    headRefOid: value.headRefOid,
+    headRepository,
+    baseRefName: value.baseRefName,
+    baseRepository,
+  };
+}
+
+function validatePageInfo(
+  value: unknown,
+  pageIndex: number,
+  pageCount: number,
+  cursors: Set<string>,
+): void {
+  if (
+    !isRecord(value) ||
+    typeof value.hasNextPage !== "boolean" ||
+    !(
+      value.endCursor === null ||
+      (typeof value.endCursor === "string" && value.endCursor.length > 0)
+    )
+  ) {
+    throw new Error("pagination returned malformed pageInfo");
+  }
+  const finalPage = pageIndex === pageCount - 1;
+  if (finalPage ? value.hasNextPage : !value.hasNextPage) {
+    throw new Error("pagination is incomplete");
+  }
+  if (!finalPage && typeof value.endCursor !== "string") {
+    throw new Error("pagination omitted an intermediate cursor");
+  }
+  if (typeof value.endCursor === "string") {
+    if (cursors.has(value.endCursor)) throw new Error("pagination repeated a cursor");
+    cursors.add(value.endCursor);
+  }
+}
+
+function samePullRequest(left: PullRequest, right: PullRequest): boolean {
+  return (
+    left.number === right.number &&
+    left.url === right.url &&
+    left.state === right.state &&
+    left.isDraft === right.isDraft &&
+    left.mergedAt === right.mergedAt &&
+    left.headRefName === right.headRefName &&
+    left.headRefOid === right.headRefOid &&
+    left.headRepository === right.headRepository &&
+    left.baseRefName === right.baseRefName &&
+    left.baseRepository === right.baseRepository
+  );
+}
+
+function dedupePullRequests(pullRequests: PullRequest[]): PullRequest[] {
+  const deduped = new Map<string, PullRequest>();
+  for (const pullRequest of pullRequests) {
+    const key = `${pullRequest.baseRepository.toLowerCase()}#${pullRequest.number}`;
+    const existing = deduped.get(key);
+    if (existing && !samePullRequest(existing, pullRequest)) {
+      throw new Error(`conflicting duplicate pull request ${key}`);
+    }
+    if (!existing) deduped.set(key, pullRequest);
+  }
+  return [...deduped.values()];
+}
+
+function parseAssociatedPullRequestPages(
+  raw: string,
+  expectedRepo: string,
+  oid: string,
+): { canonicalRepo: string; pullRequests: PullRequest[] } {
+  const pages = parseJson<unknown>(raw, "associated PR inventory");
+  if (!Array.isArray(pages) || pages.length === 0) {
+    throw new Error("pagination returned no pages");
+  }
+  const cursors = new Set<string>();
+  let canonicalRepo: string | null = null;
+  const pullRequests: PullRequest[] = [];
+  pages.forEach((page, pageIndex) => {
+    if (!isRecord(page) || "errors" in page || !isRecord(page.data)) {
+      throw new Error("page returned malformed GraphQL data");
+    }
+    const repository = page.data.repository;
+    const pageRepo = repositoryName(repository);
+    if (
+      !isRecord(repository) ||
+      pageRepo === null ||
+      pageRepo.toLowerCase() !== expectedRepo.toLowerCase()
+    ) {
+      throw new Error("canonical repository identity mismatch");
+    }
+    if (canonicalRepo !== null && pageRepo !== canonicalRepo) {
+      throw new Error("canonical repository identity changed between pages");
+    }
+    canonicalRepo = pageRepo;
+    if (!isRecord(repository.object) || !isRecord(repository.object.associatedPullRequests)) {
+      throw new Error("commit association connection is unavailable");
+    }
+    const connection = repository.object.associatedPullRequests;
+    if (!Array.isArray(connection.nodes)) {
+      throw new Error("association nodes are malformed");
+    }
+    validatePageInfo(connection.pageInfo, pageIndex, pages.length, cursors);
+    if (
+      pageIndex < pages.length - 1 &&
+      connection.nodes.length === 0
+    ) {
+      throw new Error("pagination returned an empty intermediate page");
+    }
+    pullRequests.push(
+      ...connection.nodes.map((node) => parsePullRequestNode(node, oid)),
+    );
+  });
+  if (canonicalRepo === null) throw new Error("canonical repository identity is unavailable");
+  return { canonicalRepo, pullRequests: dedupePullRequests(pullRequests) };
+}
+
+function parseExactHeadPullRequestPages(
+  raw: string,
+  canonicalRepo: string,
+  branch: string,
+): PullRequest[] {
+  const pages = parseJson<unknown>(raw, "exact-head PR search");
+  if (!Array.isArray(pages) || pages.length === 0) {
+    throw new Error("pagination returned no pages");
+  }
+  const cursors = new Set<string>();
+  let issueCount: number | null = null;
+  const pullRequests: PullRequest[] = [];
+  pages.forEach((page, pageIndex) => {
+    if (!isRecord(page) || "errors" in page || !isRecord(page.data)) {
+      throw new Error("page returned malformed GraphQL data");
+    }
+    const search = page.data.search;
+    if (
+      !isRecord(search) ||
+      !Number.isInteger(search.issueCount) ||
+      (search.issueCount as number) < 0 ||
+      !Array.isArray(search.nodes)
+    ) {
+      throw new Error("search page returned malformed data");
+    }
+    if ((search.issueCount as number) > 1_000) {
+      throw new Error("reached GitHub's 1000-result cap");
+    }
+    if (issueCount !== null && issueCount !== search.issueCount) {
+      throw new Error("search page totals are inconsistent");
+    }
+    issueCount = search.issueCount as number;
+    validatePageInfo(search.pageInfo, pageIndex, pages.length, cursors);
+    if (pageIndex < pages.length - 1 && search.nodes.length === 0) {
+      throw new Error("pagination returned an empty intermediate page");
+    }
+    pullRequests.push(...search.nodes.map((node) => parsePullRequestNode(node, null)));
+  });
+  if (issueCount === null || pullRequests.length !== issueCount) {
+    throw new Error("search pagination is incomplete");
+  }
+  return dedupePullRequests(
+    pullRequests.filter(
+      (pullRequest) =>
+        pullRequest.headRepository?.toLowerCase() === canonicalRepo.toLowerCase() &&
+        pullRequest.headRefName === branch,
+    ),
+  );
+}
+
 function fetchPullRequests(
   repo: string,
   root: string,
+  heads: string[],
   branches: string[],
-): { pullRequests: PullRequest[]; error: string | null } {
-  const pullRequests: PullRequest[] = [];
-  for (const branch of [...new Set(branches)].filter((name) => !PROTECTED_BRANCHES.has(name))) {
+  defaultBranch: string | null,
+): PullRequestInventory {
+  const byOid = new Map<string, PullRequest[]>();
+  const byBranch = new Map<string, PullRequest[]>();
+  const errorsByOid = new Map<string, string>();
+  const errorsByBranch = new Map<string, string>();
+  const globalErrors: string[] = [];
+  const repoMatch = repo.match(/^([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)$/);
+  if (!repoMatch) {
+    return {
+      byOid,
+      byBranch,
+      errorsByOid,
+      errorsByBranch,
+      globalErrors: ["pull request inventory has an invalid canonical repository"],
+      canonicalRepo: null,
+    };
+  }
+  const [, owner, name] = repoMatch;
+  let canonicalRepo: string | null = null;
+  for (const oid of [...new Set(heads)]) {
     const result = command(
       "gh",
       [
-        "pr",
-        "list",
-        "--repo",
-        repo,
-        "--state",
-        "all",
-        "--head",
-        branch,
-        "--limit",
-        "101",
-        "--json",
-        "number,url,state,isDraft,mergedAt,baseRefName,headRefName,headRefOid",
+        "api",
+        "--hostname",
+        "github.com",
+        "graphql",
+        "--paginate",
+        "--slurp",
+        "-F",
+        `owner=${owner}`,
+        "-F",
+        `name=${name}`,
+        "-F",
+        `oid=${oid}`,
+        "-f",
+        `query=${ASSOCIATED_PULL_REQUESTS_QUERY}`,
       ],
       root,
-      60_000,
+      120_000,
     );
-    if (!result.ok) {
-      return {
-        pullRequests: [],
-        error: result.stderr || `pull request inventory unavailable for ${branch}`,
-      };
+    if (!result.ok || result.stderr) {
+      errorsByOid.set(
+        oid,
+        `associated PR inventory query failed for ${oid}: ${
+          result.stderr || `status ${result.status ?? "unknown"}`
+        }`,
+      );
+      continue;
     }
     try {
-      const parsed = parseJson<
-        Array<{
-          number: number;
-          url: string;
-          state: "OPEN" | "CLOSED" | "MERGED";
-          isDraft: boolean;
-          mergedAt: string | null;
-          baseRefName: string;
-          headRefName: string;
-          headRefOid: string;
-        }>
-      >(result.stdout, `GitHub pull request inventory for ${branch}`);
-      if (
-        !Array.isArray(parsed) ||
-        !parsed.every(
-          (pr) =>
-            isRecord(pr) &&
-            Number.isInteger(pr.number) &&
-            typeof pr.url === "string" &&
-            (pr.state === "OPEN" || pr.state === "CLOSED" || pr.state === "MERGED") &&
-            typeof pr.isDraft === "boolean" &&
-            (pr.state === "MERGED"
-              ? typeof pr.mergedAt === "string" && Number.isFinite(Date.parse(pr.mergedAt))
-              : pr.mergedAt === null) &&
-            typeof pr.baseRefName === "string" &&
-            pr.baseRefName.length > 0 &&
-            pr.headRefName === branch &&
-            typeof pr.headRefOid === "string" &&
-            OID.test(pr.headRefOid),
-        )
-      ) {
-        throw new Error();
+      const parsed = parseAssociatedPullRequestPages(result.stdout, repo, oid);
+      if (canonicalRepo !== null && parsed.canonicalRepo !== canonicalRepo) {
+        globalErrors.push("pull request inventory canonical repository identity changed");
+      } else if (canonicalRepo === null) {
+        canonicalRepo = parsed.canonicalRepo;
       }
-      if (parsed.length >= 101) {
-        return {
-          pullRequests: [],
-          error: `pull request inventory exceeded the safe per-branch limit for ${branch}`,
-        };
+      byOid.set(oid, parsed.pullRequests);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "malformed response";
+      const message = `associated PR inventory returned malformed data for ${oid}: ${detail}`;
+      errorsByOid.set(oid, message);
+      if (/canonical repository/i.test(detail)) {
+        globalErrors.push(`pull request inventory canonical repository failure: ${detail}`);
       }
-      pullRequests.push(
-        ...parsed.map((pr): PullRequest => ({
-          number: pr.number,
-          html_url: pr.url,
-          state: pr.state === "OPEN" ? "open" : "closed",
-          draft: pr.isDraft,
-          merged_at:
-            pr.state === "MERGED" && pr.baseRefName === "main" ? pr.mergedAt : null,
-          head: { ref: pr.headRefName, sha: pr.headRefOid },
-        })),
-      );
-    } catch {
-      return {
-        pullRequests: [],
-        error: `pull request inventory returned malformed data for ${branch}`,
-      };
     }
   }
-  return { pullRequests, error: null };
+  if (canonicalRepo === null) {
+    globalErrors.push("pull request inventory canonical repository is unavailable");
+  }
+
+  if (
+    canonicalRepo !== null &&
+    !globalErrors.some((error) => /canonical repository/i.test(error))
+  ) {
+    const canonicalOwner = canonicalRepo.split("/")[0]!;
+    for (const branch of [...new Set(branches)].filter(
+      (candidate) =>
+        !PROTECTED_BRANCHES.has(candidate) && candidate !== defaultBranch,
+    )) {
+      const searchQuery = `is:pr head:${canonicalOwner}:${branch}`;
+      const result = command(
+        "gh",
+        [
+          "api",
+          "--hostname",
+          "github.com",
+          "graphql",
+          "--paginate",
+          "--slurp",
+          "-F",
+          `searchQuery=${searchQuery}`,
+          "-f",
+          `query=${EXACT_HEAD_PULL_REQUESTS_QUERY}`,
+        ],
+        root,
+        120_000,
+      );
+      if (!result.ok || result.stderr) {
+        errorsByBranch.set(
+          branch,
+          `exact-head PR search failed for ${branch}: ${
+            result.stderr || `status ${result.status ?? "unknown"}`
+          }`,
+        );
+        continue;
+      }
+      try {
+        byBranch.set(
+          branch,
+          parseExactHeadPullRequestPages(result.stdout, canonicalRepo, branch),
+        );
+      } catch (error) {
+        errorsByBranch.set(
+          branch,
+          `exact-head PR search returned malformed or incomplete data for ${branch}: ${
+            error instanceof Error ? error.message : "malformed response"
+          }`,
+        );
+      }
+    }
+  }
+
+  return {
+    byOid,
+    byBranch,
+    errorsByOid,
+    errorsByBranch,
+    globalErrors: [...new Set(globalErrors)],
+    canonicalRepo,
+  };
 }
 
 function fetchWorkflows(
@@ -1010,11 +1350,11 @@ function refsContaining(root: string, head: string): {
   };
 }
 
-function onDefaultBranch(root: string, head: string, defaultMainOid: string): {
+function onDefaultBranch(root: string, head: string, localTrackingRef: string): {
   value: boolean;
   error: string | null;
 } {
-  const result = git(root, ["merge-base", "--is-ancestor", head, defaultMainOid]);
+  const result = git(root, ["merge-base", "--is-ancestor", head, localTrackingRef]);
   if (result.status === 0) return { value: true, error: null };
   if (result.status === 1) return { value: false, error: null };
   return { value: false, error: result.stderr || "default-branch ancestry check failed" };
@@ -1049,7 +1389,7 @@ function exactRemoteRef(
       error: `${label} probe failed for ${ref}: ${result.stderr || "command unavailable"}`,
     };
   }
-  const match = result.stdout.match(/^([0-9a-f]{40,64})\t([^\n]+)\n?$/);
+  const match = result.stdout.match(/^((?:[0-9a-f]{40}|[0-9a-f]{64}))\t([^\n]+)\n?$/);
   if (!match || match[2] !== ref) {
     return {
       remoteRef: null,
@@ -1059,47 +1399,105 @@ function exactRemoteRef(
   return { remoteRef: { ref: match[2], oid: match[1] }, error: null };
 }
 
-function liveDefaultMain(root: string): { oid: string | null; error: string | null } {
-  const live = exactRemoteRef(root, "refs/heads/main", {
-    required: true,
-    label: "live default-main ref",
+function strictOutputLines(raw: string): string[] | null {
+  const body = raw.endsWith("\n") ? raw.slice(0, -1) : raw;
+  if (!body || body.endsWith("\n") || body.includes("\r")) return null;
+  const lines = body.split("\n");
+  return lines.every((line) => line.length > 0) ? lines : null;
+}
+
+function remoteDefaultBranch(root: string): RemoteDefaultBranch {
+  const fail = (message: string): RemoteDefaultBranch => ({
+    branch: null,
+    remoteRef: null,
+    localTrackingRef: null,
+    oid: null,
+    error: `default branch inventory ${message}`,
   });
-  if (live.error || !live.remoteRef) {
-    return {
-      oid: null,
-      error: live.error ?? "live default-main ref probe returned no refs/heads/main record",
-    };
+  const head = git(root, ["ls-remote", "--symref", "origin", "HEAD"], 60_000);
+  if (!head.ok || head.stderr) {
+    return fail(`origin HEAD probe failed: ${head.stderr || "command unavailable"}`);
+  }
+  const headLines = strictOutputLines(head.stdout);
+  const symrefs =
+    headLines?.flatMap((line) => {
+      const match = line.match(/^ref: (refs\/heads\/[^\t]+)\tHEAD$/);
+      return match ? [match[1]!] : [];
+    }) ?? [];
+  const headOids =
+    headLines?.flatMap((line) => {
+      const match = line.match(/^((?:[0-9a-f]{40}|[0-9a-f]{64}))\tHEAD$/);
+      return match ? [match[1]!] : [];
+    }) ?? [];
+  if (!headLines || headLines.length !== 2 || symrefs.length !== 1 || headOids.length !== 1) {
+    return fail("returned malformed origin HEAD symref data");
   }
 
-  const tracking = git(root, [
-    "show-ref",
-    "--verify",
-    "--hash",
-    "refs/remotes/origin/main",
-  ]);
-  if (!tracking.ok) {
-    return {
-      oid: null,
-      error:
-        tracking.stderr ||
-        "local default-main tracking ref refs/remotes/origin/main is unavailable",
-    };
+  const remoteRef = symrefs[0]!;
+  const branch = remoteRef.slice("refs/heads/".length);
+  const refCheck = git(root, ["check-ref-format", remoteRef]);
+  if (!branch || !refCheck.ok || refCheck.stdout !== "" || refCheck.stderr) {
+    return fail(`returned malformed remote default ref ${remoteRef}`);
   }
-  const match = tracking.stdout.match(/^([0-9a-f]{40,64})\n?$/);
-  if (!match) {
-    return {
-      oid: null,
-      error: "local default-main tracking ref refs/remotes/origin/main returned malformed data",
-    };
+
+  const target = git(root, ["ls-remote", "--exit-code", "origin", remoteRef], 60_000);
+  if (!target.ok || target.stderr) {
+    return fail(
+      `target ref ${remoteRef} probe failed: ${target.stderr || `status ${target.status ?? "unknown"}`}`,
+    );
   }
-  if (match[1] !== live.remoteRef.oid) {
-    return {
-      oid: null,
-      error:
-        "refs/remotes/origin/main is stale or divergent from live origin refs/heads/main",
-    };
+  const targetLines = strictOutputLines(target.stdout);
+  const targetMatch =
+    targetLines?.length === 1
+      ? targetLines[0]!.match(
+          /^((?:[0-9a-f]{40}|[0-9a-f]{64}))\t([^\t\n]+)$/,
+        )
+      : null;
+  if (!targetMatch || targetMatch[2] !== remoteRef) {
+    return fail(`target ref ${remoteRef} returned malformed data`);
   }
-  return { oid: live.remoteRef.oid, error: null };
+  if (targetMatch[1] !== headOids[0]) {
+    return fail(`target OID mismatch for ${remoteRef}`);
+  }
+
+  const localTrackingRef = `refs/remotes/origin/${branch}`;
+  const direct = git(root, ["symbolic-ref", "-q", localTrackingRef]);
+  if (direct.status === 0) {
+    return fail(`tracking ref ${localTrackingRef} is symbolic`);
+  }
+  if (direct.status !== 1) {
+    return fail(
+      `tracking ref ${localTrackingRef} directness probe failed: ${
+        direct.stderr || `status ${direct.status ?? "unknown"}`
+      }`,
+    );
+  }
+  const tracking = git(root, ["rev-parse", "--verify", `${localTrackingRef}^{commit}`]);
+  if (!tracking.ok || tracking.stderr) {
+    return fail(
+      `tracking ref ${localTrackingRef} is unavailable: ${
+        tracking.stderr || `status ${tracking.status ?? "unknown"}`
+      }`,
+    );
+  }
+  const trackingLines = strictOutputLines(tracking.stdout);
+  const trackingOid =
+    trackingLines?.length === 1 && OID.test(trackingLines[0]!) ? trackingLines[0]! : null;
+  if (!trackingOid) {
+    return fail(`tracking ref ${localTrackingRef} returned malformed data`);
+  }
+  if (trackingOid !== targetMatch[1]) {
+    return fail(
+      `tracking ref ${localTrackingRef} is stale or mismatched with authoritative ${remoteRef}`,
+    );
+  }
+  return {
+    branch,
+    remoteRef,
+    localTrackingRef,
+    oid: trackingOid,
+    error: null,
+  };
 }
 
 function matchingTasks(
@@ -1330,17 +1728,19 @@ export function collectWorktreeLifecycleInventory(
       })),
   ];
 
+  const defaultBranch = remoteDefaultBranch(root);
   const prs = fetchPullRequests(
     options.repo,
     root,
+    units.map((unit) => unit.head),
     units.flatMap((unit) => (unit.branch ? [unit.branch] : [])),
+    defaultBranch.branch,
   );
   const workflows = fetchWorkflows(options.repo, root);
   const claims = fetchClaims(root);
   const sessions = fetchSessions(root);
   const tasks = fetchTasks(root);
   const processes = fetchProcessOwners();
-  const defaultMain = liveDefaultMain(root);
   const sessionOwnership =
     sessions.error === null
       ? assignActiveSessions(
@@ -1351,9 +1751,12 @@ export function collectWorktreeLifecycleInventory(
           sessionIdsByPath: new Map<string, string[]>(),
           probeErrorsByPath: new Map<string, string[]>(),
         };
-  const branchGlobalErrors = [prs.error, workflows.error, claims.error, tasks.error].filter(
-    (error): error is string => error !== null,
-  );
+  const branchGlobalErrors = [
+    ...prs.globalErrors,
+    workflows.error,
+    claims.error,
+    tasks.error,
+  ].filter((error): error is string => typeof error === "string");
 
   const observations: WorktreeLifecycleObservation[] = units.map((unit) => {
     const state = unit.path
@@ -1362,32 +1765,56 @@ export function collectWorktreeLifecycleInventory(
     const flags = unit.path ? indexFlags(unit.path) : { flags: [], error: null };
     const remoteRefs = refsContaining(root, unit.head);
     const ancestry =
-      defaultMain.oid === null
+      defaultBranch.localTrackingRef === null
         ? {
             value: false,
-            error: defaultMain.error ?? "live default-main verification failed",
+            error: defaultBranch.error ?? "default branch inventory verification failed",
           }
-        : onDefaultBranch(root, unit.head, defaultMain.oid);
-    const branchPrs = unit.branch
-      ? prs.pullRequests.filter((pr) => pr.head.ref === unit.branch)
-      : [];
-    const exactMerged = branchPrs.find(
-      (pr) => pr.merged_at !== null && pr.head.sha === unit.head,
-    );
-    const latestMerged = exactMerged ?? branchPrs.find((pr) => pr.merged_at !== null);
+        : onDefaultBranch(root, unit.head, defaultBranch.localTrackingRef);
+    let pullRequestMergeError: string | null = null;
+    let unitPullRequests: PullRequest[] = [];
+    try {
+      unitPullRequests = dedupePullRequests([
+        ...(prs.byOid.get(unit.head) ?? []),
+        ...(unit.branch ? (prs.byBranch.get(unit.branch) ?? []) : []),
+      ]);
+    } catch (error) {
+      pullRequestMergeError = `pull request inventory returned conflicting duplicates: ${
+        error instanceof Error ? error.message : "malformed duplicate"
+      }`;
+    }
+    const exactMerged =
+      defaultBranch.branch !== null && prs.canonicalRepo !== null
+        ? unitPullRequests
+            .filter(
+              (pullRequest) =>
+                pullRequest.state === "MERGED" &&
+                pullRequest.headRefOid === unit.head &&
+                pullRequest.baseRepository.toLowerCase() ===
+                  prs.canonicalRepo!.toLowerCase() &&
+                pullRequest.baseRefName === defaultBranch.branch,
+            )
+            .sort(
+              (left, right) =>
+                Date.parse(right.mergedAt!) - Date.parse(left.mergedAt!),
+            )[0] ?? null
+        : null;
     const recency = updatedAt(
       unit.path ?? root,
       unit.ref,
-      exactMerged?.merged_at ?? null,
+      exactMerged?.mergedAt ?? null,
       unit.path !== null,
     );
     const remote = unit.ref
       ? exactRemoteRef(root, unit.ref)
       : { remoteRef: null, error: null };
     const metadata = metadataFor(unit.branch, unit.path, tasks.tasks);
-    const openPrs = branchPrs
-      .filter((pr) => pr.state === "open")
-      .map((pr) => ({ number: pr.number, url: pr.html_url }));
+    const openPrs = unitPullRequests
+      .filter((pullRequest) => pullRequest.state === "OPEN" || pullRequest.isDraft)
+      .map((pullRequest) => ({
+        number: pullRequest.number,
+        url: pullRequest.url,
+      }));
     const activeWorkflowUrls = workflows.runs
       .filter(
         (run) =>
@@ -1399,6 +1826,9 @@ export function collectWorktreeLifecycleInventory(
     const probeErrors = [
       ...unit.initialErrors,
       ...branchGlobalErrors,
+      prs.errorsByOid.get(unit.head),
+      ...(unit.branch ? [prs.errorsByBranch.get(unit.branch)] : []),
+      pullRequestMergeError,
       ...pathErrors,
       ...(unit.path ? (sessionOwnership.probeErrorsByPath.get(unit.path) ?? []) : []),
       recency.error,
@@ -1406,7 +1836,7 @@ export function collectWorktreeLifecycleInventory(
       ancestry.error,
       remote.error,
       ...(unit.ref ? [directRefError(root, unit.ref)] : []),
-    ].filter((error): error is string => error !== null);
+    ].filter((error): error is string => typeof error === "string");
 
     return {
       kind: unit.kind,
@@ -1415,7 +1845,9 @@ export function collectWorktreeLifecycleInventory(
       branch: unit.branch,
       head: unit.head,
       isPrimary: unit.path !== null && normalizePath(unit.path) === primaryPath,
-      protectedBranch: unit.branch !== null && PROTECTED_BRANCHES.has(unit.branch),
+      protectedBranch:
+        unit.branch !== null &&
+        (PROTECTED_BRANCHES.has(unit.branch) || unit.branch === defaultBranch.branch),
       changes: state.changes,
       ignoredPaths: state.ignoredPaths,
       nonDisposableIgnoredPaths: state.nonDisposableIgnoredPaths,
@@ -1428,11 +1860,11 @@ export function collectWorktreeLifecycleInventory(
         : [],
       taskIds: matchingTasks(unit.branch, unit.path, tasks.tasks),
       openPrs,
-      mergedPr: latestMerged
+      mergedPr: exactMerged
         ? {
-            number: latestMerged.number,
-            url: latestMerged.html_url,
-            headOid: latestMerged.head.sha,
+            number: exactMerged.number,
+            url: exactMerged.url,
+            headOid: exactMerged.headRefOid,
           }
         : null,
       activeWorkflowUrls,
