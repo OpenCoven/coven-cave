@@ -146,8 +146,6 @@ const GITHUB_REPOSITORY = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const RFC3339_INSTANT =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-](\d{2}):(\d{2}))$/;
 const ISO_CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
-const HISTORY_OVERRIDE_DRIFT_ERROR = "history override inventory changed during patrol";
-
 function isRealCalendarDate(year: number, month: number, day: number): boolean {
   if (month < 1 || month > 12 || day < 1) return false;
   const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
@@ -555,6 +553,7 @@ function updatedAt(
   ref: string | null,
   exactMergeAt: string | null,
   exactDefaultLandingAtMs: number | null,
+  defaultIntegrationAtMs: number | null,
 
   includeWorktreeHead: boolean,
 ): { value: number | null; error: string | null } {
@@ -589,6 +588,9 @@ function updatedAt(
   }
   if (exactDefaultLandingAtMs !== null) {
     epochs.push(exactDefaultLandingAtMs);
+  }
+  if (defaultIntegrationAtMs !== null) {
+    epochs.push(defaultIntegrationAtMs);
   }
 
   if (
@@ -2292,12 +2294,6 @@ export function collectWorktreeLifecycleInventory(
     "--path-format=absolute",
     "--git-common-dir",
   ]).trim();
-  const initialGrafts = graftInventory(commonGitDir);
-  const initialReplacementRefsRaw = requiredGit(root, [
-    "for-each-ref",
-    "--format=%(refname)%0a%(objectname)%00",
-    "refs/replace",
-  ]);
   const primaryPath = normalizePath(path.dirname(commonGitDir));
   const initialHistoryOverrides = historyOverrideProbe(root, commonGitDir);
   const initialWorktreeRaw = requiredGit(root, ["worktree", "list", "--porcelain", "-z"]);
@@ -2455,6 +2451,7 @@ export function collectWorktreeLifecycleInventory(
       unit.ref,
       exactMerged?.mergedAt ?? null,
       landing.value,
+      integration.value,
 
       unit.path !== null,
     );
@@ -2488,6 +2485,7 @@ export function collectWorktreeLifecycleInventory(
           ...(unit.path ? (sessionOwnership.probeErrorsByPath.get(unit.path) ?? []) : []),
           recency.error,
           landing.error,
+          integration.error,
           remoteRefs.error,
           ancestry.error,
           remote.error,
@@ -2555,13 +2553,6 @@ export function collectWorktreeLifecycleInventory(
   ) {
     throw new Error("worktree or branch inventory changed during patrol");
   }
-  if (
-    finalReplacementRefsRaw !== initialReplacementRefsRaw ||
-    finalGrafts.snapshot !== initialGrafts.snapshot
-  ) {
-    throw new Error(HISTORY_OVERRIDE_DRIFT_ERROR);
-  }
-
   const structuredRecords = tasks.tasks
     .flatMap((task) => task.structured);
   const validMetadata = structuredRecords
