@@ -91,7 +91,7 @@ assert.equal(
 );
 assert.equal(
   redactSecretText('{"TOKEN":"short private secret"}'),
-  `{"TOKEN":${REDACTED_SECRET}}`,
+  `{"TOKEN":"${REDACTED_SECRET}"}`,
   "matching quoted JSON keys and values are redacted",
 );
 assert.equal(
@@ -212,6 +212,16 @@ assert.equal(
   "controlled plurals and compound credential assignments are redacted",
 );
 assert.equal(
+  redactSecretText("passwords=hunter2"),
+  `passwords=${REDACTED_SECRET}`,
+  "password plurals are redacted in assignments",
+);
+assert.deepEqual(
+  redactSecretsDeep({ databasePasswords: ["hunter2"] }),
+  { databasePasswords: REDACTED_SECRET },
+  "password plurals are redacted in compound object keys",
+);
+assert.equal(
   redactSecretText(
     "token_count=12 sessionDuration=30 authorship=collaboration secretariat=office apiKeyboard=mechanical",
   ),
@@ -254,6 +264,90 @@ assert.equal(
   redactSecretText("TOKEN=`printf 'literal-secret' && echo exposed"),
   `TOKEN=${REDACTED_SECRET}`,
   "an unclosed backtick command fails closed through the end of the input",
+);
+
+assert.equal(
+  redactSecretText('{"token":\n"short private secret"}'),
+  `{"token":"${REDACTED_SECRET}"}`,
+  "complete JSON text redacts scalar values after JSON whitespace",
+);
+assert.equal(
+  redactSecretText(String.raw`{"authori\u007Aation":"Basic dXNlcjpwYXNz"}`),
+  `{"authorization":"${REDACTED_SECRET}"}`,
+  "complete JSON text recognizes Unicode-escaped secret keys",
+);
+
+const safeJsonValue = {
+  safe: "ordinary value",
+  nested: [{ count: 3, enabled: true }, null],
+};
+assert.deepEqual(
+  JSON.parse(redactSecretText(` \n${JSON.stringify(safeJsonValue)}\t`)),
+  safeJsonValue,
+  "safe complete JSON text remains semantically intact",
+);
+
+let veryDeep: Record<string, unknown> = { leaf: "raw-leaf-value" };
+for (let depth = 0; depth < 20_000; depth += 1) {
+  veryDeep = { child: veryDeep };
+}
+assert.doesNotThrow(
+  () => redactSecretsDeep(veryDeep),
+  "iterative structural redaction does not overflow on deeply nested objects",
+);
+assert.equal(
+  redactSecretsDeep(veryDeep),
+  REDACTED_SECRET,
+  "values beyond the structural depth bound fail closed without retaining a raw leaf",
+);
+
+const veryWide = Object.fromEntries(
+  Array.from({ length: 10_000 }, (_, index) => [`safe${index}`, `raw-${index}`]),
+);
+assert.equal(
+  redactSecretsDeep(veryWide),
+  REDACTED_SECRET,
+  "objects beyond the structural entry bound fail closed",
+);
+
+const descriptorHeavyArray: unknown[] = [];
+for (let index = 0; index < 10_000; index += 1) {
+  Object.defineProperty(descriptorHeavyArray, `hidden${index}`, { value: index });
+}
+assert.equal(
+  redactSecretsDeep(descriptorHeavyArray),
+  REDACTED_SECRET,
+  "arrays with excessive own entries fail closed even when the entries are not enumerable",
+);
+
+const cyclic: Record<string, unknown> = { visible: "raw-cycle-value" };
+cyclic.self = cyclic;
+assert.equal(
+  redactSecretsDeep(cyclic),
+  REDACTED_SECRET,
+  "cyclic values fail closed",
+);
+
+let getterCalls = 0;
+const accessorValue = {};
+Object.defineProperty(accessorValue, "unsafe", {
+  enumerable: true,
+  get() {
+    getterCalls += 1;
+    return "raw-accessor-value";
+  },
+});
+assert.equal(
+  redactSecretsDeep(accessorValue),
+  REDACTED_SECRET,
+  "enumerable accessors fail closed",
+);
+assert.equal(getterCalls, 0, "structural redaction does not invoke enumerable getters");
+
+assert.equal(
+  redactSecretsDeep("x".repeat(256 * 1024 + 1)),
+  REDACTED_SECRET,
+  "structural strings beyond the cumulative byte bound fail closed",
 );
 
 console.log("secret-redaction.test.ts: ok");

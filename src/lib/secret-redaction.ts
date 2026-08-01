@@ -36,6 +36,9 @@ const AUTHORIZATION_SCHEMES = new Set([
 ]);
 
 const MAX_ASSIGNMENT_NESTING = 64;
+const MAX_REDACTION_DEPTH = 64;
+const MAX_REDACTION_ENTRIES = 4_096;
+const MAX_REDACTION_STRING_BYTES = 256 * 1_024;
 
 const WHOLE_SECRET_PATTERNS: RegExp[] = [
   /\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b/gi,
@@ -50,6 +53,12 @@ const WHOLE_SECRET_PATTERNS: RegExp[] = [
 ];
 
 export function redactSecretText(text: string): string {
+  const jsonRedaction = redactJsonText(text);
+  if (jsonRedaction !== undefined) return jsonRedaction;
+  return redactSecretTextPlain(text);
+}
+
+function redactSecretTextPlain(text: string): string {
   let next = text;
   for (const pattern of WHOLE_SECRET_PATTERNS) {
     next = next.replace(pattern, REDACTED_SECRET);
@@ -64,21 +73,226 @@ export function redactSecretText(text: string): string {
 }
 
 export function redactSecretsDeep<T>(value: T): T {
-  return redactValue(value, undefined) as T;
+  let result: unknown;
+  const ancestors = new WeakSet<object>();
+  const budget = { entries: 0, stringBytes: 0 };
+  const stack: RedactionFrame[] = [
+    {
+      kind: "visit",
+      value,
+      depth: 0,
+      assign: (next) => {
+        result = next;
+        return true;
+      },
+    },
+  ];
+
+  while (stack.length > 0) {
+    const frame = stack.pop()!;
+    if (frame.kind === "exit") {
+      ancestors.delete(frame.value);
+      continue;
+    }
+
+    if (frame.key && isSecretKey(frame.key)) {
+      if (!frame.assign(REDACTED_SECRET)) return REDACTED_SECRET as T;
+      continue;
+    }
+
+    if (typeof frame.value === "string") {
+      if (!consumeStringBytes(frame.value, budget)) return REDACTED_SECRET as T;
+      if (!frame.assign(redactSecretTextPlain(frame.value))) return REDACTED_SECRET as T;
+      continue;
+    }
+
+    if (frame.value === null || typeof frame.value !== "object") {
+      if (typeof frame.value === "function") return REDACTED_SECRET as T;
+      if (!frame.assign(frame.value)) return REDACTED_SECRET as T;
+      continue;
+    }
+
+    if (frame.depth > MAX_REDACTION_DEPTH || ancestors.has(frame.value)) {
+      return REDACTED_SECRET as T;
+    }
+
+    const container = readContainer(frame.value, budget);
+    if (!container || !frame.assign(container.output)) return REDACTED_SECRET as T;
+
+    ancestors.add(frame.value);
+    stack.push({ kind: "exit", value: frame.value });
+    for (let index = container.children.length - 1; index >= 0; index -= 1) {
+      const child = container.children[index]!;
+      stack.push({
+        kind: "visit",
+        value: child.value,
+        key: child.key,
+        depth: frame.depth + 1,
+        assign: child.assign,
+      });
+    }
+  }
+
+  return result as T;
 }
 
-function redactValue(value: unknown, key: string | undefined): unknown {
-  if (key && isSecretKey(key)) return REDACTED_SECRET;
+interface RedactionBudget {
+  entries: number;
+  stringBytes: number;
+}
 
-  if (typeof value === "string") return redactSecretText(value);
-  if (Array.isArray(value)) return value.map((item) => redactValue(item, undefined));
-  if (!value || typeof value !== "object") return value;
+interface RedactionChild {
+  key: string;
+  value: unknown;
+  assign: (value: unknown) => boolean;
+}
 
-  const out: Record<string, unknown> = {};
-  for (const [childKey, childValue] of Object.entries(value)) {
-    out[childKey] = redactValue(childValue, childKey);
+interface RedactionContainer {
+  output: object;
+  children: RedactionChild[];
+}
+
+type RedactionFrame =
+  | {
+      kind: "visit";
+      value: unknown;
+      key?: string;
+      depth: number;
+      assign: (value: unknown) => boolean;
+    }
+  | { kind: "exit"; value: object };
+
+function redactJsonText(text: string): string | undefined {
+  const trimmed = text.trim();
+  if (trimmed[0] !== "{" && trimmed[0] !== "[") return undefined;
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(trimmed);
+  } catch {
+    return undefined;
   }
-  return out;
+  if (!decoded || typeof decoded !== "object") return undefined;
+
+  const redacted = redactSecretsDeep(decoded);
+  try {
+    return JSON.stringify(redacted) ?? JSON.stringify(REDACTED_SECRET);
+  } catch {
+    return JSON.stringify(REDACTED_SECRET);
+  }
+}
+
+function readContainer(value: object, budget: RedactionBudget): RedactionContainer | undefined {
+  try {
+    const prototype = Object.getPrototypeOf(value);
+    const keys = Reflect.ownKeys(value);
+
+    if (Array.isArray(value)) {
+      if (prototype !== Array.prototype) return undefined;
+      const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+      if (!lengthDescriptor || !("value" in lengthDescriptor)) return undefined;
+      const length = lengthDescriptor.value;
+      if (
+        typeof length !== "number" ||
+        !Number.isSafeInteger(length) ||
+        length < 0 ||
+        length > MAX_REDACTION_ENTRIES - budget.entries
+      ) {
+        return undefined;
+      }
+      if (keys.length - 1 > MAX_REDACTION_ENTRIES - budget.entries) return undefined;
+
+      budget.entries += length;
+      const output: unknown[] = new Array(length);
+      const children: RedactionChild[] = [];
+      for (const key of keys) {
+        if (key === "length") continue;
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (!descriptor) return undefined;
+        if (!descriptor.enumerable) continue;
+        if (typeof key !== "string" || !("value" in descriptor)) return undefined;
+        if (!isArrayIndex(key, length)) {
+          if (budget.entries >= MAX_REDACTION_ENTRIES) return undefined;
+          budget.entries += 1;
+        }
+        if (!consumeStringBytes(key, budget)) return undefined;
+        children.push({
+          key,
+          value: descriptor.value,
+          assign: (next) => defineEnumerableValue(output, key, next),
+        });
+      }
+      return { output, children };
+    }
+
+    if (prototype !== Object.prototype && prototype !== null) return undefined;
+    if (keys.length > MAX_REDACTION_ENTRIES - budget.entries) return undefined;
+    budget.entries += keys.length;
+
+    const output: Record<string, unknown> =
+      prototype === null ? Object.create(null) : {};
+    const children: RedactionChild[] = [];
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor) return undefined;
+      if (!descriptor.enumerable) continue;
+      if (typeof key !== "string" || !("value" in descriptor)) return undefined;
+      if (!consumeStringBytes(key, budget)) return undefined;
+      children.push({
+        key,
+        value: descriptor.value,
+        assign: (next) => defineEnumerableValue(output, key, next),
+      });
+    }
+    return { output, children };
+  } catch {
+    return undefined;
+  }
+}
+
+function defineEnumerableValue(target: object, key: string, value: unknown): boolean {
+  try {
+    Object.defineProperty(target, key, {
+      configurable: true,
+      enumerable: true,
+      value,
+      writable: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isArrayIndex(key: string, length: number): boolean {
+  const index = Number(key);
+  return Number.isInteger(index) && index >= 0 && index < length && String(index) === key;
+}
+
+function consumeStringBytes(value: string, budget: RedactionBudget): boolean {
+  let bytes = budget.stringBytes;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x7f) {
+      bytes += 1;
+    } else if (code <= 0x7ff) {
+      bytes += 2;
+    } else if (
+      code >= 0xd800 &&
+      code <= 0xdbff &&
+      index + 1 < value.length &&
+      value.charCodeAt(index + 1) >= 0xdc00 &&
+      value.charCodeAt(index + 1) <= 0xdfff
+    ) {
+      bytes += 4;
+      index += 1;
+    } else {
+      bytes += 3;
+    }
+    if (bytes > MAX_REDACTION_STRING_BYTES) return false;
+  }
+  budget.stringBytes = bytes;
+  return true;
 }
 
 function isSecretKey(key: string): boolean {
@@ -95,6 +309,7 @@ function isSecretKey(key: string): boolean {
 
 function normalizeSecretWord(word: string): string {
   if (word === "keys") return "key";
+  if (word === "passwords") return "password";
   if (word === "secrets") return "secret";
   if (word === "tokens") return "token";
   return word;
