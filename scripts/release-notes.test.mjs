@@ -21,12 +21,13 @@ import assert from "node:assert/strict";
 const SCRIPT = fileURLToPath(new URL("./release-notes.sh", import.meta.url));
 const REPO_ROOT = path.dirname(path.dirname(SCRIPT));
 
-function render(version, previous) {
+function render(version, previous, env) {
   const args = previous ? [version, previous] : [version];
   return execFileSync(SCRIPT, args, {
     cwd: REPO_ROOT,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, ...(env ?? {}) },
   });
 }
 
@@ -101,4 +102,39 @@ test("every rendered body ends with the standardized checksum + changelog footer
     assert.match(body, /shasum -a 256 -c SHA256SUMS/, `${v} body has the verify-checksums block`);
     assert.match(body, /\*\*Full changelog:\*\*/, `${v} body has the compare link`);
   }
+});
+
+// ── Build provenance when the registry guards were skipped (cave-yp21x) ─────
+// v0.2.0 shipped through the emergency manual hatch with BOTH signed-registry
+// gates skipped, and the only evidence was a `skipped` step in the Actions
+// log — invisible to anyone reading the release. The body now says so.
+
+test("the provenance block appears only when the guards were actually skipped", () => {
+  const skipped = render("v0.0.55", undefined, { COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED: "true" });
+  assert.match(skipped, /^## Build provenance/m, "a skipped-guard build states its provenance");
+  assert.match(skipped, /allow_unconfigured_registries/, "names the flag that caused it");
+  assert.match(skipped, /built-in baseline schema parsers/, "says what it used instead");
+  assert.match(skipped, /tag push cannot skip/, "says the normal path is still fail-closed");
+
+  // The default release path must stay unchanged — an unset or false flag adds
+  // nothing, so ordinary releases read exactly as before.
+  assert.doesNotMatch(render("v0.0.55"), /Build provenance/, "unset flag renders no block");
+  assert.doesNotMatch(
+    render("v0.0.55", undefined, { COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED: "false" }),
+    /Build provenance/,
+    "an explicit false renders no block",
+  );
+  // Only the exact string "true" counts — a truthy-looking value must not arm it.
+  assert.doesNotMatch(
+    render("v0.0.55", undefined, { COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED: "1" }),
+    /Build provenance/,
+    "a non-'true' value renders no block",
+  );
+});
+
+test("the provenance block never displaces the compare link", () => {
+  // The body's contract is that it ends with the changelog link; a section
+  // appended in the wrong place would bury it.
+  const body = render("v0.0.55", undefined, { COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED: "true" });
+  assert.match(body.trimEnd().split("\n").at(-1) ?? "", /^\*\*Full changelog:\*\*/);
 });
