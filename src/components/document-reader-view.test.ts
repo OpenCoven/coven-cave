@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { test } from "vitest";
 import type { Block } from "@create-markdown/core";
 import { paragraph } from "@create-markdown/core";
 import {
@@ -79,4 +79,19 @@ test("the shared reader uses the popover scaffold and reduced-motion-aware scrol
   assert.match(source, /from "@\/components\/ui\/popover"/);
   assert.match(source, /prefers-reduced-motion: reduce/);
   assert.match(source, /className="[^"]*focus-ring/);
+});
+
+test("the shared reader falls back to the global accent outside Research", () => {
+  const source = readFileSync(
+    new URL("../styles/document-reader.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /--document-reader-accent:\s*var\(--research-accent, var\(--accent\)\)/,
+  );
+  assert.match(
+    source,
+    /--document-reader-accent-soft:\s*var\(\s*--research-accent-soft,\s*color-mix\(in oklch, var\(--document-reader-accent\) 14%, transparent\)\s*\)/,
+  );
 });

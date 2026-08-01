@@ -1,4 +1,10 @@
 .document-reader {
+  --document-reader-accent: var(--research-accent, var(--accent));
+  --document-reader-accent-soft: var(
+    --research-accent-soft,
+    color-mix(in oklch, var(--document-reader-accent) 14%, transparent)
+  );
+
   display: grid;
   min-height: 0;
   height: 100%;
@@ -52,9 +58,9 @@
 }
 
 .document-reader__toc-link[data-active="true"] {
-  border-left-color: var(--research-accent);
-  background: var(--research-accent-soft);
-  color: var(--research-accent);
+  border-left-color: var(--document-reader-accent);
+  background: var(--document-reader-accent-soft);
+  color: var(--document-reader-accent);
 }
 
 .document-reader__toc-meta {
@@ -118,7 +124,7 @@
 
 .document-reader__kicker {
   margin-bottom: var(--space-2);
-  color: var(--research-accent);
+  color: var(--document-reader-accent);
   font: 600 var(--text-2xs) var(--font-mono);
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -180,7 +186,7 @@
   width: var(--space-1);
   height: var(--space-4);
   border-radius: var(--radius-pill);
-  background: var(--research-accent);
+  background: var(--document-reader-accent);
   content: "";
   flex: none;
 }
@@ -218,7 +224,7 @@
 }
 
 .document-reader__column a {
-  color: var(--research-accent);
+  color: var(--document-reader-accent);
 }
 
 .document-reader__column blockquote {
@@ -274,9 +280,9 @@
   margin: 0 0 var(--space-4);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-hairline);
-  border-left-color: var(--research-accent);
+  border-left-color: var(--document-reader-accent);
   border-radius: var(--radius-card);
-  background: var(--research-accent-soft);
+  background: var(--document-reader-accent-soft);
   color: var(--text-secondary);
 }
 

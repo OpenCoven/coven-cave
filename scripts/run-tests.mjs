@@ -65,7 +65,6 @@ export const SUITES = {
     "src/lib/roving-list.test.ts",
     "src/lib/research-artifact-contract.test.ts",
     "src/lib/document-reader.test.ts",
-    "src/components/document-reader-view.test.ts",
     "src/lib/research-findings-doc.test.ts",
     "src/lib/role-surface-state.test.ts",
     "src/components/role-surface-host-state.test.ts",
@@ -1643,6 +1642,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/document-reader-view.test.ts",
   "src/components/role-surfaces/familiar-room-interactions.test.tsx",
   "src/components/familiars-memory-recovery.test.tsx",
   "src/components/familiars-view-memory-ownership.test.tsx",
