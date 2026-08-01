@@ -79,4 +79,109 @@ assert.equal(
   "ordinary metric and word assignments are not treated as credential keys",
 );
 
+assert.equal(
+  redactSecretText('PASSWORD=""correct-horse-battery-staple'),
+  `PASSWORD=${REDACTED_SECRET}`,
+  "adjacent quoted and unquoted shell segments are consumed as one value",
+);
+assert.equal(
+  redactSecretText("CLIENT_SECRET=short\\ private\\ secret"),
+  `CLIENT_SECRET=${REDACTED_SECRET}`,
+  "escaped shell whitespace remains part of the secret value",
+);
+assert.equal(
+  redactSecretText('{"TOKEN":"short private secret"}'),
+  `{"TOKEN":${REDACTED_SECRET}}`,
+  "matching quoted JSON keys and values are redacted",
+);
+assert.equal(
+  redactSecretText(
+    'GOOGLE_CREDENTIALS={"type":"service_account","private_key":"short private secret"} && echo done',
+  ),
+  `GOOGLE_CREDENTIALS=${REDACTED_SECRET} && echo done`,
+  "balanced JSON assignment values are consumed without swallowing a shell suffix",
+);
+assert.equal(
+  redactSecretText('TOKEN=["short",{"nested":"private"}], safe=visible'),
+  `TOKEN=${REDACTED_SECRET}, safe=visible`,
+  "balanced array values are consumed through nested objects and strings",
+);
+assert.equal(
+  redactSecretText('TOKEN="unterminated private value'),
+  `TOKEN=${REDACTED_SECRET}`,
+  "an unclosed secret quote fails safe through the end of the input",
+);
+assert.equal(
+  redactSecretText('GOOGLE_CREDENTIALS={"private_key":"unterminated"'),
+  `GOOGLE_CREDENTIALS=${REDACTED_SECRET}`,
+  "an unclosed secret object fails safe through the end of the input",
+);
+
+const shortDeepSecrets = redactSecretsDeep({
+  authToken: "short",
+  GOOGLE_CREDENTIALS: "short",
+  googleCredentials: { private_key: "short" },
+  privateKey: "short",
+  "client-secret": "short",
+  refresh_token: "short",
+  OPENAI_API_KEY: "short",
+  NPM_TOKEN: "short",
+});
+assert.deepEqual(
+  shortDeepSecrets,
+  {
+    authToken: REDACTED_SECRET,
+    GOOGLE_CREDENTIALS: REDACTED_SECRET,
+    googleCredentials: REDACTED_SECRET,
+    privateKey: REDACTED_SECRET,
+    "client-secret": REDACTED_SECRET,
+    refresh_token: REDACTED_SECRET,
+    OPENAI_API_KEY: REDACTED_SECRET,
+    NPM_TOKEN: REDACTED_SECRET,
+  },
+  "camelCase, plural, paired, and prefixed credential keys replace whole deep values",
+);
+
+const ordinaryDeepValues = {
+  authorship: "collaboration",
+  token_count: 12,
+  sessionDuration: 30,
+  secretariat: "office",
+  apiKeyboard: "mechanical",
+  requestCount: 5,
+};
+assert.deepEqual(
+  redactSecretsDeep(ordinaryDeepValues),
+  ordinaryDeepValues,
+  "ordinary words and metric keys are not classified as secrets",
+);
+assert.equal(
+  redactSecretText(
+    "authorship=collaboration token_count=12 sessionDuration=30 secretariat=office apiKeyboard=mechanical",
+  ),
+  "authorship=collaboration token_count=12 sessionDuration=30 secretariat=office apiKeyboard=mechanical",
+  "ordinary assignments remain visible",
+);
+
+assert.equal(
+  redactSecretText("token=short authorization=short bearer=short cookie=short jwt=short oauth=short password=short session=short"),
+  `token=${REDACTED_SECRET} authorization=${REDACTED_SECRET} bearer=${REDACTED_SECRET} cookie=${REDACTED_SECRET} jwt=${REDACTED_SECRET} oauth=${REDACTED_SECRET} password=${REDACTED_SECRET} session=${REDACTED_SECRET}`,
+  "common terminal credential terms are classified consistently",
+);
+assert.equal(
+  redactSecretText("https://example.invalid/callback?token=short&safe=visible"),
+  `https://example.invalid/callback?token=${REDACTED_SECRET}&safe=visible`,
+  "URL query secret redaction remains intact",
+);
+assert.equal(
+  redactSecretText("https://user:short-password@example.invalid/path"),
+  `https://user:${REDACTED_SECRET}@example.invalid/path`,
+  "basic-auth password redaction remains intact",
+);
+assert.equal(
+  redactSecretText(`prefix sk-proj-${"a".repeat(32)} suffix`),
+  `prefix ${REDACTED_SECRET} suffix`,
+  "whole-token redaction remains intact",
+);
+
 console.log("secret-redaction.test.ts: ok");
