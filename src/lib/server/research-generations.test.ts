@@ -664,6 +664,82 @@ test("podcast drafter clamps a long source mechanically at the local TTS limit",
   assert.ok(content.script.some((segment) => segment.text.includes("verbatim source claim")));
 });
 
+test("podcast drafter prefers sentence boundaries when splitting long units into turns", () => {
+  // Dogfood round 2 (cave-2emgc): chunks become separate spoken turns, so a
+  // continuation turn opening mid-sentence ("it can appear where you didn't…")
+  // is a speech bug. Sentences short enough to pack many per chunk.
+  const sentences = Array.from(
+    { length: 60 },
+    (_, i) => `Claim number ${i + 1} holds under repeated evaluation pressure.`,
+  ).join(" ");
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: `# Long findings\n\n## Detailed findings\n\n- ${sentences}`,
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const guestTurns = content.script.filter((segment) => segment.speaker === "guest");
+  assert.ok(guestTurns.length > 1, "long unit split into multiple turns");
+  for (const turn of guestTurns) {
+    assert.match(
+      turn.text,
+      /^[A-Z0-9(“"']/,
+      `turn never opens mid-sentence (${turn.text.slice(0, 40)}…)`,
+    );
+    assert.match(
+      turn.text,
+      /[.!?…]["'”’)\]]*$/,
+      `turn never ends mid-sentence (…${turn.text.slice(-40)})`,
+    );
+  }
+});
+
+test("podcast openings speak a cleaned mission title — no trailing '.…' garbage", () => {
+  const messyMission = {
+    ...mission,
+    title: "Research and compare: Identity Preservation for Agents during Self-Evolution.…",
+  };
+  for (const style of ["breakdown", "debate", "interview"] as const) {
+    const content = draftPodcastContent({
+      mission: messyMission,
+      artifact: { key: "findings", title: "Findings" },
+      markdown: "# Findings\n\n## Detailed findings\n\n- Gates bind proxies, not purposes.",
+    }, "standard", style);
+    assert.equal(content.kind, "podcast");
+    if (content.kind !== "podcast") return;
+    const opening = content.script[0]?.text ?? "";
+    assert.ok(
+      opening.includes("“Research and compare: Identity Preservation for Agents during Self-Evolution”"),
+      `${style} opening strips trailing title punctuation (${opening})`,
+    );
+    assert.ok(!opening.includes(".…"), `${style} opening never speaks '.…'`);
+  }
+});
+
+test("podcast drafter normalizes TTS-hostile glyphs into spoken words", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Open questions → next steps",
+      "",
+      "- Throughput improved 3× at ≥ 90% recall (≈ baseline cost).",
+    ].join("\n"),
+  }, "standard", "debate");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const narration = content.script.map((segment) => segment.text).join(" ");
+  assert.ok(narration.includes("Open questions to next steps"), `arrow spoken as 'to' (${narration})`);
+  assert.ok(narration.includes("3 times at at least 90%"), `× and ≥ spoken (${narration})`);
+  assert.ok(narration.includes("about baseline cost"), `≈ spoken as 'about' (${narration})`);
+  for (const glyph of ["→", "×", "≥", "≈"]) {
+    assert.ok(!narration.includes(glyph), `no raw ${glyph} reaches speech`);
+  }
+});
+
 test("video storyboard drafter maps headings, bullets, and narration without invention", () => {
   const content = draftVideoStoryboardContent({
     mission,
