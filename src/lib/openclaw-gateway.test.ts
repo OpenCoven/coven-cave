@@ -601,6 +601,74 @@ if (reconnectDispatch.kind === "accepted") {
   assert.deepEqual(await reconnectDispatch.done, { state: "final" });
 }
 
+let settledLifecycleOptions;
+let settledLifecycleClientCount = 0;
+const settledLifecycleEvents = [];
+const settledLifecycleDispatch = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "ignore lifecycle callbacks after final",
+  idempotencyKey: "cave-request-settled-lifecycle",
+  env: {
+    OPENCLAW_GATEWAY_DISPATCH: "1",
+    OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+  },
+  onEvent: (event) => settledLifecycleEvents.push(event),
+  clientFactory: (options) => {
+    const clientIndex = settledLifecycleClientCount++;
+    if (clientIndex === 1) settledLifecycleOptions = options;
+    return {
+      start() {
+        queueMicrotask(() => options.onHelloOk?.(helloOk()));
+      },
+      stop() {},
+      async request(method, _params, requestOptions) {
+        if (method === "sessions.messages.subscribe") return { subscribed: true };
+        if (method === "chat.send") {
+          requestOptions?.onSent?.();
+          return { runId: expected.runId };
+        }
+        return {};
+      },
+    };
+  },
+});
+
+assert.equal(settledLifecycleDispatch.kind, "accepted");
+settledLifecycleOptions.onEvent?.({
+  type: "event",
+  event: "chat",
+  payload: {
+    runId: expected.runId,
+    sessionKey: expected.sessionKey,
+    agentId: expected.agentId,
+    seq: 0,
+    state: "final",
+  },
+});
+if (settledLifecycleDispatch.kind === "accepted") {
+  const finalResult = await settledLifecycleDispatch.done;
+  settledLifecycleOptions.onClose?.(1006, "late close");
+  settledLifecycleOptions.onConnectError?.(new Error("late reconnect failure"));
+  settledLifecycleOptions.onHelloOk?.({
+    ...helloOk(),
+    server: { ...helloOk().server, version: "2026.7.2-beta.6" },
+  });
+  settledLifecycleOptions.onHelloOk?.({});
+  settledLifecycleOptions.onReconnectPaused?.({ attempts: 1, elapsedMs: 1 });
+  await Promise.resolve();
+  assert.deepEqual(
+    settledLifecycleEvents,
+    [{ kind: "final" }],
+    "lifecycle callbacks after a terminal event cannot project a new user-visible error",
+  );
+  assert.deepEqual(
+    await settledLifecycleDispatch.done,
+    finalResult,
+    "lifecycle callbacks after a terminal event cannot replace the final result",
+  );
+}
+
 let pendingAckOptions;
 let resolvePendingAckSend;
 let markPendingAckSendStarted;
@@ -923,6 +991,55 @@ assert.deepEqual(
 );
 assert.equal(preSendDriftChatSends, 0, "a pre-send compatibility drift never calls chat.send");
 assert.ok(preSendDriftStops > 0, "a pre-send compatibility drift stops the dispatch client");
+
+let preSendInvalidClientCount = 0;
+let preSendInvalidSubscriptions = 0;
+let preSendInvalidChatSends = 0;
+let preSendInvalidStops = 0;
+const preSendInvalidEvents = [];
+const preSendInvalid = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "pre-send invalid reauthenticated hello",
+  idempotencyKey: "cave-request-pre-send-invalid-hello",
+  env: {
+    OPENCLAW_GATEWAY_DISPATCH: "1",
+    OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+  },
+  onEvent: (event) => preSendInvalidEvents.push(event),
+  clientFactory: (options) => {
+    const clientIndex = preSendInvalidClientCount++;
+    return {
+      start() {
+        queueMicrotask(() => options.onHelloOk?.(helloOk()));
+      },
+      stop() {
+        if (clientIndex === 1) preSendInvalidStops += 1;
+      },
+      async request(method) {
+        if (method === "sessions.messages.subscribe") {
+          preSendInvalidSubscriptions += 1;
+          if (preSendInvalidSubscriptions === 1) {
+            options.onHelloOk?.({});
+            return { subscribed: true };
+          }
+          throw new Error("invalid hello triggered a subscription retry loop");
+        }
+        if (method === "chat.send") preSendInvalidChatSends += 1;
+        return { runId: expected.runId };
+      },
+    };
+  },
+});
+assert.deepEqual(
+  preSendInvalid,
+  { kind: "unavailable", reason: "Gateway returned an invalid hello response for the pinned v4 schema" },
+  "an invalid reauthenticated hello before send fails through the pre-dispatch lifecycle fence",
+);
+assert.equal(preSendInvalidSubscriptions, 1, "an invalid pre-send hello never retries subscription");
+assert.equal(preSendInvalidChatSends, 0, "an invalid pre-send hello never calls chat.send");
+assert.deepEqual(preSendInvalidEvents, [], "an invalid pre-send hello retains fallback without emitting");
+assert.ok(preSendInvalidStops > 0, "an invalid pre-send hello stops the dispatch client");
 
 // --- paired-device credential wiring -------------------------------------
 

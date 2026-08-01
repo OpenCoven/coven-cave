@@ -418,6 +418,10 @@ export async function dispatchOpenClawGatewayTurn(args: {
   };
 
   const failDispatchLifecycle = (message: string) => {
+    if (settled) {
+      client?.stop();
+      return;
+    }
     lifecycleFailure = message;
     streamReady = false;
     connectionGeneration += 1;
@@ -548,24 +552,17 @@ export async function dispatchOpenClawGatewayTurn(args: {
         void subscribeToSession(generation)
           .catch(() => {
             if (generation !== connectionGeneration || settled) return;
-            const message = "Gateway reconnect could not restore the session stream";
-            args.onEvent({ kind: "error", message });
-            settle("error", message);
-            client.stop();
+            failDispatchLifecycle("Gateway reconnect could not restore the session stream");
           });
       },
       onInvalidHello: (failure) => {
-        args.onEvent({ kind: "error", message: failure });
-        settle("error", failure);
+        failDispatchLifecycle(failure);
       },
       onReconnectPaused: () => {
-        if (settled) return;
-        const message = "Gateway reconnect was paused after dispatch";
-        args.onEvent({ kind: "error", message });
-        settle("error", message);
-        client.stop();
+        failDispatchLifecycle("Gateway reconnect was paused after dispatch");
       },
       onClose: () => {
+        if (settled) return;
         // A socket close invalidates the subscription immediately, not only
         // when the next hello arrives. A buffered callback from the closed
         // transport must not be accepted before the next subscription.
@@ -579,10 +576,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
       },
       onGap: () => {
         if (!expectedRunId || settled) return;
-        const message = "Gateway transport sequence gap";
-        args.onEvent({ kind: "error", message });
-        settle("error", message);
-        client.stop();
+        failDispatchLifecycle("Gateway transport sequence gap");
       },
     });
     const dispatchDiscovery = openClawDiscoveryFromHello(dispatchConnection.hello);
