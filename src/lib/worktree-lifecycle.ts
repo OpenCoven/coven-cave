@@ -173,7 +173,8 @@ const HUMAN_LANE_LABELS: Record<WorktreeLifecycleLane, string> = {
 };
 
 export function isDisposableIgnoredPath(candidate: string): boolean {
-  const normalized = candidate.replace(/\\/g, "/").replace(/^\.\/|\/+$/g, "");
+  const platformPath = pathSeparator === "\\" ? candidate.replace(/\\/g, "/") : candidate;
+  const normalized = platformPath.replace(/^\.\/|\/+$/g, "");
   if (
     normalized === ".DS_Store" ||
     normalized === "next-env.d.ts" ||
@@ -242,10 +243,9 @@ export function normalizeAbsoluteWorktreePath(
   candidate: string | null | undefined,
 ): string | null {
   if (typeof candidate !== "string" || candidate.includes("\0")) return null;
-  const trimmed = candidate.trim();
-  if (trimmed.length === 0 || trimmed.includes("\0") || !isAbsolute(trimmed)) return null;
+  if (candidate.length === 0 || !isAbsolute(candidate)) return null;
   try {
-    let normalized = normalizePath(trimmed);
+    let normalized = normalizePath(candidate);
     if (normalized.length === 0 || !isAbsolute(normalized)) return null;
     const root = parsePath(normalized).root;
     while (normalized.length > root.length && normalized.endsWith(pathSeparator)) {
