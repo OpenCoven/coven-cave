@@ -376,6 +376,7 @@ function parseLocalBranchRefs(raw: string): LocalBranchRef[] {
   if (chunks.pop() !== "\n" || chunks.length === 0) {
     throw new Error("malformed local branch inventory");
   }
+  const seen = new Set<string>();
   return chunks.map((chunk, index) => {
     const record = index === 0 ? chunk : chunk.startsWith("\n") ? chunk.slice(1) : "";
     const fields = record.split("\n");
@@ -385,6 +386,10 @@ function parseLocalBranchRefs(raw: string): LocalBranchRef[] {
     if (!match || !match[1] || !oid || !OID.test(oid)) {
       throw new Error("malformed local branch inventory");
     }
+    if (seen.has(ref)) {
+      throw new Error(`duplicate local branch ref: ${ref}`);
+    }
+    seen.add(ref);
     return { ref, branch: match[1], oid };
   });
 }
@@ -1566,64 +1571,77 @@ function onDefaultBranch(root: string, head: string, authoritativeDefaultOid: st
   return { value: false, error: result.stderr || "default-branch ancestry check failed" };
 }
 
-function defaultLandingAt(
+function exactDefaultLandingAt(
   root: string,
   head: string,
   authoritativeDefaultOid: string,
+  exactMergedAt: string | null,
 ): { value: number | null; error: string | null } {
   if (!OID.test(head) || !OID.test(authoritativeDefaultOid)) {
     return { value: null, error: "default branch landing evidence has malformed OIDs" };
   }
 
-  let landingOid = head;
-  if (head !== authoritativeDefaultOid) {
-    const ancestryPath = git(root, [
-      "rev-list",
-      "--ancestry-path",
-      "--first-parent",
-      "--reverse",
-      "--parents",
-      `${head}..${authoritativeDefaultOid}`,
-    ]);
-    if (!ancestryPath.ok || ancestryPath.stderr) {
+  if (head === authoritativeDefaultOid) {
+    if (exactMergedAt === null) {
       return {
         value: null,
-        error: `default branch landing ancestry path unavailable: ${
-          ancestryPath.stderr || `status ${ancestryPath.status ?? "unknown"}`
-        }`,
+        error:
+          "default branch landing time is unprovable when candidate equals captured default: remote ref-move time is unavailable without an exact merged PR timestamp",
       };
     }
-    const lines = strictOutputLines(ancestryPath.stdout);
-    if (!lines) {
-      return { value: null, error: "default branch landing evidence is malformed" };
+    const exactMergedAtMs = Date.parse(exactMergedAt);
+    if (!Number.isFinite(exactMergedAtMs)) {
+      return { value: null, error: "default branch landing timestamp is malformed" };
     }
-    const seen = new Set<string>();
-    const records: Array<{ oid: string; parents: string[] }> = [];
-    for (const line of lines) {
-      const fields = line.split(" ");
-      const [oid, ...parents] = fields;
-      if (
-        fields.some((field) => !OID.test(field)) ||
-        !oid ||
-        parents.length === 0 ||
-        seen.has(oid) ||
-        new Set(fields).size !== fields.length
-      ) {
-        return { value: null, error: "default branch landing evidence is malformed" };
-      }
-      seen.add(oid);
-      records.push({ oid, parents });
-    }
-    if (records.at(-1)?.oid !== authoritativeDefaultOid) {
-      return { value: null, error: "default branch landing evidence is malformed" };
-    }
-    for (let index = 1; index < records.length; index += 1) {
-      if (records[index]!.parents[0] !== records[index - 1]!.oid) {
-        return { value: null, error: "default branch landing evidence is ambiguous" };
-      }
-    }
-    landingOid = records[0]!.oid;
+    return { value: exactMergedAtMs, error: null };
   }
+
+  const ancestryPath = git(root, [
+    "rev-list",
+    "--ancestry-path",
+    "--first-parent",
+    "--reverse",
+    "--parents",
+    `${head}..${authoritativeDefaultOid}`,
+  ]);
+  if (!ancestryPath.ok || ancestryPath.stderr) {
+    return {
+      value: null,
+      error: `default branch landing ancestry path unavailable: ${
+        ancestryPath.stderr || `status ${ancestryPath.status ?? "unknown"}`
+      }`,
+    };
+  }
+  const lines = strictOutputLines(ancestryPath.stdout);
+  if (!lines) {
+    return { value: null, error: "default branch landing evidence is malformed" };
+  }
+  const seen = new Set<string>();
+  const records: Array<{ oid: string; parents: string[] }> = [];
+  for (const line of lines) {
+    const fields = line.split(" ");
+    const [oid, ...parents] = fields;
+    if (
+      fields.some((field) => !OID.test(field)) ||
+      !oid ||
+      parents.length === 0 ||
+      seen.has(oid) ||
+      new Set(fields).size !== fields.length
+    ) {
+      return { value: null, error: "default branch landing evidence is malformed" };
+    }
+    seen.add(oid);
+    records.push({ oid, parents });
+  }
+  if (records.at(-1)?.oid !== authoritativeDefaultOid) {
+    return { value: null, error: "default branch landing evidence is malformed" };
+  }
+  for (let index = 1; index < records.length; index += 1) {
+    if (records[index]!.parents[0] !== records[index - 1]!.oid) {
+      return { value: null, error: "default branch landing evidence is ambiguous" };
+    }
+  }
+  const landingOid = records[0]!.oid;
 
   const timestamp = git(root, [
     "show",
@@ -1674,6 +1692,12 @@ function exactRemoteRef(
 } {
   const label = options.label ?? "same-named remote ref";
   const result = git(root, ["ls-remote", "--exit-code", "--heads", "origin", ref], 60_000);
+  if (result.stderr) {
+    return {
+      remoteRef: null,
+      error: `${label} probe failed for ${ref}: ${result.stderr}`,
+    };
+  }
   if (result.status === 2) {
     return {
       remoteRef: null,
@@ -2086,10 +2110,6 @@ export function collectWorktreeLifecycleInventory(
             error: defaultBranch.error ?? "default branch inventory verification failed",
           }
         : onDefaultBranch(root, unit.head, defaultBranch.oid);
-    const landing =
-      ancestry.value && defaultBranch.oid !== null
-        ? defaultLandingAt(root, unit.head, defaultBranch.oid)
-        : { value: null, error: null };
     let pullRequestMergeError: string | null = null;
     let unitPullRequests: PullRequest[] = [];
     try {
@@ -2118,6 +2138,15 @@ export function collectWorktreeLifecycleInventory(
                 Date.parse(right.mergedAt!) - Date.parse(left.mergedAt!),
             )[0] ?? null
         : null;
+    const landing =
+      unit.branch !== null && ancestry.value && defaultBranch.oid !== null
+        ? exactDefaultLandingAt(
+            root,
+            unit.head,
+            defaultBranch.oid,
+            exactMerged?.mergedAt ?? null,
+          )
+        : { value: null, error: null };
     const recency = updatedAt(
       unit.path ?? root,
       unit.ref,
