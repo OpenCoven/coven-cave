@@ -243,7 +243,7 @@ export function normalizeAbsoluteWorktreePath(
 ): string | null {
   if (typeof candidate !== "string") return null;
   const trimmed = candidate.trim();
-  if (trimmed.length === 0 || !isAbsolute(trimmed)) return null;
+  if (trimmed.length === 0 || trimmed.includes("\0") || !isAbsolute(trimmed)) return null;
   try {
     let normalized = normalizePath(trimmed);
     if (normalized.length === 0 || !isAbsolute(normalized)) return null;
