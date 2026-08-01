@@ -187,7 +187,7 @@ function createGitFixture() {
   const repo = realpathSync(repoEntry);
 
   git(["init", "-q", "-b", "main"], repo);
-  git(["init", "-q", "--bare"], origin);
+  git(["init", "-q", "--bare", "-b", "main"], origin);
   git(["config", "user.name", "Cave Test"], repo);
   git(["config", "user.email", "cave@example.invalid"], repo);
   git(["config", "commit.gpgsign", "false"], repo);

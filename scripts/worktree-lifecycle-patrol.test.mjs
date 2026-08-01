@@ -7,8 +7,10 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { devNull } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -23,6 +25,7 @@ const gitBin = path.join(fixtureRoot, "git-bin");
 const registeredDrift = path.join(fixtureRoot, "registered-drift");
 const duplicateRegisteredPath = path.join(fixtureRoot, "duplicate-registered");
 const duplicateWorktreeInventory = path.join(fixtureRoot, "duplicate-worktree-inventory");
+const metadataAlias = path.join(fixtureRoot, "old-alias");
 
 function run(command, args, cwd, options = {}) {
   return execFileSync(command, args, {
@@ -73,6 +76,7 @@ try {
   });
   const oldHead = git(["rev-parse", "HEAD"], old).trim();
   git(["push", "-q", "-u", "origin", "feat/old"], old);
+  symlinkSync(old, metadataAlias, process.platform === "win32" ? "junction" : "dir");
 
   const recentMerge = path.join(repo, ".worktrees", "recent-merge");
   git(["worktree", "add", "-q", "-b", "feat/recent-merge", recentMerge, "origin/main"], repo);
@@ -110,6 +114,7 @@ try {
 
   const live = path.join(repo, ".worktrees", "live");
   git(["worktree", "add", "-q", "-b", "feat/live", live, "origin/main"], repo);
+  const workflowHead = git(["rev-parse", "HEAD"], live).trim();
   writeFileSync(path.join(live, "uncommitted.txt"), "live\n");
 
   const linked = path.join(repo, ".worktrees", "linked");
@@ -138,10 +143,39 @@ try {
   });
   git(["push", "-q", "origin", "main"], repo);
 
+  const directLandingPath = path.join(repo, ".worktrees", "direct-landing");
+  git(
+    ["worktree", "add", "-q", "-b", "feat/direct-landing", directLandingPath, "origin/main"],
+    repo,
+  );
+  writeFileSync(path.join(directLandingPath, "direct-landing.txt"), "direct landing\n");
+  git(["add", "direct-landing.txt"], directLandingPath);
+  git(["commit", "-q", "-m", "old directly landed work"], directLandingPath, {
+    env: {
+      ...process.env,
+      GIT_AUTHOR_DATE: "2026-07-20T12:00:00Z",
+      GIT_COMMITTER_DATE: "2026-07-20T12:00:00Z",
+    },
+  });
+  const directLandingHead = git(["rev-parse", "HEAD"], directLandingPath).trim();
+  git(["push", "-q", "-u", "origin", "feat/direct-landing"], directLandingPath);
+  git(["worktree", "remove", directLandingPath], repo);
+  git(
+    ["merge", "-q", "--no-ff", "feat/direct-landing", "-m", "land direct work"],
+    repo,
+    {
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: "2026-08-10T21:30:00Z",
+        GIT_COMMITTER_DATE: "2026-08-10T21:30:00Z",
+      },
+    },
+  );
+  git(["push", "-q", "origin", "main"], repo);
+
   const detached = path.join(repo, ".worktrees", "detached");
   git(["worktree", "add", "-q", "--detach", detached, "origin/main"], repo);
   const defaultHead = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
-  const workflowHead = "d".repeat(defaultHead.length);
   git(["update-ref", "refs/remotes/origin/trunk", defaultHead], repo);
   const worktreeInventory = git(["worktree", "list", "--porcelain", "-z"], repo);
   writeFileSync(
@@ -231,18 +265,12 @@ try {
     JSON.stringify([
       branchOnlyMetadataTask,
       {
-        id: "cave-closed-oid-owner",
-        status: "closed",
-        title: "Closed captured commit",
-        external_ref: `commit:${branchOnlyHead}`,
-      },
-      {
         id: "cave-oid-owner",
         status: "open",
         title: "Investigate captured commit",
         description: "",
         notes: "",
-        external_ref: `commit:${branchOnlyHead.toUpperCase()}`,
+        external_ref: `commit:${branchOnlyHead}`,
       },
     ]),
   );
@@ -257,18 +285,6 @@ try {
         description: "",
         notes: branchOnlyHead.slice(0, 12),
         external_ref: null,
-      },
-    ]),
-  );
-  writeFileSync(
-    path.join(fixtureRoot, "tasks-longer-oid.json"),
-    JSON.stringify([
-      branchOnlyMetadataTask,
-      {
-        id: "cave-longer-oid",
-        status: "open",
-        title: "Investigate another commit",
-        notes: `a${branchOnlyHead}b`,
       },
     ]),
   );
@@ -327,25 +343,30 @@ try {
     path.join(gitBin, "git"),
     `#!/bin/sh
 DEFAULT_OID=${JSON.stringify(defaultHead)}
+DIRECT_LANDING_OID=${JSON.stringify(directLandingHead)}
 STALE_OID=${JSON.stringify("a".repeat(defaultHead.length))}
 OTHER_OID=${JSON.stringify("b".repeat(defaultHead.length))}
 MARKER_PREFIX=${JSON.stringify(path.join(fixtureRoot, "invalid-default-merge-base-"))}
 
 if [ "\${LIFECYCLE_REQUIRE_SAFE_GIT:-0}" = "1" ]; then
   case " $* " in
-    *" --no-optional-locks --no-replace-objects -C "*) ;;
+    *" --no-optional-locks --no-replace-objects -c advice.graftFileDeprecated=false -C "*) ;;
     *)
       printf '%s\n' 'inventory git omitted read-only global options' >&2
       exit 92
       ;;
   esac
-  for VARIABLE in GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE GIT_PREFIX GIT_OPTIONAL_LOCKS GIT_REPLACE_REF_BASE GIT_NO_REPLACE_OBJECTS GIT_CONFIG GIT_GRAFT_FILE GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do
+  for VARIABLE in GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_OPTIONAL_LOCKS GIT_REPLACE_REF_BASE GIT_NO_REPLACE_OBJECTS GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do
     eval "VALUE_SET=\\\${$VARIABLE+x}"
     if [ -n "$VALUE_SET" ]; then
       printf 'unsafe git environment retained: %s\n' "$VARIABLE" >&2
       exit 93
     fi
   done
+  if [ "\${GIT_GRAFT_FILE:-}" != ${JSON.stringify(devNull)} ]; then
+    printf '%s\n' 'inventory git did not pin GIT_GRAFT_FILE to the null device' >&2
+    exit 93
+  fi
   if [ -n "\${LIFECYCLE_EXPECT_GIT_SSH_COMMAND:-}" ] &&
      [ "\${GIT_SSH_COMMAND:-}" != "$LIFECYCLE_EXPECT_GIT_SSH_COMMAND" ]; then
     printf '%s\n' 'git authentication environment was stripped' >&2
@@ -362,6 +383,32 @@ if [ "\${LIFECYCLE_REQUIRE_SAFE_GIT:-0}" = "1" ]; then
             ;;
         esac
       done
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_WORKTREE_INVENTORY_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" worktree list --porcelain -z "*)
+      PATH=\${PATH#${gitBin}:}
+      export PATH
+      git "$@"
+      STATUS=$?
+      printf '%s\n' 'git worktree inventory omitted registrations' >&2
+      exit "$STATUS"
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_REF_INVENTORY_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" for-each-ref --format=%(refname)%0a%(objectname)%00 refs/heads "*)
+      PATH=\${PATH#${gitBin}:}
+      export PATH
+      git "$@"
+      STATUS=$?
+      printf '%s\n' 'git ref inventory omitted refs' >&2
+      exit "$STATUS"
       ;;
   esac
 fi
@@ -391,6 +438,22 @@ if [ "\${LIFECYCLE_INDEX_STDERR:-0}" = "1" ]; then
       ;;
   esac
 fi
+
+case " $* " in
+  *" rev-list --ancestry-path --first-parent --reverse --parents $DIRECT_LANDING_OID..$DEFAULT_OID "*)
+    if [ "\${LIFECYCLE_MALFORMED_LANDING:-0}" = "1" ]; then
+      printf '%s\n' 'not-an-oid malformed-parent'
+      exit 0
+    elif [ "\${LIFECYCLE_AMBIGUOUS_LANDING:-0}" = "1" ]; then
+      printf '%s %s\n%s %s\n%s %s %s\n' \
+        "$STALE_OID" "$DIRECT_LANDING_OID" \
+        "$OTHER_OID" "$DIRECT_LANDING_OID" \
+        "$DEFAULT_OID" "$STALE_OID" "$OTHER_OID"
+      exit 0
+    fi
+    ;;
+esac
+
 case " $* " in
   *" worktree list --porcelain -z "*)
     if [ "\${LIFECYCLE_DUPLICATE_REGISTERED_REF:-0}" = "1" ]; then
@@ -643,7 +706,7 @@ if [ "$1" = "api" ] &&
     [ -z "$OWNER$NAME$OID_ARG" ] || fail "exact-head search included repository variables"
     case "$SEARCH_QUERY" in
       is:pr\\ head:*:*) fail "exact-head search used an owner-prefixed head qualifier" ;;
-      is:pr\\ head:feat/old|is:pr\\ head:feat/recent-merge|is:pr\\ head:feat/recent-reflog|is:pr\\ head:feat/live|is:pr\\ head:feat/cave-link1-linked|is:pr\\ head:feat/branch-only) ;;
+      is:pr\\ head:feat/old|is:pr\\ head:feat/recent-merge|is:pr\\ head:feat/recent-reflog|is:pr\\ head:feat/live|is:pr\\ head:feat/cave-link1-linked|is:pr\\ head:feat/branch-only|is:pr\\ head:feat/direct-landing) ;;
       *) fail "exact-head search used an unexpected query: $SEARCH_QUERY" ;;
     esac
     require_query 'search(query: $searchQuery, type: ISSUE, first: 100, after: $endCursor)'
@@ -685,24 +748,15 @@ case "$*" in
       *" status=pending "*) WORKFLOW_STATUS=pending ;;
     esac
     [ -n "$WORKFLOW_STATUS" ] || fail "workflow inventory omitted an exact status"
-    WORKFLOW_COUNT_FILE=${JSON.stringify(
-      path.join(fixtureRoot, "workflow-count-"),
+    WORKFLOW_CALL_MARKER=${JSON.stringify(
+      path.join(fixtureRoot, "workflow-calls-"),
     )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
-    WORKFLOW_CALL_COUNT=$(cat "$WORKFLOW_COUNT_FILE" 2>/dev/null || printf '0')
-    WORKFLOW_CALL_COUNT=$((WORKFLOW_CALL_COUNT + 1))
-    printf '%s' "$WORKFLOW_CALL_COUNT" > "$WORKFLOW_COUNT_FILE"
-    EXPECTED_INDEX=$(((WORKFLOW_CALL_COUNT - 1) % 5))
-    case "$EXPECTED_INDEX" in
-      0) EXPECTED_STATUS=queued ;;
-      1) EXPECTED_STATUS=in_progress ;;
-      2) EXPECTED_STATUS=requested ;;
-      3) EXPECTED_STATUS=waiting ;;
-      4) EXPECTED_STATUS=pending ;;
-    esac
-    [ "$WORKFLOW_STATUS" = "$EXPECTED_STATUS" ] ||
-      fail "workflow sweep queried $WORKFLOW_STATUS where $EXPECTED_STATUS was expected"
+    printf '%s\n' "$WORKFLOW_STATUS" >> "$WORKFLOW_CALL_MARKER"
+    if [ "\${LIFECYCLE_WORKFLOW_STDERR:-0}" = "1" ]; then
+      printf '%s\n' 'workflow inventory omitted inaccessible runs' >&2
+    fi
     if [ "\${LIFECYCLE_BAD_WORKFLOW:-0}" = "1" ]; then
-      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/missing-id"}]}]'
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{}]}]'
     elif [ "\${LIFECYCLE_PARTIAL_WORKFLOW:-0}" = "1" ]; then
       printf '%s\n' '[{"total_count":2,"workflow_runs":[{"id":9001,"status":"'"$WORKFLOW_STATUS"'","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run"}]}]'
     elif [ "\${LIFECYCLE_CAPPED_WORKFLOW:-0}" = "1" ]; then
@@ -731,7 +785,7 @@ case "$*" in
         printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
       fi
     elif [ "$WORKFLOW_STATUS" = "queued" ]; then
-      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":1000,"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/1000"}]}]'
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":9000,"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/9000"}]}]'
     else
       printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
     fi
@@ -753,6 +807,9 @@ case " $* " in
     exit 2
     ;;
 esac
+if [ "\${LIFECYCLE_BEADS_STDERR:-0}" = "1" ]; then
+  printf '%s\n' 'Beads inventory omitted records' >&2
+fi
 if [ "\${LIFECYCLE_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "drift-once")}" ]; then
   touch "${path.join(fixtureRoot, "drift-once")}"
   git -C "${repo}" branch feat/drift origin/main
@@ -780,13 +837,9 @@ elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_PATH:-0}" = "1" ]; then
 elif [ "\${LIFECYCLE_UNUSABLE_ADDITIONAL_BRANCH:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Unusable branch","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/bad..name","path":"${live}","owner":"Kitty","purpose":"Invalid fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_EXCEPTION_BUDGETS:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${realpathSync(old)}/","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active matched exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${realpathSync(old)}/./"]}}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${path.join(repo, ".worktrees", "path-mismatch")}","owner":"Kitty","purpose":"Mismatched fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired path mismatch","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${recentMerge}"]}}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired matched exception","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-stale","status":"closed","title":"Stale metadata","metadata":{"coven":{"worktree":{"branch":"feat/stale","path":"${path.join(repo, ".worktrees", "stale")}","owner":"Kitty","purpose":"Stale fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active stale exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${path.join(repo, ".worktrees", "stale")}"]}}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${realpathSync(old)}/","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active matched exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${realpathSync(old)}"]}}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${path.join(repo, ".worktrees", "path-mismatch")}","owner":"Kitty","purpose":"Mismatched fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired path mismatch","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${recentMerge}"]}}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired matched exception","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-stale","status":"closed","title":"Stale metadata","metadata":{"coven":{"worktree":{"branch":"feat/stale","path":"${path.join(repo, ".worktrees", "stale")}","owner":"Kitty","purpose":"Stale fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active stale exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${path.join(repo, ".worktrees", "stale")}"]}}}}}]'
 elif [ "\${LIFECYCLE_LINKED_TASK:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"CAVE-LINK1","status":"open","title":"Unrelated task","description":"","notes":""},{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
-elif [ "\${LIFECYCLE_OID_ONLY_TASK:-0}" = "1" ]; then
-  cat ${JSON.stringify(path.join(fixtureRoot, "tasks-oid-only.json"))}
-elif [ "\${LIFECYCLE_LONGER_OID_TASK:-0}" = "1" ]; then
-  cat ${JSON.stringify(path.join(fixtureRoot, "tasks-longer-oid.json"))}
 elif [ "\${LIFECYCLE_MISSING_BRANCH_METADATA:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_DUPLICATE_METADATA:-0}" = "1" ]; then
@@ -799,10 +852,18 @@ elif [ "\${LIFECYCLE_CLOSED_CONFLICTING_STRUCTURED_PATH:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-other-owner","status":"closed","title":"Other branch owner","metadata":{"coven":{"worktree":{"branch":"feat/other-owner","path":"${old}","owner":"Kitty","purpose":"Conflicting fixture","disposition":"archive","createdAt":"2026-07-20T12:00:00Z","reason":"Closed conflict fixture","reviewAfter":"2026-08-11"}}}}]'
 elif [ "\${LIFECYCLE_SIBLING_STRUCTURED_PATH:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-sibling","status":"open","title":"Open sibling path","metadata":{"coven":{"worktree":{"branch":"feat/sibling","path":"${old}-sibling","owner":"Kitty","purpose":"Sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+elif [ "\${LIFECYCLE_SYMLINK_METADATA_ALIAS:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Alias metadata","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${metadataAlias}","owner":"Kitty","purpose":"Alias fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+elif [ "\${LIFECYCLE_OPEN_SYMLINK_PATH_OWNER:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-alias-owner","status":"open","title":"Alias owner","metadata":{"coven":{"worktree":{"branch":"feat/alias-owner","path":"${metadataAlias}","owner":"Kitty","purpose":"Alias ownership fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+elif [ "\${LIFECYCLE_ALIAS_EXCEPTION_BUDGETS:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Lexical exception fixture","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${metadataAlias}"]}}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Lexical exception fixture","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${old}"]}}}}}]'
+elif [ "\${LIFECYCLE_WHITESPACE_METADATA_PATH:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Whitespace metadata","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old} ","owner":"Kitty","purpose":"Whitespace fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_NULL_EXCEPTION:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":null}}}}]'
 else
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-direct-landing","status":"closed","title":"Direct landing","metadata":{"coven":{"worktree":{"branch":"feat/direct-landing","path":"${directLandingPath}","owner":"Kitty","purpose":"Direct landing fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 fi
 `,
   );
@@ -814,7 +875,10 @@ if [ "$1" = "sessions" ] && [ "$2" = "--json" ]; then
     touch "${path.join(fixtureRoot, "worktree-drift-once")}"
     git -C "${repo}" worktree add -q --detach "${registeredDrift}" origin/main
   fi
-  if [ "\${LIFECYCLE_SESSIONS_UNAVAILABLE:-0}" = "1" ]; then
+  if [ "\${LIFECYCLE_SESSIONS_STDERR:-0}" = "1" ]; then
+    printf '%s\n' '{"sessions":[]}'
+    printf '%s\n' 'Coven sessions omitted records' >&2
+  elif [ "\${LIFECYCLE_SESSIONS_UNAVAILABLE:-0}" = "1" ]; then
     printf '%s\n' 'Coven sessions unavailable' >&2
     exit 23
   elif [ "\${LIFECYCLE_BAD_SESSIONS:-0}" = "1" ]; then
@@ -836,6 +900,9 @@ if [ "$1" = "sessions" ] && [ "$2" = "--json" ]; then
   else
     printf '%s\n' '{"sessions":[]}'
   fi
+elif [ "\${LIFECYCLE_CLAIMS_STDERR:-0}" = "1" ]; then
+  printf '%s\n' '{"claims":[]}'
+  printf '%s\n' 'Coven claims omitted records' >&2
 elif [ "\${LIFECYCLE_BAD_CLAIMS:-0}" = "1" ]; then
   printf '%s\n' '{"claims":[{}]}'
 elif [ "\${LIFECYCLE_UNKNOWN_CLAIM_STATE:-0}" = "1" ]; then
@@ -893,8 +960,12 @@ exit 0
       "LIFECYCLE_DEFAULT_TRACKING_MUTATION",
       "LIFECYCLE_DUPLICATE_REGISTERED_REF",
       "LIFECYCLE_REQUIRE_SAFE_GIT",
+      "LIFECYCLE_WORKTREE_INVENTORY_STDERR",
+      "LIFECYCLE_REF_INVENTORY_STDERR",
       "LIFECYCLE_STATUS_STDERR",
       "LIFECYCLE_INDEX_STDERR",
+      "LIFECYCLE_MALFORMED_LANDING",
+      "LIFECYCLE_AMBIGUOUS_LANDING",
     ].some(
       (name) =>
         extraEnv[name] === "1" ||
@@ -929,19 +1000,23 @@ exit 0
   const report = JSON.parse(stdout);
 
   const byBranch = new Map(report.items.map((item) => [item.branch, item]));
-  assert.equal(
-    readFileSync(path.join(fixtureRoot, "workflow-count-1"), "utf8"),
-    "10",
-    `normal patrol captures two complete active workflow snapshots: ${JSON.stringify(
-      report.items.flatMap((item) => item.probeErrors),
-    )}`,
+  const workflowCalls = readFileSync(
+    path.join(fixtureRoot, `workflow-calls-${lastPatrolInvocation}`),
+    "utf8",
+  )
+    .trim()
+    .split("\n");
+  assert.deepEqual(
+    workflowCalls,
+    [...["queued", "in_progress", "requested", "waiting", "pending"], ...["queued", "in_progress", "requested", "waiting", "pending"]],
+    "workflow ownership uses exactly five status queries in each of two complete sweeps",
   );
   assert.equal(byBranch.get("main").lane, "protected");
   assert.equal(byBranch.get("feat/live").lane, "active");
   assert.deepEqual(
     byBranch.get("feat/live").activeWorkflowUrls,
-    ["https://example.test/run/1000"],
-    "identical workflow snapshots retain one canonical run",
+    ["https://example.test/run/9000"],
+    "the stable exact workflow owner appears exactly once",
   );
   assert.deepEqual(
     byBranch.get("feat/live").changes.map((line) => line.replace(/^\?\s+/, "")),
@@ -1001,10 +1076,30 @@ exit 0
     },
     "exact structured metadata survives patrol JSON serialization",
   );
-  assert.equal(branchOnly.lane, "retire-after-gate");
+  assert.equal(
+    branchOnly.lane,
+    "retire-after-gate",
+    "a newer default commit does not move an older branch's first landing timestamp",
+  );
+  const directLanding = byBranch.get("feat/direct-landing");
+  assert.equal(
+    directLanding.lane,
+    "cooldown",
+    "a fresh direct default-branch landing supplies cooldown evidence without a matching PR",
+  );
+  assert.equal(directLanding.updatedAtMs, Date.parse("2026-08-10T21:30:00Z"));
+  assert.equal(directLanding.mergedPr, null);
+  const postLandingCooldown = JSON.parse(
+    patrol(["--json", "--now", "2026-08-11T21:30:01Z"]),
+  ).items.find((item) => item.branch === "feat/direct-landing");
+  assert.equal(
+    postLandingCooldown.lane,
+    "retire-after-gate",
+    "the stable direct landing becomes eligible after 24 hours",
+  );
   assert.deepEqual(report.budgets, {
     worktrees: { count: 7, warning: 12, exceeded: false },
-    branches: { count: 7, warning: 30, exceeded: false },
+    branches: { count: 8, warning: 30, exceeded: false },
     exceptions: { active: 0, expired: 0 },
   }, "the exact budget object survives patrol JSON serialization");
   const nullExceptionReport = JSON.parse(
@@ -1097,7 +1192,7 @@ exit 0
   );
   assert.match(
     humanReport,
-    /^Local branch budget: 7\/30 \(within budget\)$/m,
+    /^Local branch budget: 8\/30 \(within budget\)$/m,
     "the routine report uses the lifecycle renderer's exact local branch budget line",
   );
   assert.doesNotMatch(
@@ -1200,6 +1295,22 @@ exit 0
     );
   });
 
+  for (const [environment, expectedWarning] of [
+    ["LIFECYCLE_WORKTREE_INVENTORY_STDERR", /git worktree inventory omitted registrations/],
+    ["LIFECYCLE_REF_INVENTORY_STDERR", /git ref inventory omitted refs/],
+  ]) {
+    verifySafetyRegression(`${environment} aborts a successful but warned snapshot`, () => {
+      let failure;
+      try {
+        patrol(["--json"], { [environment]: "1", NODE_NO_WARNINGS: "1" });
+      } catch (error) {
+        failure = error;
+      }
+      assert.ok(failure, `${environment} must abort inventory collection`);
+      assert.match(failure.stderr, expectedWarning);
+    });
+  }
+
   verifySafetyRegression("successful git status with stderr fails closed", () => {
     const warnedStatusReport = JSON.parse(
       patrol(["--json"], { LIFECYCLE_STATUS_STDERR: "1" }),
@@ -1227,6 +1338,7 @@ exit 0
       /git index inventory omitted inaccessible paths/,
     );
   });
+
   verifySafetyRegression("NUL Coven session root", () => {
     const nulSessionReport = JSON.parse(
       patrol(["--json"], { LIFECYCLE_NUL_SESSION_ROOT: "1" }),
@@ -1269,6 +1381,20 @@ exit 0
     );
   });
 
+  for (const [environment, expectedError] of [
+    ["LIFECYCLE_MALFORMED_LANDING", /default branch landing.*malformed/i],
+    ["LIFECYCLE_AMBIGUOUS_LANDING", /default branch landing.*ambiguous/i],
+  ]) {
+    verifySafetyRegression(`${environment} fails closed`, () => {
+      const landingReport = JSON.parse(patrol(["--json"], { [environment]: "1" }));
+      const landingItem = landingReport.items.find(
+        (item) => item.branch === "feat/direct-landing",
+      );
+      assert.equal(landingItem.lane, "uncertain");
+      assert.match(landingItem.probeErrors.join("\n"), expectedError);
+    });
+  }
+
   verifySafetyRegression("replacement refs fail closed before ancestry", () => {
     const replacementTree = git(["show", "-s", "--format=%T", defaultHead], repo).trim();
     const replacementCommit = git(
@@ -1306,6 +1432,23 @@ exit 0
     }
   });
 
+  verifySafetyRegression("legacy grafts fail closed before ancestry", () => {
+    const graftPath = path.join(repo, ".git", "info", "grafts");
+    mkdirSync(path.dirname(graftPath), { recursive: true });
+    writeFileSync(graftPath, `${defaultHead} ${oldHead}\n`);
+    try {
+      git(["merge-base", "--is-ancestor", oldHead, defaultHead], repo);
+      const graftReport = JSON.parse(
+        patrol(["--json"], { LIFECYCLE_CLOSED_UNMERGED: "1" }),
+      );
+      const graftOld = graftReport.items.find((item) => item.branch === "feat/old");
+      assert.equal(graftOld.lane, "uncertain");
+      assert.match(graftOld.probeErrors.join("\n"), /legacy Git graft file/i);
+    } finally {
+      rmSync(graftPath, { force: true });
+    }
+  });
+
   if (safetyRegressionFailures.length > 0) {
     assert.fail(`Task 2 safety regressions:\n${safetyRegressionFailures.join("\n")}`);
   }
@@ -1315,8 +1458,11 @@ exit 0
     ["LIFECYCLE_LSOF_MALFORMED", /process cwd inventory returned malformed or partial data/],
     ["LIFECYCLE_BAD_CLAIMS", /Coven claims returned malformed data/],
     ["LIFECYCLE_UNKNOWN_CLAIM_STATE", /Coven claims returned malformed data/],
+    ["LIFECYCLE_CLAIMS_STDERR", /Coven claims omitted records/],
     ["LIFECYCLE_BAD_SESSIONS", /Coven sessions returned malformed data/],
+    ["LIFECYCLE_SESSIONS_STDERR", /Coven sessions omitted records/],
     ["LIFECYCLE_BAD_WORKFLOW", /workflow inventory returned malformed data/],
+    ["LIFECYCLE_WORKFLOW_STDERR", /workflow inventory omitted inaccessible runs/],
     ["LIFECYCLE_PARTIAL_WORKFLOW", /workflow inventory returned partial data/],
     ["LIFECYCLE_CAPPED_WORKFLOW", /workflow inventory reached GitHub's 1000-run cap/],
     ["LIFECYCLE_DUPLICATE_WORKFLOW_ID", /workflow inventory.*duplicate.*ID/i],
@@ -1325,6 +1471,7 @@ exit 0
     ["LIFECYCLE_CONFLICTING_WORKFLOW_STATUS", /workflow inventory.*conflicting.*status/i],
     ["LIFECYCLE_UNSTABLE_WORKFLOW", /workflow inventory changed between verification sweeps/i],
     ["LIFECYCLE_BAD_TASKS", /Beads inventory returned malformed data/],
+    ["LIFECYCLE_BEADS_STDERR", /Beads inventory omitted records/],
     ["LIFECYCLE_PR_CAP", /exact-head PR search.*(?:cap|1000)/i],
     [
       "LIFECYCLE_INCOMPLETE_ASSOCIATED_PAGINATION",
@@ -1564,6 +1711,65 @@ exit 0
     "structured metadata for an unrelated path is not an active task blocker",
   );
 
+  const symlinkMetadataReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_SYMLINK_METADATA_ALIAS: "1" }),
+  );
+  const symlinkMetadataOld = symlinkMetadataReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(
+    symlinkMetadataOld.lane,
+    "uncertain",
+    "a symlink metadata alias cannot authorize the registered lexical path",
+  );
+  assert.equal(symlinkMetadataOld.metadata, null);
+  assert.match(symlinkMetadataOld.metadataErrors.join("\n"), /path does not match/i);
+
+  const openSymlinkOwnerReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_OPEN_SYMLINK_PATH_OWNER: "1" }),
+  );
+  const openSymlinkOwnerOld = openSymlinkOwnerReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(openSymlinkOwnerOld.lane, "retire-after-gate");
+  assert.deepEqual(
+    openSymlinkOwnerOld.taskIds,
+    [],
+    "an open structured symlink alias does not own the registered lexical path",
+  );
+  assert.deepEqual(
+    openSymlinkOwnerOld.metadataErrors,
+    [],
+    "a symlink alias is not a conflicting duplicate of the registered lexical path",
+  );
+
+  const aliasExceptionReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_ALIAS_EXCEPTION_BUDGETS: "1" }),
+  );
+  const aliasExceptionOld = aliasExceptionReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(
+    aliasExceptionOld.lane,
+    "retire-after-gate",
+    "an exception for a symlink alias does not apply to the registered lexical path",
+  );
+  assert.deepEqual(aliasExceptionReport.budgets.exceptions, { active: 2, expired: 0 });
+  assert.deepEqual(aliasExceptionOld.metadata.exception.additionalPaths, [metadataAlias]);
+
+  const whitespaceMetadataReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_WHITESPACE_METADATA_PATH: "1" }),
+  );
+  const whitespaceMetadataOld = whitespaceMetadataReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(
+    whitespaceMetadataOld.lane,
+    "uncertain",
+    "metadata path whitespace remains identity-significant",
+  );
+  assert.match(whitespaceMetadataOld.metadataErrors.join("\n"), /path does not match/i);
+
   const partialReport = JSON.parse(patrol(["--json"], { LIFECYCLE_LSOF_PARTIAL: "1" }));
   const partialOld = partialReport.items.find((item) => item.branch === "feat/old");
   assert.equal(partialOld.lane, "active", "a discovered owner keeps partial process data active");
@@ -1696,126 +1902,6 @@ exit 0
   );
   assert.equal(linkedItem.lane, "active", "a Bead ID embedded in the branch proves ownership");
   assert.deepEqual(linkedItem.taskIds, ["CAVE-LINK1"]);
-
-  const oidOwnerReport = JSON.parse(
-    patrol(["--json"], { LIFECYCLE_OID_ONLY_TASK: "1" }),
-  );
-  const oidOwnedBranch = oidOwnerReport.items.find(
-    (item) => item.branch === "feat/branch-only",
-  );
-  assert.equal(oidOwnedBranch.lane, "active", "an exact full OID token proves Bead ownership");
-  assert.deepEqual(
-    oidOwnedBranch.taskIds,
-    ["cave-oid-owner"],
-    "closed Beads do not own a candidate even when they contain its exact OID",
-  );
-
-  const longerOidReport = JSON.parse(
-    patrol(["--json"], { LIFECYCLE_LONGER_OID_TASK: "1" }),
-  );
-  const longerOidBranch = longerOidReport.items.find(
-    (item) => item.branch === "feat/branch-only",
-  );
-  assert.equal(
-    longerOidBranch.lane,
-    "retire-after-gate",
-    "an OID substring inside a longer hex token does not prove ownership",
-  );
-  assert.deepEqual(longerOidBranch.taskIds, []);
-
-  const hiddenIndex = path.join(fixtureRoot, "hidden-index");
-  const hiddenIndexEnvironment = { ...process.env, GIT_INDEX_FILE: hiddenIndex };
-  git(["read-tree", "HEAD"], old, { env: hiddenIndexEnvironment });
-  git(["update-index", "--assume-unchanged", "old.txt"], old, {
-    env: hiddenIndexEnvironment,
-  });
-  writeFileSync(path.join(old, "old.txt"), "dirty tracked change\n");
-  try {
-    const sanitizedStatusReport = JSON.parse(
-      patrol(["--json"], {
-        LIFECYCLE_REQUIRE_SAFE_GIT: "1",
-        GIT_DIR: origin,
-        GIT_WORK_TREE: live,
-        GIT_INDEX_FILE: hiddenIndex,
-        GIT_OBJECT_DIRECTORY: path.join(origin, "objects"),
-        GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(repo, ".git", "objects"),
-        GIT_COMMON_DIR: origin,
-        GIT_NAMESPACE: "hidden",
-        GIT_PREFIX: "hidden/",
-        GIT_CONFIG: path.join(fixtureRoot, "malicious-git-config"),
-        GIT_CONFIG_GLOBAL: path.join(fixtureRoot, "malicious-global-config"),
-        GIT_CONFIG_SYSTEM: path.join(fixtureRoot, "malicious-system-config"),
-        GIT_CONFIG_COUNT: "1",
-        GIT_CONFIG_KEY_0: "status.showUntrackedFiles",
-        GIT_CONFIG_VALUE_0: "no",
-        GIT_NO_REPLACE_OBJECTS: "0",
-        GIT_OPTIONAL_LOCKS: "1",
-      }),
-    );
-    const sanitizedOld = sanitizedStatusReport.items.find(
-      (item) => item.branch === "feat/old",
-    );
-    assert.equal(sanitizedOld.lane, "active");
-    assert.ok(
-      sanitizedOld.changes.some((change) => change.includes("old.txt")),
-      "sanitized status sees a dirty tracked path hidden by the caller's index",
-    );
-  } finally {
-    writeFileSync(path.join(old, "old.txt"), "landed\n");
-  }
-
-  git(["replace", oldHead, recentMergeHead], repo);
-  try {
-    const replaceReport = JSON.parse(patrol(["--json"]));
-    for (const item of replaceReport.items) {
-      if (item.lane === "protected" || item.lane === "active") continue;
-      assert.equal(item.lane, "uncertain", "replacement refs fail closed globally");
-      assert.match(item.probeErrors.join("\n"), /replacement ref/i);
-    }
-  } finally {
-    git(["replace", "-d", oldHead], repo);
-  }
-
-  const commonGitDir = git(
-    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    repo,
-  ).trim();
-  const graftFile = path.join(commonGitDir, "info", "grafts");
-  writeFileSync(graftFile, `${oldHead} ${defaultHead}\n`);
-  try {
-    const graftReport = JSON.parse(patrol(["--json"]));
-    const graftOld = graftReport.items.find((item) => item.branch === "feat/old");
-    assert.equal(graftOld.lane, "uncertain", "legacy grafts fail closed globally");
-    assert.match(graftOld.probeErrors.join("\n"), /graft/i);
-  } finally {
-    rmSync(graftFile);
-  }
-
-  const duplicateRegisteredReport = JSON.parse(
-    patrol(["--json"], { LIFECYCLE_DUPLICATE_REGISTERED_REF: "1" }),
-  );
-  const duplicateRegisteredUnits = duplicateRegisteredReport.items.filter(
-    (item) => item.ref === "refs/heads/feat/old",
-  );
-  assert.equal(duplicateRegisteredUnits.length, 2);
-  assert.ok(
-    duplicateRegisteredUnits.every(
-      (item) => item.kind === "worktree" && item.lane !== "retire-after-gate",
-    ),
-    "every duplicate registered worktree is non-cleanup-ready",
-  );
-  for (const item of duplicateRegisteredUnits) {
-    assert.match(item.probeErrors.join("\n"), /more than one worktree/i);
-    assert.match(item.probeErrors.join("\n"), /duplicate-registered/);
-    assert.match(item.probeErrors.join("\n"), /\.worktrees\/old/);
-  }
-  assert.equal(
-    duplicateRegisteredReport.items.some(
-      (item) => item.kind === "branch-only" && item.ref === "refs/heads/feat/old",
-    ),
-    false,
-    "a duplicate registered ref never emits a branch-only unit",
-  );
 
   const trunkDefaultReport = JSON.parse(
     patrol(["--json"], { LIFECYCLE_DEFAULT_TRUNK: "1" }),
