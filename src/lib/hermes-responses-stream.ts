@@ -340,6 +340,63 @@ export function hermesApiCanAccessLocalFiles(config: HermesApiConfig): boolean {
 }
 
 /**
+ * The single source of truth for what counts as an acceptable Hermes API
+ * endpoint. Returns the normalised base URL, or null.
+ *
+ * Exported so a settings UI can reject a bad endpoint at the point of entry
+ * with the SAME rule the send route enforces. Without that, a value can be
+ * saved happily and then silently ignored at chat time, which reads as "I
+ * configured it and it did nothing" — the worst possible failure for a
+ * setting whose entire job is to turn a feature on.
+ */
+export function normalizeHermesApiUrl(raw: string | undefined): string | null {
+  const candidate = raw?.trim();
+  if (!candidate) return null;
+  try {
+    const url = new URL(candidate);
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      (url.protocol === "http:" && !isLiteralLoopbackHost(url.hostname))
+    ) return null;
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+
+/** Why an endpoint was rejected, in words an operator can act on. Null when
+ * the value is acceptable — callers pair this with normalizeHermesApiUrl. */
+export function hermesApiUrlRejection(raw: string | undefined): string | null {
+  const candidate = raw?.trim();
+  if (!candidate) return "Enter the Hermes server's base URL.";
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    return "That isn't a valid URL. Include the scheme, e.g. http://127.0.0.1:9119.";
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return "Use an http:// or https:// URL.";
+  }
+  if (url.username || url.password) {
+    return "Remove the credentials from the URL — the API key is stored separately.";
+  }
+  if (url.search || url.hash) {
+    return "Remove the query string or fragment — this must be a plain base URL.";
+  }
+  if (url.protocol === "http:" && !isLiteralLoopbackHost(url.hostname)) {
+    // Deliberately names the hostname rule: `localhost` looks loopback but is
+    // resolver-controlled, and this endpoint carries prompts and a bearer key.
+    return "Plain http:// is only allowed for a literal loopback address such as 127.0.0.1. Use https:// for any other host.";
+  }
+  return null;
+}
+
+/**
  * Opt in to the structured transport with a local/API-server endpoint. Remote
  * endpoints must use HTTPS; HTTP is limited to literal loopback listeners.
  * The key is read from the familiar-scoped spawn environment by the caller,
@@ -349,28 +406,12 @@ export function hermesApiCanAccessLocalFiles(config: HermesApiConfig): boolean {
 export function hermesApiConfig(
   env: Partial<Record<"HERMES_API_URL" | "HERMES_API_KEY", string | undefined>>,
 ): HermesApiConfig | null {
-  const raw = env.HERMES_API_URL?.trim();
   const apiKey = env.HERMES_API_KEY?.trim();
   // Invalid configuration must select the unchanged CLI fallback rather than
   // letting fetch echo a malformed authorization value in an error message.
-  if (!raw || !apiKey || /[\0-\x1F\x7F]/.test(apiKey)) return null;
-  try {
-    const url = new URL(raw);
-    if (
-      (url.protocol !== "http:" && url.protocol !== "https:") ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash ||
-      (url.protocol === "http:" && !isLiteralLoopbackHost(url.hostname))
-    ) return null;
-    return {
-      baseUrl: url.toString().replace(/\/$/, ""),
-      apiKey,
-    };
-  } catch {
-    return null;
-  }
+  if (!apiKey || /[\0-\x1F\x7F]/.test(apiKey)) return null;
+  const baseUrl = normalizeHermesApiUrl(env.HERMES_API_URL);
+  return baseUrl ? { baseUrl, apiKey } : null;
 }
 
 /** Accept either the server origin or an already-versioned `/v1` base URL. */

@@ -933,6 +933,25 @@
   resize: vertical;
 }
 .familiar-studio-brain__toast { font-size: 11px; color: var(--color-warning); margin: 0; }
+/* Hermes API card: an on/off readout and its action row. The readout is a
+   state statement, not an alarm — "off" is a perfectly normal configuration,
+   so it reads muted rather than in the warning colour. */
+.familiar-studio-brain__hermes-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+}
+.familiar-studio-brain__hermes-status--on { color: var(--color-success); }
+.familiar-studio-brain__hermes-status--off { color: var(--text-muted); }
+.familiar-studio-brain__hermes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
 /* Voice preview: speaker/stop IconButton framed like the input beside it. */
 .familiar-studio-brain__voice-preview {
   align-self: stretch;
