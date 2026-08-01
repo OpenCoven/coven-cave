@@ -20,7 +20,7 @@ const FACADES: Record<string, string[]> = {
     "../styles/globals/surface-compact-calendar.css",
     "../styles/globals/surface-reporting.css",
     "../styles/globals/surface-chat-overlays.css",
-    "../styles/globals/surface-marketplace.css",
+    "../styles/globals/shared-pickers-and-toasts.css",
     "../styles/globals/surface-role-workspaces.css",
     "../styles/document-reader.css",
   ],
