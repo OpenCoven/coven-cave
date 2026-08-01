@@ -76,13 +76,19 @@ type BeadTask = {
   id: string;
   status: string;
   text: string;
-  structured: StructuredMetadataRecord | null;
+  structured: StructuredMetadataRecord[];
+  structuredErrors: string[];
 };
 
 type StructuredMetadataRecord = {
   branch: string;
   path: string | null;
   metadata: WorktreeLifecycleMetadata | null;
+  errors: string[];
+};
+
+type StructuredMetadataParse = {
+  records: StructuredMetadataRecord[];
   errors: string[];
 };
 
@@ -106,7 +112,7 @@ const TERMINAL_SESSION_STATUSES = new Set([
 const DISPOSITIONS = new Set(["active", "pr", "recovery", "archive"]);
 const OID = /^[0-9a-f]{40,64}$/;
 const RFC3339_INSTANT =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?(Z|[+-](\d{2}):(\d{2}))$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-](\d{2}):(\d{2}))$/;
 const ISO_CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 function isRealCalendarDate(year: number, month: number, day: number): boolean {
@@ -719,6 +725,7 @@ function parseException(
   }
   if (
     !Array.isArray(additionalPaths) ||
+    additionalPaths.length === 0 ||
     !additionalPaths.every(
       (candidate) => typeof candidate === "string" && path.isAbsolute(candidate),
     )
@@ -743,22 +750,36 @@ function parseException(
   };
 }
 
-function parseStructuredMetadata(taskId: string, value: unknown): StructuredMetadataRecord | null {
-  if (value === undefined || value === null) return null;
-  if (!isRecord(value)) throw new Error();
-  if (value.coven === undefined || value.coven === null) return null;
-  if (!isRecord(value.coven)) throw new Error();
-  if (value.coven.worktree === undefined || value.coven.worktree === null) return null;
-  if (!isRecord(value.coven.worktree)) throw new Error();
-
-  const worktree = value.coven.worktree;
+function parseStructuredRecord(
+  taskId: string,
+  value: unknown,
+  location: string,
+  root: string,
+): StructuredMetadataRecord {
+  const prefix = `Bead ${taskId} ${location} metadata`;
+  if (!isRecord(value)) {
+    return {
+      branch: "",
+      path: null,
+      metadata: null,
+      errors: [`${prefix}: record must be an object`],
+    };
+  }
+  const worktree = value;
   const branch = typeof worktree.branch === "string" ? worktree.branch : "";
-  if (!branch.trim()) throw new Error();
   const errors: string[] = [];
-  const prefix = `Bead ${taskId} worktree metadata`;
   const metadataErrors = (message: string) => errors.push(`${prefix}: ${message}`);
-  if (branch.startsWith("refs/heads/") || branch.trim() !== branch) {
+  if (
+    branch.trim().length === 0 ||
+    branch.startsWith("refs/heads/") ||
+    branch.trim() !== branch
+  ) {
     metadataErrors("branch must be an exact local branch name");
+  } else {
+    const branchCheck = git(root, ["check-ref-format", "--branch", branch]);
+    if (!branchCheck.ok || branchCheck.stdout.trim() !== branch) {
+      metadataErrors("branch must be a valid exact local branch name");
+    }
   }
   if (typeof worktree.path !== "string" || !path.isAbsolute(worktree.path)) {
     metadataErrors("path must be absolute");
@@ -822,6 +843,58 @@ function parseStructuredMetadata(taskId: string, value: unknown): StructuredMeta
   };
 }
 
+function parseStructuredMetadata(
+  taskId: string,
+  value: unknown,
+  root: string,
+): StructuredMetadataParse {
+  if (value === undefined || value === null) return { records: [], errors: [] };
+  if (!isRecord(value)) throw new Error();
+  if (value.coven === undefined || value.coven === null) {
+    return { records: [], errors: [] };
+  }
+  if (!isRecord(value.coven)) throw new Error();
+
+  const records: StructuredMetadataRecord[] = [];
+  const errors: string[] = [];
+  const primaryPresent =
+    value.coven.worktree !== undefined && value.coven.worktree !== null;
+  if (primaryPresent) {
+    const primary = parseStructuredRecord(
+      taskId,
+      value.coven.worktree,
+      "worktree",
+      root,
+    );
+    records.push(primary);
+    errors.push(...primary.errors);
+  }
+
+  if (value.coven.worktrees !== undefined) {
+    if (!Array.isArray(value.coven.worktrees)) {
+      errors.push(`Bead ${taskId} worktrees metadata: worktrees must be an array`);
+    } else {
+      if (!primaryPresent && value.coven.worktrees.length > 0) {
+        errors.push(
+          `Bead ${taskId} worktrees metadata: additional records require a primary worktree`,
+        );
+      }
+      value.coven.worktrees.forEach((record, index) => {
+        const parsed = parseStructuredRecord(
+          taskId,
+          record,
+          `worktrees[${index}]`,
+          root,
+        );
+        records.push(parsed);
+        errors.push(...parsed.errors);
+      });
+    }
+  }
+
+  return { records, errors };
+}
+
 function fetchTasks(root: string): { tasks: BeadTask[]; error: string | null } {
   const result = command(
     "bd",
@@ -873,17 +946,21 @@ function fetchTasks(root: string): { tasks: BeadTask[]; error: string | null } {
       throw new Error();
     }
     return {
-      tasks: parsed.map((task) => ({
-        id: task.id,
-        status: task.status,
-        text: [
-          task.title ?? "",
-          task.description ?? "",
-          task.notes ?? "",
-          task.external_ref ?? "",
-        ].join("\n"),
-        structured: parseStructuredMetadata(task.id, task.metadata),
-      })),
+      tasks: parsed.map((task) => {
+        const structured = parseStructuredMetadata(task.id, task.metadata, root);
+        return {
+          id: task.id,
+          status: task.status,
+          text: [
+            task.title ?? "",
+            task.description ?? "",
+            task.notes ?? "",
+            task.external_ref ?? "",
+          ].join("\n"),
+          structured: structured.records,
+          structuredErrors: structured.errors,
+        };
+      }),
       error: null,
     };
   } catch {
@@ -977,16 +1054,29 @@ function matchingTasks(
   worktreePath: string | null,
   tasks: BeadTask[],
 ): string[] {
-  if (!branch || PROTECTED_BRANCHES.has(branch)) return [];
-  const branchBeadIds = new Set(beadIdsInText(branch));
+  if (branch === null && worktreePath === null) return [];
+  const matchedBranch =
+    branch !== null && !PROTECTED_BRANCHES.has(branch) ? branch : null;
+  const branchBeadIds = new Set(matchedBranch ? beadIdsInText(matchedBranch) : []);
+  const normalizedWorktreePath =
+    worktreePath === null ? null : normalizePath(worktreePath);
   return tasks
     .filter((task) => task.status !== "closed")
     .filter(
       (task) =>
-        task.structured?.branch === branch ||
+        task.structured.some(
+          (record) =>
+            (matchedBranch !== null && record.branch === matchedBranch) ||
+            (normalizedWorktreePath !== null &&
+              record.path !== null &&
+              path.isAbsolute(record.path) &&
+              normalizePath(record.path) === normalizedWorktreePath),
+        ) ||
         branchBeadIds.has(task.id.toLowerCase()) ||
-        task.text.includes(branch) ||
-        (worktreePath !== null && task.text.includes(worktreePath)),
+        (matchedBranch !== null && task.text.includes(matchedBranch)) ||
+        (matchedBranch !== null &&
+          worktreePath !== null &&
+          task.text.includes(worktreePath)),
     )
     .map((task) => task.id);
 }
@@ -997,9 +1087,31 @@ function metadataFor(
   tasks: BeadTask[],
 ): { metadata: WorktreeLifecycleMetadata | null; errors: string[] } {
   if (!branch) return { metadata: null, errors: [] };
-  const records = tasks
-    .map((task) => task.structured)
-    .filter((record): record is StructuredMetadataRecord => record?.branch === branch);
+  const globalErrors = tasks.flatMap((task) => task.structuredErrors);
+  const allRecords = tasks.flatMap((task) => task.structured);
+  const records = allRecords.filter((record) => record.branch === branch);
+  const conflictingPathRecords =
+    worktreePath === null
+      ? []
+      : allRecords.filter(
+          (record) =>
+            record.branch !== branch &&
+            record.path !== null &&
+            path.isAbsolute(record.path) &&
+            normalizePath(record.path) === normalizePath(worktreePath),
+        );
+  const ownershipErrors =
+    conflictingPathRecords.length === 0
+      ? []
+      : [
+          `conflicting structured path ownership for ${worktreePath}: ${[
+            ...new Set(conflictingPathRecords.map((record) => record.branch || "<invalid branch>")),
+          ].join(", ")}`,
+        ];
+  const inventoryErrors = [...new Set([...globalErrors, ...ownershipErrors])];
+  if (inventoryErrors.length > 0) {
+    return { metadata: null, errors: inventoryErrors };
+  }
   if (records.length > 1) {
     return {
       metadata: null,
@@ -1008,6 +1120,19 @@ function metadataFor(
   }
   const record = records[0];
   if (!record) return { metadata: null, errors: [] };
+  if (
+    record.path !== null &&
+    allRecords.filter(
+      (candidate) =>
+        candidate.path !== null &&
+        normalizePath(candidate.path) === normalizePath(record.path!),
+    ).length > 1
+  ) {
+    return {
+      metadata: null,
+      errors: [`duplicate structured worktree metadata paths for ${record.path}`],
+    };
+  }
   if (record.errors.length > 0 || !record.metadata) {
     return { metadata: null, errors: record.errors };
   }
@@ -1020,14 +1145,62 @@ function metadataFor(
   return { metadata: record.metadata, errors: [] };
 }
 
-function activeSessionIds(worktreePath: string, sessions: CovenSession[]): string[] {
-  const normalized = normalizePath(worktreePath);
-  return sessions
-    .filter(
-      (session) =>
-        session.projectRoot === normalized && !TERMINAL_SESSION_STATUSES.has(session.status),
-    )
-    .map((session) => session.id);
+function pathContains(root: string, candidate: string): boolean {
+  return candidate === root || candidate.startsWith(`${root}${path.sep}`);
+}
+
+function pathDepth(candidate: string): number {
+  const parsed = path.parse(candidate);
+  return candidate
+    .slice(parsed.root.length)
+    .split(path.sep)
+    .filter(Boolean).length;
+}
+
+function assignActiveSessions(
+  worktreePaths: string[],
+  sessions: CovenSession[],
+): {
+  sessionIdsByPath: Map<string, string[]>;
+  probeErrorsByPath: Map<string, string[]>;
+} {
+  const registered = worktreePaths.map((worktreePath) => {
+    const normalized = normalizePath(worktreePath);
+    return {
+      worktreePath,
+      normalized,
+      depth: pathDepth(normalized),
+    };
+  });
+  const sessionIdsByPath = new Map<string, string[]>();
+  const probeErrorsByPath = new Map<string, string[]>();
+
+  for (const session of sessions) {
+    if (TERMINAL_SESSION_STATUSES.has(session.status)) continue;
+    const matches = registered.filter((entry) =>
+      pathContains(entry.normalized, session.projectRoot),
+    );
+    if (matches.length === 0) continue;
+    const deepest = Math.max(...matches.map((entry) => entry.depth));
+    const owners = matches.filter((entry) => entry.depth === deepest);
+    if (owners.length > 1) {
+      const error = `Coven session ${session.id} has ambiguous equally deep registered worktree ownership: ${owners
+        .map((owner) => owner.worktreePath)
+        .join(", ")}`;
+      for (const owner of owners) {
+        const errors = probeErrorsByPath.get(owner.worktreePath) ?? [];
+        errors.push(error);
+        probeErrorsByPath.set(owner.worktreePath, errors);
+      }
+      continue;
+    }
+    const owner = owners[0]!;
+    const ids = sessionIdsByPath.get(owner.worktreePath) ?? [];
+    ids.push(session.id);
+    sessionIdsByPath.set(owner.worktreePath, ids);
+  }
+
+  return { sessionIdsByPath, probeErrorsByPath };
 }
 
 function fingerprint(worktreeRaw: string, refsRaw: string): string {
@@ -1114,6 +1287,16 @@ export function collectWorktreeLifecycleInventory(
   const sessions = fetchSessions(root);
   const tasks = fetchTasks(root);
   const processes = fetchProcessOwners();
+  const sessionOwnership =
+    sessions.error === null
+      ? assignActiveSessions(
+          units.flatMap((unit) => (unit.path === null ? [] : [unit.path])),
+          sessions.sessions,
+        )
+      : {
+          sessionIdsByPath: new Map<string, string[]>(),
+          probeErrorsByPath: new Map<string, string[]>(),
+        };
   const branchGlobalErrors = [prs.error, workflows.error, claims.error, tasks.error].filter(
     (error): error is string => error !== null,
   );
@@ -1157,6 +1340,7 @@ export function collectWorktreeLifecycleInventory(
       ...unit.initialErrors,
       ...branchGlobalErrors,
       ...pathErrors,
+      ...(unit.path ? (sessionOwnership.probeErrorsByPath.get(unit.path) ?? []) : []),
       recency.error,
       remoteRefs.error,
       ancestry.error,
@@ -1199,10 +1383,9 @@ export function collectWorktreeLifecycleInventory(
       metadata: metadata.metadata,
       metadataErrors: metadata.errors,
       remoteRef: remote.remoteRef,
-      sessionIds:
-        unit.path && sessions.error === null
-          ? activeSessionIds(unit.path, sessions.sessions)
-          : [],
+      sessionIds: unit.path
+        ? (sessionOwnership.sessionIdsByPath.get(unit.path) ?? [])
+        : [],
     };
   });
 
@@ -1217,16 +1400,25 @@ export function collectWorktreeLifecycleInventory(
   }
 
   const structuredRecords = tasks.tasks
-    .map((task) => task.structured)
-    .filter((record): record is StructuredMetadataRecord => record !== null);
+    .flatMap((task) => task.structured);
   const validMetadata = structuredRecords
     .filter(
       (record): record is StructuredMetadataRecord & { metadata: WorktreeLifecycleMetadata } =>
         record.errors.length === 0 && record.metadata !== null,
     )
+    .filter(() => tasks.tasks.every((task) => task.structuredErrors.length === 0))
     .filter(
       (record) =>
         structuredRecords.filter((candidate) => candidate.branch === record.branch).length === 1,
+    )
+    .filter(
+      (record) =>
+        record.path !== null &&
+        structuredRecords.filter(
+          (candidate) =>
+            candidate.path !== null &&
+            normalizePath(candidate.path) === normalizePath(record.path!),
+        ).length === 1,
     )
     .filter((record) =>
       units.some(
@@ -1235,9 +1427,29 @@ export function collectWorktreeLifecycleInventory(
           (unit.kind === "branch-only" || record.path === unit.path),
       ),
     );
-  const exceptions = validMetadata.flatMap((record) =>
-    record.metadata.exception ? [record.metadata.exception] : [],
-  );
+  const exceptions = [
+    ...new Map(
+      validMetadata
+        .flatMap((record) =>
+          record.metadata.exception ? [record.metadata.exception] : [],
+        )
+        .map((exception) => [
+          JSON.stringify({
+            owner: exception.owner,
+            reason: exception.reason,
+            expiresAt: exception.expiresAt,
+            additionalPaths: [
+              ...new Set(
+                exception.additionalPaths.map((candidate) =>
+                  normalizePath(candidate),
+                ),
+              ),
+            ].sort(),
+          }),
+          exception,
+        ]),
+    ).values(),
+  ];
   const budgets = calculateLifecycleBudgets({
     worktreeCount: entries.length,
     branchCount: localRefs.length,

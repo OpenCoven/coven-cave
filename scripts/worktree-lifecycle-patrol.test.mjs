@@ -257,6 +257,16 @@ if [ "\${LIFECYCLE_BAD_TASKS:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-bad","status":"open","title":[]}]'
 elif [ -n "\${LIFECYCLE_BAD_METADATA_DATE_CASE:-}" ]; then
   cat "${path.join(fixtureRoot, "metadata-")}\${LIFECYCLE_BAD_METADATA_DATE_CASE}.json"
+elif [ "\${LIFECYCLE_MULTI_WORKTREE_METADATA:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Multi-worktree fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${old}","${live}"]}},"worktrees":[{"branch":"feat/live","path":"${live}","owner":"Kitty","purpose":"Additional fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${live}","${old}"]}}]}}}]'
+elif [ "\${LIFECYCLE_MALFORMED_WORKTREES:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Malformed array","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":{}}}}]'
+elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_BRANCH:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Duplicate branch","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/old","path":"${live}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
+elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_PATH:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Duplicate path","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/live","path":"${path.join(old, "..", "old")}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
+elif [ "\${LIFECYCLE_UNUSABLE_ADDITIONAL_BRANCH:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Unusable branch","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/bad..name","path":"${live}","owner":"Kitty","purpose":"Invalid fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_EXCEPTION_BUDGETS:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${realpathSync(old)}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active matched exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${realpathSync(old)}"]}}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${path.join(repo, ".worktrees", "path-mismatch")}","owner":"Kitty","purpose":"Mismatched fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired path mismatch","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${recentMerge}"]}}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired matched exception","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-stale","status":"closed","title":"Stale metadata","metadata":{"coven":{"worktree":{"branch":"feat/stale","path":"${path.join(repo, ".worktrees", "stale")}","owner":"Kitty","purpose":"Stale fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active stale exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${path.join(repo, ".worktrees", "stale")}"]}}}}}]'
 elif [ "\${LIFECYCLE_LINKED_TASK:-0}" = "1" ]; then
@@ -267,6 +277,12 @@ elif [ "\${LIFECYCLE_DUPLICATE_METADATA:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"First duplicate exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-branch-only-copy","status":"closed","title":"Branch only duplicate","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Second duplicate exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}}]'
 elif [ "\${LIFECYCLE_OPEN_STRUCTURED_TASK:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"open","title":"Unrelated task","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+elif [ "\${LIFECYCLE_OPEN_CONFLICTING_STRUCTURED_PATH:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-other-owner","status":"open","title":"Other branch owner","metadata":{"coven":{"worktree":{"branch":"feat/other-owner","path":"${old}","owner":"Kitty","purpose":"Conflicting fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+elif [ "\${LIFECYCLE_CLOSED_CONFLICTING_STRUCTURED_PATH:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-other-owner","status":"closed","title":"Other branch owner","metadata":{"coven":{"worktree":{"branch":"feat/other-owner","path":"${old}","owner":"Kitty","purpose":"Conflicting fixture","disposition":"archive","createdAt":"2026-07-20T12:00:00Z","reason":"Closed conflict fixture","reviewAfter":"2026-08-11"}}}}]'
+elif [ "\${LIFECYCLE_SIBLING_STRUCTURED_PATH:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-sibling","status":"closed","title":"Sibling path","metadata":{"coven":{"worktree":{"branch":"feat/sibling","path":"${old}-sibling","owner":"Kitty","purpose":"Sibling fixture","disposition":"archive","createdAt":"2026-07-20T12:00:00Z","reason":"Sibling fixture","reviewAfter":"2026-08-11"}}}}]'
 elif [ "\${LIFECYCLE_NULL_EXCEPTION:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":null}}}}]'
 else
@@ -293,6 +309,12 @@ if [ "$1" = "sessions" ] && [ "$2" = "--json" ]; then
     printf '%s\n' '{"sessions":[{"id":"session-fixture","project_root":"${old}","status":"stopped"}]}'
   elif [ "\${LIFECYCLE_ACTIVE_SESSION:-0}" = "1" ]; then
     printf '%s\n' '{"sessions":[{"id":"session-fixture","project_root":"${old}","status":"created"}]}'
+  elif [ "\${LIFECYCLE_DESCENDANT_SESSION:-0}" = "1" ]; then
+    printf '%s\n' '{"sessions":[{"id":"session-descendant","project_root":"${path.join(old, "subdir")}","status":"running"}]}'
+  elif [ "\${LIFECYCLE_LINKED_DESCENDANT_SESSION:-0}" = "1" ]; then
+    printf '%s\n' '{"sessions":[{"id":"session-linked","project_root":"${path.join(linked, "subdir")}","status":"running"}]}'
+  elif [ "\${LIFECYCLE_SIBLING_PREFIX_SESSION:-0}" = "1" ]; then
+    printf '%s\n' '{"sessions":[{"id":"session-sibling","project_root":"${old}-sibling","status":"running"}]}'
   else
     printf '%s\n' '{"sessions":[]}'
   fi
@@ -450,6 +472,40 @@ exit 0
     /path does not match/i,
     "path-mismatched metadata remains invalid and does not affect exception budgets",
   );
+  const multiMetadataReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_MULTI_WORKTREE_METADATA: "1" }),
+  );
+  const multiOld = multiMetadataReport.items.find((item) => item.branch === "feat/old");
+  const multiLive = multiMetadataReport.items.find((item) => item.branch === "feat/live");
+  assert.equal(multiOld.metadata.beadId, "cave-multi");
+  assert.equal(multiOld.metadata.purpose, "Primary fixture");
+  assert.equal(multiLive.metadata.beadId, "cave-multi");
+  assert.equal(multiLive.metadata.purpose, "Additional fixture");
+  assert.equal(multiLive.metadata.disposition, "active");
+  assert.notEqual(multiLive.lane, "uncertain");
+  assert.deepEqual(
+    multiMetadataReport.budgets.exceptions,
+    { active: 1, expired: 0 },
+    "semantically shared exceptions across flattened records count once",
+  );
+  for (const [environment, expectedError] of [
+    ["LIFECYCLE_MALFORMED_WORKTREES", /worktrees must be an array/i],
+    ["LIFECYCLE_DUPLICATE_WORKTREE_BRANCH", /duplicate.*(?:branch|records)/i],
+    ["LIFECYCLE_DUPLICATE_WORKTREE_PATH", /conflicting structured path ownership/i],
+    ["LIFECYCLE_UNUSABLE_ADDITIONAL_BRANCH", /branch/i],
+  ]) {
+    const malformedMultiReport = JSON.parse(
+      patrol(["--json"], { [environment]: "1" }),
+    );
+    const malformedMultiOld = malformedMultiReport.items.find(
+      (item) => item.branch === "feat/old",
+    );
+    assert.equal(malformedMultiOld.lane, "uncertain", `${environment} fails closed`);
+    assert.match(
+      [...malformedMultiOld.metadataErrors, ...malformedMultiOld.probeErrors].join("\n"),
+      expectedError,
+    );
+  }
   assert.equal(typeof report.inventoryFingerprint, "string");
   assert.ok(report.inventoryFingerprint.length > 0);
   const humanReport = patrol();
@@ -494,6 +550,49 @@ exit 0
   const sessionOwnedOld = activeSessionReport.items.find((item) => item.branch === "feat/old");
   assert.equal(sessionOwnedOld.lane, "active", "a nonterminal Coven session owns its path");
   assert.deepEqual(sessionOwnedOld.sessionIds, ["session-fixture"]);
+
+  const descendantSessionReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_DESCENDANT_SESSION: "1" }),
+  );
+  const descendantSessionOld = descendantSessionReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(
+    descendantSessionOld.lane,
+    "active",
+    "a nonterminal Coven session below a worktree owns it",
+  );
+  assert.deepEqual(descendantSessionOld.sessionIds, ["session-descendant"]);
+
+  const linkedDescendantSessionReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_LINKED_DESCENDANT_SESSION: "1" }),
+  );
+  const linkedDescendantSession = linkedDescendantSessionReport.items.find(
+    (item) => item.branch === "feat/cave-link1-linked",
+  );
+  const primaryWithLinkedSession = linkedDescendantSessionReport.items.find(
+    (item) => item.branch === "main",
+  );
+  assert.equal(linkedDescendantSession.lane, "active");
+  assert.deepEqual(linkedDescendantSession.sessionIds, ["session-linked"]);
+  assert.deepEqual(
+    primaryWithLinkedSession.sessionIds,
+    [],
+    "a linked worktree's descendant session belongs only to the deepest match",
+  );
+
+  const siblingPrefixSessionReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_SIBLING_PREFIX_SESSION: "1" }),
+  );
+  const siblingPrefixSessionOld = siblingPrefixSessionReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(siblingPrefixSessionOld.lane, "retire-after-gate");
+  assert.deepEqual(
+    siblingPrefixSessionOld.sessionIds,
+    [],
+    "a sibling-prefix session path is not inside the worktree",
+  );
 
   const killedSessionReport = JSON.parse(
     patrol(["--json"], { LIFECYCLE_KILLED_SESSION: "1" }),
@@ -594,6 +693,56 @@ exit 0
   );
   assert.equal(structuredOwnerBranch.lane, "active");
   assert.deepEqual(structuredOwnerBranch.taskIds, ["cave-branch-only"]);
+
+  const openConflictingPathReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_OPEN_CONFLICTING_STRUCTURED_PATH: "1" }),
+  );
+  const openConflictingPathOld = openConflictingPathReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(
+    openConflictingPathOld.lane,
+    "active",
+    "an open Bead owns the exact structured path even when its branch differs",
+  );
+  assert.deepEqual(openConflictingPathOld.taskIds, ["cave-other-owner"]);
+  assert.equal(openConflictingPathOld.metadata, null);
+  assert.match(
+    openConflictingPathOld.metadataErrors.join("\n"),
+    /conflicting structured path ownership/i,
+  );
+
+  const closedConflictingPathReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_CLOSED_CONFLICTING_STRUCTURED_PATH: "1" }),
+  );
+  const closedConflictingPathOld = closedConflictingPathReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(
+    closedConflictingPathOld.lane,
+    "uncertain",
+    "a closed conflicting structured path still blocks metadata authorization",
+  );
+  assert.deepEqual(closedConflictingPathOld.taskIds, []);
+  assert.equal(closedConflictingPathOld.metadata, null);
+  assert.match(
+    closedConflictingPathOld.metadataErrors.join("\n"),
+    /conflicting structured path ownership/i,
+  );
+
+  const siblingStructuredPathReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_SIBLING_STRUCTURED_PATH: "1" }),
+  );
+  const siblingStructuredPathOld = siblingStructuredPathReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(siblingStructuredPathOld.lane, "retire-after-gate");
+  assert.equal(siblingStructuredPathOld.metadata.beadId, "cave-old");
+  assert.deepEqual(
+    siblingStructuredPathOld.metadataErrors,
+    [],
+    "a sibling-prefix structured path is not an ownership conflict",
+  );
 
   const partialReport = JSON.parse(patrol(["--json"], { LIFECYCLE_LSOF_PARTIAL: "1" }));
   const partialOld = partialReport.items.find((item) => item.branch === "feat/old");
