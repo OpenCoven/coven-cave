@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, readFile, readdir, rm } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+} from "node:fs/promises";
 import path from "node:path";
 
 import { caveHome } from "../coven-paths.ts";
@@ -11,6 +18,7 @@ import {
 import { writeJsonAtomic } from "./atomic-write.ts";
 import { corruptAsidePath } from "./corrupt-aside.ts";
 import { isValidFamiliarId } from "./familiar-id.ts";
+import { acquireProcessIntentLock } from "./process-intent-lock.ts";
 import { isValidResearchMissionId } from "./research-mission-store.ts";
 
 export type XSourceAvailability = "available" | "unavailable" | "deleted";
@@ -71,6 +79,19 @@ const CACHE_FIELDS = [
   "fetchedAt",
   "expiresAt",
 ] as const;
+const SOURCE_FIELDS = [
+  "id",
+  "familiarId",
+  "postId",
+  "canonicalUrl",
+  "originalUrl",
+  "note",
+  "tags",
+  "addedAt",
+  "updatedAt",
+  "attachedMissionIds",
+  "availability",
+] as const;
 
 function sourcesRoot(): string {
   return process.env.COVEN_X_SOURCES_DIR?.trim()
@@ -106,6 +127,45 @@ function cachePath(postId: string): string {
 
 function emptySourcesFile(): XSourcesFile {
   return { version: 1, sources: [] };
+}
+
+async function pathKind(target: string): Promise<"missing" | "file" | "directory" | "symlink" | "other"> {
+  try {
+    const info = await lstat(/* turbopackIgnore: true */ target);
+    if (info.isSymbolicLink()) return "symlink";
+    if (info.isFile()) return "file";
+    if (info.isDirectory()) return "directory";
+    return "other";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";
+    throw error;
+  }
+}
+
+async function ensureRealDirectory(target: string): Promise<void> {
+  let kind = await pathKind(target);
+  if (kind === "missing") {
+    await mkdir(/* turbopackIgnore: true */ target, { recursive: true });
+    kind = await pathKind(target);
+  }
+  if (kind !== "directory") {
+    throw new Error(`X storage path is not a directory or is a symlink: ${target}`);
+  }
+}
+
+async function assertRegularFileOrMissing(target: string): Promise<void> {
+  const kind = await pathKind(target);
+  if (kind !== "missing" && kind !== "file") {
+    throw new Error(`X storage file must be a regular file, not a symlink: ${target}`);
+  }
+}
+
+async function assertCacheRoot(): Promise<"missing" | "directory"> {
+  const kind = await pathKind(cacheRoot());
+  if (kind === "missing" || kind === "directory") return kind;
+  throw new Error(
+    `X cache path is not a directory or is a symlink: ${cacheRoot()}`,
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -148,8 +208,10 @@ function isCanonicalXPostUrlForId(value: unknown, postId: string): value is stri
   }
 }
 
-function normalizeStoredSource(value: unknown, familiarId: string): SavedXSource | null {
+function parseStoredSource(value: unknown, familiarId: string): SavedXSource | null {
   if (!isRecord(value)
+    || Object.keys(value).length !== SOURCE_FIELDS.length
+    || SOURCE_FIELDS.some((field) => !Object.hasOwn(value, field))
     || typeof value.id !== "string"
     || value.id.length === 0
     || value.familiarId !== familiarId
@@ -163,11 +225,17 @@ function normalizeStoredSource(value: unknown, familiarId: string): SavedXSource
     || !isTimestamp(value.updatedAt)
     || !Array.isArray(value.attachedMissionIds)
     || value.attachedMissionIds.some((missionId) => !isValidResearchMissionId(missionId))
+    || new Set(value.attachedMissionIds).size !== value.attachedMissionIds.length
     || !["available", "unavailable", "deleted"].includes(String(value.availability))) {
     return null;
   }
   const tags = normalizeTags(value.tags);
-  if (!tags) return null;
+  const storedTags = value.tags as string[];
+  if (!tags
+    || tags.length !== storedTags.length
+    || tags.some((tag, index) => tag !== storedTags[index])) {
+    return null;
+  }
   return {
     id: value.id,
     familiarId,
@@ -178,20 +246,22 @@ function normalizeStoredSource(value: unknown, familiarId: string): SavedXSource
     tags,
     addedAt: value.addedAt,
     updatedAt: value.updatedAt,
-    attachedMissionIds: [...new Set(value.attachedMissionIds as string[])],
+    attachedMissionIds: [...value.attachedMissionIds as string[]],
     availability: value.availability as XSourceAvailability,
   };
 }
 
-async function preserveMalformedFile(target: string): Promise<void> {
-  await copyFile(
+async function quarantineMalformedFile(target: string): Promise<void> {
+  await assertRegularFileOrMissing(target);
+  await rename(
     /* turbopackIgnore: true */ target,
     corruptAsidePath(target),
-  ).catch(() => {});
+  );
 }
 
 async function loadSourcesFile(familiarId: string): Promise<XSourcesFile> {
   const target = sourcesPath(familiarId);
+  await assertRegularFileOrMissing(target);
   let text: string;
   try {
     text = await readFile(/* turbopackIgnore: true */ target, "utf8");
@@ -204,25 +274,34 @@ async function loadSourcesFile(familiarId: string): Promise<XSourcesFile> {
   try {
     parsed = JSON.parse(text) as unknown;
   } catch {
-    await preserveMalformedFile(target);
+    await quarantineMalformedFile(target);
     return emptySourcesFile();
   }
-  if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.sources)) {
-    await preserveMalformedFile(target);
+  if (!isRecord(parsed)
+    || Object.keys(parsed).length !== 2
+    || !Object.hasOwn(parsed, "version")
+    || !Object.hasOwn(parsed, "sources")
+    || parsed.version !== 1
+    || !Array.isArray(parsed.sources)
+    || parsed.sources.length > MAX_SOURCES_PER_FAMILIAR) {
+    await quarantineMalformedFile(target);
     return emptySourcesFile();
   }
-  return {
-    version: 1,
-    sources: parsed.sources
-      .map((source) => normalizeStoredSource(source, familiarId))
-      .filter((source): source is SavedXSource => source !== null)
-      .slice(0, MAX_SOURCES_PER_FAMILIAR),
-  };
+  const sources = parsed.sources.map((source) => parseStoredSource(source, familiarId));
+  const validSources = sources.filter((source): source is SavedXSource => source !== null);
+  const duplicateIds = new Set(validSources.map((source) => source.id)).size !== validSources.length;
+  const duplicatePosts = new Set(validSources.map((source) => source.postId)).size !== validSources.length;
+  if (validSources.length !== parsed.sources.length || duplicateIds || duplicatePosts) {
+    await quarantineMalformedFile(target);
+    return emptySourcesFile();
+  }
+  return { version: 1, sources: validSources };
 }
 
 async function saveSourcesFile(familiarId: string, file: XSourcesFile): Promise<void> {
   const target = sourcesPath(familiarId);
-  await mkdir(/* turbopackIgnore: true */ path.dirname(target), { recursive: true });
+  await ensureRealDirectory(path.dirname(target));
+  await assertRegularFileOrMissing(target);
   await writeJsonAtomic(/* turbopackIgnore: true */ target, file);
 }
 
@@ -259,7 +338,9 @@ function normalizeCacheEntry(value: unknown): XPostCacheEntry | null {
 }
 
 async function loadCacheEntry(postId: string): Promise<XPostCacheEntry | null> {
+  if (await assertCacheRoot() === "missing") return null;
   const target = cachePath(postId);
+  await assertRegularFileOrMissing(target);
   let text: string;
   try {
     text = await readFile(/* turbopackIgnore: true */ target, "utf8");
@@ -271,29 +352,70 @@ async function loadCacheEntry(postId: string): Promise<XPostCacheEntry | null> {
   try {
     parsed = JSON.parse(text) as unknown;
   } catch {
-    await preserveMalformedFile(target);
+    await quarantineMalformedFile(target);
     return null;
   }
   const entry = normalizeCacheEntry(parsed);
   if (!entry || entry.postId !== postId) {
-    await preserveMalformedFile(target);
+    await quarantineMalformedFile(target);
     return null;
   }
   return entry;
 }
 
 async function removeCacheEntry(postId: string): Promise<void> {
+  if (await assertCacheRoot() === "missing") return;
+  await assertRegularFileOrMissing(cachePath(postId));
   await rm(/* turbopackIgnore: true */ cachePath(postId), { force: true });
 }
 
-let writeMutex: Promise<unknown> = Promise.resolve();
-function withWriteMutex<T>(operation: () => Promise<T>): Promise<T> {
-  const next = writeMutex.then(operation, operation);
-  writeMutex = next.then(
+const mutationMutexes = new Map<string, Promise<unknown>>();
+function withMutationMutex<T>(key: string, operation: () => Promise<T>): Promise<T> {
+  const previous = mutationMutexes.get(key) ?? Promise.resolve();
+  const next = previous.then(operation, operation);
+  const settled = next.then(
     () => undefined,
     () => undefined,
   );
+  mutationMutexes.set(key, settled);
+  void settled.finally(() => {
+    if (mutationMutexes.get(key) === settled) mutationMutexes.delete(key);
+  });
   return next;
+}
+
+function withTransactionLock<T>(
+  target: string,
+  label: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return withMutationMutex(target, async () => {
+    const release = await acquireProcessIntentLock({
+      intentsDirectory: `${target}.locks`,
+      label,
+    });
+    try {
+      return await operation();
+    } finally {
+      await release();
+    }
+  });
+}
+
+async function withSourceLock<T>(
+  familiarId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  await ensureRealDirectory(sourcesRoot());
+  return withTransactionLock(
+    sourcesPath(familiarId),
+    `X sources for ${familiarId}`,
+    operation,
+  );
+}
+
+function withCacheLock<T>(operation: () => Promise<T>): Promise<T> {
+  return withTransactionLock(cacheRoot(), "X cache", operation);
 }
 
 function validatedInput(input: UpsertSavedXSourceInput): UpsertSavedXSourceInput {
@@ -314,15 +436,18 @@ function validatedInput(input: UpsertSavedXSourceInput): UpsertSavedXSourceInput
 
 /** Newest updated source first. */
 export async function listSavedXSources(familiarId: string): Promise<SavedXSource[]> {
-  const file = await loadSourcesFile(familiarId);
-  return [...file.sources].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  assertFamiliarId(familiarId);
+  return withSourceLock(familiarId, async () => {
+    const file = await loadSourcesFile(familiarId);
+    return [...file.sources].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  });
 }
 
 export async function upsertSavedXSource(
   rawInput: UpsertSavedXSourceInput,
 ): Promise<{ source: SavedXSource; created: boolean }> {
   const input = validatedInput(rawInput);
-  return withWriteMutex(async () => {
+  return withSourceLock(input.familiarId, async () => {
     const file = await loadSourcesFile(input.familiarId);
     const existingIndex = file.sources.findIndex((source) => source.postId === input.postId);
     const now = new Date().toISOString();
@@ -371,7 +496,7 @@ export async function removeSavedXSource(
   sourceId: string,
 ): Promise<boolean> {
   assertFamiliarId(familiarId);
-  return withWriteMutex(async () => {
+  return withSourceLock(familiarId, async () => {
     const file = await loadSourcesFile(familiarId);
     const next = file.sources.filter((source) => source.id !== sourceId);
     if (next.length === file.sources.length) return false;
@@ -390,7 +515,7 @@ export async function setXSourceMissionAttached(
   if (!isValidResearchMissionId(missionId)) {
     throw new XApiError("invalid-request", "Research mission id is invalid");
   }
-  await withWriteMutex(async () => {
+  await withSourceLock(familiarId, async () => {
     const file = await loadSourcesFile(familiarId);
     const source = file.sources.find((candidate) => candidate.id === sourceId);
     if (!source) {
@@ -432,9 +557,10 @@ export async function cacheNormalizedXPosts(
       expiresAt,
     };
   });
-  await withWriteMutex(async () => {
-    await mkdir(/* turbopackIgnore: true */ cacheRoot(), { recursive: true });
+  await withCacheLock(async () => {
+    await ensureRealDirectory(cacheRoot());
     for (const entry of entries) {
+      await assertRegularFileOrMissing(cachePath(entry.postId));
       await writeJsonAtomic(
         /* turbopackIgnore: true */ cachePath(entry.postId),
         entry,
@@ -451,7 +577,7 @@ export async function getCachedXPost(
   if (!Number.isFinite(now.getTime())) {
     throw new XApiError("invalid-request", "X cache time is invalid");
   }
-  return withWriteMutex(async () => {
+  return withCacheLock(async () => {
     const entry = await loadCacheEntry(postId);
     if (!entry) return null;
     if (Date.parse(entry.expiresAt) <= now.getTime()) {
@@ -474,6 +600,11 @@ export async function getCachedXPost(
 async function sourceFileNames(): Promise<string[]> {
   let entries;
   try {
+    const rootKind = await pathKind(sourcesRoot());
+    if (rootKind === "missing") return [];
+    if (rootKind !== "directory") {
+      throw new Error(`X sources directory must be a real directory, not a symlink: ${sourcesRoot()}`);
+    }
     entries = await readdir(/* turbopackIgnore: true */ sourcesRoot(), {
       withFileTypes: true,
     });
@@ -482,7 +613,7 @@ async function sourceFileNames(): Promise<string[]> {
     throw error;
   }
   return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .filter((entry) => entry.name.endsWith(".json"))
     .map((entry) => entry.name.slice(0, -".json".length))
     .filter(isValidFamiliarId);
 }
@@ -495,8 +626,11 @@ export async function markXPostAvailability(
   if (!["available", "unavailable", "deleted"].includes(availability)) {
     throw new XApiError("invalid-request", "X source availability is invalid");
   }
-  await withWriteMutex(async () => {
-    for (const familiarId of await sourceFileNames()) {
+  if (availability !== "available") {
+    await withCacheLock(() => removeCacheEntry(postId));
+  }
+  for (const familiarId of await sourceFileNames()) {
+    await withSourceLock(familiarId, async () => {
       const file = await loadSourcesFile(familiarId);
       let changed = false;
       for (const source of file.sources) {
@@ -506,18 +640,22 @@ export async function markXPostAvailability(
         changed = true;
       }
       if (changed) await saveSourcesFile(familiarId, file);
-    }
-    if (availability !== "available") await removeCacheEntry(postId);
-  });
+    });
+  }
 }
 
 export async function sweepExpiredXCache(now: Date = new Date()): Promise<number> {
   if (!Number.isFinite(now.getTime())) {
     throw new XApiError("invalid-request", "X cache time is invalid");
   }
-  return withWriteMutex(async () => {
+  return withCacheLock(async () => {
     let entries;
     try {
+      const rootKind = await pathKind(cacheRoot());
+      if (rootKind === "missing") return 0;
+      if (rootKind !== "directory") {
+        throw new Error(`X cache directory must be a real directory, not a symlink: ${cacheRoot()}`);
+      }
       entries = await readdir(/* turbopackIgnore: true */ cacheRoot(), {
         withFileTypes: true,
       });
@@ -527,7 +665,7 @@ export async function sweepExpiredXCache(now: Date = new Date()): Promise<number
     }
     let removed = 0;
     for (const entry of entries) {
-      if (!entry.isFile() || !/^\d+\.json$/.test(entry.name)) continue;
+      if (!/^\d+\.json$/.test(entry.name)) continue;
       const postId = entry.name.slice(0, -".json".length);
       const cached = await loadCacheEntry(postId);
       if (cached && Date.parse(cached.expiresAt) <= now.getTime()) {
@@ -540,7 +678,11 @@ export async function sweepExpiredXCache(now: Date = new Date()): Promise<number
 }
 
 export async function purgeXSourceCache(): Promise<void> {
-  await withWriteMutex(async () => {
+  await withCacheLock(async () => {
+    const rootKind = await pathKind(cacheRoot());
+    if (rootKind !== "missing" && rootKind !== "directory") {
+      throw new Error(`X cache directory must be a real directory, not a symlink: ${cacheRoot()}`);
+    }
     await rm(/* turbopackIgnore: true */ cacheRoot(), {
       recursive: true,
       force: true,

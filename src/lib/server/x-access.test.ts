@@ -103,6 +103,22 @@ test("invalid familiar IDs fail before config access", async () => {
   assert.equal(configReads, 0);
 });
 
+test("capability checks do not depend on cache health", async () => {
+  let cacheSweeps = 0;
+  const dependencies = {
+    loadConfig: async () => caveConfig({ nova: { xResearchEnabled: true } }),
+    credentials: credentials(),
+    sweepExpiredCache: async () => {
+      cacheSweeps += 1;
+      throw new Error("cache permission denied");
+    },
+  };
+  const access = createXAccess(dependencies);
+
+  await access.requireXCapability("nova", "research");
+  assert.equal(cacheSweeps, 0);
+});
+
 test("authenticated reads refresh and retry exactly once after a 401", async () => {
   let refreshes = 0;
   const tokens: string[] = [];

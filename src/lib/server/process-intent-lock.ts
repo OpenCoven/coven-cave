@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
   mkdir,
+  lstat,
   open,
   readFile,
   readdir,
@@ -157,10 +158,26 @@ export async function acquireProcessIntentLock(
   options: ProcessIntentLockOptions,
 ): Promise<() => Promise<void>> {
   const timeoutMs = options.timeoutMs ?? 15_000;
-  await mkdir(
-    /* turbopackIgnore: true */ options.intentsDirectory,
-    { recursive: true },
-  );
+  let intentsInfo;
+  try {
+    intentsInfo = await lstat(
+      /* turbopackIgnore: true */ options.intentsDirectory,
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    await mkdir(
+      /* turbopackIgnore: true */ options.intentsDirectory,
+      { recursive: true },
+    );
+    intentsInfo = await lstat(
+      /* turbopackIgnore: true */ options.intentsDirectory,
+    );
+  }
+  if (intentsInfo.isSymbolicLink() || !intentsInfo.isDirectory()) {
+    throw new Error(
+      `${options.label} lock directory must be a real directory, not a symlink`,
+    );
+  }
   const ownStartIdentity = await processStartIdentity(process.pid);
   if (!ownStartIdentity) {
     throw new Error(`could not verify current process identity for ${options.label}`);
@@ -194,9 +211,17 @@ export async function acquireProcessIntentLock(
       )
         .filter((name) => intentOwner(name) !== null)
         .sort();
-      for (const name of names) {
-        if (name === ownName) continue;
-        const owner = intentOwner(name)!;
+      const oldest = names[0];
+      if (oldest === ownName) {
+        let released = false;
+        return async () => {
+          if (released) return;
+          released = true;
+          await removeIntent(ownPath);
+        };
+      }
+      if (oldest) {
+        const owner = intentOwner(oldest)!;
         const currentIdentity = await processStartIdentity(owner.pid);
         // Never infer death from age: only a dead PID or a demonstrably
         // different process incarnation can make an intent reclaimable.
@@ -207,26 +232,11 @@ export async function acquireProcessIntentLock(
           await removeIntent(
             path.join(
               /* turbopackIgnore: true */ options.intentsDirectory,
-              name,
+              oldest,
             ),
           );
+          continue;
         }
-      }
-
-      const remaining = (
-        await readdir(
-          /* turbopackIgnore: true */ options.intentsDirectory,
-        )
-      )
-        .filter((name) => intentOwner(name) !== null)
-        .sort();
-      if (remaining[0] === ownName) {
-        let released = false;
-        return async () => {
-          if (released) return;
-          released = true;
-          await removeIntent(ownPath);
-        };
       }
       if (Date.now() >= deadline) {
         throw new Error(

@@ -316,6 +316,12 @@ function effectiveRouteSource(file: string, source: string): string {
   if (source.includes('from "@/lib/proposal-decision-body"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "proposal-decision-body.ts"), "utf8"));
   }
+  if (source.includes('from "@/lib/server/x-connection-route"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "x-connection-route.ts"), "utf8"));
+  }
+  if (source.includes('from "@/lib/server/x-oauth-start-route"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "x-oauth-start-route.ts"), "utf8"));
+  }
   return parts.join("\n");
 }
 
@@ -358,7 +364,7 @@ for (const contract of contracts) {
   if (contract.localOriginGuard) {
     assert.match(source, /isLocalOrigin|rejectNonLocalRequest/, `${contract.route} must preserve local-origin guard`);
     if (source.includes("rejectNonLocalRequest")) {
-      assert.match(source, /rejectNonLocalRequest\(req\)/, `${contract.route} must call the shared local-origin guard`);
+      assert.match(effectiveSource, /rejectNonLocalRequest\(req\)/, `${contract.route} must call the shared local-origin guard`);
     } else {
       assert.match(source, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
     }

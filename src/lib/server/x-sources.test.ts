@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
+import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
 
 import { XApiError, type NormalizedXPost } from "../x-api.ts";
 
@@ -11,6 +23,7 @@ const cacheDir = path.join(root, "cache");
 const receiptsDir = path.join(root, "publish-receipts");
 const originalSourcesDir = process.env.COVEN_X_SOURCES_DIR;
 const originalCacheDir = process.env.COVEN_X_CACHE_DIR;
+const execFileAsync = promisify(execFile);
 process.env.COVEN_X_SOURCES_DIR = sourcesDir;
 process.env.COVEN_X_CACHE_DIR = cacheDir;
 
@@ -78,7 +91,10 @@ test("source files are familiar-scoped and familiar IDs cannot escape the root",
 
   assert.equal((await listSavedXSources("nova")).length, 1);
   assert.equal((await listSavedXSources("wren")).length, 1);
-  assert.deepEqual((await readdir(sourcesDir)).sort(), ["nova.json", "wren.json"]);
+  assert.deepEqual(
+    (await readdir(sourcesDir)).filter((name) => name.endsWith(".json")).sort(),
+    ["nova.json", "wren.json"],
+  );
 
   for (const familiarId of ["../nova", "nova/wren", "nova.wren", "", "a".repeat(65)]) {
     await assert.rejects(
@@ -354,6 +370,144 @@ test("malformed source and cache files are preserved aside before recovery", asy
   assert.equal(await readFile(path.join(cacheDir, cacheAside), "utf8"), "{ broken cache");
 });
 
+test("malformed source records, duplicate identities, and oversized files are quarantined whole", async () => {
+  const timestamp = "2026-07-31T12:00:00.000Z";
+  const validSource = (postId: string) => ({
+    id: `source-${postId}`,
+    familiarId: "nova",
+    postId,
+    canonicalUrl: `https://x.com/opencoven/status/${postId}`,
+    originalUrl: `https://x.com/opencoven/status/${postId}`,
+    note: "",
+    tags: [],
+    addedAt: timestamp,
+    updatedAt: timestamp,
+    attachedMissionIds: [],
+    availability: "available",
+  });
+  const malformedFiles = [
+    {
+      version: 1,
+      sources: [validSource("1"), { ...validSource("2"), note: 42 }],
+    },
+    {
+      version: 1,
+      sources: [validSource("1"), { ...validSource("1"), id: "other-id" }],
+    },
+    {
+      version: 1,
+      sources: Array.from({ length: 501 }, (_, index) => validSource(String(index + 1))),
+    },
+  ];
+
+  for (const [index, malformed] of malformedFiles.entries()) {
+    await rm(sourcesDir, { recursive: true, force: true });
+    await mkdir(sourcesDir, { recursive: true });
+    const target = path.join(sourcesDir, "nova.json");
+    const bytes = JSON.stringify(malformed);
+    await writeFile(target, bytes, "utf8");
+
+    assert.deepEqual(await listSavedXSources("nova"), []);
+    await assert.rejects(readFile(target, "utf8"), { code: "ENOENT" });
+    const asides = (await readdir(sourcesDir)).filter((name) =>
+      name.startsWith("nova.json.corrupt-"));
+    assert.equal(asides.length, 1, `malformed fixture ${index} is quarantined once`);
+    assert.equal(await readFile(path.join(sourcesDir, asides[0]), "utf8"), bytes);
+  }
+});
+
+test("source corruption preservation failures surface without replacing the original", async () => {
+  await mkdir(sourcesDir, { recursive: true });
+  const target = path.join(sourcesDir, "nova.json");
+  await writeFile(target, "{ broken source", "utf8");
+  await chmod(sourcesDir, 0o500);
+  try {
+    await assert.rejects(() => listSavedXSources("nova"), /EACCES|EPERM|permission/i);
+    assert.equal(await readFile(target, "utf8"), "{ broken source");
+  } finally {
+    await chmod(sourcesDir, 0o700);
+  }
+});
+
+test("malformed cache is quarantined once across repeated sweeps", async () => {
+  await mkdir(cacheDir, { recursive: true });
+  await writeFile(path.join(cacheDir, "100.json"), "{ broken cache", "utf8");
+
+  for (let sweep = 0; sweep < 5; sweep += 1) {
+    assert.equal(await sweepExpiredXCache(), 0);
+  }
+
+  const files = await readdir(cacheDir);
+  assert.equal(files.filter((name) => name.startsWith("100.json.corrupt-")).length, 1);
+  assert.equal(files.includes("100.json"), false);
+});
+
+test("source and cache paths reject symlinks without reading or overwriting their targets", async () => {
+  const outsideSource = path.join(root, "outside-source.json");
+  const outsideCache = path.join(root, "outside-cache.json");
+  await writeFile(outsideSource, "{\"outside\":\"source\"}", "utf8");
+  await writeFile(outsideCache, "{\"outside\":\"cache\"}", "utf8");
+  await mkdir(sourcesDir, { recursive: true });
+  await mkdir(cacheDir, { recursive: true });
+  await symlink(outsideSource, path.join(sourcesDir, "nova.json"));
+  await symlink(outsideCache, path.join(cacheDir, "100.json"));
+
+  await assert.rejects(() => listSavedXSources("nova"), /symlink/i);
+  await assert.rejects(() => getCachedXPost("100"), /symlink/i);
+  assert.equal(await readFile(outsideSource, "utf8"), "{\"outside\":\"source\"}");
+  assert.equal(await readFile(outsideCache, "utf8"), "{\"outside\":\"cache\"}");
+});
+
+test("source transaction locks reject symlinked lock directories", async () => {
+  const outsideLocks = path.join(root, "outside-locks");
+  await mkdir(outsideLocks, { recursive: true });
+  await mkdir(sourcesDir, { recursive: true });
+  await symlink(outsideLocks, path.join(sourcesDir, "nova.json.locks"));
+
+  await assert.rejects(() => upsertSavedXSource({
+    familiarId: "nova",
+    postId: "100",
+    canonicalUrl: "https://x.com/opencoven/status/100",
+    originalUrl: "https://x.com/opencoven/status/100",
+    note: "",
+    tags: [],
+  }), /symlink/i);
+  assert.deepEqual(await readdir(outsideLocks), []);
+});
+
+test("a symlinked source root is rejected before lock artifacts escape it", async () => {
+  const outsideSources = path.join(root, "outside-sources");
+  const linkedSources = path.join(root, "linked-sources");
+  await mkdir(outsideSources, { recursive: true });
+  await symlink(outsideSources, linkedSources);
+  process.env.COVEN_X_SOURCES_DIR = linkedSources;
+
+  await assert.rejects(() => upsertSavedXSource({
+    familiarId: "nova",
+    postId: "100",
+    canonicalUrl: "https://x.com/opencoven/status/100",
+    originalUrl: "https://x.com/opencoven/status/100",
+    note: "",
+    tags: [],
+  }), /symlink/i);
+  assert.deepEqual(await readdir(outsideSources), []);
+});
+
+test("a symlinked cache root cannot read, quarantine, or delete outside files", async () => {
+  const outsideCache = path.join(root, "outside-cache-root");
+  const linkedCache = path.join(root, "linked-cache");
+  await mkdir(outsideCache, { recursive: true });
+  const outsideEntry = path.join(outsideCache, "100.json");
+  await writeFile(outsideEntry, "{ outside cache", "utf8");
+  await symlink(outsideCache, linkedCache);
+  process.env.COVEN_X_CACHE_DIR = linkedCache;
+
+  await assert.rejects(() => getCachedXPost("100"), /symlink/i);
+  await assert.rejects(() => markXPostAvailability("100", "deleted"), /symlink/i);
+  assert.equal(await readFile(outsideEntry, "utf8"), "{ outside cache");
+  assert.deepEqual(await readdir(outsideCache), ["100.json"]);
+});
+
 test("non-ENOENT read failures surface and never trigger an empty overwrite", async () => {
   const blockedSourcesRoot = path.join(root, "blocked-sources");
   const blockedCacheRoot = path.join(root, "blocked-cache");
@@ -362,7 +516,7 @@ test("non-ENOENT read failures surface and never trigger an empty overwrite", as
   process.env.COVEN_X_SOURCES_DIR = blockedSourcesRoot;
   process.env.COVEN_X_CACHE_DIR = blockedCacheRoot;
 
-  await assert.rejects(() => listSavedXSources("nova"), /ENOTDIR|not a directory/i);
+  await assert.rejects(() => listSavedXSources("nova"), /EEXIST|ENOTDIR|not a directory|file already exists/i);
   await assert.rejects(() => upsertSavedXSource({
     familiarId: "nova",
     postId: "100",
@@ -370,7 +524,7 @@ test("non-ENOENT read failures surface and never trigger an empty overwrite", as
     originalUrl: "https://x.com/opencoven/status/100",
     note: "",
     tags: [],
-  }), /ENOTDIR|not a directory/i);
+  }), /EEXIST|ENOTDIR|not a directory|file already exists/i);
   await assert.rejects(() => getCachedXPost("100"), /ENOTDIR|not a directory/i);
   await assert.rejects(
     () => cacheNormalizedXPosts([normalizedPost("100")]),
@@ -400,6 +554,62 @@ test("concurrent source updates are serialized without losing records or mission
   assert.equal(new Set(attached?.attachedMissionIds).size, 20);
 });
 
+test("separate Node processes retain every source write and dedupe the same post", async () => {
+  const loaderUrl = pathToFileURL(path.resolve("scripts/test-alias-register.mjs")).href;
+  const moduleUrl = pathToFileURL(path.resolve("src/lib/server/x-sources.ts")).href;
+  const startAt = Date.now() + 1_500;
+  const worker = `
+    const wait = Math.max(0, Number(process.env.CAVE_TEST_START_AT) - Date.now());
+    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+    const { upsertSavedXSource } = await import(${JSON.stringify(moduleUrl)});
+    await upsertSavedXSource(JSON.parse(process.env.CAVE_TEST_SOURCE));
+  `;
+  const inputs = [
+    ...Array.from({ length: 30 }, (_, index) => ({
+      familiarId: "nova",
+      postId: String(index + 1),
+      canonicalUrl: `https://x.com/opencoven/status/${index + 1}`,
+      originalUrl: `https://x.com/opencoven/status/${index + 1}`,
+      note: `unique-${index + 1}`,
+      tags: [],
+    })),
+    ...Array.from({ length: 10 }, (_, index) => ({
+      familiarId: "nova",
+      postId: "999",
+      canonicalUrl: "https://x.com/opencoven/status/999",
+      originalUrl: "https://x.com/opencoven/status/999",
+      note: `dedupe-${index}`,
+      tags: ["dedupe"],
+    })),
+  ];
+
+  await Promise.all(inputs.map((input) => execFileAsync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--import", loaderUrl,
+      "--input-type=module",
+      "--eval", worker,
+    ],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        COVEN_X_SOURCES_DIR: sourcesDir,
+        COVEN_X_CACHE_DIR: cacheDir,
+        CAVE_TEST_START_AT: String(startAt),
+        CAVE_TEST_SOURCE: JSON.stringify(input),
+      },
+      windowsHide: true,
+    },
+  )));
+
+  const sources = await listSavedXSources("nova");
+  assert.equal(sources.length, 31);
+  assert.equal(new Set(sources.map((source) => source.postId)).size, 31);
+  assert.equal(sources.filter((source) => source.postId === "999").length, 1);
+});
+
 test("not-found handling removes cache and marks every familiar's matching source", async () => {
   for (const familiarId of ["nova", "wren"]) {
     await upsertSavedXSource({
@@ -422,6 +632,34 @@ test("not-found handling removes cache and marks every familiar's matching sourc
     assert.equal(source.note, `${familiarId} note`);
     assert.deepEqual(source.tags, [familiarId]);
   }
+});
+
+test("not-found cache purge completes before a durable source read failure surfaces", async () => {
+  for (const familiarId of ["blocked", "healthy"]) {
+    await upsertSavedXSource({
+      familiarId,
+      postId: "100",
+      canonicalUrl: "https://x.com/opencoven/status/100",
+      originalUrl: "https://x.com/opencoven/status/100",
+      note: `${familiarId} note`,
+      tags: [familiarId],
+    });
+  }
+  await cacheNormalizedXPosts([normalizedPost("100")]);
+  const blockedPath = path.join(sourcesDir, "blocked.json");
+  const healthyBefore = await readFile(path.join(sourcesDir, "healthy.json"), "utf8");
+  await chmod(blockedPath, 0o000);
+  try {
+    await assert.rejects(
+      () => markXPostAvailability("100", "deleted"),
+      /EACCES|EPERM|permission/i,
+    );
+  } finally {
+    await chmod(blockedPath, 0o600);
+  }
+
+  await assert.rejects(readFile(path.join(cacheDir, "100.json"), "utf8"), { code: "ENOENT" });
+  assert.equal(await readFile(path.join(sourcesDir, "healthy.json"), "utf8"), healthyBefore);
 });
 
 test("removal is familiar-scoped and reports misses", async () => {
