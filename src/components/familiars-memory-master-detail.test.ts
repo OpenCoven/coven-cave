@@ -20,6 +20,11 @@ assert.match(
 );
 assert.match(
   source,
+  /export function MemoryReaderModal[\s\S]*?<DocumentReader[\s\S]*?navigation="rail"/,
+  "file fullscreen expand uses the persistent shared contents rail",
+);
+assert.match(
+  source,
   /expandRow\?\.kind === "canonical"[\s\S]*?<CanonicalMemoryReader[\s\S]*?memoryId=\{expandRow\.memoryId\}/,
   "canonical fullscreen expand dispatches by opaque memory ID",
 );

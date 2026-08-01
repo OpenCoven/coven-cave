@@ -1,12 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
-import { MarkdownBlock } from "@/components/message-bubble";
+import { DocumentReader } from "@/components/document-reader";
+import { MarkdownReaderBlock } from "@/components/canonical-memory-markdown";
 import { useMemoryFile } from "@/lib/use-memory-file";
+import { parseMarkdownReaderDocument } from "@/lib/document-reader";
 import { classifyProtection } from "@/lib/memory-management";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -35,8 +37,7 @@ type MemoryFilesListProps = {
 };
 
 // ────────────────────────────────────────────────────────────────────────────
-// MemoryReaderModal — fullscreen reader rendering a memory file's markdown
-// via @create-markdown/preview (through MarkdownBlock).
+// MemoryReaderModal — fullscreen shared document reader for a memory file.
 // ────────────────────────────────────────────────────────────────────────────
 
 type MemoryReaderModalProps = {
@@ -52,10 +53,14 @@ export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalPro
   useFocusTrap(true, panelRef, { onEscape: onClose });
 
   const heading = title ?? path.split("/").pop() ?? "Memory";
+  const readerDocument = useMemo(
+    () => parseMarkdownReaderDocument(text ?? "", heading),
+    [heading, text],
+  );
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -64,7 +69,7 @@ export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalPro
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl focus:outline-none"
+        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
@@ -75,22 +80,31 @@ export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalPro
           <button
             type="button"
             onClick={onClose}
-            className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="focus-ring ml-1 flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
             aria-label="Close memory reader"
           >
             <Icon name="ph:x-bold" width={11} aria-hidden />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
-          <div className="mx-auto w-full max-w-[820px]">
-            {error ? (
-              <p className="text-[length:var(--text-sm)] text-[var(--color-warning)]">{error}</p>
-            ) : text === null ? (
-              <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading memory…</p>
-            ) : (
-              <MarkdownBlock text={text} className="cave-md--expanded" />
-            )}
-          </div>
+        <div className="min-h-0 flex-1">
+          {error ? (
+            <p className="p-6 text-[length:var(--text-sm)] text-[var(--color-warning)]">{error}</p>
+          ) : text === null ? (
+            <div className="p-6" aria-label="Loading memory" aria-busy="true">
+              <SkeletonRows count={7} />
+            </div>
+          ) : (
+            <DocumentReader
+              document={readerDocument}
+              navigation="rail"
+              renderLede={(block) => (
+                <MarkdownReaderBlock block={block} blockKey="fullscreen-lede" />
+              )}
+              renderBlock={(block, key) => (
+                <MarkdownReaderBlock block={block} blockKey={key} />
+              )}
+            />
+          )}
         </div>
       </div>
     </div>

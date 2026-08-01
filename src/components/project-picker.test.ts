@@ -142,4 +142,11 @@ assert.match(src, /onRegisterCurrentRoot\?: \(\) => void;/, "and the setup-open 
 assert.match(src, /Register this folder as a project…/, "in-place registration row");
 assert.match(src, /ph:folder-plus/, "register row carries the folder-plus icon");
 
+// cave-8e7q: selection travels as the project's generated id, never its display
+// name. Emitting the name would make presentation text a connection identifier,
+// which is what mangled names containing spaces. The behaviour of the id the
+// caller then resolves is pinned in lib/project-display-name-spaces.test.ts.
+assert.match(src, /onChange: \(id: string\) => void;/, "the picker's selection callback takes an id");
+assert.match(src, /onChange\(project\.id\);/, "picking a project emits its id, not its display name");
+
 console.log("project-picker.test.ts OK");
