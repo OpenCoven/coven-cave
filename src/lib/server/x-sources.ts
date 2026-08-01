@@ -590,6 +590,41 @@ export async function setXSourceMissionAttached(
   });
 }
 
+export async function reconcileXSourceMissionAttachments(
+  familiarId: string,
+  attachments: ReadonlyMap<string, readonly string[]>,
+): Promise<SavedXSource[]> {
+  assertFamiliarId(familiarId);
+  const normalized = new Map<string, string[]>();
+  for (const [sourceId, missionIds] of attachments) {
+    if (typeof sourceId !== "string" || sourceId.length === 0 || sourceId.length > 128) {
+      throw new XApiError("invalid-request", "Saved X source id is invalid");
+    }
+    const unique = [...new Set(missionIds)];
+    if (unique.some((missionId) => !isValidResearchMissionId(missionId))) {
+      throw new XApiError("invalid-request", "Research mission id is invalid");
+    }
+    normalized.set(sourceId, unique.sort());
+  }
+  return withSourceMutationLock(familiarId, async () => {
+    const file = await loadSourcesFile(familiarId);
+    const updatedAt = new Date().toISOString();
+    let changed = false;
+    for (const source of file.sources) {
+      const expected = normalized.get(source.id) ?? [];
+      if (source.attachedMissionIds.length === expected.length
+        && source.attachedMissionIds.every((missionId, index) => missionId === expected[index])) {
+        continue;
+      }
+      source.attachedMissionIds = expected;
+      source.updatedAt = updatedAt;
+      changed = true;
+    }
+    if (changed) await saveSourcesFile(familiarId, file);
+    return [...file.sources].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  });
+}
+
 export async function cacheNormalizedXPosts(
   posts: NormalizedXPost[],
   now: Date = new Date(),

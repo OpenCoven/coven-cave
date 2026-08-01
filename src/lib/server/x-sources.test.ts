@@ -33,6 +33,7 @@ const {
   listSavedXSources,
   markXPostAvailability,
   purgeXSourceCache,
+  reconcileXSourceMissionAttachments,
   removeSavedXSource,
   setXSourceMissionAttached,
   sweepExpiredXCache,
@@ -143,6 +144,47 @@ test("same familiar and post dedupe with a stable id and updated user fields", a
   assert.equal(second.source.originalUrl, "https://x.com/new_handle/status/100");
   assert.equal(second.source.availability, "available");
   assert.equal((await listSavedXSources("nova")).length, 1);
+});
+
+test("mission attachment reconciliation adds missing links and removes stale links atomically", async () => {
+  const first = await upsertSavedXSource({
+    familiarId: "nova",
+    postId: "100",
+    canonicalUrl: "https://x.com/opencoven/status/100",
+    originalUrl: "https://x.com/opencoven/status/100",
+    note: "",
+    tags: [],
+  });
+  const second = await upsertSavedXSource({
+    familiarId: "nova",
+    postId: "200",
+    canonicalUrl: "https://x.com/opencoven/status/200",
+    originalUrl: "https://x.com/opencoven/status/200",
+    note: "",
+    tags: [],
+  });
+  await setXSourceMissionAttached("nova", first.source.id, "mission-stale");
+  await setXSourceMissionAttached("nova", second.source.id, "mission-two");
+
+  const reconciled = await reconcileXSourceMissionAttachments("nova", new Map([
+    [first.source.id, ["mission-one", "mission-one"]],
+  ]));
+
+  assert.deepEqual(
+    reconciled.map((source) => [source.id, source.attachedMissionIds]),
+    [
+      [second.source.id, []],
+      [first.source.id, ["mission-one"]],
+    ],
+  );
+  const persisted = await listSavedXSources("nova");
+  assert.deepEqual(
+    persisted.map((source) => [source.id, source.attachedMissionIds]),
+    [
+      [second.source.id, []],
+      [first.source.id, ["mission-one"]],
+    ],
+  );
 });
 
 test("source records persist exactly identity and Coven-owned fields", async () => {
