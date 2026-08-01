@@ -89,10 +89,10 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // component import in marketplace-view.tsx, so it code-splits with the
 // MarketplaceView next/dynamic chunk. Measured on the same commit (39164745f),
 // baseline vs branch: home 908.0 → 882.2 KiB, root 644.1 → 618.5 KiB, −26 KiB each.
-// The sheet did NOT move whole: 5 KiB of it was the shared project picker, undo
-// toast, popover extras and project avatar — components in the always-loaded
-// shell, two of them labelled "Shared" in comments written while they sat in a
-// file named for one surface. Those stay in the facade as
+// The sheet did NOT move whole: 5 KiB of it was the shared project picker and
+// undo toast — components in the always-loaded shell, both labelled "Shared" in
+// comments written while they sat in a file named for one surface. Those stay
+// in the facade as
 // shared-pickers-and-toasts.css, in the exact slot surface-marketplace.css held,
 // because primitives.css defines their base rules and these override at equal
 // specificity. Moving the file wholesale would have unstyled the project picker

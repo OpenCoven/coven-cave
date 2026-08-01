@@ -4,9 +4,9 @@
  * facade, so it code-splits with the MarketplaceView dynamic chunk instead of
  * riding the home route's first load (#3264 pattern; cave-ii7xi).
  *
- * The shared project picker, undo toast, popover extras and project avatar
- * that used to live here moved to shared-pickers-and-toasts.css — they are
- * used by always-loaded shell components and cannot code-split.
+ * The shared project picker and undo toast that used to live here moved to
+ * shared-pickers-and-toasts.css — they are used by always-loaded shell
+ * components and cannot code-split.
  */
 
 /* ── Explore rail: Type · Status · Categories/Topics ── */

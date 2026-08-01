@@ -4,8 +4,8 @@
  * These rules lived in surface-marketplace.css purely by accretion; two of the
  * groups below label themselves "Shared" in comments written while they sat in
  * a file named for a single surface. They stay in the globals.css facade
- * because the components that use them (project-picker.tsx, ui/undo-toast.tsx,
- * ui/popover.tsx, project-avatar.tsx) are in the always-loaded shell, while
+ * because the components that use them (project-picker.tsx, ui/undo-toast.tsx)
+ * are in the always-loaded shell, while
  * surface-marketplace.css now code-splits with the Marketplace chunk (cave-ii7xi).
  *
  * Position in the facade is load-bearing: primitives.css defines the base
@@ -13,8 +13,10 @@
  * specificity, so this sheet must keep importing AFTER primitives.css. It
  * occupies the exact slot surface-marketplace.css used to hold.
  *
- * Contents: shared project picker · shared undo toast · popover extras ·
- * project avatar.
+ * Contents: shared project picker · shared undo toast. Nothing else — the
+ * .ui-popover and .project-avatar names appear here only as context inside one
+ * project-picker selector; their own rules live in primitives.css and did not
+ * move.
  */
 
 /* ---- Shared project picker — one trigger-chip + popover treatment for
