@@ -789,13 +789,26 @@ export function draftInfographicContent(source: GenerationDraftSource): Research
   return { kind: "infographic", stats };
 }
 
+/** Sentence terminator (with optional closing quotes/brackets) before a space. */
+const SENTENCE_BREAK_RE = /[.!?…]["'”’)\]]*(?=\s)/g;
+
 function splitMediaDraftText(text: string): string[] {
   const normalized = text.trim();
   if (!normalized) return [];
   const chunks: string[] = [];
   let remaining = normalized;
   while (remaining.length > MAX_MEDIA_DRAFT_CHARS) {
-    const boundary = remaining.lastIndexOf(" ", MAX_MEDIA_DRAFT_CHARS);
+    // Chunks become separate spoken turns, so prefer ending one at a sentence
+    // boundary; a continuation turn must never open mid-sentence.
+    const window = remaining.slice(0, MAX_MEDIA_DRAFT_CHARS);
+    let sentenceCut = -1;
+    for (const match of window.matchAll(SENTENCE_BREAK_RE)) {
+      sentenceCut = match.index + match[0].length;
+    }
+    const boundary =
+      sentenceCut > MAX_MEDIA_DRAFT_CHARS / 2
+        ? sentenceCut
+        : remaining.lastIndexOf(" ", MAX_MEDIA_DRAFT_CHARS);
     const cut = boundary > MAX_MEDIA_DRAFT_CHARS / 2 ? boundary : MAX_MEDIA_DRAFT_CHARS;
     chunks.push(remaining.slice(0, cut).trimEnd());
     remaining = remaining.slice(cut).trimStart();
@@ -807,11 +820,39 @@ function splitMediaDraftText(text: string): string[] {
 /** Fragment endings that already close a spoken clause — no "." appended. */
 const SPEAKABLE_TERMINAL_RE = /[.!?…;:)\]"'”’]$/;
 
+/**
+ * Glyphs TTS engines mangle or skip, mapped to spoken words. Scoped to
+ * symbols that carry meaning when read aloud ("Open questions → next steps").
+ */
+const SPOKEN_GLYPHS: [RegExp, string][] = [
+  [/\s*(?:→|->)\s*/g, " to "],
+  [/(?<=\d)\s*×\s*/g, " times "],
+  [/\s*≥\s*/g, " at least "],
+  [/\s*≤\s*/g, " at most "],
+  [/\s*≈\s*/g, " about "],
+];
+
+function normalizeSpokenGlyphs(text: string): string {
+  let spoken = text;
+  for (const [pattern, replacement] of SPOKEN_GLYPHS) {
+    spoken = spoken.replace(pattern, replacement);
+  }
+  return spoken.replace(/\s{2,}/g, " ").trim();
+}
+
 /** Terminates a fragment for speech without ever doubling punctuation. */
 function speakable(fragment: string): string {
-  const trimmed = fragment.trim();
+  const trimmed = normalizeSpokenGlyphs(fragment);
   if (!trimmed) return trimmed;
   return SPEAKABLE_TERMINAL_RE.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+/**
+ * Mission titles arrive with trailing punctuation or truncation ellipses
+ * ("…Self-Evolution.…"); strip them so templated openings speak cleanly.
+ */
+function spokenTitle(missionTitle: string): string {
+  return normalizeSpokenGlyphs(missionTitle).replace(/[\s.…:;,–—-]+$/u, "");
 }
 
 type NarrationUnit = {
@@ -845,7 +886,9 @@ function mediaNarrationSectionUnits(source: GenerationDraftSource): NarrationUni
     const line = stripInlineMarkdown(
       rawLine.replace(/^\s*[-*+]\s+/, "").replace(/^\s*>\s?/, ""),
     );
-    if (line && !/^#{1,6}\s/.test(line)) lines.push({ title: null, text: line });
+    if (line && !/^#{1,6}\s/.test(line)) {
+      lines.push({ title: null, text: normalizeSpokenGlyphs(line) });
+    }
   }
   return lines;
 }
@@ -914,15 +957,15 @@ const PODCAST_DIALOGUE_TEMPLATES: Record<
   (missionTitle: string) => Omit<DialogueTemplate, "budget">
 > = {
   breakdown: (missionTitle) => ({
-    opening: `Welcome in — today we're breaking down “${missionTitle}”, finding by finding.`,
+    opening: `Welcome in — today we're breaking down “${spokenTitle(missionTitle)}”, finding by finding.`,
     framing: (title) => `Next up — ${speakable(title)}`,
   }),
   debate: (missionTitle) => ({
-    opening: `Welcome to the debate — today we're stress-testing “${missionTitle}”, starting where the findings are most contested.`,
+    opening: `Welcome to the debate — today we're stress-testing “${spokenTitle(missionTitle)}”, starting where the findings are most contested.`,
     framing: (title) => `Where do we actually stand on this one? ${speakable(title)}`,
   }),
   interview: (missionTitle) => ({
-    opening: `Today my guest walks us through “${missionTitle}”. Let's get into it.`,
+    opening: `Today my guest walks us through “${spokenTitle(missionTitle)}”. Let's get into it.`,
     framing: (title) => `Walk me through this part — ${speakable(title)}`,
   }),
 };
