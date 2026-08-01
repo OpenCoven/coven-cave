@@ -28,7 +28,14 @@ import {
   markCovenGroupPending,
   markCovenTabPending,
 } from "@/lib/chat-tab-events";
-import { promoteSessionToCoven } from "@/lib/coven-promotion";
+import { addableFamiliars, promoteSessionToCoven } from "@/lib/coven-promotion";
+import {
+  FAMILIAR_DRAG_END,
+  FAMILIAR_DRAG_START,
+  canDropFamiliar,
+  readFamiliarDrag,
+  type FamiliarDragDetail,
+} from "@/lib/familiar-drag";
 import { loadGroups, saveGroups } from "@/lib/group-chat";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
@@ -5858,6 +5865,47 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [announce, familiar.display_name, familiar.id, familiars, resolvedProjectId, sessionId],
   );
 
+  // Drag a familiar from the rail's switcher into this thread (cave-76yfq) —
+  // the same outcome as the participants `+`, which stays the primary,
+  // keyboard-reachable affordance. The zone arms only for a familiar this
+  // thread can actually accept, so dragging the host over their own transcript
+  // shows nothing rather than a target that would reject the drop.
+  const [familiarDrag, setFamiliarDrag] = useState<FamiliarDragDetail | null>(null);
+  const [dropHover, setDropHover] = useState(false);
+
+  useEffect(() => {
+    const onStart = (e: Event) => {
+      const detail = (e as CustomEvent<FamiliarDragDetail>).detail;
+      if (!detail?.id) return;
+      const addable = addableFamiliars(familiars, familiar.id).map((f) => f.id);
+      if (!canDropFamiliar({ draggedId: detail.id, hostId: familiar.id, addableIds: addable })) return;
+      setFamiliarDrag(detail);
+    };
+    const onEnd = () => {
+      setFamiliarDrag(null);
+      setDropHover(false);
+    };
+    window.addEventListener(FAMILIAR_DRAG_START, onStart);
+    window.addEventListener(FAMILIAR_DRAG_END, onEnd);
+    return () => {
+      window.removeEventListener(FAMILIAR_DRAG_START, onStart);
+      window.removeEventListener(FAMILIAR_DRAG_END, onEnd);
+    };
+  }, [familiar.id, familiars]);
+
+  const handleFamiliarDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const dropped = readFamiliarDrag(e.dataTransfer) ?? familiarDrag?.id ?? null;
+      setFamiliarDrag(null);
+      setDropHover(false);
+      const addable = addableFamiliars(familiars, familiar.id).map((f) => f.id);
+      if (!canDropFamiliar({ draggedId: dropped, hostId: familiar.id, addableIds: addable })) return;
+      promoteToCoven(dropped as string);
+    },
+    [familiar.id, familiarDrag, familiars, promoteToCoven],
+  );
+
   const setChatArchived = async (archived: boolean) => {
     if (!sessionId || archiving) return;
     setArchiving(true);
@@ -6111,7 +6159,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
-      <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        tabIndex={0}
+        className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto"
+        onDragOver={familiarDrag ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropHover(true); } : undefined}
+        onDragLeave={familiarDrag ? () => setDropHover(false) : undefined}
+        onDrop={familiarDrag ? handleFamiliarDrop : undefined}
+      >
+        {familiarDrag ? (
+          <div className="cave-chat-drop" data-hover={dropHover ? "true" : undefined} aria-hidden>
+            <span className="cave-chat-drop__hint">
+              <Icon name="ph:users-three" width={20} height={20} aria-hidden />
+              Add {familiarDrag.name} to this chat
+            </span>
+          </div>
+        ) : null}
         {/* Floating Environment HUD (cave-68vv): wide panes only; keys on the
             SESSION-root derivation (cave-r0gt). */}
         <ChatEnvironmentPanel

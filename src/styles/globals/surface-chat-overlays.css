@@ -959,3 +959,43 @@
     display: none !important;
   }
 }
+
+/* ── Drag a familiar into the thread (cave-76yfq) ──────────────────────────
+   Armed only while a familiar the thread can actually accept is in flight, so
+   the overlay never appears over a drop that would be rejected. Mirrors the
+   split drop zone's dashed-target language; the whole transcript is one target
+   because there is only one outcome, unlike the split's left/right halves. */
+.cave-chat-drop {
+  position: absolute;
+  inset: var(--space-2);
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The transcript itself owns the drag handlers, so the overlay must never
+     intercept them — a pointer-events:auto layer here would swallow dragover
+     and leave the zone stuck armed. */
+  pointer-events: none;
+  border: 2px dashed color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-base) 55%, transparent);
+  backdrop-filter: blur(2px);
+  color: var(--text-muted);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.cave-chat-drop[data-hover="true"] {
+  border-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--text-primary);
+}
+.cave-chat-drop__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-chat-drop { transition: none; }
+}

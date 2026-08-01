@@ -8,6 +8,7 @@ import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import { Popover } from "@/components/ui/popover";
 import { setFamiliarOrder } from "@/lib/cave-familiar-order";
 import { requestSummonFamiliar } from "@/lib/summon-events";
+import { FAMILIAR_DRAG_MIME, emitFamiliarDragEnd, emitFamiliarDragStart } from "@/lib/familiar-drag";
 import {
   DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter,
   type DragEndEvent,
@@ -265,7 +266,25 @@ export function FamiliarSwitcher({
                       className={`familiar-switcher__option${isActive ? " is-active" : ""}`}
                       style={{ ["--familiar-accent" as string]: f.color } as CSSProperties}
                       onClick={(e) => pickFamiliar(f.id, e)}
-                      title={`${f.display_name} · ${presence.label} · click switches, checkbox or ⌘-click multi-selects`}
+                      title={`${f.display_name} · ${presence.label} · click switches, checkbox or ⌘-click multi-selects, drag into a chat to start a coven`}
+                      // Drag a familiar into a chat thread to add them to it
+                      // (cave-76yfq). Only this plain-listbox branch is
+                      // draggable — the reorder branch above is a dnd-kit
+                      // sortable, and a native HTML5 drag on the same element
+                      // would fight it for the pointer.
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData(FAMILIAR_DRAG_MIME, f.id);
+                        e.dataTransfer.setData("text/plain", f.display_name);
+                        e.dataTransfer.effectAllowed = "copy";
+                        emitFamiliarDragStart({ id: f.id, name: f.display_name });
+                      }}
+                      onDragEnd={() => {
+                        emitFamiliarDragEnd();
+                        // The drop lands in a surface behind this popover, so
+                        // leaving it open would cover the result.
+                        setOpen(false);
+                      }}
                     >
                       {/* Checkbox zone — clicking it toggles this familiar in the
                           multiselect scope and keeps the menu open. */}
