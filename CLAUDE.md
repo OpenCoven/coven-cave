@@ -45,10 +45,10 @@
 
 While it was off, **GitHub Desktop** — the desktop app, run from its UI — was
 merging feature branches into `main` locally and pushing straight to it. On
-2026-08-01 alone: **33** `git push origin main:main`, **14** `git merge
-<branch>` into `main`, and **53** invocations of Desktop's Copilot
-conflict-resolution on those merges. Every one of those pushes bypassed all
-five required checks, because a push from an admin was exempt while a *PR* from
+2026-08-01 alone: **33** `git push origin main:main`, **14**
+`git merge <branch>` into `main`, and **53** invocations of Desktop's Copilot
+conflict-resolution on those merges. Every one of those pushes bypassed every
+required check, because a push from an admin was exempt while a *PR* from
 anyone was not. `main` sat red as a result — one of the failures was a
 regression that a PR's `E2E (Playwright)` run would have caught before it
 landed. The same sweep also ran `git worktree remove --force` and
