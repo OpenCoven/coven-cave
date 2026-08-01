@@ -109,7 +109,13 @@ function createFixture({ issues = [defaultIssue()] } = {}) {
   mkdirSync(stateDir);
   const repo = realpathSync(repoEntry);
   git(["init", "-q", "-b", "main"], repo);
-  git(["init", "-q", "--bare"], origin);
+  // `-b main` on the bare origin too — same reason as the retirement fixture.
+  // Without it the origin's HEAD follows the host's init.defaultBranch while this
+  // fixture only ever pushes `main`, so on a host still defaulting to `master`
+  // origin/HEAD names a branch that does not exist and the default-branch probe
+  // fails. Reproduced with GIT_CONFIG_GLOBAL pointing at `init.defaultBranch =
+  // master`; that is why this passed locally and failed on CI.
+  git(["init", "-q", "-b", "main", "--bare"], origin);
   git(["config", "user.name", "Cave Test"], repo);
   git(["config", "user.email", "cave@example.invalid"], repo);
   git(["config", "commit.gpgsign", "false"], repo);
