@@ -266,7 +266,10 @@ async function renderCodeBlock(
 ): Promise<string> {
   const { lang, filename } = parseFenceInfo(info);
   const block = deriveReadingBlock(info);
-  const isDiff = lang === "diff";
+  // One classifier decides "is this a patch", so the rendering and the
+  // provenance pill can never disagree — `patch` and `DIFF` are diffs too, and
+  // before this they got the "patch" pill with none of the diff parsing.
+  const isDiff = block.isDiff;
   const diffLang = isDiff ? diffContentLang(code) : "text";
   let diffLines = isDiff && diffLang !== "text" ? classifyDiffLines(code) : null;
   const doc = diffLines ? diffLines.map((line) => line.content).join("\n") : code;

@@ -8,6 +8,7 @@ const {
   canApplyPatch,
   canCompare,
   staleness,
+  stalenessForRead,
   snippetStartLine,
   stalenessLabel,
   resolveInspectorMode,
@@ -173,6 +174,26 @@ const FILE = [
 // A snippet longer than the file cannot match.
 {
   assert.equal(staleness(`${FILE}\nextra line`, FILE), "stale");
+}
+
+// ── Read outcomes: "gone" vs "I could not look" ─────────────────────────────
+// The distinction the whole surface rests on. A permission denial, a 413, or an
+// offline daemon must NEVER render as a confident "gone" badge — that is the
+// same false certainty the feature exists to remove, just pointing the other
+// way. (Raised in review on PR #4197.)
+{
+  const snippet = "const CALLBACK_PATH = \"/callback\";";
+  assert.equal(stalenessForRead(snippet, { kind: "text", content: FILE }), "fresh");
+  assert.equal(stalenessForRead("nope", { kind: "text", content: FILE }), "stale");
+  assert.equal(stalenessForRead(snippet, { kind: "absent" }), "missing", "a real 404 is 'gone'");
+  assert.equal(
+    stalenessForRead(snippet, { kind: "unreadable" }),
+    "unknown",
+    "a failed read claims nothing — not 'gone'",
+  );
+  // …and an unknown verdict shows no badge at all.
+  assert.equal(stalenessLabel(stalenessForRead(snippet, { kind: "unreadable" })), null);
+  assert.equal(stalenessLabel(stalenessForRead(snippet, { kind: "absent" })), "gone");
 }
 
 // ── Inspector layout ─────────────────────────────────────────────────────────

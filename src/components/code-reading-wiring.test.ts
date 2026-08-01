@@ -145,7 +145,45 @@ assert.match(
 );
 assert.match(inspector, /aria-modal=\{mode === "modal" \? true : undefined\}/, "aria-modal matches the real behavior");
 assert.match(inspector, /focus-ring/, "interactive elements carry the focus ring");
-assert.match(inspector, /aria-selected=\{selected\}/, "line rows expose their selected state");
+assert.match(inspector, /aria-pressed=\{selected\}/, "line rows expose their selected state");
+
+// ── Review findings from PR #4197 ───────────────────────────────────────────
+
+// One classifier decides "is this a patch", so the diff RENDERING and the
+// provenance PILL can never disagree. Before this, a ```patch fence got the
+// "patch" pill with none of the diff parsing.
+assert.match(
+  bubble,
+  /const isDiff = block\.isDiff;/,
+  "diff rendering uses the same classifier as the provenance pill",
+);
+assert.doesNotMatch(
+  bubble,
+  /const isDiff = lang === "diff"/,
+  "the old lang-only diff check must not come back — it disagrees with deriveReadingBlock",
+);
+
+// A failed read must not render as a confident "gone". Only a 404 is absent.
+for (const [source, name] of [[wiring, "the wiring layer"], [inspector, "the inspector"]]) {
+  assert.match(source, /res\.status === 404/, `${name} treats only a 404 as absent`);
+  assert.match(source, /kind: "unreadable"|phase: "error"/, `${name} has a distinct unreadable outcome`);
+}
+assert.match(
+  wiring,
+  /stalenessForRead\(/,
+  "the wiring layer maps a read OUTCOME to staleness, not a nullable string",
+);
+assert.doesNotMatch(
+  inspector,
+  /staleness\(target\.code, diskContent\)/,
+  "the inspector must not collapse a read failure into `missing`",
+);
+
+// Line selection is a range of toggles, not a single-select listbox — and
+// listbox would also require the options to be the container's direct children.
+assert.doesNotMatch(inspector, /role="listbox"/, "code lines are not a listbox");
+assert.doesNotMatch(inspector, /role="option"/, "line numbers are not listbox options");
+assert.match(inspector, /aria-pressed=\{selected\}/, "line numbers announce pressed state");
 
 // Selection is not colour-only.
 assert.match(
