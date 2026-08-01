@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  classifyDaemonConnectionTravelCadence,
   classifyDaemonFailureAvailability,
   classifyDaemonStatusPoll,
 } from "./daemon-status-classification.ts";
@@ -53,6 +54,110 @@ for (const [name, input, expected] of [
   ],
 ]) {
   assert.equal(classifyDaemonFailureAvailability(input), expected, name);
+}
+
+for (const [name, payload, expected] of [
+  [
+    "hub unreachable",
+    {
+      running: false,
+      availability: "unreachable",
+      target: { mode: "hub" },
+    },
+    "hub-unreachable",
+  ],
+  [
+    "hub online",
+    {
+      running: true,
+      availability: "online",
+      target: { mode: "hub" },
+    },
+    "hub-reachable",
+  ],
+  [
+    "hub unauthorized",
+    {
+      running: false,
+      availability: "unauthorized",
+      target: { mode: "hub" },
+    },
+    "hub-reachable",
+  ],
+  [
+    "hub unhealthy",
+    {
+      running: false,
+      availability: "unhealthy",
+      target: { mode: "hub" },
+    },
+    "hub-reachable",
+  ],
+  [
+    "hub offline remains a definite reachable-hub answer",
+    {
+      running: false,
+      availability: "offline",
+      target: { mode: "hub" },
+    },
+    "hub-reachable",
+  ],
+  [
+    "local target clears outage cadence without triggering replay",
+    {
+      running: false,
+      availability: "offline",
+      target: { mode: "local" },
+    },
+    "non-hub",
+  ],
+  [
+    "unconfigured hub clears outage cadence without triggering replay",
+    {
+      running: false,
+      availability: "misconfigured",
+      target: { mode: "unconfigured-hub" },
+    },
+    "non-hub",
+  ],
+  [
+    "status-unavailable without a target stays unknown",
+    {
+      running: false,
+      availability: "status-unavailable",
+      reason: "Daemon connection status is temporarily unavailable",
+    },
+    "unknown",
+  ],
+  [
+    "null payload stays unknown",
+    null,
+    "unknown",
+  ],
+  [
+    "missing target stays unknown",
+    {
+      running: false,
+      availability: "online",
+    },
+    "unknown",
+  ],
+  [
+    "invalid target stays unknown",
+    {
+      running: false,
+      availability: "online",
+      target: { mode: "remote" },
+    },
+    "unknown",
+  ],
+  [
+    "auth-expired 401 without payload stays unknown",
+    undefined,
+    "unknown",
+  ],
+] as const) {
+  assert.equal(classifyDaemonConnectionTravelCadence(payload), expected, name);
 }
 
 assert.deepEqual(

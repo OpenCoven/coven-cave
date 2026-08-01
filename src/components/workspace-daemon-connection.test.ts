@@ -106,13 +106,18 @@ test("Workspace applies connection polls through the existing classifier-driven 
   assert.ok(applyPoll.length > 0, "Workspace should centralize daemon connection publication in a stable apply callback");
   assert.match(
     workspace,
-    /function daemonConnectionPayloadHubAvailability\([\s\S]*return availability === "online" \|\| availability === "unreachable" \|\| availability === "unhealthy" \|\| availability === "unauthorized" \? availability : null;\n\}/,
-    "Workspace should structurally map accepted hub snapshot availability before reconciling travel cadence",
+    /import \{[\s\S]*classifyDaemonConnectionTravelCadence,[\s\S]*classifyDaemonStatusPoll,[\s\S]*\} from "@\/lib\/daemon-status-classification";/,
+    "Workspace should import the explicit daemon travel cadence classifier next to the status classifier",
   );
   assert.match(
     applyPoll,
-    /const hubAvailability = daemonConnectionPayloadHubAvailability\(poll\.payload\);[\s\S]*if \(hubAvailability === "unreachable"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.setHubOutageActive\(true\);[\s\S]*\} else \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.setHubOutageActive\(false\);[\s\S]*if \(hubAvailability !== null\) daemonTravelReconcileRequesterRef\.current\?\.trigger\(\);[\s\S]*\}/,
-    "accepted hub snapshots should own outage cadence on unreachable and otherwise trigger one reconcile without double-firing",
+    /const travelCadence = classifyDaemonConnectionTravelCadence\(poll\.payload\);[\s\S]*if \(travelCadence === "hub-unreachable"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.setHubOutageActive\(true\);[\s\S]*\} else if \(travelCadence === "hub-reachable"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.setHubOutageActive\(false\);[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.trigger\(\);[\s\S]*\} else if \(travelCadence === "non-hub"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.setHubOutageActive\(false\);[\s\S]*\}/,
+    "only structurally definite hub and non-hub answers should change travel cadence; unknown answers stay inert",
+  );
+  assert.doesNotMatch(
+    applyPoll,
+    /travelCadence === "unknown"[\s\S]*setHubOutageActive|travelCadence === "unknown"[\s\S]*trigger\(/,
+    "unknown connection payloads should not clear outage cadence or trigger reconcile work",
   );
   assert.match(applyPoll, /const result = classifyDaemonStatusPoll\(poll\)/, "the shared classifier remains authoritative");
   assert.match(

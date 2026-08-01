@@ -69,7 +69,10 @@ import {
   rejectPendingCanonicalMemorySelection,
   type PendingCanonicalMemorySelection,
 } from "@/lib/canonical-memory";
-import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
+import {
+  classifyDaemonConnectionTravelCadence,
+  classifyDaemonStatusPoll,
+} from "@/lib/daemon-status-classification";
 import {
   createDaemonConnectionSupervisor,
   type DaemonConnectionPoll,
@@ -262,28 +265,6 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 // the four-second session poll (~900/hour). usePausablePoll also pauses this in
 // hidden windows and while the user is composing input.
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
-
-function daemonConnectionPayloadTargetMode(
-  payload: unknown,
-): "local" | "hub" | "unconfigured-hub" | null {
-  if (!payload || typeof payload !== "object" || !("running" in payload)) return null;
-  if (typeof (payload as { running?: unknown }).running !== "boolean") return null;
-  if (!("target" in payload)) return null;
-  const target = (payload as { target?: unknown }).target;
-  if (!target || typeof target !== "object" || !("mode" in target)) return null;
-  const mode = (target as { mode?: unknown }).mode;
-  return mode === "local" || mode === "hub" || mode === "unconfigured-hub" ? mode : null;
-}
-
-function daemonConnectionPayloadHubAvailability(
-  payload: unknown,
-): "online" | "unreachable" | "unhealthy" | "unauthorized" | null {
-  if (daemonConnectionPayloadTargetMode(payload) !== "hub") return null;
-  const availability = payload && typeof payload === "object" && "availability" in payload
-    ? (payload as { availability?: unknown }).availability
-    : null;
-  return availability === "online" || availability === "unreachable" || availability === "unhealthy" || availability === "unauthorized" ? availability : null;
-}
 
 export function Workspace() {
   const [acceptedLocalDaemonHealthy, setAcceptedLocalDaemonHealthy] = useState(false);
@@ -786,12 +767,14 @@ export function Workspace() {
   useMilestoneWatch();
 
   const applyDaemonConnectionPoll = useCallback((poll: DaemonConnectionPoll, context: { fresh: boolean }) => {
-    const hubAvailability = daemonConnectionPayloadHubAvailability(poll.payload);
-    if (hubAvailability === "unreachable") {
+    const travelCadence = classifyDaemonConnectionTravelCadence(poll.payload);
+    if (travelCadence === "hub-unreachable") {
       daemonTravelReconcileRequesterRef.current?.setHubOutageActive(true);
-    } else {
+    } else if (travelCadence === "hub-reachable") {
       daemonTravelReconcileRequesterRef.current?.setHubOutageActive(false);
-      if (hubAvailability !== null) daemonTravelReconcileRequesterRef.current?.trigger();
+      daemonTravelReconcileRequesterRef.current?.trigger();
+    } else if (travelCadence === "non-hub") {
+      daemonTravelReconcileRequesterRef.current?.setHubOutageActive(false);
     }
     const result = classifyDaemonStatusPoll(poll);
     // The coordinator pins this first accepted decision. Later polls may update

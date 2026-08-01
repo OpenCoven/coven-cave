@@ -732,9 +732,9 @@ export async function setManualTravelMode(enabled: boolean, now = new Date()): P
       return iso;
     }
     state.travel.manualOffline = false;
+    state.travel.localSubdaemonWakeRequestedAt = null;
     if (!state.travel.hubUnreachableSince && !hasPendingTravelQueue(state.travel)) {
       state.travel.staleCache = false;
-      state.travel.localSubdaemonWakeRequestedAt = null;
     }
     return null;
   });

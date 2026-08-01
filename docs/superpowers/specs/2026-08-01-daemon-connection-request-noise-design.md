@@ -68,9 +68,13 @@ diagnostics payload.
 The framework-free travel reconcile requester owns an independent outage
 cadence. When an accepted hub snapshot reports `availability: "unreachable"`,
 Workspace flips the requester into outage mode, which immediately POSTs once
-and then re-arms a one-shot ten-second timer until a non-unreachable hub
-snapshot clears the cadence. This keeps recovery/replay checks within the
-travel-local threshold even while the connection supervisor backs off.
+and then re-arms a one-shot ten-second timer until a structurally definite
+non-outage answer clears the cadence. Definite reachable hub answers clear and
+trigger one recovery/replay pass, definite local or unconfigured-hub answers
+clear without triggering, and unknown payloads stay inert so fallback
+`status-unavailable` polls do not erase an active outage window. This keeps
+recovery/replay checks within the travel-local threshold even while the
+connection supervisor backs off.
 
 The travel helper executes behind a per-target serial boundary keyed by the
 sanitized target identity. Equivalent concurrent calls share one in-flight

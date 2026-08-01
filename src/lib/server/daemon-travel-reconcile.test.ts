@@ -534,6 +534,60 @@ test("stable offline heartbeats reuse the recorded outage without duplicate reac
   assert.equal(result.travelStatus.mode, "travel");
 });
 
+test("automatic mode resumes from an existing outage after the manual wake stamp is cleared", async () => {
+  const postManualState = travelState({
+    hubUnreachableSince: "2026-08-01T00:00:00.000Z",
+    staleCache: true,
+  });
+  const wokenState = {
+    ...postManualState,
+    localSubdaemonWakeRequestedAt: "2026-08-01T00:00:20.000Z",
+  };
+  let recordCalls = 0;
+  let startCalls = 0;
+  let wakeRecords = 0;
+
+  const result = await reconcileDaemonTravelState(
+    {
+      config: config(),
+      travelState: postManualState,
+      target: hubTarget(),
+      hubAnswered: false,
+      daemonHealthy: false,
+    },
+    {
+      recordTravelHubReachability: async () => {
+        recordCalls += 1;
+        return postManualState;
+      },
+      syncOfflineTravelQueue: async () => {
+        assert.fail("offline heartbeats should not replay queued work");
+      },
+      loadState: async () => {
+        assert.fail("a successful wake stamp should not reload state");
+      },
+      startLocalDaemon: async () => {
+        startCalls += 1;
+        return { ok: true };
+      },
+      recordLocalSubdaemonWakeRequest: async () => {
+        wakeRecords += 1;
+        return wokenState;
+      },
+      deriveTravelClientStatus,
+      now: () => new Date("2026-08-01T00:00:20.000Z"),
+    },
+  );
+
+  assert.equal(recordCalls, 0);
+  assert.equal(startCalls, 1);
+  assert.equal(wakeRecords, 1);
+  assert.equal(
+    result.travelState.localSubdaemonWakeRequestedAt,
+    wokenState.localSubdaemonWakeRequestedAt,
+  );
+});
+
 test("failed wake attempts stay retryable and do not stamp the outage", async () => {
   const outageState = travelState({
     hubUnreachableSince: "2026-08-01T00:00:00.000Z",
