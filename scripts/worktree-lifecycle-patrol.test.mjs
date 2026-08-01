@@ -204,10 +204,6 @@ try {
   );
 
   const fastForwardPath = path.join(repo, ".worktrees", "fast-forward");
-  // Based on `main`, not `origin/main`: main has advanced past origin by this
-  // point in the fixture (it is not pushed until after the merge below), so a
-  // branch cut from origin/main diverges and the `--ff-only` merge cannot
-  // apply — which is the whole behaviour this branch exists to exercise.
   git(
     ["worktree", "add", "-q", "-b", "feat/fast-forward", fastForwardPath, "main"],
     repo,

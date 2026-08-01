@@ -1754,32 +1754,14 @@ function historyOverrideProbe(root: string, commonGitDir: string): HistoryOverri
     }
   }
 
-  const grafts = graftInventory(commonGitDir);
-  const graftState = grafts.snapshot;
-  if (grafts.error !== null) errors.push(grafts.error);
-
-  return { replaceRefsState, graftState, errors };
-}
-
-/** Snapshot of the legacy graft file, in the same vocabulary historyOverrideProbe
- *  reports: `absent`, `present:<sha256>`, or `unreadable:<detail>`.
- *
- *  Split out so the probe and the patrol's start/end drift comparison cannot
- *  disagree about what "unchanged" means — a graft file swapped for one of equal
- *  length is only caught because both sides hash the bytes, not stat them. */
-function graftInventory(commonGitDir: string): {
-  path: string;
-  snapshot: string;
-  error: string | null;
-} {
   const graftPath = path.join(commonGitDir, "info", "grafts");
+  let graftState: string;
   try {
     const grafts = readFileSync(graftPath);
-    return {
-      path: graftPath,
-      snapshot: `present:${createHash("sha256").update(grafts).digest("hex")}`,
-      error: grafts.length > 0 ? `legacy Git graft file is nonempty: ${graftPath}` : null,
-    };
+    graftState = `present:${createHash("sha256").update(grafts).digest("hex")}`;
+    if (grafts.length > 0) {
+      errors.push(`legacy Git graft file is nonempty: ${graftPath}`);
+    }
   } catch (error) {
     if (
       error !== null &&
@@ -1787,15 +1769,15 @@ function graftInventory(commonGitDir: string): {
       "code" in error &&
       error.code === "ENOENT"
     ) {
-      return { path: graftPath, snapshot: "absent", error: null };
+      graftState = "absent";
+    } else {
+      const detail = error instanceof Error ? error.message : "unknown read error";
+      graftState = `unreadable:${detail}`;
+      errors.push(`legacy Git graft file is unreadable: ${graftPath}: ${detail}`);
     }
-    const detail = error instanceof Error ? error.message : "unknown read error";
-    return {
-      path: graftPath,
-      snapshot: `unreadable:${detail}`,
-      error: `legacy Git graft file is unreadable: ${graftPath}: ${detail}`,
-    };
   }
+
+  return { replaceRefsState, graftState, errors };
 }
 
 function exactRemoteRef(
@@ -1860,10 +1842,7 @@ function parseGitHubRepositoryUrl(
   try {
     parsed = new URL(value);
   } catch {
-    // Git accepts a filesystem path as a remote. That is not a malformed
-    // GitHub URL, it is not a GitHub URL — a distinction the caller relies on
-    // to tell "no GitHub identity" from "someone tampered with my origin".
-    return { repository: null, error: "non-github" };
+    return { repository: null, error: "malformed" };
   }
   const supportedProtocol = parsed.protocol === "https:" || parsed.protocol === "ssh:";
   if (!supportedProtocol || parsed.hostname.toLowerCase() !== "github.com") {
@@ -1907,35 +1886,18 @@ function originRepositoryIdentity(root: string, requestedRepo: string): OriginRe
   if (pushLines.length !== 1) return fail("has multiple or ambiguous push destinations");
 
   const repositories: string[] = [];
-  let nonGitHubUrls = 0;
   for (const [kind, urls] of [
     ["fetch", fetchLines],
     ["push", pushLines],
   ] as const) {
     for (const url of urls) {
       const parsed = parseGitHubRepositoryUrl(url);
-      if (parsed.error === "non-github") {
-        nonGitHubUrls += 1;
-        continue;
-      }
+      if (parsed.error === "non-github") return fail(`has a non-GitHub ${kind} URL`);
       if (parsed.error !== null || parsed.repository === null) {
         return fail(`has a malformed ${kind} URL`);
       }
       repositories.push(parsed.repository);
     }
-  }
-  // A remote that simply is not on GitHub is a known-unknown, not a fault: the
-  // repo has no pull-request tier, and the lane falls back to the ancestry and
-  // landing evidence it is really decided on. Degrading here rather than
-  // erroring only ever REMOVES a positive signal, so it cannot make retirement
-  // easier than it would be with GitHub evidence present.
-  //
-  // A remote that mixes the two is still a fault — a GitHub fetch URL beside a
-  // non-GitHub push destination is exactly the tampering this check exists for.
-  if (nonGitHubUrls > 0) {
-    return repositories.length > 0
-      ? fail("mixes GitHub and non-GitHub URLs")
-      : { repository: null, error: null };
   }
   const identities = new Map(repositories.map((repository) => [repository.toLowerCase(), repository]));
   if (identities.size !== 1) return fail("has differing fetch and push repositories");
@@ -2497,7 +2459,6 @@ export function collectWorktreeLifecycleInventory(
           landing.error,
           remoteRefs.error,
           ancestry.error,
-          integration.error,
           remote.error,
           ...(unit.ref ? [directRefError(root, unit.ref)] : []),
         ].filter((error): error is string => typeof error === "string"),
@@ -2567,12 +2528,6 @@ export function collectWorktreeLifecycleInventory(
   ]);
   const finalGrafts = graftInventory(commonGitDir);
   const finalHistoryOverrides = historyOverrideProbe(root, commonGitDir);
-  const finalReplacementRefsRaw = requiredGit(root, [
-    "for-each-ref",
-    "--format=%(refname)%0a%(objectname)%00",
-    "refs/replace",
-  ]);
-  const finalGrafts = graftInventory(commonGitDir);
   if (
     finalWorktreeRaw !== initialWorktreeRaw ||
     finalRefsRaw !== initialRefsRaw
