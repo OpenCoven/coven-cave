@@ -192,7 +192,7 @@ async function fulfillSyntheticApi(
     return;
   }
 
-  if (pathname === "/api/daemon/status") {
+  if (pathname === "/api/daemon/connection") {
     await route.fulfill({
       json: {
         running: true,
