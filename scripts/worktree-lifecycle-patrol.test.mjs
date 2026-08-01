@@ -240,6 +240,8 @@ try {
         id: "cave-oid-owner",
         status: "open",
         title: "Investigate captured commit",
+        description: "",
+        notes: "",
         external_ref: `commit:${branchOnlyHead.toUpperCase()}`,
       },
     ]),
@@ -337,18 +339,13 @@ if [ "\${LIFECYCLE_REQUIRE_SAFE_GIT:-0}" = "1" ]; then
       exit 92
       ;;
   esac
-  for VARIABLE in GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE GIT_PREFIX GIT_CONFIG GIT_REPLACE_REF_BASE GIT_GRAFT_FILE GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do
+  for VARIABLE in GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE GIT_PREFIX GIT_OPTIONAL_LOCKS GIT_REPLACE_REF_BASE GIT_NO_REPLACE_OBJECTS GIT_CONFIG GIT_GRAFT_FILE GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do
     eval "VALUE_SET=\\\${$VARIABLE+x}"
     if [ -n "$VALUE_SET" ]; then
       printf 'unsafe git environment retained: %s\n' "$VARIABLE" >&2
       exit 93
     fi
   done
-  if [ "\${GIT_NO_REPLACE_OBJECTS:-}" != "1" ] ||
-     [ "\${GIT_OPTIONAL_LOCKS:-}" != "0" ]; then
-    printf '%s\n' 'required git safety environment missing' >&2
-    exit 94
-  fi
   if [ -n "\${LIFECYCLE_EXPECT_GIT_SSH_COMMAND:-}" ] &&
      [ "\${GIT_SSH_COMMAND:-}" != "$LIFECYCLE_EXPECT_GIT_SSH_COMMAND" ]; then
     printf '%s\n' 'git authentication environment was stripped' >&2
@@ -394,7 +391,6 @@ if [ "\${LIFECYCLE_INDEX_STDERR:-0}" = "1" ]; then
       ;;
   esac
 fi
-
 case " $* " in
   *" worktree list --porcelain -z "*)
     if [ "\${LIFECYCLE_DUPLICATE_REGISTERED_REF:-0}" = "1" ]; then
@@ -1231,7 +1227,6 @@ exit 0
       /git index inventory omitted inaccessible paths/,
     );
   });
-
   verifySafetyRegression("NUL Coven session root", () => {
     const nulSessionReport = JSON.parse(
       patrol(["--json"], { LIFECYCLE_NUL_SESSION_ROOT: "1" }),

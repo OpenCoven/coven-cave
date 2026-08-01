@@ -78,7 +78,7 @@
   align-items: center;
   gap: var(--space-2);
   flex: none;
-  min-height: 30px;
+  min-height: var(--space-8);
   padding: 0 var(--space-4);
   border-top: 1px solid var(--border-hairline);
   border-bottom: 1px solid var(--border-hairline);
@@ -86,7 +86,13 @@
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--text-muted);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.cave-chat-context-row::-webkit-scrollbar {
+  display: none;
 }
 
 .cave-chat-context-row__chips,
@@ -98,8 +104,7 @@
 }
 
 .cave-chat-context-row__chips {
-  flex: 0 1 auto;
-  overflow: hidden;
+  flex: none;
 }
 
 .cave-chat-context-row__stats {
@@ -113,11 +118,11 @@
   gap: 5px;
   flex: 0 1 auto;
   min-width: 0;
-  height: 19px;
+  height: var(--space-6);
   padding: 0 var(--space-2);
   border: 1px solid var(--border-hairline);
-  border-radius: 6px;
-  background: color-mix(in oklch, var(--foreground) 3%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
   color: var(--text-primary);
   font-family: inherit;
   font-size: inherit;
@@ -126,7 +131,9 @@
 
 .cave-chat-context-chip--action {
   cursor: pointer;
-  transition: border-color 0.13s ease, background 0.13s ease;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
 }
 
 .cave-chat-context-chip--action:hover {
@@ -137,25 +144,34 @@
 /* One tint per element, set by the model's `is-*` class and read by the glyph,
    the dot, the value and the meter fill — so a new tint teaches one place. */
 .cave-chat-context-chip__glyph,
-.cave-chat-context-stat {
+.cave-chat-context-stat,
+.cave-chat-context-breakdown :where(
+  .cave-chat-context-breakdown__heading,
+  .cave-chat-context-breakdown__row,
+  .cave-chat-context-breakdown__segment
+) {
   --ctx-tint: var(--text-muted);
 }
 
 .cave-chat-context-chip__glyph.is-accent,
-.cave-chat-context-stat.is-accent {
+.cave-chat-context-stat.is-accent,
+.cave-chat-context-breakdown .is-accent {
   --ctx-tint: var(--accent-presence);
 }
 
 .cave-chat-context-chip__glyph.is-success,
-.cave-chat-context-stat.is-success {
+.cave-chat-context-stat.is-success,
+.cave-chat-context-breakdown .is-success {
   --ctx-tint: var(--color-success);
 }
 
-.cave-chat-context-stat.is-warning {
+.cave-chat-context-stat.is-warning,
+.cave-chat-context-breakdown .is-warning {
   --ctx-tint: var(--color-warning);
 }
 
-.cave-chat-context-stat.is-danger {
+.cave-chat-context-stat.is-danger,
+.cave-chat-context-breakdown .is-danger {
   --ctx-tint: var(--color-danger);
 }
 
@@ -185,13 +201,31 @@
   align-items: center;
   gap: 5px;
   flex: none;
-  padding: 2px var(--space-1);
-  border-radius: 4px;
+  min-height: var(--space-6);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
   white-space: nowrap;
 }
 
+.cave-chat-context-stat--action {
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-context-stat--action:hover,
+.cave-chat-context-stat--action[aria-expanded="true"] {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+
 .cave-chat-context-stat__dot,
-.cave-chat-context-stat__fill {
+.cave-chat-context-stat__fill,
+.cave-chat-context-breakdown__segment {
   background: var(--ctx-tint);
 }
 
@@ -203,7 +237,7 @@
 }
 
 .cave-chat-context-stat__key {
-  color: color-mix(in oklch, var(--text-muted) 62%, transparent);
+  color: var(--text-secondary);
 }
 
 .cave-chat-context-stat__value {
@@ -213,7 +247,7 @@
 
 .cave-chat-context-stat__meter {
   display: inline-flex;
-  width: 34px;
+  width: var(--space-10);
   height: 4px;
   flex: none;
   overflow: hidden;
@@ -227,12 +261,93 @@
   border-radius: var(--radius-pill);
 }
 
-/* Narrow panes drop the stats before the chips — which project and branch the
-   session runs against outrank what the last run cost. */
-@media (max-width: 900px) {
-  .cave-chat-context-row__stats {
-    display: none;
-  }
+.cave-chat-context-popover {
+  overflow: hidden;
+  border-color: var(--border-strong);
+  border-radius: var(--radius-card);
+  background-color: var(--bg-panel);
+  background-image: linear-gradient(
+    color-mix(in oklch, var(--foreground) 6%, transparent),
+    color-mix(in oklch, var(--foreground) 6%, transparent)
+  );
+  box-shadow: var(--shadow-popover);
+}
+
+.cave-chat-context-breakdown {
+  min-width: 320px;
+  padding: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+}
+
+.cave-chat-context-breakdown__heading,
+.cave-chat-context-breakdown__row {
+  display: grid;
+  grid-template-columns: var(--space-3) minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-2);
+}
+
+.cave-chat-context-breakdown__heading {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--ctx-tint);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cave-chat-context-breakdown__total {
+  color: var(--text-secondary);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.cave-chat-context-breakdown__bar {
+  display: flex;
+  width: 100%;
+  height: var(--space-3);
+  margin-top: var(--space-3);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--foreground) 12%, transparent);
+}
+
+.cave-chat-context-breakdown__segment {
+  display: block;
+  min-width: 2px;
+  height: 100%;
+}
+
+.cave-chat-context-breakdown__rows {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+}
+
+.cave-chat-context-breakdown__row {
+  min-height: var(--space-6);
+}
+
+.cave-chat-context-breakdown__label {
+  min-width: 0;
+  color: var(--text-secondary);
+  text-transform: lowercase;
+}
+
+.cave-chat-context-breakdown__value {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cave-chat-context-breakdown__note {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-align: right;
 }
 
 /* ── ⑤ Suggestions spread the full width ───────────────────────────────────

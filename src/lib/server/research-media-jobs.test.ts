@@ -102,8 +102,33 @@ async function seed(familiarId: string, generations: unknown[]) {
   );
 }
 
-async function nextTurn(): Promise<void> {
-  await new Promise<void>((resolve) => setImmediate(resolve));
+// These tests assert ORDERING and correctness — FIFO position, compare-and-set
+// happening exactly once — never latency. So the waits below are deadlines
+// generous enough that a loaded machine cannot exhaust them, not budgets that
+// double as performance assertions (cave-a1qys).
+//
+// They previously did the opposite, and inconsistently: waitForStatus polled
+// 100 times with setImmediate, which is an event-loop TURN budget and can
+// elapse in under a millisecond, while its siblings allowed 100 x 5ms = 500ms
+// for the same class of event — a 500x spread with no stated reason. Under
+// contention both expired, and correctness assertions failed for scheduling
+// reasons: "generation X never reached rendering", "runner only started 0 of 1".
+const WAIT_TIMEOUT_MS = 15_000;
+const WAIT_POLL_MS = 5;
+
+/** Poll until `probe` returns something truthy, or fail with `describe()`. */
+async function waitFor<T>(
+  probe: () => T | Promise<T>,
+  describe: () => string,
+  timeoutMs = WAIT_TIMEOUT_MS,
+): Promise<NonNullable<T>> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await probe();
+    if (value) return value as NonNullable<T>;
+    if (Date.now() >= deadline) assert.fail(describe());
+    await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
+  }
 }
 
 async function waitForStatus(
@@ -111,34 +136,32 @@ async function waitForStatus(
   generationId: string,
   status: ResearchGeneration["status"],
 ): Promise<ResearchGeneration> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const current = (await listResearchGenerations(familiarId)).find(
-      (item) => item.id === generationId,
-    );
-    if (current?.status === status) return current;
-    await nextTurn();
-  }
-  assert.fail(`generation ${generationId} never reached ${status}`);
+  return waitFor(
+    async () => {
+      const current = (await listResearchGenerations(familiarId)).find(
+        (item) => item.id === generationId,
+      );
+      return current?.status === status ? current : null;
+    },
+    () => `generation ${generationId} never reached ${status}`,
+  );
 }
 
 async function waitForStarts(starts: string[], count: number): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (starts.length >= count) return;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  assert.fail(`runner only started ${starts.length} of ${count} expected jobs`);
+  await waitFor(
+    () => starts.length >= count,
+    () => `runner only started ${starts.length} of ${count} expected jobs`,
+  );
 }
 
 async function waitForRelease(
   releases: Map<string, () => void>,
   generationId: string,
 ): Promise<() => void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const release = releases.get(generationId);
-    if (release) return release;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  assert.fail(`runner never created a release for ${generationId}`);
+  return waitFor(
+    () => releases.get(generationId) ?? null,
+    () => `runner never created a release for ${generationId}`,
+  );
 }
 
 function blockingFactory(
@@ -579,12 +602,13 @@ test("cancellation in another process aborts the durable lease owner's job", asy
     ],
     { timeout: 10_000 },
   );
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    const started = await readFile(eventsPath, "utf8").catch(() => "");
-    if (started.includes("started")) break;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    if (attempt === 199) assert.fail("child runner never started");
-  }
+  // Waits on a SPAWNED CHILD, which the spawn above already allows 10s for —
+  // the old 200 x 10ms budget here was 5x tighter than the process it waited
+  // on, so a loaded machine failed the wait before the child could start.
+  await waitFor(
+    async () => (await readFile(eventsPath, "utf8").catch(() => "")).includes("started"),
+    () => "child runner never started",
+  );
 
   const cancelled = await cancelResearchMediaJob(familiarId, generationId);
   assert.equal(cancelled.ok, true);
@@ -640,14 +664,19 @@ test("a transient terminal write failure is reconciled after storage recovers", 
   await restoredPromise;
   assert.equal(restoreFailure, undefined);
 
-  let failed: ResearchGeneration | undefined;
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    failed = (await listResearchGenerations(familiarId)).find(
-      (candidate) => candidate.id === generationId,
-    );
-    if (failed?.status === "failed") break;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+  // This loop used to fall THROUGH on timeout into the assertion below, so an
+  // expired wait surfaced as "Expected values to be strictly equal: undefined"
+  // — a timeout wearing a value mismatch's clothing, which reads like a real
+  // concurrency bug in the code under test. waitFor fails with the reason.
+  const failed = await waitFor(
+    async () => {
+      const current = (await listResearchGenerations(familiarId)).find(
+        (candidate) => candidate.id === generationId,
+      );
+      return current?.status === "failed" ? current : null;
+    },
+    () => `generation ${generationId} never reached failed`,
+  );
   assert.equal(failed?.status, "failed");
   assert.equal(failed?.error, "interrupted by runner ownership loss");
 });

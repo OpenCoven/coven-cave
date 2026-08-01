@@ -865,7 +865,7 @@ node scripts/worktree-lifecycle-create.test.mjs
 
 Expected: `worktree-lifecycle-create.test.mjs: ok`.
 
-- [ ] **Step 5: Wire the managed command and test**
+- [x] **Step 5: Wire the managed command and test**
 
 Add to `package.json`:
 
@@ -879,7 +879,7 @@ Add to the app suite in `scripts/run-tests.mjs`:
 "scripts/worktree-lifecycle-create.test.mjs",
 ```
 
-- [ ] **Step 6: Run test wiring**
+- [x] **Step 6: Run test wiring**
 
 Run:
 
@@ -889,7 +889,7 @@ node scripts/check-tests-wired.mjs
 
 Expected: all test files are wired.
 
-- [ ] **Step 7: Commit managed creation**
+- [x] **Step 7: Commit managed creation**
 
 ```bash
 git add scripts/worktree-lifecycle-create.ts scripts/worktree-lifecycle-create.test.mjs package.json scripts/run-tests.mjs
@@ -902,7 +902,7 @@ git commit -S -m "feat(worktrees): enforce managed creation policy"
 - Create: `scripts/worktree-lifecycle-retirement.ts`
 - Create: `scripts/worktree-lifecycle-retirement.test.mjs`
 
-- [ ] **Step 1: Write failing transaction tests with injected operations**
+- [x] **Step 1: Write failing transaction tests with injected operations**
 
 Build a fixture operations object that records calls and mutates an in-memory
 registration/ref model:
@@ -967,7 +967,7 @@ assert.equal(state.remoteRefs.get("refs/heads/feat/old"), "a".repeat(40));
 assert.equal(report.remoteDeletionProposals.length, 1);
 ```
 
-- [ ] **Step 2: Run the new test and verify the module is missing**
+- [x] **Step 2: Run the new test and verify the module is missing**
 
 Run:
 
@@ -978,7 +978,7 @@ node scripts/worktree-lifecycle-retirement.test.mjs
 Expected: FAIL with module-not-found for
 `scripts/worktree-lifecycle-retirement.ts`.
 
-- [ ] **Step 3: Implement the transaction interface**
+- [x] **Step 3: Implement the transaction interface**
 
 Define exact result types and keep all mutation behind injected operations:
 
@@ -1085,7 +1085,7 @@ Disposable ignored cleanup may remove only exact paths accepted by
 worktree. It must reject symlink traversal and must not accept caller-supplied
 absolute cleanup paths.
 
-- [ ] **Step 4: Run retirement tests**
+- [x] **Step 4: Run retirement tests**
 
 Run:
 
@@ -1095,7 +1095,7 @@ node scripts/worktree-lifecycle-retirement.test.mjs
 
 Expected: `worktree-lifecycle-retirement.test.mjs: ok`.
 
-- [ ] **Step 5: Commit the dormant transaction engine**
+- [x] **Step 5: Commit the dormant transaction engine**
 
 ```bash
 git add scripts/worktree-lifecycle-retirement.ts scripts/worktree-lifecycle-retirement.test.mjs
