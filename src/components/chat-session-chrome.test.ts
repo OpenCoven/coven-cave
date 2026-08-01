@@ -18,18 +18,11 @@ const contextRow = readFileSync(new URL("./chat-session-context-row.tsx", import
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const emptyState = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
-// Includes the cave-chat/* sheets. #3576 decomposed cave-chat.css into them
-// and this list was never updated, so four pins here have been matching an
-// empty haystack ever since — green for the wrong reason.
-const styles = [
-  "cave-chat",
-  "chat-list",
-  "cave-chat/activity",
-  "cave-chat/transcript",
-  "cave-chat/bubbles",
-  "cave-chat/session-chrome",
-  "cave-chat/auxiliary-surfaces",
-]
+// Facade sheets resolve to their effective content: run-tests.mjs loads
+// scripts/css-source-contract-hook.cjs, which patches readFileSync so
+// cave-chat.css yields everything it @imports. Run these files through the
+// runner — invoking them bare skips the hook and fails for the wrong reason.
+const styles = ["cave-chat", "chat-list"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 const shellNav = readFileSync(new URL("../styles/globals/shell-navigation.css", import.meta.url), "utf8");

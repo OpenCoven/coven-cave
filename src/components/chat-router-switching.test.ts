@@ -229,21 +229,9 @@ const chatViewSource = readFileSync(new URL("./chat-view.tsx", import.meta.url),
 // The controls moved into the band, so the find-chrome pins read both files.
 const findChromeSource =
   chatViewSource + readFileSync(new URL("./chat-find-band.tsx", import.meta.url), "utf8");
-// Includes the cave-chat/* sheets: #3576 decomposed cave-chat.css and moved
-// rules like .cave-turn-found into them, but this list was not updated, so the
-// pins below were matching against files that no longer owned them.
-const chatCssSource = [
-  "cave-md",
-  "cave-composer",
-  "chat-list",
-  "calendar",
-  "cave-chat",
-  "cave-chat/activity",
-  "cave-chat/transcript",
-  "cave-chat/bubbles",
-  "cave-chat/session-chrome",
-  "cave-chat/auxiliary-surfaces",
-]
+// cave-chat.css is a facade of @imports; the runner's css-source-contract-hook
+// patches readFileSync so it yields the effective content of the split sheets.
+const chatCssSource = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 
