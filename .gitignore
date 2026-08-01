@@ -104,7 +104,12 @@ package-lock.json
 /.playwright-cli
 /graphify-out
 /artifacts
-/docs/superpowers
+# NOT ignored: /docs/superpowers. Beads cite specs and plans there as the
+# authoritative approved design, so ignoring it meant `git add` silently
+# dropped them and the design died with the authoring machine — four approved
+# designs were lost that way before anyone noticed (cave-8zjr5). The directory
+# is 100% markdown; `/.superpowers` above is the tool's scratch dir and stays
+# ignored.
 
 # Generated Canvas Sketch sandbox runtime (built in prebuild)
 /public/sandbox/
