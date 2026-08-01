@@ -137,8 +137,9 @@ ds-bundle/
 /.copilot
 /.codex-tmp
 /.worktree-lifecycle-fixture-gILphr
+/.worktree-lifecycle-fixture-*
 __verify-chat-detail.mjs
 /.worktree-lifecycle-fixture-nsQqub
 /.worktree-lifecycle-fixture-Lh7Y4s
 /.worktree-lifecycle-fixture-eTlVOX
-/.worktree-lifecycle-fixture-*
+/.worktree-lifecycle-fixture-bWPzfW
