@@ -198,8 +198,8 @@ test("2b — 'Start from' is always visible and launches work that already exist
   // since (Queue, cave-3lonn) joins this same disjunction.
   assert.match(
     emptyState,
-    /const startFromVisible =\s*\n?\s*railVisible \|\| recents\.length > 0/,
-    "the launcher shows when there is work to start from",
+    /\{bands\.length > 0 \? <ChatStartFromBands bands=\{bands\} \/> : null\}/,
+    "the launcher shows whenever any source contributed a band",
   );
   assert.doesNotMatch(
     emptyState,
@@ -221,18 +221,20 @@ test("2b — 'Start from' is always visible and launches work that already exist
   // the redesign adds structure without adding weight to the home CSS.
   assert.match(
     emptyState,
-    /className="cave-chat-empty-task"[\s\S]{0,500}?onClick=\{\(\) => void resumeCard\(card\)\}/,
-    "task rows still resume through the board chat route",
+    /meta: tasksGroup,[\s\S]{0,1600}?onPick: \(\) => void resumeCard\(card\)/,
+    "task tiles still resume through the board chat route",
   );
   assert.match(
     emptyState,
-    /className="cave-chat-empty-recent"[\s\S]{0,400}?onClick=\{\(\) => openSession\(session\.id, session\.familiarId\)\}/,
-    "thread rows still open through the shared open-session event",
+    /meta: chatsGroup,[\s\S]{0,900}?onPick: \(\) => openSession\(session\.id, session\.familiarId\)/,
+    "thread tiles still open through the shared open-session event",
   );
+  // Each band head states how much of its source is on screen — the count now
+  // comes from the shared launcher, so it cannot drift per surface.
   assert.match(
-    emptyState,
-    /className="cave-chat-startfrom__count">\{tasksGroup\.count\}/,
-    "each group states how much of its source is on screen",
+    readFileSync(new URL("./chat-start-from-bands.tsx", import.meta.url), "utf8"),
+    /className="cave-sf__band-count">\{meta\.count\}/,
+    "each band states how much of its source is on screen",
   );
 });
 

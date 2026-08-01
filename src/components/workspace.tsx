@@ -58,6 +58,7 @@ import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
 import { useCanonicalMemoryWarmup } from "@/lib/use-canonical-memory-warmup";
 import { canonicalMemoryLocalAccessEligible } from "@/lib/canonical-memory-local-access";
@@ -68,10 +69,17 @@ import {
   rejectPendingCanonicalMemorySelection,
   type PendingCanonicalMemorySelection,
 } from "@/lib/canonical-memory";
-import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
+import {
+  classifyDaemonConnectionTravelCadence,
+  classifyDaemonStatusPoll,
+} from "@/lib/daemon-status-classification";
+import {
+  createDaemonConnectionSupervisor,
+  type DaemonConnectionPoll,
+} from "@/lib/daemon-connection-supervisor";
+import { createDaemonTravelReconcileRequester } from "@/lib/daemon-travel-reconcile-client";
 import {
   createDaemonDesktopAutoStartCoordinator,
-  createDaemonStatusRequestGate,
   runWorkspaceDaemonStart,
 } from "@/lib/daemon-desktop-auto-start";
 import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
@@ -562,10 +570,8 @@ export function Workspace() {
   const [authExpired, setAuthExpired] = useState(false);
   const [daemonStatusUnavailable, setDaemonStatusUnavailable] = useState<string | null>(null);
   const daemonHealthyStreakRef = useRef(0);
-  const daemonStatusRequestGateRef = useRef<ReturnType<typeof createDaemonStatusRequestGate> | null>(null);
-  if (daemonStatusRequestGateRef.current === null) {
-    daemonStatusRequestGateRef.current = createDaemonStatusRequestGate();
-  }
+  const daemonConnectionSupervisorRef = useRef<ReturnType<typeof createDaemonConnectionSupervisor> | null>(null);
+  const daemonTravelReconcileRequesterRef = useRef<ReturnType<typeof createDaemonTravelReconcileRequester> | null>(null);
   const startDaemonRef = useRef<() => Promise<void>>(async () => {});
   const daemonAutoStartCoordinatorRef = useRef<ReturnType<typeof createDaemonDesktopAutoStartCoordinator> | null>(null);
   if (daemonAutoStartCoordinatorRef.current === null) {
@@ -760,34 +766,16 @@ export function Workspace() {
   // (fetches its own unscoped roster/session data once per check).
   useMilestoneWatch();
 
-  const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {
-    const requestGate = daemonStatusRequestGateRef.current!;
-    const requestId = requestGate.begin();
-    let result: ReturnType<typeof classifyDaemonStatusPoll>;
-    let credentialAccepted = false;
-    try {
-      const res = await fetch("/api/daemon/status", { cache: "no-store" });
-      const payload = await res.json().catch(() => null);
-      result = classifyDaemonStatusPoll({
-        responseStatus: res.status,
-        responseOk: res.ok,
-        payload,
-      });
-      // A real non-401 response proves the Cave credential is accepted again.
-      credentialAccepted = res.status !== 401;
-    } catch {
-      result = classifyDaemonStatusPoll({
-        responseStatus: 0,
-        responseOk: false,
-        payload: null,
-        error: "status request failed",
-      });
+  const applyDaemonConnectionPoll = useCallback((poll: DaemonConnectionPoll, context: { fresh: boolean }) => {
+    const travelCadence = classifyDaemonConnectionTravelCadence(poll.payload);
+    if (travelCadence === "hub-unreachable") {
+      daemonTravelReconcileRequesterRef.current?.observeHubState("unreachable");
+    } else if (travelCadence === "hub-reachable") {
+      daemonTravelReconcileRequesterRef.current?.observeHubState("reachable");
+    } else if (travelCadence === "non-hub") {
+      daemonTravelReconcileRequesterRef.current?.observeHubState("inactive");
     }
-
-    // An explicit refresh after Start can overtake an older background poll.
-    // Only the newest request may publish state, or that stale offline result
-    // can put the banner back after the daemon is already healthy.
-    if (!requestGate.isLatest(requestId)) return;
+    const result = classifyDaemonStatusPoll(poll);
     // The coordinator pins this first accepted decision. Later polls may update
     // live UI state, but can never turn into a delayed automatic restart.
     daemonAutoStartCoordinatorRef.current!.observeStatus(result);
@@ -796,7 +784,8 @@ export function Workspace() {
     } else {
       setAcceptedLocalDaemonHealthy(false);
     }
-    if (credentialAccepted) setAuthExpired(false);
+    // A real non-401 response proves the Cave credential is accepted again.
+    if (poll.responseStatus !== 401) setAuthExpired(false);
 
     setDaemonStatusResolved(true);
     if (result.kind === "auth-expired") {
@@ -824,8 +813,12 @@ export function Workspace() {
     // healthy answer is enough to clear the banner immediately — without it
     // the "Start daemon" banner lingered for a poll cycle (~5s) after the
     // daemon was already up.
-    if (opts?.trusted) daemonHealthyStreakRef.current = 2;
+    if (context.fresh) daemonHealthyStreakRef.current = 2;
     if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
+  }, []);
+
+  const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean; fresh?: boolean }) => {
+    await daemonConnectionSupervisorRef.current?.refresh({ fresh: opts?.fresh === true || opts?.trusted === true });
   }, []);
 
   const startDaemon = useCallback(async () => {
@@ -849,6 +842,58 @@ export function Workspace() {
   useEffect(() => {
     daemonAutoStartCoordinatorRef.current!.observePlatform(tauriPlatform);
   }, [tauriPlatform]);
+
+  useEffect(() => {
+    const requester = createDaemonTravelReconcileRequester({
+      request: async ({ signal }) => {
+        const response = await fetch("/api/daemon/travel/reconcile", {
+          method: "POST",
+          cache: "no-store",
+          signal,
+        });
+        if (!response.ok) throw new Error("daemon travel reconcile failed");
+      },
+    });
+    const supervisor = createDaemonConnectionSupervisor({
+      request: async ({ signal, fresh }) => {
+        const response = await fetch(fresh ? "/api/daemon/connection?fresh=1" : "/api/daemon/connection", {
+          cache: "no-store",
+          signal,
+        });
+        const payload = await response.json().catch(() => null);
+        return {
+          responseStatus: response.status,
+          responseOk: response.ok,
+          payload,
+        };
+      },
+      publish: applyDaemonConnectionPoll,
+      isVisible: () => !document.hidden,
+    });
+    daemonTravelReconcileRequesterRef.current = requester;
+    daemonConnectionSupervisorRef.current = supervisor;
+
+    const onDaemonConnectionVisibilityChange = () => {
+      const visible = !document.hidden;
+      requester.setActive(visible);
+      supervisor.setVisible(visible);
+    };
+
+    requester.setActive(!document.hidden);
+    document.addEventListener("visibilitychange", onDaemonConnectionVisibilityChange);
+    supervisor.start();
+    return () => {
+      document.removeEventListener("visibilitychange", onDaemonConnectionVisibilityChange);
+      requester.stop();
+      supervisor.stop();
+      daemonTravelReconcileRequesterRef.current = null;
+      daemonConnectionSupervisorRef.current = null;
+    };
+  }, [applyDaemonConnectionPoll]);
+
+  useRefreshOnFocus(() => {
+    void daemonConnectionSupervisorRef.current?.refresh({ fresh: true });
+  });
 
   // One-shot legacy localStorage key sweep: runs once per browser profile,
   // then marks itself done so it never re-runs.
@@ -979,15 +1024,6 @@ export function Workspace() {
     };
   }, []);
 
-  // Daemon status poll (previously lived on DaemonBar before chrome consolidation)
-  // — pauses while the tab is hidden and refreshes on return (usePausablePoll).
-  useEffect(() => {
-    void refreshDaemonStatus();
-  }, [refreshDaemonStatus]);
-  usePausablePoll(() => void refreshDaemonStatus(), 5000, {
-    pauseWhileInputActive: true,
-  });
-
   // Push / dismiss the daemon-offline banner into the shared shell channel so
   // it appears at the top of every surface, not just Chat. While the access
   // token is rejected the daemon state is unknowable — suppress this banner
@@ -1028,7 +1064,7 @@ export function Workspace() {
       cta: {
         label: "Retry",
         onClick: () => {
-          void refreshDaemonStatus();
+          void refreshDaemonStatus({ fresh: true });
         },
       },
     });

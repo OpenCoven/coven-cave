@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { devNull } from "node:os";
+
 import path from "node:path";
 import {
   calculateLifecycleBudgets,
@@ -58,6 +59,11 @@ type RemoteDefaultBranch = {
   remoteRef: string | null;
   localTrackingRef: string | null;
   oid: string | null;
+  error: string | null;
+};
+
+type OriginRepositoryIdentity = {
+  repository: string | null;
   error: string | null;
 };
 
@@ -140,6 +146,7 @@ const GITHUB_REPOSITORY = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const RFC3339_INSTANT =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-](\d{2}):(\d{2}))$/;
 const ISO_CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const HISTORY_OVERRIDE_DRIFT_ERROR = "history override inventory changed during patrol";
 
 function isRealCalendarDate(year: number, month: number, day: number): boolean {
   if (month < 1 || month > 12 || day < 1) return false;
@@ -260,9 +267,11 @@ const UNSAFE_GIT_ENVIRONMENT = new Set([
 function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
+    const canonicalKey = key.toUpperCase();
     if (
-      UNSAFE_GIT_ENVIRONMENT.has(key) ||
-      /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/.test(key)
+      UNSAFE_GIT_ENVIRONMENT.has(canonicalKey) ||
+      /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/.test(canonicalKey)
+
     ) {
       delete env[key];
     }
@@ -272,7 +281,7 @@ function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
 }
 
 function git(root: string, args: string[], timeout?: number): CommandResult {
-  return command(
+  const result = command(
     "git",
     [
       "--no-optional-locks",
@@ -287,6 +296,11 @@ function git(root: string, args: string[], timeout?: number): CommandResult {
     timeout,
     sanitizedGitEnvironment(),
   );
+  if (result.status === 0 && result.stderr.length > 0) {
+    return { ...result, ok: false };
+  }
+  return result;
+
 }
 
 function requiredGit(root: string, args: string[]): string {
@@ -345,6 +359,7 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
       if (ref === null) {
         return {
           path: normalizedWorktreePath,
+
           head,
           ref: null,
           branch: null,
@@ -377,6 +392,7 @@ function parseLocalBranchRefs(raw: string): LocalBranchRef[] {
   if (chunks.pop() !== "\n" || chunks.length === 0) {
     throw new Error("malformed local branch inventory");
   }
+  const seen = new Set<string>();
   return chunks.map((chunk, index) => {
     const record = index === 0 ? chunk : chunk.startsWith("\n") ? chunk.slice(1) : "";
     const fields = record.split("\n");
@@ -386,6 +402,10 @@ function parseLocalBranchRefs(raw: string): LocalBranchRef[] {
     if (!match || !match[1] || !oid || !OID.test(oid)) {
       throw new Error("malformed local branch inventory");
     }
+    if (seen.has(ref)) {
+      throw new Error(`duplicate local branch ref: ${ref}`);
+    }
+    seen.add(ref);
     return { ref, branch: match[1], oid };
   });
 }
@@ -535,6 +555,7 @@ function updatedAt(
   ref: string | null,
   exactMergeAt: string | null,
   exactDefaultLandingAtMs: number | null,
+
   includeWorktreeHead: boolean,
 ): { value: number | null; error: string | null } {
   const target = includeWorktreeHead ? "HEAD" : ref;
@@ -569,6 +590,7 @@ function updatedAt(
   if (exactDefaultLandingAtMs !== null) {
     epochs.push(exactDefaultLandingAtMs);
   }
+
   if (
     epochs.length === 0 ||
     !commit.ok ||
@@ -1572,69 +1594,82 @@ function onDefaultBranch(root: string, head: string, authoritativeDefaultOid: st
   error: string | null;
 } {
   const result = git(root, ["merge-base", "--is-ancestor", head, authoritativeDefaultOid]);
-  if (result.status === 0) return { value: true, error: null };
-  if (result.status === 1) return { value: false, error: null };
+  if (result.status === 0 && result.ok) return { value: true, error: null };
+  if (result.status === 1 && result.stderr.length === 0) return { value: false, error: null };
   return { value: false, error: result.stderr || "default-branch ancestry check failed" };
 }
 
-function defaultLandingAt(
+function exactDefaultLandingAt(
   root: string,
   head: string,
   authoritativeDefaultOid: string,
+  exactMergedAt: string | null,
 ): { value: number | null; error: string | null } {
   if (!OID.test(head) || !OID.test(authoritativeDefaultOid)) {
     return { value: null, error: "default branch landing evidence has malformed OIDs" };
   }
 
-  let landingOid = head;
-  if (head !== authoritativeDefaultOid) {
-    const ancestryPath = git(root, [
-      "rev-list",
-      "--ancestry-path",
-      "--first-parent",
-      "--reverse",
-      "--parents",
-      `${head}..${authoritativeDefaultOid}`,
-    ]);
-    if (!ancestryPath.ok || ancestryPath.stderr) {
+  if (head === authoritativeDefaultOid) {
+    if (exactMergedAt === null) {
       return {
         value: null,
-        error: `default branch landing ancestry path unavailable: ${
-          ancestryPath.stderr || `status ${ancestryPath.status ?? "unknown"}`
-        }`,
+        error:
+          "default branch landing time is unprovable when candidate equals captured default: remote ref-move time is unavailable without an exact merged PR timestamp",
       };
     }
-    const lines = strictOutputLines(ancestryPath.stdout);
-    if (!lines) {
-      return { value: null, error: "default branch landing evidence is malformed" };
+    const exactMergedAtMs = Date.parse(exactMergedAt);
+    if (!Number.isFinite(exactMergedAtMs)) {
+      return { value: null, error: "default branch landing timestamp is malformed" };
     }
-    const seen = new Set<string>();
-    const records: Array<{ oid: string; parents: string[] }> = [];
-    for (const line of lines) {
-      const fields = line.split(" ");
-      const [oid, ...parents] = fields;
-      if (
-        fields.some((field) => !OID.test(field)) ||
-        !oid ||
-        parents.length === 0 ||
-        seen.has(oid) ||
-        new Set(fields).size !== fields.length
-      ) {
-        return { value: null, error: "default branch landing evidence is malformed" };
-      }
-      seen.add(oid);
-      records.push({ oid, parents });
-    }
-    if (records.at(-1)?.oid !== authoritativeDefaultOid) {
-      return { value: null, error: "default branch landing evidence is malformed" };
-    }
-    for (let index = 1; index < records.length; index += 1) {
-      if (records[index]!.parents[0] !== records[index - 1]!.oid) {
-        return { value: null, error: "default branch landing evidence is ambiguous" };
-      }
-    }
-    landingOid = records[0]!.oid;
+    return { value: exactMergedAtMs, error: null };
   }
+
+  const ancestryPath = git(root, [
+    "rev-list",
+    "--ancestry-path",
+    "--first-parent",
+    "--reverse",
+    "--parents",
+    `${head}..${authoritativeDefaultOid}`,
+  ]);
+  if (!ancestryPath.ok || ancestryPath.stderr) {
+    return {
+      value: null,
+      error: `default branch landing ancestry path unavailable: ${
+        ancestryPath.stderr || `status ${ancestryPath.status ?? "unknown"}`
+      }`,
+    };
+  }
+  const lines = strictOutputLines(ancestryPath.stdout);
+  if (!lines) {
+    return { value: null, error: "default branch landing evidence is malformed" };
+  }
+  const seen = new Set<string>();
+  const records: Array<{ oid: string; parents: string[] }> = [];
+  for (const line of lines) {
+    const fields = line.split(" ");
+    const [oid, ...parents] = fields;
+    if (
+      fields.some((field) => !OID.test(field)) ||
+      !oid ||
+      parents.length === 0 ||
+      seen.has(oid) ||
+      new Set(fields).size !== fields.length
+    ) {
+      return { value: null, error: "default branch landing evidence is malformed" };
+    }
+    seen.add(oid);
+    records.push({ oid, parents });
+  }
+  if (records.at(-1)?.oid !== authoritativeDefaultOid) {
+    return { value: null, error: "default branch landing evidence is malformed" };
+  }
+  for (let index = 1; index < records.length; index += 1) {
+    if (records[index]!.parents[0] !== records[index - 1]!.oid) {
+      return { value: null, error: "default branch landing evidence is ambiguous" };
+    }
+  }
+  const landingOid = records[0]!.oid;
 
   const timestamp = git(root, [
     "show",
@@ -1670,8 +1705,8 @@ function defaultLandingAt(
 
 function directRefError(root: string, ref: string): string | null {
   const result = git(root, ["symbolic-ref", "-q", ref]);
-  if (result.status === 1) return null;
-  if (result.status === 0) return `local branch ref is symbolic: ${ref}`;
+  if (result.status === 1 && result.stderr.length === 0) return null;
+  if (result.status === 0 && result.ok) return `local branch ref is symbolic: ${ref}`;
   return result.stderr || `local ref directness check failed for ${ref}`;
 }
 
@@ -1742,7 +1777,14 @@ function exactRemoteRef(
 } {
   const label = options.label ?? "same-named remote ref";
   const result = git(root, ["ls-remote", "--exit-code", "--heads", "origin", ref], 60_000);
+  if (result.stderr) {
+    return {
+      remoteRef: null,
+      error: `${label} probe failed for ${ref}: ${result.stderr}`,
+    };
+  }
   if (result.status === 2) {
+
     return {
       remoteRef: null,
       error: options.required ? `${label} is missing for ${ref}` : null,
@@ -1769,6 +1811,204 @@ function strictOutputLines(raw: string): string[] | null {
   if (!body || body.endsWith("\n") || body.includes("\r")) return null;
   const lines = body.split("\n");
   return lines.every((line) => line.length > 0) ? lines : null;
+}
+
+function parseGitHubRepositoryUrl(
+  value: string,
+): { repository: string | null; error: "malformed" | "non-github" | null } {
+  const scpMatch = value.match(
+    /^git@([^:/]+):([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/,
+  );
+  if (scpMatch) {
+    return scpMatch[1]!.toLowerCase() === "github.com"
+      ? { repository: `${scpMatch[2]}/${scpMatch[3]}`, error: null }
+      : { repository: null, error: "non-github" };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return { repository: null, error: "malformed" };
+  }
+  const supportedProtocol = parsed.protocol === "https:" || parsed.protocol === "ssh:";
+  if (!supportedProtocol || parsed.hostname.toLowerCase() !== "github.com") {
+    return { repository: null, error: "non-github" };
+  }
+  if (
+    parsed.port !== "" ||
+    parsed.password !== "" ||
+    parsed.search !== "" ||
+    parsed.hash !== "" ||
+    (parsed.protocol === "https:" && parsed.username !== "") ||
+    (parsed.protocol === "ssh:" && parsed.username !== "git")
+  ) {
+    return { repository: null, error: "malformed" };
+  }
+  const pathMatch = parsed.pathname.match(
+    /^\/([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/,
+  );
+  return pathMatch
+    ? { repository: `${pathMatch[1]}/${pathMatch[2]}`, error: null }
+    : { repository: null, error: "malformed" };
+}
+
+function originRepositoryIdentity(root: string, requestedRepo: string): OriginRepositoryIdentity {
+  const fail = (detail: string): OriginRepositoryIdentity => ({
+    repository: null,
+    error: `origin remote identity ${detail}`,
+  });
+  const fetchUrls = git(root, ["remote", "get-url", "--all", "origin"]);
+  if (!fetchUrls.ok) {
+    return fail(`fetch URL probe failed: ${fetchUrls.stderr || "command unavailable"}`);
+  }
+  const pushUrls = git(root, ["remote", "get-url", "--push", "--all", "origin"]);
+  if (!pushUrls.ok) {
+    return fail(`push URL probe failed: ${pushUrls.stderr || "command unavailable"}`);
+  }
+  const fetchLines = strictOutputLines(fetchUrls.stdout);
+  const pushLines = strictOutputLines(pushUrls.stdout);
+  if (!fetchLines) return fail("has malformed fetch URL inventory");
+  if (!pushLines) return fail("has malformed push URL inventory");
+  if (pushLines.length !== 1) return fail("has multiple or ambiguous push destinations");
+
+  const repositories: string[] = [];
+  for (const [kind, urls] of [
+    ["fetch", fetchLines],
+    ["push", pushLines],
+  ] as const) {
+    for (const url of urls) {
+      const parsed = parseGitHubRepositoryUrl(url);
+      if (parsed.error === "non-github") return fail(`has a non-GitHub ${kind} URL`);
+      if (parsed.error !== null || parsed.repository === null) {
+        return fail(`has a malformed ${kind} URL`);
+      }
+      repositories.push(parsed.repository);
+    }
+  }
+  const identities = new Map(repositories.map((repository) => [repository.toLowerCase(), repository]));
+  if (identities.size !== 1) return fail("has differing fetch and push repositories");
+  const repository = [...identities.values()][0]!;
+  if (repository.toLowerCase() !== requestedRepo.toLowerCase()) {
+    return fail(`mismatch: expected ${requestedRepo}, received ${repository}`);
+  }
+  return { repository, error: null };
+}
+
+function remoteTrackingReflogIntegrationAt(
+  root: string,
+  localTrackingRef: string,
+  authoritativeDefaultOid: string,
+): { value: number | null; error: string | null } {
+  const result = git(root, [
+    "reflog",
+    "show",
+    "-1",
+    "--date=unix",
+    "--format=%H%x00%gD",
+    localTrackingRef,
+  ]);
+  if (!result.ok) {
+    return {
+      value: null,
+      error: `default integration tracking reflog unavailable: ${
+        result.stderr || "command unavailable"
+      }`,
+    };
+  }
+  const escapedRef = localTrackingRef.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = result.stdout.match(
+    new RegExp(
+      `^((?:[0-9a-f]{40}|[0-9a-f]{64}))\\0${escapedRef}@\\{(\\d+)\\}\\n?$`,
+    ),
+  );
+  if (!match || match[1] !== authoritativeDefaultOid) {
+    return {
+      value: null,
+      error: "default integration tracking reflog returned malformed or mismatched data",
+    };
+  }
+  const epoch = Number(match[2]);
+  const epochMs = epoch * 1000;
+  if (
+    !Number.isSafeInteger(epoch) ||
+    epoch <= 0 ||
+    !Number.isSafeInteger(epochMs) ||
+    !Number.isFinite(new Date(epochMs).getTime())
+  ) {
+    return { value: null, error: "default integration tracking reflog timestamp is invalid" };
+  }
+  return { value: epochMs, error: null };
+}
+
+function defaultIntegrationAt(
+  root: string,
+  head: string,
+  defaultBranch: RemoteDefaultBranch,
+  provenAncestor: boolean,
+): { value: number | null; error: string | null } {
+  if (
+    !provenAncestor ||
+    defaultBranch.oid === null ||
+    defaultBranch.localTrackingRef === null
+  ) {
+    return { value: null, error: null };
+  }
+  if (head === defaultBranch.oid) {
+    return remoteTrackingReflogIntegrationAt(
+      root,
+      defaultBranch.localTrackingRef,
+      defaultBranch.oid,
+    );
+  }
+
+  const pathResult = git(root, [
+    "rev-list",
+    "--ancestry-path",
+    "--reverse",
+    "--topo-order",
+    `${head}..${defaultBranch.oid}`,
+  ]);
+  if (!pathResult.ok) {
+    return {
+      value: null,
+      error: `default integration ancestry path unavailable: ${
+        pathResult.stderr || "command unavailable"
+      }`,
+    };
+  }
+  if (pathResult.stdout === "") {
+    return remoteTrackingReflogIntegrationAt(
+      root,
+      defaultBranch.localTrackingRef,
+      defaultBranch.oid,
+    );
+  }
+  const descendants = strictOutputLines(pathResult.stdout);
+  if (!descendants || descendants.some((oid) => !OID.test(oid))) {
+    return { value: null, error: "default integration ancestry path returned malformed data" };
+  }
+  const timestamp = git(root, ["show", "-s", "--format=%ct", descendants[0]!]);
+  const timestampRaw = timestamp.stdout.trim();
+  if (!timestamp.ok || !/^\d+$/.test(timestampRaw)) {
+    return {
+      value: null,
+      error: `default integration timestamp is unavailable or malformed: ${
+        timestamp.stderr || timestampRaw || "command unavailable"
+      }`,
+    };
+  }
+  const epoch = Number(timestampRaw);
+  const epochMs = epoch * 1000;
+  if (
+    !Number.isSafeInteger(epoch) ||
+    epoch <= 0 ||
+    !Number.isSafeInteger(epochMs) ||
+    !Number.isFinite(new Date(epochMs).getTime())
+  ) {
+    return { value: null, error: "default integration timestamp is invalid" };
+  }
+  return { value: epochMs, error: null };
 }
 
 function remoteDefaultBranch(root: string): RemoteDefaultBranch {
@@ -1827,10 +2067,10 @@ function remoteDefaultBranch(root: string): RemoteDefaultBranch {
 
   const localTrackingRef = `refs/remotes/origin/${branch}`;
   const direct = git(root, ["symbolic-ref", "-q", localTrackingRef]);
-  if (direct.status === 0) {
+  if (direct.status === 0 && direct.ok) {
     return fail(`tracking ref ${localTrackingRef} is symbolic`);
   }
-  if (direct.status !== 1) {
+  if (direct.status !== 1 || direct.stderr.length > 0) {
     return fail(
       `tracking ref ${localTrackingRef} directness probe failed: ${
         direct.stderr || `status ${direct.status ?? "unknown"}`
@@ -1874,7 +2114,9 @@ function matchingTasks(
   const matchedBranch =
     branch !== null && !PROTECTED_BRANCHES.has(branch) ? branch : null;
   const branchBeadIds = new Set(matchedBranch ? beadIdsInText(matchedBranch) : []);
-  const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
+  const normalizedWorktreePath =
+    worktreePath === null ? null : normalizeAbsoluteWorktreePath(worktreePath);
+
   const exactOid = new RegExp(`(?:^|[^0-9a-f])${head}(?:$|[^0-9a-f])`, "i");
   return tasks
     .filter((task) => task.status !== "closed")
@@ -2050,6 +2292,12 @@ export function collectWorktreeLifecycleInventory(
     "--path-format=absolute",
     "--git-common-dir",
   ]).trim();
+  const initialGrafts = graftInventory(commonGitDir);
+  const initialReplacementRefsRaw = requiredGit(root, [
+    "for-each-ref",
+    "--format=%(refname)%0a%(objectname)%00",
+    "refs/replace",
+  ]);
   const primaryPath = normalizePath(path.dirname(commonGitDir));
   const initialHistoryOverrides = historyOverrideProbe(root, commonGitDir);
   const initialWorktreeRaw = requiredGit(root, ["worktree", "list", "--porcelain", "-z"]);
@@ -2108,7 +2356,17 @@ export function collectWorktreeLifecycleInventory(
       })),
   ];
 
-  const defaultBranch = remoteDefaultBranch(root);
+  const originIdentity = originRepositoryIdentity(root, options.repo);
+  const defaultBranch =
+    originIdentity.error === null
+      ? remoteDefaultBranch(root)
+      : {
+          branch: null,
+          remoteRef: null,
+          localTrackingRef: null,
+          oid: null,
+          error: originIdentity.error,
+        };
   const prs = fetchPullRequests(
     options.repo,
     root,
@@ -2133,6 +2391,8 @@ export function collectWorktreeLifecycleInventory(
         };
   const branchGlobalErrors = [
     ...initialHistoryOverrides.errors,
+    originIdentity.error,
+
     ...prs.globalErrors,
     workflows.error,
     claims.error,
@@ -2152,10 +2412,7 @@ export function collectWorktreeLifecycleInventory(
             error: defaultBranch.error ?? "default branch inventory verification failed",
           }
         : onDefaultBranch(root, unit.head, defaultBranch.oid);
-    const landing =
-      ancestry.value && defaultBranch.oid !== null
-        ? defaultLandingAt(root, unit.head, defaultBranch.oid)
-        : { value: null, error: null };
+    const integration = defaultIntegrationAt(root, unit.head, defaultBranch, ancestry.value);
     let pullRequestMergeError: string | null = null;
     let unitPullRequests: PullRequest[] = [];
     try {
@@ -2184,14 +2441,24 @@ export function collectWorktreeLifecycleInventory(
                 Date.parse(right.mergedAt!) - Date.parse(left.mergedAt!),
             )[0] ?? null
         : null;
+    const landing =
+      unit.branch !== null && ancestry.value && defaultBranch.oid !== null
+        ? exactDefaultLandingAt(
+            root,
+            unit.head,
+            defaultBranch.oid,
+            exactMerged?.mergedAt ?? null,
+          )
+        : { value: null, error: null };
     const recency = updatedAt(
       unit.path ?? root,
       unit.ref,
       exactMerged?.mergedAt ?? null,
       landing.value,
+
       unit.path !== null,
     );
-    const remote = unit.ref
+    const remote = unit.ref && originIdentity.error === null
       ? exactRemoteRef(root, unit.ref)
       : { remoteRef: null, error: null };
     const metadata = metadataFor(unit.branch, unit.path, tasks.tasks);
@@ -2210,20 +2477,25 @@ export function collectWorktreeLifecycleInventory(
       .map((run) => run.html_url);
     const pathErrors = unit.path ? [state.error, flags.error, processes.error, sessions.error] : [];
     const probeErrors = [
-      ...unit.initialErrors,
-      ...branchGlobalErrors,
-      prs.errorsByOid.get(unit.head),
-      ...(unit.branch ? [prs.errorsByBranch.get(unit.branch)] : []),
-      pullRequestMergeError,
-      ...pathErrors,
-      ...(unit.path ? (sessionOwnership.probeErrorsByPath.get(unit.path) ?? []) : []),
-      recency.error,
-      landing.error,
-      remoteRefs.error,
-      ancestry.error,
-      remote.error,
-      ...(unit.ref ? [directRefError(root, unit.ref)] : []),
-    ].filter((error): error is string => typeof error === "string");
+      ...new Set(
+        [
+          ...unit.initialErrors,
+          ...branchGlobalErrors,
+          prs.errorsByOid.get(unit.head),
+          ...(unit.branch ? [prs.errorsByBranch.get(unit.branch)] : []),
+          pullRequestMergeError,
+          ...pathErrors,
+          ...(unit.path ? (sessionOwnership.probeErrorsByPath.get(unit.path) ?? []) : []),
+          recency.error,
+          landing.error,
+          remoteRefs.error,
+          ancestry.error,
+          remote.error,
+          ...(unit.ref ? [directRefError(root, unit.ref)] : []),
+        ].filter((error): error is string => typeof error === "string"),
+      ),
+    ];
+
 
     return {
       kind: unit.kind,
@@ -2282,6 +2554,12 @@ export function collectWorktreeLifecycleInventory(
     finalHistoryOverrides.graftState !== initialHistoryOverrides.graftState
   ) {
     throw new Error("worktree or branch inventory changed during patrol");
+  }
+  if (
+    finalReplacementRefsRaw !== initialReplacementRefsRaw ||
+    finalGrafts.snapshot !== initialGrafts.snapshot
+  ) {
+    throw new Error(HISTORY_OVERRIDE_DRIFT_ERROR);
   }
 
   const structuredRecords = tasks.tasks

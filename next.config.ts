@@ -9,6 +9,10 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 const nextConfig: NextConfig = {
+  env: {
+    COVEN_CAVE_X_PRODUCTION_CLIENT_ID:
+      process.env.COVEN_CAVE_X_PRODUCTION_CLIENT_ID?.trim() ?? "",
+  },
   // The Next.js dev tools launcher renders in a portal at bottom-left by
   // default, which intercepts taps on Cave's mobile bottom tabs in local dev.
   devIndicators: false,
@@ -50,6 +54,10 @@ const nextConfig: NextConfig = {
       "./.git",
       "./.github/**/*",
       "./.gitignore",
+      // Lifecycle tests use repo-local mkdtemp roots so the inventory can
+      // exercise real Git. A killed test can leave one behind; never let NFT
+      // turn that disposable fixture into packaged server input.
+      "./.worktree-lifecycle-fixture-*/**/*",
       "./.next/cache/**/*",
       "./.next/dev/**/*",
       "./src-tauri/**/*",

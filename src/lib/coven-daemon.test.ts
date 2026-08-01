@@ -372,6 +372,29 @@ const {
   }
 }
 
+// Health checks can opt out of transport retries so the recurring heartbeat
+// reports the first failure immediately instead of stretching the outage.
+{
+  let attempts = 0;
+  const server = createServer((req, res) => {
+    attempts += 1;
+    res.socket.destroy();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const res = await callDaemonTarget(
+      { mode: "hub", label: "Server hub", url: `http://127.0.0.1:${port}` },
+      { path: "/api/v1/health", timeoutMs: 25, retryTransportFailure: false },
+    );
+    assert.equal(res.ok, false);
+    assert.equal(res.status, 0);
+    assert.equal(attempts, 1, "health checks must not retry transport failures when disabled");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
 // Opt-in response caps accept a body exactly at the boundary, reject the next
 // byte, and retain the HTTP status so the oversized response is not retried.
 {

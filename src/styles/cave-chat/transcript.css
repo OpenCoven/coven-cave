@@ -466,9 +466,9 @@
 
 
 .cave-chat-linear .cave-composer-shell {
-  /* Shares the thread's centered measure (cave-xsq.1) so the input sits directly
-     under the conversation column; base rule centers via margin auto. */
-  max-width: var(--cave-chat-measure);
+  /* Let the writing surface use the full dock even while the transcript keeps
+     its centered reading measure. */
+  max-width: 100%;
 }
 
 .cave-chat-linear .cave-composer-panel {
@@ -481,21 +481,21 @@
     inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
-/* Reference composer treatment: ChatView keeps the utility controls quiet and
-   makes one bright, square send control the clear end of the input row. */
+/* The in-chat action chrome stays compact so the full-width writing surface
+   remains dominant. Mobile restores touch-safe targets below. */
 .cave-chat-linear .cave-composer-footer-action,
 .cave-chat-linear .cave-composer-plus {
-  width: var(--space-10);
-  height: var(--space-10);
+  width: var(--space-6);
+  height: var(--space-6);
 }
 
 .cave-chat-linear .cave-composer-control-row {
-  min-height: var(--space-10);
+  min-height: var(--space-6);
 }
 
 .cave-chat-linear .cave-composer-send {
-  width: var(--space-10);
-  height: var(--space-10);
+  width: var(--space-6);
+  height: var(--space-6);
   border-color: transparent;
   border-radius: var(--radius-control);
   background: var(--text-primary);
@@ -563,6 +563,17 @@
    translateY runs in the negative direction so the dock rides up above
    the keyboard rather than getting pinned under it. */
 @media (max-width: 767px) {
+  .cave-chat-linear .cave-composer-footer-action,
+  .cave-chat-linear .cave-composer-plus,
+  .cave-chat-linear .cave-composer-send {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+
+  .cave-chat-linear .cave-composer-control-row {
+    min-height: var(--touch-target);
+  }
+
   .cave-chat-linear-header {
     position: sticky;
     top: 0;

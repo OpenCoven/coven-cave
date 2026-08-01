@@ -15,6 +15,18 @@ assert.match(
 
 assert.match(
   source,
+  /import \{ covenWorkspaceRoot \} from "@\/lib\/coven-paths"/,
+  "config GET should source the workspace root from the shared Cave path helper",
+);
+
+assert.match(
+  source,
+  /const config = await loadConfig\(\);[\s\S]*const workspacePath = covenWorkspaceRoot\(\);[\s\S]*return NextResponse\.json\(\{ ok: true, config, workspacePath \}\);/,
+  "config GET should return workspacePath alongside the config payload",
+);
+
+assert.match(
+  source,
   /const defaults = body\.defaults[\s\S]*defaultsHarness/,
   "config PATCH should inspect defaults.harness for runtime switches",
 );

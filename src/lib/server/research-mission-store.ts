@@ -9,7 +9,10 @@ import {
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import type { ResearchMission } from "../research-missions.ts";
-import { ensureStandardArtifactRefs } from "../research-missions.ts";
+import {
+  ensureStandardArtifactRefs,
+  parseResearchMission,
+} from "../research-missions.ts";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-write.ts";
 
 const MISSION_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -76,22 +79,6 @@ export function missionArtifactPath(id: string, fileName: string): string {
 
 function isWithin(candidate: string, root: string): boolean {
   return candidate === root || candidate.startsWith(root + path.sep);
-}
-
-function isResearchMission(value: unknown): value is ResearchMission {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const mission = value as Partial<ResearchMission>;
-  return (
-    mission.version === 1 &&
-    typeof mission.id === "string" &&
-    MISSION_ID_RE.test(mission.id) &&
-    typeof mission.familiarId === "string" &&
-    typeof mission.title === "string" &&
-    typeof mission.intent === "string" &&
-    Array.isArray(mission.iterations) &&
-    Array.isArray(mission.artifacts) &&
-    Array.isArray(mission.sources)
-  );
 }
 
 export function withResearchMissionLock<T>(
@@ -173,8 +160,8 @@ export async function loadResearchMission(id: string): Promise<ResearchMission |
   try {
     const directory = await assertRealMissionDirectory(id);
     const raw = await readFile(path.join(/* turbopackIgnore: true */ directory, "mission.json"), "utf8");
-    const parsed: unknown = JSON.parse(raw);
-    if (!isResearchMission(parsed) || parsed.id !== id) return null;
+    const parsed = parseResearchMission(JSON.parse(raw));
+    if (!parsed || parsed.id !== id) return null;
     // Additive read-time backfill: missions created before the standard refs
     // existed gain them on load; the refs persist on the next save.
     return ensureStandardArtifactRefs(parsed);

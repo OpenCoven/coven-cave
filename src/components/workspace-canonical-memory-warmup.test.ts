@@ -493,7 +493,12 @@ test("Workspace combines accepted local health with current runtime eligibility"
   );
   assert.match(
     workspace,
-    /if \(!requestGate\.isLatest\(requestId\)\) return;[\s\S]{0,900}if \(result\.kind === "running"\) \{[\s\S]{0,160}setAcceptedLocalDaemonHealthy\(result\.targetMode === "local"\);[\s\S]{0,120}\} else \{[\s\S]{0,120}setAcceptedLocalDaemonHealthy\(false\);[\s\S]{0,120}\}/,
-    "only the latest accepted local-running result retains healthy state",
+    /const applyDaemonConnectionPoll = useCallback\([\s\S]{0,1200}if \(result\.kind === "running"\) \{[\s\S]{0,160}setAcceptedLocalDaemonHealthy\(result\.targetMode === "local"\);[\s\S]{0,120}\} else \{[\s\S]{0,120}setAcceptedLocalDaemonHealthy\(false\);[\s\S]{0,120}\}/,
+    "the authoritative supervisor publication retains only accepted local-running health",
+  );
+  assert.match(
+    workspace,
+    /createDaemonConnectionSupervisor\(\{[\s\S]{0,900}publish: applyDaemonConnectionPoll,/,
+    "the connection supervisor owns stale-result fencing before publishing daemon health",
   );
 });

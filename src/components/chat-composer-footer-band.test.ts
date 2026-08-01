@@ -140,7 +140,7 @@ assert.match(
 );
 assert.doesNotMatch(css, /\.cave-context-pill/, "the combined pill's CSS is retired with it");
 
-// ── The wide reading measure: 64rem, shared by thread · follow-ups · composer
+// ── The reading measure stays on content while the composer uses the full dock
 assert.match(
   activityCss,
   /\.cave-chat-linear \{[\s\S]*--cave-chat-measure:\s*64rem;/,
@@ -158,8 +158,8 @@ assert.match(
 );
 assert.match(
   transcriptCss,
-  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*max-width:\s*var\(--cave-chat-measure\);/,
-  "composer shell should share the chat reading measure token",
+  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*max-width:\s*100%;/,
+  "composer shell should use the full dock width",
 );
 
 // ── Footer action family + circular send ────────────────────────────────────
@@ -177,6 +177,16 @@ assert.match(
   css,
   /\.cave-composer-send\s*\{[\s\S]*?width:\s*32px;[\s\S]*?height:\s*32px;[\s\S]*?border:\s*1px solid var\(--accent-presence\);[\s\S]*?border-radius:\s*var\(--radius-pill\);[\s\S]*?background:\s*transparent;/,
   "send should remain the circular 32px accent-outline button",
+);
+assert.match(
+  transcriptCss,
+  /\.cave-chat-linear \.cave-composer-footer-action,[\s\S]*?\.cave-chat-linear \.cave-composer-plus \{[\s\S]*?width:\s*var\(--space-6\);[\s\S]*?height:\s*var\(--space-6\);/,
+  "in-chat Call and Add controls should use the compact 24px token",
+);
+assert.match(
+  transcriptCss,
+  /\.cave-chat-linear \.cave-composer-send \{[\s\S]*?width:\s*var\(--space-6\);[\s\S]*?height:\s*var\(--space-6\);/,
+  "in-chat Send should use the compact 24px token",
 );
 assert.match(
   css,
@@ -239,6 +249,11 @@ assert.match(
   css,
   /@media \(max-width: 767px\)[\s\S]*?\.cave-composer-footer-action,[\s\S]*?\.cave-composer-plus,[\s\S]*?\.cave-composer-send\s*\{[\s\S]*?width:\s*var\(--touch-target\);/,
   "footer actions, plus, and send should all grow to the mobile touch target",
+);
+assert.match(
+  transcriptCss,
+  /@media \(max-width: 767px\)[\s\S]*?\.cave-chat-linear \.cave-composer-footer-action,[\s\S]*?\.cave-chat-linear \.cave-composer-plus,[\s\S]*?\.cave-chat-linear \.cave-composer-send \{[\s\S]*?width:\s*var\(--touch-target\);[\s\S]*?height:\s*var\(--touch-target\);/,
+  "chat-specific action sizing should restore mobile touch targets",
 );
 assert.match(
   css,

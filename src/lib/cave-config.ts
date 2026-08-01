@@ -173,6 +173,10 @@ export type FamiliarBinding = {
   /** Optional Asana workspace gid this familiar is scoped to (empty = all of
    *  the connected user's workspaces). */
   asanaWorkspaceGid?: string;
+  /** Explicit per-familiar X research grant. Missing is always false. */
+  xResearchEnabled?: boolean;
+  /** Explicit per-familiar X publishing grant. Missing is always false. */
+  xPublishEnabled?: boolean;
   runtime?: FamiliarRuntime;
   /** Explicit Hermes profile target. Never infer this from the sticky CLI profile. */
   hermesProfile?: HermesProfileBinding;
@@ -628,6 +632,8 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     autoSelfReport: f.autoSelfReport ?? false,
     asanaEnabled: f.asanaEnabled,
     asanaWorkspaceGid: f.asanaWorkspaceGid,
+    xResearchEnabled: f.xResearchEnabled === true,
+    xPublishEnabled: f.xPublishEnabled === true,
     runtime: normalizeFamiliarRuntime(f.runtime ?? config.defaults.runtime),
     ...(hermesProfile ? { hermesProfile } : {}),
     ...(hasInvalidHermesProfileBinding ? { hasInvalidHermesProfileBinding: true } : {}),
@@ -732,9 +738,9 @@ export async function setManualTravelMode(enabled: boolean, now = new Date()): P
       return iso;
     }
     state.travel.manualOffline = false;
+    state.travel.localSubdaemonWakeRequestedAt = null;
     if (!state.travel.hubUnreachableSince && !hasPendingTravelQueue(state.travel)) {
       state.travel.staleCache = false;
-      state.travel.localSubdaemonWakeRequestedAt = null;
     }
     return null;
   });

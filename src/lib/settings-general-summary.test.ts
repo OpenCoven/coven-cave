@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createGeneralSummaryLoader,
   resolveGeneralSummaryState,
   type GeneralSummaryResponse,
   type GeneralSummaryState,
@@ -14,10 +15,27 @@ const ok = (value: Record<string, unknown>): GeneralSummaryResponse => ({
 const failed: GeneralSummaryResponse = { ok: false, value: null };
 const loading: GeneralSummaryState = { status: "loading", summary: {} };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 test("General summary resolves complete source data", () => {
   assert.deepEqual(
     resolveGeneralSummaryState(loading, {
-      daemon: ok({ workspacePath: "/coven" }),
+      config: ok({ workspacePath: "/coven" }),
       voice: ok({
         tts: [
           { ready: true, verified: true },
@@ -51,7 +69,7 @@ test("General summary exposes partial refreshes while retaining failed-source va
 
   assert.deepEqual(
     resolveGeneralSummaryState(current, {
-      daemon: ok({ workspacePath: "/new" }),
+      config: ok({ workspacePath: "/new" }),
       voice: failed,
       sync: failed,
     }),
@@ -70,7 +88,7 @@ test("General summary exposes partial refreshes while retaining failed-source va
 test("General summary treats an unusable successful payload as a partial source failure", () => {
   assert.deepEqual(
     resolveGeneralSummaryState(loading, {
-      daemon: ok({ workspacePath: "/coven" }),
+      config: ok({ workspacePath: "/coven" }),
       voice: ok({ ok: true }),
       sync: ok({ config: { enabled: false } }),
     }),
@@ -97,7 +115,7 @@ test("General summary treats all-source failure as an error without discarding k
 
   assert.deepEqual(
     resolveGeneralSummaryState(current, {
-      daemon: failed,
+      config: failed,
       voice: failed,
       sync: failed,
     }),
@@ -111,7 +129,7 @@ test("General summary treats all-source failure as an error without discarding k
 test("General summary errors when successful responses contain no usable details", () => {
   assert.deepEqual(
     resolveGeneralSummaryState(loading, {
-      daemon: ok({ workspacePath: "" }),
+      config: ok({ workspacePath: "" }),
       voice: ok({}),
       sync: ok({ config: {} }),
     }),
@@ -120,4 +138,70 @@ test("General summary errors when successful responses contain no usable details
       summary: {},
     },
   );
+});
+
+test("General summary loader aborts superseded refreshes and keeps the newest result", async () => {
+  const calls: Array<{
+    input: string;
+    signal: AbortSignal | undefined;
+    request: ReturnType<typeof deferred<Response>>;
+  }> = [];
+  const fetchImpl = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const request = deferred<Response>();
+    const signal = init?.signal ?? undefined;
+    signal?.addEventListener("abort", () => request.reject(new Error(`aborted ${String(input)}`)), {
+      once: true,
+    });
+    calls.push({ input: String(input), signal, request });
+    return request.promise;
+  }) as typeof fetch;
+  const loader = createGeneralSummaryLoader({ fetchImpl });
+
+  const firstLoad = loader.load();
+  assert.equal(calls.length, 3, "one summary load fans out to the three narrow sources");
+  const firstSignals = calls.slice(0, 3).map((call) => call.signal);
+
+  const secondLoad = loader.load();
+  assert.equal(calls.length, 6, "a refresh starts a new three-source batch");
+  for (const signal of firstSignals) {
+    assert.equal(signal?.aborted, true, "superseded summary loads should be aborted");
+  }
+
+  calls[3].request.resolve(jsonResponse({ ok: true, workspacePath: "/coven" }));
+  calls[4].request.resolve(jsonResponse({ ok: true, tts: [{ ready: true, verified: true }] }));
+  calls[5].request.resolve(jsonResponse({ ok: true, config: { enabled: true } }));
+
+  const [firstResult, secondResult] = await Promise.all([firstLoad, secondLoad]);
+  assert.equal(firstResult, null, "a superseded load should not publish stale data");
+  assert.deepEqual(secondResult, {
+    config: ok({ ok: true, workspacePath: "/coven" }),
+    voice: ok({ ok: true, tts: [{ ready: true, verified: true }] }),
+    sync: ok({ ok: true, config: { enabled: true } }),
+  });
+});
+
+test("General summary loader aborts the active request on dispose", async () => {
+  const calls: Array<{
+    signal: AbortSignal | undefined;
+    request: ReturnType<typeof deferred<Response>>;
+  }> = [];
+  const fetchImpl = ((_: RequestInfo | URL, init?: RequestInit) => {
+    const request = deferred<Response>();
+    const signal = init?.signal ?? undefined;
+    signal?.addEventListener("abort", () => request.reject(new Error("aborted")), {
+      once: true,
+    });
+    calls.push({ signal, request });
+    return request.promise;
+  }) as typeof fetch;
+  const loader = createGeneralSummaryLoader({ fetchImpl });
+
+  const load = loader.load();
+  loader.dispose();
+
+  assert.equal(calls.length, 3, "dispose should abort the in-flight three-source batch");
+  for (const call of calls) {
+    assert.equal(call.signal?.aborted, true);
+  }
+  assert.equal(await load, null, "a disposed loader should drop the abandoned result");
 });

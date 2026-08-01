@@ -13,6 +13,7 @@ import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 import type { RuntimeModelOption } from "@/lib/grok-build";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
+import { FamiliarXSection } from "@/components/familiar-x-section";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
@@ -1517,6 +1518,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           </section>
 
           <FamiliarAsanaSection familiar={familiar} />
+          <FamiliarXSection familiar={familiar} />
 
           {harnessId ? (
             <details

@@ -7,14 +7,13 @@ import {
   utimes,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 
 import { acquireProcessIntentLock } from "./process-intent-lock.ts";
 
 const temporary = await mkdtemp(
-  path.join(tmpdir(), "cave-process-intent-lock-"),
+  path.join(process.cwd(), ".process-intent-lock-test-"),
 );
 
 after(async () => {
@@ -68,6 +67,51 @@ test("an orphan from a reused PID is reclaimed by process-start identity", async
   });
   assert.ok(!(await readdir(intentsDirectory)).includes(reusedName));
   await release();
+});
+
+test("persistent stale-intent removal failure respects the absolute timeout", async () => {
+  const intentsDirectory = path.join(temporary, "stale-removal-timeout");
+  const seedRelease = await acquireProcessIntentLock({
+    intentsDirectory,
+    label: "test-stale-removal-seed",
+  });
+  const [seedName] = await readdir(intentsDirectory);
+  await seedRelease();
+  const staleName = seedName.replace(
+    /-([a-f0-9]{16})-([a-f0-9]+)\.lock$/,
+    "-0000000000000000-$2.lock",
+  );
+  const stalePath = path.join(intentsDirectory, staleName);
+  await mkdir(stalePath);
+  await writeFile(path.join(stalePath, "obstruction"), "blocked\n");
+
+  const startedAt = Date.now();
+  const attempt = acquireProcessIntentLock({
+    intentsDirectory,
+    timeoutMs: 50,
+    label: "test-stale-removal",
+  });
+  let watchdog: NodeJS.Timeout | undefined;
+  try {
+    await assert.rejects(
+      Promise.race([
+        attempt,
+        new Promise<never>((_, reject) => {
+          watchdog = setTimeout(
+            () => reject(new Error("lock attempt exceeded 300ms")),
+            300,
+          );
+        }),
+      ]),
+      /^Error: timed out waiting for test-stale-removal lock$/,
+    );
+    assert.ok(Date.now() - startedAt < 300);
+  } finally {
+    if (watchdog) clearTimeout(watchdog);
+    await rm(stalePath, { recursive: true, force: true });
+    const release = await attempt.catch(() => null);
+    if (release) await release();
+  }
 });
 
 test("one release call retains cleanup until a failed removal recovers", async () => {

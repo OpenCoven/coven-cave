@@ -10,8 +10,8 @@ import { settingsGroupId } from "@/components/ui/settings-group";
 import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import {
+  createGeneralSummaryLoader,
   resolveGeneralSummaryState,
-  type GeneralSummaryResponse,
   type GeneralSummaryState,
 } from "@/lib/settings-general-summary";
 
@@ -20,53 +20,36 @@ function useGeneralSummary(active: boolean) {
     status: "loading",
     summary: {},
   });
-  const latestRequest = useRef(0);
+  const summaryLoaderRef = useRef<ReturnType<typeof createGeneralSummaryLoader> | null>(null);
 
   const loadSummary = useCallback(async (showLoading = false) => {
     if (!active) return;
-    const requestId = ++latestRequest.current;
     if (showLoading) {
       setState((current) => ({ ...current, status: "loading" }));
     }
-    const read = async (request: Promise<Response>): Promise<GeneralSummaryResponse> => {
-      try {
-        const response = await request;
-        if (!response.ok) return { ok: false, value: null };
-        const value = await response.json() as unknown;
-        if (!value || typeof value !== "object" || Array.isArray(value)) {
-          return { ok: false, value: null };
-        }
-        const record = value as Record<string, unknown>;
-        if (record.ok === false) return { ok: false, value: null };
-        return { ok: true, value: record };
-      } catch {
-        return { ok: false, value: null };
-      }
-    };
-
-    const [daemon, voice, sync] = await Promise.all([
-      read(fetch("/api/daemon/status", { cache: "no-store" })),
-      read(fetch("/api/voice/engines", { cache: "no-store" })),
-      read(fetch("/api/backup/sync", { cache: "no-store" })),
-    ]);
-    if (requestId !== latestRequest.current) return;
-    setState((current) => resolveGeneralSummaryState(current, {
-      daemon,
-      voice,
-      sync,
-    }));
+    if (!summaryLoaderRef.current) {
+      summaryLoaderRef.current = createGeneralSummaryLoader();
+    }
+    const sources = await summaryLoaderRef.current.load();
+    if (!sources) return;
+    setState((current) => resolveGeneralSummaryState(current, sources));
   }, [active]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active) {
+      summaryLoaderRef.current?.dispose();
+      summaryLoaderRef.current = null;
+      return;
+    }
     void loadSummary(true);
     const refreshSummary = () => { void loadSummary(); };
     window.addEventListener("cave:voice-engines-refresh", refreshSummary);
     window.addEventListener("cave:backup-sync-refresh", refreshSummary);
     return () => {
-      latestRequest.current += 1;
       window.removeEventListener("cave:voice-engines-refresh", refreshSummary);
       window.removeEventListener("cave:backup-sync-refresh", refreshSummary);
+      summaryLoaderRef.current?.dispose();
+      summaryLoaderRef.current = null;
     };
   }, [active, loadSummary]);
 

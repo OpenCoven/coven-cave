@@ -1,12 +1,11 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { mkdtemp, readFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 const previousHome = process.env.HOME;
-const tempHome = await mkdtemp(path.join(os.tmpdir(), "cave-config-"));
+const tempHome = await mkdtemp(path.join(process.cwd(), ".cave-config-test-"));
 process.env.HOME = tempHome;
 
 const config = await import("./cave-config.ts");
@@ -118,6 +117,28 @@ try {
   await config.summonSessionLocal("session-2");
   await config.summonSessionLocal("session-3");
 
+  await config.recordTravelHubReachability(false, new Date("2026-06-30T10:00:00.000Z"));
+  const manualDuringOutageAt = await config.setManualTravelMode(true, new Date("2026-06-30T10:00:05.000Z"));
+  assert.equal(manualDuringOutageAt, "2026-06-30T10:00:05.000Z");
+
+  state = await config.loadState();
+  assert.equal(state.travel.manualOffline, true);
+  assert.equal(state.travel.hubUnreachableSince, "2026-06-30T10:00:00.000Z");
+  assert.equal(state.travel.staleCache, true);
+  assert.equal(state.travel.localSubdaemonWakeRequestedAt, "2026-06-30T10:00:05.000Z");
+
+  await config.setManualTravelMode(false, new Date("2026-06-30T10:00:06.000Z"));
+  state = await config.loadState();
+  assert.equal(state.travel.manualOffline, false);
+  assert.equal(state.travel.hubUnreachableSince, "2026-06-30T10:00:00.000Z");
+  assert.equal(state.travel.staleCache, true);
+  assert.equal(
+    state.travel.localSubdaemonWakeRequestedAt,
+    null,
+    "manual wake stamps must not survive back into automatic outage handling",
+  );
+  await config.recordTravelHubReachability(true, new Date("2026-06-30T10:01:00.000Z"));
+
   const raw = await readFile(path.join(tempHome, ".coven", "cave", "state.json"), "utf8");
   const rawState = JSON.parse(raw);
   // Summon grace timestamps vary per run; the shape checks above cover them.
@@ -134,7 +155,7 @@ try {
     travel: {
       manualOffline: false,
       hubUnreachableSince: null,
-      lastHubReachableAt: null,
+      lastHubReachableAt: "2026-06-30T10:01:00.000Z",
       staleCache: false,
       localSubdaemonWakeRequestedAt: null,
       localBindHost: "127.0.0.1",
@@ -228,6 +249,9 @@ try {
   assert.equal(novaBinding.role, "review familiar");
   assert.equal(novaBinding.autoSelfReport, true);
   assert.equal(config.bindingFor(cfg, "missing").autoSelfReport, false);
+  assert.equal(config.bindingFor(cfg, "missing").xResearchEnabled, false);
+  assert.equal(config.bindingFor(cfg, "missing").xPublishEnabled, false);
+
   const modelOwnershipConfig = {
     ...cfg,
     familiars: {
@@ -252,6 +276,41 @@ try {
     cfg.defaults.model,
     "a Cave-owned runtime still inherits the global default model",
   );
+
+  await config.saveConfig({
+    defaults: {
+      xResearchEnabled: true,
+      xPublishEnabled: true,
+    },
+    familiars: {
+      nova: { xResearchEnabled: true },
+      wren: { xPublishEnabled: true },
+    },
+  });
+  cfg = await config.loadConfig();
+  assert.equal(
+    config.bindingFor(cfg, "missing").xResearchEnabled,
+    false,
+    "app defaults must never grant X research",
+  );
+  assert.equal(
+    config.bindingFor(cfg, "missing").xPublishEnabled,
+    false,
+    "app defaults must never grant X publishing",
+  );
+  assert.equal(config.bindingFor(cfg, "nova").xResearchEnabled, true);
+  assert.equal(config.bindingFor(cfg, "nova").xPublishEnabled, false);
+  assert.equal(config.bindingFor(cfg, "wren").xResearchEnabled, false);
+  assert.equal(config.bindingFor(cfg, "wren").xPublishEnabled, true);
+
+  await config.saveConfig({
+    familiars: {
+      nova: { xResearchEnabled: null, xPublishEnabled: true },
+    },
+  });
+  cfg = await config.loadConfig();
+  assert.equal(config.bindingFor(cfg, "nova").xResearchEnabled, false);
+  assert.equal(config.bindingFor(cfg, "nova").xPublishEnabled, true);
 
   await config.saveConfig({
     defaults: {
@@ -338,6 +397,7 @@ try {
     autoSelfReport: true,
     display_name: "Nova Prime",
     role: "review familiar",
+    xPublishEnabled: true,
   });
 
   await config.saveConfig({ familiars: { nova: null, local: null } });
@@ -346,6 +406,7 @@ try {
 } finally {
   if (previousHome === undefined) delete process.env.HOME;
   else process.env.HOME = previousHome;
+  await rm(tempHome, { recursive: true, force: true });
 }
 
 // ── Config write-race mutex (2026-07-03 settings audit) ──────────────────────

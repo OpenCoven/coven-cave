@@ -146,7 +146,7 @@ export async function runWorkspaceDaemonStart(input: {
   fetchImpl: typeof fetch;
   dismissError(): void;
   reportError(message: string): void;
-  refreshStatus(opts?: { trusted?: boolean }): Promise<void>;
+  refreshStatus(opts?: { trusted?: boolean; fresh?: boolean }): Promise<void>;
 }): Promise<boolean> {
   try {
     // Keep the injected function unbound. Calling `input.fetchImpl(...)`

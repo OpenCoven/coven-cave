@@ -27,6 +27,11 @@ import { NO_PROJECT_ID, chatProjectById, filterVisibleChatSessions } from "@/lib
 import { cardMatchesProject, deriveOpenTaskCards, deriveContinueThreads } from "@/lib/chat-open-tasks";
 import { deriveStarterSuggestions } from "@/lib/chat-starter-suggestions";
 import { startFromGroup, startFromSub, taskTileBadge } from "@/lib/chat-start-from";
+import {
+  ChatStartFromBands,
+  type StartFromBand,
+  type StartFromTile,
+} from "@/components/chat-start-from-bands";
 import { queueFollowUpLabel } from "@/lib/chat-queue-followups";
 import { useQueueFollowUps } from "@/lib/use-queue-followups";
 import { reviewRequestLabel } from "@/lib/chat-review-requests";
@@ -95,6 +100,12 @@ function useBoardCards(enabled: boolean) {
 }
 
 type LinkedTask = NonNullable<ChatLinkedContext["tasks"]>[number];
+
+/** The Tasks band's overflow tile sends you to the surface that holds the rest
+ *  — the same window-event bridge the rest of the shell navigates through. */
+const navigateToTasks = () => {
+  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "board" } }));
+};
 
 export function ChatEmptyState({
   familiar,
@@ -271,8 +282,113 @@ export function ChatEmptyState({
   const queueGroup = startFromGroup("queue", queueRows.length, queueFollowUps.rows.length);
   const reviewRows = reviews.rows.slice(0, REVIEW_CAP);
   const reviewsGroup = startFromGroup("reviews", reviewRows.length, reviews.rows.length);
-  const startFromVisible =
-    railVisible || recents.length > 0 || queueRows.length > 0 || reviewRows.length > 0;
+
+  // ── Bands (Chat.dc.html 2b) ───────────────────────────────────────────────
+  // Design order: the threads you were just in, the board, what you parked,
+  // then what waits on your review. A source with nothing to offer contributes
+  // no band, so this page never wraps chrome around an empty strip.
+  const bands: StartFromBand[] = [];
+
+  if (recents.length > 0) {
+    bands.push({
+      meta: chatsGroup,
+      tiles: recents.map<StartFromTile>((session) => {
+        const title = session.title?.trim() || "Untitled thread";
+        const when = relativeTime(session.updated_at || session.created_at, nowMs);
+        const diff =
+          session.diff && (session.diff.additions || session.diff.deletions)
+            ? `+${session.diff.additions} \u2212${session.diff.deletions}`
+            : null;
+        return {
+          id: session.id,
+          title,
+          badge: "resume",
+          sub: startFromSub([when, diff]),
+          ariaLabel: `Continue '${title}'${when ? `, updated ${when}` : ""}`,
+          onPick: () => openSession(session.id, session.familiarId),
+        };
+      }),
+    });
+  }
+
+  if (railVisible) {
+    bands.push({
+      meta: tasksGroup,
+      // The board's own load/error states replace the strip rather than
+      // rendering half a band of tiles beside a spinner.
+      status:
+        loading && slow ? (
+          <div
+            className="cave-chat-empty-work-skeleton"
+            role="status"
+            aria-label="Loading open work"
+          >
+            <span className="cave-chat-empty-task-skeleton" />
+            <span className="cave-chat-empty-task-skeleton" />
+          </div>
+        ) : boardError ? (
+          <p className="cave-chat-empty-work-error">
+            Couldn&apos;t load the board.{" "}
+            <button type="button" className="cave-chat-empty-retry" onClick={() => void reload()}>
+              Retry
+            </button>
+          </p>
+        ) : actionError ? (
+          <p className="cave-chat-empty-work-error" role="alert">
+            {actionError}
+          </p>
+        ) : null,
+      tiles: railCards.map<StartFromTile>((card) => {
+        const needsDaemon = !card.sessionId && daemonRunning === false;
+        const action = card.sessionId ? "Resume" : "Start";
+        return {
+          id: card.id,
+          title: card.title,
+          badge: taskTileBadge(card),
+          sub: startFromSub([card.status, card.priority]),
+          disabled: needsDaemon,
+          busyLabel: busyId === card.id ? "opening…" : null,
+          hint: needsDaemon ? "Starting a task needs the daemon running" : undefined,
+          ariaLabel: `${action} '${card.title}' — ${card.status}, ${card.priority} priority`,
+          onPick: () => void resumeCard(card),
+        };
+      }),
+      viewAll:
+        moreCount > 0
+          ? { label: `+${moreCount} in Tasks`, onOpen: () => navigateToTasks() }
+          : null,
+    });
+  }
+
+  if (queueRows.length > 0) {
+    bands.push({
+      meta: queueGroup,
+      tiles: queueRows.map<StartFromTile>((row) => ({
+        id: row.id,
+        title: row.title,
+        badge: row.updatedAt ? relativeTime(row.updatedAt, nowMs) : row.id,
+        sub: startFromSub([row.id, "queued"]),
+        ariaLabel: queueFollowUpLabel(row),
+        hint: `Pick up ${row.id}`,
+        onPick: () => onPrompt?.(`Pick up ${row.id}: ${row.title}`),
+      })),
+    });
+  }
+
+  if (reviewRows.length > 0) {
+    bands.push({
+      meta: reviewsGroup,
+      tiles: reviewRows.map<StartFromTile>((row) => ({
+        id: row.id,
+        title: row.title,
+        badge: row.badge,
+        sub: startFromSub([row.need]),
+        ariaLabel: reviewRequestLabel(row),
+        hint: `Review ${row.title}`,
+        onPick: () => onPrompt?.(`Review ${row.url}`),
+      })),
+    });
+  }
 
   return (
     <div className="cave-chat-empty select-none">
@@ -375,155 +491,10 @@ export function ChatEmptyState({
 
         {/* ── "Start from" (Chat.dc.html 2b) ────────────────────────────────
             The blank page becomes a launcher over the work that already
-            exists: open board cards and threads worth resuming. Always
-            visible — it IS the page, not context behind a disclosure. The
-            rows keep the starting page's existing grammar; the band and the
-            per-group counts are what the redesign adds. */}
-        {startFromVisible ? (
-          <section className="cave-chat-startfrom" aria-label="Start from existing work">
-            <div className="cave-chat-startfrom__head">
-              <span>Start from</span>
-              <span className="cave-chat-startfrom__rule" aria-hidden />
-            </div>
-
-            {railVisible ? (
-              <section className="cave-chat-empty-work" aria-label="Open work">
-                <span className="cave-chat-empty-section-label">
-                  <Icon name={tasksGroup.icon} width={12} aria-hidden />
-                  {tasksGroup.label}
-                  <span className="cave-chat-startfrom__count">{tasksGroup.count}</span>
-                </span>
-                {loading && slow ? (
-                  <div className="cave-chat-empty-work-skeleton" role="status" aria-label="Loading open work">
-                    <span className="cave-chat-empty-task-skeleton" />
-                    <span className="cave-chat-empty-task-skeleton" />
-                  </div>
-                ) : boardError ? (
-                  <p className="cave-chat-empty-work-error">
-                    Couldn&apos;t load the board.{" "}
-                    <button type="button" className="cave-chat-empty-retry" onClick={() => void reload()}>
-                      Retry
-                    </button>
-                  </p>
-                ) : (
-                  <>
-                    {railCards.map((card) => {
-                      const needsDaemon = !card.sessionId && daemonRunning === false;
-                      const action = card.sessionId ? "Resume" : "Start";
-                      return (
-                        <button
-                          key={card.id}
-                          type="button"
-                          className="cave-chat-empty-task"
-                          disabled={busyId === card.id || needsDaemon}
-                          title={needsDaemon ? "Starting a task needs the daemon running" : undefined}
-                          aria-label={`${action} '${card.title}' — ${card.status}, ${card.priority} priority`}
-                          onClick={() => void resumeCard(card)}
-                        >
-                          <span className={`cave-chat-empty-task-status is-${card.status}`}>{card.status}</span>
-                          <span className="cave-chat-empty-task-title">{card.title}</span>
-                          <span className="cave-chat-empty-task-priority">{taskTileBadge(card)}</span>
-                          <span className="cave-chat-empty-task-action">
-                            {busyId === card.id ? "Opening…" : action}
-                            <Icon name="ph:arrow-right-bold" width={12} aria-hidden />
-                          </span>
-                        </button>
-                      );
-                    })}
-                    {moreCount > 0 ? (
-                      <span className="cave-chat-empty-work-more">+{moreCount} more in Tasks</span>
-                    ) : null}
-                  </>
-                )}
-                {actionError ? (
-                  <p className="cave-chat-empty-work-error" role="alert">
-                    {actionError}
-                  </p>
-                ) : null}
-              </section>
-            ) : null}
-
-            {recents.length > 0 ? (
-              <section className="cave-chat-empty-recents" aria-label="Continue a recent thread">
-                <span className="cave-chat-empty-section-label">
-                  <Icon name={chatsGroup.icon} width={12} aria-hidden />
-                  {chatsGroup.label}
-                  <span className="cave-chat-startfrom__count">{chatsGroup.count}</span>
-                </span>
-                {recents.map((session) => {
-                  const title = session.title?.trim() || "Untitled thread";
-                  const when = relativeTime(session.updated_at || session.created_at, nowMs);
-                  return (
-                    <button
-                      key={session.id}
-                      type="button"
-                      className="cave-chat-empty-recent"
-                      aria-label={`Continue '${title}'${when ? `, updated ${when}` : ""}`}
-                      onClick={() => openSession(session.id, session.familiarId)}
-                    >
-                      <span className="cave-chat-empty-recent-title">{title}</span>
-                      {session.diff && (session.diff.additions || session.diff.deletions) ? (
-                        <span className="cave-chat-empty-recent-diff">
-                          +{session.diff.additions} −{session.diff.deletions}
-                        </span>
-                      ) : null}
-                      <span className="cave-chat-empty-recent-time">{startFromSub([when])}</span>
-                    </button>
-                  );
-                })}
-              </section>
-            ) : null}
-
-            {queueRows.length > 0 ? (
-              <section className="cave-chat-empty-recents" aria-label="Parked follow-ups">
-                <span className="cave-chat-empty-section-label">
-                  <Icon name={queueGroup.icon} width={12} aria-hidden />
-                  {queueGroup.label}
-                  <span className="cave-chat-startfrom__count">{queueGroup.count}</span>
-                </span>
-                {queueRows.map((row) => {
-                  const when = row.updatedAt ? relativeTime(row.updatedAt, nowMs) : "";
-                  return (
-                    <button
-                      key={row.id}
-                      type="button"
-                      className="cave-chat-empty-recent"
-                      aria-label={queueFollowUpLabel(row)}
-                      onClick={() => onPrompt?.(`Pick up ${row.id}: ${row.title}`)}
-                    >
-                      <span className="cave-chat-empty-recent-title">{row.title}</span>
-                      <span className="cave-chat-empty-recent-diff">{row.id}</span>
-                      <span className="cave-chat-empty-recent-time">{startFromSub([when])}</span>
-                    </button>
-                  );
-                })}
-              </section>
-            ) : null}
-
-            {reviewRows.length > 0 ? (
-              <section className="cave-chat-empty-recents" aria-label="Reviews waiting on you">
-                <span className="cave-chat-empty-section-label">
-                  <Icon name={reviewsGroup.icon} width={12} aria-hidden />
-                  {reviewsGroup.label}
-                  <span className="cave-chat-startfrom__count">{reviewsGroup.count}</span>
-                </span>
-                {reviewRows.map((row) => (
-                  <button
-                    key={row.id}
-                    type="button"
-                    className="cave-chat-empty-recent"
-                    aria-label={reviewRequestLabel(row)}
-                    onClick={() => onPrompt?.(`Review ${row.url}`)}
-                  >
-                    <span className="cave-chat-empty-recent-title">{row.title}</span>
-                    <span className="cave-chat-empty-recent-diff">{row.badge}</span>
-                    <span className="cave-chat-empty-recent-time">{startFromSub([row.need])}</span>
-                  </button>
-                ))}
-              </section>
-            ) : null}
-          </section>
-        ) : null}
+            exists. One band per source — the same component the brand-new
+            chat page uses, so the two new-session surfaces cannot disagree
+            about what starting from existing work looks like. */}
+        {bands.length > 0 ? <ChatStartFromBands bands={bands} /> : null}
 
         {/* Arming a linked card is a mode for the NEXT send, not a place to
             start from — it sits under the launcher as a quiet invitation. */}

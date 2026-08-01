@@ -24,6 +24,9 @@ const loopbackSpeechCapability = JSON.parse(
 const loopbackMicrophoneCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-microphone.json", import.meta.url), "utf8"),
 );
+const loopbackXOAuthCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-x-oauth.json", import.meta.url), "utf8"),
+);
 const defaultPermissions = readFileSync(new URL("./default.toml", import.meta.url), "utf8");
 const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), "utf8");
 const speechPermissions = readFileSync(new URL("./speech.toml", import.meta.url), "utf8");
@@ -58,6 +61,7 @@ const requiredPermissionIds = [
   "allow-browser-close-all",
   "allow-browser-reload",
   "allow-shell-open",
+  "allow-open-x-oauth-url",
   "allow-sidecar-startup-status",
   "allow-retry-sidecar-startup",
   "allow-cancel-sidecar-startup",
@@ -85,6 +89,7 @@ const requiredCommands = [
   "browser_close_all",
   "browser_reload",
   "shell_open",
+  "open_x_oauth_url",
   "sidecar_startup_status",
   "retry_sidecar_startup",
   "cancel_sidecar_startup",
@@ -525,6 +530,38 @@ test("the trusted main loopback webview can run the native in-app updater", () =
     updateAvailable.includes('await import("@tauri-apps/plugin-process")'),
     "update-available.tsx must relaunch through plugin-process after installing",
   );
+});
+
+test("X OAuth grants only system-browser opening to the trusted main loopback webview", () => {
+  assert.deepEqual(loopbackXOAuthCapability.webviews, ["main"]);
+  assert.equal(loopbackXOAuthCapability.windows, undefined);
+  assert.deepEqual(loopbackXOAuthCapability.remote?.urls, [
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "http://[\\:\\:1]:*/*",
+  ]);
+  for (const origin of [
+    "http://127.0.0.1:3000/",
+    "http://localhost:3000/",
+    "http://[::1]:3000/",
+  ]) {
+    assert.ok(capabilityAllowsOrigin(loopbackXOAuthCapability, origin));
+  }
+  assert.equal(
+    capabilityAllowsOrigin(loopbackXOAuthCapability, "http://example.com:3000/"),
+    false,
+  );
+  assert.deepEqual(loopbackXOAuthCapability.permissions, ["allow-open-x-oauth-url"]);
+  assertCapabilityDoesNotGrant(loopbackXOAuthCapability, [
+    "allow-shell-open",
+    "allow-pty-start",
+    "allow-browser-navigate",
+    "updater:default",
+    "allow-speech-stt-start",
+    "fs:default",
+    "process:default",
+    "process:allow-restart",
+  ]);
 });
 
 test("browser event labels use the same native prefix in Rust and React", () => {
