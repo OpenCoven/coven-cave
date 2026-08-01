@@ -212,17 +212,20 @@ export function chainOf(steps: readonly ChartStep[], id: string): ChartStep[] {
     cursor = cursor.needs ? byId.get(cursor.needs) : undefined;
   }
 
-  const down: ChartStep[] = [];
-  const seenDown = new Set<string>([id, ...seenUp]);
-  let head = id;
-  guard = 0;
-  while (guard++ < GUARD) {
-    const next = steps.find((step) => step.needs === head && !seenDown.has(step.id));
-    if (!next) break;
-    seenDown.add(next.id);
-    down.push(next);
-    head = next.id;
-  }
+  const longestDownstream = (head: string, seen: Set<string>, depth: number): ChartStep[] => {
+    if (depth >= GUARD) return [];
+    let longest: ChartStep[] = [];
+    for (const next of steps) {
+      if (next.needs !== head || seen.has(next.id)) continue;
+      const branch = [
+        next,
+        ...longestDownstream(next.id, new Set([...seen, next.id]), depth + 1),
+      ];
+      if (branch.length > longest.length) longest = branch;
+    }
+    return longest;
+  };
+  const down = longestDownstream(id, new Set([id, ...seenUp]), 0);
 
   return [...up, self, ...down];
 }

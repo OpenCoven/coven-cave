@@ -158,6 +158,19 @@ test("chainOf reads the route root-first, through the step, and on down", () => 
   );
 });
 
+test("chainOf follows the longest downstream branch", () => {
+  const steps = [
+    step("root"),
+    step("short", { needs: "root" }),
+    step("long-1", { needs: "root" }),
+    step("long-2", { needs: "long-1" }),
+  ];
+  assert.deepEqual(
+    chainOf(steps, "root").map((s) => s.id),
+    ["root", "long-1", "long-2"],
+  );
+});
+
 test("chainOf terminates on a loop instead of hanging", () => {
   const steps = [step("a", { needs: "b" }), step("b", { needs: "a" })];
   const chain = chainOf(steps, "a");

@@ -79,18 +79,27 @@ export function ChartRoomTable({
         <thead>
           <tr>
             {COLUMNS.map((column) => (
-              <th key={column.key} style={{ width: column.width }}>
+              <th
+                key={column.key}
+                style={{ width: column.width }}
+                aria-sort={
+                  sortKey === column.key ? (sortDirection === 1 ? "ascending" : "descending") : undefined
+                }
+              >
                 <button
                   type="button"
                   className="cr-sort focus-ring"
-                  aria-sort={
-                    sortKey === column.key ? (sortDirection === 1 ? "ascending" : "descending") : undefined
-                  }
                   onClick={() => onSort(column.key)}
                 >
                   {column.label}
                   <Icon
-                    name={sortKey === column.key && sortDirection === -1 ? "ph:caret-up" : "ph:caret-down"}
+                    name={
+                      sortKey !== column.key
+                        ? "ph:caret-up-down"
+                        : sortDirection === 1
+                          ? "ph:caret-up"
+                          : "ph:caret-down"
+                    }
                     width={10}
                     height={10}
                     aria-hidden

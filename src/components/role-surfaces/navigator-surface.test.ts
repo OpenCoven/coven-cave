@@ -153,7 +153,12 @@ test("the segmented lenses and toggles expose their pressed state", () => {
   assert.match(surface, /aria-pressed=\{lens === entry\.id\}/);
   assert.match(surface, /aria-pressed=\{state\.tableMode === value\}/);
   assert.match(orchestration, /aria-pressed=\{lock\?\.kind === "familiar"/);
-  assert.match(table, /aria-sort=\{/);
+  assert.match(table, /<th[\s\S]{0,180}?aria-sort=\{[\s\S]{0,180}?<button/);
+  assert.doesNotMatch(table, /<button[\s\S]{0,180}?aria-sort=/);
+  assert.match(
+    table,
+    /sortKey !== column\.key[\s\S]{0,120}?"ph:caret-up-down"[\s\S]{0,120}?sortDirection === 1[\s\S]{0,120}?"ph:caret-up"[\s\S]{0,120}?"ph:caret-down"/,
+  );
 });
 
 test("interactive elements carry the shared focus ring", () => {
