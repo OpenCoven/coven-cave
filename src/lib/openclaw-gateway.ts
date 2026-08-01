@@ -129,15 +129,29 @@ function matchesOpenClawToolRoutingRecord(
     && matchesOptionalRoutingField(value, "agentId", expected.agentId);
 }
 
+function matchesOptionalOpenClawToolRoutingContainer(
+  value: Record<string, unknown>,
+  key: "session" | "snapshot",
+  expected: { sessionKey: string; agentId: string },
+): boolean {
+  if (!hasOwn(value, key)) return true;
+  const container = value[key];
+  return isRecord(container) && matchesOpenClawToolRoutingRecord(container, expected);
+}
+
 function matchesOpenClawToolRouting(
   payload: Record<string, unknown>,
   expected: { sessionKey: string; agentId: string },
 ): boolean {
   if (!matchesOpenClawToolRoutingRecord(payload, expected)) return false;
-  const snapshot = isRecord(payload.snapshot) ? payload.snapshot : null;
-  if (snapshot && !matchesOpenClawToolRoutingRecord(snapshot, expected)) return false;
-  const session = isRecord(payload.session) ? payload.session : null;
-  return !session || matchesOpenClawToolRoutingRecord(session, expected);
+  if (!matchesOptionalOpenClawToolRoutingContainer(payload, "snapshot", expected)) return false;
+  if (!matchesOptionalOpenClawToolRoutingContainer(payload, "session", expected)) return false;
+  if (!hasOwn(payload, "snapshot")) return true;
+  return matchesOptionalOpenClawToolRoutingContainer(
+    payload.snapshot as Record<string, unknown>,
+    "session",
+    expected,
+  );
 }
 
 function profileSelectsToolFrame(

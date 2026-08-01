@@ -1207,9 +1207,15 @@ const foreignRoutingOverrides = [
   { sessionKey: "agent:other:explicit:foreign" },
   { key: "agent:other:explicit:foreign" },
   { agentId: "other-agent" },
+  { session: "foreign-session" },
+  { session: null },
+  { snapshot: [] },
+  { snapshot: null },
   { snapshot: { sessionKey: "agent:other:explicit:foreign" } },
   { snapshot: { key: "agent:other:explicit:foreign" } },
   { snapshot: { agentId: "other-agent" } },
+  { snapshot: { session: "foreign-session" } },
+  { snapshot: { session: null } },
   { session: { sessionKey: "agent:other:explicit:foreign" } },
   { session: { key: "agent:other:explicit:foreign" } },
   { session: { agentId: "other-agent" } },
@@ -1224,7 +1230,41 @@ for (const [index, routing] of foreignRoutingOverrides.entries()) {
     },
   }));
 }
-emitGatewayEvent(optionalRoutingTools.dispatchOptions, "agent", toolPayload(0, { seq: 20 }));
+const validRoutingOverrides = [
+  {},
+  { session: {} },
+  { snapshot: {} },
+  { snapshot: { session: {} } },
+  {
+    session: {
+      sessionKey: expected.sessionKey,
+      key: expected.sessionKey,
+      agentId: expected.agentId,
+    },
+  },
+  {
+    snapshot: {
+      sessionKey: expected.sessionKey,
+      key: expected.sessionKey,
+      agentId: expected.agentId,
+      session: {
+        sessionKey: expected.sessionKey,
+        key: expected.sessionKey,
+        agentId: expected.agentId,
+      },
+    },
+  },
+];
+for (const [index, routing] of validRoutingOverrides.entries()) {
+  emitGatewayEvent(optionalRoutingTools.dispatchOptions, "agent", toolPayload(0, {
+    seq: index + 20,
+    ...routing,
+    data: {
+      toolCallId: `valid-tool-${index}`,
+      args: { command: `echo valid ${index}` },
+    },
+  }));
+}
 emitGatewayEvent(optionalRoutingTools.dispatchOptions, "chat", {
   runId: expected.runId,
   sessionKey: expected.sessionKey,
@@ -1235,10 +1275,16 @@ emitGatewayEvent(optionalRoutingTools.dispatchOptions, "chat", {
 assert.deepEqual(
   optionalRoutingTools.events,
   [
-    { kind: "tool_start", id: "tool-1", name: "exec", input: { command: "echo hi" }, seq: 20 },
+    ...validRoutingOverrides.map((_routing, index) => ({
+      kind: "tool_start",
+      id: `valid-tool-${index}`,
+      name: "exec",
+      input: { command: `echo valid ${index}` },
+      seq: index + 20,
+    })),
     { kind: "final" },
   ],
-  "optional direct and session-snapshot routing mismatches reject every selected tool frame while official frames may omit routing",
+  "malformed and foreign routing containers reject selected tool frames while valid or missing containers project",
 );
 assert.equal(
   JSON.stringify(optionalRoutingTools.events).includes(foreignRoutingMarker),
