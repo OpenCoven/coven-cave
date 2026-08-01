@@ -18,11 +18,29 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // path, value = the reason (printed in the "allowlisted" summary). Keep this
 // short and justified — the whole point of the guard is that orphaning is loud.
 const ALLOWLIST = new Map([
-  // Empty by design. scripts/release-notes.test.mjs used to live here because
-  // it read this checkout's own tags and CHANGELOG; it now seeds a throwaway
-  // fixture repo and passes COVEN_RELEASE_NOTES_ROOT, so it runs anywhere
-  // (cave-5yyj1). Adding an entry back means a test nothing runs — justify it
-  // here and expect the justification to be read.
+  // scripts/release-notes.test.mjs used to live here because it read this
+  // checkout's own tags and CHANGELOG; it now seeds a throwaway fixture repo
+  // and passes COVEN_RELEASE_NOTES_ROOT, so it runs anywhere (cave-5yyj1).
+  // Adding an entry means a test nothing runs — justify it here and expect the
+  // justification to be read.
+  [
+    "scripts/worktree-lifecycle-patrol.test.mjs",
+    // QUARANTINED, not orphaned — cave-7ruzl. This test has NEVER executed:
+    // it failed to parse from the moment it landed (shell parameter expansions
+    // unescaped inside JS template literals), and the parse error was itself
+    // masked because worktree-lifecycle-retirement.test.mjs fails earlier in
+    // the suite. PR #4180 fixed the parse error and a fixture bug, at which
+    // point it reaches a further one: its stub `gh` never writes the
+    // workflow-calls-<n> marker the assertions read.
+    //
+    // Quarantining loses no coverage we currently have — the test has produced
+    // exactly zero signal to date — and it stops one never-run file holding
+    // the whole frontend gate red. It is NOT an invitation to keep it here:
+    // this file guards automated branch and worktree deletion, so it needs its
+    // author to say what it should assert, not another pass of fixture
+    // tweaking until the errors stop.
+    "never executed since landing; blocked on cave-7ruzl",
+  ],
 ]);
 
 function walk(dir, acc) {
