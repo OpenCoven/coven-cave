@@ -28,6 +28,7 @@ export type DaemonTravelReconcileResult = {
   travelState: CaveTravelState;
   travelStatus: TravelClientStatus;
   travelReplay: TravelOfflineReplayResult | null;
+  failure?: { code: "local-start-failed" };
 };
 
 type DaemonTravelReconcileDependencies = {
@@ -39,6 +40,7 @@ type DaemonTravelReconcileDependencies = {
   startLocalDaemon: () => Promise<unknown>;
   recordLocalSubdaemonWakeRequest: typeof recordLocalSubdaemonWakeRequest;
   deriveTravelClientStatus: typeof deriveTravelClientStatus;
+  now: () => Date;
 };
 
 type DaemonTravelHeartbeatDependencies = {
@@ -57,6 +59,7 @@ const defaultReconcileDependencies: DaemonTravelReconcileDependencies = {
   startLocalDaemon,
   recordLocalSubdaemonWakeRequest,
   deriveTravelClientStatus,
+  now: () => new Date(),
 };
 
 const defaultHeartbeatDependencies: DaemonTravelHeartbeatDependencies = {
@@ -103,6 +106,93 @@ function parseIsoMs(value: string | null): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+const HUB_REACHABILITY_REFRESH_MS = 30_000;
+
+type ReconcileLane = {
+  signature: string;
+  promise: Promise<DaemonTravelReconcileResult>;
+};
+
+const reconcileLanes = new Map<string, ReconcileLane>();
+
+function hasPendingTravelQueue(travelState: CaveTravelState): boolean {
+  return travelState.offlineQueue.some((item) => item.status === "pending" || item.status === "syncing" || item.status === "failed");
+}
+
+function shouldRecordHubReachability(
+  hubReachable: boolean,
+  travelState: CaveTravelState,
+  now: Date,
+): boolean {
+  if (!hubReachable) {
+    return travelState.hubUnreachableSince === null;
+  }
+  if (travelState.hubUnreachableSince !== null) return true;
+  if (travelState.lastHubReachableAt === null) return true;
+  if (travelState.staleCache || travelState.manualOffline || hasPendingTravelQueue(travelState)) {
+    return true;
+  }
+  const lastHubReachableAt = parseIsoMs(travelState.lastHubReachableAt);
+  if (lastHubReachableAt === null) return true;
+  return now.getTime() - lastHubReachableAt >= HUB_REACHABILITY_REFRESH_MS;
+}
+
+function daemonStartSucceeded(result: unknown): boolean {
+  return typeof result === "object" &&
+    result !== null &&
+    "ok" in result &&
+    (result as { ok?: unknown }).ok === true;
+}
+
+function travelStateSignature(travelState: CaveTravelState): string {
+  return JSON.stringify({
+    manualOffline: travelState.manualOffline,
+    hubUnreachableSince: travelState.hubUnreachableSince,
+    lastHubReachableAt: travelState.lastHubReachableAt,
+    staleCache: travelState.staleCache,
+    localSubdaemonWakeRequestedAt: travelState.localSubdaemonWakeRequestedAt,
+    localBindHost: travelState.localBindHost,
+    offlineQueue: travelState.offlineQueue.map((item) => `${item.id}:${item.status}`),
+  });
+}
+
+function reconcileInputSignature(input: DaemonTravelReconcileInput): string {
+  return JSON.stringify({
+    targetKey: daemonConnectionTargetKey(input.target),
+    hubAnswered: input.hubAnswered,
+    daemonHealthy: input.daemonHealthy,
+    travelState: travelStateSignature(input.travelState),
+  });
+}
+
+function startReconcileLane(
+  key: string,
+  signature: string,
+  work: () => Promise<DaemonTravelReconcileResult>,
+): Promise<DaemonTravelReconcileResult> {
+  const lane: ReconcileLane = {
+    signature,
+    promise: Promise.resolve({
+      travelState: {} as CaveTravelState,
+      travelStatus: {} as TravelClientStatus,
+      travelReplay: null,
+    }),
+  };
+  const promise = (async () => {
+    try {
+      return await work();
+    } finally {
+      if (reconcileLanes.get(key) === lane) {
+        reconcileLanes.delete(key);
+      }
+    }
+  })();
+  lane.promise = promise;
+  reconcileLanes.set(key, lane);
+  promise.catch(() => {});
+  return promise;
+}
+
 export function hasWakeRequestForCurrentOutage(
   travelState: Pick<CaveTravelState, "hubUnreachableSince" | "localSubdaemonWakeRequestedAt">,
 ): boolean {
@@ -117,18 +207,21 @@ export function hasWakeRequestForCurrentOutage(
   return true;
 }
 
-export async function reconcileDaemonTravelState(
+async function executeDaemonTravelReconcile(
   input: DaemonTravelReconcileInput,
-  dependencies: Partial<DaemonTravelReconcileDependencies> = {},
+  deps: DaemonTravelReconcileDependencies,
 ): Promise<DaemonTravelReconcileResult> {
-  const deps = { ...defaultReconcileDependencies, ...dependencies };
   const { config, target } = input;
   let travelState = input.travelState;
   let travelReplay: TravelOfflineReplayResult | null = null;
   const hubReachable = hubReachableForTarget(target, input.hubAnswered);
+  const now = deps.now();
+
+  if (target.mode === "hub" && shouldRecordHubReachability(hubReachable, travelState, now)) {
+    travelState = await deps.recordTravelHubReachability(hubReachable, now);
+  }
 
   if (target.mode === "hub") {
-    travelState = await deps.recordTravelHubReachability(hubReachable);
     if (input.daemonHealthy && !travelState.manualOffline) {
       travelReplay = await deps.syncOfflineTravelQueue(config);
       if (travelReplay.attempted > 0) {
@@ -141,6 +234,7 @@ export async function reconcileDaemonTravelState(
     multiHost: config.multiHost,
     travel: travelState,
     hubReachable,
+    now,
   });
 
   if (
@@ -148,16 +242,50 @@ export async function reconcileDaemonTravelState(
     travelStatus.wakeLocalSubdaemon &&
     !(hasWakeRequestForCurrentOutage(travelState) && !travelState.manualOffline)
   ) {
-    await deps.startLocalDaemon();
-    travelState = await deps.recordLocalSubdaemonWakeRequest();
+    let startResult: unknown;
+    try {
+      startResult = await deps.startLocalDaemon();
+    } catch {
+      return { travelState, travelStatus, travelReplay, failure: { code: "local-start-failed" } };
+    }
+    if (!daemonStartSucceeded(startResult)) {
+      return { travelState, travelStatus, travelReplay, failure: { code: "local-start-failed" } };
+    }
+    travelState = await deps.recordLocalSubdaemonWakeRequest(now);
     travelStatus = deps.deriveTravelClientStatus({
       multiHost: config.multiHost,
       travel: travelState,
       hubReachable,
+      now,
     });
   }
 
   return { travelState, travelStatus, travelReplay };
+}
+
+export async function reconcileDaemonTravelState(
+  input: DaemonTravelReconcileInput,
+  dependencies: Partial<DaemonTravelReconcileDependencies> = {},
+): Promise<DaemonTravelReconcileResult> {
+  const deps = { ...defaultReconcileDependencies, ...dependencies };
+  const key = daemonConnectionTargetKey(input.target);
+  const signature = reconcileInputSignature(input);
+  const active = reconcileLanes.get(key);
+
+  if (active) {
+    if (active.signature === signature) {
+      return active.promise;
+    }
+    return startReconcileLane(key, signature, async () => {
+      await active.promise.catch(() => {});
+      const travelState = input.target.mode === "hub"
+        ? (await deps.loadState()).travel
+        : input.travelState;
+      return executeDaemonTravelReconcile({ ...input, travelState }, deps);
+    });
+  }
+
+  return startReconcileLane(key, signature, () => executeDaemonTravelReconcile(input, deps));
 }
 
 export async function reconcileDaemonTravelHeartbeatSnapshot(

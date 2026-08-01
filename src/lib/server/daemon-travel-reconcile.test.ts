@@ -12,6 +12,27 @@ import {
   reconcileDaemonTravelState,
 } from "./daemon-travel-reconcile.ts";
 
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+};
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 function config(mode: "hub" | "local" = "hub", hubUrl = "https://cave.tailnet.example.ts.net:8787"): CaveConfig {
   return {
     multiHost: { mode, hubUrl, executorUrls: [] },
@@ -268,6 +289,155 @@ test("sustained hub failures trigger one local wake request and a second derive"
   assert.equal(result.travelState.localSubdaemonWakeRequestedAt, wokenState.localSubdaemonWakeRequestedAt);
 });
 
+test("concurrent same-target reconciles share one wake transition", async () => {
+  const outageState = travelState({
+    hubUnreachableSince: "2026-08-01T00:00:00.000Z",
+    staleCache: true,
+  });
+  const wokenState = {
+    ...outageState,
+    localSubdaemonWakeRequestedAt: "2026-08-01T00:00:30.000Z",
+  };
+  const startGate = deferred<{ ok: true }>();
+  let startCalls = 0;
+  let wakeRecords = 0;
+
+  const dependencies = {
+    recordTravelHubReachability: async (reachable: boolean) => {
+      assert.equal(reachable, false);
+      return outageState;
+    },
+    syncOfflineTravelQueue: async () => {
+      assert.fail("unhealthy failures should not replay queued work");
+    },
+    loadState: async () => state(wokenState),
+    startLocalDaemon: async () => {
+      startCalls += 1;
+      return startGate.promise;
+    },
+    recordLocalSubdaemonWakeRequest: async () => {
+      wakeRecords += 1;
+      return wokenState;
+    },
+    deriveTravelClientStatus,
+    now: () => new Date("2026-08-01T00:00:30.000Z"),
+  };
+
+  const first = reconcileDaemonTravelState(
+    {
+      config: config(),
+      travelState: outageState,
+      target: hubTarget(),
+      hubAnswered: false,
+      daemonHealthy: false,
+    },
+    dependencies,
+  );
+  const second = reconcileDaemonTravelState(
+    {
+      config: config(),
+      travelState: outageState,
+      target: hubTarget(),
+      hubAnswered: false,
+      daemonHealthy: false,
+    },
+    dependencies,
+  );
+
+  await flushMicrotasks();
+  assert.equal(startCalls, 1);
+
+  startGate.resolve({ ok: true });
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+
+  assert.equal(wakeRecords, 1);
+  assert.deepEqual(firstResult, secondResult);
+  assert.equal(
+    firstResult.travelState.localSubdaemonWakeRequestedAt,
+    wokenState.localSubdaemonWakeRequestedAt,
+  );
+});
+
+test("different hub targets do not share reconciliation state", async () => {
+  const startA = deferred<{ ok: true }>();
+  const startB = deferred<{ ok: true }>();
+  const started: string[] = [];
+
+  const first = reconcileDaemonTravelState(
+    {
+      config: config("hub", "https://cave-a.tailnet.example.ts.net:8787"),
+      travelState: travelState({
+        hubUnreachableSince: "2026-08-01T00:00:00.000Z",
+        staleCache: true,
+      }),
+      target: hubTarget("https://cave-a.tailnet.example.ts.net:8787"),
+      hubAnswered: false,
+      daemonHealthy: false,
+    },
+    {
+      recordTravelHubReachability: async () => travelState({
+        hubUnreachableSince: "2026-08-01T00:00:00.000Z",
+        staleCache: true,
+      }),
+      syncOfflineTravelQueue: async () => {
+        assert.fail("unhealthy failures should not replay queued work");
+      },
+      loadState: async () => state(travelState()),
+      startLocalDaemon: async () => {
+        started.push("a");
+        return startA.promise;
+      },
+      recordLocalSubdaemonWakeRequest: async () => travelState({
+        hubUnreachableSince: "2026-08-01T00:00:00.000Z",
+        staleCache: true,
+        localSubdaemonWakeRequestedAt: "2026-08-01T00:00:30.000Z",
+      }),
+      deriveTravelClientStatus,
+      now: () => new Date("2026-08-01T00:00:30.000Z"),
+    },
+  );
+  const second = reconcileDaemonTravelState(
+    {
+      config: config("hub", "https://cave-b.tailnet.example.ts.net:8787"),
+      travelState: travelState({
+        hubUnreachableSince: "2026-08-01T00:00:00.000Z",
+        staleCache: true,
+      }),
+      target: hubTarget("https://cave-b.tailnet.example.ts.net:8787"),
+      hubAnswered: false,
+      daemonHealthy: false,
+    },
+    {
+      recordTravelHubReachability: async () => travelState({
+        hubUnreachableSince: "2026-08-01T00:00:00.000Z",
+        staleCache: true,
+      }),
+      syncOfflineTravelQueue: async () => {
+        assert.fail("unhealthy failures should not replay queued work");
+      },
+      loadState: async () => state(travelState()),
+      startLocalDaemon: async () => {
+        started.push("b");
+        return startB.promise;
+      },
+      recordLocalSubdaemonWakeRequest: async () => travelState({
+        hubUnreachableSince: "2026-08-01T00:00:00.000Z",
+        staleCache: true,
+        localSubdaemonWakeRequestedAt: "2026-08-01T00:00:30.000Z",
+      }),
+      deriveTravelClientStatus,
+      now: () => new Date("2026-08-01T00:00:30.000Z"),
+    },
+  );
+
+  await flushMicrotasks();
+  assert.deepEqual(started.sort(), ["a", "b"]);
+
+  startA.resolve({ ok: true });
+  startB.resolve({ ok: true });
+  await Promise.all([first, second]);
+});
+
 test("existing outage wake requests suppress repeated local daemon starts", async () => {
   const outageState = travelState({
     hubUnreachableSince: new Date(Date.now() - 20_000).toISOString(),
@@ -319,6 +489,139 @@ test("existing outage wake requests suppress repeated local daemon starts", asyn
   assert.deepEqual(deriveCalls, [outageState]);
   assert.equal(result.travelStatus.mode, "travel");
   assert.equal(result.travelStatus.authority, "travel-local");
+});
+
+test("stable offline heartbeats reuse the recorded outage without duplicate reachability writes", async () => {
+  const existingOutage = travelState({
+    hubUnreachableSince: "2026-08-01T00:00:00.000Z",
+    localSubdaemonWakeRequestedAt: "2026-08-01T00:00:20.000Z",
+    staleCache: true,
+  });
+  let recordCalls = 0;
+
+  const result = await reconcileDaemonTravelState(
+    {
+      config: config(),
+      travelState: existingOutage,
+      target: hubTarget(),
+      hubAnswered: false,
+      daemonHealthy: false,
+    },
+    {
+      recordTravelHubReachability: async () => {
+        recordCalls += 1;
+        return existingOutage;
+      },
+      syncOfflineTravelQueue: async () => {
+        assert.fail("offline heartbeats should not replay queued work");
+      },
+      loadState: async () => {
+        assert.fail("stable offline heartbeats should not reload state");
+      },
+      startLocalDaemon: async () => {
+        assert.fail("existing outage wake requests should suppress repeated starts");
+      },
+      recordLocalSubdaemonWakeRequest: async () => {
+        assert.fail("existing outage wake requests should suppress repeated wake stamps");
+      },
+      deriveTravelClientStatus,
+      now: () => new Date("2026-08-01T00:00:25.000Z"),
+    },
+  );
+
+  assert.equal(recordCalls, 0);
+  assert.equal(result.travelState, existingOutage);
+  assert.equal(result.travelStatus.mode, "travel");
+});
+
+test("failed wake attempts stay retryable and do not stamp the outage", async () => {
+  const outageState = travelState({
+    hubUnreachableSince: "2026-08-01T00:00:00.000Z",
+    staleCache: true,
+  });
+  const wokenState = {
+    ...outageState,
+    localSubdaemonWakeRequestedAt: "2026-08-01T00:00:30.000Z",
+  };
+  let startCalls = 0;
+  let wakeRecords = 0;
+
+  const failed = await reconcileDaemonTravelState(
+    {
+      config: config(),
+      travelState: outageState,
+      target: hubTarget(),
+      hubAnswered: false,
+      daemonHealthy: false,
+    },
+    {
+      recordTravelHubReachability: async () => outageState,
+      syncOfflineTravelQueue: async () => {
+        assert.fail("unhealthy failures should not replay queued work");
+      },
+      loadState: async () => state(outageState),
+      startLocalDaemon: async () => {
+        startCalls += 1;
+        return {
+          ok: false,
+          code: "spawn_failed",
+          error: "/Users/buns/.coven/daemon.sock failed",
+          stdout: "",
+          stderr: "",
+          status: 500,
+          readinessAttempts: 1,
+          elapsedMs: 25,
+          launchMode: "direct",
+        };
+      },
+      recordLocalSubdaemonWakeRequest: async () => {
+        wakeRecords += 1;
+        return wokenState;
+      },
+      deriveTravelClientStatus,
+      now: () => new Date("2026-08-01T00:00:30.000Z"),
+    },
+  );
+
+  assert.equal(startCalls, 1);
+  assert.equal(wakeRecords, 0);
+  assert.deepEqual(failed.failure, { code: "local-start-failed" });
+  assert.equal(failed.travelState.localSubdaemonWakeRequestedAt, null);
+
+  const recovered = await reconcileDaemonTravelState(
+    {
+      config: config(),
+      travelState: outageState,
+      target: hubTarget(),
+      hubAnswered: false,
+      daemonHealthy: false,
+    },
+    {
+      recordTravelHubReachability: async () => outageState,
+      syncOfflineTravelQueue: async () => {
+        assert.fail("unhealthy failures should not replay queued work");
+      },
+      loadState: async () => state(wokenState),
+      startLocalDaemon: async () => {
+        startCalls += 1;
+        return { ok: true };
+      },
+      recordLocalSubdaemonWakeRequest: async () => {
+        wakeRecords += 1;
+        return wokenState;
+      },
+      deriveTravelClientStatus,
+      now: () => new Date("2026-08-01T00:00:30.000Z"),
+    },
+  );
+
+  assert.equal(startCalls, 2);
+  assert.equal(wakeRecords, 1);
+  assert.equal(recovered.failure, undefined);
+  assert.equal(
+    recovered.travelState.localSubdaemonWakeRequestedAt,
+    wokenState.localSubdaemonWakeRequestedAt,
+  );
 });
 
 test("unauthorized or unhealthy hub answers still count as reachable but do not replay", async () => {
@@ -421,6 +724,175 @@ test("healthy hub answers replay queued work and reload travel state when sync a
   assert.deepEqual(result.travelReplay, expectedReplay);
   assert.equal(result.travelStatus.mode, "hub");
   assert.equal(result.travelStatus.pendingQueueCount, 0);
+});
+
+test("stable healthy heartbeats avoid duplicate writes until the bounded refresh interval", async () => {
+  const cleanState = travelState({
+    lastHubReachableAt: "2026-08-01T00:00:00.000Z",
+  });
+  let recordCalls = 0;
+  let replayCalls = 0;
+
+  const stableResult = await reconcileDaemonTravelState(
+    {
+      config: config(),
+      travelState: cleanState,
+      target: hubTarget(),
+      hubAnswered: true,
+      daemonHealthy: true,
+    },
+    {
+      recordTravelHubReachability: async () => {
+        recordCalls += 1;
+        return cleanState;
+      },
+      syncOfflineTravelQueue: async () => {
+        replayCalls += 1;
+        return replayResult();
+      },
+      loadState: async () => {
+        assert.fail("stable healthy heartbeats should not reload state");
+      },
+      startLocalDaemon: async () => {
+        assert.fail("reachable healthy heartbeats should not wake the local daemon");
+      },
+      recordLocalSubdaemonWakeRequest: async () => {
+        assert.fail("reachable healthy heartbeats should not record a wake request");
+      },
+      deriveTravelClientStatus,
+      now: () => new Date("2026-08-01T00:00:10.000Z"),
+    },
+  );
+
+  assert.equal(recordCalls, 0);
+  assert.equal(replayCalls, 1);
+  assert.equal(stableResult.travelStatus.mode, "hub");
+
+  const refreshedState = travelState({
+    lastHubReachableAt: "2026-08-01T00:00:31.000Z",
+  });
+  const refreshed = await reconcileDaemonTravelState(
+    {
+      config: config(),
+      travelState: cleanState,
+      target: hubTarget(),
+      hubAnswered: true,
+      daemonHealthy: true,
+    },
+    {
+      recordTravelHubReachability: async (reachable) => {
+        assert.equal(reachable, true);
+        recordCalls += 1;
+        return refreshedState;
+      },
+      syncOfflineTravelQueue: async () => {
+        replayCalls += 1;
+        return replayResult();
+      },
+      loadState: async () => {
+        assert.fail("bounded refresh should not reload state without replay work");
+      },
+      startLocalDaemon: async () => {
+        assert.fail("reachable healthy heartbeats should not wake the local daemon");
+      },
+      recordLocalSubdaemonWakeRequest: async () => {
+        assert.fail("reachable healthy heartbeats should not record a wake request");
+      },
+      deriveTravelClientStatus,
+      now: () => new Date("2026-08-01T00:00:31.000Z"),
+    },
+  );
+
+  assert.equal(recordCalls, 1);
+  assert.equal(replayCalls, 2);
+  assert.equal(refreshed.travelState.lastHubReachableAt, refreshedState.lastHubReachableAt);
+});
+
+test("hub recovery clears the recorded wake so a future outage can wake again", async () => {
+  const recoveredState = travelState({
+    lastHubReachableAt: "2026-08-01T00:01:00.000Z",
+    staleCache: false,
+  });
+  const futureOutage = travelState({
+    hubUnreachableSince: "2026-08-01T00:02:00.000Z",
+    lastHubReachableAt: recoveredState.lastHubReachableAt,
+    staleCache: true,
+  });
+  const futureWake = {
+    ...futureOutage,
+    localSubdaemonWakeRequestedAt: "2026-08-01T00:02:20.000Z",
+  };
+  let startCalls = 0;
+  let wakeRecords = 0;
+
+  await reconcileDaemonTravelState(
+    {
+      config: config(),
+      travelState: travelState({
+        hubUnreachableSince: "2026-08-01T00:00:00.000Z",
+        localSubdaemonWakeRequestedAt: "2026-08-01T00:00:20.000Z",
+        staleCache: true,
+      }),
+      target: hubTarget(),
+      hubAnswered: true,
+      daemonHealthy: true,
+    },
+    {
+      recordTravelHubReachability: async (reachable) => {
+        assert.equal(reachable, true);
+        return recoveredState;
+      },
+      syncOfflineTravelQueue: async () => replayResult(),
+      loadState: async () => {
+        assert.fail("clean recovery should not reload state");
+      },
+      startLocalDaemon: async () => {
+        assert.fail("recovery should not wake the local daemon");
+      },
+      recordLocalSubdaemonWakeRequest: async () => {
+        assert.fail("recovery should not stamp a wake request");
+      },
+      deriveTravelClientStatus,
+      now: () => new Date("2026-08-01T00:01:00.000Z"),
+    },
+  );
+
+  const future = await reconcileDaemonTravelState(
+    {
+      config: config(),
+      travelState: recoveredState,
+      target: hubTarget(),
+      hubAnswered: false,
+      daemonHealthy: false,
+    },
+    {
+      recordTravelHubReachability: async (reachable) => {
+        assert.equal(reachable, false);
+        return futureOutage;
+      },
+      syncOfflineTravelQueue: async () => {
+        assert.fail("unhealthy failures should not replay queued work");
+      },
+      loadState: async () => state(futureWake),
+      startLocalDaemon: async () => {
+        startCalls += 1;
+        return { ok: true };
+      },
+      recordLocalSubdaemonWakeRequest: async () => {
+        wakeRecords += 1;
+        return futureWake;
+      },
+      deriveTravelClientStatus,
+      now: () => new Date("2026-08-01T00:02:20.000Z"),
+    },
+  );
+
+  assert.equal(startCalls, 1);
+  assert.equal(wakeRecords, 1);
+  assert.equal(
+    future.travelState.localSubdaemonWakeRequestedAt,
+    futureWake.localSubdaemonWakeRequestedAt,
+  );
 });
 
 test("manual offline mode blocks replay while preserving local travel authority", async () => {

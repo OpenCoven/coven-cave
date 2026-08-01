@@ -40,7 +40,7 @@ single PR.
 
 ## Chosen Architecture
 
-### 1. Connection snapshot with focused travel reconciliation
+### 1. Connection snapshot and separate travel reconciliation
 
 Add a server module that resolves the configured daemon target and returns only
 the fields needed by the shell connection banner and auto-start decision:
@@ -51,14 +51,25 @@ the fields needed by the shell connection banner and auto-start decision:
 - `checkedAt`
 - target summary
 
-The recurring heartbeat may run a narrow shared helper that persists hub
-reachability, advances the 10s travel-local failover/wake transition, and
-replays queued travel work when a healthy hub recovers. It must not probe
-executors, resolve installed version metadata, or construct the broader
+Expose that snapshot through a narrow read-only connection endpoint. `GET
+/api/daemon/connection` awaits only the shared snapshot broker and returns the
+result; a successful snapshot must never be replaced by downstream travel
+reconciliation work.
+
+Move the focused travel side effects into a dedicated `POST
+/api/daemon/travel/reconcile` route. That route first reuses the current
+connection snapshot through the same broker, then runs a narrow shared helper
+that persists hub reachability, advances the 10s travel-local failover/wake
+transition, and replays queued travel work when a healthy hub recovers. The
+POST boundary may be slow without delaying connection state, and it must not
+probe executors, resolve installed version metadata, or construct the broader
 diagnostics payload.
 
-Expose the snapshot through a narrow connection endpoint. The existing
-`/api/daemon/status` route remains the detailed Settings/diagnostics endpoint.
+The travel helper executes behind a per-target serial boundary keyed by the
+sanitized target identity. Equivalent concurrent calls share one in-flight
+reconcile; non-equivalent calls serialize and reload current state before
+acting. Wake state is stamped only after a successful local daemon start, so a
+failed or thrown start remains retryable on the next heartbeat.
 
 ### 2. Bounded server probe broker
 
@@ -102,9 +113,9 @@ visibility state so timing behavior is deterministic in tests.
 
 Settings and diagnostics continue using `/api/daemon/status` for executor,
 workspace, version, and daemon details. Those reads are surface-scoped,
-abortable, and user-refreshable. The recurring shell heartbeat shares only the
-focused travel reachability/failover/replay helper; it does not construct or
-pay for the broader diagnostics payload.
+abortable, and user-refreshable. The detailed status route and the dedicated
+travel POST route share the same serial travel reconciler; the recurring shell
+heartbeat never constructs or pays for the broader diagnostics payload.
 
 Any configuration mutation or successful daemon Start invalidates the relevant
 connection snapshot before a trusted refresh. This prevents a cached offline
@@ -133,6 +144,9 @@ explicit user actions, mutations, or active streams merely to reduce counts.
   not publish an offline result.
 - The connection endpoint reports storage/reconciliation unavailability
   separately from daemon offline state.
+- The travel reconcile POST route returns an explicit generic non-2xx error
+  when focused wake/replay work fails, without leaking daemon paths, stacks, or
+  raw start diagnostics.
 - No broad catch converts an unknown server defect into a healthy snapshot.
 - Client failures remain retryable and never offer Start unless the accepted
   classification proves the local target is offline.
@@ -170,9 +184,10 @@ explicit user actions, mutations, or active streams merely to reduce counts.
 - The shell never overlaps connection probes.
 - Persistent failure reduces rather than increases request pressure.
 - Concurrent heartbeat consumers share equivalent server work.
-- The heartbeat route performs no executor/version work or unrelated detailed
-  diagnostics, while focused travel transition/replay semantics remain shared
-  with the status route.
+- The read-only connection route performs no travel imports, executor/version
+  work, or unrelated detailed diagnostics; focused travel transition/replay
+  semantics live behind the separate serial POST reconciler shared with the
+  status route.
 - Explicit Start/Retry observes a fresh result.
 - All changed request producers have tested lifecycle/backpressure behavior.
 - One scoped PR merges to `main`, the Bead records verification evidence, and

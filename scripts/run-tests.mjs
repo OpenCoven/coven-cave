@@ -748,6 +748,7 @@ export const SUITES = {
     "src/components/drag-to-split.test.ts",
     "src/components/daemon-start-button.test.ts",
     "src/components/workspace-daemon-connection.test.ts",
+    "src/lib/daemon-travel-reconcile-client.test.ts",
     "src/components/familiar-avatar.test.ts",
     "src/components/project-avatar.test.ts",
     "src/components/familiar-glyph-picker-panel.test.ts",
@@ -1097,6 +1098,7 @@ export const SUITES = {
     "src/app/api/coven-memory/route.test.ts",
     "src/app/api/daemon/probe/route.test.ts",
     "src/app/api/daemon/connection/route.test.ts",
+    "src/app/api/daemon/travel/reconcile/route.test.ts",
     "src/app/api/tailscale/devices/route.test.ts",
     "src/app/api/config/route.test.ts",
     "src/app/api/opencoven-executions-route.test.ts",
@@ -1482,6 +1484,8 @@ const ALIAS_LOADER = new Set([
   "src/components/role-surfaces/review-readiness.test.ts",
   // the diff route resolves "@/lib/github-token".
   "src/app/api/github/diff/route.test.ts",
+  // imports the route module, which resolves "@/lib/server/..." aliases.
+  "src/app/api/daemon/travel/reconcile/route.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-compatibility.test.ts",
   "src/lib/opencode-stream.test.ts",

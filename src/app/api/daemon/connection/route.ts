@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { loadDaemonConnectionSnapshot } from "@/lib/server/daemon-connection-snapshot";
-import { reconcileDaemonTravelHeartbeatSnapshot } from "@/lib/server/daemon-travel-reconcile";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,7 +16,6 @@ export async function GET(request: NextRequest) {
   const fresh = request.nextUrl.searchParams.get("fresh") === "1";
   try {
     const snapshot = await loadDaemonConnectionSnapshot({ fresh });
-    await reconcileDaemonTravelHeartbeatSnapshot(snapshot);
     return NextResponse.json(snapshot);
   } catch (error) {
     const code = stableErrorCode(error);

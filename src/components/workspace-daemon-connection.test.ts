@@ -11,6 +11,11 @@ test("Workspace swaps the fixed 5s daemon-status poll for the connection supervi
     /import \{[\s\S]*createDaemonConnectionSupervisor,[\s\S]*type DaemonConnectionPoll,[\s\S]*\} from "@\/lib\/daemon-connection-supervisor";/,
     "Workspace should import the daemon connection supervisor contract",
   );
+  assert.match(
+    workspace,
+    /import \{ createDaemonTravelReconcileRequester \} from "@\/lib\/daemon-travel-reconcile-client";/,
+    "Workspace should import the daemon travel reconcile requester next to the connection supervisor",
+  );
   assert.doesNotMatch(
     workspace,
     /createDaemonStatusRequestGate/,
@@ -36,6 +41,11 @@ test("Workspace wires one mounted supervisor with fresh connection requests, vis
   );
   assert.match(
     workspace,
+    /const daemonTravelReconcileRequesterRef = useRef<ReturnType<typeof createDaemonTravelReconcileRequester> \| null>\(null\)/,
+    "Workspace should keep one travel reconcile requester ref for the mounted shell",
+  );
+  assert.match(
+    workspace,
     /const response = await fetch\(fresh \? "\/api\/daemon\/connection\?fresh=1" : "\/api\/daemon\/connection", \{\s*cache: "no-store",\s*signal,\s*\}\)/,
     "ordinary and fresh connection refreshes should use the narrow daemon connection route with the supplied AbortSignal",
   );
@@ -51,8 +61,13 @@ test("Workspace wires one mounted supervisor with fresh connection requests, vis
   );
   assert.match(
     workspace,
-    /daemonConnectionSupervisorRef\.current = supervisor[\s\S]*supervisor\.start\(\)/,
-    "Workspace should create and start exactly one supervisor per mount",
+    /const requester = createDaemonTravelReconcileRequester\(\{[\s\S]*const response = await fetch\("\/api\/daemon\/travel\/reconcile", \{\s*method: "POST",\s*cache: "no-store",\s*signal,\s*\}\);[\s\S]*if \(!response\.ok\) throw new Error\("daemon travel reconcile failed"\);[\s\S]*\}\);/,
+    "Workspace should create a separate POST travel reconcile requester that uses AbortSignal and throws only a generic non-ok error",
+  );
+  assert.match(
+    workspace,
+    /daemonTravelReconcileRequesterRef\.current = requester[\s\S]*daemonConnectionSupervisorRef\.current = supervisor[\s\S]*supervisor\.start\(\)/,
+    "Workspace should create the travel reconcile requester before starting exactly one supervisor per mount",
   );
   assert.match(
     workspace,
@@ -61,8 +76,8 @@ test("Workspace wires one mounted supervisor with fresh connection requests, vis
   );
   assert.match(
     workspace,
-    /document\.removeEventListener\("visibilitychange", onDaemonConnectionVisibilityChange\)[\s\S]*supervisor\.stop\(\)[\s\S]*daemonConnectionSupervisorRef\.current = null/,
-    "Workspace should remove the visibility listener, stop the supervisor, and clear the ref on unmount",
+    /document\.removeEventListener\("visibilitychange", onDaemonConnectionVisibilityChange\)[\s\S]*requester\.stop\(\)[\s\S]*supervisor\.stop\(\)[\s\S]*daemonTravelReconcileRequesterRef\.current = null[\s\S]*daemonConnectionSupervisorRef\.current = null/,
+    "Workspace should remove the visibility listener, stop both daemon controllers, and clear both refs on unmount",
   );
   assert.match(
     workspace,
@@ -89,6 +104,11 @@ test("Workspace applies connection polls through the existing classifier-driven 
     /const applyDaemonConnectionPoll = useCallback\(\(poll: DaemonConnectionPoll, context: \{ fresh: boolean \}\) => \{[\s\S]*?\n\s*\}, \[\]\);/,
   )?.[0] ?? "";
   assert.ok(applyPoll.length > 0, "Workspace should centralize daemon connection publication in a stable apply callback");
+  assert.match(
+    applyPoll,
+    /if \(daemonConnectionPayloadTargetMode\(poll\.payload\) === "hub"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.trigger\(\);[\s\S]*\}/,
+    "accepted hub snapshots should trigger the separate travel reconcile requester without awaiting it",
+  );
   assert.match(applyPoll, /const result = classifyDaemonStatusPoll\(poll\)/, "the shared classifier remains authoritative");
   assert.match(
     applyPoll,

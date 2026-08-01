@@ -74,6 +74,7 @@ import {
   createDaemonConnectionSupervisor,
   type DaemonConnectionPoll,
 } from "@/lib/daemon-connection-supervisor";
+import { createDaemonTravelReconcileRequester } from "@/lib/daemon-travel-reconcile-client";
 import {
   createDaemonDesktopAutoStartCoordinator,
   runWorkspaceDaemonStart,
@@ -261,6 +262,18 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 // the four-second session poll (~900/hour). usePausablePoll also pauses this in
 // hidden windows and while the user is composing input.
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
+
+function daemonConnectionPayloadTargetMode(
+  payload: unknown,
+): "local" | "hub" | "unconfigured-hub" | null {
+  if (!payload || typeof payload !== "object" || !("running" in payload)) return null;
+  if (typeof (payload as { running?: unknown }).running !== "boolean") return null;
+  if (!("target" in payload)) return null;
+  const target = (payload as { target?: unknown }).target;
+  if (!target || typeof target !== "object" || !("mode" in target)) return null;
+  const mode = (target as { mode?: unknown }).mode;
+  return mode === "local" || mode === "hub" || mode === "unconfigured-hub" ? mode : null;
+}
 
 export function Workspace() {
   const [acceptedLocalDaemonHealthy, setAcceptedLocalDaemonHealthy] = useState(false);
@@ -567,6 +580,7 @@ export function Workspace() {
   const [daemonStatusUnavailable, setDaemonStatusUnavailable] = useState<string | null>(null);
   const daemonHealthyStreakRef = useRef(0);
   const daemonConnectionSupervisorRef = useRef<ReturnType<typeof createDaemonConnectionSupervisor> | null>(null);
+  const daemonTravelReconcileRequesterRef = useRef<ReturnType<typeof createDaemonTravelReconcileRequester> | null>(null);
   const startDaemonRef = useRef<() => Promise<void>>(async () => {});
   const daemonAutoStartCoordinatorRef = useRef<ReturnType<typeof createDaemonDesktopAutoStartCoordinator> | null>(null);
   if (daemonAutoStartCoordinatorRef.current === null) {
@@ -762,6 +776,9 @@ export function Workspace() {
   useMilestoneWatch();
 
   const applyDaemonConnectionPoll = useCallback((poll: DaemonConnectionPoll, context: { fresh: boolean }) => {
+    if (daemonConnectionPayloadTargetMode(poll.payload) === "hub") {
+      daemonTravelReconcileRequesterRef.current?.trigger();
+    }
     const result = classifyDaemonStatusPoll(poll);
     // The coordinator pins this first accepted decision. Later polls may update
     // live UI state, but can never turn into a delayed automatic restart.
@@ -831,6 +848,16 @@ export function Workspace() {
   }, [tauriPlatform]);
 
   useEffect(() => {
+    const requester = createDaemonTravelReconcileRequester({
+      request: async ({ signal }) => {
+        const response = await fetch("/api/daemon/travel/reconcile", {
+          method: "POST",
+          cache: "no-store",
+          signal,
+        });
+        if (!response.ok) throw new Error("daemon travel reconcile failed");
+      },
+    });
     const supervisor = createDaemonConnectionSupervisor({
       request: async ({ signal, fresh }) => {
         const response = await fetch(fresh ? "/api/daemon/connection?fresh=1" : "/api/daemon/connection", {
@@ -847,6 +874,7 @@ export function Workspace() {
       publish: applyDaemonConnectionPoll,
       isVisible: () => !document.hidden,
     });
+    daemonTravelReconcileRequesterRef.current = requester;
     daemonConnectionSupervisorRef.current = supervisor;
 
     const onDaemonConnectionVisibilityChange = () => {
@@ -857,7 +885,9 @@ export function Workspace() {
     supervisor.start();
     return () => {
       document.removeEventListener("visibilitychange", onDaemonConnectionVisibilityChange);
+      requester.stop();
       supervisor.stop();
+      daemonTravelReconcileRequesterRef.current = null;
       daemonConnectionSupervisorRef.current = null;
     };
   }, [applyDaemonConnectionPoll]);

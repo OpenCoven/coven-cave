@@ -12,12 +12,6 @@ assert.match(
 
 assert.match(
   source,
-  /import \{[^}]*reconcileDaemonTravelHeartbeatSnapshot[^}]*\} from "@\/lib\/server\/daemon-travel-reconcile"/,
-  "daemon connection route should delegate heartbeat travel reconciliation to the focused helper",
-);
-
-assert.match(
-  source,
   /export const dynamic = "force-dynamic"/,
   "daemon connection route should opt out of caching",
 );
@@ -48,8 +42,8 @@ assert.match(
 
 assert.match(
   source,
-  /const snapshot = await loadDaemonConnectionSnapshot\(\{ fresh \}\);[\s\S]*?await reconcileDaemonTravelHeartbeatSnapshot\(snapshot\);[\s\S]*?return NextResponse\.json\(snapshot\);/,
-  "daemon connection route should reconcile heartbeat travel state before returning the snapshot",
+  /const snapshot = await loadDaemonConnectionSnapshot\(\{ fresh \}\);[\s\S]*?return NextResponse\.json\(snapshot\);/,
+  "daemon connection route should return the shared snapshot directly without awaiting travel reconciliation",
 );
 
 assert.match(
@@ -84,13 +78,13 @@ assert.match(
 
 assert.doesNotMatch(
   source,
-  /executorStatusesForConfig|syncOfflineTravelQueue|startLocalDaemon|installedCovenVersion|recordTravelHubReachability/,
-  "daemon connection route should not pull in detailed daemon-status helpers directly",
+  /daemon-travel-reconcile|reconcileDaemonTravelHeartbeatSnapshot|syncOfflineTravelQueue|startLocalDaemon|recordTravelHubReachability/,
+  "daemon connection route should remain a read-only snapshot endpoint with no travel reconciliation imports",
 );
 
 assert.doesNotMatch(
   source,
-  /target:\s*target|targetSummary|daemonTargetForConfig|loadDaemonStatusSnapshot/,
+  /executorStatusesForConfig|installedCovenVersion|target:\s*target|targetSummary|daemonTargetForConfig|loadDaemonStatusSnapshot/,
   "daemon connection route should not build broader daemon-status metadata or target summaries",
 );
 
