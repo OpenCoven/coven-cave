@@ -539,6 +539,7 @@ export const SUITES = {
     "src/lib/use-projects-normalize.test.ts",
     "src/lib/project-frecency.test.ts",
     "src/lib/project-root-normalizers.test.ts",
+    "src/lib/project-root-migration.test.ts",
     "src/lib/project-display-name-spaces.test.ts",
     "src/lib/use-projects-scope-transition.test.ts",
     "src/components/calendar-view-polish.test.ts",
@@ -1665,6 +1666,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/voice/familiar-brain.test.ts",
   "src/lib/voice/registry.test.ts",
   "src/lib/voice/elevenlabs.test.ts",
+  "src/lib/project-root-migration.test.ts",
 ]);
 
 // These gates inspect physical source files. The CSS facade expander would
