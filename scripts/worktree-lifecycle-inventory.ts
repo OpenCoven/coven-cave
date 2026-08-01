@@ -262,7 +262,6 @@ const UNSAFE_GIT_ENVIRONMENT = new Set([
   "GIT_CONFIG_SYSTEM",
   "GIT_CONFIG_NOSYSTEM",
   "GIT_CONFIG_COUNT",
-
 ]);
 
 function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
@@ -278,7 +277,6 @@ function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
     }
   }
   env.GIT_GRAFT_FILE = devNull;
-
   return env;
 }
 
@@ -294,7 +292,6 @@ function git(root: string, args: string[], timeout?: number): CommandResult {
       root,
       ...args,
     ],
-
     root,
     timeout,
     sanitizedGitEnvironment(),
@@ -2269,7 +2266,6 @@ function fingerprint(...evidence: string[]): string {
   const hash = createHash("sha256");
   for (const value of evidence) {
     hash.update(String(Buffer.byteLength(value))).update("\0").update(value);
-
   }
   return hash.digest("hex");
 }
@@ -2557,7 +2553,6 @@ export function collectWorktreeLifecycleInventory(
     finalHistoryOverrides.replaceRefsState !== initialHistoryOverrides.replaceRefsState ||
     finalHistoryOverrides.graftState !== initialHistoryOverrides.graftState
   ) {
-
     throw new Error("worktree or branch inventory changed during patrol");
   }
   if (
@@ -2646,7 +2641,6 @@ export function collectWorktreeLifecycleInventory(
       initialRefsRaw,
       initialHistoryOverrides.replaceRefsState,
       initialHistoryOverrides.graftState,
-
     ),
   };
 }

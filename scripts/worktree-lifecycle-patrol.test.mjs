@@ -27,7 +27,6 @@ const duplicateRegisteredPath = path.join(fixtureRoot, "duplicate-registered");
 const duplicateWorktreeInventory = path.join(fixtureRoot, "duplicate-worktree-inventory");
 const metadataAlias = path.join(fixtureRoot, "old-alias");
 
-
 function run(command, args, cwd, options = {}) {
   return execFileSync(command, args, {
     cwd,
@@ -238,7 +237,6 @@ try {
   const detached = path.join(repo, ".worktrees", "detached");
   git(["worktree", "add", "-q", "--detach", detached, "origin/main"], repo);
   const defaultHead = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
-  const workflowHead = "d".repeat(defaultHead.length);
   git(["update-ref", "refs/remotes/origin/trunk", defaultHead], repo);
   const worktreeInventory = git(["worktree", "list", "--porcelain", "-z"], repo);
   writeFileSync(
@@ -1173,9 +1171,8 @@ case "$*" in
     if [ "${LIFECYCLE_WORKFLOW_STDERR:-0}" = "1" ]; then
       printf '%s\n' 'workflow inventory omitted inaccessible runs' >&2
     fi
-
     if [ "\${LIFECYCLE_BAD_WORKFLOW:-0}" = "1" ]; then
-      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/missing-id"}]}]'
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{}]}]'
     elif [ "\${LIFECYCLE_PARTIAL_WORKFLOW:-0}" = "1" ]; then
       printf '%s\n' '[{"total_count":2,"workflow_runs":[{"id":9001,"status":"'"$WORKFLOW_STATUS"'","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run"}]}]'
     elif [ "\${LIFECYCLE_CAPPED_WORKFLOW:-0}" = "1" ]; then
@@ -1205,7 +1202,6 @@ case "$*" in
       fi
     elif [ "$WORKFLOW_STATUS" = "queued" ]; then
       printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":9000,"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/9000"}]}]'
-
     else
       printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
     fi
@@ -1264,7 +1260,7 @@ elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_PATH:-0}" = "1" ]; then
 elif [ "\${LIFECYCLE_UNUSABLE_ADDITIONAL_BRANCH:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Unusable branch","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/bad..name","path":"${live}","owner":"Kitty","purpose":"Invalid fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_EXCEPTION_BUDGETS:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${realpathSync(old)}/","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active matched exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${realpathSync(old)}/./"]}}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${path.join(repo, ".worktrees", "path-mismatch")}","owner":"Kitty","purpose":"Mismatched fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired path mismatch","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${recentMerge}"]}}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired matched exception","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-stale","status":"closed","title":"Stale metadata","metadata":{"coven":{"worktree":{"branch":"feat/stale","path":"${path.join(repo, ".worktrees", "stale")}","owner":"Kitty","purpose":"Stale fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active stale exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${path.join(repo, ".worktrees", "stale")}"]}}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${realpathSync(old)}/","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active matched exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${realpathSync(old)}"]}}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${path.join(repo, ".worktrees", "path-mismatch")}","owner":"Kitty","purpose":"Mismatched fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired path mismatch","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${recentMerge}"]}}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired matched exception","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-stale","status":"closed","title":"Stale metadata","metadata":{"coven":{"worktree":{"branch":"feat/stale","path":"${path.join(repo, ".worktrees", "stale")}","owner":"Kitty","purpose":"Stale fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active stale exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${path.join(repo, ".worktrees", "stale")}"]}}}}}]'
 elif [ "\${LIFECYCLE_LINKED_TASK:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"CAVE-LINK1","status":"open","title":"Unrelated task","description":"","notes":""},{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_MISSING_BRANCH_METADATA:-0}" = "1" ]; then
@@ -1488,7 +1484,6 @@ exit 0
     byBranch.get("feat/live").activeWorkflowUrls,
     ["https://example.test/run/9000"],
     "the stable exact workflow owner appears exactly once",
-
   );
   assert.deepEqual(
     byBranch.get("feat/live").changes.map((line) => line.replace(/^\?\s+/, "")),
@@ -2042,7 +2037,6 @@ exit 0
   }
 
   verifySafetyRegression("replacement refs fail closed before ancestry", () => {
-
     const replacementTree = git(["show", "-s", "--format=%T", defaultHead], repo).trim();
     const replacementCommit = git(
       ["commit-tree", replacementTree, "-p", oldHead, "-m", "replacement ancestry lie"],
@@ -2069,15 +2063,11 @@ exit 0
       const replacementReport = JSON.parse(
         patrol(["--json"], { LIFECYCLE_CLOSED_UNMERGED: "1" }),
       );
-      const replacementReport = JSON.parse(
-        patrol(["--json"], { LIFECYCLE_CLOSED_UNMERGED: "1" }),
-      );
       const replacementOld = replacementReport.items.find(
         (item) => item.branch === "feat/old",
       );
       assert.equal(replacementOld.lane, "uncertain");
       assert.match(replacementOld.probeErrors.join("\n"), /replacement ref/i);
-
     } finally {
       git(["replace", "-d", defaultHead], repo);
     }

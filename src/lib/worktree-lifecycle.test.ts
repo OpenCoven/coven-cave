@@ -66,7 +66,6 @@ const DAY = 24 * 60 * 60 * 1000;
     normalizeAbsoluteWorktreePath("/repo/wt"),
     "distinct filesystem paths are not collapsed by whitespace trimming",
   );
-
   assert.notEqual(
     normalizeAbsoluteWorktreePath("/repo/other"),
     normalizeAbsoluteWorktreePath("/repo/wt"),

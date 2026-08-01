@@ -26,7 +26,6 @@ if (process.platform === "win32") {
   );
   process.exit(0);
 }
-
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(sourceRoot, "scripts", "worktree-lifecycle-create.ts");
 const realGit = process.env.PATH.split(path.delimiter)
