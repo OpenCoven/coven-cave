@@ -49,6 +49,7 @@ export const SUITES = {
     "scripts/canonical-memory-smoke-lifecycle.test.mjs",
     "scripts/test-alias-loader.test.mjs",
     "scripts/maintenance-gate.test.mjs",
+    "scripts/worktree-lifecycle-retirement.test.mjs",
     "src/lib/board-cache-events.test.ts",
     "src/lib/surface-warmup-registry.test.ts",
     "src/components/workspace-surface-warmup.test.ts",
@@ -1457,6 +1458,8 @@ export const SUITES = {
 const STRIP_TYPES_MJS = new Set([
   "scripts/release-macos-signing.test.mjs",
   "scripts/research-media-ffmpeg.integration.test.mjs",
+  // imports ./worktree-lifecycle-inventory.ts
+  "scripts/worktree-lifecycle-retirement.test.mjs",
 ]);
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need
