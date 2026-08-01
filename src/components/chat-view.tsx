@@ -61,6 +61,12 @@ import {
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
 import { generateChatTitle } from "@/lib/chat-title-generation";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
+import {
+  newSessionDefaults,
+  newSessionDefaultsMatch,
+  readNewSessionDefaults,
+  writeNewSessionDefaults,
+} from "@/lib/chat-new-session-defaults";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp } from "@/lib/slash-commands";
@@ -1926,6 +1932,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // still expose the previous render between a picker action and its PATCH.
   const modelStateRef = useRef<ChatModelState | null>(null);
   const [usagePlan, setUsagePlan] = useState<ChatUsagePlanSnapshot | null>(null);
+  // "Save as default" (Chat.dc.html 2b): pins the current project + model so a
+  // brand-new chat stops inferring them from the most recent chat. Read once —
+  // the value only matters at session start, and re-reading would fight a
+  // picker the user is actively using.
+  const [savedDefaults, setSavedDefaults] = useState(() =>
+    typeof window === "undefined" ? newSessionDefaults() : readNewSessionDefaults(window.localStorage),
+  );
+
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).responseSpeed);
   const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode);
@@ -2120,10 +2134,32 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     taskProjectId: linkedContext?.task?.projectId,
     taskCwd: linkedContext?.task?.cwd,
     recentProjectRoot,
+    defaultProjectId: savedDefaults.projectId,
     projects,
   });
   const resolvedProjectId = projectSelection.projectId;
   const selectedProject = projectSelection.project;
+
+  const currentNewSessionDefaults = {
+    projectId: resolvedProjectId === NO_PROJECT_ID ? null : resolvedProjectId,
+    model:
+      modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+        ? modelState.effectiveModel
+        : familiar.model ?? null,
+  };
+  const defaultsAlreadySaved = newSessionDefaultsMatch(savedDefaults, currentNewSessionDefaults);
+  const saveNewSessionDefaults = useCallback(() => {
+    const next = {
+      projectId: resolvedProjectId === NO_PROJECT_ID ? null : resolvedProjectId,
+      model:
+        modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+          ? modelState.effectiveModel
+          : familiar.model ?? null,
+    };
+    writeNewSessionDefaults(typeof window === "undefined" ? null : window.localStorage, next);
+    setSavedDefaults(next);
+  }, [resolvedProjectId, modelState?.effectiveModel, familiar.model]);
+
   // A registered project's worktree keeps its checkout root for execution
   // while the parent project remains the visible, authorized selection.
   // Historical unregistered roots remain readable but resolve to no selected
@@ -6840,6 +6876,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 familiar={familiar}
                 sessions={sessions}
                 composer={composerNode}
+                onSaveDefaults={saveNewSessionDefaults}
+                defaultsSaved={defaultsAlreadySaved}
                 modelId={
                   modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
                     ? modelState.effectiveModel

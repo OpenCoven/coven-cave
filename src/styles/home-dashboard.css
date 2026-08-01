@@ -209,6 +209,68 @@
    descendant would be. Nothing to undo here — noted because the reverse has
    bitten this repo before. */
 
+/* 2b trails the config row with "Save as default" and the start hint. They ride
+   under the composer rather than inside it: the composer is shared with the
+   docked and home surfaces, and these two are new-session-only chrome. */
+.home-dash__composer-trail {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: 6px;
+  padding: 0 2px;
+}
+
+.home-dash__save-default {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.home-dash__save-default:hover:not(:disabled) {
+  color: var(--foreground);
+  border-color: var(--border-strong);
+}
+
+.home-dash__save-default:focus-visible {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+/* Saved is a state, not a dead control — it stays legible rather than dimming
+   to the usual disabled grey, because it is reporting a fact. */
+.home-dash__save-default:disabled {
+  cursor: default;
+  color: var(--text-muted);
+  border-style: dashed;
+}
+
+.home-dash__start-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.home-dash__start-hint kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
 /* Empty board — the one state with no band to show. */
 .home-dash__work-empty {
   padding: 22px 15px;
