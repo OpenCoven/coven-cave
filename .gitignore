@@ -136,15 +136,34 @@ ds-bundle/
 /.opencode
 /.copilot
 /.codex-tmp
+/.worktree*
+/.worktree-*/*
 /.worktree-lifecycle-fixture-gILphr
 /.worktree-lifecycle-fixture-*
 __verify-chat-detail.mjs
 /.worktree-lifecycle-fixture-nsQqub
 /.worktree-lifecycle-fixture-Lh7Y4s
 /.worktree-lifecycle-fixture-eTlVOX
+<<<<<<< Updated upstream
 /.worktree-lifecycle-fixture-*
 
 =======
 /.worktree-lifecycle-fixture-bWPzfW
 
 >>>>>>> main
+=======
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+/.worktree-lifecycle-fixture-*
+
+>>>>>>> Stashed changes
+=======
+/.worktree-lifecycle-fixture-bWPzfW
+/.worktree-lifecycle-fixture-bWPzfW
+/.worktree-lifecycle-fixture-bWPzfW
+/.worktree-lifecycle-fixture-bWPzfW
+/.worktree-lifecycle-fixture-bWPzfW
+/.worktree-lifecycle-fixture-bWPzfW
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
