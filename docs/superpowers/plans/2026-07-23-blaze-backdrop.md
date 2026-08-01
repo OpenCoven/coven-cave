@@ -8,7 +8,7 @@
 
 **Tech Stack:** Next.js 16 / React 19, node source-contract tests (`scripts/run-tests.mjs`), design gates (`pnpm lint` = codemod check + design ESLint), pnpm.
 
-**Spec:** `docs/superpowers/specs/2026-07-23-blaze-backdrop-design.md` (local, gitignored). **Bead:** cave-99s9. **Worktree:** `.worktrees/blaze-backdrop` (branch `blaze-backdrop`, already pushed? No — branch exists locally with no commits yet beyond origin/main).
+**Spec:** `docs/superpowers/specs/2026-07-23-blaze-backdrop-design.md` (versioned in this repo since cave-8zjr5). **Bead:** cave-99s9. **Worktree:** `.worktrees/blaze-backdrop` (branch `blaze-backdrop`, already pushed? No — branch exists locally with no commits yet beyond origin/main).
 
 **Working directory for ALL tasks:** `/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/blaze-backdrop`
 

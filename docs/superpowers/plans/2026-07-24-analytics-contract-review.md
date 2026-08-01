@@ -8,7 +8,7 @@
 
 **Tech Stack:** Next.js/React (TSX), plain CSS (component-imported sheet), node:test source-contract tests run with `--experimental-strip-types`.
 
-**Spec:** `docs/superpowers/specs/2026-07-24-analytics-contract-review-design.md` (in the primary checkout at `/Users/buns/Documents/GitHub/OpenCoven/coven-cave`; `docs/superpowers` is gitignored — local-only, do not try to commit it).
+**Spec:** `docs/superpowers/specs/2026-07-24-analytics-contract-review-design.md` (versioned in this repo since cave-8zjr5).
 
 **One deliberate deviation from the spec:** the spec listed a `familiarName` prop on `ContractCompliance`. It is not needed — the button copy is static and the brief is built in the parent, which already derives `familiarName`. YAGNI: only `onReview` is added.
 
@@ -338,7 +338,7 @@ Expected: clean (no rewrites proposed).
 gh pr create --base main --head feat/analytics-contract-review \
   --title "feat(analytics): contract review launch + empty-results grid layout" \
   --body "$(cat <<'EOF'
-Two fixes for the Familiar Analytics surface (design spec: docs/superpowers/specs/2026-07-24-analytics-contract-review-design.md, local-only):
+Two fixes for the Familiar Analytics surface (design spec: docs/superpowers/specs/2026-07-24-analytics-contract-review-design.md):
 
 **1. Empty results no longer leave holes in the grid.** `.fa-grid` had `align-items: start`, so a short empty-state card sharing a row with a tall neighbor (empty confidence card next to a full Recent sessions list) floated over a large blank gap. Rows now stretch (grid default) and empty-state notices center vertically inside their cards (`.fa-section > .ui-empty-state`, `.fa-section > .fa-thread-empty`). No JSX/order changes; the "empty thread-signals doesn't go wide" pin is untouched.
 

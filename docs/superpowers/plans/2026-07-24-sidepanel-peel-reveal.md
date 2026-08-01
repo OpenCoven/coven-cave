@@ -8,7 +8,7 @@
 
 **Tech Stack:** Next.js 15 / React 19.2.7 (`inert` boolean prop), vendored zero-dep React+WebGL2 file, repo node source-contract tests (`scripts/run-tests.mjs`), design gates (`pnpm lint`, `pnpm codemod:design`).
 
-**Spec:** `docs/superpowers/specs/2026-07-24-sidepanel-peel-reveal-design.md` (local-only; `/docs/superpowers` is gitignored). **Bead:** cave-3vgd. **Worktree:** `.worktrees/peel-sidepanel-reveal` (branch `peel-sidepanel-reveal`). All commands below run from the worktree root unless stated. Push after every commit (worktree-guard discipline). Commits are signed via the global git config; per `AGENTS.md`, do not add trailers crediting AI tools.
+**Spec:** `docs/superpowers/specs/2026-07-24-sidepanel-peel-reveal-design.md` (versioned in this repo since cave-8zjr5). **Bead:** cave-3vgd. **Worktree:** `.worktrees/peel-sidepanel-reveal` (branch `peel-sidepanel-reveal`). All commands below run from the worktree root unless stated. Push after every commit (worktree-guard discipline). Commits are signed via the global git config; per `AGENTS.md`, do not add trailers crediting AI tools.
 
 ---
 
@@ -32,7 +32,7 @@
 - [ ] **Step 1: Confirm clean worktree state**
 
 Run: `git status --porcelain`
-Expected: empty (only the untracked gitignored `docs/superpowers/` spec may appear under `git status --ignored`; that is fine).
+Expected: empty (`docs/superpowers/` is versioned since cave-8zjr5, so specs appear as ordinary tracked files).
 
 - [ ] **Step 2: Write the transient shadcn config**
 
@@ -651,7 +651,7 @@ Progressive enhancement: with the desktop nav collapsed to its 56px rail, moving
 - Revealed under-layer is `aria-hidden` + `inert` (decorative); the hover-peek remains the only interactive reveal
 - Contract test `sidepanel-peel-reveal.test.ts` wired into the app suite
 
-Design spec (local, gitignored path): docs/superpowers/specs/2026-07-24-sidepanel-peel-reveal-design.md
+Design spec: docs/superpowers/specs/2026-07-24-sidepanel-peel-reveal-design.md
 Bead: cave-3vgd
 EOF
 )"
