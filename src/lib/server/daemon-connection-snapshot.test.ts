@@ -401,6 +401,30 @@ test("target keys and summaries never expose hub access tokens", () => {
   assert.doesNotMatch(key, /secret-token|coven_access_token/);
 });
 
+test("target keys and summaries redact hub URL credentials while preserving target identity", () => {
+  const target = daemonTargetForConfig(hubConfig(
+    "https://witch:forest-secret@cave.tailnet.example.ts.net:8787/daemon/health",
+  ));
+  if (target.mode !== "hub") {
+    assert.fail(`expected a hub target, received ${target.mode}`);
+  }
+
+  const summary = daemonConnectionTargetSummary(target);
+  const key = daemonConnectionTargetKey(target);
+  const serializedSummary = JSON.stringify(summary);
+  const expectedUrl = "https://cave.tailnet.example.ts.net:8787/daemon/health";
+
+  if (summary.mode !== "hub") {
+    assert.fail(`expected a hub summary, received ${summary.mode}`);
+  }
+  assert.equal(summary.url, expectedUrl);
+  assert.equal(key, `hub:${expectedUrl}`);
+  assert.equal(new URL(summary.url).username, "");
+  assert.equal(new URL(summary.url).password, "");
+  assert.doesNotMatch(serializedSummary, /witch|forest-secret|@/);
+  assert.doesNotMatch(key, /witch|forest-secret|@/);
+});
+
 test("config load rejection propagates without probing the daemon", async () => {
   const expected = new Error("config unavailable");
   let calls = 0;

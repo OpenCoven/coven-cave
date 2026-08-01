@@ -61,19 +61,26 @@ type ProbedSnapshot = {
   completedAt: number;
 };
 
+function sanitizedHubSnapshotUrl(targetUrl: string): string {
+  const url = new URL(targetUrl);
+  url.username = "";
+  url.password = "";
+  return url.toString().replace(/\/+$/, "");
+}
+
 export function daemonConnectionTargetSummary(target: DaemonTarget): DaemonConnectionTargetSummary {
   if (target.mode === "local") {
     return { mode: target.mode, label: target.label, socket: target.socketPath };
   }
   if (target.mode === "hub") {
-    return { mode: target.mode, label: target.label, url: target.url };
+    return { mode: target.mode, label: target.label, url: sanitizedHubSnapshotUrl(target.url) };
   }
   return { mode: target.mode, label: target.label, error: target.error };
 }
 
 export function daemonConnectionTargetKey(target: DaemonTarget): string {
   if (target.mode === "local") return `local:${target.socketPath}`;
-  if (target.mode === "hub") return `hub:${target.url}`;
+  if (target.mode === "hub") return `hub:${sanitizedHubSnapshotUrl(target.url)}`;
   return `unconfigured-hub:${target.error}`;
 }
 
