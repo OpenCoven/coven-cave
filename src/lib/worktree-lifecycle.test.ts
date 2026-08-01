@@ -37,9 +37,9 @@ const DAY = 24 * 60 * 60 * 1000;
     "relative paths are not accepted as lifecycle paths",
   );
   assert.equal(
-    normalizeAbsoluteWorktreePath("/repo/\0wt"),
+    normalizeAbsoluteWorktreePath("/repo/wt\0escaped"),
     null,
-    "invalid absolute paths are not accepted as lifecycle paths",
+    "embedded NUL bytes are not accepted as lifecycle paths",
   );
   assert.notEqual(
     normalizeAbsoluteWorktreePath("/repo/other"),

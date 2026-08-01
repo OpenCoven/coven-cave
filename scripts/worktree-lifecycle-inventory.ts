@@ -83,7 +83,7 @@ type PullRequestInventory = {
 };
 
 type WorkflowRun = {
-  id: string;
+  id: number;
   status: string;
   head_branch: string | null;
   head_sha: string;
@@ -190,24 +190,92 @@ function command(
   args: string[],
   cwd: string,
   timeout = 30_000,
+  env: NodeJS.ProcessEnv = process.env,
 ): CommandResult {
-  const result = spawnSync(executable, args, {
-    cwd,
-    encoding: "utf8",
-    timeout,
-    maxBuffer: 64 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  return {
-    ok: result.status === 0,
-    status: result.status,
-    stdout: typeof result.stdout === "string" ? result.stdout : "",
-    stderr: typeof result.stderr === "string" ? result.stderr.trim() : "",
-  };
+  try {
+    const result = spawnSync(executable, args, {
+      cwd,
+      env,
+      encoding: "utf8",
+      timeout,
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const spawnError = result.error instanceof Error ? result.error.message : "";
+    const stderr = typeof result.stderr === "string" ? result.stderr.trim() : "";
+    return {
+      ok: result.status === 0 && spawnError.length === 0,
+      status: result.status,
+      stdout: typeof result.stdout === "string" ? result.stdout : "",
+      stderr: [stderr, spawnError].filter(Boolean).join(": "),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: null,
+      stdout: "",
+      stderr: `${executable} invocation failed: ${
+        error instanceof Error ? error.message : "unknown spawn error"
+      }`,
+    };
+  }
+}
+
+const UNSAFE_GIT_ENVIRONMENT = new Set([
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_COMMON_DIR",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_NAMESPACE",
+  "GIT_CEILING_DIRECTORIES",
+  "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+  "GIT_IMPLICIT_WORK_TREE",
+  "GIT_PREFIX",
+  "GIT_EXEC_PATH",
+  "GIT_OPTIONAL_LOCKS",
+  "GIT_NO_REPLACE_OBJECTS",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_GRAFT_FILE",
+  "GIT_SHALLOW_FILE",
+  "GIT_QUARANTINE_PATH",
+  "GIT_LITERAL_PATHSPECS",
+  "GIT_GLOB_PATHSPECS",
+  "GIT_NOGLOB_PATHSPECS",
+  "GIT_ICASE_PATHSPECS",
+  "GIT_ATTR_NOSYSTEM",
+  "GIT_EXTERNAL_DIFF",
+  "GIT_DIFF_OPTS",
+  "GIT_REF_PARANOIA",
+  "GIT_CONFIG",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_SYSTEM",
+  "GIT_CONFIG_NOSYSTEM",
+]);
+
+function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (
+      UNSAFE_GIT_ENVIRONMENT.has(key) ||
+      /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/.test(key)
+    ) {
+      delete env[key];
+    }
+  }
+  return env;
 }
 
 function git(root: string, args: string[], timeout?: number): CommandResult {
-  return command("git", ["-C", root, ...args], root, timeout);
+  return command(
+    "git",
+    ["--no-optional-locks", "--no-replace-objects", "-C", root, ...args],
+    root,
+    timeout,
+    sanitizedGitEnvironment(),
+  );
 }
 
 function requiredGit(root: string, args: string[]): string {
@@ -229,10 +297,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizePath(candidate: string): string {
+  const normalizedCandidate = normalizeAbsoluteWorktreePath(candidate);
+  if (normalizedCandidate === null) {
+    throw new Error("invalid absolute worktree path");
+  }
   try {
-    return realpathSync(candidate);
+    const realPath = normalizeAbsoluteWorktreePath(realpathSync(normalizedCandidate));
+    if (realPath === null) throw new Error("invalid resolved worktree path");
+    return realPath;
   } catch {
-    return path.resolve(candidate);
+    return normalizedCandidate;
   }
 }
 
@@ -249,18 +323,25 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
         throw new Error("malformed git worktree inventory");
       }
       const worktreePath = worktreeFields[0]!.slice("worktree ".length);
+      const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
       const head = headFields[0]!.slice("HEAD ".length);
-      if (!path.isAbsolute(worktreePath) || !OID.test(head)) {
+      if (normalizedWorktreePath === null || !OID.test(head)) {
         throw new Error("malformed git worktree inventory");
       }
       const ref = branchFields[0]?.slice("branch ".length) ?? null;
       if (ref === null) {
-        return { path: worktreePath, head, ref: null, branch: null, refError: null };
+        return {
+          path: normalizedWorktreePath,
+          head,
+          ref: null,
+          branch: null,
+          refError: null,
+        };
       }
       const match = ref.match(/^refs\/heads\/(.+)$/);
       if (!match || !match[1]) {
         return {
-          path: worktreePath,
+          path: normalizedWorktreePath,
           head,
           ref,
           branch: null,
@@ -268,7 +349,7 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
         };
       }
       return {
-        path: worktreePath,
+        path: normalizedWorktreePath,
         head,
         ref,
         branch: match[1],
@@ -350,10 +431,11 @@ function parseProcessOwners(raw: string): {
       else record.sawCwdField = true;
     } else if (line.startsWith("n")) {
       const cwd = line.slice(1);
-      if (!record || !record.sawCwdField || record.cwd !== null || !path.isAbsolute(cwd)) {
+      const normalizedCwd = normalizeAbsoluteWorktreePath(cwd);
+      if (!record || !record.sawCwdField || record.cwd !== null || normalizedCwd === null) {
         partial = true;
       } else {
-        record.cwd = normalizePath(cwd);
+        record.cwd = normalizePath(normalizedCwd);
       }
     } else {
       partial = true;
@@ -382,17 +464,22 @@ function statusState(root: string): {
 } {
   const result = git(root, [
     "-c",
-    "status.showUntrackedFiles=all",
+    "status.relativePaths=false",
     "-c",
     "core.fileMode=true",
     "-c",
     "core.fsmonitor=false",
+    "-c",
+    "core.untrackedCache=false",
+    "-c",
+    "core.ignoreStat=false",
     "status",
     "--porcelain=v2",
     "-z",
     "--untracked-files=all",
     "--ignored=matching",
     "--ignore-submodules=none",
+    "--no-renames",
   ]);
   if (!result.ok) {
     return {
@@ -925,28 +1012,11 @@ function fetchPullRequests(
   };
 }
 
-function canonicalWorkflowRunId(value: unknown): string | null {
-  if (typeof value === "number") {
-    return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
-  }
-  return typeof value === "string" && /^[1-9]\d*$/.test(value) ? value : null;
-}
-
-function sameWorkflowRun(left: WorkflowRun, right: WorkflowRun): boolean {
-  return (
-    left.id === right.id &&
-    left.status === right.status &&
-    left.head_branch === right.head_branch &&
-    left.head_sha === right.head_sha &&
-    left.html_url === right.html_url
-  );
-}
-
 function fetchWorkflowSweep(
   repo: string,
   root: string,
 ): { runs: WorkflowRun[]; error: string | null } {
-  const runsById = new Map<string, WorkflowRun>();
+  const runsById = new Map<number, WorkflowRun>();
   for (const state of ACTIVE_WORKFLOW_STATES) {
     const result = command(
       "gh",
@@ -987,7 +1057,8 @@ function fetchWorkflowSweep(
             page.workflow_runs.every(
               (run) =>
                 isRecord(run) &&
-                canonicalWorkflowRunId(run.id) !== null &&
+                Number.isSafeInteger(run.id) &&
+                run.id > 0 &&
                 run.status === state &&
                 (run.head_branch === null || typeof run.head_branch === "string") &&
                 typeof run.head_sha === "string" &&
@@ -1029,7 +1100,7 @@ function fetchWorkflowSweep(
           error: `workflow inventory returned partial data for ${state}`,
         };
       }
-      const stateIds = new Set<string>();
+      const stateIds = new Set<number>();
       for (const run of stateRuns) {
         if (stateIds.has(run.id)) {
           return {
@@ -1039,20 +1110,26 @@ function fetchWorkflowSweep(
         }
         stateIds.add(run.id);
         const existing = runsById.get(run.id);
-        if (existing && !sameWorkflowRun(existing, run)) {
+        if (existing) {
           return {
             runs: [],
-            error: `workflow inventory returned conflicting data for run ID ${run.id}`,
+            error: `workflow inventory returned conflicting status for run ID ${run.id}: ${existing.status} and ${run.status}`,
           };
         }
-        if (!existing) runsById.set(run.id, run);
+        runsById.set(run.id, {
+          id: run.id,
+          status: run.status,
+          head_branch: run.head_branch,
+          head_sha: run.head_sha,
+          html_url: run.html_url,
+        });
       }
     } catch {
       return { runs: [], error: `workflow inventory returned malformed data for ${state}` };
     }
   }
   return {
-    runs: [...runsById.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    runs: [...runsById.values()].sort((left, right) => left.id - right.id),
     error: null,
   };
 }
@@ -1065,11 +1142,11 @@ function fetchWorkflows(
   if (first.error) return first;
   const second = fetchWorkflowSweep(repo, root);
   if (second.error) return second;
-  if (
-    first.runs.length !== second.runs.length ||
-    first.runs.some((run, index) => !sameWorkflowRun(run, second.runs[index]!))
-  ) {
-    return { runs: [], error: "workflow inventory changed during patrol" };
+  if (JSON.stringify(first.runs) !== JSON.stringify(second.runs)) {
+    return {
+      runs: [],
+      error: "workflow inventory changed between verification sweeps",
+    };
   }
   return first;
 }
@@ -1122,7 +1199,7 @@ function fetchSessions(root: string): { sessions: CovenSession[]; error: string 
           typeof session.id === "string" &&
           session.id.length > 0 &&
           typeof session.project_root === "string" &&
-          path.isAbsolute(session.project_root) &&
+          normalizeAbsoluteWorktreePath(session.project_root) !== null &&
           typeof session.status === "string" &&
           session.status.length > 0,
       )
@@ -1132,7 +1209,9 @@ function fetchSessions(root: string): { sessions: CovenSession[]; error: string 
     return {
       sessions: parsed.sessions.map((session) => ({
         id: session.id,
-        projectRoot: normalizePath(session.project_root),
+        projectRoot: normalizePath(
+          normalizeAbsoluteWorktreePath(session.project_root)!,
+        ),
         status: session.status,
       })),
       error: null,
@@ -1152,6 +1231,13 @@ function parseException(
     return undefined;
   }
   const { owner, reason, expiresAt, additionalPaths } = value;
+  const normalizedAdditionalPaths = Array.isArray(additionalPaths)
+    ? additionalPaths.map((candidate) =>
+        typeof candidate === "string"
+          ? normalizeAbsoluteWorktreePath(candidate)
+          : null,
+      )
+    : null;
   if (typeof owner !== "string" || owner.trim().length === 0) {
     errors.push("exception owner must be a nonblank string");
   }
@@ -1167,11 +1253,8 @@ function parseException(
   if (
     !Array.isArray(additionalPaths) ||
     additionalPaths.length === 0 ||
-    !additionalPaths.every(
-      (candidate) => normalizeAbsoluteWorktreePath(
-        typeof candidate === "string" ? candidate : null,
-      ) !== null,
-    )
+    normalizedAdditionalPaths === null ||
+    normalizedAdditionalPaths.some((candidate) => candidate === null)
   ) {
     errors.push("exception additionalPaths must contain absolute paths");
   }
@@ -1179,7 +1262,7 @@ function parseException(
     typeof owner !== "string" ||
     typeof reason !== "string" ||
     typeof expiresAt !== "string" ||
-    !Array.isArray(additionalPaths)
+    normalizedAdditionalPaths === null
   ) {
     return undefined;
   }
@@ -1187,8 +1270,8 @@ function parseException(
     owner,
     reason,
     expiresAt,
-    additionalPaths: additionalPaths.filter(
-      (candidate): candidate is string => typeof candidate === "string",
+    additionalPaths: normalizedAdditionalPaths.filter(
+      (candidate): candidate is string => candidate !== null,
     ),
   };
 }
@@ -1210,6 +1293,10 @@ function parseStructuredRecord(
   }
   const worktree = value;
   const branch = typeof worktree.branch === "string" ? worktree.branch : "";
+  const metadataPath =
+    typeof worktree.path === "string"
+      ? normalizeAbsoluteWorktreePath(worktree.path)
+      : null;
   const errors: string[] = [];
   const metadataErrors = (message: string) => errors.push(`${prefix}: ${message}`);
   if (
@@ -1224,11 +1311,7 @@ function parseStructuredRecord(
       metadataErrors("branch must be a valid exact local branch name");
     }
   }
-  if (
-    normalizeAbsoluteWorktreePath(
-      typeof worktree.path === "string" ? worktree.path : null,
-    ) === null
-  ) {
+  if (metadataPath === null) {
     metadataErrors("path must be absolute");
   }
   if (typeof worktree.owner !== "string" || worktree.owner.trim().length === 0) {
@@ -1269,7 +1352,6 @@ function parseStructuredRecord(
   const exception = parseException(worktree.exception, exceptionErrors);
   for (const error of exceptionErrors) metadataErrors(error);
 
-  const metadataPath = typeof worktree.path === "string" ? worktree.path : null;
   if (errors.length > 0) return { branch, path: metadataPath, metadata: null, errors };
   return {
     branch,
@@ -1610,13 +1692,15 @@ function remoteDefaultBranch(root: string): RemoteDefaultBranch {
 function matchingTasks(
   branch: string | null,
   worktreePath: string | null,
+  head: string,
   tasks: BeadTask[],
 ): string[] {
-  if (branch === null && worktreePath === null) return [];
   const matchedBranch =
     branch !== null && !PROTECTED_BRANCHES.has(branch) ? branch : null;
   const branchBeadIds = new Set(matchedBranch ? beadIdsInText(matchedBranch) : []);
-  const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
+  const normalizedWorktreePath =
+    worktreePath === null ? null : normalizePath(worktreePath);
+  const exactOid = new RegExp(`(?:^|[^0-9a-f])${head}(?:$|[^0-9a-f])`, "i");
   return tasks
     .filter((task) => task.status !== "closed")
     .filter(
@@ -1628,6 +1712,7 @@ function matchingTasks(
               normalizeAbsoluteWorktreePath(record.path) === normalizedWorktreePath),
         ) ||
         branchBeadIds.has(task.id.toLowerCase()) ||
+        exactOid.test(task.text) ||
         (matchedBranch !== null && task.text.includes(matchedBranch)) ||
         (matchedBranch !== null &&
           worktreePath !== null &&
@@ -1785,7 +1870,9 @@ function classifyInventoryObservation(
 export function collectWorktreeLifecycleInventory(
   options: WorktreeLifecycleInventoryOptions,
 ): WorktreeLifecycleInventory {
-  const root = realpathSync(options.root);
+  const requestedRoot = normalizeAbsoluteWorktreePath(options.root);
+  if (requestedRoot === null) throw new Error("root must be an absolute worktree path");
+  const root = realpathSync(requestedRoot);
   const commonGitDir = requiredGit(root, [
     "rev-parse",
     "--path-format=absolute",
@@ -1801,6 +1888,13 @@ export function collectWorktreeLifecycleInventory(
   const entries = parseWorktrees(initialWorktreeRaw);
   const localRefs = parseLocalBranchRefs(initialRefsRaw);
   const localRefByName = new Map(localRefs.map((localRef) => [localRef.ref, localRef]));
+  const registeredPathsByRef = new Map<string, string[]>();
+  for (const entry of entries) {
+    if (entry.ref === null || entry.refError !== null) continue;
+    const paths = registeredPathsByRef.get(entry.ref) ?? [];
+    paths.push(entry.path);
+    registeredPathsByRef.set(entry.ref, paths);
+  }
   const registeredRefs = new Set(entries.flatMap((entry) => (entry.ref ? [entry.ref] : [])));
 
   const units = [
@@ -1819,6 +1913,13 @@ export function collectWorktreeLifecycleInventory(
         localRefByName.has(entry.ref) &&
         localRefByName.get(entry.ref)!.oid !== entry.head
           ? `registered worktree HEAD differs from local branch ref: ${entry.ref}`
+          : null,
+        entry.ref &&
+        entry.refError === null &&
+        (registeredPathsByRef.get(entry.ref)?.length ?? 0) > 1
+          ? `registered local branch ref ${entry.ref} appears in more than one worktree: ${registeredPathsByRef
+              .get(entry.ref)!
+              .join(", ")}`
           : null,
       ].filter((error): error is string => error !== null),
     })),
@@ -1964,7 +2065,7 @@ export function collectWorktreeLifecycleInventory(
             .filter((claim) => claim.branch === unit.branch && claim.state === "active")
             .map((claim) => claim.agent_id)
         : [],
-      taskIds: matchingTasks(unit.branch, unit.path, tasks.tasks),
+      taskIds: matchingTasks(unit.branch, unit.path, unit.head, tasks.tasks),
       openPrs,
       mergedPr: exactMerged
         ? {
