@@ -99,10 +99,24 @@ never fake production data.
   live word counts, source material from the familiar's real memory and recent
   journal days, real publishing into the Knowledge Vault (republish-in-place,
   Grimoire deep links), published-works drawer.
-- **Chart Room** (`navigator-chart-room`, role `navigator`) — the real board
-  as a plotted course: lane queues, task intake that charts real cards,
-  scheduled legs with overdue flags from card dates, real lane moves, and a
-  voyage-log drawer of completed and blocked cards.
+- **Chart Room** (`navigator-chart-room`, role `navigator`) — the real board as
+  a plotted course, read four ways: **Flow** (the board's lanes as columns, with
+  dependency edges drawn over them), **Graph** (laid out by dependency depth, so
+  column one is what can start today), **Orchestration** (steps against their
+  familiar, the capability their labels name, and what is owed by you), and
+  **Table** (sortable and editable, with gantt and board shapes of the same
+  rows). A fifth tab, **Decisions**, is not another reading of the chart: it is
+  the cards flagged `needsHuman`, most-blocking first. A briefing band carries
+  the decision owed, project stats, and the structural repairs the room would
+  make; the voyage-log drawer carries completed cards, this session's chart
+  edits, and what was answered.
+
+  Lanes, titles, owners, projects and the needs-a-human flag are real writes to
+  `/api/board`. The one thing the board cannot store is which card *waits on*
+  which, so that lives as the operator's chart overlay in the room's own
+  surface state (`chart-room-model.ts`) and is drawn over the real cards —
+  never written back as if the board knew about it. Dangling edges are pruned
+  on every read.
 - **Review Deck** (`reviewer-review-deck`, role `reviewer`) — a tri-pane deck: a
   summary strip; a filterable, collapsible review queue built from sessions
   carrying PRs, working changes, or branches; a center change viewer with file
