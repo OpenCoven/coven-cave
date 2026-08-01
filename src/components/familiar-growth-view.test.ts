@@ -5,7 +5,18 @@ import { describe, it } from "node:test";
 
 const view = readFileSync(new URL("./familiar-growth-view.tsx", import.meta.url), "utf8");
 const report = readFileSync(new URL("./familiar-growth-report.tsx", import.meta.url), "utf8");
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+// Read the sheet this view actually imports, not globals.css. cave-ii7xi
+// (1cd3d940d) split surface-reporting.css: globals.css now carries
+// shell-cards-and-controls.css in that slot, and surface-reporting.css became a
+// route-level import — familiar-growth-view.tsx pulls it in directly. Every
+// `.growth-*` rule asserted below moved with it, so pointing at globals.css
+// asserts against a sheet that no longer contains them. That split updated
+// css-module-order.test.ts and mobile-shell-smoke.test.ts but not this file,
+// which is what turned main red.
+const globals = readFileSync(
+  new URL("../styles/globals/surface-reporting.css", import.meta.url),
+  "utf8",
+);
 
 describe("Familiar growth view", () => {
   it("sorts the roster attention-first (stalled → quiet → steady → active)", () => {
