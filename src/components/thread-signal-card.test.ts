@@ -5,6 +5,10 @@ import { topPersistentBlocker } from "@/lib/thread-self-report";
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
 
 const source = readFileSync(new URL("./thread-signal-card.tsx", import.meta.url), "utf8");
+const styles = readFileSync(
+  new URL("../styles/globals/shell-cards-and-controls.css", import.meta.url),
+  "utf8",
+);
 
 function report(overrides: Partial<ThreadSelfReport> = {}): ThreadSelfReport {
   return {
@@ -72,5 +76,32 @@ describe("thread-signal-card module wiring", () => {
     assert.match(source, /topPersistentBlocker/);
     assert.match(source, /onClick=\{\(event\) => stopAndRun\(event, onViewFull\)\}/);
     assert.match(source, /onClick=\{\(event\) => stopAndRun\(event, onDismiss\)\}/);
+  });
+
+  it("keeps the card compact and switches directly from one to three score columns", () => {
+    assert.match(
+      styles,
+      /\.tsc-card\s*\{[\s\S]*?container-name:\s*thread-signal;[\s\S]*?container-type:\s*inline-size;[\s\S]*?gap:\s*var\(--space-2\);[\s\S]*?padding:\s*var\(--space-2\);[\s\S]*?border-radius:\s*var\(--radius-sm\);/,
+    );
+    assert.match(
+      styles,
+      /\.tsc-scores\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+    );
+    assert.match(
+      styles,
+      /\.tsc-score-item\s*\{[\s\S]*?padding:\s*var\(--space-1\);[\s\S]*?border-radius:\s*var\(--radius-sm\);/,
+    );
+    assert.match(
+      styles,
+      /\.tsc-actions button\s*\{[\s\S]*?min-height:\s*var\(--space-6\);/,
+    );
+    assert.match(
+      styles,
+      /@container thread-signal \(min-width:\s*560px\)\s*\{[\s\S]*?\.tsc-scores\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/,
+    );
+    assert.doesNotMatch(
+      styles,
+      /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+    );
   });
 });
