@@ -516,6 +516,7 @@ export const SUITES = {
     "src/lib/project-scope.test.ts",
     "src/lib/use-projects.test.ts",
     "src/lib/use-projects-race.test.ts",
+    "src/lib/use-projects-normalize.test.ts",
     "src/lib/use-projects-scope-transition.test.ts",
     "src/components/calendar-view-polish.test.ts",
     "src/components/calendar-agenda-redesign.test.ts",
