@@ -54,6 +54,10 @@ export type Familiar = {
   asanaEnabled?: boolean;
   /** Optional Asana workspace gid this familiar is scoped to. */
   asanaWorkspaceGid?: string;
+  /** Explicit per-familiar X research grant. Missing is false. */
+  xResearchEnabled?: boolean;
+  /** Explicit per-familiar X publishing grant. Missing is false. */
+  xPublishEnabled?: boolean;
   /** Per-familiar Omnigent fleet defaults (agent / host / workspace on host). */
   omnigent?: {
     agentId?: string;

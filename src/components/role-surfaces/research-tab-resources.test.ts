@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(new URL("./research-tab-resources.tsx", import.meta.url), "utf8");
+const xSources = readFileSync(new URL("./research-x-sources.tsx", import.meta.url), "utf8");
+const emptyState = readFileSync(new URL("../ui/empty-state.tsx", import.meta.url), "utf8");
 const styles = readFileSync(
   new URL("../../styles/globals/surface-research-resources.css", import.meta.url),
   "utf8",
@@ -182,4 +184,57 @@ test("resource cards and details keep actions in predictable footers", () => {
   assert.match(source, /context\.openUrl\(openLink\.url\)/);
   assert.match(styles, /\.research-res-card__footer/);
   assert.match(styles, /@container research-desk \(max-width: 560px\)/);
+});
+
+test("Resources mounts Grab from X inline without changing the five-tab host", () => {
+  assert.match(source, /import \{ ResearchXSources \} from "\.\/research-x-sources"/);
+  assert.match(
+    source,
+    /<ResearchXSources\s+familiar=\{context\.activeFamiliar\}\s+selectedMissionId=\{selectedMission\?\.id \?\? null\}\s+onMissionAttached=\{research\.applyMission\}/,
+  );
+  assert.match(source, /<ResearchXSources[\s\S]*<form className="research-res__intake"/);
+});
+
+test("X source links use theme-aware text contrast instead of the fixed research accent", () => {
+  assert.match(styles, /\.research-x-post__link:hover\s*\{\s*color: var\(--text-primary\);/);
+  assert.doesNotMatch(
+    styles,
+    /\.research-x-post__link:hover\s*\{\s*color: var\(--research-accent\);/,
+  );
+});
+
+test("X source ownership remounts by familiar/grant and same-scope retries claim a new generation", () => {
+  assert.match(
+    xSources,
+    /return <ResearchXSourcesScope key=\{scopeKey\} \{\.\.\.props\} \/>;/,
+  );
+  assert.match(xSources, /const generation = \+\+generationRef\.current;/);
+  assert.match(xSources, /setLookupBusy\(false\);[\s\S]*setSearchBusy\(false\);/);
+});
+
+test("X source mutations validate mission identity and preserve newer reads without stealing focus", () => {
+  assert.match(xSources, /const mission = parseResearchMission\(value\.mission\);/);
+  assert.match(xSources, /mission\.id === requestedMissionId/);
+  assert.match(xSources, /mission\.familiarId === familiar\.id/);
+  assert.doesNotMatch(xSources, /value\.mission as ResearchMission/);
+  assert.match(xSources, /const sourceReadEpoch = sourceMutationEpochRef\.current;/);
+  assert.match(xSources, /mergeSourceRead\(current, parsed as SavedXSourceView\[\]\)/);
+  assert.match(xSources, /const refreshButtonRefs = useRef\(new Map<string, HTMLButtonElement>\(\)\);/);
+  assert.match(xSources, /function focusBelongsToSourceCard\(/);
+  assert.match(xSources, /sourceCard\?\.contains\(activeElement as Node\) === true/);
+  assert.match(xSources, /function trackRefreshFocus\(/);
+  assert.match(xSources, /ownerDocument\.addEventListener\("pointerdown", onPointerDown, true\);/);
+  assert.match(xSources, /ownerDocument\.addEventListener\("focusin", onFocusIn, true\);/);
+  assert.match(xSources, /!focusOwnership\.movedElsewhere/);
+  assert.match(xSources, /focusOwnership\.ownerDocument\.body/);
+  assert.match(xSources, /\|\| retainedDisabledFocus\) \{\s*sourceCard\?\.focus\(\);/);
+  assert.match(xSources, /pendingRefreshFocusRef\.current = \{\s*sourceId: source\.id,/);
+  assert.match(xSources, /if \(activeElement === null \|\| activeElement === pending\.ownerDocument\.body\) \{\s*refreshButton\.focus\(\);/);
+  assert.match(xSources, /sourceMutationEpochRef\.current \+= 1;\s*setSources/);
+});
+
+test("manual zero-result announcements suppress duplicate EmptyState live output", () => {
+  assert.match(xSources, /<EmptyState\s+compact\s+live=\{false\}\s+headline="No X posts found"/);
+  assert.match(emptyState, /live = true/);
+  assert.match(emptyState, /role=\{live \? "status" : undefined\}/);
 });

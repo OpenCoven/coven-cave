@@ -1,0 +1,60 @@
+.familiar-x-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.familiar-x-section__heading,
+.familiar-x-section__account,
+.familiar-x-section__actions,
+.familiar-x-section__scopes {
+  display: flex;
+  align-items: center;
+}
+
+.familiar-x-section__heading,
+.familiar-x-section__account {
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.familiar-x-section__heading .familiar-studio-brain__card-title {
+  margin: 0;
+}
+
+.familiar-x-section__loading,
+.familiar-x-section__empty,
+.familiar-x-section__grants {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.familiar-x-section__empty {
+  align-items: flex-start;
+}
+
+.familiar-x-section__account {
+  align-items: flex-start;
+}
+
+.familiar-x-section__account-name {
+  margin: var(--space-1) 0 0;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.familiar-x-section__actions,
+.familiar-x-section__scopes {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.familiar-x-section__actions {
+  justify-content: flex-end;
+}
+
+.familiar-x-section__scopes {
+  color: var(--text-secondary);
+}

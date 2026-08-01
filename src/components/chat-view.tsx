@@ -6861,7 +6861,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     title="Voice call"
                     aria-label="Voice call"
                   >
-                    <Icon name="ph:phone" width={15} aria-hidden />
+                    <Icon name="ph:phone" width="var(--icon-2xs)" aria-hidden />
                   </button>
                   <ComposerActionsMenu
                     attach={{
@@ -6930,9 +6930,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   />
                 </div>
                 <div className="cave-composer-submit-row">
-                  {/* Circular 32px send (chat revamp 1d): accent outline at
-                      rest, ~18% accent tint while the draft is non-empty;
-                      busy keeps the cancel behavior in the same circle. */}
+                  {/* The compact send keeps its queue/cancel behavior in one
+                      stable action slot. */}
                   {busy ? (
                     <>
                       <button
@@ -6944,7 +6943,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         title="Queue message"
                         aria-label="Queue message"
                       >
-                        <Icon name="ph:arrow-up-bold" width={13} aria-hidden />
+                        <Icon name="ph:arrow-up-bold" width="var(--icon-2xs)" aria-hidden />
                       </button>
                       <button
                         type="button"
@@ -6953,7 +6952,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         title="Cancel (esc)"
                         aria-label="Cancel response"
                       >
-                        <Icon name="ph:x-bold" width={13} aria-hidden />
+                        <Icon name="ph:x-bold" width="var(--icon-2xs)" aria-hidden />
                       </button>
                     </>
                   ) : (
@@ -6966,7 +6965,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       title={`Send message (${keys.enter})`}
                       aria-label="Send message"
                     >
-                      <Icon name="ph:arrow-up-bold" width={13} aria-hidden />
+                      <Icon name="ph:arrow-up-bold" width="var(--icon-2xs)" aria-hidden />
                     </button>
                   )}
                 </div>

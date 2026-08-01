@@ -232,7 +232,323 @@ export type CreateResearchMissionResult =
   | { ok: true; value: CreateResearchMissionInput }
   | { ok: false; error: string };
 
+const RESEARCH_MISSION_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const FAMILIAR_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
+const RESEARCH_MISSION_STATUSES: ReadonlySet<ResearchMissionStatus> = new Set([
+  "queued",
+  "planning",
+  "running",
+  "checkpoint",
+  "paused",
+  "completed",
+  "failed",
+  "cancelled",
+  "archived",
+]);
+const RESEARCH_ITERATION_STATUSES: ReadonlySet<ResearchIterationStatus> = new Set([
+  "queued",
+  "running",
+  "checkpoint",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+const RESEARCH_SOURCE_STATUSES: ReadonlySet<ResearchSourceRef["status"]> = new Set([
+  "candidate",
+  "used",
+  "conflicting",
+  "rejected",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function optionalString(
+  value: Record<string, unknown>,
+  key: string,
+): string | undefined | null {
+  const candidate = value[key];
+  if (candidate === undefined) return undefined;
+  return typeof candidate === "string" ? candidate : null;
+}
+
+function optionalTimestamp(
+  value: Record<string, unknown>,
+  key: string,
+): string | undefined | null {
+  const candidate = value[key];
+  if (candidate === undefined) return undefined;
+  return validTimestamp(candidate) ? candidate : null;
+}
+
+function parseResearchIteration(value: unknown): ResearchIteration | null {
+  if (!isRecord(value)
+    || !Number.isSafeInteger(value.number)
+    || (value.number as number) < 1
+    || !RESEARCH_ITERATION_STATUSES.has(value.status as ResearchIterationStatus)) {
+    return null;
+  }
+  const flowRunId = optionalString(value, "flowRunId");
+  const sessionId = optionalString(value, "sessionId");
+  const automationRunId = optionalString(value, "automationRunId");
+  const startedAt = optionalTimestamp(value, "startedAt");
+  const finishedAt = optionalTimestamp(value, "finishedAt");
+  const summary = optionalString(value, "summary");
+  const decisionReason = optionalString(value, "decisionReason");
+  if (flowRunId === null
+    || sessionId === null
+    || automationRunId === null
+    || startedAt === null
+    || finishedAt === null
+    || summary === null
+    || decisionReason === null) {
+    return null;
+  }
+  if (value.costUsd !== undefined
+    && (typeof value.costUsd !== "number"
+      || !Number.isFinite(value.costUsd)
+      || value.costUsd < 0)) {
+    return null;
+  }
+  if (value.decision !== undefined
+    && !["continue", "checkpoint", "complete"].includes(String(value.decision))) {
+    return null;
+  }
+  let steps: ResearchIteration["steps"];
+  if (value.steps !== undefined) {
+    if (!Array.isArray(value.steps)) return null;
+    const parsedSteps = value.steps.map((step) => {
+      if (!isRecord(step)
+        || typeof step.id !== "string"
+        || typeof step.type !== "string"
+        || !["pending", "running", "succeeded", "failed", "skipped"].includes(
+          String(step.status),
+        )
+        || (step.detail !== undefined && typeof step.detail !== "string")) {
+        return null;
+      }
+      return {
+        id: step.id,
+        type: step.type,
+        status: step.status as NonNullable<ResearchIteration["steps"]>[number]["status"],
+        ...(typeof step.detail === "string" ? { detail: step.detail } : {}),
+      };
+    });
+    if (parsedSteps.some((step) => step === null)) return null;
+    steps = parsedSteps as NonNullable<ResearchIteration["steps"]>;
+  }
+  return {
+    number: value.number as number,
+    status: value.status as ResearchIterationStatus,
+    ...(flowRunId !== undefined ? { flowRunId } : {}),
+    ...(sessionId !== undefined ? { sessionId } : {}),
+    ...(automationRunId !== undefined ? { automationRunId } : {}),
+    ...(startedAt !== undefined ? { startedAt } : {}),
+    ...(finishedAt !== undefined ? { finishedAt } : {}),
+    ...(typeof value.costUsd === "number" ? { costUsd: value.costUsd } : {}),
+    ...(summary !== undefined ? { summary } : {}),
+    ...(value.decision !== undefined
+      ? { decision: value.decision as ResearchIteration["decision"] }
+      : {}),
+    ...(decisionReason !== undefined ? { decisionReason } : {}),
+    ...(steps !== undefined ? { steps } : {}),
+  };
+}
+
+function parseResearchArtifact(value: unknown): ResearchArtifactRef | null {
+  if (!isRecord(value)
+    || typeof value.key !== "string"
+    || !RESEARCH_ARTIFACT_KINDS.includes(value.kind as ResearchArtifactKind)
+    || typeof value.title !== "string"
+    || typeof value.relativePath !== "string"
+    || !Number.isSafeInteger(value.iteration)
+    || (value.iteration as number) < 1
+    || !["working", "published", "rejected"].includes(String(value.state))
+    || !validTimestamp(value.updatedAt)) {
+    return null;
+  }
+  const knowledgeId = optionalString(value, "knowledgeId");
+  const rejectionReason = optionalString(value, "rejectionReason");
+  if (knowledgeId === null || rejectionReason === null) return null;
+  return {
+    key: value.key,
+    kind: value.kind as ResearchArtifactKind,
+    title: value.title,
+    relativePath: value.relativePath,
+    ...(knowledgeId !== undefined ? { knowledgeId } : {}),
+    iteration: value.iteration as number,
+    state: value.state as ResearchArtifactRef["state"],
+    ...(rejectionReason !== undefined ? { rejectionReason } : {}),
+    updatedAt: value.updatedAt,
+  };
+}
+
+function parseResearchSource(value: unknown): ResearchSourceRef | null {
+  if (!isRecord(value)
+    || typeof value.id !== "string"
+    || typeof value.title !== "string"
+    || typeof value.sourceType !== "string"
+    || !RESEARCH_SOURCE_STATUSES.has(value.status as ResearchSourceRef["status"])) {
+    return null;
+  }
+  const url = optionalString(value, "url");
+  const localPath = optionalString(value, "localPath");
+  const publisher = optionalString(value, "publisher");
+  const publishedAt = optionalString(value, "publishedAt");
+  const claim = optionalString(value, "claim");
+  const note = optionalString(value, "note");
+  if (url === null
+    || localPath === null
+    || publisher === null
+    || publishedAt === null
+    || claim === null
+    || note === null) {
+    return null;
+  }
+  if (value.confidence !== undefined
+    && (typeof value.confidence !== "number"
+      || !Number.isFinite(value.confidence)
+      || value.confidence < 0
+      || value.confidence > 1)) {
+    return null;
+  }
+  return {
+    id: value.id,
+    title: value.title,
+    ...(url !== undefined ? { url } : {}),
+    ...(localPath !== undefined ? { localPath } : {}),
+    ...(publisher !== undefined ? { publisher } : {}),
+    ...(publishedAt !== undefined ? { publishedAt } : {}),
+    sourceType: value.sourceType,
+    ...(claim !== undefined ? { claim } : {}),
+    ...(note !== undefined ? { note } : {}),
+    ...(typeof value.confidence === "number" ? { confidence: value.confidence } : {}),
+    status: value.status as ResearchSourceRef["status"],
+  };
+}
+
+function parseResearchAutomation(value: unknown): ResearchAutomationLink | null {
+  if (!isRecord(value)
+    || typeof value.id !== "string"
+    || typeof value.rrule !== "string"
+    || !["ACTIVE", "PAUSED"].includes(String(value.status))
+    || typeof value.checkpointFingerprint !== "string") {
+    return null;
+  }
+  const checkpointToken = optionalString(value, "checkpointToken");
+  const lastRunId = optionalString(value, "lastRunId");
+  const lastRunAt = optionalTimestamp(value, "lastRunAt");
+  const stopReason = optionalString(value, "stopReason");
+  if (checkpointToken === null
+    || lastRunId === null
+    || lastRunAt === null
+    || stopReason === null) {
+    return null;
+  }
+  if (value.lastRunStatus !== undefined
+    && !["queued", "running", "succeeded", "failed"].includes(String(value.lastRunStatus))) {
+    return null;
+  }
+  return {
+    id: value.id,
+    rrule: value.rrule,
+    status: value.status as ResearchAutomationLink["status"],
+    checkpointFingerprint: value.checkpointFingerprint,
+    ...(checkpointToken !== undefined ? { checkpointToken } : {}),
+    ...(lastRunId !== undefined ? { lastRunId } : {}),
+    ...(value.lastRunStatus !== undefined
+      ? { lastRunStatus: value.lastRunStatus as ResearchAutomationLink["lastRunStatus"] }
+      : {}),
+    ...(lastRunAt !== undefined ? { lastRunAt } : {}),
+    ...(stopReason !== undefined ? { stopReason } : {}),
+  };
+}
+
+export function parseResearchMission(value: unknown): ResearchMission | null {
+  if (!isRecord(value)
+    || value.version !== 1
+    || typeof value.id !== "string"
+    || !RESEARCH_MISSION_ID_RE.test(value.id)
+    || typeof value.familiarId !== "string"
+    || !FAMILIAR_ID_RE.test(value.familiarId)
+    || typeof value.title !== "string"
+    || typeof value.intent !== "string"
+    || !RESEARCH_MISSION_MODES.includes(value.mode as ResearchMissionMode)
+    || !["auto", "user"].includes(String(value.modeSource))
+    || typeof value.deliverable !== "string"
+    || !Array.isArray(value.constraints)
+    || value.constraints.some((constraint) => typeof constraint !== "string")
+    || !isRecord(value.bounds)
+    || !RESEARCH_MISSION_STATUSES.has(value.status as ResearchMissionStatus)
+    || !validTimestamp(value.createdAt)
+    || !validTimestamp(value.updatedAt)
+    || !Array.isArray(value.iterations)
+    || !Array.isArray(value.artifacts)
+    || !Array.isArray(value.sources)) {
+    return null;
+  }
+  const bounds = normalizeResearchBounds(value.bounds as Partial<ResearchBounds>);
+  if (!bounds.ok) return null;
+  const direction = optionalString(value, "direction");
+  const audience = optionalString(value, "audience");
+  const projectRoot = optionalString(value, "projectRoot");
+  const startedAt = optionalTimestamp(value, "startedAt");
+  const finishedAt = optionalTimestamp(value, "finishedAt");
+  const automationId = optionalString(value, "automationId");
+  const lastError = optionalString(value, "lastError");
+  if (direction === null
+    || audience === null
+    || projectRoot === null
+    || startedAt === null
+    || finishedAt === null
+    || automationId === null
+    || lastError === null) {
+    return null;
+  }
+  const iterations = value.iterations.map(parseResearchIteration);
+  const artifacts = value.artifacts.map(parseResearchArtifact);
+  const sources = value.sources.map(parseResearchSource);
+  if (iterations.some((iteration) => iteration === null)
+    || artifacts.some((artifact) => artifact === null)
+    || sources.some((source) => source === null)) {
+    return null;
+  }
+  const automation = value.automation === undefined
+    ? undefined
+    : parseResearchAutomation(value.automation);
+  if (automation === null) return null;
+  return {
+    version: 1,
+    id: value.id,
+    familiarId: value.familiarId,
+    title: value.title,
+    intent: value.intent,
+    ...(direction !== undefined ? { direction } : {}),
+    mode: value.mode as ResearchMissionMode,
+    modeSource: value.modeSource as ResearchMission["modeSource"],
+    deliverable: value.deliverable,
+    ...(audience !== undefined ? { audience } : {}),
+    ...(projectRoot !== undefined ? { projectRoot } : {}),
+    constraints: value.constraints as string[],
+    bounds: bounds.value,
+    status: value.status as ResearchMissionStatus,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    ...(startedAt !== undefined ? { startedAt } : {}),
+    ...(finishedAt !== undefined ? { finishedAt } : {}),
+    ...(automation !== undefined ? { automation } : {}),
+    ...(automationId !== undefined ? { automationId } : {}),
+    iterations: iterations as ResearchIteration[],
+    artifacts: artifacts as ResearchArtifactRef[],
+    sources: sources as ResearchSourceRef[],
+    ...(lastError !== undefined ? { lastError } : {}),
+  };
+}
 
 /** Minimum meaningful research intent — blocks accidental one-word launches
  *  that would still spend a real familiar session. Enforced by the create

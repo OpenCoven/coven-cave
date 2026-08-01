@@ -1,12 +1,11 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { mkdtemp, readFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 const previousHome = process.env.HOME;
-const tempHome = await mkdtemp(path.join(os.tmpdir(), "cave-config-"));
+const tempHome = await mkdtemp(path.join(process.cwd(), ".cave-config-test-"));
 process.env.HOME = tempHome;
 
 const config = await import("./cave-config.ts");
@@ -250,6 +249,9 @@ try {
   assert.equal(novaBinding.role, "review familiar");
   assert.equal(novaBinding.autoSelfReport, true);
   assert.equal(config.bindingFor(cfg, "missing").autoSelfReport, false);
+  assert.equal(config.bindingFor(cfg, "missing").xResearchEnabled, false);
+  assert.equal(config.bindingFor(cfg, "missing").xPublishEnabled, false);
+
   const modelOwnershipConfig = {
     ...cfg,
     familiars: {
@@ -274,6 +276,41 @@ try {
     cfg.defaults.model,
     "a Cave-owned runtime still inherits the global default model",
   );
+
+  await config.saveConfig({
+    defaults: {
+      xResearchEnabled: true,
+      xPublishEnabled: true,
+    },
+    familiars: {
+      nova: { xResearchEnabled: true },
+      wren: { xPublishEnabled: true },
+    },
+  });
+  cfg = await config.loadConfig();
+  assert.equal(
+    config.bindingFor(cfg, "missing").xResearchEnabled,
+    false,
+    "app defaults must never grant X research",
+  );
+  assert.equal(
+    config.bindingFor(cfg, "missing").xPublishEnabled,
+    false,
+    "app defaults must never grant X publishing",
+  );
+  assert.equal(config.bindingFor(cfg, "nova").xResearchEnabled, true);
+  assert.equal(config.bindingFor(cfg, "nova").xPublishEnabled, false);
+  assert.equal(config.bindingFor(cfg, "wren").xResearchEnabled, false);
+  assert.equal(config.bindingFor(cfg, "wren").xPublishEnabled, true);
+
+  await config.saveConfig({
+    familiars: {
+      nova: { xResearchEnabled: null, xPublishEnabled: true },
+    },
+  });
+  cfg = await config.loadConfig();
+  assert.equal(config.bindingFor(cfg, "nova").xResearchEnabled, false);
+  assert.equal(config.bindingFor(cfg, "nova").xPublishEnabled, true);
 
   await config.saveConfig({
     defaults: {
@@ -360,6 +397,7 @@ try {
     autoSelfReport: true,
     display_name: "Nova Prime",
     role: "review familiar",
+    xPublishEnabled: true,
   });
 
   await config.saveConfig({ familiars: { nova: null, local: null } });
@@ -368,6 +406,7 @@ try {
 } finally {
   if (previousHome === undefined) delete process.env.HOME;
   else process.env.HOME = previousHome;
+  await rm(tempHome, { recursive: true, force: true });
 }
 
 // ── Config write-race mutex (2026-07-03 settings audit) ──────────────────────
