@@ -77,7 +77,10 @@ observation retries once. Definite local or unconfigured-hub answers clear
 without triggering, and unknown payloads stay inert so fallback
 `status-unavailable` polls do not erase an active outage window. This keeps
 recovery/replay checks within the travel-local threshold even while the
-connection supervisor backs off.
+connection supervisor backs off. Hidden tabs pause both lanes together:
+visibility deactivates the requester, clears its one-shot cadence, aborts
+in-flight POSTs, and suppresses hidden-tab observations until foreground
+visibility resumes the appropriate one-shot reconcile path.
 
 The travel helper executes behind a per-target serial boundary keyed by the
 sanitized target identity. Equivalent concurrent calls share one in-flight
@@ -166,8 +169,11 @@ explicit user actions, mutations, or active streams merely to reduce counts.
   and one `createDaemonTravelReconcileRequester()` lane for
   `POST /api/daemon/travel/reconcile`; `src/lib/daemon-connection-supervisor.ts`
   only arms the next timer after the authoritative request publishes and
-  settles, and `src/lib/daemon-connection-supervisor.test.ts` keeps ordinary
-  `peakInFlight` at `1`.
+  settles, `src/lib/daemon-connection-supervisor.test.ts` keeps ordinary
+  `peakInFlight` at `1`, and Workspace now forwards one shared visibility flag
+  to `supervisor.setVisible(visible)` plus `requester.setActive(visible)` so a
+  hidden tab pauses both the connection poll lane and the travel reconcile
+  lane together.
 - The old recurring heartbeat paid for the full `/api/daemon/status` payload:
   executor probes, travel state/replay work, version resolution, and workspace
   metadata. The current recurring lane is a fast read-only

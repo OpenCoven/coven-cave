@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createDaemonTravelReconcileRequester } from "./daemon-travel-reconcile-client.ts";
 import { TRAVEL_HUB_UNREACHABLE_MS } from "./travel-client-state.ts";
+
+const source = await readFile(new URL("./daemon-travel-reconcile-client.ts", import.meta.url), "utf8");
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -237,22 +240,101 @@ test("hub outage timer coalesces behind an active request instead of overlapping
   assert.equal(rig.inFlight, 1);
 });
 
-test("hub outage deactivation cancels the timer and keeps stale callbacks inert", async () => {
+test("hidden outage pause clears the timer, aborts the request, and keeps stale callbacks inert", async () => {
   const rig = createRig();
 
   rig.requester.observeHubState("unreachable");
   await flushMicrotasks();
-  await rig.resolve(0);
-
   const timer = rig.latestPendingTimer();
-  rig.requester.observeHubState("inactive");
+  rig.requester.setActive(false);
 
   assert.equal(timer.cancelled, true);
   assert.equal(rig.pendingTimers().length, 0);
+  assert.equal(rig.requests[0]?.signal.aborted, true);
+
+  await rig.reject(0, Object.assign(new Error("aborted"), { name: "AbortError" }));
 
   timer.callback();
   await flushMicrotasks();
   assert.equal(rig.requests.length, 1);
+});
+
+test("observations while hidden stay inert and do not queue new work", async () => {
+  const rig = createRig();
+
+  rig.requester.setActive(false);
+  rig.requester.observeHubState("unreachable");
+  rig.requester.observeHubState("reachable");
+  rig.requester.trigger();
+  await flushMicrotasks();
+
+  assert.equal(rig.requests.length, 0);
+  assert.equal(rig.pendingTimers().length, 0);
+});
+
+test("resuming hidden unreachable state immediately requests once and rearms the outage cadence", async () => {
+  const rig = createRig();
+
+  rig.requester.setActive(false);
+  rig.requester.observeHubState("unreachable");
+  await flushMicrotasks();
+
+  assert.equal(rig.requests.length, 0);
+  assert.equal(rig.pendingTimers().length, 0);
+
+  rig.requester.setActive(true);
+  rig.requester.setActive(true);
+  await flushMicrotasks();
+
+  assert.equal(rig.requests.length, 1);
+  assert.equal(rig.pendingTimers().length, 1);
+  assert.equal(rig.latestPendingTimer().delayMs, TRAVEL_HUB_UNREACHABLE_MS);
+
+  await rig.resolve(0);
+  rig.fireLatestTimer();
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 2);
+});
+
+test("steady reachable resumes silently after a successful reconcile", async () => {
+  const rig = createRig();
+
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+  await rig.resolve(0);
+
+  rig.requester.setActive(false);
+  rig.requester.setActive(true);
+  rig.requester.setActive(true);
+  await flushMicrotasks();
+
+  assert.equal(rig.requests.length, 1);
+  assert.equal(rig.pendingTimers().length, 0);
+});
+
+test("reachable retry-needed resumes one retry when the requester becomes active again", async () => {
+  const rig = createRig();
+
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 1);
+
+  await rig.reject(0, new Error("boom"));
+  rig.requester.setActive(false);
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 1);
+
+  rig.requester.setActive(true);
+  rig.requester.setActive(true);
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 2);
+
+  await rig.resolve(1);
+  rig.requester.setActive(false);
+  rig.requester.setActive(true);
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 2);
 });
 
 test("travel reconcile requester stop aborts the active request, clears trailing work, and cancels outage cadence", async () => {
@@ -277,6 +359,29 @@ test("travel reconcile requester stop aborts the active request, clears trailing
   timer.callback();
   await flushMicrotasks();
   assert.equal(rig.requests.length, 1);
+});
+
+test("stop is terminal even after later visibility or observation changes", async () => {
+  const rig = createRig();
+
+  rig.requester.observeHubState("unreachable");
+  await flushMicrotasks();
+  const timer = rig.latestPendingTimer();
+
+  rig.requester.stop();
+  assert.equal(timer.cancelled, true);
+  assert.equal(rig.requests[0]?.signal.aborted, true);
+
+  await rig.reject(0, Object.assign(new Error("aborted"), { name: "AbortError" }));
+
+  rig.requester.setActive(true);
+  rig.requester.observeHubState("unreachable");
+  rig.requester.trigger();
+  timer.callback();
+  await flushMicrotasks();
+
+  assert.equal(rig.requests.length, 1);
+  assert.equal(rig.pendingTimers().length, 0);
 });
 
 test("reachable failures wait for the next reachable observation before retrying and then go quiet after success", async () => {
@@ -342,4 +447,10 @@ test("recovery observation cancels outage cadence and triggers exactly one recon
 
   assert.equal(rig.requests.length, 2);
   assert.equal(rig.peakInFlight, 1);
+});
+
+test("travel reconcile requester uses explicit visibility pause/resume and no setInterval loop", () => {
+  assert.match(source, /setActive\(active: boolean\): void;/);
+  assert.match(source, /setActive\(nextActive: boolean\): void \{/);
+  assert.doesNotMatch(source, /setInterval\(/);
 });

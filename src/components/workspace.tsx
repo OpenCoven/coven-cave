@@ -874,9 +874,12 @@ export function Workspace() {
     daemonConnectionSupervisorRef.current = supervisor;
 
     const onDaemonConnectionVisibilityChange = () => {
-      supervisor.setVisible(!document.hidden);
+      const visible = !document.hidden;
+      requester.setActive(visible);
+      supervisor.setVisible(visible);
     };
 
+    requester.setActive(!document.hidden);
     document.addEventListener("visibilitychange", onDaemonConnectionVisibilityChange);
     supervisor.start();
     return () => {

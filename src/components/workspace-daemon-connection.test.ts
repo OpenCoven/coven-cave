@@ -66,13 +66,13 @@ test("Workspace wires one mounted supervisor with fresh connection requests, vis
   );
   assert.match(
     workspace,
-    /daemonTravelReconcileRequesterRef\.current = requester[\s\S]*daemonConnectionSupervisorRef\.current = supervisor[\s\S]*supervisor\.start\(\)/,
-    "Workspace should create the travel reconcile requester before starting exactly one supervisor per mount",
+    /daemonTravelReconcileRequesterRef\.current = requester[\s\S]*daemonConnectionSupervisorRef\.current = supervisor[\s\S]*requester\.setActive\(!document\.hidden\)[\s\S]*supervisor\.start\(\)/,
+    "Workspace should create the travel reconcile requester first, initialize its visibility state, and then start exactly one supervisor per mount",
   );
   assert.match(
     workspace,
-    /document\.addEventListener\("visibilitychange", onDaemonConnectionVisibilityChange\)/,
-    "Workspace should forward document visibility changes into the supervisor",
+    /const onDaemonConnectionVisibilityChange = \(\) => \{\s*const visible = !document\.hidden;\s*requester\.setActive\(visible\);\s*supervisor\.setVisible\(visible\);\s*\}[\s\S]*document\.addEventListener\("visibilitychange", onDaemonConnectionVisibilityChange\)/,
+    "Workspace should forward document visibility changes into both daemon lanes with one shared visibility value",
   );
   assert.match(
     workspace,
@@ -83,6 +83,11 @@ test("Workspace wires one mounted supervisor with fresh connection requests, vis
     workspace,
     /useRefreshOnFocus\(\(\) => \{\s*void daemonConnectionSupervisorRef\.current\?\.refresh\(\{ fresh: true \}\);\s*\}\)/,
     "Workspace focus recovery should use a fresh supervisor probe instead of reusing stale failure cache or in-flight work",
+  );
+  assert.doesNotMatch(
+    workspace,
+    /setInterval\(/,
+    "Workspace daemon connection wiring should stay on explicit supervisor/requester timers instead of a raw interval loop",
   );
 });
 

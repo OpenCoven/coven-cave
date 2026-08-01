@@ -7,6 +7,7 @@ export type DaemonTravelObservedHubState = "unreachable" | "reachable" | "inacti
 
 export type DaemonTravelReconcileRequester = {
   observeHubState(state: DaemonTravelObservedHubState): void;
+  setActive(active: boolean): void;
   trigger(): void;
   stop(): void;
 };
@@ -34,12 +35,13 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
     : TRAVEL_HUB_UNREACHABLE_MS;
 
   let stopped = false;
+  let requesterActive = true;
   let trailing = false;
   let observedHubState: DaemonTravelObservedHubState = "inactive";
   let reachableTriggerNeeded = false;
   let reachableRetryNeeded = false;
   let outageTimer: Handle | null = null;
-  let active: { controller: AbortController; promise: Promise<void> } | null = null;
+  let activeRequest: { controller: AbortController; promise: Promise<void> } | null = null;
 
   function clearOutageTimer(): void {
     if (outageTimer === null) return;
@@ -49,12 +51,12 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
   }
 
   function armHubOutageTimer(): void {
-    if (stopped || observedHubState !== "unreachable" || outageTimer !== null) return;
+    if (stopped || !requesterActive || observedHubState !== "unreachable" || outageTimer !== null) return;
     let handle: Handle | null = null;
     handle = schedule(() => {
       if (outageTimer !== handle) return;
       outageTimer = null;
-      if (stopped || observedHubState !== "unreachable") return;
+      if (stopped || !requesterActive || observedHubState !== "unreachable") return;
       trigger();
       armHubOutageTimer();
     }, outageIntervalMs);
@@ -70,7 +72,7 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
   }
 
   function start(): void {
-    if (stopped || active || !requestNeeded()) return;
+    if (stopped || !requesterActive || activeRequest || !requestNeeded()) return;
     const controller = new AbortController();
     const startedForReachableObservation = observedHubState === "reachable";
     if (startedForReachableObservation) {
@@ -88,8 +90,8 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
           }
         })
         .finally(() => {
-          if (active?.controller === controller) active = null;
-          if (stopped || !trailing) {
+          if (activeRequest?.controller === controller) activeRequest = null;
+          if (stopped || !requesterActive || !trailing) {
             trailing = false;
             return;
           }
@@ -97,28 +99,40 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
           start();
         }),
     };
-    active = request;
+    activeRequest = request;
     request.promise.catch(() => {});
   }
 
   function trigger(): void {
-    if (stopped || !requestNeeded()) return;
-    if (active) {
+    if (stopped || !requesterActive || !requestNeeded()) return;
+    if (activeRequest) {
       trailing = true;
       return;
     }
     start();
   }
 
+  function abortActiveRequest(options: { preserveReachableRetry: boolean }): void {
+    const current = activeRequest;
+    activeRequest = null;
+    if (!current) return;
+    if (options.preserveReachableRetry && observedHubState === "reachable") {
+      reachableRetryNeeded = true;
+      reachableTriggerNeeded = false;
+    }
+    current.controller.abort();
+  }
+
   return {
     observeHubState(nextState: DaemonTravelObservedHubState): void {
       if (stopped) return;
       if (observedHubState === nextState) {
+        if (!requesterActive) return;
         if (nextState === "unreachable") {
           armHubOutageTimer();
           return;
         }
-        if (nextState === "reachable" && reachableRetryNeeded) {
+        if (nextState === "reachable" && (reachableTriggerNeeded || reachableRetryNeeded)) {
           trigger();
         }
         return;
@@ -136,28 +150,48 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
       if (nextState === "reachable") {
         clearOutageTimer();
         reachableTriggerNeeded = true;
+        if (!requesterActive) return;
         trigger();
         return;
       }
 
       reachableTriggerNeeded = false;
       reachableRetryNeeded = false;
+      if (!requesterActive) return;
       trigger();
       armHubOutageTimer();
+    },
+
+    setActive(nextActive: boolean): void {
+      if (stopped || requesterActive === nextActive) return;
+      requesterActive = nextActive;
+      if (!requesterActive) {
+        clearOutageTimer();
+        trailing = false;
+        abortActiveRequest({ preserveReachableRetry: true });
+        return;
+      }
+      if (observedHubState === "unreachable") {
+        trigger();
+        armHubOutageTimer();
+        return;
+      }
+      if (observedHubState === "reachable" && reachableRetryNeeded) {
+        trigger();
+      }
     },
 
     trigger,
 
     stop(): void {
       stopped = true;
+      requesterActive = false;
       observedHubState = "inactive";
       clearOutageTimer();
       trailing = false;
       reachableTriggerNeeded = false;
       reachableRetryNeeded = false;
-      const current = active;
-      active = null;
-      current?.controller.abort();
+      abortActiveRequest({ preserveReachableRetry: false });
     },
   };
 }
