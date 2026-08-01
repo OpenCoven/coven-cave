@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-23-blaze-backdrop-design.md` (versioned in this repo since cave-8zjr5). **Bead:** cave-99s9. **Worktree:** `.worktrees/blaze-backdrop` (branch `blaze-backdrop`, already pushed? No — branch exists locally with no commits yet beyond origin/main).
 
-**Working directory for ALL tasks:** `/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/blaze-backdrop`
+**Working directory for ALL tasks:** `/Users/<someone>/Documents/GitHub/OpenCoven/coven-cave/.worktrees/blaze-backdrop`
 
 **Conventions:** signed commits (`git commit -S`), Co-authored-by trailer:
 `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`
@@ -44,7 +44,7 @@
 - [ ] **Step 1: Fetch the registry payload and write the file**
 
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/blaze-backdrop
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave/.worktrees/blaze-backdrop
 curl -sL "https://canvasui.dev/r/blaze-react.json" -o /tmp/blaze-react.json
 node -e "
 const j = require('/tmp/blaze-react.json');
@@ -945,7 +945,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 - [ ] **Step 1: Full local gates**
 
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/blaze-backdrop
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave/.worktrees/blaze-backdrop
 pnpm lint && pnpm typecheck && node scripts/check-tests-wired.mjs
 ```
 Expected: all clean.
@@ -1005,7 +1005,7 @@ All four required checks (Frontend build, Rust check, CodeQL, E2E (Playwright)) 
 - [ ] **Step 8: Local cleanup (worktree + branch)**
 
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
 git worktree remove .worktrees/blaze-backdrop
 git branch -D blaze-backdrop
 git worktree list
@@ -1014,7 +1014,7 @@ git worktree list
 - [ ] **Step 9: Discard the staged shadcn experiment in the primary checkout (user-approved)** — ONLY these paths; `src-tauri/src/sidecar_discovery.rs` and `.beads/*` belong to other work and stay:
 
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
 git restore --staged --worktree components.json __shoot2.mjs src/app/globals.css src/app/layout.tsx src/lib/utils.ts package.json pnpm-lock.yaml src/components/canvasui/Blaze.tsx 2>/dev/null || true
 rm -f components.json __shoot2.mjs
 git status --short   # confirm only unrelated files remain
