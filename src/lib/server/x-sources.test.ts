@@ -634,6 +634,152 @@ test("not-found handling removes cache and marks every familiar's matching sourc
   }
 });
 
+test("a malformed late familiar aborts availability changes after cache purge", async () => {
+  for (const familiarId of ["alpha", "zulu"]) {
+    await upsertSavedXSource({
+      familiarId,
+      postId: "100",
+      canonicalUrl: "https://x.com/opencoven/status/100",
+      originalUrl: "https://x.com/opencoven/status/100",
+      note: `${familiarId} note`,
+      tags: [familiarId],
+    });
+  }
+  await cacheNormalizedXPosts([normalizedPost("100")]);
+  const alphaPath = path.join(sourcesDir, "alpha.json");
+  const zuluPath = path.join(sourcesDir, "zulu.json");
+  const alphaBefore = await readFile(alphaPath, "utf8");
+  const malformedZulu = "{ malformed late familiar";
+  await writeFile(zuluPath, malformedZulu, "utf8");
+
+  await assert.rejects(
+    () => markXPostAvailability("100", "deleted"),
+    /malformed|invalid|corrupt/i,
+  );
+
+  assert.equal(await getCachedXPost("100"), null);
+  assert.equal(await readFile(alphaPath, "utf8"), alphaBefore);
+  assert.equal(await readFile(zuluPath, "utf8"), malformedZulu);
+});
+
+test("a second-file availability commit failure rolls back the first file", async () => {
+  for (const familiarId of ["alpha", "zulu"]) {
+    await upsertSavedXSource({
+      familiarId,
+      postId: "100",
+      canonicalUrl: "https://x.com/opencoven/status/100",
+      originalUrl: "https://x.com/opencoven/status/100",
+      note: `${familiarId} note`,
+      tags: [familiarId],
+    });
+  }
+  await cacheNormalizedXPosts([normalizedPost("100")]);
+  const sourcePaths = ["alpha", "zulu"].map((familiarId) =>
+    path.join(sourcesDir, `${familiarId}.json`));
+  const before = await Promise.all(sourcePaths.map((target) => readFile(target, "utf8")));
+
+  await assert.rejects(
+    () => markXPostAvailability("100", "deleted", {
+      beforeCommitFile: async ({ index }: { index: number }) => {
+        if (index === 1) throw new Error("injected second-file commit failure");
+      },
+    }),
+    /injected second-file commit failure/,
+  );
+
+  assert.equal(await getCachedXPost("100"), null);
+  assert.deepEqual(
+    await Promise.all(sourcePaths.map((target) => readFile(target, "utf8"))),
+    before,
+  );
+});
+
+test("concurrent cross-process upserts and availability changes settle without lost data", async () => {
+  for (const familiarId of ["nova", "wren"]) {
+    await upsertSavedXSource({
+      familiarId,
+      postId: "100",
+      canonicalUrl: "https://x.com/opencoven/status/100",
+      originalUrl: "https://x.com/opencoven/status/100",
+      note: "shared",
+      tags: [],
+    });
+  }
+  const loaderUrl = pathToFileURL(path.resolve("scripts/test-alias-register.mjs")).href;
+  const moduleUrl = pathToFileURL(path.resolve("src/lib/server/x-sources.ts")).href;
+  const startAt = Date.now() + 1_000;
+  const worker = `
+    const wait = Math.max(0, Number(process.env.CAVE_TEST_START_AT) - Date.now());
+    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+    const sourceModule = await import(${JSON.stringify(moduleUrl)});
+    const input = JSON.parse(process.env.CAVE_TEST_OPERATION);
+    if (input.kind === "upsert") await sourceModule.upsertSavedXSource(input.value);
+    else await sourceModule.markXPostAvailability("100", input.availability);
+  `;
+  const operations = [
+    ...Array.from({ length: 8 }, (_, index) => ({
+      kind: "upsert",
+      value: {
+        familiarId: index % 2 === 0 ? "nova" : "wren",
+        postId: String(200 + index),
+        canonicalUrl: `https://x.com/opencoven/status/${200 + index}`,
+        originalUrl: `https://x.com/opencoven/status/${200 + index}`,
+        note: `source-${index}`,
+        tags: [],
+      },
+    })),
+    { kind: "availability", availability: "unavailable" },
+    { kind: "availability", availability: "deleted" },
+  ];
+
+  let deadlockWatchdog: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      Promise.all(operations.map((operation) => execFileAsync(
+        process.execPath,
+        [
+          "--experimental-strip-types",
+          "--import", loaderUrl,
+          "--input-type=module",
+          "--eval", worker,
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            COVEN_X_SOURCES_DIR: sourcesDir,
+            COVEN_X_CACHE_DIR: cacheDir,
+            CAVE_TEST_START_AT: String(startAt),
+            CAVE_TEST_OPERATION: JSON.stringify(operation),
+          },
+          windowsHide: true,
+        },
+      ))),
+      new Promise<never>((_, reject) => {
+        deadlockWatchdog = setTimeout(
+          () => reject(new Error("cross-process operations deadlocked")),
+          10_000,
+        );
+      }),
+    ]);
+  } finally {
+    if (deadlockWatchdog) clearTimeout(deadlockWatchdog);
+  }
+
+  const allSources = [
+    ...await listSavedXSources("nova"),
+    ...await listSavedXSources("wren"),
+  ];
+  assert.equal(allSources.length, 10);
+  assert.deepEqual(
+    allSources.filter((source) => source.postId !== "100")
+      .map((source) => source.postId)
+      .sort(),
+    Array.from({ length: 8 }, (_, index) => String(200 + index)),
+  );
+  assert.equal(allSources.filter((source) => source.postId === "100").length, 2);
+});
+
 test("not-found cache purge completes before a durable source read failure surfaces", async () => {
   for (const familiarId of ["blocked", "healthy"]) {
     await upsertSavedXSource({

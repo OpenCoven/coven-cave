@@ -6,6 +6,7 @@ import {
   readdir,
   rename,
   rm,
+  writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 
@@ -51,6 +52,13 @@ type XPostCacheEntry = {
 type XSourcesFile = {
   version: 1;
   sources: SavedXSource[];
+};
+
+export type XSourceAvailabilityTransactionHooks = {
+  beforeCommitFile?: (context: {
+    familiarId: string;
+    index: number;
+  }) => void | Promise<void>;
 };
 
 export type UpsertSavedXSourceInput = {
@@ -259,6 +267,35 @@ async function quarantineMalformedFile(target: string): Promise<void> {
   );
 }
 
+function parseSourcesFileText(
+  text: string,
+  familiarId: string,
+): XSourcesFile | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)
+    || Object.keys(parsed).length !== 2
+    || !Object.hasOwn(parsed, "version")
+    || !Object.hasOwn(parsed, "sources")
+    || parsed.version !== 1
+    || !Array.isArray(parsed.sources)
+    || parsed.sources.length > MAX_SOURCES_PER_FAMILIAR) {
+    return null;
+  }
+  const sources = parsed.sources.map((source) => parseStoredSource(source, familiarId));
+  const validSources = sources.filter((source): source is SavedXSource => source !== null);
+  const duplicateIds = new Set(validSources.map((source) => source.id)).size !== validSources.length;
+  const duplicatePosts = new Set(validSources.map((source) => source.postId)).size !== validSources.length;
+  if (validSources.length !== parsed.sources.length || duplicateIds || duplicatePosts) {
+    return null;
+  }
+  return { version: 1, sources: validSources };
+}
+
 async function loadSourcesFile(familiarId: string): Promise<XSourcesFile> {
   const target = sourcesPath(familiarId);
   await assertRegularFileOrMissing(target);
@@ -269,33 +306,25 @@ async function loadSourcesFile(familiarId: string): Promise<XSourcesFile> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptySourcesFile();
     throw error;
   }
+  const parsed = parseSourcesFileText(text, familiarId);
+  if (!parsed) {
+    await quarantineMalformedFile(target);
+    return emptySourcesFile();
+  }
+  return parsed;
+}
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text) as unknown;
-  } catch {
-    await quarantineMalformedFile(target);
-    return emptySourcesFile();
+async function loadSourcesFileStrict(
+  familiarId: string,
+): Promise<{ file: XSourcesFile; originalText: string }> {
+  const target = sourcesPath(familiarId);
+  await assertRegularFileOrMissing(target);
+  const text = await readFile(/* turbopackIgnore: true */ target, "utf8");
+  const parsed = parseSourcesFileText(text, familiarId);
+  if (!parsed) {
+    throw new Error(`Stored X sources for ${familiarId} are malformed`);
   }
-  if (!isRecord(parsed)
-    || Object.keys(parsed).length !== 2
-    || !Object.hasOwn(parsed, "version")
-    || !Object.hasOwn(parsed, "sources")
-    || parsed.version !== 1
-    || !Array.isArray(parsed.sources)
-    || parsed.sources.length > MAX_SOURCES_PER_FAMILIAR) {
-    await quarantineMalformedFile(target);
-    return emptySourcesFile();
-  }
-  const sources = parsed.sources.map((source) => parseStoredSource(source, familiarId));
-  const validSources = sources.filter((source): source is SavedXSource => source !== null);
-  const duplicateIds = new Set(validSources.map((source) => source.id)).size !== validSources.length;
-  const duplicatePosts = new Set(validSources.map((source) => source.postId)).size !== validSources.length;
-  if (validSources.length !== parsed.sources.length || duplicateIds || duplicatePosts) {
-    await quarantineMalformedFile(target);
-    return emptySourcesFile();
-  }
-  return { version: 1, sources: validSources };
+  return { file: parsed, originalText: text };
 }
 
 async function saveSourcesFile(familiarId: string, file: XSourcesFile): Promise<void> {
@@ -414,6 +443,39 @@ async function withSourceLock<T>(
   );
 }
 
+async function withAllSourcesLock<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  await ensureRealDirectory(sourcesRoot());
+  return withTransactionLock(
+    path.join(sourcesRoot(), ".all-sources"),
+    "X sources",
+    operation,
+  );
+}
+
+async function withSourceMutationLock<T>(
+  familiarId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return withAllSourcesLock(
+    () => withSourceLock(familiarId, operation),
+  );
+}
+
+function withSourceFileLocks<T>(
+  familiarIds: string[],
+  operation: () => Promise<T>,
+): Promise<T> {
+  const [familiarId, ...remaining] = familiarIds;
+  if (!familiarId) return operation();
+  return withTransactionLock(
+    sourcesPath(familiarId),
+    `X sources for ${familiarId}`,
+    () => withSourceFileLocks(remaining, operation),
+  );
+}
+
 function withCacheLock<T>(operation: () => Promise<T>): Promise<T> {
   return withTransactionLock(cacheRoot(), "X cache", operation);
 }
@@ -447,7 +509,7 @@ export async function upsertSavedXSource(
   rawInput: UpsertSavedXSourceInput,
 ): Promise<{ source: SavedXSource; created: boolean }> {
   const input = validatedInput(rawInput);
-  return withSourceLock(input.familiarId, async () => {
+  return withSourceMutationLock(input.familiarId, async () => {
     const file = await loadSourcesFile(input.familiarId);
     const existingIndex = file.sources.findIndex((source) => source.postId === input.postId);
     const now = new Date().toISOString();
@@ -496,7 +558,7 @@ export async function removeSavedXSource(
   sourceId: string,
 ): Promise<boolean> {
   assertFamiliarId(familiarId);
-  return withSourceLock(familiarId, async () => {
+  return withSourceMutationLock(familiarId, async () => {
     const file = await loadSourcesFile(familiarId);
     const next = file.sources.filter((source) => source.id !== sourceId);
     if (next.length === file.sources.length) return false;
@@ -515,7 +577,7 @@ export async function setXSourceMissionAttached(
   if (!isValidResearchMissionId(missionId)) {
     throw new XApiError("invalid-request", "Research mission id is invalid");
   }
-  await withSourceLock(familiarId, async () => {
+  await withSourceMutationLock(familiarId, async () => {
     const file = await loadSourcesFile(familiarId);
     const source = file.sources.find((candidate) => candidate.id === sourceId);
     if (!source) {
@@ -615,33 +677,164 @@ async function sourceFileNames(): Promise<string[]> {
   return entries
     .filter((entry) => entry.name.endsWith(".json"))
     .map((entry) => entry.name.slice(0, -".json".length))
-    .filter(isValidFamiliarId);
+    .filter(isValidFamiliarId)
+    .sort();
+}
+
+type StagedSourceUpdate = {
+  familiarId: string;
+  target: string;
+  stage: string;
+  backup: string;
+  file: XSourcesFile;
+  originalText: string;
+};
+
+async function commitSourceUpdates(
+  updates: Array<{
+    familiarId: string;
+    file: XSourcesFile;
+    originalText: string;
+  }>,
+  hooks: XSourceAvailabilityTransactionHooks,
+): Promise<void> {
+  if (updates.length === 0) return;
+  const transactionId = `${process.pid}-${randomUUID()}`;
+  const staged: StagedSourceUpdate[] = updates.map(({
+    familiarId,
+    file,
+    originalText,
+  }) => {
+    const target = sourcesPath(familiarId);
+    return {
+      familiarId,
+      target,
+      stage: `${target}.${transactionId}.stage`,
+      backup: `${target}.${transactionId}.backup`,
+      file,
+      originalText,
+    };
+  });
+  const committed: StagedSourceUpdate[] = [];
+  let preserveBackups = false;
+
+  try {
+    for (const update of staged) {
+      await writeFile(
+        /* turbopackIgnore: true */ update.stage,
+        JSON.stringify(update.file, null, 2),
+        { encoding: "utf8", flag: "wx", mode: 0o600 },
+      );
+    }
+    for (const update of staged) {
+      if (await pathKind(update.target) !== "file") {
+        throw new Error(
+          `Stored X sources for ${update.familiarId} changed during transaction`,
+        );
+      }
+      await writeFile(
+        /* turbopackIgnore: true */ update.backup,
+        update.originalText,
+        { encoding: "utf8", flag: "wx", mode: 0o600 },
+      );
+    }
+    for (const [index, update] of staged.entries()) {
+      await hooks.beforeCommitFile?.({
+        familiarId: update.familiarId,
+        index,
+      });
+      if (await pathKind(update.target) !== "file") {
+        throw new Error(
+          `Stored X sources for ${update.familiarId} changed during transaction`,
+        );
+      }
+      await rename(
+        /* turbopackIgnore: true */ update.stage,
+        update.target,
+      );
+      committed.push(update);
+    }
+  } catch (error) {
+    const rollbackErrors: unknown[] = [];
+    for (const update of [...committed].reverse()) {
+      try {
+        await rename(
+          /* turbopackIgnore: true */ update.backup,
+          update.target,
+        );
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      preserveBackups = true;
+      throw new AggregateError(
+        [error, ...rollbackErrors],
+        "X source availability transaction failed and rollback was incomplete",
+      );
+    }
+    throw error;
+  } finally {
+    await Promise.all(staged.flatMap((update) => {
+      const cleanup = [
+        rm(/* turbopackIgnore: true */ update.stage, { force: true }).catch(() => {}),
+      ];
+      if (!preserveBackups) {
+        cleanup.push(
+          rm(/* turbopackIgnore: true */ update.backup, { force: true }).catch(() => {}),
+        );
+      }
+      return cleanup;
+    }));
+  }
 }
 
 export async function markXPostAvailability(
   postId: string,
   availability: XSourceAvailability,
+  hooks: XSourceAvailabilityTransactionHooks = {},
 ): Promise<void> {
   assertPostId(postId);
   if (!["available", "unavailable", "deleted"].includes(availability)) {
     throw new XApiError("invalid-request", "X source availability is invalid");
   }
-  if (availability !== "available") {
-    await withCacheLock(() => removeCacheEntry(postId));
-  }
-  for (const familiarId of await sourceFileNames()) {
-    await withSourceLock(familiarId, async () => {
-      const file = await loadSourcesFile(familiarId);
-      let changed = false;
-      for (const source of file.sources) {
-        if (source.postId !== postId || source.availability === availability) continue;
-        source.availability = availability;
-        source.updatedAt = new Date().toISOString();
-        changed = true;
+  const updateDurableSources = () => withAllSourcesLock(async () => {
+    const familiarIds = await sourceFileNames();
+    return withSourceFileLocks(familiarIds, async () => {
+      const files = await Promise.all(familiarIds.map(async (familiarId) => ({
+        familiarId,
+        ...await loadSourcesFileStrict(familiarId),
+      })));
+      const updatedAt = new Date().toISOString();
+      const updates: Array<{
+        familiarId: string;
+        file: XSourcesFile;
+        originalText: string;
+      }> = [];
+      for (const { familiarId, file, originalText } of files) {
+        const changed = file.sources.some((source) => {
+          if (source.postId !== postId || source.availability === availability) {
+            return false;
+          }
+          source.availability = availability;
+          source.updatedAt = updatedAt;
+          return true;
+        });
+        if (changed) {
+          updates.push({ familiarId, file, originalText });
+        }
       }
-      if (changed) await saveSourcesFile(familiarId, file);
+      await commitSourceUpdates(updates, hooks);
     });
+  });
+  if (availability !== "available") {
+    await withCacheLock(async () => {
+      await removeCacheEntry(postId);
+      await updateDurableSources();
+    });
+    return;
   }
+  await updateDurableSources();
 }
 
 export async function sweepExpiredXCache(now: Date = new Date()): Promise<number> {
