@@ -55,6 +55,27 @@ function executable(file, contents) {
 }
 
 try {
+  const packageJson = JSON.parse(
+    readFileSync(path.join(sourceRoot, "package.json"), "utf8"),
+  );
+  assert.equal(
+    packageJson.scripts["beads:worktrees:create"],
+    "node --experimental-strip-types scripts/worktree-lifecycle-create.ts",
+  );
+  assert.equal(
+    packageJson.scripts["beads:worktrees:apply"],
+    "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave --apply",
+  );
+  assert.equal(
+    packageJson.scripts["beads:worktrees"],
+    "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave",
+  );
+  assert.equal(
+    packageJson.scripts["beads:patrol:apply"],
+    "pnpm beads:prs:patrol:apply && pnpm beads:worktrees",
+    "normal apply patrol remains nonmutating until all gate planes are enforced",
+  );
+
   mkdirSync(repo);
   mkdirSync(origin);
   mkdirSync(bin);

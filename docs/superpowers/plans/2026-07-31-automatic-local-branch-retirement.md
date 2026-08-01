@@ -1253,7 +1253,7 @@ git commit -S -m "feat(worktrees): gate automatic retirement on full enforcement
 - Modify: `package.json`
 - Modify: `scripts/run-tests.mjs`
 
-- [ ] **Step 1: Add command-contract assertions**
+- [x] **Step 1: Add command-contract assertions**
 
 In `scripts/worktree-lifecycle-patrol.test.mjs`, read `package.json` and assert:
 
@@ -1277,7 +1277,7 @@ assert.equal(
 );
 ```
 
-- [ ] **Step 2: Run the command-contract test**
+- [x] **Step 2: Run the command-contract test**
 
 Run:
 
@@ -1287,7 +1287,7 @@ node scripts/worktree-lifecycle-patrol.test.mjs
 
 Expected: FAIL because `beads:worktrees:apply` is absent.
 
-- [ ] **Step 3: Add the explicit dormant apply command**
+- [x] **Step 3: Add the explicit dormant apply command**
 
 Add to `package.json`:
 
@@ -1303,7 +1303,7 @@ Add the new test after the existing patrol test entry in the `app` suite:
 "scripts/worktree-lifecycle-retirement.test.mjs",
 ```
 
-- [ ] **Step 4: Run focused wiring checks**
+- [x] **Step 4: Run focused wiring checks**
 
 Run:
 
@@ -1314,7 +1314,7 @@ node scripts/check-tests-wired.mjs
 
 Expected: patrol test passes and test wiring reports every test wired.
 
-- [ ] **Step 5: Commit commands and CI wiring**
+- [x] **Step 5: Commit commands and CI wiring**
 
 ```bash
 git add package.json scripts/run-tests.mjs scripts/worktree-lifecycle-patrol.test.mjs
