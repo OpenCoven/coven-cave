@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import {
   calculateLifecycleBudgets,
@@ -253,6 +253,7 @@ const UNSAFE_GIT_ENVIRONMENT = new Set([
   "GIT_CONFIG_GLOBAL",
   "GIT_CONFIG_SYSTEM",
   "GIT_CONFIG_NOSYSTEM",
+  "GIT_CONFIG_COUNT",
 ]);
 
 function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
@@ -265,6 +266,8 @@ function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
       delete env[key];
     }
   }
+  env.GIT_NO_REPLACE_OBJECTS = "1";
+  env.GIT_OPTIONAL_LOCKS = "0";
   return env;
 }
 
@@ -1556,6 +1559,63 @@ function directRefError(root: string, ref: string): string | null {
   return result.stderr || `local ref directness check failed for ${ref}`;
 }
 
+type HistoryOverrideProbe = {
+  replaceRefsState: string;
+  graftState: string;
+  errors: string[];
+};
+
+function historyOverrideProbe(root: string, commonGitDir: string): HistoryOverrideProbe {
+  const errors: string[] = [];
+  const replaceRefs = git(root, [
+    "for-each-ref",
+    "--format=%(refname)",
+    "refs/replace",
+  ]);
+  let replaceRefsState: string;
+  if (!replaceRefs.ok || replaceRefs.stderr) {
+    replaceRefsState = `error:${replaceRefs.status ?? "unknown"}:${replaceRefs.stderr}`;
+    errors.push(
+      `Git replacement ref inventory failed: ${
+        replaceRefs.stderr || `status ${replaceRefs.status ?? "unknown"}`
+      }`,
+    );
+  } else {
+    replaceRefsState = replaceRefs.stdout;
+    const refs = replaceRefs.stdout.split("\n").filter(Boolean);
+    if (refs.some((ref) => !ref.startsWith("refs/replace/"))) {
+      errors.push("Git replacement ref inventory returned malformed data");
+    } else if (refs.length > 0) {
+      errors.push(`Git replacement refs are present: ${refs.join(", ")}`);
+    }
+  }
+
+  const graftPath = path.join(commonGitDir, "info", "grafts");
+  let graftState: string;
+  try {
+    const grafts = readFileSync(graftPath);
+    graftState = `present:${createHash("sha256").update(grafts).digest("hex")}`;
+    if (grafts.length > 0) {
+      errors.push(`legacy Git graft file is nonempty: ${graftPath}`);
+    }
+  } catch (error) {
+    if (
+      error !== null &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      graftState = "absent";
+    } else {
+      const detail = error instanceof Error ? error.message : "unknown read error";
+      graftState = `unreadable:${detail}`;
+      errors.push(`legacy Git graft file is unreadable: ${graftPath}: ${detail}`);
+    }
+  }
+
+  return { replaceRefsState, graftState, errors };
+}
+
 function exactRemoteRef(
   root: string,
   ref: string,
@@ -1698,8 +1758,7 @@ function matchingTasks(
   const matchedBranch =
     branch !== null && !PROTECTED_BRANCHES.has(branch) ? branch : null;
   const branchBeadIds = new Set(matchedBranch ? beadIdsInText(matchedBranch) : []);
-  const normalizedWorktreePath =
-    worktreePath === null ? null : normalizePath(worktreePath);
+  const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
   const exactOid = new RegExp(`(?:^|[^0-9a-f])${head}(?:$|[^0-9a-f])`, "i");
   return tasks
     .filter((task) => task.status !== "closed")
@@ -1845,15 +1904,12 @@ function assignActiveSessions(
   return { sessionIdsByPath, probeErrorsByPath };
 }
 
-function fingerprint(worktreeRaw: string, refsRaw: string): string {
-  return createHash("sha256")
-    .update(String(Buffer.byteLength(worktreeRaw)))
-    .update("\0")
-    .update(worktreeRaw)
-    .update(String(Buffer.byteLength(refsRaw)))
-    .update("\0")
-    .update(refsRaw)
-    .digest("hex");
+function fingerprint(...evidence: string[]): string {
+  const hash = createHash("sha256");
+  for (const value of evidence) {
+    hash.update(String(Buffer.byteLength(value))).update("\0").update(value);
+  }
+  return hash.digest("hex");
 }
 
 function classifyInventoryObservation(
@@ -1879,6 +1935,7 @@ export function collectWorktreeLifecycleInventory(
     "--git-common-dir",
   ]).trim();
   const primaryPath = normalizePath(path.dirname(commonGitDir));
+  const initialHistoryOverrides = historyOverrideProbe(root, commonGitDir);
   const initialWorktreeRaw = requiredGit(root, ["worktree", "list", "--porcelain", "-z"]);
   const initialRefsRaw = requiredGit(root, [
     "for-each-ref",
@@ -1959,6 +2016,7 @@ export function collectWorktreeLifecycleInventory(
           probeErrorsByPath: new Map<string, string[]>(),
         };
   const branchGlobalErrors = [
+    ...initialHistoryOverrides.errors,
     ...prs.globalErrors,
     workflows.error,
     claims.error,
@@ -2094,7 +2152,13 @@ export function collectWorktreeLifecycleInventory(
     "--format=%(refname)%0a%(objectname)%00",
     "refs/heads",
   ]);
-  if (finalWorktreeRaw !== initialWorktreeRaw || finalRefsRaw !== initialRefsRaw) {
+  const finalHistoryOverrides = historyOverrideProbe(root, commonGitDir);
+  if (
+    finalWorktreeRaw !== initialWorktreeRaw ||
+    finalRefsRaw !== initialRefsRaw ||
+    finalHistoryOverrides.replaceRefsState !== initialHistoryOverrides.replaceRefsState ||
+    finalHistoryOverrides.graftState !== initialHistoryOverrides.graftState
+  ) {
     throw new Error("worktree or branch inventory changed during patrol");
   }
 
@@ -2172,6 +2236,11 @@ export function collectWorktreeLifecycleInventory(
       classifyInventoryObservation(observation, options.nowMs),
     ),
     budgets,
-    inventoryFingerprint: fingerprint(initialWorktreeRaw, initialRefsRaw),
+    inventoryFingerprint: fingerprint(
+      initialWorktreeRaw,
+      initialRefsRaw,
+      initialHistoryOverrides.replaceRefsState,
+      initialHistoryOverrides.graftState,
+    ),
   };
 }
