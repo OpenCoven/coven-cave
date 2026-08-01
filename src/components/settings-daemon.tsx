@@ -166,17 +166,24 @@ function AutomationSection() {
       <div className="settings-daemon-automation">
         {rows.map((row) => {
           const enabled = automation[row.key];
+          // The description is the consequence — a process restart or an
+          // unattended install. A screen reader must reach it from the switch
+          // itself, not only by having read the row on the way past.
+          const describedBy = `settings-daemon-automation-${row.key}-description`;
           return (
             <div className="settings-daemon-automation-row" key={row.key}>
               <div className="settings-daemon-automation-copy">
                 <span className="settings-daemon-automation-label">{row.label}</span>
-                <span className="settings-daemon-automation-description">{row.description}</span>
+                <span className="settings-daemon-automation-description" id={describedBy}>
+                  {row.description}
+                </span>
               </div>
               <button
                 type="button"
                 role="switch"
                 aria-checked={enabled}
                 aria-label={row.label}
+                aria-describedby={describedBy}
                 onClick={() => writeDaemonAutomation(row.key, !enabled)}
                 className={`settings-switch focus-ring${enabled ? " is-on" : ""}`}
               >

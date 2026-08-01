@@ -3,13 +3,18 @@
 /**
  * Unattended daemon lifecycle preferences (cave-bqywj).
  *
- * Three opt-in switches, all default OFF: relaunch a local daemon that died,
- * upgrade the daemon, upgrade the Coven CLI. Cave already knows how to do all
- * three — what it does not do today is any of them without a person clicking.
+ * Two opt-in switches, both default OFF: relaunch a local daemon that died,
+ * and upgrade Coven. Cave already knows how to do both — what it does not do
+ * today is either of them without a person clicking.
+ *
+ * Two, not the three this module first described: there is no separate daemon
+ * artifact to upgrade. /api/onboarding/install's allowlist has one Coven entry,
+ * `coven-cli` -> `@opencoven/cli`, and the daemon is that binary run as a
+ * daemon.
  *
  * Default-off is the whole design. These restart processes and install
  * binaries on the user's machine, and the CLI is the thing they type at, so a
- * silent version change there is the most surprising of the three. The schema
+ * silent version change there is the more surprising of the two. The schema
  * normalizes with `=== true` rather than `!== false` so a corrupt or partial
  * preferences file fails closed instead of enabling automation nobody asked
  * for.
@@ -69,7 +74,7 @@ function subscribe(fn: () => void): () => void {
 }
 
 /**
- * Live view of the three switches. The server snapshot is the defaults —
+ * Live view of both switches. The server snapshot is the defaults —
  * every flag off — so SSR and a first paint before preferences load can never
  * render as though automation were already enabled.
  */

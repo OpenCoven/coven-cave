@@ -204,9 +204,11 @@ export function normalizeOrgScope(value: unknown): string[] {
 }
 
 /**
- * Every daemon-automation key, in one place so the type, the defaults, the
- * normalizer and the patch validator cannot drift apart. Adding a key here is
- * the only edit needed to carry it through all four.
+ * Every daemon-automation key, in one place. The defaults, the normalizer and
+ * the patch validator all derive from this list, so adding a key here really
+ * is the only edit needed to carry it through them — the type is the one thing
+ * that still has to be written by hand, and `satisfies` below fails the build
+ * if the two disagree.
  */
 export const DAEMON_AUTOMATION_KEYS = [
   "autoRestart",
@@ -214,10 +216,10 @@ export const DAEMON_AUTOMATION_KEYS = [
 ] as const satisfies readonly (keyof CaveDaemonAutomationPreferences)[];
 
 /** Opt-in, every one of them. See the note on CavePreferences["daemon"]. */
-export const DEFAULT_DAEMON_AUTOMATION: CaveDaemonAutomationPreferences = {
-  autoRestart: false,
-  autoUpgradeCli: false,
-};
+export const DEFAULT_DAEMON_AUTOMATION: CaveDaemonAutomationPreferences =
+  Object.freeze(
+    Object.fromEntries(DAEMON_AUTOMATION_KEYS.map((key) => [key, false])),
+  ) as CaveDaemonAutomationPreferences;
 
 /**
  * `=== true` on purpose. The rest of this schema uses `!== false` for
@@ -226,10 +228,9 @@ export const DEFAULT_DAEMON_AUTOMATION: CaveDaemonAutomationPreferences = {
  * to normalize to off rather than on.
  */
 function normalizeDaemonAutomation(source: Record<string, unknown>): CaveDaemonAutomationPreferences {
-  return {
-    autoRestart: source.autoRestart === true,
-    autoUpgradeCli: source.autoUpgradeCli === true,
-  };
+  return Object.fromEntries(
+    DAEMON_AUTOMATION_KEYS.map((key) => [key, source[key] === true]),
+  ) as CaveDaemonAutomationPreferences;
 }
 
 function normalizeStopPhrase(value: unknown): string {

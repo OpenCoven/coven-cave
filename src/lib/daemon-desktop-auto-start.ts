@@ -26,11 +26,6 @@ export type DaemonDesktopAutoStartCoordinator = {
 };
 
 /**
- * Rendezvous the first accepted status decision with the resolved platform.
- * The decision is consumed synchronously before `start` is called, so even a
- * re-entrant status observation cannot issue a duplicate request.
- */
-/**
  * Backoff for unattended restarts, in ms since the previous attempt. A daemon
  * that cannot start must not be relaunched every 5 seconds forever: the list
  * is finite, so after the last entry the coordinator gives up and leaves the

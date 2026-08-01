@@ -446,7 +446,7 @@ assert.equal(defaults.appearance.backdrop.style, "image");
 }
 {
   // ── Daemon automation (cave-bqywj) ──────────────────────────────────────
-  // These three restart processes and install binaries on the user's machine.
+  // These two restart processes and install binaries on the user's machine.
   // Every assertion below exists because the failure mode is "the cave did
   // something unattended that the user never asked for", which no amount of
   // later UI polish undoes.
