@@ -482,11 +482,11 @@ test("podcast drafter drafts a host/guest dialogue with templated framing only",
     markdown: [
       "# Findings",
       "",
-      "## Key claims",
+      "## Gating mechanisms",
       "",
       "- Gates bind proxies, not purposes.",
       "",
-      "## Open questions",
+      "## Consolidation levers",
       "",
       "- Does goal-guarding generalize?",
     ].join("\n"),
@@ -499,7 +499,10 @@ test("podcast drafter drafts a host/guest dialogue with templated framing only",
     script[0].text.includes(mission.title),
     "the opening names the mission title, nothing invented",
   );
-  const framing = script.filter((segment) => segment.text.startsWith("Next up — "));
+  const framing = script.filter(
+    (segment) =>
+      segment.text.includes("Gating mechanisms") || segment.text.includes("Consolidation levers"),
+  );
   assert.deepEqual(
     framing.map((segment) => segment.speaker),
     ["host", "host"],
@@ -508,6 +511,13 @@ test("podcast drafter drafts a host/guest dialogue with templated framing only",
   assert.ok(
     framing.every((segment) => !segment.text.includes("..")),
     "framing reuses punctuation-aware headings",
+  );
+  // Charm review #2: host bridges rotate through distinct jobs rather than
+  // repeating one generic line per style.
+  assert.notEqual(
+    framing[0].text.replace("Gating mechanisms", "§"),
+    framing[1].text.replace("Consolidation levers", "§"),
+    "consecutive sections get different bridge copy",
   );
   const guests = script.filter((segment) => segment.speaker === "guest");
   assert.ok(
@@ -519,10 +529,106 @@ test("podcast drafter drafts a host/guest dialogue with templated framing only",
     script.map((_, index) => `segment-${index + 1}`),
     "segment ids stay sequential",
   );
-  // A host framing line is never the last thing in the script — framing only
-  // enters alongside the findings it introduces.
+  // Charm review #5: a section ends on the host's synthesis turn, never on
+  // the guest's last list item.
   const last = script[script.length - 1];
-  assert.notEqual(last.text.startsWith("Next up — "), true);
+  assert.equal(last.speaker, "host", "the episode closes on a host synthesis turn");
+  assert.ok(
+    !last.text.includes("Consolidation levers"),
+    "the closing host turn is a synthesis, not an orphan framing line",
+  );
+});
+
+test("podcast drafter translates document furniture into listener questions", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Executive summary",
+      "",
+      "- Gates bind proxies, not purposes.",
+      "",
+      "## Open questions",
+      "",
+      "- Does goal-guarding generalize?",
+      "",
+      "## Recommended next steps",
+      "",
+      "- Re-run the sweep in a quarter.",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const texts = content.script.map((segment) => segment.text);
+  for (const furniture of ["Executive summary", "Open questions", "Recommended next steps"]) {
+    assert.ok(
+      texts.every((text) => !text.includes(furniture)),
+      `"${furniture}" is never spoken aloud`,
+    );
+  }
+  const questions = content.script.filter((segment) =>
+    [
+      "what's the headline here?",
+      "What's still unsettled after all of this?",
+      "So where does this go from here?",
+    ].some((question) => segment.text.includes(question)),
+  );
+  assert.equal(questions.length, 3, "each furniture heading becomes a listener question");
+  assert.ok(
+    questions.every((segment) => segment.speaker === "host"),
+    "furniture questions are host turns",
+  );
+});
+
+test("podcast drafter strips citation apparatus from speech, keeps prose verbatim", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Gating mechanisms",
+      "",
+      "- Formal proofs are blocked (S8, S16; high).",
+      "- Benchmarks preserve scores, not intent (the DGM lesson).",
+      "- External outcomes should decide promotion [S01](../sources.json) [S06].",
+      "- Robust goal-guarding traces to training choices (S20 2025-06; high confidence).",
+      "- The date alone was flagged as unverified (2025-11).",
+      "- Anti-faking mitigations were characterized (verified).",
+      "- The Gödel machine (2003) proposed proof-gated self-modification, and (I) doubt it scales.",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const narration = content.script.map((segment) => segment.text).join(" ");
+  assert.ok(
+    narration.includes("Formal proofs are blocked."),
+    `ledger-id parentheticals never reach speech (${narration})`,
+  );
+  assert.ok(
+    narration.includes("(the DGM lesson)"),
+    "prose parentheticals stay verbatim",
+  );
+  assert.ok(
+    narration.includes("External outcomes should decide promotion."),
+    `bracketed and link-form ledger ids never reach speech (${narration})`,
+  );
+  assert.ok(
+    narration.includes("Robust goal-guarding traces to training choices."),
+    `dated confidence parentheticals never reach speech (${narration})`,
+  );
+  assert.ok(
+    narration.includes("The date alone was flagged as unverified.") &&
+      narration.includes("Anti-faking mitigations were characterized."),
+    `lone date and lone label parentheticals never reach speech (${narration})`,
+  );
+  assert.ok(
+    narration.includes("The Gödel machine (2003) proposed proof-gated self-modification, and (I) doubt it scales."),
+    `bare publication years and lone pronouns stay verbatim (${narration})`,
+  );
+  assert.ok(!/\bS\d{1,3}\b/.test(narration), `no bare ledger ids in speech (${narration})`);
 });
 
 test("podcast styles branch the drafter without inventing findings", () => {
@@ -532,7 +638,7 @@ test("podcast styles branch the drafter without inventing findings", () => {
     markdown: [
       "# Findings",
       "",
-      "## Key claims",
+      "## Gating mechanisms",
       "",
       "- Gates bind proxies, not purposes.",
       "",
@@ -557,11 +663,14 @@ test("podcast styles branch the drafter without inventing findings", () => {
   assert.equal(debate.kind, "podcast");
   if (debate.kind !== "podcast") return;
   assert.ok(debate.script[0].text.includes("stress-testing"));
-  const debateFraming = debate.script.filter((segment) =>
-    segment.text.includes("Where do we actually stand"),
+  const debateUnsettled = debate.script.findIndex((segment) =>
+    segment.text.includes("What's still unsettled"),
+  );
+  const debateGates = debate.script.findIndex((segment) =>
+    segment.text.includes("Gating mechanisms"),
   );
   assert.ok(
-    debateFraming[0]?.text.includes("Open questions"),
+    debateUnsettled !== -1 && debateGates !== -1 && debateUnsettled < debateGates,
     "debate leads with the contested section",
   );
 
@@ -571,7 +680,7 @@ test("podcast styles branch the drafter without inventing findings", () => {
   assert.ok(interview.script[0].text.includes("my guest walks us through"));
   assert.ok(
     interview.script.some((segment) =>
-      segment.text.startsWith("Walk me through this part — Key claims"),
+      segment.text.startsWith("Walk me through this part — Gating mechanisms"),
     ),
   );
 
@@ -590,9 +699,9 @@ test("podcast drafter joins are punctuation-aware — never a double period", ()
     markdown: [
       "# Punctuated findings",
       "",
-      "## Key claims (with confidence)",
+      "## Claim ledger (with caveats)",
       "",
-      "- Formal proofs are blocked (high confidence).",
+      "- Formal proofs are blocked (by Löb's theorem).",
       "- Does goal-guarding generalize?",
       "- Benchmarks bind proxies (the DGM lesson)",
       "- an unterminated bullet",
@@ -608,7 +717,7 @@ test("podcast drafter joins are punctuation-aware — never a double period", ()
     "paren-terminated fragments are not re-punctuated",
   );
   assert.ok(
-    narration.includes("Key claims (with confidence)"),
+    narration.includes("Claim ledger (with caveats)"),
     "the heading still frames its details",
   );
 });
@@ -710,8 +819,12 @@ test("podcast openings speak a cleaned mission title — no trailing '.…' garb
     if (content.kind !== "podcast") return;
     const opening = content.script[0]?.text ?? "";
     assert.ok(
-      opening.includes("“Research and compare: Identity Preservation for Agents during Self-Evolution”"),
-      `${style} opening strips trailing title punctuation (${opening})`,
+      opening.includes("“Identity Preservation for Agents during Self-Evolution”"),
+      `${style} opening speaks the framed question, cleanly terminated (${opening})`,
+    );
+    assert.ok(
+      !opening.includes("Research and compare:"),
+      `${style} opening never reads the research-prompt prefix aloud (${opening})`,
     );
     assert.ok(!opening.includes(".…"), `${style} opening never speaks '.…'`);
   }
@@ -724,7 +837,7 @@ test("podcast drafter normalizes TTS-hostile glyphs into spoken words", () => {
     markdown: [
       "# Findings",
       "",
-      "## Open questions → next steps",
+      "## Throughput → cost curve",
       "",
       "- Throughput improved 3× at ≥ 90% recall (≈ baseline cost).",
     ].join("\n"),
@@ -732,7 +845,7 @@ test("podcast drafter normalizes TTS-hostile glyphs into spoken words", () => {
   assert.equal(content.kind, "podcast");
   if (content.kind !== "podcast") return;
   const narration = content.script.map((segment) => segment.text).join(" ");
-  assert.ok(narration.includes("Open questions to next steps"), `arrow spoken as 'to' (${narration})`);
+  assert.ok(narration.includes("Throughput to cost curve"), `arrow spoken as 'to' (${narration})`);
   assert.ok(narration.includes("3 times at at least 90%"), `× and ≥ spoken (${narration})`);
   assert.ok(narration.includes("about baseline cost"), `≈ spoken as 'about' (${narration})`);
   for (const glyph of ["→", "×", "≥", "≈"]) {
