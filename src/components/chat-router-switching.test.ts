@@ -218,13 +218,32 @@ assert.match(
   "Popstate should clear stale chat hashes and return to the list when the target session is missing",
 );
 
-// ── CHAT-D9-04: in-transcript find (turn-level jump + count) ─────────────────
-// The find bar lives in ChatView's header meta line; matching is turn-level
-// (case-insensitive substring over visible text) via the pure helper in
-// src/lib/transcript-find.ts. Intra-turn highlighting is deferred.
+// ── CHAT-D9-04 → cave-7gr08: in-transcript find ──────────────────────────────
+// Superseded placement: find was an inline widget in the header meta line;
+// Chat.dc.html 2a promotes it to a band under the title row (see
+// chat-find-band.test.ts). What survives here is the part that still holds —
+// jumps resolve to a TURN, blank queries match nothing, the nav is labelled,
+// and ⌘F stays scoped to the chat section rather than the window.
 
 const chatViewSource = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const chatCssSource = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+// The controls moved into the band, so the find-chrome pins read both files.
+const findChromeSource =
+  chatViewSource + readFileSync(new URL("./chat-find-band.tsx", import.meta.url), "utf8");
+// Includes the cave-chat/* sheets: #3576 decomposed cave-chat.css and moved
+// rules like .cave-turn-found into them, but this list was not updated, so the
+// pins below were matching against files that no longer owned them.
+const chatCssSource = [
+  "cave-md",
+  "cave-composer",
+  "chat-list",
+  "calendar",
+  "cave-chat",
+  "cave-chat/activity",
+  "cave-chat/transcript",
+  "cave-chat/bubbles",
+  "cave-chat/session-chrome",
+  "cave-chat/auxiliary-surfaces",
+]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 
@@ -258,26 +277,30 @@ assert.deepEqual(
 
 // 2. The find bar renders in the header meta line with n/m count and
 //    prev/next navigation carrying aria-labels.
+// The band renders under the header, so the rename/voice/debug/delete actions
+// keep their places even when find is open — the original intent, now met by
+// moving find out of the cluster entirely instead of squeezing it in.
 assert.match(
   chatViewSource,
-  /<MetaLine[\s\S]*?<ChatFindBar[\s\S]*?<\/MetaLine>/,
-  "ChatFindBar must render inside the header MetaLine row so rename/voice/debug/delete actions stay put",
+  /<\/header>[\s\S]{0,600}?<ChatFindBand/,
+  "the find band renders under the title row, outside the action cluster",
+);
+assert.doesNotMatch(chatViewSource, /<ChatFindBar/, "the inline find widget is retired");
+
+assert.match(
+  findChromeSource,
+  /\$\{activeIndex \+ 1\}\/\$\{hits\.length\}/,
+  "find must show a 1-based n/m count",
 );
 
 assert.match(
-  chatViewSource,
-  /\$\{activeIndex \+ 1\} \/ \$\{matchCount\}/,
-  "The find bar must show a 1-based `n / m` matching-turn count",
-);
-
-assert.match(
-  chatViewSource,
+  findChromeSource,
   /aria-label="Previous match"/,
   "Prev navigation needs an aria-label",
 );
 
 assert.match(
-  chatViewSource,
+  findChromeSource,
   /aria-label="Next match"/,
   "Next navigation needs an aria-label",
 );
@@ -354,8 +377,7 @@ assert.equal(
 // 6. The Esc layering is self-contained: the find input stops propagation so
 //    closing find never reaches the composer's Esc handling, and Enter /
 //    Shift+Enter cycle next/prev.
-const findBarComponent =
-  chatViewSource.match(/function ChatFindBar\(\{[\s\S]*?\nfunction MetaLineElapsed/)?.[0] ?? "";
+const findBarComponent = readFileSync(new URL("./chat-find-band.tsx", import.meta.url), "utf8");
 
 assert.match(
   findBarComponent,
