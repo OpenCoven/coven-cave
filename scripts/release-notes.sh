@@ -29,7 +29,12 @@ VERSION="$1"
 VER_NUM="${VERSION#v}"
 PREV="${2:-}"
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# The repository this renders from. Defaults to the script's own checkout — the
+# only thing that makes sense in CI and for local backfills — but is overridable
+# so the test suite can point it at a seeded fixture repo instead of depending
+# on this checkout's live tags and CHANGELOG (cave-5yyj1). Same spirit as
+# COVEN_REPO_SLUG below, which already exists for exactly that reason.
+ROOT="${COVEN_RELEASE_NOTES_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 CHANGELOG="$ROOT/CHANGELOG.md"
 REPO="${COVEN_REPO_SLUG:-OpenCoven/coven-cave}"
 
@@ -123,6 +128,28 @@ shasum -a 256 -c SHA256SUMS
 \`\`\`
 
 INSTALL_REST
+
+# Build provenance (cave-yp21x). The signed OpenCode/Grok schema-registry gates
+# are fail-closed for tag pushes and skippable only on an emergency manual run.
+# v0.2.0 shipped through that hatch and said so nowhere a reader would find:
+# the only trace was a `skipped` step inside the Actions log. When the hatch is
+# used, the body states it plainly.
+#
+# Worded as provenance, not a warning. These gates guard against FUTURE schema
+# drift; a build without them uses the same built-in baseline parsers every
+# release before the gates existed used, so this is not a user-facing defect.
+if [ "${COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED:-}" = "true" ]; then
+  cat <<'PROVENANCE'
+## Build provenance
+
+This release was built on a manual run with `allow_unconfigured_registries`
+enabled, so the signed OpenCode and Grok compatibility-registry checks did not
+run. The build uses the built-in baseline schema parsers.
+
+Releases published from a tag push cannot skip those checks.
+
+PROVENANCE
+fi
 
 if [ -n "$PREV" ]; then
   printf '**Full changelog:** https://github.com/%s/compare/%s...%s\n' \

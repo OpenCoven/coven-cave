@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ChatModelState } from "@/lib/chat-model-state";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 
 export function useHomeModelState(selectedFamiliarId: string) {
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
@@ -44,7 +44,7 @@ export function useHomeModelState(selectedFamiliarId: string) {
   // A pick at home is sticky per familiar: PATCH familiar-default (the in-chat
   // picker's no-session path). The new chat inherits it at send time.
   const handleSelectModel = useCallback(
-    (modelId: string) => {
+    (modelId: string | null) => {
       if (!selectedFamiliarId) return;
       void (async () => {
         try {
@@ -86,15 +86,17 @@ export function useHomeModelState(selectedFamiliarId: string) {
   const handleSelectRuntime = useCallback(
     (runtime: string, selectedModel?: string) => {
       if (!selectedFamiliarId) return;
-      const nextModel = selectedModel || defaultModelForRuntime(runtime);
+      const nextModel = modelForRuntimeSwitch(runtime, selectedModel);
       setModelState((current) => ({
         familiarId: selectedFamiliarId,
         runtime: current?.runtime ?? null,
         harness: runtime,
         effectiveModel: nextModel,
-        source: "familiar-default",
+        source: nextModel ? "familiar-default" : "runtime-default",
         applicationState: "saved",
-        reason: "Selected from the home composer.",
+        reason: nextModel
+          ? "Selected from the home composer."
+          : "Using the runtime's configured default model.",
       }));
       void (async () => {
         try {
@@ -103,7 +105,10 @@ export function useHomeModelState(selectedFamiliarId: string) {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               familiars: {
-                [selectedFamiliarId]: { harness: runtime, model: nextModel },
+                [selectedFamiliarId]: {
+                  harness: runtime,
+                  model: nextModel || null,
+                },
               },
             }),
           });

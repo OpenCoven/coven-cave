@@ -156,6 +156,39 @@ test("podcast uses the exact frozen provider and voice and stores measured metad
   }
 });
 
+test("dialogue segments synthesize with their speaker's frozen voice", async () => {
+  const config = renderConfig({
+    voices: { host: "piper-amy", guest: "piper-lessac-medium" },
+  });
+  const calls: Array<{ text: string; voice: string }> = [];
+  const definition = createPodcastMediaJobDefinition(
+    {
+      familiarId: "nova",
+      generationId: "podcast-dialogue-voices",
+      script: [
+        { id: "segment-1", text: "Welcome in.", speaker: "host" },
+        { id: "segment-2", text: "A verbatim finding.", speaker: "guest" },
+        { id: "segment-3", text: "Legacy narration." },
+      ],
+      renderConfig: config,
+    },
+    {
+      synthesize: async (text, _provider, voice) => {
+        calls.push({ text, voice });
+        return { bytes: wav([1]), voice };
+      },
+    },
+  );
+  const result = await definition.run(jobContext());
+  assert.deepEqual(calls, [
+    { text: "Welcome in.", voice: "piper-amy" },
+    { text: "A verbatim finding.", voice: "piper-lessac-medium" },
+    // Speaker-less segments keep the primary voice — old drafts render unchanged.
+    { text: "Legacy narration.", voice: "piper-amy" },
+  ]);
+  assert.equal(result.content.kind, "podcast");
+});
+
 test("a segment failure is honest and names the failing index", async () => {
   const definition = createPodcastMediaJobDefinition(
     {

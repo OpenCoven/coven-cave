@@ -1,5 +1,6 @@
 "use client";
 
+import "@/styles/globals/surface-reporting.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildFamiliarAnalyticsModel,

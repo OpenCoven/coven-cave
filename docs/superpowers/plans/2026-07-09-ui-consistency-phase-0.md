@@ -1578,9 +1578,9 @@ Expected:
 Run:
 
 ```bash
-MAIN=/Users/buns/Documents/GitHub/OpenCoven/coven-cave
-FEATURE=/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/feat-ui-consistency-program
-VERIFY=/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/run-ui-xd1b1-019f4a47
+MAIN=/Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
+FEATURE=/Users/<someone>/Documents/GitHub/OpenCoven/coven-cave/.worktrees/feat-ui-consistency-program
+VERIFY=/Users/<someone>/Documents/GitHub/OpenCoven/coven-cave/.worktrees/run-ui-xd1b1-019f4a47
 git -C "$MAIN" worktree prune
 test ! -e "$VERIFY"
 SHA=$(git -C "$FEATURE" rev-parse HEAD)
@@ -1725,8 +1725,8 @@ and repeat this runtime step.
 Delete `__verify-aesthetic.mjs` with `apply_patch`, then run:
 
 ```bash
-MAIN=/Users/buns/Documents/GitHub/OpenCoven/coven-cave
-VERIFY=/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/run-ui-xd1b1-019f4a47
+MAIN=/Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
+VERIFY=/Users/<someone>/Documents/GitHub/OpenCoven/coven-cave/.worktrees/run-ui-xd1b1-019f4a47
 git -C "$MAIN" worktree remove --force "$VERIFY"
 git -C "$MAIN" worktree prune
 git -C "$MAIN" worktree list
@@ -1873,10 +1873,10 @@ After verified merge:
 ```bash
 bd close cave-xd1b.1 --reason "Phase 0 merged and verified on origin/main"
 bd update cave-xd1b --append-notes "Phase 0 cave-xd1b.1 merged: copy contract, field primitives, aesthetic reference, and conformance baseline. Umbrella remains open for React migrations, iOS, Tauri, and closure audit." --json
-WT_GUARD_BYPASS=1 git -C /Users/buns/Documents/GitHub/OpenCoven/coven-cave worktree remove /Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/feat-ui-consistency-program
-git -C /Users/buns/Documents/GitHub/OpenCoven/coven-cave worktree prune
-git -C /Users/buns/Documents/GitHub/OpenCoven/coven-cave branch -D feat/ui-consistency-program
-git -C /Users/buns/Documents/GitHub/OpenCoven/coven-cave status --short --branch
+WT_GUARD_BYPASS=1 git -C /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave worktree remove /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave/.worktrees/feat-ui-consistency-program
+git -C /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave worktree prune
+git -C /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave branch -D feat/ui-consistency-program
+git -C /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave status --short --branch
 ```
 
 Expected: the Phase 0 child is closed, `cave-xd1b` remains open/unassigned,

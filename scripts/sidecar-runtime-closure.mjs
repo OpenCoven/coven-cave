@@ -148,7 +148,9 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-29 (Chat Familiar settings): the nested Familiar settings
   // writers trace 5,804 files on Windows. Retain the established ten files
   // of cross-platform headroom without relaxing the byte ceiling.
-  fileCount: 5_814,
+  // 2026-08-01 (Memory document reader): the shared reader traces 5,817 files
+  // on Windows. Retain the established ten-file cross-platform headroom.
+  fileCount: 5_827,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

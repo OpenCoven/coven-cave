@@ -76,8 +76,51 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // code-splits out of the every-route/home first load entirely. Net after the
 // hearth restore above: ~646 KiB root / ~890 KiB home — still below even the
 // pre-modernization budgets (690/920). Banked with headroom.
-const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 660) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 900) * 1024;
+// Raised home 900->910 (2026-08-01, cave-iktbc): the home set had drifted to
+// 899.6 KiB as the chat surfaces landed through 2026-07-31 — the find band
+// (#4131), title-row participants (#4127), familiar drag-into-thread (#4132),
+// launch-readiness gating (#4141) and the Hermes API card (#4138) — leaving
+// ~0.04% of margin. A 378-byte spine-gutter fix was enough to fail the gate,
+// which means the NEXT css PR of any size would have failed it too. This bump
+// is restoring working headroom for what already merged, not paying for one
+// change; root is untouched and still 22 KiB under at 638 KiB.
+// LOWERED root 660→640 / home 910→900 (2026-08-01, cave-ii7xi): the second #3264
+// extraction — surface-marketplace.css (34 KiB) left the globals.css facade for a
+// component import in marketplace-view.tsx, so it code-splits with the
+// MarketplaceView next/dynamic chunk. Measured on the same commit (39164745f),
+// baseline vs branch: home 908.0 → 882.2 KiB, root 644.1 → 618.5 KiB, −26 KiB each.
+// The sheet did NOT move whole: 5 KiB of it was the shared project picker and
+// undo toast — components in the always-loaded shell, both labelled "Shared" in
+// comments written while they sat in a file named for one surface. Those stay
+// in the facade as
+// shared-pickers-and-toasts.css, in the exact slot surface-marketplace.css held,
+// because primitives.css defines their base rules and these override at equal
+// specificity. Moving the file wholesale would have unstyled the project picker
+// and the undo toast on the home route with every test still green.
+// Home goes back to 900 — reverting cave-iktbc's stopgap raise exactly, since this
+// extraction is the fix that raise was buying time for. That leaves 17.8 KiB
+// (1.98%), which the headroom reporter still calls THIN, and that is the honest
+// reading: one extraction is not enough to make this budget comfortable. Choosing
+// a laxer cap to silence the warning would be the exact move cave-7fd41 exists to
+// discourage. The remaining facade sheets are the work — see cave-ii7xi.
+// LOWERED root 640→600 / home 900→865 (2026-08-01, cave-ii7xi): the third #3264
+// extraction — surface-reporting.css. Measured on ad12a391b: home 882.2 → 844.9
+// KiB, root 618.5 → 581.2 KiB, −37 KiB each, the largest single reclaim in this
+// series and nearly 1.5x what the .fa-* extraction (cave-5rqi) bought.
+// The file was four tenants, not one surface: dr-* (daily report, 86 classes),
+// growth-* (55) and retro-* (40) are reached ONLY from /dashboard/... and
+// /daily-report/... routes, while ~14 KiB of chat and shell chrome — edit cards,
+// review modal, tool IO, the thread-signal card, quick-chat keyframes, the
+// GitHub reward flare, group-chat next-path and the tools-update fill button —
+// sat in the same file under a name that made it look route-scoped. The reporting
+// families are now component-imported by the dashboard and daily-report views;
+// the shell chrome stayed in the facade as shell-cards-and-controls.css, in the
+// slot surface-reporting.css held, so cascade order is unchanged.
+// Home lands at 2.32% and root at 3.14% — both above the THIN threshold for the
+// first time in this series, which is what two extractions bought that one could
+// not. 35 of the 37 reclaimed KiB are given back rather than banked.
+const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 600) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 865) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(
@@ -87,6 +130,30 @@ if (!existsSync(chunksDir)) {
 }
 
 const kb = (n) => (n / 1024).toFixed(0).padStart(6) + " KB";
+
+// Warn while there is still room to act. Every budget below used to print only
+// its total and its cap, so accretion was invisible until a PR crossed the line
+// and ate the failure — the home CSS set drifted to 0.04% of margin over a
+// single day of small merges before anyone noticed (cave-7fd41). Reporting the
+// remaining headroom on every build turns that into a visible slope.
+//
+// Deliberately does NOT fail: this is signal, not a new gate. A thin budget is
+// information for the next author, not a reason to block the current one.
+const THIN_HEADROOM_PCT = 2;
+const thin = [];
+
+function headroom(label, bytes, budget) {
+  const left = budget - bytes;
+  if (left < 0) return; // the caller's failure branch reports the overage
+  const pct = (left / budget) * 100;
+  const line = `  ${(left / 1024).toFixed(1).padStart(6)} KB headroom  (${pct.toFixed(1)}%)`;
+  if (pct < THIN_HEADROOM_PCT) {
+    thin.push(label);
+    console.log(`${line}  \u26a0 THIN — the next change of any size may fail this gate`);
+  } else {
+    console.log(line);
+  }
+}
 const sizeOf = (relToNext) => {
   try {
     return statSync(path.join(nextDir, relToNext)).size;
@@ -141,10 +208,12 @@ const shellBytes = shellFiles.reduce((a, f) => a + sizeOf(f), 0);
 
 console.log(`\nbundle-budget — initial / route JavaScript:`);
 console.log(`  ${kb(homeBytes)}  TOTAL first-load JS across ${homeFiles.length} chunks  (budget: ${kb(MAX_HOME_BYTES)})`);
+headroom("first-load JS", homeBytes, MAX_HOME_BYTES);
 
 console.log(`\nbundle-budget — always-loaded shell (rootMainFiles):`);
 for (const f of shellFiles) console.log(`  ${kb(sizeOf(f))}  ${f.replace("static/chunks/", "")}`);
 console.log(`  ${kb(shellBytes)}  TOTAL shell  (budget: ${kb(MAX_SHELL_BYTES)})`);
+headroom("always-loaded shell", shellBytes, MAX_SHELL_BYTES);
 
 console.log(`\nbundle-budget — largest client chunks:`);
 for (const c of chunks.slice(0, 8)) console.log(`  ${kb(c.bytes)}  ${c.file}`);
@@ -257,10 +326,12 @@ try {
   console.log(`bundle-budget — root-layout CSS (every route pays this):`);
   for (const f of rootCss.files) console.log(`  ${kb(f.bytes)}  ${f.file}`);
   console.log(`  ${kb(rootCss.bytes)}  TOTAL root CSS  (budget: ${kb(MAX_ROOT_CSS_BYTES)})`);
+  headroom("root-layout CSS", rootCss.bytes, MAX_ROOT_CSS_BYTES);
   console.log(`\nbundle-budget — initial / route CSS:`);
   console.log(
     `  ${kb(homeCss.bytes)}  TOTAL first-load CSS across ${homeCss.files.length} stylesheets  (budget: ${kb(MAX_HOME_CSS_BYTES)})`,
   );
+  headroom("initial / route CSS", homeCss.bytes, MAX_HOME_CSS_BYTES);
 
   if (rootCss.bytes > MAX_ROOT_CSS_BYTES) {
     failed = true;
@@ -289,4 +360,11 @@ try {
 }
 
 if (failed) process.exit(1);
+if (thin.length > 0) {
+  console.log(
+    `\n\u26a0 bundle-budget: within budget, but thin on ${thin.join(", ")}.\n` +
+      `  Reclaim room (move surface CSS to component imports, #3264) or raise the\n` +
+      `  cap deliberately with a justification — before it lands on someone else.`,
+  );
+}
 console.log(`\n✓ bundle-budget: within budget.\n`);

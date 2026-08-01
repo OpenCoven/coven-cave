@@ -19,7 +19,14 @@ import { harnessSpawnEnv } from "./harness-spawn-env.ts";
  * real output.
  */
 
-export type DirectRunnerId = "coven" | "codex" | "copilot" | "grok" | "hermes" | "opencode";
+export type DirectRunnerId =
+  | "coven"
+  | "codex"
+  | "copilot"
+  | "grok"
+  | "hermes"
+  | "opencode"
+  | "openclaw";
 /** A runtime launched by Coven rather than handed directly to Node's spawn. */
 export type CovenBackedRunnerId = "claude";
 export type RuntimeRunnerId = DirectRunnerId | CovenBackedRunnerId;
@@ -167,6 +174,8 @@ const MISSING_RUNNER_MESSAGES: Record<RuntimeRunnerId, string> = {
   hermes: "Hermes CLI not found on PATH. Install Hermes, then try again.",
   opencode:
     "OpenCode CLI not found on PATH. Install it with `npm install -g opencode-ai`, then try again.",
+  openclaw:
+    "OpenClaw CLI not found on PATH. Open Setup to install it, then try again.",
 };
 
 const RUNTIME_LAUNCH_FAILED_MESSAGES: Record<DirectRunnerId, string> = {
@@ -176,6 +185,7 @@ const RUNTIME_LAUNCH_FAILED_MESSAGES: Record<DirectRunnerId, string> = {
   grok: "Grok Build CLI failed to start. Check its installation and try again.",
   hermes: "Hermes CLI failed to start. Check its installation and try again.",
   opencode: "OpenCode CLI failed to start. Check its installation and try again.",
+  openclaw: "OpenClaw CLI failed to start. Check its installation and try again.",
 };
 
 const RUNNER_LABELS: Record<RuntimeRunnerId, string> = {
@@ -186,6 +196,7 @@ const RUNNER_LABELS: Record<RuntimeRunnerId, string> = {
   grok: "Grok Build CLI",
   hermes: "Hermes CLI",
   opencode: "OpenCode CLI",
+  openclaw: "OpenClaw CLI",
 };
 
 export function missingRunnerMessage(runner: RuntimeRunnerId): string {
@@ -214,7 +225,10 @@ export function localRuntimeLaunchError(
 /** A process that did start but exited unsuccessfully is distinct from a
  * missing or unlaunchable CLI. Its copy is safe to surface without provider
  * output, executable paths, or scoped environment values. */
-export function runtimeProcessFailure(runner: DirectRunnerId | CovenBackedRunnerId): {
+export function runtimeProcessFailure(
+  runner: DirectRunnerId | CovenBackedRunnerId,
+  options: { exitCode?: number | null; emittedDiagnostic?: boolean } = {},
+): {
   code: typeof RUNTIME_AVAILABILITY_ERROR_CODES.process_failed;
   message: string;
 } {
@@ -225,9 +239,16 @@ export function runtimeProcessFailure(runner: DirectRunnerId | CovenBackedRunner
     };
   }
   const label = runner === "hermes" ? "Hermes" : RUNNER_LABELS[runner];
+  const exitCode =
+    typeof options.exitCode === "number" && Number.isInteger(options.exitCode)
+      ? ` (exit code ${options.exitCode})`
+      : "";
+  const diagnostic = options.emittedDiagnostic
+    ? " The runtime emitted diagnostic output, which Cave withheld to protect local data."
+    : " The runtime did not emit an error message.";
   return {
     code: RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
-    message: `${label} exited with an error before returning a response. Check ${label} sign-in and configuration, then try again.`,
+    message: `${label} exited with an error${exitCode} before returning a response.${diagnostic} Check the local runtime configuration, then try again.`,
   };
 }
 

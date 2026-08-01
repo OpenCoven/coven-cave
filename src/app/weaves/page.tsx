@@ -1,4 +1,3 @@
-import { Icon } from "@/lib/icon";
 import { AnalyticsPageShell } from "@/components/analytics-page-shell";
 import { WeavesView } from "@/components/weaves-view";
 
@@ -8,35 +7,19 @@ export const metadata = {
   title: "Weaves — CovenCave",
 };
 
+/**
+ * Each weave is a familiar's enforced pattern of threads over its protected
+ * memory; each thread binds one surface to one writer. Status traces to
+ * predicate results — anything unverifiable renders blocked, never healthy.
+ *
+ * The surface owns its own chrome (breadcrumb, the single primary action, and
+ * the pending-decision count inside it) because the count is live state; the
+ * page is only the shell it fills. See components/threads-chrome.tsx.
+ */
 export default function WeavesPage() {
   return (
     <AnalyticsPageShell>
-      {/* div, not main: the shell's aps-main is the page's main landmark. */}
-      <div className="dr-page">
-        <div className="dr-topbar" data-tauri-drag-region="deep">
-          <nav className="dr-topbar__crumbs" aria-label="Breadcrumb">
-            <a className="dr-back" href="/?mode=grimoire">
-              <Icon name="ph:arrow-left" aria-hidden />
-              Memories
-            </a>
-            <span className="dr-crumb-sep" aria-hidden>/</span>
-            <span className="dr-crumb-current">Weaves</span>
-          </nav>
-          <div className="dr-topbar__actions">
-            <a className="dr-back" href="/proposals">
-              Review proposals →
-            </a>
-          </div>
-        </div>
-        <div className="px-4 pb-6">
-          <p className="mb-3 max-w-2xl text-xs text-[var(--text-muted)]">
-            Each weave is a familiar&apos;s enforced pattern of threads over its protected memory; each
-            thread binds one surface to one writer. Status here traces to predicate results — anything
-            unverifiable renders blocked, never healthy.
-          </p>
-          <WeavesView />
-        </div>
-      </div>
+      <WeavesView />
     </AnalyticsPageShell>
   );
 }

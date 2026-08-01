@@ -39,8 +39,13 @@ import type { Block } from "@create-markdown/core";
 import type { PreviewPlugin } from "@create-markdown/preview";
 import { getShikiHighlighter } from "@/lib/shiki-highlighter";
 import { Icon } from "@/lib/icon";
-import { renderCitedBody } from "@/lib/citations";
-import { CitationSources } from "@/components/ui/citation";
+import {
+  parseCitations,
+  renderCitedBody,
+  renderCitationReferences,
+  type Citation,
+} from "@/lib/citations";
+import { InlineCitationPreviews } from "@/components/ui/citation";
 import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-code-fences";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { SpeakBubble } from "@/components/speak-bubble";
@@ -691,7 +696,14 @@ async function mdToHtml(
 // plain fallback only until the first render lands
 // ---------------------------------------------------------------------------
 
-function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?: boolean; onOpenUrl?: (url: string) => void }) {
+type MarkdownContentProps = {
+  text: string;
+  pending?: boolean;
+  onOpenUrl?: (url: string) => void;
+  citations?: readonly Citation[];
+};
+
+function MarkdownContent({ text, pending, onOpenUrl, citations = [] }: MarkdownContentProps) {
   const [html, setHtml] = useState<string | null>(
     () => pending ? null : renderCacheGet(text) ?? null,
   );
@@ -813,6 +825,12 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
       {pending ? (
         <span aria-hidden="true" className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
       ) : null}
+      <InlineCitationPreviews
+        citations={citations}
+        containerRef={containerRef}
+        onOpenUrl={onOpenUrl}
+        renderedHtml={html}
+      />
     </>
   );
 }
@@ -941,6 +959,10 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
   // pipeline). Bodies without footnotes pass through unchanged. Mid-stream the
   // definition block hasn't arrived, so this is a no-op until the turn settles.
   const cited = useMemo(() => renderCitedBody(content), [content]);
+  const segmentedCitations = useMemo(
+    () => (segments?.length ? parseCitations(content) : null),
+    [content, segments],
+  );
 
   if (role === "system") {
     return (
@@ -1027,17 +1049,31 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
     >
       <div className={isError ? "text-[var(--color-warning)]" : ""}>
         {segments?.length ? (
-          segments.map((seg, i) =>
-            seg.kind === "text" ? (
-              <MarkdownContent key={`span-${i}`} text={seg.text} pending={pending && i === lastTextIdx} onOpenUrl={onOpenUrl} />
-            ) : (
-              <div key={seg.key} className="my-2">{seg.node}</div>
-            ),
-          )
+          segments.map((seg, i) => {
+            if (seg.kind === "block") {
+              return <div key={seg.key} className="my-2">{seg.node}</div>;
+            }
+            const text = segmentedCitations
+              ? renderCitationReferences(seg.text, segmentedCitations)
+              : seg.text;
+            return (
+              <MarkdownContent
+                key={`span-${i}`}
+                text={text}
+                pending={pending && i === lastTextIdx}
+                onOpenUrl={onOpenUrl}
+                citations={cited.citations}
+              />
+            );
+          })
         ) : (
-          <MarkdownContent text={cited.body} pending={pending} onOpenUrl={onOpenUrl} />
+          <MarkdownContent
+            text={cited.body}
+            pending={pending}
+            onOpenUrl={onOpenUrl}
+            citations={cited.citations}
+          />
         )}
-        {cited.citations.length > 0 ? <CitationSources citations={cited.citations} showHoverPreview /> : null}
       </div>
       {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
           actions are reachable by keyboard (Tab), screen readers, and touch. */}

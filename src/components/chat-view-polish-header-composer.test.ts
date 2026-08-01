@@ -105,13 +105,17 @@ assert.doesNotMatch(
   "Composer dock model pill should be removed — header meta line carries the model",
 );
 
-// The steady-state hint survives behind the recommended-next-path ghost fill
-// (cave-h62k): with a recommendation the placeholder mirrors it (`⇥ to fill`),
-// without one the classic `Message <familiar>…  ↵ to send` remains.
+// The composer keeps the prompt-oriented ghost fill but leaves submission to
+// its high-contrast send button — no keyboard legend is rendered in the input.
 assert.match(
   source,
-  /: `Message \$\{familiar\.display_name\}…  ↵ to send`/,
-  "Composer placeholder should include ↵ to send hint in steady state",
+  /: `Message \$\{familiar\.display_name\}…`/,
+  "Composer placeholder should remain a concise familiar prompt in steady state",
+);
+assert.doesNotMatch(
+  source,
+  /↵ to send|⇥ to fill/,
+  "Composer should rely on its send button, without inline keyboard legends",
 );
 assert.match(
   source,
@@ -169,8 +173,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*label:\s*"Thinking"[\s\S]*label:\s*"Speed"[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue[\s\S]*sections:\s*composerResponseSections/,
-  "the grouped Response section carries Host, Access, Model, Thinking, and Speed in order",
+  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*`Model · \$\{inventoryProvenanceLabel\([\s\S]*\.\.\.modelCapabilities\.map\(\(capability\) => \(\{[\s\S]*Prompt guidance[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue[\s\S]*sections:\s*composerResponseSections/,
+  "the grouped Response section carries Access, Model, and only selected-model capability controls with prompt guidance labelled",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
 // "Both" reconciliation (2026-07-21): the context chips ride the footer
@@ -240,8 +244,8 @@ assert.match(
 );
 assert.match(
   homeComposer,
-  /initialControls: \{ thinkingEffort, responseSpeed, \.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\) \}/,
-  "the home composer threads the host pick into the opened chat's first send",
+  /initialControls: runtimeHost \? \{ runtimeHost \} : undefined/,
+  "the home composer threads only the host pick into the opened chat; selected-model controls resolve in Chat",
 );
 assert.match(
   source,
@@ -322,18 +326,20 @@ assert.doesNotMatch(
   "the in-chat back-to-chats control is removed",
 );
 
+// cave-7gr08: find is a band under the title row now, so the cluster carries
+// only its trigger — still ahead of the overflow menu, same reading order.
 assert.match(
   source,
-  /<div className="cave-chat-session-actions">[\s\S]*<ChatFindBar[\s\S]*<SessionOverflowMenu/,
-  "Open chat header actions keep the find bar ahead of the overflow menu",
+  /<div className="cave-chat-session-actions">[\s\S]*aria-label="Find in conversation"[\s\S]*<SessionOverflowMenu/,
+  "Open chat header actions keep the find trigger ahead of the overflow menu",
 );
 // cave-zolo: the header cluster carries direct Voice/Archive/Delete buttons;
 // the kebab holds only secondary tools (phone handoff, project, thinking,
 // reflect, debug), sourced from the pure menu model.
 assert.match(
   source,
-  /<VoiceCallButton[\s\S]*<ArchiveChatButton[\s\S]*<ChatFindBar[\s\S]*<DeleteChatButton[\s\S]*<SessionOverflowMenu/,
-  "Direct session actions (voice, archive, delete) render beside find and the kebab",
+  /<VoiceCallButton[\s\S]*<ArchiveChatButton[\s\S]*aria-label="Find in conversation"[\s\S]*<DeleteChatButton[\s\S]*<SessionOverflowMenu/,
+  "Direct session actions (voice, archive, delete) render beside the find trigger and the kebab",
 );
 assert.match(
   sessionHeader,

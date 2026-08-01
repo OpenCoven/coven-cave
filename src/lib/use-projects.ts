@@ -89,7 +89,9 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       if (data.ok === false) {
         setError(data.error ?? "Failed to load projects");
       } else {
-        setProjects(sortProjectsAlphabetically(Array.isArray(data.projects) ? data.projects : []));
+        // Already deduped + sorted by the cache (cave-k0gf), once per fetch
+        // rather than once per consumer — do not re-run it here.
+        setProjects(Array.isArray(data.projects) ? data.projects : []);
         setLoadedScopeKey(scopeKey);
       }
     } catch (err) {

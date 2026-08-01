@@ -147,6 +147,10 @@ assert.doesNotMatch(
   /defaults:\s*\{/,
   "POST must NOT write a defaults object — creating a familiar must not change the user's global default harness/model",
 );
+assert.ok(
+  source.indexOf("await saveConfig({") < source.indexOf("await writeFile("),
+  "POST persists a familiar binding before registering it in familiars.toml",
+);
 
 // Optional-body (fallback-empty) handling, per the API contract for this route.
 assert.match(source, /let body[\s\S]{0,120}=\s*\{\}/, "POST should initialize an optional request body");

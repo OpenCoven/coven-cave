@@ -62,7 +62,6 @@ function timed<C>(name: string, loader: () => Promise<C>): () => Promise<C> {
 // App Router implementation of `next/dynamic` does not expose `.preload()`, so
 // warm-up must call the loaders directly to fetch a sidebar's chunks without
 // mounting the surface (and therefore without running any of its effects).
-const loadGitHubView = () => import("@/components/github-view").then((m) => m.GitHubView);
 const loadCalendarView = () => import("@/components/calendar-view").then((m) => m.CalendarView);
 const loadBoardView = () => import("@/components/board-view").then((m) => m.BoardView);
 const loadMarketplaceView = () =>
@@ -79,21 +78,11 @@ const loadInboxEscalationsView = () =>
 
 /** Canonical sidebar surfaces whose chunks can be warmed before navigation. */
 export type WarmableSidebarSurface =
-  | "github"
   | "marketplace"
   | "board"
   | "schedules"
   | "grimoire"
   | "agents";
-
-// The standalone GitHubView surface is back (cave-cc5r): the Code workbench
-// moved into the Coding familiar's Role Surface room, and every familiar
-// keeps GitHub as its own canonical surface again. loadGitHubView also feeds
-// preloadSidebarSurface — warming the chunk before the row is clicked.
-export const GitHubView = dynamic(
-  timed("github", loadGitHubView),
-  { ssr: false, loading: SurfaceFallback },
-);
 
 // The Code workbench chunk (CodeMirror et al.) now rides the Code room's
 // dynamic import (role-surfaces/register.tsx → code-room.tsx), keeping it out
@@ -164,8 +153,6 @@ export const InboxEscalationsView = dynamic(
  */
 export function preloadSidebarSurface(surface: WarmableSidebarSurface): Promise<void> {
   switch (surface) {
-    case "github":
-      return loadGitHubView().then(() => undefined);
     case "marketplace":
       return loadMarketplaceView().then(() => undefined);
     case "board":

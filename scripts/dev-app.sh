@@ -21,6 +21,13 @@ port_is_listening() {
   node -e "const net=require('net');const s=net.connect({host:'127.0.0.1',port:Number(process.argv[1])});s.setTimeout(300);s.on('connect',()=>process.exit(0));s.on('timeout',()=>process.exit(1));s.on('error',()=>process.exit(1));" "$1"
 }
 
+# A socket accept only proves that some process owns the port. The desktop
+# WebView needs an actual HTTP response; a wedged compiler otherwise leaves a
+# responsive but permanently black Tauri window.
+origin_is_ready() {
+  node scripts/dev-app-origin-health.mjs --port "$1" --timeout-ms "${2:-1500}" >/dev/null 2>&1
+}
+
 # If PORT is explicitly set, use that; otherwise auto-discover
 if [ -n "${PORT:-}" ]; then
   dev_port="$PORT"
@@ -56,11 +63,11 @@ fi
 TAURI_OVERRIDE_CONFIG="$(mktemp)"
 WATCHDOG_VERDICT="$(mktemp)"
 tauri_pid=""
+server_pid=""
 watchdog_pid=""
 
-# Every descendant of a pid, children before parents. Tauri's `beforeDevCommand`
-# runs as its child, so walking the tree from the Tauri pid reaches the Next dev
-# server without ever guessing at unrelated processes that merely hold the port.
+# Every descendant of a pid, children before parents. The launcher only ever
+# walks PIDs it started, never a process guessed from a loopback port.
 list_process_tree() {
   local pid="$1" child
   if command -v pgrep >/dev/null 2>&1; then
@@ -106,6 +113,7 @@ cleanup() {
     watchdog_pid=""
   fi
   terminate_process_tree "$tauri_pid"
+  terminate_process_tree "$server_pid"
   if [ "${should_start_server:-false}" = true ] && port_is_listening "$dev_port" >/dev/null 2>&1; then
     echo "[dev:app] warning: 127.0.0.1:${dev_port} is still listening after teardown" >&2
   fi
@@ -115,10 +123,10 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM HUP
 
-# A Tauri dev process and its `beforeDevCommand` inherit this secret together.
-# The server therefore requires the browser-side bridge token too; carry it in
-# the URL fragment so it never participates in Next's module URL resolution or
-# reaches the HTTP server. The bridge stores it in sessionStorage, strips it,
+# The launcher starts both the Tauri dev process and its owned server with this
+# secret. Carry it into the browser-side bridge through the URL fragment so it
+# never participates in Next's module URL resolution or reaches the HTTP server.
+# The bridge stores it in sessionStorage, strips it,
 # and attaches the header to same-origin `/api/` calls.
 dev_url="http://127.0.0.1:${dev_port}"
 if [ -n "${COVEN_CAVE_AUTH_TOKEN:-}" ]; then
@@ -126,31 +134,10 @@ if [ -n "${COVEN_CAVE_AUTH_TOKEN:-}" ]; then
   dev_url+="#covenCaveToken=${sidecar_token_fragment}"
 fi
 
-if [ "$should_start_server" = true ]; then
-  # The desktop shell always uses a loopback devUrl. A host-provided HOSTNAME
-  # (for example Docker/WSL's machine name) would bind the server elsewhere
-  # and leave Tauri waiting forever. Tauri invokes beforeDevCommand through
-  # cmd.exe on Windows, so use cmd's `set` form under Git Bash/MSYS.
-  before_dev_command="HOSTNAME=127.0.0.1 PORT=${dev_port} pnpm dev"
-  case "$(uname -s)" in
-    MINGW*|MSYS*|CYGWIN*) before_dev_command="set HOSTNAME=127.0.0.1&& set PORT=${dev_port}&& pnpm dev" ;;
-  esac
-  # Use beforeDevCommand but set PORT so it uses our free port.
-  cat >"$TAURI_OVERRIDE_CONFIG" <<CONF
-{"build":{"beforeDevCommand":"${before_dev_command}","devUrl":"${dev_url}"}}
-CONF
-else
-  # Skip beforeDevCommand since the server is already running
-  cat >"$TAURI_OVERRIDE_CONFIG" <<CONF
-{"build":{"beforeDevCommand":null,"devUrl":"${dev_url}"}}
-CONF
-fi
-
-# The desktop shell must not stay attached to a loopback origin that is never
-# coming back. The in-app recovery overlay covers restarts, so the watchdog only
-# fires after a long silence: past that, the dev server is gone for good and a
-# surviving window would just show stale Turbopack chunks.
-DEV_SERVER_GRACE_SECONDS="${COVEN_CAVE_DEV_SERVER_GRACE_SECONDS:-30}"
+# The desktop shell must not be opened until the actual root document answers.
+# The first Windows compile can be slow, so a long one-shot request avoids
+# multiplying concurrent compiles while still bounding a genuinely hung origin.
+DEV_SERVER_GRACE_SECONDS="${COVEN_CAVE_DEV_SERVER_GRACE_SECONDS:-180}"
 case "$DEV_SERVER_GRACE_SECONDS" in
   ''|*[!0-9]*)
     echo "[dev:app] ERROR: COVEN_CAVE_DEV_SERVER_GRACE_SECONDS must be a whole number of seconds" >&2
@@ -158,21 +145,39 @@ case "$DEV_SERVER_GRACE_SECONDS" in
     ;;
 esac
 
+if [ "$should_start_server" = true ]; then
+  # Bind explicitly to loopback. Git Bash exports HOSTNAME from the host (often
+  # a non-loopback machine name), so relying on server.ts's default is unsafe.
+  HOSTNAME=127.0.0.1 PORT="$dev_port" pnpm dev &
+  server_pid=$!
+fi
+
+initial_timeout_ms=$((DEV_SERVER_GRACE_SECONDS * 1000))
+if [ "$initial_timeout_ms" -lt 100 ]; then
+  initial_timeout_ms=100
+fi
+if ! origin_is_ready "$dev_port" "$initial_timeout_ms"; then
+  echo "[dev:app] loopback origin on 127.0.0.1:${dev_port} did not return the root document within ${DEV_SERVER_GRACE_SECONDS}s; desktop shell was not opened" >&2
+  exit 1
+fi
+
+# The server is already owned by this wrapper (or was pre-existing), so Tauri
+# must never start another one. This makes initial startup fail in the terminal
+# rather than presenting a black native window.
+cat >"$TAURI_OVERRIDE_CONFIG" <<CONF
+{"build":{"beforeDevCommand":null,"devUrl":"${dev_url}"}}
+CONF
+
 watch_dev_server() {
   local down_for=0
-  # Only start judging once the server has actually come up.
-  until port_is_listening "$dev_port" >/dev/null 2>&1; do
-    kill -0 "$tauri_pid" 2>/dev/null || return 0
-    sleep 2
-  done
   while kill -0 "$tauri_pid" 2>/dev/null; do
-    if port_is_listening "$dev_port" >/dev/null 2>&1; then
+    if origin_is_ready "$dev_port"; then
       down_for=0
     else
       down_for=$((down_for + 2))
       if [ "$down_for" -ge "$DEV_SERVER_GRACE_SECONDS" ]; then
-        echo "[dev:app] dev server on 127.0.0.1:${dev_port} has been unreachable for ${down_for}s; shutting the desktop shell down" >&2
-        printf 'dev-server-lost\n' >"$WATCHDOG_VERDICT"
+        echo "[dev:app] loopback origin on 127.0.0.1:${dev_port} did not return HTTP within ${down_for}s; shutting the desktop shell down" >&2
+        printf 'dev-origin-unhealthy\n' >"$WATCHDOG_VERDICT"
         terminate_process_tree "$tauri_pid"
         return 0
       fi

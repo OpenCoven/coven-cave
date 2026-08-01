@@ -5,7 +5,10 @@ import { describe, it } from "node:test";
 
 const view = readFileSync(new URL("./familiar-growth-view.tsx", import.meta.url), "utf8");
 const report = readFileSync(new URL("./familiar-growth-report.tsx", import.meta.url), "utf8");
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const globals = readFileSync(
+  new URL("../styles/globals/surface-reporting.css", import.meta.url),
+  "utf8",
+);
 
 describe("Familiar growth view", () => {
   it("sorts the roster attention-first (stalled → quiet → steady → active)", () => {

@@ -375,6 +375,45 @@
   margin: 0 auto;
 }
 
+/* The dock is the one place next steps read as a compact prompt palette: the
+   full typed-action metadata remains available to assistive technology through
+   each button's aria-label, while the visual row stays as quiet as the input. */
+.cave-chat-followups .cave-followup-card {
+  display: block;
+  min-width: 0;
+  border-color: var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-secondary);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-followups .cave-followup-card:hover {
+  border-color: color-mix(in oklch, var(--foreground) 52%, var(--border-strong));
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.cave-chat-followups .cave-followup-card__type,
+.cave-chat-followups .cave-followup-card__outcome {
+  display: none;
+}
+
+.cave-chat-followups .cave-followup-card__title {
+  display: block;
+  overflow: hidden;
+  font-size: var(--text-base);
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
 /* Typed assistant suggestions keep their effect legible before activation.
    The card owns presentation only; ChatView owns routing and side effects. */
 .cave-followup-cards {
@@ -440,6 +479,45 @@
   box-shadow:
     0 14px 38px oklch(0 0 0 / 22%),
     inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+/* Reference composer treatment: ChatView keeps the utility controls quiet and
+   makes one bright, square send control the clear end of the input row. */
+.cave-chat-linear .cave-composer-footer-action,
+.cave-chat-linear .cave-composer-plus {
+  width: var(--space-10);
+  height: var(--space-10);
+}
+
+.cave-chat-linear .cave-composer-control-row {
+  min-height: var(--space-10);
+}
+
+.cave-chat-linear .cave-composer-send {
+  width: var(--space-10);
+  height: var(--space-10);
+  border-color: transparent;
+  border-radius: var(--radius-control);
+  background: var(--text-primary);
+  color: var(--bg-panel);
+}
+
+.cave-chat-linear .cave-composer-send:hover:not(:disabled):not(.cave-composer-send--busy) {
+  background: color-mix(in oklch, var(--text-primary) 84%, var(--bg-hover));
+}
+
+.cave-chat-linear .cave-composer-send[data-typing="true"],
+.cave-chat-linear .cave-composer-send--queue {
+  background: var(--text-primary);
+}
+
+/* The glyph rides ON the danger fill, so it needs the on-danger foreground —
+   --danger-text is `var(--color-danger)` (red type for neutral surfaces) and
+   painted the cancel ✕ the same color as the button, leaving a blank square. */
+.cave-chat-linear .cave-composer-send--busy,
+.cave-chat-linear .cave-composer-send--busy:hover {
+  background: var(--color-danger);
+  color: var(--color-danger-foreground);
 }
 
 @media (max-width: 720px) {

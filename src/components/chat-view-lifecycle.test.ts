@@ -119,6 +119,22 @@ assert.match(
 
 assert.match(
   source,
+  /import \{ rebaseToolTextOffsets \} from "@\/lib\/tool-offset-correction";/,
+  "ChatView should use the client-safe tool-offset correction helper",
+);
+assert.match(
+  source,
+  /const replaceAssistantText = \(\s*text: string,\s*correction: ToolOffsetCorrection \| undefined,[\s\S]*?t\.id === assistantId\s*\? \{[\s\S]*?text,[\s\S]*?tools: rebaseToolTextOffsets\(t\.tools, correction\),[\s\S]*?pending: true,[\s\S]*?lifecycle: "streaming"/,
+  "authoritative text replacement should atomically rebase the same assistant turn's live tools",
+);
+assert.match(
+  source,
+  /case "assistant_replace": \{\s*replaceAssistantText\(ev\.text, ev\.toolOffsetCorrection, assistantId, liveGeneration\);/,
+  "assistant replacement events should pass correction metadata to the atomic turn update",
+);
+
+assert.match(
+  source,
   /case "tool_use":[\s\S]*setAssistantLifecycle\([\s\S]*?assistantId,[\s\S]*?"tooling",[\s\S]*?liveGeneration\.sessionId,[\s\S]*?liveStreamMetadata\(liveGeneration\)/,
   "Tool events should move the turn into a tool-use lifecycle",
 );
@@ -203,7 +219,7 @@ assert.match(
 
 assert.match(
   source,
-  /const requestedProjectRoot = opts\?\.projectRoot \?\? requestProjectRoot;[\s\S]*?if \(!projectLaunchReadyForRequest\)[\s\S]*?const projectRootForRequest = requestedProjectRoot;[\s\S]*?const mentionedFilesRootForRequest = opts\?\.mentionedFilesRoot \?\? mentionRoot;[\s\S]*?projectRoot: projectRootForRequest,[\s\S]*?permissionMode: controlsOverride\?\.permissionMode \?\? permissionMode,[\s\S]*?mentionedFilesRoot: mentionedFilesRootForRequest/,
+  /const requestedProjectRoot = opts\?\.projectRoot \?\? requestProjectRoot;[\s\S]*?const mentionedFilesRootForRequest = opts\?\.mentionedFilesRoot \?\? mentionRoot;[\s\S]*?if \(!projectLaunchReadyForRequest\)[\s\S]*?const projectRootForRequest = requestedProjectRoot;[\s\S]*?projectRoot: projectRootForRequest,[\s\S]*?permissionMode: controlsOverride\?\.permissionMode \?\? permissionMode,[\s\S]*?mentionedFilesRoot: mentionedFilesRootForRequest/,
   "delayed dispatch must authorize and use queued metadata rather than the latest composer state",
 );
 
@@ -353,8 +369,8 @@ assert.match(
 
 assert.match(
   source,
-  /function regenerateFor\(turn: Turn\)[\s\S]*?role === "user"[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]/,
-  "Regenerate re-sends the preceding user turn (text + attachments) through the guarded sendRaw path, and hides when no user turn precedes (CHAT-D6-02)",
+  /function regenerateFor\(turn: Turn\)[\s\S]*?role === "user"[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?retryTurnModelRequest\(prevUser, turn\)[\s\S]*?modelControls: prevUser\.modelControls \?\? \{\}/,
+  "Regenerate reuses the preceding user turn's controls and the assistant's authoritative retry model (CHAT-D6-02)",
 );
 
 assert.match(
@@ -381,7 +397,7 @@ assert.match(
 // false, error: true) must keep passing it, or the pill below never renders.
 const regenerateForBody =
   source.match(
-    /function regenerateFor\(turn: Turn\)[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]/,
+    /function regenerateFor\(turn: Turn\)[\s\S]*?\n  \}\n\n  \/\/ Branch navigator/,
   )?.[0] ?? "";
 assert.ok(regenerateForBody, "regenerateFor body should be extractable (CHAT-D12-03)");
 assert.doesNotMatch(
@@ -713,7 +729,7 @@ assert.match(
 // the new thread's model/plan; the effects pass () => !cancelled.
 assert.match(
   source,
-  /refreshModelState = useCallback\(async \(shouldApply: \(\) => boolean = \(\) => true\)[\s\S]*?if \(shouldApply\(\)\) setModelState\(next\);/,
+  /refreshModelState = useCallback\(async \(shouldApply: \(\) => boolean = \(\) => true\)[\s\S]*?if \(shouldApply\(\)\) \{\s*\n\s*modelStateRef\.current = next;\s*\n\s*setModelState\(next\);\s*\n\s*setModelCapabilities\(/,
   "refreshModelState only applies its result when the caller's shouldApply() allows it",
 );
 assert.match(

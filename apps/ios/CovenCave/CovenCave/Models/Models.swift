@@ -65,6 +65,9 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var title: String
     var harness: String?
     var model: String?
+    /// Concrete session runtime (`local:<cwd>` or `ssh:<host>:<cwd>`), when
+    /// published by `/api/sessions/list`.
+    var runtime: String?
     var status: String?
     var familiarId: String?
     var createdAt: String?
@@ -79,7 +82,7 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var generated: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, harness, model, status
+        case id, title, harness, model, runtime, status
         case familiarId
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -122,6 +125,17 @@ struct TurnUsage: Codable, Hashable {
     var outputTokens: Int?
 }
 
+/// Safe response facts persisted by the server for transcript replay. These
+/// are intentionally limited to display and retry state; provider credentials
+/// and runtime configuration never cross the history boundary.
+struct ChatTurnResponseMetadata: Codable, Hashable {
+    var retryModel: String?
+    var requestedControls: [String: String]?
+    var promptGuidanceControls: [String: String]?
+    var appliedControls: [String: String]?
+    var rejectedControlFamilies: [String]?
+}
+
 /// One message turn within a conversation.
 struct ChatTurn: Identifiable, Codable, Hashable {
     let id: String
@@ -136,14 +150,17 @@ struct ChatTurn: Identifiable, Codable, Hashable {
     /// the exact turn semantics. Older conversations decode these as nil.
     var reasoningEffort: ChatThinkingEffort?
     var responseSpeed: ChatResponseSpeed?
+    var modelControls: [String: String]?
     var modelOverride: String?
+    var modelOverrideScope: ChatModelOverrideScope?
+    var responseMetadata: ChatTurnResponseMetadata?
 
     enum CodingKeys: String, CodingKey {
         case id, role, text, reasoning, tools
         case createdAt
         case isError
         case usage
-        case reasoningEffort, responseSpeed, modelOverride
+        case reasoningEffort, responseSpeed, modelControls, modelOverride, modelOverrideScope, responseMetadata
     }
 }
 

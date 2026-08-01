@@ -86,6 +86,12 @@ assert.match(
 
 assert.match(
   replay,
+  /model: stringValue\(payload\.modelOverride\),[\s\S]*reasoningEffort: stringValue\(payload\.reasoningEffort\),[\s\S]*responseSpeed: stringValue\(payload\.responseSpeed\),[\s\S]*modelControls: record\(payload\.modelControls\)/,
+  "travel replay carries an iOS queued explicit model and capability controls through the daemon session contract",
+);
+
+assert.match(
+  replay,
   /const payloadProjectRoot = stringValue\(payload\.projectRoot\)[\s\S]*const projectRoot = payloadProjectRoot \?\? runtimeCwd \?\? process\.cwd\(\)/,
   "chat replay should derive projectRoot from queued local runtime when payload omits it",
 );

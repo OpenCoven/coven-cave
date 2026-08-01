@@ -53,6 +53,14 @@ ehthumbs.db
 *~
 .zed/
 
+# Python bytecode from one-off migration scripts. A committed .pyc is not just
+# noise: CPython bakes the absolute compile-time path into the code object's
+# co_filename, so `scripts/__pycache__/split-cave-chat-css.cpython-314.pyc`
+# shipped a contributor's home directory and worktree name to every clone
+# (cave-04qf9).
+__pycache__/
+*.pyc
+
 # Agent / tool scratch state (local automation, not for sharing)
 .claude/*
 # …except the shared, version-controlled Claude Code project settings.
@@ -104,7 +112,12 @@ package-lock.json
 /.playwright-cli
 /graphify-out
 /artifacts
-/docs/superpowers
+# NOT ignored: /docs/superpowers. Beads cite specs and plans there as the
+# authoritative approved design, so ignoring it meant `git add` silently
+# dropped them and the design died with the authoring machine — four approved
+# designs were lost that way before anyone noticed (cave-8zjr5). The directory
+# is 100% markdown; `/.superpowers` above is the tool's scratch dir and stays
+# ignored.
 
 # Generated Canvas Sketch sandbox runtime (built in prebuild)
 /public/sandbox/
@@ -122,4 +135,10 @@ ds-bundle/
 /.cave-trash
 /.opencode
 /.copilot
+__verify-chat-detail.mjs
+/.codex-tmp
 /.worktree-lifecycle-fixture-0P3qtu
+/.worktree-lifecycle-fixture-gILphr
+/.worktree-lifecycle-fixture-nsQqub
+/.worktree-lifecycle-fixture-Lh7Y4s
+/.worktree-lifecycle-fixture-eTlVOX

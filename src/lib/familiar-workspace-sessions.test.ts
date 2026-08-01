@@ -7,7 +7,7 @@ import {
 } from "./familiar-workspace-sessions.ts";
 import type { SessionRow } from "./types.ts";
 
-const WS_ROOT = "/Users/buns/.coven/workspaces/familiars";
+const WS_ROOT = "/home/test/.coven/workspaces/familiars";
 
 function row(id: string, projectRoot: string): SessionRow {
   return {
@@ -40,7 +40,7 @@ describe("isFamiliarWorkspaceRoot", () => {
 
   it("does NOT match real project roots", () => {
     assert.equal(
-      isFamiliarWorkspaceRoot("/Users/buns/Documents/GitHub/OpenCoven/coven-cave", WS_ROOT),
+      isFamiliarWorkspaceRoot("/home/test/Documents/GitHub/OpenCoven/coven-cave", WS_ROOT),
       false,
     );
   });
@@ -68,7 +68,7 @@ describe("collapseFamiliarWorkspaceSessions", () => {
     const sessions = [
       row("journal-nova", `${WS_ROOT}/nova`),
       row("journal-sage", `${WS_ROOT}/sage/notes`),
-      row("real-project", "/Users/buns/Documents/GitHub/OpenCoven/coven-cave"),
+      row("real-project", "/home/test/Documents/GitHub/OpenCoven/coven-cave"),
       row("rootless", ""),
     ];
     const kept = collapseFamiliarWorkspaceSessions(sessions, WS_ROOT);

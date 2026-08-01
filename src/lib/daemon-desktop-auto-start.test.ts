@@ -5,6 +5,7 @@ import {
   createDaemonStatusRequestGate,
   daemonDesktopAutoStartDecision,
   runWorkspaceDaemonStart,
+  DAEMON_RESTART_BACKOFF_MS,
 } from "./daemon-desktop-auto-start.ts";
 
 const localOffline = { kind: "offline", targetMode: "local" };
@@ -132,6 +133,133 @@ function response(ok, payload) {
   assert.equal(requests, 2);
   assert.deepEqual(errors, ["Coven CLI missing", "Coven CLI missing"]);
   assert.deepEqual(refreshes, [undefined, undefined], "failure keeps ordinary status authoritative");
+}
+
+
+// ── Opt-in auto-restart (cave-bqywj) ────────────────────────────────────────
+// Boot auto-start has always been one-shot: the coordinator consumes its
+// decision and never reconsiders, so a daemon that dies an hour into a session
+// stays dead. These pin the second half — and, just as importantly, pin that
+// it stays OFF unless the user asked for it.
+
+const OFFLINE = { kind: "offline", targetMode: "local" };
+const RUNNING = { kind: "running", targetMode: "local" };
+
+function restartHarness({ enabled = true, startClock = 0 } = {}) {
+  let clock = startClock;
+  const starts = [];
+  const coordinator = createDaemonDesktopAutoStartCoordinator(
+    () => starts.push(clock),
+    { autoRestartEnabled: () => enabled, now: () => clock },
+  );
+  return {
+    starts,
+    coordinator,
+    setEnabled(next) { enabled = next; },
+    advance(ms) { clock += ms; },
+  };
+}
+
+{
+  // The behaviour the bead exists for: offline mid-session gets relaunched.
+  const h = restartHarness();
+  h.coordinator.observePlatform("desktop");
+  h.coordinator.observeStatus(RUNNING);
+  assert.deepEqual(h.starts, [], "a healthy daemon is left alone");
+  h.advance(60_000);
+  h.coordinator.observeStatus(OFFLINE);
+  assert.equal(h.starts.length, 1, "a daemon that dies mid-session is restarted");
+}
+{
+  // Off by default is the entire safety story — a disabled preference must not
+  // restart anything, no matter how many polls report offline.
+  const h = restartHarness({ enabled: false });
+  h.coordinator.observePlatform("desktop");
+  h.coordinator.observeStatus(RUNNING);
+  for (let i = 0; i < 10; i += 1) {
+    h.advance(600_000);
+    h.coordinator.observeStatus(OFFLINE);
+  }
+  assert.deepEqual(h.starts, [], "opt-out means no unattended restarts at all");
+}
+{
+  // The preference is read at decision time, not captured — turning it off
+  // mid-session takes effect on the very next poll.
+  const h = restartHarness();
+  h.coordinator.observePlatform("desktop");
+  h.coordinator.observeStatus(RUNNING);
+  h.advance(60_000);
+  h.coordinator.observeStatus(OFFLINE);
+  assert.equal(h.starts.length, 1);
+  h.setEnabled(false);
+  h.advance(600_000);
+  h.coordinator.observeStatus(OFFLINE);
+  assert.equal(h.starts.length, 1, "turning the switch off stops the next restart");
+}
+{
+  // Backoff, and a real ceiling. A daemon that cannot start must not be
+  // relaunched every 5s forever — the poll cadence would otherwise make this
+  // an infinite loop against a broken install.
+  const h = restartHarness();
+  h.coordinator.observePlatform("desktop");
+  h.coordinator.observeStatus(RUNNING);
+  for (let i = 0; i < 400; i += 1) {
+    h.advance(5_000); // the real poll cadence
+    h.coordinator.observeStatus(OFFLINE);
+  }
+  assert.equal(
+    h.starts.length,
+    DAEMON_RESTART_BACKOFF_MS.length,
+    "attempts stop at the ceiling instead of looping forever",
+  );
+  const gaps = h.starts.slice(1).map((at, i) => at - h.starts[i]);
+  for (const [i, gap] of gaps.entries()) {
+    assert.ok(
+      gap >= DAEMON_RESTART_BACKOFF_MS[i + 1],
+      `attempt ${i + 2} waited at least its backoff (${gap} >= ${DAEMON_RESTART_BACKOFF_MS[i + 1]})`,
+    );
+  }
+}
+{
+  // Recovery resets the budget: a later, unrelated outage gets a full set of
+  // attempts rather than the exhausted tail of the previous one.
+  const h = restartHarness();
+  h.coordinator.observePlatform("desktop");
+  h.coordinator.observeStatus(RUNNING);
+  for (let i = 0; i < 400; i += 1) {
+    h.advance(5_000);
+    h.coordinator.observeStatus(OFFLINE);
+  }
+  const exhausted = h.starts.length;
+  h.advance(5_000);
+  h.coordinator.observeStatus(RUNNING);
+  h.advance(5_000);
+  h.coordinator.observeStatus(OFFLINE);
+  assert.equal(h.starts.length, exhausted + 1, "a recovered daemon restores the attempt budget");
+}
+{
+  // Scope guards: never on mobile, never for a hub target, and never a second
+  // start on the same observation that boot already acted on.
+  const mobile = restartHarness();
+  mobile.coordinator.observePlatform("mobile");
+  mobile.coordinator.observeStatus(OFFLINE);
+  mobile.advance(600_000);
+  mobile.coordinator.observeStatus(OFFLINE);
+  assert.deepEqual(mobile.starts, [], "mobile never auto-starts a local daemon");
+
+  const boot = restartHarness();
+  boot.coordinator.observePlatform("desktop");
+  boot.coordinator.observeStatus(OFFLINE);
+  assert.equal(boot.starts.length, 1, "boot start fires exactly once, not twice");
+}
+{
+  // No options → the old one-shot coordinator, byte for byte in behaviour.
+  const starts = [];
+  const coordinator = createDaemonDesktopAutoStartCoordinator(() => starts.push(1));
+  coordinator.observePlatform("desktop");
+  coordinator.observeStatus(RUNNING);
+  for (let i = 0; i < 5; i += 1) coordinator.observeStatus(OFFLINE);
+  assert.deepEqual(starts, [], "without opt-in wiring the coordinator stays one-shot");
 }
 
 console.log("daemon-desktop-auto-start.test.ts: ok");

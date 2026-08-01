@@ -129,8 +129,8 @@ registerRoleSurface({
 
 // The Coding familiar's room (cave-cc5r): the full Code workbench, granted by
 // the "coder" role token — the Studio's Coding type or a role label carrying
-// any of the aliases below. GitHub-item opens stay on the standalone GitHub
-// surface, which every familiar keeps.
+// any of the aliases below. GitHub-item opens also land here, on the room's
+// demand-loaded Activity / PRs / Issues / Reviews tabs.
 registerRoleSurface({
   id: CODE_SURFACE_ID,
   role: "coder",
@@ -339,7 +339,7 @@ registerRoleSurface({
   aliases: ["planner", "planning", "navigation"],
   title: "Chart Room",
   iconName: "ph:compass",
-  description: "Course lanes, scheduled legs, and real board moves",
+  description: "The board as a course — flow, graph, orchestration, and what's owed",
   accentHue: 105,
   priority: 22,
   shouldDisplay: () => true,

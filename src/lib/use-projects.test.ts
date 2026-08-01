@@ -126,9 +126,12 @@ assert.match(
   /const scopeKey = projectScopeKey\(familiarId\);[\s\S]*const \[loadedScopeKey, setLoadedScopeKey\] = useState<string \| null>\(null\);[\s\S]*const loadedSuccessfully = enabled && isCurrentProjectScope\(loadedScopeKey, familiarId\);/,
   "useProjects reports success only when the response belongs to the current familiar scope",
 );
+// The payload arrives already deduped + sorted from the cache (cave-k0gf), so
+// the success branch stores it as-is. What this pin guards is unchanged: only
+// a successful payload marks the scope loaded — an error must not.
 assert.match(
   source,
-  /if \(data\.ok === false\) \{[\s\S]*setError\(data\.error \?\? "Failed to load projects"\);[\s\S]*\} else \{[\s\S]*setProjects\(sortProjectsAlphabetically\(Array\.isArray\(data\.projects\) \? data\.projects : \[\]\)\);[\s\S]*setLoadedScopeKey\(scopeKey\);[\s\S]*\}/,
+  /if \(data\.ok === false\) \{[\s\S]*setError\(data\.error \?\? "Failed to load projects"\);[\s\S]*\} else \{[\s\S]*setProjects\(Array\.isArray\(data\.projects\) \? data\.projects : \[\]\);[\s\S]*setLoadedScopeKey\(scopeKey\);[\s\S]*\}/,
   "a scope becomes ready only after its own successful payload, not an error or another scope's payload",
 );
 assert.match(

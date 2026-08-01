@@ -23,7 +23,7 @@ assert.deepEqual(draft, {
   description: "Finds evidence and summarizes it.",
   glyph: "ph:leaf-fill",
   harness: "openclaw",
-  model: "openai/gpt-5.6-sol",
+  model: "",
   openclawAgentId: "riley",
   runtime: undefined,
 });
@@ -33,7 +33,7 @@ assert.match(toml, /id = "riley-research"/);
 assert.match(toml, /display_name = "Riley Research"/);
 assert.match(toml, /description = "Finds evidence and summarizes it\."/);
 assert.match(toml, /harness = "openclaw"/);
-assert.match(toml, /model = "openai\/gpt-5.6-sol"/);
+assert.doesNotMatch(toml, /^model\s*=/m);
 assert.match(toml, /openclaw_agent = "riley"/);
 
 assert.equal(
@@ -99,6 +99,34 @@ assert.deepEqual(hermesDraft, {
 
 assert.match(buildFamiliarsToml(hermesDraft), /description = "Plans and coordinates work\."/);
 assert.match(buildFamiliarsToml(hermesDraft), /harness = "hermes"/);
+
+const runtimeDefaultHermesDraft = normalizeFamiliarDraft({
+  displayName: "Hermes Default",
+  description: "Uses the configured provider default.",
+  harness: "hermes",
+});
+assert.equal(runtimeDefaultHermesDraft.model, "");
+assert.doesNotMatch(
+  buildFamiliarsToml(runtimeDefaultHermesDraft),
+  /^model\s*=/m,
+  "runtime-owned defaults are represented by omitting model from familiars.toml",
+);
+
+const profiledHermesDraft = normalizeFamiliarDraft({
+  displayName: "Hermes Research",
+  description: "Researches from its own saved Hermes profile.",
+  harness: "hermes",
+  hermesProfile: { id: "research", homePath: "/home/cave/.hermes/profiles/research" },
+});
+assert.deepEqual(profiledHermesDraft.hermesProfile, { id: "research", homePath: "/home/cave/.hermes/profiles/research" });
+assert.throws(
+  () => normalizeFamiliarDraft({ displayName: "Wrong", description: "Has an invalid profile.", harness: "hermes", hermesProfile: { id: "../wrong", homePath: "/tmp/wrong" } }),
+  /Choose a valid Hermes profile/,
+);
+assert.throws(
+  () => normalizeFamiliarDraft({ displayName: "Wrong runtime", description: "Binds a profile to another runtime.", harness: "codex", hermesProfile: { id: "research", homePath: "/home/cave/.hermes/profiles/research" } }),
+  /only be bound to the Hermes runtime/,
+);
 
 const escapedDescriptionToml = buildFamiliarsToml(
   normalizeFamiliarDraft({

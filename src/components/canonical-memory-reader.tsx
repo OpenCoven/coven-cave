@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CanonicalMemoryMarkdown } from "@/components/canonical-memory-markdown";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  CanonicalMemoryMarkdown,
+  MarkdownReaderBlock,
+} from "@/components/canonical-memory-markdown";
+import { DocumentReader } from "@/components/document-reader";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -15,6 +19,7 @@ import type {
   CanonicalMemoryErrorCode,
 } from "@/lib/canonical-memory";
 import { Icon } from "@/lib/icon";
+import { parseMarkdownReaderDocument } from "@/lib/document-reader";
 
 export type CanonicalMemoryDetailLoader = (
   memoryId: string,
@@ -112,6 +117,13 @@ export function CanonicalMemoryReader({
   const onMissingRef = useRef(onMissing);
   const mountedRef = useRef(true);
   const refreshGenerationRef = useRef(0);
+  const readerDocument = useMemo(
+    () =>
+      detail
+        ? parseMarkdownReaderDocument(detail.content, detail.title)
+        : null,
+    [detail],
+  );
   onMissingRef.current = onMissing;
 
   useEffect(() => {
@@ -373,31 +385,44 @@ export function CanonicalMemoryReader({
           </div>
         </dl>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1">
         {revealed ? (
-          <CanonicalMemoryMarkdown
-            content={detail.content}
-            mode={mode}
-            className={
-              mode === "rendered"
-                ? "cave-md canonical-memory-markdown"
-                : "whitespace-pre-wrap break-words font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)]"
-            }
-          />
+          mode === "rendered" && readerDocument ? (
+            <DocumentReader
+              document={readerDocument}
+              navigation="compact"
+              renderLede={(block) => (
+                <MarkdownReaderBlock block={block} blockKey="canonical-lede" />
+              )}
+              renderBlock={(block, key) => (
+                <MarkdownReaderBlock block={block} blockKey={key} />
+              )}
+            />
+          ) : (
+            <CanonicalMemoryMarkdown
+              content={detail.content}
+              mode="raw"
+              className="h-full overflow-y-auto whitespace-pre-wrap break-words p-4 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)]"
+            />
+          )
         ) : canReveal ? (
-          <EmptyState
-            compact
-            icon="ph:lock-simple"
-            headline="Content hidden"
-            subtitle="Review the privacy and verification metadata, then choose Reveal."
-          />
+          <div className="p-4">
+            <EmptyState
+              compact
+              icon="ph:lock-simple"
+              headline="Content hidden"
+              subtitle="Review the privacy and verification metadata, then choose Reveal."
+            />
+          </div>
         ) : (
-          <EmptyState
-            compact
-            icon="ph:lock-simple"
-            headline="Content remains hidden"
-            subtitle={`${detail.privacy.reason} Canonical content can be shown only when classification is public and reveal is not required.`}
-          />
+          <div className="p-4">
+            <EmptyState
+              compact
+              icon="ph:lock-simple"
+              headline="Content remains hidden"
+              subtitle={`${detail.privacy.reason} Canonical content can be shown only when classification is public and reveal is not required.`}
+            />
+          </div>
         )}
       </div>
     </article>

@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // The dedicated Code surface (cave-k0ua): a Codex-style multi-session coding
 // workbench — session rail grouped by project, per-session workbench
 // (Diff | Files | Terminal | PR), inspector column, and the GitHub content top
-// tabs (PRs | Issues | Reviews).
+// tabs (Activity | PRs | Issues | Reviews).
 // Default-on since phase 2 (cave-m6ys); since cave-cc5r it lives as the
 // Coding familiar's Role Surface room (`?mode=code` aliases onto
 // `surface:code`), so the mocked familiar carries the explicit
@@ -42,13 +42,63 @@ const NEWEST = mkSession({
 });
 const OLDER = mkSession({ id: "s-old", title: "Fix login retry", project_root: "/repo/alpha" });
 
-async function base(page: Page, sessions: unknown[] = [NEWEST, OLDER]) {
+async function base(
+  page: Page,
+  sessions: unknown[] = [NEWEST, OLDER],
+  familiarType = "coding",
+) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
+    window.localStorage.setItem("cave:familiar-scope", JSON.stringify(["nova"]));
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
   await page.route("**/api/familiars**", (route) =>
-    route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", familiarType: "coding", status: "active", icon: "ph:sparkle-fill" }] } }),
+    route.fulfill({
+      json: {
+        ok: true,
+        familiars: [{
+          id: "nova",
+          display_name: "Nova",
+          role: "Orchestrator",
+          familiarType,
+          status: "active",
+          icon: "ph:sparkle-fill",
+        }],
+      },
+    }),
+  );
+  await page.route("**/api/daemon/status**", (route) =>
+    route.fulfill({
+      json: {
+        running: true,
+        availability: "online",
+        target: { mode: "local" },
+      },
+    }),
+  );
+  await page.route("**/api/onboarding/status**", (route) =>
+    route.fulfill({ json: { ok: true, complete: true, steps: {}, tools: [] } }),
+  );
+  await page.route("**/api/onboarding/update**", (route) =>
+    route.fulfill({ json: { ok: true, tools: [], checkedAt: NEW_ISO, stale: false } }),
+  );
+  await page.route("**/api/onboarding/install**", (route) =>
+    route.fulfill({ json: { npmBusy: false } }),
+  );
+  await page.route("**/api/cave-home-migration**", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        status: {
+          pending: [],
+          conflicts: [],
+          migrated: true,
+          details: [],
+          backupRoot: "",
+          journalPath: "",
+        },
+      },
+    }),
   );
   await page.route("**/api/roles**", (route) => route.fulfill({ json: { ok: true, roles: [] } }));
   await page.route("**/api/sessions/list**", (route) =>
@@ -86,17 +136,61 @@ async function base(page: Page, sessions: unknown[] = [NEWEST, OLDER]) {
   );
 }
 
+async function mockGitHubActivity(page: Page) {
+  const complete = {
+    status: "complete",
+    shown: 0,
+    total: 0,
+    hasMore: false,
+    incomplete: false,
+    githubIncomplete: false,
+  };
+  await page.route("**/api/github/pat**", (route) =>
+    route.fulfill({ json: { hasPat: true, login: "val" } }),
+  );
+  await page.route("**/api/github/activity**", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        authed: true,
+        login: "val",
+        organizations: ["OpenCoven"],
+        collections: {
+          authored: complete,
+          reviewRequests: complete,
+          assignedIssues: complete,
+        },
+        items: [{
+          kind: "notification",
+          id: "notification:release-alert",
+          title: "Release alert",
+          repo: "OpenCoven/coven-cave",
+          url: "https://github.com/OpenCoven/coven-cave/releases",
+          updatedAt: NEW_ISO,
+        }],
+        rateLimit: { remaining: 100, limit: 5000 },
+      },
+    }),
+  );
+  await page.route("**/api/board**", (route) =>
+    route.fulfill({ json: { ok: true, cards: [] } }),
+  );
+}
+
+test.describe.configure({ mode: "serial" });
+
 test.describe("code surface (Coding familiar's room)", () => {
   test("landing: rail groups sessions, newest auto-selected, attribution chips in the header", async ({ page, isMobile }) => {
     test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
     await base(page);
-    await page.goto("/?mode=code");
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
 
     // Top tabs: Sessions active, then the GitHub content tabs (PRs · Issues ·
     // Reviews) that replaced the single generic GitHub tab.
     const topTabs = page.getByRole("tablist", { name: "Code surface" });
     await expect(topTabs).toBeVisible({ timeout: 30_000 });
     await expect(topTabs.getByRole("tab", { name: "Sessions" })).toHaveAttribute("aria-selected", "true");
+    await expect(topTabs.getByRole("tab", { name: "Activity" })).toBeVisible();
     await expect(topTabs.getByRole("tab", { name: "PRs" })).toBeVisible();
     await expect(topTabs.getByRole("tab", { name: "Issues" })).toBeVisible();
     await expect(topTabs.getByRole("tab", { name: "Reviews" })).toBeVisible();
@@ -127,7 +221,7 @@ test.describe("code surface (Coding familiar's room)", () => {
   test("workbench tabs switch; Files shows tree + preview; inspector lists branches", async ({ page, isMobile }) => {
     test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
     await base(page);
-    await page.goto("/?mode=code");
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
 
     const wb = page.getByRole("tablist", { name: "Session workbench" });
     await expect(wb).toBeVisible({ timeout: 30_000 });
@@ -152,7 +246,7 @@ test.describe("code surface (Coding familiar's room)", () => {
   test("?mode=code&session=<id>&wtab=files deep link selects the session and tab", async ({ page, isMobile }) => {
     test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
     await base(page);
-    await page.goto("/?mode=code&session=s-old&wtab=files");
+    await page.goto("/?mode=code&session=s-old&wtab=files", { waitUntil: "domcontentloaded" });
 
     // The deep-linked (NOT newest) session is selected…
     await expect(page.getByRole("heading", { name: "Fix login retry" })).toBeVisible({ timeout: 30_000 });
@@ -162,6 +256,29 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect
       .poll(() => page.evaluate(() => window.location.search))
       .not.toContain("session=");
+  });
+
+  test("legacy GitHub mode lands on Activity and preserves notifications", async ({ page }) => {
+    await base(page);
+    await mockGitHubActivity(page);
+    await page.goto("/?mode=github", { waitUntil: "domcontentloaded" });
+
+    const topTabs = page.getByRole("tablist", { name: "Code surface" });
+    await expect(topTabs.getByRole("tab", { name: "Activity" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(page.getByRole("heading", { name: "Release alert" })).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("a non-coding familiar sees the closed Code Workshop door", async ({ page }) => {
+    await base(page, [NEWEST, OLDER], "general");
+    await page.goto("/?mode=github", { waitUntil: "domcontentloaded" });
+
+    await expect(
+      page.getByText("Nova doesn't hold the coder role, so this room stays closed."),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("button", { name: "Back to the Cave" })).toBeVisible();
   });
 
   test("organization settings move focus inside, retain it when selection disappears, and fit narrow panes", async ({
@@ -187,7 +304,7 @@ test.describe("code surface (Coding familiar's room)", () => {
         },
       });
     });
-    await page.goto("/?mode=code");
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
 
     const sessionsTab = page.getByRole("tab", { name: "Sessions" });
     await sessionsTab.focus();

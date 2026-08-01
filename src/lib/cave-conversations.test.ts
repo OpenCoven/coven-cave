@@ -17,7 +17,13 @@ const {
   loadConversation,
   saveConversation,
 } = await import("./cave-conversations.ts");
-const { mapConversationHistoryTurns } = await import("./chat-turn-state.ts");
+const {
+  mapConversationHistoryTurns,
+  retryTurnModelRequest,
+} = await import("./chat-turn-state.ts");
+const { persistedTurnControls } = await import(
+  "../app/api/chat/send/chat-send-models.ts"
+);
 
 assert.equal(isSafeConversationSessionId("session-1"), true);
 assert.equal(isSafeConversationSessionId("019e-a-valid-thread"), true);
@@ -61,6 +67,8 @@ assert.deepEqual(
     usage: undefined,
     costUsd: undefined,
     responseMetadata: undefined,
+    modelControls: undefined,
+    modelOverrideScope: undefined,
     error: undefined,
     lifecycle: undefined,
     createdAt: "2026-07-25T00:00:00.000Z",
@@ -68,6 +76,77 @@ assert.deepEqual(
     voiceCallId: undefined,
   }],
   "persisted compatibility diagnostics round-trip into the client transcript after reload",
+);
+
+const reloadedRuntimeDefaultTurns = mapConversationHistoryTurns([
+  {
+    id: "runtime-default-user",
+    role: "user",
+    text: "Use the provider default",
+    modelOverrideScope: "runtime-default",
+    createdAt: "2026-07-31T00:00:00.000Z",
+  },
+  {
+    id: "runtime-default-assistant",
+    role: "assistant",
+    text: "Done",
+    createdAt: "2026-07-31T00:00:01.000Z",
+  },
+]);
+assert.equal(
+  reloadedRuntimeDefaultTurns[0]?.modelOverrideScope,
+  "runtime-default",
+  "reload retains model-less Runtime-default intent on the user turn",
+);
+assert.deepEqual(
+  retryTurnModelRequest(
+    reloadedRuntimeDefaultTurns[0],
+    reloadedRuntimeDefaultTurns[1],
+  ),
+  { modelOverride: "", modelOverrideScope: "next-message" },
+  "regenerate replays Runtime default once without replacing the chat's newer durable model",
+);
+assert.deepEqual(
+  retryTurnModelRequest(
+    reloadedRuntimeDefaultTurns[0],
+    {
+      ...reloadedRuntimeDefaultTurns[1],
+      responseMetadata: { retryModel: "anthropic/claude-opus-4-6" },
+    },
+  ),
+  {
+    modelOverride: "anthropic/claude-opus-4-6",
+    modelOverrideScope: "next-message",
+  },
+  "an honest concrete retry model remains a one-turn override",
+);
+
+const firstRuntimeDefaultRetry = retryTurnModelRequest(
+  reloadedRuntimeDefaultTurns[0],
+  reloadedRuntimeDefaultTurns[1],
+);
+const reloadedRuntimeDefaultRetry = mapConversationHistoryTurns([
+  {
+    id: "runtime-default-retry-user",
+    role: "user",
+    text: "Retry with the provider default",
+    ...persistedTurnControls(firstRuntimeDefaultRetry),
+    createdAt: "2026-07-31T00:00:02.000Z",
+  },
+  {
+    id: "runtime-default-retry-assistant",
+    role: "assistant",
+    text: "Done again",
+    createdAt: "2026-07-31T00:00:03.000Z",
+  },
+]);
+assert.deepEqual(
+  retryTurnModelRequest(
+    reloadedRuntimeDefaultRetry[0],
+    reloadedRuntimeDefaultRetry[1],
+  ),
+  { modelOverride: "", modelOverrideScope: "next-message" },
+  "a persisted Runtime-default retry remains retryable after another reload",
 );
 
 await saveConversation({
@@ -610,6 +689,7 @@ console.log("cave-conversations.test.ts: ok");
       text: "fix the flaky test please",
       reasoningEffort: "medium",
       responseSpeed: "careful",
+      modelControls: { reasoning: "medium" },
       modelOverride: "anthropic/claude-opus-4-6",
     },
   });
@@ -622,6 +702,7 @@ console.log("cave-conversations.test.ts: ok");
   assert.equal(stub?.turns[0]?.text, "fix the flaky test please");
   assert.equal(stub?.turns[0]?.reasoningEffort, "medium");
   assert.equal(stub?.turns[0]?.responseSpeed, "careful");
+  assert.deepEqual(stub?.turns[0]?.modelControls, { reasoning: "medium" });
   assert.equal(stub?.turns[0]?.modelOverride, "anthropic/claude-opus-4-6");
   assert.equal(stub?.modelIntent?.model, "anthropic/claude-opus-4-6");
   assert.equal(stub?.activeLeafId, "pending-user-turn");
@@ -711,6 +792,24 @@ console.log("cave-conversations.test.ts: ok");
   assert.equal(branched.turns.length, 1);
   assert.equal(branched.turns[0]?.parentId, null, "orphaned child re-points at stub's parent");
   assert.equal(branched.activeLeafId, "child-turn", "active leaf off the stub is untouched");
+
+  await createConversationStub({
+    sessionId: "stub-runtime-default",
+    familiarId: "charm",
+    harness: "hermes",
+    userTurn: {
+      id: "runtime-default-turn",
+      text: "Use the provider default.",
+      modelOverrideScope: "runtime-default",
+    },
+  });
+  const runtimeDefaultStub = await loadConversation("stub-runtime-default");
+  assert.equal(
+    runtimeDefaultStub?.turns[0]?.modelOverrideScope,
+    "runtime-default",
+    "a first-turn stub round-trips model-less runtime-default retry intent",
+  );
+  await deleteConversation("stub-runtime-default");
 }
 console.log("cave-conversations cache test OK");
 

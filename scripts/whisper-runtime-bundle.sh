@@ -5,15 +5,60 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="$ROOT/src-tauri/resources/whisper"
+LIVE_DEST="$ROOT/src-tauri/resources/whisper"
 VERSION="v1.9.1"
+MACOS_COMMIT="f049fff95a089aa9969deb009cdd4892b3e74916"
 RELEASE_URL="https://github.com/ggml-org/whisper.cpp/releases/download/$VERSION"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/coven-whisper-runtime.XXXXXX")"
+STAGE_ROOT="$(mktemp -d "$ROOT/src-tauri/resources/.whisper-staging.XXXXXX")"
+STAGE_DEST="$STAGE_ROOT/whisper"
+RUNTIME_ID="$VERSION:$(uname -s):$(uname -m):$MACOS_COMMIT"
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) WHISPER_CLI_NAME="whisper-cli.exe" ;;
+  *) WHISPER_CLI_NAME="whisper-cli" ;;
+esac
+PREVIOUS_DEST=""
 
 cleanup() {
-  rm -rf "$WORK"
+  local status=$?
+  trap - EXIT INT TERM HUP
+  if [ -n "$PREVIOUS_DEST" ] && [ -d "$PREVIOUS_DEST" ]; then
+    if [ ! -e "$LIVE_DEST" ]; then
+      if ! mv "$PREVIOUS_DEST" "$LIVE_DEST"; then
+        echo "ERROR: could not restore the previous bundled Whisper runtime" >&2
+        if [ "$status" -eq 0 ]; then
+          status=1
+        fi
+      fi
+    else
+      if ! rm -rf "$PREVIOUS_DEST"; then
+        echo "WARNING: could not remove the previous bundled Whisper runtime" >&2
+      fi
+    fi
+  fi
+  if ! rm -rf "$WORK" "$STAGE_ROOT"; then
+    echo "WARNING: could not remove temporary Whisper runtime files" >&2
+  fi
+  exit "$status"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+runtime_is_current() {
+  [ -x "$LIVE_DEST/$WHISPER_CLI_NAME" ] || return 1
+  [ -f "$LIVE_DEST/.coven-whisper-runtime-id" ] || return 1
+  [ "$(cat "$LIVE_DEST/.coven-whisper-runtime-id")" = "$RUNTIME_ID" ] || return 1
+  "$LIVE_DEST/$WHISPER_CLI_NAME" --version >/dev/null 2>&1
+}
+
+if [ "${COVEN_CAVE_REFRESH_WHISPER:-0}" != "1" ] && runtime_is_current; then
+  echo "==> reusing bundled whisper.cpp $VERSION"
+  exit 0
+fi
+
+DEST="$STAGE_DEST"
 
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -109,9 +154,9 @@ stage_macos() {
   command -v cmake >/dev/null 2>&1 || { echo "ERROR: cmake is required to build bundled Whisper on macOS" >&2; exit 1; }
   git init -q "$source"
   git -C "$source" remote add origin https://github.com/ggml-org/whisper.cpp.git
-  git -C "$source" fetch -q --depth 1 origin f049fff95a089aa9969deb009cdd4892b3e74916
+  git -C "$source" fetch -q --depth 1 origin "$MACOS_COMMIT"
   git -C "$source" checkout -q --detach FETCH_HEAD
-  test "$(git -C "$source" rev-parse HEAD)" = "f049fff95a089aa9969deb009cdd4892b3e74916"
+  test "$(git -C "$source" rev-parse HEAD)" = "$MACOS_COMMIT"
   # Keep copied dylibs discoverable after the temporary build tree disappears.
   # The release bundle co-locates them with whisper-cli, so @loader_path is
   # both relocatable and compatible with the later nested-code-signing pass.
@@ -130,7 +175,6 @@ stage_macos() {
   chmod 755 "$DEST/whisper-cli"
 }
 
-rm -rf "$DEST"
 mkdir -p "$DEST"
 
 case "$(uname -s)" in
@@ -140,4 +184,16 @@ case "$(uname -s)" in
   *) echo "ERROR: no bundled Whisper runtime for $(uname -s)" >&2; exit 1 ;;
 esac
 
-echo "==> bundled whisper.cpp $VERSION ($(find "$DEST" -maxdepth 1 -type f | wc -l | tr -d ' ') files)"
+printf '%s\n' "$RUNTIME_ID" > "$DEST/.coven-whisper-runtime-id"
+
+if [ -d "$LIVE_DEST" ]; then
+  PREVIOUS_DEST="$(mktemp -d "$ROOT/src-tauri/resources/.whisper-previous.XXXXXX")"
+  rmdir "$PREVIOUS_DEST"
+  mv "$LIVE_DEST" "$PREVIOUS_DEST"
+fi
+if ! mv "$STAGE_DEST" "$LIVE_DEST"; then
+  echo "ERROR: could not install bundled Whisper runtime" >&2
+  exit 1
+fi
+
+echo "==> bundled whisper.cpp $VERSION ($(find "$LIVE_DEST" -maxdepth 1 -type f | wc -l | tr -d ' ') files)"

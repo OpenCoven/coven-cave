@@ -30,11 +30,15 @@ import { deriveFamiliarSectionData } from "@/lib/familiar-tab-section-model";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
-import { isBindableRuntimeChoice, type AdapterReport } from "@/lib/harness-adapters";
+import {
+  canonicalHarnessId,
+  isBindableRuntimeChoice,
+  type AdapterReport,
+} from "@/lib/harness-adapters";
 import { consumeFamiliarSettingsPending, type FamiliarSettingsTab } from "@/lib/chat-tab-events";
 import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { listVoiceProviders } from "@/lib/voice/registry";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { relativeTime } from "@/lib/relative-time";
 import { FamiliarSkillsSection } from "@/components/familiar-tab-skills";
 import { FamiliarIdentitySection } from "@/components/familiar-tab-identity";
@@ -96,8 +100,8 @@ function FamiliarIdentityHero({
 
   // Runtime select: "" inherits the cave default; anything else is a
   // per-familiar override (binding key: harness).
-  const defaultHarnessId = familiar.defaultHarness ?? familiar.harness ?? "";
-  const defaultHarness = harnesses.find((h) => h.id === defaultHarnessId);
+  const defaultHarnessId = canonicalHarnessId(familiar.defaultHarness ?? familiar.harness ?? "");
+  const defaultHarness = harnesses.find((h) => canonicalHarnessId(h.id) === defaultHarnessId);
   const runtimeValue = familiar.harnessOverride ?? "";
   const runtimeOptions: StandardSelectOption<string>[] = [
     { value: "", label: `Default${defaultHarness ? ` · ${defaultHarness.label}` : ""}`, detail: "Inherit the cave runtime" },
@@ -125,7 +129,8 @@ function FamiliarIdentityHero({
   // Model select: sourced from the same runtime → provider catalog the chat
   // picker uses; a saved id outside the curated seed stays selectable.
   const effectiveHarness = familiar.harness ?? defaultHarnessId;
-  const runtimeModelOptions = useRuntimeModelOptions(effectiveHarness, familiar.id);
+  const runtimeModelInventory = useRuntimeModelInventory(effectiveHarness, familiar.id);
+  const runtimeModelOptions = runtimeModelInventory.models;
   const modelValue = familiar.model ?? "";
   const modelOptions: StandardSelectOption<string>[] = [
     { value: "", label: "Provider default", detail: "Runtime picks the model" },
@@ -204,7 +209,7 @@ function FamiliarIdentityHero({
             options={runtimeOptions}
           />
           <StandardSelect
-            label="Model"
+            label={`Model · ${inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}`}
             value={modelValue}
             onChange={(v) => void bind({ model: v })}
             options={modelOptions}
@@ -332,7 +337,7 @@ function FamiliarRosterWarning({ message, onRetry }: { message: string; onRetry?
 }
 
 function familiarCapabilitySummary(familiar: ResolvedFamiliar, snapshot: CapabilitySnapshot) {
-  const harnessId = familiar.harness ?? "codex";
+  const harnessId = canonicalHarnessId(familiar.harness ?? "codex");
   const roles = snapshot.roles.filter(
     (role) => role.active && (role.familiar === familiar.id || role.familiar === "all" || role.familiar === "global"),
   );
@@ -340,14 +345,18 @@ function familiarCapabilitySummary(familiar: ResolvedFamiliar, snapshot: Capabil
   const localSkills = snapshot.localSkills.filter(
     (skill) => skill.familiar === "global" || (skill.familiar as string) === familiar.id,
   );
-  const manifest = snapshot.harnessCapabilities.find((item) => item.harness_id === harnessId);
+  const manifest = snapshot.harnessCapabilities.find(
+    (item) => canonicalHarnessId(item.harness_id) === harnessId,
+  );
   const skillIds = new Set([
     ...roleSkills,
     ...localSkills.map((skill) => skill.id),
     ...(manifest?.skills ?? []).map((skill) => skill.id),
   ]);
   const enabledPlugins = (manifest?.plugins ?? []).filter((plugin) => plugin.enabled).length;
-  const harness = snapshot.harnesses.find((item) => item.id === harnessId);
+  const harness = snapshot.harnesses.find(
+    (item) => canonicalHarnessId(item.id) === harnessId,
+  );
   return {
     roleCount: roles.length,
     skillCount: skillIds.size,

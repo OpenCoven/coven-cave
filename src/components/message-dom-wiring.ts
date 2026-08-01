@@ -72,6 +72,10 @@ function wireCopyButtons(container: HTMLElement) {
 function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => void) {
   if (!onOpenUrl) return;
   for (const link of Array.from(container.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
+    if (
+      link.getAttribute("href")?.startsWith("#cite-") ||
+      link.classList.contains("cave-citation-chip")
+    ) continue;
     if ((link as HTMLAnchorElement & { _caveLinkWired?: boolean })._caveLinkWired) continue;
     const href = link.href;
     let parsed: URL;

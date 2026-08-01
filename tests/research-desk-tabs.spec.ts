@@ -457,6 +457,14 @@ test.describe("research desk tabs", () => {
       "The research session crashed before publishing.",
     );
     await expect(desk.locator(".research-mission-actions").getByRole("button", { name: /^Retry/ })).toBeVisible();
+
+    await desk.getByRole("button", { name: "View diagnostics" }).click();
+    const diagnostics = page.getByRole("dialog", { name: /Research.*Diagnostics/ });
+    await expect(diagnostics).toContainText("The research session crashed before publishing.");
+    await expect(diagnostics).toContainText("sess-fail-1");
+    await expect(diagnostics).toContainText("No flow run recorded");
+    await diagnostics.getByText("Close", { exact: true }).click();
+    await expect(diagnostics).toBeHidden();
   });
 
   test("Desk toolbar scopes runs and preserves focus mode", async ({ page }) => {

@@ -55,7 +55,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /modelOverrideScope\?: "next-message" \| "session"/,
+  /modelOverrideScope\?: "next-message" \| "session" \| "runtime-default"/,
   "SendBody should distinguish next-message and session-scoped model intent",
 );
 assert.match(
@@ -119,10 +119,10 @@ assert.doesNotMatch(
   "The misleading 'model:'/'runtime:' label helpers should be gone — openclaw-local is not a model and the runtime is a cwd",
 );
 
-assert.doesNotMatch(
+assert.match(
   chatView,
-  /<ResponseMetadataText metadata=\{turn\.responseMetadata\} \/>/,
-  "Assistant turn rows should not duplicate model/runtime metadata inline; response metadata stays stored for debug/session surfaces",
+  /<ResponseControlStatus metadata=\{turn\.responseMetadata\} \/>/,
+  "Assistant turn rows render labeled requested/applied/rejected control state",
 );
 
 assert.match(

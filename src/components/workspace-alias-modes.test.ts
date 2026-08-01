@@ -69,10 +69,16 @@ assert.match(
   /if \(next === "code"\) \{[\s\S]{0,700}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\)\)/,
   'setMode\'s "code" branch must land on the Coding familiar\'s room (MODE_ALIASES.code = "surface:code", cave-cc5r)',
 );
+assert.equal(MODE_ALIASES.github, "surface:code");
 assert.match(
   workspace,
-  /mode === "github" \?[\s\S]{0,500}?<GitHubView[\s\S]{0,300}?initialTarget=\{githubTarget\}/,
-  "the canonical github mode renders the standalone GitHub surface with its deep-link target (cave-cc5r)",
+  /if \(next === "github"\) \{[\s\S]{0,500}?enqueuePendingCodeNavigation\(\{\s*kind: "tab",\s*topTab: "activity",\s*nonce: Date\.now\(\),?\s*\}\);[\s\S]{0,300}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\), "github"\)/,
+  'setMode migrates legacy "github" requests to Code Workshop Activity',
+);
+assert.doesNotMatch(
+  workspace,
+  /mode === "github" \?/,
+  "github is compatibility intent, never a standalone render branch",
 );
 assert.doesNotMatch(
   workspace,
@@ -92,6 +98,11 @@ assert.match(
   workspace,
   /if \(last && \(isWorkspaceMode\(last\) \|\| isRoleSurfaceMode\(last\)\)\) setMode\(last as CaveMode\)/,
   "persisted last-surface restore validates via isWorkspaceMode and lets setMode route aliases",
+);
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*if \(!activeId\) return;\s*if \(!isRoleSurfaceMode\(mode\)\) \{\s*setLastSurface\(activeId, mode\);\s*return;\s*\}\s*const roleSurfaceId = parseRoleSurfaceMode\(mode\);\s*if \(!roleSurfaceId\) return;\s*if \(!roleSurfaceSession\.rolesLoaded\) return;\s*if \(!roleSurfaceSession\.rolesLoadedSuccessfully\) return;\s*if \(!roleSurfaceSession\.visibleSurfaces\.some\(\(surface\) => surface\.id === roleSurfaceId\)\) return;\s*setLastSurface\(activeId, mode\);\s*\}, \[\s*activeId,\s*mode,\s*roleSurfaceSession\.rolesLoaded,\s*roleSurfaceSession\.rolesLoadedSuccessfully,\s*roleSurfaceSession\.visibleSurfaces,\s*\]\);/,
+  "role rooms persist only after successful role resolution confirms the exact room is visible for the active familiar",
 );
 assert.doesNotMatch(
   workspace,

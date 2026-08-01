@@ -120,6 +120,97 @@ function output(renderer: ReactTestRenderer): { data: unknown; error: string | n
   return JSON.parse(renderer.root.findByType("output").children.join(""));
 }
 
+type RoleSurfaceFetchResponse = {
+  ok: boolean;
+  status?: number;
+  json(): Promise<unknown>;
+};
+
+type DeferredFetchResponse = {
+  url: string;
+  resolve(value: RoleSurfaceFetchResponse): void;
+};
+
+type RoleSurfaceSnapshot = {
+  familiarId: string | null;
+  contextFamiliarId: string | null;
+  rolesLoaded: boolean;
+  rolesLoadedSuccessfully: boolean;
+};
+
+function deferredRoleSurfaceFetch() {
+  const originalFetch = globalThis.fetch;
+  const pending: DeferredFetchResponse[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    return await new Promise((resolve) => pending.push({ url, resolve }));
+  }) as typeof fetch;
+  return {
+    pending,
+    restore() {
+      globalThis.fetch = originalFetch;
+    },
+  };
+}
+
+function familiar(id: string) {
+  return {
+    id,
+    display_name: id,
+    role: "Researcher",
+  };
+}
+
+function settleRoles(response: DeferredFetchResponse, body: unknown) {
+  return act(async () => {
+    response.resolve({
+      ok: true,
+      json: async () => body,
+    });
+    await Promise.resolve();
+  });
+}
+
+function failRoles(response: DeferredFetchResponse, options?: { status?: number; error?: Error }) {
+  return act(async () => {
+    response.resolve({
+      ok: options?.error ? true : false,
+      status: options?.status ?? 500,
+      json: async () => {
+        if (options?.error) throw options.error;
+        return { ok: false };
+      },
+    });
+    await Promise.resolve();
+  });
+}
+
+function RoleSurfaceSessionProbe({
+  familiarId,
+  snapshots,
+}: {
+  familiarId: string | null;
+  snapshots: RoleSurfaceSnapshot[];
+}) {
+  const session = roleSurfaceHooks.useRoleSurfaceSession({
+    familiar: familiarId ? familiar(familiarId) : null,
+    sessions: [],
+    activeSessionId: null,
+    daemonRunning: true,
+    openUrl() {},
+    openSession() {},
+    focusCard() {},
+    refreshTasks() {},
+  });
+  snapshots.push({
+    familiarId,
+    contextFamiliarId: session.context?.activeFamiliar.id ?? null,
+    rolesLoaded: session.rolesLoaded,
+    rolesLoadedSuccessfully: session.rolesLoadedSuccessfully,
+  });
+  return createElement("role-surface-session-probe");
+}
+
 test("selected content ignores a late response from the prior selection", async () => {
   const pending = new Map<string, Deferred<string>>();
   const request = (scope: string) => {
@@ -233,4 +324,111 @@ test("retained revalidation keeps usable data while pending and when refresh fai
   assert.equal(await refresh, false);
   assert.deepEqual(output(renderer), { data: "first", error: "Couldn't load probe." });
   await act(async () => renderer.unmount());
+});
+
+test("role-surface session treats a successful empty roles list as settled evidence", async () => {
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: RoleSurfaceSnapshot[] = [];
+  let renderer!: ReactTestRenderer;
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(RoleSurfaceSessionProbe, { familiarId: "salem", snapshots }));
+    });
+    assert.equal(fetch.pending.length, 1);
+    assert.equal(fetch.pending[0]?.url, "/api/roles");
+    assert.deepEqual(snapshots.at(-1), {
+      familiarId: "salem",
+      contextFamiliarId: "salem",
+      rolesLoaded: false,
+      rolesLoadedSuccessfully: false,
+    });
+
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    assert.deepEqual(snapshots.at(-1), {
+      familiarId: "salem",
+      contextFamiliarId: "salem",
+      rolesLoaded: true,
+      rolesLoadedSuccessfully: true,
+    });
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+  }
+});
+
+test("role-surface session clears success on familiar change and preserves failure as unsuccessful settlement", async () => {
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: RoleSurfaceSnapshot[] = [];
+  let renderer!: ReactTestRenderer;
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(RoleSurfaceSessionProbe, { familiarId: "familiar-a", snapshots }));
+    });
+    await settleRoles(fetch.pending.shift()!, {
+      roles: [{ id: "researcher", familiar: "familiar-a", active: true }],
+    });
+    assert.deepEqual(snapshots.at(-1), {
+      familiarId: "familiar-a",
+      contextFamiliarId: "familiar-a",
+      rolesLoaded: true,
+      rolesLoadedSuccessfully: true,
+    });
+
+    snapshots.length = 0;
+    await act(async () => {
+      renderer.update(createElement(RoleSurfaceSessionProbe, { familiarId: "familiar-b", snapshots }));
+    });
+    assert.ok(
+      snapshots.every(
+        (snapshot) =>
+          snapshot.familiarId === "familiar-b"
+          && snapshot.contextFamiliarId === "familiar-b"
+          && snapshot.rolesLoaded === false
+          && snapshot.rolesLoadedSuccessfully === false,
+      ),
+      "switching familiars must not expose the previous familiar's settled-success state",
+    );
+
+    const familiarB = fetch.pending.shift()!;
+    assert.equal(familiarB.url, "/api/roles");
+    await failRoles(familiarB, { status: 503 });
+    assert.deepEqual(snapshots.at(-1), {
+      familiarId: "familiar-b",
+      contextFamiliarId: "familiar-b",
+      rolesLoaded: true,
+      rolesLoadedSuccessfully: false,
+    });
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+  }
+});
+
+test("role-surface session keeps a missing familiar unsettled and unfetched", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return response(true, { roles: [] });
+  }) as typeof fetch;
+  const snapshots: RoleSurfaceSnapshot[] = [];
+  let renderer!: ReactTestRenderer;
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(RoleSurfaceSessionProbe, { familiarId: null, snapshots }));
+    });
+    assert.equal(calls, 0);
+    assert.deepEqual(snapshots.at(-1), {
+      familiarId: null,
+      contextFamiliarId: null,
+      rolesLoaded: false,
+      rolesLoadedSuccessfully: false,
+    });
+  } finally {
+    await act(async () => renderer?.unmount());
+    globalThis.fetch = originalFetch;
+  }
 });

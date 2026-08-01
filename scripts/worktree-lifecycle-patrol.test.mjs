@@ -1729,7 +1729,7 @@ exit 0
     });
   }
 
-  verifySafetyRegression("replacement refs cannot prove ancestry", () => {
+  verifySafetyRegression("replacement refs fail closed before ancestry", () => {
     const replacementTree = git(["show", "-s", "--format=%T", defaultHead], repo).trim();
     const replacementCommit = git(
       ["commit-tree", replacementTree, "-p", oldHead, "-m", "replacement ancestry lie"],
@@ -1756,16 +1756,17 @@ exit 0
       const replacementReport = JSON.parse(
         patrol(["--json"], { LIFECYCLE_CLOSED_UNMERGED: "1" }),
       );
-      assert.equal(
-        replacementReport.items.find((item) => item.branch === "feat/old").lane,
-        "recovery",
+      const replacementOld = replacementReport.items.find(
+        (item) => item.branch === "feat/old",
       );
+      assert.equal(replacementOld.lane, "uncertain");
+      assert.match(replacementOld.probeErrors.join("\n"), /replacement ref/i);
     } finally {
       git(["replace", "-d", defaultHead], repo);
     }
   });
 
-  verifySafetyRegression("legacy grafts cannot prove ancestry", () => {
+  verifySafetyRegression("legacy grafts fail closed before ancestry", () => {
     const graftPath = path.join(repo, ".git", "info", "grafts");
     mkdirSync(path.dirname(graftPath), { recursive: true });
     writeFileSync(graftPath, `${defaultHead} ${oldHead}\n`);
@@ -1774,11 +1775,9 @@ exit 0
       const graftReport = JSON.parse(
         patrol(["--json"], { LIFECYCLE_CLOSED_UNMERGED: "1" }),
       );
-      assert.equal(
-        graftReport.items.find((item) => item.branch === "feat/old").lane,
-        "recovery",
-        "inventory ancestry ignores .git/info/grafts",
-      );
+      const graftOld = graftReport.items.find((item) => item.branch === "feat/old");
+      assert.equal(graftOld.lane, "uncertain");
+      assert.match(graftOld.probeErrors.join("\n"), /legacy Git graft file/i);
     } finally {
       rmSync(graftPath, { force: true });
     }

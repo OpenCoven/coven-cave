@@ -18,6 +18,13 @@ assert.match(
 );
 assert.match(
   source,
+  /taskModelOverride \? \{ initialModelOverride: taskModelOverride \} : \{\}/,
+  "native OpenClaw and local Copilot task handoffs retain the validated card model for their first Chat send",
+);
+assert.match(source, /binding\.harness === "openclaw"[\s\S]*?return reserveNativeChatTask\(\)/, "OpenClaw uses the override-preserving native handoff");
+assert.match(source, /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]*?return reserveNativeChatTask\(\)/, "local Copilot uses the override-preserving native handoff");
+assert.match(
+  source,
   /validateProjectRoot:\s*validateCaveProjectRoot/,
   "Board task chat should reject a project root that no longer resolves to a directory",
 );
@@ -101,8 +108,8 @@ assert.match(
 
 assert.match(
   source,
-  /body:\s*\{[\s\S]{0,160}harness:\s*binding\.harness,[\s\S]{0,100}model:\s*taskModelOverride \?\? binding\.model,/,
-  "task sessions otherwise forward the familiar's resolved model",
+  /\.\.\.\(\(taskModelOverride \?\? binding\.model\)[\s\S]{0,100}\? \{ model: taskModelOverride \?\? binding\.model \}[\s\S]{0,30}: \{\}\)/,
+  "task sessions forward explicit models and omit an absent runtime-owned default",
 );
 
 assert.match(
@@ -122,6 +129,16 @@ assert.match(
 assert.ok(
   source.indexOf("await ensureAdapterManifestScaffold(binding.harness)") < source.indexOf("const res = await callDaemon"),
   "route repairs the trusted harness manifest before daemon session creation",
+);
+assert.match(
+  source,
+  /if \(binding\.hermesProfile\) \{[\s\S]*?return reserveNativeChatTask\(\);/,
+  "profile-bound Hermes tasks reserve native chat so their first turn receives the explicit profile argv",
+);
+assert.match(
+  source,
+  /if \(binding\.hasInvalidHermesProfileBinding\)[\s\S]*?Hermes profile binding is invalid/,
+  "a malformed persisted Hermes profile binding blocks task launch instead of degrading to sticky Hermes",
 );
 
 console.log("board chat route.test.ts: ok");

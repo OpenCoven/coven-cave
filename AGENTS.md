@@ -24,7 +24,7 @@ Where the truth lives:
   (surfaces, text tiers, borders, radii, 4px spacing grid, type scale, motion,
   focus rings, icon sizes). `src/app/globals.css` is only an import facade.
 - `src/styles/globals/themes.css` — 12 palettes × 2 modes (`data-theme` ×
-  `data-mode` on `:root`). Every surface must survive all 24 combinations.
+  `data-mode` on `:root`). Every surface must survive all 42 combinations.
 - `src/styles/globals/primitives.css` — shared `.ui-*` classes; grep before
   inventing a class.
 - `src/components/ui/` — React primitives (Button, EmptyState, ErrorState,
@@ -206,6 +206,44 @@ bd prime                # Refresh Beads context
 - Record branch/worktree, session, familiar owner, and verification evidence in the bead before handoff.
 - Close with `bd close <id>` only after merge or explicit completion criteria are satisfied.
 - Never put secrets in bead text, and never treat `.beads/issues.jsonl` as the sync source of truth.
+
+### `in_progress` means actively worked *right now* (cave-1mxw4)
+
+Set the status honestly **at creation and at handoff**. Everything that is not
+being worked at this moment is `open`, `blocked`, or `deferred` — `bd` supports
+all three, plus `--defer <date>` to hide an issue from `bd ready` until then.
+
+This exists because a triage sweep found `in_progress` at 47 against 16 `open`,
+and most of it was not work in flight — it was four different states wearing one
+status, each of which had to be re-derived by grepping `main`, checking branches
+and reading PRs. That re-derivation is most of the cost of a sweep, and it
+recurs every time:
+
+| Actually | Should be | Example |
+| --- | --- | --- |
+| waiting on a human at the machine | `blocked` | a live-mic pass no agent can perform |
+| waiting on a decision never made | `blocked` | "design approval is required before implementation" |
+| waiting on a maintainer action an agent must not take | `blocked` | provisioning signing keys; anything needing credentials |
+| lost — no code, no branch, no PR | `open` (or closed) | reads "approved design, in progress"; is at zero |
+
+Practical rules:
+
+- **Name what a `blocked` bead waits on**, in a comment and — for maintainer
+  actions — in the title, so it is actionable at a glance rather than merely
+  accurate.
+- **Close finished work with evidence.** Roughly 28 beads were closeable in one
+  sweep purely because nobody flipped them after their PR merged.
+- **Do not bulk re-status on weak evidence.** "No live worktree" is not proof
+  someone has stopped — work happens from the primary checkout too. Re-status
+  only when the specific blocker or the specific remaining gap is verified, and
+  say which in the comment.
+- **Durable trackers are a legitimate exception.** A tracker that follows live
+  external state (an open-PR patrol) never completes but is continuously
+  active, so `in_progress` fits it.
+
+Retrofitting this by audit does not work on its own: 17 corrections in a single
+session still left the count at 47, because other sessions kept adding. The
+status has to be right when the bead is written.
 
 ## Crediting Contributors
 

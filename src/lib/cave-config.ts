@@ -23,6 +23,8 @@ import {
   type FamiliarRuntime,
   normalizeFamiliarRuntime,
 } from "./familiar-runtime.ts";
+import { normalizeHermesProfileBinding, type HermesProfileBinding } from "./hermes-profiles.ts";
+import { runtimeOwnsModelDefault } from "./runtime-models.ts";
 import type { UserProfile } from "./user-profile-shared.ts";
 import {
   defaultTravelState,
@@ -172,6 +174,11 @@ export type FamiliarBinding = {
    *  the connected user's workspaces). */
   asanaWorkspaceGid?: string;
   runtime?: FamiliarRuntime;
+  /** Explicit Hermes profile target. Never infer this from the sticky CLI profile. */
+  hermesProfile?: HermesProfileBinding;
+  /** A persisted profile target was present but failed validation. Launch
+   * routes must reject it rather than silently using Hermes's sticky profile. */
+  hasInvalidHermesProfileBinding?: boolean;
   /** Per-familiar Omnigent fleet defaults (agent/host/workspace). */
   omnigent?: FamiliarOmnigentBinding;
 };
@@ -440,6 +447,10 @@ function mergeFamiliarConfigs(
         const merged = normalizeFamiliarOmnigent(value as FamiliarOmnigentBinding);
         if (merged) next.omnigent = merged;
         else delete next.omnigent;
+      } else if (key === "hermesProfile") {
+        const profile = normalizeHermesProfileBinding(value);
+        if (!profile) throw new Error("Invalid Hermes profile binding.");
+        next.hermesProfile = profile;
       } else {
         (next as Record<string, unknown>)[key] = value;
       }
@@ -472,6 +483,10 @@ async function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
 export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
   return withConfigLock(async () => {
   const current = await loadConfigUnlocked();
+  const defaults = { ...current.defaults, ...(patch.defaults ?? {}) };
+  // Profiles are always familiar-scoped. Drop legacy/manually supplied global
+  // values before persistence so bare Hermes cannot inherit one.
+  delete (defaults as Record<string, unknown>).hermesProfile;
   const updated: CaveConfig = {
     ...current,
     ...patch,
@@ -496,10 +511,7 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
       ...(patch.omnigent ?? {}),
     }),
     // Deep-merge defaults
-    defaults: {
-      ...current.defaults,
-      ...(patch.defaults ?? {}),
-    },
+    defaults,
     familiars: mergeFamiliarConfigs(current.familiars, patch.familiars),
     // Replace remoteHosts if provided (normalized + deduped, like roles)
     remoteHosts:
@@ -585,9 +597,20 @@ export async function uninstallMarketplacePlugin(pluginName: string): Promise<vo
 export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBinding {
   const f = config.familiars[familiarId] ?? {};
   const omnigent = normalizeFamiliarOmnigent(f.omnigent ?? config.defaults.omnigent);
+  const harness = f.harness ?? config.defaults.harness;
+  // Hermes profiles are intentionally familiar-scoped. A bare Hermes familiar
+  // must remain bare even if an older or manually-edited config has a profile
+  // under defaults; the CLI's sticky default is never Cave's selection.
+  const rawHermesProfile = f.hermesProfile;
+  const hermesProfile = normalizeHermesProfileBinding(rawHermesProfile);
+  const hasInvalidHermesProfileBinding =
+    rawHermesProfile !== undefined && rawHermesProfile !== null && !hermesProfile;
   return {
-    harness: f.harness ?? config.defaults.harness,
-    model: f.model ?? config.defaults.model,
+    harness,
+    // Missing is meaningful for runtime-owned defaults: preserve it as an
+    // empty launch value instead of silently reconstructing Cave's global
+    // model. Callers omit empty launch values at the daemon boundary.
+    model: f.model ?? (runtimeOwnsModelDefault(harness) ? "" : config.defaults.model),
     display_name: f.display_name,
     role: f.role,
     familiarType: f.familiarType,
@@ -606,6 +629,8 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     asanaEnabled: f.asanaEnabled,
     asanaWorkspaceGid: f.asanaWorkspaceGid,
     runtime: normalizeFamiliarRuntime(f.runtime ?? config.defaults.runtime),
+    ...(hermesProfile ? { hermesProfile } : {}),
+    ...(hasInvalidHermesProfileBinding ? { hasInvalidHermesProfileBinding: true } : {}),
     ...(omnigent ? { omnigent } : {}),
   };
 }

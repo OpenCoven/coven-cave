@@ -24,6 +24,7 @@ import { startAutomationRun } from "@/lib/server/automation-runner";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
 import { assertProjectRootAccess } from "@/lib/project-permissions";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
+import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
 import { loadLocalWorkflowList } from "@/lib/workflow-source";
@@ -71,6 +72,10 @@ async function spawnHubSession(args: {
   familiarId: string | null;
   harness: string;
   prompt: string;
+  model?: string | null;
+  reasoningEffort?: string | null;
+  responseSpeed?: string | null;
+  modelControls?: Record<string, unknown>;
   projectRoot?: string | null;
   title: string;
 }): Promise<string> {
@@ -87,6 +92,10 @@ async function spawnHubSession(args: {
       projectRoot,
       harness: args.harness,
       prompt: args.prompt,
+      ...(args.model ? { model: args.model } : {}),
+      ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
+      ...(args.responseSpeed ? { responseSpeed: args.responseSpeed } : {}),
+      ...(Object.keys(args.modelControls ?? {}).length ? { modelControls: args.modelControls } : {}),
       ...(args.familiarId ? { familiarId: args.familiarId } : {}),
     },
     timeoutMs: 8000,
@@ -108,7 +117,6 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const familiarId = stringValue(payload.familiarId);
   const prompt = stringValue(payload.prompt);
   if (!familiarId || !prompt) throw new Error("queued chat payload missing familiarId or prompt");
-
   const runtime = queuedRuntime(payload);
   if (runtime?.startsWith("ssh:")) {
     throw new Error("queued SSH-runtime chat cannot be replayed as a local hub session");
@@ -122,6 +130,8 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   });
 
   const binding = bindingFor(config, familiarId);
+  const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (profileBlock) throw new Error(profileBlock);
   const attachments = objectArray<ChatAttachment>(payload.attachments);
   const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
   const sessionId = await spawnHubSession({
@@ -129,6 +139,10 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     familiarId,
     harness: binding.harness,
     prompt: replayPrompt,
+    model: stringValue(payload.modelOverride),
+    reasoningEffort: stringValue(payload.reasoningEffort),
+    responseSpeed: stringValue(payload.responseSpeed),
+    modelControls: record(payload.modelControls),
     projectRoot,
     title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id),
   });
@@ -174,6 +188,8 @@ async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Pr
 
   const familiarId = stringValue(body.familiarId) ?? workflow.familiar ?? null;
   const binding = familiarId ? bindingFor(config, familiarId) : { harness: config.defaults.harness };
+  const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (profileBlock) throw new Error(profileBlock);
   const prompt = buildWorkflowRunPrompt(workflow, record(body.inputs));
   const sessionId = await spawnHubSession({
     config,
@@ -232,6 +248,8 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const targetNodeId = stringValue(options.targetNodeId) ?? undefined;
   const familiarId = stringValue(payload.familiarId) ?? flowFamiliar(flow);
   const binding = familiarId ? bindingFor(config, familiarId) : { harness: config.defaults.harness };
+  const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (profileBlock) throw new Error(profileBlock);
   const prompt = compileFlowPrompt(flow, {
     targetNodeId,
     triggerInput: options.triggerInput as never,

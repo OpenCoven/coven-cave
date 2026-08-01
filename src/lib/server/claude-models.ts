@@ -39,7 +39,7 @@ type ClaudeModelDependencies = {
 
 type CacheEntry = { expiresAt: number; models: RuntimeModelOption[] };
 const cache = new Map<string, CacheEntry>();
-const inFlight = new Map<string, Promise<RuntimeModelOption[]>>();
+const inFlight = new Map<string, Promise<{ models: RuntimeModelOption[]; discovered: boolean }>>();
 
 function positiveLimit(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0
@@ -167,7 +167,7 @@ async function discoverClaudeModels(
   familiarId: string | null | undefined,
   providerEnv: Record<string, string | undefined>,
   dependencies: ClaudeModelDependencies,
-): Promise<RuntimeModelOption[]> {
+): Promise<{ models: RuntimeModelOption[]; discovered: boolean }> {
   const versionOutput = await readVersion(dependencies);
   const models = withClaudeOpus5(seedModels(), {
     versionOutput,
@@ -186,22 +186,22 @@ async function discoverClaudeModels(
       positiveLimit(dependencies.maxCacheEntries, MAX_CACHE_ENTRIES),
     );
   }
-  return models;
+  return { models, discovered: Boolean(parseClaudeCodeVersion(versionOutput)) };
 }
 
 /** Return the Claude seed augmented only when this familiar's concrete
  * Claude Code/provider configuration can route Opus 5. */
-export async function listClaudeModels(
+export async function listClaudeModelInventory(
   familiarId?: string | null,
   dependencies: ClaudeModelDependencies = {},
-): Promise<RuntimeModelOption[]> {
+): Promise<{ models: RuntimeModelOption[]; provenance: "live" | "cached" | "fallback" }> {
   let providerEnv: Record<string, string | undefined>;
   try {
     providerEnv = modelEnvironment(
       (dependencies.scopedEnv ?? harnessSpawnEnv)(familiarId),
     );
   } catch {
-    return seedModels();
+    return { models: seedModels(), provenance: "fallback" };
   }
   const key = cacheKey(familiarId, providerEnv);
   const now = dependencies.now ?? Date.now;
@@ -210,17 +210,20 @@ export async function listClaudeModels(
   if (cached) {
     cache.delete(key);
     cache.set(key, cached);
-    return [...cached.models];
+    return { models: [...cached.models], provenance: "cached" };
   }
   const pending = inFlight.get(key);
-  if (pending) return [...await pending];
+  if (pending) {
+    const result = await pending;
+    return { models: [...result.models], provenance: result.discovered ? "live" : "fallback" };
+  }
   if (
     inFlight.size >= positiveLimit(
       dependencies.maxConcurrentDiscoveries,
       MAX_CONCURRENT_DISCOVERIES,
     )
   ) {
-    return seedModels();
+    return { models: seedModels(), provenance: "fallback" };
   }
 
   const discovery = discoverClaudeModels(
@@ -231,7 +234,19 @@ export async function listClaudeModels(
     if (inFlight.get(key) === discovery) inFlight.delete(key);
   });
   inFlight.set(key, discovery);
-  return [...await discovery];
+  const result = await discovery;
+  return {
+    models: [...result.models],
+    provenance: result.discovered ? "live" : "fallback",
+  };
+}
+
+/** Compatibility projection for callers that only need the entries. */
+export async function listClaudeModels(
+  familiarId?: string | null,
+  dependencies: ClaudeModelDependencies = {},
+): Promise<RuntimeModelOption[]> {
+  return (await listClaudeModelInventory(familiarId, dependencies)).models;
 }
 
 export function clearClaudeModelCache(): void {

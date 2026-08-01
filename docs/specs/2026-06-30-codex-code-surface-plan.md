@@ -1017,7 +1017,7 @@ gh pr checks --watch && gh pr merge --squash --delete-branch
 ```
 Local cleanup (per CLAUDE.md):
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
 git worktree remove .worktrees/codex-code-surface
 git branch -D kitty/codex-code-surface
 git worktree list

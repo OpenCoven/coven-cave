@@ -1585,9 +1585,7 @@ final class AppModel {
         guard let client, thread.messages.isEmpty,
               let convo = try? await client.conversation(sessionId: sessionId) else { return }
         let assignee = thread.familiarIds.first ?? convo.familiarId
-        thread.messages = convo.turns.map { turn in
-            DisplayMessage.restored(from: turn, familiarId: assignee)
-        }
+        thread.messages = DisplayMessage.restoredTranscript(from: convo.turns, familiarId: assignee)
         persistThreads()
     }
 
@@ -1852,6 +1850,15 @@ final class AppModel {
     /// Pending debounced thread-persist flush. Not observable state.
     @ObservationIgnored private var persistThreadsTask: Task<Void, Never>?
 
+    /// The in-flight snapshot write, kept separate from the debounce timer
+    /// above (cave-2cpo). Two things need it: a newer flush must be able to
+    /// supersede a stale write rather than race it, and a lifecycle caller must
+    /// be able to await durability. `ThreadSnapshotStore` is an actor, so two
+    /// saves can never interleave — but actors make no FIFO promise, so without
+    /// this the OLDER snapshot could still resume last and overwrite newer
+    /// state on disk.
+    @ObservationIgnored private var threadWriteTask: Task<Void, Never>?
+
     /// Guards against saving before the async `hydrateThreads()` restore has
     /// settled. Without it, a background/flush that fires before hydration
     /// publishes would snapshot the not-yet-hydrated (possibly empty) `threads`
@@ -1883,10 +1890,27 @@ final class AppModel {
         persistThreadsTask?.cancel()
         persistThreadsTask = nil
         let snapshots = threads.map(\.snapshot)
-        Task.detached(priority: .utility) { [threadStore] in
+        // Supersede, then chain (cave-2cpo). Cancelling lets `save`'s entry
+        // `checkCancellation` drop a write that has not started, and awaiting
+        // the superseded task before saving means writes land in CALL order —
+        // the actor alone only guarantees they do not overlap, not which one
+        // wins. Without both, a burst could leave the older snapshot on disk.
+        let previous = threadWriteTask
+        previous?.cancel()
+        threadWriteTask = Task.detached(priority: .utility) { [threadStore] in
+            _ = await previous?.value
             // Non-fatal: persistence is best-effort.
             try? await threadStore.save(snapshots)
         }
+    }
+
+    /// Flush and await the write. The scene-phase handler uses this when the
+    /// app leaves the foreground: `flushThreads()` alone returns the instant
+    /// the task is spawned, so the process could be suspended before the bytes
+    /// reach disk — which is exactly the durability the caller believed it had.
+    func flushThreadsAndWait() async {
+        flushThreads()
+        _ = await threadWriteTask?.value
     }
 
     /// One-shot restore at launch: load off-main via the store and publish the
