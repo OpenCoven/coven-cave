@@ -18,6 +18,7 @@
  *     against nothing.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 const store = new Map();
 globalThis.window = {
@@ -148,6 +149,48 @@ const PROJECTS = [
   store.set(CHAT_PROJECT_OVERRIDES_KEY, "{not json");
   await migrateProjectRootKeys(PROJECTS);
   assert.ok(true, "absent and corrupt override stores are survivable");
+}
+
+
+// ── legacyRoot must never reach disk (review on #4185) ─────────────────────
+// loadProjectsUnlocked attaches legacyRoot in memory, and every mutation path
+// persists the array it returned — so a marker documented as "response-only"
+// was being written to projects.json on the first create/patch/delete after an
+// upgrade, and then re-attached forever. Documenting the intent is not the
+// same as enforcing it; saveProjects strips the field, and this asserts the
+// strip rather than the comment.
+{
+  const src = readFileSync(new URL("./cave-projects.ts", import.meta.url), "utf8");
+  const save = src.match(/async function saveProjects\([\s\S]*?\n\}/)?.[0] ?? "";
+  assert.ok(save, "saveProjects is findable");
+  assert.match(
+    save,
+    /legacyRoot: _legacyRoot, \.\.\.project/,
+    "saveProjects strips legacyRoot before writing",
+  );
+  assert.doesNotMatch(
+    save,
+    /projects: projects,?\n/,
+    "the raw array is never handed to the writer",
+  );
+}
+
+// The image store keys by normalizeProjectRoot(root), so the snapshot probe has
+// to normalize too. A root carrying a trailing slash or backslashes normalizes
+// to something else entirely, and comparing the raw string would skip it.
+{
+  const src = readFileSync(new URL("./project-root-migration.ts", import.meta.url), "utf8");
+  assert.match(src, /const fromKey = normalizeProjectRoot\(from\)/, "probe uses the store's key");
+  assert.match(
+    src,
+    /await whenProjectImagesHydrated\(\)/,
+    "hydration is awaited before the snapshot is read",
+  );
+  assert.doesNotMatch(
+    src,
+    /readProjectImagesSnapshot\(\), from\)/,
+    "no raw-string snapshot lookups remain",
+  );
 }
 
 console.log("project-root-migration.test.ts: ok");

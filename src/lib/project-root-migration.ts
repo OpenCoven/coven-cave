@@ -24,8 +24,12 @@
  *     pins or order, so there is no store to move.
  */
 
-import type { CaveProject } from "./cave-projects-types.ts";
-import { moveProjectImage, readProjectImagesSnapshot } from "./cave-project-images.ts";
+import { normalizeProjectRoot, type CaveProject } from "./cave-projects-types.ts";
+import {
+  moveProjectImage,
+  readProjectImagesSnapshot,
+  whenProjectImagesHydrated,
+} from "./cave-project-images.ts";
 import { readProjectOverrides, writeProjectOverrides } from "./chat-project-overrides.ts";
 
 /**
@@ -56,14 +60,25 @@ export async function migrateProjectRootKeys(
   // which is what a caller logs and what makes a second pass observably 0.
   const followed = new Set<string>();
 
+  // Wait for the image store before reading its snapshot. It hydrates
+  // asynchronously on import, so an early read returns {} and every avatar
+  // looks absent — the migration would skip a real one and report 0, which is
+  // indistinguishable from "nothing to do".
+  await whenProjectImagesHydrated();
+
   for (const { from, to } of moves) {
-    const hadImage = Object.hasOwn(readProjectImagesSnapshot(), from);
+    // Look up by the store's OWN key. It is keyed by normalizeProjectRoot(root),
+    // which is identity for a plain `~/code/app` but not for a root carrying
+    // backslashes or a trailing slash — comparing the raw string would miss
+    // exactly those.
+    const fromKey = normalizeProjectRoot(from);
+    const hadImage = Object.hasOwn(readProjectImagesSnapshot(), fromKey);
     if (hadImage) {
       // Failures are swallowed inside moveProjectImage — it writes the new key
       // first and deletes the old only on success, so a denied write leaves the
       // record under its old key rather than losing it.
       await moveProjectImage(from, to);
-      if (!Object.hasOwn(readProjectImagesSnapshot(), from)) followed.add(from);
+      if (!Object.hasOwn(readProjectImagesSnapshot(), fromKey)) followed.add(from);
     }
   }
 

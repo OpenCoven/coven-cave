@@ -144,7 +144,17 @@ export function withProjectRegistryLock<T>(
 }
 
 async function saveProjects(projects: CaveProject[]): Promise<void> {
-  const file: ProjectsFile = { version: 1, projects };
+  // Strip legacyRoot before it reaches disk. loadProjectsUnlocked attaches it
+  // in memory so the client can follow a moved root, and every mutation path
+  // (create/patch/delete) writes back the array that load returned — so without
+  // this the transitional marker would be persisted, and then re-attached on
+  // the next read of a record that no longer needs it. A response-only field
+  // has to be stripped at the boundary that writes, not merely documented as
+  // response-only.
+  const file: ProjectsFile = {
+    version: 1,
+    projects: projects.map(({ legacyRoot: _legacyRoot, ...project }) => project),
+  };
   await writeProjectsFile(projectsFilePath(), JSON.stringify(file, null, 2));
 }
 
