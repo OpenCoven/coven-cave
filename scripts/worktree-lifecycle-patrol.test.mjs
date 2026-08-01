@@ -743,6 +743,11 @@ exit 0
     [],
     "a sibling-prefix structured path is not an ownership conflict",
   );
+  assert.deepEqual(
+    siblingStructuredPathOld.taskIds,
+    [],
+    "structured metadata for an unrelated path is not an active task blocker",
+  );
 
   const partialReport = JSON.parse(patrol(["--json"], { LIFECYCLE_LSOF_PARTIAL: "1" }));
   const partialOld = partialReport.items.find((item) => item.branch === "feat/old");
@@ -783,6 +788,53 @@ exit 0
   );
   assert.equal(linkedItem.lane, "active", "a Bead ID embedded in the branch proves ownership");
   assert.deepEqual(linkedItem.taskIds, ["CAVE-LINK1"]);
+
+  const remoteMainWriter = path.join(fixtureRoot, "remote-main-writer");
+  git(["clone", "-q", "-b", "main", origin, remoteMainWriter], fixtureRoot);
+  git(["config", "user.name", "Remote Main Writer"], remoteMainWriter);
+  git(["config", "user.email", "remote-main@example.invalid"], remoteMainWriter);
+  git(["config", "commit.gpgsign", "false"], remoteMainWriter);
+  writeFileSync(path.join(remoteMainWriter, "remote-main.txt"), "remote main advanced\n");
+  git(["add", "remote-main.txt"], remoteMainWriter);
+  git(["commit", "-q", "-m", "advance remote main"], remoteMainWriter);
+  git(["push", "-q", "origin", "main"], remoteMainWriter);
+  const staleTrackingMain = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
+  const liveRemoteMain = git(["rev-parse", "HEAD"], remoteMainWriter).trim();
+  assert.notEqual(staleTrackingMain, liveRemoteMain, "the fixture leaves origin/main stale");
+
+  const staleMainReport = JSON.parse(patrol(["--json"]));
+  const staleMainOld = staleMainReport.items.find((item) => item.branch === "feat/old");
+  assert.equal(staleMainOld.lane, "uncertain", "stale default-main tracking data fails closed");
+  assert.match(
+    staleMainOld.probeErrors.join("\n"),
+    /live.*refs\/heads\/main|refs\/remotes\/origin\/main.*(?:stale|diverg)/i,
+  );
+  assert.equal(
+    git(["rev-parse", "refs/remotes/origin/main"], repo).trim(),
+    staleTrackingMain,
+    "the live default-main probe does not fetch or mutate the tracking ref",
+  );
+  git(["fetch", "-q", "origin", "main:refs/remotes/origin/main"], repo);
+
+  const unavailableOrigin = path.join(fixtureRoot, "unavailable-origin.git");
+  git(["remote", "set-url", "origin", unavailableOrigin], repo);
+  try {
+    const unavailableMainReport = JSON.parse(patrol(["--json"]));
+    const unavailableMainOld = unavailableMainReport.items.find(
+      (item) => item.branch === "feat/old",
+    );
+    assert.equal(
+      unavailableMainOld.lane,
+      "uncertain",
+      "an unavailable live default-main ref fails closed",
+    );
+    assert.match(
+      unavailableMainOld.probeErrors.join("\n"),
+      /live.*refs\/heads\/main|default.*main.*probe/i,
+    );
+  } finally {
+    git(["remote", "set-url", "origin", origin], repo);
+  }
 
   assert.equal(
     git(["worktree", "list", "--porcelain"], repo),

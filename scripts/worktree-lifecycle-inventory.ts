@@ -1010,11 +1010,11 @@ function refsContaining(root: string, head: string): {
   };
 }
 
-function onDefaultBranch(root: string, head: string): {
+function onDefaultBranch(root: string, head: string, defaultMainOid: string): {
   value: boolean;
   error: string | null;
 } {
-  const result = git(root, ["merge-base", "--is-ancestor", head, "refs/remotes/origin/main"]);
+  const result = git(root, ["merge-base", "--is-ancestor", head, defaultMainOid]);
   if (result.status === 0) return { value: true, error: null };
   if (result.status === 1) return { value: false, error: null };
   return { value: false, error: result.stderr || "default-branch ancestry check failed" };
@@ -1027,26 +1027,79 @@ function directRefError(root: string, ref: string): string | null {
   return result.stderr || `local ref directness check failed for ${ref}`;
 }
 
-function exactRemoteRef(root: string, ref: string): {
+function exactRemoteRef(
+  root: string,
+  ref: string,
+  options: { required?: boolean; label?: string } = {},
+): {
   remoteRef: WorktreeRemoteRef | null;
   error: string | null;
 } {
+  const label = options.label ?? "same-named remote ref";
   const result = git(root, ["ls-remote", "--exit-code", "--heads", "origin", ref], 60_000);
-  if (result.status === 2) return { remoteRef: null, error: null };
+  if (result.status === 2) {
+    return {
+      remoteRef: null,
+      error: options.required ? `${label} is missing for ${ref}` : null,
+    };
+  }
   if (!result.ok) {
     return {
       remoteRef: null,
-      error: result.stderr || `same-named remote ref probe failed for ${ref}`,
+      error: `${label} probe failed for ${ref}: ${result.stderr || "command unavailable"}`,
     };
   }
   const match = result.stdout.match(/^([0-9a-f]{40,64})\t([^\n]+)\n?$/);
   if (!match || match[2] !== ref) {
     return {
       remoteRef: null,
-      error: `same-named remote ref probe returned malformed data for ${ref}`,
+      error: `${label} probe returned malformed data for ${ref}`,
     };
   }
   return { remoteRef: { ref: match[2], oid: match[1] }, error: null };
+}
+
+function liveDefaultMain(root: string): { oid: string | null; error: string | null } {
+  const live = exactRemoteRef(root, "refs/heads/main", {
+    required: true,
+    label: "live default-main ref",
+  });
+  if (live.error || !live.remoteRef) {
+    return {
+      oid: null,
+      error: live.error ?? "live default-main ref probe returned no refs/heads/main record",
+    };
+  }
+
+  const tracking = git(root, [
+    "show-ref",
+    "--verify",
+    "--hash",
+    "refs/remotes/origin/main",
+  ]);
+  if (!tracking.ok) {
+    return {
+      oid: null,
+      error:
+        tracking.stderr ||
+        "local default-main tracking ref refs/remotes/origin/main is unavailable",
+    };
+  }
+  const match = tracking.stdout.match(/^([0-9a-f]{40,64})\n?$/);
+  if (!match) {
+    return {
+      oid: null,
+      error: "local default-main tracking ref refs/remotes/origin/main returned malformed data",
+    };
+  }
+  if (match[1] !== live.remoteRef.oid) {
+    return {
+      oid: null,
+      error:
+        "refs/remotes/origin/main is stale or divergent from live origin refs/heads/main",
+    };
+  }
+  return { oid: live.remoteRef.oid, error: null };
 }
 
 function matchingTasks(
@@ -1287,6 +1340,7 @@ export function collectWorktreeLifecycleInventory(
   const sessions = fetchSessions(root);
   const tasks = fetchTasks(root);
   const processes = fetchProcessOwners();
+  const defaultMain = liveDefaultMain(root);
   const sessionOwnership =
     sessions.error === null
       ? assignActiveSessions(
@@ -1307,7 +1361,13 @@ export function collectWorktreeLifecycleInventory(
       : { changes: [], ignoredPaths: [], nonDisposableIgnoredPaths: [], error: null };
     const flags = unit.path ? indexFlags(unit.path) : { flags: [], error: null };
     const remoteRefs = refsContaining(root, unit.head);
-    const ancestry = onDefaultBranch(root, unit.head);
+    const ancestry =
+      defaultMain.oid === null
+        ? {
+            value: false,
+            error: defaultMain.error ?? "live default-main verification failed",
+          }
+        : onDefaultBranch(root, unit.head, defaultMain.oid);
     const branchPrs = unit.branch
       ? prs.pullRequests.filter((pr) => pr.head.ref === unit.branch)
       : [];
