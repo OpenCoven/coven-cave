@@ -29,6 +29,35 @@ test("classifies unauthorized hubs that answered", async () => {
   });
 });
 
+test("treats explicit unhealthy health payloads as answered but unreachable", async () => {
+  const result = await probeDaemonUrl("http://server.tailnet:8787", async () => ({
+    ok: true,
+    status: 200,
+    data: { ok: false },
+  }), () => 10);
+  assert.deepEqual(result, {
+    ok: true,
+    reachable: false,
+    status: 200,
+    latencyMs: 0,
+    reason: "hub unhealthy: http 200",
+  });
+});
+
+test("preserves legacy healthy payloads without ok", async () => {
+  const result = await probeDaemonUrl("http://server.tailnet:8787", async () => ({
+    ok: true,
+    status: 200,
+    data: { apiVersion: "1" },
+  }), () => 10);
+  assert.deepEqual(result, {
+    ok: true,
+    reachable: true,
+    status: 200,
+    latencyMs: 0,
+  });
+});
+
 test("classifies transport failures as unreachable", async () => {
   const result = await probeDaemonUrl("http://server.tailnet:8787", async () => ({
     ok: false,

@@ -11,7 +11,7 @@ import {
   classifyDaemonFailureAvailability,
   type DaemonAvailability,
 } from "../daemon-status-classification.ts";
-import { daemonHealthRequest } from "./daemon-health-request.ts";
+import { daemonHealthRequest, daemonHealthResponseSucceeded } from "./daemon-health-request.ts";
 import { classifyHubFailure } from "./daemon-probe.ts";
 
 const CACHE_TTL_MS = 1_000;
@@ -142,7 +142,7 @@ export function createDaemonConnectionSnapshotBroker(
 
     const response = await dependencies.callTarget(target, daemonHealthRequest());
     const completedAt = now();
-    if (response.ok && response.data) {
+    if (daemonHealthResponseSucceeded(response)) {
       return {
         completedAt,
         snapshot: buildSnapshot(target, completedAt, {

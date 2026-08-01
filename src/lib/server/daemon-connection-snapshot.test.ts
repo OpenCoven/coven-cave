@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import type { CaveConfig } from "../cave-config.ts";
 import { daemonTargetForConfig, type DaemonResponse, type DaemonTarget } from "../coven-daemon.ts";
-import { daemonHealthRequest } from "./daemon-health-request.ts";
+import { daemonHealthRequest, daemonHealthResponseSucceeded } from "./daemon-health-request.ts";
 import {
   createDaemonConnectionSnapshotBroker,
   daemonConnectionTargetKey,
@@ -56,6 +56,14 @@ function hubUnauthorizedResponse(): DaemonResponse<unknown> {
 
 function hubEmptyHealthyResponse(): DaemonResponse<unknown> {
   return { ok: true, status: 200, data: null };
+}
+
+function explicitUnhealthyResponse(): DaemonResponse<unknown> {
+  return { ok: true, status: 200, data: { ok: false } };
+}
+
+function legacyHealthyResponse(): DaemonResponse<unknown> {
+  return { ok: true, status: 200, data: { apiVersion: "1" } };
 }
 
 function hubUnhealthyResponse(): DaemonResponse<unknown> {
@@ -322,6 +330,11 @@ test("configured targets use the exact shared health request contract", async ()
   assert.deepEqual(seenRequests, [daemonHealthRequest()]);
 });
 
+test("shared health predicate rejects explicit ok false and preserves legacy object payloads", () => {
+  assert.equal(daemonHealthResponseSucceeded(explicitUnhealthyResponse()), false);
+  assert.equal(daemonHealthResponseSucceeded(legacyHealthyResponse()), true);
+});
+
 test("classifies local and hub outcomes without extra daemon side effects", async () => {
   let now = 70_000;
   let unconfiguredCalls = 0;
@@ -357,6 +370,18 @@ test("classifies local and hub outcomes without extra daemon side effects", asyn
       expected: { running: true, availability: "online" },
     },
     {
+      name: "local explicit unhealthy payload",
+      config: localConfig(),
+      response: explicitUnhealthyResponse(),
+      expected: { running: false, availability: "unhealthy", reason: "http 200" },
+    },
+    {
+      name: "local legacy healthy payload",
+      config: localConfig(),
+      response: legacyHealthyResponse(),
+      expected: { running: true, availability: "online" },
+    },
+    {
       name: "local offline",
       config: localConfig(),
       response: offlineResponse(),
@@ -373,6 +398,18 @@ test("classifies local and hub outcomes without extra daemon side effects", asyn
       config: hubConfig(),
       response: hubEmptyHealthyResponse(),
       expected: { running: false, availability: "unhealthy", reason: "hub unhealthy: http 200" },
+    },
+    {
+      name: "hub explicit unhealthy payload",
+      config: hubConfig(),
+      response: explicitUnhealthyResponse(),
+      expected: { running: false, availability: "unhealthy", reason: "hub unhealthy: http 200" },
+    },
+    {
+      name: "hub legacy healthy payload",
+      config: hubConfig(),
+      response: legacyHealthyResponse(),
+      expected: { running: true, availability: "online" },
     },
     {
       name: "hub unhealthy",

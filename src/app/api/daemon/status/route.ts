@@ -13,7 +13,7 @@ import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
 import { classifyDaemonFailureAvailability } from "@/lib/daemon-status-classification";
 import { executorStatusesForConfig } from "@/lib/executor-status";
-import { daemonHealthRequest } from "@/lib/server/daemon-health-request";
+import { daemonHealthRequest, daemonHealthResponseSucceeded } from "@/lib/server/daemon-health-request";
 import { classifyHubFailure } from "@/lib/server/daemon-probe";
 import { reconcileDaemonTravelState } from "@/lib/server/daemon-travel-reconcile";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type Health = {
-  ok: boolean;
+  ok?: boolean;
   apiVersion?: string;
   covenVersion?: string;
   daemon?: { pid: number; startedAt: string; socket: string };
@@ -114,15 +114,17 @@ export async function GET() {
   // a race where a connection-mode change could query one target while the
   // response claimed (and classified) another.
   const res = await callDaemonTarget<Health>(target, daemonHealthRequest());
+  const health = daemonHealthResponseSucceeded(res) ? res.data : null;
+  const daemonHealthy = health !== null;
   const { travelStatus, travelReplay } = await reconcileDaemonTravelState({
     config,
     travelState,
     target,
     hubAnswered: target.mode === "local" ? true : hubAnswered(res),
-    daemonHealthy: Boolean(res.ok && res.data),
+    daemonHealthy,
   });
   const root = covenWorkspaceRoot();
-  if (!res.ok || !res.data) {
+  if (!daemonHealthy) {
     return NextResponse.json({
       running: false,
       availability: failureAvailability(target, res),
@@ -137,19 +139,19 @@ export async function GET() {
     });
   }
   const installedVersion =
-    !res.data.covenVersion || res.data.covenVersion === "0.0.0"
+    !health.covenVersion || health.covenVersion === "0.0.0"
       ? await installedCovenVersion()
       : null;
   return NextResponse.json({
     running: true,
     availability: "online",
     checkedAt,
-    apiVersion: res.data.apiVersion,
+    apiVersion: health.apiVersion,
     covenVersion: displayCovenVersion({
-      daemonVersion: res.data.covenVersion,
+      daemonVersion: health.covenVersion,
       installedVersion,
     }),
-    daemon: res.data.daemon,
+    daemon: health.daemon,
     target: targetSummary(target),
     executors: executorStatuses,
     travel: travelStatus,

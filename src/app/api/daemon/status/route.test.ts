@@ -18,8 +18,8 @@ assert.match(
 
 assert.match(
   source,
-  /import \{[^}]*daemonHealthRequest[^}]*\} from "@\/lib\/server\/daemon-health-request"/,
-  "daemon status should import the shared daemon health request contract",
+  /import \{[^}]*daemonHealthRequest[^}]*daemonHealthResponseSucceeded[^}]*\} from "@\/lib\/server\/daemon-health-request"/,
+  "daemon status should import the shared daemon health request contract and predicate",
 );
 
 assert.match(
@@ -72,8 +72,26 @@ assert.match(
 
 assert.match(
   source,
-  /daemonHealthy: Boolean\(res\.ok && res\.data\)/,
-  "daemon status should require a parsed health payload before replaying queued work",
+  /const health = daemonHealthResponseSucceeded\(res\) \? res\.data : null;\s*const daemonHealthy = health !== null;/,
+  "daemon status should derive daemonHealthy and the parsed health payload from the shared health predicate",
+);
+
+assert.match(
+  source,
+  /daemonHealthy,\s*\n\s*\}\);/,
+  "daemon status should pass the shared daemonHealthy result into travel reconciliation",
+);
+
+assert.match(
+  source,
+  /if \(!daemonHealthy\) \{/,
+  "daemon status should use the shared daemonHealthy result for the final healthy-response guard",
+);
+
+assert.doesNotMatch(
+  source,
+  /Boolean\(res\.ok && res\.data\)/,
+  "daemon status should not inline a weaker parsed-payload check",
 );
 
 assert.match(

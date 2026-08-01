@@ -6,7 +6,7 @@ import {
   type DaemonResponse,
   type DaemonTarget,
 } from "../coven-daemon.ts";
-import { daemonHealthRequest } from "./daemon-health-request.ts";
+import { daemonHealthRequest, daemonHealthResponseSucceeded } from "./daemon-health-request.ts";
 
 export type DaemonProbeResult = {
   ok: true;
@@ -37,7 +37,7 @@ export async function probeDaemonUrl(
   const startedAt = now();
   const response = await call(target, daemonHealthRequest());
   const latencyMs = Math.max(0, now() - startedAt);
-  if (response.ok && response.data) {
+  if (daemonHealthResponseSucceeded(response)) {
     return { ok: true, reachable: true, status: response.status, latencyMs };
   }
   return {
