@@ -31,12 +31,18 @@ export const STANDALONE_FORBIDDEN_ROOTS = Object.freeze([
   "test-results",
 ]);
 
+const STANDALONE_FORBIDDEN_ROOT_PREFIXES = Object.freeze([".worktree-lifecycle-fixture-"]);
+
 function portable(relativePath) {
   return relativePath.split(path.sep).join("/");
 }
 
 export function forbiddenStandaloneRoot(relativePath) {
   const candidate = portable(relativePath);
+  const candidateRoot = candidate.split("/", 1)[0];
+  if (STANDALONE_FORBIDDEN_ROOT_PREFIXES.some((prefix) => candidateRoot.startsWith(prefix))) {
+    return candidateRoot;
+  }
   return STANDALONE_FORBIDDEN_ROOTS.find(
     (root) => candidate === root || candidate.startsWith(`${root}/`),
   );
