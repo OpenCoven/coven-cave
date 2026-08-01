@@ -14,7 +14,11 @@ assert.match(connection, /oauthOutcome/);
 assert.match(connection, /xOAuthService\.cancelAll\(\)/);
 assert.match(connection, /xCredentialService\.disconnect\(\)/);
 assert.match(connection, /\{ ok: true \}/);
-assert.doesNotMatch(connection, /accessToken|refreshToken/);
+assert.doesNotMatch(
+  connection,
+  /accessToken|refreshToken|codeVerifier|\bverifier\b|pkce|oauthState/,
+  "connection status must expose no token or PKCE secret",
+);
 
 assert.match(start, /export async function POST\(req: Request\)/);
 assert.match(start, /rejectNonLocalRequest\(req\)/);

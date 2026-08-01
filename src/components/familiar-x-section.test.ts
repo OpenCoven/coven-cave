@@ -84,6 +84,23 @@ assert.match(
 );
 assert.match(
   source,
+  /keepalive: true/,
+  "OAuth teardown cancellation opts into unload-safe delivery",
+);
+assert.match(
+  source,
+  /FLOW_ID_PATTERN\.test\(flowId\)/,
+  "OAuth cancellation payloads are limited to sanitized flow IDs",
+);
+assert.match(
+  source,
+  /cancelXOAuthFlow\(connection\.oauthFlowId\)/,
+  "inherited-flow recovery cancels only the exposed active flow",
+);
+assert.match(source, /Cancel connection attempt/);
+assert.match(source, /if \(!oauthAttempt\) return;/, "inherited flows never start polling");
+assert.match(
+  source,
   /const ownsPending = \(\) =>[\s\S]{0,240}pending\.familiarId === familiarIdRef\.current[\s\S]{0,160}pendingOAuthRef\.current === pending/,
   "post-await startup work cannot navigate after the Studio switches familiars",
 );
@@ -112,6 +129,7 @@ assert.match(
   "post-start browser failures cancel only their server-side OAuth listener",
 );
 assert.match(oauthStartRoute, /export async function DELETE\(req: Request\)/);
+assert.match(oauthStartRoute, /readJsonBody<\{ flowId\?: unknown \}>\(req, MAX_BODY_BYTES\)/);
 assert.match(oauthStartRoute, /xOAuthService\.cancel\(flowId\)/);
 assert.doesNotMatch(oauthStartRoute, /xOAuthService\.cancel\(\)/);
 

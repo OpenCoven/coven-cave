@@ -25,6 +25,8 @@ const X_SCOPES = new Set<XScope>([
 ]);
 const OAUTH_POLL_LIMIT_MS = 10 * 60 * 1000;
 const OAUTH_POLL_INTERVAL_MS = 1000;
+const FLOW_ID_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const MAX_OAUTH_CANCELLATION_BODY_BYTES = 64;
 
 type XCapability = "research" | "publish";
 type XGrant = "xResearchEnabled" | "xPublishEnabled";
@@ -121,7 +123,7 @@ export function sanitizeXConnection(value: unknown): XConnection | null {
     return null;
   }
   const hasFlowId = typeof value.oauthFlowId === "string"
-    && /^[A-Za-z0-9_-]{43}$/.test(value.oauthFlowId);
+    && FLOW_ID_PATTERN.test(value.oauthFlowId);
   const hasOutcome = value.oauthOutcome === "pending"
     || value.oauthOutcome === "succeeded"
     || value.oauthOutcome === "failed";
@@ -181,12 +183,35 @@ function createOAuthFlowId(): string {
     .replace(/=+$/, "");
 }
 
-async function cancelXOAuthFlow(flowId: string): Promise<void> {
-  await fetch("/api/x/oauth/start", {
+async function cancelXOAuthFlow(
+  flowId: string,
+  options: { keepalive?: boolean } = {},
+): Promise<boolean> {
+  if (!FLOW_ID_PATTERN.test(flowId)) return false;
+  const body = JSON.stringify({ flowId });
+  if (body.length > MAX_OAUTH_CANCELLATION_BODY_BYTES) return false;
+  const request: RequestInit = {
     method: "DELETE",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ flowId }),
-  }).catch(() => null);
+    body,
+    ...(options.keepalive ? { keepalive: true } : {}),
+  };
+  try {
+    const response = await fetch("/api/x/oauth/start", request);
+    return response.ok;
+  } catch {
+    if (!options.keepalive) return false;
+    try {
+      const response = await fetch("/api/x/oauth/start", {
+        method: request.method,
+        headers: request.headers,
+        body,
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
 }
 
 function requiredScope(capability: XCapability): XScope {
@@ -213,6 +238,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
   const [loading, setLoading] = useState(true);
   const [savingGrant, setSavingGrant] = useState<XGrant | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [cancellingActiveFlow, setCancellingActiveFlow] = useState(false);
   const [startingOAuth, setStartingOAuth] = useState(false);
   const [oauthAttempt, setOauthAttempt] = useState<OAuthAttempt | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -246,11 +272,11 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       if (pending) {
         pending.controller.abort();
         cancelSystemBrowserOpen(pending.reservation);
-        void cancelXOAuthFlow(pending.flowId);
+        void cancelXOAuthFlow(pending.flowId, { keepalive: true });
       }
       const active = activeOAuthReservationRef.current;
       if (active && settleOAuthReservation(active.flowId, true)) {
-        void cancelXOAuthFlow(active.flowId);
+        void cancelXOAuthFlow(active.flowId, { keepalive: true });
       }
     };
   }, [settleOAuthReservation]);
@@ -278,6 +304,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
     setResearchEnabled(nextResearch);
     setPublishEnabled(nextPublish);
     setSavingGrant(null);
+    setCancellingActiveFlow(false);
     setStartingOAuth(false);
     setOauthAttempt(null);
     setError(null);
@@ -573,7 +600,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
         !settled
         && settleOAuthReservation(oauthAttempt.flowId, true)
       ) {
-        void cancelXOAuthFlow(oauthAttempt.flowId);
+        void cancelXOAuthFlow(oauthAttempt.flowId, { keepalive: true });
       }
       settled = true;
       controller.abort();
@@ -632,7 +659,44 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
     }
   }
 
-  const busy = savingGrant !== null || startingOAuth || oauthAttempt !== null;
+  async function cancelInheritedFlow() {
+    if (
+      cancellingActiveFlow
+      || !connection
+      || connection.connected
+      || !connection.activeFlow
+      || !connection.oauthFlowId
+    ) return;
+    const familiarId = familiar.id;
+    const generation = familiarGenerationRef.current;
+    const isCurrent = () =>
+      mountedRef.current
+      && familiarIdRef.current === familiarId
+      && familiarGenerationRef.current === generation;
+    setCancellingActiveFlow(true);
+    setError(null);
+    try {
+      const cancelled = await cancelXOAuthFlow(connection.oauthFlowId);
+      if (!cancelled) {
+        throw new Error("Couldn't cancel the X connection attempt.");
+      }
+      await reloadConnection();
+      if (!isCurrent()) return;
+      announce("X connection attempt cancelled.");
+    } catch (cancelError) {
+      if (!isCurrent()) return;
+      const message = (cancelError as Error).message;
+      setError(message);
+      announce(message, "assertive");
+    } finally {
+      if (isCurrent()) setCancellingActiveFlow(false);
+    }
+  }
+
+  const busy = savingGrant !== null
+    || startingOAuth
+    || oauthAttempt !== null
+    || cancellingActiveFlow;
 
   return (
     <section
@@ -664,19 +728,41 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
 
       {!loading && connection?.configured && !connection.connected ? (
         <div className="familiar-x-section__empty">
-          <p className="familiar-studio-brain__hint">
-            Connect one X account before granting this familiar research or publishing access.
-          </p>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="focus-ring"
-            loading={startingOAuth}
-            disabled={platform === "unknown"}
-            onClick={() => void startOAuth("research", null)}
-          >
-            Connect X
-          </Button>
+          {connection.activeFlow ? (
+            <>
+              <p className="familiar-studio-brain__hint" role="status">
+                An X connection attempt is still active. Cancel it before reconnecting.
+              </p>
+              {connection.oauthFlowId ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="focus-ring"
+                  aria-label="Cancel connection attempt"
+                  loading={cancellingActiveFlow}
+                  onClick={() => void cancelInheritedFlow()}
+                >
+                  Cancel connection attempt
+                </Button>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <p className="familiar-studio-brain__hint">
+                Connect one X account before granting this familiar research or publishing access.
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="focus-ring"
+                loading={startingOAuth}
+                disabled={platform === "unknown"}
+                onClick={() => void startOAuth("research", null)}
+              >
+                Connect X
+              </Button>
+            </>
+          )}
         </div>
       ) : null}
 

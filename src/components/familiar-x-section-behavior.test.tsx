@@ -338,7 +338,7 @@ describe("FamiliarXSection async ownership", () => {
     browserMocks.reserve.mockReturnValue(reservation);
     const renderer = await renderWithConnection(familiarA, false);
     let flowId = "";
-    const cancelledFlowIds: string[] = [];
+    const cancellations: Array<{ flowId: string; keepalive?: boolean }> = [];
     globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/x/oauth/start" && init?.method === "POST") {
         flowId = (JSON.parse(init.body as string) as { flowId: string }).flowId;
@@ -349,9 +349,10 @@ describe("FamiliarXSection async ownership", () => {
         });
       }
       if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
-        cancelledFlowIds.push(
-          (JSON.parse(init.body as string) as { flowId: string }).flowId,
-        );
+        cancellations.push({
+          flowId: (JSON.parse(init.body as string) as { flowId: string }).flowId,
+          keepalive: init.keepalive,
+        });
         return jsonResponse({ ok: true });
       }
       if (url === "/api/x/connection" && !init?.method) {
@@ -376,7 +377,131 @@ describe("FamiliarXSection async ownership", () => {
     });
 
     expect(browserMocks.cancel).toHaveBeenCalledWith(reservation);
-    expect(cancelledFlowIds).toContain(flowId);
+    expect(cancellations).toContainEqual({ flowId, keepalive: true });
+  });
+
+  test("an inherited active flow shows recovery without starting OAuth polling", async () => {
+    const inheritedFlowId = "I".repeat(43);
+    window.setInterval = vi.fn(() => 1);
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: false,
+          activeFlow: true,
+          oauthFlowId: inheritedFlowId,
+          oauthOutcome: "pending",
+        });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FamiliarXSection familiar={familiarA} />);
+    });
+
+    expect(JSON.stringify(renderer.toJSON())).toContain(
+      "An X connection attempt is still active.",
+    );
+    expect(button(renderer, "Cancel connection attempt")).toBeDefined();
+    expect(window.setInterval).not.toHaveBeenCalled();
+  });
+
+  test("recovery cancels the exact inherited flow and makes reconnect available", async () => {
+    const inheritedFlowId = "R".repeat(43);
+    const cancellations: Array<{ flowId: string; keepalive?: boolean }> = [];
+    let connectionReads = 0;
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection" && !init?.method) {
+        connectionReads += 1;
+        return jsonResponse(
+          connectionReads === 1
+            ? {
+              configured: true,
+              connected: false,
+              activeFlow: true,
+              oauthFlowId: inheritedFlowId,
+              oauthOutcome: "pending",
+            }
+            : {
+              configured: true,
+              connected: false,
+              activeFlow: false,
+              oauthFlowId: inheritedFlowId,
+              oauthOutcome: "failed",
+            },
+        );
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        cancellations.push({
+          flowId: (JSON.parse(init.body as string) as { flowId: string }).flowId,
+          keepalive: init.keepalive,
+        });
+        return jsonResponse({ ok: true, cancelled: true });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FamiliarXSection familiar={familiarA} />);
+    });
+    await act(async () => {
+      button(renderer, "Cancel connection attempt").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(cancellations).toEqual([
+      { flowId: inheritedFlowId, keepalive: undefined },
+    ]);
+    expect(connectionReads).toBe(2);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain(
+      "An X connection attempt is still active.",
+    );
+    expect(renderer.root.findByType("button").children).toContain("Connect X");
+  });
+
+  test("an inherited-flow cancellation from the old familiar cannot surface an error on the new familiar", async () => {
+    const inheritedFlowId = "S".repeat(43);
+    const cancellation = deferred<ReturnType<typeof jsonResponse>>();
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: false,
+          activeFlow: true,
+          oauthFlowId: inheritedFlowId,
+          oauthOutcome: "pending",
+        });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        return cancellation.promise;
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FamiliarXSection familiar={familiarA} />);
+    });
+    await act(async () => {
+      button(renderer, "Cancel connection attempt").props.onClick();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      renderer.update(<FamiliarXSection familiar={familiarB} />);
+    });
+    await act(async () => {
+      cancellation.resolve(jsonResponse({ ok: false }, false));
+      await cancellation.promise;
+      await Promise.resolve();
+    });
+
+    expect(JSON.stringify(renderer.toJSON())).not.toContain(
+      "Couldn't cancel the X connection attempt.",
+    );
   });
 
   test("OAuth polling timeout closes the active browser reservation", async () => {
