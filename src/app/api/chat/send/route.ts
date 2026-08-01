@@ -2338,10 +2338,18 @@ export async function POST(req: Request) {
         // Do not fabricate tool bubbles from the CLI's presentation layer.
         // This gives the operator an actionable, privacy-safe degradation
         // notice while preserving normal CLI chat output.
+        //
+        // `notice`, not `error`: nothing failed here. The turn runs normally
+        // and only its tool bubbles are missing, which is exactly what every
+        // peer runtime's "continuing without tool activity" row reports
+        // (claude-runtime-compatibility, opencode-compatibility,
+        // grok-compatibility, codex-compatibility, copilot-protocol-*). Hermes
+        // was the lone one styled as a failure, so every CLI-mode Hermes turn
+        // opened with a red row and a "1 issue" count against a healthy run.
         pushProgress(
           "hermes-tool-activity",
-          "Hermes tool activity unavailable",
-          "error",
+          "Hermes tool activity unavailable; chat text will continue without tool bubbles",
+          "notice",
           "Configure valid HERMES_API_URL and HERMES_API_KEY values for the versioned structured event transport.",
         );
       }
