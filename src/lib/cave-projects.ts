@@ -26,7 +26,21 @@ function projectsFilePath(): string {
   );
 }
 
-function normalizeRoot(root: string): string {
+/**
+ * Server-side project root: {@link normalizeProjectRoot} PLUS `~` expansion.
+ *
+ * Deliberately NOT merged into the display normalizer (cave-zz12). Expanding
+ * `~` changes what a root normalizes to, and roots are the keys of persisted
+ * stores — IDB projectAvatars, cave:chat:project-overrides, comux pins and
+ * order — so folding this into the shared normalizer silently re-keys them and
+ * avatars and pins vanish for existing users. Unifying the two needs a
+ * migration pass, tracked separately; until then the divergence is explicit
+ * and named rather than an anonymous private duplicate.
+ *
+ * Not a security boundary either: resolveAllowedProjectPath / trustedProjectCwd
+ * do their own validation and must not be routed through any display path.
+ */
+function normalizeRootExpandingHome(root: string): string {
   let trimmed = root.trim();
   // Expand a leading ~ — a manually-typed ~/code/app was stored literally and
   // never matched the daemon's absolute project_root, so Sessions/Git/Tasks
@@ -89,7 +103,7 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
     // trustedProjectCwd, permission filtering) while the UI hid them via
     // dedupeProjectsByRoot — a client/server divergence. Newest record wins;
     // the next mutation persists the deduped list, self-healing the file.
-    return dedupeByRoot(parsed.projects, normalizeRoot);
+    return dedupeByRoot(parsed.projects, normalizeRootExpandingHome);
   } catch {
     return [];
   }
@@ -128,13 +142,13 @@ export function createProject(input: {
 }): Promise<CaveProject> {
   return withProjectsStore(() => withWriteMutex(async () => {
     const projects = await loadProjectsUnlocked();
-    const root = normalizeRoot(input.root);
+    const root = normalizeRootExpandingHome(input.root);
     // One project per root. Creating at an already-registered root would persist
     // a duplicate on disk that the UI hides via dedupeProjectsByRoot but the
     // server (projectById / trustedProjectCwd) can still resolve to — a
     // client/server divergence. Return the existing project idempotently instead
     // ("this folder is already a project → here it is").
-    const existing = projects.find((entry) => normalizeRoot(entry.root) === root);
+    const existing = projects.find((entry) => normalizeRootExpandingHome(entry.root) === root);
     if (existing) return existing;
     const now = new Date().toISOString();
     const project: CaveProject = {
@@ -169,9 +183,9 @@ export function patchProject(
     // for one path. Name/color still apply.
     let nextRoot = current.root;
     if (patch.root !== undefined) {
-      const candidate = normalizeRoot(patch.root);
+      const candidate = normalizeRootExpandingHome(patch.root);
       const collides = projects.some(
-        (entry) => entry.id !== id && normalizeRoot(entry.root) === candidate,
+        (entry) => entry.id !== id && normalizeRootExpandingHome(entry.root) === candidate,
       );
       if (!collides) nextRoot = candidate;
     }
@@ -216,8 +230,8 @@ export function projectForRoot(
   projects: CaveProject[],
 ): CaveProject | null {
   if (!root?.trim()) return null;
-  const normalized = normalizeRoot(root);
-  return projects.find((project) => normalizeRoot(project.root) === normalized) ?? null;
+  const normalized = normalizeRootExpandingHome(root);
+  return projects.find((project) => normalizeRootExpandingHome(project.root) === normalized) ?? null;
 }
 
 export function projectById(

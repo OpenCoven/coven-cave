@@ -228,6 +228,30 @@ try {
   assert.equal(novaBinding.role, "review familiar");
   assert.equal(novaBinding.autoSelfReport, true);
   assert.equal(config.bindingFor(cfg, "missing").autoSelfReport, false);
+  const modelOwnershipConfig = {
+    ...cfg,
+    familiars: {
+      ...cfg.familiars,
+      grokDefault: { harness: "grok" },
+      grokExplicit: { harness: "grok", model: "xai/grok-4" },
+      claudeDefault: { harness: "claude" },
+    },
+  };
+  assert.equal(
+    config.bindingFor(modelOwnershipConfig, "grokDefault").model,
+    "",
+    "a runtime-owned default must remain absent during binding resolution",
+  );
+  assert.equal(
+    config.bindingFor(modelOwnershipConfig, "grokExplicit").model,
+    "xai/grok-4",
+    "an explicit model remains authoritative for a runtime-owned default",
+  );
+  assert.equal(
+    config.bindingFor(modelOwnershipConfig, "claudeDefault").model,
+    cfg.defaults.model,
+    "a Cave-owned runtime still inherits the global default model",
+  );
 
   await config.saveConfig({
     defaults: {
@@ -253,6 +277,51 @@ try {
     config.bindingFor(cfg, "missing").runtime,
     { kind: "ssh", host: "build-box", cwd: "/srv/work", command: "coven" },
     "familiars without an explicit runtime must continue to inherit the workspace default",
+  );
+
+  await config.saveConfig({
+    familiars: {
+      hermesResearch: {
+        harness: "hermes",
+        hermesProfile: { id: "research", homePath: "/home/cave/.hermes/profiles/research" },
+      },
+    },
+  });
+  cfg = await config.loadConfig();
+  assert.deepEqual(
+    config.bindingFor(cfg, "hermesResearch").hermesProfile,
+    { id: "research", homePath: "/home/cave/.hermes/profiles/research" },
+    "an explicit Hermes profile binding survives config persistence and resolution",
+  );
+  assert.equal(
+    config.bindingFor({
+      defaults: {
+        harness: "hermes",
+        model: "hermes",
+        hermesProfile: { id: "research", homePath: "/home/cave/.hermes/profiles/research" },
+      },
+      familiars: { bareHermes: { harness: "hermes" } },
+    }, "bareHermes").hermesProfile,
+    undefined,
+    "bare Hermes never inherits a profile from global defaults",
+  );
+  await assert.rejects(
+    () => config.saveConfig({ familiars: { invalidHermes: { hermesProfile: { id: "../escape", homePath: "/tmp/escape" } } } }),
+    /Invalid Hermes profile binding/,
+    "saveConfig rejects invalid profile bindings before persistence",
+  );
+  assert.equal(
+    config.bindingFor({
+      defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
+      familiars: {
+        malformedHermes: {
+          harness: "hermes",
+          hermesProfile: { id: "research", homePath: "relative/profile-home" },
+        },
+      },
+    }, "malformedHermes").hasInvalidHermesProfileBinding,
+    true,
+    "a malformed persisted Hermes profile binding remains visible to launch routes instead of degrading to bare Hermes",
   );
 
   await config.saveConfig({

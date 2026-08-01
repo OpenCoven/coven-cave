@@ -2,6 +2,7 @@ import { spawn, type ChildProcessByStdio, type ChildProcessWithoutNullStreams } 
 import { homedir } from "node:os";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
+import { NextResponse } from "next/server";
 import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
@@ -171,7 +172,10 @@ import {
   OpenClawAgentResolutionError,
   extractOpenClawSessionId,
   extractOpenClawText,
+  hasValidOpenClawPayloadEnvelope,
+  isOpenClawGatewayCredentialFailure,
   openClawAgentArgs,
+  openClawCliExecutionMode,
   openClawSessionKey,
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
@@ -241,6 +245,7 @@ import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
   appendMentionedFilesBlock,
   cleanupImageTempFiles,
+  persistImageAttachments,
   resolveMentionedFiles,
   writeImageAttachmentsToTemp,
 } from "./chat-send-attachments";
@@ -259,6 +264,13 @@ import {
   resolveSendModelMetadata,
   turnRetryModel,
 } from "./chat-send-models";
+import {
+  appliedModelControls,
+  modelControlCapabilities,
+  promptOnlyModelControls,
+  validateModelControlValues,
+  type ModelControlValues,
+} from "@/lib/model-control-capabilities";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 import { conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
 
@@ -344,9 +356,12 @@ type SendBody = {
   startNewConversation?: boolean;
   projectRoot?: string;
   modelOverride?: string;
-  modelOverrideScope?: "next-message" | "session";
+  modelOverrideScope?: "next-message" | "session" | "runtime-default";
   reasoningEffort?: string;
   responseSpeed?: string;
+  /** Selected-model capability controls. Legacy fields above are accepted for
+   * historical clients but are never treated as universal provider settings. */
+  modelControls?: ModelControlValues;
   /** Composer Access chip: "full" (default) or "read". Forwarded to
    *  `coven run --permission` (mapped to the harness's native sandbox flag)
    *  only when the installed CLI advertises it; "full" is left implicit so the
@@ -383,6 +398,7 @@ type OfflineChatQueuePayload = Pick<
   | "modelOverrideScope"
   | "reasoningEffort"
   | "responseSpeed"
+  | "modelControls"
   | "mentionedFiles"
   | "mentionedFilesRoot"
   | "parentTurnId"
@@ -518,6 +534,7 @@ async function maybeQueueOfflineChat(args: {
     modelOverrideScope: args.body.modelOverrideScope,
     reasoningEffort: args.body.reasoningEffort,
     responseSpeed: args.body.responseSpeed,
+    modelControls: args.body.modelControls,
     attachments: args.persistedAttachments,
     mentionedFiles: args.body.mentionedFiles,
     mentionedFilesRoot: args.body.mentionedFilesRoot,
@@ -754,10 +771,12 @@ function openClawChatResponse(args: {
           ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
           title: stubTitle,
           ...(args.body.origin ? { origin: args.body.origin } : {}),
+          modelIntent: modelIntentForSend(args.body, args.modelState),
           userTurn: {
             id: pendingUserTurnId,
             text: args.promptText,
             ...(args.attachments.length ? { attachments: args.attachments } : {}),
+            ...persistedTurnControls(args.body, responseMetadata.retryModel),
           },
         }).catch(() => undefined);
         const stopGateway = () => {
@@ -829,7 +848,12 @@ function openClawChatResponse(args: {
         };
         conv.model = responseMetadata.model;
         conv.runtime = responseMetadata.runtime;
-        persistSendModelIntent(conv, args.body, args.modelState);
+        persistSendModelIntent(
+          conv,
+          args.body,
+          args.modelState,
+          args.initialModelIntent,
+        );
         const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
         if (workBranch) conv.branch = workBranch;
         const reportedPrUrl = latestPrUrlFromText(gatewayAssistantText);
@@ -841,6 +865,7 @@ function openClawChatResponse(args: {
             role: "user",
             text: args.promptText,
             ...(args.attachments.length ? { attachments: args.attachments } : {}),
+            ...persistedTurnControls(args.body, responseMetadata.retryModel),
             createdAt: now,
             ...(branchParentId != null ? { parentId: branchParentId } : {}),
           },
@@ -875,20 +900,27 @@ function openClawChatResponse(args: {
         close();
         return;
       }
-      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
       const openclawLaunch = openClawLaunchCommand();
-      if (openclawLaunch.unresolvedWindowsShim) {
+      const openclawEnv = openClawSpawnEnv();
+      const openclawAvailability = evaluateRuntimeAvailability({
+        runner: "openclaw",
+        command: openclawLaunch.command,
+        env: openclawEnv,
+        requiredFiles: openclawLaunch.requiredFiles,
+        unresolvedWindowsShim: openclawLaunch.unresolvedWindowsShim === true,
+        cwd,
+      });
+      if (openclawAvailability.state !== "ready") {
         pushProgress(
           "openclaw-start",
-          "OpenClaw bridge cannot start safely",
+          "OpenClaw bridge not started",
           "error",
-          "The resolved OpenClaw Windows npm shim could not be mapped to its JavaScript entry point. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
+          openclawAvailability.message,
         );
         push({
           kind: "error",
-          code: "openclaw_unsafe_shell",
-          message:
-            "OpenClaw chat is unavailable because its Windows npm shim could not be launched without shell parsing. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
+          code: openclawAvailability.code,
+          message: openclawAvailability.message,
         });
         push({
           kind: "done",
@@ -898,22 +930,24 @@ function openClawChatResponse(args: {
         close();
         return;
       }
-      const spawnArgv = [...openclawLaunch.fixedArgs, ...argv];
-      pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
-      const child = spawn(openclawLaunch.command, spawnArgv, {
-        cwd,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: openClawSpawnEnv(),
-        shell: false,
-      });
-      pushProgress("openclaw-start", "OpenClaw bridge started", "done");
-      pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
-
+      let executionMode = openClawCliExecutionMode();
+      let child: ReturnType<typeof spawn> | null = null;
       let stdout = "";
       let stderr = "";
+      let terminal = false;
+      let localRecoveryAttempted = false;
+      const spawnChild = (mode: "gateway" | "local") => {
+        const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode);
+        return spawn(openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
+          cwd,
+          stdio: ["ignore", "pipe", "pipe"],
+          env: openclawEnv,
+          shell: false,
+        });
+      };
       const killChild = () => {
         try {
-          child.kill("SIGTERM");
+          child?.kill("SIGTERM");
         } catch {
           /* ignore */
         }
@@ -972,19 +1006,12 @@ function openClawChatResponse(args: {
         },
       }).catch(() => undefined);
 
-      child.stdout.on("data", (data: Buffer) => {
-        stdout += data.toString("utf8");
-      });
-      child.stderr.on("data", (data: Buffer) => {
-        stderr += stripAnsi(data.toString("utf8"));
-      });
-      child.on("error", (err: NodeJS.ErrnoException) => {
-        const message =
-          err.code === "ENOENT"
-            ? "openclaw CLI not found on PATH. Open Setup to install it, then try again."
-            : err.message;
-        pushProgress("openclaw-response", "OpenClaw bridge failed", "error", message);
-        push({ kind: "error", code: err.code, message });
+      const failChild = (err: NodeJS.ErrnoException) => {
+        if (terminal) return;
+        terminal = true;
+        const failure = localRuntimeLaunchError("openclaw", err.code);
+        pushProgress("openclaw-response", "OpenClaw bridge failed", "error", failure.message);
+        push({ kind: "error", code: failure.code, message: failure.message });
         push({
           kind: "done",
           durationMs: Date.now() - startedAt,
@@ -996,8 +1023,49 @@ function openClawChatResponse(args: {
         unregisterChatRun(runHandle);
         runBuffer?.finish();
         close();
-      });
-      child.on("close", async (code) => {
+      };
+      const attachChild = (launchedChild: ReturnType<typeof spawn>) => {
+        launchedChild.stdout?.on("data", (data: Buffer) => {
+          stdout += data.toString("utf8");
+        });
+        launchedChild.stderr?.on("data", (data: Buffer) => {
+          stderr += stripAnsi(data.toString("utf8"));
+        });
+        launchedChild.on("error", failChild);
+        launchedChild.on("close", (code) => {
+          void finalizeChild(code);
+        });
+      };
+      async function finalizeChild(code: number | null) {
+        if (terminal) return;
+        const cancelledByUser = runHandle.stopRequested;
+        if (
+          !cancelledByUser &&
+          executionMode === "gateway" &&
+          !localRecoveryAttempted &&
+          code !== 0 &&
+          !stdout.trim() &&
+          isOpenClawGatewayCredentialFailure(stderr)
+        ) {
+          // The CLI proved it never owned a Gateway turn: its own credential
+          // gate rejected the connection before assistant output. Keep valid
+          // paired/remote Gateway routing on the first attempt, then recover
+          // a local-only installation with one embedded retry.
+          localRecoveryAttempted = true;
+          executionMode = "local";
+          stdout = "";
+          stderr = "";
+          pushProgress(
+            "openclaw-local-retry",
+            "Gateway CLI is unavailable; retrying embedded local OpenClaw",
+            "running",
+          );
+          child = spawnChild(executionMode);
+          attachChild(child);
+          pushProgress("openclaw-local-retry", "Embedded local OpenClaw started", "done");
+          return;
+        }
+        terminal = true;
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         unregisterChatRun(runHandle);
@@ -1024,11 +1092,10 @@ function openClawChatResponse(args: {
         // the fabricated "returned no text" error diagnostic. A bare transport
         // abort is NOT a cancel: the turn ran to completion above and persists
         // as a normal reply the client recovers on resync.
-        const cancelledByUser = runHandle.stopRequested;
-
         if (stdout.trim()) {
           try {
             const parsed = JSON.parse(stdout.trim()) as OpenClawAgentJson;
+            if (!hasValidOpenClawPayloadEnvelope(parsed)) throw new Error("invalid OpenClaw payload envelope");
             gatewaySessionId = extractOpenClawSessionId(parsed);
             if (gatewaySessionId) responseMetadata.gatewaySessionId = gatewaySessionId;
             assistantText = extractOpenClawText(parsed);
@@ -1175,7 +1242,12 @@ function openClawChatResponse(args: {
         runBuffer?.finish();
         await sleep(20);
         close();
-      });
+      }
+      pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
+      child = spawnChild(executionMode);
+      attachChild(child);
+      pushProgress("openclaw-start", "OpenClaw bridge started", "done");
+      pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
     },
   });
 
@@ -1213,25 +1285,38 @@ export async function POST(req: Request) {
     );
   }
   // Persisted transcripts keep attachment metadata only — base64 image
-  // payloads stay out of the conversation store.
-  const persistedAttachments = stripPreviewOnlyAttachmentFields(attachments);
+  // payloads stay out of the conversation store. Images additionally get a
+  // durable copy in the attachment store, and the transcript records its id,
+  // so reopening the thread can show the picture again instead of degrading
+  // to a filename chip (cave-cysu4).
+  const persistedAttachments = await persistImageAttachments(
+    stripPreviewOnlyAttachmentFields(attachments),
+    attachments,
+  );
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
+  const existingConversation = body.sessionId
+    ? await loadConversation(body.sessionId).catch(() => null)
+    : null;
   // Canonicalize the bound harness id up front so a familiar carrying a
   // package/alias id (e.g. "hermes-agent" for Hermes) is recognized as the
   // trusted "hermes" adapter — otherwise the trust gate below 403s and `coven
   // run` is invoked with an unknown harness name. Every downstream check and
   // the spawn use this canonical id.
   binding.harness = canonicalHarnessId(binding.harness);
-  const existingConversation = body.sessionId
-    ? await loadConversation(body.sessionId).catch(() => null)
-    : null;
   if (existingConversation && existingConversation.familiarId !== body.familiarId) {
     return new Response(
       JSON.stringify({ ok: false, error: "not found" }),
       { status: 404, headers: { "content-type": "application/json" } },
     );
+  }
+  // On resume, the persisted conversation is the execution contract: a later
+  // familiar edit must not silently move an in-progress OpenClaw (or other
+  // runtime) conversation to a different harness. The trust gate below still
+  // rejects any malformed legacy value.
+  if (existingConversation) {
+    binding.harness = canonicalHarnessId(existingConversation.harness);
   }
   // Native Board handoffs reserve Cave's conversation id before the harness
   // writes its transcript. Bind that pre-transcript id to the server-owned
@@ -1265,6 +1350,24 @@ export async function POST(req: Request) {
   }
   const effectiveRuntime = runtimeSelection.runtime ?? binding.runtime;
   const sshRuntime = isSshRuntime(effectiveRuntime) ? effectiveRuntime : null;
+  if (binding.hasInvalidHermesProfileBinding) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "This familiar's Hermes profile binding is invalid. Choose a saved Hermes profile again before starting a chat.",
+      }),
+      { status: 409, headers: { "content-type": "application/json" } },
+    );
+  }
+  if (binding.hermesProfile && (binding.harness !== "hermes" || sshRuntime)) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "This Hermes profile is local-only. Choose the local runtime so Cave can launch it with its explicit profile target.",
+      }),
+      { status: 409, headers: { "content-type": "application/json" } },
+    );
+  }
   // Grok Build is a direct local integration. Do not silently send it through
   // `coven run --stream-json` on SSH: its native JSONL/session protocol is
   // different and Cave does not yet have an equivalent direct SSH bridge.
@@ -1307,7 +1410,12 @@ export async function POST(req: Request) {
   const hermesSpawnEnvironment = hermesDirect
     ? harnessSpawnEnv(body.familiarId)
     : null;
-  const hermesApi = hermesSpawnEnvironment
+  // Hermes's documented `-p` flag scopes the CLI process before its modules
+  // load, which sets the profile's HERMES_HOME without mutating `profile use`.
+  // A configured Responses endpoint has no equivalent profile selector, so a
+  // profile-bound familiar deliberately uses the CLI rather than risk talking
+  // to an API server for the sticky/default profile.
+  const hermesApi = !binding.hermesProfile && hermesSpawnEnvironment
     ? hermesApiConfig(hermesSpawnEnvironment as {
         HERMES_API_URL?: string;
         HERMES_API_KEY?: string;
@@ -1731,6 +1839,30 @@ export async function POST(req: Request) {
   const grokLaunchModel = grokDirect
     ? runtimeModelIdForLaunch("grok", grokForwardModel)
     : null;
+  // Controls are negotiated after model resolution and before any prompt or
+  // argv is built. A native Hermes control is available only for its verified
+  // Responses API transport; the CLI path must fail closed rather than quietly
+  // turning a provider setting into prompt prose.
+  const controlCapabilities = modelControlCapabilities(binding.harness, desiredModel)
+    .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null));
+  const controlValidation = validateModelControlValues(controlCapabilities, body.modelControls);
+  if (controlValidation.rejected.length > 0) {
+    return NextResponse.json({
+      ok: false,
+      code: "model_control_unsupported",
+      error: `The selected model cannot apply: ${controlValidation.rejected.join(", ")}.`,
+      rejectedControlFamilies: controlValidation.rejected,
+    }, { status: 400 });
+  }
+  body.modelControls = controlValidation.values;
+  const promptModelControls = promptOnlyModelControls(controlCapabilities, controlValidation.values);
+  const appliedModelControlValues = appliedModelControls(controlCapabilities, controlValidation.values);
+  const hermesReasoningEffort = controlCapabilities.some(
+    (capability) => capability.parameter === "reasoning.effort",
+  ) ? controlValidation.values.reasoning : undefined;
+  const hermesVerbosity = controlCapabilities.some(
+    (capability) => capability.parameter === "text.verbosity",
+  ) ? controlValidation.values.verbosity : undefined;
   const grantedProjectRoots = sshRuntime
     ? []
     : (await filterProjectsForFamiliar(projects, body.familiarId)).map((project) => project.root);
@@ -1766,6 +1898,8 @@ export async function POST(req: Request) {
     modelSource: modelState.source,
     modelApplicationState: modelState.applicationState,
     modelApplicationReason: modelState.reason,
+    requestedControls: controlValidation.values,
+    promptGuidanceControls: promptModelControls,
   };
   const offlineChatResponse = await maybeQueueOfflineChat({
     body,
@@ -1822,7 +1956,7 @@ export async function POST(req: Request) {
                   imagesSupported,
                   imageFilePaths,
                 }),
-                body,
+                { modelControls: promptModelControls },
               ),
               mentionedFiles,
             ),
@@ -1969,7 +2103,9 @@ export async function POST(req: Request) {
       });
     }
     if (hermesDirect) {
-      const a = ["chat", "--source", "coven", "-Q"];
+      const a = binding.hermesProfile
+        ? ["-p", binding.hermesProfile.id, "chat", "--source", "coven", "-Q"]
+        : ["chat", "--source", "coven", "-Q"];
       if (resumeSessionId) a.push("--resume", resumeSessionId);
       if (hermesLaunchModel) a.push("--model", hermesLaunchModel);
       a.push("--query", prompt);
@@ -2174,7 +2310,11 @@ export async function POST(req: Request) {
         detail?: string,
         durationMs?: number,
       ) => {
-        if (id === "opencode-compatibility" || id === "grok-compatibility" || id === "codex-compatibility") {
+        if (
+          (id === "opencode-compatibility" || id === "grok-compatibility") ||
+          id === "codex-compatibility" ||
+          id === "runtime-process"
+        ) {
           persistedCompatibilityDiagnostics.push({
             id,
             label,
@@ -2210,10 +2350,18 @@ export async function POST(req: Request) {
         // Do not fabricate tool bubbles from the CLI's presentation layer.
         // This gives the operator an actionable, privacy-safe degradation
         // notice while preserving normal CLI chat output.
+        //
+        // `notice`, not `error`: nothing failed here. The turn runs normally
+        // and only its tool bubbles are missing, which is exactly what every
+        // peer runtime's "continuing without tool activity" row reports
+        // (claude-runtime-compatibility, opencode-compatibility,
+        // grok-compatibility, codex-compatibility, copilot-protocol-*). Hermes
+        // was the lone one styled as a failure, so every CLI-mode Hermes turn
+        // opened with a red row and a "1 issue" count against a healthy run.
         pushProgress(
           "hermes-tool-activity",
-          "Hermes tool activity unavailable",
-          "error",
+          "Hermes tool activity unavailable; chat text will continue without tool bubbles",
+          "notice",
           "Configure valid HERMES_API_URL and HERMES_API_KEY values for the versioned structured event transport.",
         );
       }
@@ -2298,6 +2446,7 @@ export async function POST(req: Request) {
       // stream frame. Defer classifying that condition until all buffered
       // stdout has passed through the more-specific adapter failure parser.
       let covenBackedProcessFailed = false;
+      let covenBackedExitCode: number | null = null;
       // Coven is the outer launch vehicle. Its cleanup can fail after the
       // adapter has already supplied a successful structured result; that
       // completed assistant response remains authoritative for this attempt.
@@ -3532,6 +3681,8 @@ export async function POST(req: Request) {
               ...(hermesLaunchModel ? { model: hermesLaunchModel } : {}),
               input: apiPrompt,
               stream: true,
+              ...(hermesReasoningEffort ? { reasoning: { effort: hermesReasoningEffort } } : {}),
+              ...(hermesVerbosity ? { text: { verbosity: hermesVerbosity } } : {}),
               ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
             }),
           });
@@ -4135,6 +4286,9 @@ export async function POST(req: Request) {
               !covenCompletedSuccessfulResult &&
               typeof code === "number" &&
               code !== 0;
+            if (covenBackedProcessFailed && typeof code === "number" && code !== 0) {
+              covenBackedExitCode = code;
+            }
             if (covenBackedProcessFailed) {
               result = { ...result, is_error: true };
             }
@@ -4284,6 +4438,7 @@ export async function POST(req: Request) {
         stdoutErrTail.length = 0;
         codexAdapterFailure = null;
         covenBackedProcessFailed = false;
+        covenBackedExitCode = null;
         covenCompletedSuccessfulResult = false;
         resumeFailed = false;
         adapterConflict = null;
@@ -4343,6 +4498,7 @@ export async function POST(req: Request) {
         stdoutErrTail.length = 0;
         codexAdapterFailure = null;
         covenBackedProcessFailed = false;
+        covenBackedExitCode = null;
         covenCompletedSuccessfulResult = false;
         resumeFailed = false;
         // Settle the retry step BEFORE the fresh attempt runs, not after it
@@ -4400,10 +4556,22 @@ export async function POST(req: Request) {
           : binding.harness === "claude"
             ? "claude"
             : "coven";
-        const failure = runtimeProcessFailure(failedRunner);
+        const emittedDiagnostic = stderrTail.length > 0 || stdoutErrTail.length > 0;
+        const detail = covenBackedExitCode == null
+          ? emittedDiagnostic
+            ? "Runtime diagnostic output was withheld to protect local data."
+            : "The runtime did not emit an error message."
+          : emittedDiagnostic
+            ? `Exit code ${covenBackedExitCode}; runtime diagnostic output was withheld to protect local data.`
+            : `Exit code ${covenBackedExitCode}; the runtime did not emit an error message.`;
+        const failure = runtimeProcessFailure(failedRunner, {
+          exitCode: covenBackedExitCode,
+          emittedDiagnostic,
+        });
         launchFailure = failure;
         result.is_error = true;
         pushProgress("harness-start", `${binding.harness} exited with an error`, "error", failure.message);
+        pushProgress("runtime-process", `${binding.harness} process failure`, "error", detail);
         push({ kind: "error", code: failure.code, message: failure.message });
       }
 
@@ -4565,16 +4733,44 @@ export async function POST(req: Request) {
         modelState.applicationState = application.state;
         modelState.reason = application.reason;
       }
-      // Model parity: if the harness echoed its resolved model, promote the
-      // application state from `pending` to `applied` and record what actually
-      // ran. No echo ⇒ leave the honest `pending`/`unsupported` state untouched.
+      // `coven run` can echo the forwarded model in system.init before it has
+      // started the downstream harness. That establishes argv forwarding, not
+      // downstream acceptance, so keep the model pending unless the error
+      // itself safely identifies a rejected model. In particular, do not mark
+      // a successful wrapper response as proof that Codex accepted `--model`.
+      else if (localRuntimePlan?.runner === "coven" && forwardModel) {
+        const rejected = result.is_error === true && modelRejectionInError(
+          [...stderrTail, ...stdoutErrTail].join("\n"),
+        );
+        const application = modelApplicationForHarness(
+          rejected ? { failed: true } : { supported: true },
+        );
+        responseMetadata.modelApplicationState = application.state;
+        responseMetadata.modelApplicationReason = rejected
+          ? application.reason
+          : "Coven forwarded the selected model; downstream acceptance was not confirmed.";
+        modelState.applicationState = application.state;
+        modelState.reason = responseMetadata.modelApplicationReason;
+      }
+      // Direct/native runtime echoes can identify the resolved model. A
+      // successful run confirms it; a model rejection becomes failed rather
+      // than incorrectly reporting the selected model as applied.
       else if (confirmedModel) {
-        const application = modelApplicationForHarness({ supported: true, confirmed: true });
-        responseMetadata.confirmedModel = confirmedModel;
+        const application = modelApplicationForHarness(
+          modelApplicationFromRun({
+            confirmedModel,
+            isError: result.is_error === true,
+            errorText: [...stderrTail, ...stdoutErrTail].join("\n"),
+          }),
+        );
+        if (!result.is_error) responseMetadata.confirmedModel = confirmedModel;
         responseMetadata.modelApplicationState = application.state;
         responseMetadata.modelApplicationReason = application.reason;
         modelState.applicationState = application.state;
         modelState.reason = application.reason;
+      }
+      if (!result.is_error && Object.keys(appliedModelControlValues).length > 0) {
+        responseMetadata.appliedControls = appliedModelControlValues;
       }
       const routedTurnModel = copilotStream
         ? cleanModelId(desiredModel)
@@ -4605,11 +4801,15 @@ export async function POST(req: Request) {
       // early-exiting harness never supplied a session id and therefore has
       // no conversation file to persist.
       settleUnfinishedTools();
-      // Launch failures never produced a real assistant response: the client
-      // already received the structured error above, so persist nothing
-      // (matching the OpenClaw no-spawn precedent) instead of writing a
-      // fabricated turn the user would rediscover on reload.
-      if (finalSessionId && !launchFailure) {
+      // Preflight/spawn failures never produced a real assistant response, so
+      // preserve the established no-transcript behavior for them. A Coven
+      // child that did start and then exited non-zero is different: persist a
+      // clearly marked failure when the conversation already has an id, so a
+      // reload retains the safe exit diagnostics instead of looking complete.
+      const persistCovenProcessFailure = Boolean(
+        finalSessionId && launchFailure && covenBackedProcessFailed,
+      );
+      if (finalSessionId && (!launchFailure || persistCovenProcessFailure)) {
         pushProgress("save-transcript", "Saving transcript", "running");
         await recordSessionFamiliar(finalSessionId, body.familiarId);
         // Settle any in-flight stub write first so it can never race (and
@@ -4654,10 +4854,13 @@ export async function POST(req: Request) {
           const persistedTools = toPersistedTools([...priorAttemptTools, ...toolTracker.snapshot()],
             assistantText.length - assistantText.trimStart().length,
           );
+          const persistedAssistantText = persistCovenProcessFailure && !cleanedAssistantText
+            ? launchFailure!.message
+            : cleanedAssistantText;
           const assistantTurn: ChatTurn = {
             id: assistantTurnId,
             role: "assistant",
-            text: cleanedAssistantText,
+            text: persistedAssistantText,
             ...(agentAttachments.length ? { attachments: agentAttachments } : {}),
             createdAt: new Date().toISOString(),
             durationMs: result.duration_ms,
@@ -4699,7 +4902,7 @@ export async function POST(req: Request) {
           if (workBranch) conv.branch = workBranch;
           // Transcript PR snapshot: the reply's last reported PR URL (fallback
           // attribution for chats whose work happens in agent worktrees).
-          const reportedPrUrl = latestPrUrlFromText(cleanedAssistantText);
+          const reportedPrUrl = latestPrUrlFromText(persistedAssistantText);
           if (reportedPrUrl) conv.prUrl = reportedPrUrl;
           if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
           else if (openCodeDirect && existingConversation && !openCodeNativeResumeUsed) {

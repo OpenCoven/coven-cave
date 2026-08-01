@@ -53,9 +53,21 @@ export function createShortVideoMediaJobDefinition(
       const maxScenes =
         RESEARCH_MEDIA_LENGTH_LIMITS["short-video"][input.renderConfig.length]
           .maxScenes;
+      const maxCharacters =
+        RESEARCH_MEDIA_LENGTH_LIMITS["short-video"][input.renderConfig.length]
+          .maxCharacters;
       if (input.storyboard.length > maxScenes) {
         throw new Error(
           `${input.renderConfig.length} short-video scene budget (${maxScenes}) exceeded`,
+        );
+      }
+      const narrationCharacters = input.storyboard.reduce(
+        (total, scene) => total + scene.narration.length,
+        0,
+      );
+      if (narrationCharacters > maxCharacters) {
+        throw new Error(
+          `${input.renderConfig.length} short-video narration budget (${maxCharacters}) exceeded`,
         );
       }
       const temporary = await mkdtemp(path.join(tmpdir(), "cave-short-video-"));

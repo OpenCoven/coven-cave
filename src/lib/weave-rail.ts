@@ -7,6 +7,7 @@
 
 import {
   isStale,
+  type CoherenceView,
   type DegradedFamiliarView,
   type TensionView,
   type ThreadsEnvelope,
@@ -21,7 +22,19 @@ import type { IconName } from "./icon";
 // Status pills. Every pill traces to a predicate result (evidence-first);
 // "blocked" is the fail-closed treatment for anything unverifiable.
 
-export type PillTone = "holds" | "frayed" | "snapped" | "blocked" | "stale";
+/**
+ * `awaiting` and `neutral` are queue tones, not tension states: a proposal
+ * that is merely waiting on you is not a health verdict about a weave, and it
+ * must not borrow the success/warning vocabulary that means one.
+ */
+export type PillTone =
+  | "holds"
+  | "frayed"
+  | "snapped"
+  | "blocked"
+  | "stale"
+  | "awaiting"
+  | "neutral";
 
 export type TensionPill = {
   tone: PillTone;
@@ -288,6 +301,102 @@ export function railModel(data: WeaveListEntry[]): WeaveRailModel {
     ),
   ].sort();
   return { weaves, degraded, familiars };
+}
+
+// ---------------------------------------------------------------------------
+// Rail scoping: search, familiar, and status. The status vocabulary is the
+// operator's, not the crate's — "does this ask something of me?" — and it
+// derives from coherence so a blocked familiar can never read as healthy.
+
+export type WeaveStatus = "healthy" | "attention" | "blocked";
+
+export function weaveStatus(entry: WeaveListEntry): WeaveStatus {
+  // R12: a familiar whose ward config is unreadable is blocked, never healthy.
+  if ("kind" in entry) return "blocked";
+  if (entry.coherence === "coherent") return "healthy";
+  if (entry.coherence === "unknown") return "blocked";
+  return "attention";
+}
+
+/** Worst-first, then alphabetical — the default selection is the worst weave. */
+const COHERENCE_SEVERITY: Record<CoherenceView, number> = {
+  broken: 4,
+  unknown: 3,
+  degraded: 2,
+  coherent: 0,
+};
+
+export function sortWeavesWorstFirst(weaves: WeaveSummary[]): WeaveSummary[] {
+  return [...weaves].sort(
+    (a, b) =>
+      COHERENCE_SEVERITY[b.coherence] - COHERENCE_SEVERITY[a.coherence] ||
+      a.familiarId.localeCompare(b.familiarId),
+  );
+}
+
+export type WeaveScope = { query: string; familiar: string | null; status: WeaveStatus | null };
+
+export const ALL_WEAVES_SCOPE: WeaveScope = { query: "", familiar: null, status: null };
+
+export function matchesScope(entry: WeaveListEntry, scope: WeaveScope): boolean {
+  if (scope.familiar !== null && entry.familiarId !== scope.familiar) return false;
+  if (scope.status !== null && weaveStatus(entry) !== scope.status) return false;
+  const q = scope.query.trim().toLowerCase();
+  if (q === "") return true;
+  if (entry.familiarId.toLowerCase().includes(q)) return true;
+  return "kind" in entry ? false : entry.weaveHash.toLowerCase().startsWith(q);
+}
+
+/**
+ * Integrity overview. Only a count that asks something of the operator earns a
+ * slot — an all-clear surface says so in a phrase rather than printing three
+ * zeroes, so a non-zero number always means "look here".
+ */
+export type WeaveTally = {
+  key: "attention" | "blocked" | "pending" | "clear";
+  label: string;
+  value: number;
+};
+
+export function weaveTallies(entries: WeaveListEntry[], pendingCount: number): WeaveTally[] {
+  const counts = { healthy: 0, attention: 0, blocked: 0 };
+  for (const entry of entries) counts[weaveStatus(entry)] += 1;
+  const tallies: WeaveTally[] = [];
+  if (counts.attention > 0) tallies.push({ key: "attention", label: "need attention", value: counts.attention });
+  if (counts.blocked > 0) tallies.push({ key: "blocked", label: "unverifiable", value: counts.blocked });
+  if (pendingCount > 0) tallies.push({ key: "pending", label: "awaiting you", value: pendingCount });
+  if (tallies.length === 0) {
+    tallies.push({
+      key: "clear",
+      label: `of ${entries.length} weave${entries.length === 1 ? "" : "s"} hold`,
+      value: entries.length,
+    });
+  }
+  return tallies;
+}
+
+/**
+ * The weave detail's one-sentence verdict. It states what holds, what does
+ * not, and what the operator can still rely on — never a bare status word.
+ */
+export function weaveSummaryLine(weave: WeaveDetail): string {
+  const threads = `${weave.threadCount} thread${weave.threadCount === 1 ? "" : "s"}`;
+  switch (weave.coherence) {
+    case "coherent":
+      return `All ${threads} hold. Every protected surface has exactly one authorized writer, and each binding is backed by intact strands.`;
+    case "degraded": {
+      const readOnly =
+        weave.degradedSurfaces.length > 0
+          ? weave.degradedSurfaces.join(", ")
+          : "One surface";
+      const holding = Math.max(weave.threadCount - weave.degradedSurfaces.length, 0);
+      return `${readOnly} is read-only until repair — a strand failed its check. ${holding} of ${weave.threadCount} threads still hold, so ${weave.familiarId} continues everywhere else.`;
+    }
+    case "broken":
+      return "The pattern does not hold. No authority can be exercised through this weave until it is re-woven.";
+    default:
+      return `Cave could not verify this weave's predicate, so nothing below is shown as healthy. State is withheld rather than guessed.`;
+  }
 }
 
 export type ThreadPaneModel = {

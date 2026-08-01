@@ -432,22 +432,31 @@ test("startup fails old rendering rows, preserves FIFO queue, and is idempotent"
 
   await startResearchMediaJobs(factory);
   await startResearchMediaJobs(factory);
-  const interrupted = await waitForStatus(familiarId, "interrupted", "failed");
+  await waitForStarts(starts, 1);
+  const afterFirstStart = await listResearchGenerations(familiarId);
+  const interrupted = afterFirstStart.find((row) => row.id === "interrupted");
+  assert.ok(interrupted);
+  assert.equal(interrupted.status, "failed");
   assert.equal(interrupted.error, "interrupted by runner ownership loss");
   assert.equal(interrupted.stage, undefined);
-  await waitForStatus(familiarId, "resume-first", "rendering");
-  await waitForStarts(starts, 1);
   assert.equal(
-    (await listResearchGenerations(familiarId)).find(
-      (row) => row.id === "resume-second",
-    )?.status,
+    afterFirstStart.find((row) => row.id === "resume-first")?.status,
+    "rendering",
+  );
+  assert.equal(
+    afterFirstStart.find((row) => row.id === "resume-second")?.status,
     "queued",
   );
   assert.deepEqual(starts, ["resume-first"]);
 
   releases.get("resume-first")?.();
-  await waitForStatus(familiarId, "resume-second", "rendering");
   await waitForStarts(starts, 2);
+  assert.equal(
+    (await listResearchGenerations(familiarId)).find(
+      (row) => row.id === "resume-second",
+    )?.status,
+    "rendering",
+  );
   releases.get("resume-second")?.();
   await waitForStatus(familiarId, "resume-second", "ready");
   assert.deepEqual(starts, ["resume-first", "resume-second"]);

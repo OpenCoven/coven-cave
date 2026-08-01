@@ -20,5 +20,8 @@
 @import "../styles/globals/surface-chat-overlays.css";
 @import "../styles/globals/surface-marketplace.css";
 @import "../styles/globals/surface-role-workspaces.css";
+@import "../styles/document-reader.css";
 /* The five surface-research-*.css sheets are imported by researcher-surface.tsx
- * so they code-split with the mode-gated Research Desk (#3264 pattern). */
+ * so they code-split with the mode-gated Research Desk (#3264 pattern).
+ * surface-weaves.css follows the same rule: threads-chrome.tsx imports it, so
+ * it ships with /weaves and /proposals instead of the root layout's CSS. */

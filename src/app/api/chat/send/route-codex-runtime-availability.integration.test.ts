@@ -51,11 +51,16 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'assistant-envelope', 'assistant-envelope-exit-1', 'cancel'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'assistant-envelope', 'assistant-envelope-exit-1', 'cancel'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.exit(0);",
+  "}",
+  "if (process.argv[2] === 'run' && process.argv[3] === '--help') {",
+  "  process.stdout.write('  --model <model>  Forward a provider model id\\n');",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === 'codex') {",
   "  if (process.env.COVEN_TEST_MODE === 'silent-exit') process.exit(1);",
+  "  if (process.env.COVEN_TEST_MODE === 'silent-stderr') { console.error('model gpt-5.6-sol is unsupported at /private/fixture/secret ghp_1234567890abcdefghijklmnopqrstuv'); process.exit(1); }",
   "  if (process.env.COVEN_TEST_MODE === 'cancel') {",
   "    appendFileSync(process.env.COVEN_TEST_CANCEL_READY, 'started');",
   "    setInterval(() => {}, 1000);",
@@ -229,20 +234,74 @@ try {
   // Codex is signed out. It must remain a structured runtime-process error
   // instead of fabricating the completed-but-empty authentication hint.
   process.env.COVEN_TEST_MODE = "silent-exit";
+  const silentExitSessionId = "silent-codex-session";
   const silentExitResponse = await POST(new Request("http://localhost/api/chat/send", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ familiarId: "opal", prompt: "silent child", projectRoot: familiarWorkspace }),
+    body: JSON.stringify({
+      familiarId: "opal",
+      prompt: "silent child",
+      modelOverride: "openai/gpt-5.6-sol",
+      projectRoot: familiarWorkspace,
+      sessionId: silentExitSessionId,
+    }),
   }));
   const { body: silentExitBody, events: silentExitEvents } = await readSse(silentExitResponse);
   const silentExitError = silentExitEvents.find((event) => event.kind === "error");
   assert.ok(silentExitError, "a silent non-zero Codex exit produces a structured error event");
   assert.equal(silentExitError.code, "runtime_process_failed");
-  assert.match(silentExitError.message, /Codex CLI exited with an error/);
+  assert.match(silentExitError.message, /Codex CLI exited with an error \(exit code 1\)/);
+  assert.match(silentExitError.message, /did not emit an error message/);
   assert.doesNotMatch(silentExitBody, /installed but not authenticated|produced no output/i);
   assert.ok(!silentExitEvents.some((event) => event.kind === "assistant_chunk"));
+  assert.deepEqual(
+    silentExitEvents.find((event) => event.kind === "progress" && event.id === "runtime-process"),
+    {
+      kind: "progress",
+      id: "runtime-process",
+      label: "codex process failure",
+      status: "error",
+      detail: "Exit code 1; the runtime did not emit an error message.",
+    },
+    "silent exits retain a safe, concrete diagnostic without guessing at authentication",
+  );
   const silentDone = silentExitEvents.findLast((event) => event.kind === "done");
   assert.equal(silentDone?.isError, true);
+  assert.equal(silentDone?.responseMetadata?.confirmedModel, undefined);
+  assert.equal(silentDone?.responseMetadata?.modelApplicationState, "pending");
+  const silentConversation = await loadConversation(silentExitSessionId);
+  const silentTurn = silentConversation?.turns.at(-1);
+  assert.equal(silentTurn?.isError, true, "an existing conversation retains the failed run");
+  assert.match(silentTurn?.text ?? "", /exit code 1/);
+  assert.deepEqual(silentTurn?.progress?.find((step) => step.id === "runtime-process"), {
+    id: "runtime-process",
+    label: "codex process failure",
+    status: "error",
+    detail: "Exit code 1; the runtime did not emit an error message.",
+    createdAt: silentTurn?.progress?.find((step) => step.id === "runtime-process")?.createdAt,
+  });
+
+  // Stderr may name a rejected model or contain local credentials and paths.
+  // Cave persists only the fixed diagnostic shape rather than copying the
+  // provider payload into chat, and treats the forwarded model as unverified.
+  process.env.COVEN_TEST_MODE = "silent-stderr";
+  const stderrExitResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      prompt: "silent stderr",
+      modelOverride: "openai/gpt-5.6-sol",
+      projectRoot: familiarWorkspace,
+    }),
+  }));
+  const { body: stderrExitBody, events: stderrExitEvents } = await readSse(stderrExitResponse);
+  const stderrExitError = stderrExitEvents.find((event) => event.kind === "error");
+  assert.match(stderrExitError?.message ?? "", /exit code 1/);
+  assert.match(stderrExitError?.message ?? "", /diagnostic output, which Cave withheld/);
+  assert.doesNotMatch(stderrExitBody, /ghp_|\/private\/fixture|unsupported at/i);
+  assert.equal(stderrExitEvents.findLast((event) => event.kind === "done")?.responseMetadata?.confirmedModel, undefined);
+  assert.equal(stderrExitEvents.findLast((event) => event.kind === "done")?.responseMetadata?.modelApplicationState, "pending");
 
   // Stop is an expected interruption, not evidence that Coven or Codex
   // failed. Its child commonly closes with a null exit code after SIGTERM;

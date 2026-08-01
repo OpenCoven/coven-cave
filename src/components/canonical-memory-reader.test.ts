@@ -506,3 +506,20 @@ test("canonical details expose no file or mutation controls and use no storage",
     }
   }
 });
+
+test("revealed canonical memories compose the shared presentation-safe reader", () => {
+  const source = readFileSync(
+    new URL("./canonical-memory-reader.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /<DocumentReader/);
+  assert.match(
+    source,
+    /parseMarkdownReaderDocument\(detail\.content,\s*detail\.title\)/,
+  );
+  assert.doesNotMatch(
+    source,
+    /<CanonicalMemoryMarkdown[\s\S]*?mode=\{mode\}/,
+    "rendered canonical content is delegated to DocumentReader instead of reparsed",
+  );
+});

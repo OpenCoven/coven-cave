@@ -223,17 +223,42 @@ export async function POST(req: Request) {
     );
   }
 
-  // Reject duplicates rather than appending a second [[familiar]] block with
-  // the same id (the daemon would only ever see the first).
-  const familiarsExists = await pathExists(familiarsToml);
-  if (familiarsExists) {
-    const existingToml = await readFile(familiarsToml, "utf8");
-    if (familiarsTomlContainsId(existingToml, draft.id)) {
-      return NextResponse.json(
-        { ok: false, error: `A familiar with id "${draft.id}" already exists.` },
-        { status: 409 },
-      );
-    }
+  // Check for a local duplicate before making any config change. Keep the
+  // verified contents for the later registration write, after the binding has
+  // been persisted.
+  const existingToml = await pathExists(familiarsToml)
+    ? await readFile(familiarsToml, "utf8")
+    : null;
+  if (existingToml && familiarsTomlContainsId(existingToml, draft.id)) {
+    return NextResponse.json(
+      { ok: false, error: `A familiar with id "${draft.id}" already exists.` },
+      { status: 409 },
+    );
+  }
+
+  // Scaffold the harness adapter manifest if it is missing, or repair the
+  // known Windows Hermes shim before the new familiar can launch it. Persist
+  // the binding before registering the familiar below: a profile-selected
+  // familiar must never become visible without its explicit profile binding.
+  await ensureAdapterManifestScaffold(draft.harness);
+
+  // Upsert only this familiar's binding. No `defaults` key → global defaults
+  // are preserved (see the doc comment above).
+  await saveConfig({
+    familiars: {
+      [draft.id]: {
+        harness: draft.harness,
+        model: draft.model,
+        ...(draft.hermesProfile ? { hermesProfile: draft.hermesProfile } : {}),
+        ...(draft.runtime ? { runtime: draft.runtime } : {}),
+      },
+    },
+  });
+
+  // The duplicate was checked above before any mutation. Register only after
+  // saveConfig succeeds: if binding persistence fails, no unbound familiar is
+  // registered for chat to launch through a Hermes default profile.
+  if (existingToml !== null) {
     const separator = existingToml.endsWith("\n") ? "\n" : "\n\n";
     await writeFile(
       familiarsToml,
@@ -247,23 +272,6 @@ export async function POST(req: Request) {
   // Re-creating a removed id must clear its tombstone: the roster GET hides
   // tombstoned ids, so a stale entry would make the new familiar invisible.
   await takeTombstone(draft.id).catch(() => {});
-
-  // Scaffold the harness adapter manifest if it is missing, or repair the
-  // known Windows Hermes shim before the new familiar can launch it.
-  await ensureAdapterManifestScaffold(draft.harness);
-
-  // Upsert only this familiar's binding. No `defaults` key → global defaults
-  // are preserved (see the doc comment above).
-  await saveConfig({
-    familiars: {
-      [draft.id]: {
-        harness: draft.harness,
-        model: draft.model,
-        ...(draft.runtime ? { runtime: draft.runtime } : {}),
-      },
-    },
-  });
-
   // Scaffold the Familiar Contract (SOUL.md / IDENTITY.md / ward.toml /
   // MEMORY.md) so the new familiar is contract-compliant from birth instead of
   // showing up for "rehabilitation" in the Studio Contract tab. Best-effort and

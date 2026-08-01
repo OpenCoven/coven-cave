@@ -1,4 +1,13 @@
 import type { SessionRow } from "@/lib/types";
+// One display normalizer for the whole app (cave-zz12). comux used to carry a
+// private copy that differed only by not trimming; its keying call site below
+// already passes a trimmed value, so this is the same result — and one fewer
+// place for project identity to quietly diverge.
+// Relative, not "@/": the existing `@/lib/types` import above is TYPE-ONLY and
+// erased at runtime, but this is a value import — via the alias it would need
+// the test alias loader, and any test whose graph reaches this file without it
+// would fail to resolve.
+import { normalizeProjectRoot } from "./cave-projects-types.ts";
 
 export type ComuxProject = {
   name: string;
@@ -57,11 +66,7 @@ export function projectMonogram(name: string): string {
   return (first + last).toUpperCase();
 }
 
-/** Strip trailing slashes so `/x/app` and `/x/app/` bucket as one project. */
-function normalizeRoot(root: string): string {
-  const stripped = root.replace(/\\/g, "/").replace(/\/+$/, "");
-  return stripped || "/";
-}
+
 
 /** `parent/name` for disambiguating projects that share a basename. */
 function projectNameWithParent(root: string): string {
@@ -85,7 +90,7 @@ export function deriveComuxProjects(
   for (const session of sessions) {
     const raw = session.project_root?.trim();
     if (!raw) continue;
-    const root = normalizeRoot(raw);
+    const root = normalizeProjectRoot(raw);
     const bucket = byRoot.get(root) ?? { sessions: [], familiarIds: new Set<string>() };
     bucket.sessions.push(session);
     if (session.familiarId) bucket.familiarIds.add(session.familiarId);
@@ -131,7 +136,7 @@ export function deriveComuxProjects(
     return [
       {
         name: projectName(fallbackRoot),
-        root: normalizeRoot(fallbackRoot),
+        root: normalizeProjectRoot(fallbackRoot),
         sessionCount: 0,
         runningCount: 0,
         familiarCount: 0,

@@ -462,10 +462,192 @@ test("podcast drafter creates bounded extractive narration segments", () => {
   }, "standard");
   assert.equal(content.kind, "podcast");
   if (content.kind !== "podcast") return;
-  assert.ok(content.script.length >= 1, "heading-less artifacts still produce a draft");
+  assert.ok(content.script.length >= 2, "heading-less artifacts still produce a draft");
   assert.ok(content.script.every((segment) => segment.text.length > 0));
   assert.ok(content.script.every((segment) => segment.text.length <= 4_000));
-  assert.ok(content.script[0].text.includes("A standalone paragraph with a claim."));
+  assert.equal(content.script[0].speaker, "host", "a host opening frames the episode");
+  assert.ok(content.script[1].text.includes("A standalone paragraph with a claim."));
+  assert.ok(
+    content.script.every(
+      (segment) => segment.speaker === "host" || segment.speaker === "guest",
+    ),
+    "every drafted segment carries a dialogue speaker",
+  );
+});
+
+test("podcast drafter drafts a host/guest dialogue with templated framing only", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Key claims",
+      "",
+      "- Gates bind proxies, not purposes.",
+      "",
+      "## Open questions",
+      "",
+      "- Does goal-guarding generalize?",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const script = content.script;
+  assert.equal(script[0].speaker, "host");
+  assert.ok(
+    script[0].text.includes(mission.title),
+    "the opening names the mission title, nothing invented",
+  );
+  const framing = script.filter((segment) => segment.text.startsWith("Next up — "));
+  assert.deepEqual(
+    framing.map((segment) => segment.speaker),
+    ["host", "host"],
+    "each titled section gets one host framing line",
+  );
+  assert.ok(
+    framing.every((segment) => !segment.text.includes("..")),
+    "framing reuses punctuation-aware headings",
+  );
+  const guests = script.filter((segment) => segment.speaker === "guest");
+  assert.ok(
+    guests.some((segment) => segment.text.includes("Gates bind proxies, not purposes.")),
+    "findings are delivered verbatim by the guest",
+  );
+  assert.deepEqual(
+    script.map((segment) => segment.id),
+    script.map((_, index) => `segment-${index + 1}`),
+    "segment ids stay sequential",
+  );
+  // A host framing line is never the last thing in the script — framing only
+  // enters alongside the findings it introduces.
+  const last = script[script.length - 1];
+  assert.notEqual(last.text.startsWith("Next up — "), true);
+});
+
+test("podcast styles branch the drafter without inventing findings", () => {
+  const source = {
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Key claims",
+      "",
+      "- Gates bind proxies, not purposes.",
+      "",
+      "## Open questions",
+      "",
+      "- Does goal-guarding generalize?",
+    ].join("\n"),
+  };
+  const recap = draftPodcastContent(source, "standard", "recap");
+  assert.equal(recap.kind, "podcast");
+  if (recap.kind !== "podcast") return;
+  assert.ok(
+    recap.script.every((segment) => segment.speaker === undefined),
+    "recap is a single-narrator read-through with no dialogue turns",
+  );
+  assert.ok(
+    recap.script[0].text.includes("Gates bind proxies, not purposes."),
+    "recap starts straight into the findings, no templated opening",
+  );
+
+  const debate = draftPodcastContent(source, "standard", "debate");
+  assert.equal(debate.kind, "podcast");
+  if (debate.kind !== "podcast") return;
+  assert.ok(debate.script[0].text.includes("stress-testing"));
+  const debateFraming = debate.script.filter((segment) =>
+    segment.text.includes("Where do we actually stand"),
+  );
+  assert.ok(
+    debateFraming[0]?.text.includes("Open questions"),
+    "debate leads with the contested section",
+  );
+
+  const interview = draftPodcastContent(source, "standard", "interview");
+  assert.equal(interview.kind, "podcast");
+  if (interview.kind !== "podcast") return;
+  assert.ok(interview.script[0].text.includes("my guest walks us through"));
+  assert.ok(
+    interview.script.some((segment) =>
+      segment.text.startsWith("Walk me through this part — Key claims"),
+    ),
+  );
+
+  // The default is breakdown — an unstyled call and an explicit breakdown
+  // call draft the identical script.
+  assert.deepEqual(
+    draftPodcastContent(source, "standard"),
+    draftPodcastContent(source, "standard", "breakdown"),
+  );
+});
+
+test("podcast drafter joins are punctuation-aware — never a double period", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Punctuated findings",
+      "",
+      "## Key claims (with confidence)",
+      "",
+      "- Formal proofs are blocked (high confidence).",
+      "- Does goal-guarding generalize?",
+      "- Benchmarks bind proxies (the DGM lesson)",
+      "- an unterminated bullet",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const narration = content.script.map((segment) => segment.text).join(" ");
+  assert.ok(!narration.includes(".."), `no double periods (${narration})`);
+  assert.ok(!narration.includes("?."), `no punctuation stacking after ? (${narration})`);
+  assert.ok(
+    narration.includes("(the DGM lesson) an unterminated bullet."),
+    "paren-terminated fragments are not re-punctuated",
+  );
+  assert.ok(
+    narration.includes("Key claims (with confidence)"),
+    "the heading still frames its details",
+  );
+});
+
+test("podcast drafter skips table-only sections instead of speaking bare headings", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Mechanism comparison",
+      "",
+      "| Mechanism | Guarantee |",
+      "|---|---|",
+      "| Proof-gated | formal |",
+      "",
+      "## Empty section",
+      "",
+      "## Detailed findings",
+      "",
+      "- Gates bind proxies, not purposes.",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const texts = content.script.map((segment) => segment.text);
+  assert.ok(
+    texts.every((text) => text !== "Mechanism comparison" && text !== "Mechanism comparison."),
+    "table-only sections never become orphan spoken headings",
+  );
+  assert.ok(
+    texts.every((text) => !text.startsWith("Empty section")),
+    "empty sections are skipped",
+  );
+  assert.ok(
+    texts.some((text) => text.includes("Gates bind proxies, not purposes.")),
+    "sections with speakable details survive",
+  );
 });
 
 test("podcast drafter clamps a long source mechanically at the local TTS limit", () => {
@@ -501,6 +683,76 @@ test("video storyboard drafter maps headings, bullets, and narration without inv
     narration: "Key numbers. 4–9× cost advantage at matched quality. 200K-token synthesis threshold. fifth bullet caps at four",
   });
   assert.ok(content.storyboard.every((scene) => scene.id.startsWith("scene-")));
+});
+
+test("short-video drafts keep complete source bullets within each preset narration budget", () => {
+  const source = {
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Bounded video source",
+      "",
+      "## Executive summary",
+      "",
+      `- ${"First evidence-backed finding ".repeat(6).trim()}.`,
+      `- ${"Second evidence-backed finding ".repeat(6).trim()}.`,
+      `- ${"Third evidence-backed finding ".repeat(6).trim()}.`,
+      "",
+      "## Next steps",
+      "",
+      `- ${"Follow-up finding ".repeat(6).trim()}.`,
+    ].join("\n"),
+  };
+
+  const brief = draftVideoStoryboardContent(source, "brief");
+  const standard = draftVideoStoryboardContent(source, "standard");
+  assert.equal(brief.kind, "short-video");
+  assert.equal(standard.kind, "short-video");
+  if (brief.kind !== "short-video" || standard.kind !== "short-video") return;
+
+  const narrationLength = (content: typeof brief) =>
+    content.storyboard.reduce((total, scene) => total + scene.narration.length, 0);
+  assert.ok(narrationLength(brief) <= 300, "brief narration must fit its 30-second budget");
+  assert.ok(narrationLength(standard) <= 600, "standard narration must fit its 60-second budget");
+  assert.ok(brief.storyboard.length > 0, "brief keeps the leading fitting source bullet");
+  assert.ok(
+    narrationLength(standard) > narrationLength(brief),
+    "standard admits more source detail",
+  );
+  assert.ok(brief.storyboard.length <= standard.storyboard.length);
+  for (const content of [brief, standard]) {
+    for (const scene of content.storyboard) {
+      assert.equal(scene.narration, [scene.title, ...scene.bullets].join(". "));
+      assert.ok(source.markdown.includes(scene.title), "scene heading remains source-extractive");
+      assert.ok(
+        scene.bullets.every((bullet) => source.markdown.includes(bullet)),
+        "scene bullets remain source-extractive",
+      );
+    }
+  }
+});
+
+test("short-video drafts retain a fitting title when its source detail exceeds the remaining budget", () => {
+  const content = draftVideoStoryboardContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Bounded video source",
+      "",
+      "## Fitting heading",
+      "",
+      `- ${"Oversized source detail ".repeat(20).trim()}.`,
+    ].join("\n"),
+  }, "brief");
+
+  assert.equal(content.kind, "short-video");
+  if (content.kind !== "short-video") return;
+  assert.deepEqual(content.storyboard, [{
+    id: "scene-1",
+    title: "Fitting heading",
+    bullets: [],
+    narration: "Fitting heading",
+  }]);
 });
 
 // ── directions are forwarded, never interpreted ──────────────────────────────

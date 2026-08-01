@@ -25,7 +25,33 @@ export type ChatAttachment = {
   truncated?: boolean;
   /** Base64 data URL for images, set when the file is attached locally */
   dataUrl?: string;
+  /**
+   * Id of the image in the durable attachment store, set by the server when
+   * the turn is persisted. This is what lets a reopened transcript show the
+   * picture again: `dataUrl` is stripped at persistence, `storedId` is not.
+   */
+  storedId?: string;
 };
+
+/** `<uuid>.<ext>` as minted by the server's attachment store. Validated on the
+ * client too so a hand-edited transcript cannot steer the fetch. */
+const STORED_ATTACHMENT_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{1,8}$/;
+
+function cleanStoredId(value: unknown): string | undefined {
+  return typeof value === "string" && STORED_ATTACHMENT_ID_RE.test(value) ? value : undefined;
+}
+
+/**
+ * Where to point an `<img>` for this attachment: the in-memory payload when we
+ * still hold it (the turn you just sent), otherwise the stored copy served by
+ * `/api/chat/attachment`. Null when there are no pixels to show.
+ */
+export function chatAttachmentSrc(attachment: ChatAttachment): string | null {
+  if (attachment.dataUrl) return attachment.dataUrl;
+  const storedId = cleanStoredId(attachment.storedId);
+  return storedId ? `/api/chat/attachment?id=${encodeURIComponent(storedId)}` : null;
+}
 
 /** Fenced marker a familiar emits to attach a file it produced, e.g.
  *   ```coven:attachment
@@ -113,6 +139,7 @@ export function normalizeChatAttachments(input: unknown): ChatAttachment[] {
       // server can hand them to the harness. Everything else stays metadata-only.
       const image = cleanImageDataUrl(raw.dataUrl);
       const mimeType = cleanType(raw.mimeType);
+      const storedId = cleanStoredId(raw.storedId);
       return {
         name: cleanName(raw.name),
         type: cleanType(raw.type),
@@ -121,6 +148,7 @@ export function normalizeChatAttachments(input: unknown): ChatAttachment[] {
         ...(text != null ? { text } : {}),
         ...(rawText != null && rawText.length > MAX_ATTACHMENT_TEXT_CHARS ? { truncated: true } : {}),
         ...(image ? { mimeType: image.mimeType, dataUrl: image.dataUrl } : {}),
+        ...(storedId ? { storedId } : {}),
       };
     });
 }

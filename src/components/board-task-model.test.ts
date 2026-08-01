@@ -21,7 +21,7 @@ assert.match(createRoute, /modelOverride\?: string \| null/, "board create API a
 assert.match(createRoute, /modelOverrideHarness\?: string \| null/, "board create API accepts the model runtime");
 assert.match(patchRoute, /modelOverride: string \| null/, "board patch API accepts a task model override");
 assert.match(patchRoute, /modelOverrideHarness: string \| null/, "board patch API accepts the model runtime");
-assert.match(inspector, /useRuntimeModelOptions\(modelHarness, currentFamiliar\?\.id \?\? null\)/, "inspector loads the selected familiar runtime's model options");
+assert.match(inspector, /useRuntimeModelInventory\(modelHarness, currentFamiliar\?\.id \?\? null\)[\s\S]*inventoryProvenanceLabel/, "inspector renders the selected familiar inventory and its provenance");
 assert.match(
   inspector,
   /runtimeModelOptions\.map\(\(option\) => \(\{ value: option\.id, label: option\.label \}\)\)/,
@@ -37,8 +37,18 @@ assert.match(
 );
 assert.match(
   inspector,
-  /!taskModelIsCustom && !hasUnsavedCustomModelDraft/,
+  /\(!taskModelIsCustom \|\| !allowCustomModel\)[\s\S]{0,100}\(!hasUnsavedCustomModelDraft \|\| !allowCustomModel\)/,
   "a late catalog response cannot replace an active custom model input",
+);
+assert.match(
+  inspector,
+  /taskModelIsCustom && card\.modelOverride && !allowCustomModel[\s\S]{0,280}\(not offered\)/,
+  "an existing unlisted task override remains visible when the new inventory forbids custom ids",
+);
+assert.match(
+  inspector,
+  /runtimeModelOptions\.length > 0 \|\| \(taskModelIsCustom && !allowCustomModel\)/,
+  "the no-custom remediation path keeps the model select available so the override can be reset",
 );
 assert.match(taskRoute, /card\.modelOverride && card\.modelOverrideHarness === binding\.harness/, "new task sessions only use an override from the familiar's current runtime");
 assert.match(taskRoute, /updateCard\(card\.id, \{ modelOverride: null, modelOverrideHarness: null \}\)/, "a stale task model is cleared before launch");

@@ -5,8 +5,10 @@ import {
   catalogForRuntime,
   defaultModelForRuntime,
   isModelInCatalog,
+  modelForRuntimeSwitch,
   modelForCaveFromRuntimeEcho,
   modelForRuntimeLaunch,
+  runtimeOwnsModelDefault,
   runtimeModelIdForLaunch,
   transformModelIdForRuntime,
 } from "./runtime-models.ts";
@@ -18,6 +20,26 @@ for (const runtime of ["codex", "claude", "copilot", "hermes", "opencode", "open
   assert.equal(catalog.runtime, runtime);
   assert.equal(typeof catalog.allowCustom, "boolean");
   assert.ok(Array.isArray(catalog.models));
+}
+
+for (const [alias, canonical] of [
+  ["claude-code", "claude"],
+  ["openai-codex", "codex"],
+  ["github-copilot", "copilot"],
+  ["copilot-cli", "copilot"],
+  ["hermes-agent", "hermes"],
+  ["opencode-ai", "opencode"],
+]) {
+  assert.deepEqual(
+    catalogForRuntime(alias),
+    catalogForRuntime(canonical),
+    `${alias} should resolve the canonical ${canonical} model catalog`,
+  );
+  assert.equal(
+    defaultModelForRuntime(alias),
+    defaultModelForRuntime(canonical),
+    `${alias} should inherit the canonical ${canonical} default model`,
+  );
 }
 
 // Provider-backed runtimes expose a menu sourced from their provider.
@@ -199,6 +221,15 @@ assert.equal(openclaw.allowCustom, true, "free-text must stay allowed when there
 assert.equal(defaultModelForRuntime("codex"), "openai/gpt-5.6-sol");
 assert.equal(defaultModelForRuntime("hermes"), "openai/gpt-5.6-sol", "Hermes should default to the first authenticated model");
 assert.equal(defaultModelForRuntime("openclaw"), "openai/gpt-5.6-sol", "OpenClaw should inherit a real global default, not openclaw-local");
+assert.equal(runtimeOwnsModelDefault("codex"), false);
+assert.equal(runtimeOwnsModelDefault("hermes"), true);
+assert.equal(runtimeOwnsModelDefault("grok"), true);
+assert.equal(runtimeOwnsModelDefault("opencode"), true);
+assert.equal(runtimeOwnsModelDefault("opencode-ai"), true, "OpenCode package aliases preserve runtime-owned defaults");
+assert.equal(runtimeOwnsModelDefault("openclaw"), true);
+assert.equal(modelForRuntimeSwitch("codex"), "openai/gpt-5.6-sol");
+assert.equal(modelForRuntimeSwitch("hermes"), "");
+assert.equal(modelForRuntimeSwitch("hermes", "nous/hermes-4"), "nous/hermes-4");
 
 // Unknown runtimes have no catalog.
 assert.equal(catalogForRuntime("nonexistent"), null);
@@ -276,6 +307,11 @@ assert.equal(
 // Revalidate the transformed argv value so stripping cannot expose a CLI flag;
 // nested ids remain valid after their first provider segment is removed.
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/team/model"), "team/model");
+assert.equal(
+  runtimeModelIdForLaunch("opencode", "openrouter/~anthropic/claude-opus-latest"),
+  "openrouter/~anthropic/claude-opus-latest",
+  "OpenCode launch validation should preserve authenticated tilde-prefixed provider aliases",
+);
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/--allow-all-tools"), null);
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/../escape"), null);
 assert.equal(runtimeModelIdForLaunch("copilot", null), null);

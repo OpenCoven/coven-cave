@@ -119,8 +119,8 @@ assert.match(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: \{ thinkingEffort, responseSpeed, \.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\) \},[\s\S]*?\}\)/,
-  "HomeComposer should hand the selected project root, initial command controls, and any host pick to chat start",
+  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: runtimeHost \? \{ runtimeHost \} : undefined,[\s\S]*?\}\)/,
+  "HomeComposer should hand the selected project root and any host pick to chat start without inventing response controls",
 );
 
 assert.match(
@@ -149,20 +149,20 @@ assert.match(
 
 assert.match(
   source,
-  /\.\.\.\(runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?options: runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\),[\s\S]*?handleSelectModel\(id\)/,
-  "the Options menu Model section lists the selected runtime's available inventory and is omitted for runtime-managed runtimes",
+  /\.\.\.\(runtimeOwnsDefault \|\| runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?"Runtime default"[\s\S]*?runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\)[\s\S]*?handleSelectModel\(id \|\| null\)/,
+  "the Options menu Model section lists inventory and exposes the runtime-owned default as a real choice",
 );
 
 assert.match(
   source,
-  /const runtimeModelOptions = useRuntimeModelOptions\(selectedRuntime, selectedFamiliarId\);/,
+  /const runtimeModelInventory = useRuntimeModelInventory\(selectedRuntime, selectedFamiliarId\);[\s\S]*const runtimeModelOptions = runtimeModelInventory\.models;/,
   "HomeComposer discovers OpenCode models with the selected familiar's scoped credentials",
 );
 
 assert.match(
   source,
-  /runtimeModelOptions\.length === 0\s*\?\s*""[\s\S]*?runtimeModelOptions\.some/,
-  "HomeComposer should keep runtime-managed runtimes selected when their catalog has no model options",
+  /effectiveModel &&[\s\S]*?\(runtimeOwnsDefault \|\|[\s\S]*?runtimeModelOptions\.some[\s\S]*?: runtimeOwnsDefault[\s\S]*?\? ""/,
+  "HomeComposer should keep runtime-owned runtimes on their configured default when no explicit model is selected",
 );
 
 assert.doesNotMatch(
@@ -179,7 +179,7 @@ assert.doesNotMatch(
 
 assert.match(
   modelStateHook,
-  /body: JSON\.stringify\(\{[\s\S]*?\[selectedFamiliarId\]: \{ harness: runtime, model: nextModel \},[\s\S]*?\}\)/,
+  /body: JSON\.stringify\(\{[\s\S]*?\[selectedFamiliarId\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel \|\| null,[\s\S]*?\}\)/,
   "useHomeModelState should persist runtime and model together when the combined selector changes runtime",
 );
 
@@ -209,8 +209,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: \{ thinkingEffort, responseSpeed, \.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\) \},[\s\S]*?\}\)/,
-  "HomeComposer should hand the selected agent chat prompt, command controls, and any host pick to the workspace, which opens a new chat that auto-sends it",
+  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: runtimeHost \? \{ runtimeHost \} : undefined,[\s\S]*?\}\)/,
+  "HomeComposer should hand the selected agent chat prompt, attachments, and any host pick to the workspace; selected-model controls resolve in Chat",
 );
 
 assert.match(
@@ -245,37 +245,13 @@ assert.doesNotMatch(
   "HomeComposer toolbar dropdowns should be custom popovers, not native selects",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /COMMAND_THINKING_OPTIONS/,
-  "HomeComposer should use shared thinking effort options",
+  /COMMAND_THINKING_OPTIONS|COMMAND_RESPONSE_SPEED_OPTIONS|label: "Speed"/,
+  "HomeComposer must not present retired global Thinking or Speed controls before a model capability is known",
 );
 
-assert.match(
-  source,
-  /const \[thinkingEffort, setThinkingEffort\] = useState<CommandThinkingEffort>\(\s*COMMAND_CONTROL_DEFAULTS\.thinkingEffort,\s*\)/,
-  "HomeComposer should initialise thinking effort from shared command control defaults",
-);
-
-assert.match(
-  source,
-  /const \[responseSpeed, setResponseSpeed\] = useState<CommandResponseSpeed>\(\s*COMMAND_CONTROL_DEFAULTS\.responseSpeed,\s*\)/,
-  "HomeComposer should initialise response speed from shared command control defaults",
-);
-
-assert.match(
-  source,
-  /id: "thinking",[\s\S]*?label: "Thinking",[\s\S]*?COMMAND_THINKING_OPTIONS/,
-  "the Options menu exposes the shared thinking-effort options",
-);
-
-assert.match(
-  source,
-  /id: "speed",[\s\S]*?label: "Speed",[\s\S]*?COMMAND_RESPONSE_SPEED_OPTIONS/,
-  "the Options menu exposes the shared response-speed options",
-);
-
-// Speed control removed from toolbar (response speed passed via initialControls default).
+// Selected-model response controls resolve in Chat after capability negotiation.
 
 assert.match(
   source,
@@ -782,6 +758,6 @@ assert.match(
 
 assert.match(
   source,
-  /selectedRuntime === "opencode"[\s\S]*?modelState\?\.effectiveModel[\s\S]*?: ""[\s\S]*?runtimeModelOptions\.length === 0/,
-  "OpenCode without an explicit model keeps the CLI default instead of displaying the first discovered model",
+  /const runtimeOwnsDefault = runtimeModelInventory\.defaultOwner === "runtime";[\s\S]*?const effectiveModel =[\s\S]*?const selectedModelId =[\s\S]*?: runtimeOwnsDefault[\s\S]*?\? ""[\s\S]*?: runtimeModelOptions\[0\]\?\.id/,
+  "the shared inventory owns default semantics, so a runtime-owned adapter never displays its first discovered model as the default",
 );

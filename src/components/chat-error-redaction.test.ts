@@ -13,6 +13,16 @@ assert.match(source, /onClick=\{\(\) => copy\(detailText\)\}/, "copy only receiv
 assert.match(source, /parseHarnessFailure\(recoveryText\)/, "recovery can classify raw failures without rendering them");
 assert.match(source, /input and output are withheld to protect project data/, "tool I/O is explicitly withheld in the UI");
 assert.match(source, /detail is withheld to protect project data/, "step detail is explicitly withheld in the UI");
+assert.match(
+  source,
+  /function safeRuntimeProcessDetail[\s\S]*?runtime diagnostic output was withheld to protect local data/,
+  "only the fixed runtime-process exit-code diagnostic may be disclosed",
+);
+assert.match(
+  source,
+  /safeRuntimeProcessDetail\(p\) \?\? "A runtime step failed\. Its detail is withheld to protect project data\."/,
+  "the diagnostics view falls back to withholding every unrecognized step detail",
+);
 
 const errorStrip = source.slice(source.indexOf("function ChatErrorStrip"), source.indexOf("function AuthFixRow"));
 assert.doesNotMatch(errorStrip, /<pre className=\{pre\}>\{t\.(?:input|output)\}<\/pre>/, "raw tool I/O is not rendered");

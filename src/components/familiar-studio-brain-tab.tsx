@@ -8,11 +8,10 @@ import {
 } from "@/lib/daemon-sync-status";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
-import { isBindableRuntimeChoice } from "@/lib/harness-adapters";
+import { canonicalHarnessId, isBindableRuntimeChoice } from "@/lib/harness-adapters";
 import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
-import { catalogForRuntime } from "@/lib/runtime-models";
 import type { RuntimeModelOption } from "@/lib/grok-build";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
@@ -272,22 +271,18 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  const defaultHarnessId = familiar.defaultHarness ?? familiar.harness ?? "";
+  const defaultHarnessId = canonicalHarnessId(familiar.defaultHarness ?? familiar.harness ?? "");
   const defaultHarnessLabel = runtimeLabel(defaultHarnessId, harnesses);
-  const harnessId = draftHarness || defaultHarnessId;
-  const selectedHarnessAvailability = harnesses.find((item) => item.id === harnessId)?.availability;
+  const harnessId = canonicalHarnessId(draftHarness || defaultHarnessId);
+  const selectedHarnessAvailability = harnesses.find(
+    (item) => canonicalHarnessId(item.id) === harnessId,
+  )?.availability;
 
-  // Model parity: source the per-familiar model menu from the same runtime →
-  // provider catalog the chat picker uses. allowCustom keeps the free-text
-  // field as the escape hatch for ids not in the curated seed.
-  const modelCatalog = catalogForRuntime(harnessId);
-  const liveRuntimeModels = harnesses.find((item) => item.id === harnessId)?.models ?? [];
-  // Grok Build exposes models from the authenticated local CLI. Prefer that
-  // catalog over a compile-time seed so Studio never offers unavailable xAI
-  // models; OpenCode retains its own authenticated runtime inventory.
-  const runtimeModelOptions = useRuntimeModelOptions(harnessId, familiar.id);
-  const modelOptions = harnessId === "grok" ? liveRuntimeModels : runtimeModelOptions;
-  const allowCustomModel = modelCatalog?.allowCustom ?? true;
+  // Model parity: source options and free-type capability from the same live,
+  // familiar-scoped inventory used by chat and task model pickers.
+  const runtimeModelInventory = useRuntimeModelInventory(harnessId, familiar.id);
+  const modelOptions = runtimeModelInventory.models;
+  const allowCustomModel = runtimeModelInventory.allowCustom;
   const draftModelIsListed = modelOptions.some((option) => option.id === draftModel);
   // "" means Inherit default — only a non-empty unlisted id (or the user
   // explicitly picking Custom...) should switch the select to Custom.
@@ -875,12 +870,14 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               </label>
 
               <label className="familiar-studio-brain__row">
-                <span className="familiar-studio-brain__label">Model</span>
+                <span className="familiar-studio-brain__label">Model · {inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}</span>
                 <div className="familiar-studio-brain__control">
-                  {modelOptions.length > 0 ? (
+                  {runtimeModelInventory.loading ? (
+                    <p className="familiar-studio-brain__hint" role="status">Loading model inventory…</p>
+                  ) : modelOptions.length > 0 || !allowCustomModel ? (
                     <StandardSelect
                       label="Model"
-                      value={modelIsCustom ? "__custom__" : draftModel}
+                      value={modelIsCustom && allowCustomModel ? "__custom__" : draftModel}
                       onChange={(next) => {
                         if (next === "__custom__") {
                           setModelCustomMode(true);
@@ -894,12 +891,19 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                       className="familiar-studio-brain__input"
                       options={[
                         { value: "", label: "Inherit default" },
+                        ...(modelIsCustom && draftModel && !allowCustomModel
+                          ? [{
+                              value: draftModel,
+                              label: `${draftModel} (not offered)`,
+                              disabled: true,
+                            }]
+                          : []),
                         ...modelOptions.map((option) => ({ value: option.id, label: option.label })),
                         ...(allowCustomModel ? [{ value: "__custom__", label: "Custom..." }] : []),
                       ]}
                     />
                   ) : null}
-                  {allowCustomModel && (modelOptions.length === 0 || modelIsCustom) ? (
+                  {!runtimeModelInventory.loading && allowCustomModel && (modelOptions.length === 0 || modelIsCustom) ? (
                     <input
                       type="text"
                       value={draftModel}

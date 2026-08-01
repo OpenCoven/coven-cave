@@ -66,11 +66,11 @@ test("hero selects edit the live binding through the canonical /api/config write
   );
   // The three live selects, sourced from canonical live inventories — no second mapping.
   assert.match(src, /label="Runtime"[\s\S]{0,150}?options=\{runtimeOptions\}/, "Runtime select");
-  assert.match(src, /label="Model"[\s\S]{0,150}?options=\{modelOptions\}/, "Model select");
+  assert.match(src, /label=\{`Model · \$\{inventoryProvenanceLabel[\s\S]{0,220}?options=\{modelOptions\}/, "Model select");
   assert.match(src, /label="Voice"[\s\S]{0,150}?options=\{voiceOptions\}/, "Voice select");
   assert.match(
     src,
-    /useRuntimeModelOptions\(effectiveHarness, familiar\.id\)/,
+    /useRuntimeModelInventory\(effectiveHarness, familiar\.id\)[\s\S]*inventoryProvenanceLabel/,
     "models come from the shared familiar-scoped runtime inventory",
   );
   assert.match(src, /listVoiceProviders\(\)/, "voice providers come from the canonical voice registry");

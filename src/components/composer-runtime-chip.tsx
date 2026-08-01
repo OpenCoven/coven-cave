@@ -18,7 +18,11 @@ import {
   PopoverLabel,
   PopoverSeparator,
 } from "@/components/ui/popover";
-import { RUNTIME_MODEL_CATALOG, type RuntimeModelOption } from "@/lib/runtime-models";
+import {
+  RUNTIME_MODEL_CATALOG,
+  runtimeOwnsModelDefault,
+  type RuntimeModelOption,
+} from "@/lib/runtime-models";
 import { RuntimeLogo, runtimeDisplayName } from "@/components/runtime-logo";
 import "@/styles/composer-runtime-chip.css";
 
@@ -53,9 +57,10 @@ export function ComposerRuntimePopover({
   modelValue: string;
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
-  onPickModel: (id: string) => void;
+  onPickModel: (id: string | null) => void;
 }) {
   const setOpen = onOpenChange;
+  const hasRuntimeDefault = runtimeOwnsModelDefault(runtime);
   return (
     <Popover
       open={open}
@@ -92,10 +97,21 @@ export function ComposerRuntimePopover({
               {runtimeDisplayName(catalog.runtime)}
             </PopoverItem>
           ))}
-          {modelOptions.length > 0 && (
+          {(hasRuntimeDefault || modelOptions.length > 0) && (
             <>
               <PopoverSeparator />
               <PopoverLabel>Model</PopoverLabel>
+              {hasRuntimeDefault ? (
+                <PopoverItem
+                  checked={!modelValue}
+                  onSelect={() => {
+                    if (modelValue) onPickModel(null);
+                    setOpen(false);
+                  }}
+                >
+                  Runtime default
+                </PopoverItem>
+              ) : null}
               {modelOptions.map((m) => (
                 <PopoverItem
                   key={m.id}
@@ -131,7 +147,7 @@ export function ComposerRuntimeChip({
   /** Curated models for the active runtime (catalogForRuntime). */
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
-  onPickModel: (id: string) => void;
+  onPickModel: (id: string | null) => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -140,7 +156,10 @@ export function ComposerRuntimeChip({
   const runtimeName = runtimeDisplayName(runtime);
   // The chip shows the model when the runtime has one, else the runtime name
   // alone — hermes/openclaw run their own adapters without a curated menu.
-  const modelLabel = runtimeModelLabel(modelValue, modelOptions);
+  const modelLabel =
+    !modelValue && runtimeOwnsModelDefault(runtime)
+      ? "Runtime default"
+      : runtimeModelLabel(modelValue, modelOptions);
 
   return (
     <>

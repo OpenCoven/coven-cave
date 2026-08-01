@@ -247,6 +247,59 @@ test("running reconciliation carries real Flow phase progress", async () => {
   ]);
 });
 
+test("a finished run without its primary artifact fails instead of masquerading as a checkpoint", async () => {
+  const runner = makeResearchMissionRunner(deps({
+    loadFlowRun: async () => ({ ...RUN, status: "succeeded", finishedAt: NOW.toISOString() }),
+    // This reproduces a direct session that was reported finished but never
+    // persisted its transcript or wrote the mission workspace.
+    loadConversation: async () => null,
+    readMissionFile: async () => null,
+  }));
+  const started = await runner.createAndStart(INPUT);
+  const result = await runner.reconcile(started);
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.iterations[0].status, "failed");
+  assert.equal(result.iterations[0].decision, undefined);
+  assert.match(result.lastError ?? "", /artifacts\/primary\.md/);
+  assert.ok(allowedResearchActions(result).includes("retry"));
+  assert.ok(!allowedResearchActions(result).includes("continue"));
+});
+
+test("a reviewable primary artifact still creates a checkpoint", async () => {
+  const conversation = {
+    sessionId: "session-1",
+    familiarId: "sage",
+    harness: "codex",
+    createdAt: NOW.toISOString(),
+    updatedAt: NOW.toISOString(),
+    turns: [{
+      id: "turn-1",
+      role: "assistant",
+      text: [
+        "@@research-control",
+        '{"decision":"checkpoint","reason":"Review the evidence","confidence":0.7}',
+        "@@research-artifacts-written",
+      ].join("\n"),
+      createdAt: NOW.toISOString(),
+    }],
+  } satisfies ConversationFile;
+  const runner = makeResearchMissionRunner(deps({
+    loadFlowRun: async () => ({ ...RUN, status: "succeeded", finishedAt: NOW.toISOString() }),
+    loadConversation: async () => conversation,
+    readMissionFile: async (_id, relativePath) => (
+      relativePath === "artifacts/primary.md" ? "# Evidence-backed draft\n" : null
+    ),
+  }));
+  const started = await runner.createAndStart(INPUT);
+  const result = await runner.reconcile(started);
+
+  assert.equal(result.status, "checkpoint");
+  assert.equal(result.iterations[0].status, "checkpoint");
+  assert.equal(result.lastError, undefined);
+  assert.ok(allowedResearchActions(result).includes("continue"));
+});
+
 test("successful evidence reconciliation publishes every provenance-rich artifact", async () => {
   const published: string[] = [];
   const conversation = {
@@ -801,12 +854,30 @@ test("finish surfaces publish failures without blocking completion", async () =>
   assert.equal(primary?.state, "published");
 });
 
-test("finish degrades an unreadable primary instead of 500ing after pauseAutomation (cave-v73d)", async () => {
+test("finish makes a missing primary retryable instead of completing a partial artifact set", async () => {
+  let stored = checkpointMission();
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    readMissionFile: async () => null,
+  }));
+  const result = await runner.act(stored.id, { action: "finish" });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.iterations.at(-1)?.status, "failed");
+  assert.equal(result.iterations.at(-1)?.decision, undefined);
+  assert.match(result.lastError ?? "", /artifacts\/primary\.md/);
+  assert.ok(allowedResearchActions(result).includes("retry"));
+  assert.ok(!allowedResearchActions(result).includes("continue"));
+  for (const artifact of result.artifacts) assert.equal(artifact.state, "working");
+});
+
+test("finish makes an unreadable primary retryable instead of 500ing after pauseAutomation (cave-v73d)", async () => {
   // A symlinked/oversized/escaping primary makes the store throw. Because finish
   // has already run pauseAutomation, a raw throw would 500 the whole action and
-  // leave automation paused while the mission never settles. The read is now
-  // defensive: the primary degrades to a named publish failure and finish still
-  // completes — no throw escapes act().
+  // leave automation paused while the mission never settles. The read remains
+  // defensive: it settles to a retryable failure without publishing a partial
+  // artifact set.
   let stored = checkpointMission({
     artifacts: [
       { key: "primary", kind: "findings", title: "Iterative research", relativePath: "artifacts/primary.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
@@ -824,12 +895,13 @@ test("finish degrades an unreadable primary instead of 500ing after pauseAutomat
     },
   }));
   const result = await runner.act(stored.id, { action: "finish" });
-  assert.equal(result.status, "completed", "finish still settles despite the unreadable primary");
+  assert.equal(result.status, "failed", "finish settles despite the unreadable primary");
+  assert.ok(allowedResearchActions(result).includes("retry"));
   const primary = result.artifacts.find((artifact) => artifact.key === "primary");
   assert.notEqual(primary?.state, "published", "the unreadable primary is not published");
   const findings = result.artifacts.find((artifact) => artifact.key === "findings");
-  assert.equal(findings?.state, "published", "the readable refs still publish");
-  assert.match(result.lastError ?? "", /primary/, "the failed primary is named in the banner");
+  assert.equal(findings?.state, "working", "a partial artifact set is not published");
+  assert.match(result.lastError ?? "", /symlinks/, "the integrity failure is retained");
 });
 
 test("reject-artifact clears the stale publish-failure banner for the rejected ref (cave-o780)", async () => {

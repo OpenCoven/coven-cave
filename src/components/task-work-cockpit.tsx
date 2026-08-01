@@ -28,6 +28,7 @@ type Props = {
   /** A bridge-backed task whose conversation id is reserved before its first
    * send. ChatView starts it through the normal streaming path. */
   initialPrompt?: string | null;
+  initialModelOverride?: string;
   onSlashCommand?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
   onOpenUrl?: (url: string) => void;
@@ -45,6 +46,7 @@ export function TaskWorkCockpit({
   onSessionDeleted,
   onUnlinkSession,
   initialPrompt = null,
+  initialModelOverride,
   onSlashCommand,
   onOpenOnboarding,
   onOpenUrl,
@@ -175,6 +177,7 @@ export function TaskWorkCockpit({
             session={railSession}
             projectRoot={railProjectRoot ?? undefined}
             initialPrompt={initialPrompt}
+            initialModelOverride={initialModelOverride}
             autoSendInitialPrompt
             startNewConversation
             daemonRunning={daemonRunning}

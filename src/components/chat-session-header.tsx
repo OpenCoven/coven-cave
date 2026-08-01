@@ -6,6 +6,7 @@ import { chatProjectById } from "@/lib/chat-projects";
 import { archiveAction, sessionMenuSections, voiceAction, type SessionMenuItemId } from "@/lib/chat-session-menu-model";
 import { Icon } from "@/lib/icon";
 import { useShowThinking } from "@/lib/reasoning-visibility";
+import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { ProjectPickerPopover } from "@/components/project-picker";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
@@ -49,6 +50,7 @@ export function SessionOverflowMenu({
   const [open, setOpen] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [showThinking, setShowThinking] = useShowThinking();
+  const [instrumentsVisible, setInstrumentsVisible] = useThreadInstrumentsVisible();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const activeProject =
     (projectId ? chatProjectById(projectId, projects) : projects[0]) ?? null;
@@ -60,6 +62,7 @@ export function SessionOverflowMenu({
     projectRoot: activeProject?.root ?? null,
     hasTurns,
     showThinking,
+    instrumentsVisible,
     reflectAvailable: Boolean(onReflect),
     reflecting,
   });
@@ -84,6 +87,10 @@ export function SessionOverflowMenu({
     },
     thinking: () => {
       setShowThinking(!showThinking);
+      close();
+    },
+    instruments: () => {
+      setInstrumentsVisible(!instrumentsVisible);
       close();
     },
     reflect: () => {
@@ -278,6 +285,7 @@ export function ChatTitleEditable({
   displayTitleOverride,
   onSessionsChanged,
   headline = false,
+  generateTitle,
 }: {
   session: SessionRow;
   /** When set, displayed in place of session.title (e.g. to hide a raw
@@ -289,8 +297,14 @@ export function ChatTitleEditable({
   /** Render as a full-width all-caps headline row above the context chips
    *  instead of an inline title inside the session chip. */
   headline?: boolean;
+  /** Derives a fresh title from the live transcript (cave-quiva). Supplied by
+   *  the surface that actually holds the turns; when omitted the sparkle is
+   *  not rendered, so title rows without a transcript in scope degrade to the
+   *  manual pencil rather than shipping a control that can only no-op. */
+  generateTitle?: () => string | null;
 }) {
   const [editing, setEditing] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const baseTitle = displayTitleOverride ?? session.title ?? "";
   const [value, setValue] = useState(baseTitle);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -314,21 +328,48 @@ export function ChatTitleEditable({
 
   const display = baseTitle || session.id;
 
+  // A resolved fetch is not a successful one: the local-origin gate answers 403
+  // and a rejected patch answers { ok: false }. Refreshing on those would paint
+  // the rename as applied when the server refused it, so the refresh is gated
+  // on a genuine success and anything else falls through to the sessions poll.
+  const patchTitle = async (title: string) => {
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      const json = await res.json().catch(() => ({ ok: res.ok }));
+      if (!res.ok || json?.ok === false) return;
+      onSessionsChanged?.();
+    } catch {
+      /* transient — next sessions poll will reconcile */
+    }
+  };
+
   const submit = async () => {
     if (submittedRef.current) return;
     submittedRef.current = true;
     const trimmed = value.trim();
     setEditing(false);
     if (trimmed === (session.title ?? "").trim()) return;
+    await patchTitle(trimmed);
+  };
+
+  // Regenerate the name from the transcript. The derivation is pure and
+  // synchronous (chat-title-generation.ts) — the visible "generating" state
+  // covers the PATCH, not the naming. A null derivation means the thread has
+  // nothing to name itself after yet, so the current title is left alone
+  // rather than blanked.
+  const generate = async () => {
+    if (generating) return;
+    const next = generateTitle?.()?.trim();
+    if (!next) return;
+    setGenerating(true);
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: trimmed }),
-      });
-      onSessionsChanged?.();
-    } catch {
-      /* transient — next sessions poll will reconcile */
+      if (next !== (session.title ?? "").trim()) await patchTitle(next);
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -378,9 +419,34 @@ export function ChatTitleEditable({
 
   return (
     <span className={headline ? "cave-chat-title flex w-full min-w-0 items-center gap-1.5" : "cave-chat-title flex min-w-0 flex-1 items-center gap-1"}>
+      {/* cave-quiva: name-this-chat leads the title row. The glyph stays hidden
+          until hover/focus so a settled header reads title-first; the control
+          is only rendered when a transcript is actually in scope.
+          aria-disabled rather than disabled: a disabled button loses focus the
+          instant it flips, dropping a keyboard user who pressed Enter back to
+          the body. Re-entry is already blocked in the handler, so the native
+          disable buys nothing and costs the focus ring. */}
+      {generateTitle ? (
+        <button
+          type="button"
+          className="cave-chat-title-spark focus-ring"
+          data-generating={generating ? "true" : undefined}
+          title={generating ? "Generating name" : "Generate name"}
+          aria-label={generating ? "Generating name" : "Generate name"}
+          aria-busy={generating || undefined}
+          aria-disabled={generating || undefined}
+          onClick={(e) => {
+            e.stopPropagation();
+            void generate();
+          }}
+        >
+          <Icon name="ph:sparkle" width={11} aria-hidden />
+        </button>
+      ) : null}
       <button
         type="button"
         className={buttonClassName}
+        data-generating={generating ? "true" : undefined}
         title={`${display} — click to rename`}
         onClick={(e) => {
           e.stopPropagation();

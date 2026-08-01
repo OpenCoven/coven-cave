@@ -6,6 +6,7 @@ import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
+import type { ModelControlValues } from "./model-control-capabilities.ts";
 import type { GrokSandboxProfile } from "./grok-build.ts";
 import type { SessionOrigin } from "./types.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
@@ -63,7 +64,13 @@ export type ChatTurn = {
    *  refresh/duplicate a transcript and still retry with the original intent. */
   reasoningEffort?: "low" | "medium" | "high";
   responseSpeed?: "fast" | "balanced" | "careful";
+  /** Selected-model controls. Legacy reasoningEffort/responseSpeed remain
+   * readable for old transcripts but new turns persist this typed map. */
+  modelControls?: ModelControlValues;
   modelOverride?: string;
+  /** Explicit runtime-default intent has no model id, so retain its scope for
+   * transcript reload, duplication, and retry. */
+  modelOverrideScope?: "runtime-default";
   responseMetadata?: ChatResponseMetadata;
   origin?: "chat" | "voice";
   voiceCallId?: string;
@@ -316,7 +323,9 @@ export type ConversationStubSeed = {
     attachments?: import("./chat-attachments").ChatAttachment[];
     reasoningEffort?: ChatTurn["reasoningEffort"];
     responseSpeed?: ChatTurn["responseSpeed"];
+    modelControls?: ChatTurn["modelControls"];
     modelOverride?: string;
+    modelOverrideScope?: ChatTurn["modelOverrideScope"];
   };
 };
 
@@ -361,8 +370,14 @@ export async function createConversationStub(seed: ConversationStubSeed): Promis
           ...(seed.userTurn.responseSpeed
             ? { responseSpeed: seed.userTurn.responseSpeed }
             : {}),
+          ...(seed.userTurn.modelControls && Object.keys(seed.userTurn.modelControls).length > 0
+            ? { modelControls: seed.userTurn.modelControls }
+            : {}),
           ...(seed.userTurn.modelOverride
             ? { modelOverride: seed.userTurn.modelOverride }
+            : {}),
+          ...(seed.userTurn.modelOverrideScope === "runtime-default"
+            ? { modelOverrideScope: "runtime-default" as const }
             : {}),
           createdAt: now,
           parentId: null,

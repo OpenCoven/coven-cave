@@ -44,6 +44,15 @@ assert.doesNotMatch(
 );
 assert.match(listRoute, /export async function POST\(req: Request\)/, "projects route should expose POST");
 assert.match(listRoute, /name and root are required/, "POST /api/projects should validate required fields");
+// cave-8e7q: the display name is presentation text, never a connection
+// identifier — identity is id + root. Trimming the ends is the ONLY normalizing
+// allowed, so interior spaces in a name like `My Project Two` reach the store
+// intact. A slugify/tokenize step added here is what originally mangled it.
+assert.match(
+  listRoute,
+  /const\s+name\s*=\s*String\(body\.name\s*\?\?\s*""\)\.trim\(\);/,
+  "POST /api/projects should store the display name with only its ends trimmed",
+);
 assert.match(listRoute, /isAllowedNewProjectRoot\(root\)/, "POST /api/projects should validate roots before persisting them");
 assert.equal(
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,

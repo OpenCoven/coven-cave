@@ -27,7 +27,10 @@ import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 import type { CreateProjectOptions } from "@/lib/chat-add-project";
 import { projectAccessLabel } from "@/lib/project-access-levels";
-import type { RuntimeModelOption } from "@/lib/runtime-models";
+import {
+  runtimeOwnsModelDefault,
+  type RuntimeModelOption,
+} from "@/lib/runtime-models";
 
 export type ComposerContextView = null | "project" | "model" | "branch";
 
@@ -48,7 +51,7 @@ export type ComposerContextProps = {
   modelValue: string;
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
-  onPickModel: (id: string) => void;
+  onPickModel: (id: string | null) => void;
   /** Chat disables model switching while streaming (runtime-chip parity). */
   modelDisabled?: boolean;
   /** Enables the branch chip for repo-rooted chats (undefined/non-repo
@@ -91,7 +94,10 @@ export function useComposerContextActions(config: ComposerContextProps) {
   });
 
   const runtimeName = runtimeDisplayName(config.runtime);
-  const modelLabel = runtimeModelLabel(config.modelValue, config.modelOptions);
+  const modelLabel =
+    !config.modelValue && runtimeOwnsModelDefault(config.runtime)
+      ? "Runtime default"
+      : runtimeModelLabel(config.modelValue, config.modelOptions);
 
   const root = config.projectRoot?.trim() ? config.projectRoot : undefined;
   const { loaded, notARepo, branch, count, worktree, reload } = useChangesSummary(

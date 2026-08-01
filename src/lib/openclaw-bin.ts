@@ -21,6 +21,10 @@ import { isVaultKeyGrantedTo, loadVaultMap } from "./vault";
 
 let cachedBin: string | null = null;
 
+export type OpenClawLaunchCommand = CovenLaunchCommand & {
+  requiredFiles?: string[];
+};
+
 const FORBIDDEN_SPAWN_ENV_KEYS = new Set(["GITHUB_PAT"]);
 // The Gateway dispatcher reads these only in Cave's server process. They must
 // never cross the fallback boundary, even if a broad harness allow-list was
@@ -122,13 +126,17 @@ export function openClawSupportsUntrustedArgs(bin = openClawBin()): boolean {
  * shims are batch files, but their final target is a JavaScript entry point;
  * resolve that target and execute it with the running Node binary instead.
  */
-export function openClawLaunchCommandForBinary(binary: string): CovenLaunchCommand {
+export function openClawLaunchCommandForBinary(binary: string): OpenClawLaunchCommand {
   const shimPlatform = /\.(cmd|bat)$/i.test(binary) ? "win32" : process.platform;
-  return covenLaunchCommandForBinary(binary, shimPlatform);
+  const launch = covenLaunchCommandForBinary(binary, shimPlatform);
+  return {
+    ...launch,
+    ...(launch.fixedArgs.length > 0 ? { requiredFiles: [launch.fixedArgs.at(-1)!] } : {}),
+  };
 }
 
 /** A spawn-safe OpenClaw command for either a native executable or npm shim. */
-export function openClawLaunchCommand(): CovenLaunchCommand {
+export function openClawLaunchCommand(): OpenClawLaunchCommand {
   return openClawLaunchCommandForBinary(openClawBin());
 }
 

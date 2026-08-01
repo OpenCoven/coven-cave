@@ -173,7 +173,11 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     /command -v node/,
     "sidecar bundle script must copy the release runner's Node binary",
   );
-  assert.match(bundleScript, /whisper-runtime-bundle\.sh/, "sidecar bundle script must stage Whisper before packaging");
+  assert.match(
+    bundleScript,
+    /COVEN_CAVE_REFRESH_WHISPER=1 bash "\$ROOT\/scripts\/whisper-runtime-bundle\.sh"/,
+    "release packaging must refresh Whisper instead of trusting a local development cache",
+  );
   assert.match(whisperBundleScript, /whisper-bin-x64\.zip/, "Windows must stage a pinned Whisper CLI archive");
   assert.match(whisperBundleScript, /MSVCP140\.dll.*VCRUNTIME140\.dll.*VCRUNTIME140_1\.dll.*VCOMP140\.dll/, "Windows must ship Whisper's app-local MSVC runtime");
   assert.match(whisperBundleScript, /whisper-bin-ubuntu-x64\.tar\.gz/, "Linux must stage a pinned Whisper CLI archive");
@@ -192,6 +196,51 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   assert.doesNotMatch(whisperBundleScript, /install_name_tool -add_rpath/, "macOS Whisper must not add a duplicate CMake-provided rpath");
   assert.match(whisperBundleScript, /cp -P/, "Linux Whisper staging must preserve SONAME links");
   assert.match(whisperBundleScript, /checksum mismatch/, "Whisper artifact downloads must be hash-verified");
+  assert.match(
+    whisperBundleScript,
+    /COVEN_CAVE_REFRESH_WHISPER[\s\S]*?runtime_is_current[\s\S]*?exit 0/,
+    "a validated current Whisper runtime must skip network staging unless explicitly refreshed",
+  );
+  assert.match(
+    whisperBundleScript,
+    /MINGW\*\|MSYS\*\|CYGWIN\*\) WHISPER_CLI_NAME="whisper-cli\.exe"/,
+    "Windows cache validation must use the staged whisper-cli.exe name",
+  );
+  assert.match(
+    whisperBundleScript,
+    /\[ -x "\$LIVE_DEST\/\$WHISPER_CLI_NAME" \][\s\S]*?"\$LIVE_DEST\/\$WHISPER_CLI_NAME" --version/,
+    "cache validation must probe the platform-specific Whisper executable",
+  );
+  assert.match(
+    whisperBundleScript,
+    /STAGE_ROOT=.*\.whisper-staging[\s\S]*?mv "\$STAGE_DEST" "\$LIVE_DEST"/,
+    "Whisper must stage in a sibling directory before replacing the live runtime",
+  );
+  assert.match(
+    whisperBundleScript,
+    /PREVIOUS_DEST=""[\s\S]*?cleanup\(\)[\s\S]*?\[ -n "\$PREVIOUS_DEST" \][\s\S]*?\[ ! -e "\$LIVE_DEST" \][\s\S]*?mv "\$PREVIOUS_DEST" "\$LIVE_DEST"/,
+    "cleanup must restore the previous runtime when an interrupted swap leaves the live path absent",
+  );
+  assert.match(
+    whisperBundleScript,
+    /trap 'exit 130' INT[\s\S]*?trap 'exit 143' TERM[\s\S]*?trap 'exit 129' HUP/,
+    "signals must flow through EXIT rollback cleanup with their conventional statuses",
+  );
+  assert.match(
+    whisperBundleScript,
+    /local status=\$\?[\s\S]*?if ! rm -rf "\$PREVIOUS_DEST"[\s\S]*?if ! rm -rf "\$WORK" "\$STAGE_ROOT"[\s\S]*?exit "\$status"/,
+    "non-restoration cleanup failures must be reported without replacing the original exit status",
+  );
+  assert.match(
+    whisperBundleScript,
+    /could not restore the previous bundled Whisper runtime[\s\S]*?if \[ "\$status" -eq 0 \]; then[\s\S]*?status=1/,
+    "rollback failure must preserve an existing failure or signal status while making a successful exit fail",
+  );
+  assert.doesNotMatch(
+    whisperBundleScript,
+    /rm -rf "\$DEST"/,
+    "a failed fetch must never erase the last known-good Whisper runtime",
+  );
   assert.match(
     launcher,
     /fn find_node\(resource_dir: &Path\)/,

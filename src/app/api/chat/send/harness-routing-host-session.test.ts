@@ -71,7 +71,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const a = \["chat", "--source", "coven", "-Q"\];[\s\S]*a\.push\("--query", prompt\)/,
+  /const a = binding\.hermesProfile[\s\S]*?: \["chat", "--source", "coven", "-Q"\];[\s\S]*a\.push\("--query", prompt\)/,
   "Hermes direct chat must use quiet query mode so stdout contains the actual reply",
 );
 
@@ -85,6 +85,21 @@ assert.match(
   chatRoute,
   /if \(hermesDirect\) \{[\s\S]*?if \(hermesLaunchModel\) a\.push\("--model", hermesLaunchModel\);[\s\S]*?a\.push\("--query", prompt\)/,
   "An advertised Hermes --model flag must receive the registry-transformed launch id before the query",
+);
+assert.match(
+  chatRoute,
+  /binding\.hermesProfile[\s\S]*?\["-p", binding\.hermesProfile\.id, "chat", "--source", "coven", "-Q"\]/,
+  "a profile-bound Hermes familiar receives the documented per-command profile flag",
+);
+assert.match(
+  chatRoute,
+  /binding\.hermesProfile && \(binding\.harness !== "hermes" \|\| sshRuntime\)[\s\S]*?Hermes profile is local-only/,
+  "a persisted but unsupported Hermes profile binding fails instead of launching the wrong runtime",
+);
+assert.match(
+  chatRoute,
+  /if \(binding\.hasInvalidHermesProfileBinding\)[\s\S]*?Hermes profile binding is invalid/,
+  "a malformed persisted Hermes profile binding fails closed instead of falling back to Hermes's sticky profile",
 );
 
 assert.match(
@@ -202,8 +217,18 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*if \(openclawLaunch\.unresolvedWindowsShim\)[\s\S]*openclaw_unsafe_shell/,
-  "OpenClaw chat should fail closed when it cannot resolve a Windows npm shim's JavaScript target",
+  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*requiredFiles:\s*openclawLaunch\.requiredFiles,[\s\S]*openclawAvailability\.state !== "ready"/,
+  "OpenClaw chat should fail closed when the launch plan is not ready",
+);
+assert.match(
+  chatRoute,
+  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*unresolvedWindowsShim: openclawLaunch\.unresolvedWindowsShim === true/,
+  "OpenClaw chat should classify an unresolved Windows npm shim through the shared availability contract",
+);
+assert.match(
+  chatRoute,
+  /const openclawAvailability = evaluateRuntimeAvailability\(\{[\s\S]*runner: "openclaw"[\s\S]*command: openclawLaunch\.command[\s\S]*requiredFiles: openclawLaunch\.requiredFiles[\s\S]*\}\);[\s\S]*if \(openclawAvailability\.state !== "ready"\)[\s\S]*return;[\s\S]*spawn\(openclawLaunch\.command/,
+  "OpenClaw chat should use the shared passive availability gate before spawning",
 );
 
 assert.match(
@@ -226,8 +251,8 @@ assert.match(
 
 assert.match(
   openclawBridge,
-  /"agent"[\s\S]*"--agent"[\s\S]*agentId[\s\S]*"--message"[\s\S]*harnessPrompt[\s\S]*"--json"/,
-  "OpenClaw native chat should call openclaw agent with the resolved agent id and JSON output",
+  /executionMode === "local" \? \["--local"\] : \[\]/,
+  "OpenClaw native chat should keep the CLI Gateway route by default and select embedded mode explicitly",
 );
 
 assert.match(
@@ -251,7 +276,7 @@ assert.doesNotMatch(
 
 assert.match(
   chatRoute,
-  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*const spawnArgv = \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\];[\s\S]*spawn\(openclawLaunch\.command, spawnArgv,[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: false/,
+  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode\)[\s\S]*spawn\(openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openclawEnv,[\s\S]*shell: false/,
   "OpenClaw chat should invoke resolved npm shims through Node without shell parsing untrusted prompts",
 );
 
@@ -356,29 +381,19 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  chatRoute,
-  /reasoningEffort\?: string;/,
-  "Send body should accept the composer thinking control value",
-);
-assert.match(
-  chatRoute,
-  /responseSpeed\?: string;/,
-  "Send body should accept the composer speed control value",
-);
-assert.match(
   chatView,
-  /fetch\("\/api\/chat\/send"[\s\S]*body: JSON\.stringify\(\{[\s\S]*reasoningEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed/,
-  "ChatView should send selected Thinking and Speed controls through the existing chat send body",
+  /fetch\("\/api\/chat\/send"[\s\S]*body: JSON\.stringify\(\{[\s\S]*modelControls: controlsOverride\?\.modelControls \?\? modelControls/,
+  "ChatView should send the selected-model capability map through the chat send body",
 );
 assert.match(
   chatRoute,
-  /type OfflineChatQueuePayload = Pick<[\s\S]*\|\s*"reasoningEffort"[\s\S]*\|\s*"responseSpeed"/,
-  "Offline queued sends should preserve response controls from any composer surface",
+  /type OfflineChatQueuePayload = Pick<[\s\S]*\|\s*"modelControls"/,
+  "Offline queued sends should preserve selected-model controls",
 );
 assert.match(
   chatRoute,
-  /const payload: OfflineChatQueuePayload = \{[\s\S]*reasoningEffort: args\.body\.reasoningEffort,[\s\S]*responseSpeed: args\.body\.responseSpeed/,
-  "The send route should carry composer responseSpeed through offline queue payloads",
+  /const payload: OfflineChatQueuePayload = \{[\s\S]*modelControls: args\.body\.modelControls/,
+  "The send route should carry selected-model controls through offline queue payloads",
 );
 assert.match(
   modelHelpers,
@@ -386,14 +401,14 @@ assert.match(
   "Chat send model helpers should turn composer controls into harness-visible instructions",
 );
 assert.match(
-  modelHelpers,
-  /const speed = normalizeResponseSpeed\(body\.responseSpeed\)/,
-  "Chat send model helpers should continue accepting responseSpeed from all composer send bodies",
+  chatRoute,
+  /promptOnlyModelControls/,
+  "Chat send route should only turn explicitly prompt-only capabilities into prompt guidance",
 );
 assert.match(
   modelHelpers,
-  /export function persistedTurnControls\([\s\S]*reasoningEffort: normalizeReasoningEffort\(body\.reasoningEffort\),[\s\S]*responseSpeed: normalizeResponseSpeed\(body\.responseSpeed\),[\s\S]*cleanModelId\(retryModel\)/,
-  "Completed user turns should retain normalized controls and only a confirmed or routed retry model",
+  /export function persistedTurnControls\([\s\S]*body\.modelControls[\s\S]*modelControls: body\.modelControls[\s\S]*cleanModelId\(retryModel\)[\s\S]*modelOverrideScope === "runtime-default"/,
+  "Completed user turns should retain selected controls, a confirmed retry model, or model-less runtime-default intent",
 );
 assert.equal(
   (
@@ -401,8 +416,8 @@ assert.equal(
       /\.\.\.persistedTurnControls\((?:args\.body|body), responseMetadata\.retryModel\)/g,
     ) ?? []
   ).length,
-  4,
-  "OpenClaw and native stub plus transcript writers should persist retry controls",
+  6,
+  "OpenClaw, native stubs, and transcript writers should persist retry controls",
 );
 assert.match(
   chatRoute,

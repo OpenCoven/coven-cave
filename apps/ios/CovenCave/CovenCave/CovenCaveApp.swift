@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UserNotifications
 
 @main
@@ -83,9 +84,32 @@ struct CovenCaveApp: App {
                 // so it gets one cheap validation probe instead of blind trust.
                 .onChange(of: scenePhase) { _, phase in
                     // Leaving the foreground: flush any debounced thread
-                    // persistence synchronously so an in-flight write isn't
-                    // lost if the app is suspended or terminated.
-                    if phase != .active { app.flushThreads() }
+                    // persistence and WAIT for it, holding a background-task
+                    // assertion so the system grants time to finish (cave-2cpo).
+                    // The previous call was fire-and-forget: it returned the
+                    // instant the write task was spawned, so suspension could
+                    // freeze the process before the bytes landed — the comment
+                    // here claimed a durability the code never provided.
+                    if phase != .active {
+                        Task { @MainActor in
+                            // The assertion MUST be released on every path. If
+                            // background time runs out first the system kills
+                            // the app for over-holding it, so an expiration
+                            // handler releases it early; `defer` covers the
+                            // normal and cancelled paths. `release()` is
+                            // idempotent because both can fire.
+                            var assertion: UIBackgroundTaskIdentifier = .invalid
+                            func release() {
+                                guard assertion != .invalid else { return }
+                                UIApplication.shared.endBackgroundTask(assertion)
+                                assertion = .invalid
+                            }
+                            assertion = UIApplication.shared
+                                .beginBackgroundTask(withName: "cave.flushThreads") { release() }
+                            defer { release() }
+                            await app.flushThreadsAndWait()
+                        }
+                    }
                     guard phase == .active, app.connection != nil else { return }
                     if app.connectionState != .connected,
                        app.connectionState != .checking {

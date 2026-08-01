@@ -379,6 +379,8 @@ test("owner capability holds through postconditions and dies on tampering, expir
       heartbeatAt: new Date(Date.now() + MAX_SAFE_TEST_OFFSET).toISOString(),
     }),
   );
+  assert.equal(verifyMaintenanceGateOwnership(acquired.handle).reason, "clock-regressed");
+  assert.equal(maintenanceGateStatus(repo).gate.clockRegressed, true);
   assert.equal(
     heartbeatMaintenanceGate(acquired.handle).reason,
     "heartbeat-regressed",
@@ -498,6 +500,98 @@ test("promotion rechecks intents after a concurrent writer heartbeat", async () 
   rmSync(repo, { recursive: true, force: true });
 });
 
+test("deadline contention cleans up the exact owned draining gate", async () => {
+  const repo = makeRepo();
+  const intent = registerWriterIntent({ writerId: "blocked-writer", repoDir: repo });
+  assert.equal(intent.ok, true);
+  const acquireWorker = `
+    import { acquireMaintenanceGate } from ${JSON.stringify(moduleUrl.href)};
+    const result = acquireMaintenanceGate({
+      ownerId: "curator",
+      repoDir: process.argv[1],
+      quiesceTimeoutMs: 500,
+    });
+    console.log(JSON.stringify(result));
+  `;
+  const acquireChild = spawn(
+    process.execPath,
+    ["--input-type=module", "-e", acquireWorker, repo],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  const acquiredResult = collectChild(acquireChild);
+  await waitUntil(
+    () => maintenanceGateStatus(repo).gate?.phase === "draining",
+    "gate never entered draining phase",
+    30_000,
+  );
+
+  const ready = path.join(repo, "deadline-heartbeat-ready");
+  const proceed = path.join(repo, "deadline-heartbeat-proceed");
+  const heartbeatChild = spawnPausedMutation({
+    mode: "intent-heartbeat",
+    ready,
+    proceed,
+    payload: { lease: intent.lease },
+  });
+  const heartbeatResult = collectChild(heartbeatChild);
+  await waitUntil(() => existsSync(ready), "writer heartbeat never held the mutation lock");
+  const releasePause = new Promise((resolve) => {
+    setTimeout(() => {
+      writeFileSync(proceed, "proceed");
+      resolve();
+    }, 1_500);
+  });
+
+  const acquired = await acquiredResult;
+  await releasePause;
+  assert.equal((await heartbeatResult).ok, true);
+  assert.equal(acquired.reason, "quiesce-timeout");
+  assert.equal(maintenanceGateStatus(repo).gate, null);
+  assert.equal(releaseWriterIntent(intent.lease).ok, true);
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("clock regression during drain does not report timeout blockers", async () => {
+  const repo = makeRepo();
+  const intent = registerWriterIntent({ writerId: "clock-writer", repoDir: repo });
+  assert.equal(intent.ok, true);
+  const worker = `
+    import { acquireMaintenanceGate } from ${JSON.stringify(moduleUrl.href)};
+    const result = acquireMaintenanceGate({
+      ownerId: "curator",
+      repoDir: process.argv[1],
+      quiesceTimeoutMs: 5000,
+    });
+    console.log(JSON.stringify(result));
+  `;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", worker, repo], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const acquiredResult = collectChild(child);
+  await waitUntil(
+    () => maintenanceGateStatus(repo).gate?.phase === "draining",
+    "gate never entered draining phase",
+    30_000,
+  );
+
+  const gateFile = path.join(maintenanceGateRoot(repo), "gate.json");
+  const gate = JSON.parse(readFileSync(gateFile, "utf8"));
+  writeFileSync(
+    gateFile,
+    JSON.stringify({
+      ...gate,
+      heartbeatAt: new Date(Date.now() + MAX_SAFE_TEST_OFFSET).toISOString(),
+    }),
+  );
+
+  const acquired = await acquiredResult;
+  assert.equal(acquired.reason, "clock-regressed");
+  assert.equal(Object.hasOwn(acquired, "blockers"), false);
+  assert.equal(maintenanceGateStatus(repo).gate, null);
+  assert.equal(releaseWriterIntent(intent.lease).ok, true);
+  rmSync(repo, { recursive: true, force: true });
+});
+
 test("a gate is active when acquisition returns after a slow drain", async () => {
   const repo = makeRepo();
   const intent = registerWriterIntent({ writerId: "slow-writer", repoDir: repo });
@@ -537,13 +631,41 @@ test("a gate is active when acquisition returns after a slow drain", async () =>
 
 test("acquisition does not return success after its final audit outlives the lease", async () => {
   const repo = makeRepo();
+  // The lease must be alive at the promotion checkpoint (which reports a plain
+  // "expired") and dead at the final ownership audit (the only checkpoint that
+  // reports "expired-before-return"). Expiring it by sleeping made that a race
+  // the test could not win: acquisition's own file I/O between gate creation
+  // and the audit append measured 1.3s-4.4s on a loaded machine, so a short
+  // ttlMs died at promotion instead and the test failed ~1 run in 6. Raising
+  // ttlMs only moves the boundary, because the sleep has to outlast it.
+  //
+  // So stop racing the clock. Give the lease a ttl no setup delay can exhaust,
+  // and expire it exactly where this test means to — backdate heartbeatAt as
+  // the gate-acquired audit line is written, which is after promotion and
+  // before the final audit. gateExpired() is a plain heartbeatAt + ttlMs
+  // comparison and clockRegressed() only fires on FUTURE heartbeats, so a
+  // backdated one reads as unambiguously expired rather than merely late.
+  // Shift acquiredAt with it: validateGate requires heartbeatAt >= acquiredAt,
+  // so moving the heartbeat alone makes the gate malformed instead of expired,
+  // and the cleanup on the rejection path then fails with gate-cleanup-failed.
+  // This is what expireGate() above does; it has to be inlined here because the
+  // shim runs inside the spawned child, which shares no scope with this file.
+  const TTL_MS = 60_000;
   const worker = `
     import fs from "node:fs";
+    import path from "node:path";
     import { syncBuiltinESMExports } from "node:module";
     const originalAppend = fs.appendFileSync;
     fs.appendFileSync = (target, content, options) => {
       if (String(content).includes('"event":"gate-acquired"')) {
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+        fs.appendFileSync = originalAppend;
+        // audit.jsonl and gate.json share the gate root directory.
+        const gateFile = path.join(path.dirname(String(target)), "gate.json");
+        const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"));
+        const shiftMs = gate.ttlMs + 1000;
+        gate.acquiredAt = new Date(Date.parse(gate.acquiredAt) - shiftMs).toISOString();
+        gate.heartbeatAt = new Date(Date.parse(gate.heartbeatAt) - shiftMs).toISOString();
+        fs.writeFileSync(gateFile, JSON.stringify(gate, null, 2));
       }
       return originalAppend(target, content, options);
     };
@@ -552,7 +674,7 @@ test("acquisition does not return success after its final audit outlives the lea
     const result = gate.acquireMaintenanceGate({
       ownerId: "curator",
       repoDir: process.argv[1],
-      ttlMs: 100,
+      ttlMs: ${TTL_MS},
     });
     console.log(JSON.stringify(result));
   `;
@@ -562,6 +684,41 @@ test("acquisition does not return success after its final audit outlives the lea
   const acquired = await collectChild(child);
   assert.equal(acquired.ok, false);
   assert.equal(acquired.reason, "expired-before-return");
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("final verification failure cleans up its exact owned gate", async () => {
+  const repo = makeRepo();
+  const worker = `
+    import fs from "node:fs";
+    import path from "node:path";
+    import { syncBuiltinESMExports } from "node:module";
+    const originalAppend = fs.appendFileSync;
+    fs.appendFileSync = (target, content, options) => {
+      if (String(content).includes('"event":"gate-acquired"')) {
+        const gateFile = path.join(path.dirname(target), "gate.json");
+        const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"));
+        fs.writeFileSync(gateFile, JSON.stringify({
+          ...gate,
+          heartbeatAt: new Date(Date.now() + 60_000).toISOString(),
+        }));
+      }
+      return originalAppend(target, content, options);
+    };
+    syncBuiltinESMExports();
+    const gate = await import(${JSON.stringify(moduleUrl.href)});
+    const result = gate.acquireMaintenanceGate({
+      ownerId: "curator",
+      repoDir: process.argv[1],
+    });
+    console.log(JSON.stringify(result));
+  `;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", worker, repo], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const acquired = await collectChild(child);
+  assert.equal(acquired.reason, "clock-regressed");
+  assert.equal(maintenanceGateStatus(repo).gate, null);
   rmSync(repo, { recursive: true, force: true });
 });
 
@@ -647,6 +804,13 @@ test("writer lease heartbeat keeps a long-running mutation live", async () => {
       heartbeatAt: new Date(Date.now() + MAX_SAFE_TEST_OFFSET).toISOString(),
     }),
   );
+  const blocked = acquireMaintenanceGate({
+    ownerId: "curator",
+    repoDir: repo,
+    quiesceTimeoutMs: 100,
+  });
+  assert.equal(blocked.reason, "intent-clock-regressed");
+  assert.equal(maintenanceGateStatus(repo).gate, null);
   assert.equal(
     gate.heartbeatWriterIntent(intent.lease).reason,
     "heartbeat-regressed",

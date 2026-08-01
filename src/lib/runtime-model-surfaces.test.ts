@@ -32,49 +32,49 @@ for (const [name, contents, options] of [
 }
 
 assert.match(
-  home,
-  /resolveModelArg\(\s*args,\s*modelHarness,\s*runtimeModelOptions,\s*\)/,
-  "home /model resolution uses the live Claude, Copilot, or OpenCode inventory",
-);
-assert.match(
   chat,
-  /formatModelList\(\s*modelHarness,\s*current,\s*composerModelOptions,\s*\)/,
+  /formatModelList\(\s*modelHarness,\s*current,\s*composerModelOptions,\s*composerModelInventory\.allowCustom,\s*\)/,
   "chat /model listing uses the live runtime inventory",
 );
 assert.match(
-  chat,
-  /resolveModelArg\(\s*args,\s*modelHarness,\s*composerModelOptions,\s*\)/,
-  "chat /model resolution uses the live runtime inventory",
-);
-assert.match(
   quick,
-  /formatModelList\(\s*modelHarness,\s*modelOverride \?\? null,\s*runtimeModelOptions,\s*\)/,
+  /formatModelList\(\s*modelHarness,\s*modelOverride \?\? null,\s*runtimeModelOptions,\s*runtimeModelInventory\.allowCustom,\s*\)/,
   "quick-chat /model listing uses the live runtime inventory",
 );
 assert.match(
   quick,
-  /resolveModelArg\(\s*args,\s*modelHarness,\s*runtimeModelOptions,\s*\)/,
-  "quick-chat /model resolution uses the live runtime inventory",
+  /resolveModelArg\(\s*args,\s*modelHarness,\s*runtimeModelOptions,\s*runtimeModelInventory\.allowCustom,\s*\)/,
+  "quick-chat /model resolution uses the live runtime inventory and its custom-id capability",
+);
+assert.match(
+  home,
+  /resolveModelArg\(\s*args,\s*modelHarness,\s*runtimeModelOptions,\s*runtimeModelInventory\.allowCustom,\s*\)/,
+  "home /model resolution honors the full inventory custom-id capability",
+);
+assert.match(
+  chat,
+  /resolveModelArg\(\s*args,\s*modelHarness,\s*composerModelOptions,\s*composerModelInventory\.allowCustom,\s*\)/,
+  "chat /model resolution honors the full inventory custom-id capability",
 );
 
 assert.match(
   hero,
-  /useRuntimeModelOptions\(effectiveHarness, familiar\.id\)/,
+  /useRuntimeModelInventory\(effectiveHarness, familiar\.id\)[\s\S]*inventoryProvenanceLabel/,
   "the Familiar identity model picker uses the familiar-scoped live inventory",
 );
 assert.match(
   studio,
-  /useRuntimeModelOptions\(harnessId, familiar\.id\)/,
+  /useRuntimeModelInventory\(harnessId, familiar\.id\)[\s\S]*inventoryProvenanceLabel/,
   "Familiar Studio uses the same familiar-scoped live inventory",
 );
 assert.match(
   board,
-  /useRuntimeModelOptions\(modelHarness, currentFamiliar\?\.id \?\? null\)/,
+  /useRuntimeModelInventory\(modelHarness, currentFamiliar\?\.id \?\? null\)[\s\S]*inventoryProvenanceLabel/,
   "task model selection uses the live runtime inventory",
 );
 assert.match(
   modelState,
-  /listRuntimeModelOptions\(\s*state\.harness,\s*familiarId,/,
+  /listRuntimeModelInventory\(\s*state\.harness,\s*familiarId,/,
   "the aggregate model-state response gives non-web clients the same inventory",
 );
 

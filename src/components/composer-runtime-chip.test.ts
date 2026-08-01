@@ -42,8 +42,8 @@ assert.match(
 );
 assert.match(
   contextPill,
-  /const runtimeName = runtimeDisplayName\(config\.runtime\);[\s\S]*?const modelLabel = runtimeModelLabel\(config\.modelValue, config\.modelOptions\);/,
-  "triggerless context actions derive runtime/model labels once for the shared rows",
+  /const runtimeName = runtimeDisplayName\(config\.runtime\);[\s\S]*?!config\.modelValue && runtimeOwnsModelDefault\(config\.runtime\)[\s\S]*?"Runtime default"[\s\S]*?: runtimeModelLabel\(config\.modelValue, config\.modelOptions\);/,
+  "triggerless context actions derive runtime/model labels once and name a runtime-owned default explicitly",
 );
 assert.match(
   contextPill,
@@ -90,24 +90,41 @@ assert.match(
 // ── Runtime switching is real: familiar-level config, optimistic + refetch ──
 assert.match(
   chatView,
-  /const handleSelectRuntime = useCallback\(\s*\n\s*\(runtime: string\) => \{\s*\n\s*const nextModel = defaultModelForRuntime\(runtime\);/,
-  "a runtime pick lands with the runtime's default model (a bare harness flip would keep a foreign model id)",
+  /const handleSelectRuntime = useCallback\(\s*\n\s*\(runtime: string\) => \{\s*\n\s*const nextModel = modelForRuntimeSwitch\(runtime\);/,
+  "a runtime pick uses the runtime-switch policy instead of carrying a foreign model id",
 );
 assert.match(
   chatView,
-  /fetch\("\/api\/config", \{\s*\n\s*method: "PATCH",[\s\S]{0,200}?familiars: \{ \[familiar\.id\]: \{ harness: runtime, model: nextModel \} \}/,
+  /fetch\("\/api\/config", \{\s*\n\s*method: "PATCH",[\s\S]{0,300}?familiars: \{[\s\S]*?\[familiar\.id\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel \|\| null,/,
   "runtime switches persist through /api/config — the same channel the home composer's selectRuntime uses; the send route re-resolves the binding per turn, so the switch applies from the next message",
 );
 const selectRuntimeBlock = chatView.match(/const handleSelectRuntime = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
 assert.match(
   selectRuntimeBlock,
-  /setModelState\(\(current\) =>[\s\S]{0,300}?harness: runtime, effectiveModel: nextModel/,
+  /const optimistic: ChatModelState = \{[\s\S]{0,300}?harness: runtime,\s*\n\s*effectiveModel: nextModel,[\s\S]{0,300}?modelStateRef\.current = optimistic;\s*\n\s*setModelState\(optimistic\)/,
   "the chip flips optimistically before the network round-trip",
 );
 assert.match(
   selectRuntimeBlock,
   /finally \{\s*\n\s*await refreshModelState\(\);/,
   "the model-state refetch reconciles the optimistic flip (even when the PATCH fails)",
+);
+
+const selectModelBlock = chatView.match(/const handleSelectModel = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
+assert.match(
+  selectModelBlock,
+  /effectiveModel: modelId \?\? "",[\s\S]{0,160}?source: modelId \? \(sessionId \? "session" : "familiar-default"\) : "runtime-default"[\s\S]{0,260}?modelStateRef\.current = optimistic;\s*\n\s*setModelState\(optimistic\)/,
+  "clearing a model synchronously stages the runtime default before its PATCH",
+);
+assert.match(
+  selectModelBlock,
+  /if \(json\.ok && json\.state\) \{[\s\S]*?setModelState\(json\.state\);[\s\S]*?await refreshModelState\(\);/,
+  "a successful model selection refreshes capability controls from the authoritative state response",
+);
+assert.match(
+  chatView,
+  /const currentModelState = modelStateRef\.current;[\s\S]{0,500}?const modelOverrideForRequest =[\s\S]{0,300}?currentModelState\?\.source === "session"/,
+  "send snapshots the synchronously staged model state rather than the prior render",
 );
 
 // ── The chip face: runtime logo + model, one accessible name ─────────────────
@@ -128,8 +145,8 @@ assert.match(
 );
 assert.match(
   chip,
-  /modelOptions\.length > 0 && \([\s\S]*?<PopoverLabel>Model<\/PopoverLabel>/,
-  "the model group only renders for runtimes with a curated catalog (hermes/openclaw run their own adapters)",
+  /\(hasRuntimeDefault \|\| modelOptions\.length > 0\) && \([\s\S]*?<PopoverLabel>Model<\/PopoverLabel>[\s\S]*?Runtime default/,
+  "the model group exposes runtime-owned defaults even when no inventory is available",
 );
 
 // ── Two-step pick: a runtime pick keeps the menu open for the model pick ─────
@@ -170,8 +187,8 @@ assert.match(hostCss, /\.cave-composer-host-chip \{[\s\S]*?border-radius: var\(-
 
 assert.match(
   chatView,
-  /modelState\?\.effectiveModel && modelState\.effectiveModel !== "unknown"[\s\S]*?: modelHarness === "opencode"[\s\S]*?\? ""/,
-  "an unconfigured OpenCode chat shows the runtime default rather than an unselected inventory entry",
+  /modelState\?\.effectiveModel && modelState\.effectiveModel !== "unknown"[\s\S]*?: composerRuntimeOwnsDefault[\s\S]*?\? ""/,
+  "an unconfigured runtime-owned chat shows the runtime default rather than an unselected inventory entry",
 );
 
 console.log("composer-runtime-chip.test.ts: ok");

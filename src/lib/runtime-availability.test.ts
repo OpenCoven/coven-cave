@@ -239,7 +239,7 @@ try {
 
   // Verification matrix: binary absent from every discovery location →
   // missing, with per-runner install/PATH remediation.
-  for (const runner of ["coven", "codex", "copilot", "grok", "hermes", "opencode"] as const) {
+  for (const runner of ["coven", "codex", "copilot", "grok", "hermes", "opencode", "openclaw"] as const) {
     const missing = evaluateRuntimeAvailability({
       runner,
       command: runner === "coven" ? "coven" : runner,
@@ -264,12 +264,23 @@ try {
     );
   }
 
+  assert.equal(
+    runtimeLaunchFailedMessage("openclaw"),
+    "OpenClaw CLI failed to start. Check its installation and try again.",
+    "OpenClaw spawn races should use the shared value-free launch-failure contract",
+  );
+
   // The chat client's "Open Setup" recovery matches this exact phrase
   // (src/components/chat-view.test.ts); the availability gate must keep it.
   assert.match(
     missingRunnerMessage("coven"),
     /Coven CLI not found on PATH/,
     "Coven missing copy stays pinned to the client recovery matcher",
+  );
+  assert.equal(
+    runtimeLaunchFailedMessage("openclaw"),
+    "OpenClaw CLI failed to start. Check its installation and try again.",
+    "OpenClaw spawn races should use the shared value-free launch-failure contract",
   );
 
   const emptyPath = evaluateRuntimeAvailability({
@@ -483,6 +494,16 @@ try {
     runtimeProcessFailure("hermes").code,
     RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
     "a started Hermes process has a structured error distinct from availability",
+  );
+  assert.match(
+    runtimeProcessFailure("codex", { exitCode: 1, emittedDiagnostic: false }).message,
+    /Codex CLI exited with an error \(exit code 1\).*did not emit an error message.*local runtime configuration/i,
+    "a silent Codex/Coven exit names its safe exit code without guessing at authentication",
+  );
+  assert.doesNotMatch(
+    runtimeProcessFailure("codex", { exitCode: 1, emittedDiagnostic: true }).message,
+    /stderr|token|path/i,
+    "runtime process diagnostics report only that output was withheld, never its contents",
   );
 
   // A resolved npm shim may produce a direct Node + script launch. Both the

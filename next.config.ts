@@ -37,9 +37,19 @@ const nextConfig: NextConfig = {
   // inputs; packaged assets are copied explicitly by sidecar-bundle.sh.
   outputFileTracingExcludes: {
     "/*": [
+      "./.agents/**/*",
       "./.beads/**/*",
       "./.claude/**/*",
       "./.codex/**/*",
+      "./.design-sync/**/*",
+      // A route whose module graph reaches a `caveHome()`-derived path makes
+      // the tracer glob the checkout root, which pulls in every dot-entry it
+      // is not told to skip. `./.git/**/*` below covers a normal clone, where
+      // `.git` is a directory; in a git WORKTREE `.git` is a plain file, and
+      // only this bare entry excludes it.
+      "./.git",
+      "./.github/**/*",
+      "./.gitignore",
       "./.next/cache/**/*",
       "./.next/dev/**/*",
       "./src-tauri/**/*",

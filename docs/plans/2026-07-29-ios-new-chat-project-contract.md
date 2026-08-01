@@ -665,7 +665,7 @@ On an iPhone simulator verify:
 git diff --check
 git diff --stat origin/main...
 git status --short --branch
-git -C /Users/buns/Documents/GitHub/OpenCoven/coven-cave status --short --branch
+git -C /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave status --short --branch
 ```
 
 Expected: the feature worktree contains only this task; the canonical

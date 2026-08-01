@@ -29,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { ProjectPicker } from "@/components/project-picker";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Popover } from "@/components/ui/popover";
 import { SearchInput } from "@/components/ui/search-input";
@@ -42,6 +42,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
 import { Segmented } from "@/components/ui/settings-controls";
+import { consumeCovenGroupPending } from "@/lib/chat-tab-events";
 import { formatChatRecency, useDateTimePrefs } from "@/lib/datetime-format";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -254,7 +255,13 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   useEffect(() => {
     const loaded = loadGroups();
     setGroups(loaded);
-    if (loaded.length > 0) setActiveId(loaded[0].id);
+    // A chat promoted from the title row (cave-9xadi) names the coven it just
+    // created. Honour that explicitly rather than leaning on the most-recently-
+    // updated-first sort to put it at index 0 — the sort is a display order,
+    // not a promise about which coven the user asked for.
+    const requested = consumeCovenGroupPending();
+    const target = requested && loaded.some((g) => g.id === requested) ? requested : loaded[0]?.id;
+    if (target) setActiveId(target);
   }, []);
 
   // --- swap transcript when the active group changes ----------------------
@@ -985,7 +992,12 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            familiars: { [reply.familiarId]: { harness: runtime, model: defaultModelForRuntime(runtime) } },
+            familiars: {
+              [reply.familiarId]: {
+                harness: runtime,
+                model: modelForRuntimeSwitch(runtime) || null,
+              },
+            },
           }),
         });
         if (!res.ok) {

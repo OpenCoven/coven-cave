@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
 import {
   bindingFor,
   enqueueOfflineTravelItem,
@@ -9,6 +10,7 @@ import {
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { copilotStreamSpec, type RuntimeEventProtocolSchema } from "@/lib/copilot-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { familiarWorkspace } from "@/lib/coven-paths";
 import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
 import {
@@ -110,9 +112,12 @@ async function usesLocalCopilotWorkflowRuntime(
 ): Promise<boolean> {
   const config = await loadConfig();
   const familiarId = body.familiarId ?? workflow?.familiar ?? null;
-  const binding = familiarId
+  const initialBinding = familiarId
     ? bindingFor(config, familiarId)
     : { harness: config.defaults.harness, model: config.defaults.model };
+  const binding = !familiarId && runtimeOwnsModelDefault(initialBinding.harness)
+    ? { ...initialBinding, model: "" }
+    : initialBinding;
   const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
   const hubAuthority = config.multiHost?.mode === "hub";
   return binding.harness === "copilot" && !sshBound && !hubAuthority;
@@ -156,6 +161,11 @@ export async function POST(req: Request) {
     if (blocked) {
       return NextResponse.json({ ok: false, error: blocked }, { status: 400 });
     }
+  }
+  const workflowFamiliarId = body.familiarId ?? gateWorkflow?.familiar ?? null;
+  if (workflowFamiliarId) {
+    const profileBlock = hermesProfileDaemonLaunchBlockReason(bindingFor(await loadConfig(), workflowFamiliarId));
+    if (profileBlock) return NextResponse.json({ ok: false, error: profileBlock }, { status: 409 });
   }
   const offlineWorkflowResponse = await maybeQueueOfflineWorkflow(body, gateWorkflow);
   if (offlineWorkflowResponse) return offlineWorkflowResponse;
@@ -260,9 +270,12 @@ async function runViaSession(body: RunBody) {
 
   const config = await loadConfig();
   const familiarId = body.familiarId ?? workflow.familiar ?? null;
-  const binding = familiarId
+  const initialBinding = familiarId
     ? bindingFor(config, familiarId)
     : { harness: config.defaults.harness, model: config.defaults.model };
+  const binding = !familiarId && runtimeOwnsModelDefault(initialBinding.harness)
+    ? { ...initialBinding, model: "" }
+    : initialBinding;
   if (!isAllowedHarness(binding.harness)) {
     return NextResponse.json(
       { ok: false, error: `harness '${binding.harness}' can't run as an agent session` },
@@ -359,7 +372,7 @@ async function runViaSession(body: RunBody) {
     body: {
       projectRoot,
       harness: binding.harness,
-      model: binding.model,
+      ...(binding.model ? { model: binding.model } : {}),
       prompt,
       ...(familiarId ? { familiarId } : {}),
       // Non-interactive launch: the daemon streams the orchestration prompt's

@@ -43,7 +43,12 @@ try {
         id: "tool1",
         parentId: "a1",
         timestamp: "2026-06-08T06:00:03.000Z",
-        message: { role: "tool", content: "internal tool output" },
+        message: {
+          role: "tool",
+          name: "session_lookup",
+          status: "failed",
+          content: "internal tool output",
+        },
       }),
     ].join("\n"),
     "utf8",
@@ -55,11 +60,24 @@ try {
   assert.equal(conv?.harness, "openclaw");
   assert.equal(conv?.title, "New chat");
   assert.deepEqual(
-    conv?.turns.map((turn) => [turn.role, turn.text]),
+    conv?.turns.map((turn) => [turn.id, turn.parentId, turn.role, turn.text]),
     [
-      ["user", "Show me the recent sessions"],
-      ["assistant", "Here are the recent sessions."],
+      ["u1", null, "user", "Show me the recent sessions"],
+      ["a1", "u1", "assistant", "Here are the recent sessions."],
     ],
+  );
+  assert.equal(conv?.activeLeafId, "a1", "the imported active path should end at the latest visible turn");
+  assert.deepEqual(
+    conv?.turns[1]?.tools,
+    [
+      {
+        id: "tool1",
+        name: "session_lookup",
+        output: "internal tool output",
+        status: "error",
+      },
+    ],
+    "non-success OpenClaw tool statuses should remain failures after import",
   );
 
   assert.equal(

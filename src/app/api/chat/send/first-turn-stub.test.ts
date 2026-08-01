@@ -30,6 +30,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /userTurn: \{[\s\S]*?id: pendingUserTurnId,[\s\S]*?\.\.\.persistedTurnControls\(body, responseMetadata\.retryModel\)/,
+  "the coven-run stub preserves the selected model-control snapshot before stream completion",
+);
+
+assert.match(
+  chatRoute,
   /if \(stubWrite\) await stubWrite;\s*const isFirstExchange = await withConversationLock\(finalSessionId, async \(\) => \{\s*const existing = await loadConversation\(finalSessionId\);/,
   "the coven-run save must settle the stub write and lock before loading, so a stub or model PATCH can never lose an authoritative update",
 );
@@ -46,6 +52,12 @@ assert.match(
   chatRoute,
   /const stubWrite = createConversationStub\(\{\s*sessionId: conversationId,[\s\S]*?harness: "openclaw",/,
   "the OpenClaw path must write its stub up front, keyed to the conversation id it mints before spawning",
+);
+
+assert.match(
+  chatRoute,
+  /if \(gatewayDispatch\.kind === "accepted"\)[\s\S]*?const stubWrite = createConversationStub\(\{[\s\S]*?modelIntent: modelIntentForSend\(args\.body, args\.modelState\),[\s\S]*?userTurn:/,
+  "an accepted Gateway first turn persists its session model intent before the response completes",
 );
 
 assert.match(

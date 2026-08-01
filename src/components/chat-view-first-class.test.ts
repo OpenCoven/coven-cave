@@ -59,7 +59,7 @@ assert.match(
 
 assert.match(
   source,
-  /function retryLastSend\(\)[\s\S]*sendRaw\(\s*lastFailedSend\.text,\s*lastFailedSend\.attachments\b/,
+  /function retryFailedSend\(optionOverrides\?: Partial<ChatSendOptions>\)[\s\S]*sendRaw\(\s*lastFailedSend\.text,\s*lastFailedSend\.attachments\b[\s\S]*?function retryLastSend\(\) \{\s*retryFailedSend\(\);/,
   "ChatView should expose a retry action that resends the failed prompt and attachments",
 );
 
@@ -140,8 +140,28 @@ assert.match(
 
 assert.match(
   source,
-  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*label:\s*"Thinking"[\s\S]*label:\s*"Speed"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
-  "The grouped Response section exposes Access, Model, Thinking, and Speed controls in order",
+  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*`Model · \$\{inventoryProvenanceLabel\([\s\S]*\.\.\.modelCapabilities\.map\([\s\S]*capability\.delivery === "prompt-only" \? "Prompt guidance" : "Native"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
+  "The grouped Response section exposes access, model, and capability-aware controls with an honest delivery label",
+);
+assert.match(
+  source,
+  /const pendingFamiliarModel =[\s\S]*?applicationState === "pending"[\s\S]*?const modelOverrideForRequest =[\s\S]*?currentModelState\?\.source === "session" \|\| pendingFamiliarModel[\s\S]*?pendingFamiliarModel[\s\S]*?"next-message" as const/,
+  "a model selected before the first session exists is sent once while its familiar-default PATCH is pending, without pinning the chat",
+);
+assert.match(
+  source,
+  /currentModelState\?\.source === "runtime-default"[\s\S]*?pendingRuntimeDefault && sessionId[\s\S]*?"runtime-default" as const[\s\S]*?: "next-message" as const/,
+  "an inherited or no-session runtime default is a one-turn sentinel, while only an explicit Reset on an existing chat persists a clear",
+);
+assert.match(
+  source,
+  /retryFailedSend\(\{ modelOverride: null, modelOverrideScope: undefined \}\)/,
+  "a harness-switch retry drops the failed runtime's saved model intent",
+);
+assert.match(
+  source,
+  /const handleSelectRuntime = useCallback\([\s\S]*?setModelCapabilities\(\[\]\);[\s\S]*?setModelControls\(\{\}\);/,
+  "runtime switches clear the previous runtime's controls before async capability refresh",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
 // "Both" reconciliation (2026-07-21): the context pill returned with the
@@ -170,8 +190,8 @@ assert.doesNotMatch(source, /StandardSelect/, "the composer no longer wraps cont
 
 assert.match(
   source,
-  /reasoningEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed,/,
-  "Send payload should include thinking and speed control values",
+  /thinkingEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed,[\s\S]*modelControls: controlsOverride\?\.modelControls \?\? modelControls,/,
+  "Send payload should preserve legacy command controls and the selected model-control snapshot",
 );
 
 assert.match(

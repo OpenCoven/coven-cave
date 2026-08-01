@@ -26,6 +26,13 @@ const TRANSFORM_ROOTS = [
 const SUFFIXES = ["", ".ts", ".tsx", ".js", ".mjs", "/index.ts", "/index.tsx"];
 
 export async function resolve(specifier, context, nextResolve) {
+  // Next 16 ships the server entry as server.js. Framework source continues to
+  // import the public `next/server` API, but Node 24's ESM resolver no longer
+  // performs that extension fallback when a route-level test imports the real
+  // route graph through this loader.
+  if (specifier === "next/server") {
+    return nextResolve("next/server.js", context);
+  }
   if (specifier.startsWith("@/")) {
     const target = new URL(specifier.slice(2), SRC_BASE); // @/lib/x → repo/src/lib/x
     for (const suffix of SUFFIXES) {

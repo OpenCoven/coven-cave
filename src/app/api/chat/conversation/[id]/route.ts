@@ -1,10 +1,6 @@
-// The explicit .js extension (matching src/app/api/voice/**/route.ts) lets
-// route.test.ts import this module directly under plain Node ESM resolution,
-// which — unlike Next's bundler — needs the real subpath: `next` ships no
-// "exports" map, so the extensionless "next/server" specifier 404s outside
-// Next's own resolver.
-import { NextResponse } from "next/server.js";
+import { NextResponse } from "next/server";
 import { cleanModelId } from "@/lib/chat-model-state";
+import { cleanModelControlValues } from "@/lib/model-control-capabilities";
 import {
   isSafeConversationSessionId,
   deleteConversation,
@@ -85,6 +81,11 @@ function normalizeTurn(input: unknown): ChatTurn | null {
       ? value.responseSpeed
       : undefined;
   const modelOverride = cleanModelId(value.modelOverride);
+  const modelOverrideScope =
+    value.modelOverrideScope === "runtime-default"
+      ? "runtime-default" as const
+      : undefined;
+  const modelControls = cleanModelControlValues(value.modelControls);
   const progress = Array.isArray(value.progress)
     ? value.progress.flatMap((entry) => {
       if (!entry || typeof entry !== "object") return [];
@@ -130,7 +131,11 @@ function normalizeTurn(input: unknown): ChatTurn | null {
     ...(costUsd !== undefined ? { costUsd } : {}),
     ...(value.role === "user" && reasoningEffort ? { reasoningEffort } : {}),
     ...(value.role === "user" && responseSpeed ? { responseSpeed } : {}),
-    ...(value.role === "user" && modelOverride ? { modelOverride } : {}),
+    ...(value.role === "user" && modelOverride && !modelOverrideScope
+      ? { modelOverride }
+      : {}),
+    ...(value.role === "user" && modelOverrideScope ? { modelOverrideScope } : {}),
+    ...(value.role === "user" && Object.keys(modelControls).length ? { modelControls } : {}),
   };
 }
 

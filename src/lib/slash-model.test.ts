@@ -41,8 +41,23 @@ assert.equal(resolveModelArg("Claude Sonnet 4.6", "claude"), "anthropic/claude-s
 assert.equal(resolveModelArg("anthropic/claude-haiku-4-5", "claude"), "anthropic/claude-haiku-4-5", "matches by exact id");
 assert.equal(resolveModelArg("sonnet", "claude"), "anthropic/claude-sonnet-5", "substring matches the newest Sonnet first");
 assert.equal(resolveModelArg("openai/gpt-6", "claude"), "openai/gpt-6", "accepts a valid custom id");
+assert.equal(
+  resolveModelArg("openrouter/~anthropic/claude-opus-latest", "opencode"),
+  "openrouter/~anthropic/claude-opus-latest",
+  "OpenCode provider aliases with a tilde-prefixed path segment remain selectable",
+);
 assert.equal(resolveModelArg("  ", "claude"), null, "empty arg → null");
 assert.equal(resolveModelArg("not a model!!", "claude"), null, "malformed custom id → null");
+assert.equal(
+  resolveModelArg("provider/not-offered", "claude", dynamicClaude, false),
+  null,
+  "a full inventory that forbids custom ids rejects unlisted slash input",
+);
+assert.equal(
+  resolveModelArg("anthropic/claude-opus-5", "claude", dynamicClaude, false),
+  "anthropic/claude-opus-5",
+  "a no-custom inventory still accepts one of its listed ids",
+);
 assert.equal(
   resolveModelArg("pickle", "opencode", discovered),
   "opencode/big-pickle",
@@ -55,6 +70,11 @@ assert.match(list, /Current model: anthropic\/claude-opus-4-8/, "shows the curre
 assert.match(list, /● Claude Opus 4\.8/, "marks the current model with ●");
 assert.match(list, /○ Claude Sonnet 4\.6/, "marks others with ○");
 assert.match(formatModelList("openclaw", null), /no model menu/, "free-text runtimes explain the lack of a menu");
+assert.match(
+  formatModelList("openclaw", null, [], false),
+  /no selectable model ids/,
+  "a no-custom empty inventory never tells the user to type an unsupported id",
+);
 assert.match(
   formatModelList("opencode", null, discovered),
   /OpenCode Big Pickle/,

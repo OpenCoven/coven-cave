@@ -32,7 +32,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { StandardSelect } from "@/components/ui/select";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
@@ -1176,7 +1176,9 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   const modelHarness = canonicalHarnessId(
     currentFamiliar?.harness ?? currentFamiliar?.defaultHarness ?? "",
   );
-  const runtimeModelOptions = useRuntimeModelOptions(modelHarness, currentFamiliar?.id ?? null);
+  const runtimeModelInventory = useRuntimeModelInventory(modelHarness, currentFamiliar?.id ?? null);
+  const runtimeModelOptions = runtimeModelInventory.models;
+  const allowCustomModel = runtimeModelInventory.allowCustom;
   const [modelCustomMode, setModelCustomMode] = useState(false);
   const [customModelDraft, setCustomModelDraft] = useState(card.modelOverride ?? "");
   const taskModelIsCustom = Boolean(
@@ -1217,8 +1219,17 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   }, [card.modelOverride]);
   const taskModelOptions = [
     { value: "", label: "Familiar default" },
+    ...(taskModelIsCustom && card.modelOverride && !allowCustomModel
+      ? [{
+          value: card.modelOverride,
+          label: `${card.modelOverride} (not offered)`,
+          disabled: true,
+        }]
+      : []),
     ...runtimeModelOptions.map((option) => ({ value: option.id, label: option.label })),
-    ...(runtimeModelOptions.length > 0 ? [{ value: "__custom__", label: "Custom…" }] : []),
+    ...(allowCustomModel && runtimeModelOptions.length > 0
+      ? [{ value: "__custom__", label: "Custom…" }]
+      : []),
   ];
   const resolvedFamiliarList = useResolvedFamiliars(currentFamiliar ? [currentFamiliar] : [], { includeArchived: true });
   const resolvedFamiliar = resolvedFamiliarList[0] ?? null;
@@ -1465,8 +1476,13 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
             </div>
 
             <div className="board-drawer-field">
-              <div className="board-drawer-field-label">Model</div>
-              {runtimeModelOptions.length > 0 && !modelCustomMode && !taskModelIsCustom && !hasUnsavedCustomModelDraft ? (
+              <div className="board-drawer-field-label">Model · {inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}</div>
+              {runtimeModelInventory.loading ? (
+                <p className="board-drawer-field-hint" role="status">Loading model inventory…</p>
+              ) : (runtimeModelOptions.length > 0 || (taskModelIsCustom && !allowCustomModel)) &&
+                !modelCustomMode &&
+                (!taskModelIsCustom || !allowCustomModel) &&
+                (!hasUnsavedCustomModelDraft || !allowCustomModel) ? (
                 <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
                   <span className="board-drawer-project-icon" aria-hidden>
                     <Icon name="ph:brain" width={12} className="text-[var(--text-muted)]" />
@@ -1490,7 +1506,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   />
                   <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
                 </div>
-              ) : (
+              ) : allowCustomModel ? (
                 <input
                   className="board-drawer-field-input"
                   value={customModelDraft}
@@ -1505,6 +1521,10 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   autoCorrect="off"
                   spellCheck={false}
                 />
+              ) : (
+                <p className="board-drawer-field-hint" role="status">
+                  No selectable models are available.
+                </p>
               )}
               <p className="board-drawer-field-hint">
                 {card.sessionId
