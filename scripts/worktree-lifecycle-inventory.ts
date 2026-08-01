@@ -1741,14 +1741,32 @@ function historyOverrideProbe(root: string, commonGitDir: string): HistoryOverri
     }
   }
 
+  const grafts = graftInventory(commonGitDir);
+  const graftState = grafts.snapshot;
+  if (grafts.error !== null) errors.push(grafts.error);
+
+  return { replaceRefsState, graftState, errors };
+}
+
+/** Snapshot of the legacy graft file, in the same vocabulary historyOverrideProbe
+ *  reports: `absent`, `present:<sha256>`, or `unreadable:<detail>`.
+ *
+ *  Split out so the probe and the patrol's start/end drift comparison cannot
+ *  disagree about what "unchanged" means — a graft file swapped for one of equal
+ *  length is only caught because both sides hash the bytes, not stat them. */
+function graftInventory(commonGitDir: string): {
+  path: string;
+  snapshot: string;
+  error: string | null;
+} {
   const graftPath = path.join(commonGitDir, "info", "grafts");
-  let graftState: string;
   try {
     const grafts = readFileSync(graftPath);
-    graftState = `present:${createHash("sha256").update(grafts).digest("hex")}`;
-    if (grafts.length > 0) {
-      errors.push(`legacy Git graft file is nonempty: ${graftPath}`);
-    }
+    return {
+      path: graftPath,
+      snapshot: `present:${createHash("sha256").update(grafts).digest("hex")}`,
+      error: grafts.length > 0 ? `legacy Git graft file is nonempty: ${graftPath}` : null,
+    };
   } catch (error) {
     if (
       error !== null &&
@@ -1756,15 +1774,15 @@ function historyOverrideProbe(root: string, commonGitDir: string): HistoryOverri
       "code" in error &&
       error.code === "ENOENT"
     ) {
-      graftState = "absent";
-    } else {
-      const detail = error instanceof Error ? error.message : "unknown read error";
-      graftState = `unreadable:${detail}`;
-      errors.push(`legacy Git graft file is unreadable: ${graftPath}: ${detail}`);
+      return { path: graftPath, snapshot: "absent", error: null };
     }
+    const detail = error instanceof Error ? error.message : "unknown read error";
+    return {
+      path: graftPath,
+      snapshot: `unreadable:${detail}`,
+      error: `legacy Git graft file is unreadable: ${graftPath}: ${detail}`,
+    };
   }
-
-  return { replaceRefsState, graftState, errors };
 }
 
 function exactRemoteRef(
@@ -2490,6 +2508,7 @@ export function collectWorktreeLifecycleInventory(
           landing.error,
           remoteRefs.error,
           ancestry.error,
+          integration.error,
           remote.error,
           ...(unit.ref ? [directRefError(root, unit.ref)] : []),
         ].filter((error): error is string => typeof error === "string"),
@@ -2547,6 +2566,12 @@ export function collectWorktreeLifecycleInventory(
     "refs/heads",
   ]);
   const finalHistoryOverrides = historyOverrideProbe(root, commonGitDir);
+  const finalReplacementRefsRaw = requiredGit(root, [
+    "for-each-ref",
+    "--format=%(refname)%0a%(objectname)%00",
+    "refs/replace",
+  ]);
+  const finalGrafts = graftInventory(commonGitDir);
   if (
     finalWorktreeRaw !== initialWorktreeRaw ||
     finalRefsRaw !== initialRefsRaw ||
