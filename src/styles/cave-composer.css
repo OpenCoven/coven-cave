@@ -79,6 +79,44 @@
   justify-content: flex-end;
 }
 
+.cave-chat-launch-readiness {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 var(--space-3) var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.cave-chat-launch-readiness__title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.cave-chat-launch-readiness__items,
+.cave-chat-launch-readiness__item {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.cave-chat-launch-readiness__items {
+  gap: var(--space-2);
+}
+
+.cave-chat-launch-readiness__item[data-ready="true"] {
+  color: var(--text-muted);
+}
+
+.cave-chat-launch-readiness__item[data-ready="false"] {
+  color: var(--text-primary);
+}
+
 /* Follow-ups composed while a turn streams stay visible and actionable, but
    remain outside the transcript until the normal send path dispatches them. */
 .cave-composer-queue {

@@ -203,6 +203,12 @@ import { toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-inpu
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findTranscriptHits } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
+import {
+  deriveChatLaunchReadiness,
+  hasChatStarted,
+  isModelReadyForChatSend,
+  type ChatModelResolutionStatus,
+} from "@/lib/chat-launch-readiness";
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
@@ -1914,11 +1920,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const [archivingChat, setArchivingChat] = useState(false);
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
+  const [modelResolutionStatus, setModelResolutionStatus] =
+    useState<ChatModelResolutionStatus>("loading");
   const [modelCapabilities, setModelCapabilities] = useState<readonly ModelControlCapability[]>([]);
   const [modelControls, setModelControls] = useState<ModelControlValues>({});
   // Send paths need the model selection synchronously. React state alone can
   // still expose the previous render between a picker action and its PATCH.
   const modelStateRef = useRef<ChatModelState | null>(null);
+  const modelResolutionGenerationRef = useRef(0);
+  const modelMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const enqueueModelMutation = useCallback((mutation: () => Promise<void>) => {
+    modelMutationQueueRef.current = modelMutationQueueRef.current.then(mutation, mutation);
+  }, []);
   const [usagePlan, setUsagePlan] = useState<ChatUsagePlanSnapshot | null>(null);
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).responseSpeed);
@@ -2320,10 +2333,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   }, [captureReleasedScrollAnchor, historyExpanded]);
 
-  // `shouldApply` lets a caller (the effect below) veto the setState after the
-  // await — a fetch that resolves after a thread switch must not overwrite the
-  // new thread's model. Non-effect callers omit it and always apply.
-  const refreshModelState = useCallback(async (shouldApply: () => boolean = () => true): Promise<ChatModelState | null> => {
+  // A generation invalidates every older request as soon as a newer refresh or
+  // picker action starts. The caller veto still covers effect cleanup.
+  const refreshModelState = useCallback(async (
+    shouldApply: () => boolean = () => true,
+    generation = ++modelResolutionGenerationRef.current,
+  ): Promise<ChatModelState | null> => {
     const params = new URLSearchParams({ familiarId: familiar.id });
     if (sessionId) params.set("sessionId", sessionId);
     try {
@@ -2334,16 +2349,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         controls?: ModelControlCapability[];
       };
       const next = json.ok && json.state ? json.state : null;
-      if (shouldApply()) {
+      if (generation === modelResolutionGenerationRef.current && shouldApply()) {
         modelStateRef.current = next;
         setModelState(next);
+        setModelResolutionStatus(next ? "ready" : "error");
         setModelCapabilities(json.ok && Array.isArray(json.controls) ? json.controls : []);
       }
       return next;
     } catch {
-      if (shouldApply()) {
+      if (generation === modelResolutionGenerationRef.current && shouldApply()) {
         modelStateRef.current = null;
         setModelState(null);
+        setModelResolutionStatus("error");
         setModelCapabilities([]);
       }
       return null;
@@ -2376,6 +2393,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   useEffect(() => {
     let cancelled = false;
+    setModelResolutionStatus("loading");
     // Gate the setState on !cancelled so a fetch resolving after a thread switch
     // (refreshModelState is memoized on [familiar.id, sessionId]) can't overwrite
     // the new thread's model with the previous one's.
@@ -2415,6 +2433,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // No new persistence path — the picker reuses /api/chat/model-state.
   const handleSelectModel = useCallback(
     (modelId: string | null) => {
+      const generation = ++modelResolutionGenerationRef.current;
+      setModelResolutionStatus("loading");
       // A staged model switch invalidates every prior model's controls until
       // the scoped capability response arrives; never render/send stale native values.
       setModelCapabilities([]);
@@ -2433,9 +2453,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         modelStateRef.current = optimistic;
         setModelState(optimistic);
       }
-      void (async () => {
+      enqueueModelMutation(async () => {
         try {
-          const res = await fetch("/api/chat/model-state", {
+          await fetch("/api/chat/model-state", {
             method: "PATCH",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
@@ -2445,19 +2465,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               scope: sessionId ? "session" : "familiar-default",
             }),
           });
-          const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
-          if (json.ok && json.state) {
-            modelStateRef.current = json.state;
-            setModelState(json.state);
-            await refreshModelState();
-          }
-          else await refreshModelState();
         } catch {
-          await refreshModelState();
+          // The guarded refresh below reconciles the optimistic state.
         }
-      })();
+        if (generation === modelResolutionGenerationRef.current) {
+          await refreshModelState(() => true, generation);
+        }
+      });
     },
-    [familiar.id, sessionId, refreshModelState],
+    [enqueueModelMutation, familiar.id, sessionId, refreshModelState],
   );
   // Switch the runtime from the composer chip. Familiar-level, like the home
   // composer's selectRuntime (/api/config is the only channel that rebinds a
@@ -2466,6 +2482,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
       const nextModel = modelForRuntimeSwitch(runtime);
+      const generation = ++modelResolutionGenerationRef.current;
+      setModelResolutionStatus("loading");
       // A runtime switch invalidates the previous runtime's controls before
       // the async scoped capability refresh returns.
       setModelCapabilities([]);
@@ -2485,7 +2503,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         modelStateRef.current = optimistic;
         setModelState(optimistic);
       }
-      void (async () => {
+      enqueueModelMutation(async () => {
         try {
           const res = await fetch("/api/config", {
             method: "PATCH",
@@ -2504,11 +2522,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // rather than waiting out the next natural reload.
           if (res.ok) window.dispatchEvent(new Event("cave:familiars-refresh"));
         } finally {
-          await refreshModelState();
+          if (generation === modelResolutionGenerationRef.current) {
+            await refreshModelState(() => true, generation);
+          }
         }
-      })();
+      });
     },
-    [familiar.id, refreshModelState],
+    [enqueueModelMutation, familiar.id, refreshModelState],
   );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -2981,12 +3001,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const composerModelInventory = useRuntimeModelInventory(modelHarness ?? "claude", familiar.id);
   const composerModelOptions = composerModelInventory.models;
   const composerRuntimeOwnsDefault = runtimeOwnsModelDefault(modelHarness);
-  const composerModelValue =
-    modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
-      ? modelState.effectiveModel
-      : composerRuntimeOwnsDefault
-        ? ""
-        : composerModelOptions[0]?.id ?? "";
+  const chatHasStarted = hasChatStarted(turns);
+  const chatLaunchReadiness = deriveChatLaunchReadiness({
+    projectReady: projectLaunchReady,
+    projectDetail: selectedProject?.name ?? projectLaunchMessage,
+    modelStatus: modelResolutionStatus,
+    modelState,
+    modelOverride: chatHasStarted ? undefined : initialModelOverride,
+  });
+  const composerModelValue = chatLaunchReadiness.modelValue;
+  const sendLaunchReady =
+    projectLaunchReady &&
+    isModelReadyForChatSend({
+      hasStarted: chatHasStarted,
+      modelValue: chatLaunchReadiness.modelValue,
+    });
+  const chatLaunchMessage =
+    chatLaunchReadiness.requirements
+      .filter((requirement) => !requirement.ready)
+      .map((requirement) => requirement.detail)
+      .join(" ") || "Chat is ready to send.";
+  const showLaunchReadiness = !chatHasStarted && !busy;
   const {
     skills,
     prompts,
@@ -3030,7 +3065,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       options: PERMISSION_MODES.map((m) => ({ value: m.value, label: m.label })),
       onChange: (v: string) => setPermissionMode(v as CommandPermissionMode),
     },
-    ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0
+    ...(composerModelValue !== null && (composerRuntimeOwnsDefault || composerModelOptions.length > 0)
       ? [{
           id: "model",
           label: `Model · ${inventoryProvenanceLabel(composerModelInventory.provenance, composerModelInventory.loading)}`,
@@ -3946,6 +3981,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       inputRef.current?.focus();
       return;
     }
+    if (!sendLaunchReady) {
+      setError(chatLaunchMessage);
+      announce(chatLaunchMessage, "assertive");
+      return;
+    }
     setInput("");
     setSlashIdx(0);
     setTimeout(() => sendRaw(buildSkillPrompt(s)), 0);
@@ -4028,6 +4068,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setInput(`/skill ${skill.id} `);
         return true;
       }
+      if (!sendLaunchReady) return false;
       setInput("");
       // Invoke by sending a directive to the active familiar's harness, which
       // owns Skill execution (mirrors the /run prompt-send pattern).
@@ -4117,6 +4158,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setInput("");
         return true;
       }
+      if (!sendLaunchReady) return false;
       setInput("");
       const wrapped = buildSketchPrompt(args);
       setTimeout(() => void sendRaw(args, [], [], { promptOverride: wrapped }), 0);
@@ -4130,6 +4172,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // /run, /codex, /claude — fall through into a normal send
     if (command === "/run" || command === "/codex" || command === "/claude") {
       if (!args.trim()) return true;
+      if (!sendLaunchReady) return false;
       setInput("");
       setTimeout(() => sendRaw(args), 0);
       return true;
@@ -4151,6 +4194,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const trimmed = text.trim();
     const submitPrompt = opts?.promptOverride?.trim() || trimmed;
     if (!trimmed && outgoingAttachments.length === 0) return;
+    const requestModelReady = isModelReadyForChatSend({
+      hasStarted: hasChatStarted(turnsRef.current),
+      modelValue: chatLaunchReadiness.modelValue,
+      modelOverride: opts?.modelOverride,
+    });
+    if (!requestModelReady) {
+      setError(chatLaunchMessage);
+      announce(chatLaunchMessage, "assertive");
+      return;
+    }
     const requestedProjectRoot = opts?.projectRoot ?? requestProjectRoot;
     const requestProject =
       requestedProjectRoot === activeProjectRoot
@@ -4465,13 +4518,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // race), and so a brand-new chat (no sessionId yet) still pins its
           // session model. Only session-scoped picks need this; familiar- and
           // global-default models already resolve server-side from config.
-          ...(modelStateRef.current?.source === "runtime-default"
+          ...(opts?.modelOverride === ""
             ? { modelOverrideScope: "runtime-default" as const }
             : modelOverrideForRequest
             ? {
                 modelOverride: modelOverrideForRequest,
                 modelOverrideScope: "session" as const,
               }
+            : modelStateRef.current?.source === "runtime-default"
+            ? { modelOverrideScope: "runtime-default" as const }
             : {}),
           // CHAT-D1-04: @-mentioned repo files ride with the root they are
           // relative to — resumed sessions don't resend projectRoot above.
@@ -4999,11 +5054,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       clearDraft();
       return;
     }
-    if (!projectLaunchReady) {
-      setError(projectLaunchMessage);
-      setProjectRootRequired(true);
-      raiseDebugError({ code: "project_root_required" });
-      announce(projectLaunchMessage, "assertive");
+    if (!sendLaunchReady) {
+      setError(chatLaunchMessage);
+      if (!projectLaunchReady) {
+        setProjectRootRequired(true);
+        raiseDebugError({ code: "project_root_required" });
+      }
+      announce(chatLaunchMessage, "assertive");
       return;
     }
     const outgoingAttachments = attachments.map(({ id: _id, ...attachment }) => attachment);
@@ -5107,7 +5164,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       initialPromptSentRef.current = false;
       return;
     }
-    if (!projectLaunchReady) return;
+    if (!sendLaunchReady) return;
     if (initialPromptSentRef.current || (sessionId && !autoSendInitialPrompt)) return;
     const timer = window.setTimeout(() => {
       if (initialPromptSentRef.current) return;
@@ -5120,7 +5177,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // The home composer's host pick rides the first send explicitly (state
       // set below lands too late for this closure) and seeds the chip.
       if (initialControls?.runtimeHost) setRuntimeHost(initialControls.runtimeHost);
-      const initialSendOptions = initialModelOverride ? { modelOverride: initialModelOverride } : undefined;
+      const initialSendOptions =
+        initialModelOverride !== undefined && initialModelOverride !== null
+          ? { modelOverride: initialModelOverride }
+          : undefined;
       void sendRaw(
         initialPrompt,
         initialAttachments ?? [],
@@ -5133,7 +5193,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSendInitialPrompt, initialPrompt, projectLaunchReady, sessionId]);
+  }, [autoSendInitialPrompt, initialPrompt, sendLaunchReady, sessionId]);
 
   // "Start a task" tail end: the first send's "session" event hands over the
   // session id, and the card follows the chat. Fire-and-forget — a failed card
@@ -6166,11 +6226,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <ChatNewDashboard
                 familiar={familiar}
                 sessions={sessions}
-                modelId={
-                  modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
-                    ? modelState.effectiveModel
-                    : familiar.model ?? null
-                }
+                modelId={chatLaunchReadiness.modelValue || null}
               />
             ) : (
               <ChatEmptyState
@@ -6189,11 +6245,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 sessions={sessions}
                 linkedContext={linkedContext}
                 daemonRunning={daemonRunning}
-                modelId={
-                  modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
-                    ? modelState.effectiveModel
-                    : familiar.model ?? null
-                }
+                modelId={chatLaunchReadiness.modelValue || null}
                 taskArmed={taskArmed}
                 onArmTask={armTask}
                 onDisarmTask={disarmTask}
@@ -6752,6 +6804,36 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 {dictation.partial || "Listening…"}
               </div>
             ) : null}
+            {showLaunchReadiness ? (
+              <div
+                id="chat-launch-readiness"
+                className="cave-chat-launch-readiness"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="cave-chat-launch-readiness__title">
+                  {chatLaunchReadiness.ready ? "Ready to send" : "Finish setup to send"}
+                </span>
+                <span className="cave-chat-launch-readiness__items">
+                  {chatLaunchReadiness.requirements.map((requirement) => (
+                    <span
+                      key={requirement.id}
+                      className="cave-chat-launch-readiness__item"
+                      data-ready={requirement.ready ? "true" : "false"}
+                    >
+                      <Icon
+                        name={requirement.ready ? "ph:check-circle-fill" : "ph:circle"}
+                        width={12}
+                        aria-hidden
+                      />
+                      <span>{requirement.label}</span>
+                      <span aria-hidden>·</span>
+                      <span>{requirement.detail}</span>
+                    </span>
+                  ))}
+                </span>
+              </div>
+            ) : null}
             <div className="cave-composer-controls">
               <input
                 ref={fileInputRef}
@@ -6855,7 +6937,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       <button
                         type="button"
                         onClick={() => void send()}
-                        disabled={!projectLaunchReady || (!input.trim() && attachments.length === 0)}
+                        disabled={!sendLaunchReady || (!input.trim() && attachments.length === 0)}
+                        aria-describedby={showLaunchReadiness ? "chat-launch-readiness" : undefined}
                         data-typing={input.trim() ? "true" : undefined}
                         className="cave-composer-send cave-composer-send--queue focus-ring transition-colors"
                         title="Queue message"
@@ -6877,7 +6960,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     <button
                       type="button"
                       onClick={() => void send()}
-                      disabled={!projectLaunchReady || (!input.trim() && attachments.length === 0)}
+                      disabled={!sendLaunchReady || (!input.trim() && attachments.length === 0)}
+                      aria-describedby={showLaunchReadiness ? "chat-launch-readiness" : undefined}
                       data-typing={input.trim() ? "true" : undefined}
                       className="cave-composer-send focus-ring transition-colors"
                       title={`Send message (${keys.enter})`}
