@@ -7,10 +7,10 @@ import {
   type NextPath,
 } from "./next-paths.ts";
 
-// directive: default asks for 2 or 4 (never 3), respects count, empty when 0
-assert.equal(DEFAULT_NEXT_PATHS_COUNT, 4);
-assert.match(buildNextPathsDirective(), /append 2 or 4 short/);
-assert.match(buildNextPathsDirective(), /never exactly 3/);
+// directive: default asks for exactly 3, respects count, empty when 0
+assert.equal(DEFAULT_NEXT_PATHS_COUNT, 3);
+assert.match(buildNextPathsDirective(), /append 3 short/);
+assert.doesNotMatch(buildNextPathsDirective(), /never exactly 3/);
 assert.match(buildNextPathsDirective(), /only in this block — do not also enumerate them in the reply body/);
 assert.match(buildNextPathsDirective(), /\[reply\]/);
 assert.match(buildNextPathsDirective(), /\[task\]/);
@@ -87,7 +87,7 @@ for (const malformed of ["[", "[action"]) {
     { kind: "reply", label: "Draft the follow-up message to Jules", prompt: "Draft the follow-up message to Jules" },
   ] satisfies NextPath[]);
 }
-// over-eager agent -> at most 4 pills ever surface (the chip-row product cap)
+// over-eager agent -> at most 3 pills ever surface (the prompt-width product cap)
 {
   const lines = ["One", "Two", "Three", "Four", "Five", "Six"].map((s) => `- [reply] ${s}`).join("\n");
   const r = extractNextPaths(`Answer.\n<coven:next-paths>\n${lines}\n</coven:next-paths>`);
@@ -95,7 +95,6 @@ for (const malformed of ["[", "[action"]) {
     { kind: "reply", label: "One", prompt: "One" },
     { kind: "reply", label: "Two", prompt: "Two" },
     { kind: "reply", label: "Three", prompt: "Three" },
-    { kind: "reply", label: "Four", prompt: "Four" },
   ] satisfies NextPath[]);
 }
 console.log("next-paths.test.ts: ok");
