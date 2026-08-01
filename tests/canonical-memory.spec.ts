@@ -192,12 +192,23 @@ async function fulfillSyntheticApi(
     return;
   }
 
-  if (pathname === "/api/daemon/status") {
+  // `/api/daemon/status` and `/api/daemon/connection` must agree. The daemon
+  // connection supervisor (b7ecf460e, "decouple heartbeat from daemon
+  // diagnostics") moved local-daemon readiness onto /connection, and this
+  // spec only knew about /status — so acceptedLocalDaemonHealthy never went
+  // true, localDaemonReady stayed false, and canonical-memory-reader returned
+  // before ever requesting a detail. The visible symptom was detailRequests
+  // sitting empty, which reads like a selection bug rather than a mock gap.
+  if (
+    pathname === "/api/daemon/status" ||
+    pathname === "/api/daemon/connection"
+  ) {
     await route.fulfill({
       json: {
         running: true,
         availability: "online",
         target: { mode: "local" },
+        checkedAt: new Date().toISOString(),
       },
     });
     return;

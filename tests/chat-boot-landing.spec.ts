@@ -6,7 +6,8 @@ import { expect, test, type Page } from "@playwright/test";
 // composer) without waiting for /api/sessions/list — the fetch that used to
 // gate the boot-compose effect and left users on the ChatList skeleton wall
 // for its full duration. Also pins the landing affordances: the live board's
-// open-work rows and the hidden-not-disabled pre-session Voice button.
+// work surfacing as a tile in the Start-from Tasks band (Chat.dc.html 2b) and
+// the hidden-not-disabled pre-session Voice button.
 //
 // Desktop only (compose-first boot is a desktop affordance — mobile keeps
 // the thread list as the chat home). /api/familiars, /api/sessions/list and
@@ -163,13 +164,19 @@ test.describe("chat boot landing", () => {
     const dash = page.getByTestId("chat-new-dashboard");
     await expect(dash).toBeVisible({ timeout: 45_000 });
 
-    // The live board's inbox card surfaces as an open-work row with the
-    // visual Resume CTA…
-    const workRow = dash.locator(".home-dash__work-row", { hasText: "Fix login flow" });
-    await expect(workRow).toBeVisible();
-    await expect(workRow).toContainText("Resume");
-    // …and the headline counts it.
-    await expect(dash.locator(".home-dash__headline")).toContainText("1 thread open.");
+    // Chat.dc.html 2b: the launcher is a band per SOURCE of work, and the
+    // live board's inbox card surfaces as a tile in the Tasks band…
+    const tasksBand = dash.locator('.cave-sf__band[data-kind="tasks"]');
+    await expect(tasksBand).toBeVisible();
+    const workTile = tasksBand.locator(".cave-sf__tile", { hasText: "Fix login flow" });
+    await expect(workTile).toBeVisible();
+    // …badged with its column, since a medium priority is too quiet to spend
+    // the tile's one badge on (taskTileBadge).
+    await expect(workTile.locator(".cave-sf__tile-badge")).toHaveText("inbox");
+    // The band head states how much of the source is on screen, so the hero
+    // no longer repeats a count that is already there.
+    await expect(tasksBand.locator(".cave-sf__band-count")).toHaveText("1");
+    await expect(dash.locator(".home-dash__headline")).toContainText("What should we begin?");
 
     // The context rail is retired: no quick-start rows, no rail project
     // picker — the composer owns those affordances.

@@ -204,8 +204,12 @@ try {
   );
 
   const fastForwardPath = path.join(repo, ".worktrees", "fast-forward");
+  // Based on `main`, not `origin/main`: main has advanced past origin by this
+  // point in the fixture (it is not pushed until after the merge below), so a
+  // branch cut from origin/main diverges and the `--ff-only` merge cannot
+  // apply — which is the whole behaviour this branch exists to exercise.
   git(
-    ["worktree", "add", "-q", "-b", "feat/fast-forward", fastForwardPath, "origin/main"],
+    ["worktree", "add", "-q", "-b", "feat/fast-forward", fastForwardPath, "main"],
     repo,
   );
   writeFileSync(path.join(fastForwardPath, "fast-forward.txt"), "fast-forward landing\n");
@@ -1147,7 +1151,7 @@ case "$*" in
   *"/actions/runs"*)
     WORKFLOW_COUNT_FILE=${JSON.stringify(
       path.join(fixtureRoot, "workflow-count-"),
-    )}"${LIFECYCLE_TEST_INVOCATION:-unknown}"
+    )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
     WORKFLOW_COUNT=0
     if [ -e "$WORKFLOW_COUNT_FILE" ]; then
       WORKFLOW_COUNT=$(cat "$WORKFLOW_COUNT_FILE")
@@ -1166,9 +1170,9 @@ case "$*" in
     [ -n "$WORKFLOW_STATUS" ] || fail "workflow inventory omitted an exact status"
     WORKFLOW_CALL_MARKER=${JSON.stringify(
       path.join(fixtureRoot, "workflow-calls-"),
-    )}"${LIFECYCLE_TEST_INVOCATION:-unknown}"
+    )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
     printf '%s\n' "$WORKFLOW_STATUS" >> "$WORKFLOW_CALL_MARKER"
-    if [ "${LIFECYCLE_WORKFLOW_STDERR:-0}" = "1" ]; then
+    if [ "\${LIFECYCLE_WORKFLOW_STDERR:-0}" = "1" ]; then
       printf '%s\n' 'workflow inventory omitted inaccessible runs' >&2
     fi
     if [ "\${LIFECYCLE_BAD_WORKFLOW:-0}" = "1" ]; then
@@ -1230,10 +1234,10 @@ if [ "\${LIFECYCLE_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "drift
   touch "${path.join(fixtureRoot, "drift-once")}"
   git -C "${repo}" branch feat/drift origin/main
 fi
-if [ "${LIFECYCLE_GRAFT_DRIFT:-0}" = "1" ]; then
+if [ "\${LIFECYCLE_GRAFT_DRIFT:-0}" = "1" ]; then
   printf '%s %s\n' ${JSON.stringify(defaultHead)} ${JSON.stringify(oldHead)} > ${JSON.stringify(path.join(repo, ".git", "info", "grafts"))}
 fi
-if [ "${LIFECYCLE_REPLACEMENT_DRIFT:-0}" = "1" ]; then
+if [ "\${LIFECYCLE_REPLACEMENT_DRIFT:-0}" = "1" ]; then
   git -C "${repo}" update-ref ${JSON.stringify(`refs/replace/${defaultHead}`)} ${JSON.stringify(oldHead)}
 fi
 
