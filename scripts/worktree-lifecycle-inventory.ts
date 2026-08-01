@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
+import { devNull } from "node:os";
 import path from "node:path";
 import {
   calculateLifecycleBudgets,
@@ -265,13 +266,22 @@ function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
       delete env[key];
     }
   }
+  env.GIT_GRAFT_FILE = devNull;
   return env;
 }
 
 function git(root: string, args: string[], timeout?: number): CommandResult {
   return command(
     "git",
-    ["--no-optional-locks", "--no-replace-objects", "-C", root, ...args],
+    [
+      "--no-optional-locks",
+      "--no-replace-objects",
+      "-c",
+      "advice.graftFileDeprecated=false",
+      "-C",
+      root,
+      ...args,
+    ],
     root,
     timeout,
     sanitizedGitEnvironment(),
@@ -280,7 +290,9 @@ function git(root: string, args: string[], timeout?: number): CommandResult {
 
 function requiredGit(root: string, args: string[]): string {
   const result = git(root, args);
-  if (!result.ok) throw new Error(result.stderr || `git ${args.join(" ")} failed`);
+  if (!result.ok || result.stderr) {
+    throw new Error(result.stderr || `git ${args.join(" ")} failed`);
+  }
   return result.stdout;
 }
 
@@ -481,7 +493,7 @@ function statusState(root: string): {
     "--ignore-submodules=none",
     "--no-renames",
   ]);
-  if (!result.ok) {
+  if (!result.ok || result.stderr) {
     return {
       changes: [],
       ignoredPaths: [],
@@ -506,7 +518,7 @@ function statusState(root: string): {
 
 function indexFlags(root: string): { flags: string[]; error: string | null } {
   const result = git(root, ["ls-files", "-v", "-z"]);
-  if (!result.ok) {
+  if (!result.ok || result.stderr) {
     return { flags: [], error: result.stderr || "git index flag inventory failed" };
   }
   return {
@@ -521,6 +533,7 @@ function updatedAt(
   probeRoot: string,
   ref: string | null,
   exactMergeAt: string | null,
+  exactDefaultLandingAtMs: number | null,
   includeWorktreeHead: boolean,
 ): { value: number | null; error: string | null } {
   const target = includeWorktreeHead ? "HEAD" : ref;
@@ -541,23 +554,30 @@ function updatedAt(
     ]),
   );
   const epochs: number[] = [];
-  if (commit.ok && /^\d+$/.test(commit.stdout.trim())) {
+  if (commit.ok && !commit.stderr && /^\d+$/.test(commit.stdout.trim())) {
     epochs.push(Number(commit.stdout.trim()) * 1000);
   }
   for (const reflog of reflogs) {
     const match = reflog.stdout.trim().match(/@\{(\d+)\}$/);
-    if (reflog.ok && match) epochs.push(Number(match[1]) * 1000);
+    if (reflog.ok && !reflog.stderr && match) epochs.push(Number(match[1]) * 1000);
   }
   if (exactMergeAt !== null) {
     const mergeEpoch = Date.parse(exactMergeAt);
     if (Number.isFinite(mergeEpoch)) epochs.push(mergeEpoch);
   }
+  if (exactDefaultLandingAtMs !== null) {
+    epochs.push(exactDefaultLandingAtMs);
+  }
   if (
     epochs.length === 0 ||
     !commit.ok ||
+    Boolean(commit.stderr) ||
     !/^\d+$/.test(commit.stdout.trim()) ||
     reflogs.some(
-      (reflog) => !reflog.ok || !/@\{(\d+)\}$/.test(reflog.stdout.trim()),
+      (reflog) =>
+        !reflog.ok ||
+        Boolean(reflog.stderr) ||
+        !/@\{(\d+)\}$/.test(reflog.stdout.trim()),
     )
   ) {
     return {
@@ -1037,7 +1057,7 @@ function fetchWorkflowSweep(
       root,
       120_000,
     );
-    if (!result.ok) {
+    if (!result.ok || result.stderr) {
       return { runs: [], error: result.stderr || `workflow inventory failed for ${state}` };
     }
     try {
@@ -1147,7 +1167,9 @@ function fetchClaims(root: string): {
   error: string | null;
 } {
   const result = command("coven", ["claim", "status", "--json"], root);
-  if (!result.ok) return { claims: [], error: result.stderr || "Coven claims unavailable" };
+  if (!result.ok || result.stderr) {
+    return { claims: [], error: result.stderr || "Coven claims unavailable" };
+  }
   try {
     const parsed = parseJson<{
       claims: Array<{ branch: string; agent_id: string; state: string }>;
@@ -1176,7 +1198,9 @@ function fetchClaims(root: string): {
 
 function fetchSessions(root: string): { sessions: CovenSession[]; error: string | null } {
   const result = command("coven", ["sessions", "--json"], root);
-  if (!result.ok) return { sessions: [], error: result.stderr || "Coven sessions unavailable" };
+  if (!result.ok || result.stderr) {
+    return { sessions: [], error: result.stderr || "Coven sessions unavailable" };
+  }
   try {
     const parsed = parseJson<{
       sessions: Array<{ id: string; project_root: string; status: string }>;
@@ -1431,7 +1455,9 @@ function fetchTasks(root: string): { tasks: BeadTask[]; error: string | null } {
     root,
     120_000,
   );
-  if (!result.ok) return { tasks: [], error: result.stderr || "Beads inventory unavailable" };
+  if (!result.ok || result.stderr) {
+    return { tasks: [], error: result.stderr || "Beads inventory unavailable" };
+  }
   try {
     const parsed = parseJson<
       Array<{
@@ -1538,6 +1564,97 @@ function onDefaultBranch(root: string, head: string, authoritativeDefaultOid: st
   if (result.status === 0) return { value: true, error: null };
   if (result.status === 1) return { value: false, error: null };
   return { value: false, error: result.stderr || "default-branch ancestry check failed" };
+}
+
+function defaultLandingAt(
+  root: string,
+  head: string,
+  authoritativeDefaultOid: string,
+): { value: number | null; error: string | null } {
+  if (!OID.test(head) || !OID.test(authoritativeDefaultOid)) {
+    return { value: null, error: "default branch landing evidence has malformed OIDs" };
+  }
+
+  let landingOid = head;
+  if (head !== authoritativeDefaultOid) {
+    const ancestryPath = git(root, [
+      "rev-list",
+      "--ancestry-path",
+      "--first-parent",
+      "--reverse",
+      "--parents",
+      `${head}..${authoritativeDefaultOid}`,
+    ]);
+    if (!ancestryPath.ok || ancestryPath.stderr) {
+      return {
+        value: null,
+        error: `default branch landing ancestry path unavailable: ${
+          ancestryPath.stderr || `status ${ancestryPath.status ?? "unknown"}`
+        }`,
+      };
+    }
+    const lines = strictOutputLines(ancestryPath.stdout);
+    if (!lines) {
+      return { value: null, error: "default branch landing evidence is malformed" };
+    }
+    const seen = new Set<string>();
+    const records: Array<{ oid: string; parents: string[] }> = [];
+    for (const line of lines) {
+      const fields = line.split(" ");
+      const [oid, ...parents] = fields;
+      if (
+        fields.some((field) => !OID.test(field)) ||
+        !oid ||
+        parents.length === 0 ||
+        seen.has(oid) ||
+        new Set(fields).size !== fields.length
+      ) {
+        return { value: null, error: "default branch landing evidence is malformed" };
+      }
+      seen.add(oid);
+      records.push({ oid, parents });
+    }
+    if (records.at(-1)?.oid !== authoritativeDefaultOid) {
+      return { value: null, error: "default branch landing evidence is malformed" };
+    }
+    for (let index = 1; index < records.length; index += 1) {
+      if (records[index]!.parents[0] !== records[index - 1]!.oid) {
+        return { value: null, error: "default branch landing evidence is ambiguous" };
+      }
+    }
+    landingOid = records[0]!.oid;
+  }
+
+  const timestamp = git(root, [
+    "show",
+    "-s",
+    "--format=%H%x00%ct",
+    landingOid,
+  ]);
+  if (!timestamp.ok || timestamp.stderr) {
+    return {
+      value: null,
+      error: `default branch landing timestamp unavailable: ${
+        timestamp.stderr || `status ${timestamp.status ?? "unknown"}`
+      }`,
+    };
+  }
+  if (!timestamp.stdout.endsWith("\n") || timestamp.stdout.includes("\r")) {
+    return { value: null, error: "default branch landing timestamp is malformed" };
+  }
+  const fields = timestamp.stdout.slice(0, -1).split("\0");
+  if (
+    fields.length !== 2 ||
+    fields[0] !== landingOid ||
+    !/^(?:0|[1-9]\d*)$/.test(fields[1] ?? "")
+  ) {
+    return { value: null, error: "default branch landing timestamp is malformed" };
+  }
+  const epochSeconds = Number(fields[1]);
+  if (!Number.isSafeInteger(epochSeconds) || epochSeconds > Number.MAX_SAFE_INTEGER / 1_000) {
+    return { value: null, error: "default branch landing timestamp is malformed" };
+  }
+  return { value: epochSeconds * 1_000, error: null };
 }
 
 function directRefError(root: string, ref: string): string | null {
@@ -1690,7 +1807,7 @@ function matchingTasks(
     branch !== null && !PROTECTED_BRANCHES.has(branch) ? branch : null;
   const branchBeadIds = new Set(matchedBranch ? beadIdsInText(matchedBranch) : []);
   const normalizedWorktreePath =
-    worktreePath === null ? null : normalizePath(worktreePath);
+    worktreePath === null ? null : normalizeAbsoluteWorktreePath(worktreePath);
   const exactOid = new RegExp(`(?:^|[^0-9a-f])${head}(?:$|[^0-9a-f])`, "i");
   return tasks
     .filter((task) => task.status !== "closed")
@@ -1701,8 +1818,7 @@ function matchingTasks(
             (matchedBranch !== null && record.branch === matchedBranch) ||
             (normalizedWorktreePath !== null &&
               record.path !== null &&
-              path.isAbsolute(record.path) &&
-              normalizePath(record.path) === normalizedWorktreePath),
+              record.path === normalizedWorktreePath),
         ) ||
         branchBeadIds.has(task.id.toLowerCase()) ||
         exactOid.test(task.text) ||
@@ -1723,15 +1839,16 @@ function metadataFor(
   const globalErrors = tasks.flatMap((task) => task.structuredErrors);
   const allRecords = tasks.flatMap((task) => task.structured);
   const records = allRecords.filter((record) => record.branch === branch);
+  const normalizedWorktreePath =
+    worktreePath === null ? null : normalizeAbsoluteWorktreePath(worktreePath);
   const conflictingPathRecords =
-    worktreePath === null
+    normalizedWorktreePath === null
       ? []
       : allRecords.filter(
           (record) =>
             record.branch !== branch &&
             record.path !== null &&
-            path.isAbsolute(record.path) &&
-            normalizePath(record.path) === normalizePath(worktreePath),
+            record.path === normalizedWorktreePath,
         );
   const ownershipErrors =
     conflictingPathRecords.length === 0
@@ -1758,7 +1875,7 @@ function metadataFor(
     allRecords.filter(
       (candidate) =>
         candidate.path !== null &&
-        normalizePath(candidate.path) === normalizePath(record.path!),
+        candidate.path === record.path,
     ).length > 1
   ) {
     return {
@@ -1769,7 +1886,7 @@ function metadataFor(
   if (record.errors.length > 0 || !record.metadata) {
     return { metadata: null, errors: record.errors };
   }
-  if (worktreePath !== null && normalizePath(record.path!) !== normalizePath(worktreePath)) {
+  if (normalizedWorktreePath !== null && record.path !== normalizedWorktreePath) {
     return {
       metadata: null,
       errors: [`structured worktree metadata path does not match ${branch}`],
@@ -1969,6 +2086,10 @@ export function collectWorktreeLifecycleInventory(
             error: defaultBranch.error ?? "default branch inventory verification failed",
           }
         : onDefaultBranch(root, unit.head, defaultBranch.oid);
+    const landing =
+      ancestry.value && defaultBranch.oid !== null
+        ? defaultLandingAt(root, unit.head, defaultBranch.oid)
+        : { value: null, error: null };
     let pullRequestMergeError: string | null = null;
     let unitPullRequests: PullRequest[] = [];
     try {
@@ -2001,6 +2122,7 @@ export function collectWorktreeLifecycleInventory(
       unit.path ?? root,
       unit.ref,
       exactMerged?.mergedAt ?? null,
+      landing.value,
       unit.path !== null,
     );
     const remote = unit.ref
@@ -2030,6 +2152,7 @@ export function collectWorktreeLifecycleInventory(
       ...pathErrors,
       ...(unit.path ? (sessionOwnership.probeErrorsByPath.get(unit.path) ?? []) : []),
       recency.error,
+      landing.error,
       remoteRefs.error,
       ancestry.error,
       remote.error,
@@ -2107,7 +2230,7 @@ export function collectWorktreeLifecycleInventory(
         structuredRecords.filter(
           (candidate) =>
             candidate.path !== null &&
-            normalizePath(candidate.path) === normalizePath(record.path!),
+            candidate.path === record.path,
         ).length === 1,
     )
     .filter((record) => {
@@ -2134,7 +2257,7 @@ export function collectWorktreeLifecycleInventory(
             additionalPaths: [
               ...new Set(
                 exception.additionalPaths.map((candidate) =>
-                  normalizePath(candidate),
+                  normalizeAbsoluteWorktreePath(candidate),
                 ),
               ),
             ].sort(),
