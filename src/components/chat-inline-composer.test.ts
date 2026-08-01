@@ -55,6 +55,17 @@ test("the dashboard never builds its own composer", () => {
   }
 });
 
+test("the inline composer stays selectable inside a select-none root", () => {
+  // ChatNewDashboard's root carries `select-none`; the composer is now nested
+  // inside it, so `user-select: none` inherits onto the textarea. Chromium
+  // still allows keyboard select-all, so a functional probe passes — what
+  // breaks is mouse drag-selection under WebKit, which is the desktop shell.
+  assert.match(dashboard, /home-dash__body home-dash--embed select-none/, "the root really is select-none");
+  const rule = css.match(/\.home-dash__composer \{[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.match(rule, /user-select: text/, "selection is handed back to the composer");
+  assert.match(rule, /-webkit-user-select: text/, "including the WebKit prefix — the desktop shell is WKWebView");
+});
+
 test("inline styling only undoes dock chrome", () => {
   const rule = css.match(/\.home-dash__composer \.cave-composer-dock \{[\s\S]*?\n\}/)?.[0] ?? "";
   assert.ok(rule, "the inline override exists");

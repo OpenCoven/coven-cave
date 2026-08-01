@@ -189,6 +189,20 @@
   background: none;
 }
 
+/* The dashboard root carries `select-none` — the launcher is chrome, not prose,
+   and dragging across it should not paint a selection. The composer now lives
+   INSIDE that root, so selection has to be handed back explicitly or the brief
+   cannot be selected with the mouse. user-select inherits, so one declaration
+   on the wrapper covers the textarea and every label under it.
+   Not theoretical: `user-select: none` computes onto the textarea, and WebKit
+   honours it on form controls — the desktop shell is WKWebView. Chromium still
+   allows keyboard select-all, which is why this survives a shallow check.
+   Restores parity with the docked composer, which has no select-none ancestor. */
+.home-dash__composer {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* The board clips (no-scroll design) and is a size container. Neither reaches
    the pickers: ui/popover portals to document.body, so it is neither clipped
    by the overflow nor trapped by container-type the way a fixed-position
