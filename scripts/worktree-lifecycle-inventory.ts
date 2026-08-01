@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync, type Stats } from "node:fs";
 import { devNull } from "node:os";
 
 import path from "node:path";
@@ -1196,7 +1196,7 @@ function fetchWorkflows(
 }
 
 function fetchClaims(root: string): {
-  claims: Array<{ branch: string; agent_id: string; state: string }>;
+  claims: Array<{ branch: string; agent_id: string; state: string; head: string | null }>;
   error: string | null;
 } {
   const result = command("coven", ["claim", "status", "--json"], root);
@@ -1205,7 +1205,7 @@ function fetchClaims(root: string): {
   }
   try {
     const parsed = parseJson<{
-      claims: Array<{ branch: string; agent_id: string; state: string }>;
+      claims: Array<{ branch: string; agent_id: string; state: string; head?: unknown }>;
     }>(result.stdout, "Coven claims");
     if (
       !isRecord(parsed) ||
@@ -1218,12 +1218,25 @@ function fetchClaims(root: string): {
           typeof claim.agent_id === "string" &&
           claim.agent_id.length > 0 &&
           typeof claim.state === "string" &&
-          CLAIM_STATES.has(claim.state),
+          CLAIM_STATES.has(claim.state) &&
+          (claim.head === undefined ||
+            claim.head === null ||
+            (typeof claim.head === "string" && OID.test(claim.head))) &&
+          (claim.state !== "active" ||
+            (typeof claim.head === "string" && OID.test(claim.head))),
       )
     ) {
       throw new Error();
     }
-    return { claims: parsed.claims, error: null };
+    return {
+      claims: parsed.claims.map((claim) => ({
+        branch: claim.branch,
+        agent_id: claim.agent_id,
+        state: claim.state,
+        head: typeof claim.head === "string" ? claim.head : null,
+      })),
+      error: null,
+    };
   } catch {
     return { claims: [], error: "Coven claims returned malformed data" };
   }
@@ -1933,122 +1946,6 @@ function originRepositoryIdentity(root: string, requestedRepo: string): OriginRe
   return { repository, error: null };
 }
 
-function remoteTrackingReflogIntegrationAt(
-  root: string,
-  localTrackingRef: string,
-  authoritativeDefaultOid: string,
-): { value: number | null; error: string | null } {
-  const result = git(root, [
-    "reflog",
-    "show",
-    "-1",
-    "--date=unix",
-    "--format=%H%x00%gD",
-    localTrackingRef,
-  ]);
-  if (!result.ok) {
-    return {
-      value: null,
-      error: `default integration tracking reflog unavailable: ${
-        result.stderr || "command unavailable"
-      }`,
-    };
-  }
-  const escapedRef = localTrackingRef.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = result.stdout.match(
-    new RegExp(
-      `^((?:[0-9a-f]{40}|[0-9a-f]{64}))\\0${escapedRef}@\\{(\\d+)\\}\\n?$`,
-    ),
-  );
-  if (!match || match[1] !== authoritativeDefaultOid) {
-    return {
-      value: null,
-      error: "default integration tracking reflog returned malformed or mismatched data",
-    };
-  }
-  const epoch = Number(match[2]);
-  const epochMs = epoch * 1000;
-  if (
-    !Number.isSafeInteger(epoch) ||
-    epoch <= 0 ||
-    !Number.isSafeInteger(epochMs) ||
-    !Number.isFinite(new Date(epochMs).getTime())
-  ) {
-    return { value: null, error: "default integration tracking reflog timestamp is invalid" };
-  }
-  return { value: epochMs, error: null };
-}
-
-function defaultIntegrationAt(
-  root: string,
-  head: string,
-  defaultBranch: RemoteDefaultBranch,
-  provenAncestor: boolean,
-): { value: number | null; error: string | null } {
-  if (
-    !provenAncestor ||
-    defaultBranch.oid === null ||
-    defaultBranch.localTrackingRef === null
-  ) {
-    return { value: null, error: null };
-  }
-  if (head === defaultBranch.oid) {
-    return remoteTrackingReflogIntegrationAt(
-      root,
-      defaultBranch.localTrackingRef,
-      defaultBranch.oid,
-    );
-  }
-
-  const pathResult = git(root, [
-    "rev-list",
-    "--ancestry-path",
-    "--reverse",
-    "--topo-order",
-    `${head}..${defaultBranch.oid}`,
-  ]);
-  if (!pathResult.ok) {
-    return {
-      value: null,
-      error: `default integration ancestry path unavailable: ${
-        pathResult.stderr || "command unavailable"
-      }`,
-    };
-  }
-  if (pathResult.stdout === "") {
-    return remoteTrackingReflogIntegrationAt(
-      root,
-      defaultBranch.localTrackingRef,
-      defaultBranch.oid,
-    );
-  }
-  const descendants = strictOutputLines(pathResult.stdout);
-  if (!descendants || descendants.some((oid) => !OID.test(oid))) {
-    return { value: null, error: "default integration ancestry path returned malformed data" };
-  }
-  const timestamp = git(root, ["show", "-s", "--format=%ct", descendants[0]!]);
-  const timestampRaw = timestamp.stdout.trim();
-  if (!timestamp.ok || !/^\d+$/.test(timestampRaw)) {
-    return {
-      value: null,
-      error: `default integration timestamp is unavailable or malformed: ${
-        timestamp.stderr || timestampRaw || "command unavailable"
-      }`,
-    };
-  }
-  const epoch = Number(timestampRaw);
-  const epochMs = epoch * 1000;
-  if (
-    !Number.isSafeInteger(epoch) ||
-    epoch <= 0 ||
-    !Number.isSafeInteger(epochMs) ||
-    !Number.isFinite(new Date(epochMs).getTime())
-  ) {
-    return { value: null, error: "default integration timestamp is invalid" };
-  }
-  return { value: epochMs, error: null };
-}
-
 function remoteDefaultBranch(root: string): RemoteDefaultBranch {
   const fail = (message: string): RemoteDefaultBranch => ({
     branch: null,
@@ -2300,6 +2197,78 @@ function assignActiveSessions(
   return { sessionIdsByPath, probeErrorsByPath };
 }
 
+type GraftInventory = {
+  snapshot: string;
+  error: string | null;
+};
+
+function statIdentity(stats: Stats): string {
+  return [
+    stats.dev,
+    stats.ino,
+    stats.mode,
+    stats.size,
+    stats.mtimeMs,
+    stats.ctimeMs,
+  ].join(":");
+}
+
+function graftInventory(commonGitDir: string): GraftInventory {
+  const graftPath = path.join(commonGitDir, "info", "grafts");
+  let initialStats: Stats;
+  try {
+    initialStats = lstatSync(graftPath);
+  } catch (error) {
+    const code = isRecord(error) && typeof error.code === "string" ? error.code : "UNKNOWN";
+    if (code === "ENOENT") return { snapshot: "absent", error: null };
+    return {
+      snapshot: `unreadable-state:${code}`,
+      error:
+        "Git history override inventory is unsafe: shared git common dir info/grafts state is unreadable",
+    };
+  }
+
+  const initialIdentity = statIdentity(initialStats);
+  if (!initialStats.isFile()) {
+    return {
+      snapshot: `non-regular:${initialIdentity}`,
+      error:
+        "Git history override inventory is unsafe: shared git common dir info/grafts is not a regular file",
+    };
+  }
+
+  let raw: Buffer;
+  try {
+    raw = readFileSync(graftPath);
+  } catch (error) {
+    const code = isRecord(error) && typeof error.code === "string" ? error.code : "UNKNOWN";
+    return {
+      snapshot: `unreadable-file:${initialIdentity}:${code}`,
+      error:
+        "Git history override inventory is unsafe: shared git common dir info/grafts is unreadable",
+    };
+  }
+
+  let finalStats: Stats;
+  try {
+    finalStats = lstatSync(graftPath);
+  } catch {
+    throw new Error(HISTORY_OVERRIDE_DRIFT_ERROR);
+  }
+  const finalIdentity = statIdentity(finalStats);
+  if (!finalStats.isFile() || finalIdentity !== initialIdentity) {
+    throw new Error(HISTORY_OVERRIDE_DRIFT_ERROR);
+  }
+
+  return {
+    snapshot: `regular:${initialIdentity}:${createHash("sha256").update(raw).digest("hex")}`,
+    error:
+      raw.length === 0
+        ? null
+        : "Git history override inventory is unsafe: shared git common dir info/grafts is nonempty",
+  };
+}
+
 function fingerprint(...evidence: string[]): string {
   const hash = createHash("sha256");
   for (const value of evidence) {
@@ -2429,6 +2398,7 @@ export function collectWorktreeLifecycleInventory(
         };
   const branchGlobalErrors = [
     ...initialHistoryOverrides.errors,
+    initialGrafts.error,
     originIdentity.error,
 
     ...prs.globalErrors,
@@ -2450,7 +2420,6 @@ export function collectWorktreeLifecycleInventory(
             error: defaultBranch.error ?? "default branch inventory verification failed",
           }
         : onDefaultBranch(root, unit.head, defaultBranch.oid);
-    const integration = defaultIntegrationAt(root, unit.head, defaultBranch, ancestry.value);
     let pullRequestMergeError: string | null = null;
     let unitPullRequests: PullRequest[] = [];
     try {
@@ -2551,11 +2520,17 @@ export function collectWorktreeLifecycleInventory(
       nonDisposableIgnoredPaths: state.nonDisposableIgnoredPaths,
       indexFlags: flags.flags,
       processOwners: unit.path ? processOwnersFor(unit.path, processes.owners) : [],
-      claimOwners: unit.branch
-        ? claims.claims
-            .filter((claim) => claim.branch === unit.branch && claim.state === "active")
-            .map((claim) => claim.agent_id)
-        : [],
+      claimOwners: [
+        ...new Set(
+          claims.claims
+            .filter(
+              (claim) =>
+                claim.state === "active" &&
+                (claim.branch === unit.branch || claim.head === unit.head),
+            )
+            .map((claim) => claim.agent_id),
+        ),
+      ],
       taskIds: matchingTasks(unit.branch, unit.path, unit.head, tasks.tasks),
       openPrs,
       mergedPr: exactMerged
@@ -2585,6 +2560,12 @@ export function collectWorktreeLifecycleInventory(
     "--format=%(refname)%0a%(objectname)%00",
     "refs/heads",
   ]);
+  const finalReplacementRefsRaw = requiredGit(root, [
+    "for-each-ref",
+    "--format=%(refname)%0a%(objectname)%00",
+    "refs/replace",
+  ]);
+  const finalGrafts = graftInventory(commonGitDir);
   const finalHistoryOverrides = historyOverrideProbe(root, commonGitDir);
   const finalReplacementRefsRaw = requiredGit(root, [
     "for-each-ref",
@@ -2594,13 +2575,13 @@ export function collectWorktreeLifecycleInventory(
   const finalGrafts = graftInventory(commonGitDir);
   if (
     finalWorktreeRaw !== initialWorktreeRaw ||
-    finalRefsRaw !== initialRefsRaw ||
-    finalHistoryOverrides.replaceRefsState !== initialHistoryOverrides.replaceRefsState ||
-    finalHistoryOverrides.graftState !== initialHistoryOverrides.graftState
+    finalRefsRaw !== initialRefsRaw
   ) {
     throw new Error("worktree or branch inventory changed during patrol");
   }
   if (
+    finalHistoryOverrides.replaceRefsState !== initialHistoryOverrides.replaceRefsState ||
+    finalHistoryOverrides.graftState !== initialHistoryOverrides.graftState ||
     finalReplacementRefsRaw !== initialReplacementRefsRaw ||
     finalGrafts.snapshot !== initialGrafts.snapshot
   ) {
