@@ -43,9 +43,12 @@ struct ChatView: View {
     @State private var modelPickerOptions: [ChatModelOption] = []
     @State private var modelPickerCurrent = ""
     @State private var modelPickerAllowsRuntimeDefault = false
+    @State private var modelPickerProvenance: String?
     @State private var sessionModelState: ChatModelState?
     @State private var modelControlCapabilities: [ChatModelControlCapability] = []
     @State private var modelControlValues: [String: String] = [:]
+    @State private var modelBindingScope: String?
+    @State private var modelPresentationScope = ChatModelPresentationScope()
     @State private var modelRequests = ChatModelRequestCoordinator()
     @State private var modelMutationQueue = ChatModelMutationQueue()
     @State private var showTasks = false
@@ -225,9 +228,10 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showModelPicker) {
             ModelPickerSheet(
-                options: modelPickerOptions,
-                current: modelPickerCurrent,
-                allowsRuntimeDefault: modelPickerAllowsRuntimeDefault,
+                options: presentedModelPickerOptions,
+                current: modelPresentationIsCurrent ? modelPickerCurrent : "",
+                allowsRuntimeDefault: presentedModelPickerAllowsRuntimeDefault,
+                provenance: presentedModelPickerProvenance,
                 onSelect: { id in
                 guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return }
                 _ = selectModel(id, familiarId: familiarId, sessionId: modelSessionId(familiarId))
@@ -347,7 +351,13 @@ struct ChatView: View {
             .padding(.horizontal, 14)
             .frame(minHeight: 44)
             Divider()
-            ForEach(modelControlCapabilities) { capability in
+            sessionDetailRow(
+                "Inventory",
+                value: ChatModelInventoryProvenancePresentation.label(for: presentedModelPickerProvenance),
+                systemImage: "info.circle"
+            )
+            Divider()
+            ForEach(presentedModelControlCapabilities) { capability in
                 Divider()
                 sessionControlRow(systemImage: capability.family == "reasoning" ? "brain" : "slider.horizontal.3") {
                     Picker(capability.delivery == "prompt-only" ? "\(capability.label) (Prompt guidance)" : "\(capability.label) (Native)",
@@ -405,12 +415,14 @@ struct ChatView: View {
     private var sessionModelLabel: String {
         if let pendingModelOverride = thread.pendingModelOverride {
             if pendingModelOverride.isEmpty { return "Runtime default" }
-            return modelPickerOptions.first(where: { $0.id == pendingModelOverride })?.label
+            return presentedModelPickerOptions.first(where: { $0.id == pendingModelOverride })?.label
                 ?? conciseModelName(pendingModelOverride)
         }
-        guard let state = sessionModelState else { return thread.isGroup ? "Per familiar" : "Loading…" }
+        guard let state = presentedSessionModelState else {
+            return thread.isGroup ? "Per familiar" : "Loading…"
+        }
         if state.effectiveModel.isEmpty { return "Runtime default" }
-        return modelPickerOptions.first(where: { $0.id == state.effectiveModel })?.label
+        return presentedModelPickerOptions.first(where: { $0.id == state.effectiveModel })?.label
             ?? conciseModelName(state.effectiveModel)
     }
 
@@ -426,18 +438,90 @@ struct ChatView: View {
 
     private var sessionRuntimeLabel: String {
         if thread.isGroup { return "Per familiar" }
-        guard let state = sessionModelState else { return "Unavailable" }
+        guard let state = presentedSessionModelState else { return "Unavailable" }
         return state.runtime?.isEmpty == false ? state.runtime! : state.harness
     }
 
-    private var modelStateLoadKey: String {
-        guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return "group" }
-        return "\(familiarId):\(modelSessionId(familiarId) ?? "new")"
+    private var modelStateLoadKey: ChatModelRequestTarget? { currentModelLoadTarget }
+
+    private var currentModelLoadTarget: ChatModelRequestTarget? {
+        guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return nil }
+        return makeModelRequestTarget(
+            familiarId: familiarId,
+            sessionId: modelSessionId(familiarId)
+        )
     }
 
     private var currentModelRequestTarget: ChatModelRequestTarget? {
-        guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return nil }
-        return ChatModelRequestTarget(familiarId: familiarId, sessionId: modelSessionId(familiarId))
+        currentModelLoadTarget?.withBindingScope(modelBindingScope)
+    }
+
+    private func makeModelRequestTarget(
+        familiarId: String,
+        sessionId: String?
+    ) -> ChatModelRequestTarget {
+        let session = sessionId.flatMap { id in
+            app.serverSessions.first(where: { $0.id == id })
+        }
+        let harness = (session?.harness ?? app.familiar(familiarId)?.harness)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let runtime = session?.runtime?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var identity: [String] = []
+        if let harness, !harness.isEmpty { identity.append("harness:\(harness)") }
+        if let runtime, !runtime.isEmpty { identity.append("runtime:\(runtime)") }
+        return ChatModelRequestTarget(
+            familiarId: familiarId,
+            sessionId: sessionId,
+            runtimeIdentity: identity.isEmpty ? nil : identity.joined(separator: "|")
+        )
+    }
+
+    private var modelPresentationIsCurrent: Bool {
+        modelPresentationScope.isCurrent(for: currentModelRequestTarget)
+    }
+
+    private var presentedModelPickerOptions: [ChatModelOption] {
+        modelPresentationIsCurrent ? modelPickerOptions : []
+    }
+
+    private var presentedModelPickerAllowsRuntimeDefault: Bool {
+        modelPresentationIsCurrent && modelPickerAllowsRuntimeDefault
+    }
+
+    private var presentedModelPickerProvenance: String? {
+        modelPresentationIsCurrent ? modelPickerProvenance : nil
+    }
+
+    private var presentedModelControlCapabilities: [ChatModelControlCapability] {
+        modelPresentationIsCurrent ? modelControlCapabilities : []
+    }
+
+    private var presentedSessionModelState: ChatModelState? {
+        modelPresentationIsCurrent ? sessionModelState : nil
+    }
+
+    private func prepareModelStateLoad(for target: ChatModelRequestTarget?) {
+        guard modelPresentationScope.beginLoading(for: target) else { return }
+        sessionModelState = nil
+        modelPickerOptions = []
+        modelPickerCurrent = ""
+        modelPickerAllowsRuntimeDefault = false
+        modelPickerProvenance = nil
+        modelControlCapabilities = []
+        modelControlValues = [:]
+    }
+
+    private func rekeyModelPresentation(
+        for target: ChatModelRequestTarget,
+        response: ChatModelStateResponse
+    ) -> Bool {
+        guard let responseTarget = modelPresentationScope.rekeyForResponse(
+            for: target,
+            currentTarget: currentModelRequestTarget,
+            bindingScope: response.presentationBindingScope
+        ) else { return false }
+        modelBindingScope = response.presentationBindingScope
+        return currentModelRequestTarget == responseTarget
     }
 
     private var turnModelBinding: ChatModelTurnBinding {
@@ -446,7 +530,7 @@ struct ChatView: View {
         }
         return ChatModelTurnBinding.resolve(
             pendingModel: thread.pendingModelOverride,
-            confirmedState: sessionModelState,
+            confirmedState: presentedSessionModelState,
             hasSession: modelSessionId(familiarId) != nil
         )
     }
@@ -1348,16 +1432,20 @@ struct ChatView: View {
             return
         }
         let sessionId = modelSessionId(familiarId)
-        let target = ChatModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+        let target = makeModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+            .withBindingScope(modelBindingScope)
+        prepareModelStateLoad(for: target)
         guard let request = modelRequests.beginLoad(for: target) else { return }
         let resp: ChatModelStateResponse
         do {
             resp = try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
-            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget) else { return }
+            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
+                  rekeyModelPresentation(for: target, response: resp) else { return }
             sessionModelState = resp.state
             modelPickerOptions = resp.options ?? []
             modelPickerAllowsRuntimeDefault =
                 resp.inventory?.allowsRuntimeDefault ?? false
+            modelPickerProvenance = resp.inventory?.provenance ?? "unavailable"
             if ChatModelTurnBinding.shouldClearPending(
                 thread.pendingModelOverride,
                 confirmedState: resp.state,
@@ -1368,7 +1456,12 @@ struct ChatView: View {
             }
             modelPickerCurrent = thread.pendingModelOverride ?? resp.state.effectiveModel
         } catch {
-            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget) else { return }
+            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
+                  modelPresentationScope.canApplyResponse(
+                    for: target,
+                    currentTarget: currentModelRequestTarget
+                  ) else { return }
+            if sessionModelState == nil { modelPickerProvenance = "unavailable" }
             thread.appendSystem("Couldn't load the model list. Is the desktop reachable?", isError: true)
             app.touch(thread)
             return
@@ -1414,7 +1507,8 @@ struct ChatView: View {
         sessionId: String?
     ) -> Task<Void, Never>? {
         let stagedModel = model ?? ""
-        let target = ChatModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+        let target = makeModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+            .withBindingScope(modelBindingScope)
         modelRequests.beginIntent(for: target)
         thread.pendingModelOverride = stagedModel
         modelPickerCurrent = stagedModel
@@ -1512,24 +1606,34 @@ struct ChatView: View {
         reconciling expectedTarget: ChatModelRequestTarget? = nil
     ) async -> (outcome: ChatModelReconciliationOutcome, response: ChatModelStateResponse?) {
         guard !thread.isGroup,
-              let client = app.client,
               let familiarId = thread.familiarIds.first else {
-            sessionModelState = nil
-            modelPickerOptions = []
-            modelPickerAllowsRuntimeDefault = false
+            prepareModelStateLoad(for: nil)
             return expectedTarget == nil ? (.failed, nil) : (.superseded, nil)
         }
         let sessionId = modelSessionId(familiarId)
-        let target = ChatModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
-        guard expectedTarget == nil || expectedTarget == target,
-              let request = modelRequests.beginLoad(for: target) else { return (.superseded, nil) }
+        let target = makeModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+            .withBindingScope(modelBindingScope)
+        prepareModelStateLoad(for: target)
+        guard expectedTarget == nil || expectedTarget == target else { return (.superseded, nil) }
+        guard let client = app.client else {
+            if modelPresentationScope.canApplyResponse(
+                for: target,
+                currentTarget: currentModelRequestTarget
+            ) {
+                modelPickerProvenance = "unavailable"
+            }
+            return (.failed, nil)
+        }
+        guard let request = modelRequests.beginLoad(for: target) else { return (.superseded, nil) }
         do {
             let response = try await client.chatModelState(
                 familiarId: familiarId,
                 sessionId: sessionId)
             let outcome = modelRequests.reconciliationOutcome(
                 for: request, currentTarget: currentModelRequestTarget, failed: false)
-            guard outcome == .applied else { return (outcome, nil) }
+            guard outcome == .applied,
+                  rekeyModelPresentation(for: target, response: response)
+            else { return (outcome, nil) }
             sessionModelState = response.state
             modelControlCapabilities = response.controls ?? []
             let allowed = Dictionary(uniqueKeysWithValues: modelControlCapabilities.map {
@@ -1539,6 +1643,7 @@ struct ChatView: View {
             modelPickerOptions = response.options ?? []
             modelPickerAllowsRuntimeDefault =
                 response.inventory?.allowsRuntimeDefault ?? false
+            modelPickerProvenance = response.inventory?.provenance ?? "unavailable"
             if ChatModelTurnBinding.shouldClearPending(
                 thread.pendingModelOverride,
                 confirmedState: response.state,
@@ -1552,7 +1657,12 @@ struct ChatView: View {
         } catch {
             let outcome = modelRequests.reconciliationOutcome(
                 for: request, currentTarget: currentModelRequestTarget, failed: true)
-            guard outcome == .failed else { return (outcome, nil) }
+            guard outcome == .failed,
+                  modelPresentationScope.canApplyResponse(
+                    for: target,
+                    currentTarget: currentModelRequestTarget
+                  ) else { return (outcome, nil) }
+            if sessionModelState == nil { modelPickerProvenance = "unavailable" }
             return (.failed, nil)
         }
     }
@@ -1722,20 +1832,19 @@ struct ChatView: View {
                 return
             }
 
-            let destinationModel = destination.pendingModelOverride
-            let destinationScope: ChatModelOverrideScope? = destinationModel.map { _ in
-                destination.sessionIds[familiar.id]?.isEmpty == false
-                    ? .nextMessage
-                    : .session
-            }
+            let destinationModelBinding = ChatModelTurnBinding.resolve(
+                pendingModel: destination.pendingModelOverride,
+                confirmedState: nil,
+                hasSession: destination.sessionIds[familiar.id]?.isEmpty == false
+            )
             destination.send(
                 prompt,
                 displayText: displayText,
                 reasoningEffort: thinkingEffort,
                 responseSpeed: responseSpeed,
                 modelControls: [:],
-                modelOverride: destinationModel,
-                modelOverrideScope: destinationScope,
+                modelOverride: destinationModelBinding.modelOverride,
+                modelOverrideScope: destinationModelBinding.scope,
                 client: client
             ) {
                 app.touch(destination)

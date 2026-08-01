@@ -58,6 +58,23 @@ assert.equal(
   }).source,
   "next-message",
 );
+assert.deepEqual(
+  resolveChatModelState({
+    ...base,
+    sessionModel: "anthropic/claude-opus-4-7",
+    nextMessageModel: "",
+  }),
+  {
+    familiarId: "salem",
+    harness: "claude",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "",
+    source: "runtime-default",
+    applicationState: "saved",
+    reason: "Using the runtime's configured default model for this message.",
+  },
+  "a one-turn Runtime-default sentinel overrides the saved session model without deleting it",
+);
 assert.equal(resolveChatModelState({ ...base, familiarModel: null }).source, "global-default");
 assert.deepEqual(
   resolveChatModelState({

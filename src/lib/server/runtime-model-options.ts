@@ -1,4 +1,5 @@
 import { canonicalHarnessId } from "../harness-adapters.ts";
+import { cleanModelId, isSyntheticLocalModel } from "../chat-model-state.ts";
 import {
   catalogForRuntime,
   type RuntimeModelOption,
@@ -6,17 +7,42 @@ import {
 import { listClaudeModelInventory, listClaudeModels } from "./claude-models.ts";
 import { listCopilotModelInventory, listCopilotModels } from "./copilot-models.ts";
 import { listGrokModels } from "./grok-models.ts";
+import {
+  listHermesModelInventory,
+  listHermesModels,
+} from "./hermes-models.ts";
 import { listOpenCodeModels } from "./opencode-models.ts";
 
 export type RuntimeModelOptionsDependencies = {
   allowOpenCodeInventory?: boolean;
+  /** Hermes API discovery is valid only for a bare, local binding. Callers
+   * that resolved familiar profile/SSH state opt in explicitly. */
+  allowHermesInventory?: boolean;
   listClaude?: typeof listClaudeModels;
   listCopilot?: typeof listCopilotModels;
   listClaudeInventory?: typeof listClaudeModelInventory;
   listCopilotInventory?: typeof listCopilotModelInventory;
   listGrok?: typeof listGrokModels;
+  listHermes?: typeof listHermesModels;
+  listHermesInventory?: typeof listHermesModelInventory;
   listOpenCode?: typeof listOpenCodeModels;
 };
+
+function sanitizeModels(
+  runtime: string,
+  options: readonly RuntimeModelOption[],
+): RuntimeModelOption[] {
+  const models = new Map<string, RuntimeModelOption>();
+  for (const option of options) {
+    const id = cleanModelId(option.id);
+    if (!id || isSyntheticLocalModel(id, runtime)) continue;
+    const label = typeof option.label === "string" && option.label.trim()
+      ? option.label.trim()
+      : id;
+    models.set(id, { id, label });
+  }
+  return [...models.values()];
+}
 
 export type RuntimeModelInventoryProvenance =
   | "live"
@@ -58,51 +84,60 @@ export async function listRuntimeModelInventory(
 ): Promise<RuntimeModelInventory> {
   const canonicalRuntime = canonicalHarnessId(runtime);
   const fallback = fallbackInventory(canonicalRuntime);
+  const degraded = canonicalRuntime === "hermes"
+    ? { ...fallback, models: [], provenance: "runtime-managed" as const }
+    : fallback;
   try {
+    let result: {
+      models: RuntimeModelOption[];
+      provenance: RuntimeModelInventoryProvenance;
+    } | null = null;
     if (canonicalRuntime === "claude") {
-      const result = dependencies.listClaude
+      const discovery = dependencies.listClaude
         ? { models: await dependencies.listClaude(familiarId), provenance: "live" as const }
         : await (dependencies.listClaudeInventory ?? listClaudeModelInventory)(familiarId);
-      return result.models.length > 0
-        ? { ...fallback, models: [...result.models], provenance: result.provenance }
-        : fallback;
-    }
-    if (canonicalRuntime === "copilot") {
-      const result = dependencies.listCopilot
+      result = discovery;
+    } else if (canonicalRuntime === "copilot") {
+      const discovery = dependencies.listCopilot
         ? { models: await dependencies.listCopilot(familiarId), provenance: "live" as const }
         : await (dependencies.listCopilotInventory ?? listCopilotModelInventory)(familiarId);
-      return result.models.length > 0
-        ? { ...fallback, models: [...result.models], provenance: result.provenance }
-        : fallback;
-    }
-    if (canonicalRuntime === "grok") {
-      const models = await (dependencies.listGrok ?? listGrokModels)(familiarId);
-      return models.length > 0
-        ? { ...fallback, models: [...models], provenance: "live" }
-        : fallback;
-    }
-    // Hermes can be configured against providers other than OpenAI (notably
-    // OpenRouter). Its static OpenAI seed is therefore never an authenticated
-    // inventory for a familiar-scoped request; defer to the configured CLI
-    // rather than exposing the wrong provider's models.
-    if (canonicalRuntime === "hermes") {
-      return { ...fallback, models: [], provenance: "runtime-managed" };
-    }
-    if (
+      result = discovery;
+    } else if (canonicalRuntime === "grok") {
+      result = {
+        models: await (dependencies.listGrok ?? listGrokModels)(familiarId),
+        provenance: "live",
+      };
+    } else if (canonicalRuntime === "hermes") {
+      if (dependencies.allowHermesInventory !== true) return degraded;
+      const discovery = dependencies.listHermes
+        ? { models: await dependencies.listHermes(familiarId), provenance: "live" as const }
+        : await (dependencies.listHermesInventory ?? listHermesModelInventory)(familiarId);
+      result = discovery;
+    } else if (
       canonicalRuntime === "opencode" &&
       dependencies.allowOpenCodeInventory === true
     ) {
-      const models = [
-        ...await (dependencies.listOpenCode ?? listOpenCodeModels)(familiarId),
-      ];
-      return models.length > 0
-        ? { ...fallback, models, provenance: "live" }
-        : fallback;
+      result = {
+        models: [
+          ...await (dependencies.listOpenCode ?? listOpenCodeModels)(familiarId),
+        ],
+        provenance: "live",
+      };
+    }
+
+    if (result && result.models.length > 0) {
+      const models = sanitizeModels(canonicalRuntime, result.models);
+      if (models.length === 0) return degraded;
+      return {
+        ...degraded,
+        models,
+        provenance: result.provenance,
+      };
     }
   } catch {
-    return fallback;
+    return degraded;
   }
-  return fallback;
+  return degraded;
 }
 
 /** Compatibility projection for callers that only need the menu entries. */

@@ -8,7 +8,7 @@ assert.match(route, /export async function GET/);
 assert.match(route, /export async function PATCH/);
 assert.match(
   route,
-  /state\.harness === "opencode"[\s\S]*?!rejectNonLocalRequest\(req\)[\s\S]*?listRuntimeModelInventory\([\s\S]*?allowOpenCodeInventory: canReadOpenCodeInventory/,
+  /const localInventoryRequest = rejectNonLocalRequest\(req\) === null[\s\S]*?state\.harness === "opencode" && localInventoryRequest[\s\S]*?listRuntimeModelInventory\([\s\S]*?allowOpenCodeInventory: canReadOpenCodeInventory/,
   "the aggregate endpoint uses the shared inventory while keeping OpenCode discovery local-only",
 );
 assert.match(
@@ -17,6 +17,11 @@ assert.match(
   "Claude, Copilot, OpenCode, and static clients receive one capability-aware model contract",
 );
 assert.match(route, /\n\s*inventory,\n/);
+assert.match(
+  route,
+  /function modelBindingScope\([\s\S]*?binding\.hermesProfile\.id[\s\S]*?runtimeForBinding\(binding\),[\s\S]*?runtime,[\s\S]*?hermesScope,[\s\S]*?bindingScope: modelBindingScope\(binding, state\.runtime\)/,
+  "the response exposes a non-secret binding identity for local, SSH, and Hermes profile scope transitions",
+);
 assert.match(route, /bindingFor\(config, familiarId\)/);
 assert.match(route, /resolveChatModelState/);
 assert.match(route, /loadConversation\(sessionId\)/);
@@ -24,8 +29,8 @@ assert.match(route, /saveConfig/);
 assert.match(route, /saveConversation/);
 assert.match(
   route,
-  /const hermesDirect =[\s\S]*?!isSshRuntime\(bindingFor\(await loadConfig\(\), familiarId\)\.runtime\)[\s\S]*?hermesDirect && hermesApi !== null/,
-  "SSH-bound Hermes chats must not advertise native Responses controls",
+  /const bareLocalHermes =[\s\S]*?canonicalHarnessId\(binding\.harness\) === "hermes"[\s\S]*?!binding\.hermesProfile[\s\S]*?!binding\.hasInvalidHermesProfileBinding[\s\S]*?!isSshRuntime\(binding\.runtime\)[\s\S]*?!state\.runtime\?\.startsWith\("ssh:"\)[\s\S]*?canReadHermesInventory = bareLocalHermes && localInventoryRequest[\s\S]*?allowHermesInventory: canReadHermesInventory[\s\S]*?hermesDirect = bareLocalHermes[\s\S]*?hermesDirect && hermesApi !== null/,
+  "Hermes discovery requires both local origin and a bare-local binding while remote native controls stay transport-aligned",
 );
 assert.equal(
   route.match(/sessionId && !isSafeConversationSessionId\(sessionId\)/g)?.length,

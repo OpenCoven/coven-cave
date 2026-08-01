@@ -46,6 +46,7 @@ export function resolveModelArg(
   arg: string,
   harness: string | null | undefined,
   discoveredModels?: RuntimeModelOption[],
+  allowCustom = catalogForRuntime(harness ?? "claude")?.allowCustom ?? false,
 ): string | null {
   const a = arg.trim();
   if (!a) return null;
@@ -59,7 +60,7 @@ export function resolveModelArg(
     (m) => m.id.toLowerCase().includes(lower) || m.label.toLowerCase().includes(lower),
   );
   if (partial) return partial.id;
-  return MODEL_ID_RE.test(a) ? a : null;
+  return allowCustom && MODEL_ID_RE.test(a) ? a : null;
 }
 
 /** One-line-per-model list for the `/model` (no-arg) system message. */
@@ -67,12 +68,18 @@ export function formatModelList(
   harness: string | null | undefined,
   current: string | null | undefined,
   discoveredModels?: RuntimeModelOption[],
+  allowCustom = catalogForRuntime(harness ?? "claude")?.allowCustom ?? false,
 ): string {
   const models = modelsFor(harness, discoveredModels);
   const head = current ? `Current model: ${current}` : "No model set yet.";
   if (models.length === 0) {
-    return `${head}\nThis runtime has no model menu — type \`/model <id>\` to set one.`;
+    return allowCustom
+      ? `${head}\nThis runtime has no model menu — type \`/model <id>\` to set one.`
+      : `${head}\nThis runtime has no selectable model ids.`;
   }
   const lines = models.map((m) => `  ${m.id === current ? "●" : "○"} ${m.label} — \`${m.id}\``);
-  return `${head}\nAvailable models (type \`/model <id>\` or pick from the menu):\n${lines.join("\n")}`;
+  const guidance = allowCustom
+    ? "type `/model <id>` or pick from the menu"
+    : "pick one of these ids";
+  return `${head}\nAvailable models (${guidance}):\n${lines.join("\n")}`;
 }

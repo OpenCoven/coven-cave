@@ -32,7 +32,7 @@ assert.match(
   /showSessionDetails = false\s*\n\s*Task \{ await switchModel\(""\) \}/,
   "the dropdown model row preserves the existing /model path",
 );
-assert.match(chatView, /ForEach\(modelControlCapabilities\)/, "session details render only selected-model capabilities");
+assert.match(chatView, /ForEach\(presentedModelControlCapabilities\)/, "session details render only current-scope selected-model capabilities");
 assert.match(chatView, /capability\.delivery == "prompt-only"/, "prompt-only controls are visibly labelled as guidance");
 assert.doesNotMatch(chatView, /Picker\("Thinking"|Picker\("Speed"/, "session details do not claim global Thinking or Speed settings");
 assert.doesNotMatch(chatView, /TODO\(no backend\)/, "session details do not ship known-fake controls");

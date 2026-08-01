@@ -43,6 +43,29 @@ function runtimeForBinding(binding: ReturnType<typeof bindingFor>): string | nul
   return null;
 }
 
+function modelBindingScope(
+  binding: ReturnType<typeof bindingFor>,
+  runtime: string | null,
+): string {
+  const harness = canonicalHarnessId(binding.harness);
+  const hermesScope = harness === "hermes"
+    ? binding.hasInvalidHermesProfileBinding
+      ? "invalid-profile"
+      : binding.hermesProfile
+        ? `profile:${binding.hermesProfile.id}`
+        : "bare"
+    : "default";
+  // This is a non-secret presentation identity: it intentionally excludes
+  // credentials and profile home paths while still changing across local,
+  // SSH, and Hermes profile bindings.
+  return JSON.stringify([
+    harness,
+    runtimeForBinding(binding),
+    runtime,
+    hermesScope,
+  ]);
+}
+
 function lastResponseModel(
   conversation: Awaited<ReturnType<typeof loadConversation>>,
 ): string | null {
@@ -83,37 +106,51 @@ export async function GET(req: Request) {
   }
 
   const state = await currentState(familiarId, sessionId);
+  const config = await loadConfig();
+  const binding = bindingFor(config, familiarId);
   // Also hand back the pickable model menu for this chat's runtime so non-web
   // clients (the iOS app) don't have to mirror runtime capability rules.
   // `allowCustom` means a free-typed id is valid.
-  // OpenCode's inventory is derived from local authenticated providers. Keep
-  // that CLI call local-only without denying this aggregate state endpoint to
-  // iOS, which still needs the selected model and may free-type a model id.
+  // OpenCode and bare Hermes inventories are derived from local authenticated
+  // providers. Keep those discovery calls local-only without denying this
+  // aggregate state endpoint to iOS, which still needs the selected model and
+  // may free-type a model id.
+  const localInventoryRequest = rejectNonLocalRequest(req) === null;
   const canReadOpenCodeInventory =
-    state.harness === "opencode" && !rejectNonLocalRequest(req);
+    state.harness === "opencode" && localInventoryRequest;
+  const bareLocalHermes =
+    state.harness === "hermes" &&
+    canonicalHarnessId(binding.harness) === "hermes" &&
+    !binding.hermesProfile &&
+    !binding.hasInvalidHermesProfileBinding &&
+    !isSshRuntime(binding.runtime) &&
+    !state.runtime?.startsWith("ssh:");
+  const canReadHermesInventory = bareLocalHermes && localInventoryRequest;
   const inventory = await listRuntimeModelInventory(
     state.harness,
     familiarId,
-    { allowOpenCodeInventory: canReadOpenCodeInventory },
+    {
+      allowOpenCodeInventory: canReadOpenCodeInventory,
+      allowHermesInventory: canReadHermesInventory,
+    },
   );
   // Native Hermes controls are available only through its configured Responses
   // API transport. Keep the state response aligned with the send boundary so
   // a client never renders a provider setting that would be rejected later.
-  const hermesEnvironment = state.harness === "hermes" ? harnessSpawnEnv(familiarId) : null;
+  const hermesEnvironment = bareLocalHermes ? harnessSpawnEnv(familiarId) : null;
   const hermesApi = hermesEnvironment
     ? hermesApiConfig({
         HERMES_API_URL: hermesEnvironment.HERMES_API_URL,
         HERMES_API_KEY: hermesEnvironment.HERMES_API_KEY,
       })
     : null;
-  const hermesDirect =
-    state.harness === "hermes" &&
-    !isSshRuntime(bindingFor(await loadConfig(), familiarId).runtime);
+  const hermesDirect = bareLocalHermes;
   const controls = modelControlCapabilities(state.harness, state.effectiveModel)
     .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null));
   return NextResponse.json({
     ok: true,
     state,
+    bindingScope: modelBindingScope(binding, state.runtime),
     controls,
     options: inventory.models,
     inventory,

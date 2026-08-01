@@ -132,6 +132,9 @@ struct FamiliarDetailView: View {
     @State private var modelState: ChatModelState?
     @State private var modelOptions: [ChatModelOption] = []
     @State private var modelAllowsRuntimeDefault = false
+    @State private var modelProvenance: String?
+    @State private var modelBindingScope: String?
+    @State private var modelPresentationScope = ChatModelPresentationScope()
     @State private var showModelPicker = false
     @State private var showPermissions = false
     @State private var changingModel = false
@@ -140,17 +143,51 @@ struct FamiliarDetailView: View {
         app.tasks.filter { $0.familiarId == familiar.id && $0.status.isActive }
     }
 
+    private var modelLoadTarget: ChatModelRequestTarget {
+        let harness = (app.familiar(familiar.id)?.harness ?? familiar.harness)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return ChatModelRequestTarget(
+            familiarId: familiar.id,
+            sessionId: nil,
+            runtimeIdentity: harness.flatMap { $0.isEmpty ? nil : "harness:\($0)" }
+        )
+    }
+
+    private var modelRequestTarget: ChatModelRequestTarget {
+        modelLoadTarget.withBindingScope(modelBindingScope)
+    }
+
+    private var modelPresentationIsCurrent: Bool {
+        modelPresentationScope.isCurrent(for: modelRequestTarget)
+    }
+
+    private var presentedModelState: ChatModelState? {
+        modelPresentationIsCurrent ? modelState : nil
+    }
+
+    private var presentedModelOptions: [ChatModelOption] {
+        modelPresentationIsCurrent ? modelOptions : []
+    }
+
+    private var presentedModelAllowsRuntimeDefault: Bool {
+        modelPresentationIsCurrent && modelAllowsRuntimeDefault
+    }
+
+    private var presentedModelProvenance: String? {
+        modelPresentationIsCurrent ? modelProvenance : nil
+    }
+
     private var modelLabel: String {
-        guard let state = modelState else { return familiar.model ?? "Inherited" }
+        guard let state = presentedModelState else { return familiar.model ?? "Inherited" }
         if state.effectiveModel.isEmpty { return "Runtime default" }
-        return modelOptions.first(where: { $0.id == state.effectiveModel })?.label
+        return presentedModelOptions.first(where: { $0.id == state.effectiveModel })?.label
             ?? state.effectiveModel.split(separator: "/").last.map(String.init)
             ?? state.effectiveModel
     }
 
     private var runtimeLabel: String {
-        if let runtime = modelState?.runtime, !runtime.isEmpty { return runtime }
-        return modelState?.harness ?? familiar.harness ?? "Inherited"
+        if let runtime = presentedModelState?.runtime, !runtime.isEmpty { return runtime }
+        return presentedModelState?.harness ?? familiar.harness ?? "Inherited"
     }
 
     var body: some View {
@@ -180,15 +217,16 @@ struct FamiliarDetailView: View {
             .padding(.vertical, 10)
             .glassChrome(.bottom)
         }
-        .task {
+        .task(id: modelLoadTarget) {
             if !app.tasksLoaded { await app.loadTasks() }
             await loadModel()
         }
         .sheet(isPresented: $showModelPicker) {
             ModelPickerSheet(
-                options: modelOptions,
-                current: modelState?.effectiveModel ?? familiar.model ?? "",
-                allowsRuntimeDefault: modelAllowsRuntimeDefault,
+                options: presentedModelOptions,
+                current: presentedModelState?.effectiveModel ?? familiar.model ?? "",
+                allowsRuntimeDefault: presentedModelAllowsRuntimeDefault,
+                provenance: presentedModelProvenance,
                 onSelect: { model in Task { await chooseModel(model) } },
                 application: .familiarDefault)
         }
@@ -290,9 +328,14 @@ struct FamiliarDetailView: View {
                     if changingModel {
                         ProgressView().controlSize(.small)
                     } else {
-                        Text(modelLabel)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(modelLabel)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Text(ChatModelInventoryProvenancePresentation.compactLabel(for: presentedModelProvenance))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
                         Image(systemName: "chevron.right")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.tertiary)
@@ -302,7 +345,14 @@ struct FamiliarDetailView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(modelOptions.isEmpty || changingModel)
+            .disabled(
+                !modelPresentationIsCurrent
+                    || (presentedModelOptions.isEmpty && !presentedModelAllowsRuntimeDefault)
+                    || changingModel
+            )
+            .accessibilityLabel(
+                "Model: \(modelLabel). \(ChatModelInventoryProvenancePresentation.label(for: presentedModelProvenance))"
+            )
         }
     }
 
@@ -348,16 +398,45 @@ struct FamiliarDetailView: View {
     }
 
     private func loadModel() async {
-        guard let client = app.client else { return }
-        do {
-            let response = try await client.chatModelState(familiarId: familiar.id, sessionId: nil)
-            modelState = response.state
-            modelOptions = response.options ?? []
-            modelAllowsRuntimeDefault = response.inventory?.allowsRuntimeDefault ?? false
-        } catch {
+        let target = modelRequestTarget
+        if modelPresentationScope.beginLoading(for: target) {
             modelState = nil
             modelOptions = []
             modelAllowsRuntimeDefault = false
+            modelProvenance = nil
+        }
+        guard let client = app.client else {
+            if modelPresentationScope.canApplyResponse(
+                for: target,
+                currentTarget: modelRequestTarget
+            ) {
+                modelProvenance = "unavailable"
+            }
+            return
+        }
+        do {
+            let response = try await client.chatModelState(familiarId: familiar.id, sessionId: nil)
+            guard let responseTarget = modelPresentationScope.rekeyForResponse(
+                for: target,
+                currentTarget: modelRequestTarget,
+                bindingScope: response.presentationBindingScope
+            ) else { return }
+            modelBindingScope = response.presentationBindingScope
+            guard modelRequestTarget == responseTarget else { return }
+            modelState = response.state
+            modelOptions = response.options ?? []
+            modelAllowsRuntimeDefault = response.inventory?.allowsRuntimeDefault ?? false
+            modelProvenance = response.inventory?.provenance ?? "unavailable"
+        } catch {
+            guard modelPresentationScope.canApplyResponse(
+                for: target,
+                currentTarget: modelRequestTarget
+            ) else { return }
+            if modelState == nil {
+                modelOptions = []
+                modelAllowsRuntimeDefault = false
+                modelProvenance = "unavailable"
+            }
         }
     }
 
@@ -365,16 +444,22 @@ struct FamiliarDetailView: View {
         guard let client = app.client else { return }
         changingModel = true
         defer { changingModel = false }
+        let target = modelRequestTarget
         do {
             let response = try await client.setChatModel(
                 familiarId: familiar.id,
                 sessionId: nil,
                 model: model,
                 scope: "familiar-default")
+            guard modelPresentationScope.canApplyResponse(
+                for: target,
+                currentTarget: modelRequestTarget
+            ) else { return }
             modelState = response.state
             modelOptions = response.options ?? modelOptions
             modelAllowsRuntimeDefault =
                 response.inventory?.allowsRuntimeDefault ?? modelAllowsRuntimeDefault
+            modelProvenance = response.inventory?.provenance ?? modelProvenance
             app.showToast("Default model updated", systemImage: "cpu")
         } catch {
             app.showToast("Couldn’t update the model",

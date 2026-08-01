@@ -78,6 +78,7 @@ extension DisplayMessage {
             appliedControls: turn.responseMetadata?.appliedControls,
             rejectedControlFamilies: turn.responseMetadata?.rejectedControlFamilies,
             modelOverride: turn.responseMetadata?.retryModel ?? turn.modelOverride,
+            modelOverrideScope: turn.modelOverrideScope,
             modelOverridesByFamiliar: (turn.responseMetadata?.retryModel ?? turn.modelOverride).flatMap { model in
                 familiarId.map { [$0: model] }
             },
@@ -117,6 +118,7 @@ extension DisplayMessage {
             appliedControls: message.appliedControls,
             rejectedControlFamilies: message.rejectedControlFamilies,
             modelOverride: message.modelOverride,
+            modelOverrideScope: message.modelOverrideScope,
             modelOverridesByFamiliar: message.modelOverridesByFamiliar,
             activity: message.activity
         )
@@ -365,6 +367,10 @@ final class ChatThread: Identifiable, Hashable {
         let source = messages[..<idx].last(where: { $0.role == .user })
         let prompt = source?.text ?? ""
         let retryModel = source?.retryModel(for: familiarId)
+        let modelBinding = ChatModelTurnBinding.resolveRetry(
+            retryModel: retryModel,
+            originalScope: source?.modelOverrideScope
+        )
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard requireSendProvenance(to: [familiarId]) else { return }
         mutate(messageId) { $0.text = ""; $0.isError = false; $0.streaming = true; $0.activity = nil }
@@ -375,8 +381,8 @@ final class ChatThread: Identifiable, Hashable {
                                  reasoningEffort: source?.reasoningEffort ?? .high,
                                  responseSpeed: source?.responseSpeed ?? .fast,
                                  modelControls: source?.modelControls ?? [:],
-                                 modelOverride: retryModel,
-                                 modelOverrideScope: retryModel == nil ? nil : .nextMessage,
+                                 modelOverride: modelBinding.modelOverride,
+                                 modelOverrideScope: modelBinding.scope,
                                  client: client, onChange: onChange) }
     }
 

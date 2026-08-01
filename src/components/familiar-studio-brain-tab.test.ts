@@ -15,8 +15,8 @@ assert.match(source, /familiar-studio-brain__label">Runtime<\/span>/, "Brain tab
 assert.doesNotMatch(source, /familiar-studio-brain__label">Harness<\/span>/, "Brain tab should not show Harness as the product label");
 assert.match(
   source,
-  /catalogForRuntime/,
-  "Brain tab model menu should source options from the runtime → provider catalog",
+  /useRuntimeModelInventory\(harnessId, familiar\.id\)[\s\S]{0,180}runtimeModelInventory\.allowCustom/,
+  "Brain tab model options and custom-id capability share the familiar-scoped inventory contract",
 );
 assert.match(
   source,
@@ -30,7 +30,7 @@ assert.match(
 );
 assert.match(
   source,
-  /modelOptions\.length > 0[\s\S]{0,160}<StandardSelect/,
+  /modelOptions\.length > 0 \|\| !allowCustomModel[\s\S]{0,160}<StandardSelect/,
   "A runtime with catalog models, including Hermes, must render the dropdown instead of only free text",
 );
 assert.match(
@@ -54,7 +54,7 @@ assert.match(
 );
 assert.match(
   source,
-  /value=\{modelIsCustom \? "__custom__" : draftModel\}/,
+  /value=\{modelIsCustom && allowCustomModel \? "__custom__" : draftModel\}/,
   "Inherit default (empty draft) must render as the empty option, not Custom...",
 );
 assert.match(
