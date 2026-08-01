@@ -77,9 +77,18 @@ function railSubjectRules(css: string): string[] {
   const rules: string[] = [];
   const pattern = /([^{}]+)\{([^{}]*)\}/g;
   for (const [, selectorList, body] of withoutComments.matchAll(pattern)) {
+    // Strip `:not(...)` from the WHOLE list before splitting on commas.
+    // `.shell-nav:not(.shell-nav--rail, .shell-nav--peek)` carries a comma
+    // INSIDE the parentheses, so splitting first tears it in half and leaves
+    // the fragment `.shell-nav:not(.shell-nav--rail`, whose subject still
+    // contains the class — an exclusion rule then reads as a rail-subject one.
+    // That passes today only because the rule happens not to set margin,
+    // border-radius or box-shadow; the day the expanded nav gains one, the
+    // guard fires on the wrong rule.
     const targetsRail = selectorList
+      .replace(/:not\([^)]*\)/g, "")
       .split(",")
-      .map((selector) => selector.replace(/:not\([^)]*\)/g, "").trim())
+      .map((selector) => selector.trim())
       .some((selector) => {
         const subject = selector.split(/[\s>+~]+/).filter(Boolean).at(-1) ?? "";
         return subject.includes(".shell-nav--rail");
@@ -99,6 +108,7 @@ const railProbe = railSubjectRules(`
   .shell-nav-panel > .shell-nav--rail { box-shadow: 0 1px 2px black; }
   .shell-nav-panel > .shell-nav:not(.shell-nav--rail) { border-radius: 8px; }
   .shell-nav--rail .code-sidebar__rail { border-radius: 8px; }
+  .shell-nav-panel > .shell-nav:not(.shell-nav--rail, .shell-nav--peek) { border-radius: 8px; }
 `);
 assert.equal(railProbe.length, 1, "extractor selects rail-subject rules only");
 assert.match(railProbe[0]!, CARD_DECLARATION, "extractor reaches the declarations");
