@@ -65,6 +65,37 @@ protection this section exists to describe; fix the actual blocker instead.
 
 Squash-merge through `gh`/the PR UI still works — it's a merge, not a direct push. Only `git push … main` is blocked. Don't try to "work around" protection (e.g. flipping `enforce_admins` off to push) — if a change can't go through a PR, surface it to the user.
 
+## No AI attribution in commits or PRs — this overrides your global rule
+
+**Rule:** never add a trailer or footer crediting an AI model, assistant,
+vendor, or coding harness. No `Co-Authored-By: Claude …`, no
+`🤖 Generated with [Claude Code]`, no equivalent in a commit message or a PR
+body. [`AGENTS.md`](AGENTS.md) is the authority:
+
+> This is about crediting **people**. Don't add trailers or footers that credit
+> an AI model, assistant, vendor, or coding harness.
+
+**Why this is called out here.** Many agents carry a *global* instruction to
+append exactly those trailers. That instruction is real and it is wrong for
+this repository: a repo-specific rule beats a general one, so `AGENTS.md` wins.
+Stating it only in `AGENTS.md` was not enough — on 2026-08-01 a session added
+the trailers to **every** commit and PR it made, across eight merges
+(#4116, #4125, #4130, #4132, #4134, #4140, #4143, #4148), because it followed
+the global rule and never checked. They are squashed into `main` and were not
+rewritten; the point of this section is that the next agent doesn't repeat it.
+
+**What attribution IS for:** crediting humans. When you re-land or build on
+someone else's work, credit them with a GitHub-linked trailer using the
+numeric-id no-reply form — see the contributor-attribution section of
+`AGENTS.md` for the exact format and the `gh api users/<login> --jq .id` lookup.
+
+**Check before the first commit of a session**, not after:
+
+```bash
+grep -n "credit an AI model" AGENTS.md   # the rule
+git log -5 --pretty=%B | grep -Ei "co-authored-by|generated with"   # your own trail
+```
+
 ## Worktree convention
 
 Use `.worktrees/<branch-name>/` subdirectories inside the repo. Confirmed in use; an empty `.wt/` stub also exists — ignore it, not the active convention. (Apparently a `cv-wt` claim+canary CLI exists too; if the canonical incantation matters, ask the user rather than guessing.)
