@@ -648,6 +648,8 @@ test("acquisition does not return success after its final audit outlives the lea
   // Shift acquiredAt with it: validateGate requires heartbeatAt >= acquiredAt,
   // so moving the heartbeat alone makes the gate malformed instead of expired,
   // and the cleanup on the rejection path then fails with gate-cleanup-failed.
+  // This is what expireGate() above does; it has to be inlined here because the
+  // shim runs inside the spawned child, which shares no scope with this file.
   const TTL_MS = 60_000;
   const worker = `
     import fs from "node:fs";
