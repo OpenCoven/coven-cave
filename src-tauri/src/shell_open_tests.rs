@@ -1,5 +1,13 @@
-use super::{launch_x_oauth_url_with, validate_shell_open_url, validate_x_oauth_url};
-use std::{cell::Cell, io};
+use super::{
+    launch_x_oauth_url_with, launch_x_oauth_url_with_window, validate_shell_open_url,
+    validate_x_oauth_url,
+};
+use std::{
+    cell::Cell,
+    io,
+    process::{Child, Command},
+    time::{Duration, Instant},
+};
 
 #[test]
 fn validates_http_and_https_urls() {
@@ -32,6 +40,26 @@ fn valid_x_oauth_url() -> String {
     url.to_string()
 }
 
+fn spawn_launcher_test_child(mode: &str) -> io::Result<Child> {
+    Command::new(std::env::current_exe()?)
+        .args([
+            "--exact",
+            "tauri_setup::shell_open_tests::x_oauth_launcher_child_process",
+            "--nocapture",
+        ])
+        .env("COVEN_X_OAUTH_LAUNCHER_TEST_MODE", mode)
+        .spawn()
+}
+
+#[test]
+fn x_oauth_launcher_child_process() {
+    match std::env::var("COVEN_X_OAUTH_LAUNCHER_TEST_MODE").as_deref() {
+        Ok("long-running") => std::thread::sleep(Duration::from_millis(400)),
+        Ok("nonzero") => std::process::exit(7),
+        _ => {}
+    }
+}
+
 #[test]
 fn allows_only_complete_x_oauth_authorization_urls() {
     assert!(validate_x_oauth_url(&valid_x_oauth_url()).is_ok());
@@ -59,27 +87,49 @@ fn x_oauth_launcher_reports_successful_exit() {
     let url = valid_x_oauth_url();
     let received = Cell::new(false);
 
-    assert!(launch_x_oauth_url_with(&url, |candidate| {
-        received.set(candidate == url);
-        Ok(true)
-    })
-    .is_ok());
+    assert!(
+        launch_x_oauth_url_with_window(&url, Duration::from_secs(2), |candidate| {
+            received.set(candidate == url);
+            spawn_launcher_test_child("success")
+        })
+        .is_ok()
+    );
     assert!(received.get(), "the validated URL must reach the launcher");
 }
 
 #[test]
 fn x_oauth_launcher_reports_nonzero_exit_without_url_details() {
     let url = valid_x_oauth_url();
-    let error = launch_x_oauth_url_with(&url, |_| Ok(false)).unwrap_err();
+    let error = launch_x_oauth_url_with_window(&url, Duration::from_secs(2), |_| {
+        spawn_launcher_test_child("nonzero")
+    })
+    .unwrap_err();
 
     assert_eq!(error, "System browser launcher exited unsuccessfully.");
     assert!(!error.contains(&url));
 }
 
 #[test]
+fn x_oauth_launcher_returns_promptly_while_reaping_a_long_running_child() {
+    let url = valid_x_oauth_url();
+    let started = Instant::now();
+
+    assert!(
+        launch_x_oauth_url_with_window(&url, Duration::from_millis(20), |_| {
+            spawn_launcher_test_child("long-running")
+        })
+        .is_ok()
+    );
+    assert!(
+        started.elapsed() < Duration::from_millis(250),
+        "a Linux-like long-running opener must not block OAuth polling"
+    );
+}
+
+#[test]
 fn x_oauth_launcher_sanitizes_spawn_failures() {
     let url = valid_x_oauth_url();
-    let error = launch_x_oauth_url_with(&url, |_| {
+    let error = launch_x_oauth_url_with_window(&url, Duration::from_secs(2), |_| {
         Err(io::Error::new(
             io::ErrorKind::NotFound,
             "secret-bearing launcher detail",
@@ -97,7 +147,7 @@ fn x_oauth_launcher_rejects_arbitrary_urls_before_running_command() {
     let called = Cell::new(false);
     let error = launch_x_oauth_url_with("https://example.com/", |_| {
         called.set(true);
-        Ok(true)
+        spawn_launcher_test_child("success")
     })
     .unwrap_err();
 
@@ -109,14 +159,16 @@ fn x_oauth_launcher_rejects_arbitrary_urls_before_running_command() {
 }
 
 #[test]
-fn native_x_oauth_launcher_waits_off_the_async_runtime() {
+fn native_x_oauth_launcher_uses_a_bounded_os_thread_reaper() {
     let src = include_str!("shell_open_commands.rs");
 
     assert!(
         src.contains("pub(super) async fn open_x_oauth_url")
             && src.contains("tauri::async_runtime::spawn_blocking")
-            && src.contains(".status()"),
-        "the X OAuth launcher must wait/reap in a blocking worker",
+            && src.contains("std::thread::Builder")
+            && src.contains(".recv_timeout(")
+            && src.contains(".wait()"),
+        "the X OAuth launcher must bound launch detection and reap on a plain OS thread",
     );
 }
 

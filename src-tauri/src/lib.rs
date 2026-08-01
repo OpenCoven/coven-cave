@@ -82,7 +82,7 @@ use desktop_reachability::*;
 #[cfg(desktop)]
 use platform_lifecycle::*;
 #[cfg(all(test, desktop))]
-use shell_open_commands::launch_x_oauth_url_with;
+use shell_open_commands::{launch_x_oauth_url_with, launch_x_oauth_url_with_window};
 #[cfg(desktop)]
 use shell_open_commands::{open_x_oauth_url, shell_open, shell_open_path, shell_pick_directory};
 #[cfg(desktop)]

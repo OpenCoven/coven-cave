@@ -27,7 +27,7 @@ fn open_url_in_system_browser(url: &str) -> Result<(), String> {
 }
 
 #[cfg(desktop)]
-fn wait_for_x_oauth_browser_launcher(url: &str) -> std::io::Result<bool> {
+fn spawn_x_oauth_browser_launcher(url: &str) -> std::io::Result<std::process::Child> {
     #[cfg(target_os = "macos")]
     let mut command = {
         let mut command = std::process::Command::new("open");
@@ -47,25 +47,64 @@ fn wait_for_x_oauth_browser_launcher(url: &str) -> std::io::Result<bool> {
         command
     };
 
-    let status = command
+    command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .status()?;
-    Ok(status.success())
+        .spawn()
 }
 
 #[cfg(desktop)]
-pub(super) fn launch_x_oauth_url_with<F>(url: &str, runner: F) -> Result<(), String>
+pub(super) fn launch_x_oauth_url_with_window<F>(
+    url: &str,
+    launch_window: std::time::Duration,
+    spawner: F,
+) -> Result<(), String>
 where
-    F: FnOnce(&str) -> std::io::Result<bool>,
+    F: FnOnce(&str) -> std::io::Result<std::process::Child>,
 {
     validate_x_oauth_url(url)?;
-    match runner(url) {
-        Ok(true) => Ok(()),
-        Ok(false) => Err("System browser launcher exited unsuccessfully.".to_string()),
-        Err(_) => Err("Could not start the system browser launcher.".to_string()),
+
+    // Start the waiter first so every successfully spawned opener is handed to
+    // a thread that owns it through wait(), even after launch detection times out.
+    let (child_sender, child_receiver) = std::sync::mpsc::sync_channel::<std::process::Child>(1);
+    let (status_sender, status_receiver) = std::sync::mpsc::sync_channel(1);
+    std::thread::Builder::new()
+        .name("x-oauth-launcher-reaper".to_string())
+        .spawn(move || {
+            let Ok(mut child) = child_receiver.recv() else {
+                return;
+            };
+            let status = child.wait();
+            let _ = status_sender.send(status);
+        })
+        .map_err(|_| "Could not start the system browser launcher.".to_string())?;
+
+    let child =
+        spawner(url).map_err(|_| "Could not start the system browser launcher.".to_string())?;
+    if let Err(send_error) = child_sender.send(child) {
+        let mut child = send_error.0;
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("Could not start the system browser launcher.".to_string());
     }
+
+    match status_receiver.recv_timeout(launch_window) {
+        Ok(Ok(status)) if status.success() => Ok(()),
+        Ok(Ok(_)) => Err("System browser launcher exited unsuccessfully.".to_string()),
+        Ok(Err(_)) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err("Could not start the system browser launcher.".to_string())
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Ok(()),
+    }
+}
+
+#[cfg(desktop)]
+pub(super) fn launch_x_oauth_url_with<F>(url: &str, spawner: F) -> Result<(), String>
+where
+    F: FnOnce(&str) -> std::io::Result<std::process::Child>,
+{
+    launch_x_oauth_url_with_window(url, std::time::Duration::from_millis(250), spawner)
 }
 
 /// Open an http(s) URL in the system default browser.
@@ -81,7 +120,7 @@ pub(super) fn shell_open(url: String) -> Result<(), String> {
 #[tauri::command]
 pub(super) async fn open_x_oauth_url(url: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        launch_x_oauth_url_with(&url, wait_for_x_oauth_browser_launcher)
+        launch_x_oauth_url_with(&url, spawn_x_oauth_browser_launcher)
     })
     .await
     .map_err(|_| "System browser launcher task did not complete.".to_string())?
