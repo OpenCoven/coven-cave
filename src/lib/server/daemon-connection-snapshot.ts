@@ -20,7 +20,7 @@ const HEALTH_REQUEST = {
   retryTransportFailure: false,
 } satisfies Pick<DaemonRequest, "path" | "timeoutMs" | "retryTransportFailure">;
 
-export type DaemonConnectionTargetSummary =
+type DaemonConnectionTargetSummary =
   | { mode: "local"; label: "Local daemon"; socket: string }
   | { mode: "hub"; label: "Server hub"; url: string }
   | { mode: "unconfigured-hub"; label: "Server hub"; error: string };
@@ -33,14 +33,14 @@ export type DaemonConnectionSnapshot = {
   reason?: string;
 };
 
-export type DaemonConnectionSnapshotReadOptions = { fresh?: boolean };
+type DaemonConnectionSnapshotReadOptions = { fresh?: boolean };
 
-export type DaemonConnectionSnapshotBroker = {
+type DaemonConnectionSnapshotBroker = {
   read(options?: DaemonConnectionSnapshotReadOptions): Promise<DaemonConnectionSnapshot>;
   clear(): void;
 };
 
-export type CreateDaemonConnectionSnapshotBrokerDependencies = {
+type CreateDaemonConnectionSnapshotBrokerDependencies = {
   loadConfig: () => Promise<Pick<CaveConfig, "multiHost">>;
   callTarget: (
     target: DaemonTarget,
