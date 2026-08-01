@@ -7,6 +7,7 @@ import {
   classifyLifecycleUnit,
   classifyWorktree,
   isDisposableIgnoredPath,
+  normalizeAbsoluteWorktreePath,
   type ManagedCreationException,
   type WorktreeLifecycleBudgets,
   type WorktreeLifecycleItem,
@@ -82,6 +83,8 @@ type PullRequestInventory = {
 };
 
 type WorkflowRun = {
+  id: string;
+  status: string;
   head_branch: string | null;
   head_sha: string;
   html_url: string;
@@ -922,11 +925,28 @@ function fetchPullRequests(
   };
 }
 
-function fetchWorkflows(
+function canonicalWorkflowRunId(value: unknown): string | null {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
+  }
+  return typeof value === "string" && /^[1-9]\d*$/.test(value) ? value : null;
+}
+
+function sameWorkflowRun(left: WorkflowRun, right: WorkflowRun): boolean {
+  return (
+    left.id === right.id &&
+    left.status === right.status &&
+    left.head_branch === right.head_branch &&
+    left.head_sha === right.head_sha &&
+    left.html_url === right.html_url
+  );
+}
+
+function fetchWorkflowSweep(
   repo: string,
   root: string,
 ): { runs: WorkflowRun[]; error: string | null } {
-  const runs: WorkflowRun[] = [];
+  const runsById = new Map<string, WorkflowRun>();
   for (const state of ACTIVE_WORKFLOW_STATES) {
     const result = command(
       "gh",
@@ -951,7 +971,7 @@ function fetchWorkflows(
       return { runs: [], error: result.stderr || `workflow inventory failed for ${state}` };
     }
     try {
-      const pages = parseJson<Array<{ total_count: number; workflow_runs: WorkflowRun[] }>>(
+      const pages = parseJson<Array<{ total_count: number; workflow_runs: unknown[] }>>(
         result.stdout,
         "GitHub workflow inventory",
       );
@@ -967,6 +987,8 @@ function fetchWorkflows(
             page.workflow_runs.every(
               (run) =>
                 isRecord(run) &&
+                canonicalWorkflowRunId(run.id) !== null &&
+                run.status === state &&
                 (run.head_branch === null || typeof run.head_branch === "string") &&
                 typeof run.head_sha === "string" &&
                 OID.test(run.head_sha) &&
@@ -978,7 +1000,16 @@ function fetchWorkflows(
         throw new Error();
       }
       const totals = new Set(pages.map((page) => page.total_count));
-      const stateRuns = pages.flatMap((page) => page.workflow_runs);
+      const stateRuns = pages.flatMap((page) => page.workflow_runs).map((run) => {
+        const record = run as Record<string, unknown>;
+        return {
+          id: canonicalWorkflowRunId(record.id)!,
+          status: record.status as string,
+          head_branch: record.head_branch as string | null,
+          head_sha: record.head_sha as string,
+          html_url: record.html_url as string,
+        };
+      });
       if (totals.size !== 1) {
         return {
           runs: [],
@@ -998,12 +1029,49 @@ function fetchWorkflows(
           error: `workflow inventory returned partial data for ${state}`,
         };
       }
-      runs.push(...stateRuns);
+      const stateIds = new Set<string>();
+      for (const run of stateRuns) {
+        if (stateIds.has(run.id)) {
+          return {
+            runs: [],
+            error: `workflow inventory returned duplicate run ID ${run.id} for ${state}`,
+          };
+        }
+        stateIds.add(run.id);
+        const existing = runsById.get(run.id);
+        if (existing && !sameWorkflowRun(existing, run)) {
+          return {
+            runs: [],
+            error: `workflow inventory returned conflicting data for run ID ${run.id}`,
+          };
+        }
+        if (!existing) runsById.set(run.id, run);
+      }
     } catch {
       return { runs: [], error: `workflow inventory returned malformed data for ${state}` };
     }
   }
-  return { runs, error: null };
+  return {
+    runs: [...runsById.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    error: null,
+  };
+}
+
+function fetchWorkflows(
+  repo: string,
+  root: string,
+): { runs: WorkflowRun[]; error: string | null } {
+  const first = fetchWorkflowSweep(repo, root);
+  if (first.error) return first;
+  const second = fetchWorkflowSweep(repo, root);
+  if (second.error) return second;
+  if (
+    first.runs.length !== second.runs.length ||
+    first.runs.some((run, index) => !sameWorkflowRun(run, second.runs[index]!))
+  ) {
+    return { runs: [], error: "workflow inventory changed during patrol" };
+  }
+  return first;
 }
 
 function fetchClaims(root: string): {
@@ -1100,7 +1168,9 @@ function parseException(
     !Array.isArray(additionalPaths) ||
     additionalPaths.length === 0 ||
     !additionalPaths.every(
-      (candidate) => typeof candidate === "string" && path.isAbsolute(candidate),
+      (candidate) => normalizeAbsoluteWorktreePath(
+        typeof candidate === "string" ? candidate : null,
+      ) !== null,
     )
   ) {
     errors.push("exception additionalPaths must contain absolute paths");
@@ -1154,7 +1224,11 @@ function parseStructuredRecord(
       metadataErrors("branch must be a valid exact local branch name");
     }
   }
-  if (typeof worktree.path !== "string" || !path.isAbsolute(worktree.path)) {
+  if (
+    normalizeAbsoluteWorktreePath(
+      typeof worktree.path === "string" ? worktree.path : null,
+    ) === null
+  ) {
     metadataErrors("path must be absolute");
   }
   if (typeof worktree.owner !== "string" || worktree.owner.trim().length === 0) {
@@ -1543,7 +1617,7 @@ function matchingTasks(
     branch !== null && !PROTECTED_BRANCHES.has(branch) ? branch : null;
   const branchBeadIds = new Set(matchedBranch ? beadIdsInText(matchedBranch) : []);
   const normalizedWorktreePath =
-    worktreePath === null ? null : normalizePath(worktreePath);
+    normalizeAbsoluteWorktreePath(worktreePath);
   return tasks
     .filter((task) => task.status !== "closed")
     .filter(
@@ -1552,9 +1626,7 @@ function matchingTasks(
           (record) =>
             (matchedBranch !== null && record.branch === matchedBranch) ||
             (normalizedWorktreePath !== null &&
-              record.path !== null &&
-              path.isAbsolute(record.path) &&
-              normalizePath(record.path) === normalizedWorktreePath),
+              normalizeAbsoluteWorktreePath(record.path) === normalizedWorktreePath),
         ) ||
         branchBeadIds.has(task.id.toLowerCase()) ||
         (matchedBranch !== null && task.text.includes(matchedBranch)) ||
@@ -1574,15 +1646,14 @@ function metadataFor(
   const globalErrors = tasks.flatMap((task) => task.structuredErrors);
   const allRecords = tasks.flatMap((task) => task.structured);
   const records = allRecords.filter((record) => record.branch === branch);
+  const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
   const conflictingPathRecords =
-    worktreePath === null
+    normalizedWorktreePath === null
       ? []
       : allRecords.filter(
           (record) =>
             record.branch !== branch &&
-            record.path !== null &&
-            path.isAbsolute(record.path) &&
-            normalizePath(record.path) === normalizePath(worktreePath),
+            normalizeAbsoluteWorktreePath(record.path) === normalizedWorktreePath,
         );
   const ownershipErrors =
     conflictingPathRecords.length === 0
@@ -1604,12 +1675,12 @@ function metadataFor(
   }
   const record = records[0];
   if (!record) return { metadata: null, errors: [] };
+  const normalizedRecordPath = normalizeAbsoluteWorktreePath(record.path);
   if (
-    record.path !== null &&
+    normalizedRecordPath !== null &&
     allRecords.filter(
       (candidate) =>
-        candidate.path !== null &&
-        normalizePath(candidate.path) === normalizePath(record.path!),
+        normalizeAbsoluteWorktreePath(candidate.path) === normalizedRecordPath,
     ).length > 1
   ) {
     return {
@@ -1620,7 +1691,10 @@ function metadataFor(
   if (record.errors.length > 0 || !record.metadata) {
     return { metadata: null, errors: record.errors };
   }
-  if (worktreePath !== null && normalizePath(record.path!) !== normalizePath(worktreePath)) {
+  if (
+    normalizedWorktreePath !== null &&
+    normalizedRecordPath !== normalizedWorktreePath
+  ) {
     return {
       metadata: null,
       errors: [`structured worktree metadata path does not match ${branch}`],
@@ -1938,20 +2012,27 @@ export function collectWorktreeLifecycleInventory(
     )
     .filter(
       (record) =>
-        record.path !== null &&
+        normalizeAbsoluteWorktreePath(record.path) !== null &&
         structuredRecords.filter(
-          (candidate) =>
-            candidate.path !== null &&
-            normalizePath(candidate.path) === normalizePath(record.path!),
+          (candidate) => {
+            const candidatePath = normalizeAbsoluteWorktreePath(candidate.path);
+            return (
+              candidatePath !== null &&
+              candidatePath === normalizeAbsoluteWorktreePath(record.path)
+            );
+          },
         ).length === 1,
     )
-    .filter((record) =>
-      units.some(
-        (unit) =>
-          unit.branch === record.branch &&
-          (unit.kind === "branch-only" || record.path === unit.path),
-      ),
-    );
+    .filter((record) => {
+      const recordPath = normalizeAbsoluteWorktreePath(record.path);
+      if (recordPath === null) return false;
+      return units.some((unit) => {
+        if (unit.branch !== record.branch) return false;
+        if (unit.kind === "branch-only") return true;
+        const unitPath = normalizeAbsoluteWorktreePath(unit.path);
+        return unitPath !== null && unitPath === recordPath;
+      });
+    });
   const exceptions = [
     ...new Map(
       validMetadata
@@ -1965,9 +2046,10 @@ export function collectWorktreeLifecycleInventory(
             expiresAt: exception.expiresAt,
             additionalPaths: [
               ...new Set(
-                exception.additionalPaths.map((candidate) =>
-                  normalizePath(candidate),
-                ),
+                exception.additionalPaths.flatMap((candidate) => {
+                  const normalized = normalizeAbsoluteWorktreePath(candidate);
+                  return normalized === null ? [] : [normalized];
+                }),
               ),
             ].sort(),
           }),

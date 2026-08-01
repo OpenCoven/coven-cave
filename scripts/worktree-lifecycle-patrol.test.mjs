@@ -139,6 +139,7 @@ try {
   const detached = path.join(repo, ".worktrees", "detached");
   git(["worktree", "add", "-q", "--detach", detached, "origin/main"], repo);
   const defaultHead = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
+  const workflowHead = "d".repeat(defaultHead.length);
   git(["update-ref", "refs/remotes/origin/trunk", defaultHead], repo);
 
   const validMetadata = {
@@ -417,7 +418,7 @@ if [ "$1" = "api" ] &&
       elif [ "\${LIFECYCLE_MALFORMED_ASSOCIATED_PAGINATION:-0}" = "1" ]; then
         printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"repeat"}}}}}},{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"repeat"}}}}}},{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
       elif [ "\${LIFECYCLE_DUPLICATE_ASSOCIATED_NODE:-0}" = "1" ]; then
-        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":2,"nodes":[{"number":77,"url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}},{"number":77,"url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
+        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":2,"nodes":[{"number":77,"url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":true,"endCursor":"assoc-duplicate"}}}}}},{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":2,"nodes":[{"number":77,"url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
       elif [ "\${LIFECYCLE_OMITTED_ASSOCIATED_NODE:-0}" = "1" ]; then
         printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":2,"nodes":[{"number":77,"url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
       elif [ "\${LIFECYCLE_UNSTABLE_ASSOCIATED_TOTAL:-0}" = "1" ]; then
@@ -452,7 +453,7 @@ if [ "$1" = "api" ] &&
     [ "$FIELD_COUNT" -eq 1 ] || fail "exact-head search has the wrong variable count"
     [ -z "$OWNER$NAME$OID_ARG" ] || fail "exact-head search included repository variables"
     case "$SEARCH_QUERY" in
-      is:pr\\ head:OpenCoven:*) fail "exact-head search used unsupported owner-prefixed head qualifier" ;;
+      is:pr\\ head:*:*) fail "exact-head search used an owner-prefixed head qualifier" ;;
       is:pr\\ head:feat/old|is:pr\\ head:feat/recent-merge|is:pr\\ head:feat/recent-reflog|is:pr\\ head:feat/live|is:pr\\ head:feat/cave-link1-linked|is:pr\\ head:feat/branch-only) ;;
       *) fail "exact-head search used an unexpected query: $SEARCH_QUERY" ;;
     esac
@@ -468,7 +469,7 @@ if [ "$1" = "api" ] &&
       printf '%s\\n' '[{"data":{"search":{"issueCount":1,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}]'
     elif [ "$SEARCH_QUERY" = "is:pr head:feat/old" ] &&
          [ "\${LIFECYCLE_DUPLICATE_SEARCH_NODE:-0}" = "1" ]; then
-      printf '%s\\n' '[{"data":{"search":{"issueCount":2,"nodes":[{"number":77,"url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}},{"number":77,"url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}]'
+      printf '%s\\n' '[{"data":{"search":{"issueCount":2,"nodes":[{"number":77,"url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":true,"endCursor":"search-duplicate"}}}},{"data":{"search":{"issueCount":2,"nodes":[{"number":77,"url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}]'
     elif [ "$SEARCH_QUERY" = "is:pr head:feat/old" ] &&
          [ "\${LIFECYCLE_HEAD_ONLY_DRAFT:-0}" = "1" ]; then
       printf '%s\\n' '[{"data":{"search":{"issueCount":1,"nodes":[{"number":78,"url":"https://github.com/OpenCoven/coven-cave/pull/78","state":"OPEN","isDraft":true,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}]'
@@ -486,12 +487,64 @@ fi
 
 case "$*" in
   *"/actions/runs"*)
+    WORKFLOW_STATE=
+    for ARG in "$@"; do
+      case "$ARG" in
+        status=*) WORKFLOW_STATE=\${ARG#status=} ;;
+      esac
+    done
+    case "$WORKFLOW_STATE" in
+      queued|in_progress|requested|waiting|pending) ;;
+      *) fail "workflow inventory omitted an active state" ;;
+    esac
+    WORKFLOW_COUNT_FILE=${JSON.stringify(
+      path.join(fixtureRoot, "workflow-count-"),
+    )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
+    WORKFLOW_CALL_COUNT=$(cat "$WORKFLOW_COUNT_FILE" 2>/dev/null || printf '0')
+    WORKFLOW_CALL_COUNT=$((WORKFLOW_CALL_COUNT + 1))
+    printf '%s' "$WORKFLOW_CALL_COUNT" > "$WORKFLOW_COUNT_FILE"
+    EXPECTED_INDEX=$(((WORKFLOW_CALL_COUNT - 1) % 5))
+    case "$EXPECTED_INDEX" in
+      0) EXPECTED_STATE=queued ;;
+      1) EXPECTED_STATE=in_progress ;;
+      2) EXPECTED_STATE=requested ;;
+      3) EXPECTED_STATE=waiting ;;
+      4) EXPECTED_STATE=pending ;;
+    esac
+    [ "$WORKFLOW_STATE" = "$EXPECTED_STATE" ] ||
+      fail "workflow sweep queried $WORKFLOW_STATE where $EXPECTED_STATE was expected"
+    WORKFLOW_SWEEP=$((((WORKFLOW_CALL_COUNT - 1) / 5) + 1))
     if [ "\${LIFECYCLE_BAD_WORKFLOW:-0}" = "1" ]; then
-      printf '%s\n' '[{"total_count":1,"workflow_runs":[{}]}]'
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/missing-id"}]}]'
     elif [ "\${LIFECYCLE_PARTIAL_WORKFLOW:-0}" = "1" ]; then
-      printf '%s\n' '[{"total_count":2,"workflow_runs":[{"head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run"}]}]'
+      printf '%s\n' '[{"total_count":2,"workflow_runs":[{"id":1001,"status":"queued","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run"}]}]'
     elif [ "\${LIFECYCLE_CAPPED_WORKFLOW:-0}" = "1" ]; then
       printf '%s\n' '[{"total_count":1000,"workflow_runs":[]}]'
+    elif [ "\${LIFECYCLE_DUPLICATE_WORKFLOW_ID:-0}" = "1" ] &&
+         [ "$WORKFLOW_STATE" = "queued" ]; then
+      printf '%s\n' '[{"total_count":2,"workflow_runs":[{"id":1002,"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/1002"},{"id":1002,"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/1002"}]}]'
+    elif [ "\${LIFECYCLE_CONFLICTING_WORKFLOW_ID:-0}" = "1" ] &&
+         [ "$WORKFLOW_STATE" = "queued" ]; then
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":1003,"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/queued"}]}]'
+    elif [ "\${LIFECYCLE_CONFLICTING_WORKFLOW_ID:-0}" = "1" ] &&
+         [ "$WORKFLOW_STATE" = "in_progress" ]; then
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":1003,"status":"in_progress","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/in-progress"}]}]'
+    elif [ "\${LIFECYCLE_TRANSITION_WORKFLOW:-0}" = "1" ] &&
+         [ "$WORKFLOW_SWEEP" -eq 1 ] &&
+         [ "$WORKFLOW_STATE" = "queued" ]; then
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":1004,"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/1004"}]}]'
+    elif [ "\${LIFECYCLE_TRANSITION_WORKFLOW:-0}" = "1" ] &&
+         [ "$WORKFLOW_SWEEP" -eq 2 ] &&
+         [ "$WORKFLOW_STATE" = "in_progress" ]; then
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":1004,"status":"in_progress","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/1004"}]}]'
+    elif [ "\${LIFECYCLE_MISMATCHED_WORKFLOW_STATUS:-0}" = "1" ] &&
+         [ "$WORKFLOW_STATE" = "queued" ]; then
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":1005,"status":"in_progress","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/1005"}]}]'
+    elif [ "\${LIFECYCLE_STRING_WORKFLOW_ID:-0}" = "1" ] &&
+         [ "$WORKFLOW_STATE" = "queued" ]; then
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":"1006","status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/1006"}]}]'
+    elif [ "$WORKFLOW_STATE" = "queued" ]; then
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":1000,"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/1000"}]}]'
     else
       printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
     fi
@@ -528,11 +581,11 @@ elif [ "\${LIFECYCLE_MALFORMED_WORKTREES:-0}" = "1" ]; then
 elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_BRANCH:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Duplicate branch","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/old","path":"${live}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_PATH:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Duplicate path","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/live","path":"${path.join(old, "..", "old")}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
+  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Duplicate path","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/live","path":"${old}/","owner":"Kitty","purpose":"Duplicate fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_UNUSABLE_ADDITIONAL_BRANCH:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Unusable branch","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/bad..name","path":"${live}","owner":"Kitty","purpose":"Invalid fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_EXCEPTION_BUDGETS:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${realpathSync(old)}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active matched exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${realpathSync(old)}"]}}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${path.join(repo, ".worktrees", "path-mismatch")}","owner":"Kitty","purpose":"Mismatched fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired path mismatch","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${recentMerge}"]}}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired matched exception","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-stale","status":"closed","title":"Stale metadata","metadata":{"coven":{"worktree":{"branch":"feat/stale","path":"${path.join(repo, ".worktrees", "stale")}","owner":"Kitty","purpose":"Stale fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active stale exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${path.join(repo, ".worktrees", "stale")}"]}}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${realpathSync(old)}/","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active matched exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${realpathSync(old)}/./"]}}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${path.join(repo, ".worktrees", "path-mismatch")}","owner":"Kitty","purpose":"Mismatched fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired path mismatch","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${recentMerge}"]}}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired matched exception","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-stale","status":"closed","title":"Stale metadata","metadata":{"coven":{"worktree":{"branch":"feat/stale","path":"${path.join(repo, ".worktrees", "stale")}","owner":"Kitty","purpose":"Stale fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active stale exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${path.join(repo, ".worktrees", "stale")}"]}}}}}]'
 elif [ "\${LIFECYCLE_LINKED_TASK:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"CAVE-LINK1","status":"open","title":"Unrelated task","description":"","notes":""},{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_MISSING_BRANCH_METADATA:-0}" = "1" ]; then
@@ -671,8 +724,18 @@ exit 0
   const report = JSON.parse(stdout);
 
   const byBranch = new Map(report.items.map((item) => [item.branch, item]));
+  assert.equal(
+    readFileSync(path.join(fixtureRoot, "workflow-count-1"), "utf8"),
+    "10",
+    "normal patrol captures two complete active workflow snapshots",
+  );
   assert.equal(byBranch.get("main").lane, "protected");
   assert.equal(byBranch.get("feat/live").lane, "active");
+  assert.deepEqual(
+    byBranch.get("feat/live").activeWorkflowUrls,
+    ["https://example.test/run/1000"],
+    "identical workflow snapshots retain one canonical run",
+  );
   assert.deepEqual(
     byBranch.get("feat/live").changes.map((line) => line.replace(/^\?\s+/, "")),
     ["uncommitted.txt"],
@@ -762,12 +825,25 @@ exit 0
     patrol(["--json"], { LIFECYCLE_EXCEPTION_BUDGETS: "1" }),
   );
   assert.deepEqual(exceptionBudgetReport.budgets.exceptions, { active: 1, expired: 1 });
+  const trailingSlashExceptionItem = exceptionBudgetReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.deepEqual(
+    trailingSlashExceptionItem.metadataErrors,
+    [],
+    "trailing-slash metadata remains valid for its registered worktree",
+  );
+  assert.equal(
+    trailingSlashExceptionItem.lane,
+    "active",
+    "a trailing-slash metadata path keeps its valid exception active",
+  );
   assert.match(
     exceptionBudgetReport.items
       .find((item) => item.branch === "feat/recent-merge")
       .metadataErrors.join("\n"),
     /path does not match/i,
-    "path-mismatched metadata remains invalid and does not affect exception budgets",
+    "genuinely different path metadata remains invalid and does not affect exception budgets",
   );
   const multiMetadataReport = JSON.parse(
     patrol(["--json"], { LIFECYCLE_MULTI_WORKTREE_METADATA: "1" }),
@@ -832,6 +908,11 @@ exit 0
     ["LIFECYCLE_BAD_WORKFLOW", /workflow inventory returned malformed data/],
     ["LIFECYCLE_PARTIAL_WORKFLOW", /workflow inventory returned partial data/],
     ["LIFECYCLE_CAPPED_WORKFLOW", /workflow inventory reached GitHub's 1000-run cap/],
+    ["LIFECYCLE_DUPLICATE_WORKFLOW_ID", /workflow inventory.*duplicate.*ID/i],
+    ["LIFECYCLE_CONFLICTING_WORKFLOW_ID", /workflow inventory.*conflicting.*ID/i],
+    ["LIFECYCLE_MISMATCHED_WORKFLOW_STATUS", /workflow inventory returned malformed data/],
+    ["LIFECYCLE_STRING_WORKFLOW_ID", /workflow inventory returned malformed data/],
+    ["LIFECYCLE_TRANSITION_WORKFLOW", /workflow inventory changed during patrol/],
     ["LIFECYCLE_BAD_TASKS", /Beads inventory returned malformed data/],
     ["LIFECYCLE_PR_CAP", /exact-head PR search.*(?:cap|1000)/i],
     [
@@ -864,6 +945,11 @@ exit 0
     const failedReport = JSON.parse(patrol(["--json"], { [environment]: "1" }));
     const failedOld = failedReport.items.find((item) => item.branch === "feat/old");
     assert.equal(failedOld.lane, "uncertain", `${environment} fails closed`);
+    assert.notEqual(
+      failedOld.lane,
+      "retire-after-gate",
+      `${environment} is never cleanup-ready`,
+    );
     assert.match(failedOld.probeErrors.join("\n"), expectedReason);
   }
 
