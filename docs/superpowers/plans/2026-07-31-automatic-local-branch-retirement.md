@@ -1328,7 +1328,7 @@ git commit -S -m "chore(worktrees): wire gated retirement command"
 - Modify: `.agents/skills/branch-curator/references/deletion-proof.md`
 - Modify: `.agents/skills/branch-curator/evals/evals.json`
 
-- [ ] **Step 1: Add nine lifecycle eval cases**
+- [x] **Step 1: Add nine lifecycle eval cases**
 
 Append IDs 43 through 51:
 
@@ -1389,7 +1389,7 @@ Append IDs 43 through 51:
 }
 ```
 
-- [ ] **Step 2: Validate the eval file before changing guidance**
+- [x] **Step 2: Validate the eval file before changing guidance**
 
 Run:
 
@@ -1399,7 +1399,7 @@ node -e 'const fs=require("node:fs"); const p=".agents/skills/branch-curator/eva
 
 Expected: `branch-curator evals: 51 valid`.
 
-- [ ] **Step 3: Add lifecycle prevention and routine patrol guidance**
+- [x] **Step 3: Add lifecycle prevention and routine patrol guidance**
 
 Add concise sections to `SKILL.md`:
 
@@ -1436,7 +1436,7 @@ candidate. Automatic mode never deletes remote refs; report proposals only.
 Keep `SKILL.md` near its existing size by moving detailed transaction mechanics
 to the reference.
 
-- [ ] **Step 4: Define the normative automatic local profile**
+- [x] **Step 4: Define the normative automatic local profile**
 
 At the top of `references/deletion-proof.md`, distinguish:
 
@@ -1463,7 +1463,7 @@ reports its evidence as a proposal and does not execute it.
 Do not weaken any existing proof or remove the remote block needed to explain
 manual authorization.
 
-- [ ] **Step 5: Revalidate eval shape and inspect policy diff**
+- [x] **Step 5: Revalidate eval shape and inspect policy diff**
 
 Run:
 
@@ -1474,7 +1474,7 @@ git diff --check
 
 Expected: eval IDs are unique and the diff check is silent.
 
-- [ ] **Step 6: Commit skill policy**
+- [x] **Step 6: Commit skill policy**
 
 ```bash
 git add .agents/skills/branch-curator/SKILL.md .agents/skills/branch-curator/references/deletion-proof.md .agents/skills/branch-curator/evals/evals.json
