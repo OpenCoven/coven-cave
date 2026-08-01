@@ -305,6 +305,35 @@ test("fresh refresh aborts and supersedes the older request", async () => {
   assert.equal(rig.latestPendingTimer().delayMs, scheduledDelay);
 });
 
+test("fresh refresh cancels a scheduled timer before starting a new request", async () => {
+  const rig = createRig();
+
+  rig.supervisor.start();
+  await rig.resolveRequest(0, runningPoll());
+
+  const staleTimer = rig.latestPendingTimer();
+  assert.equal(rig.pendingTimers().length, 1);
+
+  const pending = rig.supervisor.refresh({ fresh: true });
+
+  assert.equal(staleTimer.cancelled, true);
+  assert.equal(rig.pendingTimers().length, 0);
+  assert.equal(rig.requests.length, 2);
+  assert.equal(rig.requestAt(1).fresh, true);
+
+  staleTimer.callback();
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 2);
+
+  await rig.resolveRequest(1, runningPoll());
+  await pending;
+
+  assert.equal(rig.publishes.length, 2);
+  assert.deepEqual(rig.publishes[1]?.context, { fresh: true });
+  assert.equal(rig.pendingTimers().length, 1);
+  assert.notEqual(rig.latestPendingTimer(), staleTimer);
+});
+
 test("hiding clears timers and aborts active work without new publication or backoff", async () => {
   const rig = createRig();
 
