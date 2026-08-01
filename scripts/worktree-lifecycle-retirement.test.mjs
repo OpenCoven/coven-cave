@@ -1153,7 +1153,17 @@ process.stdout.write(JSON.stringify(output) + "\\n");
       }),
     );
     const item = findItem(inventory.items, `refs/heads/${branch}`);
-    assert.equal(item.lane, "retire-after-gate");
+    // Carry the classifier's own reasons into the failure. This assertion fails
+    // on Linux CI with lane "uncertain" while passing on macOS, and the bare
+    // equality told us nothing about which probe went unavailable — the lane is
+    // uncertain for several distinct causes (probe errors, missing metadata,
+    // unavailable branch/worktree recency). Without this, diagnosing it costs a
+    // CI round trip per guess.
+    assert.equal(
+      item.lane,
+      "retire-after-gate",
+      `lane was ${item.lane}; reasons: ${JSON.stringify(item.reasons)}`,
+    );
 
     writeFileSync(path.join(worktreePath, "README.md"), "dirty\n");
 
@@ -1342,7 +1352,17 @@ process.stdout.write(JSON.stringify(output) + "\\n");
       }),
     );
     const item = findItem(inventory.items, `refs/heads/${branch}`);
-    assert.equal(item.lane, "retire-after-gate");
+    // Carry the classifier's own reasons into the failure. This assertion fails
+    // on Linux CI with lane "uncertain" while passing on macOS, and the bare
+    // equality told us nothing about which probe went unavailable — the lane is
+    // uncertain for several distinct causes (probe errors, missing metadata,
+    // unavailable branch/worktree recency). Without this, diagnosing it costs a
+    // CI round trip per guess.
+    assert.equal(
+      item.lane,
+      "retire-after-gate",
+      `lane was ${item.lane}; reasons: ${JSON.stringify(item.reasons)}`,
+    );
     assert.deepEqual(item.ignoredPaths, [".next/"]);
 
     const operations = createGitRetirementOperations({
