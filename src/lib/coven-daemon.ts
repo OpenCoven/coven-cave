@@ -165,6 +165,7 @@ export type DaemonRequest = {
   body?: unknown;
   timeoutMs?: number;
   maxResponseBytes?: number;
+  retryTransportFailure?: boolean;
 };
 
 export type DaemonResponse<T = unknown> = {
@@ -180,6 +181,7 @@ export async function callDaemon<T = unknown>({
   body,
   timeoutMs = 4000,
   maxResponseBytes,
+  retryTransportFailure = true,
 }: DaemonRequest): Promise<DaemonResponse<T>> {
   const target = await loadDaemonTarget();
   return callDaemonTarget<T>(target, {
@@ -188,6 +190,7 @@ export async function callDaemon<T = unknown>({
     body,
     timeoutMs,
     maxResponseBytes,
+    retryTransportFailure,
   });
 }
 
@@ -199,6 +202,7 @@ export async function callDaemonTarget<T = unknown>(
     body,
     timeoutMs = 4000,
     maxResponseBytes,
+    retryTransportFailure = true,
   }: DaemonRequest,
 ): Promise<DaemonResponse<T>> {
   if (target.mode === "unconfigured-hub") {
@@ -218,10 +222,11 @@ export async function callDaemonTarget<T = unknown>(
     maxResponseBytes,
   });
   // Retry transport-level failures (status 0: timeout/reset/refused) once for
-  // reads — a briefly-busy daemon must not surface a hard error for a GET
-  // (the /api/familiars 503 flake). Mutations never retry: a timed-out POST
-  // may have been applied. HTTP-level errors (a real status) never retry.
-  if (!first.ok && first.status === 0 && method === "GET") {
+  // reads unless the caller opts out — a briefly-busy daemon must not surface
+  // a hard error for a GET (the /api/familiars 503 flake). Mutations never
+  // retry: a timed-out POST may have been applied. HTTP-level errors (a real
+  // status) never retry.
+  if (!first.ok && first.status === 0 && method === "GET" && retryTransportFailure) {
     await new Promise((resolve) => setTimeout(resolve, GET_RETRY_DELAY_MS));
     return callDaemonTargetOnce<T>(target, {
       method,
@@ -229,6 +234,7 @@ export async function callDaemonTarget<T = unknown>(
       body,
       timeoutMs,
       maxResponseBytes,
+      retryTransportFailure,
     });
   }
   return first;
