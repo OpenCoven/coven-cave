@@ -5661,13 +5661,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer
     if (handleArrowKey(e, input, setInput)) return;
     // Recommended-next-path ghost fill: an EMPTY composer showing the
-    // recommendation as its placeholder accepts it with ⇥ or ← (both inert
-    // in an empty textarea, so no editing behaviour is lost). Ordered after
-    // the menus and token branches — they keep owning Tab while open — and
-    // gated on the empty draft so native Tab focus-move survives the moment
-    // there's real text (a11y). Fill, never send: the draft stays editable.
+    // recommendation as its placeholder accepts it with ⇥. Ordered after the
+    // menus and token branches — they keep owning Tab while open — and gated
+    // on the empty draft so native Tab focus-move survives the moment there's
+    // real text (a11y). Fill, never send: the draft stays editable.
+    //
+    // ← is deliberately NOT an accept key (cave-i66c). It was added on the
+    // reasoning that an empty textarea makes it inert, but "inert" is only true
+    // of the text buffer: ArrowLeft stays a live navigation key for screen
+    // readers and IME candidate lists, and preventDefault here eats it for
+    // them. It is also the one key a person presses expecting nothing to
+    // happen, so spending it to paste an assistant suggestion into their draft
+    // is a surprise with no undo affordance. Tab is the only accept.
     if (
-      ((e.key === "Tab" && !e.shiftKey) || e.key === "ArrowLeft") &&
+      e.key === "Tab" &&
+      !e.shiftKey &&
       input === "" &&
       !busy &&
       recommendedNextPath
