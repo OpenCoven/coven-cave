@@ -114,7 +114,7 @@ function createRig() {
 test("travel reconcile requester coalesces active triggers into one trailing request", async () => {
   const rig = createRig();
 
-  rig.requester.trigger();
+  rig.requester.observeHubState("unreachable");
   rig.requester.trigger();
   rig.requester.trigger();
   await flushMicrotasks();
@@ -122,7 +122,8 @@ test("travel reconcile requester coalesces active triggers into one trailing req
   assert.equal(rig.requests.length, 1);
   assert.equal(rig.inFlight, 1);
 
-  rig.requester.trigger();
+  rig.requester.observeHubState("reachable");
+  rig.requester.observeHubState("reachable");
   rig.requester.trigger();
   await flushMicrotasks();
 
@@ -138,11 +139,50 @@ test("travel reconcile requester coalesces active triggers into one trailing req
   assert.equal(rig.peakInFlight, 1);
 });
 
-test("hub outage activation triggers one immediate request and one 10s timer", async () => {
+test("travel reconcile requester ignores trigger when no reconcile is currently needed", async () => {
   const rig = createRig();
 
-  rig.requester.setHubOutageActive(true);
-  rig.requester.setHubOutageActive(true);
+  rig.requester.trigger();
+  await flushMicrotasks();
+
+  assert.equal(rig.requests.length, 0);
+
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 1);
+  await rig.resolve(0);
+
+  rig.requester.trigger();
+  await flushMicrotasks();
+
+  assert.equal(rig.requests.length, 1);
+});
+
+test("initial reachable observation triggers exactly one reconcile and steady reachable stays silent after success", async () => {
+  const rig = createRig();
+
+  rig.requester.observeHubState("reachable");
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+
+  assert.equal(rig.requests.length, 1);
+  assert.equal(rig.peakInFlight, 1);
+  assert.equal(rig.pendingTimers().length, 0);
+
+  await rig.resolve(0);
+
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+
+  assert.equal(rig.requests.length, 1);
+  assert.equal(rig.pendingTimers().length, 0);
+});
+
+test("hub outage observation triggers one immediate request and one 10s timer", async () => {
+  const rig = createRig();
+
+  rig.requester.observeHubState("unreachable");
+  rig.requester.observeHubState("unreachable");
   await flushMicrotasks();
 
   assert.equal(rig.requests.length, 1);
@@ -154,7 +194,7 @@ test("hub outage activation triggers one immediate request and one 10s timer", a
 test("hub outage cadence re-triggers at every 10s timer without connection publishes", async () => {
   const rig = createRig();
 
-  rig.requester.setHubOutageActive(true);
+  rig.requester.observeHubState("unreachable");
   await flushMicrotasks();
   await rig.resolve(0);
 
@@ -181,7 +221,7 @@ test("hub outage cadence re-triggers at every 10s timer without connection publi
 test("hub outage timer coalesces behind an active request instead of overlapping", async () => {
   const rig = createRig();
 
-  rig.requester.setHubOutageActive(true);
+  rig.requester.observeHubState("unreachable");
   await flushMicrotasks();
 
   rig.fireLatestTimer();
@@ -200,12 +240,12 @@ test("hub outage timer coalesces behind an active request instead of overlapping
 test("hub outage deactivation cancels the timer and keeps stale callbacks inert", async () => {
   const rig = createRig();
 
-  rig.requester.setHubOutageActive(true);
+  rig.requester.observeHubState("unreachable");
   await flushMicrotasks();
   await rig.resolve(0);
 
   const timer = rig.latestPendingTimer();
-  rig.requester.setHubOutageActive(false);
+  rig.requester.observeHubState("inactive");
 
   assert.equal(timer.cancelled, true);
   assert.equal(rig.pendingTimers().length, 0);
@@ -218,11 +258,11 @@ test("hub outage deactivation cancels the timer and keeps stale callbacks inert"
 test("travel reconcile requester stop aborts the active request, clears trailing work, and cancels outage cadence", async () => {
   const rig = createRig();
 
-  rig.requester.setHubOutageActive(true);
+  rig.requester.observeHubState("unreachable");
   await flushMicrotasks();
   const timer = rig.latestPendingTimer();
 
-  rig.requester.trigger();
+  rig.requester.observeHubState("reachable");
   rig.requester.stop();
 
   assert.equal(timer.cancelled, true);
@@ -239,10 +279,10 @@ test("travel reconcile requester stop aborts the active request, clears trailing
   assert.equal(rig.requests.length, 1);
 });
 
-test("travel reconcile requester failures do not spin and the next trigger retries", async () => {
+test("reachable failures wait for the next reachable observation before retrying and then go quiet after success", async () => {
   const rig = createRig();
 
-  rig.requester.trigger();
+  rig.requester.observeHubState("reachable");
   await flushMicrotasks();
   assert.equal(rig.requests.length, 1);
 
@@ -250,10 +290,56 @@ test("travel reconcile requester failures do not spin and the next trigger retri
   assert.equal(rig.requests.length, 1);
   assert.equal(rig.inFlight, 0);
 
-  rig.requester.trigger();
+  rig.requester.observeHubState("reachable");
+  rig.requester.observeHubState("reachable");
   await flushMicrotasks();
   assert.equal(rig.requests.length, 2);
 
   await rig.resolve(1);
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+
+  assert.equal(rig.requests.length, 2);
+  assert.equal(rig.peakInFlight, 1);
+});
+
+test("hub outage failures stay on the 10s timer lane instead of spinning immediately", async () => {
+  const rig = createRig();
+
+  rig.requester.observeHubState("unreachable");
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 1);
+
+  await rig.reject(0, new Error("boom"));
+  assert.equal(rig.requests.length, 1);
+  assert.equal(rig.inFlight, 0);
+  assert.equal(rig.pendingTimers().length, 1);
+
+  rig.fireLatestTimer();
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 2);
+});
+
+test("recovery observation cancels outage cadence and triggers exactly one reconcile", async () => {
+  const rig = createRig();
+
+  rig.requester.observeHubState("unreachable");
+  await flushMicrotasks();
+  await rig.resolve(0);
+
+  const timer = rig.latestPendingTimer();
+  rig.requester.observeHubState("reachable");
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+
+  assert.equal(timer.cancelled, true);
+  assert.equal(rig.pendingTimers().length, 0);
+  assert.equal(rig.requests.length, 2);
+
+  await rig.resolve(1);
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+
+  assert.equal(rig.requests.length, 2);
   assert.equal(rig.peakInFlight, 1);
 });

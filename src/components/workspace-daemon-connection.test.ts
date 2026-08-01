@@ -81,21 +81,26 @@ test("Workspace wires one mounted supervisor with fresh connection requests, vis
   );
   assert.match(
     workspace,
-    /useRefreshOnFocus\(\(\) => \{\s*void daemonConnectionSupervisorRef\.current\?\.refresh\(\);\s*\}\)/,
-    "Workspace should reuse the shared focus-refresh primitive instead of hand-rolled browser-only focus logic",
+    /useRefreshOnFocus\(\(\) => \{\s*void daemonConnectionSupervisorRef\.current\?\.refresh\(\{ fresh: true \}\);\s*\}\)/,
+    "Workspace focus recovery should use a fresh supervisor probe instead of reusing stale failure cache or in-flight work",
   );
 });
 
-test("Workspace refreshDaemonStatus maps trusted starts to fresh supervisor refreshes", () => {
+test("Workspace refreshDaemonStatus maps trusted starts and explicit refreshes to fresh supervisor probes", () => {
   assert.match(
     workspace,
-    /const refreshDaemonStatus = useCallback\(async \(opts\?: \{ trusted\?: boolean \}\) => \{[\s\S]*await daemonConnectionSupervisorRef\.current\?\.refresh\(\{ fresh: opts\?\.trusted === true \}\);[\s\S]*\}, \[\]\)/,
-    "trusted daemon starts should await a fresh supervisor refresh while ordinary failures keep the normal lane",
+    /const refreshDaemonStatus = useCallback\(async \(opts\?: \{ trusted\?: boolean; fresh\?: boolean \}\) => \{[\s\S]*await daemonConnectionSupervisorRef\.current\?\.refresh\(\{ fresh: opts\?\.fresh === true \|\| opts\?\.trusted === true \}\);[\s\S]*\}, \[\]\)/,
+    "trusted starts and explicit Retry recovery should both await a fresh supervisor refresh while ordinary failures keep the normal lane",
   );
   assert.match(
     workspace,
     /runWorkspaceDaemonStart\(\{[\s\S]*refreshStatus: refreshDaemonStatus/,
     "Workspace automatic and manual starts should continue to share the tested start flow",
+  );
+  assert.match(
+    workspace,
+    /id: "daemon-status-unavailable"[\s\S]*label: "Retry"[\s\S]*void refreshDaemonStatus\(\{ fresh: true \}\)/,
+    "the daemon-status Retry CTA should issue a fresh connection probe",
   );
 });
 
@@ -111,13 +116,18 @@ test("Workspace applies connection polls through the existing classifier-driven 
   );
   assert.match(
     applyPoll,
-    /const travelCadence = classifyDaemonConnectionTravelCadence\(poll\.payload\);[\s\S]*if \(travelCadence === "hub-unreachable"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.setHubOutageActive\(true\);[\s\S]*\} else if \(travelCadence === "hub-reachable"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.setHubOutageActive\(false\);[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.trigger\(\);[\s\S]*\} else if \(travelCadence === "non-hub"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.setHubOutageActive\(false\);[\s\S]*\}/,
-    "only structurally definite hub and non-hub answers should change travel cadence; unknown answers stay inert",
+    /const travelCadence = classifyDaemonConnectionTravelCadence\(poll\.payload\);[\s\S]*if \(travelCadence === "hub-unreachable"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.observeHubState\("unreachable"\);[\s\S]*\} else if \(travelCadence === "hub-reachable"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.observeHubState\("reachable"\);[\s\S]*\} else if \(travelCadence === "non-hub"\) \{[\s\S]*daemonTravelReconcileRequesterRef\.current\?\.observeHubState\("inactive"\);[\s\S]*\}/,
+    "only structurally definite hub and non-hub answers should update the requester's explicit hub state; unknown answers stay inert",
   );
   assert.doesNotMatch(
     applyPoll,
     /travelCadence === "unknown"[\s\S]*setHubOutageActive|travelCadence === "unknown"[\s\S]*trigger\(/,
     "unknown connection payloads should not clear outage cadence or trigger reconcile work",
+  );
+  assert.doesNotMatch(
+    applyPoll,
+    /travelCadence === "hub-reachable"[\s\S]*trigger\(/,
+    "steady reachable hub heartbeats should not POST travel reconcile unconditionally",
   );
   assert.match(applyPoll, /const result = classifyDaemonStatusPoll\(poll\)/, "the shared classifier remains authoritative");
   assert.match(

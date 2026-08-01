@@ -769,12 +769,11 @@ export function Workspace() {
   const applyDaemonConnectionPoll = useCallback((poll: DaemonConnectionPoll, context: { fresh: boolean }) => {
     const travelCadence = classifyDaemonConnectionTravelCadence(poll.payload);
     if (travelCadence === "hub-unreachable") {
-      daemonTravelReconcileRequesterRef.current?.setHubOutageActive(true);
+      daemonTravelReconcileRequesterRef.current?.observeHubState("unreachable");
     } else if (travelCadence === "hub-reachable") {
-      daemonTravelReconcileRequesterRef.current?.setHubOutageActive(false);
-      daemonTravelReconcileRequesterRef.current?.trigger();
+      daemonTravelReconcileRequesterRef.current?.observeHubState("reachable");
     } else if (travelCadence === "non-hub") {
-      daemonTravelReconcileRequesterRef.current?.setHubOutageActive(false);
+      daemonTravelReconcileRequesterRef.current?.observeHubState("inactive");
     }
     const result = classifyDaemonStatusPoll(poll);
     // The coordinator pins this first accepted decision. Later polls may update
@@ -818,8 +817,8 @@ export function Workspace() {
     if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
   }, []);
 
-  const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {
-    await daemonConnectionSupervisorRef.current?.refresh({ fresh: opts?.trusted === true });
+  const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean; fresh?: boolean }) => {
+    await daemonConnectionSupervisorRef.current?.refresh({ fresh: opts?.fresh === true || opts?.trusted === true });
   }, []);
 
   const startDaemon = useCallback(async () => {
@@ -890,7 +889,7 @@ export function Workspace() {
   }, [applyDaemonConnectionPoll]);
 
   useRefreshOnFocus(() => {
-    void daemonConnectionSupervisorRef.current?.refresh();
+    void daemonConnectionSupervisorRef.current?.refresh({ fresh: true });
   });
 
   // One-shot legacy localStorage key sweep: runs once per browser profile,
@@ -1062,7 +1061,7 @@ export function Workspace() {
       cta: {
         label: "Retry",
         onClick: () => {
-          void refreshDaemonStatus();
+          void refreshDaemonStatus({ fresh: true });
         },
       },
     });

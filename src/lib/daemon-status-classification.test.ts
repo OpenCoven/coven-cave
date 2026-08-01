@@ -130,6 +130,16 @@ for (const [name, payload, expected] of [
     "unknown",
   ],
   [
+    "status-unavailable with a hub target still stays unknown",
+    {
+      running: false,
+      availability: "status-unavailable",
+      reason: "Daemon connection status is temporarily unavailable",
+      target: { mode: "hub" },
+    },
+    "unknown",
+  ],
+  [
     "null payload stays unknown",
     null,
     "unknown",

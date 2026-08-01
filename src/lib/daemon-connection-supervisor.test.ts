@@ -222,6 +222,7 @@ test("ordinary refreshes coalesce and timer-driven polls stay serial", async () 
   assert.equal(rig.requests.length, 2);
   assert.equal(rig.inFlight, 1);
   assert.equal(rig.peakInFlight, 1);
+  assert.equal(rig.requestAt(1).fresh, false);
 
   const timerCountBeforePendingCoalesce = rig.timers.length;
   const third = rig.supervisor.refresh();
@@ -352,6 +353,7 @@ test("hiding clears timers and aborts active work without new publication or bac
 
   rig.supervisor.setVisible(true);
   assert.equal(rig.requests.length, 2);
+  assert.equal(rig.requestAt(1).fresh, true);
 
   rig.supervisor.setVisible(false);
   assert.equal(rig.requestAt(1).signal.aborted, true);
@@ -362,7 +364,7 @@ test("hiding clears timers and aborts active work without new publication or bac
   assert.equal(rig.pendingTimers().length, 0);
 });
 
-test("foregrounding a started supervisor triggers exactly one immediate ordinary request", async () => {
+test("foregrounding a started supervisor triggers exactly one immediate fresh request", async () => {
   const rig = createRig({ visible: false });
 
   rig.supervisor.start();
@@ -372,10 +374,11 @@ test("foregrounding a started supervisor triggers exactly one immediate ordinary
   rig.supervisor.setVisible(true);
 
   assert.equal(rig.requests.length, 1);
-  assert.equal(rig.requestAt(0).fresh, false);
+  assert.equal(rig.requestAt(0).fresh, true);
 
   await rig.resolveRequest(0, runningPoll());
   assert.equal(rig.publishes.length, 1);
+  assert.deepEqual(rig.publishes[0]?.context, { fresh: true });
 });
 
 test("stop aborts active work, clears timers, and leaves late completions inert", async () => {

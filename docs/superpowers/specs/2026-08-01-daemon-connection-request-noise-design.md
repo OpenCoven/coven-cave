@@ -69,9 +69,12 @@ The framework-free travel reconcile requester owns an independent outage
 cadence. When an accepted hub snapshot reports `availability: "unreachable"`,
 Workspace flips the requester into outage mode, which immediately POSTs once
 and then re-arms a one-shot ten-second timer until a structurally definite
-non-outage answer clears the cadence. Definite reachable hub answers clear and
-trigger one recovery/replay pass, definite local or unconfigured-hub answers
-clear without triggering, and unknown payloads stay inert so fallback
+non-outage answer clears the cadence. Initial inactive/unknown → reachable and
+unreachable → reachable transitions each trigger exactly one recovery/replay
+pass; repeated reachable observations stay silent after success, while a failed
+reachable reconcile marks retry-needed so the next repeated reachable
+observation retries once. Definite local or unconfigured-hub answers clear
+without triggering, and unknown payloads stay inert so fallback
 `status-unavailable` polls do not erase an active outage window. This keeps
 recovery/replay checks within the travel-local threshold even while the
 connection supervisor backs off.
@@ -169,8 +172,10 @@ explicit user actions, mutations, or active streams merely to reduce counts.
   executor probes, travel state/replay work, version resolution, and workspace
   metadata. The current recurring lane is a fast read-only
   `/api/daemon/connection` snapshot, while travel wake/replay side effects live
-  behind the separate serial `POST /api/daemon/travel/reconcile` lane; detailed
-  diagnostics stay on explicit `/api/daemon/status` reads.
+  behind the separate serial `POST /api/daemon/travel/reconcile` lane and now
+  fire only on outage entry/cadence, initial reachable, recovery, or a
+  failed-reachable retry observation; steady healthy hub heartbeats stay
+  silent. Detailed diagnostics stay on explicit `/api/daemon/status` reads.
 - Both daemon health surfaces now share the same `1500ms` no-retry transport
   contract. `src/lib/server/daemon-health-request.ts` sets
   `timeoutMs: 1500` and `retryTransportFailure: false`, and both

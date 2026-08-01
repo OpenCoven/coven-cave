@@ -215,7 +215,7 @@ export function createDaemonConnectionSupervisor<Handle = TimerHandle>(
         return;
       }
       if (!started) return;
-      const pending = refresh();
+      const pending = refresh({ fresh: true });
       pending.catch(() => {});
     },
   };

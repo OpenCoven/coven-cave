@@ -21,7 +21,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /const refreshDaemonStatus = useCallback\([\s\S]*daemonConnectionSupervisorRef\.current\?\.refresh\(\{ fresh: opts\?\.trusted === true \}\)/,
+  /const refreshDaemonStatus = useCallback\([\s\S]*daemonConnectionSupervisorRef\.current\?\.refresh\(\{ fresh: opts\?\.fresh === true \|\| opts\?\.trusted === true \}\)/,
   "Workspace should expose daemon connection refresh through the shared supervisor",
 );
 
