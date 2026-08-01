@@ -519,6 +519,7 @@ export const SUITES = {
     "src/lib/use-projects-race.test.ts",
     "src/lib/use-projects-normalize.test.ts",
     "src/lib/project-frecency.test.ts",
+    "src/lib/project-root-normalizers.test.ts",
     "src/lib/use-projects-scope-transition.test.ts",
     "src/components/calendar-view-polish.test.ts",
     "src/components/calendar-agenda-redesign.test.ts",
