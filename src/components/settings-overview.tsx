@@ -44,14 +44,14 @@ function useGeneralSummary(active: boolean) {
       }
     };
 
-    const [daemon, voice, sync] = await Promise.all([
-      read(fetch("/api/daemon/status", { cache: "no-store" })),
+    const [config, voice, sync] = await Promise.all([
+      read(fetch("/api/config", { cache: "no-store" })),
       read(fetch("/api/voice/engines", { cache: "no-store" })),
       read(fetch("/api/backup/sync", { cache: "no-store" })),
     ]);
     if (requestId !== latestRequest.current) return;
     setState((current) => resolveGeneralSummaryState(current, {
-      daemon,
+      config,
       voice,
       sync,
     }));

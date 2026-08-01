@@ -67,7 +67,8 @@ test("General can opt into the control-sheet overview without changing other sec
 });
 
 test("the General control-sheet overview uses real summary sources and stable anchors", () => {
-  assert.match(overview, /fetch\("\/api\/daemon\/status"/);
+  assert.match(overview, /fetch\("\/api\/config"/);
+  assert.doesNotMatch(overview, /fetch\("\/api\/daemon\/status"/);
   assert.match(overview, /fetch\("\/api\/voice\/engines"/);
   assert.match(overview, /fetch\("\/api\/backup\/sync"/);
   assert.match(

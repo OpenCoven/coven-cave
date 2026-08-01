@@ -18,7 +18,7 @@ export type GeneralSummaryResponse = {
 };
 
 type GeneralSummarySources = {
-  daemon: GeneralSummaryResponse;
+  config: GeneralSummaryResponse;
   voice: GeneralSummaryResponse;
   sync: GeneralSummaryResponse;
 };
@@ -50,10 +50,10 @@ export function resolveGeneralSummaryState(
   sources: GeneralSummarySources,
 ): GeneralSummaryState {
   const workspacePath =
-    sources.daemon.ok &&
-    typeof sources.daemon.value?.workspacePath === "string" &&
-    sources.daemon.value.workspacePath.trim()
-      ? sources.daemon.value.workspacePath
+    sources.config.ok &&
+    typeof sources.config.value?.workspacePath === "string" &&
+    sources.config.value.workspacePath.trim()
+      ? sources.config.value.workspacePath
       : undefined;
   const models = sources.voice.ok && Array.isArray(sources.voice.value?.tts)
     ? sources.voice.value.tts

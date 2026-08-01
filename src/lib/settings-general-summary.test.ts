@@ -17,7 +17,7 @@ const loading: GeneralSummaryState = { status: "loading", summary: {} };
 test("General summary resolves complete source data", () => {
   assert.deepEqual(
     resolveGeneralSummaryState(loading, {
-      daemon: ok({ workspacePath: "/coven" }),
+      config: ok({ workspacePath: "/coven" }),
       voice: ok({
         tts: [
           { ready: true, verified: true },
@@ -51,7 +51,7 @@ test("General summary exposes partial refreshes while retaining failed-source va
 
   assert.deepEqual(
     resolveGeneralSummaryState(current, {
-      daemon: ok({ workspacePath: "/new" }),
+      config: ok({ workspacePath: "/new" }),
       voice: failed,
       sync: failed,
     }),
@@ -70,7 +70,7 @@ test("General summary exposes partial refreshes while retaining failed-source va
 test("General summary treats an unusable successful payload as a partial source failure", () => {
   assert.deepEqual(
     resolveGeneralSummaryState(loading, {
-      daemon: ok({ workspacePath: "/coven" }),
+      config: ok({ workspacePath: "/coven" }),
       voice: ok({ ok: true }),
       sync: ok({ config: { enabled: false } }),
     }),
@@ -97,7 +97,7 @@ test("General summary treats all-source failure as an error without discarding k
 
   assert.deepEqual(
     resolveGeneralSummaryState(current, {
-      daemon: failed,
+      config: failed,
       voice: failed,
       sync: failed,
     }),
@@ -111,7 +111,7 @@ test("General summary treats all-source failure as an error without discarding k
 test("General summary errors when successful responses contain no usable details", () => {
   assert.deepEqual(
     resolveGeneralSummaryState(loading, {
-      daemon: ok({ workspacePath: "" }),
+      config: ok({ workspacePath: "" }),
       voice: ok({}),
       sync: ok({ config: {} }),
     }),

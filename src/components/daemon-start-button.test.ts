@@ -21,8 +21,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /const refreshDaemonStatus = useCallback\([\s\S]*fetch\("\/api\/daemon\/status", \{ cache: "no-store" \}\)/,
-  "Workspace should expose daemon status refresh outside the polling effect",
+  /const refreshDaemonStatus = useCallback\([\s\S]*daemonConnectionSupervisorRef\.current\?\.refresh\(\{ fresh: opts\?\.trusted === true \}\)/,
+  "Workspace should expose daemon connection refresh through the shared supervisor",
 );
 
 assert.match(
