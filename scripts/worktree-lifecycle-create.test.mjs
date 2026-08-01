@@ -20,6 +20,13 @@ import {
   releaseWriterIntent,
 } from "./maintenance-gate.mjs";
 
+if (process.platform === "win32") {
+  console.log(
+    "worktree-lifecycle-create: skipped on native Windows (the fixture stubs POSIX command executables)",
+  );
+  process.exit(0);
+}
+
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(sourceRoot, "scripts", "worktree-lifecycle-create.ts");
 const realGit = process.env.PATH.split(path.delimiter)
