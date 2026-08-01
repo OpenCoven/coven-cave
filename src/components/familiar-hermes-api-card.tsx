@@ -106,7 +106,11 @@ export function FamiliarHermesApiCard({ familiarId }: Props) {
   // make it the one change the form cannot express.
   const urlChanged = draftUrl.trim() !== state.url;
   const nothingToSave = !urlChanged && !draftKey.trim();
-  const configured = Boolean(state.url) || state.keyConfigured;
+  // Disconnect must have something of THIS familiar's to disconnect. A key
+  // that exists only because another familiar owns it is not this familiar's
+  // to revoke, and offering the button there makes it a no-op that reads as
+  // broken.
+  const configured = Boolean(state.url) || (state.keyConfigured && state.keyGrantedToFamiliar);
 
   return (
     <section className="familiar-studio-brain__card">
@@ -128,6 +132,13 @@ export function FamiliarHermesApiCard({ familiarId }: Props) {
           ? "Structured tool activity is on for this familiar."
           : "Structured tool activity is off — chats run in plain CLI mode."}
       </p>
+
+      {state.ambientUrlInvalid ? (
+        <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+          This machine sets HERMES_API_URL to a value Cave can&rsquo;t use, so it&rsquo;s being
+          ignored. Enter an endpoint here to override it.
+        </p>
+      ) : null}
 
       {state.blockedByProfile ? (
         <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">

@@ -49,6 +49,15 @@ assert.match(
   "the endpoint must be validated before the key is written",
 );
 
+// ── wrong types fail fast ──────────────────────────────────────────────────
+// A non-string field treated as "not supplied" makes a broken client look
+// like a successful save that quietly changed nothing.
+assert.match(
+  route,
+  /for \(const field of \["url", "apiKey"\] as const\)[\s\S]*?must be a string[\s\S]*?status: 400/,
+  "PUT must reject wrong-typed fields instead of silently ignoring them",
+);
+
 // ── a new key is born scoped, never shared ─────────────────────────────────
 // grantVaultScope never widens, so on an absent (== "shared") scope it returns
 // "shared" — which would hand a brand-new credential to every familiar.
@@ -91,6 +100,16 @@ assert.match(
   card,
   /const urlChanged = draftUrl\.trim\(\) !== state\.url/,
   "Save must key on change, not emptiness, or clearing the endpoint becomes impossible",
+);
+assert.match(
+  card,
+  /const configured = Boolean\(state\.url\) \|\| \(state\.keyConfigured && state\.keyGrantedToFamiliar\)/,
+  "Disconnect must require something this familiar owns — a key another familiar holds is not this one's to revoke",
+);
+assert.match(
+  card,
+  /state\.ambientUrlInvalid \?[\s\S]*?HERMES_API_URL to a value Cave can/,
+  "an ambient endpoint Cave rejects must be explained, not silently ignored",
 );
 
 assert.match(

@@ -24,7 +24,11 @@
  * can never be honoured on one path and ignored on the other.
  */
 
-import { hermesApiConfig, type HermesApiConfig } from "./hermes-responses-stream.ts";
+import {
+  hermesApiConfig,
+  normalizeHermesApiUrl,
+  type HermesApiConfig,
+} from "./hermes-responses-stream.ts";
 
 /** The vault key holding the bearer credential. */
 export const HERMES_API_KEY_VAULT_KEY = "HERMES_API_KEY";
@@ -78,8 +82,13 @@ export function resolveHermesApiConfig(
 export type HermesApiSetupState = {
   /** The configured endpoint, or "" when it falls back to ambient env. */
   url: string;
-  /** True when an endpoint arrives from the process env rather than config. */
+  /** True when a USABLE endpoint arrives from the process env rather than
+   *  config. An ambient value the transport would reject is not a source. */
   urlFromEnvironment: boolean;
+  /** An ambient endpoint exists but fails the transport's own rule. The card
+   *  must say so: it is otherwise invisible — nothing in Cave set it, and the
+   *  chat just silently stays in CLI mode. */
+  ambientUrlInvalid: boolean;
   /** Whether a key is present. The value itself never crosses this boundary. */
   keyConfigured: boolean;
   /** Whether the key's vault grant covers this familiar. */
@@ -99,11 +108,17 @@ export function hermesApiSetupState(input: {
 }): HermesApiSetupState {
   const configured = input.bindingUrl?.trim() ?? "";
   const ambient = input.ambientUrl?.trim() ?? "";
-  const effective = configured || ambient;
+  // Validate the EFFECTIVE endpoint, not merely its presence. The binding is
+  // checked on write, but an ambient HERMES_API_URL never passed through Cave
+  // at all — a stale `http://localhost:9119` export is rejected by the
+  // transport, so reporting "on" from a non-empty string would state exactly
+  // the falsehood this card exists to prevent.
+  const effective = normalizeHermesApiUrl(configured || ambient);
   const usable = Boolean(effective) && input.keyConfigured && input.keyGrantedToFamiliar;
   return {
     url: configured,
-    urlFromEnvironment: !configured && Boolean(ambient),
+    urlFromEnvironment: !configured && Boolean(effective),
+    ambientUrlInvalid: !configured && Boolean(ambient) && !effective,
     keyConfigured: input.keyConfigured,
     keyGrantedToFamiliar: input.keyGrantedToFamiliar,
     active: usable && !input.hasHermesProfile,

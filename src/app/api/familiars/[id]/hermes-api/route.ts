@@ -87,6 +87,19 @@ export async function PUT(req: NextRequest, { params }: Params) {
   let body: { url?: unknown; apiKey?: unknown } = {};
   try { body = await req.json(); } catch { /* empty body handled below */ }
 
+  // Wrong-typed fields are a caller bug, not an omission. Treating them as
+  // "not supplied" makes a broken client look like a successful save that
+  // quietly changed nothing — the same silent-no-op failure this whole
+  // surface exists to eliminate.
+  for (const field of ["url", "apiKey"] as const) {
+    if (body[field] !== undefined && typeof body[field] !== "string") {
+      return NextResponse.json(
+        { ok: false, error: `${field} must be a string` },
+        { status: 400 },
+      );
+    }
+  }
+
   const rawUrl = typeof body.url === "string" ? body.url.trim() : undefined;
   const rawKey = typeof body.apiKey === "string" ? body.apiKey : undefined;
 

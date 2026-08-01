@@ -156,7 +156,54 @@ const ambient = hermesApiSetupState({
 });
 assert.equal(ambient.url, "");
 assert.equal(ambient.urlFromEnvironment, true);
+assert.equal(ambient.ambientUrlInvalid, false);
 assert.equal(ambient.active, true);
+
+// The endpoint is validated, not merely counted. A binding is checked on
+// write, but an ambient HERMES_API_URL never passed through Cave at all — a
+// stale `localhost` export is rejected by the transport, so a presence-only
+// check here would report "on" for a familiar that runs in CLI mode every
+// single turn. That is the exact falsehood this card exists to prevent.
+const staleAmbient = hermesApiSetupState({
+  bindingUrl: undefined,
+  ambientUrl: "http://localhost:9119",
+  keyConfigured: true,
+  keyGrantedToFamiliar: true,
+  hasHermesProfile: false,
+});
+assert.equal(staleAmbient.active, false, "an unusable ambient endpoint must not report as active");
+assert.equal(staleAmbient.urlFromEnvironment, false, "a rejected ambient value is not a source");
+assert.equal(staleAmbient.ambientUrlInvalid, true, "the card must be able to explain the ignored env value");
+
+// A configured endpoint overrides a broken ambient one, and the warning clears.
+const overridesStale = hermesApiSetupState({
+  bindingUrl: "http://127.0.0.1:9119",
+  ambientUrl: "http://localhost:9119",
+  keyConfigured: true,
+  keyGrantedToFamiliar: true,
+  hasHermesProfile: false,
+});
+assert.equal(overridesStale.active, true);
+assert.equal(overridesStale.ambientUrlInvalid, false);
+
+// No ambient value at all is not an "invalid ambient value".
+assert.equal(off.ambientUrlInvalid, false);
+
+// Whatever reports `active` must be exactly what the transport would accept.
+for (const endpoint of ["http://127.0.0.1:9119", "http://localhost:9119", "https://ok.example.com", "garbage"]) {
+  const state = hermesApiSetupState({
+    bindingUrl: endpoint,
+    ambientUrl: undefined,
+    keyConfigured: true,
+    keyGrantedToFamiliar: true,
+    hasHermesProfile: false,
+  });
+  assert.equal(
+    state.active,
+    resolveHermesApiConfig({ HERMES_API_KEY: "k" }, endpoint) !== null,
+    `setup state and transport disagree about "${endpoint}"`,
+  );
+}
 
 assert.equal(HERMES_API_KEY_VAULT_KEY, "HERMES_API_KEY");
 
