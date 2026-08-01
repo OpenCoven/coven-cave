@@ -103,8 +103,24 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // reading: one extraction is not enough to make this budget comfortable. Choosing
 // a laxer cap to silence the warning would be the exact move cave-7fd41 exists to
 // discourage. The remaining facade sheets are the work — see cave-ii7xi.
-const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 640) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 900) * 1024;
+// LOWERED root 640→600 / home 900→865 (2026-08-01, cave-ii7xi): the third #3264
+// extraction — surface-reporting.css. Measured on ad12a391b: home 882.2 → 844.9
+// KiB, root 618.5 → 581.2 KiB, −37 KiB each, the largest single reclaim in this
+// series and nearly 1.5x what the .fa-* extraction (cave-5rqi) bought.
+// The file was four tenants, not one surface: dr-* (daily report, 86 classes),
+// growth-* (55) and retro-* (40) are reached ONLY from /dashboard/... and
+// /daily-report/... routes, while ~14 KiB of chat and shell chrome — edit cards,
+// review modal, tool IO, the thread-signal card, quick-chat keyframes, the
+// GitHub reward flare, group-chat next-path and the tools-update fill button —
+// sat in the same file under a name that made it look route-scoped. The reporting
+// families are now component-imported by the dashboard and daily-report views;
+// the shell chrome stayed in the facade as shell-cards-and-controls.css, in the
+// slot surface-reporting.css held, so cascade order is unchanged.
+// Home lands at 2.32% and root at 3.14% — both above the THIN threshold for the
+// first time in this series, which is what two extractions bought that one could
+// not. 35 of the 37 reclaimed KiB are given back rather than banked.
+const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 600) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 865) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(
