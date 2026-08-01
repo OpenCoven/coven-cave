@@ -6,8 +6,8 @@ const navigation = readFileSync(new URL("../styles/globals/shell-navigation.css"
 
 assert.match(
   navigation,
-  /\/\* Dia-style floating sidebar edge[\s\S]*?@media \(min-width: 1024px\) \{[\s\S]*?\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail\) \{[\s\S]*?border: 1px solid var\(--border-hairline\);[\s\S]*?border-radius: var\(--radius-panel\);[\s\S]*?box-shadow:[\s\S]*?var\(--shadow-color\);[\s\S]*?overflow-x: hidden;[\s\S]*?margin: var\(--space-2\);/,
-  "expanded and peek sidebars share one token-driven inset silhouette on desktop",
+  /\/\* Inset-shell layout:[\s\S]*?@media \(min-width: 1024px\) \{[\s\S]*?\.shell-nav-panel > \.shell-nav--peek \{[\s\S]*?border: 1px solid var\(--border-hairline\);[\s\S]*?border-radius: var\(--radius-panel\);[\s\S]*?box-shadow:[\s\S]*?var\(--shadow-color\);[\s\S]*?overflow-x: hidden;/,
+  "the hover-peek sidebar keeps its token-driven floating silhouette on desktop",
 );
 
 assert.match(
@@ -18,8 +18,8 @@ assert.match(
 
 assert.match(
   navigation,
-  /\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail, \.shell-nav--peek\) \{[\s\S]*?flex: 0 0 auto;[\s\S]*?width: calc\(100% - var\(--space-4\)\);/,
-  "expanded desktop navigation is inset inside its existing panel allocation",
+  /\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail, \.shell-nav--peek\) \{[\s\S]*?flex: 1 1 auto;[\s\S]*?width: 100%;/,
+  "expanded desktop navigation stays flush inside its existing panel allocation",
 );
 
 const detailRule = navigation.match(/\.shell-detail \{([\s\S]*?)\n\}/)?.[1] ?? "";
@@ -30,8 +30,8 @@ assert.doesNotMatch(
 );
 assert.match(
   navigation,
-  /\.shell-detail-panel \{\s*background: var\(--bg-base\);\s*\}/,
-  "detail wrapper returns to the base canvas after the recessed gutter is removed",
+  /\.shell-detail-panel \{[\s\S]*?background: var\(--bg-panel\);[\s\S]*?\}/,
+  "detail wrapper uses the panel-toned inset gutter",
 );
 
 assert.doesNotMatch(
