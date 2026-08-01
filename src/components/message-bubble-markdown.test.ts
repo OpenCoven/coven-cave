@@ -314,6 +314,11 @@ assert.match(
 );
 assert.match(
   domWiring,
+  /link\.classList\.contains\("cave-citation-chip"\)/,
+  "The generic markdown linker should never claim an enhanced citation chip",
+);
+assert.match(
+  domWiring,
   /event\.preventDefault\(\)[\s\S]*onOpenUrl\(href\)/,
   "Markdown link clicks should prevent normal navigation and open in the provided browser target",
 );
