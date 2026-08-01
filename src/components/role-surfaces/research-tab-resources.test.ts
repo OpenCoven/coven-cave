@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(new URL("./research-tab-resources.tsx", import.meta.url), "utf8");
+const xSources = readFileSync(new URL("./research-x-sources.tsx", import.meta.url), "utf8");
+const emptyState = readFileSync(new URL("../ui/empty-state.tsx", import.meta.url), "utf8");
 const styles = readFileSync(
   new URL("../../styles/globals/surface-research-resources.css", import.meta.url),
   "utf8",
@@ -188,7 +190,30 @@ test("Resources mounts Grab from X inline without changing the five-tab host", (
   assert.match(source, /import \{ ResearchXSources \} from "\.\/research-x-sources"/);
   assert.match(
     source,
-    /<ResearchXSources\s+familiar=\{context\.activeFamiliar\}\s+selectedMissionId=\{selectedMission\?\.id \?\? null\}/,
+    /<ResearchXSources\s+familiar=\{context\.activeFamiliar\}\s+selectedMissionId=\{selectedMission\?\.id \?\? null\}\s+onMissionAttached=\{research\.applyMission\}/,
   );
   assert.match(source, /<ResearchXSources[\s\S]*<form className="research-res__intake"/);
+});
+
+test("X source links use theme-aware text contrast instead of the fixed research accent", () => {
+  assert.match(styles, /\.research-x-post__link:hover\s*\{\s*color: var\(--text-primary\);/);
+  assert.doesNotMatch(
+    styles,
+    /\.research-x-post__link:hover\s*\{\s*color: var\(--research-accent\);/,
+  );
+});
+
+test("X source ownership remounts by familiar/grant and same-scope retries claim a new generation", () => {
+  assert.match(
+    xSources,
+    /return <ResearchXSourcesScope key=\{scopeKey\} \{\.\.\.props\} \/>;/,
+  );
+  assert.match(xSources, /const generation = \+\+generationRef\.current;/);
+  assert.match(xSources, /setLookupBusy\(false\);[\s\S]*setSearchBusy\(false\);/);
+});
+
+test("manual zero-result announcements suppress duplicate EmptyState live output", () => {
+  assert.match(xSources, /<EmptyState\s+compact\s+live=\{false\}\s+headline="No X posts found"/);
+  assert.match(emptyState, /live = true/);
+  assert.match(emptyState, /role=\{live \? "status" : undefined\}/);
 });

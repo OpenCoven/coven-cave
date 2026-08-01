@@ -95,6 +95,20 @@ export function useResearchMissions(familiarId: string) {
     setState((current) => ({ ...current, selectedId }));
   }, []);
 
+  const applyMission = useCallback((mission: ResearchMission) => {
+    if (mission.familiarId !== familiarId) return;
+    loadSeq.current += 1;
+    setState((current) => ({
+      ...current,
+      missions: current.missions.some((candidate) => candidate.id === mission.id)
+        ? current.missions.map((candidate) => candidate.id === mission.id ? mission : candidate)
+        : [mission, ...current.missions],
+      selectedId: mission.id,
+      loading: false,
+      error: null,
+    }));
+  }, [familiarId]);
+
   const start = useCallback(async (input: CreateResearchMissionInput) => {
     try {
       const result = await createResearchMission(input);
@@ -204,5 +218,15 @@ export function useResearchMissions(familiarId: string) {
     }
   }, [load]);
 
-  return { ...state, selected, select, start, act, schedule, controlAutomation, load };
+  return {
+    ...state,
+    selected,
+    select,
+    applyMission,
+    start,
+    act,
+    schedule,
+    controlAutomation,
+    load,
+  };
 }

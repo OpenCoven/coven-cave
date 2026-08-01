@@ -23,11 +23,14 @@ vi.mock("@/lib/icon", () => ({
 vi.mock("@/components/ui/button", () => ({
   Button: ({
     children,
-    loading: _loading,
+    loading,
     leadingIcon: _leadingIcon,
     trailingIcon: _trailingIcon,
     ...props
-  }: Record<string, unknown>) => createElement("button", props, children),
+  }: Record<string, unknown>) => createElement("button", {
+    ...props,
+    "aria-busy": loading || undefined,
+  }, children),
 }));
 vi.mock("@/components/ui/search-input", () => ({
   SearchInput: ({
@@ -48,12 +51,22 @@ vi.mock("@/components/ui/relative-time", () => ({
     iso ? createElement("time", { dateTime: iso }, iso) : fallback,
 }));
 vi.mock("@/components/ui/empty-state", () => ({
-  EmptyState: ({ headline, subtitle, actions }: Record<string, unknown>) =>
-    createElement("div", { role: "status" }, headline, subtitle, actions),
+  EmptyState: ({
+    headline,
+    subtitle,
+    actions,
+    live = true,
+  }: Record<string, unknown>) =>
+    createElement("div", { role: live ? "status" : undefined }, headline, subtitle, actions),
 }));
 vi.mock("@/components/ui/error-state", () => ({
-  ErrorState: ({ headline, subtitle, actions }: Record<string, unknown>) =>
-    createElement("div", { role: "alert" }, headline, subtitle, actions),
+  ErrorState: ({
+    headline,
+    subtitle,
+    actions,
+    live = true,
+  }: Record<string, unknown>) =>
+    createElement("div", { role: live ? "alert" : undefined }, headline, subtitle, actions),
 }));
 vi.mock("@/components/ui/skeleton", () => ({
   Skeleton: () => createElement("span", { "aria-hidden": true }),
@@ -171,6 +184,7 @@ async function settle() {
 async function renderReady(
   fetcher: typeof fetch,
   props: Record<string, unknown> = {},
+  createNodeMock?: Parameters<typeof create>[1]["createNodeMock"],
 ): Promise<ReactTestRenderer> {
   globalThis.fetch = fetcher;
   let renderer!: ReactTestRenderer;
@@ -181,6 +195,7 @@ async function renderReady(
         selectedMissionId={null}
         {...props}
       />,
+      createNodeMock ? { createNodeMock } : undefined,
     );
   });
   await settle();
@@ -339,6 +354,213 @@ describe("ResearchXSources request discipline", () => {
       preventDefault() {},
     }));
     expect(JSON.stringify(renderer.toJSON())).toContain("No X posts found");
+    const noResults = renderer.root.find(
+      (node) => node.type === "div" && textOf(node).includes("No X posts found"),
+    );
+    expect(noResults.props.role).toBeUndefined();
+    expect(announce).toHaveBeenLastCalledWith("Found 0 X posts.");
+    await act(async () => renderer.unmount());
+  });
+
+  test("lookup and search share one request channel and a late lookup cannot replace newer search results", async () => {
+    const lookup = deferred<Response>();
+    const search = deferred<Response>();
+    let lookupSignal: AbortSignal | undefined;
+    const newerPost = {
+      ...post,
+      id: "456",
+      canonicalUrl: "https://x.com/cave/status/456",
+      text: "Newer search result.",
+    };
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) return response({ ok: true, sources: [] });
+      if (url === "/api/x/posts/lookup") {
+        lookupSignal = init?.signal;
+        return lookup.promise;
+      }
+      if (url === "/api/x/posts/search") return search.promise;
+      throw new Error(`unexpected fetch ${url}`);
+    }));
+
+    await act(async () => {
+      input(renderer, "X post URL").props.onChange({ target: { value: post.canonicalUrl } });
+      input(renderer, "Search X posts").props.onChange({ target: { value: "newer" } });
+    });
+    act(() => {
+      void form(renderer, "Grab X post").props.onSubmit({ preventDefault() {} });
+    });
+    act(() => {
+      void form(renderer, "Search X posts").props.onSubmit({ preventDefault() {} });
+    });
+    expect(lookupSignal?.aborted).toBe(true);
+
+    await act(async () => {
+      search.resolve(response({ ok: true, posts: [newerPost] }));
+      await search.promise;
+    });
+    await act(async () => {
+      lookup.resolve(response({ ok: true, post }));
+      await lookup.promise;
+    });
+
+    const rendered = JSON.stringify(renderer.toJSON());
+    expect(rendered).toContain(newerPost.text);
+    expect(rendered).not.toContain(post.text);
+    expect(announce).toHaveBeenCalledWith("Found 1 X post.");
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(renderer.root.findAllByProps({ "aria-busy": true })).toHaveLength(0);
+    await act(async () => renderer.unmount());
+  });
+
+  test("a newer lookup wins over a late search failure without inheriting its error or busy state", async () => {
+    const search = deferred<Response>();
+    const lookup = deferred<Response>();
+    let searchSignal: AbortSignal | undefined;
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) return response({ ok: true, sources: [] });
+      if (url === "/api/x/posts/search") {
+        searchSignal = init?.signal;
+        return search.promise;
+      }
+      if (url === "/api/x/posts/lookup") return lookup.promise;
+      throw new Error(`unexpected fetch ${url}`);
+    }));
+
+    await act(async () => {
+      input(renderer, "Search X posts").props.onChange({ target: { value: "older" } });
+      input(renderer, "X post URL").props.onChange({ target: { value: post.canonicalUrl } });
+    });
+    act(() => {
+      void form(renderer, "Search X posts").props.onSubmit({ preventDefault() {} });
+    });
+    act(() => {
+      void form(renderer, "Grab X post").props.onSubmit({ preventDefault() {} });
+    });
+    expect(searchSignal?.aborted).toBe(true);
+
+    await act(async () => {
+      lookup.resolve(response({ ok: true, post }));
+      await lookup.promise;
+    });
+    await act(async () => {
+      search.resolve(response({ ok: false, code: "internal" }, false));
+      await search.promise;
+    });
+
+    const rendered = JSON.stringify(renderer.toJSON());
+    expect(rendered).toContain(post.text);
+    expect(rendered).not.toContain("Couldn’t complete the X request");
+    expect(announce).toHaveBeenCalledWith("Found 1 X post.");
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(renderer.root.findAllByProps({ "aria-busy": true })).toHaveLength(0);
+    await act(async () => renderer.unmount());
+  });
+
+  test("an aborted preview request is cancellation, not an internal error", async () => {
+    let lookupSignal: AbortSignal | undefined;
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) return response({ ok: true, sources: [] });
+      if (url === "/api/x/posts/lookup") {
+        lookupSignal = init?.signal;
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+        });
+      }
+      if (url === "/api/x/posts/search") return response({ ok: true, posts: [] });
+      throw new Error(`unexpected fetch ${url}`);
+    }));
+
+    await act(async () => {
+      input(renderer, "X post URL").props.onChange({ target: { value: post.canonicalUrl } });
+      input(renderer, "Search X posts").props.onChange({ target: { value: "replacement" } });
+    });
+    act(() => {
+      void form(renderer, "Grab X post").props.onSubmit({ preventDefault() {} });
+    });
+    await act(async () => form(renderer, "Search X posts").props.onSubmit({
+      preventDefault() {},
+    }));
+
+    expect(lookupSignal?.aborted).toBe(true);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("Couldn’t complete the X request");
+    expect(announce).toHaveBeenLastCalledWith("Found 0 X posts.");
+    await act(async () => renderer.unmount());
+  });
+
+  test("successful lookup and search announce completion with result counts", async () => {
+    const renderer = await renderReady(vi.fn(async (url: string) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) return response({ ok: true, sources: [] });
+      if (url === "/api/x/posts/lookup") return response({ ok: true, post });
+      if (url === "/api/x/posts/search") return response({ ok: true, posts: [post, {
+        ...post,
+        id: "456",
+        canonicalUrl: "https://x.com/cave/status/456",
+      }] });
+      throw new Error(`unexpected fetch ${url}`);
+    }));
+
+    await act(async () => {
+      input(renderer, "X post URL").props.onChange({ target: { value: post.canonicalUrl } });
+    });
+    await act(async () => form(renderer, "Grab X post").props.onSubmit({
+      preventDefault() {},
+    }));
+    expect(announce).toHaveBeenLastCalledWith("Found 1 X post.");
+
+    await act(async () => {
+      input(renderer, "Search X posts").props.onChange({ target: { value: "two" } });
+    });
+    await act(async () => form(renderer, "Search X posts").props.onSubmit({
+      preventDefault() {},
+    }));
+    expect(announce).toHaveBeenLastCalledWith("Found 2 X posts.");
+    await act(async () => renderer.unmount());
+  });
+
+  test("URL and search errors keep labels and expose stable conditional associations", async () => {
+    const renderer = await renderReady(vi.fn(async (url: string) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) return response({ ok: true, sources: [] });
+      if (url === "/api/x/posts/search") {
+        return response({ ok: false, code: "invalid-request" }, false);
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }));
+
+    const urlInput = input(renderer, "X post URL");
+    const searchInput = input(renderer, "Search X posts");
+    expect(urlInput.props["aria-invalid"]).toBeUndefined();
+    expect(urlInput.props["aria-describedby"]).toBeUndefined();
+    expect(searchInput.props["aria-invalid"]).toBeUndefined();
+    expect(searchInput.props["aria-describedby"]).toBeUndefined();
+
+    await act(async () => {
+      urlInput.props.onChange({ target: { value: "https://example.com/not-x" } });
+      form(renderer, "Grab X post").props.onSubmit({ preventDefault() {} });
+    });
+    expect(input(renderer, "X post URL").props["aria-invalid"]).toBe(true);
+    expect(input(renderer, "X post URL").props["aria-describedby"]).toBe("research-x-url-error");
+    expect(renderer.root.findByProps({ id: "research-x-url-error" })).toBeTruthy();
+    expect(renderer.root.findByProps({ htmlFor: "research-x-url" })).toBeTruthy();
+
+    await act(async () => {
+      searchInput.props.onChange({ target: { value: "bad query" } });
+    });
+    await act(async () => form(renderer, "Search X posts").props.onSubmit({
+      preventDefault() {},
+    }));
+    expect(input(renderer, "Search X posts").props["aria-invalid"]).toBe(true);
+    expect(input(renderer, "Search X posts").props["aria-describedby"]).toBe(
+      "research-x-search-error",
+    );
+    expect(renderer.root.findByProps({ id: "research-x-search-error" })).toBeTruthy();
+    expect(renderer.root.findByProps({ htmlFor: "research-x-search" })).toBeTruthy();
     await act(async () => renderer.unmount());
   });
 });
@@ -430,8 +652,14 @@ describe("ResearchXSources previews and mutations", () => {
     await act(async () => renderer.unmount());
   });
 
-  test("Attach is disabled without a selected mission and uses the runner-backed source route", async () => {
+  test("Attach has a visible associated prerequisite and applies the returned authoritative mission", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const attachedMission = {
+      id: "mission-1",
+      familiarId: "familiar-a",
+      sources: [{ id: "x-123", url: post.canonicalUrl }],
+    };
+    const onMissionAttached = vi.fn();
     const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
       if (url === "/api/x/connection") return response(connectedConnection());
@@ -439,16 +667,28 @@ describe("ResearchXSources previews and mutations", () => {
         return response({ ok: true, sources: [source({ preview: post })] });
       }
       if (url === "/api/x/sources" && init?.method === "POST") {
-        return response({ ok: true, mission: { id: "mission-1" } });
+        return response({ ok: true, mission: attachedMission });
       }
       throw new Error(`unexpected fetch ${url}`);
     });
-    const renderer = await renderReady(fetcher);
+    const renderer = await renderReady(fetcher, { onMissionAttached });
 
-    expect(button(renderer, "Attach to mission").props.disabled).toBe(true);
+    const disabledAttach = button(renderer, "Attach to mission");
+    expect(disabledAttach.props.disabled).toBe(true);
+    expect(disabledAttach.props.title).toBeUndefined();
+    expect(disabledAttach.props["aria-describedby"]).toBe(
+      "research-x-attach-help-source-123",
+    );
+    expect(textOf(renderer.root.findByProps({
+      id: "research-x-attach-help-source-123",
+    }))).toContain("Select a mission on the Desk first");
     await act(async () => {
       renderer.update(
-        <ResearchXSources familiar={familiarA} selectedMissionId="mission-1" />,
+        <ResearchXSources
+          familiar={familiarA}
+          selectedMissionId="mission-1"
+          onMissionAttached={onMissionAttached}
+        />,
       );
     });
     expect(button(renderer, "Attach to mission").props.disabled).toBe(false);
@@ -464,6 +704,47 @@ describe("ResearchXSources previews and mutations", () => {
       sourceId: "source-123",
       missionId: "mission-1",
     });
+    expect(announce).toHaveBeenLastCalledWith("X source attached to the mission.");
+    expect(onMissionAttached).toHaveBeenCalledWith(attachedMission);
+    expect(calls.filter(({ url }) => url.includes("/api/research/missions"))).toHaveLength(0);
+    await act(async () => renderer.unmount());
+  });
+
+  test("Attach clears a prior per-source error before retry and after success", async () => {
+    const retry = deferred<Response>();
+    let attaches = 0;
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) {
+        return response({ ok: true, sources: [source({ preview: post })] });
+      }
+      if (url === "/api/x/sources" && init?.method === "POST") {
+        attaches += 1;
+        if (attaches === 1) {
+          return response({ ok: false, code: "upstream-unavailable" }, false);
+        }
+        return retry.promise;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }), { selectedMissionId: "mission-1" });
+
+    await act(async () => button(renderer, "Attach to mission").props.onClick());
+    expect(JSON.stringify(renderer.toJSON())).toContain("X is unavailable right now.");
+
+    act(() => {
+      void button(renderer, "Attach to mission").props.onClick();
+    });
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("X is unavailable right now.");
+
+    await act(async () => {
+      retry.resolve(response({ ok: true, mission: {
+        id: "mission-1",
+        familiarId: "familiar-a",
+        sources: [],
+      } }));
+      await retry.promise;
+    });
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("X is unavailable right now.");
     expect(announce).toHaveBeenLastCalledWith("X source attached to the mission.");
     await act(async () => renderer.unmount());
   });
@@ -527,6 +808,7 @@ describe("ResearchXSources previews and mutations", () => {
       "assertive",
     );
     expect(JSON.stringify(renderer.toJSON())).not.toContain("raw private upstream payload");
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
     await act(async () => renderer.unmount());
   });
 
@@ -560,6 +842,37 @@ describe("ResearchXSources previews and mutations", () => {
       "X API access or credits are unavailable.",
     );
     expect(JSON.stringify(renderer.toJSON())).not.toContain("private billing");
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+    await act(async () => renderer.unmount());
+  });
+
+  test("a deleted refresh moves focus to the affected source card before Refresh unmounts", async () => {
+    const focused: string[] = [];
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) {
+        return response({ ok: true, sources: [source()] });
+      }
+      if (url === "/api/x/sources" && init?.method === "POST") {
+        return response({ ok: false, code: "not-found" }, false);
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }), {}, (element) => {
+      if (element.type === "article" && element.props["data-x-source-id"]) {
+        return {
+          focus: () => focused.push(String(element.props["data-x-source-id"])),
+        };
+      }
+      return null;
+    });
+
+    await act(async () => button(renderer, "Refresh post").props.onClick());
+
+    const card = renderer.root.findByProps({ "data-x-source-id": "source-123" });
+    expect(card.props.tabIndex).toBe(-1);
+    expect(focused).toEqual(["source-123"]);
+    expect(JSON.stringify(card.toJSON?.() ?? renderer.toJSON())).toContain("Post deleted");
+    expect(() => button(renderer, "Refresh post")).toThrow();
     await act(async () => renderer.unmount());
   });
 });
@@ -710,6 +1023,59 @@ describe("ResearchXSources availability and errors", () => {
 });
 
 describe("ResearchXSources async ownership", () => {
+  test("a familiar or grant switch synchronously removes prior sources and aborts a busy preview", async () => {
+    const lookup = deferred<Response>();
+    let lookupSignal: AbortSignal | undefined;
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url === "/api/x/sources?familiarId=familiar-a") {
+        return response({ ok: true, sources: [source({ preview: post })] });
+      }
+      if (url === "/api/x/sources?familiarId=familiar-b") {
+        return response({ ok: true, sources: [] });
+      }
+      if (url === "/api/x/posts/lookup") {
+        lookupSignal = init?.signal;
+        return lookup.promise;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ResearchXSources familiar={familiarA} selectedMissionId={null} />);
+    });
+    await settle();
+    await act(async () => {
+      input(renderer, "X post URL").props.onChange({ target: { value: post.canonicalUrl } });
+    });
+    act(() => {
+      void form(renderer, "Grab X post").props.onSubmit({ preventDefault() {} });
+    });
+
+    await act(async () => {
+      renderer.update(<ResearchXSources familiar={familiarB} selectedMissionId={null} />);
+    });
+    expect(lookupSignal?.aborted).toBe(true);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain(post.text);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain(post.canonicalUrl);
+    await act(async () => {
+      input(renderer, "X post URL").props.onChange({ target: { value: post.canonicalUrl } });
+    });
+    expect(button(renderer, "Grab post").props.disabled).toBe(false);
+
+    await act(async () => {
+      renderer.update(
+        <ResearchXSources
+          familiar={{ ...familiarB, xResearchEnabled: false }}
+          selectedMissionId={null}
+        />,
+      );
+    });
+    expect(JSON.stringify(renderer.toJSON())).toContain("Allow X research");
+    expect(JSON.stringify(renderer.toJSON())).not.toContain(post.text);
+    await act(async () => renderer.unmount());
+  });
+
   test("a stale familiar load is aborted and cannot replace the new familiar's sources", async () => {
     const oldSources = deferred<Response>();
     const signals: AbortSignal[] = [];

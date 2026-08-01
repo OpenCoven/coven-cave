@@ -177,7 +177,7 @@
   white-space: nowrap;
 }
 .research-x-post__link:hover {
-  color: var(--research-accent);
+  color: var(--text-primary);
 }
 .research-x__saved {
   display: flex;
@@ -216,8 +216,11 @@
   justify-content: flex-end;
   flex-wrap: wrap;
 }
-.research-x-source__actions > span {
+.research-x-source__actions > span:first-child {
   margin-right: auto;
+}
+.research-x-source__prerequisite {
+  color: var(--text-secondary);
 }
 .research-x__skeleton,
 .research-x__preview-skeleton {

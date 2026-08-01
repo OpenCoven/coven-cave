@@ -310,6 +310,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
       <ResearchXSources
         familiar={context.activeFamiliar}
         selectedMissionId={selectedMission?.id ?? null}
+        onMissionAttached={research.applyMission}
       />
 
       <form className="research-res__intake" onSubmit={onSave}>

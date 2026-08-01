@@ -22,6 +22,7 @@ import {
   type NormalizedXPost,
   type XErrorCode,
 } from "@/lib/x-api";
+import type { ResearchMission } from "@/lib/research-missions";
 import "@/styles/globals/surface-research-resources.css";
 
 type XConnection = {
@@ -54,14 +55,18 @@ type XFailure = {
 
 type XRequestResult<T> =
   | { ok: true; value: T }
-  | { ok: false; error: XFailure };
+  | { ok: false; error: XFailure }
+  | { ok: false; cancelled: true };
 
 type ResearchXSourcesProps = {
   familiar: Pick<Familiar, "id" | "display_name" | "xResearchEnabled">;
   selectedMissionId: string | null;
+  onMissionAttached?: (mission: ResearchMission) => void;
 };
 
 const MAX_PREVIEWS = 10;
+const URL_ERROR_ID = "research-x-url-error";
+const SEARCH_ERROR_ID = "research-x-search-error";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -265,20 +270,27 @@ function XPostPreview({
   );
 }
 
-export function ResearchXSources({
+export function ResearchXSources(props: ResearchXSourcesProps) {
+  const scopeKey = `${props.familiar.id}:${
+    props.familiar.xResearchEnabled === true ? "enabled" : "disabled"
+  }`;
+  return <ResearchXSourcesScope key={scopeKey} {...props} />;
+}
+
+function ResearchXSourcesScope({
   familiar,
   selectedMissionId,
+  onMissionAttached,
 }: ResearchXSourcesProps) {
   const { announce } = useAnnouncer();
   const scopeKey = `${familiar.id}:${familiar.xResearchEnabled === true ? "enabled" : "disabled"}`;
   const scopeKeyRef = useRef(scopeKey);
   const generationRef = useRef(0);
-  if (scopeKeyRef.current !== scopeKey) {
-    scopeKeyRef.current = scopeKey;
-    generationRef.current += 1;
-  }
   const mountedRef = useRef(true);
   const controllersRef = useRef(new Set<AbortController>());
+  const previewControllerRef = useRef<AbortController | null>(null);
+  const previewRequestRef = useRef(0);
+  const sourceCardRefs = useRef(new Map<string, HTMLElement>());
 
   const [connection, setConnection] = useState<XConnection | null>(null);
   const [connectionError, setConnectionError] = useState<XFailure | null>(null);
@@ -334,7 +346,7 @@ export function ResearchXSources({
         : { ok: true, value };
     } catch (error) {
       if (requestController.signal.aborted) {
-        return { ok: false, error: { code: "internal" } };
+        return { ok: false, cancelled: true };
       }
       return { ok: false, error: { code: "upstream-unavailable" } };
     } finally {
@@ -345,12 +357,14 @@ export function ResearchXSources({
   useEffect(() => {
     mountedRef.current = true;
     const key = scopeKey;
-    const generation = generationRef.current;
+    const generation = ++generationRef.current;
     const connectionController = controller();
 
     for (const active of controllersRef.current) {
       if (active !== connectionController) active.abort();
     }
+    previewControllerRef.current = null;
+    previewRequestRef.current += 1;
     setConnection(null);
     setConnectionError(null);
     setConnectionLoading(true);
@@ -359,8 +373,10 @@ export function ResearchXSources({
     setSourcesLoading(false);
     setUrlDraft("");
     setUrlError(null);
+    setLookupBusy(false);
     setSearchDraft("");
     setSearchError(null);
+    setSearchBusy(false);
     setSearchCompleted(false);
     setPreviews([]);
     setSelectedPreviewId(null);
@@ -457,8 +473,8 @@ export function ResearchXSources({
     url: string,
     body: Record<string, unknown>,
     parseSuccess: (value: unknown) => T | null,
+    requestController = controller(),
   ): Promise<XRequestResult<T>> => {
-    const requestController = controller();
     return request(
       url,
       {
@@ -470,6 +486,25 @@ export function ResearchXSources({
       requestController,
     );
   }, [controller, request]);
+
+  const beginPreviewRequest = useCallback(() => {
+    previewControllerRef.current?.abort();
+    const requestController = controller();
+    previewControllerRef.current = requestController;
+    const requestId = ++previewRequestRef.current;
+    return { requestController, requestId };
+  }, [controller]);
+
+  const ownsPreviewRequest = useCallback((
+    key: string,
+    generation: number,
+    requestId: number,
+    requestController: AbortController,
+  ) => (
+    isCurrent(key, generation)
+    && previewRequestRef.current === requestId
+    && previewControllerRef.current === requestController
+  ), [isCurrent]);
 
   const submitLookup = async (event: FormEvent) => {
     event.preventDefault();
@@ -483,8 +518,14 @@ export function ResearchXSources({
     }
     const key = scopeKeyRef.current;
     const generation = generationRef.current;
+    const { requestController, requestId } = beginPreviewRequest();
     setLookupBusy(true);
+    setSearchBusy(false);
     setUrlError(null);
+    setSearchError(null);
+    setSearchCompleted(false);
+    setPreviews([]);
+    setSelectedPreviewId(null);
     setPreviewMutationError(null);
     const result = await postJson(
       "/api/x/posts/lookup",
@@ -493,15 +534,20 @@ export function ResearchXSources({
         if (!isRecord(value)) return null;
         return parsePost(value.post);
       },
+      requestController,
     );
-    if (!isCurrent(key, generation)) return;
+    if (!ownsPreviewRequest(key, generation, requestId, requestController)) return;
+    previewControllerRef.current = null;
     setLookupBusy(false);
+    setSearchBusy(false);
     if (!result.ok) {
+      if ("cancelled" in result) return;
       setUrlError(result.error);
       return;
     }
     setPreviews([result.value]);
     setSelectedPreviewId(result.value.id);
+    announce("Found 1 X post.");
   };
 
   const submitSearch = async (event: FormEvent) => {
@@ -514,8 +560,14 @@ export function ResearchXSources({
     }
     const key = scopeKeyRef.current;
     const generation = generationRef.current;
+    const { requestController, requestId } = beginPreviewRequest();
+    setLookupBusy(false);
     setSearchBusy(true);
+    setUrlError(null);
     setSearchError(null);
+    setSearchCompleted(false);
+    setPreviews([]);
+    setSelectedPreviewId(null);
     setPreviewMutationError(null);
     const result = await postJson(
       "/api/x/posts/search",
@@ -527,10 +579,14 @@ export function ResearchXSources({
           ? null
           : posts as NormalizedXPost[];
       },
+      requestController,
     );
-    if (!isCurrent(key, generation)) return;
+    if (!ownsPreviewRequest(key, generation, requestId, requestController)) return;
+    previewControllerRef.current = null;
+    setLookupBusy(false);
     setSearchBusy(false);
     if (!result.ok) {
+      if ("cancelled" in result) return;
       setSearchCompleted(false);
       setSearchError(result.error);
       return;
@@ -538,6 +594,7 @@ export function ResearchXSources({
     setPreviews(result.value);
     setSelectedPreviewId(result.value[0]?.id ?? null);
     setSearchCompleted(true);
+    announce(`Found ${result.value.length} X ${result.value.length === 1 ? "post" : "posts"}.`);
   };
 
   const savePost = async (post: NormalizedXPost) => {
@@ -565,6 +622,7 @@ export function ResearchXSources({
     if (!isCurrent(key, generation)) return;
     setSourceBusy(null);
     if (!result.ok) {
+      if ("cancelled" in result) return;
       const message = errorCopy(result.error).headline;
       setPreviewMutationError(result.error);
       announce(message, "assertive");
@@ -582,6 +640,11 @@ export function ResearchXSources({
     const key = scopeKeyRef.current;
     const generation = generationRef.current;
     setSourceBusy(`attach:${source.id}`);
+    setSourceErrors((current) => {
+      const next = { ...current };
+      delete next[source.id];
+      return next;
+    });
     const result = await postJson(
       "/api/x/sources",
       {
@@ -591,17 +654,26 @@ export function ResearchXSources({
         missionId: selectedMissionId,
       },
       (value) => (
-        isRecord(value) && isRecord(value.mission) ? true : null
+        isRecord(value) && isRecord(value.mission)
+          ? value.mission as ResearchMission
+          : null
       ),
     );
     if (!isCurrent(key, generation)) return;
     setSourceBusy(null);
     if (!result.ok) {
+      if ("cancelled" in result) return;
       const message = errorCopy(result.error).headline;
       setSourceErrors((current) => ({ ...current, [source.id]: result.error }));
       announce(message, "assertive");
       return;
     }
+    setSourceErrors((current) => {
+      const next = { ...current };
+      delete next[source.id];
+      return next;
+    });
+    onMissionAttached?.(result.value);
     setSources((current) => current.map((candidate) => (
       candidate.id === source.id && !candidate.attachedMissionIds.includes(selectedMissionId)
         ? {
@@ -642,9 +714,11 @@ export function ResearchXSources({
     if (!isCurrent(key, generation)) return;
     setSourceBusy(null);
     if (!result.ok) {
+      if ("cancelled" in result) return;
       const message = errorCopy(result.error).headline;
       setSourceErrors((current) => ({ ...current, [source.id]: result.error }));
       if (result.error.code === "not-found") {
+        sourceCardRefs.current.get(source.id)?.focus();
         setSources((current) => current.map((candidate) => (
           candidate.id === source.id
             ? { ...candidate, availability: "deleted", preview: undefined }
@@ -753,7 +827,8 @@ export function ResearchXSources({
               }}
               placeholder="https://x.com/handle/status/…"
               aria-label="X post URL"
-              aria-invalid={Boolean(urlError)}
+              aria-invalid={urlError ? true : undefined}
+              aria-describedby={urlError ? URL_ERROR_ID : undefined}
             />
             <Button
               type="submit"
@@ -766,11 +841,13 @@ export function ResearchXSources({
             </Button>
           </div>
           {urlError ? (
-            <ErrorState
-              compact
-              headline={errorCopy(urlError).headline}
-              subtitle={errorCopy(urlError).subtitle}
-            />
+            <div id={URL_ERROR_ID}>
+              <ErrorState
+                compact
+                headline={errorCopy(urlError).headline}
+                subtitle={errorCopy(urlError).subtitle}
+              />
+            </div>
           ) : null}
         </form>
 
@@ -792,7 +869,8 @@ export function ResearchXSources({
               }}
               placeholder="Search X posts…"
               aria-label="Search X posts"
-              aria-invalid={Boolean(searchError)}
+              aria-invalid={searchError ? true : undefined}
+              aria-describedby={searchError ? SEARCH_ERROR_ID : undefined}
               containerClassName="research-x__search"
             />
             <Button
@@ -806,11 +884,13 @@ export function ResearchXSources({
             </Button>
           </div>
           {searchError ? (
-            <ErrorState
-              compact
-              headline={errorCopy(searchError).headline}
-              subtitle={errorCopy(searchError).subtitle}
-            />
+            <div id={SEARCH_ERROR_ID}>
+              <ErrorState
+                compact
+                headline={errorCopy(searchError).headline}
+                subtitle={errorCopy(searchError).subtitle}
+              />
+            </div>
           ) : null}
         </form>
       </div>
@@ -845,6 +925,7 @@ export function ResearchXSources({
       ) : searchCompleted && !searchBusy && !searchError ? (
         <EmptyState
           compact
+          live={false}
           headline="No X posts found"
           subtitle="Try a different search when you’re ready."
         />
@@ -852,6 +933,7 @@ export function ResearchXSources({
       {previewMutationError ? (
         <ErrorState
           compact
+          live={false}
           headline={errorCopy(previewMutationError).headline}
           subtitle={errorCopy(previewMutationError).subtitle}
         />
@@ -891,8 +973,18 @@ export function ResearchXSources({
                 ? saved.attachedMissionIds.includes(selectedMissionId)
                 : false;
               const sourceError = sourceErrors[saved.id];
+              const attachHelpId = `research-x-attach-help-${saved.id}`;
               return (
-                <article className="research-x-source" key={saved.id}>
+                <article
+                  className="research-x-source focus-ring"
+                  key={saved.id}
+                  data-x-source-id={saved.id}
+                  tabIndex={-1}
+                  ref={(node) => {
+                    if (node) sourceCardRefs.current.set(saved.id, node);
+                    else sourceCardRefs.current.delete(saved.id);
+                  }}
+                >
                   {saved.preview ? (
                     <XPostPreview post={saved.preview} />
                   ) : (
@@ -929,12 +1021,20 @@ export function ResearchXSources({
                         Refresh post
                       </Button>
                     ) : null}
+                    {!selectedMissionId ? (
+                      <span
+                        id={attachHelpId}
+                        className="research-x-source__prerequisite"
+                      >
+                        Select a mission on the Desk first
+                      </span>
+                    ) : null}
                     <Button
                       size="xs"
                       variant="secondary"
                       disabled={!selectedMissionId || attached || sourceBusy !== null}
                       loading={sourceBusy === `attach:${saved.id}`}
-                      title={!selectedMissionId ? "Select a mission on the Desk first" : undefined}
+                      aria-describedby={!selectedMissionId ? attachHelpId : undefined}
                       onClick={() => void attachSource(saved)}
                     >
                       {attached ? "Attached" : "Attach to mission"}
