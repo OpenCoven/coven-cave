@@ -261,6 +261,22 @@ printf 'p1\\ncinit\\nfcwd\\nn/\\n'
 `,
   );
 
+  executable(
+    path.join(bin, "git"),
+    `#!/bin/sh
+REAL_GIT=${JSON.stringify(realGit)}
+
+case " $* " in
+  *" remote get-url --all origin "*|*" remote get-url --push --all origin "*)
+    printf '%s\\n' 'https://github.com/OpenCoven/coven-cave.git'
+    exit 0
+    ;;
+esac
+
+exec "$REAL_GIT" "$@"
+`,
+  );
+
   return { fixtureRoot, repo, origin, bin };
 }
 
