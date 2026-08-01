@@ -155,16 +155,6 @@ assert.deepEqual(
   ordinaryDeepValues,
   "ordinary words and metric keys are not classified as secrets",
 );
-assert.deepEqual(
-  redactSecretsDeep({ sessionId: "session-123", tokenId: "token-123" }),
-  { sessionId: "session-123", tokenId: "token-123" },
-  "identifier suffixes preserve lookup keys",
-);
-assert.deepEqual(
-  redactSecretsDeep({ authTokenId: "credential-reference" }),
-  { authTokenId: REDACTED_SECRET },
-  "strong credential pairs remain secret even when followed by an identifier suffix",
-);
 assert.equal(
   redactSecretText(
     "authorship=collaboration token_count=12 sessionDuration=30 secretariat=office apiKeyboard=mechanical",

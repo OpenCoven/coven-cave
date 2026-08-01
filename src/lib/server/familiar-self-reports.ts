@@ -61,7 +61,7 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        reports.push(redactSecretsDeep(JSON.parse(trimmed) as ThreadSelfReport));
+        reports.push(redactReport(JSON.parse(trimmed) as ThreadSelfReport));
       } catch {
         /* Ignore malformed historical lines; append-only storage should keep listing usable. */
       }
@@ -70,10 +70,17 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
   return reports.sort(sortNewestFirst);
 }
 
+/** Preserve this store's lookup key while still redacting every secret field. */
+function redactReport(report: ThreadSelfReport): ThreadSelfReport {
+  const redacted = redactSecretsDeep(report);
+  if (redacted.sessionId === report.sessionId) return redacted;
+  return { ...redacted, sessionId: report.sessionId };
+}
+
 export async function appendSelfReport(familiarId: string, report: ThreadSelfReport): Promise<void> {
   const dir = await reportsDir(familiarId);
   await mkdir(dir, { recursive: true });
-  const redacted = redactSecretsDeep(report);
+  const redacted = redactReport(report);
   await appendFile(path.join(dir, `${reportDate(redacted)}.jsonl`), `${JSON.stringify(redacted)}\n`, "utf8");
   // Also persist the compact metric snapshot (signal trends). Additive:
   // readers backfill from full reports, so a failure here only costs a cache.

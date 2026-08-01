@@ -38,7 +38,6 @@ const AUTHORIZATION_SCHEMES = new Set([
 const SAFE_SECRET_TRAILING_WORDS = new Set([
   "count",
   "duration",
-  "id",
   "length",
   "limit",
   "total",
