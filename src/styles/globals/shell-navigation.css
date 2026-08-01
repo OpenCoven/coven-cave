@@ -9,6 +9,10 @@
   color: var(--text-primary);
 }
 
+.shell-body {
+  background: var(--bg-panel);
+}
+
 /* react-resizable-panels wrappers — make each Panel fill its allotted
    width and hand vertical layout to the inner aside/main. */
 .shell-nav-panel,
@@ -43,8 +47,8 @@
   overflow: visible !important;
 }
 
-/* The sidebar owns the desktop shell elevation; this wrapper only establishes
-   the positioning context for the hover-peek overlay. */
+/* The navigation stays on the shell floor; this wrapper establishes the
+   positioning context for the hover-peek overlay. */
 .shell-nav-panel { position: relative; }
 
 .shell-nav-panel > .shell-nav,
@@ -139,21 +143,36 @@
   animation: shellNavPeekIn 0.13s ease;
 }
 
-/* Dia-style floating sidebar edge: expanded navigation stays in the panel's
-   resizable allocation while its painted surface floats inside the shell.
-   Hover-peek shares the same silhouette, so both states read as one object. */
+/* Inset-shell layout: navigation stays flush on the shell floor while the
+   content becomes the single elevated panel. Hover-peek remains a floating
+   overlay because it paints over the content rather than beside it. */
 @media (min-width: 1024px) {
   .shell-nav-panel > .shell-nav:not(.shell-nav--rail) {
+    overflow-x: hidden;
+  }
+
+  .shell-nav-panel > .shell-nav:not(.shell-nav--rail, .shell-nav--peek) {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .shell-nav-panel > .shell-nav--peek {
     border: 1px solid var(--border-hairline);
     border-radius: var(--radius-panel);
     box-shadow: 0 14px 36px -24px var(--shadow-color);
     overflow-x: hidden;
-    margin: var(--space-2);
   }
 
-  .shell-nav-panel > .shell-nav:not(.shell-nav--rail, .shell-nav--peek) {
-    flex: 0 0 auto;
-    width: calc(100% - var(--space-4));
+  .shell-detail-panel {
+    padding: var(--space-2);
+    background: var(--bg-panel);
+  }
+
+  .shell-detail {
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+    box-shadow: 0 14px 36px -28px var(--shadow-color);
+    overflow-x: hidden;
   }
 }
 @keyframes shellNavPeekIn {
@@ -1057,9 +1076,9 @@
   flex-direction: column;
 }
 
-/* The detail wrapper is the quiet canvas behind the elevated navigation. */
+/* The detail wrapper provides the shell floor around the inset content. */
 .shell-detail-panel {
-  background: var(--bg-base);
+  background: var(--bg-panel);
 }
 
 .shell-detail-header {
