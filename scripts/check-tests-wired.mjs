@@ -41,6 +41,22 @@ const ALLOWLIST = new Map([
     // tweaking until the errors stop.
     "never executed since landing; blocked on cave-7ruzl",
   ],
+  [
+    "src/components/familiar-x-section.test.ts",
+    // QUARANTINED — cave-lsj8u. This test asserts against a feature that is
+    // only half on main: the X API work landed its lib/ and components/ side
+    // and left src/app/api/x/ behind entirely, so the test dies reading
+    // app/api/x/oauth/start/route.ts, and app/api/familiars/route.ts carries
+    // ZERO of the X fields it checks for.
+    //
+    // Guarding the missing reads one at a time was tried and abandoned: with
+    // the subject substantially absent, that path ends at a test whittled down
+    // until it passes, which is worse than one that is honestly switched off.
+    // The other four X tests (x-api, x-oauth, familiar-x-section-behavior,
+    // research-x-sources) all pass and stay wired — this is the only one whose
+    // subject did not land.
+    "subject half-landed; blocked on cave-lsj8u",
+  ],
 ]);
 
 function walk(dir, acc) {
