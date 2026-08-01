@@ -139,6 +139,7 @@ export function createDaemonConnectionSupervisor<Handle = TimerHandle>(
       promise: Promise.resolve(),
     };
     generation = request.generation;
+    activeRequest = request;
 
     const pending = (async () => {
       let poll: DaemonConnectionPoll;
@@ -166,7 +167,6 @@ export function createDaemonConnectionSupervisor<Handle = TimerHandle>(
       if (activeRequest === request) activeRequest = null;
     });
     request.promise.catch(() => {});
-    activeRequest = request;
     return request.promise;
   }
 

@@ -411,6 +411,59 @@ test("abort rejections are neutral and still let refresh callers await completio
   assert.equal(rig.pendingTimers().length, 0);
 });
 
+test("synchronous request throws publish one generic failure poll and schedule backoff", async () => {
+  const publishes: Array<{ poll: DaemonConnectionPoll; context: { fresh: boolean } }> = [];
+  const timers: TimerRecord[] = [];
+  let nextHandle = 1;
+
+  const supervisor = createDaemonConnectionSupervisor({
+    request() {
+      throw new Error("socket exploded loudly");
+    },
+    publish(poll, context) {
+      publishes.push({ poll, context });
+    },
+    schedule(callback, delayMs) {
+      const timer = {
+        handle: nextHandle,
+        delayMs,
+        callback,
+        cancelled: false,
+        fired: false,
+      } satisfies TimerRecord;
+      nextHandle += 1;
+      timers.push(timer);
+      return timer.handle;
+    },
+    cancelSchedule(handle) {
+      const timer = timers.find((entry) => entry.handle === handle);
+      if (timer) timer.cancelled = true;
+    },
+    random: () => 0.5,
+  });
+
+  supervisor.start();
+  await assert.doesNotReject(flushMicrotasks());
+
+  assert.deepEqual(publishes, [
+    {
+      poll: {
+        responseStatus: 0,
+        responseOk: false,
+        payload: null,
+        error: "status request failed",
+      },
+      context: { fresh: false },
+    },
+  ]);
+  assert.equal(timers.filter((timer) => !timer.cancelled && !timer.fired).length, 1);
+  assert.equal(timers[0]?.delayMs, 5_000);
+  assert.equal(
+    publishes.some(({ poll }) => poll.error?.includes("socket exploded loudly") ?? false),
+    false,
+  );
+});
+
 test("non-abort rejections publish a generic unavailable poll and back off", async () => {
   const rig = createRig({ random: () => 0.5 });
 
