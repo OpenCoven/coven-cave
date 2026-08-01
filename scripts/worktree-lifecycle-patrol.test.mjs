@@ -603,7 +603,9 @@ exit 0
       "LIFECYCLE_MALFORMED_DEFAULT",
       "LIFECYCLE_MISSING_DEFAULT_TRACKING",
       "LIFECYCLE_MISMATCHED_DEFAULT_TARGET",
-    ].some((name) => extraEnv[name] === "1");
+      "LIFECYCLE_MALFORMED_DEFAULT_TRACKING",
+      "LIFECYCLE_MALFORMED_LIVE_MAIN_CASE",
+    ].some((name) => extraEnv[name] === "1" || (name === "LIFECYCLE_MALFORMED_LIVE_MAIN_CASE" && typeof extraEnv[name] === "string"));
     return run(
       process.execPath,
       [
@@ -1244,7 +1246,7 @@ exit 0
   if (existsSync(registeredDrift)) {
     git(["worktree", "remove", registeredDrift], repo);
   }
-  rmSync(fixtureRoot, { recursive: true });
+  rmSync(fixtureRoot, { recursive: true, force: true });
 }
 
 console.log("worktree-lifecycle-patrol.test.mjs: ok");
