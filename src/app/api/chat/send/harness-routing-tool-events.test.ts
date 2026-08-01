@@ -251,6 +251,37 @@ assert.match(
   "the CLI fallback must disclose that structured tool activity is unavailable and how to enable it — as an informational notice, not an error: the turn itself runs fine and only its tool bubbles are missing",
 );
 
+/**
+ * Exact source of the call that starts at `needle`, located by paren-depth
+ * scan rather than a length bound. A magic `{0,N}` window silently truncates
+ * once a call grows past it, which would drop the very status argument these
+ * assertions exist to read. An unbalanced scan returns null and fails the
+ * assertion loudly instead.
+ */
+function callSource(source: string, start: number): string | null {
+  let depth = 0;
+  for (let i = source.indexOf("(", start); i >= 0 && i < source.length; i++) {
+    if (source[i] === "(") depth += 1;
+    else if (source[i] === ")") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/** Every `pushProgress` call carrying one diagnostic id. A runtime may emit
+ *  the same id from more than one branch, and checking only the first would
+ *  leave the rest free to drift back to an error. */
+function progressCalls(source: string, id: string): (string | null)[] {
+  const calls: (string | null)[] = [];
+  const re = new RegExp(`pushProgress\\(\\s*"${id}",`, "g");
+  for (let match = re.exec(source); match; match = re.exec(source)) {
+    calls.push(callSource(source, match.index));
+  }
+  return calls;
+}
+
 // Every runtime that degrades to text-only chat reports the same fact, so they
 // must report it at the same severity. A degradation row styled as an error
 // paints a red step and an "N issues" count onto a turn that never failed.
@@ -261,15 +292,34 @@ for (const [id, label] of [
   ["grok-compatibility", "Grok Build"],
   ["codex-compatibility", "Codex"],
 ] as const) {
-  const call = new RegExp(`pushProgress\\(\\s*"${id}",[\\s\\S]{0,400}?\\)\\;`);
-  const match = call.exec(chatRoute);
-  assert.ok(match, `${label}'s tool-activity diagnostic must still be emitted`);
-  assert.equal(
-    /"error"/.test(match[0]),
-    false,
-    `${label}'s tool-activity degradation must be informational, not an error`,
-  );
+  const calls = progressCalls(chatRoute, id);
+  assert.ok(calls.length > 0, `${label}'s tool-activity diagnostic must still be emitted`);
+  for (const call of calls) {
+    assert.ok(call, `${label}'s tool-activity diagnostic must be a balanced call expression`);
+    assert.equal(
+      /"error"/.test(call),
+      false,
+      `${label}'s tool-activity degradation must be informational, not an error`,
+    );
+  }
 }
+
+// Copilot's protocol diagnostic is the one member of that family emitted
+// through `push({ kind: "progress" })` rather than pushProgress, so the loop
+// above cannot see it. Pin it on its own shape.
+const copilotDiagnostic =
+  /reportCopilotProtocolDiagnostic = [\s\S]*?push\(\{([\s\S]*?)\}\);/.exec(chatRoute);
+assert.ok(copilotDiagnostic, "Copilot's protocol diagnostic must still be emitted");
+assert.match(
+  copilotDiagnostic[1],
+  /status: "notice"/,
+  "Copilot protocol drift must be presented as a neutral notice",
+);
+assert.doesNotMatch(
+  copilotDiagnostic[1],
+  /status: "error"/,
+  "Copilot protocol drift must not regress to an error",
+);
 
 assert.match(
   chatRoute,
