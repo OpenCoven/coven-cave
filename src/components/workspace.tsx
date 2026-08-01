@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
-import { parseGitHubItemUrl, type GitHubItemTarget } from "@/lib/github-item-url";
+import { parseGitHubItemUrl } from "@/lib/github-item-url";
 import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
@@ -88,7 +88,6 @@ import {
   FamiliarsView,
   FamiliarWorkQueueView,
   FamiliarGlyphPicker,
-  GitHubView,
   GrimoireView,
   InboxEscalationsView,
   MarketplaceView,
@@ -161,6 +160,10 @@ import {
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
 import { enqueuePendingCodeOpen, type PendingCodeOpen } from "@/lib/pending-code-open";
+import {
+  clearPendingCodeNavigation,
+  enqueuePendingCodeNavigation,
+} from "@/lib/pending-code-navigation";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import { startVoiceConversation, voiceChatStartErrorMessage } from "@/lib/voice/start-voice-chat";
 import {
@@ -449,6 +452,15 @@ export function Workspace() {
       commitMode("inbox");
       return;
     }
+    if (next === "github") {
+      enqueuePendingCodeNavigation({
+        kind: "tab",
+        topTab: "activity",
+        nonce: Date.now(),
+      });
+      commitMode(roleSurfaceMode(CODE_SURFACE_ID), "github");
+      return;
+    }
     if (next === "code") {
       // Code is the Coding familiar's room (cave-cc5r): every legacy entry
       // point (?mode=code deep links, palette intents, cave:navigate-mode,
@@ -620,7 +632,6 @@ export function Workspace() {
   const manualOnboardingOpenedRef = useRef(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
-  const [githubAssignedCount, setGithubAssignedCount] = useState(0);
   // Open (not-done) board cards, kept with their familiar so the Tasks badge can
   // show a per-familiar count when a familiar is scoped, and the grand total
   // only when "All familiars" is selected.
@@ -642,14 +653,6 @@ export function Workspace() {
     whenText: string;
   }>({ fireAt: "", title: "", whenText: "" });
   const [editingReminder, setEditingReminder] = useState<InboxItem | null>(null);
-  // Deep-link target for the native GitHub surface (a GitHub-event inbox
-  // notification's PR/issue). The standalone GitHub surface hosts it for every
-  // familiar (cave-cc5r); the target clears on leaving so a later manual visit
-  // doesn't re-open a stale item.
-  const [githubTarget, setGithubTarget] = useState<GitHubItemTarget | null>(null);
-  useEffect(() => {
-    if (mode !== "github" && githubTarget) setGithubTarget(null);
-  }, [mode, githubTarget]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
@@ -1127,7 +1130,8 @@ export function Workspace() {
     // routes compatibility modes (flow, journal, groupchat, …) onto their
     // canonical surface via MODE_ALIASES (cave-nwi8, cave-m4ih.3).
     // A persisted Role Surface mode restores too — if this familiar no longer
-    // holds the role, the visibility effect below falls back generically.
+    // holds the role, the room stays on RoleSurfaceHost's explicit closed-door
+    // state and the persistence guard below preserves the prior valid surface.
     if (last && (isWorkspaceMode(last) || isRoleSurfaceMode(last))) setMode(last as CaveMode);
   }, []);
 
@@ -1157,7 +1161,6 @@ export function Workspace() {
 
       const tasks = normalizeGitHubTasks(json);
       githubTasksRef.current = tasks;
-      setGithubAssignedCount(Array.isArray(json.tasks) ? json.tasks.length : 0);
       setSessions((currentSessions) => {
         const baseSessions = baseSessionsRef.current.length > 0
           ? baseSessionsRef.current
@@ -1167,8 +1170,8 @@ export function Workspace() {
         return sameSessionList(currentSessions, enriched) ? currentSessions : enriched;
       });
     } catch {
-      // Keep the last-known-good count and session context. The next scheduled
-      // or explicit refresh will retry without blanking GitHub metadata.
+      // Keep the last-known-good session context. The next scheduled or
+      // explicit refresh will retry without blanking GitHub metadata.
     } finally {
       if (force) loadGitHubTasksForceInFlightRef.current -= 1;
     }
@@ -1314,10 +1317,6 @@ export function Workspace() {
       unlistenNew?.();
     };
   }, []);
-
-  useEffect(() => {
-    if (activeId) setLastSurface(activeId, mode);
-  }, [activeId, mode]);
 
   // Keep prefs accessible to the SSE callback without re-subscribing on every
   // mute toggle.
@@ -1977,16 +1976,20 @@ export function Workspace() {
   }, [openFamiliarSession]);
 
   // GitHub PR/issue URLs (github-watcher notifications, reminder links) open
-  // the NATIVE GitHub surface with the item's detail — never a browser tab.
+  // natively in Code Workshop with the item's detail — never a browser tab.
   // Returns false for anything that isn't a github.com item URL so callers
   // fall back to their existing behavior (cave-qcsv).
   const openGitHubTarget = useCallback((url: string | null | undefined): boolean => {
     const target = parseGitHubItemUrl(url);
     if (!target) return false;
-    setGithubTarget(target);
-    setMode("github");
+    enqueuePendingCodeNavigation({
+      kind: "github-item",
+      target,
+      nonce: Date.now(),
+    });
+    setMode("code");
     return true;
-  }, []);
+  }, [setMode]);
 
   const openUrlInApp = useCallback((url: string) => {
     if (openGitHubTarget(url)) {
@@ -2782,14 +2785,58 @@ export function Workspace() {
     refreshTasks: refreshTasksFromRoom,
   });
 
-  // If the current mode is a Role Surface this familiar can't see (role
-  // unassigned, surface unregistered, familiar switched away), fall back home.
   useEffect(() => {
-    if (!isRoleSurfaceMode(mode)) return;
+    if (!activeId) return;
+    if (!isRoleSurfaceMode(mode)) {
+      setLastSurface(activeId, mode);
+      return;
+    }
+    const roleSurfaceId = parseRoleSurfaceMode(mode);
+    if (!roleSurfaceId) return;
     if (!roleSurfaceSession.rolesLoaded) return;
-    const surfaceId = parseRoleSurfaceMode(mode);
-    if (!roleSurfaceSession.visibleSurfaces.some((s) => s.id === surfaceId)) setMode("home");
-  }, [mode, roleSurfaceSession.rolesLoaded, roleSurfaceSession.visibleSurfaces, setMode]);
+    if (!roleSurfaceSession.rolesLoadedSuccessfully) return;
+    if (!roleSurfaceSession.visibleSurfaces.some((surface) => surface.id === roleSurfaceId)) return;
+    setLastSurface(activeId, mode);
+  }, [
+    activeId,
+    mode,
+    roleSurfaceSession.rolesLoaded,
+    roleSurfaceSession.rolesLoadedSuccessfully,
+    roleSurfaceSession.visibleSurfaces,
+  ]);
+
+  useEffect(() => {
+    // setMode("github") updates modeRef.current synchronously before React
+    // rerenders. Use that authoritative intent here because other passive
+    // effects from the old render can still flush in the same batch.
+    if (modeRef.current !== roleSurfaceMode(CODE_SURFACE_ID)) {
+      clearPendingCodeNavigation();
+      return;
+    }
+    if (!roleSurfaceSession.context) {
+      if (
+        !activeFamiliarHydrated
+        || !familiarsLoaded
+        || !familiarRosterLoadedSuccessfully
+      ) return;
+      clearPendingCodeNavigation();
+      return;
+    }
+    if (!roleSurfaceSession.rolesLoaded) return;
+    if (!roleSurfaceSession.rolesLoadedSuccessfully) return;
+    if (!roleSurfaceSession.visibleSurfaces.some((surface) => surface.id === CODE_SURFACE_ID)) {
+      clearPendingCodeNavigation();
+    }
+  }, [
+    mode,
+    roleSurfaceSession.context,
+    roleSurfaceSession.rolesLoaded,
+    roleSurfaceSession.rolesLoadedSuccessfully,
+    roleSurfaceSession.visibleSurfaces,
+    activeFamiliarHydrated,
+    familiarsLoaded,
+    familiarRosterLoadedSuccessfully,
+  ]);
 
   useEffect(() => {
     const openPendingBrowserUrl = () => {
@@ -2881,10 +2928,6 @@ export function Workspace() {
       onNotificationPrefsChanged={refreshPrefs}
       boardOpenCount={boardTaskCount}
       scheduleNeedsCount={scheduleNeedsCount}
-      githubAssignedCount={githubAssignedCount}
-      // The Code room carries its own GitHub tab — hide the standalone row
-      // while the room is visible for the active familiar (cave-cc5r).
-      hideGithubRow={roleSurfaceSession.visibleSurfaces.some((s) => s.id === CODE_SURFACE_ID)}
     />
   );
 
@@ -3084,7 +3127,7 @@ export function Workspace() {
               if (item.sessionId) {
                 openFamiliarSession(item.sessionId, item.familiarId);
               } else if (item.link) {
-                // GitHub-event notifications open the native GitHub surface;
+                // GitHub-event notifications open natively in Code Workshop;
                 // other links use their normal open paths.
                 openReminderLink(item.link);
               }
@@ -3103,16 +3146,6 @@ export function Workspace() {
         active={browserVisible}
         navigationRequest={browserNavigationQueue[0] ?? null}
         onNavigationConsumed={acknowledgeBrowserNavigation}
-      />
-    ) : mode === "github" ? (
-      // Standalone GitHub surface — every familiar keeps it (cave-cc5r). The
-      // Code workbench (which carries its own GitHub tab) lives in the Coding
-      // familiar's room; GitHub-item deep links land here for everyone.
-      <GitHubView
-        onJumpToSession={openFamiliarSession}
-        onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
-        initialTarget={githubTarget}
-        onTasksRefresh={() => void loadGitHubTasks(true)}
       />
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
       // Roles and Marketplace merged into one hub. The "roles"/"capabilities"

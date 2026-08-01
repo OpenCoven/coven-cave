@@ -122,27 +122,27 @@ test("work root prefers the session's worktree over the shared project root", ()
 test("deep-link parsing falls back to defaults on unknown values", () => {
   const parsed = parseCodeDeepLink(new URLSearchParams("session=abc&ctab=reviews&wtab=files"));
   assert.deepEqual(parsed, { sessionId: "abc", topTab: "reviews", workbenchTab: "files" });
-  // Legacy `ctab=github` (minted before the PRs/Issues/Reviews split) lands on PRs.
   const legacy = parseCodeDeepLink(new URLSearchParams("ctab=github"));
-  assert.equal(legacy.topTab, "prs");
+  assert.equal(legacy.topTab, "activity");
   const fallback = parseCodeDeepLink(new URLSearchParams("ctab=bogus&wtab=nope"));
   assert.deepEqual(fallback, { sessionId: null, topTab: "sessions", workbenchTab: "diff" });
 });
 
 test("tab guards accept exactly the fixed vocabularies", () => {
   for (const tab of ["diff", "files", "terminal", "pr"]) assert.ok(isCodeWorkbenchTab(tab));
-  for (const tab of ["sessions", "prs", "issues", "reviews"]) assert.ok(isCodeTopTab(tab));
-  for (const tab of ["prs", "issues", "reviews"]) assert.ok(isCodeGithubTab(tab));
+  for (const tab of ["sessions", "activity", "prs", "issues", "reviews"]) assert.ok(isCodeTopTab(tab));
+  for (const tab of ["activity", "prs", "issues", "reviews"]) assert.ok(isCodeGithubTab(tab));
   assert.ok(!isCodeGithubTab("sessions"));
   assert.ok(!isCodeWorkbenchTab("overview"));
   assert.ok(!isCodeTopTab("code"));
-  assert.ok(!isCodeTopTab("github"), "the legacy single github tab is no longer a top tab");
+  assert.ok(!isCodeTopTab("github"), "github remains compatibility input, not a rendered tab");
   assert.ok(!isCodeWorkbenchTab(null));
   assert.ok(!isCodeTopTab(undefined));
 });
 
 test("normalizeCodeTopTab maps legacy + unknown values", () => {
-  assert.equal(normalizeCodeTopTab("github"), "prs", "legacy github → PRs");
+  assert.equal(normalizeCodeTopTab("github"), "activity", "legacy github → Activity");
+  assert.equal(normalizeCodeTopTab("activity"), "activity");
   assert.equal(normalizeCodeTopTab("issues"), "issues");
   assert.equal(normalizeCodeTopTab("bogus"), "sessions");
   assert.equal(normalizeCodeTopTab(null), "sessions");

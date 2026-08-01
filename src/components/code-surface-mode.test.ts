@@ -11,21 +11,24 @@ import { readFile } from "node:fs/promises";
 // absorbed as a tab — so the mode returned behind caveCodeSurface(). Phase 2
 // (cave-m6ys) made it default-on. Phase 3 (cave-cc5r) moved the surface into
 // the Coding familiar's Role Surface room: "code" is now an alias landing on
-// `surface:code` (role-gated, explicit familiar Type picker in the Studio),
-// while the standalone GitHub surface returned as a canonical mode every
-// familiar keeps. These pins document that sanctioned shape.
+// `surface:code` (role-gated, explicit familiar Type picker in the Studio).
+// Legacy "github" entry points are now compatibility routing into that same
+// room while the sidebar row still exists. These pins document that sanctioned
+// shape.
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const codeView = await readFile(new URL("./code-view.tsx", import.meta.url), "utf8");
+const githubView = await readFile(new URL("./github-view.tsx", import.meta.url), "utf8");
 const lazySurfaces = await readFile(new URL("./lazy-surfaces.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const registerRooms = await readFile(new URL("./role-surfaces/register.tsx", import.meta.url), "utf8");
 const codeRoom = await readFile(new URL("./role-surfaces/code-room.tsx", import.meta.url), "utf8");
+const pendingNavigation = await readFile(new URL("../lib/pending-code-navigation.ts", import.meta.url), "utf8");
 
 // ── Mode vocabulary ──────────────────────────────────────────────────────────
 
@@ -56,6 +59,16 @@ assert.match(
   /pendingOpen=\{pendingOpen\}\s+onPendingOpenHandled=\{clearPendingCodeOpen\}/,
   "the room consumes pending file/diff opens from the module store and clears them",
 );
+assert.match(
+  pendingNavigation,
+  /export type PendingCodeNavigation =[\s\S]*kind: "tab"[\s\S]*kind: "github-item"/,
+  "Code navigation has one shared tab/item handoff contract",
+);
+assert.match(
+  codeRoom,
+  /subscribePendingCodeNavigation[\s\S]*getPendingCodeNavigation[\s\S]*navigationRequest=\{pendingNavigation\}[\s\S]*onNavigationHandled=\{acknowledgePendingCodeNavigation\}/,
+  "the room consumes pending GitHub navigation after the role surface mounts",
+);
 
 // ── Workspace wiring ─────────────────────────────────────────────────────────
 
@@ -70,14 +83,19 @@ assert.match(
   "setMode funnels every code entry point (deep links, palette, navigate-mode, persisted restore) into the room",
 );
 assert.match(
+  modeType,
+  /github: "surface:code"/,
+  "MODE_ALIASES routes the github compatibility alias onto the Coding familiar's room",
+);
+assert.doesNotMatch(
   workspace,
   /mode === "github" \?[\s\S]{0,400}?<GitHubView/,
-  "Workspace renders the standalone GitHub surface on the canonical github mode",
+  "Workspace no longer renders a standalone GitHub surface; legacy github requests funnel into the room",
 );
-assert.match(
+assert.doesNotMatch(
   lazySurfaces,
-  /export const GitHubView = dynamic\(\s*timed\("github", loadGitHubView\)/,
-  "GitHubView stays code-split behind lazy-surfaces — its chunk must not join the boot bundle",
+  /loadGitHubView|export const GitHubView|case "github"/,
+  "the standalone GitHub chunk and sidebar preload path are removed",
 );
 assert.doesNotMatch(
   lazySurfaces,
@@ -124,34 +142,78 @@ assert.match(
 
 // ── Sidebar row ──────────────────────────────────────────────────────────────
 
-// One quiet slot, one vocabulary (cave-cc5r): the standalone GitHub row is
-// back for every familiar and keeps the assigned-work badge; the Code room's
-// row arrives via the registry-driven roleSurfaces cluster, and the GitHub
-// row hides while the room is visible (the room carries its own GitHub tab).
-assert.match(
+// One room-driven vocabulary (cave-cc5r): GitHub no longer owns a peer
+// workspace row. The Code room arrives via the registry-driven roleSurfaces
+// cluster and hosts GitHub's demand-loaded tabs itself.
+assert.doesNotMatch(
   navigation,
-  /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"[^}]*quiet: true \}/,
-  "the GitHub quiet row owns the canonical navigation slot",
+  /\{ id: "github", label: "GitHub"/,
+  "GitHub has no peer workspace row",
 );
-assert.match(
-  sidebar,
-  /github: \(props\) => badgeText\(props\.githubAssignedCount\)/,
-  "the sidebar adds the assigned-work badge to the canonical GitHub row",
+assert.doesNotMatch(
+  workspace,
+  /hideGithubRow=|githubAssignedCount=/,
+  "Workspace no longer carries standalone row props",
 );
 assert.doesNotMatch(
   navigation,
   /\{ id: "code", label: "Code"/,
   "no static Code row survives in workspace navigation — the room row is registry-driven",
 );
-assert.match(
+assert.doesNotMatch(
   workspace,
-  /hideGithubRow=\{roleSurfaceSession\.visibleSurfaces\.some\(\(s\) => s\.id === CODE_SURFACE_ID\)\}/,
-  "the GitHub row hides while the Code room is visible for the active familiar",
+  /visibleSurfaces\.some\(\(s\) => s\.id === surfaceId\)\) setMode\("home"\)/,
+  "Workspace lets RoleSurfaceHost render the explicit wrong-role closed-room state",
 );
 assert.match(
   codeView,
   /import\("@\/components\/github-view"\)\.then\(\(m\) => m\.GitHubView\)/,
   "the Code surface mounts GitHubView whole under its GitHub tab",
+);
+assert.match(
+  codeView,
+  /activity: "all"[\s\S]*prs: "pr"[\s\S]*issues: "issue"[\s\S]*reviews: "review_request"/,
+  "Code Workshop preserves the former all feed and each specialized filter",
+);
+assert.match(
+  codeView,
+  /const \[topTab, setTopTab\] = useState<CodeTopTab>\(\s*pendingOpen\s*\?\s*"sessions"\s*:\s*navigationRequest\s*\?\s*topTabForNavigation\(navigationRequest\)\s*:\s*deepLink\?\.topTab \?\? "sessions",\s*\);/,
+  "simultaneous file/diff navigation prevents even the first stale GitHub render.",
+);
+assert.match(
+  codeView,
+  /const \[initialGithubTarget, setInitialGithubTarget\] = useState<GitHubItemTarget \| null>\(\s*pendingOpen\s*\?\s*null\s*:\s*navigationRequest\?\.kind === "github-item"\s*\?\s*navigationRequest\.target\s*:\s*null,\s*\);/,
+  "simultaneous file/diff navigation prevents even the first stale GitHub render.",
+);
+assert.match(
+  codeView,
+  /onInitialTargetHandled=\{\(\) => setInitialGithubTarget\(null\)\}/,
+  "CodeView drops the host target after GitHubView captures it",
+);
+assert.match(
+  codeView,
+  /const \[githubNavigationKey, setGithubNavigationKey\] = useState\(\s*navigationRequest\?\.nonce \?\? 0,\s*\);/,
+  "CodeView tracks a GitHub remount key from the current request nonce so a newer null-target tab request can clear stale detail",
+);
+assert.match(
+  codeView,
+  /setInitialGithubTarget\([\s\S]*?\);\s*setGithubNavigationKey\(navigationRequest\.nonce\);[\s\S]*?onNavigationHandled\?\.\(navigationRequest\.nonce\)/,
+  "each newly handled GitHub navigation request refreshes the remount key before acknowledgement",
+);
+assert.match(
+  codeView,
+  /<LazyGitHubView\s+key=\{githubNavigationKey\}[\s\S]*initialTarget=\{initialGithubTarget\}/,
+  "GitHubView remounts only on a newer request nonce, so clearing the captured target alone cannot leave stale detail authoritative",
+);
+assert.match(
+  githubView,
+  /if \(!initialTarget\) return;[\s\S]*setDeepLink\(initialTarget\);[\s\S]*onInitialTargetHandled\?\.\(\)/,
+  "clearing the host prop does not erase GitHubView's local deep-linked detail",
+);
+assert.match(
+  codeView,
+  /if \(!pendingOpen\) return;[\s\S]*setTopTab\("sessions"\);\s*setInitialGithubTarget\(null\);\s*if \(target\) setSelectedId\(target\.id\);[\s\S]*setWorkbenchTarget\(root && !target \? null : \{ open: pendingOpen, sessionId: target\?\.id \?\? null \}\);/,
+  "file/diff navigation supersedes a pending GitHub detail so it cannot replay: the pending-open effect must switch to Sessions, clear the latched GitHub target, then keep the existing session/workbench selection flow",
 );
 
 // ── Workbench (Diff | Files | Terminal) ──────────────────────────────────────

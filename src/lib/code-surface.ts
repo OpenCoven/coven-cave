@@ -16,10 +16,10 @@ export function isCodeWorkbenchTab(value: string | null | undefined): value is C
   return (CODE_WORKBENCH_TABS as readonly string[]).includes(value ?? "");
 }
 
-/** Top-level surface tabs: the session workbench, then GitHub content split into
- *  its own tabs (PRs · Issues · Reviews) — the single generic "github" tab was
- *  replaced so each content type lands directly on its own list. */
-export const CODE_TOP_TABS = ["sessions", "prs", "issues", "reviews"] as const;
+/** Top-level surface tabs: the session workbench plus Activity (the former
+ *  all-content GitHub feed) and focused GitHub slices. Legacy `ctab=github`
+ *  deep links normalize onto Activity. */
+export const CODE_TOP_TABS = ["sessions", "activity", "prs", "issues", "reviews"] as const;
 export type CodeTopTab = (typeof CODE_TOP_TABS)[number];
 
 export function isCodeTopTab(value: string | null | undefined): value is CodeTopTab {
@@ -27,7 +27,7 @@ export function isCodeTopTab(value: string | null | undefined): value is CodeTop
 }
 
 /** The GitHub content tabs (every top tab except the session workbench). */
-export const CODE_GITHUB_TABS = ["prs", "issues", "reviews"] as const;
+export const CODE_GITHUB_TABS = ["activity", "prs", "issues", "reviews"] as const;
 export type CodeGithubTab = (typeof CODE_GITHUB_TABS)[number];
 
 export function isCodeGithubTab(value: string | null | undefined): value is CodeGithubTab {
@@ -35,10 +35,11 @@ export function isCodeGithubTab(value: string | null | undefined): value is Code
 }
 
 /** Normalize a raw `ctab` value to a top tab. The legacy `github` value (from
- *  deep links minted before the split) lands on PRs so old links keep working. */
+ *  deep links minted before Activity was named explicitly) lands on Activity so
+ *  old links keep working. */
 export function normalizeCodeTopTab(raw: string | null | undefined): CodeTopTab {
   if (isCodeTopTab(raw)) return raw;
-  if (raw === "github") return "prs";
+  if (raw === "github") return "activity";
   return "sessions";
 }
 

@@ -23,7 +23,6 @@ export const WORKSPACE_NAV_ITEMS: readonly WorkspaceNavItem[] = [
   { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true },
   { id: "salem", label: "Ask Salem", iconName: "ph:cat", description: "Ask the docs familiar — grounded answers from the Coven index and your Cave", navHidden: true },
   { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Manage what you own and preview the curated Skills shelf", quiet: true },
-  { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Assigned PRs, issues, and review requests across your repos", quiet: true },
 ];
 
 export const VISIBLE_WORKSPACE_NAV_ITEMS = WORKSPACE_NAV_ITEMS.filter((item) => !item.navHidden);
