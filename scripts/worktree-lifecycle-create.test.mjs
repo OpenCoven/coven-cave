@@ -155,6 +155,13 @@ function createFixture({ issues = [defaultIssue()] } = {}) {
 REAL_GIT=${JSON.stringify(realGit)}
 MARKER=${JSON.stringify(gitMarker)}
 
+case " $* " in
+  *" remote get-url --all origin "*|*" remote get-url --push --all origin "*)
+    printf '%s\\n' 'https://github.com/OpenCoven/coven-cave.git'
+    exit 0
+    ;;
+esac
+
 if [ "\${CAVE_TEST_FAIL_CREATED_OID_ONCE:-0}" != "1" ] &&
    [ "\${CAVE_TEST_GIT_ADD_THEN_ERROR:-0}" != "1" ]; then
   exec "$REAL_GIT" "$@"

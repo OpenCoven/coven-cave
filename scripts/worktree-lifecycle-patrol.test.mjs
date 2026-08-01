@@ -142,6 +142,29 @@ try {
   });
   git(["push", "-q", "origin", "main"], repo);
 
+  const manualRecentPath = path.join(repo, ".worktrees", "manual-recent");
+  git(["worktree", "add", "-q", "-b", "feat/manual-recent", manualRecentPath, "origin/main"], repo);
+  writeFileSync(path.join(manualRecentPath, "manual-recent.txt"), "manually landed today\n");
+  git(["add", "manual-recent.txt"], manualRecentPath);
+  git(["commit", "-q", "-m", "old manual work"], manualRecentPath, {
+    env: {
+      ...process.env,
+      GIT_AUTHOR_DATE: "2026-07-20T12:00:00Z",
+      GIT_COMMITTER_DATE: "2026-07-20T12:00:00Z",
+    },
+  });
+  const manualRecentHead = git(["rev-parse", "HEAD"], manualRecentPath).trim();
+  git(["push", "-q", "-u", "origin", "feat/manual-recent"], manualRecentPath);
+  git(["worktree", "remove", manualRecentPath], repo);
+  git(["merge", "-q", "--no-ff", "feat/manual-recent", "-m", "land manual work today"], repo, {
+    env: {
+      ...process.env,
+      GIT_AUTHOR_DATE: "2026-08-10T21:30:00Z",
+      GIT_COMMITTER_DATE: "2026-08-10T21:30:00Z",
+    },
+  });
+  git(["push", "-q", "origin", "main"], repo);
+
   const detached = path.join(repo, ".worktrees", "detached");
   git(["worktree", "add", "-q", "--detach", detached, "origin/main"], repo);
   const defaultHead = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
@@ -230,6 +253,48 @@ try {
       },
     },
   };
+  const metadataTask = (id, branch, worktreePath, purpose) => ({
+    id,
+    status: "closed",
+    title: purpose,
+    metadata: {
+      coven: {
+        worktree: {
+          branch,
+          path: worktreePath,
+          owner: "Kitty",
+          purpose,
+          disposition: "pr",
+          createdAt: "2026-07-20T12:00:00Z",
+        },
+      },
+    },
+  });
+  writeFileSync(
+    path.join(fixtureRoot, "tasks-default.json"),
+    JSON.stringify([
+      metadataTask("cave-old", "feat/old", old, "Landed fixture"),
+      metadataTask(
+        "cave-recent-merge",
+        "feat/recent-merge",
+        recentMerge,
+        "Recent fixture",
+      ),
+      metadataTask(
+        "cave-recent-reflog",
+        "feat/recent-reflog",
+        recentReflog,
+        "Reflog fixture",
+      ),
+      branchOnlyMetadataTask,
+      metadataTask(
+        "cave-manual-recent",
+        "feat/manual-recent",
+        manualRecentPath,
+        "Recently manually landed fixture",
+      ),
+    ]),
+  );
   writeFileSync(
     path.join(fixtureRoot, "tasks-oid-only.json"),
     JSON.stringify([
@@ -313,9 +378,41 @@ try {
     path.join(gitBin, "git"),
     `#!/bin/sh
 DEFAULT_OID=${JSON.stringify(defaultHead)}
+BRANCH_ONLY_OID=${JSON.stringify(branchOnlyHead)}
 STALE_OID=${JSON.stringify("a".repeat(defaultHead.length))}
 OTHER_OID=${JSON.stringify("b".repeat(defaultHead.length))}
 MARKER_PREFIX=${JSON.stringify(path.join(fixtureRoot, "invalid-default-merge-base-"))}
+
+case " $* " in
+  *" remote get-url --all origin "*)
+    case "\${LIFECYCLE_ORIGIN_IDENTITY_CASE:-https}" in
+      https|different-push) printf '%s\\n' 'https://github.com/OpenCoven/coven-cave.git' ;;
+      ssh) printf '%s\\n' 'git@github.com:OpenCoven/coven-cave.git' ;;
+      mismatch) printf '%s\\n' 'https://github.com/ForkOwner/coven-cave.git' ;;
+      malformed) printf '%s\\n' 'not-a-remote-url' ;;
+      non-github) printf '%s\\n' 'https://gitlab.com/OpenCoven/coven-cave.git' ;;
+      *) printf '%s\\n' 'unknown origin identity fixture' >&2; exit 95 ;;
+    esac
+    exit 0
+    ;;
+  *" remote get-url --push --all origin "*)
+    if [ "\${LIFECYCLE_ORIGIN_IDENTITY_CASE:-https}" = "different-push" ]; then
+      printf '%s\\n%s\\n' \
+        'https://github.com/OpenCoven/coven-cave.git' \
+        'git@github.com:ForkOwner/coven-cave.git'
+    else
+      case "\${LIFECYCLE_ORIGIN_IDENTITY_CASE:-https}" in
+        https) printf '%s\\n' 'https://github.com/OpenCoven/coven-cave.git' ;;
+        ssh) printf '%s\\n' 'ssh://git@github.com/OpenCoven/coven-cave.git/' ;;
+        mismatch) printf '%s\\n' 'https://github.com/ForkOwner/coven-cave.git' ;;
+        malformed) printf '%s\\n' 'not-a-remote-url' ;;
+        non-github) printf '%s\\n' 'https://gitlab.com/OpenCoven/coven-cave.git' ;;
+        *) printf '%s\\n' 'unknown origin identity fixture' >&2; exit 95 ;;
+      esac
+    fi
+    exit 0
+    ;;
+esac
 
 if [ "\${LIFECYCLE_REQUIRE_SAFE_GIT:-0}" = "1" ]; then
   case " $* " in
@@ -354,6 +451,13 @@ fi
 
 case " $* " in
   *" worktree list --porcelain -z "*)
+    if [ "\${LIFECYCLE_GIT_WARNING_PROBE:-}" = "required" ]; then
+      PATH=\${PATH#${gitBin}:}
+      export PATH
+      git "$@"
+      printf '%s\\n' 'fixture git warning' >&2
+      exit 0
+    fi
     if [ "\${LIFECYCLE_DUPLICATE_REGISTERED_REF:-0}" = "1" ]; then
       cat ${JSON.stringify(duplicateWorktreeInventory)}
       exit 0
@@ -363,7 +467,10 @@ esac
 
 case " $* " in
   *" ls-remote --symref origin HEAD "*)
-    if [ "\${LIFECYCLE_MALFORMED_DEFAULT:-0}" = "1" ]; then
+    if [ "\${LIFECYCLE_DEFAULT_EQUALS_BRANCH_ONLY:-0}" = "1" ]; then
+      printf 'ref: refs/heads/main\\tHEAD\\n%s\\tHEAD\\n' "$BRANCH_ONLY_OID"
+      exit 0
+    elif [ "\${LIFECYCLE_MALFORMED_DEFAULT:-0}" = "1" ]; then
       printf 'ref: refs/heads/main\\tHEAD\\nref: refs/heads/trunk\\tHEAD\\n%s\\tHEAD\\n' "$DEFAULT_OID"
       exit 0
     elif [ "\${LIFECYCLE_STALE_DEFAULT:-0}" = "1" ]; then
@@ -381,7 +488,10 @@ esac
 
 case " $* " in
   *" ls-remote --exit-code origin refs/heads/main "*|*" ls-remote --exit-code --heads origin refs/heads/main "*)
-    if [ -n "\${LIFECYCLE_MALFORMED_LIVE_MAIN_CASE:-}" ]; then
+    if [ "\${LIFECYCLE_DEFAULT_EQUALS_BRANCH_ONLY:-0}" = "1" ]; then
+      printf '%s\\trefs/heads/main\\n' "$BRANCH_ONLY_OID"
+      exit 0
+    elif [ -n "\${LIFECYCLE_MALFORMED_LIVE_MAIN_CASE:-}" ]; then
       case "\${LIFECYCLE_MALFORMED_LIVE_MAIN_CASE}" in
         malformed)
           printf '%s\\n' 'not-a-ls-remote-record'
@@ -416,6 +526,15 @@ case " $* " in
     ;;
 esac
 
+if [ "\${LIFECYCLE_DEFAULT_EQUALS_BRANCH_ONLY:-0}" = "1" ]; then
+  case " $* " in
+    *" rev-parse --verify refs/remotes/origin/main^{commit} "*)
+      printf '%s\\n' "$BRANCH_ONLY_OID"
+      exit 0
+      ;;
+  esac
+fi
+
 if [ "\${LIFECYCLE_MISSING_DEFAULT_TRACKING:-0}" = "1" ]; then
   case " $* " in
     *" rev-parse --verify refs/remotes/origin/main^{commit} "*)
@@ -447,6 +566,66 @@ if [ "\${LIFECYCLE_DEFAULT_TRACKING_MUTATION:-0}" = "1" ]; then
       ;;
   esac
 fi
+
+if [ "\${LIFECYCLE_MISSING_DEFAULT_REFLOG:-0}" = "1" ]; then
+  case " $* " in
+    *" reflog show "*" refs/remotes/origin/main "*)
+      printf '%s\\n' 'missing remote-tracking reflog' >&2
+      exit 1
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_MALFORMED_INTEGRATION_PATH:-0}" = "1" ]; then
+  case " $* " in
+    *" rev-list --ancestry-path --reverse "*)
+      printf '%s\\n' 'not-an-object-id'
+      exit 0
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_MALFORMED_INTEGRATION_TIMESTAMP:-0}" = "1" ]; then
+  case " $* " in
+    *" show -s --format=%ct "*)
+      printf '%s\\n' 'not-a-timestamp'
+      exit 0
+      ;;
+  esac
+fi
+
+case "\${LIFECYCLE_GIT_WARNING_PROBE:-}" in
+  status)
+    case " $* " in
+      *" status "*)
+        PATH=\${PATH#${gitBin}:}
+        export PATH
+        git "$@"
+        printf '%s\\n' 'fixture git warning' >&2
+        exit 0
+        ;;
+    esac
+    ;;
+  ref)
+    case " $* " in
+      *" ls-remote --exit-code --heads origin refs/heads/feat/old "*)
+        PATH=\${PATH#${gitBin}:}
+        export PATH
+        git "$@"
+        printf '%s\\n' 'fixture git warning' >&2
+        exit 0
+        ;;
+    esac
+    ;;
+  ancestry)
+    case " $* " in
+      *" merge-base --is-ancestor $BRANCH_ONLY_OID $DEFAULT_OID "*)
+        printf '%s\\n' 'fixture git warning' >&2
+        exit 0
+        ;;
+    esac
+    ;;
+esac
 
 case "\${LIFECYCLE_STALE_DEFAULT:-0}\${LIFECYCLE_MALFORMED_DEFAULT:-0}\${LIFECYCLE_MISSING_DEFAULT_TRACKING:-0}\${LIFECYCLE_MISMATCHED_DEFAULT_TARGET:-0}\${LIFECYCLE_MALFORMED_DEFAULT_TRACKING:-0}\${LIFECYCLE_MALFORMED_LIVE_MAIN_CASE:-}" in
   *1*)
@@ -604,7 +783,7 @@ if [ "$1" = "api" ] &&
     [ -z "$OWNER$NAME$OID_ARG" ] || fail "exact-head search included repository variables"
     case "$SEARCH_QUERY" in
       is:pr\\ head:*:*) fail "exact-head search used an owner-prefixed head qualifier" ;;
-      is:pr\\ head:feat/old|is:pr\\ head:feat/recent-merge|is:pr\\ head:feat/recent-reflog|is:pr\\ head:feat/live|is:pr\\ head:feat/cave-link1-linked|is:pr\\ head:feat/spaced|is:pr\\ head:feat/branch-only) ;;
+      is:pr\\ head:feat/old|is:pr\\ head:feat/recent-merge|is:pr\\ head:feat/recent-reflog|is:pr\\ head:feat/live|is:pr\\ head:feat/cave-link1-linked|is:pr\\ head:feat/spaced|is:pr\\ head:feat/branch-only|is:pr\\ head:feat/manual-recent) ;;
       *) fail "exact-head search used an unexpected query: $SEARCH_QUERY" ;;
     esac
     require_query 'search(query: $searchQuery, type: ISSUE, first: 100, after: $endCursor)'
@@ -760,7 +939,7 @@ elif [ "\${LIFECYCLE_NULL_EXCEPTION:-0}" = "1" ]; then
 elif [ "\${LIFECYCLE_SPACED_PATH:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-spaced","status":"open","title":"Spaced path","metadata":{"coven":{"worktree":{"branch":"feat/spaced","path":${JSON.stringify(spaced)},"owner":"Kitty","purpose":"Exact path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 else
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+  cat ${JSON.stringify(path.join(fixtureRoot, "tasks-default.json"))}
 fi
 `,
   );
@@ -846,23 +1025,6 @@ exit 0
   let lastPatrolInvocation = "";
   const patrol = (extraArgs = [], extraEnv = {}) => {
     lastPatrolInvocation = String(++patrolInvocation);
-    const needsGitFixture = [
-      "LIFECYCLE_DEFAULT_TRUNK",
-      "LIFECYCLE_STALE_DEFAULT",
-      "LIFECYCLE_MALFORMED_DEFAULT",
-      "LIFECYCLE_MISSING_DEFAULT_TRACKING",
-      "LIFECYCLE_MISMATCHED_DEFAULT_TARGET",
-      "LIFECYCLE_MALFORMED_DEFAULT_TRACKING",
-      "LIFECYCLE_MALFORMED_LIVE_MAIN_CASE",
-      "LIFECYCLE_DEFAULT_TRACKING_MUTATION",
-      "LIFECYCLE_DUPLICATE_REGISTERED_REF",
-      "LIFECYCLE_REQUIRE_SAFE_GIT",
-    ].some(
-      (name) =>
-        extraEnv[name] === "1" ||
-        (name === "LIFECYCLE_MALFORMED_LIVE_MAIN_CASE" &&
-          typeof extraEnv[name] === "string"),
-    );
     return run(
       process.execPath,
       [
@@ -880,7 +1042,7 @@ exit 0
       {
         env: {
           ...process.env,
-          PATH: `${needsGitFixture ? `${gitBin}${path.delimiter}` : ""}${bin}${path.delimiter}${process.env.PATH}`,
+          PATH: `${gitBin}${path.delimiter}${bin}${path.delimiter}${process.env.PATH}`,
           LIFECYCLE_TEST_INVOCATION: lastPatrolInvocation,
           ...extraEnv,
         },
@@ -961,10 +1123,19 @@ exit 0
     },
     "exact structured metadata survives patrol JSON serialization",
   );
-  assert.equal(branchOnly.lane, "retire-after-gate");
+  assert.equal(
+    branchOnly.lane,
+    "retire-after-gate",
+    "a manually integrated candidate whose first landing descendant is older than 24 hours is eligible",
+  );
+  assert.equal(
+    byBranch.get("feat/manual-recent").lane,
+    "cooldown",
+    "an old candidate manually merged today remains inside the landing cooldown",
+  );
   assert.deepEqual(report.budgets, {
     worktrees: { count: 8, warning: 12, exceeded: false },
-    branches: { count: 8, warning: 30, exceeded: false },
+    branches: { count: 9, warning: 30, exceeded: false },
     exceptions: { active: 0, expired: 0 },
   }, "the exact budget object survives patrol JSON serialization");
   const nullExceptionReport = JSON.parse(
@@ -1057,7 +1228,7 @@ exit 0
   );
   assert.match(
     humanReport,
-    /^Local branch budget: 8\/30 \(within budget\)$/m,
+    /^Local branch budget: 9\/30 \(within budget\)$/m,
     "the routine report uses the lifecycle renderer's exact local branch budget line",
   );
   assert.doesNotMatch(
@@ -1692,6 +1863,82 @@ exit 0
     mutatedTrackingReport.items.find((item) => item.branch === "feat/branch-only").lane,
     "retire-after-gate",
     "ancestry uses the captured authoritative default OID after the tracking ref mutates",
+  );
+
+  const sshOriginReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_ORIGIN_IDENTITY_CASE: "ssh" }),
+  );
+  assert.equal(
+    sshOriginReport.items.find((item) => item.branch === "feat/branch-only").lane,
+    "retire-after-gate",
+    "matching GitHub SSH fetch and push URLs bind origin normally",
+  );
+
+  for (const [originCase, expectedError] of [
+    ["mismatch", /origin remote identity.*mismatch/i],
+    ["different-push", /origin remote identity.*push/i],
+    ["malformed", /origin remote identity.*malformed/i],
+    ["non-github", /origin remote identity.*GitHub/i],
+  ]) {
+    const invalidOriginReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_ORIGIN_IDENTITY_CASE: originCase }),
+    );
+    for (const item of invalidOriginReport.items) {
+      assert.notEqual(item.lane, "retire-after-gate", `${originCase} origin fails closed globally`);
+      if (item.lane !== "active" && item.lane !== "protected") {
+        assert.equal(item.lane, "uncertain", `${originCase} origin is uncertain`);
+      }
+      assert.match(item.probeErrors.join("\n"), expectedError);
+    }
+  }
+
+  const missingExactDefaultReflogReport = JSON.parse(
+    patrol(["--json"], {
+      LIFECYCLE_DEFAULT_EQUALS_BRANCH_ONLY: "1",
+      LIFECYCLE_MISSING_DEFAULT_REFLOG: "1",
+    }),
+  );
+  const missingExactDefaultReflog = missingExactDefaultReflogReport.items.find(
+    (item) => item.branch === "feat/branch-only",
+  );
+  assert.equal(
+    missingExactDefaultReflog.lane,
+    "uncertain",
+    "an exact default OID without a tied tracking reflog has no reliable landing timestamp",
+  );
+  assert.match(missingExactDefaultReflog.probeErrors.join("\n"), /integration.*reflog/i);
+
+  for (const [environment, expectedError] of [
+    ["LIFECYCLE_MALFORMED_INTEGRATION_PATH", /integration.*ancestry path/i],
+    ["LIFECYCLE_MALFORMED_INTEGRATION_TIMESTAMP", /integration.*timestamp/i],
+  ]) {
+    const malformedIntegrationReport = JSON.parse(
+      patrol(["--json"], { [environment]: "1" }),
+    );
+    const malformedIntegrationBranch = malformedIntegrationReport.items.find(
+      (item) => item.branch === "feat/branch-only",
+    );
+    assert.equal(malformedIntegrationBranch.lane, "uncertain", `${environment} fails closed`);
+    assert.match(malformedIntegrationBranch.probeErrors.join("\n"), expectedError);
+  }
+
+  for (const [probe, branch] of [
+    ["status", "feat/old"],
+    ["ref", "feat/old"],
+    ["ancestry", "feat/branch-only"],
+  ]) {
+    const warnedGitReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_GIT_WARNING_PROBE: probe }),
+    );
+    const warnedCandidate = warnedGitReport.items.find((item) => item.branch === branch);
+    assert.equal(warnedCandidate.lane, "uncertain", `${probe} warning fails closed`);
+    assert.match(warnedCandidate.probeErrors.join("\n"), /fixture git warning/);
+    assert.notEqual(warnedCandidate.lane, "retire-after-gate");
+  }
+  assert.throws(
+    () => patrol(["--json"], { LIFECYCLE_GIT_WARNING_PROBE: "required" }),
+    /fixture git warning/,
+    "required Git inventory rejects successful commands that write warnings",
   );
 
   for (const [environment, expectedError] of [
