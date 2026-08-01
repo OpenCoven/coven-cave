@@ -8,9 +8,9 @@
 // silently turn `My Project Two` into an identifier again and every existing
 // test would still pass. These pins make that regression fail loudly instead.
 //
-// Deliberately a spaced NAME over an ordinary ROOT: spaced paths are a separate
-// concern already covered by project-root-normalizers.test.ts ("/w/app with
-// spaces"), and mixing the two would hide which one broke.
+// The end-to-end regression fixture deliberately pairs a spaced NAME with an
+// ordinary ROOT so a failure identifies the name path. A separate assertion
+// below preserves the already-supported spaced-root name derivation.
 import assert from "node:assert/strict";
 
 import { addChatProject, projectNameForRoot } from "./chat-add-project.ts";

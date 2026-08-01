@@ -50,7 +50,7 @@ assert.match(listRoute, /name and root are required/, "POST /api/projects should
 // intact. A slugify/tokenize step added here is what originally mangled it.
 assert.match(
   listRoute,
-  /const name = String\(body\.name \?\? ""\)\.trim\(\);/,
+  /const\s+name\s*=\s*String\(body\.name\s*\?\?\s*""\)\.trim\(\);/,
   "POST /api/projects should store the display name with only its ends trimmed",
 );
 assert.match(listRoute, /isAllowedNewProjectRoot\(root\)/, "POST /api/projects should validate roots before persisting them");
