@@ -462,6 +462,7 @@ export const SUITES = {
     "src/components/chat-reviews-group.test.ts",
     "src/components/chat-start-from-bands.test.ts",
     "src/components/chat-inline-composer.test.ts",
+    "src/lib/chat-new-session-defaults.test.ts",
     "src/components/chat-new-dashboard.test.ts",
     "src/components/user-chat-avatar.test.ts",
     "src/components/user-profile-invariants.test.ts",

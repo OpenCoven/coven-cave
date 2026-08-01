@@ -34,11 +34,14 @@ test("one composer element, rendered in exactly one of two positions", () => {
 
 test("the dashboard places the composer between hero and bands", () => {
   assert.match(dashboard, /composer\?: ReactNode;/, "the slot is typed");
+  // The slot now also carries 2b's trailing row ("Save as default" + the start
+  // hint), so this matches the guard and the wrapper rather than a one-liner.
   assert.match(
     dashboard,
-    /\{composer \? <div className="home-dash__composer">\{composer\}<\/div> : null\}/,
+    /\{composer \? \(\s*<div className="home-dash__composer">\s*\{composer\}/,
     "the slot renders only when handed a composer",
   );
+  assert.match(dashboard, /: null\}/, "and renders nothing when it is not");
   const hero = dashboard.indexOf("home-dash__headline");
   const slot = dashboard.indexOf("home-dash__composer");
   const bands = dashboard.indexOf("<ChatStartFromBands");
