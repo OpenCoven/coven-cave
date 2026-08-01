@@ -1,3 +1,5 @@
+import { isAbsolute, normalize as normalizePath } from "node:path";
+
 export type WorktreeLifecycleLane =
   | "active"
   | "recovery"
@@ -231,6 +233,18 @@ function reviewAfterReasons(metadata: WorktreeLifecycleMetadata, nowMs: number):
   return [`owner follow-up: ${metadata.owner} reviewAfter ${reviewAfter} is overdue`];
 }
 
+function normalizeAbsoluteManagedCreationPath(candidate: string | null | undefined): string | null {
+  if (typeof candidate !== "string") return null;
+  const trimmed = candidate.trim();
+  if (trimmed.length === 0 || !isAbsolute(trimmed)) return null;
+  try {
+    const normalized = normalizePath(trimmed);
+    return normalized.length > 0 && isAbsolute(normalized) ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
 function applicableManagedCreationException({
   exception,
   requestedPath,
@@ -240,13 +254,20 @@ function applicableManagedCreationException({
   requestedPath: string | null;
   nowMs: number;
 }): ManagedCreationException | null {
-  if (!exception || requestedPath === null) return null;
+  if (!exception) return null;
   if (exception.owner.trim().length === 0 || exception.reason.trim().length === 0) {
     return null;
   }
   const expiresAtMs = Date.parse(exception.expiresAt);
   if (!Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs) return null;
-  return exception.additionalPaths.includes(requestedPath) ? exception : null;
+  const normalizedRequestedPath = normalizeAbsoluteManagedCreationPath(requestedPath);
+  if (normalizedRequestedPath === null) return null;
+  return exception.additionalPaths.some(
+    (additionalPath) =>
+      normalizeAbsoluteManagedCreationPath(additionalPath) === normalizedRequestedPath,
+  )
+    ? exception
+    : null;
 }
 
 function managedCreationExceptionReasons(exception: ManagedCreationException): string[] {
