@@ -7,6 +7,11 @@ import {
   openClawGatewayPairedDeviceAuthStatus,
   textFromOpenClawGatewayMessage,
 } from "./openclaw-gateway.ts";
+import {
+  loadOpenClawCompatibility,
+  openClawDiscoveryFromHello,
+  redactedOpenClawToolFingerprint,
+} from "./openclaw-compatibility.ts";
 import { createOpenClawDeviceCredentialStore } from "./server/openclaw-device-credentials.ts";
 
 const gatewayBeta4 = JSON.parse(
@@ -14,6 +19,9 @@ const gatewayBeta4 = JSON.parse(
 );
 const gatewayBeta5 = JSON.parse(
   readFileSync(new URL("./openclaw-fixtures/gateway-beta5.json", import.meta.url), "utf8"),
+);
+const toolLifecycleV1 = JSON.parse(
+  readFileSync(new URL("./openclaw-fixtures/tool-lifecycle-v1.json", import.meta.url), "utf8"),
 );
 
 const expected = {
@@ -1128,6 +1136,271 @@ assert.equal(preSendInvalidChatSends, 0, "an invalid pre-send hello never calls 
 assert.deepEqual(preSendInvalidEvents, [], "an invalid pre-send hello retains fallback without emitting");
 assert.ok(preSendInvalidStops > 0, "an invalid pre-send hello stops the dispatch client");
 
+async function createToolGatewayHarness(id) {
+  let dispatchOptions;
+  let clientCount = 0;
+  let subscriptionCalls = 0;
+  const events = [];
+  const dispatch = await dispatchOpenClawGatewayTurn({
+    sessionKey: expected.sessionKey,
+    agentId: expected.agentId,
+    message: id,
+    idempotencyKey: `cave-request-${id}`,
+    env: {
+      OPENCLAW_GATEWAY_DISPATCH: "1",
+      OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+    },
+    onEvent: (event) => events.push(event),
+    clientFactory: (options) => {
+      const clientIndex = clientCount++;
+      if (clientIndex === 1) dispatchOptions = options;
+      return {
+        start() {
+          queueMicrotask(() => options.onHelloOk?.(helloOk()));
+        },
+        stop() {},
+        async request(method, _params, requestOptions) {
+          if (method === "sessions.messages.subscribe") {
+            subscriptionCalls += 1;
+            return { subscribed: true };
+          }
+          if (method === "chat.send") {
+            requestOptions?.onSent?.();
+            return { runId: expected.runId };
+          }
+          return {};
+        },
+      };
+    },
+  });
+  assert.equal(dispatch.kind, "accepted", `${id} must accept the Gateway run`);
+  assert.ok(dispatchOptions, `${id} must expose the dispatch client's callbacks`);
+  return {
+    dispatch,
+    dispatchOptions,
+    events,
+    subscriptionCalls: () => subscriptionCalls,
+  };
+}
+
+function toolPayload(frameIndex, overrides = {}) {
+  const fixture = structuredClone(toolLifecycleV1.frames[frameIndex].payload);
+  return {
+    ...fixture,
+    runId: expected.runId,
+    ...overrides,
+    ...(overrides.data ? { data: { ...fixture.data, ...overrides.data } } : {}),
+  };
+}
+
+function emitGatewayEvent(options, event, payload) {
+  options.onEvent?.({ type: "event", event, payload });
+}
+
+const correlatedTools = await createToolGatewayHarness("correlated-tool-lifecycle");
+const correlatedOptions = correlatedTools.dispatchOptions;
+emitGatewayEvent(correlatedOptions, "future.tool", {
+  ...toolPayload(0),
+  data: { ...toolPayload(0).data, secret: "unknown outer event must stay private" },
+});
+emitGatewayEvent(correlatedOptions, "agent", {
+  runId: expected.runId,
+  seq: 2,
+  stream: "assistant",
+  ts: 950,
+  data: { text: "non-tool agent sequence" },
+});
+emitGatewayEvent(correlatedOptions, "agent", toolPayload(0, { runId: "foreign-run" }));
+emitGatewayEvent(correlatedOptions, "agent", toolPayload(0, {
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  status: "running",
+}));
+emitGatewayEvent(correlatedOptions, "session.tool", toolPayload(0, {
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  status: "running",
+}));
+emitGatewayEvent(correlatedOptions, "agent", toolPayload(1, { seq: 2 }));
+emitGatewayEvent(correlatedOptions, "session.tool", toolPayload(1, {
+  seq: 4,
+  sessionKey: "agent:other:explicit:foreign",
+  agentId: expected.agentId,
+}));
+emitGatewayEvent(correlatedOptions, "session.tool", toolPayload(1, {
+  seq: 5,
+  sessionKey: expected.sessionKey,
+  agentId: "other-agent",
+}));
+emitGatewayEvent(correlatedOptions, "agent", toolPayload(1));
+emitGatewayEvent(correlatedOptions, "agent", {
+  runId: expected.runId,
+  seq: 8,
+  stream: "assistant",
+  ts: 1150,
+  data: { text: "shared upstream sequence" },
+});
+emitGatewayEvent(correlatedOptions, "session.tool", toolPayload(1, {
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+}));
+emitGatewayEvent(correlatedOptions, "agent", toolPayload(2));
+emitGatewayEvent(correlatedOptions, "session.tool", toolPayload(3, {
+  seq: 12,
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+}));
+emitGatewayEvent(correlatedOptions, "chat", { ...delta, seq: 0 });
+emitGatewayEvent(correlatedOptions, "chat", {
+  runId: expected.runId,
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  seq: 1,
+  state: "final",
+});
+assert.deepEqual(
+  correlatedTools.events,
+  [
+    { kind: "tool_start", id: "tool-1", name: "exec", input: { command: "echo hi" }, seq: 3 },
+    { kind: "tool_progress", id: "tool-1", output: "hi", seq: 7 },
+    {
+      kind: "tool_end",
+      id: "tool-1",
+      name: "exec",
+      output: { text: "hi", exitCode: 0 },
+      isError: false,
+      seq: 9,
+    },
+    {
+      kind: "tool_end",
+      id: "tool-2",
+      name: "edit",
+      output: { status: "failed", text: "validation failed" },
+      isError: true,
+      seq: 12,
+    },
+    { kind: "delta", text: "Hello", replace: false },
+    { kind: "final" },
+  ],
+  "only exact-run, exact-session tool lifecycle projects; sparse tool seq remains independent from chat seq",
+);
+if (correlatedTools.dispatch.kind === "accepted") {
+  assert.deepEqual(await correlatedTools.dispatch.done, { state: "final" });
+}
+
+let preAckToolOptions;
+let preAckToolClientCount = 0;
+const preAckToolEvents = [];
+const preAckToolDispatch = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "pre-ack tool correlation",
+  idempotencyKey: "cave-request-pre-ack-tool-correlation",
+  env: {
+    OPENCLAW_GATEWAY_DISPATCH: "1",
+    OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+  },
+  onEvent: (event) => preAckToolEvents.push(event),
+  clientFactory: (options) => {
+    const clientIndex = preAckToolClientCount++;
+    if (clientIndex === 1) preAckToolOptions = options;
+    return {
+      start() {
+        queueMicrotask(() => options.onHelloOk?.(helloOk()));
+      },
+      stop() {},
+      async request(method, _params, requestOptions) {
+        if (method === "sessions.messages.subscribe") return { subscribed: true };
+        if (method === "chat.send") {
+          requestOptions?.onSent?.();
+          emitGatewayEvent(options, "agent", toolPayload(0, { runId: "foreign-run" }));
+          emitGatewayEvent(options, "agent", toolPayload(0));
+          return { runId: expected.runId };
+        }
+        return {};
+      },
+    };
+  },
+});
+assert.equal(preAckToolDispatch.kind, "accepted");
+assert.deepEqual(
+  preAckToolEvents,
+  [{ kind: "tool_start", id: "tool-1", name: "exec", input: { command: "echo hi" }, seq: 3 }],
+  "bounded pre-acknowledgement tool frames drain only after the accepted run id correlates them",
+);
+emitGatewayEvent(preAckToolOptions, "chat", {
+  runId: expected.runId,
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  seq: 0,
+  state: "final",
+});
+if (preAckToolDispatch.kind === "accepted") {
+  assert.deepEqual(await preAckToolDispatch.done, { state: "final" });
+}
+
+const toolGap = await createToolGatewayHarness("tool-transport-gap");
+emitGatewayEvent(toolGap.dispatchOptions, "agent", toolPayload(0));
+toolGap.dispatchOptions.onGap?.({ expected: 4, received: 6 });
+emitGatewayEvent(toolGap.dispatchOptions, "agent", toolPayload(1));
+emitGatewayEvent(toolGap.dispatchOptions, "chat", { ...delta, seq: 0 });
+emitGatewayEvent(toolGap.dispatchOptions, "chat", {
+  runId: expected.runId,
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  seq: 1,
+  state: "final",
+});
+assert.deepEqual(
+  toolGap.events,
+  [
+    { kind: "tool_start", id: "tool-1", name: "exec", input: { command: "echo hi" }, seq: 3 },
+    { kind: "compatibility", code: "tool-event-sequence-gap" },
+    { kind: "delta", text: "Hello", replace: false },
+    { kind: "final" },
+  ],
+  "an authoritative transport gap settles unfinished tool projection without terminating valid chat",
+);
+if (toolGap.dispatch.kind === "accepted") {
+  assert.deepEqual(await toolGap.dispatch.done, { state: "final" });
+}
+
+const reconnectingTool = await createToolGatewayHarness("tool-reconnect-gap");
+emitGatewayEvent(reconnectingTool.dispatchOptions, "agent", toolPayload(0));
+const subscriptionsBeforeToolReconnect = reconnectingTool.subscriptionCalls();
+reconnectingTool.dispatchOptions.onClose?.(1006, "tool transport reset");
+emitGatewayEvent(reconnectingTool.dispatchOptions, "agent", toolPayload(1));
+reconnectingTool.dispatchOptions.onHelloOk?.(helloOk());
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(
+  reconnectingTool.subscriptionCalls(),
+  subscriptionsBeforeToolReconnect + 1,
+  "chat subscription is restored after a tool reconnect gap",
+);
+emitGatewayEvent(reconnectingTool.dispatchOptions, "agent", toolPayload(2));
+emitGatewayEvent(reconnectingTool.dispatchOptions, "chat", { ...delta, seq: 0 });
+emitGatewayEvent(reconnectingTool.dispatchOptions, "chat", {
+  runId: expected.runId,
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  seq: 1,
+  state: "final",
+});
+assert.deepEqual(
+  reconnectingTool.events,
+  [
+    { kind: "tool_start", id: "tool-1", name: "exec", input: { command: "echo hi" }, seq: 3 },
+    { kind: "compatibility", code: "tool-event-reconnect-gap" },
+    { kind: "delta", text: "Hello", replace: false },
+    { kind: "final" },
+  ],
+  "a reconnect with unfinished tools disables later tool projection while validated chat resumes",
+);
+if (reconnectingTool.dispatch.kind === "accepted") {
+  assert.deepEqual(await reconnectingTool.dispatch.done, { state: "final" });
+}
+
 // --- paired-device credential wiring -------------------------------------
 
 // Opaque placeholders: nothing in the wiring path parses key material.
@@ -1247,6 +1520,70 @@ assert.deepEqual(
   failingStoreDispatch,
   { kind: "unavailable", reason: "The macOS Keychain holds an invalid OpenClaw device identity" },
   "an identity failure is a pre-dispatch compatibility failure that retains the CLI fallback",
+);
+
+const malformedTools = await createToolGatewayHarness("malformed-tool-quarantine");
+const secretToolValue = "sk-tool-secret-must-not-leak";
+const malformedToolPayload = toolPayload(0, {
+  data: {
+    phase: "future-phase",
+    args: {
+      command: `cat /Users/private/${secretToolValue}`,
+      authorization: `Bearer ${secretToolValue}`,
+    },
+  },
+});
+emitGatewayEvent(malformedTools.dispatchOptions, "agent", malformedToolPayload);
+emitGatewayEvent(malformedTools.dispatchOptions, "session.tool", toolPayload(1, {
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  data: {
+    phase: "another-future-phase",
+    partialResult: secretToolValue,
+  },
+}));
+emitGatewayEvent(malformedTools.dispatchOptions, "unrelated.unknown", {
+  secret: secretToolValue,
+});
+emitGatewayEvent(malformedTools.dispatchOptions, "agent", toolPayload(0, { seq: 10 }));
+emitGatewayEvent(malformedTools.dispatchOptions, "chat", { ...delta, seq: 0 });
+emitGatewayEvent(malformedTools.dispatchOptions, "chat", {
+  runId: expected.runId,
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  seq: 1,
+  state: "final",
+});
+assert.deepEqual(
+  malformedTools.events,
+  [
+    {
+      kind: "compatibility",
+      code: "unknown-tool-event",
+      fingerprint: redactedOpenClawToolFingerprint(malformedToolPayload),
+    },
+    { kind: "delta", text: "Hello", replace: false },
+    { kind: "final" },
+  ],
+  "malformed selected tool data emits one safe diagnostic, disables tools, and preserves chat completion",
+);
+assert.equal(
+  JSON.stringify(malformedTools.events).includes(secretToolValue),
+  false,
+  "tool compatibility diagnostics never expose raw tool payload values",
+);
+if (malformedTools.dispatch.kind === "accepted") {
+  assert.deepEqual(await malformedTools.dispatch.done, { state: "final" });
+}
+assert.deepEqual(
+  await loadOpenClawCompatibility(openClawDiscoveryFromHello(helloOk())),
+  {
+    mode: "plain",
+    discovery: openClawDiscoveryFromHello(helloOk()),
+    bundleSource: "built-in",
+    diagnostic: "profile-quarantined",
+  },
+  "the malformed selected tool event quarantines the active profile revision exactly once for the process",
 );
 
 console.log("openclaw Gateway run correlation tests passed");
