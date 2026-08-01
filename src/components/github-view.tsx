@@ -2309,7 +2309,11 @@ function GitHubItemGlassPanel({
   const checksState = useGitHubChecks(item, isPull);
   const [open, setOpen] = useState<Record<string, boolean>>({ brief: true, talk: true, linked: true });
   const [factsOpen, setFactsOpen] = useState(false);
-  const [nextOpen, setNextOpen] = useState(true);
+  // Collapsed by default, as in the design. Open, the drawer takes a third of a
+  // quarter-width split and leaves the brief a couple of lines — so the
+  // collapsed header carries the gate rollup instead, and one click gets the
+  // verbs. The choice sticks for the visit: triage opens it once, not per row.
+  const [nextOpen, setNextOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   const toggle = useCallback((key: string) => {
@@ -2360,13 +2364,12 @@ function GitHubItemGlassPanel({
 
   const stage = deriveStage(item, { linkedCount: linkedCards.length, session: sessionLabel });
   const gates = landingGates(item, detail, checksState);
-  const gateTone = gates.some((g) => g.tone === "bad")
-    ? "bad"
-    : gates.some((g) => g.tone === "warn")
-      ? "warn"
-      : gates.every((g) => g.tone === "ok")
-        ? "ok"
-        : "mute";
+  const worstGate =
+    gates.find((g) => g.tone === "bad")
+    ?? gates.find((g) => g.tone === "warn")
+    ?? gates.find((g) => g.tone === "mute")
+    ?? null;
+  const gateTone = worstGate?.tone ?? "ok";
 
   const labels = detail?.labels ?? [];
   const pull = detail?.pull ?? null;
@@ -2586,9 +2589,12 @@ function GitHubItemGlassPanel({
           <span className="gh-next-title">what to do next</span>
           <span className="gh-detail-spacer" />
           {isPull ? (
+            // The headline, not all three values concatenated: collapsed, this
+            // line has room for one fact, and the one worth having is whichever
+            // gate is furthest from clear.
             <span className={`gh-next-rollup gh-tone--${gateTone}`}>
               <span className="gh-next-rollup-dot" aria-hidden />
-              {gates.map((g) => g.value).join(" · ")}
+              {worstGate ? `${worstGate.label} — ${worstGate.value}` : "every gate clear"}
             </span>
           ) : null}
         </button>

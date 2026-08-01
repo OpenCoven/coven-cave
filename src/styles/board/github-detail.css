@@ -950,11 +950,11 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
 .gh-next-caret.is-open { transform:rotate(180deg); }
 .gh-next-title { flex:none; }
 .gh-next-rollup {
-  flex:none;
+  flex:0 1 auto;
+  min-width:0;
   display:inline-flex;
   align-items:center;
   gap:var(--space-1);
-  max-width:60%;
   letter-spacing:0;
   text-transform:none;
   font-size:var(--text-2xs);
