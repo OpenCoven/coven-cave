@@ -220,6 +220,16 @@ assert.match(
   /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*requiredFiles:\s*openclawLaunch\.requiredFiles,[\s\S]*openclawAvailability\.state !== "ready"/,
   "OpenClaw chat should fail closed when the launch plan is not ready",
 );
+assert.match(
+  chatRoute,
+  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*unresolvedWindowsShim: openclawLaunch\.unresolvedWindowsShim === true/,
+  "OpenClaw chat should classify an unresolved Windows npm shim through the shared availability contract",
+);
+assert.match(
+  chatRoute,
+  /const openclawAvailability = evaluateRuntimeAvailability\(\{[\s\S]*runner: "openclaw"[\s\S]*command: openclawLaunch\.command[\s\S]*requiredFiles: openclawLaunch\.requiredFiles[\s\S]*\}\);[\s\S]*if \(openclawAvailability\.state !== "ready"\)[\s\S]*return;[\s\S]*spawn\(openclawLaunch\.command/,
+  "OpenClaw chat should use the shared passive availability gate before spawning",
+);
 
 assert.match(
   openclawBridge,

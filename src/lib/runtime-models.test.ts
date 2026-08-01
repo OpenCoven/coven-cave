@@ -22,6 +22,26 @@ for (const runtime of ["codex", "claude", "copilot", "hermes", "opencode", "open
   assert.ok(Array.isArray(catalog.models));
 }
 
+for (const [alias, canonical] of [
+  ["claude-code", "claude"],
+  ["openai-codex", "codex"],
+  ["github-copilot", "copilot"],
+  ["copilot-cli", "copilot"],
+  ["hermes-agent", "hermes"],
+  ["opencode-ai", "opencode"],
+]) {
+  assert.deepEqual(
+    catalogForRuntime(alias),
+    catalogForRuntime(canonical),
+    `${alias} should resolve the canonical ${canonical} model catalog`,
+  );
+  assert.equal(
+    defaultModelForRuntime(alias),
+    defaultModelForRuntime(canonical),
+    `${alias} should inherit the canonical ${canonical} default model`,
+  );
+}
+
 // Provider-backed runtimes expose a menu sourced from their provider.
 assert.equal(catalogForRuntime("codex").provider, "openai");
 assert.equal(catalogForRuntime("claude").provider, "anthropic");

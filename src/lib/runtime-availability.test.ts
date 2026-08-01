@@ -264,6 +264,12 @@ try {
     );
   }
 
+  assert.equal(
+    runtimeLaunchFailedMessage("openclaw"),
+    "OpenClaw CLI failed to start. Check its installation and try again.",
+    "OpenClaw spawn races should use the shared value-free launch-failure contract",
+  );
+
   // The chat client's "Open Setup" recovery matches this exact phrase
   // (src/components/chat-view.test.ts); the availability gate must keep it.
   assert.match(

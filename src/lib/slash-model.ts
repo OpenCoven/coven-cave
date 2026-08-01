@@ -1,7 +1,7 @@
 // Helpers for the `/model` slash command — resolving a typed model argument to
 // a concrete id, and the inline autocomplete options shown while typing it.
-// Pure + client-safe (only depends on the runtime-models catalog); the model-id
-// shape is validated inline so this never pulls server code into the bundle.
+// Pure + client-safe: both dependencies are data/string helpers with no server
+// imports, so every composer surface shares the same model-id contract.
 
 import {
   catalogForRuntime,
