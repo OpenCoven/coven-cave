@@ -118,6 +118,28 @@ try {
   await config.summonSessionLocal("session-2");
   await config.summonSessionLocal("session-3");
 
+  await config.recordTravelHubReachability(false, new Date("2026-06-30T10:00:00.000Z"));
+  const manualDuringOutageAt = await config.setManualTravelMode(true, new Date("2026-06-30T10:00:05.000Z"));
+  assert.equal(manualDuringOutageAt, "2026-06-30T10:00:05.000Z");
+
+  state = await config.loadState();
+  assert.equal(state.travel.manualOffline, true);
+  assert.equal(state.travel.hubUnreachableSince, "2026-06-30T10:00:00.000Z");
+  assert.equal(state.travel.staleCache, true);
+  assert.equal(state.travel.localSubdaemonWakeRequestedAt, "2026-06-30T10:00:05.000Z");
+
+  await config.setManualTravelMode(false, new Date("2026-06-30T10:00:06.000Z"));
+  state = await config.loadState();
+  assert.equal(state.travel.manualOffline, false);
+  assert.equal(state.travel.hubUnreachableSince, "2026-06-30T10:00:00.000Z");
+  assert.equal(state.travel.staleCache, true);
+  assert.equal(
+    state.travel.localSubdaemonWakeRequestedAt,
+    null,
+    "manual wake stamps must not survive back into automatic outage handling",
+  );
+  await config.recordTravelHubReachability(true, new Date("2026-06-30T10:01:00.000Z"));
+
   const raw = await readFile(path.join(tempHome, ".coven", "cave", "state.json"), "utf8");
   const rawState = JSON.parse(raw);
   // Summon grace timestamps vary per run; the shape checks above cover them.
@@ -134,7 +156,7 @@ try {
     travel: {
       manualOffline: false,
       hubUnreachableSince: null,
-      lastHubReachableAt: null,
+      lastHubReachableAt: "2026-06-30T10:01:00.000Z",
       staleCache: false,
       localSubdaemonWakeRequestedAt: null,
       localBindHost: "127.0.0.1",

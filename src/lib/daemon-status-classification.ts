@@ -8,6 +8,11 @@ export type DaemonAvailability =
   | "status-unavailable";
 
 export type DaemonTargetMode = "local" | "hub" | "unconfigured-hub";
+export type DaemonConnectionTravelCadence =
+  | "hub-unreachable"
+  | "hub-reachable"
+  | "non-hub"
+  | "unknown";
 
 const AVAILABILITY_VALUES = new Set<DaemonAvailability>([
   "online",
@@ -60,11 +65,41 @@ function payloadReason(payload: DaemonStatusPayload): string | null {
     : null;
 }
 
+function payloadTargetMode(payload: DaemonStatusPayload): DaemonTargetMode | null {
+  const mode = payload.target?.mode;
+  return mode === "local" || mode === "hub" || mode === "unconfigured-hub" ? mode : null;
+}
+
 function payloadAvailability(payload: DaemonStatusPayload): DaemonAvailability | null {
   return typeof payload.availability === "string" &&
     AVAILABILITY_VALUES.has(payload.availability as DaemonAvailability)
     ? payload.availability as DaemonAvailability
     : null;
+}
+
+export function classifyDaemonConnectionTravelCadence(
+  payload: unknown,
+): DaemonConnectionTravelCadence {
+  const parsed = statusPayload(payload);
+  if (!parsed || typeof parsed.running !== "boolean") return "unknown";
+
+  const targetMode = payloadTargetMode(parsed);
+  if (targetMode === null) return "unknown";
+  if (targetMode === "local" || targetMode === "unconfigured-hub") {
+    return "non-hub";
+  }
+
+  const availability = payloadAvailability(parsed);
+  if (availability === "unreachable") return "hub-unreachable";
+  if (
+    availability === "online" ||
+    availability === "unauthorized" ||
+    availability === "unhealthy" ||
+    availability === "offline"
+  ) {
+    return "hub-reachable";
+  }
+  return "unknown";
 }
 
 /**
@@ -90,7 +125,7 @@ export function classifyDaemonStatusPoll(input: {
     return { kind: "unavailable", reason: "status service returned an invalid response" };
   }
   if (payload.running) {
-    const targetMode = payload.target?.mode;
+    const targetMode = payloadTargetMode(payload);
     if (targetMode === "local" || targetMode === "hub") {
       return { kind: "running", targetMode };
     }

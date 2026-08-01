@@ -31,6 +31,10 @@ test("getSectionMeta / settingsSectionLabel resolve, with a safe fallback", () =
 // ── SettingsOverview header (source-text) ────────────────────────────────────
 
 const overview = readFileSync(new URL("./settings-overview.tsx", import.meta.url), "utf8");
+const generalSummary = readFileSync(
+  new URL("../lib/settings-general-summary.ts", import.meta.url),
+  "utf8",
+);
 
 test("the overview header renders mark, kicker, title, description, and the strip", () => {
   assert.match(overview, /getSectionMeta\(section\)/, "pulls section metadata");
@@ -67,9 +71,16 @@ test("General can opt into the control-sheet overview without changing other sec
 });
 
 test("the General control-sheet overview uses real summary sources and stable anchors", () => {
-  assert.match(overview, /fetch\("\/api\/daemon\/status"/);
-  assert.match(overview, /fetch\("\/api\/voice\/engines"/);
-  assert.match(overview, /fetch\("\/api\/backup\/sync"/);
+  assert.match(overview, /createGeneralSummaryLoader/, "the overview should reuse the dedicated summary loader");
+  assert.match(
+    overview,
+    /summaryLoaderRef\.current\?\.dispose\(\)[\s\S]*summaryLoaderRef\.current = null/,
+    "the overview should dispose active summary work when the control-sheet view unmounts",
+  );
+  assert.match(generalSummary, /fetchImpl\("\/api\/config", \{ cache: "no-store", signal \}\)/);
+  assert.doesNotMatch(generalSummary, /fetchImpl\("\/api\/daemon\/status"/);
+  assert.match(generalSummary, /fetchImpl\("\/api\/voice\/engines", \{ cache: "no-store", signal \}\)/);
+  assert.match(generalSummary, /fetchImpl\("\/api\/backup\/sync", \{ cache: "no-store", signal \}\)/);
   assert.match(
     overview,
     /usePausablePoll\([\s\S]*loadSummary[\s\S]*30_000[\s\S]*enabled:\s*active/,

@@ -12,6 +12,18 @@ assert.match(
 
 assert.match(
   source,
+  /import \{[^}]*reconcileDaemonTravelState[^}]*\} from "@\/lib\/server\/daemon-travel-reconcile"/,
+  "daemon status should delegate travel reconciliation to the shared helper",
+);
+
+assert.match(
+  source,
+  /import \{[^}]*daemonHealthRequest[^}]*daemonHealthResponseSucceeded[^}]*\} from "@\/lib\/server\/daemon-health-request"/,
+  "daemon status should import the shared daemon health request contract and predicate",
+);
+
+assert.match(
+  source,
   /snapshot = await loadDaemonStatusSnapshot\(\)[\s\S]*?return caveHomeStatusUnavailable\(\)/,
   "Cave home lock failures should return a structured status response instead of HTTP 500",
 );
@@ -30,7 +42,7 @@ assert.match(
 
 assert.match(
   source,
-  /callDaemonTarget<Health>\(target,/,
+  /callDaemonTarget<Health>\(target, daemonHealthRequest\(\)\)/,
   "the health request and status metadata should use the same resolved daemon target",
 );
 
@@ -54,8 +66,32 @@ assert.match(
 
 assert.match(
   source,
-  /recordTravelHubReachability\(hubReachable\)/,
-  "daemon status should persist network reachability transitions, not auth/health failures",
+  /const \{ travelStatus, travelReplay \} = await reconcileDaemonTravelState\(\{/,
+  "daemon status should use the shared helper for hub reachability persistence, replay, and wake semantics",
+);
+
+assert.match(
+  source,
+  /const health = daemonHealthResponseSucceeded\(res\) \? res\.data : null;\s*const daemonHealthy = health !== null;/,
+  "daemon status should derive daemonHealthy and the parsed health payload from the shared health predicate",
+);
+
+assert.match(
+  source,
+  /daemonHealthy,\s*\n\s*\}\);/,
+  "daemon status should pass the shared daemonHealthy result into travel reconciliation",
+);
+
+assert.match(
+  source,
+  /if \(!daemonHealthy\) \{/,
+  "daemon status should use the shared daemonHealthy result for the final healthy-response guard",
+);
+
+assert.doesNotMatch(
+  source,
+  /Boolean\(res\.ok && res\.data\)/,
+  "daemon status should not inline a weaker parsed-payload check",
 );
 
 assert.match(
@@ -72,32 +108,14 @@ assert.match(
 
 assert.match(
   source,
-  /startLocalDaemon\(\)/,
-  "daemon status should wake the laptop-local daemon when travel mode takes authority",
-);
-
-assert.match(
-  source,
-  /recordLocalSubdaemonWakeRequest\(\)/,
-  "daemon status should persist that travel mode requested a local sub-daemon wake",
-);
-
-assert.match(
-  source,
-  /syncOfflineTravelQueue\(config\)/,
-  "daemon status should replay queued travel work after the hub reconnects",
-);
-
-assert.match(
-  source,
-  /res\.ok && !travelState\.manualOffline/,
-  "manual offline mode should block automatic reconnect replay",
-);
-
-assert.match(
-  source,
   /travelReplay/,
   "daemon status should expose reconnect replay attempts in the status response",
+);
+
+assert.doesNotMatch(
+  source,
+  /recordTravelHubReachability\(|syncOfflineTravelQueue\(|startLocalDaemon\(|recordLocalSubdaemonWakeRequest\(/,
+  "daemon status should not duplicate the shared reachability, replay, and wake sequence inline",
 );
 
 assert.match(

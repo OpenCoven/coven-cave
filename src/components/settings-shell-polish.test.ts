@@ -27,6 +27,7 @@ const aboutSource = readFileSync(
   new URL("./settings-about.tsx", import.meta.url),
   "utf8",
 );
+const workspacePathField = shellSource.match(/function WorkspacePathField\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
 const aboutCss = readFileSync(
   new URL("../styles/settings-about.css", import.meta.url),
   "utf8",
@@ -343,6 +344,24 @@ assert.match(source, /announce\("Daemon connection saved\."\)/, "saving the daem
 assert.match(source, /announce\(ok \? "Theme synced to phone\." : "Couldn't reach the daemon to sync\.", ok \? "polite" : "assertive"\)/, "resync announces its result");
 assert.match(source, /announce\(`Imported theme/, "importing a theme announces");
 assert.match(source, /aria-label="Workspace path"/, "the workspace path field is labelled");
+assert.ok(workspacePathField.length > 0, "WorkspacePathField source should remain discoverable");
+assert.match(workspacePathField, /const ctl = new AbortController\(\)/, "the workspace path field should own its AbortController");
+assert.match(
+  workspacePathField,
+  /fetch\("\/api\/config", \{ cache: "no-store", signal: ctl\.signal \}\)/,
+  "the workspace path field should read the narrow config route for workspacePath",
+);
+assert.doesNotMatch(
+  workspacePathField,
+  /\/api\/daemon\/status/,
+  "the workspace path field should not mount a full daemon-status read just to render workspacePath",
+);
+assert.match(
+  workspacePathField,
+  /if \(!ctl\.signal\.aborted && j\.workspacePath\) setPath\(j\.workspacePath\)/,
+  "the workspace path field should stay silent after unmount while applying workspacePath",
+);
+assert.match(workspacePathField, /return \(\) => ctl\.abort\(\)/, "the workspace path field should abort on unmount");
 assert.match(source, /aria-label="Server hub URL"/, "the hub URL input is labelled");
 assert.match(source, /aria-label="Executor addresses, one per line"/, "the executor textarea is labelled");
 assert.match(source, /focusTarget\.focus\(\{ preventScroll: true \}\)/, "a search/deep-link jump moves focus to the target group");

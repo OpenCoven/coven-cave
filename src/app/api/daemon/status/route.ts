@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import {
   loadDaemonStatusSnapshot,
-  loadState,
-  recordLocalSubdaemonWakeRequest,
-  recordTravelHubReachability,
 } from "@/lib/cave-config";
 import {
   callDaemonTarget,
@@ -15,17 +12,17 @@ import {
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
 import { classifyDaemonFailureAvailability } from "@/lib/daemon-status-classification";
-import { startLocalDaemon } from "@/lib/daemon-start";
 import { executorStatusesForConfig } from "@/lib/executor-status";
+import { daemonHealthRequest, daemonHealthResponseSucceeded } from "@/lib/server/daemon-health-request";
 import { classifyHubFailure } from "@/lib/server/daemon-probe";
+import { reconcileDaemonTravelState } from "@/lib/server/daemon-travel-reconcile";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
-import { syncOfflineTravelQueue, type TravelOfflineReplayResult } from "@/lib/travel-offline-replay";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type Health = {
-  ok: boolean;
+  ok?: boolean;
   apiVersion?: string;
   covenVersion?: string;
   daemon?: { pid: number; startedAt: string; socket: string };
@@ -91,8 +88,7 @@ export async function GET() {
   const target = daemonTargetForConfig(config);
   const checkedAt = new Date().toISOString();
   const executorStatuses = await executorStatusesForConfig(config);
-  let travelState = snapshot.state.travel;
-  let hubReachable: boolean | null = target.mode === "local" ? true : null;
+  const travelState = snapshot.state.travel;
   if (target.mode === "unconfigured-hub") {
     const root = covenWorkspaceRoot();
     const travelStatus = deriveTravelClientStatus({
@@ -117,34 +113,18 @@ export async function GET() {
   // and failure classification. Reloading config inside callDaemon() created
   // a race where a connection-mode change could query one target while the
   // response claimed (and classified) another.
-  const res = await callDaemonTarget<Health>(target, { path: "/api/v1/health", timeoutMs: 1500 });
-  let travelReplay: TravelOfflineReplayResult | null = null;
-  if (target.mode === "hub") {
-    hubReachable = hubAnswered(res);
-    travelState = await recordTravelHubReachability(hubReachable);
-    if (res.ok && !travelState.manualOffline) {
-      travelReplay = await syncOfflineTravelQueue(config);
-      if (travelReplay.attempted > 0) {
-        travelState = (await loadState()).travel;
-      }
-    }
-  }
-  let travelStatus = deriveTravelClientStatus({
-    multiHost: config.multiHost,
-    travel: travelState,
-    hubReachable,
+  const res = await callDaemonTarget<Health>(target, daemonHealthRequest());
+  const health = daemonHealthResponseSucceeded(res) ? res.data : null;
+  const daemonHealthy = health !== null;
+  const { travelStatus, travelReplay } = await reconcileDaemonTravelState({
+    config,
+    travelState,
+    target,
+    hubAnswered: target.mode === "local" ? true : hubAnswered(res),
+    daemonHealthy,
   });
-  if (target.mode === "hub" && travelStatus.wakeLocalSubdaemon) {
-    await startLocalDaemon();
-    travelState = await recordLocalSubdaemonWakeRequest();
-    travelStatus = deriveTravelClientStatus({
-      multiHost: config.multiHost,
-      travel: travelState,
-      hubReachable,
-    });
-  }
   const root = covenWorkspaceRoot();
-  if (!res.ok || !res.data) {
+  if (!daemonHealthy) {
     return NextResponse.json({
       running: false,
       availability: failureAvailability(target, res),
@@ -159,19 +139,19 @@ export async function GET() {
     });
   }
   const installedVersion =
-    !res.data.covenVersion || res.data.covenVersion === "0.0.0"
+    !health.covenVersion || health.covenVersion === "0.0.0"
       ? await installedCovenVersion()
       : null;
   return NextResponse.json({
     running: true,
     availability: "online",
     checkedAt,
-    apiVersion: res.data.apiVersion,
+    apiVersion: health.apiVersion,
     covenVersion: displayCovenVersion({
-      daemonVersion: res.data.covenVersion,
+      daemonVersion: health.covenVersion,
       installedVersion,
     }),
-    daemon: res.data.daemon,
+    daemon: health.daemon,
     target: targetSummary(target),
     executors: executorStatuses,
     travel: travelStatus,

@@ -927,7 +927,7 @@ function WorkspacePathField() {
 
   useEffect(() => {
     const ctl = new AbortController();
-    fetch("/api/daemon/status", { cache: "no-store", signal: ctl.signal })
+    fetch("/api/config", { cache: "no-store", signal: ctl.signal })
       .then((r) => r.json())
       .then((j: { workspacePath?: string }) => {
         if (!ctl.signal.aborted && j.workspacePath) setPath(j.workspacePath);
