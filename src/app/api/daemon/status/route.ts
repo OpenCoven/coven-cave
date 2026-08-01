@@ -119,7 +119,7 @@ export async function GET() {
     travelState,
     target,
     hubAnswered: target.mode === "local" ? true : hubAnswered(res),
-    daemonHealthy: res.ok,
+    daemonHealthy: Boolean(res.ok && res.data),
   });
   const root = covenWorkspaceRoot();
   if (!res.ok || !res.data) {

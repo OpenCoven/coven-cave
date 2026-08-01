@@ -72,6 +72,12 @@ assert.match(
 
 assert.match(
   source,
+  /daemonHealthy: Boolean\(res\.ok && res\.data\)/,
+  "daemon status should require a parsed health payload before replaying queued work",
+);
+
+assert.match(
+  source,
   /executors: executorStatuses/,
   "daemon status response should include executor node availability",
 );

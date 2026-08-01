@@ -54,6 +54,10 @@ function hubUnauthorizedResponse(): DaemonResponse<unknown> {
   return { ok: false, status: 401, data: null, error: "unauthorized" };
 }
 
+function hubEmptyHealthyResponse(): DaemonResponse<unknown> {
+  return { ok: true, status: 200, data: null };
+}
+
 function hubUnhealthyResponse(): DaemonResponse<unknown> {
   return { ok: false, status: 503, data: null, error: "maintenance" };
 }
@@ -363,6 +367,12 @@ test("classifies local and hub outcomes without extra daemon side effects", asyn
       config: hubConfig(),
       response: hubUnauthorizedResponse(),
       expected: { running: false, availability: "unauthorized", reason: "hub unauthorized: unauthorized" },
+    },
+    {
+      name: "hub ok without payload",
+      config: hubConfig(),
+      response: hubEmptyHealthyResponse(),
+      expected: { running: false, availability: "unhealthy", reason: "hub unhealthy: http 200" },
     },
     {
       name: "hub unhealthy",

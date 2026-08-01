@@ -726,6 +726,54 @@ test("unauthorized or unhealthy hub answers still count as reachable but do not 
   assert.equal(result.travelStatus.authority, "travel-local");
 });
 
+test("healthy hub answers without a payload stay out of replay", async () => {
+  const reachablePendingState = travelState({
+    staleCache: true,
+    lastHubReachableAt: "2026-08-01T00:00:00.000Z",
+    offlineQueue: [queueItem("pending")],
+  });
+  let replayCalls = 0;
+
+  const result = await reconcileDaemonTravelState(
+    {
+      config: config(),
+      travelState: travelState({
+        hubUnreachableSince: "2026-07-31T23:59:30.000Z",
+        staleCache: true,
+        offlineQueue: [queueItem("pending")],
+      }),
+      target: hubTarget(),
+      hubAnswered: true,
+      daemonHealthy: false,
+    },
+    {
+      recordTravelHubReachability: async (reachable) => {
+        assert.equal(reachable, true);
+        return reachablePendingState;
+      },
+      syncOfflineTravelQueue: async () => {
+        replayCalls += 1;
+        return replayResult({ attempted: 1, synced: 1 });
+      },
+      loadState: async () => {
+        assert.fail("ok-without-payload health responses should not reload state");
+      },
+      startLocalDaemon: async () => {
+        assert.fail("ok-without-payload health responses should not wake the local daemon");
+      },
+      recordLocalSubdaemonWakeRequest: async () => {
+        assert.fail("ok-without-payload health responses should not record a wake request");
+      },
+      deriveTravelClientStatus,
+    },
+  );
+
+  assert.equal(replayCalls, 0);
+  assert.equal(result.travelReplay, null);
+  assert.equal(result.travelStatus.mode, "handoff-pending");
+  assert.equal(result.travelStatus.authority, "travel-local");
+});
+
 test("healthy hub answers replay queued work and reload travel state when sync attempts run", async () => {
   const pendingState = travelState({
     staleCache: true,
