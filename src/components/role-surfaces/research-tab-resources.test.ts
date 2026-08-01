@@ -212,17 +212,25 @@ test("X source ownership remounts by familiar/grant and same-scope retries claim
   assert.match(xSources, /setLookupBusy\(false\);[\s\S]*setSearchBusy\(false\);/);
 });
 
-test("X source mutations validate mission identity and preserve newer source reads and focus", () => {
+test("X source mutations validate mission identity and preserve newer reads without stealing focus", () => {
   assert.match(xSources, /const mission = parseResearchMission\(value\.mission\);/);
   assert.match(xSources, /mission\.id === requestedMissionId/);
   assert.match(xSources, /mission\.familiarId === familiar\.id/);
   assert.doesNotMatch(xSources, /value\.mission as ResearchMission/);
   assert.match(xSources, /const sourceReadEpoch = sourceMutationEpochRef\.current;/);
   assert.match(xSources, /mergeSourceRead\(current, parsed as SavedXSourceView\[\]\)/);
-  assert.match(
-    xSources,
-    /sourceCardRefs\.current\.get\(source\.id\)\?\.focus\(\);\s*sourceMutationEpochRef\.current \+= 1;\s*setSources/,
-  );
+  assert.match(xSources, /const refreshButtonRefs = useRef\(new Map<string, HTMLButtonElement>\(\)\);/);
+  assert.match(xSources, /function focusBelongsToSourceCard\(/);
+  assert.match(xSources, /sourceCard\?\.contains\(activeElement as Node\) === true/);
+  assert.match(xSources, /function trackRefreshFocus\(/);
+  assert.match(xSources, /ownerDocument\.addEventListener\("pointerdown", onPointerDown, true\);/);
+  assert.match(xSources, /ownerDocument\.addEventListener\("focusin", onFocusIn, true\);/);
+  assert.match(xSources, /!focusOwnership\.movedElsewhere/);
+  assert.match(xSources, /focusOwnership\.ownerDocument\.body/);
+  assert.match(xSources, /\|\| retainedDisabledFocus\) \{\s*sourceCard\?\.focus\(\);/);
+  assert.match(xSources, /pendingRefreshFocusRef\.current = \{\s*sourceId: source\.id,/);
+  assert.match(xSources, /if \(activeElement === null \|\| activeElement === pending\.ownerDocument\.body\) \{\s*refreshButton\.focus\(\);/);
+  assert.match(xSources, /sourceMutationEpochRef\.current \+= 1;\s*setSources/);
 });
 
 test("manual zero-result announcements suppress duplicate EmptyState live output", () => {

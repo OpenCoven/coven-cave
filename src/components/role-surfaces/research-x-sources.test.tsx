@@ -206,6 +206,64 @@ function form(renderer: ReactTestRenderer, label: string): ReactTestInstance {
   );
 }
 
+function refreshFocusEnvironment() {
+  const body = {};
+  const listeners = new Map<string, Set<(event: { target: unknown }) => void>>();
+  const ownerDocument = {
+    activeElement: null as unknown,
+    body,
+    addEventListener: (type: string, listener: (event: { target: unknown }) => void) => {
+      const registered = listeners.get(type) ?? new Set();
+      registered.add(listener);
+      listeners.set(type, registered);
+    },
+    removeEventListener: (type: string, listener: (event: { target: unknown }) => void) => {
+      listeners.get(type)?.delete(listener);
+    },
+  };
+  const focused: string[] = [];
+  const refreshFocused: string[] = [];
+  const refreshControl = {
+    ownerDocument,
+    focus: () => {
+      ownerDocument.activeElement = refreshControl;
+      refreshFocused.push("refresh");
+    },
+  };
+  const sourceControl = { ownerDocument };
+  const outsideControl = { ownerDocument };
+  const sourceCard = {
+    ownerDocument,
+    contains: (candidate: unknown) => (
+      candidate === refreshControl || candidate === sourceControl
+    ),
+    focus: () => {
+      ownerDocument.activeElement = sourceCard;
+      focused.push("source-123");
+    },
+  };
+  return {
+    focused,
+    refreshFocused,
+    ownerDocument,
+    outsideControl,
+    refreshControl,
+    sourceControl,
+    dispatch: (type: string, target: unknown) => {
+      for (const listener of listeners.get(type) ?? []) listener({ target });
+    },
+    createNodeMock: (element: { type: unknown; props: Record<string, unknown> }) => {
+      if (element.type === "article" && element.props["data-x-source-id"]) {
+        return sourceCard;
+      }
+      if (element.type === "button" && element.props.children === "Refresh post") {
+        return refreshControl;
+      }
+      return null;
+    },
+  };
+}
+
 async function settle() {
   await act(async () => {
     await Promise.resolve();
@@ -970,7 +1028,7 @@ describe("ResearchXSources previews and mutations", () => {
   });
 
   test("a deleted refresh moves focus to the affected source card before Refresh unmounts", async () => {
-    const focused: string[] = [];
+    const focus = refreshFocusEnvironment();
     const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/x/connection") return response(connectedConnection());
       if (url.includes("/api/x/sources?")) {
@@ -980,27 +1038,21 @@ describe("ResearchXSources previews and mutations", () => {
         return response({ ok: false, code: "not-found" }, false);
       }
       throw new Error(`unexpected fetch ${url}`);
-    }), {}, (element) => {
-      if (element.type === "article" && element.props["data-x-source-id"]) {
-        return {
-          focus: () => focused.push(String(element.props["data-x-source-id"])),
-        };
-      }
-      return null;
-    });
+    }), {}, focus.createNodeMock);
+    focus.ownerDocument.activeElement = focus.refreshControl;
 
     await act(async () => button(renderer, "Refresh post").props.onClick());
 
     const card = renderer.root.findByProps({ "data-x-source-id": "source-123" });
     expect(card.props.tabIndex).toBe(-1);
-    expect(focused).toEqual(["source-123"]);
+    expect(focus.focused).toEqual(["source-123"]);
     expect(JSON.stringify(card.toJSON?.() ?? renderer.toJSON())).toContain("Post deleted");
     expect(() => button(renderer, "Refresh post")).toThrow();
     await act(async () => renderer.unmount());
   });
 
   test("a successful refresh keeps focus in the source region before installing its preview", async () => {
-    const focused: string[] = [];
+    const focus = refreshFocusEnvironment();
     const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/x/connection") return response(connectedConnection());
       if (url.includes("/api/x/sources?")) {
@@ -1010,20 +1062,197 @@ describe("ResearchXSources previews and mutations", () => {
         return response({ ok: true, source: source(), post });
       }
       throw new Error(`unexpected fetch ${url}`);
-    }), {}, (element) => {
-      if (element.type === "article" && element.props["data-x-source-id"]) {
-        return {
-          focus: () => focused.push(String(element.props["data-x-source-id"])),
-        };
-      }
-      return null;
-    });
+    }), {}, focus.createNodeMock);
+    focus.ownerDocument.activeElement = focus.refreshControl;
 
     await act(async () => button(renderer, "Refresh post").props.onClick());
 
-    expect(focused).toEqual(["source-123"]);
+    expect(focus.focused).toEqual(["source-123"]);
     expect(JSON.stringify(renderer.toJSON())).toContain(post.text);
     expect(() => button(renderer, "Refresh post")).toThrow();
+    await act(async () => renderer.unmount());
+  });
+
+  test("a successful refresh preserves focus ownership from within the affected source card", async () => {
+    const refresh = deferred<Response>();
+    const focus = refreshFocusEnvironment();
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) {
+        return response({ ok: true, sources: [source()] });
+      }
+      if (url === "/api/x/sources" && init?.method === "POST") {
+        return refresh.promise;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }), {}, focus.createNodeMock);
+    focus.ownerDocument.activeElement = focus.refreshControl;
+
+    act(() => {
+      void button(renderer, "Refresh post").props.onClick();
+    });
+    focus.ownerDocument.activeElement = focus.sourceControl;
+    await act(async () => {
+      refresh.resolve(response({ ok: true, source: source(), post }));
+      await refresh.promise;
+      await Promise.resolve();
+    });
+
+    expect(focus.focused).toEqual(["source-123"]);
+    expect(JSON.stringify(renderer.toJSON())).toContain(post.text);
+    await act(async () => renderer.unmount());
+  });
+
+  test.each([
+    {
+      name: "successful",
+      result: response({ ok: true, source: source(), post }),
+      expected: post.text,
+    },
+    {
+      name: "not-found",
+      result: response({ ok: false, code: "not-found" }, false),
+      expected: "Post deleted",
+    },
+  ])("a $name refresh does not steal focus after the user moves elsewhere", async ({
+    result,
+    expected,
+  }) => {
+    const refresh = deferred<Response>();
+    const focus = refreshFocusEnvironment();
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) {
+        return response({ ok: true, sources: [source()] });
+      }
+      if (url === "/api/x/sources" && init?.method === "POST") {
+        return refresh.promise;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }), {}, focus.createNodeMock);
+    focus.ownerDocument.activeElement = focus.refreshControl;
+
+    act(() => {
+      void button(renderer, "Refresh post").props.onClick();
+    });
+    focus.ownerDocument.activeElement = focus.outsideControl;
+    await act(async () => {
+      refresh.resolve(result);
+      await refresh.promise;
+      await Promise.resolve();
+    });
+
+    expect(focus.focused).toEqual([]);
+    expect(JSON.stringify(renderer.toJSON())).toContain(expected);
+    await act(async () => renderer.unmount());
+  });
+
+  test.each([
+    {
+      name: "successful",
+      result: response({ ok: true, source: source(), post }),
+      expected: post.text,
+    },
+    {
+      name: "not-found",
+      result: response({ ok: false, code: "not-found" }, false),
+      expected: "Post deleted",
+    },
+  ])("a $name refresh treats the disabled initiating control's body blur as retained ownership", async ({
+    result,
+    expected,
+  }) => {
+    const refresh = deferred<Response>();
+    const focus = refreshFocusEnvironment();
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) {
+        return response({ ok: true, sources: [source()] });
+      }
+      if (url === "/api/x/sources" && init?.method === "POST") {
+        return refresh.promise;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }), {}, focus.createNodeMock);
+    focus.ownerDocument.activeElement = focus.refreshControl;
+
+    act(() => {
+      void button(renderer, "Refresh post").props.onClick();
+    });
+    focus.ownerDocument.activeElement = focus.ownerDocument.body;
+    await act(async () => {
+      refresh.resolve(result);
+      await refresh.promise;
+      await Promise.resolve();
+    });
+
+    expect(focus.focused).toEqual(["source-123"]);
+    expect(JSON.stringify(renderer.toJSON())).toContain(expected);
+    await act(async () => renderer.unmount());
+  });
+
+  test("a body click during refresh relinquishes focus ownership instead of looking like disabled blur", async () => {
+    const refresh = deferred<Response>();
+    const focus = refreshFocusEnvironment();
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) {
+        return response({ ok: true, sources: [source()] });
+      }
+      if (url === "/api/x/sources" && init?.method === "POST") {
+        return refresh.promise;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }), {}, focus.createNodeMock);
+    focus.ownerDocument.activeElement = focus.refreshControl;
+
+    act(() => {
+      void button(renderer, "Refresh post").props.onClick();
+    });
+    focus.dispatch("pointerdown", focus.ownerDocument.body);
+    focus.ownerDocument.activeElement = focus.ownerDocument.body;
+    await act(async () => {
+      refresh.resolve(response({ ok: true, source: source(), post }));
+      await refresh.promise;
+      await Promise.resolve();
+    });
+
+    expect(focus.focused).toEqual([]);
+    expect(focus.ownerDocument.activeElement).toBe(focus.ownerDocument.body);
+    expect(JSON.stringify(renderer.toJSON())).toContain(post.text);
+    await act(async () => renderer.unmount());
+  });
+
+  test("an unavailable refresh restores focus to its initiating control after loading disables it", async () => {
+    const refresh = deferred<Response>();
+    const focus = refreshFocusEnvironment();
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) {
+        return response({ ok: true, sources: [source()] });
+      }
+      if (url === "/api/x/sources" && init?.method === "POST") {
+        return refresh.promise;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }), {}, focus.createNodeMock);
+    focus.ownerDocument.activeElement = focus.refreshControl;
+
+    act(() => {
+      void button(renderer, "Refresh post").props.onClick();
+    });
+    focus.ownerDocument.activeElement = focus.ownerDocument.body;
+    await act(async () => {
+      refresh.resolve(response({ ok: false, code: "upstream-unavailable" }, false));
+      await refresh.promise;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(focus.focused).toEqual([]);
+    expect(focus.refreshFocused).toEqual(["refresh"]);
+    expect(focus.ownerDocument.activeElement).toBe(focus.refreshControl);
+    expect(() => button(renderer, "Refresh post")).not.toThrow();
     await act(async () => renderer.unmount());
   });
 });

@@ -231,6 +231,60 @@ function mergeSourceRead(
   return [...current, ...loaded.filter((source) => !currentIds.has(source.id))];
 }
 
+type RefreshFocusOwnership = {
+  ownerDocument: Document;
+  ownedAtStart: boolean;
+  movedElsewhere: boolean;
+  dispose(): void;
+};
+
+function focusBelongsToSourceCard(
+  activeElement: EventTarget | null,
+  sourceCard: HTMLElement | undefined,
+  refreshButton: HTMLButtonElement | undefined,
+): boolean {
+  return activeElement === refreshButton
+    || activeElement === sourceCard
+    || (activeElement !== null && sourceCard?.contains(activeElement as Node) === true);
+}
+
+function trackRefreshFocus(
+  sourceCard: HTMLElement | undefined,
+  refreshButton: HTMLButtonElement | undefined,
+): RefreshFocusOwnership | null {
+  const ownerDocument = refreshButton?.ownerDocument ?? sourceCard?.ownerDocument;
+  if (!ownerDocument) return null;
+  const ownership: RefreshFocusOwnership = {
+    ownerDocument,
+    ownedAtStart: focusBelongsToSourceCard(
+      ownerDocument.activeElement,
+      sourceCard,
+      refreshButton,
+    ),
+    movedElsewhere: false,
+    dispose: () => undefined,
+  };
+  if (!ownership.ownedAtStart) return ownership;
+  const onPointerDown = (event: Event) => {
+    if (!focusBelongsToSourceCard(event.target, sourceCard, refreshButton)) {
+      ownership.movedElsewhere = true;
+    }
+  };
+  const onFocusIn = (event: Event) => {
+    if (event.target !== ownerDocument.body
+      && !focusBelongsToSourceCard(event.target, sourceCard, refreshButton)) {
+      ownership.movedElsewhere = true;
+    }
+  };
+  ownerDocument.addEventListener("pointerdown", onPointerDown, true);
+  ownerDocument.addEventListener("focusin", onFocusIn, true);
+  ownership.dispose = () => {
+    ownerDocument.removeEventListener("pointerdown", onPointerDown, true);
+    ownerDocument.removeEventListener("focusin", onFocusIn, true);
+  };
+  return ownership;
+}
+
 function XPostPreview({
   post,
   selected,
@@ -302,6 +356,11 @@ function ResearchXSourcesScope({
   const previewControllerRef = useRef<AbortController | null>(null);
   const previewRequestRef = useRef(0);
   const sourceCardRefs = useRef(new Map<string, HTMLElement>());
+  const refreshButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const pendingRefreshFocusRef = useRef<{
+    sourceId: string;
+    ownerDocument: Document;
+  } | null>(null);
   const sourceMutationEpochRef = useRef(0);
 
   const [connection, setConnection] = useState<XConnection | null>(null);
@@ -485,6 +544,19 @@ function ResearchXSourcesScope({
     mountedRef.current = false;
     for (const active of controllersRef.current) active.abort();
   }, []);
+
+  useEffect(() => {
+    if (sourceBusy !== null) return;
+    const pending = pendingRefreshFocusRef.current;
+    if (!pending) return;
+    pendingRefreshFocusRef.current = null;
+    const refreshButton = refreshButtonRefs.current.get(pending.sourceId);
+    if (!refreshButton || refreshButton.ownerDocument !== pending.ownerDocument) return;
+    const activeElement = pending.ownerDocument.activeElement;
+    if (activeElement === null || activeElement === pending.ownerDocument.body) {
+      refreshButton.focus();
+    }
+  }, [sourceBusy]);
 
   const postJson = useCallback(async <T,>(
     url: string,
@@ -713,6 +785,9 @@ function ResearchXSourcesScope({
     if (sourceBusy) return;
     const key = scopeKeyRef.current;
     const generation = generationRef.current;
+    const sourceCardAtStart = sourceCardRefs.current.get(source.id);
+    const refreshButtonAtStart = refreshButtonRefs.current.get(source.id);
+    const focusOwnership = trackRefreshFocus(sourceCardAtStart, refreshButtonAtStart);
     setSourceBusy(`refresh:${source.id}`);
     setSourceErrors((current) => {
       const next = { ...current };
@@ -735,14 +810,35 @@ function ResearchXSourcesScope({
           : null;
       },
     );
+    focusOwnership?.dispose();
     if (!isCurrent(key, generation)) return;
+    const retainedDisabledFocus = focusOwnership?.ownedAtStart
+      && !focusOwnership.movedElsewhere
+      && (focusOwnership.ownerDocument.activeElement === null
+        || focusOwnership.ownerDocument.activeElement === focusOwnership.ownerDocument.body);
+    if (!result.ok
+      && !("cancelled" in result)
+      && result.error.code !== "not-found"
+      && retainedDisabledFocus) {
+      pendingRefreshFocusRef.current = {
+        sourceId: source.id,
+        ownerDocument: focusOwnership!.ownerDocument,
+      };
+    }
     setSourceBusy(null);
     if (!result.ok) {
       if ("cancelled" in result) return;
       const message = errorCopy(result.error).headline;
       setSourceErrors((current) => ({ ...current, [source.id]: result.error }));
       if (result.error.code === "not-found") {
-        sourceCardRefs.current.get(source.id)?.focus();
+        const sourceCard = sourceCardRefs.current.get(source.id);
+        const refreshButton = refreshButtonRefs.current.get(source.id);
+        const activeElement = refreshButton?.ownerDocument.activeElement
+          ?? sourceCard?.ownerDocument.activeElement;
+        if (focusBelongsToSourceCard(activeElement ?? null, sourceCard, refreshButton)
+          || retainedDisabledFocus) {
+          sourceCard?.focus();
+        }
         sourceMutationEpochRef.current += 1;
         setSources((current) => current.map((candidate) => (
           candidate.id === source.id
@@ -753,7 +849,14 @@ function ResearchXSourcesScope({
       announce(message, "assertive");
       return;
     }
-    sourceCardRefs.current.get(source.id)?.focus();
+    const sourceCard = sourceCardRefs.current.get(source.id);
+    const refreshButton = refreshButtonRefs.current.get(source.id);
+    const activeElement = refreshButton?.ownerDocument.activeElement
+      ?? sourceCard?.ownerDocument.activeElement;
+    if (focusBelongsToSourceCard(activeElement ?? null, sourceCard, refreshButton)
+      || retainedDisabledFocus) {
+      sourceCard?.focus();
+    }
     sourceMutationEpochRef.current += 1;
     setSources((current) => mergeSource(current, {
       ...result.value.source,
@@ -1039,6 +1142,10 @@ function ResearchXSourcesScope({
                     </span>
                     {saved.availability !== "deleted" && !saved.preview ? (
                       <Button
+                        ref={(node) => {
+                          if (node) refreshButtonRefs.current.set(saved.id, node);
+                          else refreshButtonRefs.current.delete(saved.id);
+                        }}
                         size="xs"
                         variant="ghost"
                         loading={sourceBusy === `refresh:${saved.id}`}

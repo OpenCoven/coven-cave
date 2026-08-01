@@ -54,6 +54,8 @@ const INITIAL_STATE: ResearchMissionViewState = {
 
 export function useResearchMissions(familiarId: string) {
   const [state, setState] = useState<ResearchMissionViewState>(INITIAL_STATE);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   // Monotonic load token (the familiar-work-queue-view/daily-notes pattern):
   // every load claims a sequence number and bails before each setState once
   // superseded, and every mutation-applied refresh bumps the token — so an
@@ -120,13 +122,15 @@ export function useResearchMissions(familiarId: string) {
     options: ApplyMissionOptions = {},
   ) => {
     if (mission.familiarId !== familiarId) return;
+    const existing = stateRef.current.missions.find((candidate) => candidate.id === mission.id);
+    if (existing && !isMissionAtLeastAsFresh(mission, existing)) return;
+    loadSeq.current += 1;
     setState((current) => {
-      const existing = current.missions.find((candidate) => candidate.id === mission.id);
-      if (existing && !isMissionAtLeastAsFresh(mission, existing)) return current;
-      loadSeq.current += 1;
+      const currentMission = current.missions.find((candidate) => candidate.id === mission.id);
+      if (currentMission && !isMissionAtLeastAsFresh(mission, currentMission)) return current;
       return {
         ...current,
-        missions: existing
+        missions: currentMission
           ? current.missions.map((candidate) => candidate.id === mission.id ? mission : candidate)
           : [mission, ...current.missions],
         selectedId: options.select ? mission.id : current.selectedId,
