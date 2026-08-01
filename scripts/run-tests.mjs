@@ -461,6 +461,7 @@ export const SUITES = {
     "src/components/chat-tool-batches-ui.test.ts",
     "src/components/chat-queue-group.test.ts",
     "src/components/chat-reviews-group.test.ts",
+    "src/components/chat-start-from-bands.test.ts",
     "src/components/chat-new-dashboard.test.ts",
     "src/components/user-chat-avatar.test.ts",
     "src/components/user-profile-invariants.test.ts",

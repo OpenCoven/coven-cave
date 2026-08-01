@@ -24,6 +24,7 @@ const dash = await readFile(new URL("./chat-new-dashboard.tsx", import.meta.url)
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const homeComposer = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const boardHook = await readFile(new URL("./home/use-dashboard-board.ts", import.meta.url), "utf8");
+const bands = await readFile(new URL("./chat-start-from-bands.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-dashboard.css", import.meta.url), "utf8");
 
 // ── (1) chat-view's empty-state split ────────────────────────────────────
@@ -43,6 +44,26 @@ assert.match(
   dash,
   /home-dash__body home-dash--embed[\s\S]*?home-dash__board/,
   "the embed carries the work board",
+);
+assert.match(
+  dash,
+  /<ChatStartFromBands bands=\{bands\} \/>/,
+  "the board's body IS the shared Start-from band launcher (Chat.dc.html 2b)",
+);
+assert.doesNotMatch(
+  dash,
+  /home-dash__filters/,
+  "the All/Needs-you filter tabs are retired — 2b splits by SOURCE, in bands",
+);
+assert.doesNotMatch(
+  css,
+  /\.home-dash__filter\b/,
+  "the retired filter-tab styles are gone with the markup",
+);
+assert.doesNotMatch(
+  css,
+  /\.home-dash__work-row\b/,
+  "the retired full-width work rows are gone — tiles live in the band sheet",
 );
 assert.doesNotMatch(dash, /home-dash__chrome/, "no identity chrome — ChatView's header covers it");
 assert.doesNotMatch(dash, /home-dash__dock/, "no docked composer — ChatView's composer is the intent surface");
@@ -91,13 +112,18 @@ assert.match(
 );
 assert.match(
   css,
-  /@container \(max-height: 650px\) \{[\s\S]{0,120}?\.home-dash__section--recent \{[\s\S]{0,40}?display: none/,
-  "short panes shed Recent threads instead of clipping",
+  /@container \(max-height: 650px\) \{[\s\S]{0,140}?\.cave-sf__band\[data-kind="queue"\] \{[\s\S]{0,40}?display: none/,
+  "short panes shed the Queue band instead of clipping",
 );
 assert.match(
   css,
-  /@container \(max-height: 480px\) \{[\s\S]{0,600}?\.home-dash__work-row:nth-child\(n \+ 4\) \{[\s\S]{0,40}?display: none/,
-  "very short panes trim open work to three rows",
+  /@container \(max-height: 560px\) \{[\s\S]{0,140}?\.cave-sf__band\[data-kind="chats"\] \{[\s\S]{0,40}?display: none/,
+  "the resumable Chats band is the last one standing, not the first to go",
+);
+assert.match(
+  css,
+  /@container \(max-height: 480px\) \{[\s\S]{0,600}?\.cave-sf__tile:nth-child\(n \+ 3\) \{[\s\S]{0,40}?display: none/,
+  "very short panes trim each strip to two tiles",
 );
 // An element can never match its own @container query — a `.home-dash__board`
 // rule inside a tier is silently dead (shipped once: the 430px tier's padding
@@ -151,8 +177,8 @@ assert.match(
 );
 assert.match(
   dash,
-  /workFilter === "inbox" && scopedNeedsYou\.length > 0/,
-  "the Needs-you section link must use the familiar-scoped count",
+  /scopedNeedsYou\.length > 0 \? "All in Rituals" : "All in Tasks"/,
+  "the Tasks band's overflow tile must use the familiar-scoped needs-you count",
 );
 assert.match(
   dash,
@@ -167,36 +193,47 @@ assert.doesNotMatch(
   /\.sort\(/,
   "Recent threads preserve the shared helper's canonical newest-first ordering",
 );
-assert.match(dash, /OPEN_WORK_FILTERS\.map/, "the board renders the trimmed filter tabs");
+// 2b's hero states what the page is FOR; the bands below do the counting, so
+// the headline no longer duplicates a number that is on screen four times.
 assert.match(
   dash,
-  /\$\{openWork\.length\} thread\$\{openWork\.length === 1 \? "" : "s"\} open\./,
-  "the headline counts the open threads",
+  /bands\.length > 0 \? "What should we begin\?" : "A clean slate/,
+  "the hero asks the design's question, and falls back to the clean-slate line",
 );
-assert.match(dash, /home-dash__work-resume/, "work rows keep the visual Resume CTA");
+assert.match(dash, /badge: "resume"/, "resumable threads keep a Resume affordance, now as a tile badge");
 // Chat.dc.html 2b turned the board into a "Start from" launcher: the sections
 // are now named after the SOURCE of the work (Tasks / Chats) and each states
 // how much of that source is on screen, from the shared pure model.
-assert.match(dash, /className="home-dash__startfrom"/, "the board leads with the Start-from band");
+assert.match(
+  bands,
+  /className="cave-sf__head-label">\{label\}/,
+  "the launcher leads with the Start-from band label",
+);
+assert.match(
+  bands,
+  /START_FROM_NOTE = "one tap fills the brief and the whole setup"/,
+  "the band states the design's promise for the tiles",
+);
 assert.match(
   dash,
   /const tasksGroup = startFromGroup\("tasks", visibleWork\.length, openWork\.length\)/,
   "the Tasks group counts the capped rows against every open item",
 );
+assert.match(dash, /meta: tasksGroup/, "the Tasks band carries the shared group meta");
+assert.match(dash, /meta: chatsGroup/, "the Chats band carries the shared group meta");
 assert.match(
-  dash,
-  /home-dash__section-count">\{tasksGroup\.count\}/,
-  "the Tasks header shows its count",
+  bands,
+  /className="cave-sf__band-count">\{meta\.count\}/,
+  "every band head shows its group's count from the shared model",
 );
-assert.match(
-  dash,
-  /home-dash__section-count">\{chatsGroup\.count\}/,
-  "the Chats header shows its count",
+// Design order (Chat.dc.html 2b): the threads you were just in, then the
+// board, then what you parked, then what waits on your review.
+const order = ["chatsGroup", "tasksGroup", "queueGroup", "reviewsGroup"].map((g) =>
+  dash.indexOf(`meta: ${g}`),
 );
-assert.match(
-  dash,
-  /aria-label="Recent threads"/,
-  "the resumable-threads group still renders under the work group",
+assert.ok(
+  order.every((at) => at > 0) && order.every((at, i) => i === 0 || at > order[i - 1]),
+  "bands are pushed in the design's source order: Chats, Tasks, Queue, Reviews",
 );
 assert.match(
   dash,

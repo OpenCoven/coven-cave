@@ -178,152 +178,7 @@
   margin-right: var(--space-2);
 }
 
-/* Filter tabs */
-.home-dash__filters {
-  display: inline-flex;
-  padding: 3px;
-  gap: 2px;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-}
-.home-dash__filter {
-  padding: 5px 13px;
-  border-radius: var(--radius-pill);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  white-space: nowrap;
-  transition: color var(--duration-fast, 120ms), background var(--duration-fast, 120ms);
-}
-.home-dash__filter:hover {
-  color: var(--text-secondary);
-}
-.home-dash__filter.is-active {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-}
-.home-dash__filter-count {
-  color: var(--text-muted);
-  margin-left: 5px;
-  font-family: var(--font-jetbrains-mono), monospace;
-  font-size: var(--text-2xs);
-}
-.home-dash__filter.is-active .home-dash__filter-count {
-  color: var(--text-secondary);
-}
-
-/* Section scaffold (Open work / Recent threads) */
-.home-dash__section {
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
-}
-.home-dash__section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.home-dash__section-link {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-}
-.home-dash__section-link:hover {
-  color: var(--accent-presence);
-}
-
-/* Open-work rows */
-.home-dash__work {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-.home-dash__work-row {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding: 13px 15px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-card);
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-  transition: border-color var(--duration-fast, 120ms), transform var(--duration-fast, 120ms);
-}
-.home-dash__work-row:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-1px);
-}
-.home-dash__work-chip {
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-pill);
-  font: 600 10px var(--font-jetbrains-mono), monospace;
-  flex-shrink: 0;
-}
-.home-dash__work-chip[data-kind="blocked"] {
-  background: var(--danger-bg);
-  border: 1px solid var(--danger-border);
-  color: var(--danger-text);
-}
-.home-dash__work-chip[data-kind="inbox"],
-.home-dash__work-chip[data-kind="backlog"],
-.home-dash__work-chip[data-kind="review"] {
-  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, var(--border-hairline));
-  color: var(--accent-presence);
-}
-.home-dash__work-title {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--text-base);
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.home-dash__work-meta {
-  font-family: var(--font-jetbrains-mono), monospace;
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-.home-dash__work-priority {
-  font-size: var(--text-xs);
-  flex-shrink: 0;
-}
-.home-dash__work-priority[data-priority="high"] {
-  color: var(--color-warning);
-}
-.home-dash__work-priority[data-priority="urgent"] {
-  color: var(--color-danger);
-}
-/* Visual "Resume" CTA — reads as a secondary button but is a non-interactive
-   span so it never nests a real <button> inside the clickable row. The row's
-   hover deepens its border to signal the whole card is actionable. */
-.home-dash__work-resume {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  padding: 5px 10px;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: var(--bg-elevated);
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  transition: border-color var(--duration-fast, 120ms), color var(--duration-fast, 120ms);
-}
-.home-dash__work-row:hover .home-dash__work-resume {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
+/* Empty board — the one state with no band to show. */
 .home-dash__work-empty {
   padding: 22px 15px;
   border: 1px dashed var(--border-hairline);
@@ -333,63 +188,30 @@
   text-align: center;
 }
 
-/* Recent threads */
-.home-dash__recent {
-  display: flex;
-  flex-direction: column;
-}
-.home-dash__recent-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 9px var(--space-2);
-  border-radius: var(--radius-control);
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  transition: background var(--duration-fast, 120ms) var(--ease-standard, ease);
-}
-.home-dash__recent-row:hover {
-  background: var(--bg-hover);
-}
-.home-dash__recent-title {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.home-dash__recent-time {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
 /* ── No-scroll fit tiers ────────────────────────────────────────────────── */
 /* The board never scrolls (overflow: hidden), so short panes shed the
    quietest content instead of clipping it. The board carries no vertical
-   padding, so the queried height equals the pane height. Measured budgets:
-   full board ≈635px, ≈503px without Recent threads (of which 24px is bottom
-   padding — panes down to 480 clip padding only, never content), ≈294px at
-   the tight tier, ≈198px at the floor. Rules target only descendants of
-   .home-dash__board (an element can never match its own @container query),
-   and stay last in the file so these equal-specificity overrides win the
-   cascade. */
-/* Shed order follows the design's priority: the mock encodes it as width
-   (chats widest, queue smallest), so the Queue group goes first and the
-   recent threads follow one tier down (cave-3lonn). */
+   padding, so the queried height equals the pane height. Rules target only
+   descendants of .home-dash__board (an element can never match its own
+   @container query), and stay last in the file so these equal-specificity
+   overrides win the cascade.
+
+   Since Chat.dc.html 2b turned each source into a band, shedding is per band
+   rather than per section. Shed order follows the design's own priority — the
+   mock encodes it as band width (chats widest, queue smallest) — so Reviews
+   goes first and the resumable Chats band is the last one standing. */
 @container (max-height: 760px) {
-  .home-dash__section--queue,
-  .home-dash__section--reviews {
+  .cave-sf__band[data-kind="reviews"] {
     display: none;
   }
 }
 @container (max-height: 650px) {
-  .home-dash__section--recent {
+  .cave-sf__band[data-kind="queue"] {
+    display: none;
+  }
+}
+@container (max-height: 560px) {
+  .cave-sf__band[data-kind="chats"] {
     display: none;
   }
 }
@@ -402,15 +224,16 @@
   .home-dash__meta {
     display: none;
   }
-  .home-dash__work-row:nth-child(n + 4) {
+  /* The strip keeps two tiles; the rest stay reachable by scrolling it. */
+  .cave-sf__tile:nth-child(n + 3) {
     display: none;
   }
 }
 @container (max-height: 300px) {
-  .home-dash__section-head {
+  .cave-sf__head {
     display: none;
   }
-  .home-dash__work-row:nth-child(n + 3) {
+  .cave-sf__tile:nth-child(n + 2) {
     display: none;
   }
 }
