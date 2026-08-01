@@ -96,9 +96,63 @@ const ACTIVE_WORKFLOW_STATES = [
 const PROTECTED_BRANCHES = new Set(["main", "__dolt_remote_info__"]);
 const BEAD_STATUSES = new Set(["open", "in_progress", "blocked", "deferred", "closed"]);
 const CLAIM_STATES = new Set(["active", "expired"]);
-const TERMINAL_SESSION_STATUSES = new Set(["completed", "failed", "killed", "orphaned"]);
+const TERMINAL_SESSION_STATUSES = new Set([
+  "completed",
+  "failed",
+  "killed",
+  "stopped",
+  "orphaned",
+]);
 const DISPOSITIONS = new Set(["active", "pr", "recovery", "archive"]);
 const OID = /^[0-9a-f]{40,64}$/;
+const RFC3339_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?(Z|[+-](\d{2}):(\d{2}))$/;
+const ISO_CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function isRealCalendarDate(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1) return false;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  return day <= daysInMonth[month - 1]!;
+}
+
+function isCanonicalRfc3339Instant(value: string): boolean {
+  const match = value.match(RFC3339_INSTANT);
+  if (!match) return false;
+  const [, year, month, day, hour, minute, second, , timezone, offsetHour, offsetMinute] =
+    match;
+  if (
+    !isRealCalendarDate(Number(year), Number(month), Number(day)) ||
+    Number(hour) > 23 ||
+    Number(minute) > 59 ||
+    Number(second) > 59 ||
+    (timezone !== "Z" && (Number(offsetHour) > 23 || Number(offsetMinute) > 59))
+  ) {
+    return false;
+  }
+  return Number.isFinite(Date.parse(value));
+}
+
+function isIsoCalendarDate(value: string): boolean {
+  const match = value.match(ISO_CALENDAR_DATE);
+  return (
+    match !== null &&
+    isRealCalendarDate(Number(match[1]), Number(match[2]), Number(match[3]))
+  );
+}
 
 function command(
   executable: string,
@@ -659,9 +713,9 @@ function parseException(
   }
   if (
     typeof expiresAt !== "string" ||
-    !Number.isFinite(Date.parse(expiresAt))
+    !isCanonicalRfc3339Instant(expiresAt)
   ) {
-    errors.push("exception expiresAt must be a timestamp");
+    errors.push("exception expiresAt must be an RFC3339 timestamp");
   }
   if (
     !Array.isArray(additionalPaths) ||
@@ -720,9 +774,9 @@ function parseStructuredMetadata(taskId: string, value: unknown): StructuredMeta
   }
   if (
     typeof worktree.createdAt !== "string" ||
-    !Number.isFinite(Date.parse(worktree.createdAt))
+    !isCanonicalRfc3339Instant(worktree.createdAt)
   ) {
-    metadataErrors("createdAt must be a timestamp");
+    metadataErrors("createdAt must be an RFC3339 timestamp");
   }
   if (
     worktree.reason !== undefined &&
@@ -733,9 +787,9 @@ function parseStructuredMetadata(taskId: string, value: unknown): StructuredMeta
   if (
     worktree.reviewAfter !== undefined &&
     (typeof worktree.reviewAfter !== "string" ||
-      !Number.isFinite(Date.parse(worktree.reviewAfter)))
+      !isIsoCalendarDate(worktree.reviewAfter))
   ) {
-    metadataErrors("reviewAfter must be a timestamp");
+    metadataErrors("reviewAfter must be an ISO calendar date");
   }
   if (
     (worktree.disposition === "recovery" || worktree.disposition === "archive") &&

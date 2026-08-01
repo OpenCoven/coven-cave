@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -8,14 +9,17 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(sourceRoot, "scripts", "worktree-lifecycle-patrol.ts");
-const fixtureRoot = mkdtempSync(path.join(tmpdir(), "worktree-lifecycle-"));
+const fixtureRoot = mkdtempSync(path.join(sourceRoot, ".worktree-lifecycle-fixture-"));
+const repo = path.join(fixtureRoot, "repo");
+const origin = path.join(fixtureRoot, "origin.git");
+const bin = path.join(fixtureRoot, "bin");
+const registeredDrift = path.join(fixtureRoot, "registered-drift");
 
 function run(command, args, cwd, options = {}) {
   return execFileSync(command, args, {
@@ -36,9 +40,6 @@ function executable(file, contents) {
 }
 
 try {
-  const repo = path.join(fixtureRoot, "repo");
-  const origin = path.join(fixtureRoot, "origin.git");
-  const bin = path.join(fixtureRoot, "bin");
   mkdirSync(repo);
   mkdirSync(origin);
   mkdirSync(bin);
@@ -135,6 +136,67 @@ try {
   const detached = path.join(repo, ".worktrees", "detached");
   git(["worktree", "add", "-q", "--detach", detached, "origin/main"], repo);
 
+  const validMetadata = {
+    branch: "feat/old",
+    path: old,
+    owner: "Kitty",
+    purpose: "Malformed date fixture",
+    disposition: "pr",
+    createdAt: "2026-07-20T12:00:00Z",
+  };
+  for (const [name, worktree] of Object.entries({
+    "created-at-informal": {
+      ...validMetadata,
+      createdAt: "July 20, 2026 12:00 UTC",
+    },
+    "created-at-rolled": {
+      ...validMetadata,
+      createdAt: "2026-02-30T12:00:00Z",
+    },
+    "review-after-timestamp": {
+      ...validMetadata,
+      disposition: "archive",
+      reason: "Review fixture",
+      reviewAfter: "2026-08-11T00:00:00Z",
+    },
+    "review-after-invalid": {
+      ...validMetadata,
+      disposition: "archive",
+      reason: "Review fixture",
+      reviewAfter: "2026-02-30",
+    },
+    "expires-at-informal": {
+      ...validMetadata,
+      exception: {
+        owner: "Kitty",
+        reason: "Exception fixture",
+        expiresAt: "August 11, 2026 UTC",
+        additionalPaths: [old],
+      },
+    },
+    "expires-at-rolled": {
+      ...validMetadata,
+      exception: {
+        owner: "Kitty",
+        reason: "Exception fixture",
+        expiresAt: "2026-02-30T00:00:00Z",
+        additionalPaths: [old],
+      },
+    },
+  })) {
+    writeFileSync(
+      path.join(fixtureRoot, `metadata-${name}.json`),
+      JSON.stringify([
+        {
+          id: "cave-old",
+          status: "closed",
+          title: "Malformed metadata date",
+          metadata: { coven: { worktree } },
+        },
+      ]),
+    );
+  }
+
   executable(
     path.join(bin, "gh"),
     `#!/bin/sh
@@ -193,6 +255,8 @@ if [ "\${LIFECYCLE_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "drift
 fi
 if [ "\${LIFECYCLE_BAD_TASKS:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-bad","status":"open","title":[]}]'
+elif [ -n "\${LIFECYCLE_BAD_METADATA_DATE_CASE:-}" ]; then
+  cat "${path.join(fixtureRoot, "metadata-")}\${LIFECYCLE_BAD_METADATA_DATE_CASE}.json"
 elif [ "\${LIFECYCLE_EXCEPTION_BUDGETS:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${realpathSync(old)}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active matched exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${realpathSync(old)}"]}}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${path.join(repo, ".worktrees", "path-mismatch")}","owner":"Kitty","purpose":"Mismatched fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired path mismatch","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${recentMerge}"]}}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired matched exception","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-stale","status":"closed","title":"Stale metadata","metadata":{"coven":{"worktree":{"branch":"feat/stale","path":"${path.join(repo, ".worktrees", "stale")}","owner":"Kitty","purpose":"Stale fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active stale exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${path.join(repo, ".worktrees", "stale")}"]}}}}}]'
 elif [ "\${LIFECYCLE_LINKED_TASK:-0}" = "1" ]; then
@@ -214,10 +278,19 @@ fi
     path.join(bin, "coven"),
     `#!/bin/sh
 if [ "$1" = "sessions" ] && [ "$2" = "--json" ]; then
-  if [ "\${LIFECYCLE_BAD_SESSIONS:-0}" = "1" ]; then
+  if [ "\${LIFECYCLE_WORKTREE_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "worktree-drift-once")}" ]; then
+    touch "${path.join(fixtureRoot, "worktree-drift-once")}"
+    git -C "${repo}" worktree add -q --detach "${registeredDrift}" origin/main
+  fi
+  if [ "\${LIFECYCLE_SESSIONS_UNAVAILABLE:-0}" = "1" ]; then
+    printf '%s\n' 'Coven sessions unavailable' >&2
+    exit 23
+  elif [ "\${LIFECYCLE_BAD_SESSIONS:-0}" = "1" ]; then
     printf '%s\n' '{"sessions":[{"id":[],"project_root":"${old}","status":"running"}]}'
   elif [ "\${LIFECYCLE_KILLED_SESSION:-0}" = "1" ]; then
     printf '%s\n' '{"sessions":[{"id":"session-fixture","project_root":"${old}","status":"killed"}]}'
+  elif [ "\${LIFECYCLE_STOPPED_SESSION:-0}" = "1" ]; then
+    printf '%s\n' '{"sessions":[{"id":"session-fixture","project_root":"${old}","status":"stopped"}]}'
   elif [ "\${LIFECYCLE_ACTIVE_SESSION:-0}" = "1" ]; then
     printf '%s\n' '{"sessions":[{"id":"session-fixture","project_root":"${old}","status":"created"}]}'
   else
@@ -433,6 +506,54 @@ exit 0
   );
   assert.deepEqual(killedSessionOld.sessionIds, []);
 
+  const stoppedSessionReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_STOPPED_SESSION: "1" }),
+  );
+  const stoppedSessionOld = stoppedSessionReport.items.find((item) => item.branch === "feat/old");
+  assert.equal(
+    stoppedSessionOld.lane,
+    "retire-after-gate",
+    "a stopped Coven session does not keep the path-matched worktree active",
+  );
+  assert.deepEqual(stoppedSessionOld.sessionIds, []);
+
+  const unavailableSessionReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_SESSIONS_UNAVAILABLE: "1" }),
+  );
+  const unavailableSessionOld = unavailableSessionReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(unavailableSessionOld.lane, "uncertain", "unavailable sessions fail closed");
+  assert.match(unavailableSessionOld.probeErrors.join("\n"), /Coven sessions unavailable/);
+  assert.deepEqual(unavailableSessionOld.sessionIds, []);
+  const unavailableSessionBranchOnly = unavailableSessionReport.items.find(
+    (item) => item.branch === "feat/branch-only",
+  );
+  assert.doesNotMatch(
+    unavailableSessionBranchOnly.probeErrors.join("\n"),
+    /Coven sessions unavailable/,
+    "branch-only units do not gain the path-only sessions probe error",
+  );
+
+  for (const [dateCase, expectedError] of [
+    ["created-at-informal", /createdAt must be an RFC3339 timestamp/],
+    ["created-at-rolled", /createdAt must be an RFC3339 timestamp/],
+    ["review-after-timestamp", /reviewAfter must be an ISO calendar date/],
+    ["review-after-invalid", /reviewAfter must be an ISO calendar date/],
+    ["expires-at-informal", /exception expiresAt must be an RFC3339 timestamp/],
+    ["expires-at-rolled", /exception expiresAt must be an RFC3339 timestamp/],
+  ]) {
+    const malformedDateReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_BAD_METADATA_DATE_CASE: dateCase }),
+    );
+    const malformedDateOld = malformedDateReport.items.find(
+      (item) => item.branch === "feat/old",
+    );
+    assert.equal(malformedDateOld.lane, "uncertain", `${dateCase} fails closed`);
+    assert.equal(malformedDateOld.metadata, null);
+    assert.match(malformedDateOld.metadataErrors.join("\n"), expectedError);
+  }
+
   const missingMetadataReport = JSON.parse(
     patrol(["--json"], { LIFECYCLE_MISSING_BRANCH_METADATA: "1" }),
   );
@@ -531,8 +652,23 @@ exit 0
     /worktree or branch inventory changed during patrol/,
     "a concurrent branch change aborts instead of returning an incomplete success",
   );
+
+  let registrationDriftError;
+  try {
+    patrol(["--json"], { LIFECYCLE_WORKTREE_DRIFT: "1", NODE_NO_WARNINGS: "1" });
+  } catch (error) {
+    registrationDriftError = error;
+  }
+  assert.ok(registrationDriftError, "a concurrent worktree registration must abort patrol");
+  assert.equal(
+    registrationDriftError.stderr.trim(),
+    "worktree-lifecycle-patrol: worktree or branch inventory changed during patrol",
+  );
 } finally {
-  rmSync(fixtureRoot, { recursive: true, force: true });
+  if (existsSync(registeredDrift)) {
+    git(["worktree", "remove", registeredDrift], repo);
+  }
+  rmSync(fixtureRoot, { recursive: true });
 }
 
 console.log("worktree-lifecycle-patrol.test.mjs: ok");
