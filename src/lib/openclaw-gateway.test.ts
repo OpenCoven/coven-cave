@@ -501,6 +501,93 @@ if (gappedDispatch.kind === "accepted") {
 }
 assert.deepEqual(gappedEvents, [{ kind: "error", message: "Gateway event sequence gap" }]);
 
+let preAckGapClientCount = 0;
+let preAckGapStops = 0;
+const preAckGapEvents = [];
+const preAckGapDispatch = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "gap after send before acknowledgement",
+  idempotencyKey: "cave-request-pre-ack-gap",
+  env: { OPENCLAW_GATEWAY_DISPATCH: "1", OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789" },
+  onEvent: (event) => preAckGapEvents.push(event),
+  clientFactory: (options) => {
+    const clientIndex = preAckGapClientCount++;
+    return {
+      start() { queueMicrotask(() => options.onHelloOk?.(helloOk())); },
+      stop() {
+        if (clientIndex === 1) preAckGapStops += 1;
+      },
+      async request(method, _params, requestOptions) {
+        if (method === "sessions.messages.subscribe") return { subscribed: true };
+        if (method === "chat.send") {
+          requestOptions?.onSent?.();
+          options.onGap?.({ expected: 1, received: 2 });
+          options.onEvent?.({
+            type: "event",
+            event: "chat",
+            payload: {
+              runId: expected.runId,
+              sessionKey: expected.sessionKey,
+              agentId: expected.agentId,
+              seq: 0,
+              state: "final",
+            },
+          });
+          return { runId: expected.runId };
+        }
+        return {};
+      },
+    };
+  },
+});
+assert.deepEqual(
+  preAckGapDispatch,
+  { kind: "indeterminate", reason: "Gateway transport sequence gap" },
+  "a post-send pre-acknowledgement gap forbids CLI fallback even if chat.send later returns a run id",
+);
+assert.deepEqual(
+  preAckGapEvents,
+  [],
+  "a terminal frame queued after the authoritative pre-acknowledgement gap is never projected",
+);
+assert.ok(preAckGapStops > 0, "a pre-acknowledgement gap stops the dispatch stream");
+
+let preSendGapClientCount = 0;
+let preSendGapChatSends = 0;
+const preSendGapEvents = [];
+const preSendGapDispatch = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "gap before send",
+  idempotencyKey: "cave-request-pre-send-gap",
+  env: { OPENCLAW_GATEWAY_DISPATCH: "1", OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789" },
+  onEvent: (event) => preSendGapEvents.push(event),
+  clientFactory: (options) => {
+    const clientIndex = preSendGapClientCount++;
+    return {
+      start() { queueMicrotask(() => options.onHelloOk?.(helloOk())); },
+      stop() {},
+      async request(method) {
+        if (method === "sessions.messages.subscribe") {
+          assert.equal(clientIndex, 1);
+          options.onGap?.({ expected: 1, received: 2 });
+          return { subscribed: true };
+        }
+        if (method === "chat.send") preSendGapChatSends += 1;
+        return { runId: expected.runId };
+      },
+    };
+  },
+});
+assert.deepEqual(
+  preSendGapDispatch,
+  { kind: "unavailable", reason: "Gateway transport sequence gap" },
+  "a transport gap before chat.send retains the CLI fallback",
+);
+assert.equal(preSendGapChatSends, 0, "a pre-send transport gap never dispatches");
+assert.deepEqual(preSendGapEvents, [], "a pre-send transport gap does not project an accepted-run error");
+
 // A reconnect is not an excuse to trust an event before the documented
 // session subscription returns. A callback delivered while the old socket is
 // closed has no transport-generation provenance, so it is dropped rather

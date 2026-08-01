@@ -575,7 +575,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
         if (frame.event === "chat") processChatEvent(frame.payload);
       },
       onGap: () => {
-        if (!expectedRunId || settled) return;
+        if (settled) return;
         failDispatchLifecycle("Gateway transport sequence gap");
       },
     });
@@ -628,7 +628,8 @@ export async function dispatchOpenClawGatewayTurn(args: {
     if (dispatchSent) {
       return {
         kind: "indeterminate",
-        reason: "Gateway dispatch acknowledgement was lost; Cave will not start a duplicate CLI turn",
+        reason: lifecycleFailure
+          ?? "Gateway dispatch acknowledgement was lost; Cave will not start a duplicate CLI turn",
       };
     }
     return {
@@ -643,7 +644,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
     return dispatchSent
       ? {
           kind: "indeterminate",
-          reason: "Gateway dispatch acknowledgement was lost; Cave will not start a duplicate CLI turn",
+          reason: lifecycleFailure,
         }
       : { kind: "unavailable", reason: lifecycleFailure };
   }
