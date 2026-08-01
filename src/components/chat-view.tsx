@@ -199,6 +199,7 @@ import { useChangesSummary } from "@/lib/use-changes-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { useShowThinking } from "@/lib/reasoning-visibility";
+import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
 import { toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-input-diff";
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findTranscriptHits } from "@/lib/transcript-find";
@@ -2216,6 +2217,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const turnsRef = useRef<Turn[]>([]);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Reader preference for the gutter instruments (spine + minimap). Read here
+  // rather than inside them so an unchecked toggle skips mounting entirely —
+  // hiding them with CSS would leave their scroll measurement and
+  // ResizeObservers running for furniture nobody can see.
+  const [instrumentsVisible] = useThreadInstrumentsVisible();
   const threadRef = useRef<HTMLDivElement | null>(null);
   // Scroll-pin state (CHAT-D10-01). `following` means "keep the transcript
   // pinned to the newest content". It releases on user INTENT (wheel up /
@@ -6110,7 +6116,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             the left gutter and the thread minimap on the right edge. Both
             derive from the SAME activePath the transcript renders and gate
             themselves to wide panes, so narrow layouts never see them. */}
-        {activePath.length > 0 ? (
+        {activePath.length > 0 && instrumentsVisible ? (
           <>
             <ChatThreadMinimap
               turns={activePath}

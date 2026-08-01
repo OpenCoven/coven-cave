@@ -18,6 +18,7 @@ export type SessionMenuItemId =
   | "continue-on-phone"
   | "project"
   | "thinking"
+  | "instruments"
   | "reflect"
   | "debug";
 
@@ -44,6 +45,8 @@ export function sessionMenuSections(ctx: {
   projectRoot: string | null;
   hasTurns: boolean;
   showThinking: boolean;
+  /** Whether the run spine + thread minimap are currently shown. */
+  instrumentsVisible: boolean;
   /** Reflect-on-thread is wired (familiar has an id). */
   reflectAvailable: boolean;
   reflecting: boolean;
@@ -73,6 +76,26 @@ export function sessionMenuSections(ctx: {
       icon: ctx.showThinking ? "ph:brain-bold" : "ph:brain",
       checked: ctx.showThinking,
       title: ctx.showThinking ? "Hide reasoning blocks" : "Show reasoning blocks",
+    });
+  }
+  if (ctx.hasTurns) {
+    // Sits beside Show thinking: both are "how much scaffolding do I want
+    // around the conversation". Gated on hasTurns for the same reason —
+    // there is nothing to navigate in an empty transcript, and offering to
+    // hide furniture that is not on screen reads as a broken setting.
+    tools.push({
+      id: "instruments",
+      label: ctx.instrumentsVisible ? "Hide thread map" : "Show thread map",
+      // `ph:path` — the spine IS a path through the thread. Both states share
+      // it: the Popover's own checkmark slot carries on/off, and only a
+      // curated subset of Phosphor ships in the bundle (no -bold variant of
+      // this glyph exists in it), so a weight swap would mean growing the
+      // icon subset for decoration.
+      icon: "ph:path",
+      checked: ctx.instrumentsVisible,
+      title: ctx.instrumentsVisible
+        ? "Hide the turn spine and minimap in the gutters"
+        : "Show the turn spine and minimap in the gutters",
     });
   }
   if (ctx.reflectAvailable) {
