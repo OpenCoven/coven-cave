@@ -178,6 +178,23 @@
   margin-right: var(--space-2);
 }
 
+/* ── Inline composer (Chat.dc.html 2b) ──────────────────────────────────── */
+/* The brief sits under the hero on a brand-new chat, where the mock puts it.
+   It is ChatView's OWN composer handed down, so this only undoes the dock
+   chrome — the docked element is a page-width band with a hairline top and a
+   gradient that only reads correctly pinned to the bottom of the pane. */
+.home-dash__composer .cave-composer-dock {
+  padding: 0;
+  border-top: 0;
+  background: none;
+}
+
+/* The board clips (no-scroll design) and is a size container. Neither reaches
+   the pickers: ui/popover portals to document.body, so it is neither clipped
+   by the overflow nor trapped by container-type the way a fixed-position
+   descendant would be. Nothing to undo here — noted because the reverse has
+   bitten this repo before. */
+
 /* Empty board — the one state with no band to show. */
 .home-dash__work-empty {
   padding: 22px 15px;
