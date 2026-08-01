@@ -137,3 +137,4 @@ ds-bundle/
 /.copilot
 /.codex-tmp
 /.worktree-lifecycle-fixture-gILphr
+__verify-chat-detail.mjs

@@ -75,7 +75,7 @@ test("2a ③ — the row is presentation over a pure model and never renders emp
   );
   assert.match(
     contextRow,
-    /chip\.id === "project" && pickerAvailable \?/,
+    /if \(chip\.id === "project" && pickerAvailable\)/,
     "only the project chip is interactive — the rest are facts, not controls",
   );
   assert.match(
@@ -87,6 +87,37 @@ test("2a ③ — the row is presentation over a pure model and never renders emp
     contextRow,
     /<div className="cave-chat-context-row" role="group" aria-label="Session context">/,
     "the context row exposes its accessible name through a semantic group",
+  );
+  assert.match(
+    chatView,
+    /harness=\{familiar\.harness\}[\s\S]*turns=\{turns\}/,
+    "the strip receives the familiar runtime and the transcript it summarizes",
+  );
+  assert.match(
+    contextRow,
+    /function StatPopover[\s\S]*aria-haspopup="dialog"[\s\S]*<Popover/,
+    "interactive metrics use the shared accessible popover",
+  );
+  assert.match(
+    contextRow,
+    /aria-label=\{`\$\{stat\.detail\.heading\} details`\}[\s\S]*ariaLabel=\{`\$\{stat\.detail\.heading\} details`\}/,
+    "every metric trigger and card derives an accessible name from its heading",
+  );
+});
+
+test("2a ③ — the instrument strip keeps every metric reachable at narrow widths", () => {
+  assert.match(
+    styles,
+    /\.cave-chat-context-row\s*\{[\s\S]*?overflow-x:\s*auto/,
+    "the detail row scrolls horizontally instead of deleting metrics",
+  );
+  assert.match(styles, /\.cave-chat-context-stat--action/, "detail metrics have trigger styling");
+  assert.match(styles, /\.cave-chat-context-popover/, "breakdown cards have a scoped surface");
+  assert.match(styles, /\.cave-chat-context-breakdown__bar/, "context detail includes a segmented bar");
+  assert.doesNotMatch(
+    styles,
+    /@media \(max-width: 900px\)[\s\S]*?\.cave-chat-context-row__stats\s*\{[\s\S]*?display:\s*none/,
+    "narrow panes do not hide the right-side metrics",
   );
 });
 
