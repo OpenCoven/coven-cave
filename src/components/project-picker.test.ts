@@ -9,7 +9,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./project-picker.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../styles/globals/surface-marketplace.css", import.meta.url), "utf8");
+// The picker's CSS moved out of surface-marketplace.css when that sheet was
+// code-split onto the Marketplace chunk (cave-ii7xi) — a shared picker used by
+// the always-loaded shell cannot ship with a mode-gated surface.
+const css = readFileSync(
+  new URL("../styles/globals/shared-pickers-and-toasts.css", import.meta.url),
+  "utf8",
+);
 const homeComposer = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 const addMenu = readFileSync(new URL("./composer-add-menu.tsx", import.meta.url), "utf8");

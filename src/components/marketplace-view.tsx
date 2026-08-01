@@ -4,6 +4,11 @@
 // authoring in one surface. Crafts remains an explicitly flag-gated section.
 // Legacy roles/capabilities deep links land on Yours.
 
+// The surface sheet rides with this mode-gated component instead of the root
+// globals.css so the home first-load stays inside the CSS bundle budget
+// (#3264 pattern; cave-ii7xi). MarketplaceView is only reached through
+// lazy-surfaces.tsx's next/dynamic wrapper, so the CSS lands in that chunk.
+import "@/styles/globals/surface-marketplace.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { SearchInput } from "@/components/ui/search-input";

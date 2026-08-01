@@ -84,8 +84,27 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // which means the NEXT css PR of any size would have failed it too. This bump
 // is restoring working headroom for what already merged, not paying for one
 // change; root is untouched and still 22 KiB under at 638 KiB.
-const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 660) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 910) * 1024;
+// LOWERED root 660→640 / home 910→900 (2026-08-01, cave-ii7xi): the second #3264
+// extraction — surface-marketplace.css (34 KiB) left the globals.css facade for a
+// component import in marketplace-view.tsx, so it code-splits with the
+// MarketplaceView next/dynamic chunk. Measured on the same commit (39164745f),
+// baseline vs branch: home 908.0 → 882.2 KiB, root 644.1 → 618.5 KiB, −26 KiB each.
+// The sheet did NOT move whole: 5 KiB of it was the shared project picker, undo
+// toast, popover extras and project avatar — components in the always-loaded
+// shell, two of them labelled "Shared" in comments written while they sat in a
+// file named for one surface. Those stay in the facade as
+// shared-pickers-and-toasts.css, in the exact slot surface-marketplace.css held,
+// because primitives.css defines their base rules and these override at equal
+// specificity. Moving the file wholesale would have unstyled the project picker
+// and the undo toast on the home route with every test still green.
+// Home goes back to 900 — reverting cave-iktbc's stopgap raise exactly, since this
+// extraction is the fix that raise was buying time for. That leaves 17.8 KiB
+// (1.98%), which the headroom reporter still calls THIN, and that is the honest
+// reading: one extraction is not enough to make this budget comfortable. Choosing
+// a laxer cap to silence the warning would be the exact move cave-7fd41 exists to
+// discourage. The remaining facade sheets are the work — see cave-ii7xi.
+const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 640) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 900) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(
