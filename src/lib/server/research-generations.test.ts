@@ -664,7 +664,7 @@ test("podcast drafter clamps a long source mechanically at the local TTS limit",
   assert.ok(content.script.some((segment) => segment.text.includes("verbatim source claim")));
 });
 
-test("podcast drafter splits long units at sentence boundaries, never mid-sentence", () => {
+test("podcast drafter prefers sentence boundaries when splitting long units into turns", () => {
   // Dogfood round 2 (cave-2emgc): chunks become separate spoken turns, so a
   // continuation turn opening mid-sentence ("it can appear where you didn't…")
   // is a speech bug. Sentences short enough to pack many per chunk.

@@ -789,7 +789,7 @@ export function draftInfographicContent(source: GenerationDraftSource): Research
   return { kind: "infographic", stats };
 }
 
-/** Sentence terminator (with optional closing quotes/brackets) before a space. */
+/** Sentence terminator (with optional closing quotes/brackets) before whitespace. */
 const SENTENCE_BREAK_RE = /[.!?…]["'”’)\]]*(?=\s)/g;
 
 function splitMediaDraftText(text: string): string[] {
