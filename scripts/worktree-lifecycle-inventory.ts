@@ -481,7 +481,7 @@ function statusState(root: string): {
     "--ignore-submodules=none",
     "--no-renames",
   ]);
-  if (!result.ok) {
+  if (!result.ok || result.stderr) {
     return {
       changes: [],
       ignoredPaths: [],
@@ -506,7 +506,7 @@ function statusState(root: string): {
 
 function indexFlags(root: string): { flags: string[]; error: string | null } {
   const result = git(root, ["ls-files", "-v", "-z"]);
-  if (!result.ok) {
+  if (!result.ok || result.stderr) {
     return { flags: [], error: result.stderr || "git index flag inventory failed" };
   }
   return {

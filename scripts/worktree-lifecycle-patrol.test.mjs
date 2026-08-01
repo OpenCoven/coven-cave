@@ -347,6 +347,32 @@ if [ "\${LIFECYCLE_REQUIRE_SAFE_GIT:-0}" = "1" ]; then
   esac
 fi
 
+if [ "\${LIFECYCLE_STATUS_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" status "*)
+      PATH=\${PATH#${gitBin}:}
+      export PATH
+      git "$@"
+      STATUS=$?
+      printf '%s\n' 'git status omitted inaccessible paths' >&2
+      exit "$STATUS"
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_INDEX_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" ls-files -v -z "*)
+      PATH=\${PATH#${gitBin}:}
+      export PATH
+      git "$@"
+      STATUS=$?
+      printf '%s\n' 'git index inventory omitted inaccessible paths' >&2
+      exit "$STATUS"
+      ;;
+  esac
+fi
+
 case " $* " in
   *" worktree list --porcelain -z "*)
     if [ "\${LIFECYCLE_DUPLICATE_REGISTERED_REF:-0}" = "1" ]; then
@@ -827,6 +853,8 @@ exit 0
       "LIFECYCLE_DEFAULT_TRACKING_MUTATION",
       "LIFECYCLE_DUPLICATE_REGISTERED_REF",
       "LIFECYCLE_REQUIRE_SAFE_GIT",
+      "LIFECYCLE_STATUS_STDERR",
+      "LIFECYCLE_INDEX_STDERR",
     ].some(
       (name) =>
         extraEnv[name] === "1" ||
@@ -1117,6 +1145,34 @@ exit 0
         .find((item) => item.branch === "feat/live")
         .changes.map((line) => line.replace(/^\?\s+/, "")),
       ["uncommitted.txt"],
+    );
+  });
+
+  verifySafetyRegression("successful git status with stderr fails closed", () => {
+    const warnedStatusReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_STATUS_STDERR: "1" }),
+    );
+    const warnedStatusOld = warnedStatusReport.items.find(
+      (item) => item.branch === "feat/old",
+    );
+    assert.equal(warnedStatusOld.lane, "uncertain");
+    assert.match(
+      warnedStatusOld.probeErrors.join("\n"),
+      /git status omitted inaccessible paths/,
+    );
+  });
+
+  verifySafetyRegression("successful index inventory with stderr fails closed", () => {
+    const warnedIndexReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_INDEX_STDERR: "1" }),
+    );
+    const warnedIndexOld = warnedIndexReport.items.find(
+      (item) => item.branch === "feat/old",
+    );
+    assert.equal(warnedIndexOld.lane, "uncertain");
+    assert.match(
+      warnedIndexOld.probeErrors.join("\n"),
+      /git index inventory omitted inaccessible paths/,
     );
   });
 

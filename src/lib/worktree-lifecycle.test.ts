@@ -41,6 +41,16 @@ const DAY = 24 * 60 * 60 * 1000;
     null,
     "embedded NUL bytes are not accepted as lifecycle paths",
   );
+  assert.equal(
+    normalizeAbsoluteWorktreePath("/repo/wt "),
+    "/repo/wt ",
+    "valid trailing whitespace remains part of the exact filesystem path",
+  );
+  assert.notEqual(
+    normalizeAbsoluteWorktreePath("/repo/wt "),
+    normalizeAbsoluteWorktreePath("/repo/wt"),
+    "distinct filesystem paths are not collapsed by whitespace trimming",
+  );
   assert.notEqual(
     normalizeAbsoluteWorktreePath("/repo/other"),
     normalizeAbsoluteWorktreePath("/repo/wt"),
@@ -64,6 +74,11 @@ const DAY = 24 * 60 * 60 * 1000;
     isDisposableIgnoredPath("docs/superpowers/plans/uncommitted-design.md"),
     false,
     "ignored authored work remains preservation evidence",
+  );
+  assert.equal(
+    isDisposableIgnoredPath("node_modules\\valuable/source.ts"),
+    process.platform === "win32",
+    "backslashes are path separators only on platforms that define them that way",
   );
 }
 
