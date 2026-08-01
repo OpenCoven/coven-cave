@@ -171,18 +171,20 @@ export function createDaemonConnectionSupervisor<Handle = TimerHandle>(
   }
 
   function refresh(options: { fresh?: boolean } = {}): Promise<void> {
-    clearTimer();
     if (!canRun()) return Promise.resolve();
 
     const fresh = options.fresh === true;
     if (activeRequest) {
       if (!fresh) return activeRequest.promise;
+      clearTimer();
       const pending = activeRequest;
       activeRequest = null;
       generation += 1;
       pending.controller.abort();
+      return beginRequest(fresh);
     }
 
+    clearTimer();
     return beginRequest(fresh);
   }
 

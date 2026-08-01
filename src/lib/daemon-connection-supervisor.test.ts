@@ -212,6 +212,7 @@ test("ordinary refreshes coalesce and timer-driven polls stay serial", async () 
   assert.equal(rig.requests.length, 1);
   assert.equal(rig.inFlight, 1);
   assert.equal(rig.peakInFlight, 1);
+  assert.equal(rig.timers.length, 0);
 
   await rig.resolveRequest(0, runningPoll());
   await Promise.all([first, second]);
@@ -222,10 +223,14 @@ test("ordinary refreshes coalesce and timer-driven polls stay serial", async () 
   assert.equal(rig.inFlight, 1);
   assert.equal(rig.peakInFlight, 1);
 
+  const timerCountBeforePendingCoalesce = rig.timers.length;
   const third = rig.supervisor.refresh();
   const fourth = rig.supervisor.refresh();
   assert.equal(third, fourth);
   assert.equal(rig.requests.length, 2);
+  assert.equal(rig.timers.length, timerCountBeforePendingCoalesce);
+  assert.equal(rig.pendingTimers().length, 0);
+  assert.equal(rig.timers.some((timer) => timer.cancelled), false);
 
   await rig.resolveRequest(1, runningPoll("hub"));
   await Promise.all([third, fourth]);
@@ -411,13 +416,15 @@ test("abort rejections are neutral and still let refresh callers await completio
   assert.equal(rig.pendingTimers().length, 0);
 });
 
-test("synchronous request throws publish one generic failure poll and schedule backoff", async () => {
+test("coalescing onto a synchronously failing start preserves the retry timer", async () => {
   const publishes: Array<{ poll: DaemonConnectionPoll; context: { fresh: boolean } }> = [];
   const timers: TimerRecord[] = [];
   let nextHandle = 1;
+  let requests = 0;
 
   const supervisor = createDaemonConnectionSupervisor({
     request() {
+      requests += 1;
       throw new Error("socket exploded loudly");
     },
     publish(poll, context) {
@@ -443,8 +450,10 @@ test("synchronous request throws publish one generic failure poll and schedule b
   });
 
   supervisor.start();
-  await assert.doesNotReject(flushMicrotasks());
+  await assert.doesNotReject(supervisor.refresh());
+  await flushMicrotasks();
 
+  assert.equal(requests, 1);
   assert.deepEqual(publishes, [
     {
       poll: {
@@ -457,6 +466,7 @@ test("synchronous request throws publish one generic failure poll and schedule b
     },
   ]);
   assert.equal(timers.filter((timer) => !timer.cancelled && !timer.fired).length, 1);
+  assert.equal(timers.filter((timer) => timer.cancelled).length, 0);
   assert.equal(timers[0]?.delayMs, 5_000);
   assert.equal(
     publishes.some(({ poll }) => poll.error?.includes("socket exploded loudly") ?? false),
