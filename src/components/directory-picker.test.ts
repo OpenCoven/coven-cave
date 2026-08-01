@@ -22,6 +22,16 @@ test("the fs-browse route is loopback-gated and walks from trusted volume roots"
   const src = read("../app/api/fs-browse/route.ts");
   assert.match(src, /rejectNonLocalRequest\(req\)/, "loopback-only");
   assert.match(src, /resolveBrowsableDir\(requested\)/, "resolves via the trusted volume-root walk");
+  assert.match(
+    src,
+    /searchParams\.get\("showHidden"\) === "1"/,
+    "only the explicit reveal query enables hidden folders",
+  );
+  assert.match(
+    src,
+    /listSubdirs\(dir, \{ showHidden \}\)/,
+    "passes the reveal choice to the filesystem listing",
+  );
   assert.match(src, /path not allowed[\s\S]*status: 403/, "rejects escapes with 403");
   assert.match(src, /homeRoot\(\)/, "still reports $HOME as the picker's entry point");
   assert.match(src, /DRIVES_LOCATION/, "exposes the drives pseudo-location for volume switching");
@@ -40,6 +50,11 @@ test("the fs-browse route is loopback-gated and walks from trusted volume roots"
 test("the modal navigates via the fs-browse API with up/select controls", () => {
   const src = read("./directory-picker-modal.tsx");
   assert.match(src, /\/api\/fs-browse\?dir=\$\{encodeURIComponent\(dir\)\}/, "fetches the browse API");
+  assert.match(
+    src,
+    /includeHidden \? "&showHidden=1" : ""/,
+    "requests hidden folders only after the user opts in",
+  );
   assert.match(src, /aria-label="Up one folder"/, "has an up-a-level control");
   assert.match(src, />\s*New folder\s*</, "shows a visible New folder action");
   assert.match(src, /const selectLabel = pendingName \? `Select \$\{truncateName\(pendingName\)\}` : atDrivesList \? "Open a drive" : "Select home";/, "the primary action names the folder it will select");
@@ -53,6 +68,29 @@ test("the modal navigates via the fs-browse API with up/select controls", () => 
     src,
     /rounded-md|rounded-lg|rounded(?=\s|")/,
     "modal controls should use radius tokens instead of hard-coded radii",
+  );
+});
+
+test("the modal hides dot folders by default with a session-scoped reveal toggle", () => {
+  const src = read("./directory-picker-modal.tsx");
+  assert.match(src, /const \[showHidden, setShowHidden\] = useState\(false\);/, "hidden folders default off");
+  assert.match(src, /aria-pressed=\{showHidden\}/, "the toggle exposes its state");
+  assert.match(src, /\{showHidden \? "Hide hidden" : "Show hidden"\}/, "the action names both states");
+  assert.match(src, /"No visible folders"/, "the default empty state explains the filtered listing");
+  assert.match(
+    src,
+    /"Show hidden folders, or create one above\."/,
+    "the default empty state points to the reveal action",
+  );
+  assert.match(
+    src,
+    /showHiddenRef\.current = false;\s*setShowHidden\(false\);/,
+    "closing the picker restores the hidden-by-default state",
+  );
+  assert.match(
+    src,
+    /setSelectedPath\(null\);\s*resetCreateFolderState\(\);\s*void load\(cwd, modalSessionRef\.current, next\);/,
+    "toggling clears stale selection before reloading the current folder",
   );
 });
 

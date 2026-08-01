@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
   if (denied) return denied;
 
   const requested = req.nextUrl.searchParams.get("dir");
+  const showHidden = req.nextUrl.searchParams.get("showHidden") === "1";
   if ((requested ?? "").trim() === DRIVES_LOCATION) {
     const entries = listSystemRootEntries().map((entry) => ({ ...entry, workspace: false }));
     return NextResponse.json({
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
   // `workspace` badges folders that already sit inside a configured Cave
   // workspace or registered project root, so the picker can spotlight the
   // places project chats normally live.
-  const entries = listSubdirs(dir).map((entry) => ({
+  const entries = listSubdirs(dir, { showHidden }).map((entry) => ({
     ...entry,
     workspace: resolveAllowedProjectSubpath(entry.path) !== null,
   }));

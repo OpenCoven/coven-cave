@@ -2,9 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
 
-// Non-dot build-artifact / noise directories the folder browser hides. Dot
-// folders stay visible because they may themselves be intentional project
-// roots (for example, a configuration repository).
+// Build-artifact / noise directories the folder browser always hides. Other
+// dot folders can be revealed explicitly because they may be intentional
+// project roots (for example, a configuration repository).
 const SKIP = new Set([
   "node_modules",
   "dist",
@@ -203,7 +203,10 @@ export function createSubdirInBrowsableDir(
 }
 
 /** Immediate subdirectories of `dir` (one level), sorted and noise-skipped. */
-export function listSubdirs(dir: string): DirEntry[] {
+export function listSubdirs(
+  dir: string,
+  { showHidden = false }: { showHidden?: boolean } = {},
+): DirEntry[] {
   let dirents: fs.Dirent[];
   try {
     dirents = fs.readdirSync(dir, { withFileTypes: true });
@@ -211,7 +214,12 @@ export function listSubdirs(dir: string): DirEntry[] {
     return [];
   }
   return dirents
-    .filter((d) => d.isDirectory() && !SKIP.has(d.name))
+    .filter(
+      (d) =>
+        d.isDirectory() &&
+        !SKIP.has(d.name) &&
+        (showHidden || !d.name.startsWith(".")),
+    )
     .map((d) => ({ name: d.name, path: path.join(dir, d.name) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

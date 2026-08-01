@@ -89,6 +89,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -100,6 +101,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const modalSessionRef = useRef(0);
   const loadGenerationRef = useRef(0);
+  const showHiddenRef = useRef(false);
   const newFolderHintId = "directory-picker-new-folder-help";
   const newFolderErrorId = "directory-picker-new-folder-error";
 
@@ -110,13 +112,21 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     if (!preserveBusy) setCreateBusy(false);
   }, []);
 
-  const load = useCallback(async (dir: string | null, sessionGeneration = modalSessionRef.current) => {
+  const load = useCallback(async (
+    dir: string | null,
+    sessionGeneration = modalSessionRef.current,
+    includeHidden = showHiddenRef.current,
+  ) => {
     if (sessionGeneration !== modalSessionRef.current) return;
     const loadGeneration = ++loadGenerationRef.current;
     setLoading(true);
     setError(null);
     try {
-      const url = dir ? `/api/fs-browse?dir=${encodeURIComponent(dir)}` : "/api/fs-browse";
+      const url = dir
+        ? `/api/fs-browse?dir=${encodeURIComponent(dir)}${includeHidden ? "&showHidden=1" : ""}`
+        : includeHidden
+          ? "/api/fs-browse?showHidden=1"
+          : "/api/fs-browse";
       const res = await fetch(url, { cache: "no-store" });
       const body = (await res.json()) as BrowseResponse;
       if (sessionGeneration !== modalSessionRef.current || loadGeneration !== loadGenerationRef.current) return;
@@ -163,6 +173,8 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       setLoading(false);
       setError(null);
       setFilter("");
+      showHiddenRef.current = false;
+      setShowHidden(false);
       setSelectedPath(null);
       resetCreateFolderState();
     }
@@ -178,6 +190,16 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     setCreatingFolder(true);
     setNewFolderError(null);
     requestAnimationFrame(() => newFolderInputRef.current?.focus({ preventScroll: true }));
+  };
+
+  const toggleHiddenFolders = () => {
+    if (!cwd || cwd === DRIVES || loading || createBusy) return;
+    const next = !showHidden;
+    showHiddenRef.current = next;
+    setShowHidden(next);
+    setSelectedPath(null);
+    resetCreateFolderState();
+    void load(cwd, modalSessionRef.current, next);
   };
 
   const cancelCreatingFolder = () => {
@@ -379,6 +401,17 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             {crumbs.length === 0 ? <span className="px-1.5 text-[var(--text-muted)]">…</span> : null}
           </nav>
           <Button
+            variant="ghost"
+            size="sm"
+            disabled={loading || createBusy || !cwd || cwd === DRIVES}
+            onClick={toggleHiddenFolders}
+            aria-pressed={showHidden}
+            leadingIcon="ph:eye-slash"
+            className="h-[30px] flex-none rounded-[var(--radius-control)] px-2.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-40"
+          >
+            {showHidden ? "Hide hidden" : "Show hidden"}
+          </Button>
+          <Button
             ref={newFolderTriggerRef}
             variant="ghost"
             size="sm"
@@ -473,10 +506,18 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
           ) : visibleEntries.length === 0 && !creatingFolder ? (
             <div className="flex flex-col items-center gap-1.5 px-5 py-8 text-center">
               <p className="text-[length:var(--text-base)] text-[var(--text-secondary)]">
-                {query ? `No folders match \u201C${filter.trim()}\u201D` : "This folder is empty"}
+                {query
+                  ? `No folders match \u201C${filter.trim()}\u201D`
+                  : showHidden
+                    ? "This folder is empty"
+                    : "No visible folders"}
               </p>
               <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
-                Try a different name, or create one above.
+                {query
+                  ? "Try a different name, or create one above."
+                  : showHidden
+                    ? "Create a folder above to get started."
+                    : "Show hidden folders, or create one above."}
               </p>
             </div>
           ) : (

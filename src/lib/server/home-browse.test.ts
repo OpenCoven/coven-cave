@@ -216,20 +216,23 @@ test("createSubdirInBrowsableDir creates beneath absolute parents via their volu
   });
 });
 
-test("listSubdirs exposes dot folders while retaining non-dot noise filtering", () => {
+test("listSubdirs hides dot folders by default and reveals them on request", () => {
   withScratchDir((base) => {
     for (const name of [".git", ".next", "visible", "node_modules", "dist"]) {
       fs.mkdirSync(path.join(base, name));
     }
     fs.writeFileSync(path.join(base, ".env"), "not a directory");
 
-    const names = listSubdirs(base).map((entry) => entry.name);
+    const defaultNames = listSubdirs(base).map((entry) => entry.name);
+    const revealedNames = listSubdirs(base, { showHidden: true }).map((entry) => entry.name);
 
-    assert.ok(names.includes(".git"), "ordinary dot folders are visible");
-    assert.ok(names.includes(".next"), "dot-prefixed build folders are visible too");
-    assert.ok(names.includes("visible"), "ordinary folders remain visible");
-    assert.ok(!names.includes("node_modules"), "non-dot dependency noise stays hidden");
-    assert.ok(!names.includes("dist"), "non-dot build noise stays hidden");
-    assert.ok(!names.includes(".env"), "files are never returned as folders");
+    assert.ok(!defaultNames.includes(".git"), "ordinary dot folders are hidden by default");
+    assert.ok(!defaultNames.includes(".next"), "dot-prefixed build folders are hidden by default");
+    assert.ok(defaultNames.includes("visible"), "ordinary folders remain visible");
+    assert.ok(revealedNames.includes(".git"), "ordinary dot folders can be revealed");
+    assert.ok(revealedNames.includes(".next"), "dot-prefixed build folders can be revealed");
+    assert.ok(!revealedNames.includes("node_modules"), "non-dot dependency noise stays hidden");
+    assert.ok(!revealedNames.includes("dist"), "non-dot build noise stays hidden");
+    assert.ok(!revealedNames.includes(".env"), "files are never returned as folders");
   });
 });
