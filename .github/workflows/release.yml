@@ -319,6 +319,27 @@ jobs:
             echo "NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT=$NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT"
           } >> "$GITHUB_ENV"
 
+      # The escape hatch above is deliberately available for emergency manual
+      # runs, but using it must never be silent: v0.2.0 shipped with BOTH
+      # guards skipped and nobody noticed for four days, because the only
+      # evidence was a `skipped` line buried in the job steps (cave-yp21x).
+      # This is the inverse condition of the two guards, so it fires exactly
+      # when they did not.
+      - name: Record skipped compatibility guards
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_registries }}
+        shell: bash
+        run: |
+          {
+            echo "### ⚠️ Compatibility registry guards SKIPPED"
+            echo
+            echo "This \`${{ matrix.os }}\` build ran with \`allow_unconfigured_registries: true\`, so"
+            echo "**neither** the OpenCode nor the Grok signed schema-registry gate verified"
+            echo "anything. The build used the built-in baseline parsers."
+            echo
+            echo "Tag-push releases cannot do this — the hatch is manual-dispatch only."
+            echo "If this run publishes a release, its notes carry the same statement."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # Decode the App Store Connect API key onto the runner for the custom
       # macOS release script. The path is exported into the env for later
       # steps. Runs only on the macOS leg.
@@ -846,10 +867,28 @@ jobs:
       # so the install instructions match what's actually attached. This is
       # the only step that sets the release body, so it stays the canonical
       # source for what users read on the release page.
+      # Verify the renderer before it writes anything user-facing. This is the
+      # only place in CI where release-notes.test.mjs can run: it needs live
+      # tag history for the no-CHANGELOG fallback case, which is why it is
+      # allowlisted out of the frontend suites — and this job already checks
+      # out with fetch-depth: 0 for exactly that reason.
+      #
+      # Placed BEFORE the notes are set so a broken renderer stops the body
+      # from being published rather than publishing a wrong one. Artifacts are
+      # already uploaded by this point, so a failure here costs a re-run or a
+      # local `gh release edit --notes-file`, not the release.
+      - name: Verify release-notes renderer
+        shell: bash
+        run: node --test scripts/release-notes.test.mjs
+
       - name: Set release notes
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          # Provenance for the body: true only on a manual run that skipped the
+          # signed-registry gates (cave-yp21x). `inputs` is readable from every
+          # job of a workflow_dispatch run, so this needs no job-output plumbing.
+          COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_registries }}
         run: |
           set -euo pipefail
           bash scripts/release-notes.sh "$RELEASE_TAG" > /tmp/release-body.md
