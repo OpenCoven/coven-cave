@@ -44,6 +44,7 @@ export async function loopbackOriginResponds({
         signal: AbortSignal.timeout(remainingMs),
       });
       if (response.status >= 200 && response.status < 400) return true;
+      await response.body?.cancel();
     } catch {}
 
     const retryInMs = Math.min(RETRY_DELAY_MS, deadline - Date.now());
