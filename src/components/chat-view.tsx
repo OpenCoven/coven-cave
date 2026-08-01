@@ -47,6 +47,7 @@ import {
   publishLiveChatGenerationMetadata,
   readLiveChatGeneration,
   recordLiveChatGeneration,
+  retryTurnModelRequest,
   stageLiveChatGenerationMetadata,
   subscribeLiveChatGeneration,
   type ChatTurnLifecycle,
@@ -129,7 +130,6 @@ import {
 import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippets-modal";
 import {
   modelForRuntimeSwitch,
-  runtimeOwnsModelDefault,
 } from "@/lib/runtime-models";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
@@ -344,6 +344,8 @@ type FailedSend = {
   attachments: ChatAttachment[];
   mentionedFiles?: string[];
   promptOverride?: string;
+  /** Snapshot of the attempted branch/project/model intent for an honest retry. */
+  options?: ChatSendOptions;
   /** Snapshot from the attempt, never the controls currently visible later. */
   controls?: ChatSendControls;
 };
@@ -353,6 +355,8 @@ type ChatSendOptions = {
   /** Explicit queue-time metadata. `undefined` keeps the direct-send default;
    *  `null` intentionally preserves that no session model was selected. */
   modelOverride?: string | null;
+  /** Explicit request semantics; Runtime default may carry an empty one-turn model. */
+  modelOverrideScope?: "next-message" | "session" | "runtime-default";
   projectRoot?: string;
   mentionedFilesRoot?: string;
 };
@@ -2986,7 +2990,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // autocomplete below, which is null outside `/model <arg>` position).
   const composerModelInventory = useRuntimeModelInventory(modelHarness ?? "claude", familiar.id);
   const composerModelOptions = composerModelInventory.models;
-  const composerRuntimeOwnsDefault = runtimeOwnsModelDefault(modelHarness);
+  const composerRuntimeOwnsDefault = composerModelInventory.defaultOwner === "runtime";
   const composerModelValue =
     modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
@@ -3993,6 +3997,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             modelHarness,
             current,
             composerModelOptions,
+            composerModelInventory.allowCustom,
           ),
         );
         setInput("");
@@ -4002,6 +4007,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         args,
         modelHarness,
         composerModelOptions,
+        composerModelInventory.allowCustom,
       );
       if (!id) {
         appendSystem(`Unknown model "${args.trim()}". Type /model to list the options.`);
@@ -4158,6 +4164,48 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const submitPrompt = opts?.promptOverride?.trim() || trimmed;
     if (!trimmed && outgoingAttachments.length === 0) return;
     const requestedProjectRoot = opts?.projectRoot ?? requestProjectRoot;
+    const mentionedFilesRootForRequest = opts?.mentionedFilesRoot ?? mentionRoot;
+    const currentModelState = modelStateRef.current;
+    const pendingFamiliarModel =
+      currentModelState?.source === "familiar-default" &&
+      currentModelState.applicationState === "pending";
+    const pendingRuntimeDefault =
+      currentModelState?.source === "runtime-default" &&
+      currentModelState.applicationState === "pending";
+    const modelOverrideForRequest =
+      opts?.modelOverride !== undefined
+        ? opts.modelOverride
+        : currentModelState?.source === "runtime-default"
+          ? ""
+          : (currentModelState?.source === "session" || pendingFamiliarModel) &&
+              currentModelState.effectiveModel &&
+              currentModelState.effectiveModel !== "unknown"
+            ? currentModelState.effectiveModel
+          : null;
+    const modelOverrideScopeForRequest =
+      opts?.modelOverrideScope ??
+      (opts?.modelOverride !== undefined
+        ? modelOverrideForRequest ? "session" as const : undefined
+        : currentModelState?.source === "runtime-default"
+          ? pendingRuntimeDefault && sessionId
+            ? "runtime-default" as const
+            : "next-message" as const
+          : modelOverrideForRequest
+            ? pendingFamiliarModel
+              ? "next-message" as const
+              : "session" as const
+            : undefined);
+    const resolvedSendOptions: ChatSendOptions = {
+      ...opts,
+      projectRoot: requestedProjectRoot,
+      ...(outgoingMentions.length
+        ? { mentionedFilesRoot: mentionedFilesRootForRequest }
+        : {}),
+      modelOverride: modelOverrideForRequest,
+      ...(modelOverrideScopeForRequest
+        ? { modelOverrideScope: modelOverrideScopeForRequest }
+        : {}),
+    };
     const requestProject =
       requestedProjectRoot === activeProjectRoot
         ? selectedProject
@@ -4177,6 +4225,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         attachments: outgoingAttachments,
         ...(outgoingMentions.length ? { mentionedFiles: outgoingMentions } : {}),
         ...(opts?.promptOverride ? { promptOverride: opts.promptOverride } : {}),
+        options: resolvedSendOptions,
         controls: {
           thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
           responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
@@ -4193,31 +4242,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // so every harness follows the same sequential path, including runtimes
     // whose busy state has not yet reached React but already own a controller.
     if ((busy || abortRef.current) && !allowBusy) {
-      const queuedModelOverride =
-        opts?.modelOverride !== undefined
-          ? opts.modelOverride
-          : modelStateRef.current?.source === "session" &&
-              modelStateRef.current.effectiveModel &&
-              modelStateRef.current.effectiveModel !== "unknown"
-            ? modelStateRef.current.effectiveModel
-            : null;
       enqueueMessage({
         text,
         attachments: outgoingAttachments,
         mentionedFiles: outgoingMentions,
         options: {
-          ...opts,
+          ...resolvedSendOptions,
           // Programmatic sends (for example /run and /skill) enter here
           // directly rather than through send(), so snapshot their branch at
           // queue time as well. An explicit parent (including null) still
           // wins for regenerate/edit flows.
           parentTurnId:
             opts?.parentTurnId !== undefined ? opts.parentTurnId : (activeLeafId || null),
-          projectRoot: requestedProjectRoot,
-          ...(outgoingMentions.length
-            ? { mentionedFilesRoot: opts?.mentionedFilesRoot ?? mentionRoot }
-            : {}),
-          modelOverride: queuedModelOverride,
         },
         controls: {
           thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
@@ -4278,6 +4314,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       attachments: outgoingAttachments,
       ...(outgoingMentions.length ? { mentionedFiles: outgoingMentions } : {}),
       ...(opts?.promptOverride ? { promptOverride: opts.promptOverride } : {}),
+      options: resolvedSendOptions,
       controls: {
         thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
         responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
@@ -4287,15 +4324,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       },
     };
     const projectRootForRequest = requestedProjectRoot;
-    const mentionedFilesRootForRequest = opts?.mentionedFilesRoot ?? mentionRoot;
-    const modelOverrideForRequest =
-      opts?.modelOverride !== undefined
-        ? opts.modelOverride
-        : (modelStateRef.current?.source === "session" || modelStateRef.current?.source === "familiar-default") &&
-            modelStateRef.current.effectiveModel &&
-            modelStateRef.current.effectiveModel !== "unknown"
-          ? modelStateRef.current.effectiveModel
-          : null;
     setBusy(true);
     setError(null);
     setDebugError(null);
@@ -4320,6 +4348,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ...(outgoingAttachments.length ? { attachments: outgoingAttachments } : {}),
       ...(Object.keys(controlsOverride?.modelControls ?? modelControls).length
         ? { modelControls: controlsOverride?.modelControls ?? modelControls }
+        : {}),
+      ...(modelOverrideScopeForRequest === "runtime-default" ||
+      (modelOverrideScopeForRequest === "next-message" && modelOverrideForRequest === "")
+        ? { modelOverrideScope: "runtime-default" as const }
         : {}),
       createdAt: now,
     };
@@ -4468,15 +4500,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // Forward the picked model explicitly so it reaches `coven run
           // --model` for THIS turn — don't rely on the PATCH to model-state
           // having persisted to the conversation file before this send (a
-          // race), and so a brand-new chat (no sessionId yet) still pins its
-          // session model. Only session-scoped picks need this; familiar- and
-          // global-default models already resolve server-side from config.
-          ...(modelStateRef.current?.source === "runtime-default"
+          // race). A no-session familiar pick uses next-message scope so the
+          // first turn is deterministic without pinning the new chat; the
+          // familiar PATCH supplies inheritance for later turns.
+          ...(modelOverrideScopeForRequest === "runtime-default"
             ? { modelOverrideScope: "runtime-default" as const }
-            : modelOverrideForRequest
+            : modelOverrideScopeForRequest === "next-message" && modelOverrideForRequest === ""
+              ? {
+                  modelOverride: "",
+                  modelOverrideScope: "next-message" as const,
+                }
+              : modelOverrideForRequest && modelOverrideScopeForRequest
             ? {
                 modelOverride: modelOverrideForRequest,
-                modelOverrideScope: "session" as const,
+                modelOverrideScope: modelOverrideScopeForRequest,
               }
             : {}),
           // CHAT-D1-04: @-mentioned repo files ride with the root they are
@@ -4771,17 +4808,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     abortRef.current?.abort();
   };
 
-  function retryLastSend() {
+  function retryFailedSend(optionOverrides?: Partial<ChatSendOptions>) {
     if (!lastFailedSend || busy) return;
     setError(null);
     setLastFailedSend(null);
+    const savedOptions = lastFailedSend.options ??
+      (lastFailedSend.promptOverride
+        ? { promptOverride: lastFailedSend.promptOverride }
+        : undefined);
     void sendRaw(
       lastFailedSend.text,
       lastFailedSend.attachments,
       lastFailedSend.mentionedFiles ?? [],
-      lastFailedSend.promptOverride ? { promptOverride: lastFailedSend.promptOverride } : undefined,
+      optionOverrides ? { ...savedOptions, ...optionOverrides } : savedOptions,
       lastFailedSend.controls,
     );
+  }
+
+  function retryLastSend() {
+    retryFailedSend();
   }
 
   // Recovery for a harness/runtime failure: rebind the familiar to the chosen
@@ -4811,7 +4856,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       window.dispatchEvent(new Event("cave:familiars-refresh"));
       void refreshModelState();
-      retryLastSend();
+      // The saved failure belongs to the old harness. Let the retry resolve
+      // the newly selected runtime instead of forwarding a stale model id.
+      retryFailedSend({ modelOverride: null, modelOverrideScope: undefined });
     } catch {
       setError("Could not switch harness. Try again from the composer's runtime picker.");
     } finally {
@@ -4870,6 +4917,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       failed.attachments,
       failed.mentionedFiles ?? [],
       {
+        ...failed.options,
         projectRoot: project.root,
         ...(failed.promptOverride ? { promptOverride: failed.promptOverride } : {}),
       },
@@ -4950,14 +4998,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!text.trim() && !prevAttachments?.length) return undefined;
     // null parentId (root user turn) must be forwarded as null, not undefined,
     // so the regenerated answer becomes a root sibling rather than appending.
-    const retryModel = turn.responseMetadata?.retryModel;
     return () => void sendRaw(
       text,
       prevAttachments ?? [],
       [],
       {
         parentTurnId: parentId ?? null,
-        ...(retryModel ? { modelOverride: retryModel } : {}),
+        ...retryTurnModelRequest(prevUser, turn),
       },
       {
         thinkingEffort,
@@ -5050,7 +5097,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         modelState.effectiveModel &&
         modelState.effectiveModel !== "unknown"
           ? modelState.effectiveModel
-          : null,
+          : modelState?.source === "runtime-default"
+            ? ""
+            : modelState?.source === "familiar-default" &&
+                modelState.applicationState === "pending" &&
+                modelState.effectiveModel &&
+                modelState.effectiveModel !== "unknown"
+              ? modelState.effectiveModel
+              : null,
+      ...(modelState?.source === "runtime-default"
+        ? {
+            modelOverrideScope:
+              modelState.applicationState === "pending" && sessionId
+                ? "runtime-default" as const
+                : "next-message" as const,
+          }
+        : modelState?.source === "session"
+          ? { modelOverrideScope: "session" as const }
+          : modelState?.source === "familiar-default" &&
+              modelState.applicationState === "pending"
+            ? { modelOverrideScope: "next-message" as const }
+            : {}),
     };
     setReplyTarget(null);
     setInput("");

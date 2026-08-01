@@ -771,6 +771,7 @@ function openClawChatResponse(args: {
           ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
           title: stubTitle,
           ...(args.body.origin ? { origin: args.body.origin } : {}),
+          modelIntent: modelIntentForSend(args.body, args.modelState),
           userTurn: {
             id: pendingUserTurnId,
             text: args.promptText,
@@ -847,7 +848,12 @@ function openClawChatResponse(args: {
         };
         conv.model = responseMetadata.model;
         conv.runtime = responseMetadata.runtime;
-        persistSendModelIntent(conv, args.body, args.modelState);
+        persistSendModelIntent(
+          conv,
+          args.body,
+          args.modelState,
+          args.initialModelIntent,
+        );
         const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
         if (workBranch) conv.branch = workBranch;
         const reportedPrUrl = latestPrUrlFromText(gatewayAssistantText);
@@ -859,6 +865,7 @@ function openClawChatResponse(args: {
             role: "user",
             text: args.promptText,
             ...(args.attachments.length ? { attachments: args.attachments } : {}),
+            ...persistedTurnControls(args.body, responseMetadata.retryModel),
             createdAt: now,
             ...(branchParentId != null ? { parentId: branchParentId } : {}),
           },

@@ -407,8 +407,8 @@ assert.match(
 );
 assert.match(
   modelHelpers,
-  /export function persistedTurnControls\([\s\S]*body\.modelControls[\s\S]*modelControls: body\.modelControls[\s\S]*cleanModelId\(retryModel\)/,
-  "Completed user turns should retain the selected-model snapshot and only a confirmed or routed retry model",
+  /export function persistedTurnControls\([\s\S]*body\.modelControls[\s\S]*modelControls: body\.modelControls[\s\S]*cleanModelId\(retryModel\)[\s\S]*modelOverrideScope === "runtime-default"/,
+  "Completed user turns should retain selected controls, a confirmed retry model, or model-less runtime-default intent",
 );
 assert.equal(
   (
@@ -416,7 +416,7 @@ assert.equal(
       /\.\.\.persistedTurnControls\((?:args\.body|body), responseMetadata\.retryModel\)/g,
     ) ?? []
   ).length,
-  5,
+  6,
   "OpenClaw, native stubs, and transcript writers should persist retry controls",
 );
 assert.match(

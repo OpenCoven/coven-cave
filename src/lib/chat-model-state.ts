@@ -172,6 +172,17 @@ export function modelApplicationFromRun(input: {
 }
 
 export function resolveChatModelState(input: ResolveChatModelStateInput): ChatModelState {
+  // Empty string is the explicit one-turn Runtime-default sentinel. It must be
+  // evaluated before the durable session intent so regenerate/retry can use
+  // the provider default once without changing the chat's saved selection.
+  if (input.nextMessageModel === "") {
+    return chatModelState(input, {
+      effectiveModel: "",
+      source: "runtime-default",
+      applicationState: "saved",
+      reason: "Using the runtime's configured default model for this message.",
+    });
+  }
   const nextMessageModel = effectiveModelForHarness(input.nextMessageModel, input.harness);
   if (nextMessageModel) {
     return chatModelState(input, {

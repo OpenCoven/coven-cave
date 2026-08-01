@@ -34,6 +34,138 @@ final class ChatResponseControlsTests: XCTestCase {
         XCTAssertEqual(ChatThinkingEffort.allCases.map(\.rawValue), ["low", "medium", "high"])
         XCTAssertEqual(ChatResponseSpeed.allCases.map(\.rawValue), ["fast", "balanced", "careful"])
         XCTAssertEqual(ChatModelOverrideScope.nextMessage.rawValue, "next-message")
+        XCTAssertEqual(ChatModelOverrideScope.runtimeDefault.rawValue, "runtime-default")
+    }
+
+    func testInventoryProvenanceCopyCoversEveryContractState() {
+        let expected = [
+            "live": "Live inventory",
+            "cached": "Cached inventory",
+            "fallback": "Fallback inventory",
+            "runtime-managed": "Runtime-managed inventory",
+            "unavailable": "Inventory unavailable",
+        ]
+
+        for (provenance, label) in expected {
+            XCTAssertEqual(
+                ChatModelInventoryProvenancePresentation.label(for: provenance),
+                label
+            )
+        }
+        XCTAssertEqual(
+            ChatModelInventoryProvenancePresentation.label(for: nil),
+            "Loading inventory…"
+        )
+        XCTAssertEqual(
+            ChatModelInventoryProvenancePresentation.label(for: "future-state"),
+            "Inventory unavailable"
+        )
+    }
+
+    func testChangedModelScopeMasksPriorInventoryButSameScopeRefreshDoesNot() {
+        let first = ChatModelRequestTarget(
+            familiarId: "sage",
+            sessionId: "session-1",
+            runtimeIdentity: "harness:hermes|runtime:local:/repo",
+            bindingScope: "hermes:local:bare"
+        )
+        let changedRuntime = ChatModelRequestTarget(
+            familiarId: "sage",
+            sessionId: "session-1",
+            runtimeIdentity: "harness:hermes|runtime:ssh:build:/repo",
+            bindingScope: "hermes:ssh:build:/repo:bare"
+        )
+        let second = ChatModelRequestTarget(
+            familiarId: "sage",
+            sessionId: "session-2",
+            runtimeIdentity: "harness:hermes|runtime:ssh:build:/repo",
+            bindingScope: "hermes:ssh:build:/repo:bare"
+        )
+        var presentation = ChatModelPresentationScope()
+
+        XCTAssertFalse(presentation.isCurrent(for: first))
+        XCTAssertTrue(presentation.beginLoading(for: first))
+        XCTAssertTrue(presentation.isCurrent(for: first))
+        XCTAssertTrue(presentation.canApplyResponse(for: first, currentTarget: first))
+        XCTAssertFalse(
+            presentation.beginLoading(for: first),
+            "same-scope refresh should keep stable inventory while loading"
+        )
+        XCTAssertFalse(presentation.isCurrent(for: second))
+        XCTAssertFalse(
+            presentation.canApplyResponse(for: first, currentTarget: changedRuntime),
+            "a late response from the prior runtime must not overwrite the new scope"
+        )
+        XCTAssertTrue(
+            presentation.beginLoading(for: changedRuntime),
+            "changed runtime scope must synchronously mask prior inventory"
+        )
+        XCTAssertFalse(presentation.isCurrent(for: second))
+        XCTAssertFalse(
+            presentation.canApplyResponse(for: changedRuntime, currentTarget: second),
+            "a late response from the prior session must not overwrite the new scope"
+        )
+        XCTAssertTrue(
+            presentation.beginLoading(for: second),
+            "changed session scope must synchronously mask prior inventory"
+        )
+    }
+
+    func testResponseBindingScopeRekeysSameFamiliarSessionHarnessForProfileChange() {
+        let bareLocal = ChatModelRequestTarget(
+            familiarId: "sage",
+            sessionId: "session-1",
+            runtimeIdentity: "harness:hermes|runtime:local:/repo",
+            bindingScope: "hermes:local:bare"
+        )
+        let profileLocal = bareLocal.withBindingScope("hermes:local:profile:research")
+        var presentation = ChatModelPresentationScope()
+
+        XCTAssertTrue(presentation.beginLoading(for: bareLocal))
+        let responseTarget = presentation.rekeyForResponse(
+            for: bareLocal,
+            currentTarget: bareLocal,
+            bindingScope: "hermes:local:profile:research"
+        )
+
+        XCTAssertEqual(responseTarget, profileLocal)
+        XCTAssertFalse(presentation.isCurrent(for: bareLocal))
+        XCTAssertTrue(presentation.isCurrent(for: profileLocal))
+        XCTAssertFalse(
+            presentation.canApplyResponse(for: bareLocal, currentTarget: profileLocal),
+            "a late bare-local response must not overwrite a profile-scoped inventory"
+        )
+    }
+
+    func testSessionAndModelStateDecodeConcreteRuntimeBindingIdentity() throws {
+        let sessionData = try XCTUnwrap(
+            #"""
+            {"id":"session-1","title":"Chat","harness":"hermes","runtime":"ssh:build:/repo"}
+            """#.data(using: .utf8)
+        )
+        let session = try JSONDecoder().decode(SessionRow.self, from: sessionData)
+        XCTAssertEqual(session.runtime, "ssh:build:/repo")
+
+        let responseData = try XCTUnwrap(
+            #"""
+            {
+              "ok": true,
+              "state": {
+                "familiarId": "sage",
+                "harness": "hermes",
+                "runtime": "local:/repo",
+                "effectiveModel": "",
+                "source": "runtime-default"
+              },
+              "bindingScope": "[\"hermes\",\"local\",\"local:/repo\",\"profile:research\"]"
+            }
+            """#.data(using: .utf8)
+        )
+        let response = try JSONDecoder().decode(ChatModelStateResponse.self, from: responseData)
+        XCTAssertEqual(
+            response.presentationBindingScope,
+            "[\"hermes\",\"local\",\"local:/repo\",\"profile:research\"]"
+        )
     }
 
     func testSendBodyEncodesResponseControls() throws {
@@ -93,6 +225,25 @@ final class ChatResponseControlsTests: XCTestCase {
         XCTAssertEqual(queued.modelOverrideScope, .nextMessage)
     }
 
+    @MainActor
+    func testQueuedRuntimeDefaultIntentPersistsWithoutAModelOverride() throws {
+        let thread = ChatThread(
+            title: "Grok chat",
+            familiarIds: ["grok"],
+            sessionIds: ["grok": "session-1"]
+        )
+        thread.enqueue(
+            "Review the branch",
+            modelOverrideScope: .runtimeDefault
+        )
+
+        let restored = ChatThread(snapshot: thread.snapshot)
+        let queued = try XCTUnwrap(restored.messages.first)
+
+        XCTAssertNil(queued.modelOverride)
+        XCTAssertEqual(queued.modelOverrideScope, .runtimeDefault)
+    }
+
     func testServerReloadRestoresTurnControlsForRetry() throws {
         let data = try XCTUnwrap(
             """
@@ -143,6 +294,30 @@ final class ChatResponseControlsTests: XCTestCase {
         XCTAssertEqual(messages[1].rejectedControlFamilies, ["verbosity"])
     }
 
+    func testServerReloadRestoresRuntimeDefaultScopeForRetry() throws {
+        let data = try XCTUnwrap(
+            """
+            {
+              "id": "turn-1",
+              "role": "user",
+              "text": "Review the branch",
+              "modelControls": {"reasoning":"high"},
+              "modelOverrideScope": "runtime-default"
+            }
+            """.data(using: .utf8)
+        )
+        let turn = try JSONDecoder().decode(ChatTurn.self, from: data)
+        let restored = DisplayMessage.restored(from: turn, familiarId: "grok")
+        let binding = ChatModelTurnBinding.resolveRetry(
+            retryModel: restored.retryModel(for: "grok"),
+            originalScope: restored.modelOverrideScope
+        )
+
+        XCTAssertEqual(restored.modelControls, ["reasoning": "high"])
+        XCTAssertEqual(binding.modelOverride, "")
+        XCTAssertEqual(binding.scope, .nextMessage)
+    }
+
     func testDuplicatingTurnPreservesRetryControls() {
         let original = DisplayMessage(
             role: .user,
@@ -155,7 +330,8 @@ final class ChatResponseControlsTests: XCTestCase {
             modelOverridesByFamiliar: [
                 "nyx": "anthropic/claude-opus-4-6",
                 "milo": "openai/gpt-5.6-sol",
-            ]
+            ],
+            modelOverrideScope: .nextMessage
         )
 
         let copied = DisplayMessage.duplicate(of: original)
@@ -165,6 +341,7 @@ final class ChatResponseControlsTests: XCTestCase {
         XCTAssertEqual(copied.responseSpeed, .careful)
         XCTAssertEqual(copied.modelOverride, "anthropic/claude-opus-4-6")
         XCTAssertEqual(copied.retryModel(for: "milo"), "openai/gpt-5.6-sol")
+        XCTAssertEqual(copied.modelOverrideScope, .nextMessage)
     }
 
     func testDoneMetadataCarriesTheHonestRetryModel() throws {
@@ -341,6 +518,47 @@ final class ChatResponseControlsTests: XCTestCase {
             confirmedState: confirmedRuntimeDefault,
             hasSession: true
         ))
+    }
+
+    func testForwardedPendingRuntimeDefaultKeepsExplicitTurnIntent() {
+        let binding = ChatModelTurnBinding.resolve(
+            pendingModel: "",
+            confirmedState: nil,
+            hasSession: false
+        )
+
+        XCTAssertNil(binding.modelOverride)
+        XCTAssertEqual(binding.scope, .runtimeDefault)
+    }
+
+    func testRetryBindingUsesAnHonestModelWithoutChangingSessionIntent() {
+        let binding = ChatModelTurnBinding.resolveRetry(
+            retryModel: " openai/gpt-5.6-sol ",
+            originalScope: .runtimeDefault
+        )
+
+        XCTAssertEqual(binding.modelOverride, "openai/gpt-5.6-sol")
+        XCTAssertEqual(binding.scope, .nextMessage)
+    }
+
+    func testRetryBindingUsesOneTurnRuntimeDefaultWithoutChangingSessionIntent() {
+        let binding = ChatModelTurnBinding.resolveRetry(
+            retryModel: nil,
+            originalScope: .runtimeDefault
+        )
+
+        XCTAssertEqual(binding.modelOverride, "")
+        XCTAssertEqual(binding.scope, .nextMessage)
+    }
+
+    func testRetryBindingDoesNotInventIntentForAnUnselectedTurn() {
+        let binding = ChatModelTurnBinding.resolveRetry(
+            retryModel: nil,
+            originalScope: nil
+        )
+
+        XCTAssertNil(binding.modelOverride)
+        XCTAssertNil(binding.scope)
     }
 
     func testPluginReconciliationPermitsOnlyAnAppliedMatchingCatalog() {

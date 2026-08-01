@@ -758,6 +758,6 @@ assert.match(
 
 assert.match(
   source,
-  /const runtimeOwnsDefault = runtimeOwnsModelDefault\(selectedRuntime\);[\s\S]*?const effectiveModel =[\s\S]*?const selectedModelId =[\s\S]*?: runtimeOwnsDefault[\s\S]*?\? ""[\s\S]*?: runtimeModelOptions\[0\]\?\.id/,
-  "a runtime-owned adapter without an explicit model keeps its own default instead of displaying the first discovered model",
+  /const runtimeOwnsDefault = runtimeModelInventory\.defaultOwner === "runtime";[\s\S]*?const effectiveModel =[\s\S]*?const selectedModelId =[\s\S]*?: runtimeOwnsDefault[\s\S]*?\? ""[\s\S]*?: runtimeModelOptions\[0\]\?\.id/,
+  "the shared inventory owns default semantics, so a runtime-owned adapter never displays its first discovered model as the default",
 );

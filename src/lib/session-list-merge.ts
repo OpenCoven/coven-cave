@@ -173,6 +173,11 @@ export function mergeSessionRows({
     const row: SessionRow = {
       ...session,
       ...(localUpdatedAt ? { updated_at: localUpdatedAt } : {}),
+      // Cave conversations record the concrete runtime selected for the chat
+      // (`local:<cwd>` or `ssh:<host>:<cwd>`). That send-time provenance is
+      // authoritative for model inventory scoping; a daemon row may omit it or
+      // retain the pre-transition runtime, so never let the merge erase it.
+      ...(local?.runtime ? { runtime: local.runtime } : {}),
       ...(localIsNewer && !daemonStatusIsAuthoritative && local?.status ? { status: local.status } : {}),
       // A local summary with no status (a first-turn stub whose reply is still
       // streaming) must contribute neither status nor exit_code — the daemon's

@@ -765,6 +765,58 @@ assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps 
     "/Users/example/repo",
     "mergeSessionRows threads the resolver through to local-only rows",
   );
+
+  const runtimeTransitions = [
+    {
+      id: "runtime-local-to-ssh",
+      daemonRuntime: "local:/Users/example/repo",
+      localRuntime: "ssh:build:/srv/repo",
+    },
+    {
+      id: "runtime-ssh-to-local",
+      daemonRuntime: "ssh:build:/srv/repo",
+      localRuntime: "local:/Users/example/repo",
+    },
+  ];
+  for (const transition of runtimeTransitions) {
+    const [row] = mergeSessionRows({
+      daemonSessions: [
+        {
+          id: transition.id,
+          project_root: "/Users/example/repo",
+          harness: "hermes",
+          runtime: transition.daemonRuntime,
+          title: "Runtime transition",
+          status: "completed",
+          exit_code: 0,
+          archived_at: null,
+          created_at: "2026-07-31T12:00:00.000Z",
+          updated_at: "2026-07-31T12:00:00.000Z",
+        },
+      ],
+      localConversations: [
+        {
+          sessionId: transition.id,
+          familiarId: "sage",
+          harness: "hermes",
+          runtime: transition.localRuntime,
+          title: "Runtime transition",
+          status: "completed",
+          exitCode: 0,
+          updatedAt: "2026-07-31T12:01:00.000Z",
+        },
+      ],
+      state: bareState,
+      includeArchived: false,
+    });
+    assert.equal(row?.familiarId, "sage");
+    assert.equal(row?.harness, "hermes");
+    assert.equal(
+      row?.runtime,
+      transition.localRuntime,
+      `${transition.id}: merged rows retain the conversation-authoritative runtime`,
+    );
+  }
 }
 
 // ── First-turn stubs in the merge (cave-0g2x) ────────────────────────────────

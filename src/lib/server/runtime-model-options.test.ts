@@ -152,4 +152,52 @@ assert.equal(
   "a failed Grok probe reports the honest runtime-managed fallback",
 );
 
+let hermesCalls = 0;
+assert.equal(
+  (await listRuntimeModelInventory("hermes", "sage", {
+    allowHermesInventory: false,
+    listHermes: async () => {
+      hermesCalls += 1;
+      return [{ id: "openrouter/auto", label: "OpenRouter Auto" }];
+    },
+  })).provenance,
+  "runtime-managed",
+  "profile-bound, invalid, and SSH Hermes callers can decline local API discovery",
+);
+assert.equal(hermesCalls, 0);
+assert.deepEqual(
+  await listRuntimeModelInventory("hermes", "sage", {
+    allowHermesInventory: true,
+    listHermes: async (familiarId) => {
+      hermesCalls += 1;
+      assert.equal(familiarId, "sage");
+      return [
+        { id: "openrouter/auto", label: " OpenRouter Auto " },
+        { id: "hermes-local", label: "Synthetic" },
+        { id: "--unsafe", label: "Unsafe" },
+      ];
+    },
+  }),
+  {
+    runtime: "hermes",
+    models: [{ id: "openrouter/auto", label: "OpenRouter Auto" }],
+    provenance: "live",
+    defaultOwner: "runtime",
+    allowCustom: true,
+  },
+  "bare-local Hermes exposes only validated provider inventory",
+);
+assert.equal(hermesCalls, 1);
+assert.equal(
+  (await listRuntimeModelInventory("hermes", "sage", {
+    allowHermesInventory: true,
+    listHermesInventory: async () => ({
+      models: [{ id: "openrouter/auto", label: "OpenRouter Auto" }],
+      provenance: "cached",
+    }),
+  })).provenance,
+  "cached",
+  "Hermes cache provenance remains truthful at the shared inventory boundary",
+);
+
 console.log("server/runtime-model-options.test.ts: ok");

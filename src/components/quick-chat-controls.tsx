@@ -405,6 +405,7 @@ export function QuickChatComposer({
                 modelHarness,
                 modelOverride ?? null,
                 runtimeModelOptions,
+                runtimeModelInventory.allowCustom,
               ),
             );
             return;
@@ -413,6 +414,7 @@ export function QuickChatComposer({
             args,
             modelHarness,
             runtimeModelOptions,
+            runtimeModelInventory.allowCustom,
           );
           if (!id) {
             onLocalNote?.(`Unknown model "${args}".`);
@@ -471,6 +473,8 @@ export function QuickChatComposer({
       onModelOverrideChange,
       modelHarness,
       modelOverride,
+      runtimeModelOptions,
+      runtimeModelInventory.allowCustom,
       menu.skills,
       menu.prompts,
       invokeSkillOption,

@@ -56,6 +56,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /if \(gatewayDispatch\.kind === "accepted"\)[\s\S]*?const stubWrite = createConversationStub\(\{[\s\S]*?modelIntent: modelIntentForSend\(args\.body, args\.modelState\),[\s\S]*?userTurn:/,
+  "an accepted Gateway first turn persists its session model intent before the response completes",
+);
+
+assert.match(
+  chatRoute,
   /await stubWrite;\s*const isFirstExchange = await withConversationLock\(sessionId, async \(\) => \{\s*const existing = await loadConversation\(sessionId\);/,
   "the OpenClaw close handler must settle the stub write and lock before loading the conversation",
 );

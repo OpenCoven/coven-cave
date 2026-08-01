@@ -55,7 +55,6 @@ import { ComposerContextChips } from "@/components/composer-context-pill";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
-import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
 import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
@@ -256,7 +255,7 @@ export function HomeComposer({
   );
   const runtimeModelInventory = useRuntimeModelInventory(selectedRuntime, selectedFamiliarId);
   const runtimeModelOptions = runtimeModelInventory.models;
-  const runtimeOwnsDefault = runtimeOwnsModelDefault(selectedRuntime);
+  const runtimeOwnsDefault = runtimeModelInventory.defaultOwner === "runtime";
   const effectiveModel =
     modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
@@ -533,6 +532,7 @@ export function HomeComposer({
           args,
           modelHarness,
           runtimeModelOptions,
+          runtimeModelInventory.allowCustom,
         );
         if (!id) {
           onToast(`Unknown model "${args.trim()}".`);
@@ -708,6 +708,8 @@ export function HomeComposer({
     projectLaunchMessage,
     modelState,
     modelHarness,
+    runtimeModelOptions,
+    runtimeModelInventory.allowCustom,
     runtimeHost,
     sending,
     attachments,

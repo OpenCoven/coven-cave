@@ -20,6 +20,8 @@ const plugins = await read("apps/ios/CovenCave/CovenCave/Views/PluginsPanel.swif
 const client = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
 const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");
 const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelControl.swift");
+const responseControls = await read("apps/ios/CovenCave/CovenCave/Models/ChatResponseControls.swift");
+const models = await read("apps/ios/CovenCave/CovenCave/Models/Models.swift");
 const caveClient = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
 const appModel = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
 const caveApp = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
@@ -221,6 +223,76 @@ assert.match(
   "runtime-owned inventories offer an actionable Runtime default choice",
 );
 assert.match(
+  modelControl,
+  /Section\("Inventory"\)[\s\S]{0,260}ChatModelInventoryProvenancePresentation\.label\(for: provenance\)/,
+  "the model picker visibly names every inventory provenance state",
+);
+assert.match(
+  modelControl,
+  /presentationScope\.beginLoading\(for: target\)[\s\S]{0,180}options = \[\][\s\S]{0,180}inventoryProvenance = nil/,
+  "the compact model bar masks options when its familiar/session target changes",
+);
+assert.match(
+  modelControl,
+  /\.task\(id: requestLoadTarget\)[\s\S]{0,5200}presentationScope\.canApplyResponse\([\s\S]{0,180}currentTarget: requestTarget/,
+  "the compact model bar reloads for its full target and rejects late responses",
+);
+assert.match(
+  modelControl,
+  /private var requestRuntimeIdentity:[\s\S]{0,900}session\?\.runtime[\s\S]{0,600}runtimeIdentity: requestRuntimeIdentity/,
+  "the compact model bar includes known session runtime and familiar harness identity in its target",
+);
+assert.match(
+  modelControl,
+  /var bindingScope: String\?[\s\S]{0,500}presentationBindingScope[\s\S]{0,6500}rekeyForResponse\([\s\S]{0,220}bindingScope: resp\.presentationBindingScope/,
+  "the compact model bar rekeys accepted inventory to the server-owned local, SSH, or profile binding scope",
+);
+assert.match(
+  chat,
+  /sessionDetailRow\(\s*"Inventory",[\s\S]{0,180}ChatModelInventoryProvenancePresentation\.label\(for: presentedModelPickerProvenance\)/,
+  "chat session details expose inventory provenance before the picker opens",
+);
+assert.match(
+  chat,
+  /prepareModelStateLoad\(for target:[\s\S]{0,320}modelPresentationScope\.beginLoading\(for: target\)[\s\S]{0,320}modelPickerOptions = \[\][\s\S]{0,220}modelControlCapabilities = \[\]/,
+  "a changed familiar/session masks prior inventory and selected-model controls",
+);
+assert.match(
+  familiars,
+  /ModelPickerSheet\([\s\S]{0,320}provenance: presentedModelProvenance/,
+  "familiar defaults pass inventory provenance to the model picker",
+);
+assert.match(
+  familiars,
+  /\.disabled\([\s\S]{0,180}presentedModelOptions\.isEmpty && !presentedModelAllowsRuntimeDefault[\s\S]{0,100}changingModel/,
+  "familiar defaults keep Runtime default actionable without explicit options",
+);
+assert.match(
+  familiars,
+  /modelPresentationScope\.beginLoading\(for: target\)[\s\S]{0,180}modelOptions = \[\][\s\S]{0,180}modelProvenance = nil/,
+  "familiar details mask options when their familiar scope changes",
+);
+assert.match(
+  familiars,
+  /\.task\(id: modelLoadTarget\)[\s\S]{0,12000}modelPresentationScope\.canApplyResponse\([\s\S]{0,180}currentTarget: modelRequestTarget/,
+  "familiar details reload for their full target and reject late responses",
+);
+assert.match(
+  familiars,
+  /private var modelLoadTarget:[\s\S]{0,480}runtimeIdentity: harness/,
+  "familiar details include their known harness identity in the presentation target",
+);
+assert.match(
+  familiars,
+  /modelPresentationScope\.rekeyForResponse\([\s\S]{0,220}bindingScope: response\.presentationBindingScope[\s\S]{0,160}modelBindingScope = response\.presentationBindingScope/,
+  "familiar details rekey responses across local, SSH, and explicit profile bindings",
+);
+assert.match(
+  chat,
+  /modelPresentationIsCurrent[\s\S]{0,160}modelPresentationScope\.isCurrent\(for: currentModelRequestTarget\)[\s\S]{0,260}presentedModelPickerOptions[\s\S]{0,120}modelPresentationIsCurrent \? modelPickerOptions : \[\]/,
+  "chat rendering synchronously masks inventory before a changed-target task runs",
+);
+assert.match(
   caveClient,
   /func setChatModel\([\s\S]{0,180}?model: String\?[\s\S]*?encodeNil\(forKey: \.model\)/,
   "clearing an iOS model sends JSON null instead of omitting the model field",
@@ -248,6 +320,11 @@ assert.match(
   /var modelOverrideScope: ChatModelOverrideScope\?/,
   "send body scopes the selected model to the chat",
 );
+assert.match(
+  models,
+  /var modelOverrideScope: ChatModelOverrideScope\?/,
+  "server history decodes the original turn's model scope",
+);
 assert.match(thread, /var reasoningEffort: ChatThinkingEffort\?/, "queued messages persist reasoning effort");
 assert.match(thread, /var responseSpeed: ChatResponseSpeed\?/, "queued messages persist response speed");
 assert.match(thread, /var modelOverride: String\?/, "queued messages persist the selected model");
@@ -263,13 +340,28 @@ assert.match(
 );
 assert.match(
   thread,
-  /let retryModel = source\?\.retryModel\(for: familiarId\)[\s\S]{0,900}modelOverride: retryModel/,
+  /let retryModel = source\?\.retryModel\(for: familiarId\)[\s\S]{0,300}ChatModelTurnBinding\.resolveRetry\([\s\S]{0,900}modelOverride: modelBinding\.modelOverride/,
   "retry restores the original per-familiar model selection",
 );
 assert.match(
   thread,
-  /modelOverrideScope: retryModel == nil \? nil : \.nextMessage/,
-  "retry replays the original model without changing the chat’s current model",
+  /originalScope: source\?\.modelOverrideScope[\s\S]{0,900}modelOverrideScope: modelBinding\.scope/,
+  "retry preserves explicit runtime-default intent without changing the chat's current model",
+);
+assert.match(
+  responseControls,
+  /if originalScope == \.runtimeDefault \{\s*return ChatModelTurnBinding\(modelOverride: "", scope: \.nextMessage\)/,
+  "runtime-default retry is a one-turn empty override instead of a durable selection mutation",
+);
+assert.match(
+  thread,
+  /modelOverrideScope: turn\.modelOverrideScope/,
+  "history restoration retains runtime-default scope alongside capability controls",
+);
+assert.match(
+  thread,
+  /modelOverrideScope: message\.modelOverrideScope/,
+  "thread duplication retains runtime-default scope alongside capability controls",
 );
 assert.match(
   thread,
@@ -281,7 +373,7 @@ assert.match(
   /DisplayMessage\.duplicate\(of: message\)/,
   "thread duplication preserves the controls that retry reads",
 );
-assert.match(chat, /ForEach\(modelControlCapabilities\)/, "session details expose only selected-model controls");
+assert.match(chat, /ForEach\(presentedModelControlCapabilities\)/, "session details expose only selected-model controls");
 assert.match(chat, /capability\.delivery == "prompt-only"/, "prompt-only controls are identified as guidance, not native settings");
 assert.doesNotMatch(chat, /Picker\("Thinking"|Picker\("Speed"/, "session details do not present global Thinking or Speed controls");
 assert.match(
@@ -311,8 +403,23 @@ assert.match(
 );
 assert.match(
   chat,
-  /destination\.pendingModelOverride[\s\S]{0,650}modelOverrideScope: destinationScope/,
+  /ChatModelTurnBinding\.resolve\([\s\S]{0,220}pendingModel: destination\.pendingModelOverride[\s\S]{0,800}modelOverrideScope: destinationModelBinding\.scope/,
   "forwarding honors a pending model choice on the destination chat",
+);
+assert.match(
+  chat,
+  /private var modelStateLoadKey: ChatModelRequestTarget\? \{ currentModelLoadTarget \}[\s\S]{0,1200}session\?\.runtime[\s\S]{0,500}runtimeIdentity: identity\.isEmpty \? nil : identity\.joined/,
+  "chat model reload identity includes the concrete session runtime and masks local-to-SSH changes synchronously",
+);
+assert.match(
+  chat,
+  /private var modelPresentationIsCurrent:[\s\S]{0,160}modelPresentationScope\.isCurrent\(for: currentModelRequestTarget\)[\s\S]{0,260}private var presentedModelPickerOptions:[\s\S]{0,120}modelPresentationIsCurrent \? modelPickerOptions : \[\]/,
+  "a same familiar/session/harness runtime-key change masks the prior inventory before its replacement response",
+);
+assert.match(
+  chat,
+  /private func rekeyModelPresentation\([\s\S]{0,420}bindingScope: response\.presentationBindingScope[\s\S]{0,180}modelBindingScope = response\.presentationBindingScope/,
+  "chat model responses rekey the presentation across same-session runtime profile changes",
 );
 assert.doesNotMatch(
   chat,

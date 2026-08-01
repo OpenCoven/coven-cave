@@ -203,7 +203,7 @@ assert.match(
 
 assert.match(
   source,
-  /const requestedProjectRoot = opts\?\.projectRoot \?\? requestProjectRoot;[\s\S]*?if \(!projectLaunchReadyForRequest\)[\s\S]*?const projectRootForRequest = requestedProjectRoot;[\s\S]*?const mentionedFilesRootForRequest = opts\?\.mentionedFilesRoot \?\? mentionRoot;[\s\S]*?projectRoot: projectRootForRequest,[\s\S]*?permissionMode: controlsOverride\?\.permissionMode \?\? permissionMode,[\s\S]*?mentionedFilesRoot: mentionedFilesRootForRequest/,
+  /const requestedProjectRoot = opts\?\.projectRoot \?\? requestProjectRoot;[\s\S]*?const mentionedFilesRootForRequest = opts\?\.mentionedFilesRoot \?\? mentionRoot;[\s\S]*?if \(!projectLaunchReadyForRequest\)[\s\S]*?const projectRootForRequest = requestedProjectRoot;[\s\S]*?projectRoot: projectRootForRequest,[\s\S]*?permissionMode: controlsOverride\?\.permissionMode \?\? permissionMode,[\s\S]*?mentionedFilesRoot: mentionedFilesRootForRequest/,
   "delayed dispatch must authorize and use queued metadata rather than the latest composer state",
 );
 
@@ -353,7 +353,7 @@ assert.match(
 
 assert.match(
   source,
-  /function regenerateFor\(turn: Turn\)[\s\S]*?role === "user"[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?const retryModel = turn\.responseMetadata\?\.retryModel;[\s\S]*?modelOverride: retryModel[\s\S]*?modelControls: prevUser\.modelControls \?\? \{\}/,
+  /function regenerateFor\(turn: Turn\)[\s\S]*?role === "user"[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?retryTurnModelRequest\(prevUser, turn\)[\s\S]*?modelControls: prevUser\.modelControls \?\? \{\}/,
   "Regenerate reuses the preceding user turn's controls and the assistant's authoritative retry model (CHAT-D6-02)",
 );
 
