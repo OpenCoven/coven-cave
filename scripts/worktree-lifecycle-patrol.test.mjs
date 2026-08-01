@@ -75,6 +75,22 @@ try {
     "pnpm beads:prs:patrol:apply && pnpm beads:worktrees",
     "normal apply patrol remains nonmutating until all gate planes are enforced",
   );
+  const agents = readFileSync(path.join(sourceRoot, "AGENTS.md"), "utf8");
+  const claude = readFileSync(path.join(sourceRoot, "CLAUDE.md"), "utf8");
+  assert.match(agents, /After a PR merges, run `pnpm beads:worktrees`/);
+  assert.match(agents, /pnpm beads:worktrees:create/);
+  assert.match(agents, /pnpm beads:worktrees:apply/);
+  assert.match(agents, /remote deletion remains proposal-only/);
+  assert.match(claude, /normal completion uses the lifecycle patrol/);
+  assert.match(claude, /gate-incomplete, preserve the unit/);
+  assert.match(
+    claude,
+    /Never bypass\s+the worktree guard to force completion/,
+  );
+  assert.doesNotMatch(
+    claude,
+    /Manually `git worktree remove .*` then `git branch -D/,
+  );
 
   mkdirSync(repo);
   mkdirSync(origin);

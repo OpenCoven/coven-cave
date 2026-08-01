@@ -117,7 +117,12 @@ cd .worktrees/<branch> && pnpm install   # ~10s with pnpm's CAS store
 - Symlink `node_modules` from the main checkout — Next.js + pnpm workspaces are fragile around this.
 - `git worktree remove --force` when status is dirty — investigate first; uncommitted edits may belong to another live session.
 
-**After `gh pr merge --squash --delete-branch`:** remote-side cleanup is automatic; local-side is NOT. Manually `git worktree remove <path>` then `git branch -D <branch>`, then `git worktree list` to verify.
+**After `gh pr merge --squash --delete-branch`:** normal completion uses the lifecycle patrol.
+Run `pnpm beads:worktrees`; when the full maintenance
+transaction is available, `pnpm beads:worktrees:apply` retires proven-safe
+local state. If it reports active, recovery, cooldown, uncertain, or
+gate-incomplete, preserve the unit and record its owner/reason. Never bypass
+the worktree guard to force completion.
 
 ## Starting the Tauri desktop app
 

@@ -1487,7 +1487,7 @@ git commit -S -m "feat(skills): add automatic local retirement policy"
 - Modify: `AGENTS.md`
 - Modify: `CLAUDE.md`
 
-- [ ] **Step 1: Pin the new guidance with a source-contract test**
+- [x] **Step 1: Pin the new guidance with a source-contract test**
 
 Add assertions to `scripts/worktree-lifecycle-patrol.test.mjs`:
 
@@ -1502,7 +1502,7 @@ assert.match(claude, /normal completion uses the lifecycle patrol/);
 assert.doesNotMatch(claude, /Manually `git worktree remove .*` then `git branch -D/);
 ```
 
-- [ ] **Step 2: Run the source-contract test**
+- [x] **Step 2: Run the source-contract test**
 
 Run:
 
@@ -1512,7 +1512,7 @@ node scripts/worktree-lifecycle-patrol.test.mjs
 
 Expected: FAIL because the current docs still require manual `branch -D`.
 
-- [ ] **Step 3: Update normal completion guidance**
+- [x] **Step 3: Update normal completion guidance**
 
 In `AGENTS.md`, replace immediate manual cleanup with:
 
@@ -1538,7 +1538,7 @@ gate-incomplete, preserve the unit and record its owner/reason. Never bypass
 the worktree guard to force completion.
 ```
 
-- [ ] **Step 4: Run the source-contract test**
+- [x] **Step 4: Run the source-contract test**
 
 Run:
 
@@ -1548,7 +1548,7 @@ node scripts/worktree-lifecycle-patrol.test.mjs
 
 Expected: `worktree-lifecycle-patrol.test.mjs: ok`.
 
-- [ ] **Step 5: Commit workflow guidance**
+- [x] **Step 5: Commit workflow guidance**
 
 ```bash
 git add AGENTS.md CLAUDE.md scripts/worktree-lifecycle-patrol.test.mjs
