@@ -135,6 +135,38 @@ function source(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function mission(overrides: Record<string, unknown> = {}) {
+  return {
+    version: 1,
+    id: "mission-1",
+    familiarId: "familiar-a",
+    title: "Mission",
+    intent: "Investigate the evidence",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "Brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 30,
+      maxIterations: 3,
+      sourceTarget: 5,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: true,
+    },
+    status: "running",
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:01:00.000Z",
+    iterations: [{
+      number: 1,
+      status: "running",
+      startedAt: "2026-08-01T00:00:00.000Z",
+    }],
+    artifacts: [],
+    sources: [{ id: "x-123", title: "X post", url: post.canonicalUrl, sourceType: "x", status: "candidate" }],
+    ...overrides,
+  };
+}
+
 const familiarA = {
   id: "familiar-a",
   display_name: "A",
@@ -652,13 +684,39 @@ describe("ResearchXSources previews and mutations", () => {
     await act(async () => renderer.unmount());
   });
 
+  test("a saved source survives exactly once when the initial GET resolves after Save source", async () => {
+    const initialSources = deferred<Response>();
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) return initialSources.promise;
+      if (url === "/api/x/posts/lookup") return response({ ok: true, post });
+      if (url === "/api/x/sources" && init?.method === "POST") {
+        return response({ ok: true, source: source({ preview: post }), created: true });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }));
+
+    await act(async () => {
+      input(renderer, "X post URL").props.onChange({ target: { value: post.canonicalUrl } });
+    });
+    await act(async () => form(renderer, "Grab X post").props.onSubmit({
+      preventDefault() {},
+    }));
+    await act(async () => button(renderer, "Save source").props.onClick());
+
+    await act(async () => {
+      initialSources.resolve(response({ ok: true, sources: [] }));
+      await initialSources.promise;
+      await Promise.resolve();
+    });
+
+    expect(renderer.root.findAllByProps({ "data-x-source-id": "source-123" })).toHaveLength(1);
+    await act(async () => renderer.unmount());
+  });
+
   test("Attach has a visible associated prerequisite and applies the returned authoritative mission", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
-    const attachedMission = {
-      id: "mission-1",
-      familiarId: "familiar-a",
-      sources: [{ id: "x-123", url: post.canonicalUrl }],
-    };
+    const attachedMission = mission();
     const onMissionAttached = vi.fn();
     const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
@@ -710,6 +768,75 @@ describe("ResearchXSources previews and mutations", () => {
     await act(async () => renderer.unmount());
   });
 
+  test.each([
+    ["malformed", { id: "mission-1", familiarId: "familiar-a", raw: "private payload" }],
+    ["wrong mission", mission({ id: "mission-2", raw: "private payload" })],
+    ["wrong familiar", mission({ familiarId: "familiar-b", raw: "private payload" })],
+  ])("Attach safely rejects a %s mission response", async (_label, returnedMission) => {
+    const onMissionAttached = vi.fn();
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) {
+        return response({ ok: true, sources: [source({ preview: post })] });
+      }
+      if (url === "/api/x/sources" && init?.method === "POST") {
+        return response({ ok: true, mission: returnedMission });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }), { selectedMissionId: "mission-1", onMissionAttached });
+
+    await act(async () => button(renderer, "Attach to mission").props.onClick());
+
+    expect(onMissionAttached).not.toHaveBeenCalled();
+    expect(button(renderer, "Attach to mission").props.disabled).toBe(false);
+    expect(announce).toHaveBeenLastCalledWith(
+      "X returned an unexpected response. Try again when you’re ready.",
+      "assertive",
+    );
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("private payload");
+    await act(async () => renderer.unmount());
+  });
+
+  test("a late Attach response updates its requested mission without changing the newer selection", async () => {
+    const attach = deferred<Response>();
+    const onMissionAttached = vi.fn();
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) {
+        return response({ ok: true, sources: [source({ preview: post })] });
+      }
+      if (url === "/api/x/sources" && init?.method === "POST") return attach.promise;
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const renderer = await renderReady(fetcher, {
+      selectedMissionId: "mission-1",
+      onMissionAttached,
+    });
+
+    act(() => {
+      void button(renderer, "Attach to mission").props.onClick();
+    });
+    await act(async () => {
+      renderer.update(
+        <ResearchXSources
+          familiar={familiarA}
+          selectedMissionId="mission-2"
+          onMissionAttached={onMissionAttached}
+        />,
+      );
+    });
+    await act(async () => {
+      attach.resolve(response({ ok: true, mission: mission() }));
+      await attach.promise;
+      await Promise.resolve();
+    });
+
+    expect(onMissionAttached).toHaveBeenCalledWith(mission());
+    expect(button(renderer, "Attach to mission").props.disabled).toBe(false);
+    expect(textOf(button(renderer, "Attach to mission"))).toContain("Attach to mission");
+    await act(async () => renderer.unmount());
+  });
+
   test("Attach clears a prior per-source error before retry and after success", async () => {
     const retry = deferred<Response>();
     let attaches = 0;
@@ -737,11 +864,7 @@ describe("ResearchXSources previews and mutations", () => {
     expect(JSON.stringify(renderer.toJSON())).not.toContain("X is unavailable right now.");
 
     await act(async () => {
-      retry.resolve(response({ ok: true, mission: {
-        id: "mission-1",
-        familiarId: "familiar-a",
-        sources: [],
-      } }));
+      retry.resolve(response({ ok: true, mission: mission({ sources: [] }) }));
       await retry.promise;
     });
     expect(JSON.stringify(renderer.toJSON())).not.toContain("X is unavailable right now.");
@@ -872,6 +995,34 @@ describe("ResearchXSources previews and mutations", () => {
     expect(card.props.tabIndex).toBe(-1);
     expect(focused).toEqual(["source-123"]);
     expect(JSON.stringify(card.toJSON?.() ?? renderer.toJSON())).toContain("Post deleted");
+    expect(() => button(renderer, "Refresh post")).toThrow();
+    await act(async () => renderer.unmount());
+  });
+
+  test("a successful refresh keeps focus in the source region before installing its preview", async () => {
+    const focused: string[] = [];
+    const renderer = await renderReady(vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection") return response(connectedConnection());
+      if (url.includes("/api/x/sources?")) {
+        return response({ ok: true, sources: [source()] });
+      }
+      if (url === "/api/x/sources" && init?.method === "POST") {
+        return response({ ok: true, source: source(), post });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }), {}, (element) => {
+      if (element.type === "article" && element.props["data-x-source-id"]) {
+        return {
+          focus: () => focused.push(String(element.props["data-x-source-id"])),
+        };
+      }
+      return null;
+    });
+
+    await act(async () => button(renderer, "Refresh post").props.onClick());
+
+    expect(focused).toEqual(["source-123"]);
+    expect(JSON.stringify(renderer.toJSON())).toContain(post.text);
     expect(() => button(renderer, "Refresh post")).toThrow();
     await act(async () => renderer.unmount());
   });

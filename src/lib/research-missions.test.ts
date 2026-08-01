@@ -9,6 +9,7 @@ import {
   describeResearchSchedule,
   ensureStandardArtifactRefs,
   normalizeResearchBounds,
+  parseResearchMission,
   RESEARCH_BOUND_LIMITS,
   RESEARCH_INTENT_MIN_LENGTH,
   researchArtifactKindForMode,
@@ -20,6 +21,47 @@ import {
   type ResearchMission,
   validateCreateResearchMissionInput,
 } from "./research-missions.ts";
+
+function validMission(): ResearchMission {
+  return {
+    version: 1,
+    id: "mission-1",
+    familiarId: "sage",
+    title: "Mission",
+    intent: "Investigate the evidence",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "Brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 30,
+      maxIterations: 3,
+      sourceTarget: 5,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: true,
+    },
+    status: "running",
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:01:00.000Z",
+    iterations: [{ number: 1, status: "running" }],
+    artifacts: [],
+    sources: [],
+  };
+}
+
+test("mission parser validates shared-state fields and reconstructs safe data", () => {
+  const parsed = parseResearchMission({ ...validMission(), privatePayload: "do not retain" });
+  assert.deepEqual(parsed, validMission());
+  assert.equal(parseResearchMission({ ...validMission(), bounds: { maxIterations: 3 } }), null);
+  assert.equal(parseResearchMission({
+    ...validMission(),
+    iterations: [{ number: 1, status: "invented" }],
+  }), null);
+  assert.equal(parseResearchMission({
+    ...validMission(),
+    sources: [{ id: "x", title: "X", sourceType: "x", status: "invented" }],
+  }), null);
+});
 
 test("Auto-routing is explainable and ambiguous work never loops", () => {
   assert.deepEqual(inferResearchMissionMode("Compare local-first note apps"), {

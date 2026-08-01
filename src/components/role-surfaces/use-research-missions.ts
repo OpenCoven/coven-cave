@@ -25,6 +25,26 @@ export type ResearchMissionViewState = {
   error: string | null;
 };
 
+type ApplyMissionOptions = {
+  select?: boolean;
+};
+
+function isMissionAtLeastAsFresh(
+  incoming: ResearchMission,
+  current: ResearchMission,
+): boolean {
+  const incomingUpdatedAt = Date.parse(incoming.updatedAt);
+  const currentUpdatedAt = Date.parse(current.updatedAt);
+  if (Number.isFinite(incomingUpdatedAt)
+    && Number.isFinite(currentUpdatedAt)
+    && incomingUpdatedAt !== currentUpdatedAt) {
+    return incomingUpdatedAt > currentUpdatedAt;
+  }
+  const incomingIteration = incoming.iterations.at(-1)?.number ?? 0;
+  const currentIteration = current.iterations.at(-1)?.number ?? 0;
+  return incomingIteration >= currentIteration;
+}
+
 const INITIAL_STATE: ResearchMissionViewState = {
   missions: [],
   selectedId: null,
@@ -95,18 +115,25 @@ export function useResearchMissions(familiarId: string) {
     setState((current) => ({ ...current, selectedId }));
   }, []);
 
-  const applyMission = useCallback((mission: ResearchMission) => {
+  const applyMission = useCallback((
+    mission: ResearchMission,
+    options: ApplyMissionOptions = {},
+  ) => {
     if (mission.familiarId !== familiarId) return;
-    loadSeq.current += 1;
-    setState((current) => ({
-      ...current,
-      missions: current.missions.some((candidate) => candidate.id === mission.id)
-        ? current.missions.map((candidate) => candidate.id === mission.id ? mission : candidate)
-        : [mission, ...current.missions],
-      selectedId: mission.id,
-      loading: false,
-      error: null,
-    }));
+    setState((current) => {
+      const existing = current.missions.find((candidate) => candidate.id === mission.id);
+      if (existing && !isMissionAtLeastAsFresh(mission, existing)) return current;
+      loadSeq.current += 1;
+      return {
+        ...current,
+        missions: existing
+          ? current.missions.map((candidate) => candidate.id === mission.id ? mission : candidate)
+          : [mission, ...current.missions],
+        selectedId: options.select ? mission.id : current.selectedId,
+        loading: false,
+        error: null,
+      };
+    });
   }, [familiarId]);
 
   const start = useCallback(async (input: CreateResearchMissionInput) => {

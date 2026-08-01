@@ -32,11 +32,9 @@ function mission(overrides: Record<string, unknown> = {}) {
     deliverable: "Brief",
     constraints: [],
     bounds: {
-      maxIterations: 1,
-      maxSearchQueries: 1,
-      maxSourceFetches: 1,
-      maxRuntimeMinutes: 1,
-      maxCostUsd: 1,
+      wallClockMinutes: 30,
+      maxIterations: 3,
+      sourceTarget: 5,
       checkpointEvery: 1,
       stopWhenCostUnavailable: true,
     },
@@ -55,8 +53,13 @@ describe("useResearchMissions authoritative mission application", () => {
     listResearchMissions.mockReset();
   });
 
-  test("applyMission replaces the shared mission immediately without fetching", async () => {
+  test("applyMission merges a fresh mission without changing selection unless requested", async () => {
     const initial = mission();
+    const second = mission({
+      id: "mission-2",
+      title: "Second mission",
+      updatedAt: "2026-08-01T00:00:30.000Z",
+    });
     const attached = mission({
       updatedAt: "2026-08-01T00:01:00.000Z",
       sources: [{
@@ -67,7 +70,7 @@ describe("useResearchMissions authoritative mission application", () => {
         status: "candidate",
       }],
     });
-    listResearchMissions.mockResolvedValue({ ok: true, missions: [initial] });
+    listResearchMissions.mockResolvedValue({ ok: true, missions: [initial, second] });
     let latest: ReturnType<typeof useResearchMissions> | null = null;
     function Harness() {
       latest = useResearchMissions("familiar-a");
@@ -84,12 +87,58 @@ describe("useResearchMissions authoritative mission application", () => {
     expect(listResearchMissions).toHaveBeenCalledTimes(1);
 
     act(() => {
+      latest!.select("mission-2");
       latest!.applyMission(attached);
     });
 
-    expect(latest!.selected?.sources).toEqual(attached.sources);
+    expect(latest!.selected?.id).toBe("mission-2");
     expect(latest!.missions[0]).toEqual(attached);
     expect(listResearchMissions).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      latest!.applyMission(attached, { select: true });
+    });
+    expect(latest!.selected?.id).toBe("mission-1");
+    await act(async () => renderer.unmount());
+  });
+
+  test("applyMission cannot roll back a newer authoritative mission", async () => {
+    const authoritative = mission({
+      updatedAt: "2026-08-01T00:02:00.000Z",
+      status: "checkpoint",
+      iterations: [
+        { number: 1, status: "completed" },
+        { number: 2, status: "checkpoint" },
+      ],
+      sources: [{ id: "newer", title: "Newer", sourceType: "web", status: "used" }],
+    });
+    const staleAttach = mission({
+      updatedAt: "2026-08-01T00:01:00.000Z",
+      status: "running",
+      iterations: [{ number: 1, status: "running" }],
+      sources: [{ id: "stale", title: "Stale", sourceType: "x", status: "candidate" }],
+    });
+    listResearchMissions.mockResolvedValue({ ok: true, missions: [authoritative] });
+    let latest: ReturnType<typeof useResearchMissions> | null = null;
+    function Harness() {
+      latest = useResearchMissions("familiar-a");
+      return createElement("div");
+    }
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(createElement(Harness));
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      latest!.applyMission(staleAttach, { select: true });
+    });
+
+    expect(latest!.missions[0]).toEqual(authoritative);
+    expect(latest!.selected).toEqual(authoritative);
     await act(async () => renderer.unmount());
   });
 });

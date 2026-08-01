@@ -22,7 +22,10 @@ import {
   type NormalizedXPost,
   type XErrorCode,
 } from "@/lib/x-api";
-import type { ResearchMission } from "@/lib/research-missions";
+import {
+  parseResearchMission,
+  type ResearchMission,
+} from "@/lib/research-missions";
 import "@/styles/globals/surface-research-resources.css";
 
 type XConnection = {
@@ -220,6 +223,14 @@ function mergeSource(
   ));
 }
 
+function mergeSourceRead(
+  current: SavedXSourceView[],
+  loaded: SavedXSourceView[],
+): SavedXSourceView[] {
+  const currentIds = new Set(current.map((source) => source.id));
+  return [...current, ...loaded.filter((source) => !currentIds.has(source.id))];
+}
+
 function XPostPreview({
   post,
   selected,
@@ -291,6 +302,7 @@ function ResearchXSourcesScope({
   const previewControllerRef = useRef<AbortController | null>(null);
   const previewRequestRef = useRef(0);
   const sourceCardRefs = useRef(new Map<string, HTMLElement>());
+  const sourceMutationEpochRef = useRef(0);
 
   const [connection, setConnection] = useState<XConnection | null>(null);
   const [connectionError, setConnectionError] = useState<XFailure | null>(null);
@@ -410,6 +422,7 @@ function ResearchXSourcesScope({
         if (!nextConnection.connected || familiar.xResearchEnabled !== true) return;
 
         setSourcesLoading(true);
+        const sourceReadEpoch = sourceMutationEpochRef.current;
         const sourcesController = controller();
         try {
           const sourcesResponse = await fetch(
@@ -430,7 +443,11 @@ function ResearchXSourcesScope({
             setSourcesError({ code: "invalid-response" });
             return;
           }
-          setSources(parsed as SavedXSourceView[]);
+          setSources((current) => (
+            sourceReadEpoch === sourceMutationEpochRef.current
+              ? parsed as SavedXSourceView[]
+              : mergeSourceRead(current, parsed as SavedXSourceView[])
+          ));
         } catch {
           if (!sourcesController.signal.aborted && isCurrent(key, generation)) {
             setSourcesError({ code: "upstream-unavailable" });
@@ -628,6 +645,7 @@ function ResearchXSourcesScope({
       announce(message, "assertive");
       return;
     }
+    sourceMutationEpochRef.current += 1;
     setSources((current) => mergeSource(current, {
       ...result.value.source,
       preview: result.value.source.preview ?? post,
@@ -637,6 +655,7 @@ function ResearchXSourcesScope({
 
   const attachSource = async (source: SavedXSourceView) => {
     if (!selectedMissionId || sourceBusy) return;
+    const requestedMissionId = selectedMissionId;
     const key = scopeKeyRef.current;
     const generation = generationRef.current;
     setSourceBusy(`attach:${source.id}`);
@@ -651,13 +670,17 @@ function ResearchXSourcesScope({
         action: "attach",
         familiarId: familiar.id,
         sourceId: source.id,
-        missionId: selectedMissionId,
+        missionId: requestedMissionId,
       },
-      (value) => (
-        isRecord(value) && isRecord(value.mission)
-          ? value.mission as ResearchMission
-          : null
-      ),
+      (value) => {
+        if (!isRecord(value)) return null;
+        const mission = parseResearchMission(value.mission);
+        return mission
+          && mission.id === requestedMissionId
+          && mission.familiarId === familiar.id
+          ? mission
+          : null;
+      },
     );
     if (!isCurrent(key, generation)) return;
     setSourceBusy(null);
@@ -674,11 +697,12 @@ function ResearchXSourcesScope({
       return next;
     });
     onMissionAttached?.(result.value);
+    sourceMutationEpochRef.current += 1;
     setSources((current) => current.map((candidate) => (
-      candidate.id === source.id && !candidate.attachedMissionIds.includes(selectedMissionId)
+      candidate.id === source.id && !candidate.attachedMissionIds.includes(requestedMissionId)
         ? {
             ...candidate,
-            attachedMissionIds: [...candidate.attachedMissionIds, selectedMissionId],
+            attachedMissionIds: [...candidate.attachedMissionIds, requestedMissionId],
           }
         : candidate
     )));
@@ -719,6 +743,7 @@ function ResearchXSourcesScope({
       setSourceErrors((current) => ({ ...current, [source.id]: result.error }));
       if (result.error.code === "not-found") {
         sourceCardRefs.current.get(source.id)?.focus();
+        sourceMutationEpochRef.current += 1;
         setSources((current) => current.map((candidate) => (
           candidate.id === source.id
             ? { ...candidate, availability: "deleted", preview: undefined }
@@ -728,6 +753,8 @@ function ResearchXSourcesScope({
       announce(message, "assertive");
       return;
     }
+    sourceCardRefs.current.get(source.id)?.focus();
+    sourceMutationEpochRef.current += 1;
     setSources((current) => mergeSource(current, {
       ...result.value.source,
       preview: result.value.post,

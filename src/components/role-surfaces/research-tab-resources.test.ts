@@ -212,6 +212,19 @@ test("X source ownership remounts by familiar/grant and same-scope retries claim
   assert.match(xSources, /setLookupBusy\(false\);[\s\S]*setSearchBusy\(false\);/);
 });
 
+test("X source mutations validate mission identity and preserve newer source reads and focus", () => {
+  assert.match(xSources, /const mission = parseResearchMission\(value\.mission\);/);
+  assert.match(xSources, /mission\.id === requestedMissionId/);
+  assert.match(xSources, /mission\.familiarId === familiar\.id/);
+  assert.doesNotMatch(xSources, /value\.mission as ResearchMission/);
+  assert.match(xSources, /const sourceReadEpoch = sourceMutationEpochRef\.current;/);
+  assert.match(xSources, /mergeSourceRead\(current, parsed as SavedXSourceView\[\]\)/);
+  assert.match(
+    xSources,
+    /sourceCardRefs\.current\.get\(source\.id\)\?\.focus\(\);\s*sourceMutationEpochRef\.current \+= 1;\s*setSources/,
+  );
+});
+
 test("manual zero-result announcements suppress duplicate EmptyState live output", () => {
   assert.match(xSources, /<EmptyState\s+compact\s+live=\{false\}\s+headline="No X posts found"/);
   assert.match(emptyState, /live = true/);
