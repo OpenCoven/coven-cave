@@ -43,10 +43,8 @@
   overflow: visible !important;
 }
 
-/* Inner panel border — the recessed gutter and rounded leading edge of
-   .shell-detail now carry the separation, so the side panes drop the hard
-   divider that used to double it. (`list` is undefined at every call site
-   today; if that pane ever returns, its seam is a fresh call to make.) */
+/* The sidebar owns the desktop shell elevation; this wrapper only establishes
+   the positioning context for the hover-peek overlay. */
 .shell-nav-panel { position: relative; }
 
 .shell-nav-panel > .shell-nav,
@@ -138,9 +136,25 @@
      @supports / reduced-transparency blocks below. */
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border-right: 1px solid var(--border-hairline);
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.35);
   animation: shellNavPeekIn 0.13s ease;
+}
+
+/* Dia-style floating sidebar edge: expanded navigation stays in the panel's
+   resizable allocation while its painted surface floats inside the shell.
+   Hover-peek shares the same silhouette, so both states read as one object. */
+@media (min-width: 1024px) {
+  .shell-nav-panel > .shell-nav:not(.shell-nav--rail) {
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+    box-shadow: 0 14px 36px -24px var(--shadow-color);
+    overflow-x: hidden;
+    margin: var(--space-2);
+  }
+
+  .shell-nav-panel > .shell-nav:not(.shell-nav--rail, .shell-nav--peek) {
+    flex: 0 0 auto;
+    width: calc(100% - var(--space-4));
+  }
 }
 @keyframes shellNavPeekIn {
   from { opacity: 0; transform: translateX(-8px); }
@@ -1041,26 +1055,11 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  /* Rounded leading edge: the content pane reads as a surface raised off the
-     shell rather than a third column butted against the rail. Logical corners,
-     so RTL rounds the trailing edge instead. The recess behind the arc is
-     painted by .shell-detail-panel below — .shell-root cannot supply it,
-     because backdrop mode makes root transparent. */
-  border-start-start-radius: var(--radius-panel);
-  border-end-start-radius: var(--radius-panel);
-  /* A hair of inset so the recess reads down the whole edge rather than only
-     inside the corner arcs — flush panes make the rounding almost invisible. */
-  margin-inline-start: var(--space-2);
 }
 
-/* The arc needs a surface behind it. The panel wrapper paints the gutter in
-   the nav's own rendered colour — .shell-nav is `--bg-raised` at 88% over
-   `--bg-base`, so this is that mix flattened — which makes the content read as
-   a card floating on the rail's plane. Deriving it instead of picking a token
-   keeps the relationship right in light themes too, where a recess token like
-   --bg-panel is *lighter* than the base and would invert the effect. */
+/* The detail wrapper is the quiet canvas behind the elevated navigation. */
 .shell-detail-panel {
-  background: color-mix(in oklch, var(--bg-raised) 88%, var(--bg-base));
+  background: var(--bg-base);
 }
 
 .shell-detail-header {
