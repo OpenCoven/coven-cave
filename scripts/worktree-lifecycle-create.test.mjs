@@ -231,7 +231,7 @@ case "$*" in
     OID_ARG=
     for arg in "$@"; do
       case "$arg" in
-        oid=*) OID_ARG=${arg#oid=} ;;
+        oid=*) OID_ARG=\${arg#oid=} ;;
       esac
     done
     if [ "$OID_ARG" = "${initialOid}" ]; then
