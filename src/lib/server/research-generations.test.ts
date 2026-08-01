@@ -595,6 +595,9 @@ test("podcast drafter strips citation apparatus from speech, keeps prose verbati
       "- Benchmarks preserve scores, not intent (the DGM lesson).",
       "- External outcomes should decide promotion [S01](../sources.json) [S06].",
       "- Robust goal-guarding traces to training choices (S20 2025-06; high confidence).",
+      "- The date alone was flagged as unverified (2025-11).",
+      "- Anti-faking mitigations were characterized (verified).",
+      "- The Gödel machine (2003) proposed proof-gated self-modification, and (I) doubt it scales.",
     ].join("\n"),
   }, "standard");
   assert.equal(content.kind, "podcast");
@@ -615,6 +618,15 @@ test("podcast drafter strips citation apparatus from speech, keeps prose verbati
   assert.ok(
     narration.includes("Robust goal-guarding traces to training choices."),
     `dated confidence parentheticals never reach speech (${narration})`,
+  );
+  assert.ok(
+    narration.includes("The date alone was flagged as unverified.") &&
+      narration.includes("Anti-faking mitigations were characterized."),
+    `lone date and lone label parentheticals never reach speech (${narration})`,
+  );
+  assert.ok(
+    narration.includes("The Gödel machine (2003) proposed proof-gated self-modification, and (I) doubt it scales."),
+    `bare publication years and lone pronouns stay verbatim (${narration})`,
   );
   assert.ok(!/\bS\d{1,3}\b/.test(narration), `no bare ledger ids in speech (${narration})`);
 });

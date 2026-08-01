@@ -852,6 +852,21 @@ const CITATION_ID_RE =
 /** Confidence labels that only annotate a citation. */
 const CITATION_LABEL_RE =
   /^(?:high|medium|low|inference|fact|theory|confidence|verified|\[?[IVH]\]?|\d{4}(?:-\d{2}){0,2})$/i;
+/**
+ * Tokens that anchor a parenthetical as citation metadata on their own.
+ * Deliberately narrower than `CITATION_LABEL_RE`: single grade letters would
+ * strip prose like "(I)", and bare years would strip publication years like
+ * "(2003)" that still read as meaningful speech.
+ */
+const CITATION_ANCHOR_RE =
+  /^(?:high|medium|low|inference|fact|theory|verified|confidence|\d{4}(?:-\d{2}){1,2})$/i;
+/**
+ * Ids allowed to anchor a parenthetical. Narrower than the bracket form:
+ * bare numbers ("(2003)") and hyphenated prose ("(state-of-the-art)") are
+ * not citations there, so kebab ids must carry a digit.
+ */
+const PAREN_ID_RE =
+  /^(?:SS|[A-Z]{1,2}\d{1,3}(?:\.\w+)?[a-z]?|(?:src|link)-[\w.…-]+|arXiv:[\w./-]+|[a-z][\w.…]*(?:-[\w.…]+)*-[\w.…]*\d[\w.…-]*)$/;
 
 function citationTokens(inner: string): string[] {
   return inner.split(/[\s,;·+&]+/).filter(Boolean);
@@ -870,10 +885,10 @@ function stripSpokenCitations(text: string): string {
     .replace(/\(([^()]+)\)/g, (match, inner: string) => {
       const tokens = citationTokens(inner);
       const allCitation = tokens.every(
-        (token) => CITATION_ID_RE.test(token) || CITATION_LABEL_RE.test(token),
+        (token) => PAREN_ID_RE.test(token) || CITATION_LABEL_RE.test(token),
       );
       const anchored = tokens.some(
-        (token) => CITATION_ID_RE.test(token) || /^(?:high|medium|low|inference)$/i.test(token),
+        (token) => PAREN_ID_RE.test(token) || CITATION_ANCHOR_RE.test(token),
       );
       return allCitation && anchored ? "" : match;
     })
