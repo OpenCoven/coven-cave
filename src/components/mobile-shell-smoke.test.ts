@@ -28,7 +28,7 @@ const globals = (
       "../styles/globals/shell-responsive.css",
       "../styles/globals/calendar-agenda.css",
       "../styles/globals/surface-compact-calendar.css",
-      "../styles/globals/surface-reporting.css",
+      "../styles/globals/shell-cards-and-controls.css",
       "../styles/globals/surface-chat-overlays.css",
       "../styles/globals/shared-pickers-and-toasts.css",
       "../styles/globals/surface-role-workspaces.css",
