@@ -867,6 +867,20 @@ jobs:
       # so the install instructions match what's actually attached. This is
       # the only step that sets the release body, so it stays the canonical
       # source for what users read on the release page.
+      # Verify the renderer before it writes anything user-facing. This is the
+      # only place in CI where release-notes.test.mjs can run: it needs live
+      # tag history for the no-CHANGELOG fallback case, which is why it is
+      # allowlisted out of the frontend suites — and this job already checks
+      # out with fetch-depth: 0 for exactly that reason.
+      #
+      # Placed BEFORE the notes are set so a broken renderer stops the body
+      # from being published rather than publishing a wrong one. Artifacts are
+      # already uploaded by this point, so a failure here costs a re-run or a
+      # local `gh release edit --notes-file`, not the release.
+      - name: Verify release-notes renderer
+        shell: bash
+        run: node --test scripts/release-notes.test.mjs
+
       - name: Set release notes
         shell: bash
         env:
