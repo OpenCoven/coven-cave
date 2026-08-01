@@ -59,14 +59,14 @@ function renderListItem(block: Block, key: string): ReactNode {
     { key },
     renderInline(block.content, key),
     block.children.map((child, index) =>
-      renderBlock(child, `${key}:child:${index}`)
+      renderBlockNode(child, `${key}:child:${index}`)
     ),
   );
 }
 
-function renderBlock(block: Block, key: string): ReactNode {
+function renderBlockNode(block: Block, key: string): ReactNode {
   const children = block.children.map((child, index) =>
-    renderBlock(child, `${key}:child:${index}`)
+    renderBlockNode(child, `${key}:child:${index}`)
   );
   switch (block.type) {
     case "paragraph":
@@ -129,6 +129,7 @@ function renderBlock(block: Block, key: string): ReactNode {
         ),
       );
     }
+
     case "blockquote":
       return createElement(
         "blockquote",
@@ -207,6 +208,16 @@ function renderBlock(block: Block, key: string): ReactNode {
   }
 }
 
+export function MarkdownReaderBlock({
+  block,
+  blockKey,
+}: {
+  block: Block;
+  blockKey: string;
+}) {
+  return renderBlockNode(block, blockKey);
+}
+
 export function CanonicalMemoryMarkdown({
   content,
   mode = "rendered",
@@ -222,6 +233,8 @@ export function CanonicalMemoryMarkdown({
   return createElement(
     "div",
     { className },
-    parse(content).map((block, index) => renderBlock(block, `block:${index}`)),
+    parse(content).map((block, index) =>
+      renderBlockNode(block, `block:${index}`)
+    ),
   );
 }

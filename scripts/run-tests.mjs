@@ -64,6 +64,7 @@ export const SUITES = {
     "src/lib/research-mission-client.test.ts",
     "src/lib/roving-list.test.ts",
     "src/lib/research-artifact-contract.test.ts",
+    "src/lib/document-reader.test.ts",
     "src/lib/research-findings-doc.test.ts",
     "src/lib/role-surface-state.test.ts",
     "src/components/role-surface-host-state.test.ts",
@@ -72,6 +73,7 @@ export const SUITES = {
     "src/components/role-surfaces/researcher-status.test.ts",
     "src/components/role-surfaces/familiar-room-interactions.test.tsx",
     "src/components/role-surfaces/researcher-surface.test.ts",
+    "src/components/role-surfaces/research-reader-shared.test.ts",
     "src/components/role-surfaces/research-evidence-ledger.test.ts",
     "src/components/role-surfaces/research-artifact-actions.test.ts",
     "src/components/role-surfaces/research-tab-prompt.test.ts",
@@ -914,6 +916,7 @@ export const SUITES = {
     "src/components/familiars-memory-reader.test.ts",
     "src/components/familiars-memory-master-detail.test.ts",
     "src/components/canonical-memory-markdown.test.ts",
+    "src/components/document-reader-view.test.ts",
     "src/components/canonical-memory-reader.test.ts",
     "src/components/familiars-memory-recovery.test.tsx",
     "src/components/familiars-view-memory-ownership.test.tsx",
@@ -1641,6 +1644,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/document-reader-view.test.ts",
   "src/components/role-surfaces/familiar-room-interactions.test.tsx",
   "src/components/familiars-memory-recovery.test.tsx",
   "src/components/familiars-view-memory-ownership.test.tsx",

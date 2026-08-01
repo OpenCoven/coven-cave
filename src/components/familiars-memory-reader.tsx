@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
-import { MarkdownBlock } from "@/components/message-bubble";
+import { DocumentReader } from "@/components/document-reader";
+import { MarkdownReaderBlock } from "@/components/canonical-memory-markdown";
 import { useMemoryFile } from "@/lib/use-memory-file";
 import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
@@ -10,6 +11,7 @@ import type { FileMemoryRow } from "@/lib/memory-rows";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { parseMarkdownReaderDocument } from "@/lib/document-reader";
 
 function compactPath(path: string): string {
   const collapsed = path.replace(/^\/Users\/[^/]+/, "~");
@@ -45,6 +47,11 @@ export function MemoryReaderPane({
   // File rows always carry the absolute allow-listed content path.
   const fetchPath = row?.contentPath ?? null;
   const { text, error, loading } = useMemoryFile(fetchPath, { refreshToken });
+  const content = text ?? "";
+  const readerDocument = useMemo(
+    () => parseMarkdownReaderDocument(content, row?.title ?? "Memory"),
+    [content, row?.title],
+  );
 
   // Leaving a row ends its edit session — a new selection opens in read mode.
   useEffect(() => {
@@ -70,7 +77,6 @@ export function MemoryReaderPane({
     });
   };
 
-  const content = text ?? "";
   const isFileLoading = loading || text === null;
   const fileError = error;
 
@@ -209,16 +215,18 @@ export function MemoryReaderPane({
           />
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="min-h-0 flex-1">
           {fileError ? (
-            <ErrorState
-              compact
-              headline="Couldn't load this memory"
-              subtitle={fileError}
-            />
+            <div className="p-4">
+              <ErrorState
+                compact
+                headline="Couldn't load this memory"
+                subtitle={fileError}
+              />
+            </div>
           ) : isFileLoading ? (
             <div
-              className="space-y-2.5"
+              className="space-y-2.5 p-4"
               aria-label="Loading memory"
               aria-busy="true"
             >
@@ -229,17 +237,26 @@ export function MemoryReaderPane({
               )}
             </div>
           ) : content.trim() === "" ? (
-            <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
+            <p className="p-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">
               Empty file.
             </p>
           ) : mode === "rendered" ? (
-            <MarkdownBlock text={content} />
+            <DocumentReader
+              document={readerDocument}
+              navigation="compact"
+              renderLede={(block) => (
+                <MarkdownReaderBlock block={block} blockKey="memory-lede" />
+              )}
+              renderBlock={(block, key) => (
+                <MarkdownReaderBlock block={block} blockKey={key} />
+              )}
+            />
           ) : (
-            <pre className="whitespace-pre-wrap break-words font-mono text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">
+            <pre className="h-full overflow-y-auto whitespace-pre-wrap break-words p-4 font-mono text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">
               {content}
             </pre>
           )}
-          </div>
+        </div>
       )}
     </div>
   );
