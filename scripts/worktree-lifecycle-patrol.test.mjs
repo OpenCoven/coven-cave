@@ -115,6 +115,10 @@ try {
   const linked = path.join(repo, ".worktrees", "linked");
   git(["worktree", "add", "-q", "-b", "feat/cave-link1-linked", linked, "origin/main"], repo);
 
+  const spaced = path.join(repo, ".worktrees", "spaced ");
+  git(["worktree", "add", "-q", "-b", "feat/spaced", spaced, "origin/main"], repo);
+  writeFileSync(path.join(spaced, "significant-space.txt"), "dirty\n");
+
   const branchOnlyPath = path.join(repo, ".worktrees", "branch-only");
   git(["worktree", "add", "-q", "-b", "feat/branch-only", branchOnlyPath, "origin/main"], repo);
   writeFileSync(path.join(branchOnlyPath, "branch-only.txt"), "landed branch-only work\n");
@@ -321,7 +325,7 @@ if [ "\${LIFECYCLE_REQUIRE_SAFE_GIT:-0}" = "1" ]; then
       exit 92
       ;;
   esac
-  for VARIABLE in GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_OPTIONAL_LOCKS GIT_REPLACE_REF_BASE GIT_NO_REPLACE_OBJECTS GIT_GRAFT_FILE GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do
+  for VARIABLE in GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE Git_Index_File GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_OPTIONAL_LOCKS GIT_REPLACE_REF_BASE GIT_NO_REPLACE_OBJECTS GIT_GRAFT_FILE GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do
     eval "VALUE_SET=\\\${$VARIABLE+x}"
     if [ -n "$VALUE_SET" ]; then
       printf 'unsafe git environment retained: %s\n' "$VARIABLE" >&2
@@ -600,7 +604,7 @@ if [ "$1" = "api" ] &&
     [ -z "$OWNER$NAME$OID_ARG" ] || fail "exact-head search included repository variables"
     case "$SEARCH_QUERY" in
       is:pr\\ head:*:*) fail "exact-head search used an owner-prefixed head qualifier" ;;
-      is:pr\\ head:feat/old|is:pr\\ head:feat/recent-merge|is:pr\\ head:feat/recent-reflog|is:pr\\ head:feat/live|is:pr\\ head:feat/cave-link1-linked|is:pr\\ head:feat/branch-only) ;;
+      is:pr\\ head:feat/old|is:pr\\ head:feat/recent-merge|is:pr\\ head:feat/recent-reflog|is:pr\\ head:feat/live|is:pr\\ head:feat/cave-link1-linked|is:pr\\ head:feat/spaced|is:pr\\ head:feat/branch-only) ;;
       *) fail "exact-head search used an unexpected query: $SEARCH_QUERY" ;;
     esac
     require_query 'search(query: $searchQuery, type: ISSUE, first: 100, after: $endCursor)'
@@ -633,6 +637,15 @@ fi
 
 case "$*" in
   *"/actions/runs"*)
+    WORKFLOW_COUNT_FILE=${JSON.stringify(
+      path.join(fixtureRoot, "workflow-count-"),
+    )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
+    WORKFLOW_COUNT=0
+    if [ -e "$WORKFLOW_COUNT_FILE" ]; then
+      WORKFLOW_COUNT=$(cat "$WORKFLOW_COUNT_FILE")
+    fi
+    WORKFLOW_COUNT=$((WORKFLOW_COUNT + 1))
+    printf '%s' "$WORKFLOW_COUNT" > "$WORKFLOW_COUNT_FILE"
     WORKFLOW_STATUS=
     case " $* " in
       *" status=queued "*) WORKFLOW_STATUS=queued ;;
@@ -671,6 +684,8 @@ case "$*" in
         : > "$WORKFLOW_MARKER"
         printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
       fi
+    elif [ "$WORKFLOW_STATUS" = "queued" ]; then
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":1000,"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/1000"}]}]'
     else
       printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
     fi
@@ -695,6 +710,12 @@ esac
 if [ "\${LIFECYCLE_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "drift-once")}" ]; then
   touch "${path.join(fixtureRoot, "drift-once")}"
   git -C "${repo}" branch feat/drift origin/main
+fi
+if [ "\${LIFECYCLE_GRAFT_DRIFT:-0}" = "1" ]; then
+  printf '%s %s\n' ${JSON.stringify(defaultHead)} ${JSON.stringify(oldHead)} > ${JSON.stringify(path.join(repo, ".git", "info", "grafts"))}
+fi
+if [ "\${LIFECYCLE_REPLACEMENT_DRIFT:-0}" = "1" ]; then
+  git -C "${repo}" update-ref ${JSON.stringify(`refs/replace/${defaultHead}`)} ${JSON.stringify(oldHead)}
 fi
 if [ "\${LIFECYCLE_OID_ONLY_TASK:-0}" = "1" ]; then
   cat ${JSON.stringify(path.join(fixtureRoot, "tasks-oid-only.json"))}
@@ -736,6 +757,8 @@ elif [ "\${LIFECYCLE_SIBLING_STRUCTURED_PATH:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-sibling","status":"open","title":"Open sibling path","metadata":{"coven":{"worktree":{"branch":"feat/sibling","path":"${old}-sibling","owner":"Kitty","purpose":"Sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_NULL_EXCEPTION:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":null}}}}]'
+elif [ "\${LIFECYCLE_SPACED_PATH:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-spaced","status":"open","title":"Spaced path","metadata":{"coven":{"worktree":{"branch":"feat/spaced","path":${JSON.stringify(spaced)},"owner":"Kitty","purpose":"Exact path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 else
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 fi
@@ -766,6 +789,8 @@ if [ "$1" = "sessions" ] && [ "$2" = "--json" ]; then
     printf '%s\n' '{"sessions":[{"id":"session-descendant","project_root":"${path.join(old, "subdir")}","status":"running"}]}'
   elif [ "\${LIFECYCLE_LINKED_DESCENDANT_SESSION:-0}" = "1" ]; then
     printf '%s\n' '{"sessions":[{"id":"session-linked","project_root":"${path.join(linked, "subdir")}","status":"running"}]}'
+  elif [ "\${LIFECYCLE_SPACED_PATH:-0}" = "1" ]; then
+    printf '%s\n' '{"sessions":[{"id":"session-spaced","project_root":${JSON.stringify(spaced)},"status":"running"}]}'
   elif [ "\${LIFECYCLE_SIBLING_PREFIX_SESSION:-0}" = "1" ]; then
     printf '%s\n' '{"sessions":[{"id":"session-sibling","project_root":"${old}-sibling","status":"running"}]}'
   else
@@ -797,6 +822,10 @@ fi
 if [ "\${LIFECYCLE_LSOF_WARN:-0}" = "1" ]; then
   printf 'p999\ncnode\nfcwd\nn${old}\n'
   printf '%s\n' 'some processes could not be inspected' >&2
+  exit 0
+fi
+if [ "\${LIFECYCLE_SPACED_PATH:-0}" = "1" ]; then
+  printf 'p1001\ncnode\nfcwd\nn%s\n' ${JSON.stringify(spaced)}
   exit 0
 fi
 printf 'p1\ncinit\nfcwd\nn/\n'
@@ -934,8 +963,8 @@ exit 0
   );
   assert.equal(branchOnly.lane, "retire-after-gate");
   assert.deepEqual(report.budgets, {
-    worktrees: { count: 7, warning: 12, exceeded: false },
-    branches: { count: 7, warning: 30, exceeded: false },
+    worktrees: { count: 8, warning: 12, exceeded: false },
+    branches: { count: 8, warning: 30, exceeded: false },
     exceptions: { active: 0, expired: 0 },
   }, "the exact budget object survives patrol JSON serialization");
   const nullExceptionReport = JSON.parse(
@@ -1023,12 +1052,12 @@ exit 0
   assert.match(humanReport, /uncommitted\.txt/, "the routine report includes exact dirty paths");
   assert.match(
     humanReport,
-    /^Worktree budget: 7\/12 \(within budget\)$/m,
+    /^Worktree budget: 8\/12 \(within budget\)$/m,
     "the routine report uses the lifecycle renderer's exact worktree budget line",
   );
   assert.match(
     humanReport,
-    /^Local branch budget: 7\/30 \(within budget\)$/m,
+    /^Local branch budget: 8\/30 \(within budget\)$/m,
     "the routine report uses the lifecycle renderer's exact local branch budget line",
   );
   assert.doesNotMatch(
@@ -1098,6 +1127,7 @@ exit 0
         GIT_WORK_TREE: live,
         GIT_COMMON_DIR: path.join(fixtureRoot, "hostile-common"),
         GIT_INDEX_FILE: path.join(fixtureRoot, "hostile-index"),
+        Git_Index_File: path.join(fixtureRoot, "hostile-mixed-case-index"),
         GIT_OBJECT_DIRECTORY: path.join(fixtureRoot, "hostile-objects"),
         GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(fixtureRoot, "hostile-alternates"),
         GIT_OPTIONAL_LOCKS: "1",
@@ -1129,6 +1159,25 @@ exit 0
         .changes.map((line) => line.replace(/^\?\s+/, "")),
       ["uncommitted.txt"],
     );
+  });
+
+  verifySafetyRegression("exact worktree path bytes remain authoritative", () => {
+    const spacedReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_SPACED_PATH: "1" }),
+    );
+    const spacedItem = spacedReport.items.find((item) => item.branch === "feat/spaced");
+    assert.equal(spacedItem.path, spaced);
+    assert.equal(spacedItem.path.endsWith(" "), true);
+    assert.deepEqual(
+      spacedItem.changes.map((line) => line.replace(/^\?\s+/, "")),
+      ["significant-space.txt"],
+    );
+    assert.deepEqual(spacedItem.sessionIds, ["session-spaced"]);
+    assert.deepEqual(spacedItem.processOwners, [{ pid: 1001, command: "node" }]);
+    assert.equal(spacedItem.metadata.beadId, "cave-spaced");
+    assert.deepEqual(spacedItem.metadataErrors, []);
+    assert.deepEqual(spacedItem.taskIds, ["cave-spaced"]);
+    assert.notEqual(spacedItem.lane, "retire-after-gate");
   });
 
   verifySafetyRegression("NUL Coven session root", () => {
@@ -1206,6 +1255,28 @@ exit 0
       );
     } finally {
       git(["replace", "-d", defaultHead], repo);
+    }
+  });
+
+  verifySafetyRegression("nonempty legacy grafts fail closed globally", () => {
+    const graftPath = path.join(repo, ".git", "info", "grafts");
+    writeFileSync(graftPath, `${defaultHead} ${oldHead}\n`);
+    try {
+      const graftReport = JSON.parse(patrol(["--json"]));
+      for (const item of graftReport.items) {
+        assert.notEqual(item.lane, "retire-after-gate");
+        assert.ok(
+          item.probeErrors.includes(
+            "Git history override inventory is unsafe: shared git common dir info/grafts is nonempty",
+          ),
+        );
+      }
+      assert.equal(
+        graftReport.items.find((item) => item.branch === "feat/old").lane,
+        "uncertain",
+      );
+    } finally {
+      rmSync(graftPath, { force: true });
     }
   });
 
@@ -1698,6 +1769,33 @@ exit 0
     () => patrol(["--json"], { LIFECYCLE_DRIFT: "1" }),
     /worktree or branch inventory changed during patrol/,
     "a concurrent branch change aborts instead of returning an incomplete success",
+  );
+
+  let graftDriftError;
+  try {
+    patrol(["--json"], { LIFECYCLE_GRAFT_DRIFT: "1", NODE_NO_WARNINGS: "1" });
+  } catch (error) {
+    graftDriftError = error;
+  }
+  assert.ok(graftDriftError, "a graft appearing during patrol must abort");
+  assert.equal(
+    graftDriftError.stderr.trim(),
+    "worktree-lifecycle-patrol: history override inventory changed during patrol",
+  );
+  rmSync(path.join(repo, ".git", "info", "grafts"), { force: true });
+
+  let replacementDriftError;
+  try {
+    patrol(["--json"], { LIFECYCLE_REPLACEMENT_DRIFT: "1", NODE_NO_WARNINGS: "1" });
+  } catch (error) {
+    replacementDriftError = error;
+  } finally {
+    git(["update-ref", "-d", `refs/replace/${defaultHead}`], repo);
+  }
+  assert.ok(replacementDriftError, "replacement-ref drift must abort");
+  assert.equal(
+    replacementDriftError.stderr.trim(),
+    "worktree-lifecycle-patrol: history override inventory changed during patrol",
   );
 
   let registrationDriftError;

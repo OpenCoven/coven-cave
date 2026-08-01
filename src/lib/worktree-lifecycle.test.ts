@@ -32,6 +32,21 @@ const DAY = 24 * 60 * 60 * 1000;
   }
   assert.equal(normalizeAbsoluteWorktreePath("/"), "/", "the filesystem root remains root");
   assert.equal(
+    normalizeAbsoluteWorktreePath("/repo/worktree "),
+    "/repo/worktree ",
+    "significant trailing whitespace remains part of an absolute worktree path",
+  );
+  assert.equal(
+    normalizeAbsoluteWorktreePath("/repo/ worktree"),
+    "/repo/ worktree",
+    "significant leading whitespace within an absolute path is preserved",
+  );
+  assert.equal(
+    normalizeAbsoluteWorktreePath(" /repo/worktree"),
+    null,
+    "whitespace before the root separator does not make a relative path absolute",
+  );
+  assert.equal(
     normalizeAbsoluteWorktreePath("repo/wt"),
     null,
     "relative paths are not accepted as lifecycle paths",

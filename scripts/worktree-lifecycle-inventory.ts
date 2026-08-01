@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync, type Stats } from "node:fs";
 import path from "node:path";
 import {
   calculateLifecycleBudgets,
@@ -139,6 +139,7 @@ const GITHUB_REPOSITORY = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const RFC3339_INSTANT =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-](\d{2}):(\d{2}))$/;
 const ISO_CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const HISTORY_OVERRIDE_DRIFT_ERROR = "history override inventory changed during patrol";
 
 function isRealCalendarDate(year: number, month: number, day: number): boolean {
   if (month < 1 || month > 12 || day < 1) return false;
@@ -258,9 +259,10 @@ const UNSAFE_GIT_ENVIRONMENT = new Set([
 function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
+    const canonicalKey = key.toUpperCase();
     if (
-      UNSAFE_GIT_ENVIRONMENT.has(key) ||
-      /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/.test(key)
+      UNSAFE_GIT_ENVIRONMENT.has(canonicalKey) ||
+      /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/.test(canonicalKey)
     ) {
       delete env[key];
     }
@@ -331,7 +333,7 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
       const ref = branchFields[0]?.slice("branch ".length) ?? null;
       if (ref === null) {
         return {
-          path: normalizedWorktreePath,
+          path: worktreePath,
           head,
           ref: null,
           branch: null,
@@ -341,7 +343,7 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
       const match = ref.match(/^refs\/heads\/(.+)$/);
       if (!match || !match[1]) {
         return {
-          path: normalizedWorktreePath,
+          path: worktreePath,
           head,
           ref,
           branch: null,
@@ -349,7 +351,7 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
         };
       }
       return {
-        path: normalizedWorktreePath,
+        path: worktreePath,
         head,
         ref,
         branch: match[1],
@@ -1057,6 +1059,7 @@ function fetchWorkflowSweep(
             page.workflow_runs.every(
               (run) =>
                 isRecord(run) &&
+                typeof run.id === "number" &&
                 Number.isSafeInteger(run.id) &&
                 run.id > 0 &&
                 run.status === state &&
@@ -1074,7 +1077,7 @@ function fetchWorkflowSweep(
       const stateRuns = pages.flatMap((page) => page.workflow_runs).map((run) => {
         const record = run as Record<string, unknown>;
         return {
-          id: canonicalWorkflowRunId(record.id)!,
+          id: record.id as number,
           status: record.status as string,
           head_branch: record.head_branch as string | null,
           head_sha: record.head_sha as string,
@@ -1845,15 +1848,87 @@ function assignActiveSessions(
   return { sessionIdsByPath, probeErrorsByPath };
 }
 
-function fingerprint(worktreeRaw: string, refsRaw: string): string {
-  return createHash("sha256")
-    .update(String(Buffer.byteLength(worktreeRaw)))
-    .update("\0")
-    .update(worktreeRaw)
-    .update(String(Buffer.byteLength(refsRaw)))
-    .update("\0")
-    .update(refsRaw)
-    .digest("hex");
+type GraftInventory = {
+  snapshot: string;
+  error: string | null;
+};
+
+function statIdentity(stats: Stats): string {
+  return [
+    stats.dev,
+    stats.ino,
+    stats.mode,
+    stats.size,
+    stats.mtimeMs,
+    stats.ctimeMs,
+  ].join(":");
+}
+
+function graftInventory(commonGitDir: string): GraftInventory {
+  const graftPath = path.join(commonGitDir, "info", "grafts");
+  let initialStats: Stats;
+  try {
+    initialStats = lstatSync(graftPath);
+  } catch (error) {
+    const code = isRecord(error) && typeof error.code === "string" ? error.code : "UNKNOWN";
+    if (code === "ENOENT") return { snapshot: "absent", error: null };
+    return {
+      snapshot: `unreadable-state:${code}`,
+      error:
+        "Git history override inventory is unsafe: shared git common dir info/grafts state is unreadable",
+    };
+  }
+
+  const initialIdentity = statIdentity(initialStats);
+  if (!initialStats.isFile()) {
+    return {
+      snapshot: `non-regular:${initialIdentity}`,
+      error:
+        "Git history override inventory is unsafe: shared git common dir info/grafts is not a regular file",
+    };
+  }
+
+  let raw: Buffer;
+  try {
+    raw = readFileSync(graftPath);
+  } catch (error) {
+    const code = isRecord(error) && typeof error.code === "string" ? error.code : "UNKNOWN";
+    return {
+      snapshot: `unreadable-file:${initialIdentity}:${code}`,
+      error:
+        "Git history override inventory is unsafe: shared git common dir info/grafts is unreadable",
+    };
+  }
+
+  let finalStats: Stats;
+  try {
+    finalStats = lstatSync(graftPath);
+  } catch {
+    throw new Error(HISTORY_OVERRIDE_DRIFT_ERROR);
+  }
+  const finalIdentity = statIdentity(finalStats);
+  if (!finalStats.isFile() || finalIdentity !== initialIdentity) {
+    throw new Error(HISTORY_OVERRIDE_DRIFT_ERROR);
+  }
+
+  return {
+    snapshot: `regular:${initialIdentity}:${createHash("sha256").update(raw).digest("hex")}`,
+    error:
+      raw.length === 0
+        ? null
+        : "Git history override inventory is unsafe: shared git common dir info/grafts is nonempty",
+  };
+}
+
+function fingerprint(...inventories: string[]): string {
+  const hash = createHash("sha256");
+  for (const inventory of inventories) {
+    hash
+      .update(String(Buffer.byteLength(inventory)))
+      .update("\0")
+      .update(inventory);
+  }
+  return hash.digest("hex");
 }
 
 function classifyInventoryObservation(
@@ -1878,6 +1953,12 @@ export function collectWorktreeLifecycleInventory(
     "--path-format=absolute",
     "--git-common-dir",
   ]).trim();
+  const initialGrafts = graftInventory(commonGitDir);
+  const initialReplacementRefsRaw = requiredGit(root, [
+    "for-each-ref",
+    "--format=%(refname)%0a%(objectname)%00",
+    "refs/replace",
+  ]);
   const primaryPath = normalizePath(path.dirname(commonGitDir));
   const initialWorktreeRaw = requiredGit(root, ["worktree", "list", "--porcelain", "-z"]);
   const initialRefsRaw = requiredGit(root, [
@@ -1959,6 +2040,7 @@ export function collectWorktreeLifecycleInventory(
           probeErrorsByPath: new Map<string, string[]>(),
         };
   const branchGlobalErrors = [
+    initialGrafts.error,
     ...prs.globalErrors,
     workflows.error,
     claims.error,
@@ -2094,8 +2176,20 @@ export function collectWorktreeLifecycleInventory(
     "--format=%(refname)%0a%(objectname)%00",
     "refs/heads",
   ]);
+  const finalReplacementRefsRaw = requiredGit(root, [
+    "for-each-ref",
+    "--format=%(refname)%0a%(objectname)%00",
+    "refs/replace",
+  ]);
+  const finalGrafts = graftInventory(commonGitDir);
   if (finalWorktreeRaw !== initialWorktreeRaw || finalRefsRaw !== initialRefsRaw) {
     throw new Error("worktree or branch inventory changed during patrol");
+  }
+  if (
+    finalReplacementRefsRaw !== initialReplacementRefsRaw ||
+    finalGrafts.snapshot !== initialGrafts.snapshot
+  ) {
+    throw new Error(HISTORY_OVERRIDE_DRIFT_ERROR);
   }
 
   const structuredRecords = tasks.tasks
@@ -2172,6 +2266,11 @@ export function collectWorktreeLifecycleInventory(
       classifyInventoryObservation(observation, options.nowMs),
     ),
     budgets,
-    inventoryFingerprint: fingerprint(initialWorktreeRaw, initialRefsRaw),
+    inventoryFingerprint: fingerprint(
+      initialWorktreeRaw,
+      initialRefsRaw,
+      initialReplacementRefsRaw,
+      initialGrafts.snapshot,
+    ),
   };
 }
