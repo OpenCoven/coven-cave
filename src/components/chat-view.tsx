@@ -5899,9 +5899,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       const dropped = readFamiliarDrag(e.dataTransfer) ?? familiarDrag?.id ?? null;
       setFamiliarDrag(null);
       setDropHover(false);
+      if (!dropped) return;
       const addable = addableFamiliars(familiars, familiar.id).map((f) => f.id);
       if (!canDropFamiliar({ draggedId: dropped, hostId: familiar.id, addableIds: addable })) return;
-      promoteToCoven(dropped as string);
+      promoteToCoven(dropped);
     },
     [familiar.id, familiarDrag, familiars, promoteToCoven],
   );
