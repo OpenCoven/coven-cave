@@ -642,6 +642,22 @@ case "$*" in
       *" status=pending "*) WORKFLOW_STATUS=pending ;;
     esac
     [ -n "$WORKFLOW_STATUS" ] || fail "workflow inventory omitted an exact status"
+    WORKFLOW_COUNT_FILE=${JSON.stringify(
+      path.join(fixtureRoot, "workflow-count-"),
+    )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
+    WORKFLOW_CALL_COUNT=$(cat "$WORKFLOW_COUNT_FILE" 2>/dev/null || printf '0')
+    WORKFLOW_CALL_COUNT=$((WORKFLOW_CALL_COUNT + 1))
+    printf '%s' "$WORKFLOW_CALL_COUNT" > "$WORKFLOW_COUNT_FILE"
+    EXPECTED_INDEX=$(((WORKFLOW_CALL_COUNT - 1) % 5))
+    case "$EXPECTED_INDEX" in
+      0) EXPECTED_STATUS=queued ;;
+      1) EXPECTED_STATUS=in_progress ;;
+      2) EXPECTED_STATUS=requested ;;
+      3) EXPECTED_STATUS=waiting ;;
+      4) EXPECTED_STATUS=pending ;;
+    esac
+    [ "$WORKFLOW_STATUS" = "$EXPECTED_STATUS" ] ||
+      fail "workflow sweep queried $WORKFLOW_STATUS where $EXPECTED_STATUS was expected"
     if [ "\${LIFECYCLE_BAD_WORKFLOW:-0}" = "1" ]; then
       printf '%s\n' '[{"total_count":1,"workflow_runs":[{"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/missing-id"}]}]'
     elif [ "\${LIFECYCLE_PARTIAL_WORKFLOW:-0}" = "1" ]; then
@@ -671,6 +687,8 @@ case "$*" in
         : > "$WORKFLOW_MARKER"
         printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
       fi
+    elif [ "$WORKFLOW_STATUS" = "queued" ]; then
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":1000,"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/1000"}]}]'
     else
       printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
     fi
@@ -865,7 +883,9 @@ exit 0
   assert.equal(
     readFileSync(path.join(fixtureRoot, "workflow-count-1"), "utf8"),
     "10",
-    "normal patrol captures two complete active workflow snapshots",
+    `normal patrol captures two complete active workflow snapshots: ${JSON.stringify(
+      report.items.flatMap((item) => item.probeErrors),
+    )}`,
   );
   assert.equal(byBranch.get("main").lane, "protected");
   assert.equal(byBranch.get("feat/live").lane, "active");

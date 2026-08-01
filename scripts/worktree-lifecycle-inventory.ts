@@ -1074,7 +1074,7 @@ function fetchWorkflowSweep(
       const stateRuns = pages.flatMap((page) => page.workflow_runs).map((run) => {
         const record = run as Record<string, unknown>;
         return {
-          id: canonicalWorkflowRunId(record.id)!,
+          id: record.id as number,
           status: record.status as string,
           head_branch: record.head_branch as string | null,
           head_sha: record.head_sha as string,
