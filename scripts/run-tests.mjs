@@ -1064,6 +1064,7 @@ export const SUITES = {
     "scripts/beads-pr-bridge.test.mjs",
     "scripts/beads-pr-patrol.test.mjs",
     "scripts/worktree-lifecycle-patrol.test.mjs",
+    "scripts/worktree-lifecycle-create.test.mjs",
     "src/lib/coven-paths.test.ts",
     "src/lib/server/cave-home-migration-backup-recovery.test.ts",
     "src/lib/server/cave-home-migration-json-merge.test.ts",

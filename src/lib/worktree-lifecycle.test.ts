@@ -9,12 +9,44 @@ const {
   classifyLifecycleUnit,
   classifyWorktree,
   isDisposableIgnoredPath,
+  normalizeAbsoluteWorktreePath,
   renderWorktreeLifecycleReport,
   summarizeWorktreeLifecycle,
 } = await import("./worktree-lifecycle.ts");
 
 const NOW = Date.parse("2026-07-29T22:00:00Z");
 const DAY = 24 * 60 * 60 * 1000;
+
+{
+  for (const equivalent of [
+    "/repo/wt",
+    "/repo/wt/",
+    "/repo/parent/../wt",
+    "/repo/./wt",
+  ]) {
+    assert.equal(
+      normalizeAbsoluteWorktreePath(equivalent),
+      "/repo/wt",
+      `${equivalent} canonicalizes to the same absolute worktree path`,
+    );
+  }
+  assert.equal(normalizeAbsoluteWorktreePath("/"), "/", "the filesystem root remains root");
+  assert.equal(
+    normalizeAbsoluteWorktreePath("repo/wt"),
+    null,
+    "relative paths are not accepted as lifecycle paths",
+  );
+  assert.equal(
+    normalizeAbsoluteWorktreePath("/repo/wt\0escaped"),
+    null,
+    "embedded NUL bytes are not accepted as lifecycle paths",
+  );
+  assert.notEqual(
+    normalizeAbsoluteWorktreePath("/repo/other"),
+    normalizeAbsoluteWorktreePath("/repo/wt"),
+    "genuinely different absolute paths remain different",
+  );
+}
 
 {
   for (const generated of [
@@ -276,6 +308,7 @@ function legacyObservation(overrides = {}) {
 {
   const item = classifyLifecycleUnit(
     observation({
+      path: "/repo/.worktrees/releases/../feat-x",
       metadata: metadata({
         exception: {
           owner: "Kitty",
@@ -288,7 +321,7 @@ function legacyObservation(overrides = {}) {
     }),
     NOW,
   );
-  assert.equal(item.lane, "active", "a live exception keeps its exact worktree path active");
+  assert.equal(item.lane, "active", "a live exception keeps an equivalent normalized worktree path active");
   assert.match(item.reasons.join("\n"), /Primary checkout is conflicted and user-owned/);
 }
 
@@ -325,19 +358,20 @@ function legacyObservation(overrides = {}) {
 {
   const item = classifyLifecycleUnit(
     observation({
+      path: "/repo/.worktrees/releases/../feat-x",
       metadata: metadata({
         exception: {
           owner: "Kitty",
           reason: "Primary checkout is conflicted and user-owned",
           expiresAt: "2026-07-30T00:00:00Z",
-          additionalPaths: ["/repo/.worktrees/other"],
+          additionalPaths: ["/repo/.worktrees/other/../other"],
         },
       }),
       mergedPr: { number: 54, headOid: "a".repeat(40), url: "https://example.test/54" },
     }),
     NOW,
   );
-  assert.equal(item.lane, "retire-after-gate", "exceptions only apply to their exact requested paths");
+  assert.equal(item.lane, "retire-after-gate", "exceptions do not apply to genuinely different normalized paths");
 }
 
 {
@@ -350,14 +384,14 @@ function legacyObservation(overrides = {}) {
           owner: "Kitty",
           reason: "Primary checkout is conflicted and user-owned",
           expiresAt: "2026-07-30T00:00:00Z",
-          additionalPaths: ["/repo/.worktrees/feat-x"],
+          additionalPaths: ["/repo/.worktrees/releases/../feat-x"],
         },
       }),
       mergedPr: { number: 55, headOid: "a".repeat(40), url: "https://example.test/55" },
     }),
     NOW,
   );
-  assert.equal(item.lane, "retire-after-gate", "branch-only units cannot apply path-bounded exceptions");
+  assert.equal(item.lane, "retire-after-gate", "branch-only units still cannot apply normalized path-bounded exceptions");
 }
 
 {
@@ -491,7 +525,7 @@ function legacyObservation(overrides = {}) {
 {
   const allowed = assessManagedWorktreeCreation({
     beadId: "cave-ox3ky",
-    requestedPath: "/repo/.worktrees/second",
+    requestedPath: "/repo/.worktrees/releases/../second",
     nowMs: NOW,
     existingPaths: ["/repo/.worktrees/first"],
     budgets: calculateLifecycleBudgets({
@@ -507,7 +541,57 @@ function legacyObservation(overrides = {}) {
       additionalPaths: ["/repo/.worktrees/second"],
     },
   });
-  assert.deepEqual(allowed, { allowed: true, reasons: [] }, "valid exceptions permit an additional path");
+  assert.deepEqual(allowed, { allowed: true, reasons: [] }, "valid exceptions permit an equivalent normalized additional path");
+}
+
+{
+  const blocked = assessManagedWorktreeCreation({
+    beadId: "cave-ox3ky",
+    requestedPath: "/repo/.worktrees/releases/../third",
+    nowMs: NOW,
+    existingPaths: ["/repo/.worktrees/first"],
+    budgets: calculateLifecycleBudgets({
+      worktreeCount: 4,
+      branchCount: 8,
+      activeExceptions: 0,
+      expiredExceptions: 0,
+    }),
+    exception: {
+      owner: "Kitty",
+      reason: "Primary checkout is conflicted and user-owned",
+      expiresAt: "2026-07-30T00:00:00Z",
+      additionalPaths: ["/repo/.worktrees/other/../second"],
+    },
+  });
+  assert.deepEqual(blocked, {
+    allowed: false,
+    reasons: ["active Bead cave-ox3ky already owns a registered worktree"],
+  });
+}
+
+{
+  const blocked = assessManagedWorktreeCreation({
+    beadId: "cave-ox3ky",
+    requestedPath: "/repo/.worktrees/second",
+    nowMs: NOW,
+    existingPaths: ["/repo/.worktrees/first"],
+    budgets: calculateLifecycleBudgets({
+      worktreeCount: 4,
+      branchCount: 8,
+      activeExceptions: 0,
+      expiredExceptions: 0,
+    }),
+    exception: {
+      owner: "Kitty",
+      reason: "Primary checkout is conflicted and user-owned",
+      expiresAt: "2026-07-30T00:00:00Z",
+      additionalPaths: ["repo/.worktrees/second"],
+    },
+  });
+  assert.deepEqual(blocked, {
+    allowed: false,
+    reasons: ["active Bead cave-ox3ky already owns a registered worktree"],
+  });
 }
 
 {
