@@ -124,6 +124,7 @@ function createFixture({ issues = [defaultIssue()] } = {}) {
   git(["commit", "-q", "-m", "initial"], repo);
   git(["remote", "add", "origin", origin], repo);
   git(["push", "-q", "-u", "origin", "main"], repo);
+  const initialOid = git(["rev-parse", "HEAD"], repo).trim();
   const tree = git(["rev-parse", "HEAD^{tree}"], repo).trim();
   const alternateOid = git(["commit-tree", tree, "-m", "alternate identity"], repo, {
     env: {
@@ -213,7 +214,17 @@ case "$1 $2" in
 esac
 case "$*" in
   *"graphql"*"associatedPullRequests"*)
-    printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
+    OID_ARG=
+    for arg in "$@"; do
+      case "$arg" in
+        oid=*) OID_ARG=\${arg#oid=} ;;
+      esac
+    done
+    if [ "$OID_ARG" = "${initialOid}" ]; then
+      printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":1,"url":"https://github.com/OpenCoven/coven-cave/pull/1","state":"MERGED","isDraft":false,"mergedAt":"2026-07-31T12:00:00Z","headRefName":"fixture-main","headRefOid":"${initialOid}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
+    else
+      printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
+    fi
     ;;
   *"graphql"*)
     printf '%s\\n' '[{"data":{"search":{"issueCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}]'
