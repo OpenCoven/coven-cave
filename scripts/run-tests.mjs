@@ -1365,6 +1365,7 @@ export const SUITES = {
     "scripts/ios-ipad-split-tasks.test.mjs",
     "scripts/ios-ipad-split-chats.test.mjs",
     "scripts/ios-task-search-familiar-scope.test.mjs",
+    "scripts/ios-thread-persist-durability.test.mjs",
     "scripts/ios-thread-rename.test.mjs",
     "scripts/ios-archive-threads.test.mjs",
     "scripts/ios-pin-threads.test.mjs",
