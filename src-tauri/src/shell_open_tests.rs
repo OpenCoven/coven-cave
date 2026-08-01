@@ -124,7 +124,6 @@ fn rejects_arbitrary_or_malformed_x_oauth_navigation() {
     for denied in [
         "http://x.com/i/oauth2/authorize",
         "https://example.com/i/oauth2/authorize",
-        "https://user:pass@x.com/i/oauth2/authorize",
         "https://x.com/i/oauth2/authorize#fragment",
         "https://x.com/other",
         "https://x.com/i/oauth2/authorize",
@@ -149,12 +148,15 @@ fn rejects_each_x_oauth_url_constraint_in_isolation() {
     assert!(validate_x_oauth_url(&valid).is_ok(), "control must be accepted");
 
     let swap = |from: &str, to: &str| valid.replacen(from, to, 1);
+    let mut credentialed = tauri::Url::parse(&valid).unwrap();
+    credentialed.set_username("fixture-user").unwrap();
+    credentialed.set_password(Some("fixture-password")).unwrap();
     for (label, denied) in [
         ("host", swap("https://x.com/", "https://evil.example/")),
         ("scheme", swap("https://", "http://")),
         ("port", swap("https://x.com/", "https://x.com:8443/")),
         ("path", swap("/i/oauth2/authorize", "/i/oauth2/authorise")),
-        ("credentials", swap("https://x.com/", "https://user:pass@x.com/")),
+        ("credentials", credentialed.to_string()),
         ("fragment", format!("{valid}#fragment")),
         ("extra param", format!("{valid}&next=https%3A%2F%2Fevil.example")),
         ("duplicate param", format!("{valid}&state=CCCC")),
