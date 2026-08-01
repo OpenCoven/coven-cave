@@ -10,13 +10,12 @@ async function source(name: string): Promise<string> {
 
 test("warmup registry covers canonical sidebar landings with bounded serial resources", async () => {
   const registry = await source("surface-warmup-registry.ts");
-  for (const surface of ["github", "marketplace", "board", "schedules", "grimoire", "agents"]) {
+  for (const surface of ["marketplace", "board", "schedules", "grimoire", "agents"]) {
     assert.match(registry, new RegExp(`${surface}: \\[`, "m"), `${surface} has a registry entry`);
   }
   assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\)/);
   assert.match(registry, /await warm<\{ rateLimit/);
   assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\)[\s\S]{0,900}catch(?: \(error\))? \{[\s\S]{0,360}must not leave the rest of this surface cold/);
-  assert.match(registry, /GITHUB_WARMUP_REMAINING_FLOOR/);
   assert.match(registry, /response\.status === 429/);
   assert.match(registry, /response\.headers\.has\("retry-after"\)/);
   assert.match(registry, /error instanceof SurfaceWarmupBackpressureError[\s\S]{0,100}backpressured: true/);
@@ -41,11 +40,22 @@ test("warmup registry covers canonical sidebar landings with bounded serial reso
   );
 });
 
-test("sidebar preloads call the dynamic import loaders rather than an unavailable dynamic preload hook", async () => {
+test("GitHub cache resources stay demand-loaded without a standalone sidebar warmup", async () => {
   const surfaces = await readFile(new URL("../components/lazy-surfaces.tsx", import.meta.url), "utf8");
-  assert.match(surfaces, /const loadGitHubView = \(\) => import\("@\/components\/github-view"\)/);
-  assert.match(surfaces, /return loadGitHubView\(\)\.then\(\(\) => undefined\)/);
-  assert.doesNotMatch(surfaces, /function preloadSurface/);
+  const registry = await source("surface-warmup-registry.ts");
+  const coordinator = await source("use-surface-warmup.ts");
+
+  assert.doesNotMatch(surfaces, /loadGitHubView|case "github"/);
+  assert.doesNotMatch(registry, /^\s*github:\s*\[/m);
+  assert.doesNotMatch(coordinator, /ORDER:[^=]*=\s*\[[^\]]*"github"/);
+  assert.match(registry, /defineResource\("github:pat"/);
+  assert.match(registry, /"github:activity"[\s\S]*\/api\/github\/activity/);
+  assert.match(registry, /defineResource\("github:familiars"/);
+  assert.match(
+    coordinator,
+    /invalidateIfDefined\("github:familiars"\)/,
+    "roster writes still invalidate an on-demand GitHub cache",
+  );
 });
 
 test("warmup starts after paint and pauses work without mounting inactive surfaces", async () => {

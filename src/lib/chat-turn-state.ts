@@ -3,6 +3,7 @@ import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import type { ModelControlValues } from "@/lib/model-control-capabilities";
 import type { ChatStreamClientHealth } from "@/lib/chat-stream-health";
+import { cleanModelId } from "@/lib/chat-model-state";
 import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
 import type { TurnUsage } from "@/lib/usage-format";
 
@@ -64,6 +65,8 @@ export type Turn = {
   responseMetadata?: ChatResponseMetadata;
   /** Selected-model controls requested with this user turn. */
   modelControls?: ModelControlValues;
+  /** Semantic marker for a turn that deliberately used the runtime default. */
+  modelOverrideScope?: "runtime-default";
   origin?: "chat" | "voice";
   voiceCallId?: string;
 };
@@ -83,6 +86,7 @@ export type ConversationHistoryTurn = {
   costUsd?: number;
   responseMetadata?: ChatResponseMetadata;
   modelControls?: ModelControlValues;
+  modelOverrideScope?: "runtime-default";
   cancelled?: boolean;
   createdAt?: string;
   origin?: "chat" | "voice";
@@ -119,12 +123,35 @@ export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[])
       costUsd: turn.costUsd,
       responseMetadata: turn.responseMetadata,
       modelControls: turn.modelControls,
+      modelOverrideScope: turn.modelOverrideScope,
       error: turn.isError,
       lifecycle: turn.cancelled ? ("cancelled" as const) : undefined,
       createdAt: turn.createdAt ?? new Date().toISOString(),
       origin: turn.origin,
       voiceCallId: turn.voiceCallId,
     }));
+}
+
+export type RetryTurnModelRequest = {
+  modelOverride?: string;
+  modelOverrideScope?: "next-message";
+};
+
+/** Rebuild one turn's model intent without mutating the chat's durable model.
+ * Runtime default uses an explicit empty one-turn sentinel; a confirmed or
+ * routed concrete model remains an ordinary next-message override. */
+export function retryTurnModelRequest(
+  userTurn: Pick<Turn, "modelOverrideScope">,
+  assistantTurn: Pick<Turn, "responseMetadata">,
+): RetryTurnModelRequest {
+  const retryModel = cleanModelId(assistantTurn.responseMetadata?.retryModel);
+  if (retryModel) {
+    return { modelOverride: retryModel, modelOverrideScope: "next-message" };
+  }
+  if (userTurn.modelOverrideScope === "runtime-default") {
+    return { modelOverride: "", modelOverrideScope: "next-message" };
+  }
+  return {};
 }
 
 function cloneLiveTurn(turn: Turn): Turn {

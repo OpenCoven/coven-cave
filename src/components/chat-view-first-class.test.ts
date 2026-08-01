@@ -59,7 +59,7 @@ assert.match(
 
 assert.match(
   source,
-  /function retryLastSend\(\)[\s\S]*sendRaw\(\s*lastFailedSend\.text,\s*lastFailedSend\.attachments\b/,
+  /function retryFailedSend\(optionOverrides\?: Partial<ChatSendOptions>\)[\s\S]*sendRaw\(\s*lastFailedSend\.text,\s*lastFailedSend\.attachments\b[\s\S]*?function retryLastSend\(\) \{\s*retryFailedSend\(\);/,
   "ChatView should expose a retry action that resends the failed prompt and attachments",
 );
 
@@ -145,8 +145,18 @@ assert.match(
 );
 assert.match(
   source,
-  /const modelOverrideForRequest =[\s\S]*?source === "session" \|\| modelStateRef\.current\?\.source === "familiar-default"[\s\S]*?modelOverrideScope: "session" as const/,
-  "a model selected before the first session exists is synchronously sent as a session override while its familiar-default PATCH is pending",
+  /const pendingFamiliarModel =[\s\S]*?applicationState === "pending"[\s\S]*?const modelOverrideForRequest =[\s\S]*?currentModelState\?\.source === "session" \|\| pendingFamiliarModel[\s\S]*?pendingFamiliarModel[\s\S]*?"next-message" as const/,
+  "a model selected before the first session exists is sent once while its familiar-default PATCH is pending, without pinning the chat",
+);
+assert.match(
+  source,
+  /currentModelState\?\.source === "runtime-default"[\s\S]*?pendingRuntimeDefault && sessionId[\s\S]*?"runtime-default" as const[\s\S]*?: "next-message" as const/,
+  "an inherited or no-session runtime default is a one-turn sentinel, while only an explicit Reset on an existing chat persists a clear",
+);
+assert.match(
+  source,
+  /retryFailedSend\(\{ modelOverride: null, modelOverrideScope: undefined \}\)/,
+  "a harness-switch retry drops the failed runtime's saved model intent",
 );
 assert.match(
   source,

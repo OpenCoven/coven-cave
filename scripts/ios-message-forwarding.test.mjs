@@ -57,6 +57,12 @@ assert.match(
 
 assert.match(
   chat,
+  /let destinationModelBinding = ChatModelTurnBinding\.resolve\([\s\S]{0,220}pendingModel: destination\.pendingModelOverride[\s\S]{0,700}modelOverride: destinationModelBinding\.modelOverride,[\s\S]{0,120}modelOverrideScope: destinationModelBinding\.scope/,
+  "forwarding should preserve an explicit destination runtime-default sentinel through the shared turn binding",
+);
+
+assert.match(
+  chat,
   /app\.requestOpen\(destination\)/,
   "after forwarding, iOS should open the destination familiar thread",
 );

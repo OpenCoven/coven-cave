@@ -123,7 +123,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const modelOverrideForRequest =[\s\S]{0,300}?modelStateRef\.current\?\.source === "session"/,
+  /const currentModelState = modelStateRef\.current;[\s\S]{0,500}?const modelOverrideForRequest =[\s\S]{0,300}?currentModelState\?\.source === "session"/,
   "send snapshots the synchronously staged model state rather than the prior render",
 );
 

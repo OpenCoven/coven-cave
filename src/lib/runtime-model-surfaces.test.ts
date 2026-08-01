@@ -32,29 +32,29 @@ for (const [name, contents, options] of [
 }
 
 assert.match(
-  home,
-  /resolveModelArg\(\s*args,\s*modelHarness,\s*runtimeModelOptions,\s*\)/,
-  "home /model resolution uses the live Claude, Copilot, or OpenCode inventory",
-);
-assert.match(
   chat,
-  /formatModelList\(\s*modelHarness,\s*current,\s*composerModelOptions,\s*\)/,
+  /formatModelList\(\s*modelHarness,\s*current,\s*composerModelOptions,\s*composerModelInventory\.allowCustom,\s*\)/,
   "chat /model listing uses the live runtime inventory",
 );
 assert.match(
-  chat,
-  /resolveModelArg\(\s*args,\s*modelHarness,\s*composerModelOptions,\s*\)/,
-  "chat /model resolution uses the live runtime inventory",
-);
-assert.match(
   quick,
-  /formatModelList\(\s*modelHarness,\s*modelOverride \?\? null,\s*runtimeModelOptions,\s*\)/,
+  /formatModelList\(\s*modelHarness,\s*modelOverride \?\? null,\s*runtimeModelOptions,\s*runtimeModelInventory\.allowCustom,\s*\)/,
   "quick-chat /model listing uses the live runtime inventory",
 );
 assert.match(
   quick,
-  /resolveModelArg\(\s*args,\s*modelHarness,\s*runtimeModelOptions,\s*\)/,
-  "quick-chat /model resolution uses the live runtime inventory",
+  /resolveModelArg\(\s*args,\s*modelHarness,\s*runtimeModelOptions,\s*runtimeModelInventory\.allowCustom,\s*\)/,
+  "quick-chat /model resolution uses the live runtime inventory and its custom-id capability",
+);
+assert.match(
+  home,
+  /resolveModelArg\(\s*args,\s*modelHarness,\s*runtimeModelOptions,\s*runtimeModelInventory\.allowCustom,\s*\)/,
+  "home /model resolution honors the full inventory custom-id capability",
+);
+assert.match(
+  chat,
+  /resolveModelArg\(\s*args,\s*modelHarness,\s*composerModelOptions,\s*composerModelInventory\.allowCustom,\s*\)/,
+  "chat /model resolution honors the full inventory custom-id capability",
 );
 
 assert.match(

@@ -21,6 +21,8 @@ type ModelRequest = {
 
 type ResponseControlRequest = {
   modelControls?: ModelControlValues;
+  modelOverride?: string;
+  modelOverrideScope?: ModelRequest["modelOverrideScope"];
 };
 
 
@@ -32,6 +34,9 @@ export function resolveSendModelMetadata(args: {
   modelForwardingEnabled: boolean;
 }): { desiredModel: string; modelState: ChatModelState } {
   const requestedModel = cleanModelId(args.body.modelOverride);
+  const nextMessageRuntimeDefault =
+    args.body.modelOverrideScope === "next-message" &&
+    args.body.modelOverride === "";
   const sessionModel =
     args.body.modelOverrideScope === "runtime-default"
       ? ""
@@ -45,7 +50,9 @@ export function resolveSendModelMetadata(args: {
     globalDefaultModel: args.config.defaults.model,
     familiarModel: args.config.familiars[args.body.familiarId]?.model ?? null,
     sessionModel,
-    nextMessageModel: args.body.modelOverrideScope === "next-message" ? requestedModel : null,
+    nextMessageModel: args.body.modelOverrideScope === "next-message"
+      ? nextMessageRuntimeDefault ? "" : requestedModel
+      : null,
     application: { supported: args.modelForwardingEnabled },
   });
   const desiredModel = modelState.effectiveModel === "unknown" ? args.binding.model : modelState.effectiveModel;
@@ -81,8 +88,13 @@ export function persistSendModelIntent(
 ): boolean {
   const intent = modelIntentForSend(body, modelState);
   if (!intent) return false;
-  const expected = cleanModelId(expectedPreviousModel);
-  const current = cleanModelId(conversation.modelIntent?.model);
+  // Empty string is the durable Runtime-default sentinel. Preserve it in the
+  // compare-and-set key instead of normalizing it together with an absent
+  // intent, or a stale send completion can undo a newer Runtime-default PATCH.
+  const comparableIntentModel = (value: string | null | undefined) =>
+    value === "" ? "" : cleanModelId(value);
+  const expected = comparableIntentModel(expectedPreviousModel);
+  const current = comparableIntentModel(conversation.modelIntent?.model);
   // The run captured `expected` before it started. A different current model
   // is a newer mid-stream PATCH and must win over this stale completion.
   if (current !== expected && current !== intent.model) return false;
@@ -97,12 +109,18 @@ export function persistedTurnControls(
 ): {
   modelControls?: ModelControlValues;
   modelOverride?: string;
+  modelOverrideScope?: "runtime-default";
 } {
   return {
     ...(body.modelControls && Object.keys(body.modelControls).length > 0
       ? { modelControls: body.modelControls }
       : {}),
     ...(cleanModelId(retryModel) ? { modelOverride: cleanModelId(retryModel)! } : {}),
+    ...(
+      body.modelOverrideScope === "runtime-default" ||
+      (body.modelOverrideScope === "next-message" && body.modelOverride === "")
+      ? { modelOverrideScope: "runtime-default" as const }
+      : {}),
   };
 }
 

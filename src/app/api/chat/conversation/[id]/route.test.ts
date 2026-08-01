@@ -197,6 +197,11 @@ test("PUT preserves retry controls on user turns", async () => {
         reasoningEffort: "medium",
         responseSpeed: "careful",
         modelOverride: "anthropic/claude-opus-4-6",
+      }, {
+        role: "user",
+        text: "Use the runtime default",
+        modelOverride: "anthropic/forged-alongside-runtime-default",
+        modelOverrideScope: "runtime-default",
       }],
     }),
     paramsFor("sess-user-controls"),
@@ -208,13 +213,36 @@ test("PUT preserves retry controls on user turns", async () => {
       reasoningEffort: json.conversation.turns[0].reasoningEffort,
       responseSpeed: json.conversation.turns[0].responseSpeed,
       modelOverride: json.conversation.turns[0].modelOverride,
+      runtimeDefaultScope: json.conversation.turns[1].modelOverrideScope,
+      runtimeDefaultModel: json.conversation.turns[1].modelOverride,
     },
     {
       reasoningEffort: "medium",
       responseSpeed: "careful",
       modelOverride: "anthropic/claude-opus-4-6",
+      runtimeDefaultScope: "runtime-default",
+      runtimeDefaultModel: undefined,
     },
+    "runtime-default semantics win over a conflicting client-authored model id",
   );
+});
+
+test("PUT drops unknown model override scopes instead of persisting new wire semantics", async () => {
+  const res = await PUT(
+    writeReq({
+      familiarId: "milo",
+      harness: "claude",
+      turns: [{
+        role: "user",
+        text: "Review the branch",
+        modelOverrideScope: "future-scope",
+      }],
+    }),
+    paramsFor("sess-user-invalid-model-scope"),
+  );
+  const json = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal("modelOverrideScope" in json.conversation.turns[0], false);
 });
 
 test("PUT rejects an over-long turn with 413", async () => {

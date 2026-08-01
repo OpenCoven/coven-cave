@@ -9,7 +9,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./project-picker.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../styles/globals/surface-marketplace.css", import.meta.url), "utf8");
+// The picker's CSS moved out of surface-marketplace.css when that sheet was
+// code-split onto the Marketplace chunk (cave-ii7xi) — a shared picker used by
+// the always-loaded shell cannot ship with a mode-gated surface.
+const css = readFileSync(
+  new URL("../styles/globals/shared-pickers-and-toasts.css", import.meta.url),
+  "utf8",
+);
 const homeComposer = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 const addMenu = readFileSync(new URL("./composer-add-menu.tsx", import.meta.url), "utf8");
@@ -141,5 +147,12 @@ assert.match(src, /registerCurrentRoot\?: string;/, "picker takes the candidate 
 assert.match(src, /onRegisterCurrentRoot\?: \(\) => void;/, "and the setup-open callback");
 assert.match(src, /Register this folder as a project…/, "in-place registration row");
 assert.match(src, /ph:folder-plus/, "register row carries the folder-plus icon");
+
+// cave-8e7q: selection travels as the project's generated id, never its display
+// name. Emitting the name would make presentation text a connection identifier,
+// which is what mangled names containing spaces. The behaviour of the id the
+// caller then resolves is pinned in lib/project-display-name-spaces.test.ts.
+assert.match(src, /onChange: \(id: string\) => void;/, "the picker's selection callback takes an id");
+assert.match(src, /onChange\(project\.id\);/, "picking a project emits its id, not its display name");
 
 console.log("project-picker.test.ts OK");

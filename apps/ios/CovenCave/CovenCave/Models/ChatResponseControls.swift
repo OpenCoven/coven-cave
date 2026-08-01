@@ -56,6 +56,24 @@ struct ChatModelTurnBinding: Equatable {
         )
     }
 
+    /// Rebuild the original turn's model intent without changing the chat's
+    /// durable selection. Runtime-managed defaults have no model id, so their
+    /// explicit intent rides one turn as an empty override instead of mutating
+    /// the session's durable selection.
+    static func resolveRetry(
+        retryModel: String?,
+        originalScope: ChatModelOverrideScope?
+    ) -> ChatModelTurnBinding {
+        let model = retryModel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let model, !model.isEmpty {
+            return ChatModelTurnBinding(modelOverride: model, scope: .nextMessage)
+        }
+        if originalScope == .runtimeDefault {
+            return ChatModelTurnBinding(modelOverride: "", scope: .nextMessage)
+        }
+        return ChatModelTurnBinding(modelOverride: nil, scope: nil)
+    }
+
     /// A session announcement can precede end-of-stream persistence. Keep the
     /// pending intent until an authoritative model-state read proves that exact
     /// model is now the session's durable choice.
@@ -74,10 +92,74 @@ struct ChatModelTurnBinding: Equatable {
     }
 }
 
-/// The familiar/session pair a model-state request is allowed to update.
+/// The complete model presentation identity a model-state request may update.
+/// `runtimeIdentity` is the client-known session runtime/harness. The optional
+/// server-owned `bindingScope` additionally distinguishes local, SSH, and
+/// profile bindings that share the same familiar/session/harness tuple.
 struct ChatModelRequestTarget: Equatable {
     let familiarId: String
     let sessionId: String?
+    let runtimeIdentity: String?
+    let bindingScope: String?
+
+    init(
+        familiarId: String,
+        sessionId: String?,
+        runtimeIdentity: String? = nil,
+        bindingScope: String? = nil
+    ) {
+        self.familiarId = familiarId
+        self.sessionId = sessionId
+        self.runtimeIdentity = runtimeIdentity
+        self.bindingScope = bindingScope
+    }
+
+    func withBindingScope(_ bindingScope: String?) -> ChatModelRequestTarget {
+        ChatModelRequestTarget(
+            familiarId: familiarId,
+            sessionId: sessionId,
+            runtimeIdentity: runtimeIdentity,
+            bindingScope: bindingScope
+        )
+    }
+}
+
+/// Tracks which familiar/session/runtime owns the inventory currently on
+/// screen. A changed target must synchronously mask the prior result; a refresh
+/// for the same target keeps its stable content until the replacement arrives.
+struct ChatModelPresentationScope {
+    private(set) var target: ChatModelRequestTarget? = nil
+
+    func isCurrent(for target: ChatModelRequestTarget?) -> Bool {
+        self.target == target
+    }
+
+    func canApplyResponse(
+        for responseTarget: ChatModelRequestTarget?,
+        currentTarget: ChatModelRequestTarget?
+    ) -> Bool {
+        target == responseTarget && responseTarget == currentTarget
+    }
+
+    mutating func beginLoading(for target: ChatModelRequestTarget?) -> Bool {
+        guard self.target != target else { return false }
+        self.target = target
+        return true
+    }
+
+    /// Re-key an accepted response to the server's binding scope before its
+    /// options/capabilities become presentable. The request and current target
+    /// must still match, so a late response cannot resurrect an older scope.
+    mutating func rekeyForResponse(
+        for requestTarget: ChatModelRequestTarget?,
+        currentTarget: ChatModelRequestTarget?,
+        bindingScope: String?
+    ) -> ChatModelRequestTarget? {
+        guard target == requestTarget, requestTarget == currentTarget else { return nil }
+        let responseTarget = requestTarget?.withBindingScope(bindingScope)
+        target = responseTarget
+        return responseTarget
+    }
 }
 
 enum ChatModelReconciliationMessageDisposition: Equatable {

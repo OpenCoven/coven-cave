@@ -457,7 +457,7 @@ test("promotion rechecks intents after a concurrent writer heartbeat", async () 
     const result = acquireMaintenanceGate({
       ownerId: "curator",
       repoDir: process.argv[1],
-      quiesceTimeoutMs: 5000,
+      quiesceTimeoutMs: 30_000,
     });
     console.log(JSON.stringify(result));
   `;
@@ -560,7 +560,7 @@ test("clock regression during drain does not report timeout blockers", async () 
     const result = acquireMaintenanceGate({
       ownerId: "curator",
       repoDir: process.argv[1],
-      quiesceTimeoutMs: 5000,
+      quiesceTimeoutMs: 30_000,
     });
     console.log(JSON.stringify(result));
   `;
@@ -631,13 +631,41 @@ test("a gate is active when acquisition returns after a slow drain", async () =>
 
 test("acquisition does not return success after its final audit outlives the lease", async () => {
   const repo = makeRepo();
+  // The lease must be alive at the promotion checkpoint (which reports a plain
+  // "expired") and dead at the final ownership audit (the only checkpoint that
+  // reports "expired-before-return"). Expiring it by sleeping made that a race
+  // the test could not win: acquisition's own file I/O between gate creation
+  // and the audit append measured 1.3s-4.4s on a loaded machine, so a short
+  // ttlMs died at promotion instead and the test failed ~1 run in 6. Raising
+  // ttlMs only moves the boundary, because the sleep has to outlast it.
+  //
+  // So stop racing the clock. Give the lease a ttl no setup delay can exhaust,
+  // and expire it exactly where this test means to — backdate heartbeatAt as
+  // the gate-acquired audit line is written, which is after promotion and
+  // before the final audit. gateExpired() is a plain heartbeatAt + ttlMs
+  // comparison and clockRegressed() only fires on FUTURE heartbeats, so a
+  // backdated one reads as unambiguously expired rather than merely late.
+  // Shift acquiredAt with it: validateGate requires heartbeatAt >= acquiredAt,
+  // so moving the heartbeat alone makes the gate malformed instead of expired,
+  // and the cleanup on the rejection path then fails with gate-cleanup-failed.
+  // This is what expireGate() above does; it has to be inlined here because the
+  // shim runs inside the spawned child, which shares no scope with this file.
+  const TTL_MS = 60_000;
   const worker = `
     import fs from "node:fs";
+    import path from "node:path";
     import { syncBuiltinESMExports } from "node:module";
     const originalAppend = fs.appendFileSync;
     fs.appendFileSync = (target, content, options) => {
       if (String(content).includes('"event":"gate-acquired"')) {
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+        fs.appendFileSync = originalAppend;
+        // audit.jsonl and gate.json share the gate root directory.
+        const gateFile = path.join(path.dirname(String(target)), "gate.json");
+        const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"));
+        const shiftMs = gate.ttlMs + 1000;
+        gate.acquiredAt = new Date(Date.parse(gate.acquiredAt) - shiftMs).toISOString();
+        gate.heartbeatAt = new Date(Date.parse(gate.heartbeatAt) - shiftMs).toISOString();
+        fs.writeFileSync(gateFile, JSON.stringify(gate, null, 2));
       }
       return originalAppend(target, content, options);
     };
@@ -646,7 +674,7 @@ test("acquisition does not return success after its final audit outlives the lea
     const result = gate.acquireMaintenanceGate({
       ownerId: "curator",
       repoDir: process.argv[1],
-      ttlMs: 100,
+      ttlMs: ${TTL_MS},
     });
     console.log(JSON.stringify(result));
   `;

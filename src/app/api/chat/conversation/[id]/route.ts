@@ -81,6 +81,10 @@ function normalizeTurn(input: unknown): ChatTurn | null {
       ? value.responseSpeed
       : undefined;
   const modelOverride = cleanModelId(value.modelOverride);
+  const modelOverrideScope =
+    value.modelOverrideScope === "runtime-default"
+      ? "runtime-default" as const
+      : undefined;
   const modelControls = cleanModelControlValues(value.modelControls);
   const progress = Array.isArray(value.progress)
     ? value.progress.flatMap((entry) => {
@@ -127,7 +131,10 @@ function normalizeTurn(input: unknown): ChatTurn | null {
     ...(costUsd !== undefined ? { costUsd } : {}),
     ...(value.role === "user" && reasoningEffort ? { reasoningEffort } : {}),
     ...(value.role === "user" && responseSpeed ? { responseSpeed } : {}),
-    ...(value.role === "user" && modelOverride ? { modelOverride } : {}),
+    ...(value.role === "user" && modelOverride && !modelOverrideScope
+      ? { modelOverride }
+      : {}),
+    ...(value.role === "user" && modelOverrideScope ? { modelOverrideScope } : {}),
     ...(value.role === "user" && Object.keys(modelControls).length ? { modelControls } : {}),
   };
 }

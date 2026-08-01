@@ -37,8 +37,18 @@ assert.match(
 );
 assert.match(
   inspector,
-  /!taskModelIsCustom && !hasUnsavedCustomModelDraft/,
+  /\(!taskModelIsCustom \|\| !allowCustomModel\)[\s\S]{0,100}\(!hasUnsavedCustomModelDraft \|\| !allowCustomModel\)/,
   "a late catalog response cannot replace an active custom model input",
+);
+assert.match(
+  inspector,
+  /taskModelIsCustom && card\.modelOverride && !allowCustomModel[\s\S]{0,280}\(not offered\)/,
+  "an existing unlisted task override remains visible when the new inventory forbids custom ids",
+);
+assert.match(
+  inspector,
+  /runtimeModelOptions\.length > 0 \|\| \(taskModelIsCustom && !allowCustomModel\)/,
+  "the no-custom remediation path keeps the model select available so the override can be reset",
 );
 assert.match(taskRoute, /card\.modelOverride && card\.modelOverrideHarness === binding\.harness/, "new task sessions only use an override from the familiar's current runtime");
 assert.match(taskRoute, /updateCard\(card\.id, \{ modelOverride: null, modelOverrideHarness: null \}\)/, "a stale task model is cleared before launch");

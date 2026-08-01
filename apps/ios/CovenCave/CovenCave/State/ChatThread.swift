@@ -94,6 +94,7 @@ extension DisplayMessage {
             rejectedControlFamilies: metadata?.rejectedControlFamilies,
             modelOverride: resolvedModel,
             modelOverridesByFamiliar: overridesByFamiliar,
+            modelOverrideScope: turn.modelOverrideScope,
             activity: activity
         )
     }
@@ -130,6 +131,7 @@ extension DisplayMessage {
             rejectedControlFamilies: message.rejectedControlFamilies,
             modelOverride: message.modelOverride,
             modelOverridesByFamiliar: message.modelOverridesByFamiliar,
+            modelOverrideScope: message.modelOverrideScope,
             activity: message.activity
         )
     }
@@ -377,6 +379,10 @@ final class ChatThread: Identifiable, Hashable {
         let source = messages[..<idx].last(where: { $0.role == .user })
         let prompt = source?.text ?? ""
         let retryModel = source?.retryModel(for: familiarId)
+        let modelBinding = ChatModelTurnBinding.resolveRetry(
+            retryModel: retryModel,
+            originalScope: source?.modelOverrideScope
+        )
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard requireSendProvenance(to: [familiarId]) else { return }
         mutate(messageId) { $0.text = ""; $0.isError = false; $0.streaming = true; $0.activity = nil }
@@ -387,8 +393,8 @@ final class ChatThread: Identifiable, Hashable {
                                  reasoningEffort: source?.reasoningEffort ?? .high,
                                  responseSpeed: source?.responseSpeed ?? .fast,
                                  modelControls: source?.modelControls ?? [:],
-                                 modelOverride: retryModel,
-                                 modelOverrideScope: retryModel == nil ? nil : .nextMessage,
+                                 modelOverride: modelBinding.modelOverride,
+                                 modelOverrideScope: modelBinding.scope,
                                  client: client, onChange: onChange) }
     }
 

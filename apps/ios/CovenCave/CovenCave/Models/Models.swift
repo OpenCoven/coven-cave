@@ -65,6 +65,9 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var title: String
     var harness: String?
     var model: String?
+    /// Concrete session runtime (`local:<cwd>` or `ssh:<host>:<cwd>`), when
+    /// published by `/api/sessions/list`.
+    var runtime: String?
     var status: String?
     var familiarId: String?
     var createdAt: String?
@@ -79,7 +82,7 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var generated: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, harness, model, status
+        case id, title, harness, model, runtime, status
         case familiarId
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -149,6 +152,7 @@ struct ChatTurn: Identifiable, Codable, Hashable {
     var responseSpeed: ChatResponseSpeed?
     var modelControls: [String: String]?
     var modelOverride: String?
+    var modelOverrideScope: ChatModelOverrideScope?
     var responseMetadata: ChatTurnResponseMetadata?
 
     enum CodingKeys: String, CodingKey {
@@ -156,7 +160,7 @@ struct ChatTurn: Identifiable, Codable, Hashable {
         case createdAt
         case isError
         case usage
-        case reasoningEffort, responseSpeed, modelControls, modelOverride, responseMetadata
+        case reasoningEffort, responseSpeed, modelControls, modelOverride, modelOverrideScope, responseMetadata
     }
 }
 

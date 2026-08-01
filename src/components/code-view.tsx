@@ -5,14 +5,14 @@
  * multi-session coding tab. Reverses the earlier Code-mode retirement on the
  * owner's request; default-on since phase 2 (cave-m6ys).
  *
- * Phase 3+ (this shape): top-level Sessions/GitHub tabs, the session rail
+ * Phase 3+ (this shape): top-level Sessions/Activity/PRs/Issues/Reviews tabs, the session rail
  * (grouped by project, git-attribution badges, + New session) and the
  * per-session workbench (Diff | Files | Terminal | PR) with the follow-up
  * composer (code-composer.tsx). New sessions start via code-new-session.tsx —
  * project + familiar + optional fresh worktree. The inspector and mobile
- * layout land in follow-up PRs. GitHub mounts whole under the GitHub tab
- * (the standalone GitHub surface and its sidebar row were absorbed; the
- * "github" workspace mode is now a tab alias landing here).
+ * layout land in follow-up PRs. CodeView hosts the whole GitHubView under the
+ * Activity/PRs/Issues/Reviews tabs; workspace routing lives outside this
+ * component.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -34,10 +34,11 @@ import { CodeNewSession } from "@/components/code-new-session";
 import { GithubOrganizationSettings } from "@/components/settings-github";
 import type { GitHubItemTarget } from "@/lib/github-item-url";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
+import { codeTopTabForGitHubTarget, type PendingCodeNavigation } from "@/lib/pending-code-navigation";
 import type { SessionRow } from "@/lib/types";
 
 // GitHubView keeps its own chunk: CodeView opens far more often than its
-// GitHub tab, and github-view is a 3k-line surface (same split posture as
+// GitHub tabs, and github-view is a 3k-line surface (same split posture as
 // lazy-surfaces.tsx, done locally to avoid a lazy-surfaces ↔ code-view cycle).
 const LazyGitHubView = dynamic(
   () => import("@/components/github-view").then((m) => m.GitHubView),
@@ -46,6 +47,7 @@ const LazyGitHubView = dynamic(
 
 // The GitHub content tabs and the GitHubView filter each one drives.
 const GITHUB_TAB_FILTER: Record<CodeGithubTab, GitHubFilter> = {
+  activity: "all",
   prs: "pr",
   issues: "issue",
   reviews: "review_request",
@@ -54,19 +56,24 @@ const GITHUB_TAB_META: Record<
   CodeGithubTab,
   { label: string; icon: Parameters<typeof Icon>[0]["name"] }
 > = {
+  activity: { label: "Activity", icon: "ph:bell" },
   prs: { label: "PRs", icon: "ph:git-pull-request" },
   issues: { label: "Issues", icon: "ph:circle-dashed" },
   reviews: { label: "Reviews", icon: "ph:check-circle" },
 };
 
+function topTabForNavigation(request: PendingCodeNavigation): CodeTopTab {
+  return request.kind === "github-item"
+    ? codeTopTabForGitHubTarget(request.target)
+    : request.topTab;
+}
+
 export type CodeViewProps = {
   sessions: SessionRow[];
-  /** Landing tab override — the "github" mode alias mounts CodeView on its
-   *  GitHub tab (deep-link continuity for the absorbed standalone surface). */
-  initialTopTab?: CodeTopTab;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard: (cardId: string) => void;
-  githubTarget?: GitHubItemTarget | null;
+  navigationRequest?: PendingCodeNavigation | null;
+  onNavigationHandled?: (nonce: number) => void;
   /** A file/diff open raised anywhere in the app (cave-ohcj): the workspace
    *  routes cave:open-project-file / cave:open-file-diff /
    *  cave:browse-project-files here instead of Chat's code rail. */
@@ -77,15 +84,15 @@ export type CodeViewProps = {
 
 export function CodeView({
   sessions,
-  initialTopTab,
   onJumpToSession,
   onFocusCard,
-  githubTarget,
+  navigationRequest,
+  onNavigationHandled,
   pendingOpen,
   onPendingOpenHandled,
   onTasksRefresh,
 }: CodeViewProps) {
-  // `?mode=code&session=<id>&ctab=<sessions|github>&wtab=<diff|files|terminal|pr>`
+  // `?mode=code&session=<id>&ctab=<sessions|activity|prs|issues|reviews>&wtab=<diff|files|terminal|pr>`
   // deep link — parsed once (initializer stays PURE: React StrictMode runs it
   // twice, so stripping here would feed the second run an already-stripped
   // URL and lose the target), then stripped in a mount effect (the
@@ -105,8 +112,34 @@ export function CodeView({
     window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
   }, []);
   const [topTab, setTopTab] = useState<CodeTopTab>(
-    githubTarget ? "prs" : deepLink?.topTab ?? initialTopTab ?? "sessions",
+    pendingOpen
+      ? "sessions"
+      : navigationRequest
+        ? topTabForNavigation(navigationRequest)
+        : deepLink?.topTab ?? "sessions",
   );
+  const [initialGithubTarget, setInitialGithubTarget] = useState<GitHubItemTarget | null>(
+    pendingOpen
+      ? null
+      : navigationRequest?.kind === "github-item"
+        ? navigationRequest.target
+        : null,
+  );
+  const [githubNavigationKey, setGithubNavigationKey] = useState(
+    navigationRequest?.nonce ?? 0,
+  );
+  const handledNavigationNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!navigationRequest) return;
+    if (handledNavigationNonceRef.current === navigationRequest.nonce) return;
+    setTopTab(topTabForNavigation(navigationRequest));
+    setInitialGithubTarget(
+      navigationRequest.kind === "github-item" ? navigationRequest.target : null,
+    );
+    setGithubNavigationKey(navigationRequest.nonce);
+    handledNavigationNonceRef.current = navigationRequest.nonce;
+    onNavigationHandled?.(navigationRequest.nonce);
+  }, [navigationRequest, onNavigationHandled]);
   const githubTab: CodeGithubTab | null = isCodeGithubTab(topTab) ? topTab : null;
   // Selection is tri-state for the mobile drill-in: `undefined` = nothing
   // chosen yet (auto-pick allowed), `null` = the user explicitly went Back to
@@ -149,6 +182,7 @@ export function CodeView({
         : undefined;
     const target = byId ?? byRoot;
     setTopTab("sessions");
+    setInitialGithubTarget(null);
     if (target) setSelectedId(target.id);
     // Root browse with no matching session: there is no workbench to focus —
     // land on the surface and leave the rail/selection as-is.
@@ -227,9 +261,11 @@ export function CodeView({
       {githubTab ? (
         <div className="min-h-0 flex-1">
           <LazyGitHubView
+            key={githubNavigationKey}
             onJumpToSession={onJumpToSession}
             onFocusCard={onFocusCard}
-            initialTarget={githubTarget}
+            initialTarget={initialGithubTarget}
+            onInitialTargetHandled={() => setInitialGithubTarget(null)}
             initialFilter={GITHUB_TAB_FILTER[githubTab]}
             onTasksRefresh={onTasksRefresh}
           />

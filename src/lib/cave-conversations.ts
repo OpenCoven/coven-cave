@@ -68,6 +68,9 @@ export type ChatTurn = {
    * readable for old transcripts but new turns persist this typed map. */
   modelControls?: ModelControlValues;
   modelOverride?: string;
+  /** Explicit runtime-default intent has no model id, so retain its scope for
+   * transcript reload, duplication, and retry. */
+  modelOverrideScope?: "runtime-default";
   responseMetadata?: ChatResponseMetadata;
   origin?: "chat" | "voice";
   voiceCallId?: string;
@@ -322,6 +325,7 @@ export type ConversationStubSeed = {
     responseSpeed?: ChatTurn["responseSpeed"];
     modelControls?: ChatTurn["modelControls"];
     modelOverride?: string;
+    modelOverrideScope?: ChatTurn["modelOverrideScope"];
   };
 };
 
@@ -371,6 +375,9 @@ export async function createConversationStub(seed: ConversationStubSeed): Promis
             : {}),
           ...(seed.userTurn.modelOverride
             ? { modelOverride: seed.userTurn.modelOverride }
+            : {}),
+          ...(seed.userTurn.modelOverrideScope === "runtime-default"
+            ? { modelOverrideScope: "runtime-default" as const }
             : {}),
           createdAt: now,
           parentId: null,

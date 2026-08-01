@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { normalizeCopilotModels } from "../copilot-models.ts";
 import { copilotStreamSpec } from "../copilot-stream.ts";
 import { harnessSpawnEnv } from "../harness-spawn-env.ts";
@@ -143,6 +144,21 @@ function cacheModels(
   }
 }
 
+function copilotScopeKey(
+  familiarId: string | null | undefined,
+  env: Record<string, string | undefined>,
+): string {
+  const fingerprint = createHash("sha256")
+    .update(
+      Object.entries(env)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, value]) => `${key}=${value ?? ""}`)
+        .join("\u0000"),
+    )
+    .digest("hex");
+  return `${familiarId ?? ""}\u0000${fingerprint}`;
+}
+
 function queryCopilotModels(
   launch: CopilotRuntimeLaunch,
   dependencies: CopilotModelDependencies,
@@ -262,19 +278,11 @@ function queryCopilotModels(
 }
 
 async function discoverCopilotModels(
-  familiarId: string | null | undefined,
+  env: Record<string, string | undefined>,
+  cacheKey: string,
   dependencies: CopilotModelDependencies,
 ): Promise<RuntimeModelOption[]> {
-  const scopedEnv = dependencies.scopedEnv ?? harnessSpawnEnv;
   const executable = copilotStreamSpec()?.executable ?? "copilot";
-  let env: Record<string, string | undefined>;
-  try {
-    // Match the chat launch path: construct the familiar-scoped environment
-    // before the passive resolver starts its short filesystem deadline.
-    env = scopedEnv(familiarId);
-  } catch {
-    return [];
-  }
   let launch: CopilotRuntimeLaunch;
   try {
     launch = await (
@@ -293,7 +301,7 @@ async function discoverCopilotModels(
     const currentTime = now();
     pruneExpiredCache(currentTime);
     cacheModels(
-      familiarId ?? "",
+      cacheKey,
       {
         expiresAt: currentTime + (dependencies.cacheMs ?? CACHE_MS),
         models,
@@ -310,7 +318,16 @@ export async function listCopilotModelInventory(
   familiarId?: string | null,
   dependencies: CopilotModelDependencies = {},
 ): Promise<{ models: RuntimeModelOption[]; provenance: "live" | "cached" }> {
-  const key = familiarId ?? "";
+  let env: Record<string, string | undefined>;
+  try {
+    // Match the chat launch path and scope both cached and in-flight discovery
+    // to the exact environment that will reach the provider. The fingerprint
+    // invalidates credentials/config changes without retaining their values.
+    env = (dependencies.scopedEnv ?? harnessSpawnEnv)(familiarId);
+  } catch {
+    return { models: [], provenance: "live" };
+  }
+  const key = copilotScopeKey(familiarId, env);
   const now = dependencies.now ?? Date.now;
   pruneExpiredCache(now());
   const cached = cache.get(key);
@@ -330,7 +347,11 @@ export async function listCopilotModelInventory(
     return { models: [], provenance: "live" };
   }
 
-  const discovery = discoverCopilotModels(familiarId, dependencies).finally(() => {
+  const discovery = discoverCopilotModels(
+    env,
+    key,
+    dependencies,
+  ).finally(() => {
     if (inFlight.get(key) === discovery) inFlight.delete(key);
   });
   inFlight.set(key, discovery);

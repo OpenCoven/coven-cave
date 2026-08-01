@@ -26,23 +26,82 @@ export type DaemonDesktopAutoStartCoordinator = {
 };
 
 /**
+ * Backoff for unattended restarts, in ms since the previous attempt. A daemon
+ * that cannot start must not be relaunched every 5 seconds forever: the list
+ * is finite, so after the last entry the coordinator gives up and leaves the
+ * offline banner to say so. A single observed `running` result resets it.
+ */
+export const DAEMON_RESTART_BACKOFF_MS = [0, 15_000, 60_000, 300_000] as const;
+
+export type DaemonAutoRestartOptions = {
+  /**
+   * Read at each decision, never captured: the user can turn the preference
+   * off mid-session and the very next poll must respect that.
+   */
+  autoRestartEnabled: () => boolean;
+  now: () => number;
+};
+
+/**
  * Rendezvous the first accepted status decision with the resolved platform.
  * The decision is consumed synchronously before `start` is called, so even a
  * re-entrant status observation cannot issue a duplicate request.
+ *
+ * Boot behaviour is unchanged and unconditional — a daemon that is already
+ * offline when the app opens is still started once, with no preference
+ * involved. `options` adds the opt-in second half (cave-bqywj): after that
+ * first decision, keep watching, and relaunch a local daemon that goes offline
+ * mid-session. Without `options` the coordinator is exactly the one-shot it
+ * has always been.
  */
 export function createDaemonDesktopAutoStartCoordinator(
   start: () => void,
+  options?: DaemonAutoRestartOptions,
 ): DaemonDesktopAutoStartCoordinator {
   let platform: TauriPlatform = "unknown";
   let firstStatus: DaemonStatusPollResult | null = null;
   let consumed = false;
+  let restartAttempts = 0;
+  let lastAttemptAt: number | null = null;
 
   const reconcile = () => {
     if (consumed) return;
     const decision = daemonDesktopAutoStartDecision({ platform, firstStatus });
     if (decision === "wait") return;
     consumed = true;
-    if (decision === "start") start();
+    if (decision === "start") {
+      lastAttemptAt = options ? options.now() : null;
+      restartAttempts = 1;
+      start();
+    }
+  };
+
+  /**
+   * Runs only after the boot decision is consumed. Deliberately re-reads the
+   * preference and re-checks the platform every time rather than trusting the
+   * state captured at boot.
+   */
+  const considerRestart = (status: DaemonStatusPollResult) => {
+    if (!options || !consumed) return;
+    if (status.kind === "running") {
+      // Proof the daemon is back: forget the attempt history so a later,
+      // unrelated outage gets a full budget rather than the tail of this one.
+      restartAttempts = 0;
+      lastAttemptAt = null;
+      return;
+    }
+    if (platform !== "desktop") return;
+    if (status.kind !== "offline" || status.targetMode !== "local") return;
+    if (!options.autoRestartEnabled()) return;
+    if (restartAttempts >= DAEMON_RESTART_BACKOFF_MS.length) return;
+
+    const wait = DAEMON_RESTART_BACKOFF_MS[restartAttempts];
+    const at = options.now();
+    if (lastAttemptAt !== null && at - lastAttemptAt < wait) return;
+
+    restartAttempts += 1;
+    lastAttemptAt = at;
+    start();
   };
 
   return {
@@ -53,6 +112,7 @@ export function createDaemonDesktopAutoStartCoordinator(
     observeStatus(status) {
       if (firstStatus === null) firstStatus = status;
       reconcile();
+      considerRestart(status);
     },
   };
 }

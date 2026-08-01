@@ -45,7 +45,11 @@ test("deep-linkable modes hosted by another surface light the host row (cave-s9p
     "active",
     "a code deep link lights the Coding familiar's room row (cave-cc5r)",
   );
-  assert.equal(sidebarRowState("github", "github"), "active", "GitHub is standalone again (cave-cc5r)");
+  assert.equal(
+    sidebarRowState("surface:code", "github"),
+    "active",
+    "a github deep link lights the Coding familiar's room row",
+  );
 });
 
 test("Journal is a Memories tab — the Memories (grimoire) row hosts it", () => {

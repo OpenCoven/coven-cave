@@ -90,6 +90,8 @@ type Props = {
   /** Deep-link target from a GitHub-event inbox notification — opens that
    *  PR/issue's detail natively, even when it isn't in the activity list. */
   initialTarget?: GitHubItemTarget | null;
+  /** Called after the view captures a host target into local detail state. */
+  onInitialTargetHandled?: () => void;
   /** When set, the host owns the content filter (e.g. the Code Workshop's
    *  PRs/Issues/Reviews top tabs). The view is driven to this filter and hides
    *  its own filter control to avoid a redundant second switch. */
@@ -2311,6 +2313,7 @@ export function GitHubView({
   onFocusCard,
   onTasksRefresh,
   initialTarget,
+  onInitialTargetHandled,
   initialFilter,
 }: Props = {}) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
@@ -2343,8 +2346,10 @@ export function GitHubView({
   // user picks a row themselves — from then on selection owns the detail.
   const [deepLink, setDeepLink] = useState<GitHubItemTarget | null>(initialTarget ?? null);
   useEffect(() => {
-    setDeepLink(initialTarget ?? null);
-  }, [initialTarget]);
+    if (!initialTarget) return;
+    setDeepLink(initialTarget);
+    onInitialTargetHandled?.();
+  }, [initialTarget, onInitialTargetHandled]);
   const selectRow = useCallback((id: string) => {
     setDeepLink(null);
     setTransientSelectedItemId(id);
