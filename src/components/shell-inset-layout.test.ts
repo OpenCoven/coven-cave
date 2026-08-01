@@ -42,4 +42,21 @@ assert.match(
   "mobile detail should remain full-bleed without desktop card chrome",
 );
 
+// Migrated from sidebar-floating-edge.test.ts (deleted in this commit): that
+// file pinned the pre-inversion design and failed on main for every open PR
+// after "Adopt inset shell layout for detail content" (a212c9cca) changed the
+// CSS without it. Everything else it asserted is either obsolete or already
+// covered above; these two are neither, so they move here rather than being
+// lost with the file.
+assert.match(
+  shellCss,
+  /\.shell-nav \{[\s\S]*?overflow-y: auto;/,
+  "the shared sidebar remains vertically scrollable",
+);
+assert.doesNotMatch(
+  shellCss,
+  /\.shell-nav--rail \{[^}]*?(?:margin|border-radius|box-shadow):/,
+  "collapsed icon rail does not become a second floating card",
+);
+
 console.log("shell-inset-layout.test.ts: ok");
