@@ -124,6 +124,44 @@ assert.equal(
 );
 if (cancellationAwaitAssertion) throw cancellationAwaitAssertion;
 
+let hungResponseBodyCancelled = false;
+const outerTimeout = Symbol("outer timeout");
+let outerTimer;
+const hungCancellationResult = await Promise.race([
+  loopbackOriginResponds({
+    port: 3000,
+    timeoutMs: 100,
+    fetchImpl: async () => ({
+      status: 503,
+      body: {
+        cancel() {
+          hungResponseBodyCancelled = true;
+          return new Promise(() => {});
+        },
+      },
+    }),
+  }),
+  new Promise((resolve) => {
+    outerTimer = setTimeout(() => resolve(outerTimeout), 1_000);
+  }),
+]);
+clearTimeout(outerTimer);
+assert.equal(
+  hungResponseBodyCancelled,
+  true,
+  "a hung non-success response body cancellation is invoked",
+);
+assert.notEqual(
+  hungCancellationResult,
+  outerTimeout,
+  "a hung non-success response body cancellation must not outlive the probe deadline",
+);
+assert.equal(
+  hungCancellationResult,
+  false,
+  "a probe with a hung non-success response body cancellation is not ready",
+);
+
 const hungSockets = new Set();
 const hung = net.createServer((socket) => {
   hungSockets.add(socket);
