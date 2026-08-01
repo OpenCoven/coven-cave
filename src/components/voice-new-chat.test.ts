@@ -154,7 +154,7 @@ test("home-composer: voice call item gates itself on an in-flight mint and alway
 test("chat-view: direct voice call button works pre-session by creating the conversation first", () => {
   assert.match(
     chatView,
-    /<button[\s\S]*?className="cave-composer-footer-action focus-ring"[\s\S]*?onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{!projectLaunchReady \|\| voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?title="Voice call"[\s\S]*?aria-label="Voice call"[\s\S]*?<Icon name="ph:phone" width="var\(--icon-2xs\)" aria-hidden \/>[\s\S]*?<\/button>\s*<ComposerActionsMenu/,
+    /<button[\s\S]*?className="cave-composer-footer-action focus-ring"[\s\S]*?onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{!projectLaunchReady \|\| voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?title="Voice call"[\s\S]*?aria-label="Voice call"[\s\S]*?<Icon name="ph:phone" width="var\(--icon-md\)" aria-hidden \/>[\s\S]*?<\/button>\s*<ComposerActionsMenu/,
   );
   assert.doesNotMatch(chatView, /\{\s*sessionId\s*&&\s*<button[\s\S]{0,280}aria-label="Voice call"/);
   assert.doesNotMatch(chatView, /\{\s*sessionId\s*\?\s*<button[\s\S]{0,280}aria-label="Voice call"/);

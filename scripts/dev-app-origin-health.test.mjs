@@ -19,6 +19,13 @@ function close(server) {
   return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
+async function unusedPort() {
+  const reservation = net.createServer();
+  const port = await listen(reservation);
+  await close(reservation);
+  return port;
+}
+
 assert.equal(parsePort("3000"), 3000);
 assert.equal(parsePort("0"), null);
 assert.equal(parsePort("3000;echo nope"), null);
@@ -53,6 +60,33 @@ try {
   );
 } finally {
   await close(redirect);
+}
+
+const delayed = http.createServer((_, response) => {
+  response.writeHead(204);
+  response.end();
+});
+const delayedPort = await unusedPort();
+const delayedStarted = new Promise((resolve, reject) => {
+  setTimeout(() => {
+    delayed.once("error", reject);
+    delayed.listen(delayedPort, "127.0.0.1", () => {
+      delayed.removeListener("error", reject);
+      resolve();
+    });
+  }, 75);
+});
+try {
+  const responded = await loopbackOriginResponds({ port: delayedPort, timeoutMs: 1_000 });
+  await delayedStarted;
+  assert.equal(
+    responded,
+    true,
+    "startup readiness waits through an initial refused connection until the origin responds",
+  );
+} finally {
+  await delayedStarted.catch(() => {});
+  if (delayed.listening) await close(delayed);
 }
 
 const hungSockets = new Set();

@@ -481,21 +481,21 @@
     inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
-/* The in-chat action chrome stays visually tiny so the full-width writing
-   surface remains dominant. Mobile restores touch-safe targets below. */
+/* The in-chat action chrome stays compact so the full-width writing surface
+   remains dominant. Mobile restores touch-safe targets below. */
 .cave-chat-linear .cave-composer-footer-action,
 .cave-chat-linear .cave-composer-plus {
-  width: var(--icon-sm);
-  height: var(--icon-sm);
+  width: var(--space-6);
+  height: var(--space-6);
 }
 
 .cave-chat-linear .cave-composer-control-row {
-  min-height: var(--icon-sm);
+  min-height: var(--space-6);
 }
 
 .cave-chat-linear .cave-composer-send {
-  width: var(--icon-sm);
-  height: var(--icon-sm);
+  width: var(--space-6);
+  height: var(--space-6);
   border-color: transparent;
   border-radius: var(--radius-control);
   background: var(--text-primary);
