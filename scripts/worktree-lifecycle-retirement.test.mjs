@@ -1116,6 +1116,14 @@ test("adapter reprobe rejects a candidate that is no longer cleanup-ready", () =
     };
     git(["branch", branch, "HEAD"], fixture.repo, { env: agedEnv });
     git(["push", "-q", "-u", "origin", branch], fixture.repo);
+    // Land the branch for real: advance main past it and push, so the branch
+    // is strictly behind the default tip. cave-ox3ky's ae16550d6 fails closed
+    // when the candidate oid EQUALS the captured default — with no ref move
+    // there is no evidence of WHEN it landed, so the age window is unprovable.
+    // A fixture that leaves the branch at the default tip is asserting on a
+    // case the engine now (correctly) refuses to judge.
+    git(["commit", "-q", "--allow-empty", "-m", "land fix/reprobe-dirty"], fixture.repo, { env: agedEnv });
+    git(["push", "-q", "origin", "main"], fixture.repo);
     git(["worktree", "add", worktreePath, branch], fixture.repo, { env: agedEnv });
     executable(
       path.join(fixture.bin, "bd"),
@@ -1294,6 +1302,14 @@ test("real git adapter retires a landed managed worktree under a held maintenanc
     };
     git(["branch", branch, "HEAD"], fixture.repo, { env: agedEnv });
     git(["push", "-q", "-u", "origin", branch], fixture.repo);
+    // Land the branch for real: advance main past it and push, so the branch
+    // is strictly behind the default tip. cave-ox3ky's ae16550d6 fails closed
+    // when the candidate oid EQUALS the captured default — with no ref move
+    // there is no evidence of WHEN it landed, so the age window is unprovable.
+    // A fixture that leaves the branch at the default tip is asserting on a
+    // case the engine now (correctly) refuses to judge.
+    git(["commit", "-q", "--allow-empty", "-m", "land fix/retire-me"], fixture.repo, { env: agedEnv });
+    git(["push", "-q", "origin", "main"], fixture.repo);
     git(["worktree", "add", worktreePath, branch], fixture.repo, { env: agedEnv });
     mkdirSync(path.join(worktreePath, ".next"), { recursive: true });
     writeFileSync(path.join(worktreePath, ".next", "cache.txt"), "cache\n");
