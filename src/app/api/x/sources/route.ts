@@ -27,6 +27,7 @@ import {
   sweepExpiredXCache,
   type SavedXSource,
   type SaveCachedXPostAsSourceInput,
+  withXSourceAttachmentLock,
 } from "@/lib/server/x-sources";
 import {
   requireXCapability,
@@ -78,6 +79,10 @@ type SourcesDependencies = {
   makeRunner(): {
     act(id: string, input: unknown): Promise<unknown>;
   };
+  withAttachmentLock(
+    missionId: string,
+    operation: () => Promise<unknown>,
+  ): Promise<unknown>;
   setMissionAttached(familiarId: string, sourceId: string, missionId: string): Promise<void>;
   withAuthenticatedRead(
     familiarId: string,
@@ -196,11 +201,11 @@ export function createXSourcesHandlers(dependencies: SourcesDependencies) {
       await dependencies.requireResearch(scopedFamiliarId);
       const savedSources = await dependencies.listSources(scopedFamiliarId);
       const savedIds = new Set(savedSources.map((source) => source.id));
-      const savedIdsByCanonicalUrl = new Map<string, string | null>();
+      const savedIdsByPostId = new Map<string, string | null>();
       for (const source of savedSources) {
-        savedIdsByCanonicalUrl.set(
-          source.canonicalUrl,
-          savedIdsByCanonicalUrl.has(source.canonicalUrl) ? null : source.id,
+        savedIdsByPostId.set(
+          source.postId,
+          savedIdsByPostId.has(source.postId) ? null : source.id,
         );
       }
       const missions = (await dependencies.listMissions()).filter(
@@ -209,11 +214,18 @@ export function createXSourcesHandlers(dependencies: SourcesDependencies) {
       const attachments = new Map<string, string[]>();
       for (const mission of missions) {
         for (const source of mission.sources) {
-          const matchedSourceId = savedIds.has(source.id)
+          let matchedSourceId: string | null | undefined = savedIds.has(source.id)
             ? source.id
-            : typeof source.url === "string"
-              ? savedIdsByCanonicalUrl.get(source.url)
-              : undefined;
+            : undefined;
+          if (!matchedSourceId && typeof source.url === "string") {
+            try {
+              matchedSourceId = savedIdsByPostId.get(
+                parseXPostUrl(source.url).postId,
+              );
+            } catch {
+              matchedSourceId = undefined;
+            }
+          }
           if (!matchedSourceId) continue;
           const missionIds = attachments.get(matchedSourceId) ?? [];
           if (!missionIds.includes(mission.id)) missionIds.push(mission.id);
@@ -267,32 +279,38 @@ export function createXSourcesHandlers(dependencies: SourcesDependencies) {
         const scopedSourceId = sourceId(parsed.body.sourceId);
         const scopedMissionId = missionId(parsed.body.missionId);
         await dependencies.requireResearch(scopedFamiliarId);
-        const source = savedSource(
-          await dependencies.listSources(scopedFamiliarId),
-          scopedSourceId,
-        );
-        const mission = await dependencies.loadMission(scopedMissionId);
-        if (!mission || mission.familiarId !== scopedFamiliarId) {
-          throw new XApiError("not-found", "Research mission was not found");
-        }
-        const attachedMission = await dependencies.makeRunner().act(scopedMissionId, {
-          action: "attach-source",
-          source: {
-            id: source.id,
-            title: source.canonicalUrl,
-            url: source.canonicalUrl,
-            sourceType: "x-post",
-            provider: "x",
-            externalId: source.postId,
-            availability: source.availability,
-            note: source.note,
-            status: "candidate",
-          },
-        });
-        await dependencies.setMissionAttached(
-          scopedFamiliarId,
-          scopedSourceId,
+        const attachedMission = await dependencies.withAttachmentLock(
           scopedMissionId,
+          async () => {
+            const source = savedSource(
+              await dependencies.listSources(scopedFamiliarId),
+              scopedSourceId,
+            );
+            const mission = await dependencies.loadMission(scopedMissionId);
+            if (!mission || mission.familiarId !== scopedFamiliarId) {
+              throw new XApiError("not-found", "Research mission was not found");
+            }
+            const result = await dependencies.makeRunner().act(scopedMissionId, {
+              action: "attach-source",
+              source: {
+                id: source.id,
+                title: source.canonicalUrl,
+                url: source.canonicalUrl,
+                sourceType: "x-post",
+                provider: "x",
+                externalId: source.postId,
+                availability: source.availability,
+                note: source.note,
+                status: "candidate",
+              },
+            });
+            await dependencies.setMissionAttached(
+              scopedFamiliarId,
+              scopedSourceId,
+              scopedMissionId,
+            );
+            return result;
+          },
         );
         return NextResponse.json({ ok: true, mission: attachedMission });
       }
@@ -371,6 +389,7 @@ const handlers = createXSourcesHandlers({
       act: (id, input) => runner.act(id, input as ResearchMissionActionInput),
     };
   },
+  withAttachmentLock: withXSourceAttachmentLock,
   setMissionAttached: setXSourceMissionAttached,
   withAuthenticatedRead: (familiarId, scopes, operation) => (
     withXAuthenticatedRead(familiarId, scopes, operation)

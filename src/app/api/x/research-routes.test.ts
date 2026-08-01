@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
 
 import { XApiError, type NormalizedXPost } from "../../../lib/x-api.ts";
 
+const execFileAsync = promisify(execFile);
 const lookupSource = readFileSync(new URL("./posts/lookup/route.ts", import.meta.url), "utf8");
 const searchSource = readFileSync(new URL("./posts/search/route.ts", import.meta.url), "utf8");
 const sourcesSource = readFileSync(new URL("./sources/route.ts", import.meta.url), "utf8");
@@ -264,6 +270,10 @@ function sourceDependencies(overrides: Record<string, unknown> = {}) {
     listMissions: async () => [],
     loadMission: async () => null,
     makeRunner: () => ({ act: async () => ({ id: "mission-one" }) }),
+    withAttachmentLock: async (
+      _missionId: string,
+      operation: () => Promise<unknown>,
+    ) => operation(),
     setMissionAttached: async () => {},
     withAuthenticatedRead: async (
       _familiarId: string,
@@ -315,6 +325,14 @@ test("sources attach proves familiar ownership, invokes the exact runner action,
       sourceId: "source-one",
       missionId: "mission-one",
     }),
+    withAttachmentLock: async (_missionId: string, operation: () => Promise<unknown>) => {
+      calls.push("lock-enter");
+      try {
+        return await operation();
+      } finally {
+        calls.push("lock-exit");
+      }
+    },
     listSources: async () => {
       calls.push("source");
       return [savedSource];
@@ -337,7 +355,7 @@ test("sources attach proves familiar ownership, invokes the exact runner action,
 
   const response = await handlers.POST(jsonRequest("/api/x/sources", {}));
   assert.equal(response.status, 200);
-  assert.deepEqual(calls, ["source", "mission", "act", "link"]);
+  assert.deepEqual(calls, ["lock-enter", "source", "mission", "act", "link", "lock-exit"]);
   assert.deepEqual(actionInput, {
     action: "attach-source",
     source: {
@@ -419,13 +437,17 @@ test("a source-store failure after mission attach is explicit and GET reconcilia
   assert.deepEqual(body.sources[0].attachedMissionIds, ["mission-one"]);
 });
 
-test("attach then GET reconciles a runner-preserved same-URL mission source id", async () => {
+test("attach then GET reconciles a runner-preserved X post after its handle changed", async () => {
+  const changedHandleSource = {
+    ...savedSource,
+    canonicalUrl: "https://x.com/new_handle/status/100",
+  };
   const mission = {
     id: "mission-one",
     familiarId: "nova",
     sources: [{
       id: "pre-existing-source",
-      url: savedSource.canonicalUrl,
+      url: "https://x.com/old_handle/status/100",
     }],
   };
   let attachedMissionIds: string[] = [];
@@ -434,16 +456,16 @@ test("attach then GET reconciles a runner-preserved same-URL mission source id",
     readJsonBody: parsedBody({
       action: "attach",
       familiarId: "nova",
-      sourceId: savedSource.id,
+      sourceId: changedHandleSource.id,
       missionId: mission.id,
     }),
-    listSources: async () => [{ ...savedSource, attachedMissionIds }],
+    listSources: async () => [{ ...changedHandleSource, attachedMissionIds }],
     loadMission: async () => mission,
     makeRunner: () => ({
       act: async (_missionId: string, input: {
         source?: { url?: string };
       }) => {
-        assert.equal(input.source?.url, savedSource.canonicalUrl);
+        assert.equal(input.source?.url, changedHandleSource.canonicalUrl);
         return mission;
       },
     }),
@@ -456,8 +478,8 @@ test("attach then GET reconciles a runner-preserved same-URL mission source id",
       attachments: ReadonlyMap<string, readonly string[]>,
     ) => {
       reconcileInput = attachments;
-      attachedMissionIds = [...(attachments.get(savedSource.id) ?? [])];
-      return [{ ...savedSource, attachedMissionIds }];
+      attachedMissionIds = [...(attachments.get(changedHandleSource.id) ?? [])];
+      return [{ ...changedHandleSource, attachedMissionIds }];
     },
   }));
 
@@ -469,12 +491,45 @@ test("attach then GET reconciles a runner-preserved same-URL mission source id",
   assert.equal(getResponse.status, 200);
   assert.deepEqual(
     reconcileInput && [...reconcileInput],
-    [[savedSource.id, [mission.id]]],
+    [[changedHandleSource.id, [mission.id]]],
   );
   const body = await getResponse.json() as {
     sources: Array<{ attachedMissionIds: string[] }>;
   };
   assert.deepEqual(body.sources[0].attachedMissionIds, [mission.id]);
+});
+
+test("sources GET ignores invalid mission URLs and refuses ambiguous post-id fallback", async () => {
+  const duplicate = {
+    ...savedSource,
+    id: "source-two",
+  };
+  let reconcileInput: ReadonlyMap<string, readonly string[]> | undefined;
+  const handlers = createXSourcesHandlers(sourceDependencies({
+    listSources: async () => [savedSource, duplicate],
+    listMissions: async () => [{
+      id: "mission-one",
+      familiarId: "nova",
+      sources: [
+        { id: "unknown-one", url: "https://x.com/old_handle/status/100" },
+        { id: "unknown-two", url: "https://example.com/status/100" },
+        { id: "unknown-three", url: "not a URL" },
+      ],
+    }],
+    reconcileAttachments: async (
+      _familiarId: string,
+      attachments: ReadonlyMap<string, readonly string[]>,
+    ) => {
+      reconcileInput = attachments;
+      return [savedSource, duplicate];
+    },
+  }));
+
+  const response = await handlers.GET(
+    new Request("http://127.0.0.1/api/x/sources?familiarId=nova"),
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(reconcileInput && [...reconcileInput], []);
 });
 
 test("sources attach hides cross-familiar missions and does not invoke the runner", async () => {
@@ -640,6 +695,214 @@ test("source action bounds reject notes, tags, identifiers, and unknown actions 
     assert.equal(response.status, 400);
     const serialized = JSON.stringify(await response.json());
     assert.equal(serialized.includes("n".repeat(100)), false);
+  }
+});
+
+test("separate Node processes serialize real runner attachments through the durable X lock", async () => {
+  const root = await mkdtemp(path.join(process.cwd(), ".x-attachment-route-test-"));
+  const sourcesDir = path.join(root, "sources");
+  const missionsDir = path.join(root, "missions");
+  const enteredDir = path.join(root, "entered");
+  const overlapPath = path.join(root, "overlap");
+  const sentinelPath = path.join(root, "critical-section");
+  const loaderUrl = pathToFileURL(path.resolve("scripts/test-alias-register.mjs")).href;
+  const routeUrl = pathToFileURL(path.resolve("src/app/api/x/sources/route.ts")).href;
+  const sourcesUrl = pathToFileURL(path.resolve("src/lib/server/x-sources.ts")).href;
+  const missionStoreUrl = pathToFileURL(
+    path.resolve("src/lib/server/research-mission-store.ts"),
+  ).href;
+  const runnerUrl = pathToFileURL(
+    path.resolve("src/lib/server/research-mission-runner.ts"),
+  ).href;
+  const commonOptions = {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      COVEN_X_SOURCES_DIR: sourcesDir,
+      COVEN_RESEARCH_MISSIONS_DIR: missionsDir,
+    },
+    windowsHide: true,
+  };
+  const setup = `
+    const sources = await import(${JSON.stringify(sourcesUrl)});
+    const store = await import(${JSON.stringify(missionStoreUrl)});
+    const first = await sources.upsertSavedXSource({
+      familiarId: "nova",
+      postId: "100",
+      canonicalUrl: "https://x.com/opencoven/status/100",
+      originalUrl: "https://x.com/opencoven/status/100",
+      note: "first",
+      tags: [],
+    });
+    const second = await sources.upsertSavedXSource({
+      familiarId: "nova",
+      postId: "200",
+      canonicalUrl: "https://x.com/opencoven/status/200",
+      originalUrl: "https://x.com/opencoven/status/200",
+      note: "second",
+      tags: [],
+    });
+    const timestamp = "2026-07-31T12:00:00.000Z";
+    await store.createResearchMissionWorkspace({
+      version: 1,
+      id: "mission-one",
+      familiarId: "nova",
+      title: "Concurrent attachment",
+      intent: "Keep both X sources",
+      mode: "brief",
+      modeSource: "user",
+      deliverable: "Brief",
+      constraints: [],
+      bounds: {
+        wallClockMinutes: 10,
+        maxIterations: 1,
+        sourceTarget: 2,
+        checkpointEvery: 1,
+        stopWhenCostUnavailable: true,
+      },
+      status: "queued",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      iterations: [],
+      artifacts: [],
+      sources: [],
+    });
+    console.log(JSON.stringify([first.source.id, second.source.id]));
+  `;
+  const worker = `
+    const { mkdir, open, rm, writeFile } = await import("node:fs/promises");
+    const path = await import("node:path");
+    const route = await import(${JSON.stringify(routeUrl)});
+    const sources = await import(${JSON.stringify(sourcesUrl)});
+    const store = await import(${JSON.stringify(missionStoreUrl)});
+    const runnerModule = await import(${JSON.stringify(runnerUrl)});
+    const body = JSON.parse(process.env.CAVE_TEST_BODY);
+    const startAt = Number(process.env.CAVE_TEST_START_AT);
+    const wait = Math.max(0, startAt - Date.now());
+    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+    const handler = route.createXSourcesHandlers({
+      rejectNonLocalRequest: () => null,
+      readJsonBody: async () => ({ ok: true, body }),
+      sweepExpiredCache: async () => 0,
+      requireResearch: async () => {},
+      listSources: sources.listSavedXSources,
+      loadMission: store.loadResearchMission,
+      makeRunner: () => {
+        const runner = runnerModule.makeProductionResearchMissionRunner();
+        return { act: (id, input) => runner.act(id, input) };
+      },
+      withAttachmentLock: (missionId, operation) => (
+        sources.withXSourceAttachmentLock(missionId, async () => {
+          await mkdir(process.env.CAVE_TEST_ENTERED_DIR, { recursive: true });
+          await writeFile(
+            path.join(process.env.CAVE_TEST_ENTERED_DIR, body.sourceId),
+            "entered",
+            "utf8",
+          );
+          let sentinel;
+          try {
+            sentinel = await open(process.env.CAVE_TEST_SENTINEL_PATH, "wx");
+          } catch (error) {
+            if (error?.code !== "EEXIST") throw error;
+            await writeFile(process.env.CAVE_TEST_OVERLAP_PATH, "overlap", "utf8");
+          }
+          try {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            return await operation();
+          } finally {
+            if (sentinel) {
+              await sentinel.close();
+              await rm(process.env.CAVE_TEST_SENTINEL_PATH, { force: true });
+            }
+          }
+        })
+      ),
+      setMissionAttached: sources.setXSourceMissionAttached,
+      errorResponse: (error) => Response.json({
+        ok: false,
+        error: error instanceof Error ? error.message : "unknown",
+      }, { status: 500 }),
+    });
+    const response = await handler.POST(new Request("http://127.0.0.1/api/x/sources", {
+      method: "POST",
+    }));
+    if (!response.ok) throw new Error(JSON.stringify(await response.json()));
+  `;
+  const verify = `
+    const sources = await import(${JSON.stringify(sourcesUrl)});
+    const store = await import(${JSON.stringify(missionStoreUrl)});
+    const mission = await store.loadResearchMission("mission-one");
+    const saved = await sources.listSavedXSources("nova");
+    console.log(JSON.stringify({ mission, saved }));
+  `;
+
+  try {
+    const setupResult = await execFileAsync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--import", loaderUrl,
+        "--input-type=module",
+        "--eval", setup,
+      ],
+      commonOptions,
+    );
+    const sourceIds = JSON.parse(setupResult.stdout.trim()) as string[];
+    const startAt = Date.now() + 1_000;
+    await Promise.all(sourceIds.map((sourceId) => execFileAsync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--import", loaderUrl,
+        "--input-type=module",
+        "--eval", worker,
+      ],
+      {
+        ...commonOptions,
+        env: {
+          ...commonOptions.env,
+          CAVE_TEST_BODY: JSON.stringify({
+            action: "attach",
+            familiarId: "nova",
+            sourceId,
+            missionId: "mission-one",
+          }),
+          CAVE_TEST_START_AT: String(startAt),
+          CAVE_TEST_ENTERED_DIR: enteredDir,
+          CAVE_TEST_OVERLAP_PATH: overlapPath,
+          CAVE_TEST_SENTINEL_PATH: sentinelPath,
+        },
+      },
+    )));
+    assert.deepEqual((await readdir(enteredDir)).sort(), [...sourceIds].sort());
+    await assert.rejects(() => readFile(overlapPath, "utf8"), /ENOENT/);
+
+    const verified = await execFileAsync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--import", loaderUrl,
+        "--input-type=module",
+        "--eval", verify,
+      ],
+      commonOptions,
+    );
+    const result = JSON.parse(verified.stdout.trim()) as {
+      mission: { sources: Array<{ id: string }> };
+      saved: Array<{ id: string; attachedMissionIds: string[] }>;
+    };
+    assert.deepEqual(
+      result.mission.sources.map((source) => source.id).sort(),
+      [...sourceIds].sort(),
+    );
+    for (const sourceId of sourceIds) {
+      assert.deepEqual(
+        result.saved.find((source) => source.id === sourceId)?.attachedMissionIds,
+        ["mission-one"],
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

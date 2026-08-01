@@ -40,6 +40,7 @@ const {
   setXSourceMissionAttached,
   sweepExpiredXCache,
   upsertSavedXSource,
+  withXSourceAttachmentLock,
 } = await import("./x-sources.ts");
 
 const normalizedPost = (
@@ -681,6 +682,25 @@ test("source transaction locks reject symlinked lock directories", async () => {
     note: "",
     tags: [],
   }), /symlink/i);
+  assert.deepEqual(await readdir(outsideLocks), []);
+});
+
+test("X attachment locks validate mission IDs before paths and reject symlink directories", async () => {
+  await assert.rejects(
+    () => withXSourceAttachmentLock("../mission-one", async () => {}),
+    (error) => error instanceof XApiError && error.code === "invalid-request",
+  );
+  assert.equal(await readdir(root).then((entries) => entries.includes("sources")), false);
+
+  const outsideLocks = path.join(root, "outside-attachment-locks");
+  await mkdir(outsideLocks, { recursive: true });
+  await mkdir(sourcesDir, { recursive: true });
+  await symlink(outsideLocks, path.join(sourcesDir, ".attachment-locks"));
+
+  await assert.rejects(
+    () => withXSourceAttachmentLock("mission-one", async () => {}),
+    /symlink/i,
+  );
   assert.deepEqual(await readdir(outsideLocks), []);
 });
 

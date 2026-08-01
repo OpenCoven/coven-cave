@@ -84,6 +84,7 @@ const MAX_TAGS = 25;
 const MAX_TAG_CHARS = 64;
 const MAX_SOURCES_PER_FAMILIAR = 500;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const ATTACHMENT_LOCK_TIMEOUT_MS = 15_000;
 const POST_ID = /^\d+$/;
 const AUTHOR_USERNAME = /^[A-Za-z0-9_]{1,15}$/;
 const CACHE_FIELDS = [
@@ -118,6 +119,13 @@ function sourcesRoot(): string {
 function cacheRoot(): string {
   return process.env.COVEN_X_CACHE_DIR?.trim()
     || path.join(/* turbopackIgnore: true */ caveHome(), "x-cache");
+}
+
+function attachmentLocksRoot(): string {
+  return path.join(
+    /* turbopackIgnore: true */ sourcesRoot(),
+    ".attachment-locks",
+  );
 }
 
 function assertFamiliarId(familiarId: string): void {
@@ -476,6 +484,31 @@ async function withSourceMutationLock<T>(
   return withAllSourcesLock(
     () => withSourceLock(familiarId, operation),
   );
+}
+
+export async function withXSourceAttachmentLock<T>(
+  missionId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!isValidResearchMissionId(missionId)) {
+    throw new XApiError("invalid-request", "Research mission id is invalid");
+  }
+  await ensureRealDirectory(sourcesRoot());
+  const lockRoot = attachmentLocksRoot();
+  await ensureRealDirectory(lockRoot);
+  const release = await acquireProcessIntentLock({
+    intentsDirectory: path.join(
+      /* turbopackIgnore: true */ lockRoot,
+      missionId,
+    ),
+    timeoutMs: ATTACHMENT_LOCK_TIMEOUT_MS,
+    label: "X source attachment",
+  });
+  try {
+    return await operation();
+  } finally {
+    await release();
+  }
 }
 
 function withSourceFileLocks<T>(
