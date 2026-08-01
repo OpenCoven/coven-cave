@@ -173,6 +173,26 @@ try {
   );
   git(["push", "-q", "origin", "main"], repo);
 
+  const fastForwardPath = path.join(repo, ".worktrees", "fast-forward");
+  git(
+    ["worktree", "add", "-q", "-b", "feat/fast-forward", fastForwardPath, "origin/main"],
+    repo,
+  );
+  writeFileSync(path.join(fastForwardPath, "fast-forward.txt"), "fast-forward landing\n");
+  git(["add", "fast-forward.txt"], fastForwardPath);
+  git(["commit", "-q", "-m", "old fast-forward work"], fastForwardPath, {
+    env: {
+      ...process.env,
+      GIT_AUTHOR_DATE: "2026-07-20T12:00:00Z",
+      GIT_COMMITTER_DATE: "2026-07-20T12:00:00Z",
+    },
+  });
+  const fastForwardHead = git(["rev-parse", "HEAD"], fastForwardPath).trim();
+  git(["push", "-q", "-u", "origin", "feat/fast-forward"], fastForwardPath);
+  git(["worktree", "remove", fastForwardPath], repo);
+  git(["merge", "-q", "--ff-only", "feat/fast-forward"], repo);
+  git(["push", "-q", "origin", "main"], repo);
+
   const detached = path.join(repo, ".worktrees", "detached");
   git(["worktree", "add", "-q", "--detach", detached, "origin/main"], repo);
   const defaultHead = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
@@ -400,6 +420,25 @@ if [ "\${LIFECYCLE_WORKTREE_INVENTORY_STDERR:-0}" = "1" ]; then
   esac
 fi
 
+if [ "\${LIFECYCLE_DUPLICATE_LOCAL_REF_SAME:-0}" = "1" ] ||
+   [ "\${LIFECYCLE_DUPLICATE_LOCAL_REF_CONFLICT:-0}" = "1" ]; then
+  case " $* " in
+    *" for-each-ref --format=%(refname)%0a%(objectname)%00 refs/heads "*)
+      PATH=\${PATH#${gitBin}:}
+      export PATH
+      git "$@"
+      STATUS=$?
+      [ "$STATUS" -eq 0 ] || exit "$STATUS"
+      DUPLICATE_OID=${JSON.stringify(oldHead)}
+      if [ "\${LIFECYCLE_DUPLICATE_LOCAL_REF_CONFLICT:-0}" = "1" ]; then
+        DUPLICATE_OID="$OTHER_OID"
+      fi
+      printf 'refs/heads/feat/old\\n%s\\0\\n' "$DUPLICATE_OID"
+      exit 0
+      ;;
+  esac
+fi
+
 if [ "\${LIFECYCLE_REF_INVENTORY_STDERR:-0}" = "1" ]; then
   case " $* " in
     *" for-each-ref --format=%(refname)%0a%(objectname)%00 refs/heads "*)
@@ -435,6 +474,28 @@ if [ "\${LIFECYCLE_INDEX_STDERR:-0}" = "1" ]; then
       STATUS=$?
       printf '%s\n' 'git index inventory omitted inaccessible paths' >&2
       exit "$STATUS"
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_REMOTE_SUCCESS_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" ls-remote --exit-code --heads origin refs/heads/feat/old "*)
+      PATH=\${PATH#${gitBin}:}
+      export PATH
+      git "$@"
+      STATUS=$?
+      printf '%s\\n' 'same-named remote ref probe omitted records' >&2
+      exit "$STATUS"
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_REMOTE_ABSENCE_STDERR:-0}" = "1" ]; then
+  case " $* " in
+    *" ls-remote --exit-code --heads origin refs/heads/feat/old "*)
+      printf '%s\\n' 'same-named remote ref absence is untrustworthy' >&2
+      exit 2
       ;;
   esac
 fi
@@ -695,6 +756,9 @@ if [ "$1" = "api" ] &&
       printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":43,"url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:00:00Z","headRefName":"feat/recent-merge","headRefOid":"${recentMergeHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"recent"}}}}}}]\\n' "$BASE_REF"
     elif [ "$OID_ARG" = "${recentReflogHead}" ]; then
       printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":44,"url":"https://github.com/OpenCoven/coven-cave/pull/44","state":"MERGED","isDraft":false,"mergedAt":"2026-07-21T12:00:00Z","headRefName":"feat/recent-reflog","headRefOid":"${recentReflogHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"reflog"}}}}}}]\\n' "$BASE_REF"
+    elif [ "$OID_ARG" = "${fastForwardHead}" ] &&
+         [ "\${LIFECYCLE_FAST_FORWARD_MERGED_PR:-0}" = "1" ]; then
+      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":45,"url":"https://github.com/OpenCoven/coven-cave/pull/45","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:30:00Z","headRefName":"feat/fast-forward","headRefOid":"${fastForwardHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"fast-forward"}}}}}}]\\n' "$BASE_REF"
     else
       printf '[{"data":{"repository":{"nameWithOwner":"%s","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]\\n' "$REPOSITORY"
     fi
@@ -706,7 +770,7 @@ if [ "$1" = "api" ] &&
     [ -z "$OWNER$NAME$OID_ARG" ] || fail "exact-head search included repository variables"
     case "$SEARCH_QUERY" in
       is:pr\\ head:*:*) fail "exact-head search used an owner-prefixed head qualifier" ;;
-      is:pr\\ head:feat/old|is:pr\\ head:feat/recent-merge|is:pr\\ head:feat/recent-reflog|is:pr\\ head:feat/live|is:pr\\ head:feat/cave-link1-linked|is:pr\\ head:feat/branch-only|is:pr\\ head:feat/direct-landing) ;;
+      is:pr\\ head:feat/old|is:pr\\ head:feat/recent-merge|is:pr\\ head:feat/recent-reflog|is:pr\\ head:feat/live|is:pr\\ head:feat/cave-link1-linked|is:pr\\ head:feat/branch-only|is:pr\\ head:feat/direct-landing|is:pr\\ head:feat/fast-forward) ;;
       *) fail "exact-head search used an unexpected query: $SEARCH_QUERY" ;;
     esac
     require_query 'search(query: $searchQuery, type: ISSUE, first: 100, after: $endCursor)'
@@ -863,7 +927,7 @@ elif [ "\${LIFECYCLE_WHITESPACE_METADATA_PATH:-0}" = "1" ]; then
 elif [ "\${LIFECYCLE_NULL_EXCEPTION:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":null}}}}]'
 else
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-direct-landing","status":"closed","title":"Direct landing","metadata":{"coven":{"worktree":{"branch":"feat/direct-landing","path":"${directLandingPath}","owner":"Kitty","purpose":"Direct landing fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-direct-landing","status":"closed","title":"Direct landing","metadata":{"coven":{"worktree":{"branch":"feat/direct-landing","path":"${directLandingPath}","owner":"Kitty","purpose":"Direct landing fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-fast-forward","status":"closed","title":"Fast-forward landing","metadata":{"coven":{"worktree":{"branch":"feat/fast-forward","path":"${fastForwardPath}","owner":"Kitty","purpose":"Fast-forward landing fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 fi
 `,
   );
@@ -959,6 +1023,10 @@ exit 0
       "LIFECYCLE_MALFORMED_LIVE_MAIN_CASE",
       "LIFECYCLE_DEFAULT_TRACKING_MUTATION",
       "LIFECYCLE_DUPLICATE_REGISTERED_REF",
+      "LIFECYCLE_DUPLICATE_LOCAL_REF_SAME",
+      "LIFECYCLE_DUPLICATE_LOCAL_REF_CONFLICT",
+      "LIFECYCLE_REMOTE_SUCCESS_STDERR",
+      "LIFECYCLE_REMOTE_ABSENCE_STDERR",
       "LIFECYCLE_REQUIRE_SAFE_GIT",
       "LIFECYCLE_WORKTREE_INVENTORY_STDERR",
       "LIFECYCLE_REF_INVENTORY_STDERR",
@@ -1011,7 +1079,11 @@ exit 0
     [...["queued", "in_progress", "requested", "waiting", "pending"], ...["queued", "in_progress", "requested", "waiting", "pending"]],
     "workflow ownership uses exactly five status queries in each of two complete sweeps",
   );
-  assert.equal(byBranch.get("main").lane, "protected");
+  assert.equal(
+    byBranch.get("main").lane,
+    "protected",
+    "the primary default branch remains protected before ambiguous evidence classification",
+  );
   assert.equal(byBranch.get("feat/live").lane, "active");
   assert.deepEqual(
     byBranch.get("feat/live").activeWorkflowUrls,
@@ -1099,7 +1171,7 @@ exit 0
   );
   assert.deepEqual(report.budgets, {
     worktrees: { count: 7, warning: 12, exceeded: false },
-    branches: { count: 8, warning: 30, exceeded: false },
+    branches: { count: 9, warning: 30, exceeded: false },
     exceptions: { active: 0, expired: 0 },
   }, "the exact budget object survives patrol JSON serialization");
   const nullExceptionReport = JSON.parse(
@@ -1192,7 +1264,7 @@ exit 0
   );
   assert.match(
     humanReport,
-    /^Local branch budget: 8\/30 \(within budget\)$/m,
+    /^Local branch budget: 9\/30 \(within budget\)$/m,
     "the routine report uses the lifecycle renderer's exact local branch budget line",
   );
   assert.doesNotMatch(
@@ -1211,6 +1283,72 @@ exit 0
       );
     }
   };
+
+  verifySafetyRegression("unprovable fast-forward landing time", () => {
+    const fastForward = byBranch.get("feat/fast-forward");
+    assert.equal(fastForward.head, defaultHead);
+    assert.equal(fastForward.lane, "uncertain");
+    assert.notEqual(fastForward.lane, "retire-after-gate");
+    assert.match(
+      fastForward.probeErrors.join("\n"),
+      /default branch landing.*(?:unavailable|unprovable)/i,
+    );
+    assert.equal(byBranch.get("main").lane, "protected");
+  });
+
+  verifySafetyRegression("exact merged PR times a fast-forward landing", () => {
+    const mergedReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_FAST_FORWARD_MERGED_PR: "1" }),
+    );
+    const mergedFastForward = mergedReport.items.find(
+      (item) => item.branch === "feat/fast-forward",
+    );
+    assert.equal(mergedFastForward.head, defaultHead);
+    assert.equal(mergedFastForward.lane, "cooldown");
+    assert.equal(mergedFastForward.updatedAtMs, Date.parse("2026-08-10T21:30:00Z"));
+    assert.equal(mergedFastForward.mergedPr.number, 45);
+
+    const eligibleFastForward = JSON.parse(
+      patrol(
+        ["--json", "--now", "2026-08-11T21:30:01Z"],
+        { LIFECYCLE_FAST_FORWARD_MERGED_PR: "1" },
+      ),
+    ).items.find((item) => item.branch === "feat/fast-forward");
+    assert.equal(eligibleFastForward.lane, "retire-after-gate");
+  });
+
+  for (const environment of [
+    "LIFECYCLE_DUPLICATE_LOCAL_REF_SAME",
+    "LIFECYCLE_DUPLICATE_LOCAL_REF_CONFLICT",
+  ]) {
+    verifySafetyRegression(`${environment} rejects duplicate local refs`, () => {
+      let failure;
+      try {
+        patrol(["--json"], { [environment]: "1", NODE_NO_WARNINGS: "1" });
+      } catch (error) {
+        failure = error;
+      }
+      assert.ok(failure, `${environment} must abort inventory collection`);
+      assert.match(failure.stderr, /duplicate local branch ref/i);
+    });
+  }
+
+  for (const [environment, warning] of [
+    ["LIFECYCLE_REMOTE_SUCCESS_STDERR", /same-named remote ref probe omitted records/],
+    ["LIFECYCLE_REMOTE_ABSENCE_STDERR", /same-named remote ref absence is untrustworthy/],
+  ]) {
+    verifySafetyRegression(`${environment} rejects exact remote ref stderr`, () => {
+      const warnedRemoteReport = JSON.parse(
+        patrol(["--json"], { [environment]: "1" }),
+      );
+      const warnedRemoteOld = warnedRemoteReport.items.find(
+        (item) => item.branch === "feat/old",
+      );
+      assert.equal(warnedRemoteOld.lane, "uncertain");
+      assert.equal(warnedRemoteOld.remoteRef, null);
+      assert.match(warnedRemoteOld.probeErrors.join("\n"), warning);
+    });
+  }
 
   verifySafetyRegression("exact OID Bead ownership", () => {
     const oidOwnerReport = JSON.parse(
