@@ -93,7 +93,7 @@ numeric-id no-reply form — see the contributor-attribution section of
 
 ```bash
 grep -n "credit an AI model" AGENTS.md   # the rule
-git log -5 --pretty=%B | grep -i "co-authored-by\|generated with"   # your own trail
+git log -5 --pretty=%B | grep -Ei "co-authored-by|generated with"   # your own trail
 ```
 
 ## Worktree convention
