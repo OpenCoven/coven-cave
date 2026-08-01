@@ -35,6 +35,7 @@ import {
 const GATEWAY_DISPATCH_ENV = "OPENCLAW_GATEWAY_DISPATCH";
 const GATEWAY_URL_ENV = "OPENCLAW_GATEWAY_URL";
 const STARTUP_TIMEOUT_MS = 3_000;
+const MAX_TRACKED_TOOL_CALLS = 128;
 const REQUIRED_GATEWAY_METHODS = ["chat.send", "chat.abort"];
 const REQUIRED_GATEWAY_CAPABILITIES = [GATEWAY_SERVER_CAPS.CHAT_SEND_ROUTING_CONTRACT];
 
@@ -493,12 +494,25 @@ export async function dispatchOpenClawGatewayTurn(args: {
     | { generation: number; kind: "chat"; payload: unknown }
     | { generation: number; kind: "tool"; eventName: string; payload: unknown }
   > = [];
-  const seenToolEvents = new Set<string>();
-  const openToolIds = new Set<string>();
+  const unfinishedToolIds = new Set<string>();
+  const completedToolIds = new Set<string>();
   let doneResolve!: (value: { state: "final" | "aborted" | "error"; message?: string }) => void;
   const done = new Promise<{ state: "final" | "aborted" | "error"; message?: string }>((resolve) => {
     doneResolve = resolve;
   });
+
+  const clearToolLifecycleState = () => {
+    unfinishedToolIds.clear();
+    completedToolIds.clear();
+  };
+
+  const stopToolProjection = () => {
+    toolProjectionEnabled = false;
+    for (let index = queuedEvents.length - 1; index >= 0; index -= 1) {
+      if (queuedEvents[index]?.kind === "tool") queuedEvents.splice(index, 1);
+    }
+    clearToolLifecycleState();
+  };
 
   const settle = (state: "final" | "aborted" | "error", message?: string) => {
     if (settled) return;
@@ -517,7 +531,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
     queuedEvents.splice(0);
     preAcknowledgementOverflowGeneration = undefined;
     toolProjectionEnabled = false;
-    openToolIds.clear();
+    clearToolLifecycleState();
     if (expectedRunId) {
       args.onEvent({ kind: "error", message });
       settle("error", message);
@@ -534,11 +548,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
     fingerprint?: string,
   ) => {
     if (!toolProjectionEnabled || settled) return;
-    toolProjectionEnabled = false;
-    for (let index = queuedEvents.length - 1; index >= 0; index -= 1) {
-      if (queuedEvents[index]?.kind === "tool") queuedEvents.splice(index, 1);
-    }
-    openToolIds.clear();
+    stopToolProjection();
     args.onEvent({
       kind: "compatibility",
       code,
@@ -585,12 +595,22 @@ export async function dispatchOpenClawGatewayTurn(args: {
       disableToolProjection("unknown-tool-event", parsed.fingerprint);
       return;
     }
-    const dedupeKey = `${expectedRunId}:${parsed.seq}:${parsed.id}:${parsed.kind}`;
-    if (seenToolEvents.has(dedupeKey) || parsed.seq <= highestToolSequence) return;
-    seenToolEvents.add(dedupeKey);
+    if (parsed.seq <= highestToolSequence) return;
     highestToolSequence = parsed.seq;
-    if (parsed.kind === "tool_start") openToolIds.add(parsed.id);
-    if (parsed.kind === "tool_end") openToolIds.delete(parsed.id);
+    if (completedToolIds.has(parsed.id)) return;
+    if (
+      !unfinishedToolIds.has(parsed.id)
+      && unfinishedToolIds.size + completedToolIds.size >= MAX_TRACKED_TOOL_CALLS
+    ) {
+      stopToolProjection();
+      return;
+    }
+    if (parsed.kind === "tool_start" || parsed.kind === "tool_progress") {
+      unfinishedToolIds.add(parsed.id);
+    } else {
+      unfinishedToolIds.delete(parsed.id);
+      completedToolIds.add(parsed.id);
+    }
     args.onEvent(parsed);
   };
 
@@ -703,7 +723,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
           failDispatchLifecycle(failure);
           return;
         }
-        if (expectedRunId && openToolIds.size > 0) {
+        if (expectedRunId && unfinishedToolIds.size > 0) {
           disableToolProjection("tool-event-reconnect-gap");
         }
         // The official client reconnects after a transport loss. Restore the
@@ -728,7 +748,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
         // A socket close invalidates the subscription immediately, not only
         // when the next hello arrives. A buffered callback from the closed
         // transport must not be accepted before the next subscription.
-        if (expectedRunId && openToolIds.size > 0) {
+        if (expectedRunId && unfinishedToolIds.size > 0) {
           disableToolProjection("tool-event-reconnect-gap");
         }
         streamReady = false;
@@ -747,7 +767,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
       },
       onGap: () => {
         if (settled) return;
-        if (expectedRunId && toolProjectionEnabled && openToolIds.size > 0) {
+        if (expectedRunId && toolProjectionEnabled && unfinishedToolIds.size > 0) {
           disableToolProjection("tool-event-sequence-gap");
         }
         failDispatchLifecycle("Gateway transport sequence gap");

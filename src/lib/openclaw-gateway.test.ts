@@ -1641,6 +1641,148 @@ if (reconnectingTool.dispatch.kind === "accepted") {
   assert.deepEqual(await reconnectingTool.dispatch.done, { state: "final" });
 }
 
+const progressBeforeStart = await createToolGatewayHarness("tool-progress-before-start");
+emitGatewayEvent(progressBeforeStart.dispatchOptions, "agent", toolPayload(1));
+const subscriptionsBeforeProgressReconnect = progressBeforeStart.subscriptionCalls();
+progressBeforeStart.dispatchOptions.onClose?.(1006, "tool transport reset");
+progressBeforeStart.dispatchOptions.onHelloOk?.(helloOk());
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(
+  progressBeforeStart.subscriptionCalls(),
+  subscriptionsBeforeProgressReconnect + 1,
+  "chat subscription is restored after reconnecting from an out-of-order progress frame",
+);
+emitGatewayEvent(progressBeforeStart.dispatchOptions, "agent", toolPayload(0, { seq: 9 }));
+emitGatewayEvent(progressBeforeStart.dispatchOptions, "chat", { ...delta, seq: 0 });
+emitGatewayEvent(progressBeforeStart.dispatchOptions, "chat", {
+  runId: expected.runId,
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  seq: 1,
+  state: "final",
+});
+assert.deepEqual(
+  progressBeforeStart.events,
+  [
+    { kind: "tool_progress", id: "tool-1", output: "hi", seq: 7 },
+    { kind: "compatibility", code: "tool-event-reconnect-gap" },
+    { kind: "delta", text: "Hello", replace: false },
+    { kind: "final" },
+  ],
+  "progress before start remains unfinished, so reconnect fences it once and disables later tool projection",
+);
+if (progressBeforeStart.dispatch.kind === "accepted") {
+  assert.deepEqual(await progressBeforeStart.dispatch.done, { state: "final" });
+}
+
+const resultBeforeStart = await createToolGatewayHarness("tool-result-before-start");
+emitGatewayEvent(resultBeforeStart.dispatchOptions, "agent", toolPayload(2, { seq: 7 }));
+const subscriptionsBeforeResultReconnect = resultBeforeStart.subscriptionCalls();
+resultBeforeStart.dispatchOptions.onClose?.(1006, "tool transport reset");
+resultBeforeStart.dispatchOptions.onHelloOk?.(helloOk());
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(
+  resultBeforeStart.subscriptionCalls(),
+  subscriptionsBeforeResultReconnect + 1,
+  "chat subscription is restored after reconnecting from an out-of-order terminal frame",
+);
+emitGatewayEvent(resultBeforeStart.dispatchOptions, "agent", toolPayload(0, { seq: 9 }));
+emitGatewayEvent(resultBeforeStart.dispatchOptions, "agent", toolPayload(1, { seq: 10 }));
+emitGatewayEvent(resultBeforeStart.dispatchOptions, "chat", { ...delta, seq: 0 });
+emitGatewayEvent(resultBeforeStart.dispatchOptions, "chat", {
+  runId: expected.runId,
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  seq: 1,
+  state: "final",
+});
+assert.deepEqual(
+  resultBeforeStart.events,
+  [
+    {
+      kind: "tool_end",
+      id: "tool-1",
+      name: "exec",
+      output: { text: "hi", exitCode: 0 },
+      isError: false,
+      seq: 7,
+    },
+    { kind: "delta", text: "Hello", replace: false },
+    { kind: "final" },
+  ],
+  "result before start is terminal, avoids a reconnect diagnostic, and makes later lifecycle frames immutable",
+);
+if (resultBeforeStart.dispatch.kind === "accepted") {
+  assert.deepEqual(await resultBeforeStart.dispatch.done, { state: "final" });
+}
+
+const orderedToolLifecycle = await createToolGatewayHarness("ordered-tool-lifecycle");
+emitGatewayEvent(orderedToolLifecycle.dispatchOptions, "agent", toolPayload(0));
+emitGatewayEvent(orderedToolLifecycle.dispatchOptions, "agent", toolPayload(1));
+emitGatewayEvent(orderedToolLifecycle.dispatchOptions, "agent", toolPayload(2));
+emitGatewayEvent(orderedToolLifecycle.dispatchOptions, "chat", {
+  runId: expected.runId,
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  seq: 0,
+  state: "final",
+});
+assert.deepEqual(
+  orderedToolLifecycle.events,
+  [
+    { kind: "tool_start", id: "tool-1", name: "exec", input: { command: "echo hi" }, seq: 3 },
+    { kind: "tool_progress", id: "tool-1", output: "hi", seq: 7 },
+    {
+      kind: "tool_end",
+      id: "tool-1",
+      name: "exec",
+      output: { text: "hi", exitCode: 0 },
+      isError: false,
+      seq: 9,
+    },
+    { kind: "final" },
+  ],
+  "ordered start, progress, and end frames continue to project normally",
+);
+if (orderedToolLifecycle.dispatch.kind === "accepted") {
+  assert.deepEqual(await orderedToolLifecycle.dispatch.done, { state: "final" });
+}
+
+const boundedToolLifecycle = await createToolGatewayHarness("bounded-tool-lifecycle");
+for (let index = 0; index <= 128; index += 1) {
+  emitGatewayEvent(boundedToolLifecycle.dispatchOptions, "agent", toolPayload(2, {
+    seq: index + 1,
+    data: { toolCallId: `bounded-tool-${index}` },
+  }));
+}
+emitGatewayEvent(boundedToolLifecycle.dispatchOptions, "chat", {
+  runId: expected.runId,
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  seq: 0,
+  state: "final",
+});
+assert.equal(
+  boundedToolLifecycle.events.filter((event) => event.kind === "tool_end").length,
+  128,
+  "tool lifecycle state remains bounded to 128 distinct call ids",
+);
+assert.equal(
+  boundedToolLifecycle.events.some((event) => event.id === "bounded-tool-128"),
+  false,
+  "a lifecycle-state overflow fails later tool projection closed",
+);
+assert.deepEqual(
+  boundedToolLifecycle.events.at(-1),
+  { kind: "final" },
+  "tool lifecycle overflow leaves validated chat projection available",
+);
+if (boundedToolLifecycle.dispatch.kind === "accepted") {
+  assert.deepEqual(await boundedToolLifecycle.dispatch.done, { state: "final" });
+}
+
 // --- paired-device credential wiring -------------------------------------
 
 // Opaque placeholders: nothing in the wiring path parses key material.
