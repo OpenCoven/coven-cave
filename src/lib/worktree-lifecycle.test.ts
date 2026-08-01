@@ -9,12 +9,39 @@ const {
   classifyLifecycleUnit,
   classifyWorktree,
   isDisposableIgnoredPath,
+  normalizeAbsoluteWorktreePath,
   renderWorktreeLifecycleReport,
   summarizeWorktreeLifecycle,
 } = await import("./worktree-lifecycle.ts");
 
 const NOW = Date.parse("2026-07-29T22:00:00Z");
 const DAY = 24 * 60 * 60 * 1000;
+
+{
+  for (const equivalent of [
+    "/repo/wt",
+    "/repo/wt/",
+    "/repo/parent/../wt",
+    "/repo/./wt",
+  ]) {
+    assert.equal(
+      normalizeAbsoluteWorktreePath(equivalent),
+      "/repo/wt",
+      `${equivalent} canonicalizes to the same absolute worktree path`,
+    );
+  }
+  assert.equal(normalizeAbsoluteWorktreePath("/"), "/", "the filesystem root remains root");
+  assert.equal(
+    normalizeAbsoluteWorktreePath("repo/wt"),
+    null,
+    "relative paths are not accepted as lifecycle paths",
+  );
+  assert.notEqual(
+    normalizeAbsoluteWorktreePath("/repo/other"),
+    normalizeAbsoluteWorktreePath("/repo/wt"),
+    "genuinely different absolute paths remain different",
+  );
+}
 
 {
   for (const generated of [

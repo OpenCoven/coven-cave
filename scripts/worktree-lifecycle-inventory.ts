@@ -7,6 +7,7 @@ import {
   classifyLifecycleUnit,
   classifyWorktree,
   isDisposableIgnoredPath,
+  normalizeAbsoluteWorktreePath,
   type ManagedCreationException,
   type WorktreeLifecycleBudgets,
   type WorktreeLifecycleItem,
@@ -1945,13 +1946,16 @@ export function collectWorktreeLifecycleInventory(
             normalizePath(candidate.path) === normalizePath(record.path!),
         ).length === 1,
     )
-    .filter((record) =>
-      units.some(
-        (unit) =>
-          unit.branch === record.branch &&
-          (unit.kind === "branch-only" || record.path === unit.path),
-      ),
-    );
+    .filter((record) => {
+      const recordPath = normalizeAbsoluteWorktreePath(record.path);
+      if (recordPath === null) return false;
+      return units.some((unit) => {
+        if (unit.branch !== record.branch) return false;
+        if (unit.kind === "branch-only") return true;
+        const unitPath = normalizeAbsoluteWorktreePath(unit.path);
+        return unitPath !== null && unitPath === recordPath;
+      });
+    });
   const exceptions = [
     ...new Map(
       validMetadata
