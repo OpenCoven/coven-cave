@@ -67,6 +67,74 @@ assert.ok(
   "unicode tool payloads respect byte rather than UTF-16 code-unit caps",
 );
 
+const truncationSuffix = "\n[tool payload truncated]";
+const largeEmojiPayload = "😀".repeat((256 * 1024) / 4);
+const cappedLargeEmojiPayload = capLiveToolPayload(largeEmojiPayload, 16_000) ?? "";
+assert.ok(
+  new TextEncoder().encode(cappedLargeEmojiPayload).byteLength <= 16_000,
+  "large emoji payloads remain within the exact UTF-8 byte cap",
+);
+assert.ok(
+  cappedLargeEmojiPayload.endsWith(truncationSuffix),
+  "large emoji payloads retain the truncation marker",
+);
+assert.doesNotMatch(
+  cappedLargeEmojiPayload,
+  /\uFFFD/,
+  "UTF-8 boundary truncation never emits a replacement character",
+);
+function hasLoneSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) return true;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+assert.equal(
+  hasLoneSurrogate(cappedLargeEmojiPayload),
+  false,
+  "UTF-8 boundary truncation never emits a lone surrogate",
+);
+
+const malformedBoundaryCap = new TextEncoder().encode(truncationSuffix).byteLength + 10;
+const cappedMalformedPayload = capLiveToolPayload(
+  `ab\uD800${"x".repeat(100)}`,
+  malformedBoundaryCap,
+) ?? "";
+assert.equal(
+  cappedMalformedPayload,
+  `ab${truncationSuffix}`,
+  "malformed UTF-16 stops before a lone surrogate rather than encoding a replacement character",
+);
+assert.doesNotMatch(cappedMalformedPayload, /\uFFFD/);
+assert.equal(hasLoneSurrogate(cappedMalformedPayload), false);
+
+const emojiBoundaryCap = new TextEncoder().encode(truncationSuffix).byteLength + 5;
+assert.equal(
+  capLiveToolPayload(`abc😀${"x".repeat(100)}`, emojiBoundaryCap),
+  `abc${truncationSuffix}`,
+  "a byte cap inside a multi-byte code point backs up only to its UTF-8 boundary",
+);
+
+const asciiCap = 128;
+const cappedAsciiPayload = capLiveToolPayload("x".repeat(asciiCap + 1), asciiCap) ?? "";
+assert.equal(
+  new TextEncoder().encode(cappedAsciiPayload).byteLength,
+  asciiCap,
+  "ASCII truncation continues to fill the byte cap exactly",
+);
+assert.equal(
+  cappedAsciiPayload,
+  `${"x".repeat(asciiCap - truncationSuffix.length)}${truncationSuffix}`,
+  "ASCII truncation preserves the existing prefix and suffix behavior",
+);
+
 const linkedHook = new ToolCallTracker(() => 1_000);
 const linkedHookStart = linkedHook.hookStart("read");
 const linkedHookUpdate = linkedHook.envelopeToolUse("hook-linked", "read", "x".repeat(100_000));

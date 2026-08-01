@@ -35,6 +35,15 @@ const AUTHORIZATION_SCHEMES = new Set([
   "ntlm",
 ]);
 
+const SAFE_SECRET_TRAILING_WORDS = new Set([
+  "count",
+  "duration",
+  "length",
+  "limit",
+  "total",
+  "usage",
+]);
+
 const MAX_ASSIGNMENT_NESTING = 64;
 const MAX_REDACTION_DEPTH = 64;
 const MAX_REDACTION_ENTRIES = 4_096;
@@ -90,6 +99,16 @@ export function redactSecretsDeep<T>(value: T): T {
 
   while (stack.length > 0) {
     const frame = stack.pop()!;
+    if (frame.kind === "serialize") {
+      try {
+        if (!frame.assign(JSON.stringify(frame.holder.value) ?? JSON.stringify(REDACTED_SECRET))) {
+          return REDACTED_SECRET as T;
+        }
+      } catch {
+        if (!frame.assign(JSON.stringify(REDACTED_SECRET))) return REDACTED_SECRET as T;
+      }
+      continue;
+    }
     if (frame.kind === "exit") {
       ancestors.delete(frame.value);
       continue;
@@ -102,6 +121,22 @@ export function redactSecretsDeep<T>(value: T): T {
 
     if (typeof frame.value === "string") {
       if (!consumeStringBytes(frame.value, budget)) return REDACTED_SECRET as T;
+      const decoded = decodeJsonValue(frame.value);
+      if (decoded) {
+        if (frame.depth >= MAX_REDACTION_DEPTH) return REDACTED_SECRET as T;
+        const holder: { value?: unknown } = {};
+        stack.push({ kind: "serialize", holder, assign: frame.assign });
+        stack.push({
+          kind: "visit",
+          value: decoded.value,
+          depth: frame.depth + 1,
+          assign: (next) => {
+            holder.value = next;
+            return true;
+          },
+        });
+        continue;
+      }
       if (!frame.assign(redactSecretTextPlain(frame.value))) return REDACTED_SECRET as T;
       continue;
     }
@@ -160,25 +195,30 @@ type RedactionFrame =
       depth: number;
       assign: (value: unknown) => boolean;
     }
-  | { kind: "exit"; value: object };
+  | { kind: "exit"; value: object }
+  | {
+      kind: "serialize";
+      holder: { value?: unknown };
+      assign: (value: unknown) => boolean;
+    };
 
 function redactJsonText(text: string): string | undefined {
-  const trimmed = text.trim();
-  if (trimmed[0] !== "{" && trimmed[0] !== "[") return undefined;
+  const decoded = decodeJsonValue(text);
+  if (!decoded) return undefined;
 
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(trimmed);
-  } catch {
-    return undefined;
-  }
-  if (!decoded || typeof decoded !== "object") return undefined;
-
-  const redacted = redactSecretsDeep(decoded);
+  const redacted = redactSecretsDeep(decoded.value);
   try {
     return JSON.stringify(redacted) ?? JSON.stringify(REDACTED_SECRET);
   } catch {
     return JSON.stringify(REDACTED_SECRET);
+  }
+}
+
+function decodeJsonValue(value: string): { value: unknown } | undefined {
+  try {
+    return { value: JSON.parse(value) };
+  } catch {
+    return undefined;
   }
 }
 
@@ -297,14 +337,22 @@ function consumeStringBytes(value: string, budget: RedactionBudget): boolean {
 
 function isSecretKey(key: string): boolean {
   const words = normalizeKeyWords(key).map(normalizeSecretWord);
-  const last = words.at(-1);
-  if (!last) return false;
-  if (SECRET_TERMINAL_WORDS.has(last)) return true;
-  if (last === "key" && words.slice(0, -1).some((word) => SECRET_KEY_MARKERS.has(word))) {
-    return true;
+  if (words.length === 0) return false;
+
+  for (let index = 1; index < words.length; index += 1) {
+    if (SECRET_TERMINAL_PAIRS.has(`${words[index - 1]}:${words[index]}`)) return true;
+    if (
+      words[index] === "key" &&
+      words.slice(0, index).some((word) => SECRET_KEY_MARKERS.has(word))
+    ) {
+      return true;
+    }
   }
-  if (words.length < 2) return false;
-  return SECRET_TERMINAL_PAIRS.has(`${words.at(-2)}:${last}`);
+
+  const secretIndex = words.findIndex((word) => SECRET_TERMINAL_WORDS.has(word));
+  if (secretIndex === -1) return false;
+  if (secretIndex === words.length - 1) return true;
+  return !words.slice(secretIndex + 1).every((word) => SAFE_SECRET_TRAILING_WORDS.has(word));
 }
 
 function normalizeSecretWord(word: string): string {
@@ -364,7 +412,12 @@ function redactSecretAssignments(text: string): string {
       continue;
     }
 
-    const valueEnd = scanAssignmentValue(text, assignment.valueStart, assignment.key);
+    const valueEnd = scanAssignmentValue(
+      text,
+      assignment.valueStart,
+      assignment.key,
+      assignment.separator,
+    );
     chunks.push(text.slice(copiedThrough, assignment.valueStart), REDACTED_SECRET);
     copiedThrough = valueEnd;
     index = valueEnd;
@@ -378,6 +431,7 @@ function redactSecretAssignments(text: string): string {
 interface Assignment {
   key: string;
   keyEnd: number;
+  separator: "=" | ":";
   valueStart: number;
 }
 
@@ -430,20 +484,44 @@ function readAssignment(text: string, start: number): Assignment | undefined {
   let valueStart = separator + 1;
   while (isHorizontalWhitespace(text[valueStart])) valueStart += 1;
   if (text[valueStart] === "\r" || text[valueStart] === "\n") {
-    let multilineValueStart = valueStart;
-    while (isWhitespace(text[multilineValueStart])) multilineValueStart += 1;
-    if (
-      text[multilineValueStart] === "{" ||
-      text[multilineValueStart] === "[" ||
-      isAuthorizationKey(key)
-    ) {
-      valueStart = multilineValueStart;
+    if (separatorChar === ":") {
+      let nextLineStart = valueStart;
+      if (text[nextLineStart] === "\r") nextLineStart += 1;
+      if (text[nextLineStart] === "\n") nextLineStart += 1;
+      let indentedValueStart = nextLineStart;
+      while (isHorizontalWhitespace(text[indentedValueStart])) indentedValueStart += 1;
+      if (indentedValueStart > nextLineStart) valueStart = indentedValueStart;
+    } else {
+      let multilineValueStart = valueStart;
+      while (isWhitespace(text[multilineValueStart])) multilineValueStart += 1;
+      if (
+        text[multilineValueStart] === "{" ||
+        text[multilineValueStart] === "[" ||
+        isAuthorizationKey(key)
+      ) {
+        valueStart = multilineValueStart;
+      }
     }
   }
-  return { key, keyEnd, valueStart };
+  return { key, keyEnd, separator: separatorChar, valueStart };
 }
 
-function scanAssignmentValue(text: string, start: number, key: string): number {
+function scanAssignmentValue(
+  text: string,
+  start: number,
+  key: string,
+  separator: "=" | ":",
+): number {
+  if (separator === ":") {
+    const first = text[start];
+    if (
+      isAuthorizationKey(key) ||
+      (first !== '"' && first !== "'" && first !== "`" && first !== "{" && first !== "[")
+    ) {
+      return scanColonTextValue(text, start);
+    }
+  }
+
   const authorizationEnd = isAuthorizationKey(key)
     ? scanAuthorizationCredential(text, start)
     : undefined;
@@ -483,6 +561,30 @@ function scanAssignmentValue(text: string, start: number, key: string): number {
     index += 1;
   }
   return text.length;
+}
+
+function scanColonTextValue(text: string, start: number): number {
+  let end = scanLineEnd(text, start);
+
+  while (end < text.length) {
+    let nextLine = end;
+    if (text[nextLine] === "\r") nextLine += 1;
+    if (text[nextLine] === "\n") nextLine += 1;
+    if (nextLine === end) return end;
+
+    let contentStart = nextLine;
+    while (isHorizontalWhitespace(text[contentStart])) contentStart += 1;
+    if (contentStart === nextLine) return end;
+    end = scanLineEnd(text, contentStart);
+  }
+
+  return end;
+}
+
+function scanLineEnd(text: string, start: number): number {
+  let end = start;
+  while (end < text.length && text[end] !== "\r" && text[end] !== "\n") end += 1;
+  return end;
 }
 
 function scanAuthorizationCredential(text: string, start: number): number | undefined {

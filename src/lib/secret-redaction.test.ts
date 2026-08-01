@@ -229,6 +229,57 @@ assert.equal(
   "controlled compound matching does not absorb lookalike metric or ordinary keys",
 );
 
+const embeddedCompoundSecrets = {
+  passwordConfirmation: "hunter2",
+  passwordValue: "hunter2",
+  passwordsByDatabase: ["hunter2"],
+  authTokenValue: "hunter2",
+  apiKeyValue: "hunter2",
+  privateKeyValue: "hunter2",
+  clientSecretUsage: "hunter2",
+  refreshTokenCount: "hunter2",
+  secretAccessKeyTotal: "hunter2",
+};
+assert.deepEqual(
+  redactSecretsDeep(embeddedCompoundSecrets),
+  Object.fromEntries(
+    Object.keys(embeddedCompoundSecrets).map((key) => [key, REDACTED_SECRET]),
+  ),
+  "exact secret words and strong credential pairs are classified anywhere in compound keys",
+);
+assert.equal(
+  redactSecretText(
+    "passwordConfirmation=one passwordValue=two passwordsByDatabase=three authTokenValue=four apiKeyValue=five privateKeyValue=six clientSecretUsage=seven refreshTokenCount=eight secretAccessKeyTotal=nine",
+  ),
+  `passwordConfirmation=${REDACTED_SECRET} passwordValue=${REDACTED_SECRET} passwordsByDatabase=${REDACTED_SECRET} authTokenValue=${REDACTED_SECRET} apiKeyValue=${REDACTED_SECRET} privateKeyValue=${REDACTED_SECRET} clientSecretUsage=${REDACTED_SECRET} refreshTokenCount=${REDACTED_SECRET} secretAccessKeyTotal=${REDACTED_SECRET}`,
+  "compound assignment classification matches structural key classification",
+);
+
+const safeMetricCompounds = {
+  tokenCount: 12,
+  token_count: 12,
+  tokenUsage: 12,
+  sessionDuration: 30,
+  passwordLength: 24,
+  tokenLimit: 4_096,
+  secretTotal: 3,
+  authorship: "collaboration",
+  secretariat: "office",
+  apiKeyboard: "mechanical",
+};
+assert.deepEqual(
+  redactSecretsDeep(safeMetricCompounds),
+  safeMetricCompounds,
+  "controlled metric suffixes exempt exact secret-looking words without exempting credential pairs",
+);
+assert.equal(
+  redactSecretText(
+    "tokenCount=12 token_count=12 tokenUsage=12 sessionDuration=30 passwordLength=24 tokenLimit=4096 secretTotal=3 authorship=collaboration secretariat=office apiKeyboard=mechanical",
+  ),
+  "tokenCount=12 token_count=12 tokenUsage=12 sessionDuration=30 passwordLength=24 tokenLimit=4096 secretTotal=3 authorship=collaboration secretariat=office apiKeyboard=mechanical",
+  "safe metric compounds and ordinary lookalikes remain visible in assignment text",
+);
+
 assert.equal(
   redactSecretText(
     'GOOGLE_CREDENTIALS:\n  {"type":"service_account","private_key":"literal-secret"}\nnext=safe',
@@ -275,6 +326,73 @@ assert.equal(
   redactSecretText(String.raw`{"authori\u007Aation":"Basic dXNlcjpwYXNz"}`),
   `{"authorization":"${REDACTED_SECRET}"}`,
   "complete JSON text recognizes Unicode-escaped secret keys",
+);
+
+assert.equal(
+  redactSecretText(String.raw`"\u0070assword=hunter2"`),
+  JSON.stringify(`password=${REDACTED_SECRET}`),
+  "complete JSON scalar strings are decoded before assignment redaction",
+);
+assert.deepEqual(
+  redactSecretsDeep({
+    stdout: String.raw`{"pass\u0077ord":"hunter2"}`,
+  }),
+  {
+    stdout: JSON.stringify({ password: REDACTED_SECRET }),
+  },
+  "JSON represented inside structural string values is decoded and redacted",
+);
+const nestedJsonString = JSON.stringify(JSON.stringify("password=hunter2"));
+assert.doesNotMatch(
+  redactSecretText(nestedJsonString),
+  /hunter2/,
+  "nested JSON-looking strings are repeatedly decoded through the bounded work queue",
+);
+assert.equal(
+  redactSecretText('"ordinary JSON scalar"'),
+  '"ordinary JSON scalar"',
+  "semantically safe JSON scalar strings remain intact",
+);
+assert.deepEqual(
+  redactSecretsDeep({ stdout: '{"safe":"ordinary","count":3}' }),
+  { stdout: '{"safe":"ordinary","count":3}' },
+  "semantically safe JSON represented inside strings remains intact",
+);
+
+let repeatedlyEncodedSecret = "password=hunter2";
+while (repeatedlyEncodedSecret.length < 100_000) {
+  repeatedlyEncodedSecret = JSON.stringify(repeatedlyEncodedSecret);
+}
+assert.equal(
+  redactSecretsDeep(repeatedlyEncodedSecret),
+  REDACTED_SECRET,
+  "repeated JSON string decoding fails closed when the cumulative byte budget is exhausted",
+);
+
+assert.equal(
+  redactSecretText("password: correct horse battery staple\nnext: visible"),
+  `password: ${REDACTED_SECRET}\nnext: visible`,
+  "colon-style secret fields redact their complete multi-word value",
+);
+assert.equal(
+  redactSecretText("password: first line\n  second line\n\tthird line\nnext: visible"),
+  `password: ${REDACTED_SECRET}\nnext: visible`,
+  "colon-style secret fields consume indented continuation lines",
+);
+assert.equal(
+  redactSecretText("password:\nnext: visible"),
+  `password:${REDACTED_SECRET}\nnext: visible`,
+  "an empty colon field preserves a following non-indented line",
+);
+assert.equal(
+  redactSecretText("Authorization: ApiKey short credential with suffix\nX-Trace: visible"),
+  `Authorization: ${REDACTED_SECRET}\nX-Trace: visible`,
+  "Authorization headers redact the full line for any scheme",
+);
+assert.equal(
+  redactSecretText("password=short-secret && echo done\nnext=safe"),
+  `password=${REDACTED_SECRET} && echo done\nnext=safe`,
+  "equals assignments retain shell suffix operators and following lines",
 );
 
 const safeJsonValue = {

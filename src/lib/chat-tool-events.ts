@@ -51,24 +51,89 @@ export const MAX_SETTLED_RECONCILIATION_CALLS = 512;
 /** A malicious or runaway runtime must not grow the persisted event index forever. */
 export const MAX_RECORDED_TOOL_EVENTS = 512;
 
+const UTF8_ENCODER = new TextEncoder();
+const UTF8_FATAL_DECODER = new TextDecoder("utf-8", { fatal: true });
+const TOOL_PAYLOAD_TRUNCATION_SUFFIX = "\n[tool payload truncated]";
+const TOOL_PAYLOAD_TRUNCATION_SUFFIX_BYTES = UTF8_ENCODER.encode(
+  TOOL_PAYLOAD_TRUNCATION_SUFFIX,
+);
+
 /** Compare full tool inputs without retaining their uncapped contents. */
 function toolInputFingerprint(input: string | undefined): string | undefined {
   return input === undefined ? undefined : createHash("sha256").update(input).digest("hex");
 }
 
 function utf8Bytes(value: string | undefined): number {
-  return value === undefined ? 0 : new TextEncoder().encode(value).byteLength;
+  return value === undefined ? 0 : UTF8_ENCODER.encode(value).byteLength;
 }
 
 export function capLiveToolPayload(value: string | undefined, cap: number): string | undefined {
-  if (value === undefined || utf8Bytes(value) <= cap) return value;
-  const suffix = "\n[tool payload truncated]";
-  const budget = Math.max(0, cap - utf8Bytes(suffix));
-  let end = Math.min(value.length, budget);
-  // UTF-16 code-unit offsets are not byte offsets. Trim to a UTF-8 boundary
-  // so a hostile unicode payload cannot exceed the advertised byte cap.
-  while (end > 0 && utf8Bytes(value.slice(0, end)) > budget) end -= 1;
-  return `${value.slice(0, end)}${suffix}`;
+  if (value === undefined) return undefined;
+  const encoded = UTF8_ENCODER.encode(value);
+  if (encoded.byteLength <= cap) return value;
+
+  const boundedCap = Math.max(0, Math.floor(cap));
+  if (boundedCap <= TOOL_PAYLOAD_TRUNCATION_SUFFIX_BYTES.byteLength) {
+    return decodeUtf8Prefix(TOOL_PAYLOAD_TRUNCATION_SUFFIX_BYTES, boundedCap);
+  }
+
+  const prefixBudget = boundedCap - TOOL_PAYLOAD_TRUNCATION_SUFFIX_BYTES.byteLength;
+  const prefix = hasLoneSurrogate(value)
+    ? sliceWellFormedUtf16Prefix(value, prefixBudget)
+    : decodeUtf8Prefix(encoded, prefixBudget);
+  return `${prefix}${TOOL_PAYLOAD_TRUNCATION_SUFFIX}`;
+}
+
+function decodeUtf8Prefix(encoded: Uint8Array, byteLimit: number): string {
+  let end = Math.min(encoded.byteLength, byteLimit);
+  while (end > 0 && end < encoded.byteLength && (encoded[end]! & 0xc0) === 0x80) {
+    end -= 1;
+  }
+  return UTF8_FATAL_DECODER.decode(encoded.subarray(0, end));
+}
+
+function hasLoneSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) return true;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function sliceWellFormedUtf16Prefix(value: string, byteLimit: number): string {
+  let bytes = 0;
+  let end = 0;
+
+  while (end < value.length) {
+    const code = value.charCodeAt(end);
+    let codeUnits = 1;
+    let codePointBytes: number;
+    if (code <= 0x7f) {
+      codePointBytes = 1;
+    } else if (code <= 0x7ff) {
+      codePointBytes = 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(end + 1);
+      if (next < 0xdc00 || next > 0xdfff) break;
+      codeUnits = 2;
+      codePointBytes = 4;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      break;
+    } else {
+      codePointBytes = 3;
+    }
+    if (bytes + codePointBytes > byteLimit) break;
+    bytes += codePointBytes;
+    end += codeUnits;
+  }
+
+  return value.slice(0, end);
 }
 
 export function toolTextCorrection(
