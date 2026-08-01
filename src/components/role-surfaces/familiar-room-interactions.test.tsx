@@ -201,6 +201,15 @@ function buttonInGroup(
   return button;
 }
 
+/** The Chart Room's step sheet, or null when no step is open. */
+function stepSheet(renderer: ReactTestRenderer): ReactTestInstance | null {
+  return (
+    renderer.root
+      .findAllByProps({ role: "dialog" })
+      .find((node) => String(node.props["aria-label"] ?? "").startsWith("Step — ")) ?? null
+  );
+}
+
 function rightRail(renderer: ReactTestRenderer, label: string): ReactTestInstance {
   return renderer.root
     .findAllByType(SurfaceRail)
@@ -286,19 +295,23 @@ describe("active selections control compact inspectors", () => {
     await act(async () => renderer.unmount());
   });
 
-  test("Navigator opens card details for the newly selected card", async () => {
+  // The Chart Room opens a step in a modal sheet rather than a compact rail,
+  // so the contract is the dialog's presence, not a rail's expanded flag.
+  test("Navigator opens the step sheet for the newly selected card", async () => {
     const cards = [card("card-1", "First voyage"), card("card-2", "Second voyage")];
     globalThis.fetch = vi.fn(async () => response({ ok: true, cards }));
     const renderer = await renderSurface(NavigatorSurface, context("navigator-selection"));
 
-    await act(async () => buttonContaining(renderer, "First voyage").props.onClick());
-    expect(rightRail(renderer, "Card details").props.expanded).toBe(true);
+    expect(stepSheet(renderer)).toBeNull();
 
-    await act(async () => rightRail(renderer, "Card details").props.onExpandedChange(false));
-    expect(rightRail(renderer, "Card details").props.expanded).toBe(false);
+    await act(async () => buttonContaining(renderer, "First voyage").props.onClick());
+    expect(stepSheet(renderer)?.props["aria-label"]).toBe("Step — First voyage");
+
+    await act(async () => buttonContaining(renderer, "Close").props.onClick());
+    expect(stepSheet(renderer)).toBeNull();
 
     await act(async () => buttonContaining(renderer, "Second voyage").props.onClick());
-    expect(rightRail(renderer, "Card details").props.expanded).toBe(true);
+    expect(stepSheet(renderer)?.props["aria-label"]).toBe("Step — Second voyage");
     await act(async () => renderer.unmount());
   });
 

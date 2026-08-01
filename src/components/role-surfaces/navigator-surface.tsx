@@ -637,7 +637,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
   // ── Drag to link ───────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!drag) return;
+    if (!drag || typeof window === "undefined") return;
     const from = drag.from;
     const move = (event: PointerEvent) => {
       const canvas = canvasElRef.current;
@@ -648,7 +648,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       );
     };
     const up = (event: PointerEvent) => {
-      const under = document.elementFromPoint(event.clientX, event.clientY);
+      const under = document.elementFromPoint?.(event.clientX, event.clientY) ?? null;
       const host = under instanceof Element ? under.closest("[data-step-id]") : null;
       const target = host?.getAttribute("data-step-id");
       if (target && target !== from) linkSteps(target, from);
@@ -672,6 +672,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
   // ── Keyboard ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setScopeMenuOpen(false);
@@ -969,6 +970,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
             setGraphPan({ x: 0, y: 0 });
           }}
           onPanStart={(event) => {
+            if (typeof window === "undefined") return;
             if ((event.target as HTMLElement).closest("button")) return;
             event.preventDefault();
             const startX = event.clientX;
