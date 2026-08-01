@@ -20,6 +20,11 @@ import { TextInput } from "@/components/ui/text-input";
 import { copyText } from "@/lib/clipboard";
 import { Icon, type IconName } from "@/lib/icon";
 import { classifyTailscaleFailureKind } from "@/lib/tailscale-failure";
+import {
+  useDaemonAutomation,
+  writeDaemonAutomation,
+  type DaemonAutomationKey,
+} from "@/lib/daemon-automation-pref";
 import { parseExecutorUrls } from "./settings-multihost";
 
 type DaemonStatus = {
@@ -115,6 +120,73 @@ function SectionRule({ id, label, meta }: { id: string; label: string; meta?: Re
       <span className="settings-daemon-rule-line" aria-hidden="true" />
       {meta ? <span className="settings-daemon-rule-meta">{meta}</span> : null}
     </div>
+  );
+}
+
+/**
+ * Unattended lifecycle switches (cave-bqywj). Every one is opt-in and starts
+ * off: they restart processes and install binaries on this machine.
+ *
+ * There is no "auto-reconnect" switch on purpose — reconnection already
+ * happens unconditionally (the status poll re-probes every 5s and drops the
+ * offline banner the moment the daemon answers; the PTY bridge runs its own
+ * backoff loop). A toggle would either do nothing or, defaulting to off,
+ * remove recovery that works today.
+ *
+ * `.settings-switch` comes from dashboard.css, which settings-shell.tsx
+ * imports; DaemonSection only ever renders inside that shell.
+ */
+function AutomationSection() {
+  const automation = useDaemonAutomation();
+  const rows: {
+    key: DaemonAutomationKey;
+    label: string;
+    description: string;
+  }[] = [
+    {
+      key: "autoRestart",
+      label: "Restart the daemon",
+      description:
+        "Relaunch a local daemon that goes offline mid-session. Today it is only started once, at app launch.",
+    },
+    {
+      key: "autoUpgradeCli",
+      label: "Upgrade Coven",
+      description:
+        "Install Coven CLI updates unattended. This is also the daemon — they ship as one package — and it changes the version of the command you type at.",
+    },
+  ];
+
+  return (
+    <section
+      className="settings-daemon-section"
+      aria-labelledby="settings-daemon-automation-heading"
+    >
+      <SectionRule id="settings-daemon-automation-heading" label="AUTOMATION" />
+      <div className="settings-daemon-automation">
+        {rows.map((row) => {
+          const enabled = automation[row.key];
+          return (
+            <div className="settings-daemon-automation-row" key={row.key}>
+              <div className="settings-daemon-automation-copy">
+                <span className="settings-daemon-automation-label">{row.label}</span>
+                <span className="settings-daemon-automation-description">{row.description}</span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={enabled}
+                aria-label={row.label}
+                onClick={() => writeDaemonAutomation(row.key, !enabled)}
+                className={`settings-switch focus-ring${enabled ? " is-on" : ""}`}
+              >
+                <span className="settings-switch__knob" aria-hidden />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -923,6 +995,8 @@ export function DaemonSection({
       </section>
 
       {omnigentSettings}
+
+      <AutomationSection />
 
       <section className="settings-daemon-section settings-daemon-info-section" aria-labelledby="settings-daemon-info-heading">
         <SectionRule id="settings-daemon-info-heading" label="INFO" />

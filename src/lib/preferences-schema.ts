@@ -125,6 +125,30 @@ export type CavePreferences = {
      */
     orgScope: string[];
   };
+  /**
+   * Unattended daemon lifecycle. Every flag here defaults to FALSE and is
+   * normalized with `=== true`, not `!== false`: these actions restart
+   * processes and install binaries on the user's machine, so anything that is
+   * not an explicit `true` must read as off. A corrupt or partial preferences
+   * file therefore fails closed.
+   */
+  daemon: CaveDaemonAutomationPreferences;
+};
+
+export type CaveDaemonAutomationPreferences = {
+  /** Relaunch a local daemon that has gone offline mid-session. */
+  autoRestart: boolean;
+  /**
+   * Install Coven CLI updates without waiting for a banner click.
+   *
+   * There is no separate daemon flag because there is no separate daemon
+   * artifact: /api/onboarding/install's allowlist has one Coven entry,
+   * `coven-cli` -> `@opencoven/cli`, and the daemon is that same binary run as
+   * a daemon. daemon-update-lifecycle.ts exists precisely to update the CLI
+   * while its local daemon holds the executable open. Two switches would have
+   * been one action wearing two labels.
+   */
+  autoUpgradeCli: boolean;
 };
 
 export type CavePreferencesPatch = {
@@ -143,6 +167,7 @@ export type CavePreferencesPatch = {
   general?: Partial<CavePreferences["general"]>;
   phone?: Partial<CavePreferences["phone"]>;
   github?: Partial<CavePreferences["github"]>;
+  daemon?: Partial<CavePreferences["daemon"]>;
 };
 
 const DEFAULT_THEME: CaveThemePreferences = {
@@ -176,6 +201,35 @@ export function normalizeOrgScope(value: unknown): string[] {
     if (login) seen.add(login);
   }
   return [...seen];
+}
+
+/**
+ * Every daemon-automation key, in one place so the type, the defaults, the
+ * normalizer and the patch validator cannot drift apart. Adding a key here is
+ * the only edit needed to carry it through all four.
+ */
+export const DAEMON_AUTOMATION_KEYS = [
+  "autoRestart",
+  "autoUpgradeCli",
+] as const satisfies readonly (keyof CaveDaemonAutomationPreferences)[];
+
+/** Opt-in, every one of them. See the note on CavePreferences["daemon"]. */
+export const DEFAULT_DAEMON_AUTOMATION: CaveDaemonAutomationPreferences = {
+  autoRestart: false,
+  autoUpgradeCli: false,
+};
+
+/**
+ * `=== true` on purpose. The rest of this schema uses `!== false` for
+ * default-on booleans; these are default-OFF and they restart processes and
+ * install binaries, so a missing, malformed or truthy-but-not-true value has
+ * to normalize to off rather than on.
+ */
+function normalizeDaemonAutomation(source: Record<string, unknown>): CaveDaemonAutomationPreferences {
+  return {
+    autoRestart: source.autoRestart === true,
+    autoUpgradeCli: source.autoUpgradeCli === true,
+  };
 }
 
 function normalizeStopPhrase(value: unknown): string {
@@ -217,6 +271,7 @@ export function createDefaultPreferences(initialized = false): CavePreferences {
     general: { stopPhrase: DEFAULT_STOP_PHRASE, celebrations: true },
     phone: { mobileMode: true },
     github: { orgScope: [] },
+    daemon: DEFAULT_DAEMON_AUTOMATION,
   };
 }
 
@@ -380,6 +435,7 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
   const general = record(source.general);
   const phone = record(source.phone);
   const github = record(source.github);
+  const daemon = record(source.daemon);
 
   const modePreference = oneOf(theme.modePreference, MODE_PREFERENCES, "dark");
   const resolvedMode = oneOf(
@@ -461,6 +517,7 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
     },
     phone: { mobileMode: phone.mobileMode !== false },
     github: { orgScope: normalizeOrgScope(github.orgScope) },
+    daemon: normalizeDaemonAutomation(daemon),
   };
 }
 
@@ -554,7 +611,11 @@ function strictAccentSeed(value: unknown, path: string): CaveBackdropAccentSeed 
 
 export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
   const input = strictRecord(value, "preferences patch");
-  assertAllowedKeys(input, ["appearance", "general", "phone", "github"], "preferences patch");
+  assertAllowedKeys(
+    input,
+    ["appearance", "general", "phone", "github", "daemon"],
+    "preferences patch",
+  );
   const patch: CavePreferencesPatch = {};
 
   if (Object.hasOwn(input, "appearance")) {
@@ -724,6 +785,17 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
     }
     patch.github = githubPatch;
   }
+  if (Object.hasOwn(input, "daemon")) {
+    const daemon = strictRecord(input.daemon, "daemon");
+    assertAllowedKeys(daemon, DAEMON_AUTOMATION_KEYS, "daemon");
+    const daemonPatch: NonNullable<CavePreferencesPatch["daemon"]> = {};
+    for (const key of DAEMON_AUTOMATION_KEYS) {
+      if (Object.hasOwn(daemon, key)) {
+        daemonPatch[key] = strictBoolean(daemon[key], `daemon.${key}`);
+      }
+    }
+    patch.daemon = daemonPatch;
+  }
 
   return patch;
 }
@@ -802,6 +874,7 @@ export function applyPreferencesPatch(
     general: { ...current.general, ...(patch.general ?? {}) },
     phone: { ...current.phone, ...(patch.phone ?? {}) },
     github: { ...current.github, ...(patch.github ?? {}) },
+    daemon: { ...current.daemon, ...(patch.daemon ?? {}) },
   };
 
   const semanticCurrent = { ...current, initialized: true, revision: 0, updatedAt: "" };

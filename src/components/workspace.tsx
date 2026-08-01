@@ -74,6 +74,7 @@ import {
   createDaemonStatusRequestGate,
   runWorkspaceDaemonStart,
 } from "@/lib/daemon-desktop-auto-start";
+import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
 import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
@@ -556,9 +557,19 @@ export function Workspace() {
   const startDaemonRef = useRef<() => Promise<void>>(async () => {});
   const daemonAutoStartCoordinatorRef = useRef<ReturnType<typeof createDaemonDesktopAutoStartCoordinator> | null>(null);
   if (daemonAutoStartCoordinatorRef.current === null) {
-    daemonAutoStartCoordinatorRef.current = createDaemonDesktopAutoStartCoordinator(() => {
-      void startDaemonRef.current();
-    });
+    daemonAutoStartCoordinatorRef.current = createDaemonDesktopAutoStartCoordinator(
+      () => {
+        void startDaemonRef.current();
+      },
+      {
+        // Read per decision, not captured: Settings → Daemon → Automation can
+        // flip this mid-session and the next 5s poll must respect it
+        // (cave-bqywj). Off by default; boot auto-start is unaffected either
+        // way.
+        autoRestartEnabled: () => readDaemonAutomation().autoRestart,
+        now: () => Date.now(),
+      },
+    );
   }
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const browserNavigationIdRef = useRef(Date.now() * 1024);
