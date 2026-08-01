@@ -22,7 +22,7 @@ import "@/styles/home-dashboard.css";
 //   • cave:navigate-mode      (workspace switches surface: Tasks, Schedules)
 //   • cave:agents-open-session (ChatSurface routes into an existing session)
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -134,11 +134,17 @@ const markInboxItemRead = (id: string) => {
 export function ChatNewDashboard({
   familiar,
   sessions = [],
+  composer = null,
   modelId = null,
 }: {
   familiar: Familiar;
   /** Workspace-owned session list; powers Recent threads without a fetch. */
   sessions?: SessionRow[];
+  /** ChatView's own composer, rendered inline under the hero (Chat.dc.html 2b
+   *  puts the brief there and has no dock). Handed down rather than rebuilt so
+   *  there is exactly one draft, one project/model/branch selection and one
+   *  enhance flow — a second composer would fork all of them. */
+  composer?: ReactNode;
   /** Effective model for the board-head meta row (quiet text, not a badge). */
   modelId?: string | null;
 }) {
@@ -342,6 +348,11 @@ export function ChatNewDashboard({
               </p>
             </div>
           </div>
+
+          {/* Chat.dc.html 2b: the brief sits directly under the hero, above
+              the launcher — you state the work first, and the bands below are
+              the shortcut for when it already exists somewhere. */}
+          {composer ? <div className="home-dash__composer">{composer}</div> : null}
 
           {/* Chat.dc.html 2b: everything below is a launcher over work that
               already exists — one band per source, each a strip of tiles. */}
