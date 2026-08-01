@@ -105,7 +105,7 @@ const kb = (n) => (n / 1024).toFixed(0).padStart(6) + " KB";
 // Deliberately does NOT fail: this is signal, not a new gate. A thin budget is
 // information for the next author, not a reason to block the current one.
 const THIN_HEADROOM_PCT = 2;
-let thin = [];
+const thin = [];
 
 function headroom(label, bytes, budget) {
   const left = budget - bytes;
