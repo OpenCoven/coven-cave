@@ -1060,6 +1060,7 @@ function fetchWorkflowSweep(
             page.workflow_runs.every(
               (run) =>
                 isRecord(run) &&
+                typeof run.id === "number" &&
                 Number.isSafeInteger(run.id) &&
                 run.id > 0 &&
                 run.status === state &&
