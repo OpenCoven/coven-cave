@@ -26,6 +26,7 @@ if (process.platform === "win32") {
   );
   process.exit(0);
 }
+
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(sourceRoot, "scripts", "worktree-lifecycle-create.ts");
 const realGit = process.env.PATH.split(path.delimiter)
@@ -116,6 +117,7 @@ function createFixture({ issues = [defaultIssue()] } = {}) {
   const repo = realpathSync(repoEntry);
   git(["init", "-q", "-b", "main"], repo);
   git(["init", "-q", "--bare", "-b", "main"], origin);
+
   git(["config", "user.name", "Cave Test"], repo);
   git(["config", "user.email", "cave@example.invalid"], repo);
   git(["config", "commit.gpgsign", "false"], repo);
@@ -125,6 +127,7 @@ function createFixture({ issues = [defaultIssue()] } = {}) {
   git(["remote", "add", "origin", origin], repo);
   git(["push", "-q", "-u", "origin", "main"], repo);
   const initialOid = git(["rev-parse", "HEAD"], repo).trim();
+
   const tree = git(["rev-parse", "HEAD^{tree}"], repo).trim();
   const alternateOid = git(["commit-tree", tree, "-m", "alternate identity"], repo, {
     env: {
@@ -161,6 +164,13 @@ function createFixture({ issues = [defaultIssue()] } = {}) {
     `#!/bin/sh
 REAL_GIT=${JSON.stringify(realGit)}
 MARKER=${JSON.stringify(gitMarker)}
+
+case " $* " in
+  *" remote get-url --all origin "*|*" remote get-url --push --all origin "*)
+    printf '%s\\n' 'https://github.com/OpenCoven/coven-cave.git'
+    exit 0
+    ;;
+esac
 
 if [ "\${CAVE_TEST_FAIL_CREATED_OID_ONCE:-0}" != "1" ] &&
    [ "\${CAVE_TEST_GIT_ADD_THEN_ERROR:-0}" != "1" ]; then
@@ -217,7 +227,7 @@ case "$*" in
     OID_ARG=
     for arg in "$@"; do
       case "$arg" in
-        oid=*) OID_ARG=\${arg#oid=} ;;
+        oid=*) OID_ARG=${arg#oid=} ;;
       esac
     done
     if [ "$OID_ARG" = "${initialOid}" ]; then
@@ -225,6 +235,7 @@ case "$*" in
     else
       printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
     fi
+
     ;;
   *"graphql"*)
     printf '%s\\n' '[{"data":{"search":{"issueCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}]'
