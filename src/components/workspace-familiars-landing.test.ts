@@ -266,10 +266,25 @@ assert.match(
   /if \(!activeFamiliarHydrated\) return;[\s\S]*setFamiliarScope\(\[\.\.\.scopeIds\]\)/,
   "Workspace should not write scope storage until after the mount restore runs",
 );
+// b7ecf460e ("decouple heartbeat from daemon diagnostics") retired the 5s
+// usePausablePoll for daemon status: the connection supervisor owns its own
+// cadence and backoff now, so the workspace only delegates to it. That commit
+// updated daemon-start-button and settings-overview but missed this file, and
+// the stale assertion sat red until the frontend gate ran again.
 assert.match(
   workspace,
-  /usePausablePoll\(\(\) => void refreshDaemonStatus\(\), 5000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
-  "Workspace pauses the daemon-status poll while a mobile text input is active",
+  /createDaemonConnectionSupervisor\(\{/,
+  "Workspace delegates daemon status to the connection supervisor",
+);
+assert.match(
+  workspace,
+  /await daemonConnectionSupervisorRef\.current\?\.refresh\(\{\s*fresh: opts\?\.fresh === true \|\| opts\?\.trusted === true,?\s*\}\)/,
+  "refreshDaemonStatus is a thin delegate to the supervisor, not its own fetch",
+);
+assert.doesNotMatch(
+  workspace,
+  /usePausablePoll\(\(\) => void refreshDaemonStatus\(\)/,
+  "the retired 5s daemon-status poll must not come back — that is the decoupling",
 );
 assert.match(
   workspace,

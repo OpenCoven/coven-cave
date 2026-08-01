@@ -247,7 +247,9 @@
   flex: none;
   padding: 1px var(--space-1);
   border: 1px solid var(--border-hairline);
-  border-radius: 3px;
+  /* --radius-sm (6px) is the scale's floor and the closest on-scale value to
+     the mock's 3px corner; --radius-control would read as a pill at this size. */
+  border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--text-muted);
