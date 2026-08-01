@@ -27,7 +27,7 @@ import {
   sweepExpiredXCache,
   type SavedXSource,
   type SaveCachedXPostAsSourceInput,
-  withXSourceAttachmentLock,
+  withXSourceLifecycleLock,
 } from "@/lib/server/x-sources";
 import {
   requireXCapability,
@@ -79,10 +79,10 @@ type SourcesDependencies = {
   makeRunner(): {
     act(id: string, input: unknown): Promise<unknown>;
   };
-  withAttachmentLock(
-    missionId: string,
-    operation: () => Promise<unknown>,
-  ): Promise<unknown>;
+  withLifecycleLock<T>(
+    familiarId: string,
+    operation: () => Promise<T>,
+  ): Promise<T>;
   setMissionAttached(familiarId: string, sourceId: string, missionId: string): Promise<void>;
   withAuthenticatedRead(
     familiarId: string,
@@ -199,40 +199,45 @@ export function createXSourcesHandlers(dependencies: SourcesDependencies) {
       if (familiarValues.length !== 1) invalidRequest("Familiar id is invalid");
       const scopedFamiliarId = familiarId(familiarValues[0]);
       await dependencies.requireResearch(scopedFamiliarId);
-      const savedSources = await dependencies.listSources(scopedFamiliarId);
-      const savedIds = new Set(savedSources.map((source) => source.id));
-      const savedIdsByPostId = new Map<string, string | null>();
-      for (const source of savedSources) {
-        savedIdsByPostId.set(
-          source.postId,
-          savedIdsByPostId.has(source.postId) ? null : source.id,
-        );
-      }
-      const missions = (await dependencies.listMissions()).filter(
-        (mission) => mission.familiarId === scopedFamiliarId,
-      );
-      const attachments = new Map<string, string[]>();
-      for (const mission of missions) {
-        for (const source of mission.sources) {
-          let matchedSourceId: string | null | undefined = savedIds.has(source.id)
-            ? source.id
-            : undefined;
-          if (!matchedSourceId && typeof source.url === "string") {
-            try {
-              matchedSourceId = savedIdsByPostId.get(
-                parseXPostUrl(source.url).postId,
-              );
-            } catch {
-              matchedSourceId = undefined;
+      const sources = await dependencies.withLifecycleLock(
+        scopedFamiliarId,
+        async () => {
+          const savedSources = await dependencies.listSources(scopedFamiliarId);
+          const savedIds = new Set(savedSources.map((source) => source.id));
+          const savedIdsByPostId = new Map<string, string | null>();
+          for (const source of savedSources) {
+            savedIdsByPostId.set(
+              source.postId,
+              savedIdsByPostId.has(source.postId) ? null : source.id,
+            );
+          }
+          const missions = (await dependencies.listMissions()).filter(
+            (mission) => mission.familiarId === scopedFamiliarId,
+          );
+          const attachments = new Map<string, string[]>();
+          for (const mission of missions) {
+            for (const source of mission.sources) {
+              let matchedSourceId: string | null | undefined = savedIds.has(source.id)
+                ? source.id
+                : undefined;
+              if (!matchedSourceId && typeof source.url === "string") {
+                try {
+                  matchedSourceId = savedIdsByPostId.get(
+                    parseXPostUrl(source.url).postId,
+                  );
+                } catch {
+                  matchedSourceId = undefined;
+                }
+              }
+              if (!matchedSourceId) continue;
+              const missionIds = attachments.get(matchedSourceId) ?? [];
+              if (!missionIds.includes(mission.id)) missionIds.push(mission.id);
+              attachments.set(matchedSourceId, missionIds);
             }
           }
-          if (!matchedSourceId) continue;
-          const missionIds = attachments.get(matchedSourceId) ?? [];
-          if (!missionIds.includes(mission.id)) missionIds.push(mission.id);
-          attachments.set(matchedSourceId, missionIds);
-        }
-      }
-      const sources = await dependencies.reconcileAttachments(scopedFamiliarId, attachments);
+          return dependencies.reconcileAttachments(scopedFamiliarId, attachments);
+        },
+      );
       const withPreviews = await Promise.all(sources.map(async (source) => {
         const preview = await dependencies.getCachedPost(source.postId);
         return preview ? { ...source, preview } : source;
@@ -279,8 +284,8 @@ export function createXSourcesHandlers(dependencies: SourcesDependencies) {
         const scopedSourceId = sourceId(parsed.body.sourceId);
         const scopedMissionId = missionId(parsed.body.missionId);
         await dependencies.requireResearch(scopedFamiliarId);
-        const attachedMission = await dependencies.withAttachmentLock(
-          scopedMissionId,
+        const attachedMission = await dependencies.withLifecycleLock(
+          scopedFamiliarId,
           async () => {
             const source = savedSource(
               await dependencies.listSources(scopedFamiliarId),
@@ -358,7 +363,10 @@ export function createXSourcesHandlers(dependencies: SourcesDependencies) {
       const scopedFamiliarId = familiarId(parsed.body.familiarId);
       const scopedSourceId = sourceId(parsed.body.sourceId);
       await dependencies.requireResearch(scopedFamiliarId);
-      const removed = await dependencies.removeSource(scopedFamiliarId, scopedSourceId);
+      const removed = await dependencies.withLifecycleLock(
+        scopedFamiliarId,
+        () => dependencies.removeSource(scopedFamiliarId, scopedSourceId),
+      );
       if (!removed) throw new XApiError("not-found", "Saved X source was not found");
       return NextResponse.json({ ok: true, removed: true });
     } catch (error) {
@@ -389,7 +397,7 @@ const handlers = createXSourcesHandlers({
       act: (id, input) => runner.act(id, input as ResearchMissionActionInput),
     };
   },
-  withAttachmentLock: withXSourceAttachmentLock,
+  withLifecycleLock: withXSourceLifecycleLock,
   setMissionAttached: setXSourceMissionAttached,
   withAuthenticatedRead: (familiarId, scopes, operation) => (
     withXAuthenticatedRead(familiarId, scopes, operation)

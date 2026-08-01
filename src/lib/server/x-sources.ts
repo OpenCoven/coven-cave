@@ -84,7 +84,7 @@ const MAX_TAGS = 25;
 const MAX_TAG_CHARS = 64;
 const MAX_SOURCES_PER_FAMILIAR = 500;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const ATTACHMENT_LOCK_TIMEOUT_MS = 15_000;
+const LIFECYCLE_LOCK_TIMEOUT_MS = 15_000;
 const POST_ID = /^\d+$/;
 const AUTHOR_USERNAME = /^[A-Za-z0-9_]{1,15}$/;
 const CACHE_FIELDS = [
@@ -121,10 +121,10 @@ function cacheRoot(): string {
     || path.join(/* turbopackIgnore: true */ caveHome(), "x-cache");
 }
 
-function attachmentLocksRoot(): string {
+function lifecycleLocksRoot(): string {
   return path.join(
     /* turbopackIgnore: true */ sourcesRoot(),
-    ".attachment-locks",
+    ".lifecycle-locks",
   );
 }
 
@@ -486,23 +486,21 @@ async function withSourceMutationLock<T>(
   );
 }
 
-export async function withXSourceAttachmentLock<T>(
-  missionId: string,
+export async function withXSourceLifecycleLock<T>(
+  familiarId: string,
   operation: () => Promise<T>,
 ): Promise<T> {
-  if (!isValidResearchMissionId(missionId)) {
-    throw new XApiError("invalid-request", "Research mission id is invalid");
-  }
+  assertFamiliarId(familiarId);
   await ensureRealDirectory(sourcesRoot());
-  const lockRoot = attachmentLocksRoot();
+  const lockRoot = lifecycleLocksRoot();
   await ensureRealDirectory(lockRoot);
   const release = await acquireProcessIntentLock({
     intentsDirectory: path.join(
       /* turbopackIgnore: true */ lockRoot,
-      missionId,
+      familiarId,
     ),
-    timeoutMs: ATTACHMENT_LOCK_TIMEOUT_MS,
-    label: "X source attachment",
+    timeoutMs: LIFECYCLE_LOCK_TIMEOUT_MS,
+    label: `X source lifecycle for ${familiarId}`,
   });
   try {
     return await operation();

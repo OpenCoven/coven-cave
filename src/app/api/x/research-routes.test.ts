@@ -78,6 +78,52 @@ function safeError(error: unknown): Response {
   }, { status: 500 });
 }
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+function createFamiliarLifecycleLock() {
+  const tails = new Map<string, Promise<void>>();
+  return async function withLifecycleLock<T>(
+    familiarId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = tails.get(familiarId) ?? Promise.resolve();
+    let release!: () => void;
+    const owned = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.then(() => owned);
+    tails.set(familiarId, tail);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      await tail;
+      if (tails.get(familiarId) === tail) tails.delete(familiarId);
+    }
+  };
+}
+
+async function waitForFile(target: string, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await readFile(target, "utf8");
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${path.basename(target)}`);
+}
+
 function parsedBody<T>(body: T) {
   return async (_req: Request, maxBytes: number) => {
     assert.equal(maxBytes, 16 * 1024);
@@ -270,10 +316,10 @@ function sourceDependencies(overrides: Record<string, unknown> = {}) {
     listMissions: async () => [],
     loadMission: async () => null,
     makeRunner: () => ({ act: async () => ({ id: "mission-one" }) }),
-    withAttachmentLock: async (
-      _missionId: string,
-      operation: () => Promise<unknown>,
-    ) => operation(),
+    withLifecycleLock: async <T>(
+      _familiarId: string,
+      operation: () => Promise<T>,
+    ): Promise<T> => operation(),
     setMissionAttached: async () => {},
     withAuthenticatedRead: async (
       _familiarId: string,
@@ -325,7 +371,10 @@ test("sources attach proves familiar ownership, invokes the exact runner action,
       sourceId: "source-one",
       missionId: "mission-one",
     }),
-    withAttachmentLock: async (_missionId: string, operation: () => Promise<unknown>) => {
+    withLifecycleLock: async <T>(
+      _familiarId: string,
+      operation: () => Promise<T>,
+    ): Promise<T> => {
       calls.push("lock-enter");
       try {
         return await operation();
@@ -370,6 +419,203 @@ test("sources attach proves familiar ownership, invokes the exact runner action,
       status: "candidate",
     },
   });
+});
+
+test("delete-before-attach returns not found without mutating the mission", async () => {
+  const sharedLifecycleLock = createFamiliarLifecycleLock();
+  const contenderQueued = deferred();
+  let lifecycleCalls = 0;
+  const withLifecycleLock = async <T>(
+    familiarId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> => {
+    lifecycleCalls += 1;
+    if (lifecycleCalls === 2) contenderQueued.resolve();
+    return sharedLifecycleLock(familiarId, operation);
+  };
+  const deleteEntered = deferred();
+  const allowDelete = deferred();
+  let sourceExists = true;
+  let listCalls = 0;
+  let acts = 0;
+  const handlers = createXSourcesHandlers(sourceDependencies({
+    readJsonBody: async (req: Request) => ({
+      ok: true as const,
+      body: req.method === "DELETE"
+        ? { familiarId: "nova", sourceId: "source-one" }
+        : {
+            action: "attach",
+            familiarId: "nova",
+            sourceId: "source-one",
+            missionId: "mission-one",
+          },
+    }),
+    withLifecycleLock,
+    listSources: async () => {
+      listCalls += 1;
+      return sourceExists ? [savedSource] : [];
+    },
+    removeSource: async () => {
+      deleteEntered.resolve();
+      await allowDelete.promise;
+      sourceExists = false;
+      return true;
+    },
+    loadMission: async () => ({ id: "mission-one", familiarId: "nova", sources: [] }),
+    makeRunner: () => ({
+      act: async () => {
+        acts += 1;
+        return { id: "mission-one" };
+      },
+    }),
+  }));
+
+  const deleting = handlers.DELETE(jsonRequest("/api/x/sources", {}, "DELETE"));
+  await deleteEntered.promise;
+  const attaching = handlers.POST(jsonRequest("/api/x/sources", {}));
+  await contenderQueued.promise;
+  assert.equal(listCalls, 0);
+  allowDelete.resolve();
+
+  assert.equal((await deleting).status, 200);
+  assert.equal((await attaching).status, 404);
+  assert.equal(acts, 0);
+});
+
+test("attach-before-delete succeeds before the source is removed", async () => {
+  const sharedLifecycleLock = createFamiliarLifecycleLock();
+  const contenderQueued = deferred();
+  let lifecycleCalls = 0;
+  const withLifecycleLock = async <T>(
+    familiarId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> => {
+    lifecycleCalls += 1;
+    if (lifecycleCalls === 2) contenderQueued.resolve();
+    return sharedLifecycleLock(familiarId, operation);
+  };
+  const runnerEntered = deferred();
+  const allowRunner = deferred();
+  let sourceExists = true;
+  let removeCalls = 0;
+  const mission = { id: "mission-one", familiarId: "nova", sources: [] as Array<{ id: string }> };
+  let attachedMissionIds: string[] = [];
+  const handlers = createXSourcesHandlers(sourceDependencies({
+    readJsonBody: async (req: Request) => ({
+      ok: true as const,
+      body: req.method === "DELETE"
+        ? { familiarId: "nova", sourceId: "source-one" }
+        : {
+            action: "attach",
+            familiarId: "nova",
+            sourceId: "source-one",
+            missionId: "mission-one",
+          },
+    }),
+    withLifecycleLock,
+    listSources: async () => sourceExists ? [{ ...savedSource, attachedMissionIds }] : [],
+    loadMission: async () => mission,
+    makeRunner: () => ({
+      act: async () => {
+        runnerEntered.resolve();
+        await allowRunner.promise;
+        mission.sources.push({ id: "source-one" });
+        return mission;
+      },
+    }),
+    setMissionAttached: async () => {
+      assert.equal(sourceExists, true);
+      attachedMissionIds = ["mission-one"];
+    },
+    removeSource: async () => {
+      removeCalls += 1;
+      sourceExists = false;
+      return true;
+    },
+  }));
+
+  const attaching = handlers.POST(jsonRequest("/api/x/sources", {}));
+  await runnerEntered.promise;
+  const deleting = handlers.DELETE(jsonRequest("/api/x/sources", {}, "DELETE"));
+  await contenderQueued.promise;
+  assert.equal(removeCalls, 0);
+  allowRunner.resolve();
+
+  assert.equal((await attaching).status, 200);
+  assert.equal((await deleting).status, 200);
+  assert.equal(sourceExists, false);
+  assert.deepEqual(mission.sources, [{ id: "source-one" }]);
+});
+
+test("a stale GET reconciliation linearizes before attach and cannot erase its completed link", async () => {
+  const sharedLifecycleLock = createFamiliarLifecycleLock();
+  const contenderQueued = deferred();
+  let lifecycleCalls = 0;
+  const withLifecycleLock = async <T>(
+    familiarId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> => {
+    lifecycleCalls += 1;
+    if (lifecycleCalls === 2) contenderQueued.resolve();
+    return sharedLifecycleLock(familiarId, operation);
+  };
+  const missionSnapshotTaken = deferred();
+  const allowReconciliation = deferred();
+  const calls: string[] = [];
+  const mission = {
+    id: "mission-one",
+    familiarId: "nova",
+    sources: [] as Array<{ id: string }>,
+  };
+  let attachedMissionIds: string[] = ["mission-stale"];
+  const handlers = createXSourcesHandlers(sourceDependencies({
+    readJsonBody: parsedBody({
+      action: "attach",
+      familiarId: "nova",
+      sourceId: "source-one",
+      missionId: "mission-one",
+    }),
+    withLifecycleLock,
+    listSources: async () => [{ ...savedSource, attachedMissionIds }],
+    listMissions: async () => {
+      calls.push("snapshot");
+      missionSnapshotTaken.resolve();
+      return [];
+    },
+    reconcileAttachments: async () => {
+      calls.push("reconcile");
+      await allowReconciliation.promise;
+      attachedMissionIds = [];
+      return [{ ...savedSource, attachedMissionIds }];
+    },
+    getCachedPost: async () => null,
+    loadMission: async () => mission,
+    makeRunner: () => ({
+      act: async () => {
+        calls.push("act");
+        mission.sources.push({ id: "source-one" });
+        return mission;
+      },
+    }),
+    setMissionAttached: async () => {
+      calls.push("link");
+      attachedMissionIds = ["mission-one"];
+    },
+  }));
+
+  const getting = handlers.GET(
+    new Request("http://127.0.0.1/api/x/sources?familiarId=nova"),
+  );
+  await missionSnapshotTaken.promise;
+  const attaching = handlers.POST(jsonRequest("/api/x/sources", {}));
+  await contenderQueued.promise;
+  assert.deepEqual(calls, ["snapshot", "reconcile"]);
+  allowReconciliation.resolve();
+
+  assert.equal((await getting).status, 200);
+  assert.equal((await attaching).status, 200);
+  assert.deepEqual(calls, ["snapshot", "reconcile", "act", "link"]);
+  assert.deepEqual(attachedMissionIds, ["mission-one"]);
 });
 
 test("sources attach never updates the source store when the mission action fails", async () => {
@@ -698,7 +944,7 @@ test("source action bounds reject notes, tags, identifiers, and unknown actions 
   }
 });
 
-test("separate Node processes serialize real runner attachments through the durable X lock", async () => {
+test("separate Node processes serialize real runner attachments through the familiar lifecycle lock", async () => {
   const root = await mkdtemp(path.join(process.cwd(), ".x-attachment-route-test-"));
   const sourcesDir = path.join(root, "sources");
   const missionsDir = path.join(root, "missions");
@@ -791,8 +1037,8 @@ test("separate Node processes serialize real runner attachments through the dura
         const runner = runnerModule.makeProductionResearchMissionRunner();
         return { act: (id, input) => runner.act(id, input) };
       },
-      withAttachmentLock: (missionId, operation) => (
-        sources.withXSourceAttachmentLock(missionId, async () => {
+      withLifecycleLock: (familiarId, operation) => (
+        sources.withXSourceLifecycleLock(familiarId, async () => {
           await mkdir(process.env.CAVE_TEST_ENTERED_DIR, { recursive: true });
           await writeFile(
             path.join(process.env.CAVE_TEST_ENTERED_DIR, body.sourceId),
@@ -901,6 +1147,177 @@ test("separate Node processes serialize real runner attachments through the dura
         ["mission-one"],
       );
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("separate Node processes linearize attach before DELETE without a false attach failure", async () => {
+  const root = await mkdtemp(path.join(process.cwd(), ".x-attach-delete-route-test-"));
+  const sourcesDir = path.join(root, "sources");
+  const runnerEnteredPath = path.join(root, "runner-entered");
+  const missionMutationPath = path.join(root, "mission-source");
+  const loaderUrl = pathToFileURL(path.resolve("scripts/test-alias-register.mjs")).href;
+  const routeUrl = pathToFileURL(path.resolve("src/app/api/x/sources/route.ts")).href;
+  const sourcesUrl = pathToFileURL(path.resolve("src/lib/server/x-sources.ts")).href;
+  const commonOptions = {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      COVEN_X_SOURCES_DIR: sourcesDir,
+    },
+    windowsHide: true,
+  };
+  const setup = `
+    const sources = await import(${JSON.stringify(sourcesUrl)});
+    const saved = await sources.upsertSavedXSource({
+      familiarId: "nova",
+      postId: "100",
+      canonicalUrl: "https://x.com/opencoven/status/100",
+      originalUrl: "https://x.com/opencoven/status/100",
+      note: "",
+      tags: [],
+    });
+    console.log(saved.source.id);
+  `;
+  const attach = `
+    const { writeFile } = await import("node:fs/promises");
+    const route = await import(${JSON.stringify(routeUrl)});
+    const sources = await import(${JSON.stringify(sourcesUrl)});
+    const sourceId = process.env.CAVE_SOURCE_ID;
+    const handler = route.createXSourcesHandlers({
+      rejectNonLocalRequest: () => null,
+      readJsonBody: async () => ({
+        ok: true,
+        body: {
+          action: "attach",
+          familiarId: "nova",
+          sourceId,
+          missionId: "mission-one",
+        },
+      }),
+      sweepExpiredCache: async () => 0,
+      requireResearch: async () => {},
+      listSources: sources.listSavedXSources,
+      loadMission: async () => ({
+        id: "mission-one",
+        familiarId: "nova",
+        sources: [],
+      }),
+      makeRunner: () => ({
+        act: async () => {
+          await writeFile(process.env.CAVE_RUNNER_ENTERED_PATH, "entered", "utf8");
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          await writeFile(process.env.CAVE_MISSION_MUTATION_PATH, sourceId, "utf8");
+          return { id: "mission-one" };
+        },
+      }),
+      withLifecycleLock: sources.withXSourceLifecycleLock,
+      setMissionAttached: sources.setXSourceMissionAttached,
+      errorResponse: (error) => Response.json({
+        ok: false,
+        error: error instanceof Error ? error.message : "unknown",
+      }, { status: 500 }),
+    });
+    const response = await handler.POST(new Request("http://127.0.0.1/api/x/sources", {
+      method: "POST",
+    }));
+    console.log(JSON.stringify({ status: response.status, body: await response.json() }));
+  `;
+  const remove = `
+    const route = await import(${JSON.stringify(routeUrl)});
+    const sources = await import(${JSON.stringify(sourcesUrl)});
+    const handler = route.createXSourcesHandlers({
+      rejectNonLocalRequest: () => null,
+      readJsonBody: async () => ({
+        ok: true,
+        body: {
+          familiarId: "nova",
+          sourceId: process.env.CAVE_SOURCE_ID,
+        },
+      }),
+      sweepExpiredCache: async () => 0,
+      requireResearch: async () => {},
+      removeSource: sources.removeSavedXSource,
+      withLifecycleLock: sources.withXSourceLifecycleLock,
+      errorResponse: (error) => Response.json({
+        ok: false,
+        error: error instanceof Error ? error.message : "unknown",
+      }, { status: 500 }),
+    });
+    const response = await handler.DELETE(new Request("http://127.0.0.1/api/x/sources", {
+      method: "DELETE",
+    }));
+    console.log(JSON.stringify({ status: response.status, body: await response.json() }));
+  `;
+  const verify = `
+    const sources = await import(${JSON.stringify(sourcesUrl)});
+    console.log(JSON.stringify(await sources.listSavedXSources("nova")));
+  `;
+
+  try {
+    const setupResult = await execFileAsync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--import", loaderUrl,
+        "--input-type=module",
+        "--eval", setup,
+      ],
+      commonOptions,
+    );
+    const sourceId = setupResult.stdout.trim();
+    const attachResult = execFileAsync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--import", loaderUrl,
+        "--input-type=module",
+        "--eval", attach,
+      ],
+      {
+        ...commonOptions,
+        env: {
+          ...commonOptions.env,
+          CAVE_SOURCE_ID: sourceId,
+          CAVE_RUNNER_ENTERED_PATH: runnerEnteredPath,
+          CAVE_MISSION_MUTATION_PATH: missionMutationPath,
+        },
+      },
+    );
+    await waitForFile(runnerEnteredPath);
+    const removeResult = execFileAsync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--import", loaderUrl,
+        "--input-type=module",
+        "--eval", remove,
+      ],
+      {
+        ...commonOptions,
+        env: {
+          ...commonOptions.env,
+          CAVE_SOURCE_ID: sourceId,
+        },
+      },
+    );
+    const [attached, removed] = await Promise.all([attachResult, removeResult]);
+    assert.equal(JSON.parse(attached.stdout.trim()).status, 200);
+    assert.equal(JSON.parse(removed.stdout.trim()).status, 200);
+    assert.equal(await readFile(missionMutationPath, "utf8"), sourceId);
+
+    const verified = await execFileAsync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--import", loaderUrl,
+        "--input-type=module",
+        "--eval", verify,
+      ],
+      commonOptions,
+    );
+    assert.deepEqual(JSON.parse(verified.stdout.trim()), []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

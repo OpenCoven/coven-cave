@@ -40,7 +40,7 @@ const {
   setXSourceMissionAttached,
   sweepExpiredXCache,
   upsertSavedXSource,
-  withXSourceAttachmentLock,
+  withXSourceLifecycleLock,
 } = await import("./x-sources.ts");
 
 const normalizedPost = (
@@ -71,6 +71,14 @@ async function waitForFile(target: string, timeoutMs = 5_000): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error(`Timed out waiting for ${path.basename(target)}`);
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
 }
 
 beforeEach(async () => {
@@ -685,23 +693,47 @@ test("source transaction locks reject symlinked lock directories", async () => {
   assert.deepEqual(await readdir(outsideLocks), []);
 });
 
-test("X attachment locks validate mission IDs before paths and reject symlink directories", async () => {
+test("X lifecycle locks validate familiar IDs before paths and reject symlink directories", async () => {
   await assert.rejects(
-    () => withXSourceAttachmentLock("../mission-one", async () => {}),
+    () => withXSourceLifecycleLock("../nova", async () => {}),
     (error) => error instanceof XApiError && error.code === "invalid-request",
   );
   assert.equal(await readdir(root).then((entries) => entries.includes("sources")), false);
 
-  const outsideLocks = path.join(root, "outside-attachment-locks");
+  const outsideLocks = path.join(root, "outside-lifecycle-locks");
   await mkdir(outsideLocks, { recursive: true });
   await mkdir(sourcesDir, { recursive: true });
-  await symlink(outsideLocks, path.join(sourcesDir, ".attachment-locks"));
+  await symlink(outsideLocks, path.join(sourcesDir, ".lifecycle-locks"));
 
   await assert.rejects(
-    () => withXSourceAttachmentLock("mission-one", async () => {}),
+    () => withXSourceLifecycleLock("nova", async () => {}),
     /symlink/i,
   );
   assert.deepEqual(await readdir(outsideLocks), []);
+});
+
+test("X lifecycle locks preserve concurrency across separate familiars", async () => {
+  const novaEntered = deferred();
+  const releaseNova = deferred();
+  const wrenEntered = deferred();
+  const nova = withXSourceLifecycleLock("nova", async () => {
+    novaEntered.resolve();
+    await releaseNova.promise;
+  });
+  await novaEntered.promise;
+  const wren = withXSourceLifecycleLock("wren", async () => {
+    wrenEntered.resolve();
+  });
+
+  await Promise.race([
+    wrenEntered.promise,
+    new Promise<never>((_, reject) => setTimeout(
+      () => reject(new Error("separate familiar was blocked")),
+      500,
+    )),
+  ]);
+  releaseNova.resolve();
+  await Promise.all([nova, wren]);
 });
 
 test("a symlinked source root is rejected before lock artifacts escape it", async () => {
