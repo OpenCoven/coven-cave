@@ -42,4 +42,28 @@ assert.match(
   "mobile detail should remain full-bleed without desktop card chrome",
 );
 
+// Carried over from sidebar-floating-edge.test.ts, which this file replaced.
+// That test encoded the older "Dia-style floating sidebar edge" contract, which
+// the inset layout deliberately reversed — its central assertion is the exact
+// negation of the doesNotMatch above, so the two could never pass together. Most
+// of it went with the design, but these two claims are orthogonal to whether the
+// sidebar floats or sits flush, still hold, and were covered nowhere else. They
+// are kept so retiring the obsolete file is not a silent loss of coverage.
+// Whitespace-tolerant on purpose. These came over with exact-spacing regexes,
+// which is a real hazard for the negative one below: if a reformat turned
+// `.shell-nav--rail {` into `.shell-nav--rail{`, the pattern would stop matching
+// and doesNotMatch would pass vacuously — the guard would go quiet exactly when
+// it still looked green. Asserting on semantics rather than spacing keeps a
+// formatting change from silently retiring the check.
+assert.match(
+  shellCss,
+  /\.shell-nav\s*\{[\s\S]*?overflow-y:\s*auto;/,
+  "the shared sidebar remains vertically scrollable",
+);
+assert.doesNotMatch(
+  shellCss,
+  /\.shell-nav--rail\s*\{[^}]*?(?:margin|border-radius|box-shadow)\s*:/,
+  "collapsed icon rail does not become a second floating card",
+);
+
 console.log("shell-inset-layout.test.ts: ok");
