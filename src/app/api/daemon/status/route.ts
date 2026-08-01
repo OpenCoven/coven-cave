@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import {
   loadDaemonStatusSnapshot,
-  loadState,
-  recordLocalSubdaemonWakeRequest,
-  recordTravelHubReachability,
 } from "@/lib/cave-config";
 import {
   callDaemonTarget,
@@ -15,11 +12,10 @@ import {
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
 import { classifyDaemonFailureAvailability } from "@/lib/daemon-status-classification";
-import { startLocalDaemon } from "@/lib/daemon-start";
 import { executorStatusesForConfig } from "@/lib/executor-status";
 import { classifyHubFailure } from "@/lib/server/daemon-probe";
+import { reconcileDaemonTravelState } from "@/lib/server/daemon-travel-reconcile";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
-import { syncOfflineTravelQueue, type TravelOfflineReplayResult } from "@/lib/travel-offline-replay";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -91,8 +87,7 @@ export async function GET() {
   const target = daemonTargetForConfig(config);
   const checkedAt = new Date().toISOString();
   const executorStatuses = await executorStatusesForConfig(config);
-  let travelState = snapshot.state.travel;
-  let hubReachable: boolean | null = target.mode === "local" ? true : null;
+  const travelState = snapshot.state.travel;
   if (target.mode === "unconfigured-hub") {
     const root = covenWorkspaceRoot();
     const travelStatus = deriveTravelClientStatus({
@@ -118,31 +113,13 @@ export async function GET() {
   // a race where a connection-mode change could query one target while the
   // response claimed (and classified) another.
   const res = await callDaemonTarget<Health>(target, { path: "/api/v1/health", timeoutMs: 1500 });
-  let travelReplay: TravelOfflineReplayResult | null = null;
-  if (target.mode === "hub") {
-    hubReachable = hubAnswered(res);
-    travelState = await recordTravelHubReachability(hubReachable);
-    if (res.ok && !travelState.manualOffline) {
-      travelReplay = await syncOfflineTravelQueue(config);
-      if (travelReplay.attempted > 0) {
-        travelState = (await loadState()).travel;
-      }
-    }
-  }
-  let travelStatus = deriveTravelClientStatus({
-    multiHost: config.multiHost,
-    travel: travelState,
-    hubReachable,
+  const { travelStatus, travelReplay } = await reconcileDaemonTravelState({
+    config,
+    travelState,
+    target,
+    hubAnswered: target.mode === "local" ? true : hubAnswered(res),
+    daemonHealthy: res.ok,
   });
-  if (target.mode === "hub" && travelStatus.wakeLocalSubdaemon) {
-    await startLocalDaemon();
-    travelState = await recordLocalSubdaemonWakeRequest();
-    travelStatus = deriveTravelClientStatus({
-      multiHost: config.multiHost,
-      travel: travelState,
-      hubReachable,
-    });
-  }
   const root = covenWorkspaceRoot();
   if (!res.ok || !res.data) {
     return NextResponse.json({

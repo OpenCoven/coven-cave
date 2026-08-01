@@ -12,6 +12,12 @@ assert.match(
 
 assert.match(
   source,
+  /import \{[^}]*reconcileDaemonTravelState[^}]*\} from "@\/lib\/server\/daemon-travel-reconcile"/,
+  "daemon status should delegate travel reconciliation to the shared helper",
+);
+
+assert.match(
+  source,
   /snapshot = await loadDaemonStatusSnapshot\(\)[\s\S]*?return caveHomeStatusUnavailable\(\)/,
   "Cave home lock failures should return a structured status response instead of HTTP 500",
 );
@@ -54,8 +60,8 @@ assert.match(
 
 assert.match(
   source,
-  /recordTravelHubReachability\(hubReachable\)/,
-  "daemon status should persist network reachability transitions, not auth/health failures",
+  /const \{ travelStatus, travelReplay \} = await reconcileDaemonTravelState\(\{/,
+  "daemon status should use the shared helper for hub reachability persistence, replay, and wake semantics",
 );
 
 assert.match(
@@ -72,32 +78,14 @@ assert.match(
 
 assert.match(
   source,
-  /startLocalDaemon\(\)/,
-  "daemon status should wake the laptop-local daemon when travel mode takes authority",
-);
-
-assert.match(
-  source,
-  /recordLocalSubdaemonWakeRequest\(\)/,
-  "daemon status should persist that travel mode requested a local sub-daemon wake",
-);
-
-assert.match(
-  source,
-  /syncOfflineTravelQueue\(config\)/,
-  "daemon status should replay queued travel work after the hub reconnects",
-);
-
-assert.match(
-  source,
-  /res\.ok && !travelState\.manualOffline/,
-  "manual offline mode should block automatic reconnect replay",
-);
-
-assert.match(
-  source,
   /travelReplay/,
   "daemon status should expose reconnect replay attempts in the status response",
+);
+
+assert.doesNotMatch(
+  source,
+  /recordTravelHubReachability\(|syncOfflineTravelQueue\(|startLocalDaemon\(|recordLocalSubdaemonWakeRequest\(/,
+  "daemon status should not duplicate the shared reachability, replay, and wake sequence inline",
 );
 
 assert.match(

@@ -24,8 +24,9 @@ single PR.
 1. Keep shell connection state responsive without overlapping requests.
 2. Bound request volume and latency while the daemon is unavailable.
 3. Prevent concurrent consumers from multiplying identical daemon probes.
-4. Keep detailed diagnostics and travel/executor side effects out of the
-   recurring heartbeat.
+4. Keep detailed diagnostics, executor probes, version resolution, and
+   unrelated side effects out of the recurring heartbeat while preserving
+   focused travel transition/replay semantics.
 5. Apply the same cancellation, deduplication, and backpressure rules to other
    high-noise request producers found by the audit.
 6. Preserve explicit Start, Retry, refresh, stream, and mutation behavior.
@@ -39,7 +40,7 @@ single PR.
 
 ## Chosen Architecture
 
-### 1. Pure connection snapshot
+### 1. Connection snapshot with focused travel reconciliation
 
 Add a server module that resolves the configured daemon target and returns only
 the fields needed by the shell connection banner and auto-start decision:
@@ -50,8 +51,11 @@ the fields needed by the shell connection banner and auto-start decision:
 - `checkedAt`
 - target summary
 
-It must not probe executors, mutate travel state, replay queued work, start a
-daemon, or resolve installed version metadata.
+The recurring heartbeat may run a narrow shared helper that persists hub
+reachability, advances the 10s travel-local failover/wake transition, and
+replays queued travel work when a healthy hub recovers. It must not probe
+executors, resolve installed version metadata, or construct the broader
+diagnostics payload.
 
 Expose the snapshot through a narrow connection endpoint. The existing
 `/api/daemon/status` route remains the detailed Settings/diagnostics endpoint.
@@ -97,9 +101,10 @@ visibility state so timing behavior is deterministic in tests.
 ### 4. Detailed status remains explicit
 
 Settings and diagnostics continue using `/api/daemon/status` for executor,
-travel, workspace, version, and daemon details. Those reads are surface-scoped,
-abortable, and user-refreshable. The recurring shell heartbeat no longer pays
-their cost or triggers their side effects.
+workspace, version, and daemon details. Those reads are surface-scoped,
+abortable, and user-refreshable. The recurring shell heartbeat shares only the
+focused travel reachability/failover/replay helper; it does not construct or
+pay for the broader diagnostics payload.
 
 Any configuration mutation or successful daemon Start invalidates the relevant
 connection snapshot before a trusted refresh. This prevents a cached offline
@@ -165,7 +170,9 @@ explicit user actions, mutations, or active streams merely to reduce counts.
 - The shell never overlaps connection probes.
 - Persistent failure reduces rather than increases request pressure.
 - Concurrent heartbeat consumers share equivalent server work.
-- The heartbeat route performs no executor/travel/replay/start/version work.
+- The heartbeat route performs no executor/version work or unrelated detailed
+  diagnostics, while focused travel transition/replay semantics remain shared
+  with the status route.
 - Explicit Start/Retry observes a fresh result.
 - All changed request producers have tested lifecycle/backpressure behavior.
 - One scoped PR merges to `main`, the Bead records verification evidence, and
