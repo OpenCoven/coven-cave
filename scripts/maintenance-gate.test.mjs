@@ -17,6 +17,7 @@ import {
   heartbeatMaintenanceGate,
   maintenanceGateRoot,
   maintenanceGateStatus,
+  repositoryMaintenanceCapabilities,
   registerWriterIntent,
   releaseMaintenanceGate,
   releaseWriterIntent,
@@ -739,4 +740,14 @@ test("every transition lands in the audit log with its generation", () => {
     "the audit trail records the full lifecycle in order",
   );
   rmSync(repo, { recursive: true, force: true });
+});
+
+test("repositoryMaintenanceCapabilities reports the current local-only maintenance contract", () => {
+  assert.deepEqual(repositoryMaintenanceCapabilities(), {
+    local: { enforced: true, source: "scripts/maintenance-gate.mjs" },
+    coven: { enforced: false, source: "cave-wqa0b.2" },
+    beads: { enforced: false, source: "cave-wqa0b.3" },
+    github: { enforced: false, source: "cave-wqa0b.4" },
+    complete: false,
+  });
 });

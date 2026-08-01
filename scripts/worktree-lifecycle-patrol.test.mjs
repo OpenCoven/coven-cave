@@ -10,7 +10,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { maintenanceGateRoot } from "./maintenance-gate.mjs";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -850,6 +851,53 @@ exit 0
       {
         env: {
           ...process.env,
+          NODE_NO_WARNINGS: "1",
+          PATH: `${needsGitFixture ? `${gitBin}${path.delimiter}` : ""}${bin}${path.delimiter}${process.env.PATH}`,
+          LIFECYCLE_TEST_INVOCATION: lastPatrolInvocation,
+          ...extraEnv,
+        },
+      },
+    );
+  };
+  const patrolResult = (extraArgs = [], extraEnv = {}) => {
+    lastPatrolInvocation = String(++patrolInvocation);
+    const needsGitFixture = [
+      "LIFECYCLE_DEFAULT_TRUNK",
+      "LIFECYCLE_STALE_DEFAULT",
+      "LIFECYCLE_MALFORMED_DEFAULT",
+      "LIFECYCLE_MISSING_DEFAULT_TRACKING",
+      "LIFECYCLE_MISMATCHED_DEFAULT_TARGET",
+      "LIFECYCLE_MALFORMED_DEFAULT_TRACKING",
+      "LIFECYCLE_MALFORMED_LIVE_MAIN_CASE",
+      "LIFECYCLE_DEFAULT_TRACKING_MUTATION",
+      "LIFECYCLE_DUPLICATE_REGISTERED_REF",
+      "LIFECYCLE_REQUIRE_SAFE_GIT",
+    ].some(
+      (name) =>
+        extraEnv[name] === "1" ||
+        (name === "LIFECYCLE_MALFORMED_LIVE_MAIN_CASE" &&
+          typeof extraEnv[name] === "string"),
+    );
+    return spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        script,
+        "--repo",
+        "OpenCoven/coven-cave",
+        "--root",
+        repo,
+        "--now",
+        "2026-08-10T22:00:00Z",
+        ...extraArgs,
+      ],
+      {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          NODE_NO_WARNINGS: "1",
           PATH: `${needsGitFixture ? `${gitBin}${path.delimiter}` : ""}${bin}${path.delimiter}${process.env.PATH}`,
           LIFECYCLE_TEST_INVOCATION: lastPatrolInvocation,
           ...extraEnv,
@@ -1665,6 +1713,67 @@ exit 0
       `${liveMainCase} live main does not run ancestry before default OID equality proof`,
     );
   }
+
+  const maxRetireReadOnly = patrol(["--json", "--max-retire", "1"]);
+  assert.equal(
+    maxRetireReadOnly,
+    stdout,
+    "--max-retire does not change read-only patrol output",
+  );
+
+  const missingMaxRetire = patrolResult(["--json", "--max-retire"]);
+  assert.equal(missingMaxRetire.status, 1);
+  assert.equal(
+    missingMaxRetire.stderr.trim(),
+    "worktree-lifecycle-patrol: --max-retire requires an integer from 1 through 10",
+  );
+
+  const outOfBoundsMaxRetire = patrolResult(["--json", "--max-retire", "11"]);
+  assert.equal(outOfBoundsMaxRetire.status, 1);
+  assert.equal(
+    outOfBoundsMaxRetire.stderr.trim(),
+    "worktree-lifecycle-patrol: --max-retire must be an integer from 1 through 10",
+  );
+
+  const gateRoot = maintenanceGateRoot(repo);
+  const applyResult = patrolResult(["--apply", "--json"]);
+  assert.equal(applyResult.status, 2);
+  assert.equal(applyResult.stderr.trim(), "");
+  assert.deepEqual(JSON.parse(applyResult.stdout), {
+    ok: false,
+    reason: "gate-incomplete",
+    missingPlanes: ["coven", "beads", "github"],
+    local: { enforced: true, source: "scripts/maintenance-gate.mjs" },
+    coven: { enforced: false, source: "cave-wqa0b.2" },
+    beads: { enforced: false, source: "cave-wqa0b.3" },
+    github: { enforced: false, source: "cave-wqa0b.4" },
+    complete: false,
+  });
+  assert.equal(
+    git(["worktree", "list", "--porcelain"], repo),
+    beforeWorktrees,
+    "--apply leaves worktree registrations untouched while maintenance planes are incomplete",
+  );
+  assert.equal(
+    git(["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads"], repo),
+    beforeBranches,
+    "--apply leaves local branch refs untouched while maintenance planes are incomplete",
+  );
+  assert.equal(
+    git(["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes"], repo),
+    beforeRemoteRefs,
+    "--apply leaves remote-tracking refs untouched while maintenance planes are incomplete",
+  );
+  assert.equal(
+    existsSync(path.join(gateRoot, "gate.json")),
+    false,
+    "--apply does not acquire a maintenance gate before capability completion",
+  );
+  assert.equal(
+    existsSync(path.join(gateRoot, "audit.jsonl")),
+    false,
+    "--apply does not emit maintenance gate audit entries before capability completion",
+  );
 
   assert.equal(
     git(["worktree", "list", "--porcelain"], repo),
