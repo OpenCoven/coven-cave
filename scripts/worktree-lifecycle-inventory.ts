@@ -485,6 +485,7 @@ query($owner: String!, $name: String!, $oid: GitObjectID!, $endCursor: String) {
     object(oid: $oid) {
       ... on Commit {
         associatedPullRequests(first: 100, after: $endCursor) {
+          totalCount
           nodes {
             number
             url
@@ -649,6 +650,19 @@ function dedupePullRequests(pullRequests: PullRequest[]): PullRequest[] {
   return [...deduped.values()];
 }
 
+function assertUniqueConnectionPullRequest(
+  pullRequest: PullRequest,
+  identities: Set<string>,
+  urls: Set<string>,
+): void {
+  const identity = `${pullRequest.baseRepository.toLowerCase()}#${pullRequest.number}`;
+  if (identities.has(identity) || urls.has(pullRequest.url)) {
+    throw new Error(`duplicate pull request ${identity}`);
+  }
+  identities.add(identity);
+  urls.add(pullRequest.url);
+}
+
 function parseAssociatedPullRequestPages(
   raw: string,
   expectedRepo: string,
@@ -660,6 +674,9 @@ function parseAssociatedPullRequestPages(
   }
   const cursors = new Set<string>();
   let canonicalRepo: string | null = null;
+  let totalCount: number | null = null;
+  const identities = new Set<string>();
+  const urls = new Set<string>();
   const pullRequests: PullRequest[] = [];
   pages.forEach((page, pageIndex) => {
     if (!isRecord(page) || "errors" in page || !isRecord(page.data)) {
@@ -682,9 +699,17 @@ function parseAssociatedPullRequestPages(
       throw new Error("commit association connection is unavailable");
     }
     const connection = repository.object.associatedPullRequests;
-    if (!Array.isArray(connection.nodes)) {
+    if (
+      !Number.isSafeInteger(connection.totalCount) ||
+      (connection.totalCount as number) < 0 ||
+      !Array.isArray(connection.nodes)
+    ) {
       throw new Error("association nodes are malformed");
     }
+    if (totalCount !== null && totalCount !== connection.totalCount) {
+      throw new Error("association page totals are inconsistent");
+    }
+    totalCount = connection.totalCount as number;
     validatePageInfo(connection.pageInfo, pageIndex, pages.length, cursors);
     if (
       pageIndex < pages.length - 1 &&
@@ -692,12 +717,17 @@ function parseAssociatedPullRequestPages(
     ) {
       throw new Error("pagination returned an empty intermediate page");
     }
-    pullRequests.push(
-      ...connection.nodes.map((node) => parsePullRequestNode(node, oid)),
-    );
+    for (const node of connection.nodes) {
+      const pullRequest = parsePullRequestNode(node, oid);
+      assertUniqueConnectionPullRequest(pullRequest, identities, urls);
+      pullRequests.push(pullRequest);
+    }
   });
   if (canonicalRepo === null) throw new Error("canonical repository identity is unavailable");
-  return { canonicalRepo, pullRequests: dedupePullRequests(pullRequests) };
+  if (totalCount === null || pullRequests.length !== totalCount) {
+    throw new Error("association pagination is incomplete relative to totalCount");
+  }
+  return { canonicalRepo, pullRequests };
 }
 
 function parseExactHeadPullRequestPages(
@@ -711,6 +741,8 @@ function parseExactHeadPullRequestPages(
   }
   const cursors = new Set<string>();
   let issueCount: number | null = null;
+  const identities = new Set<string>();
+  const urls = new Set<string>();
   const pullRequests: PullRequest[] = [];
   pages.forEach((page, pageIndex) => {
     if (!isRecord(page) || "errors" in page || !isRecord(page.data)) {
@@ -719,7 +751,7 @@ function parseExactHeadPullRequestPages(
     const search = page.data.search;
     if (
       !isRecord(search) ||
-      !Number.isInteger(search.issueCount) ||
+      !Number.isSafeInteger(search.issueCount) ||
       (search.issueCount as number) < 0 ||
       !Array.isArray(search.nodes)
     ) {
@@ -736,17 +768,19 @@ function parseExactHeadPullRequestPages(
     if (pageIndex < pages.length - 1 && search.nodes.length === 0) {
       throw new Error("pagination returned an empty intermediate page");
     }
-    pullRequests.push(...search.nodes.map((node) => parsePullRequestNode(node, null)));
+    for (const node of search.nodes) {
+      const pullRequest = parsePullRequestNode(node, null);
+      assertUniqueConnectionPullRequest(pullRequest, identities, urls);
+      pullRequests.push(pullRequest);
+    }
   });
   if (issueCount === null || pullRequests.length !== issueCount) {
     throw new Error("search pagination is incomplete");
   }
-  return dedupePullRequests(
-    pullRequests.filter(
-      (pullRequest) =>
-        pullRequest.headRepository?.toLowerCase() === canonicalRepo.toLowerCase() &&
-        pullRequest.headRefName === branch,
-    ),
+  return pullRequests.filter(
+    (pullRequest) =>
+      pullRequest.headRepository?.toLowerCase() === canonicalRepo.toLowerCase() &&
+      pullRequest.headRefName === branch,
   );
 }
 
@@ -831,12 +865,11 @@ function fetchPullRequests(
     canonicalRepo !== null &&
     !globalErrors.some((error) => /canonical repository/i.test(error))
   ) {
-    const canonicalOwner = canonicalRepo.split("/")[0]!;
     for (const branch of [...new Set(branches)].filter(
       (candidate) =>
         !PROTECTED_BRANCHES.has(candidate) && candidate !== defaultBranch,
     )) {
-      const searchQuery = `is:pr head:${canonicalOwner}:${branch}`;
+      const searchQuery = `is:pr head:${branch}`;
       const result = command(
         "gh",
         [
@@ -1350,11 +1383,11 @@ function refsContaining(root: string, head: string): {
   };
 }
 
-function onDefaultBranch(root: string, head: string, localTrackingRef: string): {
+function onDefaultBranch(root: string, head: string, authoritativeDefaultOid: string): {
   value: boolean;
   error: string | null;
 } {
-  const result = git(root, ["merge-base", "--is-ancestor", head, localTrackingRef]);
+  const result = git(root, ["merge-base", "--is-ancestor", head, authoritativeDefaultOid]);
   if (result.status === 0) return { value: true, error: null };
   if (result.status === 1) return { value: false, error: null };
   return { value: false, error: result.stderr || "default-branch ancestry check failed" };
@@ -1765,12 +1798,12 @@ export function collectWorktreeLifecycleInventory(
     const flags = unit.path ? indexFlags(unit.path) : { flags: [], error: null };
     const remoteRefs = refsContaining(root, unit.head);
     const ancestry =
-      defaultBranch.localTrackingRef === null
+      defaultBranch.oid === null
         ? {
             value: false,
             error: defaultBranch.error ?? "default branch inventory verification failed",
           }
-        : onDefaultBranch(root, unit.head, defaultBranch.localTrackingRef);
+        : onDefaultBranch(root, unit.head, defaultBranch.oid);
     let pullRequestMergeError: string | null = null;
     let unitPullRequests: PullRequest[] = [];
     try {
