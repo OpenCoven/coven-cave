@@ -19,7 +19,14 @@ import { harnessSpawnEnv } from "./harness-spawn-env.ts";
  * real output.
  */
 
-export type DirectRunnerId = "coven" | "codex" | "copilot" | "grok" | "hermes" | "opencode";
+export type DirectRunnerId =
+  | "coven"
+  | "codex"
+  | "copilot"
+  | "grok"
+  | "hermes"
+  | "opencode"
+  | "openclaw";
 /** A runtime launched by Coven rather than handed directly to Node's spawn. */
 export type CovenBackedRunnerId = "claude";
 export type RuntimeRunnerId = DirectRunnerId | CovenBackedRunnerId;
@@ -167,6 +174,8 @@ const MISSING_RUNNER_MESSAGES: Record<RuntimeRunnerId, string> = {
   hermes: "Hermes CLI not found on PATH. Install Hermes, then try again.",
   opencode:
     "OpenCode CLI not found on PATH. Install it with `npm install -g opencode-ai`, then try again.",
+  openclaw:
+    "OpenClaw CLI not found on PATH. Open Setup to install it, then try again.",
 };
 
 const RUNTIME_LAUNCH_FAILED_MESSAGES: Record<DirectRunnerId, string> = {
@@ -176,6 +185,7 @@ const RUNTIME_LAUNCH_FAILED_MESSAGES: Record<DirectRunnerId, string> = {
   grok: "Grok Build CLI failed to start. Check its installation and try again.",
   hermes: "Hermes CLI failed to start. Check its installation and try again.",
   opencode: "OpenCode CLI failed to start. Check its installation and try again.",
+  openclaw: "OpenClaw CLI failed to start. Check its installation and try again.",
 };
 
 const RUNNER_LABELS: Record<RuntimeRunnerId, string> = {
@@ -186,6 +196,7 @@ const RUNNER_LABELS: Record<RuntimeRunnerId, string> = {
   grok: "Grok Build CLI",
   hermes: "Hermes CLI",
   opencode: "OpenCode CLI",
+  openclaw: "OpenClaw CLI",
 };
 
 export function missingRunnerMessage(runner: RuntimeRunnerId): string {

@@ -8,7 +8,7 @@ import {
 } from "@/lib/daemon-sync-status";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
-import { isBindableRuntimeChoice } from "@/lib/harness-adapters";
+import { canonicalHarnessId, isBindableRuntimeChoice } from "@/lib/harness-adapters";
 import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 import type { RuntimeModelOption } from "@/lib/grok-build";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
@@ -271,10 +271,12 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  const defaultHarnessId = familiar.defaultHarness ?? familiar.harness ?? "";
+  const defaultHarnessId = canonicalHarnessId(familiar.defaultHarness ?? familiar.harness ?? "");
   const defaultHarnessLabel = runtimeLabel(defaultHarnessId, harnesses);
-  const harnessId = draftHarness || defaultHarnessId;
-  const selectedHarnessAvailability = harnesses.find((item) => item.id === harnessId)?.availability;
+  const harnessId = canonicalHarnessId(draftHarness || defaultHarnessId);
+  const selectedHarnessAvailability = harnesses.find(
+    (item) => canonicalHarnessId(item.id) === harnessId,
+  )?.availability;
 
   // Model parity: source options and free-type capability from the same live,
   // familiar-scoped inventory used by chat and task model pickers.

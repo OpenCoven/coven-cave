@@ -1015,7 +1015,7 @@ Expected: no other open PR touching the composer footer. If one exists, reconcil
 ```bash
 gh pr checks <PR#> --watch
 gh pr merge <PR#> --squash --delete-branch
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
 git worktree remove .worktrees/feat-chat-footer-split-chips
 git branch -D feat/chat-footer-split-chips
 git worktree list

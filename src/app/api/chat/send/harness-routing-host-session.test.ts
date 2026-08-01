@@ -217,8 +217,18 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*if \(openclawLaunch\.unresolvedWindowsShim\)[\s\S]*openclaw_unsafe_shell/,
-  "OpenClaw chat should fail closed when it cannot resolve a Windows npm shim's JavaScript target",
+  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*requiredFiles:\s*openclawLaunch\.requiredFiles,[\s\S]*openclawAvailability\.state !== "ready"/,
+  "OpenClaw chat should fail closed when the launch plan is not ready",
+);
+assert.match(
+  chatRoute,
+  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*unresolvedWindowsShim: openclawLaunch\.unresolvedWindowsShim === true/,
+  "OpenClaw chat should classify an unresolved Windows npm shim through the shared availability contract",
+);
+assert.match(
+  chatRoute,
+  /const openclawAvailability = evaluateRuntimeAvailability\(\{[\s\S]*runner: "openclaw"[\s\S]*command: openclawLaunch\.command[\s\S]*requiredFiles: openclawLaunch\.requiredFiles[\s\S]*\}\);[\s\S]*if \(openclawAvailability\.state !== "ready"\)[\s\S]*return;[\s\S]*spawn\(openclawLaunch\.command/,
+  "OpenClaw chat should use the shared passive availability gate before spawning",
 );
 
 assert.match(
@@ -266,7 +276,7 @@ assert.doesNotMatch(
 
 assert.match(
   chatRoute,
-  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode\)[\s\S]*spawn\(openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: false/,
+  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode\)[\s\S]*spawn\(openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openclawEnv,[\s\S]*shell: false/,
   "OpenClaw chat should invoke resolved npm shims through Node without shell parsing untrusted prompts",
 );
 

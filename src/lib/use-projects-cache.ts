@@ -1,4 +1,4 @@
-import type { CaveProject } from "./cave-projects-types.ts";
+import { sortProjectsAlphabetically, type CaveProject } from "./cave-projects-types.ts";
 import { createSwrCache } from "./swr-cache.ts";
 
 export type ProjectsPayload = { ok?: boolean; projects?: CaveProject[]; error?: string };
@@ -30,7 +30,28 @@ async function requestProjects(familiarId: string | null): Promise<ProjectsPaylo
   // Thrown (not returned) so HTTP failures are never cached — swr-cache only
   // stores resolutions — and every coalesced caller sees the same error.
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as ProjectsPayload;
+  const payload = (await res.json()) as ProjectsPayload;
+  return normalizePayload(payload);
+}
+
+/**
+ * Dedupe + sort ONCE per fetch, here, rather than once per consumer.
+ *
+ * `useProjects()` has 20+ call sites and the cache already collapses their
+ * mount burst onto a single request — but each consumer was still running
+ * `sortProjectsAlphabetically` over the whole list when that one response
+ * resolved, so the O(n log n) ran once per consumer for identical input.
+ * Normalizing inside the cache also means every coalesced caller receives the
+ * SAME array instance, which keeps referential equality stable for memoized
+ * consumers instead of handing each one a fresh copy.
+ *
+ * Safe to share because nothing mutates the list in place: the only in-place
+ * sort over projects (comux-projects) builds its own objects from sessions.
+ */
+function normalizePayload(payload: ProjectsPayload): ProjectsPayload {
+  if (payload.ok === false) return payload;
+  const projects = Array.isArray(payload.projects) ? payload.projects : [];
+  return { ...payload, projects: sortProjectsAlphabetically(projects) };
 }
 
 function generationKey(familiarId: string | null): string {

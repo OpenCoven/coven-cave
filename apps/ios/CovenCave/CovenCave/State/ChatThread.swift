@@ -65,6 +65,21 @@ extension DisplayMessage {
     /// that retry depends on.
     static func restored(from turn: ChatTurn, familiarId: String?) -> DisplayMessage {
         let role = Role(rawValue: turn.role) ?? .assistant
+        // Sub-expressions are hoisted out of the initializer call deliberately:
+        // inline, the two ternaries plus the nested flatMap/map closure pushed
+        // this literal past the type checker's time limit and the whole target
+        // failed to compile. Keep them as typed locals.
+        let metadata = turn.responseMetadata
+        let resolvedModel = metadata?.retryModel ?? turn.modelOverride
+        let overridesByFamiliar: [String: String]? = resolvedModel.flatMap { model in
+            familiarId.map { [$0: model] }
+        }
+        let activity: [ActivityStep]? = role == .assistant
+            ? ActivityFold.steps(fromTools: turn.tools)
+            : nil
+        // Argument order follows DisplayMessage's stored-property order —
+        // appliedControls is declared before requestedControls, and the
+        // memberwise initializer requires that order.
         return DisplayMessage(
             role: role,
             familiarId: role == .assistant ? familiarId : nil,
@@ -73,17 +88,14 @@ extension DisplayMessage {
             reasoningEffort: turn.reasoningEffort,
             responseSpeed: turn.responseSpeed,
             modelControls: turn.modelControls,
-            requestedControls: turn.responseMetadata?.requestedControls,
-            promptGuidanceControls: turn.responseMetadata?.promptGuidanceControls,
-            appliedControls: turn.responseMetadata?.appliedControls,
-            rejectedControlFamilies: turn.responseMetadata?.rejectedControlFamilies,
-            modelOverride: turn.responseMetadata?.retryModel ?? turn.modelOverride,
+            appliedControls: metadata?.appliedControls,
+            requestedControls: metadata?.requestedControls,
+            promptGuidanceControls: metadata?.promptGuidanceControls,
+            rejectedControlFamilies: metadata?.rejectedControlFamilies,
+            modelOverride: resolvedModel,
+            modelOverridesByFamiliar: overridesByFamiliar,
             modelOverrideScope: turn.modelOverrideScope,
-            modelOverridesByFamiliar: (turn.responseMetadata?.retryModel ?? turn.modelOverride).flatMap { model in
-                familiarId.map { [$0: model] }
-            },
-            activity: role == .assistant
-                ? ActivityFold.steps(fromTools: turn.tools) : nil
+            activity: activity
         )
     }
 
@@ -113,13 +125,13 @@ extension DisplayMessage {
             reasoningEffort: message.reasoningEffort,
             responseSpeed: message.responseSpeed,
             modelControls: message.modelControls,
+            appliedControls: message.appliedControls,
             requestedControls: message.requestedControls,
             promptGuidanceControls: message.promptGuidanceControls,
-            appliedControls: message.appliedControls,
             rejectedControlFamilies: message.rejectedControlFamilies,
             modelOverride: message.modelOverride,
-            modelOverrideScope: message.modelOverrideScope,
             modelOverridesByFamiliar: message.modelOverridesByFamiliar,
+            modelOverrideScope: message.modelOverrideScope,
             activity: message.activity
         )
     }

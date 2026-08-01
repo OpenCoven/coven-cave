@@ -901,18 +901,26 @@ function openClawChatResponse(args: {
         return;
       }
       const openclawLaunch = openClawLaunchCommand();
-      if (openclawLaunch.unresolvedWindowsShim) {
+      const openclawEnv = openClawSpawnEnv();
+      const openclawAvailability = evaluateRuntimeAvailability({
+        runner: "openclaw",
+        command: openclawLaunch.command,
+        env: openclawEnv,
+        requiredFiles: openclawLaunch.requiredFiles,
+        unresolvedWindowsShim: openclawLaunch.unresolvedWindowsShim === true,
+        cwd,
+      });
+      if (openclawAvailability.state !== "ready") {
         pushProgress(
           "openclaw-start",
-          "OpenClaw bridge cannot start safely",
+          "OpenClaw bridge not started",
           "error",
-          "The resolved OpenClaw Windows npm shim could not be mapped to its JavaScript entry point. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
+          openclawAvailability.message,
         );
         push({
           kind: "error",
-          code: "openclaw_unsafe_shell",
-          message:
-            "OpenClaw chat is unavailable because its Windows npm shim could not be launched without shell parsing. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
+          code: openclawAvailability.code,
+          message: openclawAvailability.message,
         });
         push({
           kind: "done",
@@ -933,7 +941,7 @@ function openClawChatResponse(args: {
         return spawn(openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
           cwd,
           stdio: ["ignore", "pipe", "pipe"],
-          env: openClawSpawnEnv(),
+          env: openclawEnv,
           shell: false,
         });
       };
@@ -1001,12 +1009,9 @@ function openClawChatResponse(args: {
       const failChild = (err: NodeJS.ErrnoException) => {
         if (terminal) return;
         terminal = true;
-        const message =
-          err.code === "ENOENT"
-            ? "openclaw CLI not found on PATH. Open Setup to install it, then try again."
-            : err.message;
-        pushProgress("openclaw-response", "OpenClaw bridge failed", "error", message);
-        push({ kind: "error", code: err.code, message });
+        const failure = localRuntimeLaunchError("openclaw", err.code);
+        pushProgress("openclaw-response", "OpenClaw bridge failed", "error", failure.message);
+        push({ kind: "error", code: failure.code, message: failure.message });
         push({
           kind: "done",
           durationMs: Date.now() - startedAt,
@@ -2345,10 +2350,18 @@ export async function POST(req: Request) {
         // Do not fabricate tool bubbles from the CLI's presentation layer.
         // This gives the operator an actionable, privacy-safe degradation
         // notice while preserving normal CLI chat output.
+        //
+        // `notice`, not `error`: nothing failed here. The turn runs normally
+        // and only its tool bubbles are missing, which is exactly what every
+        // peer runtime's "continuing without tool activity" row reports
+        // (claude-runtime-compatibility, opencode-compatibility,
+        // grok-compatibility, codex-compatibility, copilot-protocol-*). Hermes
+        // was the lone one styled as a failure, so every CLI-mode Hermes turn
+        // opened with a red row and a "1 issue" count against a healthy run.
         pushProgress(
           "hermes-tool-activity",
-          "Hermes tool activity unavailable",
-          "error",
+          "Hermes tool activity unavailable; chat text will continue without tool bubbles",
+          "notice",
           "Configure valid HERMES_API_URL and HERMES_API_KEY values for the versioned structured event transport.",
         );
       }

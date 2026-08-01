@@ -6,6 +6,7 @@ import { chatProjectById } from "@/lib/chat-projects";
 import { archiveAction, sessionMenuSections, voiceAction, type SessionMenuItemId } from "@/lib/chat-session-menu-model";
 import { Icon } from "@/lib/icon";
 import { useShowThinking } from "@/lib/reasoning-visibility";
+import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { ProjectPickerPopover } from "@/components/project-picker";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
@@ -49,6 +50,7 @@ export function SessionOverflowMenu({
   const [open, setOpen] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [showThinking, setShowThinking] = useShowThinking();
+  const [instrumentsVisible, setInstrumentsVisible] = useThreadInstrumentsVisible();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const activeProject =
     (projectId ? chatProjectById(projectId, projects) : projects[0]) ?? null;
@@ -60,6 +62,7 @@ export function SessionOverflowMenu({
     projectRoot: activeProject?.root ?? null,
     hasTurns,
     showThinking,
+    instrumentsVisible,
     reflectAvailable: Boolean(onReflect),
     reflecting,
   });
@@ -84,6 +87,10 @@ export function SessionOverflowMenu({
     },
     thinking: () => {
       setShowThinking(!showThinking);
+      close();
+    },
+    instruments: () => {
+      setInstrumentsVisible(!instrumentsVisible);
       close();
     },
     reflect: () => {

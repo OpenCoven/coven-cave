@@ -133,6 +133,53 @@
   outline-offset: 1px;
 }
 
+/* Citation footnotes become compact evidence chips after the sanitized
+   markdown mounts. Provider text keeps the source legible without relying on
+   the accent dot, while the full provenance stays one hover or focus away. */
+.cave-md a.cave-citation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 1.4em;
+  margin-inline: 0.12em;
+  padding-inline: var(--space-1);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, var(--border-hairline));
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: var(--accent-presence);
+  font-size: 0.78em;
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  white-space: nowrap;
+  vertical-align: 0.08em;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-md a.cave-citation-chip::before {
+  width: var(--space-1);
+  height: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  content: "";
+  opacity: 0.72;
+}
+
+.cave-md a.cave-citation-chip:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  color: var(--accent-presence);
+  text-decoration: none;
+}
+
+.cave-md a.cave-citation-chip:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+  text-decoration: none;
+}
+
 /* Task list */
 .cave-md li.task-list-item {
   list-style: none;

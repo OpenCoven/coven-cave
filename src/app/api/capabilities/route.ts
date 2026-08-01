@@ -196,7 +196,8 @@ async function ensureAdapterCoverage(
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const refresh = url.searchParams.get("refresh") === "1" ? "?refresh=1" : "";
-  const harness = url.searchParams.get("harness");
+  const rawHarness = url.searchParams.get("harness");
+  const harness = rawHarness ? canonicalHarnessId(rawHarness) : null;
 
   if (harness) {
     if (harness === "openclaw") {

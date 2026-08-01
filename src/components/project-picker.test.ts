@@ -36,10 +36,18 @@ assert.match(
   /projectForPickerQuery\(sortedProjects, query\)/,
   "Enter resolves through the shared exact-name-first matcher",
 );
+// Enter now goes through pick(), which records the frecency pick, calls
+// onChange and closes (cave-ow9f) — same outcome, one path shared with
+// clicking a row instead of a second inline copy.
 assert.match(
   src,
-  /event\.key !== "Enter"[\s\S]*?event\.preventDefault\(\);[\s\S]*?onChange\(match\.id\);[\s\S]*?close\(\);/,
-  "Enter selects the typed match and closes the picker",
+  /event\.key !== "Enter"[\s\S]*?event\.preventDefault\(\);[\s\S]*?pick\(match\);/,
+  "Enter selects the typed match",
+);
+assert.match(
+  src,
+  /const pick = \(project: \{ id: string; root: string \}\) => \{[\s\S]*?onChange\(project\.id\);\s*close\(\);/,
+  "and pick() is what changes the selection and closes the picker",
 );
 assert.match(src, /aria-haspopup="dialog"/, "trigger announces the popover");
 assert.match(src, /role="alert"/, "add-flow failures surface inline, not silently");

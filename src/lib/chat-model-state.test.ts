@@ -19,6 +19,11 @@ const base = {
 
 assert.equal(cleanModelId("  anthropic/claude-opus-4-7  "), "anthropic/claude-opus-4-7");
 assert.equal(cleanModelId("openai/gpt-5.5"), "openai/gpt-5.5");
+assert.equal(
+  cleanModelId("openrouter/~anthropic/claude-opus-latest"),
+  "openrouter/~anthropic/claude-opus-latest",
+  "OpenCode provider aliases with a tilde-prefixed path segment remain selectable",
+);
 assert.equal(cleanModelId(""), null);
 assert.equal(cleanModelId("bad model with spaces"), null);
 assert.equal(cleanModelId("../escape"), null);

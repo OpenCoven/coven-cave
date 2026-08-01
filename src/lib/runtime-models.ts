@@ -29,6 +29,16 @@ type RuntimeModelTransformMetadata = {
   modelIdTransform?: unknown;
 };
 
+const MODEL_PROVIDER_RE = /^[A-Za-z0-9][A-Za-z0-9._:@+-]*$/;
+const MODEL_PATH_SEGMENT_RE = /^~?[A-Za-z0-9][A-Za-z0-9._:@+-]*$/;
+
+export function isSafeRuntimeModelId(value: string): boolean {
+  if (!value || value.includes("..")) return false;
+  const [provider, ...modelPath] = value.split("/");
+  if (!MODEL_PROVIDER_RE.test(provider ?? "")) return false;
+  return modelPath.every((segment) => MODEL_PATH_SEGMENT_RE.test(segment));
+}
+
 /**
  * Apply the adapter registry's model-id transform using the same semantics as
  * Coven's Rust authority layer. Unknown or missing metadata defaults to
@@ -40,7 +50,8 @@ export function transformModelIdForRuntime(
   modelId: string,
   runtimes: readonly RuntimeModelTransformMetadata[] = REGISTRY_RUNTIMES,
 ): string {
-  const transform = runtimes.find((runtime) => runtime.id === runtimeId)?.modelIdTransform;
+  const canonicalRuntime = canonicalHarnessId(runtimeId);
+  const transform = runtimes.find((runtime) => runtime.id === canonicalRuntime)?.modelIdTransform;
   if (transform === "preserve") return modelId;
 
   const slash = modelId.indexOf("/");
@@ -55,9 +66,7 @@ export function transformModelIdForRuntime(
 export function runtimeModelIdForLaunch(runtimeId: string, modelId: string | null): string | null {
   if (!modelId) return null;
   const transformed = transformModelIdForRuntime(runtimeId, modelId);
-  return !transformed.includes("..") && /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/.test(transformed)
-    ? transformed
-    : null;
+  return isSafeRuntimeModelId(transformed) ? transformed : null;
 }
 
 export type RuntimeModelCatalog = {
@@ -184,13 +193,14 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
 const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.6-sol";
 
 export function catalogForRuntime(runtime: string): RuntimeModelCatalog | null {
-  const curated = RUNTIME_MODEL_CATALOG[runtime];
+  const canonicalRuntime = canonicalHarnessId(runtime);
+  const curated = RUNTIME_MODEL_CATALOG[canonicalRuntime];
   if (curated) return curated;
   // Registry-synced runtimes without a curated list get the runtime-managed
   // treatment: no menu, free-text only (same branch as openclaw above).
-  if (REGISTRY_RUNTIMES.some((entry) => entry.id === runtime)) {
+  if (REGISTRY_RUNTIMES.some((entry) => entry.id === canonicalRuntime)) {
     return {
-      runtime,
+      runtime: canonicalRuntime,
       provider: null,
       models: [],
       allowCustom: true,
@@ -233,10 +243,8 @@ export function isModelInCatalog(runtime: string, modelId: string): boolean {
 
 /** Translate a stable Cave model id only at the native runtime boundary. */
 export function modelForRuntimeLaunch(runtime: string, modelId: string): string {
-  if (
-    (runtime === "claude" || runtime === "claude-code") &&
-    modelId === CLAUDE_OPUS_5_CAVE_ID
-  ) {
+  const canonicalRuntime = canonicalHarnessId(runtime);
+  if (canonicalRuntime === "claude" && modelId === CLAUDE_OPUS_5_CAVE_ID) {
     return CLAUDE_OPUS_5_NATIVE_MODEL;
   }
   return modelId;

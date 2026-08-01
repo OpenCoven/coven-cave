@@ -339,7 +339,7 @@ registerRoleSurface({
   aliases: ["planner", "planning", "navigation"],
   title: "Chart Room",
   iconName: "ph:compass",
-  description: "Course lanes, scheduled legs, and real board moves",
+  description: "The board as a course — flow, graph, orchestration, and what's owed",
   accentHue: 105,
   priority: 22,
   shouldDisplay: () => true,

@@ -1,6 +1,6 @@
 import type { SessionRow } from "./types.ts";
 import type { CaveProject } from "./cave-projects.ts";
-import { compareProjectsAlphabetically } from "./cave-projects-types.ts";
+import { compareProjectsAlphabetically, normalizeProjectRoot } from "./cave-projects-types.ts";
 
 export type ChatProject = CaveProject;
 export type { CaveProject };
@@ -16,9 +16,18 @@ export type ChatProjectGroup = {
   updatedAt: string | null;
 };
 
+/**
+ * Canonical project-root form for chat.
+ *
+ * This was a character-for-character reimplementation of normalizeProjectRoot
+ * (cave-zz12) — same trim, same backslash flip, same trailing-slash strip,
+ * same "/" fallback. Two identical normalizers are one silent divergence
+ * waiting to happen, so this is now a re-export that keeps the chat-side name
+ * at its ~30 call sites. The signature stays string -> string: chat callers
+ * always have a root in hand, and widening it would hide a missing one.
+ */
 export function normalizeChatProjectRoot(root: string): string {
-  const normalized = root.trim().replace(/\\/g, "/").replace(/\/+$/, "");
-  return normalized || "/";
+  return normalizeProjectRoot(root);
 }
 
 export function chatProjectById(
