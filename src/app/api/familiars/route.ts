@@ -116,8 +116,6 @@ export async function GET(req: Request) {
       autoSelfReport: configEntry.autoSelfReport ?? false,
       asanaEnabled: configEntry.asanaEnabled,
       asanaWorkspaceGid: configEntry.asanaWorkspaceGid,
-      xResearchEnabled: configEntry.xResearchEnabled === true,
-      xPublishEnabled: configEntry.xPublishEnabled === true,
       ...(binding.omnigent ? { omnigent: binding.omnigent } : {}),
       avatarUrl: avatar
         ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}&format=png`
