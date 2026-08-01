@@ -70,7 +70,25 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
   return reports.sort(sortNewestFirst);
 }
 
-/** Preserve this store's lookup key while still redacting every secret field. */
+/**
+ * Redact a report without destroying the identifier it is looked up by.
+ *
+ * `redactSecretsDeep` classifies any `<secret-word>Id` key as a credential, so
+ * it rewrites `sessionId` to "[redacted]" — see SECRET_TERMINAL_WORDS, which
+ * contains "session", and SAFE_SECRET_TRAILING_WORDS, which does not contain
+ * "id". That is correct for a session *token*; it is wrong here. This store's
+ * `sessionId` is the key `findSelfReport` matches on, so redacting it does not
+ * protect a secret, it silently breaks lookup: every stored report collapses to
+ * the same "[redacted]" value and no session can ever be found again. The damage
+ * is invisible because the write still succeeds and listing still works.
+ *
+ * Restoring just this one field is deliberately narrower than adding "id" to the
+ * global safe-trailing-word list, which would also stop redacting `tokenId` and
+ * `authId` everywhere else in the app.
+ *
+ * Applied on read as well as write: reports written while this was broken, and
+ * any redacted on the way back out, both go through here.
+ */
 function redactReport(report: ThreadSelfReport): ThreadSelfReport {
   const redacted = redactSecretsDeep(report);
   if (redacted.sessionId === report.sessionId) return redacted;
