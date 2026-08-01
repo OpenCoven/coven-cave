@@ -356,6 +356,7 @@ export const SUITES = {
     "src/components/settings-search.test.ts",
     "src/components/settings-daemon-multihost.test.ts",
     "src/lib/server/daemon-connection-snapshot.test.ts",
+    "src/app/api/daemon/connection/route.test.ts",
     "src/lib/server/daemon-probe.test.ts",
     "src/lib/server/tailscale-devices.test.ts",
     "src/components/settings-familiars-section.test.ts",
