@@ -4,6 +4,7 @@ import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { getXClientId } from "@/lib/server/x-app-config";
 import { xCredentialService } from "@/lib/server/x-credentials";
 import { xOAuthService } from "@/lib/server/x-oauth";
+import { purgeXSourceCache, sweepExpiredXCache } from "@/lib/server/x-sources";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,6 +22,7 @@ function configured(): boolean {
 export async function GET(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
+  await sweepExpiredXCache();
   const connection = xCredentialService.getConnectionStatus();
   const oauth = xOAuthService.flowStatus();
   return NextResponse.json({
@@ -37,5 +39,6 @@ export async function DELETE(req: Request) {
   if (forbidden) return forbidden;
   xOAuthService.cancelAll();
   xCredentialService.disconnect();
+  await purgeXSourceCache();
   return NextResponse.json({ ok: true });
 }

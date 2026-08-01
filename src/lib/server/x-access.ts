@@ -6,6 +6,7 @@ import {
   xCredentialService,
   type XCredentialService,
 } from "./x-credentials.ts";
+import { sweepExpiredXCache } from "./x-sources.ts";
 
 export type XCapability = "research" | "publish";
 
@@ -18,6 +19,7 @@ type XAccessCredentials = Pick<
 export type XAccessDependencies = {
   loadConfig(): Promise<XAccessConfig>;
   credentials: XAccessCredentials;
+  sweepExpiredCache?(): Promise<unknown>;
 };
 
 export type XAccess = {
@@ -62,6 +64,7 @@ export function createXAccess(dependencies: XAccessDependencies): XAccess {
     capability: XCapability,
   ): Promise<void> {
     if (!isValidFamiliarId(familiarId)) throw invalidFamiliarId();
+    await dependencies.sweepExpiredCache?.();
     const config = await dependencies.loadConfig();
     const entry = config.familiars[familiarId];
     const granted = capability === "research"
@@ -132,6 +135,7 @@ export function createXAccess(dependencies: XAccessDependencies): XAccess {
 const xAccess = createXAccess({
   loadConfig,
   credentials: xCredentialService,
+  sweepExpiredCache: sweepExpiredXCache,
 });
 
 export const requireXCapability = xAccess.requireXCapability;

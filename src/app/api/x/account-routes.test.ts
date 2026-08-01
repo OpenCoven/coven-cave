@@ -9,10 +9,13 @@ assert.match(connection, /export async function DELETE\(req: Request\)/);
 assert.match(connection, /rejectNonLocalRequest\(req\)/g);
 assert.match(connection, /xCredentialService\.getConnectionStatus\(\)/);
 assert.match(connection, /xOAuthService\.flowStatus\(\)/);
+assert.equal(connection.match(/await sweepExpiredXCache\(\)/g)?.length, 1);
 assert.match(connection, /oauthFlowId/);
 assert.match(connection, /oauthOutcome/);
 assert.match(connection, /xOAuthService\.cancelAll\(\)/);
 assert.match(connection, /xCredentialService\.disconnect\(\)/);
+assert.match(connection, /await purgeXSourceCache\(\)/);
+assert.doesNotMatch(connection, /runtime.*purge|purge.*runtime/i);
 assert.match(connection, /\{ ok: true \}/);
 assert.doesNotMatch(
   connection,
@@ -29,5 +32,6 @@ assert.match(start, /xOAuthService\.start\(\{ capability, flowId \}\)/);
 assert.match(start, /export async function DELETE\(req: Request\)/);
 assert.match(start, /xOAuthService\.cancel\(flowId\)/);
 assert.doesNotMatch(start, /xOAuthService\.cancel\(\)/);
+assert.equal(start.match(/await sweepExpiredXCache\(\)/g)?.length, 2);
 
 console.log("account-routes.test.ts: ok");

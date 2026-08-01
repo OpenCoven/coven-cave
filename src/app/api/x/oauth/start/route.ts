@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { XApiError } from "@/lib/x-api";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { xOAuthService } from "@/lib/server/x-oauth";
+import { sweepExpiredXCache } from "@/lib/server/x-sources";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -13,6 +14,7 @@ type XOAuthStartBody = { capability?: unknown; flowId?: unknown };
 export async function POST(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
+  await sweepExpiredXCache();
   const parsed = await readJsonBody<XOAuthStartBody>(req, MAX_BODY_BYTES);
   if (!parsed.ok) return parsed.response;
   const capability = parsed.body.capability;
@@ -36,6 +38,7 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
+  await sweepExpiredXCache();
   const parsed = await readJsonBody<{ flowId?: unknown }>(req, MAX_BODY_BYTES);
   if (!parsed.ok) return parsed.response;
   const flowId = parsed.body.flowId;
