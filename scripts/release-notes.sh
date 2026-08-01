@@ -29,7 +29,12 @@ VERSION="$1"
 VER_NUM="${VERSION#v}"
 PREV="${2:-}"
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# The repository this renders from. Defaults to the script's own checkout — the
+# only thing that makes sense in CI and for local backfills — but is overridable
+# so the test suite can point it at a seeded fixture repo instead of depending
+# on this checkout's live tags and CHANGELOG (cave-5yyj1). Same spirit as
+# COVEN_REPO_SLUG below, which already exists for exactly that reason.
+ROOT="${COVEN_RELEASE_NOTES_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 CHANGELOG="$ROOT/CHANGELOG.md"
 REPO="${COVEN_REPO_SLUG:-OpenCoven/coven-cave}"
 

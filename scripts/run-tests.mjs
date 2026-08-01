@@ -1280,6 +1280,7 @@ export const SUITES = {
     "src/server-heap-monitor.test.ts",
     "src/lib/pty-ws-bridge.test.ts",
     "scripts/release-macos-signing.test.mjs",
+    "scripts/release-notes.test.mjs",
     "scripts/generate-latest-json.test.mjs",
     "scripts/stamp-release.test.mjs",
     "src/app/api/daemon/start/route.test.ts",
