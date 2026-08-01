@@ -52,7 +52,8 @@ test("chat-projects no longer carries its own implementation", () => {
   const src = readFileSync(new URL("./chat-projects.ts", import.meta.url), "utf8");
   assert.match(
     src,
-    /export function normalizeChatProjectRoot\(root: string\): string \{\s*return normalizeProjectRoot\(root\);\s*\}/,
+    // Whitespace-tolerant: a reformat should not fail a test about delegation.
+    /export function normalizeChatProjectRoot\s*\(\s*root:\s*string\s*\)\s*:\s*string\s*\{\s*return normalizeProjectRoot\(root\);\s*\}/,
     "it delegates rather than re-implementing trim/backslash/trailing-slash",
   );
   // Narrowly the normalizer idiom — chat-projects legitimately flips
@@ -71,14 +72,22 @@ test("comux no longer carries its own implementation", () => {
   assert.match(src, /normalizeProjectRoot\(raw\)/, "bucketing keys through the shared normalizer");
 });
 
+// No `as SessionRow`: every required field is supplied, so the compiler checks
+// the shape. A cast here would let a future edit build an invalid session and
+// silently change what deriveComuxProjects sees, with no type error.
 function session(over: Partial<SessionRow> & { id: string }): SessionRow {
   return {
-    familiarId: "cody",
+    project_root: "/w/app",
+    harness: "copilot",
+    title: "session",
     status: "idle",
+    exit_code: null,
+    archived_at: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
+    familiarId: "cody",
     ...over,
-  } as SessionRow;
+  };
 }
 
 // comux's normalizer differed from the shared one ONLY by not trimming, and
