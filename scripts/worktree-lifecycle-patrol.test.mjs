@@ -21,6 +21,8 @@ const origin = path.join(fixtureRoot, "origin.git");
 const bin = path.join(fixtureRoot, "bin");
 const gitBin = path.join(fixtureRoot, "git-bin");
 const registeredDrift = path.join(fixtureRoot, "registered-drift");
+const duplicateRegisteredPath = path.join(fixtureRoot, "duplicate-registered");
+const duplicateWorktreeInventory = path.join(fixtureRoot, "duplicate-worktree-inventory");
 
 function run(command, args, cwd, options = {}) {
   return execFileSync(command, args, {
@@ -140,6 +142,11 @@ try {
   git(["worktree", "add", "-q", "--detach", detached, "origin/main"], repo);
   const defaultHead = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
   git(["update-ref", "refs/remotes/origin/trunk", defaultHead], repo);
+  const worktreeInventory = git(["worktree", "list", "--porcelain", "-z"], repo);
+  writeFileSync(
+    duplicateWorktreeInventory,
+    `${worktreeInventory}worktree ${duplicateRegisteredPath}\0HEAD ${oldHead}\0branch refs/heads/feat/old\0\0`,
+  );
 
   const validMetadata = {
     branch: "feat/old",
@@ -201,6 +208,101 @@ try {
       ]),
     );
   }
+  const branchOnlyMetadataTask = {
+    id: "cave-branch-only",
+    status: "closed",
+    title: "Branch only",
+    metadata: {
+      coven: {
+        worktree: {
+          branch: "feat/branch-only",
+          path: branchOnlyPath,
+          owner: "Kitty",
+          purpose: "Removed worktree fixture",
+          disposition: "pr",
+          createdAt: "2026-07-20T12:00:00Z",
+        },
+      },
+    },
+  };
+  writeFileSync(
+    path.join(fixtureRoot, "tasks-oid-only.json"),
+    JSON.stringify([
+      branchOnlyMetadataTask,
+      {
+        id: "cave-oid-owner",
+        status: "open",
+        title: "Investigate captured commit",
+        description: "",
+        notes: "",
+        external_ref: `commit:${branchOnlyHead}`,
+      },
+    ]),
+  );
+  writeFileSync(
+    path.join(fixtureRoot, "tasks-short-oid.json"),
+    JSON.stringify([
+      branchOnlyMetadataTask,
+      {
+        id: "cave-short-oid",
+        status: "open",
+        title: "Investigate abbreviated commit",
+        description: "",
+        notes: branchOnlyHead.slice(0, 12),
+        external_ref: null,
+      },
+    ]),
+  );
+  writeFileSync(
+    path.join(fixtureRoot, "tasks-nul-metadata-path.json"),
+    JSON.stringify([
+      {
+        id: "cave-old",
+        status: "closed",
+        title: "Impossible metadata path",
+        metadata: {
+          coven: {
+            worktree: {
+              branch: "feat/old",
+              path: `${old}\0suffix`,
+              owner: "Kitty",
+              purpose: "Reject impossible fixture path",
+              disposition: "pr",
+              createdAt: "2026-07-20T12:00:00Z",
+            },
+          },
+        },
+      },
+    ]),
+  );
+  writeFileSync(
+    path.join(fixtureRoot, "tasks-nul-exception-path.json"),
+    JSON.stringify([
+      {
+        id: "cave-old",
+        status: "closed",
+        title: "Impossible exception path",
+        metadata: {
+          coven: {
+            worktree: {
+              branch: "feat/old",
+              path: old,
+              owner: "Kitty",
+              purpose: "Reject impossible exception path",
+              disposition: "pr",
+              createdAt: "2026-07-20T12:00:00Z",
+              exception: {
+                owner: "Kitty",
+                reason: "Impossible path fixture",
+                expiresAt: "2026-08-11T00:00:00Z",
+                additionalPaths: [`${old}\0suffix`],
+              },
+            },
+          },
+        },
+      },
+    ]),
+  );
 
   executable(
     path.join(gitBin, "git"),
@@ -209,6 +311,50 @@ DEFAULT_OID=${JSON.stringify(defaultHead)}
 STALE_OID=${JSON.stringify("a".repeat(defaultHead.length))}
 OTHER_OID=${JSON.stringify("b".repeat(defaultHead.length))}
 MARKER_PREFIX=${JSON.stringify(path.join(fixtureRoot, "invalid-default-merge-base-"))}
+
+if [ "\${LIFECYCLE_REQUIRE_SAFE_GIT:-0}" = "1" ]; then
+  case " $* " in
+    *" --no-optional-locks --no-replace-objects -C "*) ;;
+    *)
+      printf '%s\n' 'inventory git omitted read-only global options' >&2
+      exit 92
+      ;;
+  esac
+  for VARIABLE in GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_OPTIONAL_LOCKS GIT_REPLACE_REF_BASE GIT_NO_REPLACE_OBJECTS GIT_GRAFT_FILE GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do
+    eval "VALUE_SET=\\\${$VARIABLE+x}"
+    if [ -n "$VALUE_SET" ]; then
+      printf 'unsafe git environment retained: %s\n' "$VARIABLE" >&2
+      exit 93
+    fi
+  done
+  if [ -n "\${LIFECYCLE_EXPECT_GIT_SSH_COMMAND:-}" ] &&
+     [ "\${GIT_SSH_COMMAND:-}" != "$LIFECYCLE_EXPECT_GIT_SSH_COMMAND" ]; then
+    printf '%s\n' 'git authentication environment was stripped' >&2
+    exit 94
+  fi
+  case " $* " in
+    *" status "*)
+      for REQUIRED in "-c status.relativePaths=false" "-c core.fileMode=true" "-c core.fsmonitor=false" "-c core.untrackedCache=false" "-c core.ignoreStat=false" "--porcelain=v2" "-z" "--untracked-files=all" "--ignored=matching" "--ignore-submodules=none" "--no-renames"; do
+        case " $* " in
+          *" $REQUIRED "*) ;;
+          *)
+            printf '%s\n' 'git status omitted configuration-independent safety flags' >&2
+            exit 95
+            ;;
+        esac
+      done
+      ;;
+  esac
+fi
+
+case " $* " in
+  *" worktree list --porcelain -z "*)
+    if [ "\${LIFECYCLE_DUPLICATE_REGISTERED_REF:-0}" = "1" ]; then
+      cat ${JSON.stringify(duplicateWorktreeInventory)}
+      exit 0
+    fi
+    ;;
+esac
 
 case " $* " in
   *" ls-remote --symref origin HEAD "*)
@@ -486,12 +632,44 @@ fi
 
 case "$*" in
   *"/actions/runs"*)
+    WORKFLOW_STATUS=
+    case " $* " in
+      *" status=queued "*) WORKFLOW_STATUS=queued ;;
+      *" status=in_progress "*) WORKFLOW_STATUS=in_progress ;;
+      *" status=requested "*) WORKFLOW_STATUS=requested ;;
+      *" status=waiting "*) WORKFLOW_STATUS=waiting ;;
+      *" status=pending "*) WORKFLOW_STATUS=pending ;;
+    esac
+    [ -n "$WORKFLOW_STATUS" ] || fail "workflow inventory omitted an exact status"
     if [ "\${LIFECYCLE_BAD_WORKFLOW:-0}" = "1" ]; then
       printf '%s\n' '[{"total_count":1,"workflow_runs":[{}]}]'
     elif [ "\${LIFECYCLE_PARTIAL_WORKFLOW:-0}" = "1" ]; then
-      printf '%s\n' '[{"total_count":2,"workflow_runs":[{"head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run"}]}]'
+      printf '%s\n' '[{"total_count":2,"workflow_runs":[{"id":9001,"status":"'"$WORKFLOW_STATUS"'","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run"}]}]'
     elif [ "\${LIFECYCLE_CAPPED_WORKFLOW:-0}" = "1" ]; then
       printf '%s\n' '[{"total_count":1000,"workflow_runs":[]}]'
+    elif [ "\${LIFECYCLE_DUPLICATE_WORKFLOW_ID:-0}" = "1" ] &&
+         [ "$WORKFLOW_STATUS" = "queued" ]; then
+      printf '%s\n' '[{"total_count":2,"workflow_runs":[{"id":9001,"status":"queued","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run/9001"},{"id":9001,"status":"queued","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run/9001"}]}]'
+    elif [ "\${LIFECYCLE_MALFORMED_WORKFLOW_ID:-0}" = "1" ] &&
+         [ "$WORKFLOW_STATUS" = "queued" ]; then
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":0,"status":"queued","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run/invalid"}]}]'
+    elif [ "\${LIFECYCLE_MISMATCHED_WORKFLOW_STATUS:-0}" = "1" ] &&
+         [ "$WORKFLOW_STATUS" = "queued" ]; then
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":9002,"status":"in_progress","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run/9002"}]}]'
+    elif [ "\${LIFECYCLE_CONFLICTING_WORKFLOW_STATUS:-0}" = "1" ] &&
+         { [ "$WORKFLOW_STATUS" = "queued" ] || [ "$WORKFLOW_STATUS" = "in_progress" ]; }; then
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":9003,"status":"'"$WORKFLOW_STATUS"'","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run/9003"}]}]'
+    elif [ "\${LIFECYCLE_UNSTABLE_WORKFLOW:-0}" = "1" ] &&
+         [ "$WORKFLOW_STATUS" = "queued" ]; then
+      WORKFLOW_MARKER=${JSON.stringify(
+        path.join(fixtureRoot, "workflow-sweep-"),
+      )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
+      if [ -e "$WORKFLOW_MARKER" ]; then
+        printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":9004,"status":"queued","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run/9004"}]}]'
+      else
+        : > "$WORKFLOW_MARKER"
+        printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
+      fi
     else
       printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
     fi
@@ -517,7 +695,15 @@ if [ "\${LIFECYCLE_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "drift
   touch "${path.join(fixtureRoot, "drift-once")}"
   git -C "${repo}" branch feat/drift origin/main
 fi
-if [ "\${LIFECYCLE_BAD_TASKS:-0}" = "1" ]; then
+if [ "\${LIFECYCLE_OID_ONLY_TASK:-0}" = "1" ]; then
+  cat ${JSON.stringify(path.join(fixtureRoot, "tasks-oid-only.json"))}
+elif [ "\${LIFECYCLE_SHORT_OID_TASK:-0}" = "1" ]; then
+  cat ${JSON.stringify(path.join(fixtureRoot, "tasks-short-oid.json"))}
+elif [ "\${LIFECYCLE_NUL_METADATA_PATH:-0}" = "1" ]; then
+  cat ${JSON.stringify(path.join(fixtureRoot, "tasks-nul-metadata-path.json"))}
+elif [ "\${LIFECYCLE_NUL_EXCEPTION_PATH:-0}" = "1" ]; then
+  cat ${JSON.stringify(path.join(fixtureRoot, "tasks-nul-exception-path.json"))}
+elif [ "\${LIFECYCLE_BAD_TASKS:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-bad","status":"open","title":[]}]'
 elif [ -n "\${LIFECYCLE_BAD_METADATA_DATE_CASE:-}" ]; then
   cat "${path.join(fixtureRoot, "metadata-")}\${LIFECYCLE_BAD_METADATA_DATE_CASE}.json"
@@ -567,6 +753,8 @@ if [ "$1" = "sessions" ] && [ "$2" = "--json" ]; then
     exit 23
   elif [ "\${LIFECYCLE_BAD_SESSIONS:-0}" = "1" ]; then
     printf '%s\n' '{"sessions":[{"id":[],"project_root":"${old}","status":"running"}]}'
+  elif [ "\${LIFECYCLE_NUL_SESSION_ROOT:-0}" = "1" ]; then
+    printf '%s\n' '{"sessions":[{"id":"session-impossible","project_root":"${old}\\u0000suffix","status":"running"}]}'
   elif [ "\${LIFECYCLE_KILLED_SESSION:-0}" = "1" ]; then
     printf '%s\n' '{"sessions":[{"id":"session-fixture","project_root":"${old}","status":"killed"}]}'
   elif [ "\${LIFECYCLE_STOPPED_SESSION:-0}" = "1" ]; then
@@ -637,6 +825,8 @@ exit 0
       "LIFECYCLE_MALFORMED_DEFAULT_TRACKING",
       "LIFECYCLE_MALFORMED_LIVE_MAIN_CASE",
       "LIFECYCLE_DEFAULT_TRACKING_MUTATION",
+      "LIFECYCLE_DUPLICATE_REGISTERED_REF",
+      "LIFECYCLE_REQUIRE_SAFE_GIT",
     ].some(
       (name) =>
         extraEnv[name] === "1" ||
@@ -836,6 +1026,182 @@ exit 0
     "the routine report does not append the legacy combined budget block",
   );
 
+  const safetyRegressionFailures = [];
+  const verifySafetyRegression = (name, check) => {
+    try {
+      check();
+    } catch (error) {
+      safetyRegressionFailures.push(
+        `${name}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  };
+
+  verifySafetyRegression("exact OID Bead ownership", () => {
+    const oidOwnerReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_OID_ONLY_TASK: "1" }),
+    );
+    const oidOwnedBranch = oidOwnerReport.items.find(
+      (item) => item.branch === "feat/branch-only",
+    );
+    assert.equal(oidOwnedBranch.lane, "active");
+    assert.deepEqual(oidOwnedBranch.taskIds, ["cave-oid-owner"]);
+  });
+
+  verifySafetyRegression("abbreviated OID is not Bead ownership", () => {
+    const shortOidReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_SHORT_OID_TASK: "1" }),
+    );
+    const shortOidBranch = shortOidReport.items.find(
+      (item) => item.branch === "feat/branch-only",
+    );
+    assert.equal(shortOidBranch.lane, "retire-after-gate");
+    assert.deepEqual(shortOidBranch.taskIds, []);
+  });
+
+  verifySafetyRegression("duplicate registered local branch ref", () => {
+    const duplicateRefReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_DUPLICATE_REGISTERED_REF: "1" }),
+    );
+    const duplicateRefItems = duplicateRefReport.items.filter(
+      (item) => item.ref === "refs/heads/feat/old",
+    );
+    assert.equal(duplicateRefItems.length, 2);
+    for (const item of duplicateRefItems) {
+      assert.equal(item.lane, "uncertain");
+      assert.match(
+        item.probeErrors.join("\n"),
+        /registered local branch ref.*more than one worktree/i,
+      );
+    }
+  });
+
+  verifySafetyRegression("sanitized read-only Git probes", () => {
+    const authSentinel = "ssh -o BatchMode=yes";
+    const safeGitReport = JSON.parse(
+      patrol(["--json"], {
+        LIFECYCLE_REQUIRE_SAFE_GIT: "1",
+        LIFECYCLE_EXPECT_GIT_SSH_COMMAND: authSentinel,
+        GIT_SSH_COMMAND: authSentinel,
+        GIT_DIR: origin,
+        GIT_WORK_TREE: live,
+        GIT_COMMON_DIR: path.join(fixtureRoot, "hostile-common"),
+        GIT_INDEX_FILE: path.join(fixtureRoot, "hostile-index"),
+        GIT_OBJECT_DIRECTORY: path.join(fixtureRoot, "hostile-objects"),
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(fixtureRoot, "hostile-alternates"),
+        GIT_OPTIONAL_LOCKS: "1",
+        GIT_REPLACE_REF_BASE: "refs/hostile-replace",
+        GIT_NO_REPLACE_OBJECTS: "0",
+        GIT_GRAFT_FILE: path.join(fixtureRoot, "hostile-grafts"),
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "core.repositoryFormatVersion",
+        GIT_CONFIG_VALUE_0: "999",
+        GIT_CONFIG_PARAMETERS: "'status.showUntrackedFiles'='no'",
+        GIT_CONFIG_GLOBAL: path.join(fixtureRoot, "hostile-global-config"),
+        GIT_CONFIG_SYSTEM: path.join(fixtureRoot, "hostile-system-config"),
+        GIT_CONFIG_NOSYSTEM: "1",
+      }),
+    );
+    const safeGitOld = safeGitReport.items.find((item) => item.branch === "feat/old");
+    assert.equal(
+      safeGitOld.lane,
+      "retire-after-gate",
+      JSON.stringify({
+        probeErrors: safeGitOld.probeErrors,
+        metadataErrors: safeGitOld.metadataErrors,
+        reasons: safeGitOld.reasons,
+      }),
+    );
+    assert.deepEqual(
+      safeGitReport.items
+        .find((item) => item.branch === "feat/live")
+        .changes.map((line) => line.replace(/^\?\s+/, "")),
+      ["uncommitted.txt"],
+    );
+  });
+
+  verifySafetyRegression("NUL Coven session root", () => {
+    const nulSessionReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_NUL_SESSION_ROOT: "1" }),
+    );
+    const nulSessionOld = nulSessionReport.items.find(
+      (item) => item.branch === "feat/old",
+    );
+    assert.equal(nulSessionOld.lane, "uncertain");
+    assert.match(
+      nulSessionOld.probeErrors.join("\n"),
+      /Coven sessions returned malformed data/,
+    );
+  });
+
+  verifySafetyRegression("NUL structured metadata path", () => {
+    const nulMetadataReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_NUL_METADATA_PATH: "1" }),
+    );
+    const nulMetadataOld = nulMetadataReport.items.find(
+      (item) => item.branch === "feat/old",
+    );
+    assert.equal(nulMetadataOld.lane, "uncertain");
+    assert.match(
+      nulMetadataOld.metadataErrors.join("\n"),
+      /path must be absolute/i,
+    );
+  });
+
+  verifySafetyRegression("NUL exception path", () => {
+    const nulExceptionReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_NUL_EXCEPTION_PATH: "1" }),
+    );
+    const nulExceptionOld = nulExceptionReport.items.find(
+      (item) => item.branch === "feat/old",
+    );
+    assert.equal(nulExceptionOld.lane, "uncertain");
+    assert.match(
+      nulExceptionOld.metadataErrors.join("\n"),
+      /exception additionalPaths must contain absolute paths/i,
+    );
+  });
+
+  verifySafetyRegression("replacement refs cannot prove ancestry", () => {
+    const replacementTree = git(["show", "-s", "--format=%T", defaultHead], repo).trim();
+    const replacementCommit = git(
+      ["commit-tree", replacementTree, "-p", oldHead, "-m", "replacement ancestry lie"],
+      repo,
+      {
+        env: {
+          ...process.env,
+          GIT_AUTHOR_DATE: "2026-07-22T12:00:00Z",
+          GIT_COMMITTER_DATE: "2026-07-22T12:00:00Z",
+        },
+      },
+    ).trim();
+    git(["replace", "-f", defaultHead, replacementCommit], repo);
+    try {
+      git(["merge-base", "--is-ancestor", oldHead, defaultHead], repo);
+      assert.throws(
+        () =>
+          git(
+            ["--no-replace-objects", "merge-base", "--is-ancestor", oldHead, defaultHead],
+            repo,
+          ),
+        "the fixture must lie only when replacement refs are honored",
+      );
+      const replacementReport = JSON.parse(
+        patrol(["--json"], { LIFECYCLE_CLOSED_UNMERGED: "1" }),
+      );
+      assert.equal(
+        replacementReport.items.find((item) => item.branch === "feat/old").lane,
+        "recovery",
+      );
+    } finally {
+      git(["replace", "-d", defaultHead], repo);
+    }
+  });
+
+  if (safetyRegressionFailures.length > 0) {
+    assert.fail(`Task 2 safety regressions:\n${safetyRegressionFailures.join("\n")}`);
+  }
+
   for (const [environment, expectedReason] of [
     ["LIFECYCLE_LSOF_FAIL", /process cwd inventory unavailable/],
     ["LIFECYCLE_LSOF_MALFORMED", /process cwd inventory returned malformed or partial data/],
@@ -845,6 +1211,11 @@ exit 0
     ["LIFECYCLE_BAD_WORKFLOW", /workflow inventory returned malformed data/],
     ["LIFECYCLE_PARTIAL_WORKFLOW", /workflow inventory returned partial data/],
     ["LIFECYCLE_CAPPED_WORKFLOW", /workflow inventory reached GitHub's 1000-run cap/],
+    ["LIFECYCLE_DUPLICATE_WORKFLOW_ID", /workflow inventory.*duplicate.*ID/i],
+    ["LIFECYCLE_MALFORMED_WORKFLOW_ID", /workflow inventory returned malformed data/i],
+    ["LIFECYCLE_MISMATCHED_WORKFLOW_STATUS", /workflow inventory returned malformed data/i],
+    ["LIFECYCLE_CONFLICTING_WORKFLOW_STATUS", /workflow inventory.*conflicting.*status/i],
+    ["LIFECYCLE_UNSTABLE_WORKFLOW", /workflow inventory changed between verification sweeps/i],
     ["LIFECYCLE_BAD_TASKS", /Beads inventory returned malformed data/],
     ["LIFECYCLE_PR_CAP", /exact-head PR search.*(?:cap|1000)/i],
     [

@@ -241,7 +241,7 @@ function reviewAfterReasons(metadata: WorktreeLifecycleMetadata, nowMs: number):
 export function normalizeAbsoluteWorktreePath(
   candidate: string | null | undefined,
 ): string | null {
-  if (typeof candidate !== "string") return null;
+  if (typeof candidate !== "string" || candidate.includes("\0")) return null;
   const trimmed = candidate.trim();
   if (trimmed.length === 0 || !isAbsolute(trimmed)) return null;
   try {
