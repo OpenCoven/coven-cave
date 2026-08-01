@@ -51,7 +51,34 @@ async function requestProjects(familiarId: string | null): Promise<ProjectsPaylo
 function normalizePayload(payload: ProjectsPayload): ProjectsPayload {
   if (payload.ok === false) return payload;
   const projects = Array.isArray(payload.projects) ? payload.projects : [];
+  followRootMoves(projects);
   return { ...payload, projects: sortProjectsAlphabetically(projects) };
+}
+
+/**
+ * Follow any root the server re-normalized, once (cave-2x1em).
+ *
+ * This is the single choke point every project consumer funnels through, which
+ * is why the migration hangs here rather than in a component: 20+ call sites
+ * would otherwise each need to remember to run it.
+ *
+ * Deliberately NOT awaited. The payload is already correct — the server serves
+ * the expanded root — so nothing on screen waits for a re-key of local avatar
+ * and override records. A failure leaves the old keys in place and the next
+ * load retries; the migration is idempotent and reports 0 when there is
+ * nothing to do.
+ */
+let rootMoveMigration: Promise<unknown> | null = null;
+function followRootMoves(projects: readonly CaveProject[]): void {
+  if (typeof window === "undefined") return;
+  if (rootMoveMigration) return; // one at a time; a concurrent fetch is not a second migration
+  if (!projects.some((project) => project.legacyRoot)) return;
+  rootMoveMigration = import("./project-root-migration.ts")
+    .then((mod) => mod.migrateProjectRootKeys(projects))
+    .catch(() => 0)
+    .finally(() => {
+      rootMoveMigration = null;
+    });
 }
 
 function generationKey(familiarId: string | null): string {
