@@ -60,6 +60,25 @@ assert.match(
   "a single-familiar install gets an explanation, not an empty popover",
 );
 
+// ARIA: the trigger promises a menu, so the rows must live in one. menuitems
+// outside a menu container are invalid, and a plain button among them makes
+// the promise unreliable for screen readers (Copilot review, PR #4127).
+assert.match(
+  participants,
+  /<PopoverBody role="menu" ariaLabel="Add a familiar to this chat">/,
+  "the roster body is a menu, matching the trigger's aria-haspopup",
+);
+assert.doesNotMatch(
+  participants,
+  /semantic="button"/,
+  "every row keeps menuitem semantics; non-actionable rows use `disabled` instead",
+);
+assert.match(
+  participants,
+  /aria-haspopup="menu"/,
+  "the trigger still advertises the menu it opens",
+);
+
 // ── Promotion carries the thread and routes deterministically ───────────────
 assert.match(
   chatView,

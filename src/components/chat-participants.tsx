@@ -80,13 +80,17 @@ export function ChatParticipants({
         minWidth={244}
         ariaLabel="Add a familiar to this chat"
       >
-        <PopoverBody>
+        {/* role="menu" matches the trigger's aria-haspopup and gives the
+            menuitem rows a container to live in — menuitems outside a menu are
+            invalid ARIA, and mixing plain buttons among them makes the
+            trigger's promise unreliable for screen readers. Non-actionable
+            rows stay menuitems and lean on `disabled`. */}
+        <PopoverBody role="menu" ariaLabel="Add a familiar to this chat">
           <PopoverLabel>In this chat</PopoverLabel>
           <PopoverItem
             leading={<FamiliarIcon familiar={familiar} size="sm" />}
             title={`${familiar.display_name} is this chat's familiar`}
             disabled
-            semantic="button"
           >
             <span className="cave-chat-participants__row">
               <span className="truncate">{familiar.display_name}</span>
@@ -95,9 +99,7 @@ export function ChatParticipants({
           </PopoverItem>
           <PopoverLabel>Add to the conversation</PopoverLabel>
           {addable.length === 0 ? (
-            <PopoverItem disabled semantic="button">
-              No other familiars yet
-            </PopoverItem>
+            <PopoverItem disabled>No other familiars yet</PopoverItem>
           ) : (
             addable.map((other) => (
               <PopoverItem
