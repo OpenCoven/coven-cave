@@ -12,13 +12,21 @@ import {
 } from "node:fs";
 import { devNull } from "node:os";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { maintenanceGateRoot } from "./maintenance-gate.mjs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  evaluateRetirementApplyOutcome,
+  renderApplyReport,
+  runRetirementApply,
+} from "./worktree-lifecycle-patrol.ts";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(sourceRoot, "scripts", "worktree-lifecycle-patrol.ts");
-const fixtureRoot = mkdtempSync(path.join(sourceRoot, ".worktree-lifecycle-fixture-"));
+const fixtureRoot = realpathSync(
+  mkdtempSync(path.join(tmpdir(), "worktree-lifecycle-fixture-")),
+);
 const repo = path.join(fixtureRoot, "repo");
 const origin = path.join(fixtureRoot, "origin.git");
 const bin = path.join(fixtureRoot, "bin");
@@ -2728,20 +2736,275 @@ exit 0
     "worktree-lifecycle-patrol: --max-retire must be an integer from 1 through 10",
   );
 
+  const applyOptions = {
+    repo: "OpenCoven/coven-cave",
+    root: repo,
+    json: true,
+    nowMs: Date.parse("2026-08-10T22:00:00Z"),
+    apply: true,
+    maxRetire: 3,
+  };
+  const applyInventory = { items: report.items };
+  const acquiredHandle = {
+    root: repo,
+    ownerId: "fixture-owner",
+    generation: 7,
+    token: "fixture-token",
+  };
+  const retiredCandidate = report.items.find((item) => item.branch === "feat/old");
+  const blockedCandidate = report.items.find((item) => item.branch === "feat/branch-only");
+  assert.ok(retiredCandidate, "fixture report includes feat/old");
+  assert.ok(blockedCandidate, "fixture report includes feat/branch-only");
+  const fakeRetirement = {
+    retired: [retiredCandidate],
+    blocked: [],
+    cleanupReady: [],
+    attempts: [],
+    remoteDeletionProposals: [],
+  };
+  const blockedRetirement = {
+    ...fakeRetirement,
+    blocked: [
+      {
+        branch: blockedCandidate.branch,
+        ref: blockedCandidate.ref,
+        oid: blockedCandidate.head,
+        reason: "[branch-only]",
+        partial: false,
+      },
+    ],
+    cleanupReady: [retiredCandidate],
+  };
+  assert.ok(retiredCandidate.remoteRef, "fixture report includes feat/old remote ref");
+  assert.ok(retiredCandidate.mergedPr, "fixture report includes feat/old merged PR");
+
+  assert.deepEqual(evaluateRetirementApplyOutcome({ retirement: fakeRetirement }), {
+    ok: true,
+    status: 0,
+  });
+  assert.deepEqual(evaluateRetirementApplyOutcome({ retirement: blockedRetirement }), {
+    ok: false,
+    status: 1,
+    reason: "retirement-blocked",
+  });
+  assert.deepEqual(
+    evaluateRetirementApplyOutcome({
+      retirement: fakeRetirement,
+      warning: "failed to release maintenance gate: fixture release failed",
+    }),
+    {
+      ok: false,
+      status: 1,
+      reason: "maintenance-gate-release-failed",
+    },
+  );
+  assert.deepEqual(
+    evaluateRetirementApplyOutcome({
+      retirement: blockedRetirement,
+      warning: "failed to release maintenance gate: fixture release failed",
+    }),
+    {
+      ok: false,
+      status: 1,
+      reason: "retirement-blocked-and-maintenance-gate-release-failed",
+    },
+  );
+  const applyText = renderApplyReport(
+    report,
+    blockedRetirement,
+    "failed to release maintenance gate: fixture release failed",
+  );
+  assert.doesNotMatch(
+    applyText,
+    /Report only\. No worktree or branch was changed\./,
+    "human apply output omits the false read-only footer",
+  );
+  assert.match(applyText, /Apply result: failed \(retirement-blocked-and-maintenance-gate-release-failed\)/);
+  assert.match(applyText, /Retired: 1/);
+  assert.match(applyText, /Blocked: 1/);
+  assert.match(
+    applyText,
+    new RegExp(`Cleanup-ready remaining: ${report.counts["retire-after-gate"]}`),
+    "the aggregate remaining count comes from the post-apply inventory",
+  );
+  assert.match(applyText, /Locally retired \(1\)/);
+  assert.ok(
+    applyText.includes(`- feat/old @ ${retiredCandidate.path} (oid ${retiredCandidate.head})`),
+    "human apply output enumerates locally retired units with path and exact OID",
+  );
+  assert.match(applyText, /Blocked during apply \(1\)/);
+  assert.ok(
+    applyText.includes(`- [BLOCKED] feat/branch-only (oid ${blockedCandidate.head}): [branch-only]`),
+    "human apply output marks fully blocked entries textually",
+  );
+  assert.match(applyText, /Cleanup-ready but not processed \(1\)/);
+  assert.ok(
+    applyText.includes(`- feat/old @ ${retiredCandidate.path} (oid ${retiredCandidate.head})`),
+    "human apply output enumerates cleanup-ready remaining units with exact OID",
+  );
+  assert.match(applyText, /Remote-deletion proposals \(0\): none/);
+  assert.match(applyText, /Warning: failed to release maintenance gate: fixture release failed/);
+
+  const inventoryDrivenRemainingText = renderApplyReport(
+    {
+      ...report,
+      counts: {
+        ...report.counts,
+        "retire-after-gate": 7,
+      },
+    },
+    {
+      ...fakeRetirement,
+      cleanupReady: [],
+    },
+  );
+  assert.match(
+    inventoryDrivenRemainingText,
+    /Cleanup-ready remaining: 7/,
+    "blocked or otherwise still-eligible units are counted from post-apply inventory",
+  );
+  assert.match(
+    inventoryDrivenRemainingText,
+    /Cleanup-ready but not processed \(0\): none/,
+    "the unprocessed section remains limited to candidates skipped by the batch bound",
+  );
+
+  const partialBlockedRetirement = {
+    retired: [retiredCandidate],
+    blocked: [
+      {
+        branch: blockedCandidate.branch,
+        ref: blockedCandidate.ref,
+        oid: blockedCandidate.head,
+        reason: "fixture partial failure",
+        partial: true,
+      },
+    ],
+    cleanupReady: [blockedCandidate],
+    attempts: [],
+    remoteDeletionProposals: [
+      {
+        ref: retiredCandidate.remoteRef.ref,
+        oid: retiredCandidate.remoteRef.oid,
+        localRetirementOid: retiredCandidate.head,
+        mergedPr: retiredCandidate.mergedPr.number,
+        reason: "remote-deletion-requires-separate-authorization",
+      },
+    ],
+  };
+  const detailedApplyText = renderApplyReport(report, partialBlockedRetirement);
+  assert.doesNotMatch(
+    detailedApplyText,
+    /Report only\. No worktree or branch was changed\./,
+    "human apply output never shows the read-only footer",
+  );
+  assert.ok(
+    detailedApplyText.includes(
+      `- [PARTIAL] feat/branch-only (oid ${blockedCandidate.head}): fixture partial failure`,
+    ),
+    "human apply output distinguishes partial blocks textually and includes the exact reason",
+  );
+  assert.ok(
+    detailedApplyText.includes(
+      `- feat/branch-only [branch-only] (oid ${blockedCandidate.head})`,
+    ),
+    "human apply output enumerates cleanup-ready but not processed units",
+  );
+  assert.match(detailedApplyText, /Remote-deletion proposals \(1\)/);
+  assert.ok(
+    detailedApplyText.includes(
+      `- ${retiredCandidate.remoteRef.ref} remote oid ${retiredCandidate.remoteRef.oid}; local retirement oid ${retiredCandidate.head}; merged PR #${retiredCandidate.mergedPr.number}; separate authorization required before any remote deletion`,
+    ),
+    "human apply output presents remote deletion proposals as proposals only",
+  );
+
+  {
+    let releasedHandle = null;
+    let createOpsHandle = null;
+    const result = runRetirementApply(applyOptions, applyInventory, {
+      acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+      releaseMaintenanceGate: (handle) => {
+        releasedHandle = handle;
+        return { ok: true };
+      },
+      createGitRetirementOperations: ({ gateHandle }) => {
+        createOpsHandle = gateHandle;
+        return { fixture: "ops" };
+      },
+      retireLifecycleUnits: ({ operations }) => {
+        assert.deepEqual(operations, { fixture: "ops" });
+        return fakeRetirement;
+      },
+    });
+    assert.deepEqual(result, { retirement: fakeRetirement });
+    assert.equal(createOpsHandle, acquiredHandle);
+    assert.equal(
+      releasedHandle,
+      acquiredHandle,
+      "runRetirementApply releases the exact gate handle it acquired",
+    );
+  }
+
+  {
+    const result = runRetirementApply(applyOptions, applyInventory, {
+      acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+      releaseMaintenanceGate: () => ({
+        ok: false,
+        reason: "fixture release failed",
+      }),
+      createGitRetirementOperations: () => ({ fixture: "ops" }),
+      retireLifecycleUnits: () => fakeRetirement,
+    });
+    assert.equal(result.retirement, fakeRetirement);
+    assert.equal(
+      result.warning,
+      "failed to release maintenance gate: fixture release failed",
+      "runRetirementApply preserves a completed retirement result when release fails",
+    );
+  }
+
+  assert.throws(
+    () =>
+      runRetirementApply(applyOptions, applyInventory, {
+        acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+        releaseMaintenanceGate: () => ({
+          ok: false,
+          reason: "fixture release failed",
+        }),
+        createGitRetirementOperations: () => ({ fixture: "ops" }),
+        retireLifecycleUnits: () => {
+          throw new Error("fixture retirement failed");
+        },
+      }),
+    /fixture retirement failed; failed to release maintenance gate: fixture release failed/,
+    "runRetirementApply preserves both retirement and release failures",
+  );
+
   const gateRoot = maintenanceGateRoot(repo);
   const applyResult = patrolResult(["--apply", "--json"]);
   assert.equal(applyResult.status, 2);
   assert.equal(applyResult.stderr.trim(), "");
-  assert.deepEqual(JSON.parse(applyResult.stdout), {
-    ok: false,
-    reason: "gate-incomplete",
-    missingPlanes: ["coven", "beads", "github"],
-    local: { enforced: true, source: "scripts/maintenance-gate.mjs" },
-    coven: { enforced: false, source: "cave-wqa0b.2" },
-    beads: { enforced: false, source: "cave-wqa0b.3" },
-    github: { enforced: false, source: "cave-wqa0b.4" },
-    complete: false,
+  const applyJson = JSON.parse(applyResult.stdout);
+  assert.equal(applyJson.ok, false);
+  assert.equal(applyJson.reason, "gate-incomplete");
+  assert.deepEqual(applyJson.missingPlanes, ["coven", "beads", "github"]);
+  assert.deepEqual(applyJson.local, {
+    enforced: true,
+    source: "scripts/maintenance-gate.mjs",
   });
+  assert.deepEqual(applyJson.coven, { enforced: false, source: "cave-wqa0b.2" });
+  assert.deepEqual(applyJson.beads, { enforced: false, source: "cave-wqa0b.3" });
+  assert.deepEqual(applyJson.github, { enforced: false, source: "cave-wqa0b.4" });
+  assert.equal(applyJson.complete, false);
+  assert.equal(applyJson.generatedAt, report.generatedAt);
+  assert.equal(applyJson.inventoryFingerprint, report.inventoryFingerprint);
+  assert.deepEqual(applyJson.counts, report.counts);
+  assert.deepEqual(applyJson.budgets, report.budgets);
+  assert.deepEqual(
+    applyJson.items,
+    report.items,
+    "--apply --json retains the normal read-only lifecycle inventory before reporting incomplete capabilities",
+  );
   assert.equal(
     git(["worktree", "list", "--porcelain"], repo),
     beforeWorktrees,

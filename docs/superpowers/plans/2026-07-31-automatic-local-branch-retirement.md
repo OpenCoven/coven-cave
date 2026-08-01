@@ -1110,7 +1110,7 @@ git commit -S -m "feat(worktrees): add fenced local retirement engine"
 - Modify: `scripts/worktree-lifecycle-patrol.ts`
 - Modify: `scripts/worktree-lifecycle-patrol.test.mjs`
 
-- [ ] **Step 1: Pin incomplete cross-system capabilities**
+- [x] **Step 1: Pin incomplete cross-system capabilities**
 
 Add this assertion to `scripts/maintenance-gate.test.mjs`:
 
@@ -1149,7 +1149,7 @@ assert.equal(
 );
 ```
 
-- [ ] **Step 2: Run tests and verify capability/apply APIs are absent**
+- [x] **Step 2: Run tests and verify capability/apply APIs are absent**
 
 Run:
 
@@ -1161,7 +1161,7 @@ node scripts/worktree-lifecycle-patrol.test.mjs
 Expected: FAIL on missing `repositoryMaintenanceCapabilities` and unsupported
 `--apply`.
 
-- [ ] **Step 3: Export the honest capability report**
+- [x] **Step 3: Export the honest capability report**
 
 Add to `scripts/maintenance-gate.mjs`:
 
@@ -1181,7 +1181,7 @@ Do not add an environment override or command-line bypass. The activation plan
 must replace each false value with evidence from the released enforcement
 integration, not flip constants without integration tests.
 
-- [ ] **Step 4: Add apply arguments and fail before gate acquisition**
+- [x] **Step 4: Add apply arguments and fail before gate acquisition**
 
 Extend CLI options:
 
@@ -1228,7 +1228,7 @@ are incomplete.
 the tested adapter with `createGitRetirementOperations()`, and release only its
 matching handle in `finally`.
 
-- [ ] **Step 5: Run gate and patrol tests**
+- [x] **Step 5: Run gate and patrol tests**
 
 Run:
 
@@ -1240,7 +1240,7 @@ node scripts/worktree-lifecycle-retirement.test.mjs
 
 Expected: all print `: ok`; apply exits 2 and leaves the fixture unchanged.
 
-- [ ] **Step 6: Commit fail-closed apply orchestration**
+- [x] **Step 6: Commit fail-closed apply orchestration**
 
 ```bash
 git add scripts/maintenance-gate.mjs scripts/maintenance-gate.test.mjs scripts/worktree-lifecycle-patrol.ts scripts/worktree-lifecycle-patrol.test.mjs
