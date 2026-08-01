@@ -57,6 +57,18 @@ assert.match(
   /onSelect=\{\(\) => pick\(entry\)\}/,
   "both sections go through the same recording path",
 );
+// Typing a name and pressing Enter is a pick too — routing it around pick()
+// meant frecency never learned from keyboard selection (PR #4142 review).
+assert.match(
+  picker,
+  /const match = projectForPickerQuery\(sortedProjects, query\);\s*if \(!match\) return;[\s\S]{0,200}?pick\(match\);/,
+  "the filter input's Enter path records the pick as well",
+);
+assert.doesNotMatch(
+  picker,
+  /if \(!match\) return;\s*onChange\(match\.id\);/,
+  "Enter must not bypass pick() straight to onChange",
+);
 // One renderer for both sections: a divergence here is how the Recent rows
 // silently stop recording, or lose the access/selected affordances.
 assert.equal(

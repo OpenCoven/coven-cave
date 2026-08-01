@@ -122,6 +122,11 @@ test("with no history there is no Recent section and the list is untouched", () 
 
 // This is the design's stated tradeoff: a list that reorders under the cursor
 // is worse than one that never learns.
+test("`all` is the caller's own array by reference, not a copy", () => {
+  const { all } = rankProjectsByFrecency(LIST, {}, NOW);
+  assert.equal(all, LIST, "no defensive copy — the contract is pass-through, enforced readonly");
+});
+
 test("the full list is NEVER reordered or filtered — Recent is additive", () => {
   const store: FrecencyStore = {
     "/w/delta": { picks: 10, lastPickedAt: NOW },
@@ -217,7 +222,9 @@ test("corrupt or hostile stored values degrade to no history", () => {
     ]) {
       localStorage.setItem("cave:project-frecency:v1", bad);
       const store = loadFrecencyStore();
-      assert.deepEqual(store, {}, `\`${bad}\` yields no history`);
+      // Keys, not deepEqual({}): the store is intentionally null-prototype,
+      // and deepStrictEqual compares prototypes.
+      assert.deepEqual(Object.keys(store), [], `\`${bad}\` yields no history`);
     }
   });
 });
@@ -253,6 +260,70 @@ test("a storage write failure does not throw at the call site", () => {
 test("with no localStorage at all (SSR) everything is inert", () => {
   assert.deepEqual(loadFrecencyStore(), {});
   assert.doesNotThrow(() => saveFrecencyStore({ "/w/a": { picks: 1, lastPickedAt: NOW } }));
+});
+
+// localStorage is attacker-reachable in a compromised renderer, and assigning
+// a "__proto__" key onto a plain object literal mutates the prototype rather
+// than adding an own property.
+test("a hostile __proto__ key cannot pollute the prototype", () => {
+  withLocalStorage(() => {
+    localStorage.setItem(
+      "cave:project-frecency:v1",
+      '{"__proto__": {"picks": 1, "lastPickedAt": 1, "polluted": true}}',
+    );
+    const store = loadFrecencyStore();
+    assert.equal(({} as Record<string, unknown>).polluted, undefined, "Object.prototype is clean");
+    assert.equal(Object.getPrototypeOf(store), null, "the store has no prototype to pollute");
+  });
+});
+
+test("keys written by an older build are re-normalized so their history counts", () => {
+  withLocalStorage(() => {
+    // A raw root with a trailing slash would never match rootKey() at ranking
+    // time, so the history would be silently ignored.
+    localStorage.setItem(
+      "cave:project-frecency:v1",
+      JSON.stringify({ "/w/alpha/": { picks: 4, lastPickedAt: NOW } }),
+    );
+    const store = loadFrecencyStore();
+    assert.deepEqual(Object.keys(store), ["/w/alpha"]);
+    const { recent } = rankProjectsByFrecency(LIST, store, NOW);
+    assert.deepEqual(recent.map((p) => p.name), ["Alpha"], "the legacy entry now ranks");
+  });
+});
+
+test("two stored spellings of one root merge instead of shadowing", () => {
+  withLocalStorage(() => {
+    localStorage.setItem(
+      "cave:project-frecency:v1",
+      JSON.stringify({
+        "/w/alpha": { picks: 2, lastPickedAt: NOW - DAY },
+        "/w/alpha/": { picks: 3, lastPickedAt: NOW },
+      }),
+    );
+    const store = loadFrecencyStore();
+    assert.equal(Object.keys(store).length, 1);
+    assert.equal(store["/w/alpha"].picks, 5, "picks add up");
+    assert.equal(store["/w/alpha"].lastPickedAt, NOW, "the newer timestamp wins");
+  });
+});
+
+test("a bare / key is dropped rather than ranked", () => {
+  withLocalStorage(() => {
+    localStorage.setItem("cave:project-frecency:v1", '{"/": {"picks": 9, "lastPickedAt": 1}}');
+    assert.deepEqual(Object.keys(loadFrecencyStore()), []);
+  });
+});
+
+test("an oversized stored map is capped on read, not just on write", () => {
+  withLocalStorage(() => {
+    const hostile: Record<string, unknown> = {};
+    for (let i = 0; i < MAX_TRACKED_PROJECTS + 50; i += 1) {
+      hostile[`/w/p${i}`] = { picks: 1, lastPickedAt: NOW + i };
+    }
+    localStorage.setItem("cave:project-frecency:v1", JSON.stringify(hostile));
+    assert.equal(Object.keys(loadFrecencyStore()).length, MAX_TRACKED_PROJECTS);
+  });
 });
 
 console.log("project-frecency.test.ts: ok");

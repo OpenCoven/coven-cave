@@ -254,8 +254,9 @@ export function ProjectPickerPopover({
             event.preventDefault();
             const match = projectForPickerQuery(sortedProjects, query);
             if (!match) return;
-            onChange(match.id);
-            close();
+            // Same path as clicking a row: typing a project's name and pressing
+            // Enter is a pick, and frecency has to learn from it too.
+            pick(match);
           }}
           placeholder="Filter projects…"
           aria-label="Filter projects"

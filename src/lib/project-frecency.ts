@@ -85,7 +85,7 @@ export function pruneStore(store: FrecencyStore): FrecencyStore {
   const keep = keys
     .sort((a, b) => store[b].lastPickedAt - store[a].lastPickedAt)
     .slice(0, MAX_TRACKED_PROJECTS);
-  const next: FrecencyStore = {};
+  const next: FrecencyStore = Object.create(null) as FrecencyStore;
   for (const key of keep) next[key] = store[key];
   return next;
 }
@@ -93,10 +93,11 @@ export function pruneStore(store: FrecencyStore): FrecencyStore {
 export type RankedProjects = {
   /** Capped, most-frecent-first. Empty until something has actually been picked. */
   recent: CaveProject[];
-  /** Every project, in the caller's original order. Never re-sorted, and never
-   *  filtered — a project in `recent` still appears here so the list a user has
-   *  learned the shape of does not develop holes. */
-  all: CaveProject[];
+  /** The caller's own array, by reference. Never re-sorted, never filtered — a
+   *  project in `recent` still appears here so a list whose shape a user has
+   *  learned does not develop holes. `readonly` because "unchanged" should be
+   *  enforced by the type, not just promised in a comment. */
+  all: readonly CaveProject[];
 };
 
 /**
@@ -111,7 +112,7 @@ export function rankProjectsByFrecency(
   now: number,
   limit: number = RECENT_SECTION_SIZE,
 ): RankedProjects {
-  const all = [...projects];
+  const all = projects;
   if (limit <= 0) return { recent: [], all };
   const scored: Array<{ project: CaveProject; score: number }> = [];
   for (const project of projects) {
@@ -144,15 +145,30 @@ export function loadFrecencyStore(): FrecencyStore {
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const out: FrecencyStore = {};
+    // Null-prototype: a persisted key of "__proto__" assigned onto a plain
+    // object literal mutates the prototype instead of adding an own property.
+    // localStorage is attacker-reachable in a compromised renderer, and there
+    // is no reason for this map to inherit from Object at all.
+    const out: FrecencyStore = Object.create(null) as FrecencyStore;
     for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
       if (!value || typeof value !== "object") continue;
       const { picks, lastPickedAt } = value as Partial<FrecencyEntry>;
       if (typeof picks !== "number" || !Number.isFinite(picks) || picks <= 0) continue;
       if (typeof lastPickedAt !== "number" || !Number.isFinite(lastPickedAt)) continue;
-      out[key] = { picks, lastPickedAt };
+      // Re-normalize on read: entries written by an older build (or edited by
+      // hand) may hold a raw root that would never match rootKey() at ranking
+      // time, so their history would be silently ignored rather than used.
+      if (!key.trim()) continue;
+      const normalized = rootKey(key);
+      if (!normalized || normalized === "/") continue;
+      const prev = out[normalized];
+      out[normalized] = prev
+        ? { picks: prev.picks + picks, lastPickedAt: Math.max(prev.lastPickedAt, lastPickedAt) }
+        : { picks, lastPickedAt };
     }
-    return out;
+    // Cap on read too: the write path prunes, but a store from another build
+    // (or a hand-edited one) can arrive over the limit.
+    return pruneStore(out);
   } catch {
     return {};
   }
