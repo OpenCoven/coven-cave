@@ -103,7 +103,22 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
     // trustedProjectCwd, permission filtering) while the UI hid them via
     // dedupeProjectsByRoot — a client/server divergence. Newest record wins;
     // the next mutation persists the deduped list, self-healing the file.
-    return dedupeByRoot(parsed.projects, normalizeRootExpandingHome);
+    // Serve ONE root form (cave-2x1em). createProject has persisted the
+    // expanded root since cave-psp8, but records written before that still
+    // hold a literal `~/...`, so the same folder reaches clients as two
+    // different strings depending on when it was added — and roots are the
+    // keys of the client's avatar, chat-override and comux stores.
+    //
+    // The display normalizer deliberately does NOT expand `~`: it runs in the
+    // browser, which has no home directory. So the split is closed here, on
+    // the side that knows the homedir, rather than by shipping one to the
+    // client. `legacyRoot` carries the old key so the client can re-key what
+    // it already stored; it is response-only and never written back.
+    return dedupeByRoot(parsed.projects, normalizeRootExpandingHome).map((project) => {
+      const expanded = normalizeRootExpandingHome(project.root);
+      if (expanded === project.root) return project;
+      return { ...project, root: expanded, legacyRoot: project.root };
+    });
   } catch {
     return [];
   }
