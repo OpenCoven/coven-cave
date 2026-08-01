@@ -256,11 +256,7 @@ async function main() {
     assert.match(manifest.payloadSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.treeSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.archiveSha256, /^[a-f0-9]{64}$/);
-    // Keep this ceiling in lockstep with SIDECAR_RUNTIME_BUDGETS.fileCount in
-    // scripts/sidecar-runtime-closure.mjs. They are two independent copies of
-    // the same budget, and a bump applied to only one fails here on Windows
-    // long after the closure check has gone green (cave-b8ba8).
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_825);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_814);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));

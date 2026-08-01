@@ -12,7 +12,7 @@ import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
 import { modelControlCapabilities } from "@/lib/model-control-capabilities";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { resolveHermesApiConfig } from "@/lib/hermes-api-settings";
+import { hermesApiConfig } from "@/lib/hermes-responses-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 
 export const dynamic = "force-dynamic";
@@ -100,18 +100,15 @@ export async function GET(req: Request) {
   // API transport. Keep the state response aligned with the send boundary so
   // a client never renders a provider setting that would be rejected later.
   const hermesEnvironment = state.harness === "hermes" ? harnessSpawnEnv(familiarId) : null;
-  const hermesBinding = bindingFor(await loadConfig(), familiarId);
   const hermesApi = hermesEnvironment
-    ? resolveHermesApiConfig(
-        {
-          HERMES_API_URL: hermesEnvironment.HERMES_API_URL,
-          HERMES_API_KEY: hermesEnvironment.HERMES_API_KEY,
-        },
-        hermesBinding.hermesApiUrl,
-      )
+    ? hermesApiConfig({
+        HERMES_API_URL: hermesEnvironment.HERMES_API_URL,
+        HERMES_API_KEY: hermesEnvironment.HERMES_API_KEY,
+      })
     : null;
   const hermesDirect =
-    state.harness === "hermes" && !isSshRuntime(hermesBinding.runtime);
+    state.harness === "hermes" &&
+    !isSshRuntime(bindingFor(await loadConfig(), familiarId).runtime);
   const controls = modelControlCapabilities(state.harness, state.effectiveModel)
     .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null));
   return NextResponse.json({

@@ -48,7 +48,7 @@ export type ComposerContextProps = {
     options?: CreateProjectOptions,
   ) => Promise<CaveProject | null>;
   runtime: string;
-  modelValue: string | null;
+  modelValue: string;
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
   onPickModel: (id: string | null) => void;
@@ -95,9 +95,7 @@ export function useComposerContextActions(config: ComposerContextProps) {
 
   const runtimeName = runtimeDisplayName(config.runtime);
   const modelLabel =
-    config.modelValue === null
-      ? "Resolving model…"
-      : !config.modelValue && runtimeOwnsModelDefault(config.runtime)
+    !config.modelValue && runtimeOwnsModelDefault(config.runtime)
       ? "Runtime default"
       : runtimeModelLabel(config.modelValue, config.modelOptions);
 

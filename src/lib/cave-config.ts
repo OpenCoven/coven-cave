@@ -24,7 +24,6 @@ import {
   normalizeFamiliarRuntime,
 } from "./familiar-runtime.ts";
 import { normalizeHermesProfileBinding, type HermesProfileBinding } from "./hermes-profiles.ts";
-import { hermesApiUrlRejection, normalizeHermesApiUrl } from "./hermes-responses-stream.ts";
 import { runtimeOwnsModelDefault } from "./runtime-models.ts";
 import type { UserProfile } from "./user-profile-shared.ts";
 import {
@@ -177,10 +176,6 @@ export type FamiliarBinding = {
   runtime?: FamiliarRuntime;
   /** Explicit Hermes profile target. Never infer this from the sticky CLI profile. */
   hermesProfile?: HermesProfileBinding;
-  /** Base URL of the Hermes Responses API that gives this familiar structured
-   *  tool activity. The matching bearer key lives in the vault, scoped to the
-   *  familiar — never here, because bindings are read back to clients. */
-  hermesApiUrl?: string;
   /** A persisted profile target was present but failed validation. Launch
    * routes must reject it rather than silently using Hermes's sticky profile. */
   hasInvalidHermesProfileBinding?: boolean;
@@ -456,18 +451,6 @@ function mergeFamiliarConfigs(
         const profile = normalizeHermesProfileBinding(value);
         if (!profile) throw new Error("Invalid Hermes profile binding.");
         next.hermesProfile = profile;
-      } else if (key === "hermesApiUrl") {
-        // Reject here, with the same rule the chat route applies, so a bad
-        // endpoint fails at the point of entry instead of saving cleanly and
-        // being silently discarded on every later turn.
-        const normalized = normalizeHermesApiUrl(typeof value === "string" ? value : undefined);
-        if (!normalized) {
-          throw new Error(
-            hermesApiUrlRejection(typeof value === "string" ? value : undefined)
-              ?? "Invalid Hermes API endpoint.",
-          );
-        }
-        next.hermesApiUrl = normalized;
       } else {
         (next as Record<string, unknown>)[key] = value;
       }
@@ -622,9 +605,6 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
   const hermesProfile = normalizeHermesProfileBinding(rawHermesProfile);
   const hasInvalidHermesProfileBinding =
     rawHermesProfile !== undefined && rawHermesProfile !== null && !hermesProfile;
-  // Normalise on read as well as on write: a hand-edited config must not
-  // smuggle in an endpoint the patch path would have refused.
-  const hermesApiUrl = normalizeHermesApiUrl(f.hermesApiUrl);
   return {
     harness,
     // Missing is meaningful for runtime-owned defaults: preserve it as an
@@ -650,7 +630,6 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     asanaWorkspaceGid: f.asanaWorkspaceGid,
     runtime: normalizeFamiliarRuntime(f.runtime ?? config.defaults.runtime),
     ...(hermesProfile ? { hermesProfile } : {}),
-    ...(hermesApiUrl ? { hermesApiUrl } : {}),
     ...(hasInvalidHermesProfileBinding ? { hasInvalidHermesProfileBinding: true } : {}),
     ...(omnigent ? { omnigent } : {}),
   };
