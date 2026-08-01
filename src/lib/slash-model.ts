@@ -3,16 +3,16 @@
 // Pure + client-safe (only depends on the runtime-models catalog); the model-id
 // shape is validated inline so this never pulls server code into the bundle.
 
-import { catalogForRuntime, type RuntimeModelOption } from "@/lib/runtime-models";
+import {
+  catalogForRuntime,
+  isSafeRuntimeModelId,
+  type RuntimeModelOption,
+} from "@/lib/runtime-models";
 
 // Composer text while in the argument position of /model (or /m): the user has
 // typed "/model " (with a space) and is now typing the model id/name. Group 1 is
 // the partial argument (possibly empty right after the space).
 const MODEL_ARG_RE = /^\/(?:model|m)\s+(.*)$/i;
-
-// Cave model ids follow `provider/model` with a conservative charset (mirrors
-// cleanModelId in chat-model-state.ts, inlined to keep this client-safe).
-const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
 
 function modelsFor(
   harness: string | null | undefined,
@@ -59,7 +59,7 @@ export function resolveModelArg(
     (m) => m.id.toLowerCase().includes(lower) || m.label.toLowerCase().includes(lower),
   );
   if (partial) return partial.id;
-  return MODEL_ID_RE.test(a) ? a : null;
+  return isSafeRuntimeModelId(a) ? a : null;
 }
 
 /** One-line-per-model list for the `/model` (no-arg) system message. */

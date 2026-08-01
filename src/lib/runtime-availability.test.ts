@@ -239,7 +239,7 @@ try {
 
   // Verification matrix: binary absent from every discovery location →
   // missing, with per-runner install/PATH remediation.
-  for (const runner of ["coven", "codex", "copilot", "grok", "hermes", "opencode"] as const) {
+  for (const runner of ["coven", "codex", "copilot", "grok", "hermes", "opencode", "openclaw"] as const) {
     const missing = evaluateRuntimeAvailability({
       runner,
       command: runner === "coven" ? "coven" : runner,
@@ -270,6 +270,11 @@ try {
     missingRunnerMessage("coven"),
     /Coven CLI not found on PATH/,
     "Coven missing copy stays pinned to the client recovery matcher",
+  );
+  assert.equal(
+    runtimeLaunchFailedMessage("openclaw"),
+    "OpenClaw CLI failed to start. Check its installation and try again.",
+    "OpenClaw spawn races should use the shared value-free launch-failure contract",
   );
 
   const emptyPath = evaluateRuntimeAvailability({

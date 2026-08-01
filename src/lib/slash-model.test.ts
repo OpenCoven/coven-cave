@@ -41,6 +41,11 @@ assert.equal(resolveModelArg("Claude Sonnet 4.6", "claude"), "anthropic/claude-s
 assert.equal(resolveModelArg("anthropic/claude-haiku-4-5", "claude"), "anthropic/claude-haiku-4-5", "matches by exact id");
 assert.equal(resolveModelArg("sonnet", "claude"), "anthropic/claude-sonnet-5", "substring matches the newest Sonnet first");
 assert.equal(resolveModelArg("openai/gpt-6", "claude"), "openai/gpt-6", "accepts a valid custom id");
+assert.equal(
+  resolveModelArg("openrouter/~anthropic/claude-opus-latest", "opencode"),
+  "openrouter/~anthropic/claude-opus-latest",
+  "OpenCode provider aliases with a tilde-prefixed path segment remain selectable",
+);
 assert.equal(resolveModelArg("  ", "claude"), null, "empty arg → null");
 assert.equal(resolveModelArg("not a model!!", "claude"), null, "malformed custom id → null");
 assert.equal(

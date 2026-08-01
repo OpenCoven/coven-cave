@@ -287,6 +287,11 @@ assert.equal(
 // Revalidate the transformed argv value so stripping cannot expose a CLI flag;
 // nested ids remain valid after their first provider segment is removed.
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/team/model"), "team/model");
+assert.equal(
+  runtimeModelIdForLaunch("opencode", "openrouter/~anthropic/claude-opus-latest"),
+  "openrouter/~anthropic/claude-opus-latest",
+  "OpenCode launch validation should preserve authenticated tilde-prefixed provider aliases",
+);
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/--allow-all-tools"), null);
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/../escape"), null);
 assert.equal(runtimeModelIdForLaunch("copilot", null), null);

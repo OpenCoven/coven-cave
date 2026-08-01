@@ -37,7 +37,7 @@ assert.match(
 );
 assert.match(
   src,
-  /export function openClawLaunchCommandForBinary\(binary: string\): CovenLaunchCommand[\s\S]*covenLaunchCommandForBinary\(binary, shimPlatform\)/,
+  /export function openClawLaunchCommandForBinary\(binary: string\): OpenClawLaunchCommand[\s\S]*requiredFiles:\s*\[launch\.fixedArgs\.at\(-1\)!\]/,
   "OpenClaw Windows npm shims should launch their JavaScript target with Node instead of cmd.exe",
 );
 assert.match(

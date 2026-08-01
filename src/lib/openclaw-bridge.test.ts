@@ -211,6 +211,18 @@ try {
 }
 
 assert.equal(openClawSessionKey("ABC_123:Weird"), "cave-abc-123-weird");
+assert.equal(
+  extractOpenClawText({ result: { payloads: [{ content: "scalar reply" }] } }),
+  "scalar reply",
+  "OpenClaw scalar payload content should not be discarded",
+);
+assert.equal(
+  extractOpenClawText({
+    result: { payloads: [{ content: { text: "object reply" } }] },
+  }),
+  "object reply",
+  "OpenClaw object payload content with a text field should not be discarded",
+);
 assert.deepEqual(openClawAgentArgs("hi", "nova", "ABC_123"), [
   "agent",
   "--agent",

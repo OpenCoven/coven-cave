@@ -326,6 +326,7 @@ export function extractOpenClawText(json: OpenClawAgentJson): string {
   const text = payloads
     .map((payload) => {
       if (typeof payload.text === "string") return payload.text;
+      if (typeof payload.content === "string") return payload.content;
       if (Array.isArray(payload.content)) {
         return payload.content
           .map((part) =>
@@ -337,6 +338,14 @@ export function extractOpenClawText(json: OpenClawAgentJson): string {
               : "",
           )
           .join("");
+      }
+      if (
+        payload.content &&
+        typeof payload.content === "object" &&
+        "text" in payload.content &&
+        typeof payload.content.text === "string"
+      ) {
+        return payload.content.text;
       }
       return "";
     })
