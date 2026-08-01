@@ -49,14 +49,20 @@ assert.match(
 // of it went with the design, but these two claims are orthogonal to whether the
 // sidebar floats or sits flush, still hold, and were covered nowhere else. They
 // are kept so retiring the obsolete file is not a silent loss of coverage.
+// Whitespace-tolerant on purpose. These came over with exact-spacing regexes,
+// which is a real hazard for the negative one below: if a reformat turned
+// `.shell-nav--rail {` into `.shell-nav--rail{`, the pattern would stop matching
+// and doesNotMatch would pass vacuously — the guard would go quiet exactly when
+// it still looked green. Asserting on semantics rather than spacing keeps a
+// formatting change from silently retiring the check.
 assert.match(
   shellCss,
-  /\.shell-nav \{[\s\S]*?overflow-y: auto;/,
+  /\.shell-nav\s*\{[\s\S]*?overflow-y:\s*auto;/,
   "the shared sidebar remains vertically scrollable",
 );
 assert.doesNotMatch(
   shellCss,
-  /\.shell-nav--rail \{[^}]*?(?:margin|border-radius|box-shadow):/,
+  /\.shell-nav--rail\s*\{[^}]*?(?:margin|border-radius|box-shadow)\s*:/,
   "collapsed icon rail does not become a second floating card",
 );
 
