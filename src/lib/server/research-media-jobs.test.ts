@@ -435,7 +435,8 @@ test("startup fails old rendering rows, preserves FIFO queue, and is idempotent"
   await waitForStarts(starts, 1);
   const afterFirstStart = await listResearchGenerations(familiarId);
   const interrupted = afterFirstStart.find((row) => row.id === "interrupted");
-  assert.equal(interrupted?.status, "failed");
+  assert.ok(interrupted);
+  assert.equal(interrupted.status, "failed");
   assert.equal(interrupted.error, "interrupted by runner ownership loss");
   assert.equal(interrupted.stage, undefined);
   assert.equal(
