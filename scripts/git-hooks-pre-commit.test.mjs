@@ -125,6 +125,20 @@ for (const content of [
   assert.match(result.stderr, /password assignment/i);
 }
 
+// A line carrying BOTH a synthetic fixture and a real token must still block on
+// the real one. A line-granular filter would drop the whole line and let the
+// real secret through — the failure mode is silent, so it gets its own case.
+{
+  const repo = stagedRepo({
+    filePath: "src/lib/secrets.test.ts",
+    content:
+      `const a = "${"Bearer " + "synthetic-access-token"}", b = "${"Bearer " + "aZ09kQ7fLm3xY8pW2vR5tN"}";\n`,
+  });
+  const result = runHook(repo);
+  assert.notEqual(result.status, 0, "a real token sharing a line with a fixture still blocks");
+  assert.match(result.stderr, /Bearer token/i);
+}
+
 // The allowlist is scoped to the generic heuristics ONLY. A vendor-shaped key
 // does not become safe by containing the word "synthetic" or "example" — this
 // is the assertion that stops the narrowing from being widened carelessly.
@@ -152,17 +166,28 @@ for (const content of [
 // integration block. Both are tracked, so a scanner change made in one copy
 // and not the other silently disables it for whichever hooks path is live.
 {
-  const canonical = readFileSync(hookSource, "utf8").replace(/\n+$/, "");
+  const canonical = readFileSync(hookSource, "utf8");
   const installed = readFileSync(path.join(root, ".beads", "hooks", "pre-commit"), "utf8");
+
+  // beads does NOT append verbatim: it strips the canonical trailing `exit 0`
+  // so its own block is reachable, then re-exits at the end. Asserting a
+  // verbatim prefix is what produced the bug this assertion now prevents — the
+  // mirror kept `exit 0` and left the beads block as dead code, silently
+  // disabling `bd hooks run pre-commit` for the live hooks path.
+  const body = canonical.replace(/\nexit 0\n$/, "\n");
+  assert.notEqual(body, canonical, "the canonical hook still ends with `exit 0`");
   assert.ok(
-    installed.startsWith(canonical),
-    ".beads/hooks/pre-commit must begin with scripts/git-hooks/pre-commit verbatim — " +
-      "re-run scripts/install-git-hooks.sh or re-apply the edit to both copies",
+    installed.startsWith(body),
+    ".beads/hooks/pre-commit must begin with scripts/git-hooks/pre-commit (minus its " +
+      "trailing `exit 0`) — re-apply the edit to both copies",
   );
-  assert.match(
-    installed.slice(canonical.length),
-    /# --- BEGIN BEADS INTEGRATION/,
-    "the installed copy keeps its beads integration block",
+
+  const beadsAt = installed.indexOf("# --- BEGIN BEADS INTEGRATION");
+  assert.ok(beadsAt > 0, "the installed copy keeps its beads integration block");
+  assert.doesNotMatch(
+    installed.slice(0, beadsAt),
+    /^exit 0$/m,
+    "nothing exits before the beads block — that would make it unreachable",
   );
 }
 

@@ -81,9 +81,19 @@ SYNTHETIC='(synthetic|placeholder|example|dummy|fake|sample|redacted|changeme|no
 scan() {
   local label="$1" pattern="$2" allow="${3:-}"
   local hits
-  hits=$(grep -InE -e "$pattern" "$ADDED_FILE" || true)
-  if [ -n "$hits" ] && [ -n "$allow" ]; then
-    hits=$(printf '%s\n' "$hits" | grep -vE -e "$allow" || true)
+  if [ -n "$allow" ]; then
+    # Filter per MATCH, not per line. A line-granular `grep -v` would drop the
+    # whole line when any part of it looked synthetic, so
+    #     const a = "Bearer synthetic-token", b = "Bearer <a real one>"
+    # would suppress the real secret too. Extract each match with -o and keep
+    # only those that do NOT carry a synthetic marker.
+    hits=$(grep -IonE -e "$pattern" "$ADDED_FILE" 2>/dev/null | while IFS= read -r entry; do
+      [ -n "$entry" ] || continue
+      match=${entry#*:}
+      printf '%s' "$match" | grep -qE -e "$allow" || printf '%s\n' "$entry"
+    done)
+  else
+    hits=$(grep -InE -e "$pattern" "$ADDED_FILE" || true)
   fi
   if [ -n "$hits" ]; then
     fail "possible $label in staged diff:"
