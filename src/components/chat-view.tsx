@@ -4262,7 +4262,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       (opts?.modelOverride !== undefined
         ? modelOverrideForRequest ? "session" as const : undefined
         : currentModelState?.source === "runtime-default"
-          ? pendingRuntimeDefault && sessionId
+          ? pendingRuntimeDefault
             ? "runtime-default" as const
             : "next-message" as const
           : modelOverrideForRequest
