@@ -156,7 +156,8 @@ import {
   formatRuntime,
   type ChatResponseMetadata,
 } from "@/lib/chat-response-metadata";
-import type { StreamEvent } from "@/lib/stream-events";
+import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
+import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
 import { extractNextPaths, type NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
@@ -5302,6 +5303,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   const replaceAssistantText = (
     text: string,
+    correction: ToolOffsetCorrection | undefined,
     assistantId: string,
     liveGeneration: LiveStreamGeneration,
   ) => {
@@ -5314,7 +5316,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     updateLiveTurns((prev) =>
       prev.map((t) =>
         t.id === assistantId
-          ? { ...t, text, pending: true, lifecycle: "streaming" }
+          ? {
+              ...t,
+              text,
+              tools: rebaseToolTextOffsets(t.tools, correction),
+              pending: true,
+              lifecycle: "streaming",
+            }
           : t,
       ),
       assistantId,
@@ -5376,7 +5384,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       case "assistant_replace": {
-        replaceAssistantText(ev.text, assistantId, liveGeneration);
+        replaceAssistantText(ev.text, ev.toolOffsetCorrection, assistantId, liveGeneration);
         return;
       }
       case "attachment": {

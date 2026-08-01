@@ -2,7 +2,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
+const styles = [
+  readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8"),
+  readFileSync(new URL("../styles/sidebar-minimal/shell-chrome.css", import.meta.url), "utf8"),
+  readFileSync(new URL("../styles/sidebar-minimal/navigation-recents.css", import.meta.url), "utf8"),
+  readFileSync(new URL("../styles/sidebar-minimal/familiars.css", import.meta.url), "utf8"),
+  readFileSync(new URL("../styles/sidebar-minimal/activity-rail.css", import.meta.url), "utf8"),
+].join("\n");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
@@ -78,10 +84,20 @@ assert.doesNotMatch(
   "Knowledge section removed",
 );
 
+assert.doesNotMatch(
+  navigation,
+  /\{ id: "github", label: "GitHub"/,
+  "GitHub has no standalone workspace navigation row",
+);
+assert.doesNotMatch(
+  source,
+  /hideGithubRow|githubAssignedCount|MODE_BADGES[\s\S]*github:/,
+  "the sidebar has no standalone GitHub badge or conditional-row plumbing",
+);
 assert.match(
   source,
-  /props\.hideGithubRow[\s\S]{0,120}\? VISIBLE_WORKSPACE_NAV_ITEMS\.filter\(\(item\) => item\.id !== "github"\)[\s\S]{0,80}: VISIBLE_WORKSPACE_NAV_ITEMS/,
-  "Sidebar renders the visible folder modes, dropping the GitHub row while the Code room already carries a GitHub tab (cave-cc5r)",
+  /props\.roleSurfaces!\.map\(\(room\) =>/,
+  "Code Workshop remains registry-driven through the active familiar's rooms",
 );
 assert.match(
   source,
@@ -291,10 +307,10 @@ assert.doesNotMatch(
   "Sidebar should not hide surfaces behind add-on config",
 );
 
-assert.match(
+assert.doesNotMatch(
   navigation,
   /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"/,
-  "The standalone GitHub row is back (cave-cc5r): Code lives in the Coding familiar's room",
+  "GitHub no longer appears as a standalone sidebar destination",
 );
 assert.doesNotMatch(
   navigation,
@@ -356,7 +372,7 @@ assert.match(
   /onSelectFamiliar=\{onFamiliarScopeChange\}/,
   "the header switcher drives the shared familiar scope",
 );
-const sidebarCss = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
+const sidebarCss = styles;
 assert.match(
   sidebarCss,
   /\.shell-nav--rail \.sidebar-familiar-switch \.familiar-switcher__trigger-label \{\s*\n\s*display: none/,
@@ -461,7 +477,7 @@ assert.match(
 assert.match(
   source,
   /quietLead=\{Boolean\(fm\.quiet\) && !rows\[i - 1\]\?\.quiet\}/,
-  "the first quiet row opens the spacing gap (indexed on the RENDERED list, which may drop the GitHub row)",
+  "the first quiet row opens the spacing gap (indexed on the rendered list after navHidden filtering)",
 );
 assert.match(
   styles,

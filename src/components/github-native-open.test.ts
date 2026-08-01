@@ -1,13 +1,17 @@
 // @ts-nocheck
-// cave-qcsv: GitHub-event inbox notifications open the NATIVE GitHub surface.
+// cave-qcsv: GitHub-event inbox notifications open natively in Code Workshop.
 // github-watcher writes `link: { kind: "url", ref: <github html_url> }` on its
-// items; every open path must route PR/issue URLs to mode "github" with a
-// deep-link target — never a browser tab. Non-item GitHub URLs (actions runs,
-// repo roots) keep the in-app browser fallback.
+// items; every open path must route PR/issue URLs into Code Workshop with a
+// pending GitHub-item target — never a browser tab. Non-item GitHub URLs
+// (actions runs, repo roots) keep the in-app browser fallback.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const pendingNavigation = readFileSync(
+  new URL("../lib/pending-code-navigation.ts", import.meta.url),
+  "utf8",
+);
 const githubView = [
   readFileSync(new URL("./github-view.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./github-view-data.ts", import.meta.url), "utf8"),
@@ -16,8 +20,8 @@ const githubView = [
 // ── Workspace: one shared interceptor, used by every open path ───────────────
 assert.match(
   workspace,
-  /const openGitHubTarget = useCallback\(\(url: string \| null \| undefined\): boolean => \{\s*const target = parseGitHubItemUrl\(url\);\s*if \(!target\) return false;\s*setGithubTarget\(target\);\s*setMode\("github"\);\s*return true;/,
-  "openGitHubTarget parses the URL and routes to the native GitHub surface",
+  /const openGitHubTarget = useCallback\(\(url: string \| null \| undefined\): boolean => \{[\s\S]*?parseGitHubItemUrl\(url\)[\s\S]*?enqueuePendingCodeNavigation\(\{\s*kind: "github-item",\s*target,\s*nonce: Date\.now\(\),?\s*\}\);[\s\S]*?setMode\("code"\);[\s\S]*?return true;/,
+  "PR/issue URLs enqueue native detail and enter Code Workshop",
 );
 assert.match(
   workspace,
@@ -35,15 +39,22 @@ assert.match(
   "bell rows without a session fall through to the item link (native GitHub for watcher items)",
 );
 assert.match(
-  workspace,
-  /<GitHubView[\s\S]{0,300}initialTarget=\{githubTarget\}/,
-  "the standalone GitHub surface receives the deep-link target (cave-cc5r)",
+  pendingNavigation,
+  /acknowledgePendingCodeNavigation\(nonce: number\)[\s\S]*pending\?\.nonce !== nonce/,
+  "a stale consumer cannot clear a newer GitHub target",
 );
 assert.match(
   workspace,
-  /if \(mode !== "github" && githubTarget\) setGithubTarget\(null\);/,
-  "leaving the surface clears the target so later visits don't re-open a stale item",
+  /if \(modeRef\.current !== roleSurfaceMode\(CODE_SURFACE_ID\)\) \{[\s\S]{0,80}?clearPendingCodeNavigation\(\);[\s\S]{0,40}?\}/,
+  "leaving Code Workshop discards an unavailable room's unconsumed target",
 );
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{[\s\S]{0,300}?if \(modeRef\.current !== roleSurfaceMode\(CODE_SURFACE_ID\)\) \{[\s\S]*?clearPendingCodeNavigation\(\);[\s\S]*?return;\s*\}\s*if \(!roleSurfaceSession\.context\) \{\s*if \(\s*!activeFamiliarHydrated\s*\|\|\s*!familiarsLoaded\s*\|\|\s*!familiarRosterLoadedSuccessfully\s*\) return;\s*clearPendingCodeNavigation\(\);[\s\S]*?return;\s*\}\s*if \(!roleSurfaceSession\.rolesLoaded\) return;\s*if \(!roleSurfaceSession\.rolesLoadedSuccessfully\) return;\s*if \(!roleSurfaceSession\.visibleSurfaces\.some\(\(surface\) => surface\.id === CODE_SURFACE_ID\)\) \{[\s\S]*?clearPendingCodeNavigation\(\);[\s\S]*?\}\s*\}, \[\s*mode,\s*roleSurfaceSession\.context,\s*roleSurfaceSession\.rolesLoaded,\s*roleSurfaceSession\.rolesLoadedSuccessfully,\s*roleSurfaceSession\.visibleSurfaces,\s*activeFamiliarHydrated,\s*familiarsLoaded,\s*familiarRosterLoadedSuccessfully,\s*\]\);/,
+  "pending Code navigation uses modeRef.current as the synchronous same-flush authority while still rerunning for committed mode, roster, role, and visibility changes",
+);
+assert.doesNotMatch(workspace, /setGithubTarget|githubTarget/, "Workspace owns no standalone GitHub detail state");
+assert.doesNotMatch(workspace, /<GitHubView/, "Workspace never renders GitHubView directly");
 
 // ── GitHubView: deep link selects/synthesizes the item ───────────────────────
 assert.match(

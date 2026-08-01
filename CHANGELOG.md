@@ -7,6 +7,44 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-31
+
+### Added
+
+- Added privacy-safe Discord Rich Presence for desktop, with automatic recovery after Discord restarts (#4093).
+- Added durable Research Studio podcast, short-video, and long-video generation with readiness checks, cancellation, recovery, and native review/playback (#4091).
+- Added a gated GitHub card composer with comments, merge controls, assignees, labels, familiar-assisted drafts, and interactive reactions (#4068, #4075, #4100).
+- Added wide-transcript navigation with a per-turn run spine and per-event thread minimap (#4046, #4048).
+- Added read-aloud actions for assistant replies, packaged Kokoro support in desktop builds, and selectable named Kokoro speakers (#4027, #4079, #4102).
+- Added verified, read-only canonical-memory access for Mobile Cave and the native iOS live-voice transport foundation (#4081).
+- Added optional device-owner authentication to iOS for app unlock and sensitive desktop-connection approvals, with app-switcher privacy shielding and a 60-second relock window (#4092).
+- Added distinct Reply, Task, and Action follow-up cards while keeping compact chats reply-only.
+- Added GitHub artifact attestations for release installers and SHA256SUMS (#4070).
+
+### Changed
+
+- Moved chat settings into the active familiar’s Familiar surface, removed duplicate local familiar switching, and retired the legacy Settings Familiars tab (#4040, #4049).
+- Unified familiar-memory search across compact and master-detail views, preserving local file discovery while keeping canonical matching per-field and path-free (#4105).
+- Routed Codex chat tool activity through the verified schema transport, with compatibility drift presented as a notice rather than a runtime failure (#4069, #4064).
+- Refined Research Desk hierarchy with lifecycle scopes, priority groups, persisted focus mode, keyboard handling, and responsive rails (#4085).
+- Rebuilt Weaves and Proposals as one fail-closed decision flow with shared list/detail chrome, scoped worst-first inspection, evidence-backed maps, deep-linked staged writes, and shared audit reads (#4108, #4113).
+- Refocused Marketplace on owned plugins and local skills, with Crafts remaining available only behind its explicit feature flag.
+
+### Fixed
+
+- Fixed native microphone permission recovery, including partial plugin wiring, platform gating, legacy macOS prompts, and late failures after cleanup (#4039).
+- Fixed Copilot replies losing message boundaries around pauses and tool calls (#4031).
+- Fixed iOS chat creation and recovery so authorized project context survives forwarding, retry, import, and replay (#4067).
+- Hardened worktree cleanup against active processes, incomplete ownership evidence, audit gaps, false self-detection, and remotely archived work (#4032, #4052, #4054, #4060, #4080, #4087).
+- Fixed the Board GitHub picker so partial, failed, and truncated sources are disclosed instead of producing misleading empty states (#4056).
+- Fixed new-project selection being overwritten and made repository rows visually distinct from workspaces (#4019).
+- Fixed Familiar grouping appearing outside true multi-selection and corrected Board popover shadows in light themes (#4088).
+- Fixed sidebar navigation so the version opens Settings → About and Dashboard remains available in the collapsed rail (#4013, #4044).
+
+### Security
+
+- Prevented memory archive and restore operations from escaping through symlinked parents, stopped GitHub post-merge branch deletion from trusting a request-supplied branch name, and added the repository-local maintenance-gate core with fenced writer leases and race-safe owner cleanup for branch/worktree curation (#4084, #4068, #4107, #4111).
+
 ## [0.2.0] - 2026-07-26
 
 > 🗣️ **The Cave gets a voice, ears, and a Code room of its own.** Local Piper TTS with a signature voice roster and sidecar Whisper speech-to-text land fully offline. A dedicated Code Workshop becomes the Coding familiar's room, Research Studio gains mermaid diagrams and a typeset Reader, encrypted backups run on a schedule, and the Tauri mobile remnants are gone — iOS continues as the native design-handoff app.

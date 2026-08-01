@@ -72,11 +72,6 @@ export type SidebarMinimalProps = {
   /** Live counts surfaced as small nav badges (omitted/0 -> no badge). */
   boardOpenCount?: number;
   scheduleNeedsCount?: number;
-  githubAssignedCount?: number;
-  /** Hide the standalone GitHub row while the Code room is visible for the
-   *  active familiar (cave-cc5r) — the room carries its own GitHub tab, so
-   *  both rows at once would double-list the same content. */
-  hideGithubRow?: boolean;
 };
 
 // Format a count as a compact nav badge; 0/undefined yields no badge.
@@ -88,7 +83,6 @@ function badgeText(n?: number): string | undefined {
 const MODE_BADGES: Partial<Record<WorkspaceNavMode, (props: SidebarMinimalProps) => string | undefined>> = {
   board: (props) => badgeText(props.boardOpenCount),
   inbox: (props) => badgeText(props.scheduleNeedsCount),
-  github: (props) => badgeText(props.githubAssignedCount),
 };
 
 
@@ -234,10 +228,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       </div>
 
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
-        {(props.hideGithubRow
-          ? VISIBLE_WORKSPACE_NAV_ITEMS.filter((item) => item.id !== "github")
-          : VISIBLE_WORKSPACE_NAV_ITEMS
-        ).map((fm: WorkspaceNavItem, i, rows) => (
+        {VISIBLE_WORKSPACE_NAV_ITEMS.map((fm: WorkspaceNavItem, i, rows) => (
           <FolderRow
             key={fm.id}
             id={fm.id}
@@ -251,8 +242,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             kbd={fm.kbd}
             description={fm.description}
             quiet={fm.quiet}
-            // Index the RENDERED list — a navHidden or hidden-GitHub entry
-            // between quiet rows must not throw off the "first quiet row" gap.
+            // Index the RENDERED list — a navHidden entry between quiet rows
+            // must not throw off the "first quiet row" gap.
             quietLead={Boolean(fm.quiet) && !rows[i - 1]?.quiet}
             onClick={() => handleModeSelect(fm.id)}
           />

@@ -33,6 +33,7 @@ import {
   flattenToolResultContent,
   formatToolInputValue,
   formatToolPayload,
+  toolTextCorrection,
   toPersistedTools,
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
@@ -711,6 +712,14 @@ function openClawChatResponse(args: {
       // Gateway it deliberately never starts a second CLI turn.
       let gatewayAssistantText = "";
       let gatewayAssistantTextEmitted = false;
+      const gatewayToolTracker = new ToolCallTracker(Date.now, "openclaw:");
+      let gatewayToolProjectionEnabled = true;
+      let gatewayCompatibilityDiagnosticSent = false;
+      const settleOpenGatewayTools = (output: string) => {
+        for (const tool of gatewayToolTracker.failOpenCalls(output)) {
+          push({ kind: "tool_use", ...tool });
+        }
+      };
       const gatewayAuth = openClawGatewayPairedDeviceAuthStatus();
       const gatewayDispatch = gatewayAuth.available
         ? await dispatchOpenClawGatewayTurn({
@@ -722,15 +731,97 @@ function openClawChatResponse(args: {
         // retry observable to the Gateway instead of creating another run.
         idempotencyKey: args.body.runId ?? "",
         onEvent: (event) => {
+          if (event.kind === "compatibility") {
+            if (gatewayToolProjectionEnabled) {
+              gatewayToolProjectionEnabled = false;
+              settleOpenGatewayTools("[OpenClaw tool activity became incompatible]");
+            }
+            if (gatewayCompatibilityDiagnosticSent) return;
+            gatewayCompatibilityDiagnosticSent = true;
+            const fingerprint =
+              event.fingerprint && /^[0-9a-f]{16}$/i.test(event.fingerprint)
+                ? event.fingerprint.toLowerCase()
+                : undefined;
+            pushProgress(
+              "openclaw-tool-compatibility",
+              "OpenClaw tool activity needs an update",
+              "notice",
+              `${event.code}${fingerprint ? ` (${fingerprint})` : ""}`,
+            );
+            return;
+          }
+          if (event.kind === "tool_start" && gatewayToolProjectionEnabled) {
+            const rawInput = formatToolInputValue(redactSecretsDeep(event.input));
+            const input = rawInput === undefined ? undefined : redactSecretText(rawInput);
+            const tool = gatewayToolTracker.envelopeToolUse(
+              event.id,
+              event.name,
+              input,
+              gatewayAssistantText.length,
+            );
+            if (tool) push({ kind: "tool_use", ...tool });
+            const pendingProgress = gatewayToolTracker.consumePendingEnvelopeProgress(event.id);
+            if (pendingProgress) push({ kind: "tool_use", ...pendingProgress });
+            const pendingResult = gatewayToolTracker.consumePendingEnvelopeResult(event.id);
+            if (pendingResult) push({ kind: "tool_use", ...pendingResult });
+            return;
+          }
+          if (event.kind === "tool_progress" && gatewayToolProjectionEnabled) {
+            const safeOutput = redactSecretsDeep(event.output);
+            const rawOutput = flattenToolResultContent(safeOutput) ?? formatToolInputValue(safeOutput);
+            const output = rawOutput === undefined ? undefined : redactSecretText(rawOutput);
+            const tool = gatewayToolTracker.envelopeToolProgress(
+              event.id,
+              output,
+            );
+            if (tool) push({ kind: "tool_use", ...tool });
+            return;
+          }
+          if (event.kind === "tool_end" && gatewayToolProjectionEnabled) {
+            const safeOutput = redactSecretsDeep(event.output);
+            const rawOutput = flattenToolResultContent(safeOutput) ?? formatToolInputValue(safeOutput);
+            const output = rawOutput === undefined ? undefined : redactSecretText(rawOutput);
+            const tool = gatewayToolTracker.envelopeToolResult(
+              event.id,
+              output,
+              event.isError,
+            );
+            if (tool) {
+              push({ kind: "tool_use", ...tool });
+              return;
+            }
+            if (!gatewayToolTracker.hasSettledEnvelopeId(event.id)) {
+              const started = gatewayToolTracker.envelopeToolUse(
+                event.id,
+                event.name,
+                undefined,
+                gatewayAssistantText.length,
+              );
+              if (started) push({ kind: "tool_use", ...started });
+              const pendingProgress = gatewayToolTracker.consumePendingEnvelopeProgress(event.id);
+              if (pendingProgress) push({ kind: "tool_use", ...pendingProgress });
+              const pendingResult = gatewayToolTracker.consumePendingEnvelopeResult(event.id);
+              if (pendingResult) push({ kind: "tool_use", ...pendingResult });
+            }
+            return;
+          }
           if (event.kind === "status") {
             pushProgress("openclaw-gateway", "OpenClaw Gateway", "running", event.phase);
             return;
           }
           if (event.kind === "delta") {
             if (event.replace) {
+              const correction = toolTextCorrection(gatewayAssistantText, event.text);
+              if (correction) {
+                gatewayToolTracker.rebaseTextOffsets(correction.after, correction.delta);
+              }
               gatewayAssistantText = event.text;
               gatewayAssistantTextEmitted = true;
-              push({ kind: "assistant_replace", text: event.text });
+              push({
+                kind: "assistant_replace",
+                text: event.text,
+                ...(correction ? { toolOffsetCorrection: correction } : {}),
+              });
               return;
             }
             gatewayAssistantText += event.text;
@@ -739,12 +830,23 @@ function openClawChatResponse(args: {
             return;
           }
           if (event.kind === "final" && event.text) {
-            if (gatewayAssistantTextEmitted && gatewayAssistantText !== event.text) {
-              push({ kind: "assistant_replace", text: event.text });
+            if (gatewayAssistantText !== event.text) {
+              const correction = toolTextCorrection(gatewayAssistantText, event.text);
+              if (correction) {
+                gatewayToolTracker.rebaseTextOffsets(correction.after, correction.delta);
+              }
+              if (gatewayAssistantTextEmitted) {
+                push({
+                  kind: "assistant_replace",
+                  text: event.text,
+                  ...(correction ? { toolOffsetCorrection: correction } : {}),
+                });
+              }
             }
             gatewayAssistantText = event.text;
           }
           if (event.kind === "error") {
+            settleOpenGatewayTools("[tool did not settle before the Gateway turn ended]");
             pushProgress("openclaw-gateway", "OpenClaw Gateway", "error", event.message);
           }
         },
@@ -780,6 +882,7 @@ function openClawChatResponse(args: {
           },
         }).catch(() => undefined);
         const stopGateway = () => {
+          settleOpenGatewayTools("[tool cancelled by user]");
           void gatewayDispatch.abort();
         };
         const runHandle = registerChatRun([args.body.runId, conversationId], stopGateway);
@@ -803,6 +906,11 @@ function openClawChatResponse(args: {
         args.req.signal.addEventListener("abort", onAbort, { once: true });
         pushProgress("openclaw-response", "Waiting for OpenClaw Gateway response", "running");
         const gatewayResult = await gatewayDispatch.done;
+        settleOpenGatewayTools(
+          gatewayResult.state === "aborted"
+            ? "[tool cancelled by user]"
+            : "[tool did not settle before the Gateway turn ended]",
+        );
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         unregisterChatRun(runHandle);
@@ -859,6 +967,12 @@ function openClawChatResponse(args: {
         const reportedPrUrl = latestPrUrlFromText(gatewayAssistantText);
         if (reportedPrUrl) conv.prUrl = reportedPrUrl;
         const assistantTurnId = crypto.randomUUID();
+        const leadingTrimShift =
+          gatewayAssistantText.length - gatewayAssistantText.trimStart().length;
+        const persistedGatewayTools = toPersistedTools(
+          gatewayToolTracker.snapshot(),
+          leadingTrimShift,
+        );
         conv.turns.push(
           {
             id: pendingUserTurnId,
@@ -878,6 +992,7 @@ function openClawChatResponse(args: {
             isError,
             parentId: pendingUserTurnId,
             responseMetadata,
+            ...(persistedGatewayTools ? { tools: persistedGatewayTools } : {}),
             ...(cancelledByUser ? { cancelled: true } : {}),
           },
         );

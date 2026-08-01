@@ -1,6 +1,6 @@
 {
   "name": "coven-cave",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions.",
   "author": "OpenCoven contributors",
@@ -82,8 +82,8 @@
     "@iconify/react": "6.0.2",
     "@lezer/highlight": "1.2.3",
     "@milkdown/crepe": "7.21.3",
-    "@openclaw/gateway-client": "2026.7.2-beta.4",
-    "@openclaw/gateway-protocol": "2026.7.2-beta.4",
+    "@openclaw/gateway-client": "2026.7.2-beta.5",
+    "@openclaw/gateway-protocol": "2026.7.2-beta.5",
     "@tailwindcss/browser": "4.3.3",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-notification": "2.3.3",
