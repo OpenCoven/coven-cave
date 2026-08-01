@@ -148,7 +148,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-29 (Chat Familiar settings): the nested Familiar settings
   // writers trace 5,804 files on Windows. Retain the established ten files
   // of cross-platform headroom without relaxing the byte ceiling.
-  fileCount: 5_814,
+  // 2026-08-01 (Hermes API setup surface, cave-b8ba8): the per-familiar
+  // hermes-api route traces one additional file, measuring 5,815 on ubuntu.
+  // Retain the established ten files of cross-platform headroom without
+  // relaxing the byte ceiling.
+  fileCount: 5_825,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

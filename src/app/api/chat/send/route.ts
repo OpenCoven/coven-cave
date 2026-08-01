@@ -123,7 +123,6 @@ import {
 } from "@/lib/server/claude-runtime-compatibility";
 import {
   HermesSseDecoder,
-  hermesApiConfig,
   hermesApiCanAccessLocalFiles,
   isHermesResponsesEventName,
   isHermesMissingPreviousResponseError,
@@ -131,6 +130,7 @@ import {
   isHermesInvalidPreviousResponseIdError,
   parseHermesResponsesEvent,
 } from "@/lib/hermes-responses-stream";
+import { resolveHermesApiConfig } from "@/lib/hermes-api-settings";
 import { redactSecretText, redactSecretsDeep } from "@/lib/secret-redaction";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
@@ -1404,10 +1404,13 @@ export async function POST(req: Request) {
   // profile-bound familiar deliberately uses the CLI rather than risk talking
   // to an API server for the sticky/default profile.
   const hermesApi = !binding.hermesProfile && hermesSpawnEnvironment
-    ? hermesApiConfig(hermesSpawnEnvironment as {
-        HERMES_API_URL?: string;
-        HERMES_API_KEY?: string;
-      })
+    ? resolveHermesApiConfig(
+        hermesSpawnEnvironment as {
+          HERMES_API_URL?: string;
+          HERMES_API_KEY?: string;
+        },
+        binding.hermesApiUrl,
+      )
     : null;
 
   // Resolve the direct plan in the exact familiar-scoped environment passed to
