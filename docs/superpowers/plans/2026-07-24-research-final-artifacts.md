@@ -49,7 +49,7 @@
 - [ ] **Step 0.1: Create the worktree**
 
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
 git worktree add -b research-final-artifacts .worktrees/research-final-artifacts origin/main
 cp docs/specs/2026-07-24-research-final-artifacts-design.md .worktrees/research-final-artifacts/docs/specs/
 mkdir -p .worktrees/research-final-artifacts/docs/superpowers/plans

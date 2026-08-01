@@ -12,7 +12,7 @@
 
 **One deliberate deviation from the spec:** the spec listed a `familiarName` prop on `ContractCompliance`. It is not needed — the button copy is static and the brief is built in the parent, which already derives `familiarName`. YAGNI: only `onReview` is added.
 
-**Worktree:** All work happens in `/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/feat-analytics-contract-review` (branch `feat/analytics-contract-review`, already created from `origin/main`, already has `node_modules` via pnpm — if not, run `pnpm install` there first, ~10s). All commands below run from that directory. Commits MUST be signed (`git commit -S`).
+**Worktree:** All work happens in `/Users/<someone>/Documents/GitHub/OpenCoven/coven-cave/.worktrees/feat-analytics-contract-review` (branch `feat/analytics-contract-review`, already created from `origin/main`, already has `node_modules` via pnpm — if not, run `pnpm install` there first, ~10s). All commands below run from that directory. Commits MUST be signed (`git commit -S`).
 
 **Key existing code you'll touch or reuse (read these before editing):**
 
@@ -366,7 +366,7 @@ gh pr merge feat/analytics-contract-review --squash --delete-branch
 - [ ] **Step 5: Local cleanup (squash orphans the tip — bypass is sanctioned after verifying content landed)**
 
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
 git fetch origin --quiet
 # verify the squash landed the same content before destroying the branch:
 git diff feat/analytics-contract-review origin/main -- src/components/familiar-analytics-content.tsx src/components/familiar-analytics-view.test.ts src/styles/familiar-analytics.css

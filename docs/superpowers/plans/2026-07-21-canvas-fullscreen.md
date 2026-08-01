@@ -10,12 +10,12 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-21-canvas-fullscreen-design.md` · **Bead:** cave-i0qt
 
-**Working directory for ALL tasks:** `/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/feat-canvas-fullscreen` (branch `feat/canvas-fullscreen`, local-only until Task 5 pushes). All commits are signed (`-S`).
+**Working directory for ALL tasks:** `/Users/<someone>/Documents/GitHub/OpenCoven/coven-cave/.worktrees/feat-canvas-fullscreen` (branch `feat/canvas-fullscreen`, local-only until Task 5 pushes). All commits are signed (`-S`).
 
 **One-time setup (before Task 1):**
 
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/feat-canvas-fullscreen
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave/.worktrees/feat-canvas-fullscreen
 pnpm install
 ```
 
@@ -675,7 +675,7 @@ bd update cave-i0qt --notes "Implemented on feat/canvas-fullscreen (worktree .wo
 
 ```bash
 gh pr merge <n> --squash --delete-branch
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
 git worktree remove .worktrees/feat-canvas-fullscreen
 git branch -D feat/canvas-fullscreen
 git worktree list

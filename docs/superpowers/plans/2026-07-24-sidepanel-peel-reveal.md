@@ -673,7 +673,7 @@ gh pr merge --squash --delete-branch \
 - [ ] **Step 5: Local cleanup + bead close**
 
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
 git worktree remove .worktrees/peel-sidepanel-reveal
 git branch -D peel-sidepanel-reveal
 git worktree list
