@@ -245,12 +245,49 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
   const mountedRef = useRef(true);
   const pendingOAuthRef = useRef<PendingOAuthStart | null>(null);
   const activeOAuthReservationRef = useRef<ActiveOAuthReservation | null>(null);
+  const pageHiddenOAuthFlowsRef = useRef(new Set<string>());
+  const pageHideHandlerRef = useRef<{
+    flowId: string;
+    handler: () => void;
+  } | null>(null);
   const familiarIdRef = useRef(familiar.id);
   const familiarGenerationRef = useRef(0);
   if (familiarIdRef.current !== familiar.id) {
     familiarIdRef.current = familiar.id;
     familiarGenerationRef.current += 1;
   }
+
+  const removeOAuthPageHideHandler = useCallback((flowId?: string) => {
+    const registered = pageHideHandlerRef.current;
+    if (!registered || (flowId && registered.flowId !== flowId)) return;
+    window.removeEventListener("pagehide", registered.handler);
+    pageHideHandlerRef.current = null;
+  }, []);
+
+  const registerOAuthPageHideHandler = useCallback((flowId: string) => {
+    removeOAuthPageHideHandler();
+    const handler = () => {
+      removeOAuthPageHideHandler(flowId);
+      const pending = pendingOAuthRef.current;
+      if (pending?.flowId === flowId) {
+        pageHiddenOAuthFlowsRef.current.add(flowId);
+        pendingOAuthRef.current = null;
+        pending.controller.abort();
+        cancelSystemBrowserOpen(pending.reservation);
+        void cancelXOAuthFlow(flowId, { keepalive: true });
+        return;
+      }
+      const active = activeOAuthReservationRef.current;
+      if (active?.flowId === flowId) {
+        pageHiddenOAuthFlowsRef.current.add(flowId);
+        activeOAuthReservationRef.current = null;
+        cancelSystemBrowserOpen(active.reservation);
+        void cancelXOAuthFlow(flowId, { keepalive: true });
+      }
+    };
+    pageHideHandlerRef.current = { flowId, handler };
+    window.addEventListener("pagehide", handler);
+  }, [removeOAuthPageHideHandler]);
 
   const settleOAuthReservation = useCallback((
     flowId: string,
@@ -259,14 +296,16 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
     const active = activeOAuthReservationRef.current;
     if (!active || active.flowId !== flowId) return false;
     activeOAuthReservationRef.current = null;
+    removeOAuthPageHideHandler(flowId);
     if (close) cancelSystemBrowserOpen(active.reservation);
     return true;
-  }, []);
+  }, [removeOAuthPageHideHandler]);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      removeOAuthPageHideHandler();
       const pending = pendingOAuthRef.current;
       pendingOAuthRef.current = null;
       if (pending) {
@@ -279,12 +318,13 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
         void cancelXOAuthFlow(active.flowId, { keepalive: true });
       }
     };
-  }, [settleOAuthReservation]);
+  }, [removeOAuthPageHideHandler, settleOAuthReservation]);
 
   useEffect(() => {
     const pending = pendingOAuthRef.current;
     if (pending && pending.familiarId !== familiar.id) {
       pendingOAuthRef.current = null;
+      removeOAuthPageHideHandler(pending.flowId);
       pending.controller.abort();
       cancelSystemBrowserOpen(pending.reservation);
       void cancelXOAuthFlow(pending.flowId);
@@ -312,6 +352,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
     familiar.id,
     familiar.xPublishEnabled,
     familiar.xResearchEnabled,
+    removeOAuthPageHideHandler,
     settleOAuthReservation,
   ]);
 
@@ -401,7 +442,11 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
     capability: XCapability,
     grant: XGrant | null,
   ) => {
-    if (pendingOAuthRef.current) return;
+    if (
+      pendingOAuthRef.current
+      || activeOAuthReservationRef.current
+      || connection?.activeFlow
+    ) return;
     const reservation = reserveSystemBrowserWindow({
       platform,
       hostname: window.location.hostname,
@@ -421,6 +466,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       generation: familiarGenerationRef.current,
     };
     pendingOAuthRef.current = pending;
+    registerOAuthPageHideHandler(pending.flowId);
     const ownsPending = () =>
       mountedRef.current
       && pending.familiarId === familiarIdRef.current
@@ -428,6 +474,8 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       && pendingOAuthRef.current === pending;
     const cancelPending = async () => {
       pending.controller.abort();
+      if (pageHiddenOAuthFlowsRef.current.has(pending.flowId)) return;
+      removeOAuthPageHideHandler(pending.flowId);
       cancelSystemBrowserOpen(reservation);
       await cancelXOAuthFlow(pending.flowId);
     };
@@ -498,7 +546,14 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
         && pending.generation === familiarGenerationRef.current
       ) setStartingOAuth(false);
     }
-  }, [announce, familiar.id, platform]);
+  }, [
+    announce,
+    connection?.activeFlow,
+    familiar.id,
+    platform,
+    registerOAuthPageHideHandler,
+    removeOAuthPageHideHandler,
+  ]);
 
   useEffect(() => {
     if (!oauthAttempt) return;
@@ -521,7 +576,12 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
       announce(message, "assertive");
       controller.abort();
       settleOAuthReservation(oauthAttempt.flowId, true);
-      if (cancelFlow) void cancelXOAuthFlow(oauthAttempt.flowId);
+      if (
+        cancelFlow
+        && !pageHiddenOAuthFlowsRef.current.has(oauthAttempt.flowId)
+      ) {
+        void cancelXOAuthFlow(oauthAttempt.flowId);
+      }
     };
 
     const poll = async () => {
@@ -663,9 +723,9 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
     if (
       cancellingActiveFlow
       || !connection
-      || connection.connected
       || !connection.activeFlow
       || !connection.oauthFlowId
+      || connection.oauthFlowId === oauthAttempt?.flowId
     ) return;
     const familiarId = familiar.id;
     const generation = familiarGenerationRef.current;
@@ -697,6 +757,11 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
     || startingOAuth
     || oauthAttempt !== null
     || cancellingActiveFlow;
+  const ownsConnectionFlow = oauthAttempt !== null
+    && connection?.oauthFlowId === oauthAttempt.flowId;
+  const inheritedActiveFlow = connection?.activeFlow === true
+    && !ownsConnectionFlow;
+  const connectionControlsBusy = busy || inheritedActiveFlow;
 
   return (
     <section
@@ -726,43 +791,44 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
         />
       ) : null}
 
-      {!loading && connection?.configured && !connection.connected ? (
+      {!loading && connection?.configured && inheritedActiveFlow ? (
         <div className="familiar-x-section__empty">
-          {connection.activeFlow ? (
-            <>
-              <p className="familiar-studio-brain__hint" role="status">
-                An X connection attempt is still active. Cancel it before reconnecting.
-              </p>
-              {connection.oauthFlowId ? (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="focus-ring"
-                  aria-label="Cancel connection attempt"
-                  loading={cancellingActiveFlow}
-                  onClick={() => void cancelInheritedFlow()}
-                >
-                  Cancel connection attempt
-                </Button>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <p className="familiar-studio-brain__hint">
-                Connect one X account before granting this familiar research or publishing access.
-              </p>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="focus-ring"
-                loading={startingOAuth}
-                disabled={platform === "unknown"}
-                onClick={() => void startOAuth("research", null)}
-              >
-                Connect X
-              </Button>
-            </>
-          )}
+          <p className="familiar-studio-brain__hint" role="status">
+            An X connection attempt is still active. Cancel it before reconnecting.
+          </p>
+          {connection.oauthFlowId ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="focus-ring"
+              aria-label="Cancel connection attempt"
+              loading={cancellingActiveFlow}
+              onClick={() => void cancelInheritedFlow()}
+            >
+              Cancel connection attempt
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!loading
+        && connection?.configured
+        && !connection.connected
+        && !inheritedActiveFlow ? (
+        <div className="familiar-x-section__empty">
+          <p className="familiar-studio-brain__hint">
+            Connect one X account before granting this familiar research or publishing access.
+          </p>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="focus-ring"
+            loading={startingOAuth}
+            disabled={platform === "unknown" || busy}
+            onClick={() => void startOAuth("research", null)}
+          >
+            Connect X
+          </Button>
         </div>
       ) : null}
 
@@ -780,7 +846,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
                 size="xs"
                 variant="ghost"
                 className="focus-ring"
-                disabled={busy}
+                disabled={connectionControlsBusy}
                 onClick={() => void startOAuth(
                   connection.scopes.includes("tweet.write") ? "publish" : "research",
                   null,
@@ -793,7 +859,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
                 variant="danger-ghost"
                 className="focus-ring"
                 loading={disconnecting}
-                disabled={busy}
+                disabled={connectionControlsBusy}
                 onClick={() => disconnectConfirm.trigger(() => void disconnect())}
               >
                 {disconnectConfirm.armed ? "Really disconnect X?" : "Disconnect"}
@@ -816,7 +882,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
                   role="switch"
                   aria-checked={researchEnabled}
                   aria-label={`Allow X research for ${familiar.display_name}`}
-                  disabled={busy}
+                  disabled={connectionControlsBusy}
                   onClick={() => void toggleResearch()}
                   className={`settings-switch focus-ring${researchEnabled ? " is-on" : ""}`}
                 >
@@ -833,7 +899,7 @@ export function FamiliarXSection({ familiar }: { familiar: ResolvedFamiliar }) {
                   role="switch"
                   aria-checked={publishEnabled}
                   aria-label={`Allow X publishing for ${familiar.display_name}`}
-                  disabled={busy}
+                  disabled={connectionControlsBusy}
                   onClick={() => void togglePublishing()}
                   className={`settings-switch focus-ring${publishEnabled ? " is-on" : ""}`}
                 >

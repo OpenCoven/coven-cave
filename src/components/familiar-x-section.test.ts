@@ -89,6 +89,28 @@ assert.match(
 );
 assert.match(
   source,
+  /window\.addEventListener\("pagehide"/,
+  "an owned OAuth attempt registers hard page-exit cleanup",
+);
+assert.match(
+  source,
+  /window\.removeEventListener\("pagehide"/,
+  "owned OAuth page-exit cleanup is removed when ownership changes",
+);
+const pageHideRegistrationIndex = source.indexOf(
+  "registerOAuthPageHideHandler(pending.flowId)",
+);
+const oauthPostIndex = source.indexOf(
+  'const response = await fetch("/api/x/oauth/start"',
+  pageHideRegistrationIndex,
+);
+assert.ok(
+  pageHideRegistrationIndex >= 0
+  && oauthPostIndex > pageHideRegistrationIndex,
+  "page-exit cleanup is installed synchronously before OAuth start can suspend",
+);
+assert.match(
+  source,
   /FLOW_ID_PATTERN\.test\(flowId\)/,
   "OAuth cancellation payloads are limited to sanitized flow IDs",
 );
@@ -96,6 +118,15 @@ assert.match(
   source,
   /cancelXOAuthFlow\(connection\.oauthFlowId\)/,
   "inherited-flow recovery cancels only the exposed active flow",
+);
+const cancelInheritedFlowSource = source.slice(
+  source.indexOf("async function cancelInheritedFlow"),
+  source.indexOf("const busy ="),
+);
+assert.doesNotMatch(
+  cancelInheritedFlowSource,
+  /\|\| connection\.connected/,
+  "connected accounts may cancel an inherited OAuth flow without disconnecting",
 );
 assert.match(source, /Cancel connection attempt/);
 assert.match(source, /if \(!oauthAttempt\) return;/, "inherited flows never start polling");

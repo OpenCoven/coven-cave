@@ -113,11 +113,23 @@ async function renderWithConnection(familiar: typeof familiarA, connected: boole
 }
 
 beforeEach(() => {
+  const listeners = new Map<string, Set<(event: Event) => void>>();
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
       location: { hostname: "localhost" },
-      dispatchEvent: vi.fn(),
+      addEventListener: vi.fn((type: string, listener: (event: Event) => void) => {
+        const handlers = listeners.get(type) ?? new Set();
+        handlers.add(listener);
+        listeners.set(type, handlers);
+      }),
+      removeEventListener: vi.fn((type: string, listener: (event: Event) => void) => {
+        listeners.get(type)?.delete(listener);
+      }),
+      dispatchEvent: vi.fn((event: Event) => {
+        for (const listener of listeners.get(event.type) ?? []) listener(event);
+        return true;
+      }),
       setInterval: globalThis.setInterval,
       clearInterval: globalThis.clearInterval,
       setTimeout: globalThis.setTimeout,
@@ -380,6 +392,210 @@ describe("FamiliarXSection async ownership", () => {
     expect(cancellations).toContainEqual({ flowId, keepalive: true });
   });
 
+  test("pagehide cancels the exact owned flow with keepalive and closes its popup without waiting for unmount", async () => {
+    const reservation = {
+      ok: true,
+      kind: "browser",
+      popup: { opener: null, closed: false, location: { replace() {} }, close() {} },
+    };
+    browserMocks.reserve.mockReturnValue(reservation);
+    const renderer = await renderWithConnection(familiarA, false);
+    let timeoutCallback: (() => void) | undefined;
+    window.setInterval = vi.fn(() => 1);
+    window.clearInterval = vi.fn();
+    window.setTimeout = vi.fn((callback: () => void) => {
+      timeoutCallback = callback;
+      return 2;
+    });
+    window.clearTimeout = vi.fn();
+    let flowId = "";
+    const cancellations: Array<{ flowId: string; keepalive?: boolean }> = [];
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        flowId = (JSON.parse(init.body as string) as { flowId: string }).flowId;
+        return jsonResponse({
+          ok: true,
+          flowId,
+          authorizationUrl: "https://x.com/i/oauth2/authorize",
+        });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        cancellations.push({
+          flowId: (JSON.parse(init.body as string) as { flowId: string }).flowId,
+          keepalive: init.keepalive,
+        });
+        return jsonResponse({ ok: true });
+      }
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: false,
+          activeFlow: true,
+          oauthFlowId: flowId,
+          oauthOutcome: "pending",
+        });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    await act(async () => {
+      renderer.root.findByType("button").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    window.dispatchEvent(new Event("pagehide"));
+
+    expect(browserMocks.cancel).toHaveBeenCalledTimes(1);
+    expect(browserMocks.cancel).toHaveBeenCalledWith(reservation);
+    expect(cancellations).toEqual([{ flowId, keepalive: true }]);
+    expect(window.removeEventListener).toHaveBeenCalledWith(
+      "pagehide",
+      expect.any(Function),
+    );
+
+    window.dispatchEvent(new Event("pagehide"));
+    await act(async () => {
+      timeoutCallback!();
+      await Promise.resolve();
+    });
+
+    expect(browserMocks.cancel).toHaveBeenCalledTimes(1);
+    expect(cancellations).toEqual([{ flowId, keepalive: true }]);
+
+    await act(async () => {
+      renderer.unmount();
+    });
+
+    expect(browserMocks.cancel).toHaveBeenCalledTimes(1);
+    expect(cancellations).toEqual([{ flowId, keepalive: true }]);
+  });
+
+  test("pagehide cleanup is installed synchronously before the OAuth start request settles", async () => {
+    const reservation = {
+      ok: true,
+      kind: "browser",
+      popup: { opener: null, closed: false, location: { replace() {} }, close() {} },
+    };
+    browserMocks.reserve.mockReturnValue(reservation);
+    const renderer = await renderWithConnection(familiarA, false);
+    const start = deferred<ReturnType<typeof jsonResponse>>();
+    let flowId = "";
+    const cancellations: Array<{ flowId: string; keepalive?: boolean }> = [];
+    globalThis.fetch = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        flowId = (JSON.parse(init.body as string) as { flowId: string }).flowId;
+        return start.promise;
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        cancellations.push({
+          flowId: (JSON.parse(init.body as string) as { flowId: string }).flowId,
+          keepalive: init.keepalive,
+        });
+        return Promise.resolve(jsonResponse({ ok: true }));
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    await act(async () => {
+      renderer.root.findByType("button").props.onClick();
+      window.dispatchEvent(new Event("pagehide"));
+      await Promise.resolve();
+    });
+
+    expect(browserMocks.cancel).toHaveBeenCalledWith(reservation);
+    expect(cancellations).toEqual([{ flowId, keepalive: true }]);
+
+    await act(async () => {
+      start.resolve(jsonResponse({
+        ok: true,
+        flowId,
+        authorizationUrl: "https://x.com/i/oauth2/authorize",
+      }));
+      await start.promise;
+      await Promise.resolve();
+    });
+
+    expect(browserMocks.open).not.toHaveBeenCalled();
+    expect(cancellations).toEqual([{ flowId, keepalive: true }]);
+  });
+
+  test("pagehide is not registered without an owned OAuth attempt or a successful reservation", async () => {
+    const renderer = await renderWithConnection(familiarA, false);
+
+    expect(window.addEventListener).not.toHaveBeenCalledWith(
+      "pagehide",
+      expect.any(Function),
+    );
+
+    browserMocks.reserve.mockReturnValue({
+      ok: false,
+      error: "Allow pop-ups for localhost, then try connecting X again.",
+    });
+    await act(async () => {
+      renderer.root.findByType("button").props.onClick();
+      await Promise.resolve();
+    });
+
+    expect(window.addEventListener).not.toHaveBeenCalledWith(
+      "pagehide",
+      expect.any(Function),
+    );
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  test("an owned OAuth attempt cannot start a duplicate connection while polling", async () => {
+    const renderer = await renderWithConnection(familiarA, false);
+    let flowId = "";
+    let oauthStarts = 0;
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        oauthStarts += 1;
+        flowId = (JSON.parse(init.body as string) as { flowId: string }).flowId;
+        return jsonResponse({
+          ok: true,
+          flowId,
+          authorizationUrl: "https://x.com/i/oauth2/authorize",
+        });
+      }
+      if (url === "/api/x/connection" && !init?.method) {
+        return jsonResponse({
+          configured: true,
+          connected: false,
+          activeFlow: true,
+          oauthFlowId: flowId,
+          oauthOutcome: "pending",
+        });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        return jsonResponse({ ok: true });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    await act(async () => {
+      renderer.root.findByType("button").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const connect = renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Connect X"),
+    );
+    expect(connect.props.disabled).toBe(true);
+
+    await act(async () => {
+      connect.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(oauthStarts).toBe(1);
+  });
+
   test("an inherited active flow shows recovery without starting OAuth polling", async () => {
     const inheritedFlowId = "I".repeat(43);
     window.setInterval = vi.fn(() => 1);
@@ -461,6 +677,99 @@ describe("FamiliarXSection async ownership", () => {
       "An X connection attempt is still active.",
     );
     expect(renderer.root.findByType("button").children).toContain("Connect X");
+  });
+
+  test("a connected account can cancel an inherited flow without disconnecting and then upgrade publishing scope", async () => {
+    const inheritedFlowId = "C".repeat(43);
+    const cancellations: string[] = [];
+    const connectionDeletes: RequestInit[] = [];
+    const oauthStarts: Array<{ capability: string; flowId: string }> = [];
+    let connectionReads = 0;
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/x/connection" && !init?.method) {
+        connectionReads += 1;
+        return jsonResponse({
+          configured: true,
+          connected: true,
+          activeFlow: connectionReads === 1,
+          oauthFlowId: inheritedFlowId,
+          oauthOutcome: connectionReads === 1 ? "pending" : "failed",
+          account: { id: "42", username: "cave", name: "Cave" },
+          scopes: ["tweet.read", "users.read", "offline.access"],
+        });
+      }
+      if (url === "/api/x/connection" && init?.method === "DELETE") {
+        connectionDeletes.push(init);
+        return jsonResponse({ ok: true });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "DELETE") {
+        cancellations.push(
+          (JSON.parse(init.body as string) as { flowId: string }).flowId,
+        );
+        return jsonResponse({ ok: true, cancelled: true });
+      }
+      if (url === "/api/x/oauth/start" && init?.method === "POST") {
+        const body = JSON.parse(init.body as string) as {
+          capability: string;
+          flowId: string;
+        };
+        oauthStarts.push(body);
+        return jsonResponse({ ok: false, error: "stop after proving upgrade" }, false);
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FamiliarXSection familiar={familiarA} />);
+    });
+
+    expect(JSON.stringify(renderer.toJSON())).toContain(
+      "An X connection attempt is still active.",
+    );
+    expect(
+      renderer.root.findByProps({
+        className: "familiar-x-section__account-name",
+      }).children.join(""),
+    ).toBe("Cave · @cave");
+    expect(
+      renderer.root.find(
+        (node) => node.type === "button" && node.children.includes("Reconnect"),
+      ).props.disabled,
+    ).toBe(true);
+    expect(button(renderer, "Allow X publishing for A").props.disabled).toBe(true);
+
+    await act(async () => {
+      button(renderer, "Cancel connection attempt").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(cancellations).toEqual([inheritedFlowId]);
+    expect(connectionDeletes).toEqual([]);
+    expect(connectionReads).toBe(2);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain(
+      "An X connection attempt is still active.",
+    );
+    expect(
+      renderer.root.findByProps({
+        className: "familiar-x-section__account-name",
+      }).children.join(""),
+    ).toBe("Cave · @cave");
+    const reconnect = renderer.root.find(
+      (node) => node.type === "button" && node.children.includes("Reconnect"),
+    );
+    expect(reconnect.props.disabled).toBe(false);
+
+    await act(async () => {
+      button(renderer, "Allow X publishing for A").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(oauthStarts).toHaveLength(1);
+    expect(oauthStarts[0].capability).toBe("publish");
+    expect(connectionDeletes).toEqual([]);
   });
 
   test("an inherited-flow cancellation from the old familiar cannot surface an error on the new familiar", async () => {
