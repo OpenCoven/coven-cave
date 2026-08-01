@@ -6,8 +6,14 @@
 - Use branches and worktrees only as short-lived PR transport for active implementation. Do not use branches as durable storage, coordination logs, or half-finished agent memory.
 - Keep durable coordination in tracked workflow artifacts: plans, specs, issues, PR descriptions/checklists, release notes, and handoff docs.
 - Before opening a PR, make the branch PR-shaped: scoped diff, relevant local verification, and a summary of what changed.
-- After a PR merges, delete the remote branch and remove the local worktree/branch. Preserve any intentionally unmerged work as an archive patch or named stash before cleanup.
-- Run `pnpm beads:worktrees` before closing PR-backed work. Record each local worktree as removed and verified or intentionally preserved with an owner and reason; `retire-after-gate` is not deletion authorization.
+- Create managed worktrees through `pnpm beads:worktrees:create -- --bead
+  cave-123 --branch fix/cave-123-example --owner kitty --purpose "Repair
+  example"` so the owning Bead records structured lifecycle metadata and
+  budget admission.
+- After a PR merges, run `pnpm beads:worktrees`, record the merged unit's
+  disposition, and use `pnpm beads:worktrees:apply` only when it reports a
+  complete repository maintenance transaction. Local cleanup is bounded and
+  exact-OID guarded; remote deletion remains proposal-only.
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
 

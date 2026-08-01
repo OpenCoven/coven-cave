@@ -58,6 +58,16 @@ const MUTATION_LOCK_POLL_MS = 10;
 const MUTATION_LOCK_WAIT_MS = 1_000;
 const GATE_CLEANUP_TIMEOUT_MS = 5_000;
 
+export function repositoryMaintenanceCapabilities() {
+  return {
+    local: { enforced: true, source: "scripts/maintenance-gate.mjs" },
+    coven: { enforced: false, source: "cave-wqa0b.2" },
+    beads: { enforced: false, source: "cave-wqa0b.3" },
+    github: { enforced: false, source: "cave-wqa0b.4" },
+    complete: false,
+  };
+}
+
 /** Synchronous sleep without CPU spin (callers are sync CLI/hook processes). */
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
