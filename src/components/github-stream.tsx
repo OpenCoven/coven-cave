@@ -123,7 +123,7 @@ export function GitHubStream({
       const list = rows();
       const i = current
         ? list.indexOf(current)
-        : list.findIndex((r) => r.getAttribute("aria-selected") === "true");
+        : list.findIndex((r) => r.getAttribute("aria-current") === "true");
       switch (e.key) {
         case "ArrowDown": e.preventDefault(); focusAt((i < 0 ? -1 : i) + 1); break;
         case "ArrowUp": e.preventDefault(); focusAt((i < 0 ? list.length : i) - 1); break;
@@ -229,7 +229,7 @@ function StreamRow({
       data-item-id={row.id}
       role="button"
       tabIndex={selected ? 0 : -1}
-      aria-selected={selected}
+      aria-current={selected ? "true" : undefined}
       aria-label={`${stage.label} — ${row.title} in ${row.repo}${numberSuffix}`}
       className={`gh-stream-row reveal-scope gh-tone--${stage.tone}${selected ? " is-selected" : ""}`}
       onClick={() => onSelect(row.id)}

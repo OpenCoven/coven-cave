@@ -2315,6 +2315,11 @@ function GitHubItemGlassPanel({
   // verbs. The choice sticks for the visit: triage opens it once, not per row.
   const [nextOpen, setNextOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  // Focused, this is a real modal: trap the tab ring inside it, return focus to
+  // whatever opened it, and let the hook own Escape. Inert while docked in the
+  // split, where the panel is just another region of the page.
+  useFocusTrap(focused, panelRef, { onEscape: onUnfocus });
 
   const toggle = useCallback((key: string) => {
     setOpen((prev) => ({ ...prev, [key]: prev[key] === false }));
@@ -2396,6 +2401,11 @@ function GitHubItemGlassPanel({
 
   const panel = (
     <aside
+      ref={panelRef}
+      // Docked, it is a labelled region. Raised over the list behind a scrim it
+      // IS a modal, and saying so is what lets a screen reader treat it as one.
+      role={focused ? "dialog" : undefined}
+      aria-modal={focused ? true : undefined}
       className={`gh-glass-panel gh-detail${focused ? " is-focused" : ""}`}
       aria-label={`${detailLabel} details`}
     >
@@ -2422,9 +2432,7 @@ function GitHubItemGlassPanel({
             {stateLabel}
           </span>
           <span className="gh-detail-spacer" />
-          {item.number != null ? (
-            <CopyButton value={item.url} label="Copy the link to this item" />
-          ) : null}
+          <CopyButton value={item.url} label="Copy the link to this item" />
         </div>
 
         <h2 className="gh-detail-title">{detail?.title ?? item.title}</h2>
@@ -2679,10 +2687,15 @@ const FILTER_BACK_LABEL: Record<Filter, string> = {
  */
 function GhSyncPill({ syncedAt, failing }: { syncedAt: number | null; failing: boolean }) {
   const [, setTick] = useState(0);
+  // Only age a label that is on screen. Before the first successful fetch the
+  // pill renders nothing, and a ticker behind it is a timer plus a re-render
+  // per 15s for no pixels.
+  const ticking = syncedAt !== null;
   useEffect(() => {
+    if (!ticking) return;
     const id = window.setInterval(() => setTick((n) => n + 1), 15_000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [ticking]);
 
   if (syncedAt === null && !failing) return null;
   const ageMs = syncedAt === null ? Number.POSITIVE_INFINITY : Date.now() - syncedAt;

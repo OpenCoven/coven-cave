@@ -247,6 +247,32 @@ assert.match(source, /function GhBudgetMeter/, "the header states the hour's sha
 assert.match(source, /setLastSyncedAt\(Date\.now\(\)\)/, "freshness is stamped only on a successful fetch");
 assert.match(boardCss, /\.gh-budget-track \{/, "the budget meter draws a spend bar, not just a number");
 
+// ── Review-feedback guards (PR #4198, copilot-pull-request-reviewer) ─────────
+// Rows are role="button", where aria-selected is not a valid state and some
+// assistive tech drops it — aria-current is the codebase's marker, and the
+// roving-index logic has to read the same attribute it writes.
+assert.doesNotMatch(stream, /aria-selected/, "stream rows do not use aria-selected on a role=button");
+assert.match(stream, /aria-current=\{selected \? "true" : undefined\}/, "the inspected row is marked with aria-current");
+assert.match(stream, /r\.getAttribute\("aria-current"\) === "true"/, "roving-index recovery reads the same attribute the row writes");
+
+// Raised over the list behind a scrim, the detail panel IS a modal: it says so,
+// traps the tab ring, and returns focus on close.
+assert.match(source, /role=\{focused \? "dialog" : undefined\}/, "the focused read carries dialog semantics");
+assert.match(source, /aria-modal=\{focused \? true : undefined\}/, "the focused read is announced as modal");
+assert.match(source, /useFocusTrap\(focused, panelRef, \{ onEscape: onUnfocus \}\)/, "the focused read traps focus and returns it");
+
+// The freshness ticker only runs when there is a label on screen to age.
+assert.match(source, /const ticking = syncedAt !== null;/, "the sync pill gates its ticker on having something to age");
+assert.match(source, /if \(!ticking\) return;/, "no interval is created for a pill that renders nothing");
+
+// A notification has a url but no number — gating the copy control on the
+// number made its link uncopyable.
+assert.doesNotMatch(
+  source,
+  /\{item\.number != null \? \(\s*<CopyButton/,
+  "the copy-link control is not gated on a number the item may not have",
+);
+
 // Selecting a repo pins the org to that repo's org and locks the Org select.
 assert.match(
   source,
