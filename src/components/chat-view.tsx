@@ -6415,7 +6415,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       title="Voice call"
                       aria-label="Voice call"
                     >
-                      <Icon name="ph:phone" width="var(--icon-2xs)" aria-hidden />
+                      <Icon name="ph:phone" width="var(--icon-md)" aria-hidden />
                     </button>
                     <ComposerActionsMenu
                       attach={{
@@ -6497,7 +6497,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           title="Queue message"
                           aria-label="Queue message"
                         >
-                          <Icon name="ph:arrow-up-bold" width="var(--icon-2xs)" aria-hidden />
+                          <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
                         </button>
                         <button
                           type="button"
@@ -6506,7 +6506,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           title="Cancel (esc)"
                           aria-label="Cancel response"
                         >
-                          <Icon name="ph:x-bold" width="var(--icon-2xs)" aria-hidden />
+                          <Icon name="ph:x-bold" width="var(--icon-md)" aria-hidden />
                         </button>
                       </>
                     ) : (
@@ -6519,7 +6519,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         title={`Send message (${keys.enter})`}
                         aria-label="Send message"
                       >
-                        <Icon name="ph:arrow-up-bold" width="var(--icon-2xs)" aria-hidden />
+                        <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
                       </button>
                     )}
                   </div>

@@ -840,19 +840,96 @@ function normalizeSpokenGlyphs(text: string): string {
   return spoken.replace(/\s{2,}/g, " ").trim();
 }
 
+// ── spoken citation handling (cave-jckyz, Charm review #4) ──────────────────
+// Citation apparatus belongs in show notes, not speech: "(S5, S6; high)" read
+// aloud is noise. Removal is strictly mechanical — a group goes only when
+// every token in it is recognizably citation metadata; anything containing
+// plain prose stays verbatim.
+
+/** Source-ledger ids: "S20", "C2", "F1.1", "src-kiro-specs", "knuth-lp-1992", "[^1]". */
+const CITATION_ID_RE =
+  /^(?:\^?\d+|SS|[A-Z]{1,2}\d{1,3}(?:\.\w+)?[a-z]?|(?:src|link)-[\w.…-]+|arXiv:[\w./-]+|[a-z][\w]*(?:-[\w…]+)+)$/;
+/** Confidence labels that only annotate a citation. */
+const CITATION_LABEL_RE =
+  /^(?:high|medium|low|inference|fact|theory|confidence|verified|\[?[IVH]\]?|\d{4}(?:-\d{2}){0,2})$/i;
+/**
+ * Tokens that anchor a parenthetical as citation metadata on their own.
+ * Deliberately narrower than `CITATION_LABEL_RE`: single grade letters would
+ * strip prose like "(I)", and bare years would strip publication years like
+ * "(2003)" that still read as meaningful speech.
+ */
+const CITATION_ANCHOR_RE =
+  /^(?:high|medium|low|inference|fact|theory|verified|confidence|\d{4}(?:-\d{2}){1,2})$/i;
+/**
+ * Ids allowed to anchor a parenthetical. Narrower than the bracket form:
+ * bare numbers ("(2003)") and hyphenated prose ("(state-of-the-art)") are
+ * not citations there, so kebab ids must carry a digit.
+ */
+const PAREN_ID_RE =
+  /^(?:SS|[A-Z]{1,2}\d{1,3}(?:\.\w+)?[a-z]?|(?:src|link)-[\w.…-]+|arXiv:[\w./-]+|[a-z][\w.…]*(?:-[\w.…]+)*-[\w.…]*\d[\w.…-]*)$/;
+
+function citationTokens(inner: string): string[] {
+  return inner.split(/[\s,;·+&]+/).filter(Boolean);
+}
+
+function stripSpokenCitations(text: string): string {
+  return text
+    // Bracket groups made only of ledger ids: "[S01]", "[knuth-lp-1992]".
+    .replace(/\[([^\][]+)\]/g, (match, inner: string) => {
+      const tokens = citationTokens(inner);
+      return tokens.every((token) => CITATION_ID_RE.test(token)) ? "" : match;
+    })
+    // Parentheticals of ids + dates + confidence labels: "(S20 2025-06; high)",
+    // "(high confidence)". At least one id or label keeps "(the DGM lesson)"
+    // and other prose parentheticals intact.
+    .replace(/\(([^()]+)\)/g, (match, inner: string) => {
+      const tokens = citationTokens(inner);
+      const allCitation = tokens.every(
+        (token) => PAREN_ID_RE.test(token) || CITATION_LABEL_RE.test(token),
+      );
+      const anchored = tokens.some(
+        (token) => PAREN_ID_RE.test(token) || CITATION_ANCHOR_RE.test(token),
+      );
+      return allCitation && anchored ? "" : match;
+    })
+    // Bare ledger ids left behind by markdown-link stripping ("S01 S06").
+    .replace(/(^|\s)[SCR]\d{1,3}[a-z]?(?=[\s,.;:!?]|$)/g, "$1")
+    // Tidy the seams the removals leave behind.
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/([,;:])\s*(?=[,.;:])/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/** Full spoken-text normalization: citations out, glyphs to words. */
+function spokenText(text: string): string {
+  return normalizeSpokenGlyphs(stripSpokenCitations(text));
+}
+
 /** Terminates a fragment for speech without ever doubling punctuation. */
 function speakable(fragment: string): string {
-  const trimmed = normalizeSpokenGlyphs(fragment);
+  const trimmed = spokenText(fragment);
   if (!trimmed) return trimmed;
   return SPEAKABLE_TERMINAL_RE.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
 /**
- * Mission titles arrive with trailing punctuation or truncation ellipses
- * ("…Self-Evolution.…"); strip them so templated openings speak cleanly.
+ * Mission titles are often raw research prompts ("Research and compare: X.
+ * Primary questions: …"). The episode should frame the intellectual question,
+ * not read the query furniture aloud (Charm review #1) — so strip prompt
+ * prefixes, cut instruction tails, and drop trailing punctuation/ellipses.
  */
 function spokenTitle(missionTitle: string): string {
-  return normalizeSpokenGlyphs(missionTitle).replace(/[\s.…:;,–—-]+$/u, "");
+  let title = normalizeSpokenGlyphs(missionTitle);
+  title = title.replace(
+    /^research(?:\s+(?:and\s+compare|prompt|brief|mission|task))?\s*[:\-–—]\s*/i,
+    "",
+  );
+  const instructionTail = title.search(
+    /[.!?]\s+(?:primary\s+questions?|questions?|task|recommend|compare|focus)\b/i,
+  );
+  if (instructionTail !== -1) title = title.slice(0, instructionTail);
+  return title.replace(/[\s.…:;,–—-]+$/u, "");
 }
 
 type NarrationUnit = {
@@ -887,7 +964,7 @@ function mediaNarrationSectionUnits(source: GenerationDraftSource): NarrationUni
       rawLine.replace(/^\s*[-*+]\s+/, "").replace(/^\s*>\s?/, ""),
     );
     if (line && !/^#{1,6}\s/.test(line)) {
-      lines.push({ title: null, text: normalizeSpokenGlyphs(line) });
+      lines.push({ title: null, text: spokenText(line) });
     }
   }
   return lines;
@@ -950,32 +1027,128 @@ function contestedSectionsFirst(units: NarrationUnit[]): NarrationUnit[] {
 
 /**
  * Per-style templated copy — episode structure only. Every findings turn the
- * templates introduce stays verbatim artifact text.
+ * templates introduce stays verbatim artifact text. Host bridges rotate
+ * through distinct editorial jobs (orient / define / challenge / connect /
+ * turn-to-practice) instead of repeating one generic line, and every section
+ * ends on a short host synthesis turn rather than the guest's last list item
+ * (cave-jckyz, Charm review #2/#5). Style guidance for dense research:
+ * breakdown (default) > interview (host as listener proxy) > recap > debate
+ * (only when the source has genuinely competing interpretations).
  */
+const rotated = (variants: readonly string[], index: number): string =>
+  variants[index % variants.length];
+
 const PODCAST_DIALOGUE_TEMPLATES: Record<
   Exclude<ResearchPodcastStyle, "recap">,
   (missionTitle: string) => Omit<DialogueTemplate, "budget">
 > = {
   breakdown: (missionTitle) => ({
-    opening: `Welcome in — today we're breaking down “${spokenTitle(missionTitle)}”, finding by finding.`,
-    framing: (title) => `Next up — ${speakable(title)}`,
+    opening: `Welcome in — today we're breaking down what we actually know about “${spokenTitle(missionTitle)}”, finding by finding.`,
+    framing: (title, section) =>
+      rotated(
+        [
+          `Next up — ${speakable(title)}`,
+          `Let's get precise about this one. ${speakable(title)}`,
+          `Here's the part worth slowing down for. ${speakable(title)}`,
+          `And notice how this connects to what we just heard. ${speakable(title)}`,
+          `So what would you actually do with this? ${speakable(title)}`,
+        ],
+        section,
+      ),
+    closer: (section) =>
+      rotated(
+        [
+          "Okay — that one's on the board.",
+          "Good. Let's keep moving.",
+          "That's the takeaway there.",
+          "Noted — that piece matters.",
+        ],
+        section,
+      ),
   }),
   debate: (missionTitle) => ({
     opening: `Welcome to the debate — today we're stress-testing “${spokenTitle(missionTitle)}”, starting where the findings are most contested.`,
-    framing: (title) => `Where do we actually stand on this one? ${speakable(title)}`,
+    framing: (title, section) =>
+      rotated(
+        [
+          `Where do we actually stand on this one? ${speakable(title)}`,
+          `Steelman it for me. ${speakable(title)}`,
+          `I'm not convinced yet — make the case. ${speakable(title)}`,
+          `What would it take to change your mind here? ${speakable(title)}`,
+        ],
+        section,
+      ),
+    closer: (section) =>
+      rotated(
+        [
+          "So the jury's still out on that one.",
+          "Fair — I'll grant that point.",
+          "We'll have to leave that one contested.",
+          "That lands. Next round.",
+        ],
+        section,
+      ),
   }),
   interview: (missionTitle) => ({
     opening: `Today my guest walks us through “${spokenTitle(missionTitle)}”. Let's get into it.`,
-    framing: (title) => `Walk me through this part — ${speakable(title)}`,
+    framing: (title, section) =>
+      rotated(
+        [
+          `Walk me through this part — ${speakable(title)}`,
+          `For listeners just joining us, what does this actually mean? ${speakable(title)}`,
+          `Push back on me for a second here. ${speakable(title)}`,
+          `How does that square with what you said earlier? ${speakable(title)}`,
+          `And for someone who wants to apply this tomorrow? ${speakable(title)}`,
+        ],
+        section,
+      ),
+    closer: (section) =>
+      rotated(
+        [
+          "Got it — that's much clearer now.",
+          "That's a really useful way to put it.",
+          "Right — I hadn't thought of it that way.",
+          "Okay, that helps. Let's go on.",
+        ],
+        section,
+      ),
   }),
 };
+
+/**
+ * Document furniture headings translated into listener questions — the host
+ * never reads "Executive summary" or "Open questions" aloud (cave-jckyz,
+ * Charm review #3). Matching is prefix-based after list numbering is dropped;
+ * unmatched headings flow to the style's own bridges.
+ */
+const FURNITURE_HEADING_QUESTIONS: [RegExp, string][] = [
+  [/^executive summary/i, "Let's start with the big picture — what's the headline here?"],
+  [/^key claims/i, "What are the claims we can actually stand behind?"],
+  [/^(?:key |detailed |main )?findings/i, "So what did the research actually find?"],
+  [/^(?:open|unresolved) questions/i, "What's still unsettled after all of this?"],
+  [/^(?:recommended )?next steps/i, "So where does this go from here?"],
+  [/^(?:comparison|decision) criteria/i, "If someone has to choose, how should they actually decide?"],
+  [/^\S+ comparison\b/i, "How do the options stack up against each other?"],
+  [/^(?:conclusion|bottom line|summary\b)/i, "So what's the bottom line?"],
+  [/^(?:sources?\b|source ledger|research log)/i, "And what is all of this based on?"],
+];
+
+function furnitureQuestion(title: string): string | null {
+  const bare = title.replace(/^\d+[.)]\s*/, "").trim();
+  for (const [pattern, question] of FURNITURE_HEADING_QUESTIONS) {
+    if (pattern.test(bare)) return question;
+  }
+  return null;
+}
 
 type DialogueTemplate = {
   budget: number;
   /** Templated host opener; counts against the character budget. */
   opening: string;
   /** Templated host bridge into a titled section; structure, never findings. */
-  framing: (title: string) => string;
+  framing: (title: string, section: number) => string;
+  /** Templated host synthesis turn closing a titled section. */
+  closer: (section: number) => string;
 };
 
 /**
@@ -998,11 +1171,15 @@ function draftDialogueScript(
   push(template.opening, "host");
   // Heading-less lines have no title to frame, so delivery alternates.
   let alternate: ResearchPodcastSpeaker = "guest";
+  let section = 0;
   outer: for (const unit of units) {
     const chunks = splitMediaDraftText(unit.text);
     if (chunks.length === 0) continue;
     if (unit.title !== null) {
-      const framing = template.framing(unit.title);
+      // Document furniture becomes a listener question; real headings get the
+      // style's rotating bridge (list numbering never gets spoken).
+      const heading = unit.title.replace(/^\d+[.)]\s*/, "");
+      const framing = furnitureQuestion(heading) ?? template.framing(heading, section);
       // Never leave an orphan host question: the framing line only enters
       // when at least its first findings chunk also fits the budget.
       if (used + framing.length + chunks[0].length > template.budget) break;
@@ -1011,6 +1188,13 @@ function draftDialogueScript(
         if (used + chunk.length > template.budget) break outer;
         push(chunk, "guest");
       }
+      // Host synthesis bookend — a section ends on the host's turn, not the
+      // guest's last list item. Skipped only when the budget is spent.
+      const closer = template.closer(section);
+      if (used + closer.length <= template.budget) {
+        push(closer, "host");
+      }
+      section += 1;
     } else {
       for (const chunk of chunks) {
         if (used + chunk.length > template.budget) break outer;

@@ -170,7 +170,7 @@ export function ComposerActionsMenu({
           setOpen(true);
         }}
       >
-        <Icon name="ph:plus" width="var(--icon-2xs)" aria-hidden />
+        <Icon name="ph:plus" width="var(--icon-md)" aria-hidden />
         {showIndicator ? <span className="composer-actions__indicator" aria-hidden /> : null}
       </button>
 
