@@ -26,6 +26,24 @@ export function parseTimeout(value) {
     : null;
 }
 
+async function awaitByDeadline(promise, deadline) {
+  const settlement = Promise.resolve(promise).catch(() => {});
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) return;
+
+  let timeout;
+  try {
+    await Promise.race([
+      settlement,
+      new Promise((resolve) => {
+        timeout = setTimeout(resolve, remainingMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function loopbackOriginResponds({
   port,
   timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -44,6 +62,7 @@ export async function loopbackOriginResponds({
         signal: AbortSignal.timeout(remainingMs),
       });
       if (response.status >= 200 && response.status < 400) return true;
+      await awaitByDeadline(response.body?.cancel(), deadline);
     } catch {}
 
     const retryInMs = Math.min(RETRY_DELAY_MS, deadline - Date.now());
