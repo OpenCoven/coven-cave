@@ -326,18 +326,20 @@ assert.doesNotMatch(
   "the in-chat back-to-chats control is removed",
 );
 
+// cave-7gr08: find is a band under the title row now, so the cluster carries
+// only its trigger — still ahead of the overflow menu, same reading order.
 assert.match(
   source,
-  /<div className="cave-chat-session-actions">[\s\S]*<ChatFindBar[\s\S]*<SessionOverflowMenu/,
-  "Open chat header actions keep the find bar ahead of the overflow menu",
+  /<div className="cave-chat-session-actions">[\s\S]*aria-label="Find in conversation"[\s\S]*<SessionOverflowMenu/,
+  "Open chat header actions keep the find trigger ahead of the overflow menu",
 );
 // cave-zolo: the header cluster carries direct Voice/Archive/Delete buttons;
 // the kebab holds only secondary tools (phone handoff, project, thinking,
 // reflect, debug), sourced from the pure menu model.
 assert.match(
   source,
-  /<VoiceCallButton[\s\S]*<ArchiveChatButton[\s\S]*<ChatFindBar[\s\S]*<DeleteChatButton[\s\S]*<SessionOverflowMenu/,
-  "Direct session actions (voice, archive, delete) render beside find and the kebab",
+  /<VoiceCallButton[\s\S]*<ArchiveChatButton[\s\S]*aria-label="Find in conversation"[\s\S]*<DeleteChatButton[\s\S]*<SessionOverflowMenu/,
+  "Direct session actions (voice, archive, delete) render beside the find trigger and the kebab",
 );
 assert.match(
   sessionHeader,

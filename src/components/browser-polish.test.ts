@@ -314,17 +314,44 @@ const hideWebviewFn = rustBrowser.match(
   /fn hide_webview\(webview: &tauri::Webview\) -> Result<\(\), String> \{[\s\S]*?\n\}/,
 )?.[0];
 assert.ok(hideWebviewFn, "hide_webview() exists in src-tauri/src/browser.rs");
-assert.match(hideWebviewFn, /#\[cfg\(target_os = "windows"\)\][\s\S]*webview\.hide\(\)/, "Windows hides WebView2 so it cannot capture clicks");
 assert.match(
   hideWebviewFn,
-  /#\[cfg\(not\(target_os = "windows"\)\)\][\s\S]*offscreen_browser_position\([\s\S]*PhysicalPosition::new\(x, y\)[\s\S]*set_position\(offscreen_position\)/,
-  "non-Windows parks the retained child fully outside its physical client area",
+  /#\[cfg\(any\(target_os = "windows", target_os = "linux"\)\)\][\s\S]*webview\.hide\(\)/,
+  "Windows hides WebView2 so it cannot capture clicks; Linux hides because parking is a no-op there (cave-vb79)",
 );
 assert.match(
-  rustBrowser,
-  /fn show_webview_at[\s\S]*inner_size\(\)[\s\S]*PhysicalPosition::new\(x, y\)[\s\S]*PhysicalSize::new\(w, h\)[\s\S]*#\[cfg\(target_os = "windows"\)\][\s\S]*webview\.show\(\)/,
-  "Windows atomically applies clamped bounds before revealing WebView2",
+  hideWebviewFn,
+  /#\[cfg\(not\(any\(target_os = "windows", target_os = "linux"\)\)\)\][\s\S]*offscreen_browser_position\([\s\S]*PhysicalPosition::new\(x, y\)[\s\S]*set_position\(offscreen_position\)/,
+  "the remaining platforms park the retained child fully outside its physical client area",
 );
+const showWebviewFn = rustBrowser.match(
+  /fn show_webview_at\([\s\S]*?\n\}/,
+)?.[0];
+assert.ok(showWebviewFn, "show_webview_at() exists in src-tauri/src/browser.rs");
+assert.match(
+  rustBrowser,
+  /fn show_webview_at[\s\S]*inner_size\(\)[\s\S]*PhysicalPosition::new\(x, y\)[\s\S]*PhysicalSize::new\(w, h\)[\s\S]*#\[cfg\(any\(target_os = "windows", target_os = "linux"\)\)\][\s\S]*webview\.show\(\)/,
+  "hiding platforms atomically apply clamped bounds before revealing the child",
+);
+
+// Hide and show must cover the SAME platform set. A platform that hides the
+// widget but never shows it again strands the browser invisible forever —
+// which is how extending the Linux hide (cave-vb79) could have gone wrong.
+{
+  // The first `cfg(any(...))` in each function is its hide/show guard.
+  const guardOf = (fn: string) =>
+    (fn.match(/#\[cfg\(any\(([^)]*)\)\)\]/)?.[1] ?? "").replace(/\s+/g, "");
+  const hideGuard = guardOf(hideWebviewFn);
+  assert.equal(
+    hideGuard,
+    guardOf(showWebviewFn),
+    "every platform that hides the child webview must also show it again in show_webview_at",
+  );
+  assert.ok(
+    hideGuard.includes('target_os="windows"') && hideGuard.includes('target_os="linux"'),
+    "the hiding platforms are Windows and Linux",
+  );
+}
 assert.match(rustBrowser, /fn browser_bounds_within_client[\s\S]{0,900}!x\.is_finite\(\)[\s\S]{0,500}browser bounds must be finite/, "invalid browser bounds fail closed");
 assert.match(rustBrowser, /fn ensure_browser[\s\S]{0,1200}offscreen_browser_creation_bounds[\s\S]*main\.add_child/, "first-created WebViews use the same bounded geometry policy");
 assert.match(rustBrowser, /fn offscreen_browser_creation_bounds[\s\S]{0,600}browser_bounds_within_client/, "offscreen creation bounds are derived from the bounded geometry policy");

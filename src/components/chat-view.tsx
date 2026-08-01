@@ -22,7 +22,14 @@ import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
 import { formatBatchDuration, toolBatchSummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
-import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
+import {
+  CHAT_OPEN_COVEN_EVENT,
+  CHAT_OPEN_PROJECTS_EVENT,
+  markCovenGroupPending,
+  markCovenTabPending,
+} from "@/lib/chat-tab-events";
+import { promoteSessionToCoven } from "@/lib/coven-promotion";
+import { loadGroups, saveGroups } from "@/lib/group-chat";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
 import { publishBoardChanged } from "@/lib/board-cache-events";
@@ -57,6 +64,8 @@ import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
+import { ChatFindBand } from "@/components/chat-find-band";
+import { ChatParticipants } from "@/components/chat-participants";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ChatEmptyState } from "@/components/chat-empty-state";
 import { ChatNewDashboard } from "@/components/chat-new-dashboard";
@@ -185,7 +194,7 @@ import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/
 import { useShowThinking } from "@/lib/reasoning-visibility";
 import { toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-input-diff";
 import { diffStat } from "@/lib/tool-edit-stat";
-import { findMatchingTurnIds } from "@/lib/transcript-find";
+import { findTranscriptHits } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
@@ -268,6 +277,9 @@ type Props = {
    *  switched this view to a different session. */
   openVoiceSessionId?: string;
   daemonRunning?: boolean;
+  /** Roster behind the title row's participants cluster — who you could add to
+   *  this chat to make it a coven (cave-9xadi). */
+  familiars?: Familiar[];
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
   sessions?: SessionRow[];
@@ -1235,128 +1247,6 @@ function turnMetaPeekTitle(turn: Turn): string | null {
   return parts.length ? parts.join(" · ") : null;
 }
 
-/** In-transcript find bar (CHAT-D9-04). Collapsed: a search icon button in
- *  the meta line. Expanded: query input + `n / m` matching-TURN count +
- *  prev/next/close, styled to extend the meta line without displacing the
- *  rename/voice/debug/delete actions. Esc layering is self-contained: the
- *  input's own onKeyDown stops propagation so closing find never reaches the
- *  composer's Esc handling (slash dismiss / stream cancel). */
-function ChatFindBar({
-  open,
-  query,
-  activeIndex,
-  matchCount,
-  focusNonce,
-  onOpen,
-  onClose,
-  onQueryChange,
-  onNext,
-  onPrev,
-}: {
-  open: boolean;
-  query: string;
-  /** 0-based index of the active match; rendered 1-based. */
-  activeIndex: number;
-  matchCount: number;
-  /** Bumped on every section-level ⌘F so an already-open bar refocuses. */
-  focusNonce: number;
-  onOpen: () => void;
-  onClose: () => void;
-  onQueryChange: (value: string) => void;
-  onNext: () => void;
-  onPrev: () => void;
-}) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, [open, focusNonce]);
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        className="focus-ring inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-        title="Find in conversation (⌘F)"
-        aria-label="Find in conversation"
-        onClick={onOpen}
-      >
-        <Icon name="ph:magnifying-glass" width={12} aria-hidden />
-      </button>
-    );
-  }
-
-  return (
-    <span className="cave-chat-find" role="search" aria-label="Find in conversation">
-      <Icon name="ph:magnifying-glass" width={11} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-      <input
-        ref={inputRef}
-        type="text"
-        value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.shiftKey) onPrev();
-            else onNext();
-            return;
-          }
-          if (e.key === "Escape") {
-            e.preventDefault();
-            e.stopPropagation();
-            onClose();
-          }
-        }}
-        placeholder="Find in chat…"
-        aria-label="Find in conversation"
-        className="cave-chat-find__input"
-      />
-      <span className="cave-chat-find__count" aria-live="polite">
-        {matchCount > 0 ? `${activeIndex + 1} / ${matchCount}` : "0 / 0"}
-      </span>
-      <button
-        type="button"
-        className="cave-chat-find__nav focus-ring"
-        aria-label="Previous match"
-        title="Previous match (shift+enter)"
-        disabled={matchCount === 0}
-        onClick={onPrev}
-      >
-        <Icon name="ph:caret-up" width={10} aria-hidden />
-      </button>
-      <button
-        type="button"
-        className="cave-chat-find__nav focus-ring"
-        aria-label="Next match"
-        title="Next match (enter)"
-        disabled={matchCount === 0}
-        onClick={onNext}
-      >
-        <Icon name="ph:caret-down" width={10} aria-hidden />
-      </button>
-      <button
-        type="button"
-        className="cave-chat-find__nav focus-ring"
-        aria-label="Close find"
-        title="Close find (esc)"
-        onClick={onClose}
-      >
-        <Icon name="ph:x-bold" width={9} aria-hidden />
-      </button>
-    </span>
-  );
-}
-
-/** CHAT-D3-06: compact ticking elapsed for the streaming/tooling meta line,
- *  so the wall-clock counter survives past the first token (ThinkingIndicator
- *  swaps to text and takes its counter with it). Same 1s interval pattern as
- *  ThinkingIndicator. SR-quiet by construction: the span is aria-hidden INSIDE
- *  the role="status" live region, so the per-second rewrite is excluded from
- *  the accessibility tree and never announced (the rewrites-per-second
- *  problem from CHAT-D12-04). */
 /** Inline remedy for the offline meta line: the old copy said "start it from
  *  the banner above", but the banner can be dismissed or off-screen — a broken
  *  reference. The action lives in the notice itself, self-contained like the
@@ -1828,7 +1718,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, familiars = [], sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2861,6 +2751,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [findDebouncedQuery, setFindDebouncedQuery] = useState("");
   const [findActiveIdx, setFindActiveIdx] = useState(0);
   const [findFocusNonce, setFindFocusNonce] = useState(0);
+  // Sticky across open/close and across sessions, the way an editor's find
+  // toggles behave — you set them because of how you search, not because of
+  // what you are searching.
+  const [findMatchCase, setFindMatchCase] = useState(false);
+  const [findWholeWord, setFindWholeWord] = useState(false);
   // Turn id flashed with the cave-turn-found highlight after a jump.
   const [foundTurnId, setFoundTurnId] = useState<string | null>(null);
   const foundClearTimerRef = useRef<number | null>(null);
@@ -2886,19 +2781,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [findOpen, findQuery]);
 
   // Recompute on (debounced) query change AND on turns change while open —
-  // a streaming chunk can create or grow a matching turn.
-  const findMatches = useMemo(() => {
+  // a streaming chunk can create or grow a matching turn. The band lists every
+  // OCCURRENCE, so this is hit-level: two hits in one turn are two rows and
+  // two Next presses, which is what a reader scanning the list expects.
+  const findHits = useMemo(() => {
     if (!findOpen) return [];
-    return findMatchingTurnIds(
+    return findTranscriptHits(
       turns.map((t) => ({
         id: t.id,
+        role: t.role,
         // Visible text only: assistant turns may carry inline <thinking>
         // blocks in `text`; match what the transcript actually renders.
         text: t.role === "assistant" ? splitReasoning(t.text).visible : t.text,
       })),
       findDebouncedQuery,
+      { matchCase: findMatchCase, wholeWord: findWholeWord },
     );
-  }, [findOpen, findDebouncedQuery, turns]);
+  }, [findOpen, findDebouncedQuery, findMatchCase, findWholeWord, turns]);
 
   // Find searches the whole transcript, so opening it mounts every turn — a
   // jump (jumpToFindMatch) resolves its target via querySelector and must find
@@ -2909,12 +2808,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // Keep the active pointer in bounds when the match set shrinks.
   useEffect(() => {
-    setFindActiveIdx((i) => (findMatches.length === 0 ? 0 : Math.min(i, findMatches.length - 1)));
-  }, [findMatches]);
+    setFindActiveIdx((i) => (findHits.length === 0 ? 0 : Math.min(i, findHits.length - 1)));
+  }, [findHits]);
 
   const jumpToFindMatch = useCallback(
-    (idx: number, matches: string[]) => {
-      const id = matches[idx];
+    (idx: number, matches: readonly { turnId: string }[]) => {
+      const id = matches[idx]?.turnId;
       if (!id) return;
       setFindActiveIdx(idx);
       // A find jump is explicit navigation away from the tail — release the
@@ -2947,23 +2846,36 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // A fresh (debounced) query jumps to its first matching turn. Guarded by
   // ref so turns-driven recomputes (e.g. streaming) never re-trigger a jump.
+  // Toggling Match case / Whole word re-runs the search, so it must re-jump
+  // too — the key includes them, otherwise flipping a toggle leaves you parked
+  // on a hit that the new options no longer produce.
   useEffect(() => {
     if (!findOpen) return;
-    if (findDebouncedQuery === lastJumpedQueryRef.current) return;
-    lastJumpedQueryRef.current = findDebouncedQuery;
-    if (findMatches.length > 0) jumpToFindMatch(0, findMatches);
+    const key = [findMatchCase ? "c" : "", findWholeWord ? "w" : "", findDebouncedQuery].join("|");
+    if (key === lastJumpedQueryRef.current) return;
+    lastJumpedQueryRef.current = key;
+    if (findHits.length > 0) jumpToFindMatch(0, findHits);
     else setFindActiveIdx(0);
-  }, [findOpen, findDebouncedQuery, findMatches, jumpToFindMatch]);
+  }, [findOpen, findDebouncedQuery, findMatchCase, findWholeWord, findHits, jumpToFindMatch]);
+
+  // The band names who said each hit, so it needs the operator's display name
+  // the same way the transcript rows do.
+  const findOperatorName = userDisplayName(useUserProfile()?.profile);
 
   const findNext = useCallback(() => {
-    if (findMatches.length === 0) return;
-    jumpToFindMatch((findActiveIdx + 1) % findMatches.length, findMatches);
-  }, [findActiveIdx, findMatches, jumpToFindMatch]);
+    if (findHits.length === 0) return;
+    jumpToFindMatch((findActiveIdx + 1) % findHits.length, findHits);
+  }, [findActiveIdx, findHits, jumpToFindMatch]);
 
   const findPrev = useCallback(() => {
-    if (findMatches.length === 0) return;
-    jumpToFindMatch((findActiveIdx - 1 + findMatches.length) % findMatches.length, findMatches);
-  }, [findActiveIdx, findMatches, jumpToFindMatch]);
+    if (findHits.length === 0) return;
+    jumpToFindMatch((findActiveIdx - 1 + findHits.length) % findHits.length, findHits);
+  }, [findActiveIdx, findHits, jumpToFindMatch]);
+
+  const selectFindHit = useCallback(
+    (idx: number) => jumpToFindMatch(idx, findHits),
+    [findHits, jumpToFindMatch],
+  );
 
   const openFind = useCallback(() => {
     setFindOpen(true);
@@ -5728,13 +5640,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer
     if (handleArrowKey(e, input, setInput)) return;
     // Recommended-next-path ghost fill: an EMPTY composer showing the
-    // recommendation as its placeholder accepts it with ⇥ or ← (both inert
-    // in an empty textarea, so no editing behaviour is lost). Ordered after
-    // the menus and token branches — they keep owning Tab while open — and
-    // gated on the empty draft so native Tab focus-move survives the moment
-    // there's real text (a11y). Fill, never send: the draft stays editable.
+    // recommendation as its placeholder accepts it with ⇥. Ordered after the
+    // menus and token branches — they keep owning Tab while open — and gated
+    // on the empty draft so native Tab focus-move survives the moment there's
+    // real text (a11y). Fill, never send: the draft stays editable.
+    //
+    // ← is deliberately NOT an accept key (cave-i66c). It was added on the
+    // reasoning that an empty textarea makes it inert, but "inert" is only true
+    // of the text buffer: ArrowLeft stays a live navigation key for screen
+    // readers and IME candidate lists, and preventDefault here eats it for
+    // them. It is also the one key a person presses expecting nothing to
+    // happen, so spending it to paste an assistant suggestion into their draft
+    // is a surprise with no undo affordance. Tab is the only accept.
     if (
-      ((e.key === "Tab" && !e.shiftKey) || e.key === "ArrowLeft") &&
+      e.key === "Tab" &&
+      !e.shiftKey &&
       input === "" &&
       !busy &&
       recommendedNextPath
@@ -5874,6 +5794,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // are archive-free by default — chat-siderail-hide-archived) but the
   // transcript survives, reachable via the chat list's "Show archived" toggle
   // where the same menu item unarchives it back onto the rail.
+  // Participants cluster (cave-9xadi): adding a familiar turns this solo
+  // thread into a coven. A coven is a set of ordinary per-familiar sessions,
+  // so nothing migrates — the group pins THIS session as the host's, and the
+  // coven surface resumes it. The latch pair (tab + group id) mirrors how the
+  // Projects/Skills tabs hand off, so the surface lands on the new coven
+  // rather than its empty state.
+  const promoteToCoven = useCallback(
+    (addedId: string) => {
+      const added = familiars.find((f) => f.id === addedId);
+      if (!added) return;
+      const { groups, group, carriedSession } = promoteSessionToCoven({
+        groups: loadGroups(),
+        host: { id: familiar.id, name: familiar.display_name },
+        added: [{ id: added.id, name: added.display_name }],
+        sessionId,
+        projectId: resolvedProjectId !== NO_PROJECT_ID ? resolvedProjectId : null,
+        now: new Date().toISOString(),
+        groupId: crypto.randomUUID(),
+      });
+      saveGroups(groups);
+      markCovenTabPending();
+      markCovenGroupPending(group.id);
+      window.dispatchEvent(new CustomEvent(CHAT_OPEN_COVEN_EVENT));
+      announce(
+        carriedSession
+          ? `Added ${added.display_name}. This conversation continues as ${familiar.display_name}'s thread in the coven.`
+          : `Started a coven with ${familiar.display_name} and ${added.display_name}.`,
+      );
+    },
+    [announce, familiar.display_name, familiar.id, familiars, resolvedProjectId, sessionId],
+  );
+
   const setChatArchived = async (archived: boolean) => {
     if (!sessionId || archiving) return;
     setArchiving(true);
@@ -6023,6 +5975,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           generateTitle={generateTitleFromTranscript}
         >
           <div className="cave-chat-session-actions">
+            {/* cave-9xadi: the participants cluster leads the action group —
+                who is in this conversation reads before what you can do to it.
+                The dashed + is the coven entry point, per the design's own
+                note: "a solo session becomes a coven by adding someone here." */}
+            <ChatParticipants
+              familiar={familiar}
+              familiars={familiars}
+              daemonRunning={daemonRunning ?? null}
+              onAddFamiliar={promoteToCoven}
+            />
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
                 no longer hides them). Voice joins the hover-reveal quick set;
                 Archive stays always-visible (the design's "Mark done" slot,
@@ -6042,19 +6004,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onSetArchived={(next) => void setChatArchived(next)}
               />
             ) : null}
-            {turns.length > 0 ? (
-              <ChatFindBar
-                open={findOpen}
-                query={findQuery}
-                activeIndex={findActiveIdx}
-                matchCount={findMatches.length}
-                focusNonce={findFocusNonce}
-                onOpen={openFind}
-                onClose={closeFind}
-                onQueryChange={setFindQuery}
-                onNext={findNext}
-                onPrev={findPrev}
-              />
+            {/* cave-7gr08: the header keeps only the trigger — the search
+                itself lives in the band under the title row. */}
+            {turns.length > 0 && !findOpen ? (
+              <button
+                type="button"
+                className="focus-ring"
+                title="Find in conversation (⌘F)"
+                aria-label="Find in conversation"
+                onClick={openFind}
+              >
+                <Icon name="ph:magnifying-glass" width={12} aria-hidden />
+              </button>
             ) : null}
             {sessionId ? (
               <DeleteChatButton deleting={deleting} onDelete={() => void deleteChat()} />
@@ -6091,6 +6052,28 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </div>
         </MetaLine>
       </header>
+      {/* Chat.dc.html 2a: find slides open as a band under the title row —
+          controls over a scrollable list of every hit. The list is the point:
+          a bare "3 / 17" makes you press Next until you recognise the one you
+          wanted, while rows let you read them and jump straight there. */}
+      <ChatFindBand
+        open={findOpen}
+        query={findQuery}
+        hits={findHits}
+        activeIndex={findActiveIdx}
+        matchCase={findMatchCase}
+        wholeWord={findWholeWord}
+        focusNonce={findFocusNonce}
+        familiar={familiar}
+        operatorName={findOperatorName}
+        onQueryChange={setFindQuery}
+        onToggleMatchCase={() => setFindMatchCase((v) => !v)}
+        onToggleWholeWord={() => setFindWholeWord((v) => !v)}
+        onSelectHit={selectFindHit}
+        onNext={findNext}
+        onPrev={findPrev}
+        onClose={closeFind}
+      />
       {/* Chat.dc.html 2a ③: the slim mono context band under the title —
           project · branch · model · cwd on the left, what the last run cost on
           the right. Everything here is machine-decided, so it reads in mono
