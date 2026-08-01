@@ -77,12 +77,14 @@ function foldPreservingLength(text: string): string {
   // Fast path: the common case folds cleanly, so skip the per-code-point walk.
   const naive = text.toLowerCase();
   if (naive.length === text.length) return naive;
-  let out = "";
+  // Collected then joined rather than `+=` in the loop: the slow path is rare
+  // but unbounded in principle, and this keeps it linear on every engine.
+  const parts: string[] = [];
   for (const ch of text) {
     const lower = ch.toLowerCase();
-    out += lower.length === ch.length ? lower : ch;
+    parts.push(lower.length === ch.length ? lower : ch);
   }
-  return out;
+  return parts.join("");
 }
 
 function isWordBoundedAt(haystack: string, start: number, end: number): boolean {
@@ -114,8 +116,8 @@ export function findOccurrences(
     if (!options.wholeWord || isWordBoundedAt(haystack, at, end)) {
       out.push({ start: at, end });
     }
-    // Advance past this occurrence, so "aa" in "aaa" counts twice rather than
-    // three times — the same way editors count.
+    // Non-overlapping, the way editors count: the scan resumes AFTER the match,
+    // so "aa" is one occurrence in "aaa" and two in "aaaa".
     from = at + needle.length;
   }
   return out;

@@ -45,10 +45,16 @@ test("turn ids stay one-per-turn — a jump lands on a turn, not an offset", () 
   assert.deepEqual(findMatchingTurnIds(turns, "deploy"), ["t1", "t2"]);
 });
 
-test("overlapping candidates count the way editors count them", () => {
-  // "aa" in "aaa" is two occurrences (0-2, then scan resumes at 2), not three.
+test("matches are non-overlapping, the way editors count them", () => {
+  // The scan resumes AFTER each match, so overlapping candidates are not
+  // double-counted: "aa" fits once in "aaa" and twice in "aaaa".
   assert.equal(findOccurrences("aaa", "aa").length, 1);
   assert.equal(findOccurrences("aaaa", "aa").length, 2);
+  assert.equal(findOccurrences("aaaaa", "aa").length, 2);
+  assert.deepEqual(findOccurrences("aaaa", "aa"), [
+    { start: 0, end: 2 },
+    { start: 2, end: 4 },
+  ]);
 });
 
 test("a blank or whitespace query matches nothing", () => {
