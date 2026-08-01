@@ -29,7 +29,7 @@ import "@/styles/composer-runtime-chip.css";
 /** The effective label a runtime+model pair displays: the curated model label,
  *  a trailing path segment for custom ids, or null (runtime-only adapters). */
 export function runtimeModelLabel(
-  modelValue: string,
+  modelValue: string | null,
   modelOptions: RuntimeModelOption[],
 ): string | null {
   return (
@@ -54,7 +54,7 @@ export function ComposerRuntimePopover({
   onOpenChange: (open: boolean) => void;
   anchorRef: React.RefObject<HTMLElement | null>;
   runtime: string;
-  modelValue: string;
+  modelValue: string | null;
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
   onPickModel: (id: string | null) => void;
@@ -103,9 +103,9 @@ export function ComposerRuntimePopover({
               <PopoverLabel>Model</PopoverLabel>
               {hasRuntimeDefault ? (
                 <PopoverItem
-                  checked={!modelValue}
+                  checked={modelValue === ""}
                   onSelect={() => {
-                    if (modelValue) onPickModel(null);
+                    if (modelValue !== "") onPickModel(null);
                     setOpen(false);
                   }}
                 >
@@ -142,8 +142,8 @@ export function ComposerRuntimeChip({
 }: {
   /** Active runtime (harness id): codex | claude | copilot | hermes | openclaw. */
   runtime: string;
-  /** Effective model id ("" when the runtime has no curated models). */
-  modelValue: string;
+  /** Effective model id, null while resolving, or "" for runtime default. */
+  modelValue: string | null;
   /** Curated models for the active runtime (catalogForRuntime). */
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
@@ -157,7 +157,9 @@ export function ComposerRuntimeChip({
   // The chip shows the model when the runtime has one, else the runtime name
   // alone — hermes/openclaw run their own adapters without a curated menu.
   const modelLabel =
-    !modelValue && runtimeOwnsModelDefault(runtime)
+    modelValue === null
+      ? "Resolving model…"
+      : !modelValue && runtimeOwnsModelDefault(runtime)
       ? "Runtime default"
       : runtimeModelLabel(modelValue, modelOptions);
 
