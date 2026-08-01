@@ -1,5 +1,6 @@
 import { GatewayClient, type GatewayClientHostDeps } from "@openclaw/gateway-client";
 import {
+  AgentEventSchema,
   ChatEventSchema,
   GATEWAY_SERVER_CAPS,
   HelloOkSchema,
@@ -119,33 +120,24 @@ function matchesOptionalRoutingField(
   return !hasOwn(value, key) || value[key] === expected;
 }
 
-function matchesOpenClawSessionToolRouting(
+function matchesOpenClawToolRoutingRecord(
+  value: Record<string, unknown>,
+  expected: { sessionKey: string; agentId: string },
+): boolean {
+  return matchesOptionalRoutingField(value, "sessionKey", expected.sessionKey)
+    && matchesOptionalRoutingField(value, "key", expected.sessionKey)
+    && matchesOptionalRoutingField(value, "agentId", expected.agentId);
+}
+
+function matchesOpenClawToolRouting(
   payload: Record<string, unknown>,
   expected: { sessionKey: string; agentId: string },
 ): boolean {
-  if (
-    !matchesOptionalRoutingField(payload, "sessionKey", expected.sessionKey)
-    || !matchesOptionalRoutingField(payload, "agentId", expected.agentId)
-  ) {
-    return false;
-  }
+  if (!matchesOpenClawToolRoutingRecord(payload, expected)) return false;
   const snapshot = isRecord(payload.snapshot) ? payload.snapshot : null;
-  if (
-    snapshot
-    && (
-      !matchesOptionalRoutingField(snapshot, "sessionKey", expected.sessionKey)
-      || !matchesOptionalRoutingField(snapshot, "agentId", expected.agentId)
-    )
-  ) {
-    return false;
-  }
+  if (snapshot && !matchesOpenClawToolRoutingRecord(snapshot, expected)) return false;
   const session = isRecord(payload.session) ? payload.session : null;
-  return !session
-    || (
-      !hasOwn(session, "key")
-      || session.key === expected.sessionKey
-    )
-    && matchesOptionalRoutingField(session, "agentId", expected.agentId);
+  return !session || matchesOpenClawToolRoutingRecord(session, expected);
 }
 
 function profileSelectsToolFrame(
@@ -483,9 +475,10 @@ export async function dispatchOpenClawGatewayTurn(args: {
   let settled = false;
   let lifecycleFailure: string | undefined;
   let preAcknowledgementOverflowGeneration: number | undefined;
-  let preAcknowledgementToolOverflowGeneration: number | undefined;
-  const queuedChatEvents: Array<{ generation: number; payload: unknown }> = [];
-  const queuedToolEvents: Array<{ generation: number; eventName: string; payload: unknown }> = [];
+  const queuedEvents: Array<
+    | { generation: number; kind: "chat"; payload: unknown }
+    | { generation: number; kind: "tool"; eventName: string; payload: unknown }
+  > = [];
   const seenToolEvents = new Set<string>();
   const openToolIds = new Set<string>();
   let doneResolve!: (value: { state: "final" | "aborted" | "error"; message?: string }) => void;
@@ -507,10 +500,8 @@ export async function dispatchOpenClawGatewayTurn(args: {
     lifecycleFailure = message;
     streamReady = false;
     connectionGeneration += 1;
-    queuedChatEvents.splice(0);
-    queuedToolEvents.splice(0);
+    queuedEvents.splice(0);
     preAcknowledgementOverflowGeneration = undefined;
-    preAcknowledgementToolOverflowGeneration = undefined;
     toolProjectionEnabled = false;
     openToolIds.clear();
     if (expectedRunId) {
@@ -530,8 +521,9 @@ export async function dispatchOpenClawGatewayTurn(args: {
   ) => {
     if (!toolProjectionEnabled || settled) return;
     toolProjectionEnabled = false;
-    queuedToolEvents.splice(0);
-    preAcknowledgementToolOverflowGeneration = undefined;
+    for (let index = queuedEvents.length - 1; index >= 0; index -= 1) {
+      if (queuedEvents[index]?.kind === "tool") queuedEvents.splice(index, 1);
+    }
     openToolIds.clear();
     args.onEvent({
       kind: "compatibility",
@@ -544,26 +536,34 @@ export async function dispatchOpenClawGatewayTurn(args: {
     if (settled || !toolProjectionEnabled) return;
     if (!expectedRunId) {
       if (!streamReady) return;
-      if (queuedToolEvents.length < 128) {
-        queuedToolEvents.push({ generation: connectionGeneration, eventName, payload });
+      if (queuedEvents.length < 128) {
+        queuedEvents.push({ generation: connectionGeneration, kind: "tool", eventName, payload });
       } else {
-        preAcknowledgementToolOverflowGeneration = connectionGeneration;
+        preAcknowledgementOverflowGeneration = connectionGeneration;
       }
       return;
     }
     if (!streamReady || !isRecord(payload) || payload.runId !== expectedRunId) return;
     if (
-      eventName === "session.tool"
-      && !matchesOpenClawSessionToolRouting(payload, {
+      !matchesOpenClawToolRouting(payload, {
         sessionKey: args.sessionKey,
         agentId: args.agentId,
       })
     ) {
       return;
     }
+    const agentEventPayload = openClawAgentEventPayload(payload);
+    if (
+      Value.Check(AgentEventSchema, agentEventPayload)
+      && isRecord(agentEventPayload)
+      && typeof agentEventPayload.seq === "number"
+      && agentEventPayload.seq <= highestToolSequence
+    ) {
+      return;
+    }
     const parsed = parseOpenClawToolEvent(
       eventName,
-      openClawAgentEventPayload(payload),
+      agentEventPayload,
       selectedToolProfile,
     );
     if (parsed.kind === "unknown") {
@@ -580,37 +580,23 @@ export async function dispatchOpenClawGatewayTurn(args: {
     args.onEvent(parsed);
   };
 
-  const drainQueuedToolEvents = () => {
-    if (!expectedRunId || !streamReady || settled || !toolProjectionEnabled) return;
-    const overflowed = preAcknowledgementToolOverflowGeneration === connectionGeneration;
-    preAcknowledgementToolOverflowGeneration = undefined;
-    if (overflowed) {
-      queuedToolEvents.splice(0);
-      disableToolProjection("tool-event-sequence-gap");
-      return;
-    }
-    for (const queued of queuedToolEvents.splice(0)) {
-      if (queued.generation === connectionGeneration) {
-        processToolEvent(queued.eventName, queued.payload);
-      }
-    }
-  };
-
-  const drainQueuedChatEvents = () => {
+  const drainQueuedEvents = () => {
     if (!expectedRunId || !streamReady || settled) return;
     const overflowed = preAcknowledgementOverflowGeneration === connectionGeneration;
     preAcknowledgementOverflowGeneration = undefined;
     if (overflowed) {
-      queuedChatEvents.splice(0);
-      queuedToolEvents.splice(0);
+      queuedEvents.splice(0);
       const message = "Gateway pre-acknowledgement event buffer overflow";
       args.onEvent({ kind: "error", message });
       settle("error", message);
       client.stop();
       return;
     }
-    for (const queued of queuedChatEvents.splice(0)) {
-      if (queued.generation === connectionGeneration) processChatEvent(queued.payload);
+    for (const queued of queuedEvents.splice(0)) {
+      if (queued.generation !== connectionGeneration) continue;
+      if (queued.kind === "chat") processChatEvent(queued.payload);
+      else processToolEvent(queued.eventName, queued.payload);
+      if (settled) break;
     }
   };
 
@@ -624,8 +610,8 @@ export async function dispatchOpenClawGatewayTurn(args: {
     // could expose a late frame buffered by the old socket.
     if (!expectedRunId) {
       if (!streamReady) return;
-      if (queuedChatEvents.length < 128) {
-        queuedChatEvents.push({ generation: connectionGeneration, payload });
+      if (queuedEvents.length < 128) {
+        queuedEvents.push({ generation: connectionGeneration, kind: "chat", payload });
       } else {
         preAcknowledgementOverflowGeneration = connectionGeneration;
       }
@@ -682,8 +668,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
     await client.request("sessions.messages.subscribe", { key: args.sessionKey, agentId: args.agentId });
     if (generation !== connectionGeneration || settled) return false;
     streamReady = true;
-    drainQueuedToolEvents();
-    drainQueuedChatEvents();
+    drainQueuedEvents();
     return true;
   };
 
@@ -709,10 +694,8 @@ export async function dispatchOpenClawGatewayTurn(args: {
         }
         // The official client reconnects after a transport loss. Restore the
         // documented session stream before accepting resumed chat frames.
-        queuedChatEvents.splice(0);
-        queuedToolEvents.splice(0);
+        queuedEvents.splice(0);
         preAcknowledgementOverflowGeneration = undefined;
-        preAcknowledgementToolOverflowGeneration = undefined;
         const generation = ++connectionGeneration;
         void subscribeToSession(generation)
           .catch(() => {
@@ -735,10 +718,8 @@ export async function dispatchOpenClawGatewayTurn(args: {
           disableToolProjection("tool-event-reconnect-gap");
         }
         streamReady = false;
-        queuedChatEvents.splice(0);
-        queuedToolEvents.splice(0);
+        queuedEvents.splice(0);
         preAcknowledgementOverflowGeneration = undefined;
-        preAcknowledgementToolOverflowGeneration = undefined;
         connectionGeneration += 1;
       },
       onEvent: (frame) => {
@@ -754,7 +735,6 @@ export async function dispatchOpenClawGatewayTurn(args: {
         if (settled) return;
         if (expectedRunId && toolProjectionEnabled && openToolIds.size > 0) {
           disableToolProjection("tool-event-sequence-gap");
-          return;
         }
         failDispatchLifecycle("Gateway transport sequence gap");
       },
@@ -837,8 +817,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
     };
   }
   expectedRunId = runId;
-  drainQueuedToolEvents();
-  drainQueuedChatEvents();
+  drainQueuedEvents();
 
   return {
     kind: "accepted",

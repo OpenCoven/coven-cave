@@ -1140,6 +1140,7 @@ async function createToolGatewayHarness(id) {
   let dispatchOptions;
   let clientCount = 0;
   let subscriptionCalls = 0;
+  let stopCalls = 0;
   const events = [];
   const dispatch = await dispatchOpenClawGatewayTurn({
     sessionKey: expected.sessionKey,
@@ -1158,7 +1159,9 @@ async function createToolGatewayHarness(id) {
         start() {
           queueMicrotask(() => options.onHelloOk?.(helloOk()));
         },
-        stop() {},
+        stop() {
+          if (clientIndex === 1) stopCalls += 1;
+        },
         async request(method, _params, requestOptions) {
           if (method === "sessions.messages.subscribe") {
             subscriptionCalls += 1;
@@ -1180,6 +1183,7 @@ async function createToolGatewayHarness(id) {
     dispatchOptions,
     events,
     subscriptionCalls: () => subscriptionCalls,
+    stopCalls: () => stopCalls,
   };
 }
 
@@ -1195,6 +1199,54 @@ function toolPayload(frameIndex, overrides = {}) {
 
 function emitGatewayEvent(options, event, payload) {
   options.onEvent?.({ type: "event", event, payload });
+}
+
+const optionalRoutingTools = await createToolGatewayHarness("optional-tool-routing");
+const foreignRoutingMarker = "foreign-tool-routing-must-not-project";
+const foreignRoutingOverrides = [
+  { sessionKey: "agent:other:explicit:foreign" },
+  { key: "agent:other:explicit:foreign" },
+  { agentId: "other-agent" },
+  { snapshot: { sessionKey: "agent:other:explicit:foreign" } },
+  { snapshot: { key: "agent:other:explicit:foreign" } },
+  { snapshot: { agentId: "other-agent" } },
+  { session: { sessionKey: "agent:other:explicit:foreign" } },
+  { session: { key: "agent:other:explicit:foreign" } },
+  { session: { agentId: "other-agent" } },
+];
+for (const [index, routing] of foreignRoutingOverrides.entries()) {
+  emitGatewayEvent(optionalRoutingTools.dispatchOptions, "agent", toolPayload(0, {
+    seq: index + 3,
+    ...routing,
+    data: {
+      toolCallId: `foreign-tool-${index}`,
+      args: { command: foreignRoutingMarker },
+    },
+  }));
+}
+emitGatewayEvent(optionalRoutingTools.dispatchOptions, "agent", toolPayload(0, { seq: 20 }));
+emitGatewayEvent(optionalRoutingTools.dispatchOptions, "chat", {
+  runId: expected.runId,
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  seq: 0,
+  state: "final",
+});
+assert.deepEqual(
+  optionalRoutingTools.events,
+  [
+    { kind: "tool_start", id: "tool-1", name: "exec", input: { command: "echo hi" }, seq: 20 },
+    { kind: "final" },
+  ],
+  "optional direct and session-snapshot routing mismatches reject every selected tool frame while official frames may omit routing",
+);
+assert.equal(
+  JSON.stringify(optionalRoutingTools.events).includes(foreignRoutingMarker),
+  false,
+  "foreign optional routing fields cannot expose tool payloads from another session",
+);
+if (optionalRoutingTools.dispatch.kind === "accepted") {
+  assert.deepEqual(await optionalRoutingTools.dispatch.done, { state: "final" });
 }
 
 const correlatedTools = await createToolGatewayHarness("correlated-tool-lifecycle");
@@ -1339,6 +1391,145 @@ if (preAckToolDispatch.kind === "accepted") {
   assert.deepEqual(await preAckToolDispatch.done, { state: "final" });
 }
 
+async function dispatchPreAckOrderedFrames(id, emitFrames) {
+  const events = [];
+  const dispatch = await dispatchOpenClawGatewayTurn({
+    sessionKey: expected.sessionKey,
+    agentId: expected.agentId,
+    message: id,
+    idempotencyKey: `cave-request-${id}`,
+    env: {
+      OPENCLAW_GATEWAY_DISPATCH: "1",
+      OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+    },
+    onEvent: (event) => events.push(event),
+    clientFactory: (options) => ({
+      start() {
+        queueMicrotask(() => options.onHelloOk?.(helloOk()));
+      },
+      stop() {},
+      async request(method, _params, requestOptions) {
+        if (method === "sessions.messages.subscribe") return { subscribed: true };
+        if (method === "chat.send") {
+          requestOptions?.onSent?.();
+          emitFrames(options);
+          return { runId: expected.runId };
+        }
+        return {};
+      },
+    }),
+  });
+  assert.equal(dispatch.kind, "accepted");
+  return { dispatch, events };
+}
+
+const preAckFinalThenTool = await dispatchPreAckOrderedFrames("pre-ack-final-then-tool", (options) => {
+  emitGatewayEvent(options, "chat", {
+    runId: expected.runId,
+    sessionKey: expected.sessionKey,
+    agentId: expected.agentId,
+    seq: 0,
+    state: "final",
+  });
+  emitGatewayEvent(options, "agent", toolPayload(0));
+});
+assert.deepEqual(
+  preAckFinalThenTool.events,
+  [{ kind: "final" }],
+  "pre-acknowledgement frames preserve final-before-tool arrival order so a later tool frame cannot project",
+);
+if (preAckFinalThenTool.dispatch.kind === "accepted") {
+  assert.deepEqual(await preAckFinalThenTool.dispatch.done, { state: "final" });
+}
+
+const preAckToolThenFinal = await dispatchPreAckOrderedFrames("pre-ack-tool-then-final", (options) => {
+  emitGatewayEvent(options, "agent", toolPayload(0));
+  emitGatewayEvent(options, "chat", {
+    runId: expected.runId,
+    sessionKey: expected.sessionKey,
+    agentId: expected.agentId,
+    seq: 0,
+    state: "final",
+  });
+});
+assert.deepEqual(
+  preAckToolThenFinal.events,
+  [
+    { kind: "tool_start", id: "tool-1", name: "exec", input: { command: "echo hi" }, seq: 3 },
+    { kind: "final" },
+  ],
+  "pre-acknowledgement frames preserve tool-before-final arrival order",
+);
+if (preAckToolThenFinal.dispatch.kind === "accepted") {
+  assert.deepEqual(await preAckToolThenFinal.dispatch.done, { state: "final" });
+}
+
+const mixedPreAckOverflow = await dispatchPreAckOrderedFrames("mixed-pre-ack-overflow", (options) => {
+  for (let index = 0; index < 64; index += 1) {
+    emitGatewayEvent(options, "agent", toolPayload(0, {
+      seq: index + 100,
+      data: {
+        toolCallId: `mixed-overflow-tool-${index}`,
+        args: { command: `echo ${index}` },
+      },
+    }));
+    emitGatewayEvent(options, "chat", { ...delta, seq: index, deltaText: `chunk-${index}` });
+  }
+  emitGatewayEvent(options, "chat", {
+    runId: expected.runId,
+    sessionKey: expected.sessionKey,
+    agentId: expected.agentId,
+    seq: 64,
+    state: "final",
+  });
+});
+assert.deepEqual(
+  mixedPreAckOverflow.events,
+  [{ kind: "error", message: "Gateway pre-acknowledgement event buffer overflow" }],
+  "the shared pre-acknowledgement bound fails before projecting any queued chat or tool frame",
+);
+if (mixedPreAckOverflow.dispatch.kind === "accepted") {
+  assert.deepEqual(
+    await mixedPreAckOverflow.dispatch.done,
+    { state: "error", message: "Gateway pre-acknowledgement event buffer overflow" },
+  );
+}
+
+const replayedToolSequence = await createToolGatewayHarness("replayed-tool-sequence");
+emitGatewayEvent(replayedToolSequence.dispatchOptions, "agent", toolPayload(0));
+emitGatewayEvent(replayedToolSequence.dispatchOptions, "agent", toolPayload(1, {
+  seq: 2,
+  data: {
+    phase: "future-replayed-phase",
+    partialResult: "stale-malformed-tool-data-must-not-quarantine",
+  },
+}));
+emitGatewayEvent(replayedToolSequence.dispatchOptions, "agent", toolPayload(1));
+emitGatewayEvent(replayedToolSequence.dispatchOptions, "chat", {
+  runId: expected.runId,
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  seq: 0,
+  state: "final",
+});
+assert.deepEqual(
+  replayedToolSequence.events,
+  [
+    { kind: "tool_start", id: "tool-1", name: "exec", input: { command: "echo hi" }, seq: 3 },
+    { kind: "tool_progress", id: "tool-1", output: "hi", seq: 7 },
+    { kind: "final" },
+  ],
+  "a stale malformed AgentEvent is ignored before parsing so a later fresh sparse sequence still projects",
+);
+if (replayedToolSequence.dispatch.kind === "accepted") {
+  assert.deepEqual(await replayedToolSequence.dispatch.done, { state: "final" });
+}
+assert.equal(
+  (await loadOpenClawCompatibility(openClawDiscoveryFromHello(helloOk()))).mode,
+  "structured",
+  "a stale malformed AgentEvent does not quarantine or disable the selected tool profile",
+);
+
 const toolGap = await createToolGatewayHarness("tool-transport-gap");
 emitGatewayEvent(toolGap.dispatchOptions, "agent", toolPayload(0));
 toolGap.dispatchOptions.onGap?.({ expected: 4, received: 6 });
@@ -1356,14 +1547,17 @@ assert.deepEqual(
   [
     { kind: "tool_start", id: "tool-1", name: "exec", input: { command: "echo hi" }, seq: 3 },
     { kind: "compatibility", code: "tool-event-sequence-gap" },
-    { kind: "delta", text: "Hello", replace: false },
-    { kind: "final" },
+    { kind: "error", message: "Gateway transport sequence gap" },
   ],
-  "an authoritative transport gap settles unfinished tool projection without terminating valid chat",
+  "an authoritative transport gap settles open tools before terminating the Gateway-owned dispatch",
 );
 if (toolGap.dispatch.kind === "accepted") {
-  assert.deepEqual(await toolGap.dispatch.done, { state: "final" });
+  assert.deepEqual(
+    await toolGap.dispatch.done,
+    { state: "error", message: "Gateway transport sequence gap" },
+  );
 }
+assert.ok(toolGap.stopCalls() > 0, "an authoritative transport gap stops the dispatch client");
 
 const reconnectingTool = await createToolGatewayHarness("tool-reconnect-gap");
 emitGatewayEvent(reconnectingTool.dispatchOptions, "agent", toolPayload(0));
