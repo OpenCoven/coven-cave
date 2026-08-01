@@ -150,7 +150,12 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // of cross-platform headroom without relaxing the byte ceiling.
   // 2026-08-01 (Memory document reader): the shared reader traces 5,817 files
   // on Windows. Retain the established ten-file cross-platform headroom.
-  fileCount: 5_827,
+  // 2026-08-01 (main integration tree): the traced closure measures 5,828
+  // files on Ubuntu and 5,831 on Windows. These are required emitted server
+  // chunks and target-native runtime files; maps, declarations, nested
+  // dependencies, and non-runtime roots are already excluded. Preserve the
+  // established ten-file cross-platform headroom.
+  fileCount: 5_841,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
