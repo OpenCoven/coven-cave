@@ -1847,7 +1847,10 @@ function parseGitHubRepositoryUrl(
   try {
     parsed = new URL(value);
   } catch {
-    return { repository: null, error: "malformed" };
+    // Git accepts a filesystem path as a remote. That is not a malformed
+    // GitHub URL, it is not a GitHub URL — a distinction the caller relies on
+    // to tell "no GitHub identity" from "someone tampered with my origin".
+    return { repository: null, error: "non-github" };
   }
   const supportedProtocol = parsed.protocol === "https:" || parsed.protocol === "ssh:";
   if (!supportedProtocol || parsed.hostname.toLowerCase() !== "github.com") {
@@ -1891,18 +1894,35 @@ function originRepositoryIdentity(root: string, requestedRepo: string): OriginRe
   if (pushLines.length !== 1) return fail("has multiple or ambiguous push destinations");
 
   const repositories: string[] = [];
+  let nonGitHubUrls = 0;
   for (const [kind, urls] of [
     ["fetch", fetchLines],
     ["push", pushLines],
   ] as const) {
     for (const url of urls) {
       const parsed = parseGitHubRepositoryUrl(url);
-      if (parsed.error === "non-github") return fail(`has a non-GitHub ${kind} URL`);
+      if (parsed.error === "non-github") {
+        nonGitHubUrls += 1;
+        continue;
+      }
       if (parsed.error !== null || parsed.repository === null) {
         return fail(`has a malformed ${kind} URL`);
       }
       repositories.push(parsed.repository);
     }
+  }
+  // A remote that simply is not on GitHub is a known-unknown, not a fault: the
+  // repo has no pull-request tier, and the lane falls back to the ancestry and
+  // landing evidence it is really decided on. Degrading here rather than
+  // erroring only ever REMOVES a positive signal, so it cannot make retirement
+  // easier than it would be with GitHub evidence present.
+  //
+  // A remote that mixes the two is still a fault — a GitHub fetch URL beside a
+  // non-GitHub push destination is exactly the tampering this check exists for.
+  if (nonGitHubUrls > 0) {
+    return repositories.length > 0
+      ? fail("mixes GitHub and non-GitHub URLs")
+      : { repository: null, error: null };
   }
   const identities = new Map(repositories.map((repository) => [repository.toLowerCase(), repository]));
   if (identities.size !== 1) return fail("has differing fetch and push repositories");
