@@ -14,7 +14,6 @@ import { catalogForRuntime } from "@/lib/runtime-models";
 import type { RuntimeModelOption } from "@/lib/grok-build";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
-import { FamiliarHermesApiCard } from "@/components/familiar-hermes-api-card";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
@@ -922,10 +921,6 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               </label>
             </div>
           </section>
-
-          {/* Only Hermes has a CLI mode that cannot report tool activity, so
-              this card appears only when Hermes is the effective runtime. */}
-          {harnessId === "hermes" ? <FamiliarHermesApiCard familiarId={familiar.id} /> : null}
 
           <section className="familiar-studio-brain__card familiar-studio-brain__card--prompt">
             <h3 className="familiar-studio-brain__card-title">System prompt / note</h3>

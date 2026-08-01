@@ -16,7 +16,7 @@
 //   6. Emits the cave-yp21x build-provenance block only when guards were skipped.
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
@@ -43,6 +43,14 @@ function seedRepo() {
   git("config", "user.name", "Fixture");
   git("config", "commit.gpgsign", "false");
   git("config", "tag.gpgsign", "false");
+  // Point hooks at an empty directory. A machine with a global core.hooksPath
+  // or init.templateDir would otherwise fire someone's real hooks against this
+  // throwaway repo — a fixture must not run arbitrary local automation just to
+  // make five commits. (Guard taken from a parallel session's fixture, which
+  // had it and this one did not; see cave-5yyj1.)
+  const hooks = path.join(dir, "empty-hooks");
+  mkdirSync(hooks, { recursive: true });
+  git("config", "core.hooksPath", hooks);
 
   const commitTag = (tag, subject) => {
     writeFileSync(path.join(dir, `${tag}.txt`), `${tag}\n`);

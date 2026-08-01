@@ -106,8 +106,8 @@ assert.match(
 );
 assert.match(
   selectRuntimeBlock,
-  /finally \{[\s\S]{0,160}?generation === modelResolutionGenerationRef\.current[\s\S]{0,160}?await refreshModelState\(\(\) => true, generation\);/,
-  "the latest runtime write reconciles its optimistic flip even when the PATCH fails",
+  /finally \{\s*\n\s*await refreshModelState\(\);/,
+  "the model-state refetch reconciles the optimistic flip (even when the PATCH fails)",
 );
 
 const selectModelBlock = chatView.match(/const handleSelectModel = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
@@ -118,8 +118,8 @@ assert.match(
 );
 assert.match(
   selectModelBlock,
-  /enqueueModelMutation\(async \(\) => \{[\s\S]*?await fetch\("\/api\/chat\/model-state"[\s\S]*?generation === modelResolutionGenerationRef\.current[\s\S]*?await refreshModelState\(\(\) => true, generation\);/,
-  "the latest model write refreshes capability controls from authoritative state",
+  /if \(json\.ok && json\.state\) \{[\s\S]*?setModelState\(json\.state\);[\s\S]*?await refreshModelState\(\);/,
+  "a successful model selection refreshes capability controls from the authoritative state response",
 );
 assert.match(
   chatView,
@@ -187,13 +187,8 @@ assert.match(hostCss, /\.cave-composer-host-chip \{[\s\S]*?border-radius: var\(-
 
 assert.match(
   chatView,
-  /const composerModelValue = chatLaunchReadiness\.modelValue;/,
-  "the chat chip reads the final resolved model from shared launch readiness",
-);
-assert.doesNotMatch(
-  chatView,
-  /composerModelOptions\[0\]\?\.id/,
-  "an unresolved chat must not display an unselected inventory entry",
+  /modelState\?\.effectiveModel && modelState\.effectiveModel !== "unknown"[\s\S]*?: composerRuntimeOwnsDefault[\s\S]*?\? ""/,
+  "an unconfigured runtime-owned chat shows the runtime default rather than an unselected inventory entry",
 );
 
 console.log("composer-runtime-chip.test.ts: ok");

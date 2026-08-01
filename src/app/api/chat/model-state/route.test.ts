@@ -24,7 +24,7 @@ assert.match(route, /saveConfig/);
 assert.match(route, /saveConversation/);
 assert.match(
   route,
-  /const hermesBinding = bindingFor\(await loadConfig\(\), familiarId\);[\s\S]*?const hermesDirect =[\s\S]*?!isSshRuntime\(hermesBinding\.runtime\)[\s\S]*?hermesDirect && hermesApi !== null/,
+  /const hermesDirect =[\s\S]*?!isSshRuntime\(bindingFor\(await loadConfig\(\), familiarId\)\.runtime\)[\s\S]*?hermesDirect && hermesApi !== null/,
   "SSH-bound Hermes chats must not advertise native Responses controls",
 );
 assert.equal(

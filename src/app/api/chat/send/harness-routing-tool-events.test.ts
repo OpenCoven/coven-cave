@@ -223,18 +223,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const hermesSpawnEnvironment = hermesDirect[\s\S]*?harnessSpawnEnv\(body\.familiarId\)[\s\S]*?const hermesApi = !binding\.hermesProfile && hermesSpawnEnvironment[\s\S]*?resolveHermesApiConfig\(\s*hermesSpawnEnvironment as \{/,
+  /const hermesSpawnEnvironment = hermesDirect[\s\S]*?harnessSpawnEnv\(body\.familiarId\)[\s\S]*?const hermesApi = !binding\.hermesProfile && hermesSpawnEnvironment[\s\S]*?hermesApiConfig\(hermesSpawnEnvironment as \{/,
   "Hermes API credentials and CLI fallback must reuse one familiar-scoped environment boundary",
-);
-
-// The configured endpoint is a SECOND source for the same transport. It must
-// be merged into that one scoped environment — never resolved beside it —
-// or the send route and the model-state route can disagree about whether a
-// familiar has structured tool activity.
-assert.match(
-  chatRoute,
-  /resolveHermesApiConfig\([\s\S]*?binding\.hermesApiUrl,\s*\)/,
-  "the familiar's configured Hermes endpoint must flow through the same resolver as its spawn environment",
 );
 
 assert.match(

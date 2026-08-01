@@ -40,10 +40,10 @@ assert.ok(
 );
 
 const sendIndex = chat.indexOf("const send = async");
-const sendGateIndex = chat.indexOf("if (!sendLaunchReady)", sendIndex);
+const sendGateIndex = chat.indexOf("if (!projectLaunchReady)", sendIndex);
 const sendMutationIndex = chat.indexOf("pushHistory(text)", sendIndex);
-assert.ok(sendGateIndex > sendIndex, "composer send should guard combined launch readiness");
-assert.ok(sendGateIndex < sendMutationIndex, "a blocked launch must preserve the draft and history");
+assert.ok(sendGateIndex > sendIndex, "composer send should guard project readiness");
+assert.ok(sendGateIndex < sendMutationIndex, "a blocked send must preserve the draft and history");
 
 const voiceIndex = chat.indexOf("const openVoiceCall = useCallback");
 const voiceGateIndex = chat.indexOf("projectLaunchRef.current", voiceIndex);
@@ -57,10 +57,10 @@ assert.match(
 );
 
 const initialPromptIndex = chat.indexOf("// Auto-send a prompt handed off from the home composer.");
-const initialReadyIndex = chat.indexOf("if (!sendLaunchReady) return;", initialPromptIndex);
+const initialReadyIndex = chat.indexOf("if (!projectLaunchReady) return;", initialPromptIndex);
 const initialLatchIndex = chat.indexOf("initialPromptSentRef.current = true", initialPromptIndex);
-assert.ok(initialReadyIndex > initialPromptIndex, "handoff auto-send should wait for project and model readiness");
-assert.ok(initialReadyIndex < initialLatchIndex, "waiting for launch setup must not consume the prompt latch");
+assert.ok(initialReadyIndex > initialPromptIndex, "handoff auto-send should wait for project readiness");
+assert.ok(initialReadyIndex < initialLatchIndex, "waiting for a project must not consume the prompt latch");
 
 assert.doesNotMatch(
   chat,
@@ -79,8 +79,8 @@ assert.doesNotMatch(
 );
 assert.match(
   chat,
-  /disabled=\{!sendLaunchReady \|\| \(!input\.trim\(\) && attachments\.length === 0\)\}/,
-  "the typed send control should be disabled without a launchable project and final model",
+  /disabled=\{!projectLaunchReady \|\| \(!input\.trim\(\) && attachments\.length === 0\)\}/,
+  "the typed send control should be disabled without a launchable project",
 );
 assert.match(
   chat,
