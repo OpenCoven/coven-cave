@@ -150,6 +150,60 @@ Use existing shared lifecycle primitives where they fit. Add a focused helper
 only when the daemon supervisor's semantics are distinct. Do not change
 explicit user actions, mutations, or active streams merely to reduce counts.
 
+## Implementation Evidence
+
+### Verified before/after facts
+
+- `origin/main` `src/components/workspace.tsx` ran
+  `usePausablePoll(() => void refreshDaemonStatus(), 5000)` and
+  `refreshDaemonStatus()` fetched `/api/daemon/status`, so a failed health
+  request that outlived five seconds could overlap the next tick. The current
+  `src/components/workspace.tsx` mounts one
+  `createDaemonConnectionSupervisor()` lane for `GET /api/daemon/connection`
+  and one `createDaemonTravelReconcileRequester()` lane for
+  `POST /api/daemon/travel/reconcile`; `src/lib/daemon-connection-supervisor.ts`
+  only arms the next timer after the authoritative request publishes and
+  settles, and `src/lib/daemon-connection-supervisor.test.ts` keeps ordinary
+  `peakInFlight` at `1`.
+- The old recurring heartbeat paid for the full `/api/daemon/status` payload:
+  executor probes, travel state/replay work, version resolution, and workspace
+  metadata. The current recurring lane is a fast read-only
+  `/api/daemon/connection` snapshot, while travel wake/replay side effects live
+  behind the separate serial `POST /api/daemon/travel/reconcile` lane; detailed
+  diagnostics stay on explicit `/api/daemon/status` reads.
+- Both daemon health surfaces now share the same `1500ms` no-retry transport
+  contract. `src/lib/server/daemon-health-request.ts` sets
+  `timeoutMs: 1500` and `retryTransportFailure: false`, and both
+  `src/lib/server/daemon-connection-snapshot.ts` and
+  `src/app/api/daemon/status/route.ts` call `daemonHealthRequest()`.
+- Travel failover timing is now independent of the connection backoff.
+  `src/lib/travel-client-state.ts` defines
+  `TRAVEL_HUB_UNREACHABLE_MS = 10_000`, and
+  `src/lib/daemon-travel-reconcile-client.ts` uses that value as a one-shot
+  outage cadence while keeping live requests serial/trailing.
+- `origin/main` `src/components/settings-overview.tsx` fetched
+  `/api/daemon/status`, `/api/voice/engines`, and `/api/backup/sync`; it used
+  `latestRequest` to fence writes but did not abort superseded or unmounted
+  work. The current summary is narrowed to `/api/config`,
+  `/api/voice/engines`, and `/api/backup/sync`, and
+  `src/lib/settings-general-summary.ts` now aborts superseded batches and drops
+  disposed results. `src/lib/settings-general-summary.test.ts` verifies both
+  supersession and unmount/dispose behavior.
+- `origin/main` `src/components/settings-shell.tsx` read `workspacePath` from
+  `/api/daemon/status`. The current `WorkspacePathField` reads `/api/config`
+  and aborts the mount-time request on unmount.
+
+### Audited producer paths and dispositions
+
+| Path | Producer classification | Disposition |
+| --- | --- | --- |
+| `src/components/workspace.tsx` | Recurring connection heartbeat, visibility/focus refresh, separate travel reconciliation lane | **Fixed on this branch.** The daemon lane is supervisor-owned, peak ordinary in-flight is `1`, and travel moved to its own serial requester. |
+| `src/components/settings-overview.tsx` + `src/lib/settings-general-summary.ts` | Mount-time General summary load, 30s recurring poll, immediate voice/backup mutation refresh | **Fixed and narrowed.** The summary now reads `/api/config`/`/api/voice/engines`/`/api/backup/sync`, aborts superseded batches, and disposes cleanly on inactive/unmount. |
+| `src/components/settings-daemon.tsx` | Mount-time detailed daemon/config/device reads plus explicit Start/Restart/Probe/Travel mutations | **Preserved.** This surface still intentionally uses `/api/daemon/status` for rich diagnostics, and its mount-time readers already carry `AbortController` cleanup. |
+| `src/components/settings-shell.tsx` | Mount-time workspace-path config read plus scoped General/backup/Omnigent readers | **Preserved/narrowed.** `WorkspacePathField` now uses `/api/config` and aborts on unmount; the other reads are already scoped or explicit-user-action lanes. |
+| `src/components/settings-about.tsx` | Mount-time daemon diagnostics snapshot plus explicit Retry | **Preserved.** About still uses `/api/daemon/status` because it is an active diagnostics surface, and the request is already abortable. |
+| `src/components/settings-phone.tsx` | Mount-time optional install-info fetch | **Reviewed, no change.** The request is already mount-scoped and abortable, and it is unrelated to the daemon request-noise regression. |
+
 ## Error Handling
 
 - Transport, timeout, malformed, authorization, and HTTP failures retain the
