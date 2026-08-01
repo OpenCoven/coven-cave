@@ -40,6 +40,21 @@ function reminder(id, hour, title = "Sync the registry") {
   };
 }
 
+function agentNotice(id, hour, minute, auto, title = "PR opened") {
+  return {
+    id,
+    kind: "agent",
+    title,
+    status: "fired",
+    createdAt: at(hour, minute),
+    updatedAt: at(hour, minute),
+    firedAt: at(hour, minute),
+    recurrence: "none",
+    source: "agent",
+    auto,
+  };
+}
+
 // ── clockLabel ──────────────────────────────────────────────────────────────
 {
   assert.equal(clockLabel(at(8, 14)), "08:14");
@@ -347,6 +362,46 @@ function reminder(id, hour, title = "Sync the registry") {
   assert.deepEqual(spine.map((e) => e.count), [1, 1]);
 
   assert.deepEqual(deriveSpine([]), [], "no chapters, no spine");
+}
+
+{
+  const events = dayEvents(
+    {
+      prsMerged: [
+        { repo: "OpenCoven/coven", number: 1, title: "merged one", url: "", mergedAt: at(14, 0) },
+        { repo: "OpenCoven/cave", number: 2, title: "merged two", url: "", mergedAt: at(14, 1) },
+        { repo: "OpenCoven/docs", number: 3, title: "merged three", url: "", mergedAt: at(14, 2) },
+      ],
+      factsHash: "h",
+      refreshedAt: at(23),
+    },
+    emptyBreakdown({
+      familiars: [
+        agentNotice("merged-notice-1", 14, 5, "github-sub:pr-opened:OpenCoven/coven#1"),
+        agentNotice("merged-notice-2", 14, 6, "github-sub:pr-opened:opencoven/CAVE#2"),
+        agentNotice("open-notice-1", 14, 10, "github-sub:pr-opened:OpenCoven/runtime#10"),
+        agentNotice("open-notice-1-repeat", 14, 11, "github-sub:pr-opened:OpenCoven/runtime#10"),
+        agentNotice("open-notice-2", 14, 12, "github-sub:pr-opened:OpenCoven/landing#11"),
+        agentNotice("ordinary-agent", 14, 20, "session-finished:s1", "Sage finished the release audit"),
+        agentNotice("open-notice-1-later", 18, 0, "github-sub:pr-opened:OpenCoven/runtime#10"),
+      ],
+    }),
+    DAY,
+  );
+
+  const chapters = deriveChapters(events, 0);
+  assert.equal(chapters.length, 2, "the later duplicate opens a second chapter");
+  const spine = deriveSpine(chapters);
+  assert.equal(spine.length, 3, "merged notices disappear, duplicate openings dedupe, and the rest collapse");
+  assert.deepEqual(
+    spine.map(({ label, count }) => ({ label, count })),
+    [
+      { label: "3 merges across 3 repos", count: 3 },
+      { label: "2 PRs opened across 2 repos", count: 2 },
+      { label: "Sage finished the release audit", count: 1 },
+    ],
+  );
+  assert.equal(spine[1].detail, "runtime · landing");
 }
 
 // ── the trailing week ───────────────────────────────────────────────────────
