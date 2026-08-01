@@ -184,4 +184,76 @@ assert.equal(
   "whole-token redaction remains intact",
 );
 
+const controlledCompoundSecrets = redactSecretsDeep({
+  SECRET_KEY: "literal-secret",
+  AWS_SECRET_ACCESS_KEY: "literal-secret",
+  authTokens: "literal-secret",
+  apiKeys: "literal-secret",
+  clientSecrets: "literal-secret",
+  credentials: "literal-secret",
+});
+assert.deepEqual(
+  controlledCompoundSecrets,
+  {
+    SECRET_KEY: REDACTED_SECRET,
+    AWS_SECRET_ACCESS_KEY: REDACTED_SECRET,
+    authTokens: REDACTED_SECRET,
+    apiKeys: REDACTED_SECRET,
+    clientSecrets: REDACTED_SECRET,
+    credentials: REDACTED_SECRET,
+  },
+  "controlled plurals and compound credential keys replace whole deep values",
+);
+assert.equal(
+  redactSecretText(
+    "SECRET_KEY=one AWS_SECRET_ACCESS_KEY=two authTokens=three apiKeys=four clientSecrets=five credentials=six",
+  ),
+  `SECRET_KEY=${REDACTED_SECRET} AWS_SECRET_ACCESS_KEY=${REDACTED_SECRET} authTokens=${REDACTED_SECRET} apiKeys=${REDACTED_SECRET} clientSecrets=${REDACTED_SECRET} credentials=${REDACTED_SECRET}`,
+  "controlled plurals and compound credential assignments are redacted",
+);
+assert.equal(
+  redactSecretText(
+    "token_count=12 sessionDuration=30 authorship=collaboration secretariat=office apiKeyboard=mechanical",
+  ),
+  "token_count=12 sessionDuration=30 authorship=collaboration secretariat=office apiKeyboard=mechanical",
+  "controlled compound matching does not absorb lookalike metric or ordinary keys",
+);
+
+assert.equal(
+  redactSecretText(
+    'GOOGLE_CREDENTIALS:\n  {"type":"service_account","private_key":"literal-secret"}\nnext=safe',
+  ),
+  `GOOGLE_CREDENTIALS:
+  ${REDACTED_SECRET}
+next=safe`,
+  "balanced JSON values may begin after separator whitespace and a newline",
+);
+assert.equal(
+  redactSecretText(
+    `TOKEN=$(printf '%s' "literal-secret (nested)" \\) $(printf '%s' inner)) && echo done`,
+  ),
+  `TOKEN=${REDACTED_SECRET} && echo done`,
+  "balanced shell command substitutions consume nested commands, quotes, and escapes",
+);
+assert.equal(
+  redactSecretText('TOKEN=`printf "%s" "literal-secret" \\`` && echo done'),
+  `TOKEN=${REDACTED_SECRET} && echo done`,
+  "backtick command values consume escaped backticks as one secret assignment",
+);
+assert.equal(
+  redactSecretText("Authorization: Basic dXNlcjpwYXNz"),
+  `Authorization: ${REDACTED_SECRET}`,
+  "Authorization schemes consume and redact the complete credential",
+);
+assert.equal(
+  redactSecretText("TOKEN=$(printf 'literal-secret' && echo exposed"),
+  `TOKEN=${REDACTED_SECRET}`,
+  "an unclosed command substitution fails closed through the end of the input",
+);
+assert.equal(
+  redactSecretText("TOKEN=`printf 'literal-secret' && echo exposed"),
+  `TOKEN=${REDACTED_SECRET}`,
+  "an unclosed backtick command fails closed through the end of the input",
+);
+
 console.log("secret-redaction.test.ts: ok");

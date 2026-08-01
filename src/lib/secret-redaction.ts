@@ -22,6 +22,17 @@ const SECRET_TERMINAL_PAIRS = new Set([
   "client:secret",
   "private:key",
   "refresh:token",
+  "secret:key",
+]);
+
+const SECRET_KEY_MARKERS = new Set(["api", "auth", "client", "private", "secret"]);
+
+const AUTHORIZATION_SCHEMES = new Set([
+  "basic",
+  "bearer",
+  "digest",
+  "negotiate",
+  "ntlm",
 ]);
 
 const MAX_ASSIGNMENT_NESTING = 64;
@@ -71,12 +82,22 @@ function redactValue(value: unknown, key: string | undefined): unknown {
 }
 
 function isSecretKey(key: string): boolean {
-  const words = normalizeKeyWords(key);
+  const words = normalizeKeyWords(key).map(normalizeSecretWord);
   const last = words.at(-1);
   if (!last) return false;
   if (SECRET_TERMINAL_WORDS.has(last)) return true;
+  if (last === "key" && words.slice(0, -1).some((word) => SECRET_KEY_MARKERS.has(word))) {
+    return true;
+  }
   if (words.length < 2) return false;
   return SECRET_TERMINAL_PAIRS.has(`${words.at(-2)}:${last}`);
+}
+
+function normalizeSecretWord(word: string): string {
+  if (word === "keys") return "key";
+  if (word === "secrets") return "secret";
+  if (word === "tokens") return "token";
+  return word;
 }
 
 function normalizeKeyWords(key: string): string[] {
@@ -128,7 +149,7 @@ function redactSecretAssignments(text: string): string {
       continue;
     }
 
-    const valueEnd = scanAssignmentValue(text, assignment.valueStart);
+    const valueEnd = scanAssignmentValue(text, assignment.valueStart, assignment.key);
     chunks.push(text.slice(copiedThrough, assignment.valueStart), REDACTED_SECRET);
     copiedThrough = valueEnd;
     index = valueEnd;
@@ -193,19 +214,46 @@ function readAssignment(text: string, start: number): Assignment | undefined {
 
   let valueStart = separator + 1;
   while (isHorizontalWhitespace(text[valueStart])) valueStart += 1;
+  if (text[valueStart] === "\r" || text[valueStart] === "\n") {
+    let multilineValueStart = valueStart;
+    while (isWhitespace(text[multilineValueStart])) multilineValueStart += 1;
+    if (
+      text[multilineValueStart] === "{" ||
+      text[multilineValueStart] === "[" ||
+      isAuthorizationKey(key)
+    ) {
+      valueStart = multilineValueStart;
+    }
+  }
   return { key, keyEnd, valueStart };
 }
 
-function scanAssignmentValue(text: string, start: number): number {
-  let index = start;
+function scanAssignmentValue(text: string, start: number, key: string): number {
+  const authorizationEnd = isAuthorizationKey(key)
+    ? scanAuthorizationCredential(text, start)
+    : undefined;
+  if (authorizationEnd !== undefined) return authorizationEnd;
 
-  if (text[index] === "{" || text[index] === "[") {
-    index = scanBalancedValue(text, index);
-    if (index >= text.length) return text.length;
-  }
+  let index = start;
 
   while (index < text.length) {
     const char = text[index]!;
+    if (char === "{" || char === "[") {
+      index = scanBalancedValue(text, index);
+      if (index >= text.length) return text.length;
+      continue;
+    }
+    if (char === "$" && text[index + 1] === "(") {
+      index = scanCommandSubstitution(text, index);
+      if (index >= text.length) return text.length;
+      continue;
+    }
+    if (char === "`") {
+      const quoteEnd = scanBacktickValue(text, index);
+      if (quoteEnd === -1) return text.length;
+      index = quoteEnd;
+      continue;
+    }
     if (char === '"' || char === "'") {
       const quoteEnd = scanQuotedValue(text, index, char);
       if (quoteEnd === -1) return text.length;
@@ -222,6 +270,45 @@ function scanAssignmentValue(text: string, start: number): number {
   return text.length;
 }
 
+function scanAuthorizationCredential(text: string, start: number): number | undefined {
+  let schemeEnd = start;
+  while (
+    isAsciiLetter(text[schemeEnd]) ||
+    isAsciiDigit(text[schemeEnd]) ||
+    text[schemeEnd] === "-"
+  ) {
+    schemeEnd += 1;
+  }
+  if (schemeEnd === start) return undefined;
+  if (!AUTHORIZATION_SCHEMES.has(text.slice(start, schemeEnd).toLowerCase())) {
+    return undefined;
+  }
+
+  let credentialStart = schemeEnd;
+  while (isHorizontalWhitespace(text[credentialStart])) credentialStart += 1;
+  if (credentialStart === schemeEnd) return undefined;
+  if (credentialStart >= text.length) return text.length;
+
+  const first = text[credentialStart]!;
+  if (first === '"' || first === "'") {
+    const quoteEnd = scanQuotedValue(text, credentialStart, first);
+    return quoteEnd === -1 ? text.length : quoteEnd;
+  }
+  if (first === "`") {
+    const quoteEnd = scanBacktickValue(text, credentialStart);
+    return quoteEnd === -1 ? text.length : quoteEnd;
+  }
+
+  let credentialEnd = credentialStart;
+  while (
+    credentialEnd < text.length &&
+    !isAuthorizationCredentialDelimiter(text[credentialEnd]!)
+  ) {
+    credentialEnd += 1;
+  }
+  return credentialEnd === credentialStart ? text.length : credentialEnd;
+}
+
 function scanQuotedValue(text: string, start: number, quote: string): number {
   let index = start + 1;
   while (index < text.length) {
@@ -234,6 +321,65 @@ function scanQuotedValue(text: string, start: number, quote: string): number {
     index += 1;
   }
   return -1;
+}
+
+function scanBacktickValue(text: string, start: number): number {
+  let index = start + 1;
+  while (index < text.length) {
+    const char = text[index]!;
+    if (char === "\\") {
+      index = Math.min(text.length, index + 2);
+      continue;
+    }
+    if (char === "`") return index + 1;
+    index += 1;
+  }
+  return -1;
+}
+
+function scanCommandSubstitution(text: string, start: number): number {
+  let depth = 1;
+  let index = start + 2;
+
+  while (index < text.length) {
+    const char = text[index]!;
+    if (char === '"' || char === "'") {
+      const quoteEnd = scanQuotedValue(text, index, char);
+      if (quoteEnd === -1) return text.length;
+      index = quoteEnd;
+      continue;
+    }
+    if (char === "`") {
+      const quoteEnd = scanBacktickValue(text, index);
+      if (quoteEnd === -1) return text.length;
+      index = quoteEnd;
+      continue;
+    }
+    if (char === "\\") {
+      index = Math.min(text.length, index + 2);
+      continue;
+    }
+    if (char === "$" && text[index + 1] === "(") {
+      if (depth >= MAX_ASSIGNMENT_NESTING) return text.length;
+      depth += 1;
+      index += 2;
+      continue;
+    }
+    if (char === "(") {
+      if (depth >= MAX_ASSIGNMENT_NESTING) return text.length;
+      depth += 1;
+      index += 1;
+      continue;
+    }
+    if (char === ")") {
+      depth -= 1;
+      index += 1;
+      if (depth === 0) return index;
+      continue;
+    }
+    index += 1;
+  }
+  return text.length;
 }
 
 function scanBalancedValue(text: string, start: number): number {
@@ -277,8 +423,20 @@ function isAssignmentDelimiter(char: string): boolean {
   return " \t\r\n\f\v,;|&<>()}]".includes(char);
 }
 
+function isAuthorizationCredentialDelimiter(char: string): boolean {
+  return isWhitespace(char) || ",;|&<>".includes(char);
+}
+
 function isHorizontalWhitespace(char: string | undefined): boolean {
   return char === " " || char === "\t";
+}
+
+function isWhitespace(char: string | undefined): boolean {
+  return Boolean(char && " \t\r\n\f\v".includes(char));
+}
+
+function isAuthorizationKey(key: string): boolean {
+  return normalizeKeyWords(key).at(-1) === "authorization";
 }
 
 function isAsciiLetter(char: string | undefined): boolean {

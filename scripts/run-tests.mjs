@@ -533,6 +533,7 @@ export const SUITES = {
     "src/lib/opencode-models.test.ts",
     "src/lib/opencode-bin.test.ts",
     "src/lib/chat-tool-events.test.ts",
+    "src/lib/tool-offset-correction.test.ts",
     "src/lib/opencode-compatibility.test.ts",
     "src/lib/opencode-stream.test.ts",
     "src/lib/use-runtime-model-options.test.ts",

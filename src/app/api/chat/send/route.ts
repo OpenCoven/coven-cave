@@ -800,7 +800,11 @@ function openClawChatResponse(args: {
               }
               gatewayAssistantText = event.text;
               gatewayAssistantTextEmitted = true;
-              push({ kind: "assistant_replace", text: event.text });
+              push({
+                kind: "assistant_replace",
+                text: event.text,
+                ...(correction ? { toolOffsetCorrection: correction } : {}),
+              });
               return;
             }
             gatewayAssistantText += event.text;
@@ -815,7 +819,11 @@ function openClawChatResponse(args: {
                 gatewayToolTracker.rebaseTextOffsets(correction.after, correction.delta);
               }
               if (gatewayAssistantTextEmitted) {
-                push({ kind: "assistant_replace", text: event.text });
+                push({
+                  kind: "assistant_replace",
+                  text: event.text,
+                  ...(correction ? { toolOffsetCorrection: correction } : {}),
+                });
               }
             }
             gatewayAssistantText = event.text;

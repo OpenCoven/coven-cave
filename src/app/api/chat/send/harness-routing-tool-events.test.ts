@@ -63,13 +63,18 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /if \(event\.replace\) \{\s*const correction = toolTextCorrection\(gatewayAssistantText, event\.text\);\s*if \(correction\) \{\s*gatewayToolTracker\.rebaseTextOffsets\(correction\.after, correction\.delta\);\s*\}\s*gatewayAssistantText = event\.text;[\s\S]*?kind: "assistant_replace"/,
-  "a published Gateway replacement rebases from the shared text-correction boundary before assigning corrected text",
+  /if \(event\.replace\) \{\s*const correction = toolTextCorrection\(gatewayAssistantText, event\.text\);\s*if \(correction\) \{\s*gatewayToolTracker\.rebaseTextOffsets\(correction\.after, correction\.delta\);\s*\}\s*gatewayAssistantText = event\.text;[\s\S]*?kind: "assistant_replace",\s*text: event\.text,\s*\.\.\.\(correction \? \{ toolOffsetCorrection: correction \} : \{\}\)/,
+  "a published Gateway replacement rebases persisted tools and emits the same correction for live tools",
 );
 assert.match(
   chatRoute,
-  /event\.kind === "final" && event\.text\) \{\s*if \(gatewayAssistantText !== event\.text\) \{\s*const correction = toolTextCorrection\(gatewayAssistantText, event\.text\);\s*if \(correction\) \{\s*gatewayToolTracker\.rebaseTextOffsets\(correction\.after, correction\.delta\);\s*\}\s*if \(gatewayAssistantTextEmitted\) \{[\s\S]*?kind: "assistant_replace"[\s\S]*?\}\s*\}\s*gatewayAssistantText = event\.text;/,
-  "a divergent terminal Gateway message uses the shared correction boundary before assigning persisted text",
+  /event\.kind === "final" && event\.text\) \{\s*if \(gatewayAssistantText !== event\.text\) \{\s*const correction = toolTextCorrection\(gatewayAssistantText, event\.text\);\s*if \(correction\) \{\s*gatewayToolTracker\.rebaseTextOffsets\(correction\.after, correction\.delta\);\s*\}\s*if \(gatewayAssistantTextEmitted\) \{[\s\S]*?kind: "assistant_replace",\s*text: event\.text,\s*\.\.\.\(correction \? \{ toolOffsetCorrection: correction \} : \{\}\)[\s\S]*?\}\s*\}\s*gatewayAssistantText = event\.text;/,
+  "a divergent terminal Gateway message emits the persisted correction for live tools",
+);
+assert.match(
+  streamEvents,
+  /export type ToolOffsetCorrection = \{ after: number; delta: number \};[\s\S]*?kind: "assistant_replace"; text: string; toolOffsetCorrection\?: ToolOffsetCorrection/,
+  "assistant replacement events may carry a numeric tool-offset correction",
 );
 assert.doesNotMatch(
   chatRoute,
