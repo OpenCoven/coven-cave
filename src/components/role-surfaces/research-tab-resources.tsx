@@ -42,6 +42,7 @@ import {
 import type { ResearchMission } from "@/lib/research-missions";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { ResearchTabProps } from "./researcher-surface";
+import { ResearchXSources } from "./research-x-sources";
 import { useResearchLinks } from "./use-research-links";
 
 const VIEW_STORAGE_KEY = "cave:research:res-view";
@@ -305,6 +306,11 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
           {links.length} saved · from pastes, /save, and run citations
         </span>
       </header>
+
+      <ResearchXSources
+        familiar={context.activeFamiliar}
+        selectedMissionId={selectedMission?.id ?? null}
+      />
 
       <form className="research-res__intake" onSubmit={onSave}>
         <div className="research-res__intake-head">

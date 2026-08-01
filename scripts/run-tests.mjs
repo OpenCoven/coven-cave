@@ -80,6 +80,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-tab-library.test.ts",
     "src/components/role-surfaces/research-tab-studio.test.ts",
     "src/components/role-surfaces/research-tab-resources.test.ts",
+    "src/components/role-surfaces/research-x-sources.test.tsx",
     "src/lib/research-generations.test.ts",
     "src/components/role-surfaces/messenger-surface.test.ts",
     "src/components/role-surfaces/sentinel-surface.test.ts",
@@ -1624,6 +1625,7 @@ const VITEST_TESTS = new Set([
   "src/components/workspace-canonical-memory-lazy-familiar.test.tsx",
   "src/components/projects-view-repair-behavior.test.tsx",
   "src/components/familiar-x-section-behavior.test.tsx",
+  "src/components/role-surfaces/research-x-sources.test.tsx",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

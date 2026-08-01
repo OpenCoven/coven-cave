@@ -183,3 +183,12 @@ test("resource cards and details keep actions in predictable footers", () => {
   assert.match(styles, /\.research-res-card__footer/);
   assert.match(styles, /@container research-desk \(max-width: 560px\)/);
 });
+
+test("Resources mounts Grab from X inline without changing the five-tab host", () => {
+  assert.match(source, /import \{ ResearchXSources \} from "\.\/research-x-sources"/);
+  assert.match(
+    source,
+    /<ResearchXSources\s+familiar=\{context\.activeFamiliar\}\s+selectedMissionId=\{selectedMission\?\.id \?\? null\}/,
+  );
+  assert.match(source, /<ResearchXSources[\s\S]*<form className="research-res__intake"/);
+});
