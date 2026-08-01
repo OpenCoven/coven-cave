@@ -12,10 +12,16 @@ const SECRET_TERMINAL_WORDS = new Set([
   "pass",
   "password",
   "secret",
-  "session",
   "token",
 ]);
 
+// "session" is deliberately NOT a terminal word (cave-3ww55). A session
+// IDENTIFIER is a foreign key, not a credential, and treating it as one made
+// `sessionId` unreadable: findSelfReport compared a redacted value and could
+// never match, and appendSelfReport redacted before writing, so reports were
+// persisted with the link to their session destroyed. A session TOKEN is still
+// a credential — these pairs and the terminal words below keep every
+// secret-bearing form covered.
 const SECRET_TERMINAL_PAIRS = new Set([
   "api:key",
   "auth:token",
@@ -23,9 +29,15 @@ const SECRET_TERMINAL_PAIRS = new Set([
   "private:key",
   "refresh:token",
   "secret:key",
+  "session:cookie",
+  "session:credential",
+  "session:credentials",
+  "session:key",
+  "session:secret",
+  "session:token",
 ]);
 
-const SECRET_KEY_MARKERS = new Set(["api", "auth", "client", "private", "secret"]);
+const SECRET_KEY_MARKERS = new Set(["api", "auth", "client", "private", "secret", "session"]);
 
 const AUTHORIZATION_SCHEMES = new Set([
   "basic",
@@ -338,6 +350,12 @@ function consumeStringBytes(value: string, budget: RedactionBudget): boolean {
 function isSecretKey(key: string): boolean {
   const words = normalizeKeyWords(key).map(normalizeSecretWord);
   if (words.length === 0) return false;
+
+  // A key that is exactly `session` still redacts. Dropping "session" from the
+  // terminal words (cave-3ww55) was about qualified identifiers like sessionId;
+  // a bare `session=…` in a log line is as likely to be the token itself as
+  // anything, and nothing else in this file would catch it.
+  if (words.length === 1 && words[0] === "session") return true;
 
   for (let index = 1; index < words.length; index += 1) {
     if (SECRET_TERMINAL_PAIRS.has(`${words[index - 1]}:${words[index]}`)) return true;

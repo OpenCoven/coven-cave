@@ -469,3 +469,41 @@ assert.equal(
 );
 
 console.log("secret-redaction.test.ts: ok");
+
+// ── Session identifiers are foreign keys, not credentials (cave-3ww55) ──────
+// "session" used to be a terminal secret word, so `sessionId` redacted. That
+// was not a cosmetic over-match: findSelfReport compared a redacted value and
+// could never match any session, and appendSelfReport redacted BEFORE writing,
+// so self-reports were persisted with the link to their session destroyed.
+{
+  const keys = {
+    sessionId: "session-two",
+    sessionSlug: "s-two",
+    sessionDuration: 30,
+  };
+  const kept = redactSecretsDeep(keys);
+  assert.deepEqual(kept, keys, "session identifiers survive redaction intact");
+}
+{
+  // Everything that actually carries a credential still redacts. This is the
+  // half that stops the narrowing from being widened into a hole.
+  const secrets = {
+    session: "abc123",
+    sessionToken: "abc123",
+    sessionKey: "abc123",
+    session_secret: "abc123",
+    sessionCookie: "abc123",
+  };
+  const out = redactSecretsDeep(secrets) as Record<string, string>;
+  for (const key of Object.keys(secrets)) {
+    assert.equal(out[key], REDACTED_SECRET, `${key} is still redacted`);
+  }
+}
+{
+  // The text path shares isSecretKey, so it moves in lockstep.
+  assert.equal(
+    redactSecretText("sessionId=session-two sessionToken=abc123 session=abc123"),
+    `sessionId=session-two sessionToken=${REDACTED_SECRET} session=${REDACTED_SECRET}`,
+    "log lines keep the identifier and mask the credential",
+  );
+}
