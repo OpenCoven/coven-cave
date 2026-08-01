@@ -51,6 +51,13 @@ function stringifyUnknown(value: unknown): string | undefined {
   }
 }
 
+function openClawToolStatus(status: string | undefined): "ok" | "error" {
+  const normalized = status?.trim().toLowerCase();
+  return !normalized || ["ok", "success", "completed", "done"].includes(normalized)
+    ? "ok"
+    : "error";
+}
+
 function extractToolEvent(
   id: string,
   msg: OpenclawMessage & { role: "tool" },
@@ -68,7 +75,7 @@ function extractToolEvent(
     id: msg.tool_call_id ?? id,
     name,
     output,
-    status: msg.status === "error" ? "error" : "ok",
+    status: openClawToolStatus(msg.status),
   };
 }
 
@@ -126,6 +133,7 @@ export async function loadConversationFromJsonl(
     const msgRecord = record as {
       type: "message";
       id: string;
+      parentId: string | null;
       timestamp: string;
       message: OpenclawMessage;
     };
@@ -154,6 +162,7 @@ export async function loadConversationFromJsonl(
 
     const turn: ChatTurn = {
       id: msgRecord.id,
+      parentId: msgRecord.parentId,
       role: msg.role as "user" | "assistant",
       text,
       createdAt: iso,
@@ -177,5 +186,6 @@ export async function loadConversationFromJsonl(
     createdAt: createdAt ?? now,
     updatedAt: updatedAt ?? now,
     turns,
+    activeLeafId: turns.at(-1)?.id,
   };
 }

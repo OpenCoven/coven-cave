@@ -22,6 +22,26 @@ for (const runtime of ["codex", "claude", "copilot", "hermes", "opencode", "open
   assert.ok(Array.isArray(catalog.models));
 }
 
+for (const [alias, canonical] of [
+  ["claude-code", "claude"],
+  ["openai-codex", "codex"],
+  ["github-copilot", "copilot"],
+  ["copilot-cli", "copilot"],
+  ["hermes-agent", "hermes"],
+  ["opencode-ai", "opencode"],
+]) {
+  assert.deepEqual(
+    catalogForRuntime(alias),
+    catalogForRuntime(canonical),
+    `${alias} should resolve the canonical ${canonical} model catalog`,
+  );
+  assert.equal(
+    defaultModelForRuntime(alias),
+    defaultModelForRuntime(canonical),
+    `${alias} should inherit the canonical ${canonical} default model`,
+  );
+}
+
 // Provider-backed runtimes expose a menu sourced from their provider.
 assert.equal(catalogForRuntime("codex").provider, "openai");
 assert.equal(catalogForRuntime("claude").provider, "anthropic");
@@ -287,6 +307,11 @@ assert.equal(
 // Revalidate the transformed argv value so stripping cannot expose a CLI flag;
 // nested ids remain valid after their first provider segment is removed.
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/team/model"), "team/model");
+assert.equal(
+  runtimeModelIdForLaunch("opencode", "openrouter/~anthropic/claude-opus-latest"),
+  "openrouter/~anthropic/claude-opus-latest",
+  "OpenCode launch validation should preserve authenticated tilde-prefixed provider aliases",
+);
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/--allow-all-tools"), null);
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/../escape"), null);
 assert.equal(runtimeModelIdForLaunch("copilot", null), null);

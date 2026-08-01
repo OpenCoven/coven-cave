@@ -20,8 +20,8 @@ assert.match(
 
 assert.match(
   source,
-  /function extractToolEvent[\s\S]*role: "tool"[\s\S]*status: msg\.status === "error" \? "error" : "ok"/,
-  "OpenClaw JSONL fallback should convert tool-role messages into tool events",
+  /function openClawToolStatus[\s\S]*return !normalized[\s\S]*: "error";[\s\S]*function extractToolEvent[\s\S]*status: openClawToolStatus\(msg\.status\)/,
+  "OpenClaw JSONL fallback should preserve non-success tool terminal states as errors",
 );
 
 assert.match(

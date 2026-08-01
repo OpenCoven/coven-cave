@@ -1,4 +1,4 @@
-import { runtimeOwnsModelDefault } from "./runtime-models.ts";
+import { isSafeRuntimeModelId, runtimeOwnsModelDefault } from "./runtime-models.ts";
 
 export type ModelScope =
   | "runtime-default"
@@ -60,15 +60,13 @@ const SYNTHETIC_LOCAL_MODELS = new Set([
   "openclaw-local",
 ]);
 
-const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
-
 export function cleanModelId(value: unknown): string | null {
   if (typeof value !== "string") return null;
 
   const trimmed = value.trim();
   if (!trimmed) return null;
   if (trimmed.includes(" ") || trimmed.includes("..")) return null;
-  if (!MODEL_ID_RE.test(trimmed)) return null;
+  if (!isSafeRuntimeModelId(trimmed)) return null;
 
   return trimmed;
 }
