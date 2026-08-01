@@ -105,12 +105,18 @@ const CARD_DECLARATION = /(?:^|;)\s*(?:margin|border-radius|box-shadow)\s*:/;
 // survived. If this stops matching, the extractor broke and every assertion
 // below it is meaningless.
 const railProbe = railSubjectRules(`
-  .shell-nav-panel > .shell-nav--rail { box-shadow: 0 1px 2px black; }
+  @media (min-width: 1024px) {
+    .shell-nav-panel > .shell-nav--rail { box-shadow: 0 1px 2px black; }
+  }
   .shell-nav-panel > .shell-nav:not(.shell-nav--rail) { border-radius: 8px; }
   .shell-nav--rail .code-sidebar__rail { border-radius: 8px; }
   .shell-nav-panel > .shell-nav:not(.shell-nav--rail, .shell-nav--peek) { border-radius: 8px; }
 `);
-assert.equal(railProbe.length, 1, "extractor selects rail-subject rules only");
+assert.equal(
+  railProbe.length,
+  1,
+  "extractor selects rail-subject rules inside at-rules without selecting exclusions or descendants",
+);
 assert.match(railProbe[0]!, CARD_DECLARATION, "extractor reaches the declarations");
 
 for (const body of railSubjectRules(shellCss)) {

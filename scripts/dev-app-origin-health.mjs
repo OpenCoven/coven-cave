@@ -9,6 +9,7 @@
 const READY_PATH = "/?__devShellProbe=1";
 const DEFAULT_TIMEOUT_MS = 1_500;
 const MAX_TIMEOUT_MS = 300_000;
+const RETRY_DELAY_MS = 50;
 
 export function parsePort(value) {
   if (!/^\d+$/.test(value ?? "")) return null;
@@ -32,16 +33,24 @@ export async function loopbackOriginResponds({
 } = {}) {
   if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) return false;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) return false;
-  try {
-    const response = await fetchImpl(`http://127.0.0.1:${port}${READY_PATH}`, {
-      method: "GET",
-      redirect: "manual",
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    return response.status >= 200 && response.status < 400;
-  } catch {
-    return false;
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const remainingMs = deadline - Date.now();
+    try {
+      const response = await fetchImpl(`http://127.0.0.1:${port}${READY_PATH}`, {
+        method: "GET",
+        redirect: "manual",
+        signal: AbortSignal.timeout(remainingMs),
+      });
+      if (response.status >= 200 && response.status < 400) return true;
+    } catch {}
+
+    const retryInMs = Math.min(RETRY_DELAY_MS, deadline - Date.now());
+    if (retryInMs <= 0) break;
+    await new Promise((resolve) => setTimeout(resolve, retryInMs));
   }
+  return false;
 }
 
 function cliArgs(argv) {
