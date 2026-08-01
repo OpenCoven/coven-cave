@@ -119,6 +119,22 @@ assert.match(
 
 assert.match(
   source,
+  /import \{ rebaseToolTextOffsets \} from "@\/lib\/tool-offset-correction";/,
+  "ChatView should use the client-safe tool-offset correction helper",
+);
+assert.match(
+  source,
+  /const replaceAssistantText = \(\s*text: string,\s*correction: ToolOffsetCorrection \| undefined,[\s\S]*?t\.id === assistantId\s*\? \{[\s\S]*?text,[\s\S]*?tools: rebaseToolTextOffsets\(t\.tools, correction\),[\s\S]*?pending: true,[\s\S]*?lifecycle: "streaming"/,
+  "authoritative text replacement should atomically rebase the same assistant turn's live tools",
+);
+assert.match(
+  source,
+  /case "assistant_replace": \{\s*replaceAssistantText\(ev\.text, ev\.toolOffsetCorrection, assistantId, liveGeneration\);/,
+  "assistant replacement events should pass correction metadata to the atomic turn update",
+);
+
+assert.match(
+  source,
   /case "tool_use":[\s\S]*setAssistantLifecycle\([\s\S]*?assistantId,[\s\S]*?"tooling",[\s\S]*?liveGeneration\.sessionId,[\s\S]*?liveStreamMetadata\(liveGeneration\)/,
   "Tool events should move the turn into a tool-use lifecycle",
 );
