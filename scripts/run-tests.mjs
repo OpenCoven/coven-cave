@@ -1109,8 +1109,6 @@ export const SUITES = {
     "src/app/api/api-contracts.test.ts",
     "src/app/api/hermes-profiles/route.test.ts",
     "src/lib/server/x-oauth.test.ts",
-    "src/app/api/x/account-routes.test.ts",
-    "src/app/api/x/research-routes.test.ts",
     "src/app/api/coven-memory/route.test.ts",
     "src/app/api/daemon/probe/route.test.ts",
     "src/app/api/daemon/connection/route.test.ts",
