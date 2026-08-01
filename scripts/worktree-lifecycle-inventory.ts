@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { devNull } from "node:os";
 import path from "node:path";
 import {
@@ -254,6 +254,7 @@ const UNSAFE_GIT_ENVIRONMENT = new Set([
   "GIT_CONFIG_GLOBAL",
   "GIT_CONFIG_SYSTEM",
   "GIT_CONFIG_NOSYSTEM",
+  "GIT_CONFIG_COUNT",
 ]);
 
 function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
@@ -1061,7 +1062,7 @@ function fetchWorkflowSweep(
       return { runs: [], error: result.stderr || `workflow inventory failed for ${state}` };
     }
     try {
-      const pages = parseJson<Array<{ total_count: number; workflow_runs: WorkflowRun[] }>>(
+      const pages = parseJson<Array<{ total_count: number; workflow_runs: unknown[] }>>(
         result.stdout,
         "GitHub workflow inventory",
       );
@@ -1077,6 +1078,7 @@ function fetchWorkflowSweep(
             page.workflow_runs.every(
               (run) =>
                 isRecord(run) &&
+                typeof run.id === "number" &&
                 Number.isSafeInteger(run.id) &&
                 run.id > 0 &&
                 run.status === state &&
@@ -1091,7 +1093,16 @@ function fetchWorkflowSweep(
         throw new Error();
       }
       const totals = new Set(pages.map((page) => page.total_count));
-      const stateRuns = pages.flatMap((page) => page.workflow_runs);
+      const stateRuns = pages.flatMap((page) => page.workflow_runs).map((run) => {
+        const record = run as Record<string, unknown>;
+        return {
+          id: record.id as number,
+          status: record.status as string,
+          head_branch: record.head_branch as string | null,
+          head_sha: record.head_sha as string,
+          html_url: record.html_url as string,
+        };
+      });
       if (totals.size !== 1) {
         return {
           runs: [],
@@ -1664,6 +1675,63 @@ function directRefError(root: string, ref: string): string | null {
   return result.stderr || `local ref directness check failed for ${ref}`;
 }
 
+type HistoryOverrideProbe = {
+  replaceRefsState: string;
+  graftState: string;
+  errors: string[];
+};
+
+function historyOverrideProbe(root: string, commonGitDir: string): HistoryOverrideProbe {
+  const errors: string[] = [];
+  const replaceRefs = git(root, [
+    "for-each-ref",
+    "--format=%(refname)",
+    "refs/replace",
+  ]);
+  let replaceRefsState: string;
+  if (!replaceRefs.ok || replaceRefs.stderr) {
+    replaceRefsState = `error:${replaceRefs.status ?? "unknown"}:${replaceRefs.stderr}`;
+    errors.push(
+      `Git replacement ref inventory failed: ${
+        replaceRefs.stderr || `status ${replaceRefs.status ?? "unknown"}`
+      }`,
+    );
+  } else {
+    replaceRefsState = replaceRefs.stdout;
+    const refs = replaceRefs.stdout.split("\n").filter(Boolean);
+    if (refs.some((ref) => !ref.startsWith("refs/replace/"))) {
+      errors.push("Git replacement ref inventory returned malformed data");
+    } else if (refs.length > 0) {
+      errors.push(`Git replacement refs are present: ${refs.join(", ")}`);
+    }
+  }
+
+  const graftPath = path.join(commonGitDir, "info", "grafts");
+  let graftState: string;
+  try {
+    const grafts = readFileSync(graftPath);
+    graftState = `present:${createHash("sha256").update(grafts).digest("hex")}`;
+    if (grafts.length > 0) {
+      errors.push(`legacy Git graft file is nonempty: ${graftPath}`);
+    }
+  } catch (error) {
+    if (
+      error !== null &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      graftState = "absent";
+    } else {
+      const detail = error instanceof Error ? error.message : "unknown read error";
+      graftState = `unreadable:${detail}`;
+      errors.push(`legacy Git graft file is unreadable: ${graftPath}: ${detail}`);
+    }
+  }
+
+  return { replaceRefsState, graftState, errors };
+}
+
 function exactRemoteRef(
   root: string,
   ref: string,
@@ -1806,8 +1874,7 @@ function matchingTasks(
   const matchedBranch =
     branch !== null && !PROTECTED_BRANCHES.has(branch) ? branch : null;
   const branchBeadIds = new Set(matchedBranch ? beadIdsInText(matchedBranch) : []);
-  const normalizedWorktreePath =
-    worktreePath === null ? null : normalizeAbsoluteWorktreePath(worktreePath);
+  const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
   const exactOid = new RegExp(`(?:^|[^0-9a-f])${head}(?:$|[^0-9a-f])`, "i");
   return tasks
     .filter((task) => task.status !== "closed")
@@ -1817,8 +1884,7 @@ function matchingTasks(
           (record) =>
             (matchedBranch !== null && record.branch === matchedBranch) ||
             (normalizedWorktreePath !== null &&
-              record.path !== null &&
-              record.path === normalizedWorktreePath),
+              normalizeAbsoluteWorktreePath(record.path) === normalizedWorktreePath),
         ) ||
         branchBeadIds.has(task.id.toLowerCase()) ||
         exactOid.test(task.text) ||
@@ -1839,16 +1905,14 @@ function metadataFor(
   const globalErrors = tasks.flatMap((task) => task.structuredErrors);
   const allRecords = tasks.flatMap((task) => task.structured);
   const records = allRecords.filter((record) => record.branch === branch);
-  const normalizedWorktreePath =
-    worktreePath === null ? null : normalizeAbsoluteWorktreePath(worktreePath);
+  const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
   const conflictingPathRecords =
     normalizedWorktreePath === null
       ? []
       : allRecords.filter(
           (record) =>
             record.branch !== branch &&
-            record.path !== null &&
-            record.path === normalizedWorktreePath,
+            normalizeAbsoluteWorktreePath(record.path) === normalizedWorktreePath,
         );
   const ownershipErrors =
     conflictingPathRecords.length === 0
@@ -1870,12 +1934,12 @@ function metadataFor(
   }
   const record = records[0];
   if (!record) return { metadata: null, errors: [] };
+  const normalizedRecordPath = normalizeAbsoluteWorktreePath(record.path);
   if (
-    record.path !== null &&
+    normalizedRecordPath !== null &&
     allRecords.filter(
       (candidate) =>
-        candidate.path !== null &&
-        candidate.path === record.path,
+        normalizeAbsoluteWorktreePath(candidate.path) === normalizedRecordPath,
     ).length > 1
   ) {
     return {
@@ -1886,7 +1950,10 @@ function metadataFor(
   if (record.errors.length > 0 || !record.metadata) {
     return { metadata: null, errors: record.errors };
   }
-  if (normalizedWorktreePath !== null && record.path !== normalizedWorktreePath) {
+  if (
+    normalizedWorktreePath !== null &&
+    normalizedRecordPath !== normalizedWorktreePath
+  ) {
     return {
       metadata: null,
       errors: [`structured worktree metadata path does not match ${branch}`],
@@ -1953,15 +2020,12 @@ function assignActiveSessions(
   return { sessionIdsByPath, probeErrorsByPath };
 }
 
-function fingerprint(worktreeRaw: string, refsRaw: string): string {
-  return createHash("sha256")
-    .update(String(Buffer.byteLength(worktreeRaw)))
-    .update("\0")
-    .update(worktreeRaw)
-    .update(String(Buffer.byteLength(refsRaw)))
-    .update("\0")
-    .update(refsRaw)
-    .digest("hex");
+function fingerprint(...evidence: string[]): string {
+  const hash = createHash("sha256");
+  for (const value of evidence) {
+    hash.update(String(Buffer.byteLength(value))).update("\0").update(value);
+  }
+  return hash.digest("hex");
 }
 
 function classifyInventoryObservation(
@@ -1987,6 +2051,7 @@ export function collectWorktreeLifecycleInventory(
     "--git-common-dir",
   ]).trim();
   const primaryPath = normalizePath(path.dirname(commonGitDir));
+  const initialHistoryOverrides = historyOverrideProbe(root, commonGitDir);
   const initialWorktreeRaw = requiredGit(root, ["worktree", "list", "--porcelain", "-z"]);
   const initialRefsRaw = requiredGit(root, [
     "for-each-ref",
@@ -2067,6 +2132,7 @@ export function collectWorktreeLifecycleInventory(
           probeErrorsByPath: new Map<string, string[]>(),
         };
   const branchGlobalErrors = [
+    ...initialHistoryOverrides.errors,
     ...prs.globalErrors,
     workflows.error,
     claims.error,
@@ -2208,7 +2274,13 @@ export function collectWorktreeLifecycleInventory(
     "--format=%(refname)%0a%(objectname)%00",
     "refs/heads",
   ]);
-  if (finalWorktreeRaw !== initialWorktreeRaw || finalRefsRaw !== initialRefsRaw) {
+  const finalHistoryOverrides = historyOverrideProbe(root, commonGitDir);
+  if (
+    finalWorktreeRaw !== initialWorktreeRaw ||
+    finalRefsRaw !== initialRefsRaw ||
+    finalHistoryOverrides.replaceRefsState !== initialHistoryOverrides.replaceRefsState ||
+    finalHistoryOverrides.graftState !== initialHistoryOverrides.graftState
+  ) {
     throw new Error("worktree or branch inventory changed during patrol");
   }
 
@@ -2225,13 +2297,16 @@ export function collectWorktreeLifecycleInventory(
         structuredRecords.filter((candidate) => candidate.branch === record.branch).length === 1,
     )
     .filter(
-      (record) =>
-        record.path !== null &&
-        structuredRecords.filter(
-          (candidate) =>
-            candidate.path !== null &&
-            candidate.path === record.path,
-        ).length === 1,
+      (record) => {
+        const recordPath = normalizeAbsoluteWorktreePath(record.path);
+        return (
+          recordPath !== null &&
+          structuredRecords.filter(
+            (candidate) =>
+              normalizeAbsoluteWorktreePath(candidate.path) === recordPath,
+          ).length === 1
+        );
+      },
     )
     .filter((record) => {
       const recordPath = normalizeAbsoluteWorktreePath(record.path);
@@ -2256,9 +2331,10 @@ export function collectWorktreeLifecycleInventory(
             expiresAt: exception.expiresAt,
             additionalPaths: [
               ...new Set(
-                exception.additionalPaths.map((candidate) =>
-                  normalizeAbsoluteWorktreePath(candidate),
-                ),
+                exception.additionalPaths.flatMap((candidate) => {
+                  const normalized = normalizeAbsoluteWorktreePath(candidate);
+                  return normalized === null ? [] : [normalized];
+                }),
               ),
             ].sort(),
           }),
@@ -2282,6 +2358,11 @@ export function collectWorktreeLifecycleInventory(
       classifyInventoryObservation(observation, options.nowMs),
     ),
     budgets,
-    inventoryFingerprint: fingerprint(initialWorktreeRaw, initialRefsRaw),
+    inventoryFingerprint: fingerprint(
+      initialWorktreeRaw,
+      initialRefsRaw,
+      initialHistoryOverrides.replaceRefsState,
+      initialHistoryOverrides.graftState,
+    ),
   };
 }
