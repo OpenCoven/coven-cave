@@ -5,7 +5,16 @@ import { describe, it } from "node:test";
 
 const view = readFileSync(new URL("./familiar-growth-view.tsx", import.meta.url), "utf8");
 const report = readFileSync(new URL("./familiar-growth-report.tsx", import.meta.url), "utf8");
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+// The growth surface's CSS left the globals.css facade in cave-ii7xi — it is
+// component-imported by familiar-growth-view.tsx now, so it code-splits with
+// the /dashboard routes instead of riding every route's first load. The
+// css-source-contract hook resolves the facade's @imports, so reading globals
+// here used to reach these rules transitively; after the split it no longer
+// does. Read the sheet that owns them.
+const globals = readFileSync(
+  new URL("../styles/globals/surface-reporting.css", import.meta.url),
+  "utf8",
+);
 
 describe("Familiar growth view", () => {
   it("sorts the roster attention-first (stalled → quiet → steady → active)", () => {
