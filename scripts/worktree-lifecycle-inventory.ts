@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync, type Stats } from "node:fs";
 import { devNull } from "node:os";
 
 import path from "node:path";
@@ -2265,6 +2265,78 @@ function assignActiveSessions(
   return { sessionIdsByPath, probeErrorsByPath };
 }
 
+type GraftInventory = {
+  snapshot: string;
+  error: string | null;
+};
+
+function statIdentity(stats: Stats): string {
+  return [
+    stats.dev,
+    stats.ino,
+    stats.mode,
+    stats.size,
+    stats.mtimeMs,
+    stats.ctimeMs,
+  ].join(":");
+}
+
+function graftInventory(commonGitDir: string): GraftInventory {
+  const graftPath = path.join(commonGitDir, "info", "grafts");
+  let initialStats: Stats;
+  try {
+    initialStats = lstatSync(graftPath);
+  } catch (error) {
+    const code = isRecord(error) && typeof error.code === "string" ? error.code : "UNKNOWN";
+    if (code === "ENOENT") return { snapshot: "absent", error: null };
+    return {
+      snapshot: `unreadable-state:${code}`,
+      error:
+        "Git history override inventory is unsafe: shared git common dir info/grafts state is unreadable",
+    };
+  }
+
+  const initialIdentity = statIdentity(initialStats);
+  if (!initialStats.isFile()) {
+    return {
+      snapshot: `non-regular:${initialIdentity}`,
+      error:
+        "Git history override inventory is unsafe: shared git common dir info/grafts is not a regular file",
+    };
+  }
+
+  let raw: Buffer;
+  try {
+    raw = readFileSync(graftPath);
+  } catch (error) {
+    const code = isRecord(error) && typeof error.code === "string" ? error.code : "UNKNOWN";
+    return {
+      snapshot: `unreadable-file:${initialIdentity}:${code}`,
+      error:
+        "Git history override inventory is unsafe: shared git common dir info/grafts is unreadable",
+    };
+  }
+
+  let finalStats: Stats;
+  try {
+    finalStats = lstatSync(graftPath);
+  } catch {
+    throw new Error(HISTORY_OVERRIDE_DRIFT_ERROR);
+  }
+  const finalIdentity = statIdentity(finalStats);
+  if (!finalStats.isFile() || finalIdentity !== initialIdentity) {
+    throw new Error(HISTORY_OVERRIDE_DRIFT_ERROR);
+  }
+
+  return {
+    snapshot: `regular:${initialIdentity}:${createHash("sha256").update(raw).digest("hex")}`,
+    error:
+      raw.length === 0
+        ? null
+        : "Git history override inventory is unsafe: shared git common dir info/grafts is nonempty",
+  };
+}
+
 function fingerprint(...evidence: string[]): string {
   const hash = createHash("sha256");
   for (const value of evidence) {
@@ -2395,6 +2467,7 @@ export function collectWorktreeLifecycleInventory(
         };
   const branchGlobalErrors = [
     ...initialHistoryOverrides.errors,
+    initialGrafts.error,
     originIdentity.error,
 
     ...prs.globalErrors,
@@ -2550,17 +2623,22 @@ export function collectWorktreeLifecycleInventory(
     "--format=%(refname)%0a%(objectname)%00",
     "refs/heads",
   ]);
+  const finalReplacementRefsRaw = requiredGit(root, [
+    "for-each-ref",
+    "--format=%(refname)%0a%(objectname)%00",
+    "refs/replace",
+  ]);
+  const finalGrafts = graftInventory(commonGitDir);
   const finalHistoryOverrides = historyOverrideProbe(root, commonGitDir);
   if (
     finalWorktreeRaw !== initialWorktreeRaw ||
-    finalRefsRaw !== initialRefsRaw ||
-    finalHistoryOverrides.replaceRefsState !== initialHistoryOverrides.replaceRefsState ||
-    finalHistoryOverrides.graftState !== initialHistoryOverrides.graftState
+    finalRefsRaw !== initialRefsRaw
   ) {
-
     throw new Error("worktree or branch inventory changed during patrol");
   }
   if (
+    finalHistoryOverrides.replaceRefsState !== initialHistoryOverrides.replaceRefsState ||
+    finalHistoryOverrides.graftState !== initialHistoryOverrides.graftState ||
     finalReplacementRefsRaw !== initialReplacementRefsRaw ||
     finalGrafts.snapshot !== initialGrafts.snapshot
   ) {

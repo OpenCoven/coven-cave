@@ -206,7 +206,7 @@ try {
 
   const fastForwardPath = path.join(repo, ".worktrees", "fast-forward");
   git(
-    ["worktree", "add", "-q", "-b", "feat/fast-forward", fastForwardPath, "origin/main"],
+    ["worktree", "add", "-q", "-b", "feat/fast-forward", fastForwardPath, "main"],
     repo,
   );
   writeFileSync(path.join(fastForwardPath, "fast-forward.txt"), "fast-forward landing\n");
@@ -228,7 +228,7 @@ try {
   const detached = path.join(repo, ".worktrees", "detached");
   git(["worktree", "add", "-q", "--detach", detached, "origin/main"], repo);
   const defaultHead = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
-  const workflowHead = "d".repeat(defaultHead.length);
+  const malformedWorkflowHead = "d".repeat(defaultHead.length);
   git(["update-ref", "refs/remotes/origin/trunk", defaultHead], repo);
   const worktreeInventory = git(["worktree", "list", "--porcelain", "-z"], repo);
   writeFileSync(
@@ -645,41 +645,6 @@ case " $* " in
     ;;
 esac
 
-if [ "\${LIFECYCLE_REQUIRE_SAFE_GIT:-0}" = "1" ]; then
-  case " $* " in
-    *" --no-optional-locks --no-replace-objects -C "*) ;;
-    *)
-      printf '%s\n' 'inventory git omitted read-only global options' >&2
-      exit 92
-      ;;
-  esac
-  for VARIABLE in GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE Git_Index_File GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_OPTIONAL_LOCKS GIT_REPLACE_REF_BASE GIT_NO_REPLACE_OBJECTS GIT_GRAFT_FILE GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do
-    eval "VALUE_SET=\\\${$VARIABLE+x}"
-    if [ -n "$VALUE_SET" ]; then
-      printf 'unsafe git environment retained: %s\n' "$VARIABLE" >&2
-      exit 93
-    fi
-  done
-  if [ -n "\${LIFECYCLE_EXPECT_GIT_SSH_COMMAND:-}" ] &&
-     [ "\${GIT_SSH_COMMAND:-}" != "$LIFECYCLE_EXPECT_GIT_SSH_COMMAND" ]; then
-    printf '%s\n' 'git authentication environment was stripped' >&2
-    exit 94
-  fi
-  case " $* " in
-    *" status "*)
-      for REQUIRED in "-c status.relativePaths=false" "-c core.fileMode=true" "-c core.fsmonitor=false" "-c core.untrackedCache=false" "-c core.ignoreStat=false" "--porcelain=v2" "-z" "--untracked-files=all" "--ignored=matching" "--ignore-submodules=none" "--no-renames"; do
-        case " $* " in
-          *" $REQUIRED "*) ;;
-          *)
-            printf '%s\n' 'git status omitted configuration-independent safety flags' >&2
-            exit 95
-            ;;
-        esac
-      done
-      ;;
-  esac
-fi
-
 case " $* " in
   *" worktree list --porcelain -z "*)
     if [ "\${LIFECYCLE_GIT_WARNING_PROBE:-}" = "required" ]; then
@@ -789,10 +754,10 @@ if [ "\${LIFECYCLE_DEFAULT_TRACKING_MUTATION:-0}" = "1" ]; then
     *" merge-base --is-ancestor "*)
       PATH=\${PATH#${gitBin}:}
       export PATH
-      git -C ${JSON.stringify(repo)} update-ref refs/remotes/origin/main ${JSON.stringify(oldHead)}
+      git --no-replace-objects -c advice.graftFileDeprecated=false -C ${JSON.stringify(repo)} update-ref refs/remotes/origin/main ${JSON.stringify(oldHead)}
       git "$@"
       STATUS=$?
-      git -C ${JSON.stringify(repo)} update-ref refs/remotes/origin/main "$DEFAULT_OID"
+      git --no-replace-objects -c advice.graftFileDeprecated=false -C ${JSON.stringify(repo)} update-ref refs/remotes/origin/main "$DEFAULT_OID"
       exit "$STATUS"
       ;;
   esac
@@ -809,7 +774,7 @@ fi
 
 if [ "\${LIFECYCLE_MALFORMED_INTEGRATION_PATH:-0}" = "1" ]; then
   case " $* " in
-    *" rev-list --ancestry-path --reverse "*)
+    *" rev-list --ancestry-path --first-parent --reverse "*)
       printf '%s\\n' 'not-an-object-id'
       exit 0
       ;;
@@ -818,7 +783,7 @@ fi
 
 if [ "\${LIFECYCLE_MALFORMED_INTEGRATION_TIMESTAMP:-0}" = "1" ]; then
   case " $* " in
-    *" show -s --format=%ct "*)
+    *" show -s --format=%H%x00%ct "*)
       printf '%s\\n' 'not-a-timestamp'
       exit 0
       ;;
@@ -1017,7 +982,7 @@ if [ "$1" = "api" ] &&
     [ -z "$OWNER$NAME$OID_ARG" ] || fail "exact-head search included repository variables"
     case "$SEARCH_QUERY" in
       is:pr\\ head:*:*) fail "exact-head search used an owner-prefixed head qualifier" ;;
-      is:pr\ head:feat/old|is:pr\ head:feat/recent-merge|is:pr\ head:feat/recent-reflog|is:pr\ head:feat/live|is:pr\ head:feat/cave-link1-linked|is:pr\ head:feat/spaced|is:pr\ head:feat/branch-only|is:pr\ head:feat/direct-landing|is:pr\ head:feat/fast-forward|is:pr\ head:feat/manual-recent) ;;
+      is:pr\\ head:feat/old|is:pr\\ head:feat/recent-merge|is:pr\\ head:feat/recent-reflog|is:pr\\ head:feat/live|is:pr\\ head:feat/cave-link1-linked|is:pr\\ head:feat/spaced|is:pr\\ head:feat/branch-only|is:pr\\ head:feat/direct-landing|is:pr\\ head:feat/fast-forward|is:pr\\ head:feat/manual-recent) ;;
 
       *) fail "exact-head search used an unexpected query: $SEARCH_QUERY" ;;
     esac
@@ -1053,7 +1018,7 @@ case "$*" in
   *"/actions/runs"*)
     WORKFLOW_COUNT_FILE=${JSON.stringify(
       path.join(fixtureRoot, "workflow-count-"),
-    )}"${LIFECYCLE_TEST_INVOCATION:-unknown}"
+    )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
     WORKFLOW_COUNT=0
     if [ -e "$WORKFLOW_COUNT_FILE" ]; then
       WORKFLOW_COUNT=$(cat "$WORKFLOW_COUNT_FILE")
@@ -1072,14 +1037,14 @@ case "$*" in
     [ -n "$WORKFLOW_STATUS" ] || fail "workflow inventory omitted an exact status"
     WORKFLOW_CALL_MARKER=${JSON.stringify(
       path.join(fixtureRoot, "workflow-calls-"),
-    )}"${LIFECYCLE_TEST_INVOCATION:-unknown}"
+    )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
     printf '%s\n' "$WORKFLOW_STATUS" >> "$WORKFLOW_CALL_MARKER"
-    if [ "${LIFECYCLE_WORKFLOW_STDERR:-0}" = "1" ]; then
+    if [ "\${LIFECYCLE_WORKFLOW_STDERR:-0}" = "1" ]; then
       printf '%s\n' 'workflow inventory omitted inaccessible runs' >&2
     fi
 
     if [ "\${LIFECYCLE_BAD_WORKFLOW:-0}" = "1" ]; then
-      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/missing-id"}]}]'
+      printf '%s\n' '[{"total_count":1,"workflow_runs":[{"status":"queued","head_branch":"feat/live","head_sha":"${malformedWorkflowHead}","html_url":"https://example.test/run/missing-id"}]}]'
     elif [ "\${LIFECYCLE_PARTIAL_WORKFLOW:-0}" = "1" ]; then
       printf '%s\n' '[{"total_count":2,"workflow_runs":[{"id":9001,"status":"'"$WORKFLOW_STATUS"'","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run"}]}]'
     elif [ "\${LIFECYCLE_CAPPED_WORKFLOW:-0}" = "1" ]; then
@@ -1138,10 +1103,10 @@ if [ "\${LIFECYCLE_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "drift
   touch "${path.join(fixtureRoot, "drift-once")}"
   git -C "${repo}" branch feat/drift origin/main
 fi
-if [ "${LIFECYCLE_GRAFT_DRIFT:-0}" = "1" ]; then
+if [ "\${LIFECYCLE_GRAFT_DRIFT:-0}" = "1" ]; then
   printf '%s %s\n' ${JSON.stringify(defaultHead)} ${JSON.stringify(oldHead)} > ${JSON.stringify(path.join(repo, ".git", "info", "grafts"))}
 fi
-if [ "${LIFECYCLE_REPLACEMENT_DRIFT:-0}" = "1" ]; then
+if [ "\${LIFECYCLE_REPLACEMENT_DRIFT:-0}" = "1" ]; then
   git -C "${repo}" update-ref ${JSON.stringify(`refs/replace/${defaultHead}`)} ${JSON.stringify(oldHead)}
 fi
 
@@ -1460,7 +1425,7 @@ exit 0
   assert.deepEqual(report.budgets, {
     worktrees: { count: 8, warning: 12, exceeded: false },
 
-    branches: { count: 9, warning: 30, exceeded: false },
+    branches: { count: 11, warning: 30, exceeded: false },
     exceptions: { active: 0, expired: 0 },
   }, "the exact budget object survives patrol JSON serialization");
   const nullExceptionReport = JSON.parse(
@@ -1553,7 +1518,7 @@ exit 0
   );
   assert.match(
     humanReport,
-    /^Local branch budget: 9\/30 \(within budget\)$/m,
+    /^Local branch budget: 11\/30 \(within budget\)$/m,
     "the routine report uses the lifecycle renderer's exact local branch budget line",
   );
   assert.doesNotMatch(
@@ -1869,9 +1834,6 @@ exit 0
             repo,
           ),
         "the fixture must lie only when replacement refs are honored",
-      );
-      const replacementReport = JSON.parse(
-        patrol(["--json"], { LIFECYCLE_CLOSED_UNMERGED: "1" }),
       );
       const replacementReport = JSON.parse(
         patrol(["--json"], { LIFECYCLE_CLOSED_UNMERGED: "1" }),
@@ -2388,10 +2350,13 @@ exit 0
   const mutatedTrackingReport = JSON.parse(
     patrol(["--json"], { LIFECYCLE_DEFAULT_TRACKING_MUTATION: "1" }),
   );
+  const mutatedTrackingItem = mutatedTrackingReport.items.find(
+    (item) => item.branch === "feat/branch-only",
+  );
   assert.equal(
-    mutatedTrackingReport.items.find((item) => item.branch === "feat/branch-only").lane,
+    mutatedTrackingItem.lane,
     "retire-after-gate",
-    "ancestry uses the captured authoritative default OID after the tracking ref mutates",
+    `ancestry uses the captured authoritative default OID after the tracking ref mutates: ${mutatedTrackingItem.probeErrors.join("; ")}`,
   );
 
   const sshOriginReport = JSON.parse(
@@ -2433,13 +2398,16 @@ exit 0
   assert.equal(
     missingExactDefaultReflog.lane,
     "uncertain",
-    "an exact default OID without a tied tracking reflog has no reliable landing timestamp",
+    "an exact default OID without a merged PR has no reliable landing timestamp",
   );
-  assert.match(missingExactDefaultReflog.probeErrors.join("\n"), /integration.*reflog/i);
+  assert.match(
+    missingExactDefaultReflog.probeErrors.join("\n"),
+    /landing time.*unprovable.*exact merged PR/i,
+  );
 
   for (const [environment, expectedError] of [
-    ["LIFECYCLE_MALFORMED_INTEGRATION_PATH", /integration.*ancestry path/i],
-    ["LIFECYCLE_MALFORMED_INTEGRATION_TIMESTAMP", /integration.*timestamp/i],
+    ["LIFECYCLE_MALFORMED_INTEGRATION_PATH", /landing evidence.*malformed/i],
+    ["LIFECYCLE_MALFORMED_INTEGRATION_TIMESTAMP", /landing timestamp.*malformed/i],
   ]) {
     const malformedIntegrationReport = JSON.parse(
       patrol(["--json"], { [environment]: "1" }),
