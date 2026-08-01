@@ -444,3 +444,71 @@ assert.equal(defaults.appearance.backdrop.style, "image");
   const cleared = applyPreferencesPatch(scoped, { github: { orgScope: [] } });
   assert.deepEqual(cleared.github.orgScope, [], "empty patch clears back to all");
 }
+{
+  // ── Daemon automation (cave-bqywj) ──────────────────────────────────────
+  // These two restart processes and install binaries on the user's machine.
+  // Every assertion below exists because the failure mode is "the cave did
+  // something unattended that the user never asked for", which no amount of
+  // later UI polish undoes.
+  const daemon = createDefaultPreferences(false).daemon;
+  assert.equal(daemon.autoRestart, false, "auto-restart is opt-in");
+  assert.equal(daemon.autoUpgradeCli, false, "CLI auto-upgrade is opt-in");
+  assert.deepEqual(
+    Object.keys(daemon).sort(),
+    ["autoRestart", "autoUpgradeCli"],
+    "no daemon automation ships without a default asserted here",
+  );
+}
+{
+  // Absent section, and a file written by a build that never had one.
+  assert.equal(normalizeCavePreferences({}).daemon.autoUpgradeCli, false, "absent daemon → off");
+  assert.equal(
+    normalizeCavePreferences({ daemon: {} }).daemon.autoRestart,
+    false,
+    "empty daemon section → off",
+  );
+}
+{
+  // Fails CLOSED. The rest of the schema uses `!== false` for default-on
+  // booleans; a value that merely looks truthy must NOT switch these on.
+  for (const truthy of ["true", 1, "yes", {}, [], "on"]) {
+    const p = normalizeCavePreferences({
+      daemon: { autoRestart: truthy, autoUpgradeCli: truthy },
+    });
+    assert.equal(p.daemon.autoRestart, false, `truthy ${JSON.stringify(truthy)} is not consent`);
+    assert.equal(p.daemon.autoUpgradeCli, false, `truthy ${JSON.stringify(truthy)} is not consent`);
+  }
+  const on = normalizeCavePreferences({ daemon: { autoRestart: true } });
+  assert.equal(on.daemon.autoRestart, true, "an explicit true still turns it on");
+}
+{
+  // Patch validation: booleans only, known keys only.
+  const patch = validatePreferencesPatch({ daemon: { autoUpgradeCli: true } });
+  assert.equal(patch.daemon?.autoUpgradeCli, true);
+  assert.equal(
+    Object.hasOwn(patch.daemon ?? {}, "autoRestart"),
+    false,
+    "a patch touches only the keys it names",
+  );
+  for (const bad of ["true", 1, null]) {
+    assert.throws(
+      () => validatePreferencesPatch({ daemon: { autoRestart: bad } }),
+      PreferencesValidationError,
+      `daemon.autoRestart rejects ${JSON.stringify(bad)}`,
+    );
+  }
+  assert.throws(
+    () => validatePreferencesPatch({ daemon: { autoUpgradeEverything: true } }),
+    PreferencesValidationError,
+    "unknown daemon keys are rejected rather than silently stored",
+  );
+}
+{
+  // Toggling one flag leaves the others alone, and off is reachable again.
+  const base = createDefaultPreferences(true);
+  const on = applyPreferencesPatch(base, { daemon: { autoRestart: true } });
+  assert.equal(on.daemon.autoRestart, true);
+  assert.equal(on.daemon.autoUpgradeCli, false, "one toggle does not enable its neighbours");
+  const off = applyPreferencesPatch(on, { daemon: { autoRestart: false } });
+  assert.equal(off.daemon.autoRestart, false, "the user can always turn it back off");
+}
