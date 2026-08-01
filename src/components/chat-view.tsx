@@ -6840,6 +6840,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <CodeReadingContext.Provider value={codeReading}>
+      {/* Row, so a `split` inspector docks BESIDE the transcript and narrows it
+          rather than covering it. With no inspector open the row collapses to
+          the transcript alone and the layout is unchanged. Overlay and modal
+          are fixed-position and escape this row on their own. */}
+      <div className="flex min-h-0 flex-1">
       <div
         ref={scrollRef}
         tabIndex={0}
@@ -7065,6 +7070,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }}
         />
       ) : null}
+      </div>
       </CodeReadingContext.Provider>
       </FileLinkResolverContext.Provider>
       </ToolProjectRootContext.Provider>

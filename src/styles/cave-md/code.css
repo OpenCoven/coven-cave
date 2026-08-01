@@ -154,18 +154,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl;
-  text-align: left;
-}
-/* RTL above keeps the ellipsis on the LEFT so a deep path truncates to the
-   part that identifies it (…/lib/oauth-loopback.ts, never src/lib/oau…).
-   The children are re-isolated so their own text still reads left-to-right. */
-.cave-code-filename > * {
-  direction: ltr;
-  unicode-bidi: isolate;
 }
 
+/* The qualifying path, after the name and dimmer. Truncating here costs only
+   context, never the file's identity — which is why the name goes first. */
 .cave-code-dir {
+  margin-left: 0.5em;
   color: var(--code-chrome-ink-muted);
 }
 
