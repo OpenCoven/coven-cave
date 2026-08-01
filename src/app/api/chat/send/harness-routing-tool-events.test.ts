@@ -15,6 +15,10 @@ import {
   ToolCallTracker,
   toPersistedTools,
 } from "../../../../lib/chat-tool-events.ts";
+import {
+  redactSecretText,
+  redactSecretsDeep,
+} from "../../../../lib/secret-redaction.ts";
 
 const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
@@ -59,18 +63,18 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /if \(event\.replace\) \{\s*const previousTextLength = gatewayAssistantText\.length;\s*gatewayToolTracker\.rebaseTextOffsets\(\s*0,\s*event\.text\.length - previousTextLength,\s*\);\s*gatewayAssistantText = event\.text;[\s\S]*?kind: "assistant_replace"/,
-  "a published Gateway replacement delta rebases tool positions before correcting the live stream and persisted transcript",
+  /if \(event\.replace\) \{\s*const correction = toolTextCorrection\(gatewayAssistantText, event\.text\);\s*if \(correction\) \{\s*gatewayToolTracker\.rebaseTextOffsets\(correction\.after, correction\.delta\);\s*\}\s*gatewayAssistantText = event\.text;[\s\S]*?kind: "assistant_replace"/,
+  "a published Gateway replacement rebases from the shared text-correction boundary before assigning corrected text",
 );
 assert.match(
   chatRoute,
-  /event\.kind === "final" && event\.text\) \{\s*if \(gatewayAssistantText !== event\.text\) \{\s*const previousTextLength = gatewayAssistantText\.length;\s*gatewayToolTracker\.rebaseTextOffsets\(\s*0,\s*event\.text\.length - previousTextLength,\s*\);\s*if \(gatewayAssistantTextEmitted\) \{[\s\S]*?kind: "assistant_replace"[\s\S]*?\}\s*\}\s*gatewayAssistantText = event\.text;/,
-  "a divergent terminal Gateway message rebases tool positions before assigning persisted text and only replaces an emitted stream",
+  /event\.kind === "final" && event\.text\) \{\s*if \(gatewayAssistantText !== event\.text\) \{\s*const correction = toolTextCorrection\(gatewayAssistantText, event\.text\);\s*if \(correction\) \{\s*gatewayToolTracker\.rebaseTextOffsets\(correction\.after, correction\.delta\);\s*\}\s*if \(gatewayAssistantTextEmitted\) \{[\s\S]*?kind: "assistant_replace"[\s\S]*?\}\s*\}\s*gatewayAssistantText = event\.text;/,
+  "a divergent terminal Gateway message uses the shared correction boundary before assigning persisted text",
 );
 assert.doesNotMatch(
   chatRoute,
-  /if \(gatewayAssistantTextEmitted && gatewayAssistantText !== event\.text\)/,
-  "final offset rebasing must depend on text divergence, while live replacement separately depends on prior emission",
+  /gatewayToolTracker\.rebaseTextOffsets\(\s*0\s*,/,
+  "Gateway text corrections must not directly rebase every tool from offset zero",
 );
 assert.match(
   chatRoute,
@@ -97,6 +101,19 @@ assert.doesNotMatch(
   /gatewayToolTracker\.envelopeTool(?:Use|Progress|Result)\(\s*event\.id,[\s\S]{0,160}?event\.(?:input|output)/,
   "raw Gateway event payloads must never reach ToolCallTracker",
 );
+{
+  const npmToken = "npm_example-token-123456789";
+  const rawInput = formatToolInputValue(redactSecretsDeep({
+    command: `NPM_TOKEN=${npmToken} npm publish`,
+  }));
+  const input = rawInput === undefined ? undefined : redactSecretText(rawInput);
+  assert.doesNotMatch(input ?? "", new RegExp(npmToken), "Gateway tool input removes NPM_TOKEN values");
+  assert.match(
+    input ?? "",
+    /NPM_TOKEN=\[redacted\]/,
+    "Gateway tool input preserves the assignment while redacting its value",
+  );
+}
 assert.match(
   chatRoute,
   /const settleOpenGatewayTools = \(output: string\) => \{[\s\S]*?gatewayToolTracker\.failOpenCalls\(output\)[\s\S]*?push\(\{ kind: "tool_use", \.\.\.tool \}\)/,

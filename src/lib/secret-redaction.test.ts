@@ -38,4 +38,30 @@ assert.match(
   "bearer tokens are redacted in free text",
 );
 
+assert.equal(
+  redactSecretText("NPM_TOKEN=npm_example-token-123456789"),
+  `NPM_TOKEN=${REDACTED_SECRET}`,
+  "uppercase underscore-prefixed credential assignments are redacted",
+);
+assert.equal(
+  redactSecretText("my-client-secret: client-secret-value-123456789"),
+  `my-client-secret: ${REDACTED_SECRET}`,
+  "hyphenated credential keys are redacted",
+);
+assert.equal(
+  redactSecretText('OPENAI_API_KEY="example-openai-key-value"'),
+  `OPENAI_API_KEY="${REDACTED_SECRET}"`,
+  "quoted assignment values retain their quote syntax",
+);
+assert.equal(
+  redactSecretText("env NPM_TOKEN=npm_example-token-123456789 npm publish"),
+  `env NPM_TOKEN=${REDACTED_SECRET} npm publish`,
+  "credential assignments are redacted inside surrounding command text",
+);
+assert.equal(
+  redactSecretText("metrics token_count=12 authorship=collaboration"),
+  "metrics token_count=12 authorship=collaboration",
+  "ordinary metric and word assignments are not treated as credential keys",
+);
+
 console.log("secret-redaction.test.ts: ok");

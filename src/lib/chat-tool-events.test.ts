@@ -1,6 +1,16 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { LIVE_TOOL_INPUT_CAP, LIVE_TOOL_OUTPUT_CAP, MAX_RECORDED_TOOL_EVENTS, MAX_SETTLED_ENVELOPE_IDS, MAX_SETTLED_RECONCILIATION_CALLS, ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
+import {
+  LIVE_TOOL_INPUT_CAP,
+  LIVE_TOOL_OUTPUT_CAP,
+  MAX_RECORDED_TOOL_EVENTS,
+  MAX_SETTLED_ENVELOPE_IDS,
+  MAX_SETTLED_RECONCILIATION_CALLS,
+  ToolCallTracker,
+  capLiveToolPayload,
+  toolTextCorrection,
+  toPersistedTools,
+} from "./chat-tool-events.ts";
 
 const tracker = new ToolCallTracker(() => 1_000);
 assert.equal(tracker.envelopeToolResult("call_1", "late terminal output", false), null);
@@ -211,5 +221,70 @@ largeSameName.hookEnd("Read", "first output", false);
 const largeSameNameRecords = new Map(largeSameName.snapshot().map((event) => [event.id, event]));
 assert.equal(largeSameNameRecords.get("large-a")?.output, "first output");
 assert.equal(largeSameNameRecords.get("large-b")?.output, "second output");
+
+function applyTextCorrection(
+  tracker: ToolCallTracker,
+  previous: string,
+  next: string,
+) {
+  const correction = toolTextCorrection(previous, next);
+  if (correction) tracker.rebaseTextOffsets(correction.after, correction.delta);
+  return correction;
+}
+
+const initialSnapshot = new ToolCallTracker(() => 1_000);
+initialSnapshot.envelopeToolUse("initial-snapshot", "read", undefined, 0);
+assert.equal(
+  applyTextCorrection(initialSnapshot, "", "Initial full answer"),
+  null,
+  "an initial full snapshot does not rebase a tool that happened before text",
+);
+assert.equal(initialSnapshot.snapshot()[0]?.textOffset, 0);
+
+const appendedSuffix = new ToolCallTracker(() => 1_000);
+appendedSuffix.envelopeToolUse("append-suffix", "read", undefined, 5);
+assert.deepEqual(
+  applyTextCorrection(appendedSuffix, "Hello", "Hello world"),
+  { after: 5, delta: 6 },
+  "an appended suffix corrects offsets from the old text end",
+);
+assert.equal(appendedSuffix.snapshot()[0]?.textOffset, 11);
+
+const commonPrefix = new ToolCallTracker(() => 1_000);
+commonPrefix.envelopeToolUse("before-prefix", "read", undefined, 4);
+commonPrefix.envelopeToolUse("after-prefix", "write", undefined, 10);
+assert.deepEqual(
+  applyTextCorrection(commonPrefix, "prefix old", "prefix new answer"),
+  { after: 7, delta: 7 },
+  "a divergent correction starts at the longest common prefix",
+);
+assert.deepEqual(
+  commonPrefix.snapshot().map((event) => event.textOffset),
+  [4, 17],
+  "tools before the correction boundary stay fixed while later tools shift",
+);
+
+const shortenedReplacement = new ToolCallTracker(() => 1_000);
+shortenedReplacement.envelopeToolUse("before-shortening", "read", undefined, 6);
+shortenedReplacement.envelopeToolUse("after-shortening", "write", undefined, 15);
+assert.deepEqual(
+  applyTextCorrection(shortenedReplacement, "prefix long tail", "prefix x"),
+  { after: 7, delta: -8 },
+  "a shorter replacement reports the actual correction boundary and length delta",
+);
+assert.deepEqual(
+  shortenedReplacement.snapshot().map((event) => event.textOffset),
+  [6, 7],
+  "shortening shifts only tools at or after the corrected suffix",
+);
+
+const duplicateFinal = new ToolCallTracker(() => 1_000);
+duplicateFinal.envelopeToolUse("duplicate-final", "read", undefined, 4);
+assert.equal(
+  applyTextCorrection(duplicateFinal, "same text", "same text"),
+  null,
+  "an identical final snapshot is a no-op",
+);
+assert.equal(duplicateFinal.snapshot()[0]?.textOffset, 4);
 
 console.log("chat-tool-events.test.ts: ok");

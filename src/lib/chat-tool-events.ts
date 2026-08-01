@@ -71,6 +71,20 @@ export function capLiveToolPayload(value: string | undefined, cap: number): stri
   return `${value.slice(0, end)}${suffix}`;
 }
 
+export function toolTextCorrection(
+  previous: string,
+  next: string,
+): { after: number; delta: number } | null {
+  if (!previous || previous === next) return null;
+  const delta = next.length - previous.length;
+  if (!delta) return null;
+
+  let after = 0;
+  const commonLength = Math.min(previous.length, next.length);
+  while (after < commonLength && previous[after] === next[after]) after += 1;
+  return { after, delta };
+}
+
 /** Pretty-print a raw JSON payload string; fall back to the raw text. */
 export function formatToolPayload(raw: string): string | undefined {
   if (!raw) return undefined;

@@ -32,6 +32,7 @@ import {
   flattenToolResultContent,
   formatToolInputValue,
   formatToolPayload,
+  toolTextCorrection,
   toPersistedTools,
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
@@ -793,11 +794,10 @@ function openClawChatResponse(args: {
           }
           if (event.kind === "delta") {
             if (event.replace) {
-              const previousTextLength = gatewayAssistantText.length;
-              gatewayToolTracker.rebaseTextOffsets(
-                0,
-                event.text.length - previousTextLength,
-              );
+              const correction = toolTextCorrection(gatewayAssistantText, event.text);
+              if (correction) {
+                gatewayToolTracker.rebaseTextOffsets(correction.after, correction.delta);
+              }
               gatewayAssistantText = event.text;
               gatewayAssistantTextEmitted = true;
               push({ kind: "assistant_replace", text: event.text });
@@ -810,11 +810,10 @@ function openClawChatResponse(args: {
           }
           if (event.kind === "final" && event.text) {
             if (gatewayAssistantText !== event.text) {
-              const previousTextLength = gatewayAssistantText.length;
-              gatewayToolTracker.rebaseTextOffsets(
-                0,
-                event.text.length - previousTextLength,
-              );
+              const correction = toolTextCorrection(gatewayAssistantText, event.text);
+              if (correction) {
+                gatewayToolTracker.rebaseTextOffsets(correction.after, correction.delta);
+              }
               if (gatewayAssistantTextEmitted) {
                 push({ kind: "assistant_replace", text: event.text });
               }

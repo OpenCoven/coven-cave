@@ -3,6 +3,12 @@ export const REDACTED_SECRET = "[redacted]";
 const SECRET_KEY_PATTERN =
   /(?:^|_)(?:api[_-]?key|auth|authorization|bearer|client[_-]?secret|cookie|credential|jwt|oauth|pass(?:word)?|private[_-]?key|refresh[_-]?token|secret|session|token)(?:$|_)/i;
 
+const SECRET_ASSIGNMENT_KEY_PATTERN =
+  /(?:^|[_-])(?:api[_-]?key|auth(?:orization)?|bearer|client[_-]?secret|cookie|credentials?|jwt|oauth|pass(?:word)?|private[_-]?key|refresh[_-]?token|secret|session|token)$/i;
+
+const SECRET_ASSIGNMENT_PATTERN =
+  /\b([A-Za-z][A-Za-z0-9]*(?:[_-][A-Za-z0-9]+)*)(\s*[:=]\s*)("[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/g;
+
 const WHOLE_SECRET_PATTERNS: RegExp[] = [
   /\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b/gi,
   /\bsk-or-v1-[A-Za-z0-9_-]{32,}\b/g,
@@ -24,10 +30,16 @@ export function redactSecretText(text: string): string {
     /([?&](?:access_token|api_key|auth|key|password|secret|token)=)[^&#\s]+/gi,
     `$1${REDACTED_SECRET}`,
   );
-  next = next.replace(
-    /\b((?:api[_-]?key|authorization|client[_-]?secret|password|secret|token)\s*[:=]\s*)("[^"]+"|'[^']+'|[^\s,;]+)/gi,
-    `$1${REDACTED_SECRET}`,
-  );
+  next = next.replace(SECRET_ASSIGNMENT_PATTERN, (assignment, key, separator, value) => {
+    if (!SECRET_ASSIGNMENT_KEY_PATTERN.test(key)) return assignment;
+    const quote =
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'")))
+        ? value[0]
+        : "";
+    return `${key}${separator}${quote}${REDACTED_SECRET}${quote}`;
+  });
   next = next.replace(/\b(https?:\/\/[^:/\s]+:)[^@\s/]+(@)/gi, `$1${REDACTED_SECRET}$2`);
   return next;
 }
