@@ -15,7 +15,7 @@
 **Current settings** (verified live; `gh api repos/OpenCoven/coven-cave/branches/main/protection`):
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
-- Required status checks (all must pass): `Frontend build`, `Rust check`, `E2E (Playwright)`, `Cross-environment required`, `Sidecar runtime required`. **`CodeQL` is retired** (2026-07-31): the ruleset's `code_scanning` rule went first, then the required context in classic branch protection, and now the workflow itself. Code scanning is fully off — GitHub default setup is `not-configured`, so nothing scans in its place. If you ever see a PR stuck `BLOCKED` with `mergeable: MERGEABLE`, no failing check and every conversation resolved, suspect a required context that no longer reports; compare `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the checks the PR actually runs. The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
+- Required status checks — **all NINE** must pass (widened 2026-08-01 from five): `Frontend build`, `Rust check`, `E2E (Playwright)`, `Cross-environment (ubuntu-latest)`, `Cross-environment (windows-latest)`, `Cross-environment required`, `Sidecar runtime (ubuntu-latest)`, `Sidecar runtime (windows-latest)`, `Sidecar runtime required`. The four matrix legs were added alongside their `*-required` rollups. The rollups already fail unless `needs.<job>.result == 'success'`, so this is defense in depth rather than a gap being closed — it removes the dependency on those aggregation scripts staying correct. **Both layers carry the same nine** (classic protection and ruleset `19123333`), so they cannot disagree. Only `ci.yml` runs on `pull_request` and no job carries a skippable `if:`, which is why requiring the legs is safe — a required context that never reports is what leaves a PR stuck `BLOCKED` with nothing failing. **`CodeQL` is retired** (2026-07-31): the ruleset's `code_scanning` rule went first, then the required context in classic branch protection, and now the workflow itself. Code scanning is fully off — GitHub default setup is `not-configured`, so nothing scans in its place. If you ever see a PR stuck `BLOCKED` with `mergeable: MERGEABLE`, no failing check and every conversation resolved, suspect a required context that no longer reports; compare `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the checks the PR actually runs. The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
 - **All review conversations must be resolved** (`required_conversation_resolution`).
   This is the one that surprises you: it counts threads opened by
   `copilot-pull-request-reviewer[bot]` and `github-advanced-security[bot]`, not
@@ -31,15 +31,59 @@
   merely advised.
 - Branches do **not** need to be up to date with `main` (`strict: false`), so
   being behind is never the reason a merge is blocked.
-- `enforce_admins = false` — **deliberate**, not drift. Protection was first
-  enabled with `enforce_admins=true` (see the Why above); it was intentionally
-  relaxed later. Leave it alone. It does **not** loosen the rule this section
-  exists to state: every change still goes through a PR with green checks, and
-  the `--admin` flag `gh` dangles at you on a blocked merge is still not the
-  fix — fix the actual blocker. What the setting buys is an escape hatch for a
-  human to use knowingly, not a shortcut for an agent to take because a merge
-  was inconvenient.
-- Force-pushes and deletion of `main` are blocked.
+- `enforce_admins = true` — admins are **not** exempt. This flipped back on
+  2026-08-01 at the user's direction, and the paragraph that used to sit here
+  (calling `false` "deliberate, not drift — leave it alone") was wrong enough
+  to be worth a warning. See "What `enforce_admins = false` actually cost"
+  below. The `--admin` flag `gh` dangles at you on a blocked merge is still not
+  the fix — fix the actual blocker.
+- Force-pushes and deletion of `main` are blocked. `allow_deletions = false`
+  holds regardless of `enforce_admins`: two `git push origin :main` attempts on
+  2026-08-01 were both rejected with exit 1.
+
+### What `enforce_admins = false` actually cost
+
+While it was off, **GitHub Desktop** — the desktop app, run from its UI — was
+merging feature branches into `main` locally and pushing straight to it. On
+2026-08-01 alone: **33** `git push origin main:main`, **14**
+`git merge <branch>` into `main`, and **53** invocations of Desktop's Copilot
+conflict-resolution on those merges. Every one of those pushes bypassed every
+required check, because a push from an admin was exempt while a *PR* from
+anyone was not. `main` sat red as a result — one of the failures was a
+regression that a PR's `E2E (Playwright)` run would have caught before it
+landed. The same sweep also ran `git worktree remove --force` and
+`git push origin :<branch>` on the branches it merged, destroying a live
+session's worktree mid-verification (see the worktree-guard section below —
+that hook only covers Claude Code sessions, never GitHub Desktop).
+
+**Diagnosing a direct-to-`main` push.** In the PRIMARY checkout:
+
+```bash
+git reflog show main --date=iso | head -20
+```
+
+`merge <branch>: Merge made by the 'ort' strategy` interleaved with
+`pull --ff --recurse-submodules --progress origin` is the GitHub Desktop
+signature (that exact pull flag set is Desktop's, not a human's CLI). Confirm
+against Desktop's own log, which records every operation with a `[ui]` prefix
+and a UTC timestamp:
+
+```bash
+grep -nE "Executing (merge|push|removeWorktree|deleteRemoteBranch)" \
+  ~/Library/Application\ Support/GitHub\ Desktop/logs/$(date -u +%F).desktop.production.log
+```
+
+A related tell: `main`'s CI runs keep showing `cancelled` rather than
+completing, because each new push supersedes the previous run. If you cannot
+find a completed run for a commit on `main`, suspect push churn, not a CI bug.
+
+⚠️ **Remaining gap — the ruleset layer.** Protection is two layers and a push
+must satisfy BOTH, so classic protection is what blocks today. But ruleset
+`19123333` still carries `bypass_actors: [{actor_type: OrganizationAdmin,
+bypass_mode: always}]` over its `deletion` / `required_status_checks` /
+`pull_request` rules. If classic protection is ever retired in favour of
+rulesets alone, that bypass silently becomes the whole story. Check with
+`gh api repos/OpenCoven/coven-cave/rulesets/19123333 --jq .bypass_actors`.
 
 **How to apply (the only path to `main`):**
 
