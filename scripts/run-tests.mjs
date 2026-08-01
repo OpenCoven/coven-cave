@@ -476,6 +476,7 @@ export const SUITES = {
     "src/components/sidepanel-badges.test.ts",
     "src/components/sidepanel-badge-dots.test.ts",
     "src/components/sidepanel-nav-peek.test.ts",
+    "src/components/sidebar-floating-edge.test.ts",
     "src/components/sidepanel-peel-reveal.test.ts",
     "src/components/sidepanel-keyboard-nav.test.ts",
     "src/components/recent-activity-rollup.test.ts",
