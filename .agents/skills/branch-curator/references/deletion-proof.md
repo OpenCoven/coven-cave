@@ -783,6 +783,19 @@ of stdout, and exactly the documented four-key allow object. After the final
 allow-object validation, nothing except the worktree removal itself may
 intervene:
 
+If the exact source branch still exists or `HEAD` is an ancestor of an
+advertised branch/tag, leave `strict_guard_retention_args` empty and use the
+ordinary bounded proof. If GitHub squash-merged the exact candidate and
+auto-deleted its source branch, populate the array only after a fresh exact PR
+detail query has proved: one numeric PR, `state == closed`, `merged == true`, a
+valid `merged_at`, `head.sha == audited_worktree_head_oid`,
+`base.ref == audited_remote_main_branch`, and
+`base.repo.full_name == audited_gh_repo`.
+The strict guard reauthenticates those facts and queries/fetches only the exact
+`refs/pull/<number>/head`; it never enumerates unrelated heads/tags in this
+mode. Any ambiguity leaves the array unset and preserves the candidate rather
+than trying both paths or bypassing the source bound.
+
 ```bash
 if test -n "$worktree_path"; then
   current_worktree_head_oid=$(git_exact -C "$worktree_path" rev-parse \
@@ -803,7 +816,15 @@ if test -n "$worktree_path"; then
     { rm -f -- "$strict_guard_output_file";
       printf 'PRESERVE - default ref changed before worktree removal\n';
       continue; }
-  if env -u WT_GUARD_BYPASS -u WT_GUARD_TEST_MODE -u WT_GUARD_TEST_LSOF_BIN node scripts/worktree-guard.mjs --strict-worktree-remove "$canonical_worktree_path" --expected-head "$audited_worktree_head_oid" >"$strict_guard_output_file"; then
+  strict_guard_retention_args=()
+  if test -n "${audited_merged_pr_number:-}"; then
+    strict_guard_retention_args=(
+      --retained-by-github-pr origin "$audited_gh_repo"
+      "$audited_merged_pr_number"
+      --expected-base "$audited_remote_main_branch"
+    )
+  fi
+  if env -u WT_GUARD_BYPASS -u WT_GUARD_TEST_MODE -u WT_GUARD_TEST_LSOF_BIN node scripts/worktree-guard.mjs --strict-worktree-remove "$canonical_worktree_path" --expected-head "$audited_worktree_head_oid" "${strict_guard_retention_args[@]}" >"$strict_guard_output_file"; then
     :
   else
     strict_guard_status=$?
