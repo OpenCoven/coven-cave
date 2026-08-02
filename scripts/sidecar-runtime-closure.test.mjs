@@ -8,6 +8,7 @@ import {
   assembleSidecarRuntime,
   collectTracedDependencies,
   SIDECAR_FORBIDDEN_ROOTS,
+  SIDECAR_NEXT_RUNTIME_FILES,
   SIDECAR_RUNTIME_BUDGETS,
   verifySidecarRuntime,
 } from "./sidecar-runtime-closure.mjs";
@@ -80,6 +81,9 @@ try {
     await packageFixture(projectRoot, packageName);
     await packageFixture(path.dirname(dependencyRoot), packageName);
   }
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    await write(dependencyRoot, path.join("next", relativePath), "next runtime fixture\n");
+  }
   await write(projectRoot, "node_modules/@img/sharp-win32-x64/lib/libvips-42.dll", "native dependency\n");
   await write(dependencyRoot, "@img/sharp-win32-x64/lib/libvips-42.dll", "native dependency\n");
   await write(projectRoot, "node_modules/foo/node_modules/evil/index.js", "must not be copied\n");
@@ -109,6 +113,12 @@ try {
   assert.equal(await readFile(path.join(destination, "marketplace/plugins/example/plugin.json"), "utf8"), "{}\n");
   assert.equal(await readFile(path.join(destination, "workflows/example.yaml"), "utf8"), "id: example\n");
   assert.equal(await readFile(path.join(destination, "public/sandbox/tailwind.js"), "utf8"), "tailwind\n");
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    assert.equal(
+      await readFile(path.join(destination, "node_modules", "next", relativePath), "utf8"),
+      "next runtime fixture\n",
+    );
+  }
   assert.equal(await readFile(path.join(destination, "node_modules/foo/index.js"), "utf8"), 'module.exports = "foo";\n');
   assert.equal(
     await readFile(path.join(destination, "node_modules/@img/sharp-win32-x64/lib/libvips-42.dll"), "utf8"),

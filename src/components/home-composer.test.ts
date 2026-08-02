@@ -32,8 +32,18 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /useProjects\(\{\s*enabled: Boolean\(selectedFamiliarId\),\s*familiarId: selectedFamiliarId \|\| null,\s*\}\)/,
-  "HomeComposer should load projects only for a selected familiar, never through the unscoped fallback",
+  /useProjects\(\{\s*enabled: true,\s*familiarId: selectedFamiliarId \|\| null,\s*\}\)/,
+  "HomeComposer should keep the operator project registry visible before a familiar is selected",
+);
+assert.match(
+  source,
+  /const projects = useMemo\(\s*\(\) => selectedFamiliarId\s*\? scopedProjects\.filter\(\(project\) => project\.access !== undefined\)\s*:\s*scopedProjects,/,
+  "HomeComposer should filter by access only when it has a familiar scope",
+);
+assert.match(
+  source,
+  /!selectedFamiliarId\s*\?\s*"Summon a familiar before starting chat\."/,
+  "HomeComposer should explain why chat remains blocked without a familiar while retaining registered projects",
 );
 
 // Chat revamp 1a + minimal pass: the hero is the hearth card's heading —

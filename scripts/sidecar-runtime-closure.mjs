@@ -35,6 +35,15 @@ export const SIDECAR_DYNAMIC_PACKAGES = Object.freeze([
   "ws",
 ]);
 
+// Next's server config loader resolves these files dynamically at startup.
+// NFT does not retain them in the sparse standalone dependency tree, so keep
+// the small compiled webpack bootstrap explicitly in the sidecar closure.
+export const SIDECAR_NEXT_RUNTIME_FILES = Object.freeze([
+  "dist/compiled/webpack/webpack-lib.js",
+  "dist/compiled/webpack/webpack.js",
+  "dist/compiled/webpack/bundle5.js",
+]);
+
 export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // Headroom over the ~5.2k baseline: .agents/skills is a runtime root, so
   // each first-party skill shipped to familiars adds a file here (covenwiki
@@ -398,6 +407,35 @@ async function copyNextAliases(standaloneRoot, destination, allowedLinkRoots) {
   }
 }
 
+async function copyNextRuntimeFiles(standaloneRoot, dependencyRoot, destination, allowedLinkRoots) {
+  const nextRoots = [
+    path.join(standaloneRoot, "node_modules", "next"),
+    path.join(dependencyRoot, "next"),
+  ];
+
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    let source = null;
+    for (const root of nextRoots) {
+      const candidate = path.join(root, relativePath);
+      try {
+        await stat(candidate);
+        source = candidate;
+        break;
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+    if (!source) {
+      throw new Error(`required Next sidecar runtime file is missing: ${relativePath}`);
+    }
+    await copyResolvedEntry(
+      source,
+      path.join(destination, "node_modules", "next", relativePath),
+      { followLinks: true, allowedLinkRoots },
+    );
+  }
+}
+
 export async function assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination) {
   const roots = [projectRoot, standaloneRoot, dependencyRoot].map((root) => path.resolve(root));
   [projectRoot, standaloneRoot, dependencyRoot, destination] = [
@@ -485,6 +523,7 @@ export async function assembleSidecarRuntime(projectRoot, standaloneRoot, depend
   for (const packageName of SIDECAR_DYNAMIC_PACKAGES) {
     await copyDynamicPackage(packageName, dependencyRoot, destination, roots);
   }
+  await copyNextRuntimeFiles(standaloneRoot, dependencyRoot, destination, roots);
   await copyDynamicNativePackages(dependencyRoot, destination, roots);
   await copyNextAliases(standaloneRoot, destination, roots);
 
@@ -532,6 +571,7 @@ export async function verifySidecarRuntime(root) {
     "node_modules/react-dom/package.json",
     "node_modules/sharp/package.json",
     "node_modules/ws/package.json",
+    ...SIDECAR_NEXT_RUNTIME_FILES.map((relativePath) => path.join("node_modules/next", relativePath)),
     "package.json",
     "public/sandbox/react-runtime.js",
     "server.js",

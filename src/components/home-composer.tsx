@@ -205,6 +205,10 @@ export function HomeComposer({
   );
   const { modelState, selectModel: handleSelectModel, selectRuntime: handleSelectRuntime } =
     useHomeModelState(selectedFamiliarId);
+  // Keep the operator registry query alive even before a familiar exists. The
+  // home add-project action can register a folder before familiar setup, and
+  // hiding the unscoped result makes a successful creation look inert. Once a
+  // familiar is selected, the same hook switches to its access-scoped view.
   const {
     projects: scopedProjects,
     loading: projectsLoading,
@@ -213,12 +217,14 @@ export function HomeComposer({
     createProject,
     createProjectOrThrow,
   } = useProjects({
-    enabled: Boolean(selectedFamiliarId),
+    enabled: true,
     familiarId: selectedFamiliarId || null,
   });
   const projects = useMemo(
-    () => scopedProjects.filter((project) => project.access !== undefined),
-    [scopedProjects],
+    () => selectedFamiliarId
+      ? scopedProjects.filter((project) => project.access !== undefined)
+      : scopedProjects,
+    [scopedProjects, selectedFamiliarId],
   );
   const [selectedProjectId, setSelectedProjectId] = useState("");
   // Host chip: where the opened chat should execute. Per-composer state, not a
@@ -245,11 +251,13 @@ export function HomeComposer({
     ? "Checking project access…"
     : projectsError
       ? "Projects are unavailable. Retry before starting chat."
-      : !projectsLoadedSuccessfully
-        ? "Checking project access…"
-        : projects.length === 0
-          ? "Add a project this familiar can access before starting chat."
-          : "Choose a project this familiar can access before starting chat.";
+      : !selectedFamiliarId
+        ? "Summon a familiar before starting chat."
+        : !projectsLoadedSuccessfully
+          ? "Checking project access…"
+          : projects.length === 0
+            ? "Add a project this familiar can access before starting chat."
+            : "Choose a project this familiar can access before starting chat.";
   const displayProjectId = selectedProject?.id ?? null;
   const selectedRuntime = canonicalHarnessId(
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",
