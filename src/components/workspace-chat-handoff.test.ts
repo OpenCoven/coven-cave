@@ -131,9 +131,13 @@ assert.match(
   /export type PendingCodeOpen =[\s\S]*kind: "files"[\s\S]*sessionId\?: string[\s\S]*kind: "changes"[\s\S]*path: string[\s\S]*sessionId\?: string[\s\S]*nonce: number/,
   "PendingCodeOpen should be defined once in the shared lib and carry the raising session",
 );
+// Pins the SOURCE, not the exact symbol list: the store may grow types (it
+// gained PendingCodeOrigin for the chat→workshop source card, cave-f6mu9) and
+// this should keep guarding "workspace uses the shared store" rather than
+// failing every time the import widens.
 assert.match(
   workspace,
-  /import \{ enqueuePendingCodeOpen, type PendingCodeOpen \} from "@\/lib\/pending-code-open"/,
+  /import \{[^}]*\benqueuePendingCodeOpen\b[^}]*\btype PendingCodeOpen\b[^}]*\} from "@\/lib\/pending-code-open"/,
   "Workspace should import the shared pending code open store",
 );
 assert.doesNotMatch(
