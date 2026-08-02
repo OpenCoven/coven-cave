@@ -244,15 +244,18 @@ for (const [name, src] of [["stream", stream], ["stage", stage]]) {
 // .gh-stream-verb--accent as dead CSS and the row with no primary-action
 // signal at all. The accent now reaches the slot by selector, so this pins
 // both halves: the declarations stay live, and the slot is what wears them.
+// Whitespace-tolerant on purpose: these pin the SELECTOR PAIRING, not the
+// formatting. A regex that demands a literal newline fails on a reflow that
+// changed nothing, which trains people to edit the test instead of reading it.
 assert.match(
   boardCss,
-  /\.gh-stream-verb--accent,\s*\n\.gh-stream-handoff \.ui-btn \{/,
+  /\.gh-stream-verb--accent,\s*\.gh-stream-handoff \.ui-btn\s*\{/,
   "the row's accent reaches the hand-off slot rather than becoming dead CSS",
 );
 // The slot's wrapper does not restate what .gh-action-wrap already sets.
 assert.doesNotMatch(
   boardCss,
-  /\.gh-stream-handoff \.gh-action-wrap \{ display:inline-flex; \}/,
+  /\.gh-stream-handoff\s+\.gh-action-wrap\s*\{\s*display:\s*inline-flex/,
   "the hand-off wrapper does not restate .gh-action-wrap's own display",
 );
 
