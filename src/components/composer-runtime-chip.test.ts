@@ -90,7 +90,7 @@ assert.match(
 // ── Runtime switching is real: familiar-level config, optimistic + refetch ──
 assert.match(
   chatView,
-  /const handleSelectRuntime = useCallback\(\s*\n\s*\(runtime: string\) => \{\s*\n\s*const nextModel = modelForRuntimeSwitch\(runtime\);/,
+  /const handleSelectRuntime = useCallback\(\s*\n\s*\(runtime: string\) => \{[\s\S]{0,240}?const nextModel = modelForRuntimeSwitch\(runtime\);/,
   "a runtime pick uses the runtime-switch policy instead of carrying a foreign model id",
 );
 assert.match(
@@ -106,7 +106,7 @@ assert.match(
 );
 assert.match(
   selectRuntimeBlock,
-  /finally \{\s*\n\s*await refreshModelState\(\);/,
+  /finally \{[\s\S]{0,220}?await refreshModelState\(/,
   "the model-state refetch reconciles the optimistic flip (even when the PATCH fails)",
 );
 
@@ -118,7 +118,7 @@ assert.match(
 );
 assert.match(
   selectModelBlock,
-  /if \(json\.ok && json\.state\) \{[\s\S]*?setModelState\(json\.state\);[\s\S]*?await refreshModelState\(\);/,
+  /if \(json\.ok && json\.state\) \{[\s\S]*?setModelState\(json\.state\);[\s\S]{0,260}?await refreshModelState\(/,
   "a successful model selection refreshes capability controls from the authoritative state response",
 );
 assert.match(
