@@ -168,7 +168,7 @@ import {
 } from "@/lib/first-project-gate-retry";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
-import { enqueuePendingCodeOpen, type PendingCodeOpen } from "@/lib/pending-code-open";
+import { enqueuePendingCodeOpen, type PendingCodeOpen, type PendingCodeOrigin } from "@/lib/pending-code-open";
 import {
   clearPendingCodeNavigation,
   enqueuePendingCodeNavigation,
@@ -993,13 +993,16 @@ export function Workspace() {
   // left pending.
   useEffect(() => {
     const enqueue = (kind: PendingCodeOpen["kind"], e: Event) => {
-      const detail = (e as CustomEvent<{ path?: string; line?: number }>).detail;
+      // `origin` is set only when the open came from a chat code block
+      // (cave-f6mu9); the Code surface shows it as a source-context card so
+      // the reader can see — and walk back — why they are looking at this file.
+      const detail = (e as CustomEvent<{ path?: string; line?: number; origin?: PendingCodeOrigin }>).detail;
       if (!detail?.path) return;
       const sessionId = activeChatSessionIdRef.current ?? undefined;
       enqueuePendingCodeOpen(
         kind === "files"
-          ? { kind, path: detail.path, line: detail.line, sessionId, nonce: Date.now() }
-          : { kind, path: detail.path, sessionId, nonce: Date.now() },
+          ? { kind, path: detail.path, line: detail.line, sessionId, origin: detail.origin, nonce: Date.now() }
+          : { kind, path: detail.path, sessionId, origin: detail.origin, nonce: Date.now() },
       );
       setMode("code");
     };

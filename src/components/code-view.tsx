@@ -31,6 +31,7 @@ import type { Filter as GitHubFilter } from "@/components/github-view-data";
 import { CodeSessionRail } from "@/components/code-session-rail";
 import { CodeWorkbench } from "@/components/code-workbench";
 import { CodeNewSession } from "@/components/code-new-session";
+import { CodeSourceContext } from "@/components/code-source-context";
 import { GithubOrganizationSettings } from "@/components/settings-github";
 import type { GitHubItemTarget } from "@/lib/github-item-url";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
@@ -187,8 +188,23 @@ export function CodeView({
     // Root browse with no matching session: there is no workbench to focus —
     // land on the surface and leave the rail/selection as-is.
     setWorkbenchTarget(root && !target ? null : { open: pendingOpen, sessionId: target?.id ?? null });
+    // A new arrival re-shows the source card even if the reader dismissed the
+    // last one — dismissing is "I've read this", not "never show me these".
+    setOriginDismissed(false);
     onPendingOpenHandled?.();
   }, [groups, onPendingOpenHandled, pendingOpen]);
+
+  // Only opens raised from a conversation carry an origin; a file picked from
+  // the tree shows nothing, because there is no conversation to point back to.
+  const [originDismissed, setOriginDismissed] = useState(false);
+  const activeOrigin =
+    !originDismissed &&
+    workbenchTarget &&
+    (workbenchTarget.sessionId ?? selectedId) === selectedId &&
+    workbenchTarget.open.origin
+      ? workbenchTarget.open.origin
+      : null;
+  const originSessionId = workbenchTarget?.open.sessionId ?? null;
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -303,6 +319,18 @@ export function CodeView({
                     Sessions
                   </button>
                 </div>
+                {activeOrigin ? (
+                  <CodeSourceContext
+                    origin={activeOrigin}
+                    path={workbenchTarget?.open.path}
+                    // Back lands on the chat session the block came from, not
+                    // the workbench's own session — they differ whenever the
+                    // reader handed off from one conversation into another
+                    // session's worktree.
+                    onBack={originSessionId ? () => onJumpToSession(originSessionId) : undefined}
+                    onDismiss={() => setOriginDismissed(true)}
+                  />
+                ) : null}
                 <div className="min-h-0 flex-1">
                   <CodeWorkbench
                     key={selected.id}

@@ -5,13 +5,36 @@ import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
 import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import dynamic from "next/dynamic";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { FeedbackContext } from "@/lib/message-feedback";
 import { matchesStopPhrase, readStopPhrase } from "@/lib/stop-phrase";
 import { extractLinks } from "@/lib/link-extractor";
 import { LINK_CATEGORY_META, type LinkCategory } from "@/lib/link-organizer";
 import { RichText } from "@/components/rich-text";
-import { FileLinkResolverContext, MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
+import {
+  CodeReadingContext,
+  FileLinkResolverContext,
+  MessageBubble,
+  SyntaxBlock,
+  type CodeReading,
+  type MessageBubbleSegment,
+} from "@/components/message-bubble";
+// Lazy so the inspector's markup AND its stylesheet code-split out of the home
+// first load (#3264) — nobody pays ~15 KB of CSS for a panel they have not
+// opened. `ssr: false` is honest about it: the panel only ever exists after a
+// click, so there is nothing to prerender.
+const CodeReadingInspector = dynamic(
+  () => import("@/components/code-reading-inspector").then((m) => m.CodeReadingInspector),
+  { ssr: false },
+);
+import type { CodeReadingTarget } from "@/components/code-reading-inspector";
+import type { InspectorPin } from "@/lib/code-reading";
+import {
+  DEFAULT_CODE_READING_PIN,
+  readCodeReadingPin,
+  writeCodeReadingPin,
+} from "@/lib/code-reading-pref";
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
@@ -2161,6 +2184,41 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     session?.project_root ??
     projectRoot ??
     "";
+  // ── Code reading (cave-f6mu9) ─────────────────────────────────────────────
+  // A code block in the transcript is a claim about a file; the inspector is
+  // where the reader checks it against the working tree and carries lines back
+  // into the reply. State lives here because the panel outlives the block that
+  // opened it — scrolling the transcript must not close what you're reading.
+  const [readingTarget, setReadingTarget] = useState<CodeReadingTarget | null>(null);
+  const [readingPin, setReadingPin] = useState<InspectorPin>(DEFAULT_CODE_READING_PIN);
+  // localStorage is unavailable during SSR, so the stored pin is adopted after
+  // mount rather than read during render (which would hydrate-mismatch).
+  useEffect(() => {
+    setReadingPin(readCodeReadingPin(familiar.id));
+  }, [familiar.id]);
+  const changeReadingPin = useCallback(
+    (pin: InspectorPin) => {
+      setReadingPin(pin);
+      writeCodeReadingPin(pin, familiar.id);
+    },
+    [familiar.id],
+  );
+  const codeReading = useMemo<CodeReading>(
+    () => ({
+      projectRoot: activeProjectRoot || null,
+      onRead: (request) =>
+        setReadingTarget({
+          ...request,
+          origin: {
+            sessionTitle: session?.title ?? null,
+            familiar: familiar.display_name,
+            messageIndex: null,
+          },
+        }),
+    }),
+    [activeProjectRoot, familiar.display_name, session?.title],
+  );
+
   const projectLaunchReady =
     projectsLoadedSuccessfully &&
     !projectsLoading &&
@@ -6790,6 +6848,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
+      <CodeReadingContext.Provider value={codeReading}>
+      {/* Row, so a `split` inspector docks BESIDE the transcript and narrows it
+          rather than covering it. With no inspector open the row collapses to
+          the transcript alone and the layout is unchanged. Overlay and modal
+          are fixed-position and escape this row on their own. */}
+      <div className="flex min-h-0 flex-1">
       <div
         ref={scrollRef}
         tabIndex={0}
@@ -6983,6 +7047,41 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </button>
         )}
       </div>
+      {readingTarget ? (
+        <CodeReadingInspector
+          target={readingTarget}
+          projectRoot={activeProjectRoot || null}
+          pin={readingPin}
+          onPinChange={changeReadingPin}
+          onClose={() => setReadingTarget(null)}
+          onReference={(label) =>
+            setInput((prev) => {
+              const sep = prev && !/\s$/.test(prev) ? " " : "";
+              return `${prev}${sep}\`${label}\` `;
+            })
+          }
+          onQuote={(markdown) =>
+            setInput((prev) => (prev ? `${prev.replace(/\s*$/, "")}\n\n${markdown}` : markdown))
+          }
+          onOpenInWorkshop={({ path, line, selectionLabel: range, origin }) => {
+            // The workshop consumes this through the same shell handler that
+            // inline file refs use (workspace.tsx → pending-code-open), so the
+            // handoff has one route, not a second parallel one.
+            window.dispatchEvent(
+              new CustomEvent("cave:open-project-file", {
+                detail: {
+                  path,
+                  line: line ?? undefined,
+                  origin: { ...origin, selectionLabel: range },
+                },
+              }),
+            );
+            setReadingTarget(null);
+          }}
+        />
+      ) : null}
+      </div>
+      </CodeReadingContext.Provider>
       </FileLinkResolverContext.Provider>
       </ToolProjectRootContext.Provider>
 
