@@ -217,7 +217,7 @@ try {
   // The explicit Next runtime files are nested below a package root, so the
   // package directory itself must also be confined rather than only its final
   // file entry.
-  const externalNextRoot = path.join(fixture, "outside-allowed-roots", "next");
+  const externalNextRoot = path.join(projectRoot, "outside-allowed-roots", "next");
   for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
     await write(externalNextRoot, relativePath, "outside runtime\n");
   }

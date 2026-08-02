@@ -407,7 +407,7 @@ async function copyNextAliases(standaloneRoot, destination, allowedLinkRoots) {
   }
 }
 
-async function copyNextRuntimeFiles(standaloneRoot, dependencyRoot, destination, allowedLinkRoots) {
+async function copyNextRuntimeFiles(projectRoot, standaloneRoot, dependencyRoot, destination) {
   const nextRoots = [
     path.join(standaloneRoot, "node_modules", "next"),
     path.join(dependencyRoot, "next"),
@@ -416,8 +416,11 @@ async function copyNextRuntimeFiles(standaloneRoot, dependencyRoot, destination,
   // checking only the final directory entry is not enough to enforce the
   // staging-root boundary. Resolve both the candidate and the allowed roots
   // before copying, while still letting copyResolvedEntry apply its existing
-  // final-entry link checks.
-  const resolvedAllowedLinkRoots = await Promise.all(allowedLinkRoots.map((root) => realpath(root)));
+  // final-entry link checks. Do not use the broad project root here: a
+  // dependency symlink must not pull unrelated project files into the sidecar.
+  const resolvedAllowedLinkRoots = await Promise.all(
+    [standaloneRoot, path.join(projectRoot, "node_modules"), dependencyRoot].map((root) => realpath(root)),
+  );
 
   for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
     let source = null;
@@ -536,7 +539,7 @@ export async function assembleSidecarRuntime(projectRoot, standaloneRoot, depend
   for (const packageName of SIDECAR_DYNAMIC_PACKAGES) {
     await copyDynamicPackage(packageName, dependencyRoot, destination, roots);
   }
-  await copyNextRuntimeFiles(standaloneRoot, dependencyRoot, destination, roots);
+  await copyNextRuntimeFiles(projectRoot, standaloneRoot, dependencyRoot, destination);
   await copyDynamicNativePackages(dependencyRoot, destination, roots);
   await copyNextAliases(standaloneRoot, destination, roots);
 
