@@ -1,11 +1,53 @@
 # Deletion proof
 
-This procedure is normative. Run it only inside the repository-wide exclusive
-deletion gate described by the parent skill. If the gate, a command, a parse, or
-a postcondition is unavailable or uncertain, preserve the candidate.
-Every shell block below is a fragment of the parent skill's per-candidate loop;
-`PRESERVE` guards exit to the documented candidate-loop depth. Bare inner-loop
-`continue` statements only skip the current enumeration entry.
+This procedure is normative. Run it only inside the execution profile selected
+by the parent skill. If the profile, authorization, required exclusion, a
+command, a parse, or a postcondition is unavailable or uncertain, preserve the
+candidate. Every shell block below is a fragment of the parent skill's
+per-candidate loop; `PRESERVE` guards exit to the documented candidate-loop
+depth. Bare inner-loop `continue` statements only skip the current enumeration
+entry.
+
+## Select and record the execution profile
+
+The recorded profile and candidate scope are immutable batch inputs. Gate and
+lease state are live facts that the parent loop must freshly verify before each
+transaction:
+
+```bash
+case "$cleanup_profile" in
+  automatic)
+    test "$full_maintenance_gate_held" -eq 1 ||
+      { printf 'PRESERVE - automatic maintenance gate unavailable\n'; continue; }
+    delete_remote=0
+    ;;
+  manual)
+    test "$current_maintainer_authorization_recorded" -eq 1 ||
+      { printf 'PRESERVE - manual authorization unavailable\n'; continue; }
+    test "$local_maintenance_lease_held" -eq 1 ||
+      { printf 'PRESERVE - local maintenance lease unavailable\n'; continue; }
+    case "$remote_cleanup_authorized" in
+      0) delete_remote=0 ;;
+      1) delete_remote=1 ;;
+      *) printf 'PRESERVE - remote authorization scope invalid\n'; continue ;;
+    esac
+    ;;
+  *) printf 'PRESERVE - cleanup profile unavailable\n'; continue ;;
+esac
+```
+
+Automatic retirement requires a freshly held full maintenance gate, stays
+local-only, and never deletes remote refs. Manual cleanup requires explicit
+current-maintainer authorization for this current task and a currently held
+local maintenance lease. Historical, standing, inferred, or unbounded
+authorization is invalid. Manual cleanup defaults to local-only; Manual
+local-only authority retains remotes. Set `remote_cleanup_authorized=1` and
+therefore `delete_remote=1` only for explicit remote authorization naming the
+exact recorded candidate.
+
+Treat the recorded instruction as authorization evidence, not candidate-safety evidence.
+Every live-work, unique-work, recovery, recency, destination, and exact-tip
+proof below remains mandatory. Authorization never replaces safety evidence.
 
 ## Required disposition
 
@@ -62,9 +104,68 @@ replace_refs=$(git for-each-ref --format='%(refname)' refs/replace) ||
   { printf 'PRESERVE - replacement ref inventory failed\n'; continue; }
 test -z "$replace_refs" ||
   { printf 'PRESERVE - replacement refs present\n'; continue; }
-audited_fetch_url=$(git remote get-url origin) ||
+remote_name=origin
+candidate_refs_are_unprotected() {
+  test "$#" -ge 2 || return 1
+  local protected_remote_name=$1
+  shift
+  test -n "$protected_remote_name" || return 1
+
+  local protected_head_lines
+  protected_head_lines=$(git ls-remote --symref "$protected_remote_name" HEAD) ||
+    return 1
+  local protected_default_ref=''
+  local protected_head_oid=''
+  local protected_left protected_right protected_extra
+  while IFS=$'\t' read -r protected_left protected_right protected_extra; do
+    test -z "$protected_extra" && test "$protected_right" = HEAD || return 1
+    case "$protected_left" in
+      'ref: refs/heads/'*)
+        test -z "$protected_default_ref" || return 1
+        protected_default_ref=${protected_left#ref: }
+        ;;
+      *)
+        test -z "$protected_head_oid" || return 1
+        case "$protected_left" in
+          ''|*[!0-9a-f]*) return 1 ;;
+        esac
+        case "${#protected_left}" in
+          40|64) protected_head_oid=$protected_left ;;
+          *) return 1 ;;
+        esac
+        ;;
+    esac
+  done <<EOF
+$protected_head_lines
+EOF
+  test -n "$protected_default_ref" && test -n "$protected_head_oid" || return 1
+  git check-ref-format "$protected_default_ref" || return 1
+
+  local candidate_ref
+  for candidate_ref in "$@"; do
+    git check-ref-format "$candidate_ref" || return 1
+    case "$candidate_ref" in
+      refs/heads/main|refs/heads/__dolt_remote_info__) return 1 ;;
+      "$protected_default_ref") return 1 ;;
+      refs/heads/*) ;;
+      *) return 1 ;;
+    esac
+  done
+  remote_main_ref=$protected_default_ref
+  return 0
+}
+
+remote_ref="refs/heads/$branch"
+test "$local_ref" = "$remote_ref" ||
+  { printf 'PRESERVE - candidate ref identity mismatch\n'; continue; }
+if ! candidate_refs_are_unprotected "$remote_name" "$local_ref" "$remote_ref"; then
+  printf 'PRESERVE - protected, default, tool-owned, or invalid candidate ref\n'
+  continue
+fi
+audited_remote_main_ref=$remote_main_ref
+audited_fetch_url=$(git remote get-url "$remote_name") ||
   { printf 'PRESERVE - fetch URL unavailable\n'; continue; }
-audited_push_urls=$(git remote get-url --push --all origin) ||
+audited_push_urls=$(git remote get-url --push --all "$remote_name") ||
   { printf 'PRESERVE - push URL unavailable\n'; continue; }
 test "$audited_push_urls" = "$audited_fetch_url" ||
   { printf 'PRESERVE - push destination differs\n'; continue; }
@@ -79,15 +180,14 @@ case "$audited_gh_repo" in
 esac
 audited_gh_owner=${audited_gh_repo%%/*}
 audited_gh_name=${audited_gh_repo#*/}
-remote_main_ref='refs/heads/main'
-main_line=$(git ls-remote --exit-code origin "$remote_main_ref") ||
+main_line=$(git ls-remote --exit-code "$remote_name" "$remote_main_ref") ||
   { printf 'PRESERVE - base lookup failed\n'; continue; }
-read -r remote_main_oid observed_main_ref <<EOF
+read -r remote_main_oid observed_main_ref extra <<EOF
 $main_line
 EOF
-test "$observed_main_ref" = "$remote_main_ref" ||
+test -z "$extra" && test "$observed_main_ref" = "$remote_main_ref" ||
   { printf 'PRESERVE - wrong base ref\n'; continue; }
-git fetch --no-prune --no-tags origin "$remote_main_ref" ||
+git fetch --no-prune --no-tags "$remote_name" "$remote_main_ref" ||
   { printf 'PRESERVE - base fetch failed\n'; continue; }
 audited_main_oid=$(git_exact rev-parse --verify 'FETCH_HEAD^{commit}') ||
   { printf 'PRESERVE - fetched base missing\n'; continue; }
@@ -96,7 +196,6 @@ test "$audited_main_oid" = "$remote_main_oid" ||
 
 audited_local_oid=$(git_exact rev-parse --verify "$local_ref^{commit}") ||
   { printf 'PRESERVE - local tip missing\n'; continue; }
-remote_ref="refs/heads/$branch"
 audited_remote_oid=''
 if remote_line=$(git ls-remote --exit-code --heads origin "$remote_ref"); then
   read -r audited_remote_oid observed_remote_ref <<EOF
@@ -117,11 +216,16 @@ else
     *) printf 'PRESERVE - remote lookup failed (%s)\n' "$remote_status"; continue ;;
   esac
 fi
-if test -n "$audited_remote_oid"; then
-  # GitHub's refs API exposes the current OID but not the ref's update time.
-  # Commit timestamps cannot prove when a branch was created, reset, or pushed.
-  printf 'PRESERVE - authoritative remote-ref recency unavailable\n'
-  continue
+if test -n "$audited_remote_oid" && test "$delete_remote" -eq 1; then
+  test "$cleanup_profile" = manual &&
+    test "$remote_cleanup_authorized" -eq 1 ||
+    { printf 'PRESERVE - remote deletion not explicitly authorized\n'; continue; }
+  # GitHub does not expose a server-authoritative ref-update timestamp. Current
+  # bounded manual authority is the disposition for only that unavailable fact
+  # and only for this exact remote candidate.
+  # Commit age is never used as ref recency; every observable activity, local
+  # and recovery recency, retention,
+  # ownership, destination, and exact-tip proof still runs.
 fi
 ```
 
@@ -452,10 +556,10 @@ commit and every raw reflog file under its private `logs/` directory:
 ```bash
 worktree_git_dir=$(git -C "$worktree_path" rev-parse --absolute-git-dir) ||
   { printf 'PRESERVE - worktree git dir missing\n'; continue; }
-worktree_head_oid=$(git_exact -C "$worktree_path" rev-parse \
+audited_worktree_head_oid=$(git_exact -C "$worktree_path" rev-parse \
   --verify 'HEAD^{commit}') ||
   { printf 'PRESERVE - worktree HEAD missing\n'; continue; }
-oid_is_retained "$worktree_head_oid" ||
+oid_is_retained "$audited_worktree_head_oid" ||
   { printf 'PRESERVE - worktree HEAD unique\n'; continue; }
 test -d "$worktree_git_dir/logs" && test ! -L "$worktree_git_dir/logs" ||
   { printf 'PRESERVE - unsafe worktree logs path\n'; continue; }
@@ -637,26 +741,103 @@ branch ref or `logs/HEAD` alone covers it.
 
 ## Recheck, mutate, and verify in order
 
-Still under the gate, rerun every ownership, worktree-state, PR, workflow,
-recency, archive, and recovery check. Requery and refetch the exact default and
-candidate remote refs, recapture the local tip, require all OIDs to equal the
-audited OIDs, and rerun the selected guarded redundancy proof immediately
-before mutation.
+Each mutation below is a separate transaction boundary. Immediately before
+each one, the parent loop must freshly reverify the selected profile exclusion
+and its current gate or lease ownership, then rerun every applicable Beads,
+GitHub PR and workflow, process, worktree, ref/OID/destination, recency,
+archive, and recovery/admin proof. Requery and refetch the exact default and
+candidate remote refs, recapture the applicable tips, require them to equal the
+audited OIDs, and rerun the selected guarded redundancy proof. An OID-only
+refresh is insufficient.
 
-Each mutation is a transaction boundary. A failure or uncertain postcondition
-stops the sequence; never continue to the next deletion:
+After an earlier transaction, a later recheck treats the earlier verified
+absence as a required postcondition and also detects newly appearing ownership,
+activity, worktree registration, refs, or destination drift. Any query, proof,
+or recheck failure stops this candidate and all later transactions for it.
+Protected `main` remains unchanged throughout.
+
+### Transaction 1: worktree removal
+
+Immediately before removing a worktree, freshly revalidate the selected profile
+authority as current, task-bounded, candidate-exact, and scope-exact. Freshly
+reverify the selected profile exclusion and gate or lease ownership. Rerun the
+applicable Beads, GitHub PR and workflow, process, worktree, ref, OID, and
+destination, recency, archive, and recovery and admin evidence. Detect newly
+appearing ownership, activity, registration, refs, or destination drift. Any
+query, proof, or recheck failure stops this candidate and all later
+transactions for it.
+
+Recapture the exact worktree `HEAD`, cross-check it against the audited value,
+canonicalize the path, then invoke the strict guard. The parent loop must not
+set any bypass or test seam. Require a successful guard exit, exactly one line
+of stdout, and exactly the documented four-key allow object. After the final
+allow-object validation, nothing except the worktree removal itself may
+intervene:
 
 ```bash
 if test -n "$worktree_path"; then
-  git worktree remove -- "$worktree_path" ||
+  current_worktree_head_oid=$(git_exact -C "$worktree_path" rev-parse \
+    --verify 'HEAD^{commit}') ||
+    { printf 'PRESERVE - worktree HEAD recheck failed\n'; continue; }
+  test "$current_worktree_head_oid" = "$audited_worktree_head_oid" ||
+    { printf 'PRESERVE - worktree HEAD changed\n'; continue; }
+  canonical_worktree_path=$(CDPATH= cd -- "$worktree_path" && pwd -P) ||
+    { printf 'PRESERVE - worktree path canonicalization failed\n'; continue; }
+  strict_guard_output_file=$(mktemp -t branch-curator-strict-guard.XXXXXX) ||
+    { printf 'PRESERVE - strict worktree guard output file failed\n'; continue; }
+  if ! candidate_refs_are_unprotected "$remote_name" "$local_ref" "$remote_ref"; then
+    rm -f -- "$strict_guard_output_file"
+    printf 'PRESERVE - protected/default/tool-owned worktree candidate\n'
+    continue
+  fi
+  test "$remote_main_ref" = "$audited_remote_main_ref" ||
+    { rm -f -- "$strict_guard_output_file";
+      printf 'PRESERVE - default ref changed before worktree removal\n';
+      continue; }
+  if env -u WT_GUARD_BYPASS -u WT_GUARD_TEST_MODE -u WT_GUARD_TEST_LSOF_BIN node scripts/worktree-guard.mjs --strict-worktree-remove "$canonical_worktree_path" --expected-head "$audited_worktree_head_oid" >"$strict_guard_output_file"; then
+    :
+  else
+    strict_guard_status=$?
+    rm -f -- "$strict_guard_output_file"
+    printf 'PRESERVE - strict worktree guard failed (%s)\n' \
+      "$strict_guard_status"
+    continue
+  fi
+  strict_guard_line_count=$(awk 'END { print NR }' \
+    "$strict_guard_output_file") ||
+    { rm -f -- "$strict_guard_output_file";
+      printf 'PRESERVE - strict worktree guard output count failed\n';
+      continue; }
+  test "$strict_guard_line_count" -eq 1 ||
+    { rm -f -- "$strict_guard_output_file";
+      printf 'PRESERVE - strict worktree guard output was not one line\n';
+      continue; }
+  strict_guard_allowed=$(jq -er \
+    --arg path "$canonical_worktree_path" \
+    --arg head "$audited_worktree_head_oid" \
+    'type == "object" and
+     keys == ["head", "mode", "ok", "path"] and
+     .ok == true and
+     .mode == "strict-worktree-remove" and
+     .path == $path and
+     .head == $head' "$strict_guard_output_file") ||
+    { rm -f -- "$strict_guard_output_file";
+      printf 'PRESERVE - strict worktree guard result invalid\n';
+      continue; }
+  rm -f -- "$strict_guard_output_file" ||
+    { printf 'PRESERVE - strict worktree guard output cleanup failed\n'; continue; }
+  test "$strict_guard_allowed" = true ||
+    { printf 'PRESERVE - strict worktree guard result invalid\n'; continue; }
+  git worktree remove -- "$canonical_worktree_path" ||
     { printf 'PRESERVE - worktree removal failed\n'; continue; }
-  test ! -e "$worktree_path" && test ! -L "$worktree_path" ||
+  test ! -e "$canonical_worktree_path" &&
+    test ! -L "$canonical_worktree_path" ||
     { printf 'PRESERVE - worktree path remains\n'; continue; }
   worktree_list_ok=1
   worktree_still_registered=0
   while IFS= read -r -d '' worktree_field; do
     case "$worktree_field" in
-      "worktree $worktree_path") worktree_still_registered=1 ;;
+      "worktree $canonical_worktree_path") worktree_still_registered=1 ;;
       branch-curator-worktree-list-failed) worktree_list_ok=0 ;;
     esac
   done < <(
@@ -667,6 +848,34 @@ if test -n "$worktree_path"; then
     test "$worktree_still_registered" -eq 0 ||
     { printf 'PRESERVE - worktree registry remains uncertain\n'; continue; }
 fi
+```
+
+### Transaction 2: local compare-and-delete
+
+Require the prior worktree path and registry absence to remain verified.
+Freshly revalidate the selected profile authority as current, task-bounded,
+candidate-exact, and scope-exact. Freshly reverify the selected profile
+exclusion and gate or lease ownership, then rerun the applicable Beads, GitHub
+PR and workflow, process, worktree, ref, OID, and destination, recency, archive,
+and recovery and admin evidence against the remaining state. Reject newly
+appearing ownership, activity, worktree registration, refs, or destination
+drift. Any query, proof, or recheck failure stops this candidate and all later
+transactions for it.
+
+Recapture the local tip after that complete recheck, then use an exact
+compare-and-delete and verify absence:
+
+```bash
+current_local_oid=$(git_exact rev-parse --verify "$local_ref^{commit}") ||
+  { printf 'PRESERVE - local ref recheck failed\n'; continue; }
+test "$current_local_oid" = "$audited_local_oid" ||
+  { printf 'PRESERVE - local ref changed\n'; continue; }
+if ! candidate_refs_are_unprotected "$remote_name" "$local_ref" "$remote_ref"; then
+  printf 'PRESERVE - protected/default/tool-owned local candidate\n'
+  continue
+fi
+test "$remote_main_ref" = "$audited_remote_main_ref" ||
+  { printf 'PRESERVE - default ref changed before local deletion\n'; continue; }
 
 git update-ref --no-deref -d "$local_ref" "$audited_local_oid" ||
   { printf 'PRESERVE - local compare-and-delete failed\n'; continue; }
@@ -677,20 +886,81 @@ else
   test "$local_absence_status" -eq 1 ||
     { printf 'PRESERVE - local verification failed\n'; continue; }
 fi
+```
 
-if test -n "$audited_remote_oid"; then
-  current_fetch_url=$(git remote get-url origin) ||
+### Transaction 3: remote deletion
+
+Require the prior local-ref absence and prior worktree path and registry absence
+to remain verified. Freshly revalidate the selected profile authority as
+current, task-bounded, candidate-exact, and scope-exact. Freshly revalidate the
+exact remote authorization as current-task, candidate-exact, and
+remote-scope-exact. Freshly reverify the selected profile exclusion and gate or
+lease ownership, then rerun the applicable Beads, GitHub PR and workflow,
+process, worktree, ref, OID, and destination, recency, archive, and recovery and
+admin evidence against the remaining remote state. Reject newly appearing
+ownership, activity, worktree registration, refs, or destination drift. Any
+query, proof, or recheck failure stops this candidate and all later
+transactions for it. Automatic and manual-local-only profiles skip this
+transaction and preserve or propose the existing remote ref.
+
+Remote deletion requires explicit exact-candidate remote authorization, a
+still-existing audited ref, exact destination equality, and the audited OID:
+
+```bash
+if test "$delete_remote" -eq 1; then
+  test -n "$audited_remote_oid" ||
+    { printf 'PRESERVE - authorized remote ref disappeared\n'; continue; }
+  if git show-ref --verify --quiet "$local_ref"; then
+    printf 'PRESERVE - local ref reappeared\n'; continue
+  else
+    local_absence_status=$?
+    test "$local_absence_status" -eq 1 ||
+      { printf 'PRESERVE - local absence recheck failed\n'; continue; }
+  fi
+  current_remote_line=$(git ls-remote --exit-code --heads \
+    "$remote_name" "$remote_ref") ||
+    { remote_recheck_status=$?;
+      case "$remote_recheck_status" in
+        2) printf 'PRESERVE - authorized remote ref disappeared\n' ;;
+        *) printf 'PRESERVE - remote ref recheck failed (%s)\n' \
+             "$remote_recheck_status" ;;
+      esac
+      continue; }
+  read -r current_remote_oid current_remote_ref extra <<EOF
+$current_remote_line
+EOF
+  test -z "$extra" &&
+    test "$current_remote_ref" = "$remote_ref" &&
+    test "$current_remote_oid" = "$audited_remote_oid" ||
+    { printf 'PRESERVE - remote ref changed\n'; continue; }
+  current_fetch_url=$(git remote get-url "$remote_name") ||
     { printf 'PRESERVE - fetch URL recheck failed\n'; continue; }
-  current_push_urls=$(git remote get-url --push --all origin) ||
+  current_push_urls=$(git remote get-url --push --all "$remote_name") ||
     { printf 'PRESERVE - push URL recheck failed\n'; continue; }
   test "$current_fetch_url" = "$audited_fetch_url" &&
     test "$current_push_urls" = "$audited_push_urls" &&
     test "$current_push_urls" = "$current_fetch_url" ||
     { printf 'PRESERVE - remote destination changed\n'; continue; }
-  git push --force-with-lease="$remote_ref:$audited_remote_oid" \
-    origin ":$remote_ref" ||
-    { printf 'PRESERVE - remote lease delete failed\n'; continue; }
-  if git ls-remote --exit-code --heads origin "$remote_ref" >/dev/null; then
+  if ! candidate_refs_are_unprotected "$remote_name" "$local_ref" "$remote_ref"; then
+    printf 'PRESERVE - protected/default/tool-owned remote candidate\n'
+    continue
+  fi
+  test "$remote_main_ref" = "$audited_remote_main_ref" ||
+    { printf 'PRESERVE - default ref changed before remote deletion\n'; continue; }
+  if git push --atomic --force-with-lease="$remote_ref:$audited_remote_oid" \
+    "$remote_name" ":$remote_ref"; then
+    :
+  else
+    remote_delete_status=$?
+    case "$remote_delete_status" in
+      2) printf 'PRESERVE - remote lease delete failed (status 2)\n' ;;
+      *) printf 'PRESERVE - remote lease delete failed (%s)\n' \
+           "$remote_delete_status" ;;
+    esac
+    continue
+  fi
+  if git ls-remote --exit-code --heads \
+    "$remote_name" "$remote_ref" >/dev/null; then
     printf 'PRESERVE - remote ref remains\n'; continue
   else
     remote_absence_status=$?

@@ -7,7 +7,12 @@
 - Keep durable coordination in tracked workflow artifacts: plans, specs, issues, PR descriptions/checklists, release notes, and handoff docs.
 - Before opening a PR, make the branch PR-shaped: scoped diff, relevant local verification, and a summary of what changed.
 - After a PR merges, delete the remote branch and remove the local worktree/branch. Preserve any intentionally unmerged work as an archive patch or named stash before cleanup.
-- Run `pnpm beads:worktrees` before closing PR-backed work. Record each local worktree as removed and verified or intentionally preserved with an owner and reason; `retire-after-gate` is not deletion authorization.
+- Run `pnpm beads:worktrees` before closing PR-backed work. Record each local
+  worktree as removed and verified or intentionally preserved with an owner and
+  reason; `retire-after-gate` is a classification, not automatic deletion
+  authority. Automatic retirement requires the full maintenance gate. Explicit
+  maintainer authorization in the current task may activate Branch Curator's
+  bounded manual deletion proof.
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
 
