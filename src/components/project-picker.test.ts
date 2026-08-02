@@ -95,6 +95,7 @@ assert.doesNotMatch(
 // the chat composer). The pill chains to the shared ProjectPickerPopover, so
 // selection reads the same everywhere (chat revamp 1d).
 assert.match(homeComposer, /<ComposerContextChips[\s\S]*?projectValue=\{displayProjectId\}/, "home composer's context chips host the shared project picker");
+assert.match(homeComposer, /\{plusAddProject\.addError \? \(/, "home's Start a new project flow renders add failures");
 assert.match(contextPill, /export type ComposerContextProps = \{/, "context props are reusable");
 assert.match(
   contextPill,

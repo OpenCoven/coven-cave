@@ -85,6 +85,7 @@ assert.match(
   "the registry mutations come from useProjects",
 );
 assert.match(tab, /useAddProjectFlow\(\{[\s\S]{0,220}createProjectOrThrow,/, "the shared add flow preserves local-only creation guidance");
+assert.match(tab, /\{addFlow\.addError \? \(/, "familiar studio renders add-project failures");
 assert.match(tab, /onClick=\{addFlow\.beginAddProject\}/, "an Add project affordance exists");
 assert.match(tab, /\{addFlow\.addProjectModal\}/, "the add-project directory browser is mounted");
 assert.match(tab, /icon="ph:gear-six"[\s\S]{0,220}onClick=\{\(\) => setSettingsProjectId\(project\.id\)\}/, "each row opens per-project settings");

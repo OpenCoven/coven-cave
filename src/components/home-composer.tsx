@@ -1044,6 +1044,11 @@ export function HomeComposer({
                 promptSnippets={{ onSelect: () => setSnippetsBrowserOpen(true) }}
                 onOpenModelTuning={() => setOptionsOpen(true)}
               />
+              {plusAddProject.addError ? (
+                <span className="cave-project-picker__error" role="alert">
+                  {plusAddProject.addError}
+                </span>
+              ) : null}
               {plusAddProject.addProjectModal}
               <div
                 className="hc-dest-pills hc-dest-pills--inline"

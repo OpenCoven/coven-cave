@@ -328,3 +328,4 @@ assert.match(
   /<ChatEmptyState[\s\S]*?createProject=\{createProject\}[\s\S]*?createProjectOrThrow=\{createProjectOrThrow\}/,
   "the chat empty-state picker receives the throwing creator",
 );
+assert.match(source, /\{overflowAddProject\.addError \? \(/, "the chat overflow picker renders add-project failures");

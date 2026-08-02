@@ -79,6 +79,21 @@ test("accepts valid loopback plus sidecar token requests", () => {
   assert.equal(res, null);
 });
 
+test("accepts loopback origins without widening the host allowlist", () => {
+  delete process.env.COVEN_CAVE_AUTH_TOKEN;
+  for (const [host, origin] of [
+    ["localhost:3000", "http://localhost:3000"],
+    ["127.0.0.1:3000", "http://127.0.0.1:3000"],
+    ["[::1]:3000", "http://[::1]:3000"],
+  ]) {
+    assert.equal(
+      rejectNonLocalRequest(request({ host, origin })),
+      null,
+      `${origin} should remain a trusted loopback origin`,
+    );
+  }
+});
+
 function jsonBodyRequest(raw: string) {
   return new Request("http://x/", {
     method: "POST",

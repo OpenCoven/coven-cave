@@ -6721,6 +6721,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 }
               />
             )}
+            {overflowAddProject.addError ? (
+              <p className="cave-project-picker__error" role="alert">
+                {overflowAddProject.addError}
+              </p>
+            ) : null}
             {overflowAddProject.addProjectModal}
             <ProjectSetupModal
               root={projectSetupRoot}

@@ -156,6 +156,16 @@ assert.match(
   /code === LOCAL_REQUEST_REQUIRED_CODE\s*\? LOCAL_PROJECT_CREATION_MESSAGE/,
   "local-only rejection becomes actionable project-creation copy",
 );
+assert.match(
+  source,
+  /function reportCreateFailure\(options: CreateProjectOptions \| undefined, error: ProjectCreationError\)/,
+  "nullable creation can report the typed failure without changing its null return contract",
+);
+assert.match(
+  source,
+  /reportCreateFailure\(options, new ProjectCreationError\(error, code\)\)/,
+  "the nullable path reports stable response codes to bundled callers",
+);
 
 assert.match(
   source,

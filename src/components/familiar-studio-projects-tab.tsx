@@ -351,6 +351,11 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
           {error}
         </p>
       )}
+      {addFlow.addError ? (
+        <p role="alert" className="px-1 text-[length:var(--text-sm)] text-[var(--color-danger)]">
+          {addFlow.addError}
+        </p>
+      ) : null}
 
       {/* ── Project access (the grant matrix, one familiar) ── */}
       {supreme ? (

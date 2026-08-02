@@ -21,6 +21,14 @@ type CreateProjectResult =
   | { ok: true; project: CaveProject }
   | { ok: false; error: string; code?: string };
 
+function reportCreateFailure(options: CreateProjectOptions | undefined, error: ProjectCreationError): void {
+  try {
+    options?.onError?.(error);
+  } catch {
+    // Error reporting must not change the nullable creator's existing contract.
+  }
+}
+
 function fetchProjects(
   familiarId: string | null,
   opts?: { force?: boolean },
@@ -172,15 +180,18 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
           : typeof data?.error === "string"
             ? data.error
             : `Could not create project (HTTP ${res.status})`;
+      reportCreateFailure(options, new ProjectCreationError(error, code));
       return {
         ok: false,
         error,
         ...(code ? { code } : {}),
       };
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not create that project.";
+      reportCreateFailure(options, new ProjectCreationError(message));
       return {
         ok: false,
-        error: error instanceof Error ? error.message : "Could not create that project.",
+        error: message,
       };
     }
   }, [applyCreatedProject]);
