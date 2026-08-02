@@ -116,8 +116,10 @@ lanes are:
 - `active` — local changes or a live owner still needs the worktree.
 - `recovery` — detached, WIP, backup, or unlanded work still protects data.
 - `cooldown` — landed work is inside the mandatory 24-hour recency window.
-- `retire-after-gate` — old, clean, landed work is owner-actionable, but removal
-  still requires the repository-wide maintenance gate and final deletion proof.
+- `retire-after-gate` — old, clean, landed work is cleanup-ready. Automatic
+  retirement still requires the full repository-wide maintenance gate; explicit
+  maintainer authorization in the current task may instead activate Branch
+  Curator's bounded manual deletion proof.
 - `uncertain` — an ownership or remote probe failed, so cleanup fails closed.
 - `protected` — the primary checkout or tool-owned infrastructure.
 
