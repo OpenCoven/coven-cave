@@ -51,6 +51,11 @@ export function useAddProjectFlow(args: {
     root: string,
     options?: CreateProjectOptions,
   ) => Promise<CaveProject | null>;
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
   projects: CaveProject[];
   onAdded: (projectId: string) => void;
 }): AddProjectFlow {
@@ -68,6 +73,7 @@ export function useAddProjectFlow(args: {
       root,
       familiarId: args.familiarId,
       createProject: args.createProject,
+      createProjectOrThrow: args.createProjectOrThrow,
       existingProjectId: existing?.id ?? null,
     });
     setAdding(false);
@@ -343,6 +349,7 @@ export function ProjectPicker({
   defaultToFirst = true,
   familiarId = null,
   createProject,
+  createProjectOrThrow,
   disabled = false,
   ariaLabel,
   className,
@@ -361,6 +368,12 @@ export function ProjectPicker({
     root: string,
     options?: CreateProjectOptions,
   ) => Promise<CaveProject | null>;
+  /** Throwing creator from the caller's useProjects(); preserves server guidance. */
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
   disabled?: boolean;
   ariaLabel: string;
   className?: string;
@@ -378,6 +391,7 @@ export function ProjectPicker({
   const addFlow = useAddProjectFlow({
     familiarId,
     createProject: createProject ?? (async () => null),
+    createProjectOrThrow,
     projects,
     onAdded: onChange,
   });

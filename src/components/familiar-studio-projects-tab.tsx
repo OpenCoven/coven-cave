@@ -152,6 +152,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
   const {
     projects: registryProjects,
     createProject,
+    createProjectOrThrow,
     renameProject,
     deleteProject,
     updateRepoUrl,
@@ -164,6 +165,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
   const addFlow = useAddProjectFlow({
     familiarId: familiar.id,
     createProject,
+    createProjectOrThrow,
     projects: registryProjects,
     onAdded: () => void load(),
   });

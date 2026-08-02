@@ -1,9 +1,10 @@
 import type { CaveProject } from "./cave-projects.ts";
+import { projectErrorCode } from "./project-errors.ts";
 import { emitProjectRegistryMutation } from "./project-registry-events.ts";
 
 export type AddChatProjectResult =
   | { ok: true; projectId: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: string };
 
 export type CreateProjectOptions = {
   emitMutation?: boolean;
@@ -47,6 +48,12 @@ export async function addChatProject(args: {
     root: string,
     options?: CreateProjectOptions,
   ) => Promise<CaveProject | null>;
+  /** Prefer this when available so server error messages survive nullable callers. */
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
   existingProjectId?: string | null;
   projectJustCreated?: boolean;
   name?: string;
@@ -61,14 +68,19 @@ export async function addChatProject(args: {
   if (!projectId) {
     try {
       const name = (args.name ?? "").trim() || projectNameForRoot(root);
-      const project = await args.createProject(name, root, { emitMutation: false });
+      const project = args.createProjectOrThrow
+        ? await args.createProjectOrThrow(name, root, { emitMutation: false })
+        : await args.createProject(name, root, { emitMutation: false });
       if (!project) return { ok: false, error: "could not register project" };
       projectId = project.id;
       createdProject = true;
     } catch (error) {
+      const message = error instanceof Error ? error.message : "could not register project";
+      const code = projectErrorCode(error);
       return {
         ok: false,
-        error: error instanceof Error ? error.message : "could not register project",
+        error: message,
+        ...(code ? { code } : {}),
       };
     }
   }

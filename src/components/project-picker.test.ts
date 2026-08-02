@@ -24,6 +24,7 @@ const actionsMenu = readFileSync(new URL("./composer-actions-menu.tsx", import.m
 // ── One shared add flow: register + grant in a single human-initiated step ──
 assert.match(src, /export function useAddProjectFlow\(/, "shared flow exported");
 assert.match(src, /addChatProject\(\{/, "register+grant goes through the tested helper");
+assert.match(src, /createProjectOrThrow: args\.createProjectOrThrow/, "the shared flow threads the throwing creation path");
 assert.match(src, /shell_pick_directory/, "native folder dialog on desktop builds");
 assert.match(src, /DirectoryPickerModal/, "web fallback directory browser");
 

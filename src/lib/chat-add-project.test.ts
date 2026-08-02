@@ -2,6 +2,11 @@
 import assert from "node:assert/strict";
 import { addChatProject, projectNameForRoot } from "./chat-add-project.ts";
 import {
+  LOCAL_PROJECT_CREATION_MESSAGE,
+  LOCAL_REQUEST_REQUIRED_CODE,
+  ProjectCreationError,
+} from "./project-errors.ts";
+import {
   resetProjectRegistryListenersForTests,
   subscribeProjectRegistryMutation,
 } from "./project-registry-events.ts";
@@ -93,6 +98,35 @@ assert.equal(projectNameForRoot(""), "");
   };
   const result = await addChatProject({ root: "/x", familiarId: "sage", createProject, fetchImpl });
   assert.equal(result.ok, false);
+  assert.equal(granted, false);
+}
+
+// When both creation paths are available, the throwing variant wins so a
+// nullable caller cannot erase a stable local-only failure contract.
+{
+  let nullableCalled = false;
+  let granted = false;
+  const result = await addChatProject({
+    root: "/remote-only",
+    familiarId: "sage",
+    createProject: async () => {
+      nullableCalled = true;
+      return null;
+    },
+    createProjectOrThrow: async () => {
+      throw new ProjectCreationError(LOCAL_PROJECT_CREATION_MESSAGE, LOCAL_REQUEST_REQUIRED_CODE);
+    },
+    fetchImpl: async () => {
+      granted = true;
+      return { ok: true, json: async () => ({ ok: true }) };
+    },
+  });
+  assert.deepEqual(result, {
+    ok: false,
+    error: LOCAL_PROJECT_CREATION_MESSAGE,
+    code: LOCAL_REQUEST_REQUIRED_CODE,
+  });
+  assert.equal(nullableCalled, false);
   assert.equal(granted, false);
 }
 

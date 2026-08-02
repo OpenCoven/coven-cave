@@ -47,6 +47,12 @@ export type ComposerContextProps = {
     root: string,
     options?: CreateProjectOptions,
   ) => Promise<CaveProject | null>;
+  /** Throwing creator from the caller's useProjects(); preserves server guidance. */
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
   runtime: string;
   modelValue: string;
   modelOptions: RuntimeModelOption[];
@@ -89,6 +95,7 @@ export function useComposerContextActions(config: ComposerContextProps) {
   const addFlow = useAddProjectFlow({
    familiarId: config.familiarId ?? null,
    createProject: config.createProject ?? (async () => null),
+   createProjectOrThrow: config.createProjectOrThrow,
    projects: config.projects,
    onAdded: config.onProjectChange,
   });
