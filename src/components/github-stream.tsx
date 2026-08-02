@@ -76,9 +76,13 @@ export type GitHubStreamProps = {
   onSelect: (id: string) => void;
   /** Select and raise the focused detail view. */
   onOpen: (id: string) => void;
-  /** Hand the row to a familiar — the stream's one accented row verb. */
-  onHandOff?: (item: GitHubItem) => void;
-  handOffLabel?: string;
+  /**
+   * The row's hand-off verb. A slot rather than a callback because handing work
+   * to a familiar means choosing WHICH familiar — that picker is the host's
+   * (it reads the user's own roster), and this component must never assume a
+   * name or a default.
+   */
+  renderHandOff?: (item: GitHubItem) => ReactNode;
   /** The existing chat / board / merge verbs, rendered into the peek footer. */
   renderRowActions?: (item: GitHubItem) => ReactNode;
 };
@@ -92,8 +96,7 @@ export function GitHubStream({
   onTogglePeek,
   onSelect,
   onOpen,
-  onHandOff,
-  handOffLabel = "Hand to a familiar",
+  renderHandOff,
   renderRowActions,
 }: GitHubStreamProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -172,8 +175,7 @@ export function GitHubStream({
                     onTogglePeek={onTogglePeek}
                     onSelect={onSelect}
                     onOpen={onOpen}
-                    onHandOff={onHandOff}
-                    handOffLabel={handOffLabel}
+                    renderHandOff={renderHandOff}
                     renderRowActions={renderRowActions}
                   />
                 ))}
@@ -191,8 +193,7 @@ function StreamRow({
   onTogglePeek,
   onSelect,
   onOpen,
-  onHandOff,
-  handOffLabel,
+  renderHandOff,
   renderRowActions,
 }: {
   entry: GhStreamEntry<GitHubItem>;
@@ -201,8 +202,7 @@ function StreamRow({
   onTogglePeek: (id: string) => void;
   onSelect: (id: string) => void;
   onOpen: (id: string) => void;
-  onHandOff?: (item: GitHubItem) => void;
-  handOffLabel: string;
+  renderHandOff?: (item: GitHubItem) => ReactNode;
   renderRowActions?: (item: GitHubItem) => ReactNode;
 }) {
   const { row, stage } = entry;
@@ -261,16 +261,13 @@ function StreamRow({
               <Icon name={peekOpen ? "ph:caret-up" : "ph:caret-down"} width={9} aria-hidden />
               Peek
             </button>
-            {onHandOff ? (
-              <button
-                type="button"
-                className="gh-stream-verb gh-stream-verb--accent focus-ring"
-                title={handOffLabel}
-                onClick={(e) => { e.stopPropagation(); onHandOff(row); }}
-              >
-                <Icon name="ph:sparkle" width={9} aria-hidden />
-                Hand off
-              </button>
+            {renderHandOff ? (
+              // The wrapper is not the affordance — the picker inside it is.
+              // It only stops the row's own click from firing (and re-selecting)
+              // while you are choosing a familiar, so it needs no key handler.
+              <span className="gh-stream-handoff" onClick={(e) => e.stopPropagation()}>
+                {renderHandOff(row)}
+              </span>
             ) : null}
           </span>
         </span>
