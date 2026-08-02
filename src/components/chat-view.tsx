@@ -2560,6 +2560,46 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // composer's selectRuntime (/api/config is the only channel that rebinds a
   // harness) — and it applies from the next send, because the send route
   // re-resolves the familiar's binding from current config on every turn.
+  // cave-pkapw: inside a session, picking a model writes SESSION scope, so the
+  // familiar's own default is untouched and "use this for every new chat" has
+  // no path from here — you had to go to Home or the Familiar studio. This
+  // promotes the session's current model to that default using the SAME
+  // server-side mechanism a brand-new chat's pick already uses: PATCH with
+  // scope "familiar-default" and no sessionId. Deliberately not a new store —
+  // cave-x0k78 was closed because a second one would fight this config.
+  // `source: "session"` alone is NOT enough to offer promotion: the resolver
+  // reports it whenever a session intent exists, even when that intent already
+  // matches the familiar's default. Gating on it alone made the row a no-op in
+  // that case, and — worse — left it on screen after a successful promotion,
+  // because promoting does not clear the session intent. Compare against the
+  // familiar's stored default so the row appears only when it would change it.
+  const promotableModel =
+    modelState?.source === "session" &&
+    modelState.effectiveModel !== "unknown" &&
+    modelState.effectiveModel !== modelState.familiarDefaultModel
+      ? modelState.effectiveModel
+      : null;
+  const handlePromoteModelToDefault = useCallback(() => {
+    if (!promotableModel) return;
+    void (async () => {
+      try {
+        await fetch("/api/chat/model-state", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            familiarId: familiar.id,
+            model: promotableModel,
+            scope: "familiar-default",
+          }),
+        });
+      } finally {
+        // Re-read either way: the chip must reflect what the server actually
+        // holds, not what we hoped it would.
+        await refreshModelState();
+      }
+    })();
+  }, [familiar.id, promotableModel, refreshModelState]);
+
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
       const nextModel = modelForRuntimeSwitch(runtime);
@@ -6632,6 +6672,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     modelOptions={composerModelOptions}
                     onPickRuntime={handleSelectRuntime}
                     onPickModel={handleSelectModel}
+                    promotableModel={promotableModel}
+                    onPromoteModelToDefault={handlePromoteModelToDefault}
                     modelDisabled={busy}
                     projectRoot={activeProjectRoot}
                     onOpenUrl={onOpenUrl}

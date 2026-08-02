@@ -58,6 +58,10 @@ export type ComposerContextProps = {
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
   onPickModel: (id: string | null) => void;
+  /** cave-pkapw: the session's current model when it differs from the
+   *  familiar's default — null when there is nothing to promote. */
+  promotableModel?: string | null;
+  onPromoteModelToDefault?: () => void;
   /** Chat disables model switching while streaming (runtime-chip parity). */
   modelDisabled?: boolean;
   /** Enables the branch chip for repo-rooted chats (undefined/non-repo
@@ -196,6 +200,8 @@ export function ComposerContextPickers({
         modelOptions={context.config.modelOptions}
         onPickRuntime={context.config.onPickRuntime}
         onPickModel={context.config.onPickModel}
+        promotableModel={context.config.promotableModel ?? null}
+        onPromoteModelToDefault={context.config.onPromoteModelToDefault}
       />
       <GitBranchMenuPopover
         open={view === "branch"}
