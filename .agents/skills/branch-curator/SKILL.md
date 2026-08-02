@@ -389,6 +389,18 @@ esac
 An open matching PR or active workflow makes the branch live. Query failure
 makes it uncertain.
 
+When GitHub has squash-merged the exact candidate and auto-deleted its source
+branch, do not turn a full remote namespace scan into deletion evidence. The
+manual profile may select one exact merged-PR retention source only after the
+fresh PR inventory identifies the candidate head, the PR detail endpoint
+confirms `closed` + merged state on the repository default branch, and
+`refs/pull/<number>/head` advertises the audited OID. Pass that repository,
+remote, PR number, and base to the strict guard. The guard independently
+reauthenticates all of them, fetches only that one source ref, and rechecks it
+for drift. Any missing, open, mismatched, malformed, or moving PR proof is
+uncertainty. Generic branch/tag retention keeps its existing bounded scan; a
+large unrelated ref namespace is never a reason to raise or bypass that bound.
+
 For other candidates, inspect unique work using fully qualified refs:
 ```bash
 local_ref="refs/heads/$branch"

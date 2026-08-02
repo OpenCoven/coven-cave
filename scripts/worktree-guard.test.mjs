@@ -83,6 +83,18 @@ function strictArgs(wt, head) {
   return ["--strict-worktree-remove", wt, "--expected-head", head];
 }
 
+function strictGithubPrArgs(wt, head, number = "4214") {
+  return [
+    ...strictArgs(wt, head),
+    "--retained-by-github-pr",
+    "origin",
+    "OpenCoven/coven-cave",
+    number,
+    "--expected-base",
+    "main",
+  ];
+}
+
 function strictEnv(executable = lsofStub()) {
   return { WT_GUARD_TEST_MODE: "1", WT_GUARD_TEST_LSOF_BIN: executable };
 }
@@ -100,8 +112,15 @@ const options = ${JSON.stringify(options)};
 const args = process.argv.slice(2);
 const isLsRemote = args.includes("ls-remote");
 const isFetch = args.includes("fetch");
+if (options.callLog) {
+  appendFileSync(options.callLog, JSON.stringify(args) + "\\n");
+}
 if (isFetch && options.fetchLog) {
   appendFileSync(options.fetchLog, JSON.stringify(args) + "\\n");
+}
+if (options.remoteUrl && args.includes("remote") && args.includes("get-url")) {
+  process.stdout.write(options.remoteUrl + "\\n");
+  process.exit(0);
 }
 if (isLsRemote && options.lsRemoteOutput !== undefined) {
   process.stdout.write(options.lsRemoteOutput);
@@ -129,6 +148,32 @@ process.exit(Number.isInteger(result.status) ? result.status : 127);
   );
   chmodSync(executable, 0o755);
   return `${bin}${path.delimiter}${process.env.PATH}`;
+}
+
+function ghWrapper(payload, { status = 0, stderr = "", tailPath = process.env.PATH } = {}) {
+  const bin = mkdtempSync(path.join(tmpdir(), "wt-guard-gh-"));
+  const executable = path.join(bin, "gh");
+  const stateFile = path.join(bin, "state");
+  const payloads = Array.isArray(payload) ? payload : [payload];
+  writeFileSync(
+    executable,
+    `#!/usr/bin/env node\nconst { existsSync, readFileSync, writeFileSync } = require("node:fs");\nconst payloads = ${JSON.stringify(payloads)};\nconst stateFile = ${JSON.stringify(stateFile)};\nconst count = existsSync(stateFile) ? Number(readFileSync(stateFile, "utf8")) : 0;\nwriteFileSync(stateFile, String(count + 1));\nprocess.stdout.write(payloads[Math.min(count, payloads.length - 1)]);\nprocess.stderr.write(${JSON.stringify(stderr)});\nprocess.exit(${status});\n`,
+  );
+  chmodSync(executable, 0o755);
+  return `${bin}${path.delimiter}${tailPath}`;
+}
+
+function mergedPrPayload(head, overrides = {}) {
+  return JSON.stringify({
+    number: 4214,
+    state: "closed",
+    merged: true,
+    merged_at: "2026-08-02T04:40:45Z",
+    merge_commit_sha: "a".repeat(head.length),
+    head: { sha: head },
+    base: { ref: "main", repo: { full_name: "OpenCoven/coven-cave" } },
+    ...overrides,
+  });
 }
 
 function fetchCalls(fetchLog) {
@@ -587,6 +632,7 @@ await test("strict exact branch tips fetch only the exact advertised source", ()
   assert.equal(result.status, 0, `an exact advertised branch tip is retained: ${result.stderr}`);
   const calls = fetchCalls(fetchLog);
   assert.equal(calls.length, 1, "exact retention uses one source-only fetch");
+  assert.equal(calls[0].includes("--no-auto-maintenance"), true, "strict fetch cannot create its own live CWD");
   const separator = calls[0].indexOf("--");
   assert.deepEqual(
     calls[0].slice(separator + 2),
@@ -673,6 +719,131 @@ await test("strict retention has a hard aggregate candidate bound", () => {
   assert.equal(result.status, 2, "more than 256 advertised candidate sources is refused before fetch");
   assert.equal(result.stdout, "");
   assert.deepEqual(gitMetadataSnapshot(excessive.dir), metadataBefore, "candidate overflow changes no refs or FETCH_HEAD");
+});
+
+await test("strict merged PR proof bypasses no limits and avoids a large remote namespace", () => {
+  const fixture = repoWithWorktree({ push: false });
+  const head = sh("git", ["-C", fixture.wt, "rev-parse", "HEAD"], fixture.dir).trim();
+  const remoteMain = sh("git", ["-C", fixture.dir, "rev-parse", "main"], fixture.dir).trim();
+  for (let index = 0; index < 257; index += 1) {
+    sh(
+      "git",
+      ["--git-dir", fixture.bare, "update-ref", `refs/heads/generated-${String(index).padStart(3, "0")}`, remoteMain],
+      fixture.dir,
+    );
+  }
+  sh("git", ["-C", fixture.wt, "push", "-q", "origin", "HEAD:refs/pull/4214/head"], fixture.dir);
+
+  const logs = mkdtempSync(path.join(tmpdir(), "wt-guard-pr-proof-"));
+  const callLog = path.join(logs, "git.jsonl");
+  const fetchLog = path.join(logs, "fetch.jsonl");
+  writeFileSync(callLog, "");
+  writeFileSync(fetchLog, "");
+  const metadataBefore = gitMetadataSnapshot(fixture.dir);
+  const gitPath = gitWrapper({
+    callLog,
+    fetchLog,
+    remoteUrl: "https://github.com/OpenCoven/coven-cave.git",
+  });
+  const result = runStrict(strictGithubPrArgs(fixture.wt, head), fixture.dir, {
+    ...strictEnv(),
+    PATH: ghWrapper(mergedPrPayload(head), { tailPath: gitPath }),
+  });
+
+  assert.equal(result.status, 0, `exact merged PR retention succeeds without scanning 257 refs: ${result.stderr}`);
+  const calls = readFileSync(callLog, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+  const lsRemoteCalls = calls.filter((args) => args.includes("ls-remote"));
+  assert.equal(lsRemoteCalls.length, 2, "the exact PR ref is advertised and rechecked once");
+  for (const args of lsRemoteCalls) {
+    assert.equal(args.includes("--heads"), false, "merged PR proof never enumerates remote branches");
+    assert.equal(args.includes("--tags"), false, "merged PR proof never enumerates remote tags");
+    assert.deepEqual(args.slice(-3), ["--", "origin", "refs/pull/4214/head"], "only the exact PR head is queried");
+  }
+  const fetches = fetchCalls(fetchLog);
+  assert.equal(fetches.length, 1, "merged PR proof performs one source-only fetch");
+  assert.deepEqual(fetches[0].slice(-3), ["--", "origin", "refs/pull/4214/head:"], "only the PR head is fetched");
+  assert.deepEqual(gitMetadataSnapshot(fixture.dir), metadataBefore, "merged PR proof changes no refs or FETCH_HEAD");
+});
+
+await test("strict merged PR proof refuses state, scope, identity, API, and drift failures", () => {
+  const fixture = repoWithWorktree({ push: false });
+  const head = sh("git", ["-C", fixture.wt, "rev-parse", "HEAD"], fixture.dir).trim();
+  const other = sh("git", ["-C", fixture.dir, "rev-parse", "main"], fixture.dir).trim();
+  sh("git", ["-C", fixture.wt, "push", "-q", "origin", "HEAD:refs/pull/4214/head"], fixture.dir);
+  const metadataBefore = gitMetadataSnapshot(fixture.dir);
+
+  const cases = [
+    ["open PR", mergedPrPayload(head, { state: "open", merged_at: null }), {}, /not merged/],
+    ["head mismatch", mergedPrPayload(other), {}, /head does not match/],
+    ["base mismatch", mergedPrPayload(head, { base: { ref: "develop", repo: { full_name: "OpenCoven/coven-cave" } } }), {}, /base does not match/],
+    ["repo mismatch", mergedPrPayload(head, { base: { ref: "main", repo: { full_name: "Other/repo" } } }), {}, /repository does not match/],
+    ["API failure", "", { status: 1, stderr: "offline" }, /GitHub API/],
+  ];
+  for (const [label, payload, ghOptions, pattern] of cases) {
+    const gitPath = gitWrapper({ remoteUrl: "https://github.com/OpenCoven/coven-cave.git" });
+    const result = runStrict(strictGithubPrArgs(fixture.wt, head), fixture.dir, {
+      ...strictEnv(),
+      PATH: ghWrapper(payload, { ...ghOptions, tailPath: gitPath }),
+    });
+    assert.equal(result.status, 2, `${label} is refused`);
+    assert.match(result.stderr, pattern, `${label} explains the failed proof`);
+  }
+
+  const wrongRemotePath = gitWrapper({ remoteUrl: "https://github.com/Other/repo.git" });
+  const wrongRemote = runStrict(strictGithubPrArgs(fixture.wt, head), fixture.dir, {
+    ...strictEnv(),
+    PATH: ghWrapper(mergedPrPayload(head), { tailPath: wrongRemotePath }),
+  });
+  assert.equal(wrongRemote.status, 2, "configured remote/repository mismatch is refused");
+  assert.match(wrongRemote.stderr, /remote URL does not match/);
+
+  const driftPath = gitWrapper({
+    remoteUrl: "https://github.com/OpenCoven/coven-cave.git",
+    driftRef: "refs/pull/4214/head",
+    driftOid: other,
+  });
+  const drift = runStrict(strictGithubPrArgs(fixture.wt, head), fixture.dir, {
+    ...strictEnv(),
+    PATH: ghWrapper(mergedPrPayload(head), { tailPath: driftPath }),
+  });
+  assert.equal(drift.status, 2, "PR head drift after fetch is refused");
+  assert.match(drift.stderr, /changed refs\/pull\/4214\/head/);
+
+  const apiDriftPath = gitWrapper({ remoteUrl: "https://github.com/OpenCoven/coven-cave.git" });
+  const apiDrift = runStrict(strictGithubPrArgs(fixture.wt, head), fixture.dir, {
+    ...strictEnv(),
+    PATH: ghWrapper(
+      [
+        mergedPrPayload(head),
+        mergedPrPayload(head, { merge_commit_sha: "b".repeat(head.length) }),
+      ],
+      { tailPath: apiDriftPath },
+    ),
+  });
+  assert.equal(apiDrift.status, 2, "PR API drift after fetch is refused");
+  assert.match(apiDrift.stderr, /GitHub PR changed during retention proof/);
+  assert.deepEqual(gitMetadataSnapshot(fixture.dir), metadataBefore, "all PR proof refusals change no refs or FETCH_HEAD");
+});
+
+await test("strict lsof proof ignores only unresolved cwd paths outside the target", () => {
+  const fixture = repoWithWorktree({ push: true });
+  const head = sh("git", ["-C", fixture.wt, "rev-parse", "HEAD"], fixture.dir).trim();
+  const unrelatedDeleted = path.join(fixture.dir, ".worktrees", "already-deleted");
+  const unrelated = runStrict(strictArgs(fixture.wt, head), fixture.dir, strictEnv(lsofStub(
+    `p4242\ncstale\nfcwd\nn${unrelatedDeleted}\n`,
+  )));
+  assert.equal(
+    unrelated.status,
+    0,
+    `an unresolved cwd outside the exact target is not target ownership: ${unrelated.stderr}`,
+  );
+
+  const deletedInsideTarget = path.join(fixture.wt, "removed-child");
+  const inside = runStrict(strictArgs(fixture.wt, head), fixture.dir, strictEnv(lsofStub(
+    `p4242\ncstale\nfcwd\nn${deletedInsideTarget}\n`,
+  )));
+  assert.equal(inside.status, 2, "an unresolved cwd lexically inside the target remains uncertain");
+  assert.match(inside.stderr, /cwd inside target cannot be resolved/);
 });
 
 await test("strict advertisements use one repository OID width", () => {
