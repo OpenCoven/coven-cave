@@ -22,6 +22,11 @@ The result must preserve the branch curator's fail-closed safety model:
 - no apply-mode mutation is enabled until the repository-wide maintenance gate
   excludes every supported local and remote writer.
 
+The separately specified
+[manual maintainer-authorized cleanup profile](2026-08-01-maintainer-authorized-branch-cleanup-design.md)
+does not enable automatic apply mode or remote deletion by automation. It is a
+bounded operator path with fresh proof and exact expected-OID mutations.
+
 ## Current state
 
 The repository already has three relevant pieces:
