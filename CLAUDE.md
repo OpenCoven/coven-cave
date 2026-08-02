@@ -39,8 +39,19 @@
   Historical note, since it will otherwise look like a mystery: while the
   setting was on, a PR with every check green and zero approvals still reported
   `mergeStateStatus: BLOCKED`, and `gh pr merge` failed with *"the base branch
-  policy prohibits the merge"* — never mentioning conversations. If that error
-  reappears, the setting has been turned back on.
+  policy prohibits the merge"* — never mentioning conversations.
+
+  That message is **generic** — it covers any policy failure (a required check
+  that never reported, `restrictions`, linear history, a stale-review dismissal
+  rule). So diagnose by symptom rather than by the string: if every required
+  check is green, zero approvals are outstanding, and the only thing left is
+  open review threads, *suspect* this setting has been turned back on and
+  confirm it directly:
+
+  ```bash
+  gh api repos/OpenCoven/coven-cave/branches/main/protection \
+    --jq .required_conversation_resolution.enabled
+  ```
 - Commit signatures are **required** (`required_signatures`) — the server
   rejects unsigned commits outright, so the global `-S` rule is enforced, not
   merely advised.
