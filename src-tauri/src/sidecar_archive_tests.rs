@@ -408,6 +408,15 @@ fn activation_surfaces_staging_cleanup_failure() {
     .expect_err("permanent contention must fail");
 
     assert!(error.contains("staging cleanup also failed"));
+    assert!(error.contains("raw OS error: Some(5)"));
+    let cleanup_detail = error
+        .split("staging cleanup also failed")
+        .nth(1)
+        .expect("cleanup detail should be present");
+    assert!(
+        !cleanup_detail.contains(root.to_string_lossy().as_ref()),
+        "cleanup diagnostics must not include the full cache path"
+    );
     assert!(staging.exists(), "failed cleanup must not be hidden");
     drop(held_child);
     fs::remove_dir_all(root).expect("remove test root");

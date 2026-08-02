@@ -24,7 +24,7 @@ mod sidecar_archive_preparation;
 
 use sidecar_archive_cache::{
     acquire_cache_lock, cleanup_staging_before_extraction, create_staging_directory,
-    remove_cache_path, required_free_space, try_acquire_cache_lock,
+    remove_cache_path, remove_cache_path_io, required_free_space, try_acquire_cache_lock,
 };
 pub(crate) use sidecar_archive_cleanup::cleanup_stale_sidecar_runtimes;
 use sidecar_archive_extraction::extract_archive;

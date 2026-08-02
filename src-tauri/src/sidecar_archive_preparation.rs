@@ -50,16 +50,18 @@ pub(super) fn activate_extracted_cache_with(
         let destination_exists = destination.exists();
         let destination_ready = cache_is_ready(destination, manifest);
         if destination_ready {
-            match remove_cache_path(staging) {
+            match remove_cache_path_io(staging) {
                 Ok(()) => log::info!(
                     "[cave] sidecar cache activation reused concurrent destination attempt={attempt}/{maximum_attempts} elapsed_ms={} staging={}",
                     started.elapsed().as_millis(),
                     cache_path_label(staging)
                 ),
                 Err(cleanup_error) => log::warn!(
-                    "[cave] sidecar cache activation reused concurrent destination but staging cleanup failed attempt={attempt}/{maximum_attempts} elapsed_ms={} staging={} error={cleanup_error}",
+                    "[cave] sidecar cache activation reused concurrent destination but staging cleanup failed attempt={attempt}/{maximum_attempts} elapsed_ms={} staging={} cleanup_kind={:?} cleanup_raw_os_error={:?}",
                     started.elapsed().as_millis(),
-                    cache_path_label(staging)
+                    cache_path_label(staging),
+                    cleanup_error.kind(),
+                    cleanup_error.raw_os_error()
                 ),
             }
             return Ok(());
@@ -81,7 +83,7 @@ pub(super) fn activate_extracted_cache_with(
             }
         }
 
-        let cleanup_error = remove_cache_path(staging).err();
+        let cleanup_error = remove_cache_path_io(staging).err();
         log::warn!(
             "[cave] sidecar cache activation failed attempt={attempt}/{maximum_attempts} elapsed_ms={} kind={:?} raw_os_error={:?} staging={} destination={} source_exists={source_exists} destination_exists={destination_exists} destination_ready={destination_ready} cleanup={}",
             started.elapsed().as_millis(),
@@ -92,7 +94,13 @@ pub(super) fn activate_extracted_cache_with(
             if cleanup_error.is_some() { "failed" } else { "succeeded" }
         );
         let cleanup_detail = cleanup_error
-            .map(|cleanup_error| format!("; staging cleanup also failed: {cleanup_error}"))
+            .map(|cleanup_error| {
+                format!(
+                    "; staging cleanup also failed (kind: {:?}, raw OS error: {:?})",
+                    cleanup_error.kind(),
+                    cleanup_error.raw_os_error()
+                )
+            })
             .unwrap_or_default();
         return Err(format!(
             "could not activate extracted sidecar cache {} after {attempt} attempt(s): {error} (kind: {:?}, raw OS error: {:?}){cleanup_detail}",
