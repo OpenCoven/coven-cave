@@ -49,6 +49,8 @@ export function ComposerRuntimePopover({
   modelOptions,
   onPickRuntime,
   onPickModel,
+  promotableModel = null,
+  onPromoteModelToDefault,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -58,6 +60,10 @@ export function ComposerRuntimePopover({
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
   onPickModel: (id: string | null) => void;
+  /** cave-pkapw: the session's model when it is NOT already the familiar's
+   *  default. Null hides the promote row — the action would be a no-op. */
+  promotableModel?: string | null;
+  onPromoteModelToDefault?: () => void;
 }) {
   const setOpen = onOpenChange;
   const hasRuntimeDefault = runtimeOwnsModelDefault(runtime);
@@ -125,6 +131,26 @@ export function ComposerRuntimePopover({
                   {m.label}
                 </PopoverItem>
               ))}
+              {/* cave-pkapw: inside a session a model pick is session-scoped,
+                  so the familiar's default is untouched. This promotes it
+                  using the same PATCH a brand-new chat's pick already sends
+                  (scope "familiar-default", no sessionId). Shown only when the
+                  session model differs from that default — otherwise the
+                  action is a no-op and the row is noise. */}
+              {promotableModel && onPromoteModelToDefault ? (
+                <>
+                  <PopoverSeparator />
+                  <PopoverItem
+                    title={`New chats with this familiar will start on ${promotableModel}`}
+                    onSelect={() => {
+                      onPromoteModelToDefault();
+                      setOpen(false);
+                    }}
+                  >
+                    Set as default for new chats
+                  </PopoverItem>
+                </>
+              ) : null}
             </>
           )}
         </PopoverBody>
