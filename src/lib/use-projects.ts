@@ -89,6 +89,10 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   // per-instance AbortController — the shared, coalesced request can't be
   // aborted by one of its subscribers, so late results are discarded instead.)
   const generationRef = useRef(0);
+  // A bundled create may intentionally suppress the registry event while it
+  // applies a familiar grant. Keep that local registration in the unscoped
+  // view if the GET that was already in flight returns its older snapshot.
+  const locallyCreatedProjectsRef = useRef(new Map<string, CaveProject>());
 
   const load = useCallback(async (opts?: { force?: boolean }) => {
     generationRef.current += 1;
@@ -104,7 +108,21 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       } else {
         // Already deduped + sorted by the cache (cave-k0gf), once per fetch
         // rather than once per consumer — do not re-run it here.
-        setProjects(Array.isArray(data.projects) ? data.projects : []);
+        if (familiarId === null && locallyCreatedProjectsRef.current.size > 0) {
+          const serverProjects = Array.isArray(data.projects) ? data.projects : [];
+          const serverProjectIds = new Set(serverProjects.map((project) => project.id));
+          for (const projectId of serverProjectIds) {
+            locallyCreatedProjectsRef.current.delete(projectId);
+          }
+          const pendingLocalProjects = [...locallyCreatedProjectsRef.current.values()];
+          setProjects(
+            pendingLocalProjects.length > 0
+              ? sortProjectsAlphabetically([...serverProjects, ...pendingLocalProjects])
+              : serverProjects,
+          );
+        } else {
+          setProjects(Array.isArray(data.projects) ? data.projects : []);
+        }
         setLoadedScopeKey(scopeKey);
       }
     } catch (err) {
@@ -140,6 +158,9 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   useEffect(() => {
     if (!enabled) return;
     return subscribeProjectRegistryMutation(({ mutation }) => {
+      if (mutation.kind === "delete") {
+        locallyCreatedProjectsRef.current.delete(mutation.projectId);
+      }
       setProjects((prev) => applyProjectRegistryMutation(prev, mutation));
       void load();
     });
@@ -157,7 +178,10 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     // unscoped operator view. Surface it even if the initial GET is still
     // pending (or fails), while familiar-scoped views must await their grant-
     // filtered response before becoming ready.
-    if (familiarId === null) setLoadedScopeKey(scopeKey);
+    if (familiarId === null) {
+      locallyCreatedProjectsRef.current.set(project.id, project);
+      setLoadedScopeKey(scopeKey);
+    }
     if (options?.emitMutation !== false) emitProjectRegistryMutation();
     return project;
   }, [familiarId, scopeKey]);
@@ -284,6 +308,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
     const data = await res.json();
     if (data.ok) {
+      locallyCreatedProjectsRef.current.delete(id);
       setProjects((prev) => prev.filter((project) => project.id !== id));
       emitProjectRegistryMutation({ kind: "delete", projectId: id });
       return true;

@@ -9,7 +9,7 @@ import {
   LOCAL_REQUEST_REQUIRED_CODE,
   ProjectCreationError,
 } from "./project-errors.ts";
-import { resetProjectRegistryListenersForTests } from "./project-registry-events.ts";
+import { emitProjectRegistryMutation, resetProjectRegistryListenersForTests } from "./project-registry-events.ts";
 import { resetProjectsCacheForTests, useProjects } from "./use-projects.ts";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -269,6 +269,29 @@ test("unscoped project creation is visible before the initial registry load sett
       latestState!.projects.map((entry) => entry.id),
       [created.id],
       "the successful local registration must not remain masked by the pending GET",
+    );
+
+    await settle(pending[0]!, [project("existing-before-create")]);
+    assert.deepEqual(
+      latestState!.projects.map((entry) => entry.id),
+      [created.id, "existing-before-create"],
+      "an older in-flight snapshot must not overwrite the new registration or hide existing projects",
+    );
+
+    await act(async () => {
+      emitProjectRegistryMutation({ kind: "delete", projectId: created.id });
+      await Promise.resolve();
+    });
+    assert.deepEqual(
+      latestState!.projects.map((entry) => entry.id),
+      ["existing-before-create"],
+      "a delete from another project hook must remove the locally pending registration",
+    );
+    await settle(pending[0]!, [project("existing-before-create")]);
+    assert.deepEqual(
+      latestState!.projects.map((entry) => entry.id),
+      ["existing-before-create"],
+      "a delete refresh must not resurrect a locally pending registration",
     );
   } finally {
     await act(async () => {
