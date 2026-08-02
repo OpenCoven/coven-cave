@@ -197,6 +197,38 @@ test("project creation preserves the local-only code through nullable and throwi
       assert.equal(error.message, LOCAL_PROJECT_CREATION_MESSAGE);
       return true;
     });
+
+    const validationReported: ProjectCreationError[] = [];
+    const invalidRoot = latestState!.createProject("Missing", "/missing", {
+      onError: (error) => validationReported.push(error),
+    });
+    assert.equal(pending.length, 1);
+    pending.shift()!.resolve({
+      ok: false,
+      status: 400,
+      json: async () => ({ ok: false, error: "root does not exist" }),
+    });
+    assert.equal(await invalidRoot, null);
+    assert.equal(validationReported[0]!.message, "root does not exist");
+    assert.equal(validationReported[0]!.code, undefined);
+
+    const validationThrow = latestState!.createProjectOrThrow("Missing", "/missing");
+    assert.equal(pending.length, 1);
+    pending.shift()!.resolve({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        ok: false,
+        code: "PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE",
+        error: "Choose a specific folder for this project — your home folder itself or the top of a drive can't be a project root.",
+      }),
+    });
+    await assert.rejects(validationThrow, (error: unknown) => {
+      assert.ok(error instanceof ProjectCreationError);
+      assert.equal(error.code, "PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE");
+      assert.match(error.message, /home folder itself/);
+      return true;
+    });
   } finally {
     await act(async () => {
       renderer?.unmount();
