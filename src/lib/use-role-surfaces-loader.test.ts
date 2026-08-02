@@ -5,6 +5,7 @@ import { createElement, useCallback } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import * as roleSurfaceHooks from "./use-role-surfaces.ts";
+import { registerRoleSurface } from "./role-surfaces.ts";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -153,11 +154,11 @@ function deferredRoleSurfaceFetch() {
   };
 }
 
-function familiar(id: string) {
+function familiar(id: string, role = "Researcher") {
   return {
     id,
     display_name: id,
-    role: "Researcher",
+    role,
   };
 }
 
@@ -430,5 +431,79 @@ test("role-surface session keeps a missing familiar unsettled and unfetched", as
   } finally {
     await act(async () => renderer?.unmount());
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("role-surface session aggregates All-scope rooms and records deterministic owners", async () => {
+  const unregisterResearch = registerRoleSurface({
+    id: "loader-test-research-room",
+    role: "researcher",
+    title: "Loader Research Room",
+    iconName: "ph:book-open",
+    description: "research",
+    priority: 20,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const unregisterCode = registerRoleSurface({
+    id: "loader-test-code-room",
+    role: "coder",
+    title: "Loader Code Room",
+    iconName: "ph:code",
+    description: "code",
+    priority: 10,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: Array<{
+    visibleSurfaceIds: string[];
+    surfaceFamiliarIds: Record<string, readonly string[]>;
+    rolesLoaded: boolean;
+  }> = [];
+  let renderer!: ReactTestRenderer;
+
+  function AggregateProbe() {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      familiar: null,
+      familiars: [familiar("research"), familiar("code", "Coder")],
+      sessions: [],
+      activeSessionId: null,
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    snapshots.push({
+      visibleSurfaceIds: session.visibleSurfaces.map((surface) => surface.id),
+      surfaceFamiliarIds: session.surfaceFamiliarIds,
+      rolesLoaded: session.rolesLoaded,
+    });
+    return createElement("role-surface-aggregate-probe");
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(AggregateProbe));
+    });
+    assert.equal(fetch.pending.length, 1);
+    assert.equal(fetch.pending[0]?.url, "/api/roles");
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    const latest = snapshots.at(-1)!;
+    assert.deepEqual(latest.visibleSurfaceIds, [
+      "loader-test-research-room",
+      "loader-test-code-room",
+    ]);
+    assert.deepEqual(latest.surfaceFamiliarIds, {
+      "loader-test-research-room": ["research"],
+      "loader-test-code-room": ["code"],
+    });
+    assert.equal(latest.rolesLoaded, true);
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregisterResearch();
+    unregisterCode();
   }
 });

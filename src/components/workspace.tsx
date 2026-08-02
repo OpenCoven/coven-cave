@@ -2452,6 +2452,12 @@ export function Workspace() {
     }
     if (intent.kind === "go-to-surface") {
       setMode(intent.mode as WorkspaceMode);
+      if (intent.familiarId) {
+        // Aggregate room rows carry their deterministic owner. Narrowing first
+        // gives RoleSurfaceHost the familiar-bound context it requires while
+        // preserving the room selected from the launcher.
+        selectFamiliarScope(intent.familiarId, { preserveSurface: true });
+      }
       shellRef.current?.dismissNavMobile();
       return;
     }
@@ -2811,9 +2817,9 @@ export function Workspace() {
     [inboxItemsWithEphemeral],
   );
 
-  // Role Surfaces: build the shared context from the live session and resolve
-  // which registered surfaces the active familiar should see. Entirely
-  // registry-driven — the shell never branches on a specific role.
+  // Role Surfaces: build shared context from the live session and resolve
+  // which registered surfaces the active familiar or selected scope should
+  // see. Entirely registry-driven — the shell never branches on a specific role.
   // `onPaletteIntent` is re-created every render, so the room's focus-card
   // service goes through a ref to keep the context identity stable.
   const onPaletteIntentRef = useRef<(intent: PaletteIntent) => void>(() => {});
@@ -2824,8 +2830,15 @@ export function Workspace() {
   const refreshTasksFromRoom = useCallback(() => {
     void loadGitHubTasks(true);
   }, [loadGitHubTasks]);
+  const roleSurfaceFamiliars = useMemo(
+    () => scopeIds.size === 0
+      ? visibleFamiliars
+      : visibleFamiliars.filter((candidate) => scopeIds.has(candidate.id)),
+    [scopeIds, visibleFamiliars],
+  );
   const roleSurfaceSession = useRoleSurfaceSession({
     familiar: active,
+    familiars: roleSurfaceFamiliars,
     sessions,
     activeSessionId: activeChatSessionId,
     daemonRunning,
@@ -2834,6 +2847,20 @@ export function Workspace() {
     focusCard: focusCardFromRoom,
     refreshTasks: refreshTasksFromRoom,
   });
+
+  // A room can be launched from a deep link while the scope is still All (or
+  // multi-select). Resolve a unique owner before the host renders its
+  // familiar-bound context. Sidebar/palette clicks do this in the same event;
+  // this effect covers restored URLs and persisted last-surface state.
+  useEffect(() => {
+    if (activeId !== null || !isRoleSurfaceMode(mode)) return;
+    const surfaceId = parseRoleSurfaceMode(mode);
+    if (!surfaceId) return;
+    const owners = roleSurfaceSession.surfaceFamiliarIds[surfaceId];
+    if (owners?.length === 1) {
+      selectFamiliarScope(owners[0]!, { preserveSurface: true });
+    }
+  }, [activeId, mode, roleSurfaceSession.surfaceFamiliarIds, selectFamiliarScope]);
 
   useEffect(() => {
     if (!activeId) return;
@@ -2935,13 +2962,16 @@ export function Workspace() {
     <SidebarMinimal
       mode={mode}
       splitPageModes={splitPageModes}
-      // Registered Role Surfaces visible for the active familiar — rendered by
+      // Registered Role Surfaces visible for the active scope — rendered by
       // the sidebar as generic rows (rooms), never named in shell code.
       roleSurfaces={roleSurfaceSession.visibleSurfaces.map((surface) => ({
         mode: roleSurfaceMode(surface.id),
         label: surface.title,
         iconName: surface.iconName,
         description: surface.description,
+        familiarId: roleSurfaceSession.surfaceFamiliarIds[surface.id]?.length === 1
+          ? roleSurfaceSession.surfaceFamiliarIds[surface.id]![0]
+          : undefined,
       }))}
       sessions={sessions}
       activeSessionId={activeChatSessionId}
@@ -3468,6 +3498,9 @@ export function Workspace() {
             mode: roleSurfaceMode(surface.id),
             label: surface.title,
             description: surface.description,
+            familiarId: roleSurfaceSession.surfaceFamiliarIds[surface.id]?.length === 1
+              ? roleSurfaceSession.surfaceFamiliarIds[surface.id]![0]
+              : undefined,
           }))}
           initialQuery={topSearchQuery}
           onQueryChange={setTopSearchQuery}
