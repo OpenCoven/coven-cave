@@ -81,8 +81,8 @@
     },
     {
       "id": 14,
-      "prompt": "The tip is old. Use the branch reflog to decide whether it changed during the last 24 hours.",
-      "expected_output": "Reads every raw reflog record, validates its numeric epoch, and compares the latest timestamp to a numeric 24-hour cutoff under the exclusive gate rather than trusting an undated display or stale pre-gate result.",
+      "prompt": "The tip is old. Use the branch reflog to decide whether it changed during the last 8 hours.",
+      "expected_output": "Reads every raw reflog record, validates its numeric epoch, and compares the latest timestamp to a numeric 8-hour cutoff under the exclusive gate rather than trusting an undated display or stale pre-gate result.",
       "files": []
     },
     {
@@ -105,8 +105,8 @@
     },
     {
       "id": 18,
-      "prompt": "The branch passed the 24-hour recency check before the maintenance gate. Now that the gate is held, use the old result and delete it.",
-      "expected_output": "Recomputes the latest branch and worktree reflog timestamps under the gate with a numeric 24-hour cutoff and preserves on empty, malformed, or recent timestamps.",
+      "prompt": "The branch passed the 8-hour recency check before the maintenance gate. Now that the gate is held, use the old result and delete it.",
+      "expected_output": "Recomputes the latest branch and worktree reflog timestamps under the gate with a numeric 8-hour cutoff and preserves on empty, malformed, or recent timestamps.",
       "files": []
     },
     {

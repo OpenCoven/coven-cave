@@ -26,7 +26,7 @@ Delete only when all of these remain true under the gate:
 3. Configuration-independent inspection finds no staged, unstaged, untracked,
    ignored, submodule, assume-unchanged, or skip-worktree state.
 4. The local ref is not symbolic.
-5. The tip and every recovery record are older than 24 hours.
+5. The tip and every recovery record are older than 8 hours.
 6. Every local and remote tip is redundant on the freshly fetched default
    branch or exactly matches the recorded head of a merged PR.
 7. Every recovery OID is reachable from that default branch or from an
@@ -363,7 +363,7 @@ of the oldest retained record:
 now_epoch=$(date +%s) ||
   { printf 'PRESERVE - clock failed\n'; continue; }
 case "$now_epoch" in ''|*[!0-9]*) printf 'PRESERVE - clock invalid\n'; continue ;; esac
-recency_cutoff_epoch=$((now_epoch - 86400))
+recency_cutoff_epoch=$((now_epoch - 28800))
 object_format=$(git rev-parse --show-object-format) ||
   { printf 'PRESERVE - object format failed\n'; continue; }
 case "$object_format" in
