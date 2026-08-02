@@ -30,8 +30,12 @@
  *     git's admin file keeps pointing at the old path, so moving a live
  *     worktree strands its work exactly like deleting it would.
  *
- * "Retained" means a remote BRANCH or a TAG that is present on a remote. Tags
- * count because archiving a branch as a signed, pushed tag preserves its OIDs
+ * "Retained" normally means a remote BRANCH or a TAG that is present on a
+ * remote. The strict direct guard also accepts one explicitly named merged
+ * GitHub PR whose exact `refs/pull/<number>/head` is freshly authenticated,
+ * fetched, and rechecked; this bounded path handles squash-source auto-delete
+ * without enumerating a large unrelated ref namespace. Tags count because
+ * archiving a branch as a signed, pushed tag preserves its OIDs
  * more durably than a branch does — merging deletes the branch, never the tag.
  * Requiring a branch made the guard block six provably-archived cleanups during
  * one sweep (2026-07-29), and six bypasses to delete preserved work is how the
@@ -63,9 +67,10 @@ import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 
 const FULL_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
-// Strict retention proof has a deterministic network/work ceiling. Normal
-// repositories are far below these limits; exceeding any one is uncertainty,
-// not permission to turn an unbounded ref inventory into deletion evidence.
+// Generic branch/tag retention proof has a deterministic network/work ceiling.
+// Exceeding any one is uncertainty, not permission to turn an unbounded ref
+// inventory into deletion evidence. Exact merged-PR proof has its own smaller
+// ceiling: one PR API record and one exact PR ref, each checked twice.
 // With incremental 16-ref fetch batches this permits at most 16 initial
 // advertisements, 31 source-only fetches, and 31 rechecks: 78 remote round
 // trips total.
@@ -134,6 +139,43 @@ function strictGit(args, cwd) {
   const probe = strictGitProbe(args, cwd);
   if (probe.status !== 0) throw new Error(`git probe exited ${probe.status}`);
   return probe.stdout;
+}
+
+function strictGithubApi(endpoint, cwd) {
+  const env = strictGitEnv();
+  delete env.GH_HOST;
+  delete env.GH_REPO;
+  env.GH_PAGER = "cat";
+  env.GH_PROMPT_DISABLED = "1";
+  const probe = spawnSync(
+    "gh",
+    ["api", "--hostname", "github.com", "--method", "GET", endpoint],
+    {
+      cwd,
+      env,
+      encoding: "utf8",
+      timeout: 10000,
+      maxBuffer: 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  if (probe.error) throw new Error(`GitHub API failed: ${probe.error.message}`);
+  if (probe.signal) throw new Error(`GitHub API ended on signal ${probe.signal}`);
+  if (probe.status !== 0) throw new Error(`GitHub API exited ${probe.status}`);
+  if (probe.stderr !== "") throw new Error("GitHub API returned unexpected diagnostics");
+  if (typeof probe.stdout !== "string" || !probe.stdout) {
+    throw new Error("GitHub API returned empty output");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(probe.stdout);
+  } catch {
+    throw new Error("GitHub API returned malformed JSON");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("GitHub API returned malformed PR data");
+  }
+  return parsed;
 }
 
 function strictSingleOid(output, label) {
@@ -289,6 +331,102 @@ function strictResolveAdvertisedCommit(target, remote, entry, peeled) {
   return advertisedCommit;
 }
 
+function strictGithubRepoFromRemoteUrl(output) {
+  const remoteUrl = strictSingleLine(output, "git remote get-url");
+  const match =
+    /^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remoteUrl) ??
+    /^git@github\.com:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remoteUrl) ??
+    /^ssh:\/\/git@github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remoteUrl);
+  if (!match) throw new Error("configured remote URL is not a canonical github.com repository URL");
+  return `${match[1]}/${match[2]}`;
+}
+
+function strictSingleExactRef(output, remote, expectedRef, expectedOidWidth) {
+  const lines = output.split("\n");
+  if (lines.length !== 2 || lines[1] !== "") {
+    throw new Error(`remote ${remote} returned malformed exact-ref output`);
+  }
+  const match = /^([0-9a-f]+)\t(refs\/pull\/([1-9][0-9]*)\/head)$/.exec(lines[0]);
+  if (
+    !match ||
+    !FULL_OID.test(match[1]) ||
+    match[1].length !== expectedOidWidth ||
+    match[2] !== expectedRef ||
+    Buffer.byteLength(match[2], "utf8") > STRICT_MAX_REF_BYTES
+  ) {
+    throw new Error(`remote ${remote} returned a malformed exact PR head`);
+  }
+  return { oid: match[1], ref: match[2], kind: "pull", name: match[3], peeled: false };
+}
+
+function strictValidateMergedGithubPr(pr, proof, head) {
+  if (pr.number !== proof.number) throw new Error("GitHub PR number does not match requested proof");
+  if (pr.state !== "closed" || pr.merged !== true || typeof pr.merged_at !== "string" || !Number.isFinite(Date.parse(pr.merged_at))) {
+    throw new Error("GitHub PR is not merged");
+  }
+  if (!FULL_OID.test(pr.merge_commit_sha) || pr.merge_commit_sha.length !== head.length) {
+    throw new Error("GitHub PR returned a malformed merge commit");
+  }
+  if (pr.head?.sha !== head) throw new Error("GitHub PR head does not match expected HEAD");
+  if (pr.base?.ref !== proof.base) throw new Error("GitHub PR base does not match expected base");
+  if (pr.base?.repo?.full_name?.toLowerCase() !== proof.repo.toLowerCase()) {
+    throw new Error("GitHub PR repository does not match requested proof");
+  }
+  return {
+    number: pr.number,
+    state: pr.state,
+    merged: pr.merged,
+    mergedAt: pr.merged_at,
+    mergeCommit: pr.merge_commit_sha,
+    head: pr.head.sha,
+    base: pr.base.ref,
+    repo: pr.base.repo.full_name.toLowerCase(),
+  };
+}
+
+function strictRetainedByMergedGithubPr(target, head, proof) {
+  const remotes = strictRemoteNames(target);
+  if (!remotes.includes(proof.remote)) throw new Error("GitHub PR proof remote is not configured");
+  strictGit(["-C", target, "check-ref-format", `refs/heads/${proof.base}`]);
+
+  const remoteRepo = strictGithubRepoFromRemoteUrl(
+    strictGit(["-C", target, "remote", "get-url", "--", proof.remote]),
+  );
+  if (remoteRepo.toLowerCase() !== proof.repo.toLowerCase()) {
+    throw new Error("configured remote URL does not match GitHub PR proof repository");
+  }
+
+  const endpoint = `repos/${proof.repo}/pulls/${proof.number}`;
+  const initialPr = strictValidateMergedGithubPr(strictGithubApi(endpoint, target), proof, head);
+
+  const prRef = `refs/pull/${proof.number}/head`;
+  strictGit(["-C", target, "check-ref-format", prRef]);
+  const advertised = strictSingleExactRef(
+    strictGit(["-C", target, "ls-remote", "--", proof.remote, prRef]),
+    proof.remote,
+    prRef,
+    head.length,
+  );
+  if (advertised.oid !== head) throw new Error("advertised GitHub PR head does not match expected HEAD");
+
+  strictFetchAdvertisedRefs(target, proof.remote, [prRef]);
+  const refreshed = strictSingleExactRef(
+    strictGit(["-C", target, "ls-remote", "--", proof.remote, prRef]),
+    proof.remote,
+    prRef,
+    head.length,
+  );
+  if (refreshed.oid !== advertised.oid) {
+    throw new Error(`remote ${proof.remote} changed ${prRef} during retention proof`);
+  }
+  const refreshedPr = strictValidateMergedGithubPr(strictGithubApi(endpoint, target), proof, head);
+  if (JSON.stringify(refreshedPr) !== JSON.stringify(initialPr)) {
+    throw new Error("GitHub PR changed during retention proof");
+  }
+  const advertisedCommit = strictResolveAdvertisedCommit(target, proof.remote, advertised, null);
+  if (advertisedCommit !== head) throw new Error("fetched GitHub PR head does not match expected HEAD");
+}
+
 function strictRetainedOnRemote(target, head) {
   const advertisements = [];
   let candidateSourceCount = 0;
@@ -420,17 +558,46 @@ function strictLiveProcesses(target) {
 }
 
 function runStrictWorktreeRemove(args) {
-  if (
-    args.length !== 4 ||
-    args[0] !== "--strict-worktree-remove" ||
-    args[2] !== "--expected-head"
-  ) {
-    throw new Error("expected --strict-worktree-remove <absolute-path> --expected-head <full-oid>");
+  const basicArgs =
+    args.length === 4 &&
+    args[0] === "--strict-worktree-remove" &&
+    args[2] === "--expected-head";
+  const githubPrArgs =
+    args.length === 10 &&
+    args[0] === "--strict-worktree-remove" &&
+    args[2] === "--expected-head" &&
+    args[4] === "--retained-by-github-pr" &&
+    args[8] === "--expected-base";
+  if (!basicArgs && !githubPrArgs) {
+    throw new Error(
+      "expected --strict-worktree-remove <absolute-path> --expected-head <full-oid> " +
+        "[--retained-by-github-pr <remote> <owner/repo> <number> --expected-base <branch>]",
+    );
   }
   const requestedPath = args[1];
   const expectedHead = args[3];
   if (!path.isAbsolute(requestedPath)) throw new Error("target path must be absolute");
   if (!FULL_OID.test(expectedHead)) throw new Error("expected HEAD must be a full OID");
+  let githubProof = null;
+  if (githubPrArgs) {
+    const remote = args[5];
+    const repo = args[6];
+    const numberText = args[7];
+    const base = args[9];
+    if (!remote || /\s/.test(remote)) throw new Error("GitHub PR proof remote is malformed");
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || repo.endsWith(".git")) {
+      throw new Error("GitHub PR proof repository is malformed");
+    }
+    if (!/^[1-9][0-9]*$/.test(numberText) || numberText.length > 10) {
+      throw new Error("GitHub PR proof number is malformed");
+    }
+    if (!base || base.length > STRICT_MAX_REF_BYTES || strictSingleLine(`${base}\n`, "expected base") !== base) {
+      throw new Error("GitHub PR proof base is malformed");
+    }
+    const number = Number(numberText);
+    if (!Number.isSafeInteger(number)) throw new Error("GitHub PR proof number is out of range");
+    githubProof = { remote, repo, number, base };
+  }
 
   let target;
   try {
@@ -462,7 +629,8 @@ function runStrictWorktreeRemove(args) {
   ]);
   if (status !== "") throw new Error("target worktree is not clean");
 
-  strictRetainedOnRemote(target, actualHead);
+  if (githubProof) strictRetainedByMergedGithubPr(target, actualHead, githubProof);
+  else strictRetainedOnRemote(target, actualHead);
   strictLiveProcesses(target);
   process.stdout.write(`${JSON.stringify({
     ok: true,

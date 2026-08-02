@@ -262,9 +262,13 @@ test("normative proof scopes remote deletion and uses exact expected OIDs", () =
   );
   assert.ok(
     worktreeTransaction.includes(
-      `env -u WT_GUARD_BYPASS -u WT_GUARD_TEST_MODE -u WT_GUARD_TEST_LSOF_BIN node scripts/worktree-guard.mjs --strict-worktree-remove "$canonical_worktree_path" --expected-head "$audited_worktree_head_oid"`,
+      `env -u WT_GUARD_BYPASS -u WT_GUARD_TEST_MODE -u WT_GUARD_TEST_LSOF_BIN node scripts/worktree-guard.mjs --strict-worktree-remove "$canonical_worktree_path" --expected-head "$audited_worktree_head_oid" "\${strict_guard_retention_args[@]}"`,
     ),
   );
+  assert.match(worktreeTransaction, /--retained-by-github-pr origin "\$audited_gh_repo"/);
+  assert.match(worktreeTransaction, /"\$audited_merged_pr_number"/);
+  assert.match(worktreeTransaction, /--expected-base "\$audited_remote_main_branch"/);
+  assert.match(worktreeTransaction, /queries\/fetches only the exact|queries\/fetches only|queries\/fetches/);
   assert.match(
     worktreeTransaction,
     /if env -u WT_GUARD_BYPASS -u WT_GUARD_TEST_MODE -u WT_GUARD_TEST_LSOF_BIN node scripts\/worktree-guard\.mjs --strict-worktree-remove[\s\S]*else[\s\S]*PRESERVE - strict worktree guard failed/,
