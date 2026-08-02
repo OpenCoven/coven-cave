@@ -710,3 +710,9 @@
   overflow:hidden;
 }
 .gh-budget-fill { display:block; height:100%; background:currentColor; border-radius:2px; }
+
+/* The row's hand-off slot. The host renders the familiar picker into it, so
+   the sizing lives here rather than in the stream — the row only guarantees
+   the space and the hover reveal. */
+.gh-stream-handoff { display:inline-flex; align-items:center; }
+.gh-stream-handoff .gh-action-wrap { display:inline-flex; }
