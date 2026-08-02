@@ -1,0 +1,155 @@
+// @ts-nocheck
+//
+// Source pins for the code reading path (cave-f6mu9). The model logic is
+// covered behaviorally in src/lib/code-reading.test.ts; what these guard is
+// the WIRING, which is the part that silently rots: chrome that renders but is
+// never wired, a context that is never provided, a handoff whose origin is
+// dropped one hop before it arrives.
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const read = (rel) => readFile(new URL(rel, import.meta.url), "utf8");
+
+const bubble = await read("./message-bubble.tsx");
+const wiring = await read("./message-dom-wiring.ts");
+const chatView = await read("./chat-view.tsx");
+const workspace = await read("./workspace.tsx");
+const codeView = await read("./code-view.tsx");
+const inspector = await read("./code-reading-inspector.tsx");
+const codeCss = await read("../styles/cave-md/code.css");
+
+// ── Chrome renders with the identity the wiring layer needs ─────────────────
+
+// Provenance must be derived from the fence, not guessed downstream: it is
+// what gates every action, so the render and the wiring must agree on one
+// source of truth.
+assert.match(bubble, /deriveReadingBlock\(info\)/, "the frame derives provenance from the fence info");
+assert.match(
+  bubble,
+  /data-code-provenance="\$\{escHtml\(block\.provenance\)\}"/,
+  "provenance rides on the wrap so the wiring layer can read it back",
+);
+assert.match(bubble, /data-code-path="\$\{escHtml\(block\.path\)\}"/, "the path rides on the wrap");
+
+// The controls exist in the markup…
+assert.match(bubble, /cave-code-read-btn/, "renders a Read control");
+assert.match(bubble, /cave-code-compare-btn/, "renders a Compare control");
+assert.match(bubble, /cave-code-prov cave-code-prov--/, "renders the provenance pill");
+assert.match(bubble, /class="cave-code-stale" hidden/, "the staleness slot starts hidden");
+
+// Compare is gated on provenance — a quoted block has no working tree to
+// compare against, so the control must not render for one.
+assert.match(
+  bubble,
+  /canCompare\(block\.provenance\)\s*\?/,
+  "Compare renders only when the provenance supports it",
+);
+
+// ── …and are actually wired ─────────────────────────────────────────────────
+
+assert.match(wiring, /function wireCodeReading\(/, "there is a reading wiring pass");
+assert.match(
+  wiring,
+  /wireCodeReading\(el, reading\)/,
+  "useWireCopyButtons runs the reading pass alongside copy/collapse",
+);
+assert.match(
+  wiring,
+  /\.cave-code-read-btn"\)\?\.addEventListener\("click"/,
+  "the Read control gets a click handler",
+);
+assert.match(
+  wiring,
+  /\.cave-code-compare-btn"\)\?\.addEventListener\("click"/,
+  "the Compare control gets a click handler",
+);
+
+// Compare must land on the compare tab, not the snippet the reader already saw.
+assert.match(wiring, /open\("compare"\)/, "Compare opens the compare tab");
+
+// No inspector on this surface ⇒ no controls. Rendering a button that does
+// nothing is worse than rendering none, and the same markdown renders on
+// settings/journal/palette surfaces that have no inspector.
+assert.match(
+  wiring,
+  /if \(reading\) wrap\.classList\.add\("cave-code-wrap--readable"\)/,
+  "controls are revealed only where a reading context exists",
+);
+assert.match(
+  codeCss,
+  /\.cave-code-read-btn,\s*\n\.cave-code-compare-btn \{\s*\n\s*display: none;/,
+  "the controls are hidden by default in CSS, not merely unwired",
+);
+
+// The staleness check must read the WORKING TREE, and must not claim anything
+// before it has an answer.
+assert.match(wiring, /\/api\/project-file\?path=/, "staleness reads the real file");
+assert.match(wiring, /if \(!marker\.isConnected\) return;/, "a re-render mid-flight is not a crash");
+assert.match(
+  wiring,
+  /wrap\.setAttribute\("data-code-staleness", state\)/,
+  "the verdict lands on the wrap so CSS can react to it",
+);
+
+// ── The chat surface provides the context and renders the panel ─────────────
+
+assert.match(chatView, /<CodeReadingContext\.Provider value=\{codeReading\}>/, "chat provides the reading context");
+assert.match(chatView, /<CodeReadingInspector/, "chat renders the inspector");
+assert.match(
+  chatView,
+  /projectRoot: activeProjectRoot \|\| null/,
+  "the context carries the session's active project root, not a guess",
+);
+// The pin is read after mount: localStorage does not exist during SSR and
+// reading it during render would hydrate-mismatch.
+assert.match(
+  chatView,
+  /useEffect\(\(\) => \{\s*\n\s*setReadingPin\(readCodeReadingPin\(familiar\.id\)\);/,
+  "the stored pin is adopted after mount, not read during render",
+);
+assert.match(chatView, /writeCodeReadingPin\(pin, familiar\.id\)/, "the pin persists per familiar");
+
+// Reference and Quote must reach the composer — the whole point of selecting
+// lines is carrying them into the reply.
+assert.match(chatView, /onReference=\{/, "Reference is wired to the composer");
+assert.match(chatView, /onQuote=\{/, "Quote is wired to the composer");
+
+// ── The handoff keeps its origin all the way to the workshop ────────────────
+
+assert.match(
+  chatView,
+  /new CustomEvent\("cave:open-project-file"/,
+  "Open in workshop reuses the existing shell route rather than a parallel one",
+);
+assert.match(chatView, /origin: \{ \.\.\.origin, selectionLabel: range \}/, "the selected range travels with the open");
+assert.match(
+  workspace,
+  /origin: detail\.origin/,
+  "the shell handler forwards the origin into the pending open",
+);
+assert.match(codeView, /<CodeSourceContext/, "the Code surface renders the source-context card");
+assert.match(
+  codeView,
+  /setOriginDismissed\(false\)/,
+  "a new arrival re-shows the card — dismissing means 'read', not 'never again'",
+);
+
+// ── A11y and layout promises ────────────────────────────────────────────────
+
+// Only the phone-width modal traps focus; a split/overlay inspector sits beside
+// a live conversation and trapping there would strand the reader.
+assert.match(
+  inspector,
+  /useFocusTrap\(mode === "modal", panelRef/,
+  "focus is trapped for the modal layout only",
+);
+assert.match(inspector, /aria-modal=\{mode === "modal" \? true : undefined\}/, "aria-modal matches the real behavior");
+assert.match(inspector, /focus-ring/, "interactive elements carry the focus ring");
+assert.match(inspector, /aria-selected=\{selected\}/, "line rows expose their selected state");
+
+// Selection is not colour-only.
+assert.match(
+  await read("../styles/code-reading.css"),
+  /\.cri-row--selected \{[\s\S]*?box-shadow: inset 2px 0 0/,
+  "selection carries a rule as well as a tint",
+);

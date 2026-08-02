@@ -258,3 +258,11 @@
  * into them must reveal them even without a pointer. */
 .cave-code-wrap:focus-within .cave-copy-btn,
 .group:focus-within .cave-copy-btn { opacity: 1; }
+
+/* Reading controls (cave-f6mu9) reveal on the same gesture as Copy — they are
+ * peers in the header, and splitting the reveal would make one of them feel
+ * like a different class of control than it is. */
+.cave-code-wrap:hover .cave-code-read-btn,
+.cave-code-wrap:hover .cave-code-compare-btn,
+.cave-code-wrap:focus-within .cave-code-read-btn,
+.cave-code-wrap:focus-within .cave-code-compare-btn { opacity: 1; }

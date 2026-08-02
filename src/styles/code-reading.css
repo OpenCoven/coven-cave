@@ -1,0 +1,334 @@
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CODE READING INSPECTOR (cave-f6mu9)
+
+   Component-imported by code-reading-inspector.tsx, so it code-splits with
+   the reading surface and never lands on the root/home CSS budget (#3264).
+
+   Three layouts, one sheet: `split` docks to the right of the conversation,
+   `overlay` floats above it, `modal` takes the phone-width screen. They share
+   every inner rule — only the shell's positioning differs, so a reader who
+   changes the pin sees the same panel move, not a different panel.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.cri {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* Docked beside the transcript: no shadow, it is part of the layout. */
+.cri--split {
+  border-radius: 0;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  height: 100%;
+  min-width: 22.5rem;
+}
+
+/* Floating over the transcript, anchored bottom-right so it does not cover
+   the message the reader just opened it from. */
+.cri--overlay {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 60;
+  width: min(34rem, calc(100vw - var(--space-8)));
+  max-height: min(70vh, 40rem);
+  box-shadow: 0 14px 46px -18px var(--shadow-color);
+}
+
+.cri--modal {
+  position: fixed;
+  inset: var(--space-3);
+  z-index: 61;
+  box-shadow: 0 14px 46px -18px var(--shadow-color);
+}
+
+.cri-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--backdrop-scrim);
+}
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+
+.cri-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  min-height: 2.25rem;
+}
+
+.cri-spacer {
+  flex: 1;
+  min-width: var(--space-1);
+}
+
+.cri-prov,
+.cri-stale {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  padding: 0.05em 0.45em;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Accent marks the one provenance that connects to something real on disk. */
+.cri-prov--file-backed {
+  border-color: color-mix(in oklch, var(--accent-presence) 42%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--accent-presence);
+}
+
+.cri-stale {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.cri-name {
+  flex: none;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 14rem;
+}
+
+.cri-dir,
+.cri-lang {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 11rem;
+}
+
+.cri-pins {
+  flex: none;
+  display: inline-flex;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.cri-pin {
+  border: 0;
+  border-left: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  padding: 0.15em 0.5em;
+  cursor: pointer;
+}
+.cri-pin:first-child {
+  border-left: 0;
+}
+.cri-pin:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.cri-pin--on {
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  color: var(--accent-presence);
+}
+
+.cri-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.cri-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+
+.cri-tabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.cri-tab {
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  padding: 0.2em 0.6em;
+  cursor: pointer;
+}
+.cri-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.cri-tab--on {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--text-primary);
+}
+
+/* ── Body ─────────────────────────────────────────────────────────────── */
+
+.cri-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg-base);
+}
+
+.cri-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.65;
+  padding: var(--space-2) 0;
+}
+
+.cri-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding-right: var(--space-3);
+}
+
+/* Selection is carried by a fill AND a left rule, so it survives a reader who
+   cannot distinguish the tint (colour is never the only channel). */
+.cri-row--selected {
+  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent-presence);
+}
+
+.cri-row--add {
+  background: color-mix(in oklch, var(--color-success) 12%, transparent);
+}
+.cri-row--del {
+  background: var(--danger-bg);
+}
+
+.cri-ln {
+  flex: none;
+  width: 3.25rem;
+  padding-left: var(--space-2);
+  text-align: right;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  user-select: none;
+  cursor: pointer;
+}
+.cri-ln:hover {
+  color: var(--accent-presence);
+}
+.cri-ln--static {
+  cursor: default;
+}
+
+.cri-src {
+  flex: 1;
+  min-width: 0;
+  white-space: pre;
+  overflow-x: auto;
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+  padding: 0;
+}
+
+.cri-note {
+  margin: 0;
+  padding: var(--space-4) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-align: center;
+}
+.cri-note--bad {
+  color: var(--danger-text);
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+
+.cri-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+}
+
+.cri-sel {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.cri-clear {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.cri-clear:hover {
+  color: var(--text-primary);
+}
+
+/* The overlay and modal arrive; nothing moves for a reader who asked it not to. */
+@media (prefers-reduced-motion: no-preference) {
+  .cri--overlay,
+  .cri--modal {
+    animation: cri-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+@keyframes cri-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
