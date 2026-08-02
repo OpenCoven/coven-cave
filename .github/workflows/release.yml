@@ -67,6 +67,11 @@ on:
         required: false
         default: false
         type: boolean
+      allow_unconfigured_x_app:
+        description: "RECOVERY ONLY: ship with X integration disabled when its public client ID is unavailable. Tag pushes always stay fail-closed."
+        required: false
+        default: false
+        type: boolean
       use_current_release_tooling:
         description: "RECOVERY ONLY: build tag source with the audited release.sh and sidecar-bundle.sh from this workflow commit. Tag pushes always use tag tooling."
         required: false
@@ -276,6 +281,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Require OpenCoven X app configuration
+        env:
+          COVEN_CAVE_X_RELEASE_DISABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app && '1' || '' }}
         run: node scripts/check-x-app-release.mjs
 
       - name: Require signed OpenCode compatibility registry
@@ -894,6 +901,7 @@ jobs:
           # signed-registry gates (cave-yp21x). `inputs` is readable from every
           # job of a workflow_dispatch run, so this needs no job-output plumbing.
           COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_registries }}
+          COVEN_RELEASE_X_GUARD_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
         run: |
           set -euo pipefail
           bash scripts/release-notes.sh "$RELEASE_TAG" > /tmp/release-body.md

@@ -41,4 +41,20 @@ const configured = spawnSync(process.execPath, [script], {
 assert.equal(configured.status, 0);
 assert.doesNotMatch(configured.stdout + configured.stderr, /test-client-id-123/);
 
+const explicitlyDisabled = spawnSync(process.execPath, [script], {
+  cwd,
+  encoding: "utf8",
+  env: {
+    ...process.env,
+    COVEN_CAVE_X_PRODUCTION_CLIENT_ID: "",
+    COVEN_CAVE_X_RELEASE_DISABLED: "1",
+  },
+});
+assert.equal(explicitlyDisabled.status, 0);
+assert.equal(explicitlyDisabled.stdout, "");
+assert.equal(
+  explicitlyDisabled.stderr,
+  "::warning::Shipping with X integration disabled by an explicit manual release override.\n",
+);
+
 console.log("check-x-app-release.test.mjs: ok");

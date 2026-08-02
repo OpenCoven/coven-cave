@@ -204,6 +204,18 @@ test("the provenance block never displaces the compare link", () => {
   assert.match(body.trimEnd().split("\n").at(-1) ?? "", /^\*\*Full changelog:\*\*/);
 });
 
+test("the X recovery override is permanently disclosed in release provenance", () => {
+  const skipped = render("v7.0.55", undefined, { COVEN_RELEASE_X_GUARD_SKIPPED: "true" });
+  assert.match(skipped, /^## Build provenance/m);
+  assert.match(skipped, /allow_unconfigured_x_app/);
+  assert.match(skipped, /X integration remains disabled/);
+  assert.match(skipped, /tag push cannot skip the X app configuration check/);
+  assert.doesNotMatch(
+    render("v7.0.55", undefined, { COVEN_RELEASE_X_GUARD_SKIPPED: "1" }),
+    /allow_unconfigured_x_app/,
+  );
+});
+
 test("the fixture is genuinely self-contained", () => {
   // The point of cave-5yyj1: no assertion above may depend on this checkout's
   // own tags, CHANGELOG, or slug. If the real slug leaks through, the script is
