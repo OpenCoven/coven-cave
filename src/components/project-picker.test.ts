@@ -24,7 +24,10 @@ const actionsMenu = readFileSync(new URL("./composer-actions-menu.tsx", import.m
 // ── One shared add flow: register + grant in a single human-initiated step ──
 assert.match(src, /export function useAddProjectFlow\(/, "shared flow exported");
 assert.match(src, /addChatProject\(\{/, "register+grant goes through the tested helper");
+assert.match(src, /createProject\?: \(/, "the shared flow can rely on the throwing creator alone");
 assert.match(src, /createProjectOrThrow: args\.createProjectOrThrow/, "the shared flow threads the throwing creation path");
+assert.match(src, /const canAddProject = Boolean\(createProject \|\| createProjectOrThrow\)/, "a throwing-only creator still enables the shared add flow");
+assert.match(src, /onAddProject=\{canAddProject \? addFlow\.beginAddProject : undefined\}/, "the picker exposes add when only the throwing creator is available");
 assert.match(src, /shell_pick_directory/, "native folder dialog on desktop builds");
 assert.match(src, /DirectoryPickerModal/, "web fallback directory browser");
 
@@ -116,6 +119,8 @@ assert.match(
 );
 assert.match(contextPill, /<ProjectPickerPopover/, "the context pill opens the shared ProjectPickerPopover");
 assert.match(contextPill, /useAddProjectFlow\(\{/, "the context pill folds in the shared add-project flow");
+assert.match(contextPill, /const canAddProject = Boolean\(config\.createProject \|\| config\.createProjectOrThrow\)/, "composer context supports throwing-only project creation");
+assert.match(contextPill, /onAddProject=\{context\.canAddProject \? context\.addFlow\.beginAddProject : undefined\}/, "composer pickers expose the add flow for the throwing creator");
 assert.match(
   contextPill,
   /projectAccessLabel\(context\.selectedProject\.access\)/,

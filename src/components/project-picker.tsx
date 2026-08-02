@@ -46,7 +46,7 @@ export type AddProjectFlow = {
  */
 export function useAddProjectFlow(args: {
   familiarId: string | null;
-  createProject: (
+  createProject?: (
     name: string,
     root: string,
     options?: CreateProjectOptions,
@@ -72,7 +72,7 @@ export function useAddProjectFlow(args: {
     const result = await addChatProject({
       root,
       familiarId: args.familiarId,
-      createProject: args.createProject,
+      createProject: args.createProject ?? (async () => null),
       createProjectOrThrow: args.createProjectOrThrow,
       existingProjectId: existing?.id ?? null,
     });
@@ -362,7 +362,7 @@ export function ProjectPicker({
   /** False keeps null rendered as "Choose project" until a durable id is selected. */
   defaultToFirst?: boolean;
   familiarId?: string | null;
-  /** From the caller's useProjects(); presence enables the "Add project…" row. */
+  /** From the caller's useProjects(); either creator enables the "Add project…" row. */
   createProject?: (
     name: string,
     root: string,
@@ -395,6 +395,7 @@ export function ProjectPicker({
     projects,
     onAdded: onChange,
   });
+  const canAddProject = Boolean(createProject || createProjectOrThrow);
 
   return (
     <>
@@ -432,7 +433,7 @@ export function ProjectPicker({
         onChange={onChange}
         allowNoProject={allowNoProject}
         defaultToFirst={defaultToFirst}
-        onAddProject={createProject ? addFlow.beginAddProject : undefined}
+        onAddProject={canAddProject ? addFlow.beginAddProject : undefined}
         addingProject={addFlow.adding}
         ariaLabel={ariaLabel}
       />
@@ -441,7 +442,7 @@ export function ProjectPicker({
           {addFlow.addError}
         </span>
       ) : null}
-      {createProject ? addFlow.addProjectModal : null}
+      {canAddProject ? addFlow.addProjectModal : null}
     </>
   );
 }
