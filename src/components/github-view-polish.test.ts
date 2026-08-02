@@ -238,6 +238,21 @@ assert.match(
 for (const [name, src] of [["stream", stream], ["stage", stage]]) {
   assert.doesNotMatch(src, /\bCody\b/i, `${name} names no specific familiar`);
 }
+
+// The row is both a click and a double-click target, so every interactive
+// island nested inside it must swallow BOTH. Stopping only `click` leaves
+// `dblclick` bubbling, and an impatient double-click on the hand-off picker or
+// the Peek verb opens the focused read out from under the interaction.
+assert.match(stream, /const stopRowActivation = useCallback\(/, "one helper swallows row activation for nested islands");
+{
+  const islands = stream.match(/onDoubleClick=\{stopRowActivation\}/g) ?? [];
+  assert.ok(islands.length >= 5, `every nested island stops dblclick (found ${islands.length}, expected >= 5)`);
+}
+assert.match(
+  stream,
+  /className="gh-stream-handoff"\s*\n\s*onClick=\{stopRowActivation\}\s*\n\s*onDoubleClick=\{stopRowActivation\}/,
+  "the hand-off slot swallows both activations",
+);
 assert.match(boardCss, /\.gh-tone--ok\s+\{ --gh-tone:var\(--color-success\); \}/, "one custom property carries a row's tone to every part that paints it");
 
 // ── Landing gates ─────────────────────────────────────────────────────────────

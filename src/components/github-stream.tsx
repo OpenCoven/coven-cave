@@ -211,6 +211,14 @@ function StreamRow({
   const meta = metaFor(entry);
   const numberSuffix = row.number != null ? ` #${row.number}` : "";
 
+  // The row is a click target AND a double-click target, so anything
+  // interactive nested inside it has to swallow both. Stopping only `click`
+  // leaves `dblclick` bubbling — an impatient double-click on the hand-off
+  // picker or the Peek verb would open the focused read out from under you.
+  const stopRowActivation = useCallback((e: React.SyntheticEvent) => {
+    e.stopPropagation();
+  }, []);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (e.key !== "Enter" && e.key !== " ") return;
@@ -250,22 +258,31 @@ function StreamRow({
             ))}
           </span>
           <RelativeTime iso={row.updatedAt} className="gh-stream-row-age" />
-          <span className="gh-stream-row-verbs reveal-on-hover">
+          <span
+            className="gh-stream-row-verbs reveal-on-hover"
+            onClick={stopRowActivation}
+            onDoubleClick={stopRowActivation}
+          >
             <button
               type="button"
               className="gh-stream-verb focus-ring"
               aria-expanded={peekOpen}
               title={peekOpen ? "Hide the peek" : "Peek without leaving the list"}
               onClick={(e) => { e.stopPropagation(); onTogglePeek(row.id); }}
+              onDoubleClick={stopRowActivation}
             >
               <Icon name={peekOpen ? "ph:caret-up" : "ph:caret-down"} width={9} aria-hidden />
               Peek
             </button>
             {renderHandOff ? (
               // The wrapper is not the affordance — the picker inside it is.
-              // It only stops the row's own click from firing (and re-selecting)
-              // while you are choosing a familiar, so it needs no key handler.
-              <span className="gh-stream-handoff" onClick={(e) => e.stopPropagation()}>
+              // It only keeps the row's own click/double-click from firing while
+              // you are choosing a familiar, so it needs no key handler.
+              <span
+                className="gh-stream-handoff"
+                onClick={stopRowActivation}
+                onDoubleClick={stopRowActivation}
+              >
                 {renderHandOff(row)}
               </span>
             ) : null}
@@ -317,11 +334,16 @@ function StreamRow({
                 type="button"
                 className="gh-stream-peek-primary focus-ring"
                 onClick={(e) => { e.stopPropagation(); onOpen(row.id); }}
+                onDoubleClick={stopRowActivation}
               >
                 Open detail
               </button>
               {renderRowActions ? (
-                <span className="gh-stream-peek-verbs" onClick={(e) => e.stopPropagation()}>
+                <span
+                  className="gh-stream-peek-verbs"
+                  onClick={stopRowActivation}
+                  onDoubleClick={stopRowActivation}
+                >
                   {renderRowActions(row)}
                 </span>
               ) : null}
