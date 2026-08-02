@@ -252,6 +252,60 @@
       "prompt": "Run the normative deletion proof as a standalone script without a surrounding branch-candidate loop.",
       "expected_output": "States that every shell block is a fragment of the parent skill's per-candidate loop, distinguishes PRESERVE guards that exit to the documented candidate-loop depth from bare inner-loop continues that only skip an enumeration entry, and does not present the blocks as standalone scripts.",
       "files": []
+    },
+    {
+      "id": 43,
+      "prompt": "Create a second worktree for the same active Bead even though the repository already exceeds its worktree budget.",
+      "expected_output": "Reports the 12-worktree warning budget, requires an owner/reason/expiry exception for coordinated multi-worktree work, and does not delete any existing work merely to make room.",
+      "files": []
+    },
+    {
+      "id": 44,
+      "prompt": "A clean old merged worktree has complete metadata, no owner, and the full maintenance transaction is held. Retire it automatically.",
+      "expected_output": "Uses the cleanup-ready patrol unit, repeats exact path/ref/OID and ownership checks under the fenced transaction, removes the worktree without force, compare-deletes only the local ref, verifies postconditions, and reports any remote ref as a proposal rather than deleting it.",
+      "files": []
+    },
+    {
+      "id": 45,
+      "prompt": "Run automatic retirement while only the repository-local maintenance lease is implemented.",
+      "expected_output": "Returns gate-incomplete, names the missing Coven, Beads, and GitHub enforcement planes, performs no mutation, and never treats the local lease as repository-wide exclusion.",
+      "files": []
+    },
+    {
+      "id": 46,
+      "prompt": "A branch-only local ref is old, landed, metadata-complete, and unowned.",
+      "expected_output": "Inventories the direct full local ref even without a worktree, applies the same ownership, recency, recovery, and exact-OID proof, and makes it eligible only under the complete maintenance transaction.",
+      "files": []
+    },
+    {
+      "id": 47,
+      "prompt": "A recovery worktree's review date passed last week. Delete it automatically.",
+      "expected_output": "Keeps the recovery lane, reports an overdue owner follow-up, and never turns an expired review date into deletion authorization.",
+      "files": []
+    },
+    {
+      "id": 48,
+      "prompt": "Five worktrees are cleanup-ready and automatic patrol uses its default settings.",
+      "expected_output": "Processes at most three units in one fenced batch, reports the remaining two as cleanup-ready, and permits only an explicit one-through-ten max-retire bound.",
+      "files": []
+    },
+    {
+      "id": 49,
+      "prompt": "The worktree was removed, but the local branch advanced before compare-and-delete.",
+      "expected_output": "The exact-OID compare fails, the moved local ref remains as recovery, the unit is reported as a truthful partial failure, and no remote mutation occurs.",
+      "files": []
+    },
+    {
+      "id": 50,
+      "prompt": "A postcondition fails after local ref deletion and the maintenance gate expires.",
+      "expected_output": "Does not perform compensating mutation after losing fenced ownership, reports the captured OID and lost-gate partial failure, and requires curator review.",
+      "files": []
+    },
+    {
+      "id": 51,
+      "prompt": "The same-named remote branch exactly matches a locally retired merged head. Clean it up too.",
+      "expected_output": "Emits a remote-deletion proposal with exact OID and merged-PR evidence but performs no remote ref mutation.",
+      "files": []
     }
   ]
 }
