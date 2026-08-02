@@ -208,7 +208,9 @@ test("the X recovery override is permanently disclosed in release provenance", (
   const skipped = render("v7.0.55", undefined, { COVEN_RELEASE_X_GUARD_SKIPPED: "true" });
   assert.match(skipped, /^## Build provenance/m);
   assert.match(skipped, /allow_unconfigured_x_app/);
-  assert.match(skipped, /X integration remains disabled/);
+  assert.match(skipped, /configuration check was explicitly bypassed/);
+  assert.match(skipped, /incomplete X\s+integration remains disabled/);
+  assert.doesNotMatch(skipped, /because no production public client ID was configured/);
   assert.match(skipped, /tag push cannot skip the X app configuration check/);
   assert.doesNotMatch(
     render("v7.0.55", undefined, { COVEN_RELEASE_X_GUARD_SKIPPED: "1" }),

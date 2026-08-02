@@ -155,8 +155,8 @@ fi
 if [ "$x_guard_skipped" = "true" ]; then
   cat <<'PROVENANCE'
 This release was built on a manual run with `allow_unconfigured_x_app` enabled.
-The incomplete X integration remains disabled in this build because no
-production public client ID was configured.
+The X app configuration check was explicitly bypassed. The incomplete X
+integration remains disabled in this build.
 
 Releases published from a tag push cannot skip the X app configuration check.
 
