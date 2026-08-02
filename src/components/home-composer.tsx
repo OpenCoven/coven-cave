@@ -70,7 +70,12 @@ import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
 import { DESTINATIONS, placeholderFor, type Destination } from "@/components/home/home-destinations";
-import { resolveHomeComposerFamiliar, resolveHomeComposerProject } from "@/lib/home-composer-context";
+import {
+  isHomeComposerProjectLaunchReady,
+  projectsForHomeComposerScope,
+  resolveHomeComposerFamiliar,
+  resolveHomeComposerProject,
+} from "@/lib/home-composer-context";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -221,9 +226,7 @@ export function HomeComposer({
     familiarId: selectedFamiliarId || null,
   });
   const projects = useMemo(
-    () => selectedFamiliarId
-      ? scopedProjects.filter((project) => project.access !== undefined)
-      : scopedProjects,
+    () => projectsForHomeComposerScope(scopedProjects, selectedFamiliarId),
     [scopedProjects, selectedFamiliarId],
   );
   const [selectedProjectId, setSelectedProjectId] = useState("");
@@ -241,12 +244,13 @@ export function HomeComposer({
     [projects, selectedProjectId, recentProjectRoot],
   );
   const selectedProjectRoot = selectedProject?.root ?? "";
-  const projectLaunchReady =
-    projectsLoadedSuccessfully &&
-    !projectsLoading &&
-    !projectsError &&
-    selectedProject?.access !== undefined &&
-    Boolean(selectedProjectRoot);
+  const projectLaunchReady = isHomeComposerProjectLaunchReady({
+    familiarId: selectedFamiliarId,
+    projectsLoadedSuccessfully,
+    projectsLoading,
+    projectsError,
+    selectedProject,
+  });
   const projectLaunchMessage = projectsLoading
     ? "Checking project access…"
     : projectsError
@@ -872,7 +876,7 @@ export function HomeComposer({
           />
         ) : null}
 
-        {!projectLaunchReady ? (
+        {destination === "chat" && !projectLaunchReady ? (
           <p
             role={projectsError ? "alert" : "status"}
             className="mx-auto mb-2 max-w-3xl px-3 text-[length:var(--text-xs)] leading-5 text-[var(--text-muted)]"

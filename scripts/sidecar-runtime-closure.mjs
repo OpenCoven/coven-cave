@@ -412,17 +412,27 @@ async function copyNextRuntimeFiles(standaloneRoot, dependencyRoot, destination,
     path.join(standaloneRoot, "node_modules", "next"),
     path.join(dependencyRoot, "next"),
   ];
+  // A required file can be beneath a symlinked `next` package directory, so
+  // checking only the final directory entry is not enough to enforce the
+  // staging-root boundary. Resolve both the candidate and the allowed roots
+  // before copying, while still letting copyResolvedEntry apply its existing
+  // final-entry link checks.
+  const resolvedAllowedLinkRoots = await Promise.all(allowedLinkRoots.map((root) => realpath(root)));
 
   for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
     let source = null;
     for (const root of nextRoots) {
       const candidate = path.join(root, relativePath);
       try {
-        const metadata = await stat(candidate);
+        const resolvedCandidate = await realpath(candidate);
+        if (!resolvedAllowedLinkRoots.some((allowedRoot) => isInside(allowedRoot, resolvedCandidate))) {
+          throw new Error(`sidecar dependency link escapes its allowed roots: ${candidate} -> ${resolvedCandidate}`);
+        }
+        const metadata = await stat(resolvedCandidate);
         if (!metadata.isFile()) {
           throw new Error(`required Next sidecar runtime file is not a regular file: ${relativePath}`);
         }
-        source = candidate;
+        source = resolvedCandidate;
         break;
       } catch (error) {
         if (error.code !== "ENOENT") throw error;
@@ -434,7 +444,7 @@ async function copyNextRuntimeFiles(standaloneRoot, dependencyRoot, destination,
     await copyResolvedEntry(
       source,
       path.join(destination, "node_modules", "next", relativePath),
-      { followLinks: true, allowedLinkRoots },
+      { followLinks: true, allowedLinkRoots: resolvedAllowedLinkRoots },
     );
   }
 }

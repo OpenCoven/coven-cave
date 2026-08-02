@@ -1,6 +1,48 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveHomeComposerFamiliar, resolveHomeComposerProject } from "./home-composer-context.ts";
+import {
+  isHomeComposerProjectLaunchReady,
+  projectsForHomeComposerScope,
+  resolveHomeComposerFamiliar,
+  resolveHomeComposerProject,
+} from "./home-composer-context.ts";
+
+test("home composer shows the unscoped registry, then filters to familiar access", () => {
+  const projects = [
+    { id: "open", name: "Open", root: "/work/open", access: undefined },
+    { id: "readable", name: "Readable", root: "/work/readable", access: "read" },
+  ] as never[];
+  assert.deepEqual(
+    projectsForHomeComposerScope(projects, null).map((project) => project.id),
+    ["open", "readable"],
+    "initial setup must retain every locally registered project",
+  );
+  assert.deepEqual(
+    projectsForHomeComposerScope(projects, "sage").map((project) => project.id),
+    ["readable"],
+    "a familiar scope must retain only projects with server-derived access",
+  );
+});
+
+test("home composer never treats project access as launch permission without a familiar", () => {
+  const selectedProject = { root: "/work/readable", access: "read" } as never;
+  const readyArgs = {
+    projectsLoadedSuccessfully: true,
+    projectsLoading: false,
+    projectsError: null,
+    selectedProject,
+  };
+  assert.equal(
+    isHomeComposerProjectLaunchReady({ ...readyArgs, familiarId: null }),
+    false,
+    "chat launch must remain blocked before familiar setup even if a stale access field is present",
+  );
+  assert.equal(
+    isHomeComposerProjectLaunchReady({ ...readyArgs, familiarId: "sage" }),
+    true,
+    "a loaded project with familiar access is launchable",
+  );
+});
 
 test("home composer excludes archived familiars and falls back from an archived active familiar", () => {
   const familiars = [

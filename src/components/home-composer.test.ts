@@ -37,8 +37,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const projects = useMemo\(\s*\(\) => selectedFamiliarId\s*\? scopedProjects\.filter\(\(project\) => project\.access !== undefined\)\s*:\s*scopedProjects,/,
-  "HomeComposer should filter by access only when it has a familiar scope",
+  /projectsForHomeComposerScope\(scopedProjects, selectedFamiliarId\)/,
+  "HomeComposer should apply the operator-versus-familiar project scope helper",
 );
 assert.match(
   source,
@@ -47,8 +47,8 @@ assert.match(
 );
 assert.match(
   source,
-  /role=\{projectsError \? "alert" : "status"\}[\s\S]{0,220}\{projectLaunchMessage\}/,
-  "HomeComposer should render launch guidance while chat is blocked",
+  /destination === "chat" && !projectLaunchReady/,
+  "HomeComposer should not show chat-only launch guidance for task creation",
 );
 
 // Chat revamp 1a + minimal pass: the hero is the hearth card's heading —

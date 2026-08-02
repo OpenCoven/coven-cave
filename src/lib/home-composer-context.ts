@@ -2,6 +2,35 @@ import type { CaveProject } from "./cave-projects-types";
 import type { Familiar } from "./types";
 import { projectForRoot } from "./chat-projects.ts";
 
+/**
+ * The home composer uses the operator registry before familiar setup, then
+ * switches to the server-authorized familiar view once a familiar exists.
+ */
+export function projectsForHomeComposerScope(
+  projects: readonly CaveProject[],
+  familiarId: string | null | undefined,
+): CaveProject[] {
+  return familiarId
+    ? projects.filter((project) => project.access !== undefined)
+    : [...projects];
+}
+
+/** Chat launch needs both an actual familiar and server-derived project access. */
+export function isHomeComposerProjectLaunchReady(args: {
+  familiarId: string | null | undefined;
+  projectsLoadedSuccessfully: boolean;
+  projectsLoading: boolean;
+  projectsError: string | null;
+  selectedProject: Pick<CaveProject, "access" | "root"> | null;
+}): boolean {
+  return Boolean(args.familiarId)
+    && args.projectsLoadedSuccessfully
+    && !args.projectsLoading
+    && !args.projectsError
+    && args.selectedProject?.access !== undefined
+    && Boolean(args.selectedProject?.root);
+}
+
 export function resolveHomeComposerFamiliar(
   familiars: readonly Familiar[],
   activeFamiliarId: string | null,

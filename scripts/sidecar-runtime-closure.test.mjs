@@ -214,6 +214,37 @@ try {
     await packageFixture(path.dirname(dependencyRoot), "sharp");
   }
 
+  // The explicit Next runtime files are nested below a package root, so the
+  // package directory itself must also be confined rather than only its final
+  // file entry.
+  const externalNextRoot = path.join(fixture, "outside-allowed-roots", "next");
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    await write(externalNextRoot, relativePath, "outside runtime\n");
+  }
+  await packageFixture(standaloneRoot, "next");
+  await rm(path.join(dependencyRoot, "next"), { recursive: true, force: true });
+  try {
+    await symlink(
+      externalNextRoot,
+      path.join(dependencyRoot, "next"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await assert.rejects(
+      assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+      /sidecar dependency link escapes its allowed roots/,
+      "Next runtime files must not follow a package-root link outside the locked production root",
+    );
+  } catch (error) {
+    if (!["EPERM", "EACCES", "ENOSYS"].includes(error.code)) throw error;
+    console.warn(`sidecar-runtime-closure.test: Next package-link confinement skipped (${error.code})`);
+  } finally {
+    await rm(path.join(dependencyRoot, "next"), { recursive: true, force: true });
+    await packageFixture(path.dirname(dependencyRoot), "next");
+    for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+      await write(dependencyRoot, path.join("next", relativePath), "next runtime fixture\n");
+    }
+  }
+
   const publishedArchive = path.join(fixture, "published", "server.tar.zst");
   const publishedManifest = path.join(fixture, "published", "manifest.json");
   const interruptedArchive = path.join(fixture, "published", ".server.tar.zst.interrupted.tmp");
