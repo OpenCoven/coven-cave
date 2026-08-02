@@ -1,4 +1,5 @@
 use super::*;
+use std::os::windows::fs::OpenOptionsExt;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, Barrier,
@@ -101,6 +102,31 @@ fn create_required_runtime(root: &Path) {
     }
 }
 
+fn create_ready_runtime(root: &Path, manifest: &SidecarArchiveManifest) {
+    create_required_runtime(root);
+    let marker = CompletionMarker {
+        schema_version: MANIFEST_SCHEMA_VERSION,
+        payload_sha256: manifest.payload_sha256.clone(),
+        tree_sha256: manifest.tree_sha256.clone(),
+    };
+    fs::write(
+        root.join(".complete.json"),
+        serde_json::to_vec(&marker).expect("serialize completion marker"),
+    )
+    .expect("write completion marker");
+}
+
+fn activation_fixture(name: &str) -> (PathBuf, PathBuf, PathBuf, SidecarArchiveManifest) {
+    let root = test_root(name);
+    let (_, _, manifest) = write_fixture(&root);
+    let cache = root.join("cache");
+    let staging = cache.join(".extract-test");
+    let destination = cache.join(cache_key(&manifest));
+    create_ready_runtime(&staging, &manifest);
+    fs::write(staging.join("extraction-id"), b"verified-once").expect("write extraction identity");
+    (root, staging, destination, manifest)
+}
+
 #[test]
 fn extracts_atomically_and_reuses_complete_cache() {
     let root = test_root("extract");
@@ -194,6 +220,231 @@ fn concurrent_preparations_extract_once_under_the_process_lock() {
             .count(),
         1
     );
+    fs::remove_dir_all(root).expect("remove test root");
+}
+
+#[test]
+fn activation_retries_transient_access_denied_without_reextracting() {
+    let (root, staging, destination, manifest) = activation_fixture("activation-retry-once");
+    let mut attempts = 0;
+    let mut waited = Vec::new();
+
+    activate_extracted_cache_with(
+        &staging,
+        &destination,
+        &manifest,
+        |source, destination| {
+            attempts += 1;
+            if attempts == 1 {
+                Err(io::Error::from_raw_os_error(ERROR_ACCESS_DENIED as i32))
+            } else {
+                fs::rename(source, destination)
+            }
+        },
+        |delay| waited.push(delay),
+    )
+    .expect("retry transient access denial");
+
+    assert_eq!(attempts, 2);
+    assert_eq!(waited, vec![ACTIVATION_RETRY_DELAYS[0]]);
+    assert_eq!(
+        fs::read(destination.join("extraction-id")).expect("read moved extraction identity"),
+        b"verified-once"
+    );
+    assert!(!staging.exists());
+    fs::remove_dir_all(root).expect("remove test root");
+}
+
+#[test]
+fn activation_retries_multiple_sharing_violations_within_bound() {
+    let (root, staging, destination, manifest) = activation_fixture("activation-retry-many");
+    let mut attempts = 0;
+    let mut waited = Vec::new();
+
+    activate_extracted_cache_with(
+        &staging,
+        &destination,
+        &manifest,
+        |source, destination| {
+            attempts += 1;
+            if attempts <= 3 {
+                Err(io::Error::from_raw_os_error(ERROR_SHARING_VIOLATION as i32))
+            } else {
+                fs::rename(source, destination)
+            }
+        },
+        |delay| waited.push(delay),
+    )
+    .expect("retry bounded sharing violations");
+
+    assert_eq!(attempts, 4);
+    assert_eq!(waited.as_slice(), &ACTIVATION_RETRY_DELAYS[..3]);
+    assert!(cache_is_ready(&destination, &manifest));
+    fs::remove_dir_all(root).expect("remove test root");
+}
+
+#[test]
+fn activation_exhausts_bounded_access_denied_retries() {
+    let (root, staging, destination, manifest) = activation_fixture("activation-exhausted");
+    let mut attempts = 0;
+    let mut waited = Vec::new();
+
+    let error = activate_extracted_cache_with(
+        &staging,
+        &destination,
+        &manifest,
+        |_, _| {
+            attempts += 1;
+            Err(io::Error::from_raw_os_error(ERROR_ACCESS_DENIED as i32))
+        },
+        |delay| waited.push(delay),
+    )
+    .expect_err("permanent access denial must remain an error");
+
+    assert_eq!(attempts, ACTIVATION_RETRY_DELAYS.len() + 1);
+    assert_eq!(waited.as_slice(), &ACTIVATION_RETRY_DELAYS);
+    assert!(error.contains("after 6 attempt(s)"));
+    assert!(error.contains("raw OS error: Some(5)"));
+    assert!(!staging.exists(), "failed staging should be cleaned");
+    fs::remove_dir_all(root).expect("remove test root");
+}
+
+#[test]
+fn activation_does_not_retry_unrelated_errors() {
+    let (root, staging, destination, manifest) = activation_fixture("activation-unrelated");
+    let mut attempts = 0;
+    let mut waited = Vec::new();
+
+    let error = activate_extracted_cache_with(
+        &staging,
+        &destination,
+        &manifest,
+        |_, _| {
+            attempts += 1;
+            Err(io::Error::from_raw_os_error(2))
+        },
+        |delay| waited.push(delay),
+    )
+    .expect_err("unrelated errors must fail immediately");
+
+    assert_eq!(attempts, 1);
+    assert!(waited.is_empty());
+    assert!(error.contains("raw OS error: Some(2)"));
+    assert!(!staging.exists(), "failed staging should be cleaned");
+    fs::remove_dir_all(root).expect("remove test root");
+}
+
+#[test]
+fn activation_reuses_a_valid_concurrent_destination() {
+    let (root, staging, destination, manifest) = activation_fixture("activation-concurrent");
+    let mut attempts = 0;
+    let mut waited = Vec::new();
+
+    activate_extracted_cache_with(
+        &staging,
+        &destination,
+        &manifest,
+        |_, _| {
+            attempts += 1;
+            create_ready_runtime(&destination, &manifest);
+            Err(io::Error::from_raw_os_error(ERROR_SHARING_VIOLATION as i32))
+        },
+        |delay| waited.push(delay),
+    )
+    .expect("reuse a concurrently completed destination");
+
+    assert_eq!(attempts, 1);
+    assert!(waited.is_empty());
+    assert!(cache_is_ready(&destination, &manifest));
+    assert!(!staging.exists(), "redundant staging should be retired");
+    fs::remove_dir_all(root).expect("remove test root");
+}
+
+#[test]
+fn activation_never_trusts_an_incomplete_concurrent_destination() {
+    let (root, staging, destination, manifest) = activation_fixture("activation-incomplete");
+    let mut attempts = 0;
+
+    let error = activate_extracted_cache_with(
+        &staging,
+        &destination,
+        &manifest,
+        |_, _| {
+            attempts += 1;
+            if attempts == 1 {
+                fs::create_dir(&destination).expect("create incomplete destination");
+                fs::write(destination.join("partial"), b"partial")
+                    .expect("write incomplete destination");
+            }
+            Err(io::Error::from_raw_os_error(ERROR_SHARING_VIOLATION as i32))
+        },
+        |_| {},
+    )
+    .expect_err("an incomplete destination must never be reused");
+
+    assert_eq!(attempts, ACTIVATION_RETRY_DELAYS.len() + 1);
+    assert!(error.contains("after 6 attempt(s)"));
+    assert!(!cache_is_ready(&destination, &manifest));
+    assert!(destination.join("partial").is_file());
+    fs::remove_dir_all(root).expect("remove test root");
+}
+
+#[test]
+fn activation_surfaces_staging_cleanup_failure() {
+    let (root, staging, destination, manifest) = activation_fixture("activation-cleanup");
+    let held_child = OpenOptions::new()
+        .read(true)
+        .share_mode(0x0000_0001 | 0x0000_0002)
+        .open(staging.join("server.mjs"))
+        .expect("hold extracted child without delete sharing");
+
+    let error = activate_extracted_cache_with(
+        &staging,
+        &destination,
+        &manifest,
+        |_, _| Err(io::Error::from_raw_os_error(ERROR_ACCESS_DENIED as i32)),
+        |_| {},
+    )
+    .expect_err("permanent contention must fail");
+
+    assert!(error.contains("staging cleanup also failed"));
+    assert!(staging.exists(), "failed cleanup must not be hidden");
+    drop(held_child);
+    fs::remove_dir_all(root).expect("remove test root");
+}
+
+#[test]
+fn native_activation_recovers_after_no_delete_share_handle_releases() {
+    let (root, staging, destination, manifest) = activation_fixture("activation-native-handle");
+    let held_child = OpenOptions::new()
+        .read(true)
+        .share_mode(0x0000_0001 | 0x0000_0002)
+        .open(staging.join("server.mjs"))
+        .expect("hold extracted child without delete sharing");
+    let mut held_child = Some(held_child);
+    let mut attempts = 0;
+    let mut raw_errors = Vec::new();
+
+    activate_extracted_cache_with(
+        &staging,
+        &destination,
+        &manifest,
+        |source, destination| {
+            attempts += 1;
+            let result = fs::rename(source, destination);
+            if let Err(error) = &result {
+                raw_errors.push(error.raw_os_error());
+            }
+            result
+        },
+        |_| drop(held_child.take()),
+    )
+    .expect("recover after the external handle is released");
+
+    assert_eq!(attempts, 2);
+    assert_eq!(raw_errors, vec![Some(ERROR_ACCESS_DENIED as i32)]);
+    assert!(cache_is_ready(&destination, &manifest));
+    assert!(!staging.exists());
     fs::remove_dir_all(root).expect("remove test root");
 }
 
