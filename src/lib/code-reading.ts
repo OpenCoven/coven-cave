@@ -169,6 +169,27 @@ function trimBlankEdges(lines: string[]): string[] {
   return lines.slice(start, end);
 }
 
+/**
+ * The outcome of trying to read the working-tree file.
+ *
+ * `absent` and `unreadable` are deliberately different: "this file is gone" is
+ * a claim about the repository, while "I could not read it" is a claim about
+ * *us*. Collapsing them would let a permission denial or an offline daemon
+ * render as a confident "gone" badge — the exact species of false certainty
+ * this surface exists to remove.
+ */
+export type WorkingTreeRead =
+  | { kind: "text"; content: string }
+  | { kind: "absent" }
+  | { kind: "unreadable" };
+
+/** Staleness for a read outcome. An unreadable file yields `unknown`, not `missing`. */
+export function stalenessForRead(snippet: string, read: WorkingTreeRead): Staleness {
+  if (read.kind === "unreadable") return "unknown";
+  if (read.kind === "absent") return "missing";
+  return staleness(snippet, read.content);
+}
+
 export function staleness(snippet: string, diskContent: string | null | undefined): Staleness {
   if (diskContent === null || diskContent === undefined) return "missing";
   const needle = trimBlankEdges(normalizeLines(snippet));

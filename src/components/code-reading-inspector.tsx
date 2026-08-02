@@ -46,10 +46,11 @@ import {
   selectedText,
   selectionLabel,
   snippetStartLine,
-  staleness,
+  stalenessForRead,
   stalenessLabel,
   stalenessTitle,
   type CodeProvenance,
+  type Staleness,
   type InspectorMode,
   type InspectorPin,
   type InspectorTabId,
@@ -103,6 +104,9 @@ type DiskState =
   | { phase: "idle" }
   | { phase: "loading" }
   | { phase: "ready"; content: string }
+  // `absent` is a claim about the repository ("this file is gone"); `error` is
+  // a claim about us ("I could not look"). Only the first earns a badge.
+  | { phase: "absent" }
   | { phase: "error"; message: string };
 
 // ── Working-tree read ────────────────────────────────────────────────────────
@@ -120,6 +124,11 @@ function useWorkingTree(projectRoot: string | null, path: string | null, enabled
     (async () => {
       try {
         const res = await fetch(`/api/project-file?path=${encodeURIComponent(abs)}`, { cache: "no-store" });
+        if (cancelled) return;
+        if (res.status === 404) {
+          setState({ phase: "absent" });
+          return;
+        }
         const json = (await res.json().catch(() => null)) as
           | { ok?: boolean; kind?: string; content?: string; error?: string }
           | null;
@@ -198,7 +207,12 @@ function CodeRows({
   onPickLine: ((line: number, shiftKey: boolean) => void) | null;
 }) {
   return (
-    <div className="cri-code" role={onPickLine ? "listbox" : undefined} aria-label={onPickLine ? "Code lines" : undefined}>
+    // Deliberately NOT a listbox: selecting lines is a range built from
+    // toggles, not a single-select list, and listbox semantics would also
+    // require the options to be this element's direct children (they are
+    // nested inside each row). A group of pressed/unpressed buttons is what
+    // this actually is, so that is what it announces.
+    <div className="cri-code" role={onPickLine ? "group" : undefined} aria-label={onPickLine ? "Code lines" : undefined}>
       {lines.map((html, i) => {
         const n = startLine + i;
         const selected = isLineSelected(selection, n);
@@ -212,8 +226,7 @@ function CodeRows({
               <button
                 type="button"
                 className="cri-ln focus-ring"
-                role="option"
-                aria-selected={selected}
+                aria-pressed={selected}
                 aria-label={`Select line ${n}`}
                 onClick={(event) => onPickLine(n, event.shiftKey)}
               >
@@ -284,9 +297,19 @@ export function CodeReadingInspector({
   const disk = useWorkingTree(projectRoot, target.path, wantsDisk);
   const diskContent = disk.phase === "ready" ? disk.content : null;
 
-  const stale = wantsDisk && disk.phase !== "loading" && disk.phase !== "idle"
-    ? staleness(target.code, diskContent)
-    : "unknown";
+  // A read failure is `unknown`, not `missing` — the error still shows in the
+  // File/Compare tabs, but the header never claims a file is gone on the
+  // strength of a permission denial or an offline daemon.
+  const stale: Staleness = !wantsDisk || disk.phase === "loading" || disk.phase === "idle"
+    ? "unknown"
+    : stalenessForRead(
+        target.code,
+        disk.phase === "ready"
+          ? { kind: "text", content: disk.content }
+          : disk.phase === "absent"
+            ? { kind: "absent" }
+            : { kind: "unreadable" },
+      );
   const staleText = stalenessLabel(stale);
 
   // Where the snippet sits in the file, so line numbers in the Snippet tab are
@@ -441,7 +464,7 @@ export function CodeReadingInspector({
               <CodeRows lines={lines} startLine={1} selection={selection} onPickLine={pickLine} />
             ) : (
               <p className="cri-note cri-note--bad">
-                {projectRoot ? disk.phase === "error" ? disk.message : "Nothing to read yet." : "No project root for this session."}
+                {!projectRoot ? "No project root for this session." : disk.phase === "absent" ? "This file is not in the working tree any more." : disk.phase === "error" ? disk.message : "Nothing to read yet."}
               </p>
             )
           ) : null}
@@ -457,7 +480,7 @@ export function CodeReadingInspector({
               )
             ) : (
               <p className="cri-note cri-note--bad">
-                {projectRoot ? disk.phase === "error" ? disk.message : "Nothing to compare yet." : "No project root for this session."}
+                {!projectRoot ? "No project root for this session." : disk.phase === "absent" ? "This file is not in the working tree any more — nothing to compare against." : disk.phase === "error" ? disk.message : "Nothing to compare yet."}
               </p>
             )
           ) : null}

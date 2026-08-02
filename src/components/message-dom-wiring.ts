@@ -5,11 +5,12 @@ import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
 import { FOCUSABLE } from "@/lib/use-focus-trap";
 import {
   isCodeProvenance,
-  staleness,
+  stalenessForRead,
   stalenessLabel,
   stalenessTitle,
   type CodeProvenance,
   type InspectorTabId,
+  type WorkingTreeRead,
 } from "@/lib/code-reading";
 import { wireMermaidDiagrams } from "./mermaid-viewer";
 
@@ -243,27 +244,30 @@ function openTableLightbox(scroll: HTMLElement) {
  * transcript (which re-wires every block) does not re-fetch the whole file set.
  */
 const DISK_CACHE_TTL_MS = 15_000;
-const diskCache = new Map<string, { at: number; content: Promise<string | null> }>();
+const diskCache = new Map<string, { at: number; content: Promise<WorkingTreeRead> }>();
 
-function readWorkingTree(absPath: string): Promise<string | null> {
+function readWorkingTree(absPath: string): Promise<WorkingTreeRead> {
   const hit = diskCache.get(absPath);
   if (hit && Date.now() - hit.at < DISK_CACHE_TTL_MS) return hit.content;
-  const pending = (async (): Promise<string | null> => {
+  const pending = (async (): Promise<WorkingTreeRead> => {
     try {
       const res = await fetch(`/api/project-file?path=${encodeURIComponent(absPath)}`, {
         cache: "no-store",
       });
+      // Only a 404 means the file is not there. A 403 (outside a granted root),
+      // a 413 (too large) or a transport failure means we could not look —
+      // which must never render as a confident "gone".
+      if (res.status === 404) return { kind: "absent" };
       const json = (await res.json().catch(() => null)) as
         | { ok?: boolean; kind?: string; content?: string }
         | null;
       if (!res.ok || !json?.ok || json.kind !== "text" || typeof json.content !== "string") {
-        return null;
+        return { kind: "unreadable" };
       }
-      return json.content;
+      return { kind: "text", content: json.content };
     } catch {
-      // Offline, no daemon, or the path is outside every granted root. The
-      // block simply stays unmarked: an unverified block claims nothing.
-      return null;
+      // Offline or no daemon: unverified, so the block claims nothing.
+      return { kind: "unreadable" };
     }
   })();
   diskCache.set(absPath, { at: Date.now(), content: pending });
@@ -296,11 +300,11 @@ function codeTextFromWrapEl(wrap: Element): string {
 function markStaleness(wrap: HTMLElement, root: string, relPath: string) {
   const marker = wrap.querySelector<HTMLElement>(".cave-code-stale");
   if (!marker) return;
-  void readWorkingTree(joinProjectPath(root, relPath)).then((content) => {
+  void readWorkingTree(joinProjectPath(root, relPath)).then((read) => {
     // The transcript may have re-rendered under us; the marker we captured is
     // then detached and writing to it is a no-op we skip rather than a crash.
     if (!marker.isConnected) return;
-    const state = staleness(codeTextFromWrapEl(wrap), content);
+    const state = stalenessForRead(codeTextFromWrapEl(wrap), read);
     const label = stalenessLabel(state);
     wrap.setAttribute("data-code-staleness", state);
     if (!label) {

@@ -314,6 +314,28 @@
   color: var(--text-primary);
 }
 
+/* Press feedback. The prototype specifies this as a real state, not decoration:
+   `support.js` compiles every `style-active="…"` into an actual `:active` rule,
+   and the design's own base sheet presses ALL buttons by the same amount. The
+   repo has no global equivalent, so these controls carry it themselves — and
+   drop it entirely for a reader who asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .cri-tab,
+  .cri-pin,
+  .cri-close,
+  .cri-clear,
+  .cri-ln {
+    transition: transform 0.09s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .cri-tab:active,
+  .cri-pin:active,
+  .cri-close:active,
+  .cri-clear:active,
+  .cri-ln:active {
+    transform: translateY(0.5px) scale(0.993);
+  }
+}
+
 /* The overlay and modal arrive; nothing moves for a reader who asked it not to. */
 @media (prefers-reduced-motion: no-preference) {
   .cri--overlay,
