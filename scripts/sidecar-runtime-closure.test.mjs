@@ -245,6 +245,29 @@ try {
     }
   }
 
+  const externalNextFile = path.join(projectRoot, "node_modules", "unrelated-runtime.js");
+  await writeFile(externalNextFile, "outside runtime\n", "utf8");
+  const linkedRuntimePath = path.join(dependencyRoot, "next", SIDECAR_NEXT_RUNTIME_FILES[0]);
+  await rm(linkedRuntimePath);
+  try {
+    await symlink(
+      externalNextFile,
+      linkedRuntimePath,
+      process.platform === "win32" ? "file" : undefined,
+    );
+    await assert.rejects(
+      assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+      /sidecar dependency link escapes its allowed roots/,
+      "Next runtime files must not follow a link into an unrelated dependency tree",
+    );
+  } catch (error) {
+    if (!(["EPERM", "EACCES", "ENOSYS"].includes(error.code))) throw error;
+    console.warn(`sidecar-runtime-closure.test: Next file-link confinement skipped (${error.code})`);
+  } finally {
+    await rm(linkedRuntimePath, { force: true });
+    await write(dependencyRoot, linkedRuntimePath.slice(dependencyRoot.length + 1), "next runtime fixture\n");
+  }
+
   const publishedArchive = path.join(fixture, "published", "server.tar.zst");
   const publishedManifest = path.join(fixture, "published", "manifest.json");
   const interruptedArchive = path.join(fixture, "published", ".server.tar.zst.interrupted.tmp");
