@@ -11,8 +11,7 @@
 // these fail, which is the prompt to remove the pins too.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { existsSync } from "node:fs";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const studio = readFileSync(new URL("./familiar-studio-brain-tab.tsx", import.meta.url), "utf8");
 const research = readFileSync(

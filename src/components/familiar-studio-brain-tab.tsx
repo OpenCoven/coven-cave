@@ -1518,15 +1518,15 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           </section>
 
           <FamiliarAsanaSection familiar={familiar} />
-          {/* cave-lsj8u: the X connection routes (/api/x/connection,
-            /api/x/oauth/start) exist only on tag
-            archive/cave-8i8q5-wip-2026-07-29, so this section 404s and shows a
-            permanent ErrorState. Gated on EITHER capability, since the
-            connection serves both: whichever half lands first re-exposes it.
-            Delete this condition when the routes land. */}
-        {familiar.xResearchEnabled || familiar.xPublishEnabled ? (
-          <FamiliarXSection familiar={familiar} />
-        ) : null}
+            {/* cave-lsj8u: the X connection routes (/api/x/connection,
+              /api/x/oauth/start) exist only on tag
+              archive/cave-8i8q5-wip-2026-07-29, so this section 404s and shows a
+              permanent ErrorState. Gated on EITHER capability, since the
+              connection serves both: whichever half lands first re-exposes it.
+              Delete this condition when the routes land. */}
+          {familiar.xResearchEnabled || familiar.xPublishEnabled ? (
+            <FamiliarXSection familiar={familiar} />
+          ) : null}
 
           {harnessId ? (
             <details
