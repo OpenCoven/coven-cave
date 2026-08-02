@@ -245,6 +245,19 @@
 .cave-code-wrap--readable .cave-code-compare-btn:focus-visible {
   opacity: 1;
 }
+/* Press feedback, matching the prototype's `style-active` on these exact
+   controls (support.js compiles those into real :active rules). */
+@media (prefers-reduced-motion: no-preference) {
+  .cave-code-wrap--readable .cave-code-read-btn,
+  .cave-code-wrap--readable .cave-code-compare-btn {
+    transition: opacity 0.15s, color 0.1s, background 0.1s, transform 0.09s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .cave-code-wrap--readable .cave-code-read-btn:active,
+  .cave-code-wrap--readable .cave-code-compare-btn:active {
+    transform: translateY(0.5px) scale(0.993);
+  }
+}
+
 /* A block that has drifted keeps Compare visible without a hover: the reader
    needs to know the way to check BEFORE they act on stale lines. */
 .cave-code-wrap[data-code-staleness="stale"].cave-code-wrap--readable .cave-code-compare-btn {
