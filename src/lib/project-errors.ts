@@ -1,4 +1,4 @@
-/** Stable error contract for project mutations that require the local Cave host. */
+/** Stable error contract for desktop-only local request rejections. */
 export const LOCAL_REQUEST_REQUIRED_CODE = "local_request_required";
 
 export const LOCAL_PROJECT_CREATION_MESSAGE =

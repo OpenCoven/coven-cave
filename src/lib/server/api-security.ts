@@ -7,7 +7,7 @@ const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 
 function localRequestRequired(): NextResponse {
   // Keep the legacy forbidden error for callers that only understand the old
-  // response, while the code gives project creation a stable repair path.
+  // response, while the code gives clients a stable repair path.
   return NextResponse.json(
     { ok: false, code: LOCAL_REQUEST_REQUIRED_CODE, error: "forbidden" },
     { status: 403 },
