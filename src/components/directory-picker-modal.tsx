@@ -5,6 +5,10 @@ import { createPortal } from "react-dom";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
+import {
+  LOCAL_PROJECT_CREATION_MESSAGE,
+  LOCAL_REQUEST_REQUIRED_CODE,
+} from "@/lib/project-errors";
 
 type DirEntry = { name: string; path: string; workspace?: boolean };
 type BrowseResponse = {
@@ -13,6 +17,7 @@ type BrowseResponse = {
   cwd?: string;
   parent?: string | null;
   entries?: DirEntry[];
+  code?: string;
   error?: string;
 };
 
@@ -41,17 +46,28 @@ function baseName(value: string, sep: "/" | "\\"): string {
 type CreateFolderResponse = {
   ok: boolean;
   path?: string;
+  code?: string;
   error?: string;
 };
 
 function isCreateFolderResponse(value: unknown): value is CreateFolderResponse {
   if (!value || typeof value !== "object") return false;
-  const body = value as { ok?: unknown; path?: unknown; error?: unknown };
+  const body = value as { ok?: unknown; path?: unknown; code?: unknown; error?: unknown };
   return (
     typeof body.ok === "boolean" &&
     (typeof body.path === "string" || typeof body.path === "undefined") &&
+    (typeof body.code === "string" || typeof body.code === "undefined") &&
     (typeof body.error === "string" || typeof body.error === "undefined")
   );
+}
+
+function browseErrorMessage(
+  body: { code?: string; error?: string },
+  fallback: string,
+): string {
+  return body.code === LOCAL_REQUEST_REQUIRED_CODE
+    ? LOCAL_PROJECT_CREATION_MESSAGE
+    : body.error ?? fallback;
 }
 
 /** "Select Documents", truncated so long folder names can't blow out the footer. */
@@ -121,7 +137,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       const body = (await res.json()) as BrowseResponse;
       if (sessionGeneration !== modalSessionRef.current || loadGeneration !== loadGenerationRef.current) return;
       if (!res.ok || !body.ok || !body.cwd) {
-        setError(body.error ?? "Could not read that folder");
+        setError(browseErrorMessage(body, "Could not read that folder"));
         return;
       }
       setHome((h) => h ?? body.home ?? body.cwd!);
@@ -206,7 +222,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       if (sessionGeneration !== modalSessionRef.current) return;
       if (!res.ok || !body?.ok || !body.path) {
         shouldRefocusInput = true;
-        setNewFolderError(body?.error ?? "Could not create that folder");
+        setNewFolderError(browseErrorMessage(body ?? {}, "Could not create that folder"));
         return;
       }
       resetCreateFolderState({ preserveBusy: true });

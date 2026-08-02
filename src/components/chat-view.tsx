@@ -2246,6 +2246,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const overflowAddProject = useAddProjectFlow({
     familiarId: familiar?.id ?? null,
     createProject,
+    createProjectOrThrow,
     projects,
     onAdded: (newProjectId) => {
       setProjectIdDraft(newProjectId);
@@ -4965,6 +4966,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         root,
         familiarId: familiar?.id ?? null,
         createProject,
+        createProjectOrThrow,
         existingProjectId: projectIdForRoot(root, projects),
       });
       if (result.ok) {
@@ -6520,6 +6522,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         onProjectChange: setProjectIdDraft,
                         familiarId: familiar.id ?? null,
                         createProject,
+                        createProjectOrThrow,
                         runtime: modelHarness,
                         modelValue: composerModelValue,
                         modelOptions: composerModelOptions,
@@ -6623,6 +6626,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     onProjectChange={setProjectIdDraft}
                     familiarId={familiar.id ?? null}
                     createProject={createProject}
+                    createProjectOrThrow={createProjectOrThrow}
                     runtime={modelHarness}
                     modelValue={composerModelValue}
                     modelOptions={composerModelOptions}
@@ -6775,6 +6779,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 }
               />
             )}
+            {overflowAddProject.addError ? (
+              <p className="cave-project-picker__error" role="alert">
+                {overflowAddProject.addError}
+              </p>
+            ) : null}
             {overflowAddProject.addProjectModal}
             <ProjectSetupModal
               root={projectSetupRoot}
@@ -6951,6 +6960,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onProjectChange={setProjectIdDraft}
                 projects={projects}
                 createProject={createProject}
+                createProjectOrThrow={createProjectOrThrow}
                 fileMentions={Boolean(mentionRoot)}
                 sessionId={sessionId}
                 sessions={sessions}

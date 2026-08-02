@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
+import {
+  LOCAL_PROJECT_CREATION_MESSAGE,
+  LOCAL_REQUEST_REQUIRED_CODE,
+  ProjectCreationError,
+} from "@/lib/project-errors";
 import { isCurrentProjectScope, projectScopeKey, projectsForCurrentScope } from "./project-scope.ts";
 import { emitProjectRegistryMutation, subscribeProjectRegistryMutation } from "./project-registry-events.ts";
 import { applyProjectRegistryMutation } from "./project-registry-mutation.ts";
@@ -11,10 +16,18 @@ import type { CreateProjectOptions } from "./chat-add-project.ts";
 
 export type { CreateProjectOptions } from "./chat-add-project.ts";
 
-type ProjectMutationPayload = { ok?: boolean; project?: CaveProject; error?: string };
+type ProjectMutationPayload = { ok?: boolean; project?: CaveProject; code?: string; error?: string };
 type CreateProjectResult =
   | { ok: true; project: CaveProject }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: string };
+
+function reportCreateFailure(options: CreateProjectOptions | undefined, error: ProjectCreationError): void {
+  try {
+    options?.onError?.(error);
+  } catch {
+    // Error reporting must not change the nullable creator's existing contract.
+  }
+}
 
 function fetchProjects(
   familiarId: string | null,
@@ -160,14 +173,25 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       if (res.ok && data?.ok && data.project) {
         return { ok: true, project: applyCreatedProject(data.project as CaveProject, options) };
       }
+      const code = typeof data?.code === "string" ? data.code : undefined;
+      const error =
+        code === LOCAL_REQUEST_REQUIRED_CODE
+          ? LOCAL_PROJECT_CREATION_MESSAGE
+          : typeof data?.error === "string"
+            ? data.error
+            : `Could not create project (HTTP ${res.status})`;
+      reportCreateFailure(options, new ProjectCreationError(error, code));
       return {
         ok: false,
-        error: typeof data?.error === "string" ? data.error : `Could not create project (HTTP ${res.status})`,
+        error,
+        ...(code ? { code } : {}),
       };
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not create that project.";
+      reportCreateFailure(options, new ProjectCreationError(message));
       return {
         ok: false,
-        error: error instanceof Error ? error.message : "Could not create that project.",
+        error: message,
       };
     }
   }, [applyCreatedProject]);
@@ -180,7 +204,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   const createProjectOrThrow = useCallback(async (name: string, root: string, options?: CreateProjectOptions): Promise<CaveProject> => {
     const result = await requestCreateProject(name, root, options);
     if (result.ok) return result.project;
-    throw new Error(result.error);
+    throw new ProjectCreationError(result.error, result.code);
   }, [requestCreateProject]);
 
   const renameProject = useCallback(async (id: string, name: string): Promise<boolean> => {

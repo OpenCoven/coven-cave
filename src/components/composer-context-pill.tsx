@@ -41,12 +41,18 @@ export type ComposerContextProps = {
   onProjectChange: (id: string) => void;
   allowNoProject?: boolean;
   familiarId?: string | null;
-  /** From the caller's useProjects(); presence enables the "Add project…" row. */
+  /** From the caller's useProjects(); either creator enables the "Add project…" row. */
   createProject?: (
     name: string,
     root: string,
     options?: CreateProjectOptions,
   ) => Promise<CaveProject | null>;
+  /** Throwing creator from the caller's useProjects(); preserves server guidance. */
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
   runtime: string;
   modelValue: string;
   modelOptions: RuntimeModelOption[];
@@ -89,9 +95,11 @@ export function useComposerContextActions(config: ComposerContextProps) {
   const addFlow = useAddProjectFlow({
    familiarId: config.familiarId ?? null,
    createProject: config.createProject ?? (async () => null),
+   createProjectOrThrow: config.createProjectOrThrow,
    projects: config.projects,
    onAdded: config.onProjectChange,
   });
+  const canAddProject = Boolean(config.createProject || config.createProjectOrThrow);
 
   const runtimeName = runtimeDisplayName(config.runtime);
   const modelLabel =
@@ -121,6 +129,7 @@ export function useComposerContextActions(config: ComposerContextProps) {
    emptyProjectLabel,
    selectedProjectLabel,
    addFlow,
+   canAddProject,
     runtimeName,
     modelLabel,
     root,
@@ -172,7 +181,7 @@ export function ComposerContextPickers({
         value={context.config.projectValue}
         onChange={context.config.onProjectChange}
         allowNoProject={context.config.allowNoProject}
-        onAddProject={context.config.createProject ? context.addFlow.beginAddProject : undefined}
+        onAddProject={context.canAddProject ? context.addFlow.beginAddProject : undefined}
         addingProject={context.addFlow.adding}
         registerCurrentRoot={context.config.registerCurrentRoot}
         onRegisterCurrentRoot={context.config.onRegisterCurrentRoot}
@@ -201,7 +210,7 @@ export function ComposerContextPickers({
           {context.addFlow.addError}
         </span>
       ) : null}
-      {context.config.createProject ? context.addFlow.addProjectModal : null}
+      {context.canAddProject ? context.addFlow.addProjectModal : null}
     </>
   );
 }
@@ -299,7 +308,7 @@ export function ComposerContextChips(props: ComposerContextProps) {
         value={context.config.projectValue}
         onChange={context.config.onProjectChange}
         allowNoProject={context.config.allowNoProject}
-        onAddProject={context.config.createProject ? context.addFlow.beginAddProject : undefined}
+        onAddProject={context.canAddProject ? context.addFlow.beginAddProject : undefined}
         addingProject={context.addFlow.adding}
         registerCurrentRoot={context.config.registerCurrentRoot}
         onRegisterCurrentRoot={context.config.onRegisterCurrentRoot}
@@ -330,7 +339,7 @@ export function ComposerContextChips(props: ComposerContextProps) {
           {context.addFlow.addError}
         </span>
       ) : null}
-      {context.config.createProject ? context.addFlow.addProjectModal : null}
+      {context.canAddProject ? context.addFlow.addProjectModal : null}
     </>
   );
 }

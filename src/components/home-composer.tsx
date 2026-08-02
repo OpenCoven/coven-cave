@@ -211,6 +211,7 @@ export function HomeComposer({
     error: projectsError,
     loadedSuccessfully: projectsLoadedSuccessfully,
     createProject,
+    createProjectOrThrow,
   } = useProjects({
     enabled: Boolean(selectedFamiliarId),
     familiarId: selectedFamiliarId || null,
@@ -300,6 +301,7 @@ export function HomeComposer({
   const plusAddProject = useAddProjectFlow({
     familiarId: selectedFamiliarId || null,
     createProject,
+    createProjectOrThrow,
     projects,
     onAdded: setSelectedProjectId,
   });
@@ -1042,6 +1044,11 @@ export function HomeComposer({
                 promptSnippets={{ onSelect: () => setSnippetsBrowserOpen(true) }}
                 onOpenModelTuning={() => setOptionsOpen(true)}
               />
+              {plusAddProject.addError ? (
+                <span className="cave-project-picker__error" role="alert">
+                  {plusAddProject.addError}
+                </span>
+              ) : null}
               {plusAddProject.addProjectModal}
               <div
                 className="hc-dest-pills hc-dest-pills--inline"
@@ -1146,6 +1153,7 @@ export function HomeComposer({
               onProjectChange={setSelectedProjectId}
               familiarId={selectedFamiliarId || null}
               createProject={createProject}
+              createProjectOrThrow={createProjectOrThrow}
               runtime={selectedRuntime}
               modelValue={selectedModelId}
               modelOptions={runtimeModelOptions}
