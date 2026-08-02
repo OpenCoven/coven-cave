@@ -3093,6 +3093,12 @@ exit 0
     );
     assert.match(fallbackText, /Cleanup-ready remaining: unknown/);
     assert.match(fallbackText, /Post-apply inventory: unavailable/);
+    assert.equal(
+      fallbackText.match(/failed to collect post-apply inventory: fixture inventory failed/g)
+        ?.length,
+      1,
+      "human apply output reports the post-inventory failure once",
+    );
   }
 
   {

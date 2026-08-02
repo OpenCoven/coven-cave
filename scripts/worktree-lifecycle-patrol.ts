@@ -291,9 +291,6 @@ export function renderApplyReport(
   if (warning) {
     lines.push("", `Warning: ${warning}`);
   }
-  if (postInventoryError) {
-    lines.push("", `Warning: ${postInventoryError}`);
-  }
   return lines.join("\n");
 }
 
