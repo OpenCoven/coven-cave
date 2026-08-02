@@ -70,7 +70,14 @@ import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
 import { DESTINATIONS, placeholderFor, type Destination } from "@/components/home/home-destinations";
-import { resolveHomeComposerFamiliar, resolveHomeComposerProject } from "@/lib/home-composer-context";
+import {
+  homeComposerProjectLaunchMessage,
+  isHomeComposerProjectLaunchReady,
+  projectsForHomeComposerScope,
+  resolveHomeComposerFamiliar,
+  resolveHomeComposerProject,
+  shouldClearHomeComposerProjectSelection,
+} from "@/lib/home-composer-context";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -205,6 +212,10 @@ export function HomeComposer({
   );
   const { modelState, selectModel: handleSelectModel, selectRuntime: handleSelectRuntime } =
     useHomeModelState(selectedFamiliarId);
+  // Keep the operator registry query alive even before a familiar exists. The
+  // home add-project action can register a folder before familiar setup, and
+  // hiding the unscoped result makes a successful creation look inert. Once a
+  // familiar is selected, the same hook switches to its access-scoped view.
   const {
     projects: scopedProjects,
     loading: projectsLoading,
@@ -213,12 +224,12 @@ export function HomeComposer({
     createProject,
     createProjectOrThrow,
   } = useProjects({
-    enabled: Boolean(selectedFamiliarId),
+    enabled: true,
     familiarId: selectedFamiliarId || null,
   });
   const projects = useMemo(
-    () => scopedProjects.filter((project) => project.access !== undefined),
-    [scopedProjects],
+    () => projectsForHomeComposerScope(scopedProjects, selectedFamiliarId),
+    [scopedProjects, selectedFamiliarId],
   );
   const [selectedProjectId, setSelectedProjectId] = useState("");
   // Host chip: where the opened chat should execute. Per-composer state, not a
@@ -235,21 +246,20 @@ export function HomeComposer({
     [projects, selectedProjectId, recentProjectRoot],
   );
   const selectedProjectRoot = selectedProject?.root ?? "";
-  const projectLaunchReady =
-    projectsLoadedSuccessfully &&
-    !projectsLoading &&
-    !projectsError &&
-    selectedProject?.access !== undefined &&
-    Boolean(selectedProjectRoot);
-  const projectLaunchMessage = projectsLoading
-    ? "Checking project access…"
-    : projectsError
-      ? "Projects are unavailable. Retry before starting chat."
-      : !projectsLoadedSuccessfully
-        ? "Checking project access…"
-        : projects.length === 0
-          ? "Add a project this familiar can access before starting chat."
-          : "Choose a project this familiar can access before starting chat.";
+  const projectLaunchReady = isHomeComposerProjectLaunchReady({
+    familiarId: selectedFamiliarId,
+    projectsLoadedSuccessfully,
+    projectsLoading,
+    projectsError,
+    selectedProject,
+  });
+  const projectLaunchMessage = homeComposerProjectLaunchMessage({
+    familiarId: selectedFamiliarId,
+    projectsLoading,
+    projectsError,
+    projectsLoadedSuccessfully,
+    projectCount: projects.length,
+  });
   const displayProjectId = selectedProject?.id ?? null;
   const selectedRuntime = canonicalHarnessId(
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",
@@ -282,10 +292,9 @@ export function HomeComposer({
   // then the first project) resolves in resolveHomeComposerProject so it can
   // upgrade as sessions land. Only clear a stale pick whose project vanished.
   useEffect(() => {
-    if (!selectedProjectId) return;
-    if (projects.some((project) => project.id === selectedProjectId)) return;
+    if (!shouldClearHomeComposerProjectSelection(projects, selectedProjectId, projectsLoadedSuccessfully)) return;
     setSelectedProjectId("");
-  }, [projects, selectedProjectId]);
+  }, [projects, projectsLoadedSuccessfully, selectedProjectId]);
 
   // "Add to project ›" flyout data + the "Start a new project" flow (same
   // directory-picker flow the context pill uses, so both entry points create
@@ -862,6 +871,15 @@ export function HomeComposer({
               }
             }}
           />
+        ) : null}
+
+        {destination === "chat" && !projectLaunchReady ? (
+          <p
+            role={projectsError ? "alert" : "status"}
+            className="mx-auto mb-2 max-w-3xl px-3 text-[length:var(--text-xs)] leading-5 text-[var(--text-muted)]"
+          >
+            {projectLaunchMessage}
+          </p>
         ) : null}
 
         {/* Composer card — reference layout: the input leads; the mode pills,
