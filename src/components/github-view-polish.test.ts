@@ -222,6 +222,37 @@ assert.match(source, /allSections\.filter\(\(s\) => pickedFacets\.includes\(s\.k
 assert.match(source, /const live = picked\.filter\(\(key\) => allSections\.some\(\(s\) => s\.key === key\)\)/, "a facet whose section disappeared is dropped rather than silently emptying the list");
 assert.match(stage, /return defs[\s\S]{0,200}?\.filter\(\(s\) => s\.entries\.length > 0\)/, "empty sections are dropped, not rendered as bare headings");
 assert.match(stream, /GH_NEXT_STEP\[stage\.key\]/, "peek names the next step for the row's stage");
+
+// ── The stream never names or defaults a familiar ────────────────────────────
+// Handing work off means choosing WHICH familiar, from the user's own roster.
+// The stream takes a slot; the host fills it with the picker. A callback here
+// would have invited a hardcoded default, and the earlier `onHandOff` prop was
+// never wired at all, so the row verb silently did not render.
+assert.doesNotMatch(stream, /onHandOff|handOffLabel/, "the dead hand-off callback is gone");
+assert.match(stream, /renderHandOff\?: \(item: GitHubItem\) => ReactNode;/, "hand-off is a host-rendered slot");
+assert.match(
+  source,
+  /renderHandOff=\{\(item\) => \(\s*<OpenChatAction/,
+  "the host fills the hand-off slot with the familiar picker",
+);
+for (const [name, src] of [["stream", stream], ["stage", stage]]) {
+  assert.doesNotMatch(src, /\bCody\b/i, `${name} names no specific familiar`);
+}
+
+// The row is both a click and a double-click target, so every interactive
+// island nested inside it must swallow BOTH. Stopping only `click` leaves
+// `dblclick` bubbling, and an impatient double-click on the hand-off picker or
+// the Peek verb opens the focused read out from under the interaction.
+assert.match(stream, /const stopRowActivation = useCallback\(/, "one helper swallows row activation for nested islands");
+{
+  const islands = stream.match(/onDoubleClick=\{stopRowActivation\}/g) ?? [];
+  assert.ok(islands.length >= 5, `every nested island stops dblclick (found ${islands.length}, expected >= 5)`);
+}
+assert.match(
+  stream,
+  /className="gh-stream-handoff"\s*\n\s*onClick=\{stopRowActivation\}\s*\n\s*onDoubleClick=\{stopRowActivation\}/,
+  "the hand-off slot swallows both activations",
+);
 assert.match(boardCss, /\.gh-tone--ok\s+\{ --gh-tone:var\(--color-success\); \}/, "one custom property carries a row's tone to every part that paints it");
 
 // ── Landing gates ─────────────────────────────────────────────────────────────

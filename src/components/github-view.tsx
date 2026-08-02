@@ -3616,20 +3616,26 @@ export function GitHubView({
                   onTogglePeek={togglePeek}
                   onSelect={selectRow}
                   onOpen={openDetail}
+                  // The row's hand-off. OpenChatAction opens the familiar
+                  // picker (GitHubActionPopover reads /api/familiars), so the
+                  // work always goes to a familiar the user chose from their
+                  // own roster — the stream never names or defaults one.
+                  renderHandOff={(item) => (
+                    <OpenChatAction
+                      item={item}
+                      linkedCards={linkedMap.get(item.id) ?? []}
+                      familiars={familiars}
+                      cards={cards}
+                      familiarsFailed={familiarsFailed}
+                      cardsFailed={cardsFailed}
+                      onJumpToSession={onJumpToSession}
+                      onAfterLink={refreshLinkedWork}
+                    />
+                  )}
                   renderRowActions={(item) => {
                     const linked = linkedMap.get(item.id) ?? [];
                     return (
                       <>
-                        <OpenChatAction
-                          item={item}
-                          linkedCards={linked}
-                          familiars={familiars}
-                          cards={cards}
-                          familiarsFailed={familiarsFailed}
-                          cardsFailed={cardsFailed}
-                          onJumpToSession={onJumpToSession}
-                          onAfterLink={refreshLinkedWork}
-                        />
                         <AddToBoardAction
                           item={item}
                           familiars={familiars}
