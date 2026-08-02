@@ -50,6 +50,7 @@ export const SUITES = {
     "scripts/test-alias-loader.test.mjs",
     "scripts/maintenance-gate.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
+    "scripts/worktree-lifecycle-patrol.test.mjs",
     "src/lib/board-cache-events.test.ts",
     "src/lib/surface-warmup-registry.test.ts",
     "src/components/workspace-surface-warmup.test.ts",
