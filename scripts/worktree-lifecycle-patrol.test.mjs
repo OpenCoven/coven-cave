@@ -36,11 +36,30 @@ const duplicateRegisteredPath = path.join(fixtureRoot, "duplicate-registered");
 const duplicateWorktreeInventory = path.join(fixtureRoot, "duplicate-worktree-inventory");
 const metadataAlias = path.join(fixtureRoot, "old-alias");
 
+// No child of this test should ever run unbounded. `execFileSync` without a
+// timeout waits forever, so a wedged git or a stub that never exits used to
+// stall the whole app suite with no output and no way to tell it apart from
+// slow-but-working. 120s is far above the slowest observed call (~5.6s for a
+// full patrol spawn) — it exists to convert a hang into a failure, not to
+// police speed.
+const DEFAULT_CHILD_TIMEOUT_MS = 120_000;
+// Validate the override rather than trusting Number(): `Number("")` is 0 and
+// `Number("nope")` is NaN, and Node treats BOTH as "no timeout" — so a typo in
+// the env var would silently restore the unbounded hang this exists to prevent.
+// Anything not a finite positive number falls back to the default.
+const CHILD_TIMEOUT_MS = (() => {
+  const raw = process.env.LIFECYCLE_TEST_CHILD_TIMEOUT_MS;
+  if (raw === undefined) return DEFAULT_CHILD_TIMEOUT_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CHILD_TIMEOUT_MS;
+})();
+
 function run(command, args, cwd, options = {}) {
   return execFileSync(command, args, {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    timeout: CHILD_TIMEOUT_MS,
     ...options,
   });
 }
@@ -1404,8 +1423,21 @@ exit 0
   );
   let patrolInvocation = 0;
   let lastPatrolInvocation = "";
+  // This file spawns the patrol ~140 times at ~4.5s apiece (measured: 5.15s
+  // mean over the first ten, 3.75s over the last ten — flat, not degrading), so
+  // it produces no output for roughly ten minutes. That silence is
+  // indistinguishable from a hang and has been mistaken for one. Emit a
+  // heartbeat per spawn — cheap, and it names the exact invocation to look at
+  // when something does wedge.
+  const startedAt = Date.now();
+  const heartbeat = (label) => {
+    if (process.env.LIFECYCLE_TEST_QUIET) return;
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+    process.stderr.write(`  patrol #${patrolInvocation} (${elapsed}s) ${label}\n`);
+  };
   const patrol = (extraArgs = [], extraEnv = {}) => {
     lastPatrolInvocation = String(++patrolInvocation);
+    heartbeat(extraArgs.join(" ") || "report");
     const needsGitFixture = [
       "LIFECYCLE_DEFAULT_TRUNK",
       "LIFECYCLE_STALE_DEFAULT",
@@ -1467,6 +1499,7 @@ exit 0
   };
   const patrolResult = (extraArgs = [], extraEnv = {}) => {
     lastPatrolInvocation = String(++patrolInvocation);
+    heartbeat(extraArgs.join(" ") || "result");
     return spawnSync(
       process.execPath,
       [
@@ -1484,6 +1517,7 @@ exit 0
         cwd: repo,
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
+        timeout: CHILD_TIMEOUT_MS,
         env: {
           ...process.env,
           NODE_NO_WARNINGS: "1",
