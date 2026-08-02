@@ -36,6 +36,16 @@ function fetchProjects(
   return fetchProjectsFromCache(familiarId, opts);
 }
 
+function mergeLocallyCreatedProjects(
+  serverProjects: CaveProject[],
+  localProjects: Iterable<CaveProject>,
+): CaveProject[] {
+  const pendingLocalProjects = [...localProjects];
+  return pendingLocalProjects.length > 0
+    ? sortProjectsAlphabetically([...serverProjects, ...pendingLocalProjects])
+    : serverProjects;
+}
+
 /** Test-only: drop the module-level cache between cases. */
 export function resetProjectsCacheForTests(): void {
   clearProjectsCache();
@@ -114,12 +124,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
           for (const projectId of serverProjectIds) {
             locallyCreatedProjectsRef.current.delete(projectId);
           }
-          const pendingLocalProjects = [...locallyCreatedProjectsRef.current.values()];
-          setProjects(
-            pendingLocalProjects.length > 0
-              ? sortProjectsAlphabetically([...serverProjects, ...pendingLocalProjects])
-              : serverProjects,
-          );
+          setProjects(mergeLocallyCreatedProjects(serverProjects, locallyCreatedProjectsRef.current.values()));
         } else {
           setProjects(Array.isArray(data.projects) ? data.projects : []);
         }
