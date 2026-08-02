@@ -1636,12 +1636,12 @@ exit 0
   assert.equal(directLanding.updatedAtMs, Date.parse("2026-08-10T21:30:00Z"));
   assert.equal(directLanding.mergedPr, null);
   const postLandingCooldown = JSON.parse(
-    patrol(["--json", "--now", "2026-08-11T21:30:01Z"]),
+    patrol(["--json", "--now", "2026-08-11T05:30:00Z"]),
   ).items.find((item) => item.branch === "feat/direct-landing");
   assert.equal(
     postLandingCooldown.lane,
     "retire-after-gate",
-    "the stable direct landing becomes eligible after 24 hours",
+    "the stable direct landing becomes eligible after 8 hours",
   );
   assert.deepEqual(report.budgets, {
     worktrees: { count: 8, warning: 12, exceeded: false },

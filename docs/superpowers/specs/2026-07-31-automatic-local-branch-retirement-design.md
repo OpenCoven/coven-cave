@@ -189,7 +189,7 @@ maintenance transaction:
    request, or active workflow owns the path, branch, or exact OID.
 6. Every liveness query is complete and schema-valid.
 7. The latest commit, branch reflog, worktree HEAD reflog, and exact merge are
-   outside the mandatory 24-hour cooldown.
+   outside the mandatory 8-hour cooldown.
 8. The exact local OID is on the freshly fetched default branch or exactly
    matches the recorded head of a pull request merged into that default branch.
 9. Structured lifecycle metadata exists and no unexpired exception or recovery
@@ -383,4 +383,4 @@ lifecycle cases. Existing safety cases must not regress.
 - No age-only or name-only stale inference.
 - No automatic cleanup of unstructured legacy state before metadata backfill.
 - No claim that raw Git worktree creation is universally blocked.
-- No weakening of the 24-hour cooldown or existing recovery guarantees.
+- No weakening of the 8-hour cooldown or existing recovery guarantees.

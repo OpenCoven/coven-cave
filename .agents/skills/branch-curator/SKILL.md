@@ -22,7 +22,7 @@ Preserve a branch or worktree when any of these signals apply:
 - Any non-closed Bead names the branch, worktree, surface, or owner.
 - It heads an open or draft pull request, or its CI is still running.
 - It is a same-day backup, rescue, archive, or WIP snapshot without a disposition.
-- Its tip or reflog changed in the last 24 hours. Recency is unconditional;
+- Its tip or reflog changed in the last 8 hours. Recency is unconditional;
   known ownership does not override it.
 - It contains local or remote commits whose disposition is not proven.
 - Its local branch ref is symbolic rather than a direct commit ref.
