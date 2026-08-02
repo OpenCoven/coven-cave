@@ -41,6 +41,7 @@ const RAW_INTERVAL_ALLOWLIST = new Map([
   ["components/update-available.tsx", "6-hour recheck cadence; a hidden-tab skip would defer updates for days"],
   ["components/onboarding-overlay.tsx", "modal-scoped 2s install polls; only run while the overlay is open mid-setup"],
   ["components/familiar-x-section.tsx", "attempt-scoped X OAuth completion poll; the user is necessarily in ANOTHER window authorizing, so this is the one poll that must keep running while our tab is hidden — it is bounded by the attempt deadline and cancelled on unmount"],
+  ["components/github-view.tsx", "15s re-render tick so the GitHub freshness pill's \"synced Nm ago\" ages honestly between polls; reads the clock only, issues no request"],
   ["lib/use-pausable-poll.ts", "the shared hook's own interval (it self-guards via document.hidden)"],
 ]);
 

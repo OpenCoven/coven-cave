@@ -72,9 +72,12 @@ assert.match(
   /id: `deeplink:\$\{deepLink\.repo\}#\$\{deepLink\.number\}`/,
   "an unlisted target synthesizes a minimal item so the detail pane can fetch it",
 );
+// The chain ends at the first row the STREAM is showing (then the whole set),
+// so narrowing to a section can't leave the panel inspecting something the list
+// no longer lists.
 assert.match(
   githubView,
-  /deepLinkItem \?\? sorted\.find\(sameSelectedTarget\) \?\? sorted\.find\(\(item\) => item\.id === transientSelectedItemId\) \?\? sorted\[0\] \?\? null/,
+  /deepLinkItem\s*\?\?\s*sorted\.find\(sameSelectedTarget\)\s*\?\?\s*sorted\.find\(\(item\) => item\.id === transientSelectedItemId\)\s*\?\?\s*streamRows\[0\]\s*\?\?\s*sorted\[0\]\s*\?\?\s*null/,
   "the deep-linked item wins the detail selection until the user picks a row",
 );
 assert.match(
@@ -89,7 +92,7 @@ assert.match(
 );
 assert.match(
   githubView,
-  /sorted\.find\(sameSelectedTarget\) \?\? sorted\.find\(\(item\) => item\.id === transientSelectedItemId\)/,
+  /sorted\.find\(sameSelectedTarget\)\s*\?\?\s*sorted\.find\(\(item\) => item\.id === transientSelectedItemId\)/,
   "the transient notification selection wins over the default first row",
 );
 assert.match(
