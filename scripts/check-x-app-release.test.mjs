@@ -61,12 +61,12 @@ assert.equal(
 const workflow = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
 assert.match(
   workflow,
-  /name: Overlay audited X release recovery guard[\s\S]*?inputs\.allow_unconfigured_x_app[\s\S]*?tooling_path="scripts\/check-x-app-release\.mjs"/,
+  /name: Overlay audited X release recovery guard[\s\S]*?inputs\.allow_unconfigured_x_app[\s\S]*?RECOVERY_TOOLING_REF: \$\{\{ github\.ref \}\}[\s\S]*?refs\/heads\/\$DEFAULT_BRANCH[\s\S]*?tooling_path="scripts\/check-x-app-release\.mjs"/,
   "manual recovery overlays the reviewed guard after checking out the release tag",
 );
 assert.match(
   workflow,
-  /name: Overlay audited X release provenance renderer[\s\S]*?inputs\.allow_unconfigured_x_app[\s\S]*?for tooling_path in scripts\/release-notes\.sh scripts\/release-notes\.test\.mjs/,
+  /name: Overlay audited X release provenance renderer[\s\S]*?inputs\.allow_unconfigured_x_app[\s\S]*?RECOVERY_TOOLING_REF: \$\{\{ github\.ref \}\}[\s\S]*?refs\/heads\/\$DEFAULT_BRANCH[\s\S]*?for tooling_path in scripts\/release-notes\.sh scripts\/release-notes\.test\.mjs/,
   "manual recovery overlays the reviewed provenance renderer after checking out the release tag",
 );
 

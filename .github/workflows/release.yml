@@ -233,9 +233,15 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
         shell: bash
         env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RECOVERY_TOOLING_REF: ${{ github.ref }}
           RECOVERY_TOOLING_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          if [ "$RECOVERY_TOOLING_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::X release recovery must be dispatched from the repository default branch."
+            exit 1
+          fi
           tooling_path="scripts/check-x-app-release.mjs"
           git fetch --no-tags --depth=1 origin "$RECOVERY_TOOLING_SHA"
           git show "${RECOVERY_TOOLING_SHA}:${tooling_path}" > "${tooling_path}.recovery"
@@ -839,9 +845,15 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
         shell: bash
         env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RECOVERY_TOOLING_REF: ${{ github.ref }}
           RECOVERY_TOOLING_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          if [ "$RECOVERY_TOOLING_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::X release recovery must be dispatched from the repository default branch."
+            exit 1
+          fi
           git fetch --no-tags --depth=1 origin "$RECOVERY_TOOLING_SHA"
           for tooling_path in scripts/release-notes.sh scripts/release-notes.test.mjs; do
             git show "${RECOVERY_TOOLING_SHA}:${tooling_path}" > "${tooling_path}.recovery"
