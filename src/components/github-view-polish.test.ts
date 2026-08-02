@@ -239,6 +239,36 @@ for (const [name, src] of [["stream", stream], ["stage", stage]]) {
   assert.doesNotMatch(src, /\bCody\b/i, `${name} names no specific familiar`);
 }
 
+// …and the HOST does not quietly pick one either (cave-26sg4). The guard above
+// covered the stream and the stage, which is where the slot was introduced —
+// but the violation it was written against lived in github-view.tsx, where
+// SafeMergeAction fell back to `familiars[0]`. Roster order is not a choice the
+// user made, and safe merge creates a worktree and drives a merge, so the
+// familiar it lands on has to be asked for.
+assert.doesNotMatch(
+  source,
+  /familiars\[0\]/,
+  "the host never falls back to whichever familiar sorts first",
+);
+// Safe merge asks when the work is not already attached to a familiar.
+assert.match(
+  source,
+  /const linkedFamiliarId = linkedCard\?\.familiarId \?\? null;/,
+  "safe merge derives its familiar from the linked card only",
+);
+assert.match(
+  source,
+  /if \(linkedFamiliarId\) \{\s*void startSafeMerge\(linkedFamiliarId\);[\s\S]{0,80}?setPickerOpen\(\(v\) => !v\);/,
+  "safe merge runs straight through when a linked card names a familiar, and opens the picker otherwise",
+);
+// An empty roster and a failed load are different claims — cave-59cv's rule,
+// applied here because safe merge now surfaces the roster itself.
+assert.match(
+  source,
+  /familiarsFailed \? "Could not load your familiars\." : "No familiars yet\."/,
+  "safe merge distinguishes a failed familiars load from an empty roster",
+);
+
 // The row keeps exactly ONE accented verb. Moving the hand-off to a slot took
 // the accent off it (the slot renders a plain secondary button), which left
 // .gh-stream-verb--accent as dead CSS and the row with no primary-action
