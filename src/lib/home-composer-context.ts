@@ -55,8 +55,8 @@ export function homeComposerProjectLaunchMessage(args: {
   projectCount: number;
 }): string {
   if (!args.familiarId) return "Summon a familiar before starting chat.";
-  if (args.projectsLoading || !args.projectsLoadedSuccessfully) return "Checking project access…";
   if (args.projectsError) return "Projects are unavailable. Retry before starting chat.";
+  if (args.projectsLoading || !args.projectsLoadedSuccessfully) return "Checking project access…";
   if (args.projectCount === 0) return "Add a project this familiar can access before starting chat.";
   return "Choose a project this familiar can access before starting chat.";
 }

@@ -67,6 +67,17 @@ test("home composer explains the familiar prerequisite while projects are loadin
     }),
     "Add a project this familiar can access before starting chat.",
   );
+  assert.equal(
+    homeComposerProjectLaunchMessage({
+      familiarId: "sage",
+      projectsLoading: false,
+      projectsError: "HTTP 503",
+      projectsLoadedSuccessfully: false,
+      projectCount: 0,
+    }),
+    "Projects are unavailable. Retry before starting chat.",
+    "an initial project-load failure must not be reported as an endless loading state",
+  );
 });
 
 test("home composer keeps an explicit project through a pending familiar scope", () => {

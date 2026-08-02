@@ -238,3 +238,44 @@ test("project creation preserves the local-only code through nullable and throwi
     resetProjectsCacheForTests();
   }
 });
+
+test("unscoped project creation is visible before the initial registry load settles", async () => {
+  resetProjectRegistryListenersForTests();
+  resetProjectsCacheForTests();
+  const originalFetch = globalThis.fetch;
+  const pending: DeferredResponse[] = [];
+  let latestState: ReturnType<typeof useProjects> | null = null;
+  let renderer: ReturnType<typeof create> | null = null;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    return await new Promise((resolve) => pending.push({ url, resolve }));
+  }) as typeof fetch;
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(CreationProbe, { onState: (state) => { latestState = state; } }));
+    });
+    assert.equal(pending.length, 1, "the initial unscoped list is still in flight");
+
+    const created = project("created-before-load");
+    const creation = latestState!.createProject("Created", created.root, { emitMutation: false });
+    assert.equal(pending.length, 2, "creation is independent of the pending list request");
+    pending[1]!.resolve({ ok: true, status: 201, json: async () => ({ ok: true, project: created }) });
+    await act(async () => {
+      await creation;
+    });
+
+    assert.deepEqual(
+      latestState!.projects.map((entry) => entry.id),
+      [created.id],
+      "the successful local registration must not remain masked by the pending GET",
+    );
+  } finally {
+    await act(async () => {
+      renderer?.unmount();
+    });
+    globalThis.fetch = originalFetch;
+    resetProjectRegistryListenersForTests();
+    resetProjectsCacheForTests();
+  }
+});

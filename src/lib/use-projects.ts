@@ -153,9 +153,14 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
 
   const applyCreatedProject = useCallback((project: CaveProject, options?: CreateProjectOptions): CaveProject => {
     setProjects((prev) => sortProjectsAlphabetically([...prev, project]));
+    // A successful local registration is already authoritative for the
+    // unscoped operator view. Surface it even if the initial GET is still
+    // pending (or fails), while familiar-scoped views must await their grant-
+    // filtered response before becoming ready.
+    if (familiarId === null) setLoadedScopeKey(scopeKey);
     if (options?.emitMutation !== false) emitProjectRegistryMutation();
     return project;
-  }, []);
+  }, [familiarId, scopeKey]);
 
   const requestCreateProject = useCallback(async (name: string, root: string, options?: CreateProjectOptions): Promise<CreateProjectResult> => {
     try {
