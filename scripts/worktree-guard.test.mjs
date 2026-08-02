@@ -6,9 +6,10 @@
 // garbage input. A guard bug must never brick Bash.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
@@ -16,6 +17,30 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(root, "scripts", "worktree-guard.mjs");
 const isWin = process.platform === "win32";
 const BYPASS = "WT_GUARD_BYPASS=1";
+const STRICT_GIT_ENV_KEYS = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_COMMON_DIR",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_GRAFT_FILE",
+  "GIT_SHALLOW_FILE",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_NAMESPACE",
+  "GIT_QUARANTINE_PATH",
+  "GIT_EXEC_PATH",
+  "GIT_CONFIG_COUNT",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_SYSTEM",
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_NOSYSTEM",
+  "GIT_PAGER",
+  "GIT_LITERAL_PATHSPECS",
+  "GIT_GLOB_PATHSPECS",
+  "GIT_NOGLOB_PATHSPECS",
+  "GIT_ICASE_PATHSPECS",
+];
 
 function runHook(command, cwd, extraEnv = {}) {
   const payload = JSON.stringify({ session_id: "test", cwd, tool_name: "Bash", tool_input: { command } });
@@ -25,6 +50,40 @@ function runHook(command, cwd, extraEnv = {}) {
     encoding: "utf8",
     env: { ...process.env, CLAUDE_PROJECT_DIR: cwd, ...extraEnv },
   });
+}
+
+function runStrict(args, cwd, extraEnv = {}) {
+  const env = { ...process.env };
+  delete env.WT_GUARD_TEST_MODE;
+  delete env.WT_GUARD_TEST_LSOF_BIN;
+  for (const key of STRICT_GIT_ENV_KEYS) delete env[key];
+  for (const key of Object.keys(env)) {
+    if (/^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(key)) delete env[key];
+  }
+  return spawnSync("node", [script, ...args], {
+    cwd,
+    encoding: "utf8",
+    env: { ...env, ...extraEnv },
+  });
+}
+
+function lsofStub(output = "p4242\ncidle\nfcwd\nn/\n", status = 0, errorOutput = "", name = "lsof-stub") {
+  const bin = mkdtempSync(path.join(tmpdir(), "wt-guard-lsof-"));
+  const executable = path.join(bin, name);
+  writeFileSync(
+    executable,
+    `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(output)});\nprocess.stderr.write(${JSON.stringify(errorOutput)});\nprocess.exit(${status});\n`,
+  );
+  chmodSync(executable, 0o755);
+  return executable;
+}
+
+function strictArgs(wt, head) {
+  return ["--strict-worktree-remove", wt, "--expected-head", head];
+}
+
+function strictEnv(executable = lsofStub()) {
+  return { WT_GUARD_TEST_MODE: "1", WT_GUARD_TEST_LSOF_BIN: executable };
 }
 
 function sh(cmd, args, cwd) {
@@ -393,5 +452,164 @@ if (!isWin) {
     assert.equal(res.status, 0, `exits 0 on input ${JSON.stringify(input)}`);
   }
 }
+
+await test("strict-worktree-remove is a fail-closed direct guard", () => {
+  const safe = repoWithWorktree({ push: true });
+  const safeHead = sh("git", ["-C", safe.wt, "rev-parse", "HEAD"], safe.dir).trim();
+  const safeResult = runStrict(strictArgs(safe.wt, safeHead), safe.dir, strictEnv());
+  assert.equal(safeResult.status, 0, `safe strict removal is allowed: ${safeResult.stderr}`);
+  assert.equal(safeResult.stderr, "", "safe strict removal writes no diagnostics");
+  assert.ok(safeResult.stdout.endsWith("\n"), "allow evidence is newline terminated");
+  assert.equal(safeResult.stdout.split("\n").length, 2, "allow evidence is exactly one line");
+  const allow = JSON.parse(safeResult.stdout);
+  assert.deepEqual(Object.keys(allow), ["ok", "mode", "path", "head"], "allow evidence has only the contract keys");
+  assert.deepEqual(allow, {
+    ok: true,
+    mode: "strict-worktree-remove",
+    path: realpathSync(safe.wt),
+    head: safeHead,
+  });
+
+  const externalExclude = repoWithWorktree({ push: true });
+  const externalExcludeHead = sh(
+    "git",
+    ["-C", externalExclude.wt, "rev-parse", "HEAD"],
+    externalExclude.dir,
+  ).trim();
+  const excludesFile = path.join(externalExclude.dir, "external-excludes");
+  writeFileSync(excludesFile, "hidden-by-external.txt\n");
+  sh("git", ["-C", externalExclude.wt, "config", "core.excludesFile", excludesFile], externalExclude.dir);
+  writeFileSync(path.join(externalExclude.wt, "hidden-by-external.txt"), "must remain visible\n");
+  const externalExcludeResult = runStrict(
+    strictArgs(externalExclude.wt, externalExcludeHead),
+    externalExclude.dir,
+    strictEnv(),
+  );
+  assert.equal(externalExcludeResult.status, 2, "configured external excludes cannot hide an untracked path");
+  assert.equal(externalExcludeResult.stdout, "");
+
+  if (!isWin) {
+    const filemode = repoWithWorktree({ push: true });
+    const filemodeHead = sh("git", ["-C", filemode.wt, "rev-parse", "HEAD"], filemode.dir).trim();
+    sh("git", ["-C", filemode.wt, "config", "core.filemode", "false"], filemode.dir);
+    chmodSync(path.join(filemode.wt, "b.txt"), 0o755);
+    const filemodeResult = runStrict(strictArgs(filemode.wt, filemodeHead), filemode.dir, strictEnv());
+    assert.equal(filemodeResult.status, 2, "repo core.filemode=false cannot hide a tracked executable-bit change");
+    assert.equal(filemodeResult.stdout, "");
+  }
+
+  for (const [ambient, label] of [
+    [
+      { GIT_DIR: path.join(safe.dir, "missing-git-dir"), GIT_WORK_TREE: path.join(safe.dir, "missing-work-tree") },
+      "ambient GIT_DIR/GIT_WORK_TREE",
+    ],
+    [{ GIT_INDEX_FILE: path.join(safe.dir, "missing-index") }, "ambient GIT_INDEX_FILE"],
+    [{ GIT_CONFIG_COUNT: "1" }, "malformed ambient GIT_CONFIG_COUNT injection"],
+  ]) {
+    const ambientResult = runStrict(strictArgs(safe.wt, safeHead), safe.dir, { ...strictEnv(), ...ambient });
+    assert.equal(ambientResult.status, 0, `${label} cannot redirect strict Git: ${ambientResult.stderr}`);
+    assert.equal(ambientResult.stderr, "");
+  }
+
+  const dirty = repoWithWorktree({ push: true, dirty: true });
+  sh("git", ["config", "status.showUntrackedFiles", "no"], dirty.wt);
+  const dirtyHead = sh("git", ["-C", dirty.wt, "rev-parse", "HEAD"], dirty.dir).trim();
+  let result = runStrict(strictArgs(dirty.wt, dirtyHead), dirty.dir, {
+    ...strictEnv(),
+    WT_GUARD_BYPASS: "1",
+  });
+  assert.equal(result.status, 2, "strict mode sees untracked dirt hidden by repo config and ignores bypass");
+  assert.equal(result.stdout, "", "dirty refusal emits no allow evidence");
+
+  const unpushed = repoWithWorktree({ push: false });
+  const unpushedHead = sh("git", ["-C", unpushed.wt, "rev-parse", "HEAD"], unpushed.dir).trim();
+  result = runStrict(strictArgs(unpushed.wt, unpushedHead), unpushed.dir, strictEnv());
+  assert.equal(result.status, 2, "clean unpushed worktree is refused");
+  assert.equal(result.stdout, "");
+
+  result = runStrict(strictArgs(safe.wt, "0".repeat(40)), safe.dir, strictEnv());
+  assert.equal(result.status, 2, "audited HEAD drift is refused");
+  assert.equal(result.stdout, "");
+
+  const missing = path.join(safe.dir, ".worktrees", "missing");
+  result = runStrict(strictArgs(missing, safeHead), safe.dir, strictEnv());
+  assert.equal(result.status, 2, "missing absolute target is refused");
+  assert.equal(result.stdout, "");
+
+  const copied = path.join(safe.dir, ".worktrees", "unregistered-copy");
+  mkdirSync(copied, { recursive: true });
+  writeFileSync(path.join(copied, ".git"), readFileSync(path.join(safe.wt, ".git")));
+  result = runStrict(strictArgs(copied, safeHead), safe.dir, strictEnv());
+  assert.equal(result.status, 2, "a .git-bearing directory absent from the exact worktree registry is refused");
+  assert.equal(result.stdout, "");
+
+  result = runStrict(strictArgs(safe.wt, safeHead), safe.dir, strictEnv(path.join(safe.dir, "missing-lsof")));
+  assert.equal(result.status, 2, "a missing strict lsof executable is refused");
+  assert.equal(result.stdout, "");
+
+  result = runStrict(strictArgs(safe.wt, safeHead), safe.dir, strictEnv(lsofStub("", 7)));
+  assert.equal(result.status, 2, "a failing strict lsof probe is refused");
+  assert.equal(result.stdout, "");
+
+  result = runStrict(strictArgs(safe.wt, safeHead), safe.dir, strictEnv(lsofStub(undefined, 0, "warning\n")));
+  assert.equal(result.status, 2, "strict lsof stderr is uncertainty and is refused");
+  assert.equal(result.stdout, "");
+
+  result = runStrict(
+    strictArgs(safe.wt, safeHead),
+    safe.dir,
+    strictEnv(lsofStub("p4242\ncidle\nn/\n")),
+  );
+  assert.equal(result.status, 2, "a successful lsof stream missing fcwd is malformed and refused");
+  assert.equal(result.stdout, "");
+
+  const canonicalSafe = realpathSync(safe.wt);
+  result = runStrict(
+    strictArgs(safe.wt, safeHead),
+    safe.dir,
+    strictEnv(lsofStub(`p99123\ncworker\nfcwd\nn${canonicalSafe}\n`)),
+  );
+  assert.equal(result.status, 2, "a process with cwd at the exact target is refused");
+  assert.equal(result.stdout, "");
+
+  for (const args of [
+    strictArgs("relative/worktree", safeHead),
+    ["--strict-worktree-remove", safe.wt],
+    strictArgs(safe.wt, "abc123"),
+    [...strictArgs(safe.wt, safeHead), "extra"],
+    ["--unknown"],
+  ]) {
+    result = runStrict(args, safe.dir, strictEnv());
+    assert.equal(result.status, 2, `malformed strict argv is refused: ${JSON.stringify(args)}`);
+    assert.equal(result.stdout, "", "malformed strict argv emits no allow evidence");
+    assert.notEqual(result.stderr, "", "malformed strict argv explains the refusal");
+  }
+
+  const productionLsof = lsofStub(undefined, 0, "", "lsof");
+  const productionPath = `${path.dirname(productionLsof)}${path.delimiter}${process.env.PATH}`;
+  const failingOverride = lsofStub("", 9);
+
+  result = runStrict(strictArgs(safe.wt, safeHead), safe.dir, {
+    PATH: productionPath,
+    WT_GUARD_TEST_MODE: "1",
+  });
+  assert.equal(result.status, 0, "test mode alone still uses the production PATH lsof");
+  assert.equal(result.stderr, "");
+
+  result = runStrict(strictArgs(safe.wt, safeHead), safe.dir, {
+    PATH: productionPath,
+    WT_GUARD_TEST_LSOF_BIN: failingOverride,
+  });
+  assert.equal(result.status, 0, "the override variable alone still uses the production PATH lsof");
+  assert.equal(result.stderr, "");
+
+  result = runStrict(strictArgs(safe.wt, safeHead), safe.dir, {
+    PATH: productionPath,
+    WT_GUARD_TEST_MODE: "1",
+    WT_GUARD_TEST_LSOF_BIN: failingOverride,
+  });
+  assert.equal(result.status, 2, "both test seam variables activate the failing override");
+  assert.equal(result.stdout, "");
+});
 
 console.log("worktree-guard.test.mjs passed");

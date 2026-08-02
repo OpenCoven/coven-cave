@@ -62,6 +62,254 @@ import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, st
 import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 
+const FULL_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const STRICT_GIT_UNSAFE_ENV = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_COMMON_DIR",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_GRAFT_FILE",
+  "GIT_SHALLOW_FILE",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_NAMESPACE",
+  "GIT_QUARANTINE_PATH",
+  "GIT_EXEC_PATH",
+  "GIT_CONFIG_COUNT",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_SYSTEM",
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_NOSYSTEM",
+  "GIT_PAGER",
+  "GIT_LITERAL_PATHSPECS",
+  "GIT_GLOB_PATHSPECS",
+  "GIT_NOGLOB_PATHSPECS",
+  "GIT_ICASE_PATHSPECS",
+];
+
+function strictRefuse(reason) {
+  process.stderr.write(`worktree-guard strict refusal: ${reason}\n`);
+  process.exit(2);
+}
+
+function strictGitEnv() {
+  const env = { ...process.env };
+  for (const key of STRICT_GIT_UNSAFE_ENV) delete env[key];
+  for (const key of Object.keys(env)) {
+    if (/^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(key)) delete env[key];
+  }
+  env.GIT_NO_REPLACE_OBJECTS = "1";
+  env.GIT_PAGER = "cat";
+  return env;
+}
+
+function strictGit(args, cwd) {
+  const probe = spawnSync("git", args, {
+    cwd,
+    env: strictGitEnv(),
+    encoding: "utf8",
+    timeout: 10000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (probe.error) throw new Error(`git probe failed: ${probe.error.message}`);
+  if (probe.signal) throw new Error(`git probe ended on signal ${probe.signal}`);
+  if (probe.status !== 0) throw new Error(`git probe exited ${probe.status}`);
+  if (probe.stderr !== "") throw new Error("git probe returned unexpected diagnostics");
+  if (typeof probe.stdout !== "string") throw new Error("git probe returned malformed output");
+  return probe.stdout;
+}
+
+function strictSingleOid(output, label) {
+  const lines = output.split("\n");
+  if (lines.length !== 2 || lines[1] !== "" || !FULL_OID.test(lines[0])) {
+    throw new Error(`${label} returned a malformed full OID`);
+  }
+  return lines[0];
+}
+
+function strictRegisteredWorktree(target) {
+  const output = strictGit(["-C", target, "worktree", "list", "--porcelain", "-z"]);
+  if (!output.endsWith("\0\0")) throw new Error("worktree registry returned malformed output");
+  const records = output.slice(0, -2).split("\0\0");
+  let found = false;
+  for (const record of records) {
+    const fields = record.split("\0");
+    if (!fields[0]?.startsWith("worktree ") || fields[0].length === "worktree ".length) {
+      throw new Error("worktree registry returned a malformed record");
+    }
+    const registeredPath = fields[0].slice("worktree ".length);
+    if (!path.isAbsolute(registeredPath) || fields.slice(1).some((field) => !field)) {
+      throw new Error("worktree registry returned malformed fields");
+    }
+    if (registeredPath === target) found = true;
+  }
+  if (!found) throw new Error("target is not an exactly registered worktree");
+}
+
+function strictRemoteNames(target) {
+  const output = strictGit(["-C", target, "remote"]);
+  if (!output.endsWith("\n")) throw new Error("git remote returned malformed output");
+  const remotes = output.slice(0, -1).split("\n");
+  if (remotes.length === 1 && remotes[0] === "") throw new Error("repository has no configured remotes");
+  if (remotes.some((remote) => !remote || /\s/.test(remote)) || new Set(remotes).size !== remotes.length) {
+    throw new Error("git remote returned malformed names");
+  }
+  return remotes;
+}
+
+function strictRemoteRefs(output, remote) {
+  if (output && !output.endsWith("\n")) throw new Error(`remote ${remote} returned malformed output`);
+  const refs = [];
+  const seen = new Set();
+  for (const line of output ? output.slice(0, -1).split("\n") : []) {
+    const match = /^([0-9a-f]+)\t(refs\/(heads|tags)\/(.+))$/.exec(line);
+    if (!match || !FULL_OID.test(match[1]) || !match[4] || seen.has(match[2])) {
+      throw new Error(`remote ${remote} returned malformed refs`);
+    }
+    if (match[3] === "heads" && match[4].endsWith("^{}")) {
+      throw new Error(`remote ${remote} returned a malformed branch ref`);
+    }
+    seen.add(match[2]);
+    refs.push({ oid: match[1], ref: match[2], kind: match[3], name: match[4] });
+  }
+  return refs;
+}
+
+function strictRetainedOnRemote(target, head) {
+  let retained = false;
+  for (const remote of strictRemoteNames(target)) {
+    const output = strictGit(["-C", target, "ls-remote", "--heads", "--tags", remote]);
+    const refs = strictRemoteRefs(output, remote);
+    const peeledTags = new Set(
+      refs.filter((entry) => entry.kind === "tags" && entry.name.endsWith("^{}"))
+        .map((entry) => entry.name.slice(0, -3)),
+    );
+    for (const entry of refs) {
+      if (entry.oid !== head) continue;
+      if (entry.kind === "heads") retained = true;
+      if (entry.kind === "tags" && entry.name.endsWith("^{}")) retained = true;
+      if (entry.kind === "tags" && !entry.name.endsWith("^{}") && !peeledTags.has(entry.name)) retained = true;
+    }
+  }
+  if (!retained) throw new Error("HEAD is not retained by any configured remote");
+}
+
+function strictLiveProcesses(target) {
+  const testLsof =
+    process.env.WT_GUARD_TEST_MODE === "1" && process.env.WT_GUARD_TEST_LSOF_BIN
+      ? process.env.WT_GUARD_TEST_LSOF_BIN
+      : "lsof";
+  const probe = spawnSync(testLsof, ["-d", "cwd", "-F", "pcn"], {
+    cwd: path.parse(process.cwd()).root || path.sep,
+    encoding: "utf8",
+    timeout: 10000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (probe.error) throw new Error(`lsof probe failed: ${probe.error.message}`);
+  if (probe.signal) throw new Error(`lsof probe ended on signal ${probe.signal}`);
+  if (probe.status !== 0) throw new Error(`lsof probe exited ${probe.status}`);
+  if (probe.stderr !== "") throw new Error("lsof probe returned unexpected diagnostics");
+  if (typeof probe.stdout !== "string" || !probe.stdout || !probe.stdout.endsWith("\n")) {
+    throw new Error("lsof probe returned malformed output");
+  }
+
+  const prefix = target.endsWith(path.sep) ? target : `${target}${path.sep}`;
+  let state = "pid";
+  let processRecord = null;
+  let recordCount = 0;
+
+  for (const line of probe.stdout.slice(0, -1).split("\n")) {
+    if (state === "pid") {
+      if (!/^p[0-9]+$/.test(line)) throw new Error("lsof probe returned a malformed pid");
+      processRecord = { pid: line.slice(1), command: "" };
+      state = "command";
+    } else if (state === "command") {
+      if (!line.startsWith("c") || line.length === 1) throw new Error("lsof probe returned a malformed command");
+      processRecord.command = line.slice(1);
+      state = "descriptor";
+    } else if (state === "descriptor") {
+      if (line !== "fcwd") throw new Error("lsof probe returned a malformed cwd descriptor");
+      state = "name";
+    } else if (state === "name") {
+      const cwd = line.slice(1);
+      if (!line.startsWith("n") || !cwd || !path.isAbsolute(cwd)) {
+        throw new Error("lsof probe returned a malformed cwd name");
+      }
+      let canonicalCwd;
+      try {
+        canonicalCwd = realpathSync(cwd);
+      } catch (error) {
+        throw new Error(`lsof cwd cannot be resolved: ${error.message}`);
+      }
+      recordCount += 1;
+      if (canonicalCwd === target || canonicalCwd.startsWith(prefix)) {
+        throw new Error(`process ${processRecord.pid} has cwd inside target`);
+      }
+      processRecord = null;
+      state = "pid";
+    } else {
+      throw new Error("lsof probe entered an invalid parser state");
+    }
+  }
+  if (state !== "pid" || processRecord) throw new Error("lsof probe returned an incomplete final record");
+  if (!recordCount) throw new Error("lsof probe returned no process records");
+}
+
+function runStrictWorktreeRemove(args) {
+  if (
+    args.length !== 4 ||
+    args[0] !== "--strict-worktree-remove" ||
+    args[2] !== "--expected-head"
+  ) {
+    throw new Error("expected --strict-worktree-remove <absolute-path> --expected-head <full-oid>");
+  }
+  const requestedPath = args[1];
+  const expectedHead = args[3];
+  if (!path.isAbsolute(requestedPath)) throw new Error("target path must be absolute");
+  if (!FULL_OID.test(expectedHead)) throw new Error("expected HEAD must be a full OID");
+
+  let target;
+  try {
+    target = realpathSync(requestedPath);
+  } catch (error) {
+    throw new Error(`target cannot be resolved: ${error.message}`);
+  }
+  if (!statSync(target).isDirectory()) throw new Error("target is not a directory");
+  strictRegisteredWorktree(target);
+
+  const actualHead = strictSingleOid(
+    strictGit(["-C", target, "rev-parse", "--verify", "HEAD"]),
+    "git rev-parse HEAD",
+  );
+  if (actualHead !== expectedHead) throw new Error("target HEAD does not match expected HEAD");
+
+  const status = strictGit([
+    "-c", "core.fsmonitor=false",
+    "-c", "core.filemode=true",
+    "-c", "status.showUntrackedFiles=all",
+    "-c", "diff.ignoreSubmodules=none",
+    "-c", "status.submoduleSummary=true",
+    // Repository-owned .gitignore and .git/info/exclude remain intentionally
+    // ignored here; Branch Curator's normative ignored-state proof owns them.
+    // Only external/configured excludes are neutralized by this strict barrier.
+    "-c", `core.excludesFile=${process.platform === "win32" ? "NUL" : "/dev/null"}`,
+    "-C", target,
+    "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none",
+  ]);
+  if (status !== "") throw new Error("target worktree is not clean");
+
+  strictRetainedOnRemote(target, actualHead);
+  strictLiveProcesses(target);
+  process.stdout.write(`${JSON.stringify({
+    ok: true,
+    mode: "strict-worktree-remove",
+    path: target,
+    head: actualHead,
+  })}\n`);
+  process.exitCode = 0;
+}
+
 const BYPASS = "WT_GUARD_BYPASS=1";
 /** Fast pre-filter: commands that can't possibly match skip all work. */
 const INTEREST = /worktree\s+remove|\.worktrees\b|branch\s+(?:-D|-fd|-df|--delete\s+--force)|push\b[^|;&]*(?:--delete|\s:\S)/;
@@ -569,8 +817,17 @@ function main() {
   return allow();
 }
 
-try {
-  main();
-} catch {
-  allow(); // a guard bug must never brick every Bash call
+const directArgs = process.argv.slice(2);
+if (directArgs.length > 0) {
+  try {
+    runStrictWorktreeRemove(directArgs);
+  } catch (error) {
+    strictRefuse(error instanceof Error ? error.message : "unknown strict probe error");
+  }
+} else {
+  try {
+    main();
+  } catch {
+    allow(); // a guard bug must never brick every Bash call
+  }
 }
