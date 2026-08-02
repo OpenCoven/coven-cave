@@ -50,7 +50,11 @@ assert.match(
   /runtimeModelOptions\.length > 0 \|\| \(taskModelIsCustom && !allowCustomModel\)/,
   "the no-custom remediation path keeps the model select available so the override can be reset",
 );
-assert.match(taskRoute, /card\.modelOverride && card\.modelOverrideHarness === binding\.harness/, "new task sessions only use an override from the familiar's current runtime");
+assert.match(
+  taskRoute,
+  /cardModelHarness = card\.modelOverrideHarness[\s\S]{0,160}card\.modelOverride && cardModelHarness === binding\.harness[\s\S]{0,180}cleanModelId\(card\.modelOverride\)/,
+  "new task sessions canonicalize the card runtime and only use an override from the familiar's current runtime",
+);
 assert.match(taskRoute, /updateCard\(card\.id, \{ modelOverride: null, modelOverrideHarness: null \}\)/, "a stale task model is cleared before launch");
 assert.match(taskRoute, /model: taskModelOverride \?\? binding\.model/, "new task sessions otherwise use the familiar default model");
 // cave-aikv: board task sessions must never spawn an immortal, never-attached
