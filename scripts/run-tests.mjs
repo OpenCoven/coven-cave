@@ -118,6 +118,7 @@ export const SUITES = {
     "src/lib/open-system-browser.test.ts",
     "src/components/familiar-x-section.test.ts",
     "src/components/familiar-x-section-behavior.test.tsx",
+    "src/components/x-surface-gating.test.ts",
     "src/lib/mcp-doctor.test.ts",
     "src/lib/settings-profile-form.test.ts",
     "src/lib/user-profile-shared.test.ts",
