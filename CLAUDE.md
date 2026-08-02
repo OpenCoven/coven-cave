@@ -16,16 +16,31 @@
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
 - Required status checks — **all NINE** must pass (widened 2026-08-01 from five): `Frontend build`, `Rust check`, `E2E (Playwright)`, `Cross-environment (ubuntu-latest)`, `Cross-environment (windows-latest)`, `Cross-environment required`, `Sidecar runtime (ubuntu-latest)`, `Sidecar runtime (windows-latest)`, `Sidecar runtime required`. The four matrix legs were added alongside their `*-required` rollups. The rollups already fail unless `needs.<job>.result == 'success'`, so this is defense in depth rather than a gap being closed — it removes the dependency on those aggregation scripts staying correct. **Both layers carry the same nine** (classic protection and ruleset `19123333`), so they cannot disagree. Only `ci.yml` runs on `pull_request` and no job carries a skippable `if:`, which is why requiring the legs is safe — a required context that never reports is what leaves a PR stuck `BLOCKED` with nothing failing. **`CodeQL` is retired** (2026-07-31): the ruleset's `code_scanning` rule went first, then the required context in classic branch protection, and now the workflow itself. Code scanning is fully off — GitHub default setup is `not-configured`, so nothing scans in its place. If you ever see a PR stuck `BLOCKED` with `mergeable: MERGEABLE`, no failing check and every conversation resolved, suspect a required context that no longer reports; compare `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the checks the PR actually runs. The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
-- **All review conversations must be resolved** (`required_conversation_resolution`).
-  This is the one that surprises you: it counts threads opened by
-  `copilot-pull-request-reviewer[bot]` and `github-advanced-security[bot]`, not
-  just human review. With every required check green and zero approvals needed,
-  the PR still reports `mergeStateStatus: BLOCKED` and `gh pr merge` fails with
-  the unhelpful *"the base branch policy prohibits the merge"* — no mention of
-  conversations. Resolve the threads (reply naming the fixing commit first, so
-  it is a trail rather than a silent dismissal) and it clears. Read the bot
-  comments before resolving; on PR #4068 two of three were real bugs a fully
-  green suite had passed.
+- Review conversations are **no longer required to be resolved**
+  (`required_conversation_resolution` was turned OFF on 2026-08-01, at the
+  user's direction). A PR with green checks merges with open threads.
+
+  **Read the review comments anyway.** The gate is gone; the reason it existed
+  is not. While it was on it blocked three merges in a single day, and each one
+  was a real defect a fully green suite had passed:
+  - #4190 — `select-none` on the dashboard root inherited `user-select: none`
+    onto the composer textarea. Invisible to headless Chromium (keyboard
+    select-all still works) and broken under WKWebView, which is the desktop
+    shell.
+  - #4194 — a stored `model` field nothing consumed, with a tooltip promising
+    it. The PR's own description had argued against exactly that.
+  - #4200 — a timeout concern that turned out to be wrong, but only because
+    the PR measured it; the block is what forced the measurement.
+
+  Earlier evidence points the same way: on #4068, two of three bot comments
+  were real bugs. Reply naming the fixing commit before resolving, so it reads
+  as a trail rather than a silent dismissal.
+
+  Historical note, since it will otherwise look like a mystery: while the
+  setting was on, a PR with every check green and zero approvals still reported
+  `mergeStateStatus: BLOCKED`, and `gh pr merge` failed with *"the base branch
+  policy prohibits the merge"* — never mentioning conversations. If that error
+  reappears, the setting has been turned back on.
 - Commit signatures are **required** (`required_signatures`) — the server
   rejects unsigned commits outright, so the global `-S` rule is enforced, not
   merely advised.
@@ -93,13 +108,13 @@ git worktree add -b <branch> .worktrees/<branch> origin/main
 # … commit (signed, per the global -S rule) …
 git push -u origin <branch>
 gh pr create --base main --head <branch> --title "…" --body "…"
-# wait for the required checks to go green, then resolve every review thread —
-# including the bots' — or the merge stays BLOCKED with a misleading error:
+# wait for the required checks to go green. Resolving review threads is NO
+# LONGER required to merge — but list them and read them, because that is where
+# three real bugs surfaced in one day (see the protection bullets above):
 gh api graphql -f query='{repository(owner:"OpenCoven",name:"coven-cave"){pullRequest(number:<#>){reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved path comments(first:1){nodes{author{login} body}}}}}}}'
 # If hasNextPage is true, page with `reviewThreads(first:100, after:"<endCursor>")`
-# until it is false — an unlisted thread keeps the merge BLOCKED with no hint
-# which one, so a partial listing is worse than no listing.
-# read each one, fix what is real, reply naming the commit, then per thread id:
+# until it is false — a partial listing is worse than no listing.
+# fix what is real, reply naming the commit, then per thread id (optional now):
 gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -f t=<PRRT_…>
 gh pr merge <#> --squash --delete-branch
 ```
