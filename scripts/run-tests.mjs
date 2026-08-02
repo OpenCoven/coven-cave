@@ -1076,6 +1076,7 @@ export const SUITES = {
     "scripts/sync-runtimes.test.mjs",
     "scripts/surface-claim-guard.test.mjs",
     "scripts/worktree-guard.test.mjs",
+    "scripts/branch-curator-manual-cleanup-contract.test.mjs",
     "scripts/git-hooks-pre-commit.test.mjs",
     "scripts/git-hooks-commit-msg.test.mjs",
     "scripts/secret-preflight.test.mjs",
