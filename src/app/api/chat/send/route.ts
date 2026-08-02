@@ -268,6 +268,7 @@ import {
 import {
   appliedModelControls,
   modelControlCapabilities,
+  modelControlInputWithLegacy,
   promptOnlyModelControls,
   validateModelControlValues,
   type ModelControlValues,
@@ -693,6 +694,9 @@ function openClawChatResponse(args: {
         harness: "openclaw",
         model: args.desiredModel,
         runtime: `local:${cwd}`,
+        requestedModel: args.body.modelOverride === ""
+          ? ""
+          : cleanModelId(args.body.modelOverride) ?? undefined,
         desiredModel: args.desiredModel,
         confirmedModel: undefined,
         retryModel: turnRetryModel({ requestedModel: args.body.modelOverride }),
@@ -1399,6 +1403,41 @@ export async function POST(req: Request) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
+  // Model ids are untrusted input. Reject malformed or flag-shaped values at
+  // the send boundary before capability probes or any runtime can spawn. The
+  // empty string is the explicit runtime-default sentinel, not a model id.
+  const hasModelOverride = Object.prototype.hasOwnProperty.call(body, "modelOverride");
+  const requestedModel = body.modelOverride === ""
+    ? ""
+    : cleanModelId(body.modelOverride) ?? undefined;
+  if (hasModelOverride && body.modelOverride !== "" && !requestedModel) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        code: "invalid_model_override",
+        error: "modelOverride must be a safe model id",
+        modelApplicationState: "rejected",
+        modelApplicationReason: "The selected model id failed launch-boundary validation.",
+      }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  }
+  if (
+    body.modelOverrideScope === "runtime-default" &&
+    body.modelOverride !== undefined &&
+    body.modelOverride !== ""
+  ) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        code: "invalid_model_scope",
+        error: "runtime-default scope cannot carry a model id",
+        modelApplicationState: "rejected",
+        modelApplicationReason: "Runtime-owned defaults are represented by omitting the model id.",
+      }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  }
   // Persisted transcripts keep attachment metadata only — base64 image
   // payloads stay out of the conversation store. Images additionally get a
   // durable copy in the attachment store, and the transcript records its id,
@@ -1928,6 +1967,20 @@ export async function POST(req: Request) {
             ? codexDirectCapabilities?.model === true
             : binding.harness === "grok" ||
               (binding.harness !== "openclaw" && ((await probeCovenCapability(covenRunSupportsModel)) ?? false));
+  const explicitModelSelection = body.modelOverride !== undefined && body.modelOverride !== "";
+  if (explicitModelSelection && !modelForwardingEnabled) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        code: "unsupported_model_override",
+        error: "The selected runtime cannot accept a model override.",
+        requestedModel,
+        modelApplicationState: "rejected",
+        modelApplicationReason: "Model forwarding is unavailable for this runtime binding.",
+      }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  }
   const permissionForwardingEnabled =
     !openCodeDirect &&
     binding.harness !== "openclaw" &&
@@ -1960,7 +2013,17 @@ export async function POST(req: Request) {
   // turning a provider setting into prompt prose.
   const controlCapabilities = modelControlCapabilities(binding.harness, desiredModel)
     .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null));
-  const controlValidation = validateModelControlValues(controlCapabilities, body.modelControls);
+  const controlValidation = validateModelControlValues(
+    controlCapabilities,
+    modelControlInputWithLegacy(
+      controlCapabilities,
+      {
+        reasoningEffort: body.reasoningEffort,
+        responseSpeed: body.responseSpeed,
+      },
+      body.modelControls,
+    ),
+  );
   if (controlValidation.rejected.length > 0) {
     return NextResponse.json({
       ok: false,
@@ -2007,6 +2070,7 @@ export async function POST(req: Request) {
     runtime: sshRuntime
       ? `ssh:${sshRuntime.host}:${sshRuntime.cwd}`
       : `local:${cwd}`,
+    requestedModel,
     desiredModel,
     confirmedModel: undefined,
     retryModel: turnRetryModel({ requestedModel: body.modelOverride }),
@@ -2014,6 +2078,7 @@ export async function POST(req: Request) {
     modelApplicationState: modelState.applicationState,
     modelApplicationReason: modelState.reason,
     requestedControls: controlValidation.values,
+    forwardedControls: controlValidation.values,
     promptGuidanceControls: promptModelControls,
   };
   const offlineChatResponse = await maybeQueueOfflineChat({
@@ -2128,6 +2193,15 @@ export async function POST(req: Request) {
   const codexDirectLaunchModel = codexDirect
     ? runtimeModelIdForLaunch("codex", forwardModel)
     : null;
+  responseMetadata.forwardedModel = (hermesDirect
+    ? hermesLaunchModel
+    : openCodeDirect
+      ? openCodeLaunchModel
+      : codexDirect
+        ? codexDirectLaunchModel
+        : grokDirect
+          ? grokLaunchModel
+          : forwardModel) ?? undefined;
   const forwardPermission =
     permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
   // Directory grants: forward every granted project root — plus the familiar's

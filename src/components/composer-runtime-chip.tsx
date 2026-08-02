@@ -110,7 +110,7 @@ export function ComposerRuntimePopover({
             <>
               <PopoverSeparator />
               <PopoverLabel>Model</PopoverLabel>
-              {hasRuntimeDefault ? (
+              {hasRuntimeDefault || modelOptions.length > 0 ? (
                 <PopoverItem
                   checked={!modelValue}
                   onSelect={() => {
@@ -118,7 +118,7 @@ export function ComposerRuntimePopover({
                     setOpen(false);
                   }}
                 >
-                  Runtime default
+                  {hasRuntimeDefault ? "Runtime default" : "Cave default"}
                 </PopoverItem>
               ) : null}
               {modelOptions.map((m) => (

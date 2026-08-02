@@ -5,6 +5,7 @@ import { loadProjects, projectById } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { canonicalHarnessId, isTrustedChatHarness } from "@/lib/harness-adapters";
+import { cleanModelId } from "@/lib/chat-model-state";
 import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
@@ -206,10 +207,23 @@ export async function POST(
   // override that was chosen for this exact canonical harness. Legacy or stale
   // overrides are cleared before launch and the familiar's current default is
   // used instead.
+  const cardModelHarness = card.modelOverrideHarness
+    ? canonicalHarnessId(card.modelOverrideHarness)
+    : null;
   const taskModelOverride =
-    card.modelOverride && card.modelOverrideHarness === binding.harness
-      ? card.modelOverride
+    card.modelOverride && cardModelHarness === binding.harness
+      ? cleanModelId(card.modelOverride)
       : null;
+  if (card.modelOverride && cardModelHarness === binding.harness && !taskModelOverride) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "invalid_model_override",
+        error: "The task model id is not safe for launch.",
+      },
+      { status: 400 },
+    );
+  }
   if (card.modelOverride && !taskModelOverride) {
     await updateCard(card.id, { modelOverride: null, modelOverrideHarness: null });
   }

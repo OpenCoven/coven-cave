@@ -51,7 +51,7 @@ assert.match(
 );
 assert.match(
   source,
-  /\.\.\.fallback,[\s\S]{0,80}models: \[\],[\s\S]{0,80}provenance: "unavailable",[\s\S]{0,80}loading: true/,
+  /\.\.\.fallback,[\s\S]{0,180}models: \[\],[\s\S]{0,180}provenance: "unavailable",[\s\S]{0,180}loading: true/,
   "pending scope transitions expose neither stale ids nor stale provenance",
 );
 assert.doesNotMatch(

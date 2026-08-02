@@ -244,6 +244,21 @@ try {
     role: "review familiar",
   });
 
+  await config.saveConfig({ familiars: { nova: { model: "" } } });
+  cfg = await config.loadConfig();
+  assert.equal(
+    cfg.familiars.nova.model,
+    "",
+    "clearing a familiar model persists an explicit runtime-default sentinel",
+  );
+  assert.equal(
+    config.bindingFor(cfg, "nova").model,
+    "",
+    "binding resolution must preserve the explicit runtime-default sentinel",
+  );
+  await config.saveConfig({ familiars: { nova: { model: "anthropic/claude-sonnet-4-6" } } });
+  cfg = await config.loadConfig();
+
   const novaBinding = config.bindingFor(cfg, "nova");
   assert.equal(novaBinding.display_name, "Nova Prime");
   assert.equal(novaBinding.role, "review familiar");

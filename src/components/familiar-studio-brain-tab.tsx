@@ -887,7 +887,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         }
                         setModelCustomMode(false);
                         setDraftModel(next);
-                        void save({ model: next || null });
+                        void save({ model: next });
                       }}
                       className="familiar-studio-brain__input"
                       options={[
@@ -914,7 +914,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         // Blurring an empty custom field falls back to Inherit
                         // default instead of lingering as a blank Custom row.
                         if (!trimmed) setModelCustomMode(false);
-                        void save({ model: trimmed || null });
+                        void save({ model: trimmed });
                       }}
                       placeholder="provider/model"
                       autoCapitalize="none"

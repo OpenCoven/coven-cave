@@ -995,7 +995,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             familiars: {
               [reply.familiarId]: {
                 harness: runtime,
-                model: modelForRuntimeSwitch(runtime) || null,
+                model: modelForRuntimeSwitch(runtime),
               },
             },
           }),

@@ -169,8 +169,8 @@ assert.match(
 
 assert.match(
   source,
-  /\.\.\.\(runtimeOwnsDefault \|\| runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?"Runtime default"[\s\S]*?runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\)[\s\S]*?handleSelectModel\(id \|\| null\)/,
-  "the Options menu Model section lists inventory and exposes the runtime-owned default as a real choice",
+  /\.\.\.\(runtimeOwnsDefault \|\| runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?runtimeOwnsDefault \? "Runtime default" : "Cave default"[\s\S]*?runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\)[\s\S]*?handleSelectModel\(id \|\| null\)/,
+  "the Options menu Model section lists inventory and exposes both default scopes as explicit choices",
 );
 
 assert.match(
@@ -181,8 +181,8 @@ assert.match(
 
 assert.match(
   source,
-  /effectiveModel &&[\s\S]*?\(runtimeOwnsDefault \|\|[\s\S]*?runtimeModelOptions\.some[\s\S]*?: runtimeOwnsDefault[\s\S]*?\? ""/,
-  "HomeComposer should keep runtime-owned runtimes on their configured default when no explicit model is selected",
+  /effectiveModel &&[\s\S]*?\(runtimeOwnsDefault \|\|[\s\S]*?runtimeModelOptions\.some[\s\S]*?: ""/,
+  "HomeComposer should keep an unselected runtime on default intent rather than a catalog seed",
 );
 
 assert.doesNotMatch(
@@ -199,8 +199,8 @@ assert.doesNotMatch(
 
 assert.match(
   modelStateHook,
-  /body: JSON\.stringify\(\{[\s\S]*?\[selectedFamiliarId\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel \|\| null,[\s\S]*?\}\)/,
-  "useHomeModelState should persist runtime and model together when the combined selector changes runtime",
+  /body: JSON\.stringify\(\{[\s\S]*?\[selectedFamiliarId\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel,[\s\S]*?\}\)/,
+  "useHomeModelState should persist runtime and explicit default intent together when the combined selector changes runtime",
 );
 
 assert.doesNotMatch(
@@ -778,6 +778,6 @@ assert.match(
 
 assert.match(
   source,
-  /const runtimeOwnsDefault = runtimeModelInventory\.defaultOwner === "runtime";[\s\S]*?const effectiveModel =[\s\S]*?const selectedModelId =[\s\S]*?: runtimeOwnsDefault[\s\S]*?\? ""[\s\S]*?: runtimeModelOptions\[0\]\?\.id/,
-  "the shared inventory owns default semantics, so a runtime-owned adapter never displays its first discovered model as the default",
+  /const runtimeOwnsDefault = runtimeModelInventory\.defaultOwner === "runtime";[\s\S]*?const effectiveModel =[\s\S]*?const selectedModelId = effectiveModel &&[\s\S]*?\? effectiveModel[\s\S]*?: ""/,
+  "the shared inventory owns default semantics, so an unselected model never displays the first discovered entry as an implicit default",
 );

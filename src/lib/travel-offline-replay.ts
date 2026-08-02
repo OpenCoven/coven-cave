@@ -40,6 +40,12 @@ export type TravelOfflineReplayResult = {
 type DaemonSessionResponse = { id?: string; status?: string };
 type WorkflowEngineResponse = { ok?: boolean; runId?: string; status?: string; error?: string };
 
+function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
+  if (!Object.prototype.hasOwnProperty.call(payload, "modelOverride")) return undefined;
+  if (payload.modelOverride === "") return "";
+  return stringValue(payload.modelOverride);
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
 }
@@ -73,6 +79,7 @@ async function spawnHubSession(args: {
   harness: string;
   prompt: string;
   model?: string | null;
+  modelOverrideScope?: "runtime-default";
   reasoningEffort?: string | null;
   responseSpeed?: string | null;
   modelControls?: Record<string, unknown>;
@@ -93,6 +100,7 @@ async function spawnHubSession(args: {
       harness: args.harness,
       prompt: args.prompt,
       ...(args.model ? { model: args.model } : {}),
+      ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
       ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
       ...(args.responseSpeed ? { responseSpeed: args.responseSpeed } : {}),
       ...(Object.keys(args.modelControls ?? {}).length ? { modelControls: args.modelControls } : {}),
@@ -139,7 +147,14 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     familiarId,
     harness: binding.harness,
     prompt: replayPrompt,
-    model: stringValue(payload.modelOverride),
+    // Preserve the distinction between an omitted model and an explicit
+    // runtime-default request. The daemon receives no model argument in both
+    // cases, while the scope marker prevents this replay path from treating a
+    // cleared model as an accidental static/catalog fallback.
+    model: queuedModelOverride(payload),
+    ...(payload.modelOverrideScope === "runtime-default"
+      ? { modelOverrideScope: "runtime-default" as const }
+      : {}),
     reasoningEffort: stringValue(payload.reasoningEffort),
     responseSpeed: stringValue(payload.responseSpeed),
     modelControls: record(payload.modelControls),

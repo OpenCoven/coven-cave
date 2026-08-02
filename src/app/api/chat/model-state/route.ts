@@ -100,12 +100,25 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const familiarId = cleanText(url.searchParams.get("familiarId"));
   const sessionId = cleanText(url.searchParams.get("sessionId"));
+  const rawPreviewModel = url.searchParams.get("model");
+  // A model preview is intentionally read-only. Clients use it after staging
+  // a pre-first-send selection so the response controls are resolved for that
+  // pending model rather than for the familiar/session model that was visible
+  // before the selection.
+  const previewModel = rawPreviewModel === null
+    ? undefined
+    : rawPreviewModel === ""
+      ? ""
+      : cleanModelId(rawPreviewModel);
   if (!familiarId) return jsonError("familiarId is required", 400);
   if (sessionId && !isSafeConversationSessionId(sessionId)) {
     return jsonError("invalid session id", 400);
   }
+  if (rawPreviewModel !== null && previewModel === null) {
+    return jsonError("invalid model", 400);
+  }
 
-  const state = await currentState(familiarId, sessionId);
+  const state = await currentState(familiarId, sessionId, previewModel);
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
   // Also hand back the pickable model menu for this chat's runtime so non-web
@@ -171,7 +184,10 @@ export async function PATCH(req: Request) {
 
   const familiarId = cleanText(body.familiarId);
   const sessionId = cleanText(body.sessionId);
-  const clearModel = body.model === null;
+  // Both null (older clients) and the empty string (new clients that need to
+  // preserve the sentinel through JSON/config merges) mean explicit runtime
+  // default intent. Whitespace is still rejected as an invalid model id.
+  const clearModel = body.model === null || body.model === "";
   const model = clearModel ? null : cleanModelId(body.model);
   const scope = body.scope;
 
@@ -193,7 +209,10 @@ export async function PATCH(req: Request) {
       familiars: {
         [familiarId]: {
           ...(config.familiars[familiarId] ?? {}),
-          model,
+          // Empty model is a durable Runtime-default intent. A null patch
+          // remains accepted for old clients, but must not erase the intent
+          // and expose a stale familiar/global fallback on the next send.
+          model: clearModel ? "" : model,
         },
       },
     });

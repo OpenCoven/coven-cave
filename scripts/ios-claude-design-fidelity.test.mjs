@@ -22,6 +22,7 @@ const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift")
 const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelControl.swift");
 const responseControls = await read("apps/ios/CovenCave/CovenCave/Models/ChatResponseControls.swift");
 const models = await read("apps/ios/CovenCave/CovenCave/Models/Models.swift");
+const messageBubble = await read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
 const caveClient = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
 const appModel = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
 const caveApp = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
@@ -312,8 +313,8 @@ for (const section of ["Identity", "Defaults", "Access"]) {
 }
 
 // Session controls are transported, persisted for offline replay, and truthful.
-assert.match(client, /var reasoningEffort: ChatThinkingEffort/, "send body carries reasoning effort");
-assert.match(client, /var responseSpeed: ChatResponseSpeed/, "send body carries response speed");
+assert.match(client, /var reasoningEffort: ChatThinkingEffort\?/, "send body keeps legacy reasoning effort optional");
+assert.match(client, /var responseSpeed: ChatResponseSpeed\?/, "send body keeps legacy response speed optional");
 assert.match(client, /var modelOverride: String\?/, "send body carries the selected model");
 assert.match(
   client,
@@ -385,6 +386,35 @@ assert.match(
   chat,
   /_ = selectModel\(id, familiarId: familiarId, sessionId: modelSessionId\(familiarId\)\)/,
   "the model picker stages intent synchronously before its sheet dismisses",
+);
+assert.match(
+  chat,
+  /guard sessionId != nil \|\| model == nil else \{[\s\S]{0,1000}loadPendingModelCapabilities\(/,
+  "a pre-first-send model selection immediately previews the selected model capabilities",
+);
+assert.match(
+  chat,
+  /private func loadPendingModelCapabilities\([\s\S]{0,700}previewModel: model/,
+  "the pending-model preview requests capabilities for the selected model",
+);
+assert.match(caveClient, /func chatModelState\(/, "iOS exposes the shared model-state client");
+assert.match(caveClient, /previewModel: String\? = nil/, "iOS can request a pending-model preview");
+assert.ok(
+  caveClient.includes(String.raw`if let previewModel { path += "&model=\(urlQuery(previewModel))" }`),
+  "iOS sends a read-only model preview query after staging a new-chat selection",
+);
+assert.match(models, /requestedModel: String\?/, "iOS decodes requested model intent metadata");
+assert.match(models, /confirmedModel: String\?/, "iOS decodes confirmed model metadata");
+assert.match(models, /modelApplicationState: String\?/, "iOS decodes model application state metadata");
+assert.match(
+  messageBubble,
+  /private var responseModelStatus:[\s\S]*?Requested model:[\s\S]*?Applied model:/,
+  "iOS renders requested and applied model status separately",
+);
+assert.match(
+  messageBubble,
+  /let reason = message\.modelApplicationReason[\s\S]*?Model source:/,
+  "iOS renders safe model source and degraded reason metadata",
 );
 assert.match(
   chat,

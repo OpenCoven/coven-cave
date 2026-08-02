@@ -18,6 +18,8 @@ struct ChatModelControlCapability: Codable, Hashable, Identifiable {
     let label: String
     let delivery: String
     let values: [ChatModelControlValue]
+    /// Runtime/provider wire name. It is intentionally not rendered as copy.
+    var parameter: String?
     var id: String { family }
 }
 
@@ -31,12 +33,24 @@ struct ChatModelState: Codable {
     var reason: String?
 }
 
+struct ChatModelInventoryScope: Codable {
+    let familiarId: String?
+    let runtime: String
+    let provider: String?
+    let credentialScope: String
+    let providerConfiguration: String
+}
+
 struct ChatModelInventory: Codable {
     let runtime: String
     let models: [ChatModelOption]
     let provenance: String
+    var freshness: String?
+    var refreshState: String?
+    var availability: String?
     let defaultOwner: String
     let allowCustom: Bool
+    var scope: ChatModelInventoryScope?
 
     var allowsRuntimeDefault: Bool { defaultOwner == "runtime" }
 }

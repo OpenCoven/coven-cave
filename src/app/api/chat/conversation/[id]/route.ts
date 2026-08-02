@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cleanModelId } from "@/lib/chat-model-state";
+import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import { cleanModelControlValues } from "@/lib/model-control-capabilities";
 import {
   isSafeConversationSessionId,
@@ -50,6 +51,116 @@ function jsonError(error: string, status: number) {
   return NextResponse.json({ ok: false, error }, { status });
 }
 
+const MODEL_METADATA_SOURCES = new Set([
+  "runtime-default",
+  "global-default",
+  "familiar-default",
+  "session",
+  "next-message",
+]);
+const MODEL_METADATA_STATES = new Set([
+  "unknown",
+  "saved",
+  "pending",
+  "applied",
+  "unsupported",
+  "failed",
+]);
+const OPENCLAW_AGENT_SOURCES = new Set([
+  "explicit",
+  "id-match",
+  "name-match",
+  "default",
+  "fallback",
+]);
+
+function safeMetadataText(value: unknown, maxLength = 512, allowEmpty = false): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if ((!allowEmpty && !trimmed) || trimmed.length > maxLength) return undefined;
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return undefined;
+  return trimmed;
+}
+
+function cleanMetadataModel(value: unknown, allowEmpty = false): string | undefined {
+  if (allowEmpty && value === "") return "";
+  return cleanModelId(value) ?? undefined;
+}
+
+/**
+ * Conversation writes can come from older clients, so response metadata is
+ * normalized at this boundary before it is persisted. Keep only bounded,
+ * user-visible facts; provider payloads, credentials, and secret-bearing URLs
+ * are never accepted as transcript metadata.
+ */
+function normalizeResponseMetadata(input: unknown): ChatResponseMetadata | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const value = input as Record<string, unknown>;
+  const familiarId = safeMetadataText(value.familiarId, 160);
+  const harness = safeMetadataText(value.harness, 80);
+  // Model identity is a launch-safe id, not an arbitrary provider payload or
+  // URL. Keep the runtime-default empty sentinel, but reject everything else
+  // that cannot cross the launch boundary safely.
+  const model = cleanMetadataModel(value.model, true);
+  const runtime = safeMetadataText(value.runtime, 1024);
+  if (!familiarId || !harness || model === undefined || !runtime) return undefined;
+
+  const requestedModel = cleanMetadataModel(value.requestedModel, true);
+  const desiredModel = cleanMetadataModel(value.desiredModel, true);
+  const forwardedModel = cleanMetadataModel(value.forwardedModel);
+  const confirmedModel = cleanMetadataModel(value.confirmedModel);
+  const retryModel = cleanMetadataModel(value.retryModel);
+  const modelSource = MODEL_METADATA_SOURCES.has(String(value.modelSource))
+    ? value.modelSource as ChatResponseMetadata["modelSource"]
+    : undefined;
+  const modelApplicationState = MODEL_METADATA_STATES.has(String(value.modelApplicationState))
+    ? value.modelApplicationState as ChatResponseMetadata["modelApplicationState"]
+    : undefined;
+  const modelApplicationReason = safeMetadataText(value.modelApplicationReason, 280);
+  const rejectedControlFamilies = Array.isArray(value.rejectedControlFamilies)
+    ? value.rejectedControlFamilies.flatMap((family) => {
+      const clean = safeMetadataText(family, 64);
+      return clean ? [clean] : [];
+    }).slice(0, 16)
+    : undefined;
+  const normalizeControls = (controls: unknown): ChatResponseMetadata["requestedControls"] => {
+    const clean = cleanModelControlValues(controls);
+    return Object.keys(clean).length ? clean : undefined;
+  };
+  const openclawAgentId = safeMetadataText(value.openclawAgentId, 160);
+  const openclawAgentSource = OPENCLAW_AGENT_SOURCES.has(String(value.openclawAgentSource))
+    ? value.openclawAgentSource as ChatResponseMetadata["openclawAgentSource"]
+    : undefined;
+  const caveSessionId = safeMetadataText(value.caveSessionId, 160);
+  const gatewaySessionId = safeMetadataText(value.gatewaySessionId, 160);
+  const sessionKey = safeMetadataText(value.sessionKey, 256);
+
+  return {
+    familiarId,
+    harness,
+    model,
+    runtime,
+    ...(requestedModel !== undefined ? { requestedModel } : {}),
+    ...(desiredModel !== undefined ? { desiredModel } : {}),
+    ...(forwardedModel !== undefined ? { forwardedModel } : {}),
+    ...(confirmedModel !== undefined ? { confirmedModel } : {}),
+    ...(retryModel !== undefined ? { retryModel } : {}),
+    ...(modelSource ? { modelSource } : {}),
+    ...(modelApplicationState ? { modelApplicationState } : {}),
+    ...(modelApplicationReason ? { modelApplicationReason } : {}),
+    ...(normalizeControls(value.requestedControls) ? { requestedControls: normalizeControls(value.requestedControls) } : {}),
+    ...(normalizeControls(value.forwardedControls) ? { forwardedControls: normalizeControls(value.forwardedControls) } : {}),
+    ...(normalizeControls(value.promptGuidanceControls) ? { promptGuidanceControls: normalizeControls(value.promptGuidanceControls) } : {}),
+    ...(normalizeControls(value.appliedControls) ? { appliedControls: normalizeControls(value.appliedControls) } : {}),
+    ...(rejectedControlFamilies?.length ? { rejectedControlFamilies } : {}),
+    ...(openclawAgentId ? { openclawAgentId } : {}),
+    ...(openclawAgentSource ? { openclawAgentSource } : {}),
+    ...(caveSessionId ? { caveSessionId } : {}),
+    ...(gatewaySessionId ? { gatewaySessionId } : {}),
+    ...(sessionKey ? { sessionKey } : {}),
+  };
+}
+
 async function readBody(req: Request): Promise<ConversationWriteBody | null> {
   try {
     return (await req.json()) as ConversationWriteBody;
@@ -86,6 +197,7 @@ function normalizeTurn(input: unknown): ChatTurn | null {
       ? "runtime-default" as const
       : undefined;
   const modelControls = cleanModelControlValues(value.modelControls);
+  const responseMetadata = normalizeResponseMetadata(value.responseMetadata);
   const progress = Array.isArray(value.progress)
     ? value.progress.flatMap((entry) => {
       if (!entry || typeof entry !== "object") return [];
@@ -136,6 +248,7 @@ function normalizeTurn(input: unknown): ChatTurn | null {
       : {}),
     ...(value.role === "user" && modelOverrideScope ? { modelOverrideScope } : {}),
     ...(value.role === "user" && Object.keys(modelControls).length ? { modelControls } : {}),
+    ...(responseMetadata ? { responseMetadata } : {}),
   };
 }
 

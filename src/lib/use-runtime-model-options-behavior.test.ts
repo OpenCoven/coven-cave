@@ -25,13 +25,24 @@ function Probe({ runtime = "claude", familiarId, snapshots }: {
 }
 
 function inventory(familiarId: string, provenance = "live") {
+  const freshness = provenance === "live" ? "fresh" : provenance === "cached" ? "cached" : "seed";
   return {
     ok: true,
     runtime: "claude",
     models: [{ id: `anthropic/${familiarId}`, label: familiarId }],
     provenance,
+    freshness,
+    refreshState: provenance === "live" || provenance === "cached" ? "ready" : "degraded",
+    availability: provenance === "live" || provenance === "cached" ? "available" : "degraded",
     defaultOwner: "cave",
     allowCustom: false,
+    scope: {
+      familiarId,
+      runtime: "claude",
+      provider: "anthropic",
+      credentialScope: "familiar",
+      providerConfiguration: "familiar",
+    },
   };
 }
 
@@ -210,10 +221,21 @@ test("a completed config write retries a Hermes request that raced the save", as
       runtime: "hermes",
       models: [],
       provenance: "runtime-managed",
+      freshness: "runtime-managed",
+      refreshState: "degraded",
+      availability: "degraded",
       defaultOwner: "runtime",
       allowCustom: false,
+      scope: {
+        familiarId: "sage",
+        runtime: "hermes",
+        provider: "openai",
+        credentialScope: "familiar",
+        providerConfiguration: "familiar",
+      },
     });
 
+    snapshots.length = 0;
     await act(async () => {
       browserEvents.dispatchEvent(new Event("cave:familiars-refresh"));
     });
@@ -222,13 +244,27 @@ test("a completed config write retries a Hermes request that raced the save", as
       1,
       "the post-save event starts a same-key retry without waiting for the poll",
     );
+    assert.ok(
+      snapshots.every((snapshot) => snapshot.models.length === 0 && snapshot.loading),
+      "a config/profile change masks the prior inventory before its replacement arrives",
+    );
     await settle(pending.shift()!, {
       ok: true,
       runtime: "hermes",
       models: [{ id: "openrouter/auto", label: "OpenRouter Auto" }],
       provenance: "live",
+      freshness: "fresh",
+      refreshState: "ready",
+      availability: "available",
       defaultOwner: "runtime",
       allowCustom: false,
+      scope: {
+        familiarId: "sage",
+        runtime: "hermes",
+        provider: "openai",
+        credentialScope: "familiar",
+        providerConfiguration: "familiar",
+      },
     });
     assert.deepEqual(
       snapshots.at(-1)?.models.map((model) => model.id),

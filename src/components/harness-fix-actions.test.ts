@@ -72,7 +72,7 @@ import { readFile } from "node:fs/promises";
   );
   assert.match(
     source,
-    /handleUseHarnessFix[\s\S]{0,600}method: "PATCH"[\s\S]{0,300}familiars: \{[\s\S]*?\[familiar\.id\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel \|\| null/,
+    /handleUseHarnessFix[\s\S]{0,600}method: "PATCH"[\s\S]{0,300}familiars: \{[\s\S]*?\[familiar\.id\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel/,
     "the fix handler should rebind the familiar via /api/config PATCH",
   );
   assert.match(
@@ -97,7 +97,7 @@ import { readFile } from "node:fs/promises";
   );
   assert.match(
     source,
-    /familiars: \{[\s\S]*?\[reply\.familiarId\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: modelForRuntimeSwitch\(runtime\) \|\| null/,
+    /familiars: \{[\s\S]*?\[reply\.familiarId\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: modelForRuntimeSwitch\(runtime\)/,
     "the group-chat fix should rebind the failing reply's familiar",
   );
   assert.match(

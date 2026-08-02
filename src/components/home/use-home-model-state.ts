@@ -53,7 +53,10 @@ export function useHomeModelState(selectedFamiliarId: string) {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               familiarId: selectedFamiliarId,
-              model: modelId,
+              // Keep an explicit empty value so clearing a familiar default
+              // remains a durable Runtime-default intent instead of deleting
+              // the field and re-inheriting a stale Cave/global model.
+              model: modelId ?? "",
               scope: "familiar-default",
             }),
           });
@@ -110,7 +113,7 @@ export function useHomeModelState(selectedFamiliarId: string) {
               familiars: {
                 [selectedFamiliarId]: {
                   harness: runtime,
-                  model: nextModel || null,
+                  model: nextModel,
                 },
               },
             }),

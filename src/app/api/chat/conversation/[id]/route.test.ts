@@ -186,6 +186,35 @@ test("PUT strips client-forged assistant telemetry (usage/cost/tools/reasoning)"
   }
 });
 
+test("PUT keeps response facts bounded and rejects secret-bearing model metadata", async () => {
+  const res = await PUT(
+    writeReq({
+      familiarId: "milo",
+      harness: "claude",
+      turns: [{
+        role: "assistant",
+        text: "safe reply",
+        responseMetadata: {
+          familiarId: "milo",
+          harness: "claude",
+          model: "https://user:secret@example.invalid/model",
+          runtime: "local:/repos/cave",
+          modelApplicationReason: "provider returned a raw secret-bearing payload",
+          requestedControls: { reasoning: "high", "not-a-family": "ignored" },
+        },
+      }],
+    }),
+    paramsFor("sess-forged-metadata"),
+  );
+  const json = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(
+    "responseMetadata" in json.conversation.turns[0],
+    false,
+    "unsafe model identity prevents raw provider metadata from entering the transcript",
+  );
+});
+
 test("PUT preserves retry controls on user turns", async () => {
   const res = await PUT(
     writeReq({

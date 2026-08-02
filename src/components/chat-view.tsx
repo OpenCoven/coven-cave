@@ -1166,11 +1166,43 @@ function responseMetadataModel(metadata?: ChatResponseMetadata): string | null {
   );
 }
 
+/** The model application trail is separate from controls: a runtime echo can
+ * prove forwarding without proving provider application, and a runtime-owned
+ * default may intentionally have no model id at all. */
+function ResponseModelStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
+  if (!metadata) return null;
+  const requested = metadata.requestedModel;
+  const desired = metadata.desiredModel ?? metadata.model;
+  const forwarded = metadata.forwardedModel;
+  const confirmed = metadata.confirmedModel;
+  const lines: string[] = [];
+  if (requested !== undefined) {
+    lines.push(`Requested model: ${requested ? shortModelLabel(requested) : "Runtime default"}`);
+  }
+  if (desired) lines.push(`Effective model: ${shortModelLabel(desired)}`);
+  if (forwarded && forwarded !== desired) lines.push(`Forwarded model: ${shortModelLabel(forwarded)}`);
+  if (confirmed) lines.push(`Applied model: ${shortModelLabel(confirmed)}`);
+  else if (metadata.modelApplicationState) lines.push(`Model: ${metadata.modelApplicationState}`);
+  if (metadata.modelSource) lines.push(`Source: ${metadata.modelSource}`);
+  if (metadata.modelApplicationReason && !confirmed) lines.push(metadata.modelApplicationReason);
+  if (lines.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response model. ${lines.join(". ")}`}>
+      {lines.map((line) => (
+        <span key={line} className="ui-pill border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
+          {line}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** Per-turn control outcome: requested, prompt guidance, applied, or rejected. */
 function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
   const requested = Object.entries(metadata?.requestedControls ?? {});
   const rejected = new Set(metadata?.rejectedControlFamilies ?? []);
   const promptOnly = new Set(Object.keys(metadata?.promptGuidanceControls ?? {}));
+  const forwarded = new Set(Object.keys(metadata?.forwardedControls ?? {}));
   const applied = new Set(Object.keys(metadata?.appliedControls ?? {}));
   if (!requested.length && !rejected.size) return null;
   const lines = [
@@ -1181,6 +1213,8 @@ function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }
           ? "Prompt guidance"
           : applied.has(family)
             ? "Applied"
+            : forwarded.has(family)
+              ? "Forwarded — not confirmed"
             : "Requested — not confirmed";
       return `${prefix}: ${family} ${value}`;
     }),
@@ -1954,6 +1988,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Send paths need the model selection synchronously. React state alone can
   // still expose the previous render between a picker action and its PATCH.
   const modelStateRef = useRef<ChatModelState | null>(null);
+  const modelStateRequestRef = useRef(0);
+  const modelSelectionRevisionRef = useRef(0);
   const [usagePlan, setUsagePlan] = useState<ChatUsagePlanSnapshot | null>(null);
   // "Save as default" (Chat.dc.html 2b): pins the current project so a
   // brand-new chat stops inferring it from the most recent chat. Project only —
@@ -2420,9 +2456,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // `shouldApply` lets a caller (the effect below) veto the setState after the
   // await — a fetch that resolves after a thread switch must not overwrite the
   // new thread's model. Non-effect callers omit it and always apply.
-  const refreshModelState = useCallback(async (shouldApply: () => boolean = () => true): Promise<ChatModelState | null> => {
+  const refreshModelState = useCallback(async (
+    shouldApply: () => boolean = () => true,
+    expectedSelectionRevision = modelSelectionRevisionRef.current,
+  ): Promise<ChatModelState | null> => {
+    const requestId = ++modelStateRequestRef.current;
     const params = new URLSearchParams({ familiarId: familiar.id });
     if (sessionId) params.set("sessionId", sessionId);
+    const canApply = () =>
+      requestId === modelStateRequestRef.current &&
+      expectedSelectionRevision === modelSelectionRevisionRef.current &&
+      shouldApply();
     try {
       const res = await fetch(`/api/chat/model-state?${params.toString()}`, { cache: "no-store" });
       const json = (await res.json()) as {
@@ -2431,14 +2475,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         controls?: ModelControlCapability[];
       };
       const next = json.ok && json.state ? json.state : null;
-      if (shouldApply()) {
+      if (canApply()) {
         modelStateRef.current = next;
         setModelState(next);
         setModelCapabilities(json.ok && Array.isArray(json.controls) ? json.controls : []);
       }
       return next;
     } catch {
-      if (shouldApply()) {
+      if (canApply()) {
         modelStateRef.current = null;
         setModelState(null);
         setModelCapabilities([]);
@@ -2512,6 +2556,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // No new persistence path — the picker reuses /api/chat/model-state.
   const handleSelectModel = useCallback(
     (modelId: string | null) => {
+      const selectionRevision = ++modelSelectionRevisionRef.current;
       // A staged model switch invalidates every prior model's controls until
       // the scoped capability response arrives; never render/send stale native values.
       setModelCapabilities([]);
@@ -2538,19 +2583,34 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             body: JSON.stringify({
               familiarId: familiar.id,
               sessionId: sessionId ?? undefined,
-              model: modelId,
+              // Empty is the durable Runtime-default sentinel. Do not turn a
+              // clear into a missing field that can re-expose an old default.
+              model: modelId ?? "",
               scope: sessionId ? "session" : "familiar-default",
             }),
           });
+          if (selectionRevision !== modelSelectionRevisionRef.current) return;
           const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
           if (json.ok && json.state) {
             modelStateRef.current = json.state;
             setModelState(json.state);
-            await refreshModelState();
+            await refreshModelState(
+              () => selectionRevision === modelSelectionRevisionRef.current,
+              selectionRevision,
+            );
+          } else {
+            await refreshModelState(
+              () => selectionRevision === modelSelectionRevisionRef.current,
+              selectionRevision,
+            );
           }
-          else await refreshModelState();
         } catch {
-          await refreshModelState();
+          if (selectionRevision === modelSelectionRevisionRef.current) {
+            await refreshModelState(
+              () => selectionRevision === modelSelectionRevisionRef.current,
+              selectionRevision,
+            );
+          }
         }
       })();
     },
@@ -2602,6 +2662,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
+      const selectionRevision = ++modelSelectionRevisionRef.current;
       const nextModel = modelForRuntimeSwitch(runtime);
       // A runtime switch invalidates the previous runtime's controls before
       // the async scoped capability refresh returns.
@@ -2631,17 +2692,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               familiars: {
                 [familiar.id]: {
                   harness: runtime,
-                  model: nextModel || null,
+                  model: nextModel,
                 },
               },
             }),
           });
+          if (selectionRevision !== modelSelectionRevisionRef.current) return;
           // The roster's familiar.harness feeds the empty-state identity line
           // (and anything else reading the familiars list) — refresh it now
           // rather than waiting out the next natural reload.
           if (res.ok) window.dispatchEvent(new Event("cave:familiars-refresh"));
         } finally {
-          await refreshModelState();
+          if (selectionRevision === modelSelectionRevisionRef.current) {
+            await refreshModelState(
+              () => selectionRevision === modelSelectionRevisionRef.current,
+              selectionRevision,
+            );
+          }
         }
       })();
     },
@@ -3119,11 +3186,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const composerModelOptions = composerModelInventory.models;
   const composerRuntimeOwnsDefault = composerModelInventory.defaultOwner === "runtime";
   const composerModelValue =
-    modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+      modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
-      : composerRuntimeOwnsDefault
-        ? ""
-        : composerModelOptions[0]?.id ?? "";
+      : "";
   const {
     skills,
     prompts,
@@ -3167,15 +3232,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       options: PERMISSION_MODES.map((m) => ({ value: m.value, label: m.label })),
       onChange: (v: string) => setPermissionMode(v as CommandPermissionMode),
     },
-    ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0
+    ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0 || composerModelInventory.loading
       ? [{
           id: "model",
           label: `Model · ${inventoryProvenanceLabel(composerModelInventory.provenance, composerModelInventory.loading)}`,
           value: composerModelValue,
           options: [
-            ...(composerRuntimeOwnsDefault
-              ? [{ value: "", label: "Runtime default" }]
-              : []),
+            { value: "", label: modelState?.source === "runtime-default" || composerRuntimeOwnsDefault ? "Runtime default" : "Cave default" },
             ...composerModelOptions.map((m) => ({ value: m.id, label: m.label })),
           ],
           onChange: (id: string) => handleSelectModel(id || null),
@@ -3185,11 +3248,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       id: `model-control-${capability.family}`,
       label: `${capability.label} — ${capability.delivery === "prompt-only" ? "Prompt guidance" : "Native"}`,
       value: modelControls[capability.family] ?? "",
-      options: capability.values.map((option) => ({ value: option.value, label: option.label })),
-      onChange: (value: string) => setModelControls((current) => ({
-        ...current,
-        [capability.family]: value,
-      })),
+      options: [
+        { value: "", label: "Not set" },
+        ...capability.values.map((option) => ({ value: option.value, label: option.label })),
+      ],
+      onChange: (value: string) => setModelControls((current) => {
+        const next = { ...current };
+        if (value) next[capability.family] = value;
+        else delete next[capability.family];
+        return next;
+      }),
     })),
   ];
 
@@ -4972,7 +5040,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           familiars: {
             [familiar.id]: {
               harness: runtime,
-              model: nextModel || null,
+              model: nextModel,
             },
           },
         }),
@@ -7924,6 +7992,7 @@ function TurnRowImpl({
                   segments={renderSegments}
                   branchNav={branchNav}
                 />
+                <ResponseModelStatus metadata={turn.responseMetadata} />
                 <ResponseControlStatus metadata={turn.responseMetadata} />
               </div>
             )}

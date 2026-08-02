@@ -133,7 +133,13 @@ function FamiliarIdentityHero({
   const runtimeModelOptions = runtimeModelInventory.models;
   const modelValue = familiar.model ?? "";
   const modelOptions: StandardSelectOption<string>[] = [
-    { value: "", label: "Provider default", detail: "Runtime picks the model" },
+    {
+      value: "",
+      label: familiar.model === "" || runtimeModelInventory.defaultOwner === "runtime"
+        ? "Runtime default"
+        : "Cave default",
+      detail: inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading),
+    },
     ...runtimeModelOptions.map((m) => ({ value: m.id, label: m.label ?? m.id, detail: m.id })),
   ];
   if (modelValue && !modelOptions.some((o) => o.value === modelValue)) {

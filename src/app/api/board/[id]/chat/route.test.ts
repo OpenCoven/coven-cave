@@ -96,8 +96,13 @@ assert.match(
 
 assert.match(
   source,
-  /card\.modelOverride && card\.modelOverrideHarness === binding\.harness/,
-  "task sessions only use a card model override from the familiar's current harness",
+  /cardModelHarness = card\.modelOverrideHarness[\s\S]{0,160}card\.modelOverride && cardModelHarness === binding\.harness[\s\S]{0,180}cleanModelId\(card\.modelOverride\)/,
+  "task sessions canonicalize the card harness and only use a safe override from the familiar's current runtime",
+);
+assert.match(
+  source,
+  /cardModelHarness === binding\.harness && !taskModelOverride[\s\S]{0,240}code: "invalid_model_override"/,
+  "task launches reject an unsafe current-runtime override instead of silently falling back",
 );
 
 assert.match(

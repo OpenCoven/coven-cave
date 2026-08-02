@@ -275,9 +275,7 @@ export function HomeComposer({
     (runtimeOwnsDefault ||
       runtimeModelOptions.some((model) => model.id === effectiveModel))
     ? effectiveModel
-    : runtimeOwnsDefault
-      ? ""
-      : runtimeModelOptions[0]?.id ?? "";
+    : "";
   const keys = useKeySymbols();
   const runtimeSectionOptions = useMemo(
     () =>
@@ -1140,15 +1138,13 @@ export function HomeComposer({
                 options: runtimeSectionOptions,
                 onChange: (id: string) => handleSelectRuntime(id),
               } satisfies ComposerOptionSection,
-              ...(runtimeOwnsDefault || runtimeModelOptions.length > 0
+              ...(runtimeOwnsDefault || runtimeModelOptions.length > 0 || runtimeModelInventory.loading
                 ? [{
                     id: "model",
                     label: `Model · ${inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}`,
                     value: selectedModelId,
                     options: [
-                      ...(runtimeOwnsDefault
-                        ? [{ value: "", label: "Runtime default" }]
-                        : []),
+                      { value: "", label: modelState?.source === "runtime-default" || runtimeOwnsDefault ? "Runtime default" : "Cave default" },
                       ...runtimeModelOptions.map((m) => ({ value: m.id, label: m.label })),
                     ],
                     onChange: (id: string) => handleSelectModel(id || null),

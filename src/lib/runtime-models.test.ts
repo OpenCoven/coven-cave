@@ -227,7 +227,7 @@ assert.equal(runtimeOwnsModelDefault("grok"), true);
 assert.equal(runtimeOwnsModelDefault("opencode"), true);
 assert.equal(runtimeOwnsModelDefault("opencode-ai"), true, "OpenCode package aliases preserve runtime-owned defaults");
 assert.equal(runtimeOwnsModelDefault("openclaw"), true);
-assert.equal(modelForRuntimeSwitch("codex"), "openai/gpt-5.6-sol");
+assert.equal(modelForRuntimeSwitch("codex"), "", "runtime switches preserve default intent instead of selecting a catalog seed");
 assert.equal(modelForRuntimeSwitch("hermes"), "");
 assert.equal(modelForRuntimeSwitch("hermes", "nous/hermes-4"), "nous/hermes-4");
 

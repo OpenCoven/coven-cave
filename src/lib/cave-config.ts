@@ -443,7 +443,7 @@ function mergeFamiliarConfigs(
       if (
         value === null ||
         value === undefined ||
-        (typeof value === "string" && value.trim() === "")
+        (typeof value === "string" && value.trim() === "" && key !== "model")
       ) {
         delete next[key as keyof FamiliarBinding];
       } else if (key === "omnigent" && value && typeof value === "object" && !Array.isArray(value)) {

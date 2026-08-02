@@ -95,8 +95,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /fetch\("\/api\/config", \{\s*\n\s*method: "PATCH",[\s\S]{0,300}?familiars: \{[\s\S]*?\[familiar\.id\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel \|\| null,/,
-  "runtime switches persist through /api/config — the same channel the home composer's selectRuntime uses; the send route re-resolves the binding per turn, so the switch applies from the next message",
+  /fetch\("\/api\/config", \{\s*\n\s*method: "PATCH",[\s\S]{0,300}?familiars: \{[\s\S]*?\[familiar\.id\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel,/,
+  "runtime switches persist through /api/config with explicit default intent",
 );
 const selectRuntimeBlock = chatView.match(/const handleSelectRuntime = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
 assert.match(
@@ -187,8 +187,13 @@ assert.match(hostCss, /\.cave-composer-host-chip \{[\s\S]*?border-radius: var\(-
 
 assert.match(
   chatView,
-  /modelState\?\.effectiveModel && modelState\.effectiveModel !== "unknown"[\s\S]*?: composerRuntimeOwnsDefault[\s\S]*?\? ""/,
-  "an unconfigured runtime-owned chat shows the runtime default rather than an unselected inventory entry",
+  /const composerModelValue =\s*\n\s*modelState\?\.effectiveModel && modelState\.effectiveModel !== "unknown"[\s\S]*?: "";/,
+  "an unconfigured chat carries an explicit empty model value rather than an unselected inventory entry",
+);
+assert.match(
+  chatView,
+  /\{ value: "", label: modelState\?\.source === "runtime-default" \|\| composerRuntimeOwnsDefault \? "Runtime default" : "Cave default" \}/,
+  "the empty model entry is labeled according to runtime-owned versus Cave-owned default semantics",
 );
 
 console.log("composer-runtime-chip.test.ts: ok");

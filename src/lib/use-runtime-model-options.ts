@@ -3,11 +3,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { catalogForRuntime, type RuntimeModelOption } from "@/lib/runtime-models";
+import {
+  catalogForRuntime,
+  runtimeModelInventoryAvailability,
+  runtimeModelInventoryFreshness,
+  runtimeModelInventoryRefreshState,
+  runtimeModelInventoryScope,
+  type RuntimeModelInventory,
+  type RuntimeModelOption,
+  type RuntimeModelInventoryProvenance,
+} from "@/lib/runtime-models";
 import type {
-  RuntimeModelInventory,
-  RuntimeModelInventoryProvenance,
-} from "@/lib/server/runtime-model-options";
+  RuntimeModelInventoryAvailability,
+  RuntimeModelInventoryFreshness,
+  RuntimeModelInventoryRefreshState,
+} from "@/lib/runtime-models";
 
 export type ModelInventoryProvenance = RuntimeModelInventoryProvenance;
 type ModelResponse = { ok?: boolean } & Partial<RuntimeModelInventory>;
@@ -35,6 +45,24 @@ const PROVENANCE = new Set<RuntimeModelInventoryProvenance>([
   "runtime-managed",
   "unavailable",
 ]);
+const FRESHNESS = new Set<RuntimeModelInventoryFreshness>([
+  "fresh",
+  "cached",
+  "seed",
+  "runtime-managed",
+  "unavailable",
+]);
+const REFRESH_STATES = new Set<RuntimeModelInventoryRefreshState>([
+  "ready",
+  "degraded",
+]);
+const AVAILABILITY = new Set<RuntimeModelInventoryAvailability>([
+  "available",
+  "degraded",
+  "unavailable",
+]);
+const PROVIDERS = new Set(["openai", "anthropic", "github", "nous", "xai", null]);
+const SCOPE_STATES = new Set(["familiar", "global", "runtime-managed", "unavailable"]);
 
 export function inventoryFailureProvenance(
   runtime: string,
@@ -64,32 +92,44 @@ export function inventoryProvenanceLabel(
 function fallbackInventory(
   runtime: string,
   staticModels: readonly RuntimeModelOption[],
+  familiarId: string | null,
 ): RuntimeModelInventory {
   const catalog = catalogForRuntime(runtime);
   // Hermes' static catalog is historical UI guidance, not a provider-backed
   // inventory. On transport failure, fail closed instead of presenting those
   // OpenAI seeds as models available to this familiar's endpoint.
   if (runtime === "hermes") {
+    const provenance = "runtime-managed" as const;
     return {
       runtime,
       models: [],
-      provenance: "runtime-managed",
+      provenance,
+      freshness: runtimeModelInventoryFreshness(provenance),
+      refreshState: runtimeModelInventoryRefreshState(provenance),
+      availability: runtimeModelInventoryAvailability(provenance),
       defaultOwner: catalog?.defaultOwner ?? "runtime",
       allowCustom: catalog?.allowCustom ?? false,
+      scope: runtimeModelInventoryScope(runtime, familiarId),
     };
   }
+  const provenance = inventoryFailureProvenance(runtime, staticModels);
   return {
     runtime,
     models: [...staticModels],
-    provenance: inventoryFailureProvenance(runtime, staticModels),
+    provenance,
+    freshness: runtimeModelInventoryFreshness(provenance),
+    refreshState: runtimeModelInventoryRefreshState(provenance),
+    availability: runtimeModelInventoryAvailability(provenance),
     defaultOwner: catalog?.defaultOwner ?? "runtime",
     allowCustom: catalog?.allowCustom ?? false,
+    scope: runtimeModelInventoryScope(runtime, familiarId),
   };
 }
 
 function isInventoryResponse(
   value: ModelResponse | null,
   runtime: string,
+  familiarId: string | null,
 ): value is ModelResponse & RuntimeModelInventory & { ok: true } {
   return Boolean(
     value?.ok === true &&
@@ -102,8 +142,21 @@ function isInventoryResponse(
     ) &&
     typeof value.provenance === "string" &&
     PROVENANCE.has(value.provenance as RuntimeModelInventoryProvenance) &&
+    typeof value.freshness === "string" &&
+    FRESHNESS.has(value.freshness as RuntimeModelInventoryFreshness) &&
+    typeof value.refreshState === "string" &&
+    REFRESH_STATES.has(value.refreshState as RuntimeModelInventoryRefreshState) &&
+    typeof value.availability === "string" &&
+    AVAILABILITY.has(value.availability as RuntimeModelInventoryAvailability) &&
     (value.defaultOwner === "cave" || value.defaultOwner === "runtime") &&
-    typeof value.allowCustom === "boolean",
+    typeof value.allowCustom === "boolean" &&
+    value.scope &&
+    typeof value.scope === "object" &&
+    value.scope.runtime === runtime &&
+    value.scope.familiarId === familiarId &&
+    PROVIDERS.has(value.scope.provider as string | null) &&
+    SCOPE_STATES.has(value.scope.credentialScope as string) &&
+    SCOPE_STATES.has(value.scope.providerConfiguration as string),
   );
 }
 
@@ -116,21 +169,21 @@ export function useRuntimeModelInventory(
   // such as `opencode-ai`. Keep the local inventory on the same canonical
   // runtime that the send route uses.
   const canonicalRuntime = canonicalHarnessId(runtime);
+  const inventoryFamiliarId = familiarId ?? null;
+  const inventoryKey = `${canonicalRuntime}\u0000${inventoryFamiliarId ?? ""}`;
   const staticModels = useMemo(
     () => catalogForRuntime(canonicalRuntime)?.models ?? [],
     [canonicalRuntime],
   );
   const fallback = useMemo(
-    () => fallbackInventory(canonicalRuntime, staticModels),
-    [canonicalRuntime, staticModels],
+    () => fallbackInventory(canonicalRuntime, staticModels, inventoryFamiliarId),
+    [canonicalRuntime, inventoryFamiliarId, staticModels],
   );
   const [runtimeInventory, setRuntimeInventory] = useState<RuntimeInventoryState>({
     key: null,
     inventory: null,
   });
   const [refreshRevision, setRefreshRevision] = useState(0);
-  const inventoryFamiliarId = familiarId ?? null;
-  const inventoryKey = `${canonicalRuntime}\u0000${inventoryFamiliarId ?? ""}`;
   const dynamicInventory = DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime);
 
   usePausablePoll(
@@ -145,6 +198,10 @@ export function useRuntimeModelInventory(
   useEffect(() => {
     if (!dynamicInventory || typeof window === "undefined") return;
     const refreshAfterConfigWrite = () => {
+      // A config event may change provider credentials or a runtime profile
+      // without changing the familiar/runtime key. Mask the old scope first;
+      // timer refreshes are the only path allowed to retain same-scope data.
+      setRuntimeInventory({ key: null, inventory: null });
       setRefreshRevision((revision) => revision + 1);
     };
     window.addEventListener("cave:familiars-refresh", refreshAfterConfigWrite);
@@ -171,7 +228,7 @@ export function useRuntimeModelInventory(
         if (cancelled) return;
         setRuntimeInventory({
           key: inventoryKey,
-          inventory: isInventoryResponse(json, canonicalRuntime) ? json : fallback,
+          inventory: isInventoryResponse(json, canonicalRuntime, inventoryFamiliarId) ? json : fallback,
         });
       })
       .catch(() => {
@@ -206,6 +263,9 @@ export function useRuntimeModelInventory(
     ...fallback,
     models: [],
     provenance: "unavailable",
+    freshness: "unavailable",
+    refreshState: "degraded",
+    availability: "unavailable",
     loading: true,
     key: inventoryKey,
   };

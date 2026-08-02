@@ -86,7 +86,7 @@ assert.match(
 
 assert.match(
   replay,
-  /model: stringValue\(payload\.modelOverride\),[\s\S]*reasoningEffort: stringValue\(payload\.reasoningEffort\),[\s\S]*responseSpeed: stringValue\(payload\.responseSpeed\),[\s\S]*modelControls: record\(payload\.modelControls\)/,
+  /queuedModelOverride\(payload\)[\s\S]*modelOverrideScope:[\s\S]*reasoningEffort: stringValue\(payload\.reasoningEffort\),[\s\S]*responseSpeed: stringValue\(payload\.responseSpeed\),[\s\S]*modelControls: record\(payload\.modelControls\)/,
   "travel replay carries an iOS queued explicit model and capability controls through the daemon session contract",
 );
 
