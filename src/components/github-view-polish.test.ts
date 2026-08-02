@@ -239,6 +239,26 @@ for (const [name, src] of [["stream", stream], ["stage", stage]]) {
   assert.doesNotMatch(src, /\bCody\b/i, `${name} names no specific familiar`);
 }
 
+// The row keeps exactly ONE accented verb. Moving the hand-off to a slot took
+// the accent off it (the slot renders a plain secondary button), which left
+// .gh-stream-verb--accent as dead CSS and the row with no primary-action
+// signal at all. The accent now reaches the slot by selector, so this pins
+// both halves: the declarations stay live, and the slot is what wears them.
+// Whitespace-tolerant on purpose: these pin the SELECTOR PAIRING, not the
+// formatting. A regex that demands a literal newline fails on a reflow that
+// changed nothing, which trains people to edit the test instead of reading it.
+assert.match(
+  boardCss,
+  /\.gh-stream-verb--accent,\s*\.gh-stream-handoff \.ui-btn\s*\{/,
+  "the row's accent reaches the hand-off slot rather than becoming dead CSS",
+);
+// The slot's wrapper does not restate what .gh-action-wrap already sets.
+assert.doesNotMatch(
+  boardCss,
+  /\.gh-stream-handoff\s+\.gh-action-wrap\s*\{\s*display:\s*inline-flex/,
+  "the hand-off wrapper does not restate .gh-action-wrap's own display",
+);
+
 // The row is both a click and a double-click target, so every interactive
 // island nested inside it must swallow BOTH. Stopping only `click` leaves
 // `dblclick` bubbling, and an impatient double-click on the hand-off picker or
