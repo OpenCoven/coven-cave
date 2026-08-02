@@ -42,7 +42,17 @@ const metadataAlias = path.join(fixtureRoot, "old-alias");
 // slow-but-working. 120s is far above the slowest observed call (~5.6s for a
 // full patrol spawn) — it exists to convert a hang into a failure, not to
 // police speed.
-const CHILD_TIMEOUT_MS = Number(process.env.LIFECYCLE_TEST_CHILD_TIMEOUT_MS ?? 120_000);
+const DEFAULT_CHILD_TIMEOUT_MS = 120_000;
+// Validate the override rather than trusting Number(): `Number("")` is 0 and
+// `Number("nope")` is NaN, and Node treats BOTH as "no timeout" — so a typo in
+// the env var would silently restore the unbounded hang this exists to prevent.
+// Anything not a finite positive number falls back to the default.
+const CHILD_TIMEOUT_MS = (() => {
+  const raw = process.env.LIFECYCLE_TEST_CHILD_TIMEOUT_MS;
+  if (raw === undefined) return DEFAULT_CHILD_TIMEOUT_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CHILD_TIMEOUT_MS;
+})();
 
 function run(command, args, cwd, options = {}) {
   return execFileSync(command, args, {
