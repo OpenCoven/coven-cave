@@ -12,7 +12,8 @@ assert.match(workspaceSidebar, /deriveChatProjectGroups\(applyProjectOverrides/,
 assert.match(workspaceSidebar, /handleRegister/, "should offer register-as-project for unregistered roots");
 assert.match(workspaceSidebar, /Register \$\{label\} as a project/, "register label must be accessible");
 assert.match(workspaceSidebar, /deriveChatRecencyBuckets\(/, "should derive time buckets for Recent view");
-assert.match(workspaceSidebar, /Organize sidebar/, "should expose Organize sidebar menu");
+assert.match(workspaceSidebar, /<Tabs<ChatSidebarView>/, "should expose visible grouping tabs");
+assert.match(workspaceSidebar, /<PopoverLabel>Chat visibility<\/PopoverLabel>/, "should retain chat visibility options");
 assert.match(workspaceSidebar, /readChatSidebarView\(\)/, "organize mode should hydrate from persisted pref");
 assert.match(workspaceSidebar, /relativeTime\(iso, Date\.now\(\), "bare"\)/, 'row times should use bare density');
 assert.ok((workspaceSidebar.match(/<ThreadRow/g) ?? []).length >= 2, "both view branches should render ThreadRow");
@@ -45,7 +46,7 @@ assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph o
 assert.match(workspaceSidebar, /scheduledCount/, "should accept scheduledCount prop");
 // Hover row-actions order: bookmark (pin) → archive → delete, so archive sits
 // to the RIGHT of the bookmark button. The archive button flips to unarchive
-// on archived rows, and the Organize menu exposes the Show-archived option
+// on archived rows, and the sidebar options menu exposes Show archived
 // (default-off wiring is pinned in chat-siderail-hide-archived.test.ts).
 assert.match(
   workspaceSidebar,
@@ -57,7 +58,7 @@ assert.match(
   /name=\{archived \? "ph:arrow-counter-clockwise" : "ph:archive"\}/,
   "the archive button must flip to unarchive on archived rows",
 );
-assert.match(workspaceSidebar, /Show archived/, "the Organize menu must expose Show archived");
+assert.match(workspaceSidebar, /Show archived/, "the sidebar options menu must expose Show archived");
 // Outer CSS classes for e2e compat
 assert.match(workspaceSidebar, /workspace-sidebar chat-sidebar/, "outer div must include both CSS classes for e2e compat");
 assert.doesNotMatch(workspaceSidebar, /workspace-sidebar__rail|chat-sidebar__rail/, "chat sidebar no longer renders a collapsed rail child");
