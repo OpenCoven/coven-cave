@@ -7,6 +7,15 @@ Every shell block below is a fragment of the parent skill's per-candidate loop;
 `PRESERVE` guards exit to the documented candidate-loop depth. Bare inner-loop
 `continue` statements only skip the current enumeration entry.
 
+## Automatic local-retirement profile
+
+The lifecycle apply command may use this profile only for a cleanup-ready unit
+under the complete repository maintenance transaction. It may remove one clean
+worktree without force and compare-delete one exact local ref. It must run all
+ownership, recency, recovery-root, exact-tip, and postcondition proofs below.
+It must not execute the remote-ref mutation block; an existing remote ref
+becomes a proposal.
+
 ## Required disposition
 
 Delete only when all of these remain true under the gate:
@@ -677,7 +686,14 @@ else
   test "$local_absence_status" -eq 1 ||
     { printf 'PRESERVE - local verification failed\n'; continue; }
 fi
+```
 
+## Separately authorized manual remote profile
+
+This block is excluded from automatic lifecycle apply. Routine branch curation
+reports its evidence as a proposal and does not execute it.
+
+```bash
 if test -n "$audited_remote_oid"; then
   current_fetch_url=$(git remote get-url origin) ||
     { printf 'PRESERVE - fetch URL recheck failed\n'; continue; }
@@ -698,7 +714,9 @@ if test -n "$audited_remote_oid"; then
       { printf 'PRESERVE - remote verification failed\n'; continue; }
   fi
 fi
+```
 
+```bash
 archive_index=0
 while test "$archive_index" -lt "${#authorized_archive_refs[@]}"; do
   archive_ref=${authorized_archive_refs[$archive_index]}

@@ -1110,7 +1110,7 @@ git commit -S -m "feat(worktrees): add fenced local retirement engine"
 - Modify: `scripts/worktree-lifecycle-patrol.ts`
 - Modify: `scripts/worktree-lifecycle-patrol.test.mjs`
 
-- [ ] **Step 1: Pin incomplete cross-system capabilities**
+- [x] **Step 1: Pin incomplete cross-system capabilities**
 
 Add this assertion to `scripts/maintenance-gate.test.mjs`:
 
@@ -1149,7 +1149,7 @@ assert.equal(
 );
 ```
 
-- [ ] **Step 2: Run tests and verify capability/apply APIs are absent**
+- [x] **Step 2: Run tests and verify capability/apply APIs are absent**
 
 Run:
 
@@ -1161,7 +1161,7 @@ node scripts/worktree-lifecycle-patrol.test.mjs
 Expected: FAIL on missing `repositoryMaintenanceCapabilities` and unsupported
 `--apply`.
 
-- [ ] **Step 3: Export the honest capability report**
+- [x] **Step 3: Export the honest capability report**
 
 Add to `scripts/maintenance-gate.mjs`:
 
@@ -1181,7 +1181,7 @@ Do not add an environment override or command-line bypass. The activation plan
 must replace each false value with evidence from the released enforcement
 integration, not flip constants without integration tests.
 
-- [ ] **Step 4: Add apply arguments and fail before gate acquisition**
+- [x] **Step 4: Add apply arguments and fail before gate acquisition**
 
 Extend CLI options:
 
@@ -1228,7 +1228,7 @@ are incomplete.
 the tested adapter with `createGitRetirementOperations()`, and release only its
 matching handle in `finally`.
 
-- [ ] **Step 5: Run gate and patrol tests**
+- [x] **Step 5: Run gate and patrol tests**
 
 Run:
 
@@ -1240,7 +1240,7 @@ node scripts/worktree-lifecycle-retirement.test.mjs
 
 Expected: all print `: ok`; apply exits 2 and leaves the fixture unchanged.
 
-- [ ] **Step 6: Commit fail-closed apply orchestration**
+- [x] **Step 6: Commit fail-closed apply orchestration**
 
 ```bash
 git add scripts/maintenance-gate.mjs scripts/maintenance-gate.test.mjs scripts/worktree-lifecycle-patrol.ts scripts/worktree-lifecycle-patrol.test.mjs
@@ -1253,7 +1253,7 @@ git commit -S -m "feat(worktrees): gate automatic retirement on full enforcement
 - Modify: `package.json`
 - Modify: `scripts/run-tests.mjs`
 
-- [ ] **Step 1: Add command-contract assertions**
+- [x] **Step 1: Add command-contract assertions**
 
 In `scripts/worktree-lifecycle-patrol.test.mjs`, read `package.json` and assert:
 
@@ -1277,7 +1277,7 @@ assert.equal(
 );
 ```
 
-- [ ] **Step 2: Run the command-contract test**
+- [x] **Step 2: Run the command-contract test**
 
 Run:
 
@@ -1287,7 +1287,7 @@ node scripts/worktree-lifecycle-patrol.test.mjs
 
 Expected: FAIL because `beads:worktrees:apply` is absent.
 
-- [ ] **Step 3: Add the explicit dormant apply command**
+- [x] **Step 3: Add the explicit dormant apply command**
 
 Add to `package.json`:
 
@@ -1303,7 +1303,7 @@ Add the new test after the existing patrol test entry in the `app` suite:
 "scripts/worktree-lifecycle-retirement.test.mjs",
 ```
 
-- [ ] **Step 4: Run focused wiring checks**
+- [x] **Step 4: Run focused wiring checks**
 
 Run:
 
@@ -1314,7 +1314,7 @@ node scripts/check-tests-wired.mjs
 
 Expected: patrol test passes and test wiring reports every test wired.
 
-- [ ] **Step 5: Commit commands and CI wiring**
+- [x] **Step 5: Commit commands and CI wiring**
 
 ```bash
 git add package.json scripts/run-tests.mjs scripts/worktree-lifecycle-patrol.test.mjs
@@ -1328,7 +1328,7 @@ git commit -S -m "chore(worktrees): wire gated retirement command"
 - Modify: `.agents/skills/branch-curator/references/deletion-proof.md`
 - Modify: `.agents/skills/branch-curator/evals/evals.json`
 
-- [ ] **Step 1: Add nine lifecycle eval cases**
+- [x] **Step 1: Add nine lifecycle eval cases**
 
 Append IDs 43 through 51:
 
@@ -1389,7 +1389,7 @@ Append IDs 43 through 51:
 }
 ```
 
-- [ ] **Step 2: Validate the eval file before changing guidance**
+- [x] **Step 2: Validate the eval file before changing guidance**
 
 Run:
 
@@ -1399,7 +1399,7 @@ node -e 'const fs=require("node:fs"); const p=".agents/skills/branch-curator/eva
 
 Expected: `branch-curator evals: 51 valid`.
 
-- [ ] **Step 3: Add lifecycle prevention and routine patrol guidance**
+- [x] **Step 3: Add lifecycle prevention and routine patrol guidance**
 
 Add concise sections to `SKILL.md`:
 
@@ -1436,7 +1436,7 @@ candidate. Automatic mode never deletes remote refs; report proposals only.
 Keep `SKILL.md` near its existing size by moving detailed transaction mechanics
 to the reference.
 
-- [ ] **Step 4: Define the normative automatic local profile**
+- [x] **Step 4: Define the normative automatic local profile**
 
 At the top of `references/deletion-proof.md`, distinguish:
 
@@ -1463,7 +1463,7 @@ reports its evidence as a proposal and does not execute it.
 Do not weaken any existing proof or remove the remote block needed to explain
 manual authorization.
 
-- [ ] **Step 5: Revalidate eval shape and inspect policy diff**
+- [x] **Step 5: Revalidate eval shape and inspect policy diff**
 
 Run:
 
@@ -1474,7 +1474,7 @@ git diff --check
 
 Expected: eval IDs are unique and the diff check is silent.
 
-- [ ] **Step 6: Commit skill policy**
+- [x] **Step 6: Commit skill policy**
 
 ```bash
 git add .agents/skills/branch-curator/SKILL.md .agents/skills/branch-curator/references/deletion-proof.md .agents/skills/branch-curator/evals/evals.json
@@ -1487,7 +1487,7 @@ git commit -S -m "feat(skills): add automatic local retirement policy"
 - Modify: `AGENTS.md`
 - Modify: `CLAUDE.md`
 
-- [ ] **Step 1: Pin the new guidance with a source-contract test**
+- [x] **Step 1: Pin the new guidance with a source-contract test**
 
 Add assertions to `scripts/worktree-lifecycle-patrol.test.mjs`:
 
@@ -1502,7 +1502,7 @@ assert.match(claude, /normal completion uses the lifecycle patrol/);
 assert.doesNotMatch(claude, /Manually `git worktree remove .*` then `git branch -D/);
 ```
 
-- [ ] **Step 2: Run the source-contract test**
+- [x] **Step 2: Run the source-contract test**
 
 Run:
 
@@ -1512,7 +1512,7 @@ node scripts/worktree-lifecycle-patrol.test.mjs
 
 Expected: FAIL because the current docs still require manual `branch -D`.
 
-- [ ] **Step 3: Update normal completion guidance**
+- [x] **Step 3: Update normal completion guidance**
 
 In `AGENTS.md`, replace immediate manual cleanup with:
 
@@ -1538,7 +1538,7 @@ gate-incomplete, preserve the unit and record its owner/reason. Never bypass
 the worktree guard to force completion.
 ```
 
-- [ ] **Step 4: Run the source-contract test**
+- [x] **Step 4: Run the source-contract test**
 
 Run:
 
@@ -1548,7 +1548,7 @@ node scripts/worktree-lifecycle-patrol.test.mjs
 
 Expected: `worktree-lifecycle-patrol.test.mjs: ok`.
 
-- [ ] **Step 5: Commit workflow guidance**
+- [x] **Step 5: Commit workflow guidance**
 
 ```bash
 git add AGENTS.md CLAUDE.md scripts/worktree-lifecycle-patrol.test.mjs
@@ -1560,7 +1560,7 @@ git commit -S -m "docs: integrate branch lifecycle patrol"
 **Files:**
 - No new files
 
-- [ ] **Step 1: Run all lifecycle and gate tests together**
+- [x] **Step 1: Run all lifecycle and gate tests together**
 
 Run:
 
@@ -1574,7 +1574,7 @@ node scripts/maintenance-gate.test.mjs
 
 Expected: five `: ok` lines.
 
-- [ ] **Step 2: Run type checking**
+- [x] **Step 2: Run type checking**
 
 Run:
 
@@ -1584,7 +1584,7 @@ pnpm typecheck
 
 Expected: exit 0 with no TypeScript errors.
 
-- [ ] **Step 3: Run test wiring**
+- [x] **Step 3: Run test wiring**
 
 Run:
 
@@ -1594,7 +1594,7 @@ pnpm check:tests-wired
 
 Expected: all test files are wired into CI.
 
-- [ ] **Step 4: Run the relevant app suite**
+- [x] **Step 4: Run the relevant app suite**
 
 Run:
 
@@ -1605,12 +1605,12 @@ pnpm test:app
 Expected: all app tests pass, including lifecycle, maintenance gate, patrol,
 and retirement fixtures.
 
-- [ ] **Step 5: Prove the real checkout remains read-only**
+- [x] **Step 5: Prove the real checkout remains read-only**
 
 Run:
 
 ```bash
-pnpm beads:worktrees:json > /tmp/cave-ox3ky-worktrees.json
+pnpm --silent beads:worktrees:json > /tmp/cave-ox3ky-worktrees.json
 jq -e '.ok == true and (.items | type == "array") and (.budgets | type == "object")' /tmp/cave-ox3ky-worktrees.json
 git status --short
 ```
@@ -1622,13 +1622,13 @@ temporary output:
 rm /tmp/cave-ox3ky-worktrees.json
 ```
 
-- [ ] **Step 6: Prove production apply is disabled**
+- [x] **Step 6: Prove production apply is disabled**
 
 Run:
 
 ```bash
 set +e
-pnpm beads:worktrees:apply -- --json > /tmp/cave-ox3ky-apply.json
+pnpm --silent beads:worktrees:apply -- --json > /tmp/cave-ox3ky-apply.json
 status=$?
 set -e
 test "$status" -eq 2
@@ -1638,7 +1638,7 @@ rm /tmp/cave-ox3ky-apply.json
 
 Expected: all checks exit 0 and no branch or worktree is changed.
 
-- [ ] **Step 7: Record verification and the activation dependency**
+- [x] **Step 7: Record verification and the activation dependency**
 
 Run:
 
@@ -1646,7 +1646,7 @@ Run:
 bd update cave-ox3ky --append-notes "Foundation verification passed: lifecycle unit, patrol, retirement, and maintenance-gate tests; typecheck; test wiring; app suite; real report-only patrol. Production apply remains correctly disabled pending cave-wqa0b.2, cave-wqa0b.3, and cave-wqa0b.4."
 ```
 
-- [ ] **Step 8: Commit any verification-only corrections**
+- [x] **Step 8: Commit any verification-only corrections**
 
 If verification required tracked corrections, commit only those files:
 
