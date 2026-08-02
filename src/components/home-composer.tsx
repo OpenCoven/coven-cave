@@ -75,6 +75,7 @@ import {
   projectsForHomeComposerScope,
   resolveHomeComposerFamiliar,
   resolveHomeComposerProject,
+  shouldClearHomeComposerProjectSelection,
 } from "@/lib/home-composer-context";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 
@@ -294,10 +295,9 @@ export function HomeComposer({
   // then the first project) resolves in resolveHomeComposerProject so it can
   // upgrade as sessions land. Only clear a stale pick whose project vanished.
   useEffect(() => {
-    if (!selectedProjectId) return;
-    if (projects.some((project) => project.id === selectedProjectId)) return;
+    if (!shouldClearHomeComposerProjectSelection(projects, selectedProjectId, projectsLoadedSuccessfully)) return;
     setSelectedProjectId("");
-  }, [projects, selectedProjectId]);
+  }, [projects, projectsLoadedSuccessfully, selectedProjectId]);
 
   // "Add to project ›" flyout data + the "Start a new project" flow (same
   // directory-picker flow the context pill uses, so both entry points create

@@ -15,6 +15,21 @@ export function projectsForHomeComposerScope(
     : [...projects];
 }
 
+/**
+ * Do not clear an explicit pick while a new familiar scope is still loading.
+ * The hook intentionally masks the previous scope during that request, so an
+ * empty list at that point is not evidence that the selected project vanished.
+ */
+export function shouldClearHomeComposerProjectSelection(
+  projects: readonly CaveProject[],
+  selectedProjectId: string,
+  projectsLoadedSuccessfully: boolean,
+): boolean {
+  return projectsLoadedSuccessfully
+    && Boolean(selectedProjectId)
+    && !projects.some((project) => project.id === selectedProjectId);
+}
+
 /** Chat launch needs both an actual familiar and server-derived project access. */
 export function isHomeComposerProjectLaunchReady(args: {
   familiarId: string | null | undefined;

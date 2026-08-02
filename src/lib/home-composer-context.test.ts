@@ -5,6 +5,7 @@ import {
   projectsForHomeComposerScope,
   resolveHomeComposerFamiliar,
   resolveHomeComposerProject,
+  shouldClearHomeComposerProjectSelection,
 } from "./home-composer-context.ts";
 
 test("home composer shows the unscoped registry, then filters to familiar access", () => {
@@ -41,6 +42,25 @@ test("home composer never treats project access as launch permission without a f
     isHomeComposerProjectLaunchReady({ ...readyArgs, familiarId: "sage" }),
     true,
     "a loaded project with familiar access is launchable",
+  );
+});
+
+test("home composer keeps an explicit project through a pending familiar scope", () => {
+  const project = { id: "selected", name: "Selected", root: "/work/selected" } as never;
+  assert.equal(
+    shouldClearHomeComposerProjectSelection([], "selected", false),
+    false,
+    "the masked list during a scope request is not proof that the selected project disappeared",
+  );
+  assert.equal(
+    shouldClearHomeComposerProjectSelection([project], "selected", true),
+    false,
+    "an accessible selected project remains selected after the scoped response",
+  );
+  assert.equal(
+    shouldClearHomeComposerProjectSelection([], "selected", true),
+    true,
+    "an explicitly selected project is cleared once the settled scope excludes it",
   );
 });
 

@@ -42,6 +42,11 @@ assert.match(
 );
 assert.match(
   source,
+  /shouldClearHomeComposerProjectSelection\(projects, selectedProjectId, projectsLoadedSuccessfully\)/,
+  "HomeComposer should not clear a selected project while the familiar-scoped list is still loading",
+);
+assert.match(
+  source,
   /!selectedFamiliarId\s*\?\s*"Summon a familiar before starting chat\."/,
   "HomeComposer should explain why chat remains blocked without a familiar while retaining registered projects",
 );
