@@ -307,11 +307,19 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
         </span>
       </header>
 
-      <ResearchXSources
-        familiar={context.activeFamiliar}
-        selectedMissionId={selectedMission?.id ?? null}
-        onMissionAttached={research.applyMission}
-      />
+      {/* cave-lsj8u: src/app/api/x/ never landed, so this section's every
+          fetch (/api/x/sources, /posts/search, /posts/lookup) 404s and it
+          renders a permanent ErrorState. Gate it on the capability flag the
+          familiars API already returns — off by default, so the surface stays
+          hidden until the routes exist. Delete this condition when they land;
+          the component itself needs no change. */}
+      {context.activeFamiliar?.xResearchEnabled ? (
+        <ResearchXSources
+          familiar={context.activeFamiliar}
+          selectedMissionId={selectedMission?.id ?? null}
+          onMissionAttached={research.applyMission}
+        />
+      ) : null}
 
       <form className="research-res__intake" onSubmit={onSave}>
         <div className="research-res__intake-head">

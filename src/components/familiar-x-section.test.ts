@@ -172,7 +172,10 @@ assert.match(
 assert.match(brain, /import \{ FamiliarXSection \} from "@\/components\/familiar-x-section"/);
 assert.match(
   brain,
-  /<FamiliarAsanaSection familiar=\{familiar\} \/>\s*<FamiliarXSection familiar=\{familiar\} \/>/,
+  // Still beside Asana, but now behind the cave-lsj8u capability gate: the X
+  // routes never landed, so the section stays hidden until they do. Ordering is
+  // what this pins; the gate itself is pinned in x-surface-gating.test.ts.
+  /<FamiliarAsanaSection familiar=\{familiar\} \/>[\s\S]{0,700}?<FamiliarXSection familiar=\{familiar\} \/>/,
   "X settings render beside Asana",
 );
 assert.match(types, /xResearchEnabled\?: boolean/);
