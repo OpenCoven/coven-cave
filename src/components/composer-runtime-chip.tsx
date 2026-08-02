@@ -60,8 +60,11 @@ export function ComposerRuntimePopover({
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
   onPickModel: (id: string | null) => void;
-  /** cave-pkapw: the session's model when it is NOT already the familiar's
-   *  default. Null hides the promote row — the action would be a no-op. */
+  /** cave-pkapw: a session-scoped model id to offer promoting to the familiar
+   *  default. This component renders the row whenever the value is non-null and
+   *  cannot check it itself; the CALLER owes the "would actually change the
+   *  default" test (chat-view compares against `familiarDefaultModel`) and
+   *  passes null otherwise, which hides the row. */
   promotableModel?: string | null;
   onPromoteModelToDefault?: () => void;
 }) {

@@ -48,10 +48,21 @@ test("the promote PATCH omits sessionId, or it would write session scope", () =>
 });
 
 test("the row is offered only when it would do something", () => {
+  // Gating on `source === "session"` ALONE was wrong: the resolver reports it
+  // whenever a session intent exists, including when that intent equals the
+  // familiar default. That made the row a no-op in that case and left it on
+  // screen after a successful promotion (promoting does not clear the session
+  // intent). The comparison against the stored default is the fix — see the
+  // executable proof in src/lib/chat-model-state.test.ts.
   assert.match(
     chatView,
-    /modelState\?\.source === "session" && modelState\.effectiveModel !== "unknown"/,
-    "promotable only when the model is session-scoped and known",
+    /modelState\.effectiveModel !== modelState\.familiarDefaultModel/,
+    "promotable only when it would actually change the familiar's stored default",
+  );
+  assert.match(
+    chatView,
+    /modelState\?\.source === "session"[\s\S]{0,120}?modelState\.effectiveModel !== "unknown"/,
+    "and only when the model is session-scoped and known",
   );
   assert.match(
     popover,

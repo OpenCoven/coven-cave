@@ -42,6 +42,7 @@ assert.deepEqual(resolveChatModelState({ ...base }), {
   runtime: "local:/tmp/coven-cave",
   effectiveModel: "anthropic/claude-sonnet-4-6",
   source: "familiar-default",
+  familiarDefaultModel: "anthropic/claude-sonnet-4-6",
   applicationState: "saved",
   reason: "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.",
 });
@@ -75,6 +76,7 @@ assert.deepEqual(
     runtime: "local:/tmp/coven-cave",
     effectiveModel: "",
     source: "runtime-default",
+    familiarDefaultModel: "anthropic/claude-sonnet-4-6",
     applicationState: "saved",
     reason: "Using the runtime's configured default model for this message.",
   },
@@ -95,6 +97,7 @@ assert.deepEqual(
     runtime: "local:/tmp/coven-cave",
     effectiveModel: "",
     source: "runtime-default",
+    familiarDefaultModel: null,
     applicationState: "saved",
     reason: "Using the runtime's configured default model.",
   },
@@ -114,6 +117,7 @@ assert.deepEqual(
     runtime: "local:/tmp/coven-cave",
     effectiveModel: "",
     source: "runtime-default",
+    familiarDefaultModel: null,
     applicationState: "saved",
     reason: "Using the runtime's configured default model.",
   },
@@ -133,6 +137,7 @@ assert.deepEqual(
     runtime: "local:/tmp/coven-cave",
     effectiveModel: "openai/gpt-5.6-sol",
     source: "global-default",
+    familiarDefaultModel: null,
     applicationState: "saved",
     reason: "Inherited from Cave defaults.",
   },
@@ -152,6 +157,7 @@ assert.deepEqual(
     runtime: "local:/tmp/coven-cave",
     effectiveModel: "",
     source: "runtime-default",
+    familiarDefaultModel: null,
     applicationState: "saved",
     reason: "Using the runtime's configured default model.",
   },
@@ -184,6 +190,7 @@ assert.deepEqual(
     runtime: "local:/tmp/coven-cave",
     effectiveModel: "",
     source: "runtime-default",
+    familiarDefaultModel: null,
     applicationState: "saved",
     reason: "Using the runtime's configured default model.",
   },
@@ -225,6 +232,7 @@ assert.deepEqual(
     runtime: "local:/tmp/coven-cave",
     effectiveModel: "",
     source: "runtime-default",
+    familiarDefaultModel: null,
     applicationState: "saved",
     reason: "Using the runtime's configured default model.",
   },
@@ -327,3 +335,48 @@ assert.deepEqual(
 }
 
 console.log("chat-model-state.test.ts: ok");
+
+// cave-pkapw: `source` reports which scope WON, not that the scopes differ.
+// A session intent that merely restates the familiar default still resolves to
+// source "session", so "is this promotable to the familiar default?" cannot be
+// answered from `source` alone — hence `familiarDefaultModel` on the state.
+{
+  const sameAsDefault = resolveChatModelState({
+    ...base,
+    sessionModel: "anthropic/claude-sonnet-4-6",
+  });
+  assert.equal(
+    sameAsDefault.source,
+    "session",
+    "a session intent equal to the familiar default STILL reports source 'session'",
+  );
+  assert.equal(
+    sameAsDefault.effectiveModel,
+    sameAsDefault.familiarDefaultModel,
+    "…so the two compare equal, which is the only signal that promotion is a no-op",
+  );
+
+  const differs = resolveChatModelState({
+    ...base,
+    sessionModel: "anthropic/claude-opus-4-7",
+  });
+  assert.equal(differs.source, "session");
+  assert.notEqual(
+    differs.effectiveModel,
+    differs.familiarDefaultModel,
+    "a genuinely diverged session model is the only case worth offering to promote",
+  );
+
+  // After promotion the familiar default becomes the session's model while the
+  // session intent survives — the exact state that left the row stuck on screen.
+  const afterPromotion = resolveChatModelState({
+    ...base,
+    familiarModel: "anthropic/claude-opus-4-7",
+    sessionModel: "anthropic/claude-opus-4-7",
+  });
+  assert.equal(
+    afterPromotion.effectiveModel,
+    afterPromotion.familiarDefaultModel,
+    "promotion collapses the difference, so the promote row hides on refresh",
+  );
+}

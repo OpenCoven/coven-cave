@@ -2566,8 +2566,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // server-side mechanism a brand-new chat's pick already uses: PATCH with
   // scope "familiar-default" and no sessionId. Deliberately not a new store —
   // cave-x0k78 was closed because a second one would fight this config.
+  // `source: "session"` alone is NOT enough to offer promotion: the resolver
+  // reports it whenever a session intent exists, even when that intent already
+  // matches the familiar's default. Gating on it alone made the row a no-op in
+  // that case, and — worse — left it on screen after a successful promotion,
+  // because promoting does not clear the session intent. Compare against the
+  // familiar's stored default so the row appears only when it would change it.
   const promotableModel =
-    modelState?.source === "session" && modelState.effectiveModel !== "unknown"
+    modelState?.source === "session" &&
+    modelState.effectiveModel !== "unknown" &&
+    modelState.effectiveModel !== modelState.familiarDefaultModel
       ? modelState.effectiveModel
       : null;
   const handlePromoteModelToDefault = useCallback(() => {
