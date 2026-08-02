@@ -7,7 +7,7 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
-## [0.2.2] - 2026-07-31
+## [0.2.2] - 2026-08-01
 
 ### Added
 
@@ -20,6 +20,14 @@ breaking config changes; patch releases stay additive.
 - Added optional device-owner authentication to iOS for app unlock and sensitive desktop-connection approvals, with app-switcher privacy shielding and a 60-second relock window (#4092).
 - Added distinct Reply, Task, and Action follow-up cards while keeping compact chats reply-only.
 - Added GitHub artifact attestations for release installers and SHA256SUMS (#4070).
+- Added richer chat collaboration: visible session participants, solo-to-Coven promotion, familiar drag-and-drop, transcript search with match navigation, and inline source previews (#4127, #4131, #4132, #4152).
+- Added interactive chat-context instruments for completion, elapsed time, and context pressure, with runtime/model promoted to the leading context position.
+- Added optional thread instruments with a machine-clock stamp lane, plus batched tool-call summaries that name the skills used during a turn (#4115, #4147).
+- Added a transcript-powered chat naming action and a streamlined new-session composer with familiar defaults and clearer launch guidance (#4121, #4190, #4194).
+- Added a PR-backed Review Deck with file navigation and readiness gates, and a stage-sectioned GitHub triage stream with landing-gate detail (#4116, #4198).
+- Added one shared runtime model inventory and default-selection path across supported harnesses (#4095).
+- Added a shared document reader across Memories and working-tree-aware code-block reading (#4156, #4197).
+- Rebuilt the Navigator Chart Room around five operational lenses—Flow, Band, Chain, Orchestration, and Decisions—with real board dependencies, voyage history, and a briefing surface (cave-iuc8h).
 
 ### Changed
 
@@ -29,6 +37,10 @@ breaking config changes; patch releases stay additive.
 - Refined Research Desk hierarchy with lifecycle scopes, priority groups, persisted focus mode, keyboard handling, and responsive rails (#4085).
 - Rebuilt Weaves and Proposals as one fail-closed decision flow with shared list/detail chrome, scoped worst-first inspection, evidence-backed maps, deep-linked staged writes, and shared audit reads (#4108, #4113).
 - Refocused Marketplace on owned plugins and local skills, with Crafts remaining available only behind its explicit feature flag.
+- Refined project selection with deduplicated fetch processing, stable frecency ranking, spaced-name coverage, and consolidated project-root normalization (#4137, #4142, #4145, #4158).
+- Adopted the inset detail-shell layout and floated sidebar edge while preserving responsive content ownership (#4139).
+- Made structured Hermes tool activity configurable in-app, then removed the obsolete Hermes API setup and readiness gate after runtime parity was restored (#4138, #4150).
+- Improved release observability with explicit compatibility-guard disclosures, wired release-note fixtures, and build-budget headroom reporting (#4134, #4140, #4143, #4157).
 
 ### Fixed
 
@@ -40,10 +52,21 @@ breaking config changes; patch releases stay additive.
 - Fixed new-project selection being overwritten and made repository rows visually distinct from workspaces (#4019).
 - Fixed Familiar grouping appearing outside true multi-selection and corrected Board popover shadows in light themes (#4088).
 - Fixed sidebar navigation so the version opens Settings → About and Dashboard remains available in the collapsed rail (#4013, #4044).
+- Fixed chat attachments so cancel controls remain legible and images render after reload, preserved arrow-key editing around suggestions, and gated the initial send on runtime readiness (#4119, #4128, #4141).
+- Fixed iOS thread persistence by serializing snapshot writes and making lifecycle flushes durable (#4135).
+- Fixed Linux browser panes so hidden webviews no longer steal half the window, and bounded dev-server readiness retries during local startup (#4130, #4195).
+- Fixed Hermes compatibility notices, OpenClaw resume/runtime bridging, and nonzero Codex/Coven exits without turning recoverable drift into chat failures (#4096, #4055, #4062, #4122, #4136).
+- Fixed legacy project-root migration so existing local state is preserved (#4185).
+- Made Thread Signal chat cards compact and container-responsive, switching directly from one to three score columns without overflow (#4186).
+- Improved Research Studio podcast output with punctuation-aware dialogue joins, cleaner spoken titles, sentence chunking, and editorial template tuning (#4118, #4189, #4193).
+- Fixed GitHub row hand-off so it uses the operator's familiar picker and retains its accent on the hand-off slot (#4203, #4205).
+- Kept incomplete X surfaces hidden until their routes are ready, avoiding release of a partial integration (#4175, #4180, #4192, #4206).
 
 ### Security
 
 - Prevented memory archive and restore operations from escaping through symlinked parents, stopped GitHub post-merge branch deletion from trusting a request-supplied branch name, and added the repository-local maintenance-gate core with fenced writer leases and race-safe owner cleanup for branch/worktree curation (#4084, #4068, #4107, #4111).
+- Hardened release and contribution integrity with cached-runtime preservation, guarded synthetic secret fixtures, protected attribution rules, and visible compatibility-gate exceptions (#4098, #4124, #4134, #4169).
+- Gated automatic local worktree retirement on the repository maintenance transaction and restored lifecycle patrol coverage before release (#4192, #4199, #4200).
 
 ## [0.2.0] - 2026-07-26
 
