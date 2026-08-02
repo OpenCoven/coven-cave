@@ -30,6 +30,34 @@ Preserve a branch or worktree when any of these signals apply:
 Treat `main`, the default branch, Beads/Dolt sync refs such as
 `__dolt_remote_info__`, and other tool-owned refs as protected infrastructure.
 
+## Prevent accumulation
+Managed worktrees require one active Bead, structured
+owner/purpose/disposition metadata, and one registered worktree per Bead by
+default. Warn at 12 worktrees or 30 local branches. Exceeding a budget never
+authorizes deletion; new managed work requires safe retirement or a bounded
+owner/reason/expiry exception.
+
+Use `pnpm beads:worktrees:create -- --bead cave-123 --branch
+fix/cave-123-example --owner kitty --purpose "Repair example"` for managed
+creation. Raw `git worktree add` remains available but is not universally
+intercepted; it does not exempt the resulting worktree from lifecycle policy.
+
+Recovery and archive dispositions require an owner, reason, and review date.
+An overdue review creates follow-up work and never changes the item into a
+deletion candidate.
+
+## Routine lifecycle patrol
+Use `pnpm beads:worktrees` for the read-only inventory. It covers registered
+worktrees and branch-only refs. Treat `retire-after-gate` as cleanup-ready, not
+as deletion authorization.
+
+`pnpm beads:worktrees:apply` may retire local state only when its capability
+report proves the full Coven, Beads, GitHub, and local maintenance transaction
+is enforced. `gate-incomplete` is a successful safety decision: preserve every
+candidate. Automatic apply retires at most three units unless you pass an
+explicit `--max-retire` value from 1 through 10. Automatic mode never deletes
+remote refs; report proposals only.
+
 ## Start with durable coordination
 In a Beads repository:
 ```bash
