@@ -82,7 +82,12 @@ async function seed(page: Page): Promise<Mutable> {
       state.configPatches.push(body);
       const fam = body?.familiars?.nova;
       if (fam?.harness) state.harness = fam.harness;
-      if (fam?.model) state.effectiveModel = fam.model;
+      // Empty is the explicit runtime-default sentinel. Preserve it in the
+      // stateful mock so the follow-up model-state GET cannot resurrect the
+      // previous runtime's model.
+      if (fam && Object.prototype.hasOwnProperty.call(fam, "model")) {
+        state.effectiveModel = fam.model ?? "";
+      }
       return route.fulfill({ json: { ok: true } });
     }
     return route.fulfill({ json: { ok: true, config: {} } });
