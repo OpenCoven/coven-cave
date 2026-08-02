@@ -55,6 +55,113 @@ try {
   await close(redirect);
 }
 
+let transientAttempts = 0;
+assert.equal(
+  await loopbackOriginResponds({
+    port: 3000,
+    timeoutMs: 500,
+    fetchImpl: async () => {
+      transientAttempts += 1;
+      if (transientAttempts === 1) {
+        const error = new Error("connect ECONNREFUSED 127.0.0.1:3000");
+        error.code = "ECONNREFUSED";
+        throw error;
+      }
+      return new Response(null, { status: 204 });
+    },
+  }),
+  true,
+  "startup readiness retries after a transient refused connection",
+);
+assert.equal(transientAttempts, 2, "transient readiness succeeds on exactly the second attempt");
+
+let nonSuccessAttempts = 0;
+let responseBodyCancelled = false;
+let bodyCancellationAwaited = false;
+let cancellationAwaitAssertion = null;
+assert.equal(
+  await loopbackOriginResponds({
+    port: 3000,
+    timeoutMs: 500,
+    fetchImpl: async () => {
+      nonSuccessAttempts += 1;
+      if (nonSuccessAttempts === 1) {
+        return {
+          status: 503,
+          body: {
+            cancel() {
+              responseBodyCancelled = true;
+              return {
+                then(resolve) {
+                  bodyCancellationAwaited = true;
+                  resolve();
+                },
+              };
+            },
+          },
+        };
+      }
+      try {
+        assert.equal(
+          bodyCancellationAwaited,
+          true,
+          "a non-success response body cancellation is awaited before retrying",
+        );
+      } catch (error) {
+        cancellationAwaitAssertion = error;
+      }
+      return new Response(null, { status: 204 });
+    },
+  }),
+  true,
+  "startup readiness retries after a non-success response",
+);
+assert.equal(nonSuccessAttempts, 2, "non-success readiness succeeds on exactly the second attempt");
+assert.equal(
+  responseBodyCancelled,
+  true,
+  "a non-success response body is cancelled",
+);
+if (cancellationAwaitAssertion) throw cancellationAwaitAssertion;
+
+let hungResponseBodyCancelled = false;
+const outerTimeout = Symbol("outer timeout");
+let outerTimer;
+const hungCancellationResult = await Promise.race([
+  loopbackOriginResponds({
+    port: 3000,
+    timeoutMs: 100,
+    fetchImpl: async () => ({
+      status: 503,
+      body: {
+        cancel() {
+          hungResponseBodyCancelled = true;
+          return new Promise(() => {});
+        },
+      },
+    }),
+  }),
+  new Promise((resolve) => {
+    outerTimer = setTimeout(() => resolve(outerTimeout), 1_000);
+  }),
+]);
+clearTimeout(outerTimer);
+assert.equal(
+  hungResponseBodyCancelled,
+  true,
+  "a hung non-success response body cancellation is invoked",
+);
+assert.notEqual(
+  hungCancellationResult,
+  outerTimeout,
+  "a hung non-success response body cancellation must not outlive the probe deadline",
+);
+assert.equal(
+  hungCancellationResult,
+  false,
+  "a probe with a hung non-success response body cancellation is not ready",
+);
+
 const hungSockets = new Set();
 const hung = net.createServer((socket) => {
   hungSockets.add(socket);

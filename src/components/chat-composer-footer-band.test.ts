@@ -180,13 +180,13 @@ assert.match(
 );
 assert.match(
   transcriptCss,
-  /\.cave-chat-linear \.cave-composer-footer-action,[\s\S]*?\.cave-chat-linear \.cave-composer-plus \{[\s\S]*?width:\s*var\(--icon-sm\);[\s\S]*?height:\s*var\(--icon-sm\);/,
-  "in-chat Call and Add controls should shrink to the compact 14px token",
+  /\.cave-chat-linear \.cave-composer-footer-action,[\s\S]*?\.cave-chat-linear \.cave-composer-plus \{[\s\S]*?width:\s*var\(--space-6\);[\s\S]*?height:\s*var\(--space-6\);/,
+  "in-chat Call and Add controls should use the compact 24px token",
 );
 assert.match(
   transcriptCss,
-  /\.cave-chat-linear \.cave-composer-send \{[\s\S]*?width:\s*var\(--icon-sm\);[\s\S]*?height:\s*var\(--icon-sm\);/,
-  "in-chat Send should shrink to the compact 14px token",
+  /\.cave-chat-linear \.cave-composer-send \{[\s\S]*?width:\s*var\(--space-6\);[\s\S]*?height:\s*var\(--space-6\);/,
+  "in-chat Send should use the compact 24px token",
 );
 assert.match(
   css,

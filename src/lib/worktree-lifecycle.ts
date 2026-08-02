@@ -126,6 +126,10 @@ export type WorktreeLifecycleSummary = {
   budgets: WorktreeLifecycleBudgets;
 };
 
+export type WorktreeLifecycleRenderOptions = {
+  includeFooter?: boolean;
+};
+
 export const WORKTREE_WARNING_BUDGET = 12;
 export const BRANCH_WARNING_BUDGET = 30;
 
@@ -657,7 +661,11 @@ function humanReason(item: WorktreeLifecycleItem, reason: string): string {
   return reason;
 }
 
-export function renderWorktreeLifecycleReport(summary: WorktreeLifecycleSummary): string {
+export function renderWorktreeLifecycleReport(
+  summary: WorktreeLifecycleSummary,
+  options: WorktreeLifecycleRenderOptions = {},
+): string {
+  const { includeFooter = true } = options;
   const { counts } = summary;
   const lines = [
     `Worktree lifecycle: ${summary.items.length} registered | ${counts.active} active | ${counts.recovery} recovery | ${counts.cooldown} cooldown | ${counts["retire-after-gate"]} cleanup-ready | ${counts.uncertain} uncertain | ${counts.protected} protected`,
@@ -683,6 +691,8 @@ export function renderWorktreeLifecycleReport(summary: WorktreeLifecycleSummary)
     }
   }
 
-  lines.push("", "Report only. No worktree or branch was changed.");
+  if (includeFooter) {
+    lines.push("", "Report only. No worktree or branch was changed.");
+  }
   return lines.join("\n");
 }

@@ -773,4 +773,89 @@ function legacyObservation(overrides = {}) {
   assert.match(text, /docs\/exact-untracked\.md/);
 }
 
+{
+  const summary = summarizeWorktreeLifecycle(
+    [
+      {
+        ...observation({
+          branch: "feat/live",
+          ref: "refs/heads/feat/live",
+          path: "/repo/.worktrees/live",
+        }),
+        lane: "active",
+        reasons: ["claimed by cave-1"],
+      },
+      {
+        ...observation({
+          kind: "branch-only",
+          branch: "feat/old",
+          ref: "refs/heads/feat/old",
+          path: null,
+          changes: ["? docs/note.md"],
+          nonDisposableIgnoredPaths: ["src/exact.ts"],
+          indexFlags: ["UU src/exact.ts"],
+        }),
+        lane: "retire-after-gate",
+        reasons: ["merged PR landed"],
+      },
+    ],
+    {
+      worktrees: { count: 2, warning: 12, exceeded: false },
+      branches: { count: 2, warning: 30, exceeded: false },
+      exceptions: { active: 0, expired: 0 },
+    },
+  );
+  const expected = [
+    "Worktree lifecycle: 2 registered | 1 active | 0 recovery | 0 cooldown | 1 cleanup-ready | 0 uncertain | 0 protected",
+    "Worktree budget: 2/12 (within budget)",
+    "Local branch budget: 2/30 (within budget)",
+    "Managed exceptions: 0 active | 0 expired",
+    "",
+    "active",
+    "- feat/live @ /repo/.worktrees/live",
+    "  claimed by cave-1",
+    "",
+    "cleanup-ready",
+    "- feat/old [branch-only]",
+    "  merged PR landed",
+    "  change: ? docs/note.md",
+    "  non-disposable ignored: src/exact.ts",
+    "  index flag: UU src/exact.ts",
+    "",
+    "Report only. No worktree or branch was changed.",
+  ].join("\n");
+  const expectedWithoutFooter = [
+    "Worktree lifecycle: 2 registered | 1 active | 0 recovery | 0 cooldown | 1 cleanup-ready | 0 uncertain | 0 protected",
+    "Worktree budget: 2/12 (within budget)",
+    "Local branch budget: 2/30 (within budget)",
+    "Managed exceptions: 0 active | 0 expired",
+    "",
+    "active",
+    "- feat/live @ /repo/.worktrees/live",
+    "  claimed by cave-1",
+    "",
+    "cleanup-ready",
+    "- feat/old [branch-only]",
+    "  merged PR landed",
+    "  change: ? docs/note.md",
+    "  non-disposable ignored: src/exact.ts",
+    "  index flag: UU src/exact.ts",
+  ].join("\n");
+  assert.equal(
+    renderWorktreeLifecycleReport(summary),
+    expected,
+    "default read-only rendering remains byte-for-byte unchanged",
+  );
+  assert.equal(
+    renderWorktreeLifecycleReport(summary, { includeFooter: true }),
+    expected,
+    "the explicit read-only option matches the default renderer exactly",
+  );
+  assert.equal(
+    renderWorktreeLifecycleReport(summary, { includeFooter: false }),
+    expectedWithoutFooter,
+    "the mutable apply renderer reuses the same report body without the report-only footer",
+  );
+}
+
 console.log("worktree-lifecycle.test.ts: ok");

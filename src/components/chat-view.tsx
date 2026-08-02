@@ -61,6 +61,12 @@ import {
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
 import { generateChatTitle } from "@/lib/chat-title-generation";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
+import {
+  newSessionDefaults,
+  newSessionDefaultsMatch,
+  readNewSessionDefaults,
+  writeNewSessionDefaults,
+} from "@/lib/chat-new-session-defaults";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp } from "@/lib/slash-commands";
@@ -1926,6 +1932,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // still expose the previous render between a picker action and its PATCH.
   const modelStateRef = useRef<ChatModelState | null>(null);
   const [usagePlan, setUsagePlan] = useState<ChatUsagePlanSnapshot | null>(null);
+  // "Save as default" (Chat.dc.html 2b): pins the current project so a
+  // brand-new chat stops inferring it from the most recent chat. Project only —
+  // see chat-new-session-defaults for why model is deferred (cave-x0k78). Read once —
+  // the value only matters at session start, and re-reading would fight a
+  // picker the user is actively using.
+  const [savedDefaults, setSavedDefaults] = useState(() =>
+    typeof window === "undefined" ? newSessionDefaults() : readNewSessionDefaults(window.localStorage),
+  );
+
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).responseSpeed);
   const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode);
@@ -2120,10 +2135,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     taskProjectId: linkedContext?.task?.projectId,
     taskCwd: linkedContext?.task?.cwd,
     recentProjectRoot,
+    defaultProjectId: savedDefaults.projectId,
     projects,
   });
   const resolvedProjectId = projectSelection.projectId;
   const selectedProject = projectSelection.project;
+
+  const currentNewSessionDefaults = {
+    projectId: resolvedProjectId === NO_PROJECT_ID ? null : resolvedProjectId,
+  };
+  const defaultsAlreadySaved = newSessionDefaultsMatch(savedDefaults, currentNewSessionDefaults);
+  const saveNewSessionDefaults = useCallback(() => {
+    const next = { projectId: resolvedProjectId === NO_PROJECT_ID ? null : resolvedProjectId };
+    writeNewSessionDefaults(typeof window === "undefined" ? null : window.localStorage, next);
+    setSavedDefaults(next);
+  }, [resolvedProjectId]);
+
   // A registered project's worktree keeps its checkout root for execution
   // while the parent project remains the visible, authorized selection.
   // Historical unregistered roots remain readable but resolve to no selected
@@ -5971,6 +5998,595 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined);
   const contextRowBranch = sessionGitBranch;
 
+  // ── Composer placement (Chat.dc.html 2b) ────────────────────────────────
+  // One composer, two positions. On a brand-new chat the design puts the brief
+  // directly under the hero — its mock has no dock at all — so the SAME element
+  // renders inline there and docked everywhere else. Extracted to a variable
+  // rather than duplicated: a second composer would mean two textareas sharing
+  // nothing, with draft, project, model, branch and enhance state forked.
+  const inlineComposer = sessionId === null;
+  const composerNode = (
+        <footer
+          className="cave-composer-dock"
+          style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
+        >
+          {/* Chat-revamp 1b: the latest settled turn's follow-up suggestions sit
+              directly above the composer, aligned to the reading column. Same
+              data source (<coven:next-paths>) and typed-card treatment as the in-turn
+              rows; hidden while a response streams so a stale suggestion can't
+              be clicked mid-turn. */}
+          {followUp.suggestions.length > 0 && !busy ? (
+            <div className="cave-chat-followups">
+              <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
+            </div>
+          ) : null}
+          {setupCandidateRoot && !setupBannerDismissed ? (
+            <div
+              role="status"
+              className="mb-2 flex items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]"
+            >
+              <Icon
+                name="ph:folder-plus"
+                width={14}
+                aria-hidden
+                className="shrink-0 text-[var(--text-muted)]"
+              />
+              <span className="min-w-0 flex-1 truncate" title={setupCandidateRoot}>
+                This chat runs in{" "}
+                <span className="font-medium text-[var(--text-primary)]">
+                  {projectNameForRoot(setupCandidateRoot)}
+                </span>
+                , which isn’t a registered project.
+              </span>
+              <Button variant="ghost" onClick={() => setProjectSetupRoot(setupCandidateRoot)}>
+                Set up as project…
+              </Button>
+              <button
+                type="button"
+                className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                aria-label="Dismiss project setup suggestion"
+                onClick={dismissSetupBanner}
+              >
+                <Icon name="ph:x" width={11} aria-hidden />
+              </button>
+            </div>
+          ) : null}
+          <div className="cave-composer-shell">
+            {mentionOpen ? (
+              <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+                <ul className="max-h-72 overflow-y-auto p-1.5" id={mentionListboxId} role="listbox" aria-label="Workspace files">
+                  {mentionMatches.map((file, i) => {
+                    const active = i === mentionActiveIdx;
+                    const base = file.split("/").pop() ?? file;
+                    return (
+                      <li
+                        key={file}
+                        role="option"
+                        id={`${mentionListboxId}-opt-${i}`}
+                        aria-selected={active}
+                      >
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          ref={active ? activeMentionOptionRef : null}
+                          onMouseEnter={() => setMentionIdx(i)}
+                          onClick={() => selectMention(file)}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
+                            active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
+                          }`}
+                        >
+                          <Icon name="ph:file-code" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                          <span className="font-mono font-medium text-[var(--text-primary)]">{base}</span>
+                          <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">{file}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                  {keys.up}{keys.down} navigate · {keys.enter} insert · Tab insert · esc cancel
+                </div>
+              </div>
+            ) : null}
+            {modelMenuActive && modelOptions ? (
+              <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+                <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Models">
+                  {modelOptions.map((m, i) => {
+                    const active = i === slashIdx;
+                    return (
+                      <li key={m.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          ref={active ? activeSlashOptionRef : null}
+                          onMouseEnter={() => setSlashIdx(i)}
+                          onClick={() => {
+                            handleSelectModel(m.id);
+                            appendSystem(`Model set to ${m.id}.`);
+                            setInput("");
+                            inputRef.current?.focus();
+                          }}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
+                            active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
+                          }`}
+                        >
+                          <span className="font-medium text-[var(--text-primary)]">{m.label}</span>
+                          <span className="flex-1 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">{m.id}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                  {keys.up}{keys.down} navigate · {keys.enter} switch · esc cancel
+                </div>
+              </div>
+            ) : skillMenuActive && skillOptions ? (
+              <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+                <div className="flex">
+                <ul className="max-h-72 flex-1 min-w-0 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Skills">
+                  {skillOptions.map((s, i) => {
+                    const active = i === slashIdx;
+                    return (
+                      <li key={s.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          ref={active ? activeSlashOptionRef : null}
+                          onMouseEnter={() => setSlashIdx(i)}
+                          onClick={() => invokeSkillOption(s)}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
+                            active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
+                          }`}
+                        >
+                          <Icon name="ph:sparkle" width={15} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
+                          <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
+                          <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                            {s.description || s.id}
+                          </span>
+                          {s.argumentHint ? (
+                            <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                              {s.argumentHint}
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <SkillDetailPreview skill={skillOptions[slashIdx] ?? skillOptions[0] ?? null} />
+                </div>
+                <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                  {keys.up}{keys.down} navigate · {keys.enter} run · Tab complete · esc cancel
+                </div>
+              </div>
+            ) : promptMenuActive && promptOptions ? (
+              <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+                <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Prompts">
+                  {promptOptions.map((p, i) => {
+                    const active = i === slashIdx;
+                    return (
+                      <li key={p.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          ref={active ? activeSlashOptionRef : null}
+                          onMouseEnter={() => setSlashIdx(i)}
+                          onClick={() => insertPrompt(p)}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
+                            active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
+                          }`}
+                        >
+                          <Icon name={promptIconName(p.icon)} width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                          <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
+                          <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                            {p.description || p.id}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                  {keys.up}{keys.down} navigate · {keys.enter} insert · Tab complete · esc cancel
+                </div>
+              </div>
+            ) : slashSuggestions.length > 0 || skillCommandRows.length > 0 ? (
+              <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+                <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Slash commands">
+                  {slashSuggestions.length > 0 ? (
+                    <li role="presentation" className="px-3 pb-1 pt-1.5 text-[length:var(--text-sm)] font-medium text-[var(--text-muted)]">
+                      Commands
+                    </li>
+                  ) : null}
+                  {slashSuggestions.map((cmd, i) => {
+                    const active = i === slashIdx;
+                    return (
+                      <li
+                        key={cmd.name}
+                        role="option"
+                        id={`${slashListboxId}-opt-${i}`}
+                        aria-selected={active}
+                      >
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          ref={active ? activeSlashOptionRef : null}
+                          onMouseEnter={() => setSlashIdx(i)}
+                          onClick={() => {
+                            setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
+                            inputRef.current?.focus();
+                          }}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
+                            active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
+                          }`}
+                        >
+                          <Icon name="ph:terminal-window" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                          <span className="font-mono font-medium text-[var(--text-primary)]">{cmd.name}</span>
+                          <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                            {cmd.description}
+                          </span>
+                          {cmd.argPlaceholder ? (
+                            <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                              {cmd.argPlaceholder}
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                  {skillCommandRows.length > 0 ? (
+                    <li role="presentation" className="px-3 pb-1 pt-2.5 text-[length:var(--text-sm)] font-medium text-[var(--text-muted)]">
+                      Skills
+                    </li>
+                  ) : null}
+                  {skillCommandRows.map((s, i) => {
+                    const idx = slashSuggestions.length + i;
+                    const active = idx === slashIdx;
+                    return (
+                      <li key={`skill-${s.id}`} role="option" id={`${slashListboxId}-opt-${idx}`} aria-selected={active}>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          ref={active ? activeSlashOptionRef : null}
+                          onMouseEnter={() => setSlashIdx(idx)}
+                          onClick={() => invokeSkillOption(s)}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
+                            active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
+                          }`}
+                        >
+                          <Icon name="ph:sparkle" width={15} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
+                          <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
+                          <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                            {s.description || s.id}
+                          </span>
+                          {s.argumentHint ? (
+                            <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                              {s.argumentHint}
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                  {keys.up}{keys.down} navigate · {keys.enter} run · Tab complete · esc cancel
+                </div>
+              </div>
+            ) : null}
+
+            <MobileChatActionStrip
+              busy={busy}
+              canRetry={Boolean(lastFailedSend)}
+              canAttach={attachments.length < 10}
+              hasSession={Boolean(sessionId)}
+              onRetry={retryLastSend}
+              onStop={cancelSend}
+              onSummarize={() => {
+                setInput((current) => current.trim() ? current : "Summarize this session and call out decisions, blockers, and next actions.");
+                inputRef.current?.focus();
+              }}
+              onAttach={() => fileInputRef.current?.click()}
+              onVoice={() => setVoiceCallOpen(true)}
+            />
+
+            <div className="cave-composer-panel">
+              {attachments.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 border-b border-[var(--border-hairline)]/70 px-3 py-2">
+                  {attachments.map((attachment) => (
+                    <span
+                      key={attachment.id}
+                      className="inline-flex max-w-56 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/50 px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
+                    >
+                      {/* Staged images preview as themselves — a filename chip
+                          gave no way to tell which screenshot you picked. */}
+                      <AttachmentThumb attachment={attachment} />
+                      <span className="truncate">{attachment.name}</span>
+                      <span className="shrink-0 text-[var(--text-muted)]">{formatAttachmentBytes(attachment.size)}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(attachment.id)}
+                        className="focus-ring grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                        title={`Remove ${attachment.name}`}
+                        aria-label={`Remove ${attachment.name}`}
+                      >
+                        <Icon name="ph:x-bold" width={9} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {replyTarget ? (
+                <div className="cave-composer-reply flex items-center gap-2 border-b border-[var(--border-hairline)]/70 bg-[var(--bg-raised)] px-3 py-1.5">
+                  <Icon name="ph:arrow-bend-up-left" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                  <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-[length:var(--text-xs)]">
+                    <span className="shrink-0 font-medium text-[var(--text-secondary)]">Replying to {replyTarget.author}</span>
+                    <span className="truncate text-[var(--text-muted)]">{replyTarget.snippet}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setReplyTarget(null)}
+                    className="focus-ring grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)]"
+                    title="Cancel reply"
+                    aria-label="Cancel reply"
+                  >
+                    <Icon name="ph:x-bold" width={9} aria-hidden />
+                  </button>
+                </div>
+              ) : null}
+              <div className="cave-composer-input-wrap">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  syncComposerCaret(e);
+                }}
+                onKeyDown={onComposerKey}
+                onKeyUp={syncComposerCaret}
+                onClick={syncComposerCaret}
+                onSelect={syncComposerCaret}
+                onPaste={handlePaste}
+                placeholder={
+                  busy
+                    ? "Streaming… (send to queue · esc to cancel)"
+                    : recommendedNextPath
+                      ? recommendedNextPath.prompt
+                      : `Message ${familiar.display_name}…`
+                }
+                rows={1}
+                inputMode="text"
+                enterKeyHint="send"
+                className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
+                aria-label="Message"
+                aria-autocomplete="list"
+                aria-haspopup="listbox"
+                aria-expanded={menuOpen}
+                aria-controls={menuOpen ? slashListboxId : undefined}
+                aria-activedescendant={
+                  menuOpen ? `${slashListboxId}-opt-${slashIdx}` : undefined
+                }
+                {...mentionAriaOverrides}
+              />
+              </div>
+              {/* Enhance status strip (shared): streaming preview, apply/dismiss
+                  for late arrivals, one-tap revert after an in-place apply. */}
+              <EnhanceStrip
+                state={promptEnhance.state}
+                onApply={promptEnhance.apply}
+                onDismiss={promptEnhance.dismiss}
+                onRevert={promptEnhance.revert}
+                onCancel={promptEnhance.cancel}
+              />
+              {queuedMessages.length > 0 ? (
+                <div className="cave-composer-queue" role="group" aria-label="Queued messages">
+                  {queuedMessages.map((message) => (
+                    <div key={message.id} className="cave-composer-queue__chip" title={message.text}>
+                      <button
+                        type="button"
+                        className="cave-composer-queue__steer focus-ring"
+                        onClick={() => steerQueuedMessage(message.id)}
+                        aria-label={busy ? "Send queued message next" : "Send queued message"}
+                        title={busy ? "Send this queued message next" : "Send queued message"}
+                      >
+                        <Icon name="ph:clock" width={12} aria-hidden />
+                        <span className="cave-composer-queue__text">
+                          {message.text.trim() || `${message.attachments.length} file${message.attachments.length === 1 ? "" : "s"}`}
+                        </span>
+                        {message.attachments.length > 0 && message.text.trim() ? (
+                          <span className="cave-composer-queue__count">📎{message.attachments.length}</span>
+                        ) : null}
+                      </button>
+                      <button
+                        type="button"
+                        className="cave-composer-queue__remove focus-ring"
+                        onClick={() => removeQueuedMessage(message.id)}
+                        aria-label="Remove queued message"
+                        title="Remove from queue"
+                      >
+                        <Icon name="ph:x" width={12} aria-hidden />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {dictation.listening ? (
+                <div className="hc-dictation-caption">
+                  {dictation.partial || "Listening…"}
+                </div>
+              ) : null}
+              <div className="cave-composer-controls">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={CHAT_ATTACHMENT_ACCEPT}
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    // Snapshot the files and clear the input synchronously so picking the
+                    // SAME file again still fires onChange (e.g. re-attach after the CSV
+                    // or 10-attachment-cap early returns in addFiles).
+                    const files = e.currentTarget.files ? Array.from(e.currentTarget.files) : null;
+                    e.currentTarget.value = "";
+                    void addFiles(files);
+                  }}
+                />
+                <div className="cave-composer-control-row">
+                  <div className="cave-composer-utility-row">
+                    <button
+                      type="button"
+                      className="cave-composer-footer-action focus-ring"
+                      onClick={() => void openVoiceCall()}
+                      disabled={!projectLaunchReady || voiceCallPending || (busy && !sessionId)}
+                      title="Voice call"
+                      aria-label="Voice call"
+                    >
+                      <Icon name="ph:phone" width="var(--icon-md)" aria-hidden />
+                    </button>
+                    <ComposerActionsMenu
+                      attach={{
+                        onSelect: () => fileInputRef.current?.click(),
+                        disabled: attachments.length >= 10,
+                        hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
+                      }}
+                      skills={{
+                        onPickSkill: (skill) => {
+                          setInput(`/skill ${skill.id} `);
+                          inputRef.current?.focus();
+                        },
+                      }}
+                      context={{
+                        projects,
+                        projectValue: resolvedProjectId,
+                        onProjectChange: setProjectIdDraft,
+                        familiarId: familiar.id ?? null,
+                        createProject,
+                        runtime: modelHarness,
+                        modelValue: composerModelValue,
+                        modelOptions: composerModelOptions,
+                        onPickRuntime: handleSelectRuntime,
+                        onPickModel: handleSelectModel,
+                        modelDisabled: busy,
+                        projectRoot: activeProjectRoot,
+                        onOpenUrl,
+                      }}
+                      linkedWork={{
+                        linkedContext,
+                        onOpenTask,
+                        sessionId,
+                        onLinkedContextChange: setLinkedContext,
+                        handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
+                        sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
+                      }}
+                      improve={{
+                        dictation: dictation.available
+                          ? {
+                              listening: dictation.listening,
+                              toggle: dictation.toggle,
+                              disabled: busy && !dictation.listening,
+                            }
+                          : undefined,
+                        promptSnippets: {
+                          onSelect: () => setPromptSnippetsOpen(true),
+                        },
+                        enhance: {
+                          onEnhance: promptEnhance.enhance,
+                          disabled: busy || !input.trim(),
+                          loading: promptEnhance.state.phase === "loading",
+                        },
+                      }}
+                      response={{
+                        hostValue: composerHostValue,
+                        onHostPick: setRuntimeHost,
+                        sections: composerResponseSections,
+                        onSaveAsTemplate: () => setSaveTemplateSeed(input),
+                        saveAsTemplateDisabled: !input.trim(),
+                        indicator:
+                          composerHostValue !== LOCAL_HOST_ID ||
+                          permissionMode !== DEFAULT_PERMISSION_MODE ||
+                          thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
+                          responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
+                      }}
+                    />
+                  </div>
+                  <div className="cave-composer-submit-row">
+                    {/* The compact send keeps its queue/cancel behavior in one
+                        stable action slot. */}
+                    {busy ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void send()}
+                          disabled={!projectLaunchReady || (!input.trim() && attachments.length === 0)}
+                          data-typing={input.trim() ? "true" : undefined}
+                          className="cave-composer-send cave-composer-send--queue focus-ring transition-colors"
+                          title="Queue message"
+                          aria-label="Queue message"
+                        >
+                          <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelSend}
+                          className="cave-composer-send cave-composer-send--busy focus-ring transition-colors"
+                          title="Cancel (esc)"
+                          aria-label="Cancel response"
+                        >
+                          <Icon name="ph:x-bold" width="var(--icon-md)" aria-hidden />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void send()}
+                        disabled={!projectLaunchReady || (!input.trim() && attachments.length === 0)}
+                        data-typing={input.trim() ? "true" : undefined}
+                        className="cave-composer-send focus-ring transition-colors"
+                        title={`Send message (${keys.enter})`}
+                        aria-label="Send message"
+                      >
+                        <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {/* Footer band — the darker strip attached to the panel's
+                  underside carries the context chips (project · model · branch
+                  as separate controls, cave-g21f; each opens its own picker) on
+                  the left and the linked-work strip (tasks · GitHub ·
+                  link/create) on the right. */}
+              <div className="cave-composer-footer-band">
+                <div className="cave-composer-footer-band__cluster">
+                  <ComposerContextChips
+                    projects={projects}
+                    projectValue={resolvedProjectId}
+                    onProjectChange={setProjectIdDraft}
+                    familiarId={familiar.id ?? null}
+                    createProject={createProject}
+                    runtime={modelHarness}
+                    modelValue={composerModelValue}
+                    modelOptions={composerModelOptions}
+                    onPickRuntime={handleSelectRuntime}
+                    onPickModel={handleSelectModel}
+                    modelDisabled={busy}
+                    projectRoot={activeProjectRoot}
+                    onOpenUrl={onOpenUrl}
+                    registerCurrentRoot={setupCandidateRoot ?? undefined}
+                    onRegisterCurrentRoot={
+                      setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
+                    }
+                  />
+                </div>
+                {linkedContextRow}
+              </div>
+            </div>
+          </div>
+        </footer>
+  );
+
+
   return (
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
@@ -6240,15 +6856,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onBack={onBack}
               />
             ) : sessionId === null ? (
-              // Brand-new chat (no session yet): the simplified work-led
-              // dashboard that used to be Home — a single no-scroll open-work
-              // board over ChatView's own composer (the composer owns project
-              // picking and prompt snippets). Existing zero-turn sessions
-              // (fresh task chats with linked context) keep the quieter
-              // ChatEmptyState below.
+              // Brand-new chat (no session yet): the 2b launcher — hero, the
+              // brief composer inline beneath it, then a band per source of
+              // work. The composer is ChatView's own, handed down rather than
+              // rebuilt, so project picking / model / branch / enhance all keep
+              // working and there is exactly one draft. Existing zero-turn
+              // sessions (fresh task chats with linked context) keep the
+              // quieter ChatEmptyState below.
               <ChatNewDashboard
                 familiar={familiar}
                 sessions={sessions}
+                composer={composerNode}
+                onSaveDefaults={saveNewSessionDefaults}
+                defaultsSaved={defaultsAlreadySaved}
                 modelId={
                   modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
                     ? modelState.effectiveModel
@@ -6425,584 +7045,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         />
       ) : null}
 
-      <footer
-        className="cave-composer-dock"
-        style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
-      >
-        {/* Chat-revamp 1b: the latest settled turn's follow-up suggestions sit
-            directly above the composer, aligned to the reading column. Same
-            data source (<coven:next-paths>) and typed-card treatment as the in-turn
-            rows; hidden while a response streams so a stale suggestion can't
-            be clicked mid-turn. */}
-        {followUp.suggestions.length > 0 && !busy ? (
-          <div className="cave-chat-followups">
-            <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
-          </div>
-        ) : null}
-        {setupCandidateRoot && !setupBannerDismissed ? (
-          <div
-            role="status"
-            className="mb-2 flex items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]"
-          >
-            <Icon
-              name="ph:folder-plus"
-              width={14}
-              aria-hidden
-              className="shrink-0 text-[var(--text-muted)]"
-            />
-            <span className="min-w-0 flex-1 truncate" title={setupCandidateRoot}>
-              This chat runs in{" "}
-              <span className="font-medium text-[var(--text-primary)]">
-                {projectNameForRoot(setupCandidateRoot)}
-              </span>
-              , which isn’t a registered project.
-            </span>
-            <Button variant="ghost" onClick={() => setProjectSetupRoot(setupCandidateRoot)}>
-              Set up as project…
-            </Button>
-            <button
-              type="button"
-              className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-              aria-label="Dismiss project setup suggestion"
-              onClick={dismissSetupBanner}
-            >
-              <Icon name="ph:x" width={11} aria-hidden />
-            </button>
-          </div>
-        ) : null}
-        <div className="cave-composer-shell">
-          {mentionOpen ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
-              <ul className="max-h-72 overflow-y-auto p-1.5" id={mentionListboxId} role="listbox" aria-label="Workspace files">
-                {mentionMatches.map((file, i) => {
-                  const active = i === mentionActiveIdx;
-                  const base = file.split("/").pop() ?? file;
-                  return (
-                    <li
-                      key={file}
-                      role="option"
-                      id={`${mentionListboxId}-opt-${i}`}
-                      aria-selected={active}
-                    >
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        ref={active ? activeMentionOptionRef : null}
-                        onMouseEnter={() => setMentionIdx(i)}
-                        onClick={() => selectMention(file)}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
-                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
-                        }`}
-                      >
-                        <Icon name="ph:file-code" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                        <span className="font-mono font-medium text-[var(--text-primary)]">{base}</span>
-                        <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">{file}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                {keys.up}{keys.down} navigate · {keys.enter} insert · Tab insert · esc cancel
-              </div>
-            </div>
-          ) : null}
-          {modelMenuActive && modelOptions ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
-              <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Models">
-                {modelOptions.map((m, i) => {
-                  const active = i === slashIdx;
-                  return (
-                    <li key={m.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        ref={active ? activeSlashOptionRef : null}
-                        onMouseEnter={() => setSlashIdx(i)}
-                        onClick={() => {
-                          handleSelectModel(m.id);
-                          appendSystem(`Model set to ${m.id}.`);
-                          setInput("");
-                          inputRef.current?.focus();
-                        }}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
-                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
-                        }`}
-                      >
-                        <span className="font-medium text-[var(--text-primary)]">{m.label}</span>
-                        <span className="flex-1 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">{m.id}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                {keys.up}{keys.down} navigate · {keys.enter} switch · esc cancel
-              </div>
-            </div>
-          ) : skillMenuActive && skillOptions ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
-              <div className="flex">
-              <ul className="max-h-72 flex-1 min-w-0 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Skills">
-                {skillOptions.map((s, i) => {
-                  const active = i === slashIdx;
-                  return (
-                    <li key={s.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        ref={active ? activeSlashOptionRef : null}
-                        onMouseEnter={() => setSlashIdx(i)}
-                        onClick={() => invokeSkillOption(s)}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
-                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
-                        }`}
-                      >
-                        <Icon name="ph:sparkle" width={15} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
-                        <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
-                        <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
-                          {s.description || s.id}
-                        </span>
-                        {s.argumentHint ? (
-                          <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                            {s.argumentHint}
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-              <SkillDetailPreview skill={skillOptions[slashIdx] ?? skillOptions[0] ?? null} />
-              </div>
-              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                {keys.up}{keys.down} navigate · {keys.enter} run · Tab complete · esc cancel
-              </div>
-            </div>
-          ) : promptMenuActive && promptOptions ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
-              <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Prompts">
-                {promptOptions.map((p, i) => {
-                  const active = i === slashIdx;
-                  return (
-                    <li key={p.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        ref={active ? activeSlashOptionRef : null}
-                        onMouseEnter={() => setSlashIdx(i)}
-                        onClick={() => insertPrompt(p)}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
-                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
-                        }`}
-                      >
-                        <Icon name={promptIconName(p.icon)} width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                        <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
-                        <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
-                          {p.description || p.id}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                {keys.up}{keys.down} navigate · {keys.enter} insert · Tab complete · esc cancel
-              </div>
-            </div>
-          ) : slashSuggestions.length > 0 || skillCommandRows.length > 0 ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
-              <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Slash commands">
-                {slashSuggestions.length > 0 ? (
-                  <li role="presentation" className="px-3 pb-1 pt-1.5 text-[length:var(--text-sm)] font-medium text-[var(--text-muted)]">
-                    Commands
-                  </li>
-                ) : null}
-                {slashSuggestions.map((cmd, i) => {
-                  const active = i === slashIdx;
-                  return (
-                    <li
-                      key={cmd.name}
-                      role="option"
-                      id={`${slashListboxId}-opt-${i}`}
-                      aria-selected={active}
-                    >
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        ref={active ? activeSlashOptionRef : null}
-                        onMouseEnter={() => setSlashIdx(i)}
-                        onClick={() => {
-                          setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
-                          inputRef.current?.focus();
-                        }}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
-                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
-                        }`}
-                      >
-                        <Icon name="ph:terminal-window" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                        <span className="font-mono font-medium text-[var(--text-primary)]">{cmd.name}</span>
-                        <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
-                          {cmd.description}
-                        </span>
-                        {cmd.argPlaceholder ? (
-                          <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                            {cmd.argPlaceholder}
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  );
-                })}
-                {skillCommandRows.length > 0 ? (
-                  <li role="presentation" className="px-3 pb-1 pt-2.5 text-[length:var(--text-sm)] font-medium text-[var(--text-muted)]">
-                    Skills
-                  </li>
-                ) : null}
-                {skillCommandRows.map((s, i) => {
-                  const idx = slashSuggestions.length + i;
-                  const active = idx === slashIdx;
-                  return (
-                    <li key={`skill-${s.id}`} role="option" id={`${slashListboxId}-opt-${idx}`} aria-selected={active}>
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        ref={active ? activeSlashOptionRef : null}
-                        onMouseEnter={() => setSlashIdx(idx)}
-                        onClick={() => invokeSkillOption(s)}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
-                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
-                        }`}
-                      >
-                        <Icon name="ph:sparkle" width={15} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
-                        <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
-                        <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
-                          {s.description || s.id}
-                        </span>
-                        {s.argumentHint ? (
-                          <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                            {s.argumentHint}
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                {keys.up}{keys.down} navigate · {keys.enter} run · Tab complete · esc cancel
-              </div>
-            </div>
-          ) : null}
-
-          <MobileChatActionStrip
-            busy={busy}
-            canRetry={Boolean(lastFailedSend)}
-            canAttach={attachments.length < 10}
-            hasSession={Boolean(sessionId)}
-            onRetry={retryLastSend}
-            onStop={cancelSend}
-            onSummarize={() => {
-              setInput((current) => current.trim() ? current : "Summarize this session and call out decisions, blockers, and next actions.");
-              inputRef.current?.focus();
-            }}
-            onAttach={() => fileInputRef.current?.click()}
-            onVoice={() => setVoiceCallOpen(true)}
-          />
-
-          <div className="cave-composer-panel">
-            {attachments.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5 border-b border-[var(--border-hairline)]/70 px-3 py-2">
-                {attachments.map((attachment) => (
-                  <span
-                    key={attachment.id}
-                    className="inline-flex max-w-56 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/50 px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
-                  >
-                    {/* Staged images preview as themselves — a filename chip
-                        gave no way to tell which screenshot you picked. */}
-                    <AttachmentThumb attachment={attachment} />
-                    <span className="truncate">{attachment.name}</span>
-                    <span className="shrink-0 text-[var(--text-muted)]">{formatAttachmentBytes(attachment.size)}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeAttachment(attachment.id)}
-                      className="focus-ring grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                      title={`Remove ${attachment.name}`}
-                      aria-label={`Remove ${attachment.name}`}
-                    >
-                      <Icon name="ph:x-bold" width={9} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            {replyTarget ? (
-              <div className="cave-composer-reply flex items-center gap-2 border-b border-[var(--border-hairline)]/70 bg-[var(--bg-raised)] px-3 py-1.5">
-                <Icon name="ph:arrow-bend-up-left" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-[length:var(--text-xs)]">
-                  <span className="shrink-0 font-medium text-[var(--text-secondary)]">Replying to {replyTarget.author}</span>
-                  <span className="truncate text-[var(--text-muted)]">{replyTarget.snippet}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setReplyTarget(null)}
-                  className="focus-ring grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)]"
-                  title="Cancel reply"
-                  aria-label="Cancel reply"
-                >
-                  <Icon name="ph:x-bold" width={9} aria-hidden />
-                </button>
-              </div>
-            ) : null}
-            <div className="cave-composer-input-wrap">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => {
-                setInput(e.target.value);
-                syncComposerCaret(e);
-              }}
-              onKeyDown={onComposerKey}
-              onKeyUp={syncComposerCaret}
-              onClick={syncComposerCaret}
-              onSelect={syncComposerCaret}
-              onPaste={handlePaste}
-              placeholder={
-                busy
-                  ? "Streaming… (send to queue · esc to cancel)"
-                  : recommendedNextPath
-                    ? recommendedNextPath.prompt
-                    : `Message ${familiar.display_name}…`
-              }
-              rows={1}
-              inputMode="text"
-              enterKeyHint="send"
-              className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
-              aria-label="Message"
-              aria-autocomplete="list"
-              aria-haspopup="listbox"
-              aria-expanded={menuOpen}
-              aria-controls={menuOpen ? slashListboxId : undefined}
-              aria-activedescendant={
-                menuOpen ? `${slashListboxId}-opt-${slashIdx}` : undefined
-              }
-              {...mentionAriaOverrides}
-            />
-            </div>
-            {/* Enhance status strip (shared): streaming preview, apply/dismiss
-                for late arrivals, one-tap revert after an in-place apply. */}
-            <EnhanceStrip
-              state={promptEnhance.state}
-              onApply={promptEnhance.apply}
-              onDismiss={promptEnhance.dismiss}
-              onRevert={promptEnhance.revert}
-              onCancel={promptEnhance.cancel}
-            />
-            {queuedMessages.length > 0 ? (
-              <div className="cave-composer-queue" role="group" aria-label="Queued messages">
-                {queuedMessages.map((message) => (
-                  <div key={message.id} className="cave-composer-queue__chip" title={message.text}>
-                    <button
-                      type="button"
-                      className="cave-composer-queue__steer focus-ring"
-                      onClick={() => steerQueuedMessage(message.id)}
-                      aria-label={busy ? "Send queued message next" : "Send queued message"}
-                      title={busy ? "Send this queued message next" : "Send queued message"}
-                    >
-                      <Icon name="ph:clock" width={12} aria-hidden />
-                      <span className="cave-composer-queue__text">
-                        {message.text.trim() || `${message.attachments.length} file${message.attachments.length === 1 ? "" : "s"}`}
-                      </span>
-                      {message.attachments.length > 0 && message.text.trim() ? (
-                        <span className="cave-composer-queue__count">📎{message.attachments.length}</span>
-                      ) : null}
-                    </button>
-                    <button
-                      type="button"
-                      className="cave-composer-queue__remove focus-ring"
-                      onClick={() => removeQueuedMessage(message.id)}
-                      aria-label="Remove queued message"
-                      title="Remove from queue"
-                    >
-                      <Icon name="ph:x" width={12} aria-hidden />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {dictation.listening ? (
-              <div className="hc-dictation-caption">
-                {dictation.partial || "Listening…"}
-              </div>
-            ) : null}
-            <div className="cave-composer-controls">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={CHAT_ATTACHMENT_ACCEPT}
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  // Snapshot the files and clear the input synchronously so picking the
-                  // SAME file again still fires onChange (e.g. re-attach after the CSV
-                  // or 10-attachment-cap early returns in addFiles).
-                  const files = e.currentTarget.files ? Array.from(e.currentTarget.files) : null;
-                  e.currentTarget.value = "";
-                  void addFiles(files);
-                }}
-              />
-              <div className="cave-composer-control-row">
-                <div className="cave-composer-utility-row">
-                  <button
-                    type="button"
-                    className="cave-composer-footer-action focus-ring"
-                    onClick={() => void openVoiceCall()}
-                    disabled={!projectLaunchReady || voiceCallPending || (busy && !sessionId)}
-                    title="Voice call"
-                    aria-label="Voice call"
-                  >
-                    <Icon name="ph:phone" width="var(--icon-2xs)" aria-hidden />
-                  </button>
-                  <ComposerActionsMenu
-                    attach={{
-                      onSelect: () => fileInputRef.current?.click(),
-                      disabled: attachments.length >= 10,
-                      hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
-                    }}
-                    skills={{
-                      onPickSkill: (skill) => {
-                        setInput(`/skill ${skill.id} `);
-                        inputRef.current?.focus();
-                      },
-                    }}
-                    context={{
-                      projects,
-                      projectValue: resolvedProjectId,
-                      onProjectChange: setProjectIdDraft,
-                      familiarId: familiar.id ?? null,
-                      createProject,
-                      runtime: modelHarness,
-                      modelValue: composerModelValue,
-                      modelOptions: composerModelOptions,
-                      onPickRuntime: handleSelectRuntime,
-                      onPickModel: handleSelectModel,
-                      modelDisabled: busy,
-                      projectRoot: activeProjectRoot,
-                      onOpenUrl,
-                    }}
-                    linkedWork={{
-                      linkedContext,
-                      onOpenTask,
-                      sessionId,
-                      onLinkedContextChange: setLinkedContext,
-                      handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
-                      sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
-                    }}
-                    improve={{
-                      dictation: dictation.available
-                        ? {
-                            listening: dictation.listening,
-                            toggle: dictation.toggle,
-                            disabled: busy && !dictation.listening,
-                          }
-                        : undefined,
-                      promptSnippets: {
-                        onSelect: () => setPromptSnippetsOpen(true),
-                      },
-                      enhance: {
-                        onEnhance: promptEnhance.enhance,
-                        disabled: busy || !input.trim(),
-                        loading: promptEnhance.state.phase === "loading",
-                      },
-                    }}
-                    response={{
-                      hostValue: composerHostValue,
-                      onHostPick: setRuntimeHost,
-                      sections: composerResponseSections,
-                      onSaveAsTemplate: () => setSaveTemplateSeed(input),
-                      saveAsTemplateDisabled: !input.trim(),
-                      indicator:
-                        composerHostValue !== LOCAL_HOST_ID ||
-                        permissionMode !== DEFAULT_PERMISSION_MODE ||
-                        thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
-                        responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
-                    }}
-                  />
-                </div>
-                <div className="cave-composer-submit-row">
-                  {/* The compact send keeps its queue/cancel behavior in one
-                      stable action slot. */}
-                  {busy ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => void send()}
-                        disabled={!projectLaunchReady || (!input.trim() && attachments.length === 0)}
-                        data-typing={input.trim() ? "true" : undefined}
-                        className="cave-composer-send cave-composer-send--queue focus-ring transition-colors"
-                        title="Queue message"
-                        aria-label="Queue message"
-                      >
-                        <Icon name="ph:arrow-up-bold" width="var(--icon-2xs)" aria-hidden />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelSend}
-                        className="cave-composer-send cave-composer-send--busy focus-ring transition-colors"
-                        title="Cancel (esc)"
-                        aria-label="Cancel response"
-                      >
-                        <Icon name="ph:x-bold" width="var(--icon-2xs)" aria-hidden />
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => void send()}
-                      disabled={!projectLaunchReady || (!input.trim() && attachments.length === 0)}
-                      data-typing={input.trim() ? "true" : undefined}
-                      className="cave-composer-send focus-ring transition-colors"
-                      title={`Send message (${keys.enter})`}
-                      aria-label="Send message"
-                    >
-                      <Icon name="ph:arrow-up-bold" width="var(--icon-2xs)" aria-hidden />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-            {/* Footer band — the darker strip attached to the panel's
-                underside carries the context chips (project · model · branch
-                as separate controls, cave-g21f; each opens its own picker) on
-                the left and the linked-work strip (tasks · GitHub ·
-                link/create) on the right. */}
-            <div className="cave-composer-footer-band">
-              <div className="cave-composer-footer-band__cluster">
-                <ComposerContextChips
-                  projects={projects}
-                  projectValue={resolvedProjectId}
-                  onProjectChange={setProjectIdDraft}
-                  familiarId={familiar.id ?? null}
-                  createProject={createProject}
-                  runtime={modelHarness}
-                  modelValue={composerModelValue}
-                  modelOptions={composerModelOptions}
-                  onPickRuntime={handleSelectRuntime}
-                  onPickModel={handleSelectModel}
-                  modelDisabled={busy}
-                  projectRoot={activeProjectRoot}
-                  onOpenUrl={onOpenUrl}
-                  registerCurrentRoot={setupCandidateRoot ?? undefined}
-                  onRegisterCurrentRoot={
-                    setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
-                  }
-                />
-              </div>
-              {linkedContextRow}
-            </div>
-          </div>
-        </div>
-      </footer>
+      {inlineComposer ? null : composerNode}
       {taskSuggestion && sessionId ? (
         <FollowUpTaskReview
           open

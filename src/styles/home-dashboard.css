@@ -178,6 +178,99 @@
   margin-right: var(--space-2);
 }
 
+/* ── Inline composer (Chat.dc.html 2b) ──────────────────────────────────── */
+/* The brief sits under the hero on a brand-new chat, where the mock puts it.
+   It is ChatView's OWN composer handed down, so this only undoes the dock
+   chrome — the docked element is a page-width band with a hairline top and a
+   gradient that only reads correctly pinned to the bottom of the pane. */
+.home-dash__composer .cave-composer-dock {
+  padding: 0;
+  border-top: 0;
+  background: none;
+}
+
+/* The dashboard root carries `select-none` — the launcher is chrome, not prose,
+   and dragging across it should not paint a selection. The composer now lives
+   INSIDE that root, so selection has to be handed back explicitly or the brief
+   cannot be selected with the mouse. user-select inherits, so one declaration
+   on the wrapper covers the textarea and every label under it.
+   Not theoretical: `user-select: none` computes onto the textarea, and WebKit
+   honours it on form controls — the desktop shell is WKWebView. Chromium still
+   allows keyboard select-all, which is why this survives a shallow check.
+   Restores parity with the docked composer, which has no select-none ancestor. */
+.home-dash__composer {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* The board clips (no-scroll design) and is a size container. Neither reaches
+   the pickers: ui/popover portals to document.body, so it is neither clipped
+   by the overflow nor trapped by container-type the way a fixed-position
+   descendant would be. Nothing to undo here — noted because the reverse has
+   bitten this repo before. */
+
+/* 2b trails the config row with "Save as default" and the start hint. They ride
+   under the composer rather than inside it: the composer is shared with the
+   docked and home surfaces, and these two are new-session-only chrome. */
+.home-dash__composer-trail {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: 6px;
+  padding: 0 2px;
+}
+
+.home-dash__save-default {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.home-dash__save-default:hover:not(:disabled) {
+  color: var(--foreground);
+  border-color: var(--border-strong);
+}
+
+.home-dash__save-default:focus-visible {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+/* Saved is a state, not a dead control — it stays legible rather than dimming
+   to the usual disabled grey, because it is reporting a fact. */
+.home-dash__save-default:disabled {
+  cursor: default;
+  color: var(--text-muted);
+  border-style: dashed;
+}
+
+.home-dash__start-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.home-dash__start-hint kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
 /* Empty board — the one state with no band to show. */
 .home-dash__work-empty {
   padding: 22px 15px;

@@ -131,6 +131,11 @@ export function resolveChatProjectSelection(args: {
   /** Root of the most recent chat's registered project (recentChatProjectRoot):
    *  the brand-new-chat default when no other context picked a project. */
   recentProjectRoot?: string | null;
+  /** Project the user pinned with "Save as default" (Chat.dc.html 2b). Beats
+   *  the recent-chat inference — an explicit choice outranks a guess — but
+   *  stays BELOW every contextual signal above it, so opening a task chat or a
+   *  worktree still lands where that context says. */
+  defaultProjectId?: string | null;
   projects: CaveProject[];
 }): ChatProjectSelection {
   const firstProject = args.projects[0] ?? null;
@@ -197,6 +202,8 @@ export function resolveChatProjectSelection(args: {
     }
   }
   if (args.hasSession) return { projectId: NO_PROJECT_ID, project: null };
+  const pinnedDefault = chatProjectById(args.defaultProjectId, args.projects);
+  if (pinnedDefault) return { projectId: pinnedDefault.id, project: pinnedDefault };
   const recentProject = projectForRoot(args.recentProjectRoot, args.projects);
   if (recentProject) return { projectId: recentProject.id, project: recentProject };
   return { projectId: null, project: firstProject };

@@ -1,0 +1,2 @@
+# Beads interactions are an append-only audit log. Preserve concurrent entries.
+.beads/interactions.jsonl merge=union
