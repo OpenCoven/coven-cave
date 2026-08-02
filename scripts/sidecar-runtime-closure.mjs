@@ -418,7 +418,10 @@ async function copyNextRuntimeFiles(standaloneRoot, dependencyRoot, destination,
     for (const root of nextRoots) {
       const candidate = path.join(root, relativePath);
       try {
-        await stat(candidate);
+        const metadata = await stat(candidate);
+        if (!metadata.isFile()) {
+          throw new Error(`required Next sidecar runtime file is not a regular file: ${relativePath}`);
+        }
         source = candidate;
         break;
       } catch (error) {
@@ -578,7 +581,19 @@ export async function verifySidecarRuntime(root) {
     "server.mjs",
     "vault.yaml",
   ];
-  for (const relativePath of required) await stat(path.join(root, relativePath));
+  for (const relativePath of required) {
+    try {
+      const metadata = await stat(path.join(root, relativePath));
+      if (!metadata.isFile()) {
+        throw new Error(`required sidecar runtime file is not a regular file: ${relativePath}`);
+      }
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        throw new Error(`required sidecar runtime file is missing: ${relativePath}`);
+      }
+      throw error;
+    }
+  }
   for (const forbiddenRoot of SIDECAR_FORBIDDEN_ROOTS) {
     try {
       await stat(path.join(root, forbiddenRoot));

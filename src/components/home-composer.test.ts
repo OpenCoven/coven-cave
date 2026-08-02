@@ -45,6 +45,11 @@ assert.match(
   /!selectedFamiliarId\s*\?\s*"Summon a familiar before starting chat\."/,
   "HomeComposer should explain why chat remains blocked without a familiar while retaining registered projects",
 );
+assert.match(
+  source,
+  /role=\{projectsError \? "alert" : "status"\}[\s\S]{0,220}\{projectLaunchMessage\}/,
+  "HomeComposer should render launch guidance while chat is blocked",
+);
 
 // Chat revamp 1a + minimal pass: the hero is the hearth card's heading —
 // greeting kicker, "What are we casting today?", then a live-context subtitle

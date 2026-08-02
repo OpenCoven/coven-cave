@@ -872,6 +872,15 @@ export function HomeComposer({
           />
         ) : null}
 
+        {!projectLaunchReady ? (
+          <p
+            role={projectsError ? "alert" : "status"}
+            className="mx-auto mb-2 max-w-3xl px-3 text-[length:var(--text-xs)] leading-5 text-[var(--text-muted)]"
+          >
+            {projectLaunchMessage}
+          </p>
+        ) : null}
+
         {/* Composer card — reference layout: the input leads; the mode pills,
             attach, model chip, and mic all live INSIDE the card's control row,
             with a darker attached footer band beneath for context pickers. */}

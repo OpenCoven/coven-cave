@@ -130,6 +130,39 @@ try {
     assert.ok(await missing(path.join(destination, forbiddenRoot)), `${forbiddenRoot} must be excluded`);
   }
 
+  const missingRuntimePath = SIDECAR_NEXT_RUNTIME_FILES[0];
+  await rm(path.join(dependencyRoot, "next", missingRuntimePath));
+  await assert.rejects(
+    assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+    new RegExp(`required Next sidecar runtime file is missing: ${missingRuntimePath.replace(/[.*+?^${}()|[\\]\\]/g, "\\\\$&")}`),
+    "assembly must fail clearly when a required Next runtime file is absent",
+  );
+  await write(dependencyRoot, path.join("next", missingRuntimePath), "next runtime fixture\n");
+
+  const directoryRuntimePath = SIDECAR_NEXT_RUNTIME_FILES[1];
+  await rm(path.join(dependencyRoot, "next", directoryRuntimePath));
+  await mkdir(path.join(dependencyRoot, "next", directoryRuntimePath), { recursive: true });
+  await assert.rejects(
+    assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+    /required Next sidecar runtime file is not a regular file/,
+    "assembly must reject a directory where a required Next runtime file belongs",
+  );
+  await rm(path.join(dependencyRoot, "next", directoryRuntimePath), { recursive: true });
+  await write(dependencyRoot, path.join("next", directoryRuntimePath), "next runtime fixture\n");
+  await assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination);
+
+  const verifiedDirectoryPath = SIDECAR_NEXT_RUNTIME_FILES[2];
+  const verifiedDirectory = path.join(destination, "node_modules", "next", verifiedDirectoryPath);
+  await rm(verifiedDirectory);
+  await mkdir(verifiedDirectory, { recursive: true });
+  await assert.rejects(
+    verifySidecarRuntime(destination),
+    /required sidecar runtime file is not a regular file: node_modules[\\/]next[\\/]dist[\\/]compiled[\\/]webpack[\\/]bundle5\.js/,
+    "final runtime verification must reject a non-file required entry",
+  );
+  await rm(verifiedDirectory, { recursive: true });
+  await write(destination, path.join("node_modules", "next", verifiedDirectoryPath), "next runtime fixture\n");
+
   const optionalPackage = "@next/swc-linux-x64-gnu";
   await packageFixture(projectRoot, optionalPackage);
   await writeFile(
