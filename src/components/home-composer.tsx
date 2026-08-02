@@ -71,6 +71,7 @@ import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
 import { DESTINATIONS, placeholderFor, type Destination } from "@/components/home/home-destinations";
 import {
+  homeComposerProjectLaunchMessage,
   isHomeComposerProjectLaunchReady,
   projectsForHomeComposerScope,
   resolveHomeComposerFamiliar,
@@ -252,17 +253,13 @@ export function HomeComposer({
     projectsError,
     selectedProject,
   });
-  const projectLaunchMessage = projectsLoading
-    ? "Checking project access…"
-    : projectsError
-      ? "Projects are unavailable. Retry before starting chat."
-      : !selectedFamiliarId
-        ? "Summon a familiar before starting chat."
-        : !projectsLoadedSuccessfully
-          ? "Checking project access…"
-          : projects.length === 0
-            ? "Add a project this familiar can access before starting chat."
-            : "Choose a project this familiar can access before starting chat.";
+  const projectLaunchMessage = homeComposerProjectLaunchMessage({
+    familiarId: selectedFamiliarId,
+    projectsLoading,
+    projectsError,
+    projectsLoadedSuccessfully,
+    projectCount: projects.length,
+  });
   const displayProjectId = selectedProject?.id ?? null;
   const selectedRuntime = canonicalHarnessId(
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",

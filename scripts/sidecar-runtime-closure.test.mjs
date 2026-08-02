@@ -245,6 +245,37 @@ try {
     }
   }
 
+  // A package-root link that stays inside node_modules must still point to the
+  // actual Next package; otherwise the explicit paths could import an
+  // unrelated dependency tree that happens to contain matching filenames.
+  const unrelatedNextRoot = path.join(projectRoot, "node_modules", "unrelated-next");
+  await packageFixture(projectRoot, "unrelated-next");
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    await write(unrelatedNextRoot, relativePath, "unrelated runtime\n");
+  }
+  await rm(path.join(dependencyRoot, "next"), { recursive: true, force: true });
+  try {
+    await symlink(
+      unrelatedNextRoot,
+      path.join(dependencyRoot, "next"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await assert.rejects(
+      assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+      /sidecar Next package root is not the Next package/,
+      "an allowed-root link must still resolve to the actual Next package",
+    );
+  } catch (error) {
+    if (!(["EPERM", "EACCES", "ENOSYS"].includes(error.code))) throw error;
+    console.warn(`sidecar-runtime-closure.test: internal Next package-link confinement skipped (${error.code})`);
+  } finally {
+    await rm(path.join(dependencyRoot, "next"), { recursive: true, force: true });
+    await packageFixture(path.dirname(dependencyRoot), "next");
+    for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+      await write(dependencyRoot, path.join("next", relativePath), "next runtime fixture\n");
+    }
+  }
+
   const externalNextFile = path.join(projectRoot, "node_modules", "unrelated-runtime.js");
   await writeFile(externalNextFile, "outside runtime\n", "utf8");
   const linkedRuntimePath = path.join(dependencyRoot, "next", SIDECAR_NEXT_RUNTIME_FILES[0]);

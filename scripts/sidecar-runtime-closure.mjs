@@ -432,6 +432,10 @@ async function copyNextRuntimeFiles(projectRoot, standaloneRoot, dependencyRoot,
         if (!resolvedPackageRoots.some((allowedRoot) => isInside(allowedRoot, resolvedNextRoot))) {
           throw new Error(`sidecar dependency link escapes its allowed roots: ${root} -> ${resolvedNextRoot}`);
         }
+        const nextPackage = JSON.parse(await readFile(path.join(resolvedNextRoot, "package.json"), "utf8"));
+        if (nextPackage.name !== "next") {
+          throw new Error(`sidecar Next package root is not the Next package: ${root} -> ${resolvedNextRoot}`);
+        }
         const resolvedCandidate = await realpath(candidate);
         if (!isInside(resolvedNextRoot, resolvedCandidate)) {
           throw new Error(`sidecar dependency link escapes its allowed roots: ${candidate} -> ${resolvedCandidate}`);

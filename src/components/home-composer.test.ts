@@ -47,8 +47,8 @@ assert.match(
 );
 assert.match(
   source,
-  /!selectedFamiliarId\s*\?\s*"Summon a familiar before starting chat\."/,
-  "HomeComposer should explain why chat remains blocked without a familiar while retaining registered projects",
+  /homeComposerProjectLaunchMessage\(\{[\s\S]*familiarId: selectedFamiliarId[\s\S]*projectsLoading[\s\S]*projectsError[\s\S]*projectsLoadedSuccessfully[\s\S]*projectCount: projects\.length,/,
+  "HomeComposer should derive launch guidance from the familiar and authoritative project state",
 );
 assert.match(
   source,

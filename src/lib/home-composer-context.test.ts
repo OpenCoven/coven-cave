@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  homeComposerProjectLaunchMessage,
   isHomeComposerProjectLaunchReady,
   projectsForHomeComposerScope,
   resolveHomeComposerFamiliar,
@@ -42,6 +43,29 @@ test("home composer never treats project access as launch permission without a f
     isHomeComposerProjectLaunchReady({ ...readyArgs, familiarId: "sage" }),
     true,
     "a loaded project with familiar access is launchable",
+  );
+});
+
+test("home composer explains the familiar prerequisite while projects are loading", () => {
+  assert.equal(
+    homeComposerProjectLaunchMessage({
+      familiarId: null,
+      projectsLoading: true,
+      projectsError: null,
+      projectsLoadedSuccessfully: false,
+      projectCount: 0,
+    }),
+    "Summon a familiar before starting chat.",
+  );
+  assert.equal(
+    homeComposerProjectLaunchMessage({
+      familiarId: "sage",
+      projectsLoading: false,
+      projectsError: null,
+      projectsLoadedSuccessfully: true,
+      projectCount: 0,
+    }),
+    "Add a project this familiar can access before starting chat.",
   );
 });
 
