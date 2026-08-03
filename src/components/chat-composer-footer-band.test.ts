@@ -62,8 +62,13 @@ assert.match(
 );
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips[\s\S]*?<\/div>\s*\n\s*\{linkedContextRow\}\s*\n\s*<\/div>/,
-  "the band leads with the context-chips cluster, then the linked-context strip (tasks · GitHub · link/create)",
+  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips[\s\S]*?<\/div>\s*\n\s*\{linkedContextRow\}[\s\S]*?<div className="cave-chat-followups">[\s\S]*?<FollowUpCards/,
+  "the band leads with context and linked work, then carries the latest assistant options",
+);
+assert.doesNotMatch(
+  source.match(/<footer[\s\S]*?className="cave-composer-shell"/)?.[0] ?? "",
+  /cave-chat-followups/,
+  "latest assistant options no longer float above the composer shell",
 );
 
 // ── Split chips (cave-g21f): project · model · branch as separate controls ──
@@ -81,6 +86,26 @@ assert.match(
   source,
   /createProject=\{createProject\}[\s\S]{0,600}?projectRoot=\{activeProjectRoot\}[\s\S]{0,120}?onOpenUrl=\{onOpenUrl\}/,
   "the chips fold in the add-project flow and the git/PR context (register + grant, branch, PR open)",
+);
+assert.match(
+  source,
+  /const composerPopoverPlacement = inlineComposer \? "bottom-start" : undefined;/,
+  "brand-new inline composers prefer opening menus below while docked chats retain their existing placement",
+);
+assert.match(
+  source,
+  /<ComposerActionsMenu[\s\S]*?popoverPlacement: composerPopoverPlacement,[\s\S]*?\/>/,
+  "the grouped actions receive the new-session placement",
+);
+assert.match(
+  source,
+  /<ComposerContextChips[\s\S]*?popoverPlacement=\{composerPopoverPlacement\}[\s\S]*?\/>/,
+  "the individual context chips receive the new-session placement",
+);
+assert.match(
+  source,
+  /const composerAutocompletePosition = inlineComposer \? "top-full mt-2" : "bottom-full mb-2";[\s\S]*?cave-composer-popover absolute left-0 right-0 \$\{composerAutocompletePosition\}/,
+  "inline slash and mention suggestions open below the composer too",
 );
 assert.doesNotMatch(
   source,
@@ -104,6 +129,11 @@ assert.match(
   pill,
   /<GitBranchMenuPopover[\s\S]*?\{\.\.\.branchPopoverExtras\(context\)\}/,
   "the branch chip's menu carries the PR + Git-changes rows (hub parity)",
+);
+assert.match(
+  pill,
+  /placement=\{context\.config\.popoverPlacement\}/,
+  "runtime and branch pickers honor the caller's preferred vertical side",
 );
 
 // ── The header no longer hosts the linked-context strip ─────────────────────
@@ -153,8 +183,8 @@ assert.match(
 );
 assert.match(
   transcriptCss,
-  /\.cave-chat-followups \{[\s\S]*max-width:\s*var\(--cave-chat-measure\);/,
-  "follow-up pills should share the chat reading measure token",
+  /\.cave-chat-followups \{[\s\S]*flex:\s*0 0 100%;[\s\S]*border-top:\s*1px solid var\(--border-hairline\);/,
+  "follow-up options should span the attached footer below its context row",
 );
 assert.match(
   transcriptCss,

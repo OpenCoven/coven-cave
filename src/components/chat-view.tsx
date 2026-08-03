@@ -3404,19 +3404,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return extractNextPaths(last.text).suggestions.find((path) => path.kind === "reply") ?? null;
   }, [activePath]);
 
-  // Chat-revamp 1b: the LATEST settled turn's follow-up suggestions render as
-  // typed cards directly above the composer (aligned to the reading column) —
-  // the most actionable element sits closest to the input. That turn's in-turn
-  // card row is suppressed (followUp.turnId → TurnRow) so the suggestions
-  // never render twice; older turns keep their in-turn rows. Capped at 4 and
-  // laid out on the uniform-rows data-count grammar (never a 3+1 wrap).
+  // The LATEST settled turn's follow-up suggestions render in the composer
+  // footer. That turn's in-turn card row is suppressed (followUp.turnId →
+  // TurnRow) so the suggestions never render twice; older turns keep their
+  // in-turn rows. Capped at 4.
   const followUp = useMemo(() => {
     const empty = { turnId: null as string | null, suggestions: [] as NextPath[] };
     const last = [...activePath]
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return empty;
-    const suggestions = extractNextPaths(splitReasoning(last.text).visible).suggestions.slice(0, 4);
+    const suggestions = extractNextPaths(splitReasoning(last.text).visible).suggestions;
     return suggestions.length ? { turnId: last.id, suggestions } : empty;
   }, [activePath]);
 
@@ -6116,21 +6114,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // rather than duplicated: a second composer would mean two textareas sharing
   // nothing, with draft, project, model, branch and enhance state forked.
   const inlineComposer = sessionId === null;
+  const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
+  const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const composerNode = (
         <footer
           className="cave-composer-dock"
           style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
         >
-          {/* Chat-revamp 1b: the latest settled turn's follow-up suggestions sit
-              directly above the composer, aligned to the reading column. Same
-              data source (<coven:next-paths>) and typed-card treatment as the in-turn
-              rows; hidden while a response streams so a stale suggestion can't
-              be clicked mid-turn. */}
-          {followUp.suggestions.length > 0 && !busy ? (
-            <div className="cave-chat-followups">
-              <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
-            </div>
-          ) : null}
           {setupCandidateRoot && !setupBannerDismissed ? (
             <div
               role="status"
@@ -6164,7 +6154,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ) : null}
           <div className="cave-composer-shell">
             {mentionOpen ? (
-              <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <div className={`cave-composer-popover absolute left-0 right-0 ${composerAutocompletePosition} overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl`}>
                 <ul className="max-h-72 overflow-y-auto p-1.5" id={mentionListboxId} role="listbox" aria-label="Workspace files">
                   {mentionMatches.map((file, i) => {
                     const active = i === mentionActiveIdx;
@@ -6200,7 +6190,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             ) : null}
             {modelMenuActive && modelOptions ? (
-              <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <div className={`cave-composer-popover absolute left-0 right-0 ${composerAutocompletePosition} overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl`}>
                 <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Models">
                   {modelOptions.map((m, i) => {
                     const active = i === slashIdx;
@@ -6233,7 +6223,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 </div>
               </div>
             ) : skillMenuActive && skillOptions ? (
-              <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <div className={`cave-composer-popover absolute left-0 right-0 ${composerAutocompletePosition} overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl`}>
                 <div className="flex">
                 <ul className="max-h-72 flex-1 min-w-0 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Skills">
                   {skillOptions.map((s, i) => {
@@ -6272,7 +6262,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 </div>
               </div>
             ) : promptMenuActive && promptOptions ? (
-              <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <div className={`cave-composer-popover absolute left-0 right-0 ${composerAutocompletePosition} overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl`}>
                 <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Prompts">
                   {promptOptions.map((p, i) => {
                     const active = i === slashIdx;
@@ -6303,7 +6293,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 </div>
               </div>
             ) : slashSuggestions.length > 0 || skillCommandRows.length > 0 ? (
-              <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <div className={`cave-composer-popover absolute left-0 right-0 ${composerAutocompletePosition} overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl`}>
                 <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Slash commands">
                   {slashSuggestions.length > 0 ? (
                     <li role="presentation" className="px-3 pb-1 pt-1.5 text-[length:var(--text-sm)] font-medium text-[var(--text-muted)]">
@@ -6582,6 +6572,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         modelDisabled: busy,
                         projectRoot: activeProjectRoot,
                         onOpenUrl,
+                        popoverPlacement: composerPopoverPlacement,
                       }}
                       linkedWork={{
                         linkedContext,
@@ -6665,10 +6656,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 </div>
               </div>
               {/* Footer band — the darker strip attached to the panel's
-                  underside carries the context chips (project · model · branch
-                  as separate controls, cave-g21f; each opens its own picker) on
-                  the left and the linked-work strip (tasks · GitHub ·
-                  link/create) on the right. */}
+                  underside carries context and linked work first, then the
+                  latest assistant options. Suggestions stay hidden while a
+                  response streams so stale actions cannot be activated. */}
               <div className="cave-composer-footer-band">
                 <div className="cave-composer-footer-band__cluster">
                   <ComposerContextChips
@@ -6692,9 +6682,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     onRegisterCurrentRoot={
                       setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
                     }
+                    popoverPlacement={composerPopoverPlacement}
                   />
                 </div>
                 {linkedContextRow}
+                {followUp.suggestions.length > 0 && !busy ? (
+                  <div className="cave-chat-followups">
+                    <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

@@ -44,6 +44,7 @@ export function ComposerRuntimePopover({
   open,
   onOpenChange,
   anchorRef,
+  placement = "top-start",
   runtime,
   modelValue,
   modelOptions,
@@ -55,6 +56,7 @@ export function ComposerRuntimePopover({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   anchorRef: React.RefObject<HTMLElement | null>;
+  placement?: "bottom-start" | "top-start";
   runtime: string;
   modelValue: string;
   modelOptions: RuntimeModelOption[];
@@ -75,7 +77,7 @@ export function ComposerRuntimePopover({
       open={open}
       onOpenChange={onOpenChange}
       anchorRef={anchorRef}
-      placement="top-start"
+      placement={placement}
       minWidth={230}
       ariaLabel="Runtime and model"
     >
