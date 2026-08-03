@@ -67,6 +67,11 @@ on:
         required: false
         default: false
         type: boolean
+      allow_unconfigured_x_app:
+        description: "RECOVERY ONLY: ship with X integration disabled when its public client ID is unavailable. Tag pushes always stay fail-closed."
+        required: false
+        default: false
+        type: boolean
       use_current_release_tooling:
         description: "RECOVERY ONLY: build tag source with the audited release.sh and sidecar-bundle.sh from this workflow commit. Tag pushes always use tag tooling."
         required: false
@@ -224,6 +229,33 @@ jobs:
           git diff --check
           echo "Using release tooling from reviewed workflow commit $RECOVERY_TOOLING_SHA against tag source."
 
+      - name: Overlay audited X release recovery guard
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RECOVERY_TOOLING_REF: ${{ github.ref }}
+          RECOVERY_TOOLING_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$RECOVERY_TOOLING_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::X release recovery must be dispatched from the repository default branch."
+            exit 1
+          fi
+          tooling_path="scripts/check-x-app-release.mjs"
+          git fetch --no-tags --depth=1 origin "$RECOVERY_TOOLING_SHA"
+          git show "${RECOVERY_TOOLING_SHA}:${tooling_path}" > "${tooling_path}.recovery"
+          mv "${tooling_path}.recovery" "$tooling_path"
+          expected_blob="$(git rev-parse "${RECOVERY_TOOLING_SHA}:${tooling_path}")"
+          actual_blob="$(git hash-object "$tooling_path")"
+          if [ "$actual_blob" != "$expected_blob" ]; then
+            echo "::error::Recovery tooling blob mismatch for $tooling_path"
+            exit 1
+          fi
+          echo "$actual_blob  $tooling_path"
+          git diff --check
+          echo "Using the reviewed X release guard from workflow commit $RECOVERY_TOOLING_SHA against tag source."
+
       - name: Set release metadata
         shell: bash
         env:
@@ -276,6 +308,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Require OpenCoven X app configuration
+        env:
+          COVEN_CAVE_X_RELEASE_DISABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app && '1' || '' }}
         run: node scripts/check-x-app-release.mjs
 
       - name: Require signed OpenCode compatibility registry
@@ -807,6 +841,37 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Overlay audited X release provenance renderer
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RECOVERY_TOOLING_REF: ${{ github.ref }}
+          RECOVERY_TOOLING_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$RECOVERY_TOOLING_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::X release recovery must be dispatched from the repository default branch."
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "$RECOVERY_TOOLING_SHA"
+          for tooling_path in scripts/release-notes.sh scripts/release-notes.test.mjs; do
+            git show "${RECOVERY_TOOLING_SHA}:${tooling_path}" > "${tooling_path}.recovery"
+            mv "${tooling_path}.recovery" "$tooling_path"
+            if [[ "$tooling_path" == *.sh ]]; then
+              chmod +x "$tooling_path"
+            fi
+            expected_blob="$(git rev-parse "${RECOVERY_TOOLING_SHA}:${tooling_path}")"
+            actual_blob="$(git hash-object "$tooling_path")"
+            if [ "$actual_blob" != "$expected_blob" ]; then
+              echo "::error::Recovery tooling blob mismatch for $tooling_path"
+              exit 1
+            fi
+            echo "$actual_blob  $tooling_path"
+          done
+          git diff --check
+          echo "Using the reviewed X provenance renderer from workflow commit $RECOVERY_TOOLING_SHA against tag source."
+
       - name: Resolve release tag
         shell: bash
         env:
@@ -894,6 +959,7 @@ jobs:
           # signed-registry gates (cave-yp21x). `inputs` is readable from every
           # job of a workflow_dispatch run, so this needs no job-output plumbing.
           COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_registries }}
+          COVEN_RELEASE_X_GUARD_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
         run: |
           set -euo pipefail
           bash scripts/release-notes.sh "$RELEASE_TAG" > /tmp/release-body.md

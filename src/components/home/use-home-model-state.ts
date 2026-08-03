@@ -93,6 +93,9 @@ export function useHomeModelState(selectedFamiliarId: string) {
         harness: runtime,
         effectiveModel: nextModel,
         source: nextModel ? "familiar-default" : "runtime-default",
+        // Home picks write familiar-DEFAULT scope, so the optimistic state's
+        // stored default moves with the selection (cleared when unset).
+        familiarDefaultModel: nextModel || null,
         applicationState: "saved",
         reason: nextModel
           ? "Selected from the home composer."

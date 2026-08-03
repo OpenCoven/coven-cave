@@ -5,13 +5,16 @@ import { readFileSync } from "node:fs";
 const listRoute = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 const itemRoute = readFileSync(new URL("./[id]/route.ts", import.meta.url), "utf8");
 const seedRoute = readFileSync(new URL("./seed/route.ts", import.meta.url), "utf8");
+const securitySource = readFileSync(new URL("../../../lib/server/api-security.ts", import.meta.url), "utf8");
 const guidanceModuleUrl = new URL("../../../lib/project-root-guidance.ts", import.meta.url);
+const localRequestModuleUrl = new URL("../../../lib/project-errors.ts", import.meta.url);
 const guidanceSource = readFileSync(guidanceModuleUrl, "utf8");
 const {
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
   PROJECT_ROOT_WORKSPACE_HELP,
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
 } = await import(guidanceModuleUrl.href);
+const { LOCAL_REQUEST_REQUIRED_CODE } = await import(localRequestModuleUrl.href);
 
 assert.match(listRoute, /seedDefaultProjectsIfEmpty/, "GET /api/projects should seed defaults before listing");
 assert.doesNotMatch(
@@ -43,6 +46,12 @@ assert.doesNotMatch(
   "the familiar-scoped route must not discard effective access metadata",
 );
 assert.match(listRoute, /export async function POST\(req: Request\)/, "projects route should expose POST");
+assert.equal(LOCAL_REQUEST_REQUIRED_CODE, "local_request_required", "local-only project mutations should expose a stable error code");
+assert.match(
+  securitySource,
+  /code:\s*LOCAL_REQUEST_REQUIRED_CODE[\s\S]*error:\s*"forbidden"/,
+  "local-only rejection should preserve the legacy error and add the stable code",
+);
 assert.match(listRoute, /name and root are required/, "POST /api/projects should validate required fields");
 // cave-8e7q: the display name is presentation text, never a connection
 // identifier — identity is id + root. Trimming the ends is the ONLY normalizing

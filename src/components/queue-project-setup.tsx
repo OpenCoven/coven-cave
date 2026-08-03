@@ -27,7 +27,7 @@ export function QueueProjectSetup({
   selectedProjectId?: string | null;
   onSelected?: (readiness: QueueReadinessView) => void;
 }) {
-  const { projects, loading, createProject } = useProjects();
+  const { projects, loading, createProject, createProjectOrThrow } = useProjects();
   const [selecting, setSelecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestGeneration = useRef(0);
@@ -69,6 +69,7 @@ export function QueueProjectSetup({
         value={selectedProjectId ?? NO_PROJECT_ID}
         onChange={(projectId) => void selectProject(projectId)}
         createProject={createProject}
+        createProjectOrThrow={createProjectOrThrow}
         disabled={loading || selecting}
         ariaLabel="Choose Queue project"
       />
