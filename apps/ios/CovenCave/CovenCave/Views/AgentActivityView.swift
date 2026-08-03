@@ -118,6 +118,17 @@ struct AgentActivityView: View {
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
+                if let failure = step.errorOutput, !failure.isEmpty {
+                    // Why it failed. Wraps rather than truncating to one line —
+                    // a reason clipped mid-sentence is no reason at all.
+                    Text(failure)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(Color.red.opacity(0.85))
+                        .lineLimit(ActivityFold.errorOutputLines)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .padding(.top, 2)
+                }
             }
             Spacer(minLength: 8)
             if let duration = Self.durationLabel(step.durationMs) {

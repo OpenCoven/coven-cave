@@ -58,6 +58,69 @@ final class AgentActivityTests: XCTestCase {
         XCTAssertEqual(settled?[0].status, .error)
     }
 
+    // MARK: - Failure reasons
+
+    func testAFailedToolCarriesItsReason() {
+        let started = ActivityFold.fold([], event: toolEvent(input: "cat missing.txt"))!
+        let failed = ActivityFold.fold(started, event: toolEvent(
+            output: "cat: missing.txt: No such file or directory", status: "error"))
+        XCTAssertEqual(failed?[0].errorOutput, "cat: missing.txt: No such file or directory")
+    }
+
+    func testASuccessfulToolDoesNotStoreItsOutput() {
+        // Only a failure has to explain itself; a successful call's payload
+        // belongs on the desktop, not in every persisted snapshot.
+        let steps = ActivityFold.fold([], event: toolEvent(output: "a\nb\nc", status: "ok"))
+        XCTAssertNil(steps?[0].errorOutput)
+    }
+
+    func testAnIntermediateRunningFrameDoesNotStoreOutput() {
+        let steps = ActivityFold.fold([], event: toolEvent(output: "partial…", status: "running"))
+        XCTAssertNil(steps?[0].errorOutput)
+    }
+
+    func testTheReasonKeepsTheTailWhereTheErrorIs() throws {
+        let log = (1...40).map { "build step \($0)" }.joined(separator: "\n")
+            + "\nerror: cannot find module 'foo'"
+        let steps = ActivityFold.fold([], event: toolEvent(output: log, status: "error"))!
+        let reason = try XCTUnwrap(steps[0].errorOutput)
+        XCTAssertTrue(reason.hasSuffix("error: cannot find module 'foo'"))
+        XCTAssertFalse(reason.contains("build step 1\n"), "the head of the log is not the reason")
+        XCTAssertLessThanOrEqual(reason.split(separator: "\n").count, ActivityFold.errorOutputLines)
+    }
+
+    func testTheLiveTruncationMarkerIsNotReportedAsTheReason() {
+        // capLiveToolPayload head-caps and glues a marker on the end, so the
+        // literal tail of a long live payload is the marker, not the failure.
+        let output = "error: the build failed\n[tool payload truncated]"
+        let steps = ActivityFold.fold([], event: toolEvent(output: output, status: "error"))!
+        XCTAssertEqual(steps[0].errorOutput, "error: the build failed")
+    }
+
+    func testALongReasonIsCappedFromTheEnd() throws {
+        let steps = ActivityFold.fold([], event: toolEvent(
+            output: String(repeating: "x", count: 900), status: "error"))!
+        let reason = try XCTUnwrap(steps[0].errorOutput)
+        XCTAssertEqual(reason.count, ActivityFold.errorOutputCap)
+        XCTAssertTrue(reason.hasPrefix("…"), "the cut end is marked")
+    }
+
+    func testPersistedFailuresKeepTheirReason() {
+        let tools = [
+            ToolCall(id: "1", name: "Bash", input: "pwd", output: "boom", status: "error"),
+            ToolCall(id: "2", name: "Read", input: nil, output: "file contents", status: "ok"),
+        ]
+        let steps = ActivityFold.steps(fromTools: tools)
+        XCTAssertEqual(steps?[0].errorOutput, "boom")
+        XCTAssertNil(steps?[1].errorOutput, "a successful call keeps its output off the trail")
+    }
+
+    func testStepsPersistedBeforeErrorOutputStillDecode() throws {
+        let legacy = #"{"id":"s1","kind":"tool","title":"Bash","status":"error"}"#
+        let step = try JSONDecoder().decode(ActivityStep.self, from: Data(legacy.utf8))
+        XCTAssertNil(step.errorOutput)
+    }
+
     func testReplayingAnAlreadyAppliedSettleIsANoOp() {
         // Mid-turn resume replays frames past the cursor — re-applying an
         // identical settle must report "no change" so the UI isn't re-notified.

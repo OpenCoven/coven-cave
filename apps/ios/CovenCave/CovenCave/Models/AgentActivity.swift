@@ -29,6 +29,10 @@ struct ActivityStep: Codable, Hashable, Identifiable {
     var status: Status = .running
     /// Wall-clock duration the server reported when the step settled.
     var durationMs: Int?
+    /// Why a failed step failed — the tail of the tool's output, kept only for
+    /// `.error` steps. A successful call's output belongs on the desktop; a
+    /// failure with no reason is the one case a chip has to carry itself.
+    var errorOutput: String?
 }
 
 /// Folds raw stream events into a message's activity list. Pure functions so
@@ -41,13 +45,19 @@ enum ActivityFold {
     static let maxSteps = 120
     /// Detail strings are one-line chips, never payloads.
     static let detailCap = 140
+    /// A failure reason gets a few wrapped lines — enough to read the error,
+    /// far short of the payload the desktop shows.
+    static let errorOutputCap = 300
+    static let errorOutputLines = 4
+    /// What `capLiveToolPayload` appends when it head-caps a live payload.
+    private static let liveTruncationMarker = "[tool payload truncated]"
 
     /// Fold one event into `steps`. Returns the updated list, or nil when the
     /// event doesn't change the activity (callers skip the mutation + notify).
     static func fold(_ steps: [ActivityStep], event: StreamEvent) -> [ActivityStep]? {
         switch event {
-        case .toolUse(let id, let name, let input, _, let status, let durationMs):
-            return foldTool(steps, id: id, name: name, input: input,
+        case .toolUse(let id, let name, let input, let output, let status, let durationMs):
+            return foldTool(steps, id: id, name: name, input: input, output: output,
                             status: status, durationMs: durationMs)
         case .progress(let id, let label, let detail, let status, let durationMs):
             return foldProgress(steps, id: id, label: label, detail: detail,
@@ -77,15 +87,23 @@ enum ActivityFold {
     /// updates its step in place. Events with no id can never be re-keyed,
     /// so they simply append.
     private static func foldTool(_ steps: [ActivityStep], id: String?, name: String,
-                                 input: String?, status: String?,
+                                 input: String?, output: String?, status: String?,
                                  durationMs: Int?) -> [ActivityStep]? {
         let parsedStatus = ActivityStep.Status(rawValue: status ?? "") ?? .running
+        // Only a failure earns its output a place in the trail. Intermediate
+        // `running` frames carry partial output too, which would churn the
+        // snapshot for a call that is about to succeed anyway.
+        let failure = parsedStatus == .error ? capErrorOutput(output) : nil
         if let id, let idx = steps.lastIndex(where: { $0.kind == .tool && $0.id == id }) {
             var step = steps[idx]
             var changed = false
             if step.status != parsedStatus { step.status = parsedStatus; changed = true }
             if step.detail == nil, let detail = argSummary(name: name, input: input) {
                 step.detail = detail
+                changed = true
+            }
+            if let failure, step.errorOutput != failure {
+                step.errorOutput = failure
                 changed = true
             }
             if let durationMs, step.durationMs != durationMs {
@@ -99,7 +117,8 @@ enum ActivityFold {
         }
         let step = ActivityStep(id: id ?? UUID().uuidString, kind: .tool, title: name,
                                 detail: argSummary(name: name, input: input),
-                                status: parsedStatus, durationMs: durationMs)
+                                status: parsedStatus, durationMs: durationMs,
+                                errorOutput: failure)
         return append(step, to: steps)
     }
 
@@ -154,6 +173,28 @@ enum ActivityFold {
         return String(firstLine.prefix(detailCap))
     }
 
+    /// Why a failed call failed, trimmed to fit under a step row.
+    ///
+    /// Keeps the **tail**: a failing build prints its error last, which is the
+    /// same reason the server tail-caps persisted output. Live output is capped
+    /// the other way — head-first, with a `[tool payload truncated]` marker
+    /// glued on the end — so drop that marker before taking the tail, or every
+    /// long failure would report the marker instead of the error.
+    private static func capErrorOutput(_ text: String?) -> String? {
+        guard var trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        if trimmed.hasSuffix(liveTruncationMarker) {
+            trimmed = String(trimmed.dropLast(liveTruncationMarker.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let lines = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
+        let tail = lines.suffix(errorOutputLines).joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tail.isEmpty else { return nil }
+        guard tail.count > errorOutputCap else { return tail }
+        return "…" + String(tail.suffix(errorOutputCap - 1))
+    }
+
     /// Tool inputs are pretty-printed JSON, whose first line is a bare `{`.
     /// Summarise the payload down to its most identifying argument instead —
     /// the same one-liner the web chat shows beside a tool name.
@@ -167,10 +208,12 @@ enum ActivityFold {
     static func steps(fromTools tools: [ToolCall]?) -> [ActivityStep]? {
         guard let tools, !tools.isEmpty else { return nil }
         return tools.suffix(maxSteps).map { tool in
-            ActivityStep(id: tool.id, kind: .tool, title: tool.name,
-                         detail: argSummary(name: tool.name, input: tool.input),
-                         status: tool.status == "error" ? .error : .ok,
-                         durationMs: tool.durationMs)
+            let failed = tool.status == "error"
+            return ActivityStep(id: tool.id, kind: .tool, title: tool.name,
+                                detail: argSummary(name: tool.name, input: tool.input),
+                                status: failed ? .error : .ok,
+                                durationMs: tool.durationMs,
+                                errorOutput: failed ? capErrorOutput(tool.output) : nil)
         }
     }
 }
