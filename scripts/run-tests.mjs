@@ -51,6 +51,7 @@ export const SUITES = {
     "scripts/maintenance-gate.test.mjs",
     "scripts/check-beads-jsonl-duplicates.test.mjs",
     "scripts/beads-jsonl-merge-driver.test.mjs",
+    "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
     "scripts/worktree-lifecycle-patrol.test.mjs",
     "src/lib/board-cache-events.test.ts",
