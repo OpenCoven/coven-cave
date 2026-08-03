@@ -1206,7 +1206,11 @@ const RETRYABLE_SWEEP_ERROR =
   /(returned partial data|returned inconsistent totals|changed between verification sweeps)/;
 
 /**
- * Pairs of sweeps to attempt before giving up.
+ * How many times to attempt a stable read before giving up.
+ *
+ * An attempt is one sweep, plus a second confirming sweep only if the first
+ * succeeded — a first sweep that fails with retryable drift ends the attempt
+ * immediately, since there is nothing to confirm against.
  *
  * Deliberately no backoff between attempts. Each sweep is itself several
  * round-trips to GitHub, so a re-read is already far enough after the last one
