@@ -116,23 +116,33 @@ const del = blockAfter(model, "private func fanOutThreadDelete(");
 assert.ok(del, "fanOutThreadDelete must exist");
 assert.match(
   del,
+  /let suppressedSessions = Self\.suppressServerSessions\([\s\S]*?self\.serverSessions = suppressedSessions\.remaining[\s\S]*?Task \{/,
+  "server sessions owned by deleted threads must be suppressed synchronously before the async fan-out can expose them as server-only",
+);
+assert.match(
+  del,
   /client\.deleteSession\(sessionId: sessionId\)/,
   "delete must reach the server",
 );
 assert.match(
   del,
-  /self\.threads\.insert\(thread, at: min\(index, self\.threads\.count\)\)/,
-  "a rejected delete must restore the chat at its original index, not append it",
+  /Self\.restoringDeletedThreads\([\s\S]*?removed: removed[\s\S]*?restoring: restoreIDs/,
+  "partial rollback must rebuild failed chats relative to successful deletions",
 );
 assert.match(
   del,
-  /restore\.sorted\(by: \{ \$0\.0 < \$1\.0 \}\)/,
-  "restores must run ascending so each captured index is still valid as earlier rows reinsert",
+  /self\.serverSessions\.removeAll \{ successfulSessionIDs\.contains\(\$0\.id\) \}/,
+  "successful deletes must be pruned again in case a concurrent refresh reintroduced them",
 );
 assert.match(
   del,
-  /guard !self\.threads\.contains\(where: \{ \$0\.id == thread\.id \}\) else \{ continue \}/,
-  "restoring must not duplicate a thread that is already back in the list",
+  /suppressedSessions\.suppressed\.filter\(\{ failedSessionIDs\.contains\(\$0\.id\) \}\)/,
+  "failed deletes must restore their cached server rows without restoring successful siblings",
+);
+assert.match(
+  del,
+  /reportDeletePartial\(\s*restoredThreads: restoreIDs\.count,\s*failedSessions: failedSessions,\s*totalSessions: totalSessions\s*\)/,
+  "partial-delete toast must distinguish restored chats from failed session operations",
 );
 
 // Both delete entry points must capture position BEFORE removing.
@@ -143,7 +153,7 @@ assert.match(
   /guard let index = threads\.firstIndex\(where: \{ \$0\.id == thread\.id \}\) else \{ return \}/,
   "deleteThread must capture the index before removing",
 );
-assert.match(one, /fanOutThreadDelete\(\[\(index, removed\)\], verb: "delete"\)/, "deleteThread must fan out");
+assert.match(one, /fanOutThreadDelete\(\[\(index, removed\)\]\)/, "deleteThread must fan out");
 
 const many = blockAfter(model, "func deleteThreads(_ ids: Set<String>) {");
 assert.ok(many, "deleteThreads must exist");
@@ -157,7 +167,7 @@ assert.match(
   /guard !removed\.isEmpty else \{ return \}[\s\S]*?let n = removed\.count/,
   "deleteThreads must report only chats actually removed and no-op for stale-only selections",
 );
-assert.match(many, /fanOutThreadDelete\(removed, verb: "delete"\)/, "deleteThreads must fan out");
+assert.match(many, /fanOutThreadDelete\(removed\)/, "deleteThreads must fan out");
 
 // -- No thread mutation may go back to being local-only -------------------
 for (const fn of ["setThreadArchived", "setThreadPinned"]) {

@@ -175,6 +175,17 @@ final class AppModel {
         Haptics.error()
     }
 
+    private func reportDeletePartial(restoredThreads: Int, failedSessions: Int, totalSessions: Int) {
+        let chats = "\(restoredThreads) chat\(restoredThreads == 1 ? "" : "s")"
+        let sessions = "\(failedSessions) of \(totalSessions) server session\(totalSessions == 1 ? "" : "s")"
+        showToast(
+            "Restored \(chats) — couldn’t delete \(sessions)",
+            systemImage: "exclamationmark.triangle.fill",
+            style: .error,
+        )
+        Haptics.error()
+    }
+
     /// Ask the chat list to open a thread (switches to Chats first).
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
@@ -1883,7 +1894,7 @@ final class AppModel {
         persistThreads()
         Haptics.success()
         showToast("Chat deleted", systemImage: "trash.fill")
-        fanOutThreadDelete([(index, removed)], verb: "delete")
+        fanOutThreadDelete([(index, removed)])
     }
 
     /// Delete several threads at once (bulk select); persists once.
@@ -1903,7 +1914,7 @@ final class AppModel {
         persistThreads()
         Haptics.success()
         showToast("\(n) chat\(n == 1 ? "" : "s") deleted", systemImage: "trash.fill")
-        fanOutThreadDelete(removed, verb: "delete")
+        fanOutThreadDelete(removed)
     }
 
     /// Sacrifice every session behind the removed threads.
@@ -1911,42 +1922,102 @@ final class AppModel {
     /// Deletion is already applied locally, so this restores any thread whose
     /// sessions the server refused — a delete that did not happen must not keep
     /// looking like it did. Threads that own no session (never sent) are dropped
-    /// locally and need no server call. Restoring walks ascending so each
-    /// original index is still valid as earlier rows are reinserted.
-    private func fanOutThreadDelete(_ removed: [(Int, ChatThread)], verb: String) {
+    /// locally and need no server call. Successful earlier deletions shift the
+    /// failed rows' insertion points left, preserving the surviving original
+    /// order instead of blindly reusing stale absolute indexes.
+    private func fanOutThreadDelete(_ removed: [(Int, ChatThread)]) {
         guard let client, !removed.isEmpty else { return }
         let targets = removed.filter { !serverSessionIds($0.1).isEmpty }
         guard !targets.isEmpty else { return }
+        let targetSessionIDs = Set(targets.flatMap { serverSessionIds($0.1) })
+        let suppressedSessions = Self.suppressServerSessions(
+            serverSessions,
+            withIDs: targetSessionIDs
+        )
+        self.serverSessions = suppressedSessions.remaining
         Task { [weak self] in
-            var restore: [(Int, ChatThread)] = []
+            var restoreIDs: Set<String> = []
+            var failedSessionIDs: Set<String> = []
+            var successfulSessionIDs: Set<String> = []
             var failedSessions = 0
             var totalSessions = 0
-            for (index, thread) in targets {
+            for (_, thread) in targets {
                 guard let sessionIds = self?.serverSessionIds(thread) else { continue }
                 totalSessions += sessionIds.count
                 var threadFailed = 0
-                await withTaskGroup(of: Bool.self) { group in
+                await withTaskGroup(of: (String, Bool).self) { group in
                     for sessionId in sessionIds {
                         group.addTask {
-                            do { try await client.deleteSession(sessionId: sessionId); return true }
-                            catch { return false }
+                            do {
+                                try await client.deleteSession(sessionId: sessionId)
+                                return (sessionId, true)
+                            } catch {
+                                return (sessionId, false)
+                            }
                         }
                     }
-                    for await ok in group where !ok { threadFailed += 1 }
+                    for await (sessionId, ok) in group {
+                        if ok {
+                            successfulSessionIDs.insert(sessionId)
+                        } else {
+                            threadFailed += 1
+                            failedSessionIDs.insert(sessionId)
+                        }
+                    }
                 }
                 if threadFailed > 0 {
                     failedSessions += threadFailed
-                    restore.append((index, thread))
+                    restoreIDs.insert(thread.id)
                 }
             }
-            guard let self, !restore.isEmpty else { return }
-            for (index, thread) in restore.sorted(by: { $0.0 < $1.0 }) {
-                guard !self.threads.contains(where: { $0.id == thread.id }) else { continue }
-                self.threads.insert(thread, at: min(index, self.threads.count))
+            guard let self else { return }
+            self.serverSessions.removeAll { successfulSessionIDs.contains($0.id) }
+            for row in suppressedSessions.suppressed.filter({ failedSessionIDs.contains($0.id) })
+            where !self.serverSessions.contains(where: { $0.id == row.id }) {
+                self.serverSessions.append(row)
             }
+            guard !restoreIDs.isEmpty else { return }
+            self.threads = Self.restoringDeletedThreads(
+                current: self.threads,
+                removed: removed,
+                restoring: restoreIDs
+            )
             self.persistThreads()
-            self.reportPartial(failedSessions, of: totalSessions, verb: verb)
+            self.reportDeletePartial(
+                restoredThreads: restoreIDs.count,
+                failedSessions: failedSessions,
+                totalSessions: totalSessions
+            )
         }
+    }
+
+    static func suppressServerSessions(
+        _ sessions: [SessionRow],
+        withIDs ids: Set<String>
+    ) -> (remaining: [SessionRow], suppressed: [SessionRow]) {
+        (
+            sessions.filter { !ids.contains($0.id) },
+            sessions.filter { ids.contains($0.id) }
+        )
+    }
+
+    static func restoringDeletedThreads(
+        current: [ChatThread],
+        removed: [(index: Int, thread: ChatThread)],
+        restoring restoreIDs: Set<String>
+    ) -> [ChatThread] {
+        var restored = current
+        let successfulIndexes = removed
+            .filter { !restoreIDs.contains($0.thread.id) }
+            .map(\.index)
+
+        for item in removed.filter({ restoreIDs.contains($0.thread.id) }).sorted(by: { $0.index < $1.index }) {
+            guard !restored.contains(where: { $0.id == item.thread.id }) else { continue }
+            let successfulBefore = successfulIndexes.count { $0 < item.index }
+            let shiftedIndex = item.index - successfulBefore
+            restored.insert(item.thread, at: min(max(shiftedIndex, 0), restored.count))
+        }
+        return restored
     }
 
     /// Rename a thread (local title only); no-ops on a blank or unchanged name.
