@@ -282,16 +282,17 @@ struct ChatModelBar: View {
         } else if state?.source == "runtime-default" && state?.effectiveModel.isEmpty == true {
             return
         }
+        let selectedSessionId = sessionId
         let target = requestTarget
         busy = true
         let mutation = modelMutationQueue.enqueue {
             defer { self.busy = false }
             // Per-chat when the chat has a server session; otherwise change the
             // familiar's default so the choice still sticks for the next message.
-            let scope = self.sessionId != nil ? "session" : "familiar-default"
+            let scope = selectedSessionId != nil ? "session" : "familiar-default"
             do {
                 let resp = try await client.setChatModel(
-                    familiarId: familiarId, sessionId: self.sessionId, model: model, scope: scope)
+                    familiarId: familiarId, sessionId: selectedSessionId, model: model, scope: scope)
                 guard self.presentationScope.canApplyResponse(
                     for: target,
                     currentTarget: self.requestTarget
