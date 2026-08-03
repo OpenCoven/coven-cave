@@ -305,9 +305,28 @@ struct ChatsHomeView: View {
                     // the default cell background so the sidebar selection
                     // highlight stays visible.
                     .listRowBackground(sizeClass == .compact ? Color.clear : nil)
+                    .swipeActions(edge: .leading) {
+                        Button { startNewChat(with: familiar) } label: {
+                            Label("New chat", systemImage: "square.and.pencil")
+                        }
+                        .tint(.accentColor)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if app.hasUnread(familiar.id) {
+                            Button { app.markFamiliarViewed([familiar.id]) } label: {
+                                Label("Mark read", systemImage: "checkmark.circle")
+                            }
+                            .tint(.indigo)
+                        }
+                    }
                     .contextMenu {
                         Button { startNewChat(with: familiar) } label: {
                             Label("New chat", systemImage: "square.and.pencil")
+                        }
+                        if app.hasUnread(familiar.id) {
+                            Button { app.markFamiliarViewed([familiar.id]) } label: {
+                                Label("Mark all read", systemImage: "checkmark.circle")
+                            }
                         }
                     }
             }
