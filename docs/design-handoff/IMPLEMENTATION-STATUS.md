@@ -63,6 +63,7 @@ tests), so when a project gains or loses a frame, update this table by hand.
 | `Project Folder Modal.dc.html` | folder picker | `08becc377a` (`cave-tv71`) |
 | `Queue.dc.html` / `Tasks.dc.html` | Queue + Tasks toolbars | `52d043cd1c` (#3746), `8c4c7cfde9` (#3748) |
 | Settings `About` / `Familiars` / `Profile` / `Phone` | settings control sheets | `3e1c5125f2`, `24b702fc8a`, `4c168973c7`, `196b222f4d` |
+| `SourceCard.dc.html` | `src/components/ui/citation.tsx` — both variants (web card carries its marker; worktree card shows path, line range and a numbered peek) | `cave-mdu1n` |
 | `Coven Cave App.dc.html` (iOS) | `apps/ios/CovenCave` | `157dee8d5d` (#3736), `d4f619b6c8` (`cave-4bsu`), `01a3d91bc8` (`cave-32fp`) — gated by `scripts/ios-claude-design-fidelity.test.mjs` |
 
 ## Outstanding
@@ -86,7 +87,6 @@ surface it describes.
 | `Activity Details Panel.dc.html` | 67 | feedback-request-for-improvement (zip only) | No `activity-detail` surface anywhere under `src/components`. Tracked by `cave-5u8l4`. |
 | `Memories - Rethought.dc.html` | 59 | Form feedback requested | Newer than the landed Memories redesign; in no exported zip. Tracked by `cave-tj24b`. |
 | `AnswerFlow.dc.html` | 15 | Shells and hero flow planning | In no exported zip. Tracked by `cave-c7zgz`. |
-| `SourceCard.dc.html` | 6 | (Started) Minimalist reader interface update | Two variants: **web** (og:image, domain, claim count) and **repo** (path + line badge, code peek, "Open in Code"). `src/components/ui/citation.tsx` implements one generic card and neither variant. Tracked by `cave-mdu1n`. |
 
 ### Not deliverables
 
