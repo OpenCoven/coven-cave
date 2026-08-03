@@ -116,6 +116,8 @@ export type SessionRow = {
   diff?: { additions: number; deletions: number } | null;
   /** Keep mark from Cave state (never auto-archived when true). */
   keep?: boolean;
+  /** Pinned by the user; chat lists sort pinned rows to the top. */
+  pinned?: boolean;
   /** Cave-local auto-archive defer-until timestamp, if set. */
   archive_extended_until?: string | null;
 };
