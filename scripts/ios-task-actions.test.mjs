@@ -41,7 +41,9 @@ for (const fn of ["setTaskStatus", "setTaskPriority", "toggleStep", "deleteTask"
 }
 assert.match(
   model,
-  /func deleteTask\(_ card: BoardCard\) async \{[\s\S]*let previous = tasks[\s\S]*tasks\.removeAll[\s\S]*catch[\s\S]*tasks = previous/,
+  /func deleteTask\(_ card: BoardCard\) async \{[\s\S]*tasks\.remove\(at: index\)[\s\S]*catch[\s\S]*reinsertTask\(removed, at: index\)/,
+  // Same intent; the revert narrowed from the whole array to this one card, and
+  // a removed card must be reinserted rather than edited in place (cave-rlmot).
   "deleteTask should optimistically remove and revert on failure",
 );
 assert.match(
