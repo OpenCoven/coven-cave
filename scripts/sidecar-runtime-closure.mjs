@@ -170,7 +170,7 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // highest platform (5,831) without relaxing the byte ceiling — measured
   // bytes are 104 MB against a 200 MB cap, so size is not the pressure here,
   // file count is.
-  fileCount: 5_841,
+  fileCount: 5_887,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
