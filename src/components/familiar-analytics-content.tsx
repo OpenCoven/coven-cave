@@ -1690,6 +1690,15 @@ export function FamiliarAnalyticsContent({
     setActiveProperty((prev) => (prev === property ? null : property));
   }, []);
 
+  // A full-stage overlay is the top layer: it retires the anchored contract
+  // panel and the pulse first, so two focus traps can never be live at once.
+  const openOverlay = useCallback((next: Exclude<Overlay, null>) => {
+    setContractOpen(false);
+    setPulseOpen(false);
+    setDeepDive(null);
+    setOverlay(next);
+  }, []);
+
   // Esc unwinds the stack one layer at a time: the innermost open thing first.
   // Modal/StageOverlay own their own Esc; this covers the lighter panels.
   useEffect(() => {
@@ -1720,11 +1729,11 @@ export function FamiliarAnalyticsContent({
         onRefresh={onRefresh}
         refreshing={refreshing}
         onOpenTrust={() => setTrustOpen(true)}
-        onOpenSignals={() => setOverlay("signals")}
-        onOpenModel={() => setOverlay("model")}
+        onOpenSignals={() => openOverlay("signals")}
+        onOpenModel={() => openOverlay("model")}
         onAction={openAction}
         onReviewContract={reviewContract}
-        onExpandContract={() => setContractOpen((prev) => !prev)}
+        onExpandContract={() => { setPulseOpen(false); setContractOpen((prev) => !prev); }}
         contractExpanded={contractOpen}
       />
 
@@ -1748,7 +1757,7 @@ export function FamiliarAnalyticsContent({
           queueCount={reviewQueue.length}
           pulseOpen={pulseOpen}
           onTogglePulse={() => setPulseOpen((prev) => !prev)}
-          onOpenSignals={() => setOverlay("signals")}
+          onOpenSignals={() => openOverlay("signals")}
           onSelectDay={handleSelectDay}
           selectedDayKey={selectedDay?.key ?? null}
         />
@@ -1958,7 +1967,7 @@ export function FamiliarAnalyticsContent({
                 {reviewQueue.length} queued · {model.threadReports.length} report
                 {model.threadReports.length === 1 ? "" : "s"}
               </span>
-              <button type="button" className="fa-primary-btn focus-ring" onClick={() => setOverlay("signals")}>
+              <button type="button" className="fa-primary-btn focus-ring" onClick={() => openOverlay("signals")}>
                 Open full view
                 <Icon name="ph:arrow-up-right" width={11} aria-hidden />
               </button>
@@ -2008,7 +2017,7 @@ export function FamiliarAnalyticsContent({
               <span className="fa-band-hint">
                 thumbs votes on chat replies, netted per message
               </span>
-              <button type="button" className="fa-primary-btn focus-ring" onClick={() => setOverlay("model")}>
+              <button type="button" className="fa-primary-btn focus-ring" onClick={() => openOverlay("model")}>
                 Open full view
                 <Icon name="ph:arrow-up-right" width={11} aria-hidden />
               </button>

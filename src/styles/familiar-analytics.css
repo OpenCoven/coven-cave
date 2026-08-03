@@ -1112,6 +1112,11 @@
   padding: var(--space-3) var(--space-4);
   backface-visibility: hidden;
 }
+/* Same tab-order retirement as the stage panels — a face you cannot see must
+   not be a face you can Tab into. */
+.fa-stat__face { transition: visibility 0s linear var(--duration-slow); }
+.fa-stat__pivot:not(.is-flipped) > .fa-stat__face--back,
+.fa-stat__pivot.is-flipped > .fa-stat__face:not(.fa-stat__face--back) { visibility: hidden; }
 .fa-stat__face--back {
   transform: rotateY(180deg);
   gap: var(--space-1);
@@ -1476,6 +1481,12 @@
   transform: rotateY(180deg);
   border-color: color-mix(in oklch, var(--accent-presence) 28%, transparent);
 }
+/* backface-visibility hides the away-facing panel visually but leaves its
+   buttons in the tab order. visibility does remove them — delayed by the flip
+   duration so the face is only retired once it has actually turned away. */
+.fa-panel { transition: visibility 0s linear var(--duration-slow); }
+.fa-panel-pivot:not(.is-flipped) > .fa-panel--back,
+.fa-panel-pivot.is-flipped > .fa-panel:not(.fa-panel--back) { visibility: hidden; }
 .fa-panel__head {
   display: flex;
   align-items: center;
@@ -2624,6 +2635,9 @@
 @media (prefers-reduced-motion: reduce) {
   .fa-stat__pivot,
   .fa-panel-pivot { transition: none; }
+  /* With no rotation to wait for, the away face retires immediately. */
+  .fa-panel,
+  .fa-stat__face { transition: none; }
   .fa-renown__shine { animation: none; opacity: 0; }
   .fa-identity__active i,
   .fa-scope__summary i { animation: none; }

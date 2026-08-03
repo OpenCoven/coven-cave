@@ -505,7 +505,7 @@ describe("FamiliarAnalyticsView", () => {
     assert.equal(model.modelFeedback.models[0].key, "claude-sonnet-4");
     assert.equal(model.modelFeedback.runtimes[0].up, 2);
     assert.match(contentSource, /<b>Model performance<\/b>/, "the footer carries a Model performance deep dive");
-    assert.match(contentSource, /setOverlay\("model"\)/, "the deep dive opens the full-stage view");
+    assert.match(contentSource, /openOverlay\("model"\)/, "the deep dive opens the full-stage view");
     assert.match(source, /<ModelFeedbackSection rollup=\{model\.modelFeedback\}/, "the panel is wired to the rollup");
     assert.match(source, /ph:thumbs-up/, "rows show up-vote counts");
     assert.match(source, /ph:thumbs-down/, "rows show down-vote counts");
@@ -651,6 +651,26 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(contentSource, /covers the stage — the dock stays put/, "the overlay states its own scope");
     assert.match(faCss, /\.fa-overlay \{[^}]*position: absolute/, "the overlay is scoped to the stage, not the viewport");
     assert.match(contentSource, /useFocusTrap\(true, ref, \{ onEscape: onClose \}\)/, "stage overlays trap focus and close on Esc");
+    // Two live focus traps would fight over the tab ring, so opening the top
+    // layer retires the anchored panels underneath it first.
+    assert.match(
+      contentSource,
+      /const openOverlay = useCallback\(\(next: Exclude<Overlay, null>\) => \{\s*setContractOpen\(false\);\s*setPulseOpen\(false\);/,
+      "opening a stage overlay retires the contract panel and the pulse",
+    );
+
+    // A face turned away is hidden to the eye by backface-visibility, but that
+    // alone leaves its buttons in the tab order.
+    assert.match(
+      faCss,
+      /\.fa-panel-pivot:not\(\.is-flipped\) > \.fa-panel--back,\s*\.fa-panel-pivot\.is-flipped > \.fa-panel:not\(\.fa-panel--back\) \{ visibility: hidden; \}/,
+      "the away-facing panel leaves the tab order, not just the screen",
+    );
+    assert.match(
+      faCss,
+      /\.fa-panel \{ transition: visibility 0s linear var\(--duration-slow\); \}/,
+      "the retirement waits for the flip so the face never vanishes mid-turn",
+    );
 
     // All decorative motion holds still under prefers-reduced-motion.
     assert.match(
