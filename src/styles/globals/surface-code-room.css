@@ -1,0 +1,281 @@
+/* ═══ Coding Room — three-zone workbench (cave-98o51) ═══
+   The terminal center and the context dock beside it: split panes, pane
+   chrome, focus treatment, and the dock's collapsed / normal / expanded
+   sizes. Semantic tokens only — every palette and mode combination must hold.
+
+   Focus and selection are never signalled by colour alone: a focused terminal
+   pane carries a border weight change plus an explicit "Focused" chip, and a
+   selected dock tab carries a filled background plus aria-selected. */
+
+/* ── Room split: terminal center | context dock ── */
+.code-room__group {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+}
+.code-room__panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.code-room__sep {
+  flex: none;
+}
+
+/* ── Terminal center ── */
+.code-terminal-workspace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-base);
+}
+.code-terminal-workspace__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.code-terminal-workspace__count {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.code-terminal-workspace__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.code-terminal-workspace__action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  background: transparent;
+}
+.code-terminal-workspace__action:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.code-terminal-workspace__action[aria-pressed="true"] {
+  background: color-mix(in oklab, var(--accent-presence) 14%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent-presence) 38%, transparent);
+  color: var(--accent-presence);
+}
+.code-terminal-workspace__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.code-terminal-workspace__body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.code-terminal-group {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.code-terminal-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.code-terminal-sep {
+  flex: none;
+}
+
+/* ── One terminal pane ── */
+.code-terminal-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  /* Transparent by default so an unfocused pane keeps the same geometry as a
+     focused one — the border appears, nothing reflows. */
+  border: 1px solid transparent;
+}
+.code-terminal-pane[data-focused="true"] {
+  border-color: color-mix(in oklab, var(--accent-presence) 45%, transparent);
+}
+.code-terminal-pane__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.code-terminal-pane__name {
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+.code-terminal-pane__badge {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--accent-presence) 14%, transparent);
+  font-size: var(--text-2xs);
+  color: var(--accent-presence);
+}
+.code-terminal-pane__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+.code-terminal-pane__action {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: transparent;
+}
+.code-terminal-pane__action:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.code-terminal-pane__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.code-terminal-pane__body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.code-terminal-pane__body > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ── Context dock ── */
+.code-context-dock {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+}
+.code-context-dock__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.code-context-dock__tabs {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.code-context-dock__tabs::-webkit-scrollbar { display: none; }
+.code-context-dock__tab {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  background: transparent;
+  white-space: nowrap;
+}
+.code-context-dock__tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.code-context-dock__tab[data-selected="true"] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.code-context-dock__actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+.code-context-dock__action {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: transparent;
+}
+.code-context-dock__action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.code-context-dock__body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.code-context-dock__body > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.code-context-dock__pane {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Collapsed: the dock becomes a rail of icons. Labels go, the tab strip turns
+   vertical, and the body is not rendered at all — a collapsed dock that still
+   mounted its panels would keep polling for a surface nobody can see. */
+.code-context-dock[data-size="collapsed"] .code-context-dock__bar {
+  flex-direction: column;
+  align-items: stretch;
+}
+.code-context-dock[data-size="collapsed"] .code-context-dock__tabs {
+  flex-direction: column;
+  overflow-x: hidden;
+}
+.code-context-dock[data-size="collapsed"] .code-context-dock__tab-label {
+  /* Visually hidden rather than removed: the button keeps its accessible name. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Narrow widths: the room stacks instead of compressing into two unusable
+   columns. The terminal stays first because it is the priority surface. ── */
+@media (max-width: 900px) {
+  .code-room__group {
+    flex-direction: column;
+  }
+  .code-context-dock {
+    border-left: none;
+    border-top: 1px solid var(--border-hairline);
+  }
+}

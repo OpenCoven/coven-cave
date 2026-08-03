@@ -2,7 +2,8 @@
 
 import "@xterm/xterm/css/xterm.css";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
+import type React from "react";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
@@ -196,12 +197,23 @@ async function createXterm(
   return { term, fit, search };
 }
 
+/** Imperative handle for writing into a pane's PTY from outside it — the
+ *  Coding Room's broadcast input (cave-98o51). Deliberately write-only: it
+ *  reuses the transport this pane already owns rather than adding a second PTY
+ *  API, and a write made through it does NOT re-fire `onUserInput`, so a
+ *  broadcast can never echo back into the pane that produced it. */
+export type TerminalWriterHandle = {
+  write: (data: string) => void;
+};
+
 export function BottomTerminal({
   threadId,
   active = true,
   visible = active,
   projectRoot,
   label,
+  onUserInput,
+  writerRef,
 }: {
   threadId: string;
   /** This pane has keyboard focus (drives refit + refocus on activation). */
@@ -215,11 +227,28 @@ export function BottomTerminal({
   /** Human-readable pane name so AT can tell split
    *  panes apart — names the terminal region and its screen-reader mirror. */
   label?: string;
+  /** Keystrokes the USER typed here, after sticky-Ctrl folding — the source
+   *  side of broadcast input. Never fires for writes made via `writerRef`. */
+  onUserInput?: (data: string) => void;
+  /** Exposes {@link TerminalWriterHandle} so a split host can mirror input in. */
+  writerRef?: React.Ref<TerminalWriterHandle>;
 }) {
   // Connection transitions are written into the terminal (and its polite
   // mirror) as dim ANSI, where a disconnect can be buried under output — mirror
   // them to the shared assertive live region so AT interrupts with the status.
   const { announce: srAnnounce } = useAnnouncer();
+  // The live transport's "send these bytes to the PTY" closure, republished by
+  // whichever path (Tauri command or WebSocket bridge) actually connected.
+  // Null while disconnected, so a broadcast write during a reconnect is a
+  // no-op rather than a crash.
+  const sendToPtyRef = useRef<((data: string) => void) | null>(null);
+  const onUserInputRef = useRef(onUserInput);
+  onUserInputRef.current = onUserInput;
+  useImperativeHandle(
+    writerRef,
+    () => ({ write: (data: string) => sendToPtyRef.current?.(data) }),
+    [],
+  );
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
@@ -512,6 +541,14 @@ export function BottomTerminal({
       // Tauri command parameters are camelCase on the JS side by default.
       // The nested pty_start options object below is a Rust struct, so its
       // fields intentionally stay snake_case for Serde.
+      const writeToPty = (out: string) => {
+        if (stopped) return;
+        void bridge.invoke("pty_write", {
+          threadId: threadId,
+          bytes: Array.from(new TextEncoder().encode(out)),
+        }).catch((err) => log("pty_write FAILED", err));
+      };
+      sendToPtyRef.current = writeToPty;
       const onDataDispose = term.onData((data) => {
         if (stopped) return;
         let out = data;
@@ -522,10 +559,10 @@ export function BottomTerminal({
           if (code >= 0x40 && code <= 0x5f) out = String.fromCharCode(code & 0x1f);
           clearCtrlRef.current();
         }
-        void bridge.invoke("pty_write", {
-          threadId: threadId,
-          bytes: Array.from(new TextEncoder().encode(out)),
-        }).catch((err) => log("pty_write FAILED", err));
+        writeToPty(out);
+        // Broadcast mirrors the FOLDED bytes, so a Ctrl-C typed on the mobile
+        // key bar reaches sibling panes as a Ctrl-C rather than a literal "c".
+        onUserInputRef.current?.(out);
       });
 
       if (!attachToRunning) {
@@ -580,6 +617,7 @@ export function BottomTerminal({
         ro.disconnect();
         resizer.dispose();
         onDataDispose.dispose();
+        sendToPtyRef.current = null;
         unlistenData();
         unlistenExit();
         if (flushTimerRef.current) {
@@ -732,14 +770,19 @@ export function BottomTerminal({
       }
       setReady(true);
 
-      const onDataDispose = term.onData((data) => {
+      const writeToPty = (out: string) => {
         if (!bridge.isOpen) {
           // Dead socket (or exited shell): typing revives the terminal
           // instead of vanishing into a no-op write.
           void attemptReconnect();
           return;
         }
-        bridge.write(new TextEncoder().encode(data));
+        bridge.write(new TextEncoder().encode(out));
+      };
+      sendToPtyRef.current = writeToPty;
+      const onDataDispose = term.onData((data) => {
+        writeToPty(data);
+        onUserInputRef.current?.(data);
       });
 
       const resizer = makeResizer(term, fit, () => visibleRef.current, (cols, rows) => {
@@ -787,6 +830,7 @@ export function BottomTerminal({
         ro.disconnect();
         resizer.dispose();
         onDataDispose.dispose();
+        sendToPtyRef.current = null;
         if (typeof document !== "undefined") {
           document.removeEventListener("visibilitychange", onForeground);
         }

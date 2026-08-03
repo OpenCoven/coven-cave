@@ -10,7 +10,7 @@ assert.doesNotMatch(src, /platform === "ios" \|\| platform === "android"[\s\S]{0
 assert.match(src, /if \(platform !== "desktop"\) return;/, "Tauri IPC path remains desktop-only");
 assert.match(src, /if \(platform !== "browser" && platform !== "ios" && platform !== "android"\) return;/, "WS bridge path covers browser and Tauri-mobile");
 assert.match(src, /bridge\.connect\(threadId,\s*term\.cols,\s*term\.rows,\s*projectRootRef\.current\)/, "WS bridge connects with terminal dimensions and cwd");
-assert.match(src, /bridge\.write\(new TextEncoder\(\)\.encode\(data\)\)/, "terminal input flows to WS bridge");
+assert.match(src, /bridge\.write\(new TextEncoder\(\)\.encode\(out\)\)/, "terminal input flows to WS bridge");
 assert.match(src, /bridge\.resize\(cols,\s*rows\)/, "terminal resize flows to WS bridge (throttled via makeResizer)");
 assert.match(src, /bridge\.dispose\(\)/, "WS bridge is disposed on cleanup");
 
@@ -22,8 +22,26 @@ assert.match(src, /terminal disconnected — reconnecting/, "drop is announced i
 assert.match(src, /const RECONNECT_DELAYS_MS = \[0, 1000, 3000\]/, "reconnect retries with capped backoff");
 assert.match(
   src,
-  /if \(!bridge\.isOpen\) \{[\s\S]{0,260}attemptReconnect\(\);[\s\S]{0,80}return;[\s\S]{0,120}bridge\.write\(new TextEncoder\(\)\.encode\(data\)\)/,
+  /if \(!bridge\.isOpen\) \{[\s\S]{0,260}attemptReconnect\(\);[\s\S]{0,80}return;[\s\S]{0,120}bridge\.write\(new TextEncoder\(\)\.encode\(out\)\)/,
   "typing on a dead socket revives the terminal instead of vanishing into a no-op write",
+);
+// Broadcast input (cave-98o51) reuses this same transport rather than adding a
+// second PTY API, and a write made through the handle must NOT re-fire
+// onUserInput — otherwise a broadcast echoes back into the pane that sent it.
+assert.match(
+  src,
+  /sendToPtyRef\.current = writeToPty;/,
+  "each transport republishes its writer so the imperative handle always targets the live path",
+);
+assert.match(
+  src,
+  /useImperativeHandle\(\s*writerRef,\s*\(\) => \(\{ write: \(data: string\) => sendToPtyRef\.current\?\.\(data\) \}\)/,
+  "the writer handle is write-only and no-ops while disconnected",
+);
+assert.match(
+  src,
+  /sendToPtyRef\.current = null;/,
+  "teardown drops the writer so a broadcast can't write into an unmounted pane",
 );
 assert.match(src, /term\.reset\(\);[\s\S]{0,400}await bridge\.reconnect\(\)/, "screen resets before reattach so the server replay paints clean");
 assert.match(src, /term\.reset\(\);[\s\S]{0,300}decoderRef\.current = new TextDecoder/, "the streaming decoder is reset on reconnect so replayed scrollback decodes cleanly");

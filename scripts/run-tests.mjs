@@ -651,6 +651,7 @@ export const SUITES = {
     "src/components/code-editor.test.ts",
     "src/components/code-surface-mode.test.ts",
     "src/lib/code-surface.test.ts",
+    "src/lib/code-terminal-tree.test.ts",
     "src/lib/code-reading.test.ts",
     "src/lib/code-reading-pref.test.ts",
     "src/lib/code-lines.test.ts",
