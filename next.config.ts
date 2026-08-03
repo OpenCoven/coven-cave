@@ -60,6 +60,7 @@ const nextConfig: NextConfig = {
       "./.worktree-lifecycle-fixture-*/**/*",
       "./.next/cache/**/*",
       "./.next/dev/**/*",
+      "./.tmp/**/*",
       "./src-tauri/**/*",
       "./target/**/*",
       "./target-windows/**/*",

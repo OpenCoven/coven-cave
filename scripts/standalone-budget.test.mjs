@@ -40,6 +40,7 @@ try {
     assert.equal(forbiddenStandaloneRoot(root), root);
     assert.equal(forbiddenStandaloneRoot(`${root}/nested/file`), root);
   }
+  assert.equal(forbiddenStandaloneRoot(".tmp/repo-snapshot/package.json"), ".tmp");
   assert.equal(
     forbiddenStandaloneRoot(".worktree-lifecycle-fixture-eTlVOX"),
     ".worktree-lifecycle-fixture-eTlVOX",
@@ -55,6 +56,11 @@ try {
     nextConfig,
     /"\.\/\.worktree-lifecycle-fixture-\*\/\*\*\/\*"/,
     "Next tracing excludes every generated lifecycle fixture root",
+  );
+  assert.match(
+    nextConfig,
+    /"\.\/\.tmp\/\*\*\/\*"/,
+    "Next tracing excludes checkout-local temporary artifacts",
   );
 
   const leaked = path.join(fixture, "target-windows");
