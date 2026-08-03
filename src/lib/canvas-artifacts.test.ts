@@ -82,6 +82,23 @@ assert.match(prompt, /EXACTLY ONE fenced code block/, "sketch prompt constrains 
 assert.match(prompt, /a login form/, "sketch prompt carries the user's ask");
 assert.match(buildSketchPrompt("  "), /a simple example UI/, "blank ask gets a sensible default");
 
+// Playable is a different contract, not a phrasing tweak: a game that cannot
+// restart, cannot be played without a keyboard, or makes noise over a live
+// voice call is a broken deliverable, so the prompt states each of those.
+const game = buildSketchPrompt("a dungeon crawler", { playable: true });
+assert.match(game, /a dungeon crawler/, "game prompt carries the user's ask");
+assert.match(game, /requestAnimationFrame/, "game prompt demands a real loop, not setInterval");
+assert.match(game, /restart control/, "game prompt demands a restart without a page reload");
+assert.match(game, /touch or click controls/, "game prompt demands non-keyboard input");
+assert.match(game, /Stay SILENT/, "game prompt forbids audio so it can play over a call");
+assert.match(game, /prefers-reduced-motion/, "game prompt respects reduced motion");
+assert.match(game, /Never use `localStorage`/, "game prompt rules out storage the sandbox cannot provide");
+assert.match(
+  buildSketchPrompt("  ", { playable: true }),
+  /a tiny arcade game/,
+  "blank playable ask gets a game-shaped default, not a UI one",
+);
+
 const refine = buildRefinePrompt("<!doctype html><html></html>", "make it dark mode");
 assert.match(refine, /make it dark mode/, "refine prompt carries the change request");
 assert.match(refine, /<!doctype html><html><\/html>/, "refine prompt embeds the current document");

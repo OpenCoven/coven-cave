@@ -28,6 +28,15 @@ import type { LiveSession, VoiceSessionGrant, VoiceEarsEngine, VoiceMouthEngine 
 import { voiceErrorHint } from "@/lib/voice/types";
 import { voiceRecoveryVaultKey } from "@/lib/voice/vault-key-recovery";
 import { reduce, initialState, type CallState } from "./voice-call-overlay-state";
+import { ArcadePanel } from "./arcade-panel";
+
+/**
+ * States where the caller is waiting on machinery rather than on a person:
+ * the mic prompt, the session mint, and the connection handshake. These are
+ * where the arcade is offered, because they are the beats with nothing to
+ * look at and no way to tell a slow connection from a stuck one.
+ */
+const WAITING_STATES = new Set(["requesting-mic", "minting-session", "connecting"]);
 
 type Props = {
   familiar: Familiar;
@@ -253,6 +262,9 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
   const [savingKey, setSavingKey] = useState(false);
   const [keySaveError, setKeySaveError] = useState<string | null>(null);
   const [settingsOpenError, setSettingsOpenError] = useState<string | null>(null);
+  // Opt-in, always. A game that appears unasked during a call is a bug.
+  const [arcadeOpen, setArcadeOpen] = useState(false);
+  const waiting = WAITING_STATES.has(state.state);
   useEffect(() => {
     if (state.state !== "error") {
       setKeyDraft("");
@@ -332,6 +344,25 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}
         </header>
         <div className="voice-call-overlay__body">
+          {arcadeOpen && (
+            <ArcadePanel
+              waitingLabel={waiting ? `${labelFor(state)} — play while you wait.` : undefined}
+              onClose={() => setArcadeOpen(false)}
+            />
+          )}
+          {/* The invitation only appears in the dead air, and only once. Offered
+              during `live` too via the footer control, but never advertised
+              there — mid-conversation is not the moment to pitch a game. */}
+          {waiting && !arcadeOpen && (
+            <button
+              type="button"
+              className="voice-call-overlay__arcade-invite focus-ring"
+              onClick={() => setArcadeOpen(true)}
+            >
+              <Icon icon="ph:magic-wand-fill" aria-hidden="true" />
+              <span>Play Glitter Crypt while you wait</span>
+            </button>
+          )}
           {state.state === "live" && (state.earsEngine || state.mouthEngine) && (
             <div className="voice-call-overlay__engines">
               {state.earsEngine && (
@@ -509,6 +540,16 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
               disabled={state.state !== "live"}
             >
               <Icon icon={state.muted ? "ph:microphone-slash-fill" : "ph:microphone-fill"} />
+            </button>
+            <button
+              type="button"
+              className="voice-call-overlay__control focus-ring"
+              aria-label={arcadeOpen ? "Close Glitter Crypt" : "Play Glitter Crypt"}
+              title={arcadeOpen ? "Close Glitter Crypt" : "Play Glitter Crypt"}
+              aria-pressed={arcadeOpen}
+              onClick={() => setArcadeOpen((open) => !open)}
+            >
+              <Icon icon="ph:magic-wand-fill" />
             </button>
             {/* Barge-in without typing: cut the familiar off mid-sentence.
                 Only offered while it is actually speaking, so the control
