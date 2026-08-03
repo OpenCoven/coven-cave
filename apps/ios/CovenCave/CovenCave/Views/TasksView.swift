@@ -157,7 +157,7 @@ struct TasksView: View {
         Menu {
             ForEach(CardStatus.allCases, id: \.self) { status in
                 Button {
-                    Task { await app.setTaskStatus(card, status) }
+                    app.requestTaskStatus(card, status)
                 } label: {
                     Label(status.label, systemImage: card.status == status ? "checkmark" : status.systemImage)
                 }
@@ -355,7 +355,7 @@ struct TasksView: View {
                                 }
                             }
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                Button { Task { await app.setTaskStatus(card, card.status == .done ? .running : .done) } } label: {
+                                Button { app.requestTaskStatus(card, card.status == .done ? .running : .done) } label: {
                                     Label(card.status == .done ? "Reopen" : "Done",
                                           systemImage: card.status == .done ? "arrow.uturn.backward" : "checkmark")
                                 }

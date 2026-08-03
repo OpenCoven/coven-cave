@@ -59,7 +59,10 @@ assert.match(
 );
 assert.match(
   list,
-  /await app\.setTaskStatus\(card, card\.status == \.done \? \.running : \.done\)/,
+  /app\.requestTaskStatus\(card, card\.status == \.done \? \.running : \.done\)/,
+  // Same intent as before; the call moved off a bare `Task { await ... }` onto
+  // the cancellable entry point so rapid toggles can't apply a stale response
+  // (cave-ioswipe.4).
   "swipe should toggle Done/Reopen",
 );
 assert.match(list, /confirmationDialog\("Delete this task\?"/, "list should confirm deletes");
