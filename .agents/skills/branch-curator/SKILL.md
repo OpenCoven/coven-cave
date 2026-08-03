@@ -37,7 +37,7 @@ default. Warn at 12 worktrees or 30 local branches. Exceeding a budget never
 authorizes deletion; new managed work requires safe retirement or a bounded
 owner/reason/expiry exception.
 
-Use `pnpm beads:worktrees:create -- --bead cave-123 --branch
+Use `pnpm beads:worktrees:create --bead cave-123 --branch
 fix/cave-123-example --owner kitty --purpose "Repair example"` for managed
 creation. Raw `git worktree add` remains available but is not universally
 intercepted; it does not exempt the resulting worktree from lifecycle policy.
