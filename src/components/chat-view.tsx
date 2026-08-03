@@ -3404,19 +3404,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return extractNextPaths(last.text).suggestions.find((path) => path.kind === "reply") ?? null;
   }, [activePath]);
 
-<<<<<<< Updated upstream
   // Chat-revamp 1b: the LATEST settled turn's follow-up suggestions render as
   // typed cards directly above the composer (aligned to the reading column) —
   // the most actionable element sits closest to the input. That turn's in-turn
   // card row is suppressed (followUp.turnId → TurnRow) so the suggestions
   // never render twice; older turns keep their in-turn rows. The parser owns
   // the product cap so every renderer stays aligned.
-=======
-  // The LATEST settled turn's follow-up suggestions render in the composer
-  // footer. That turn's in-turn card row is suppressed (followUp.turnId →
-  // TurnRow) so the suggestions never render twice; older turns keep their
-  // in-turn rows. Capped at 4.
->>>>>>> Stashed changes
   const followUp = useMemo(() => {
     const empty = { turnId: null as string | null, suggestions: [] as NextPath[] };
     const last = [...activePath]
