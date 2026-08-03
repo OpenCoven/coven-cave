@@ -153,6 +153,7 @@ export const SUITES = {
     "src/components/update-available.test.ts",
     "src-tauri/permissions/desktop-permissions.test.mjs",
     "src-tauri/release-runtime.test.mjs",
+    "src-tauri/notch-window-chrome.test.mjs",
     "scripts/react-compiler-config.test.mjs",
     "scripts/codemods/tokenize-tsx-design.test.mjs",
     "scripts/eslint/design-system-plugin.test.mjs",
