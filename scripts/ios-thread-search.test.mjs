@@ -18,10 +18,10 @@ assert.match(
 // The rows the picker renders come from `entries`; the query narrows them, with
 // the per-thread rules in `matches`. Assert inside those two bodies only, so an
 // unrelated construct elsewhere in the file can never satisfy a claim.
-const entriesBody = picker.match(/private var entries: \[Entry\] \{\n([\s\S]*?)\n    \}\n/);
+const entriesBody = picker.match(/private var entries: \[Entry\] \{([\s\S]*?)\n\s*\}\s*\n\s*\n/);
 assert.ok(entriesBody, "the picker should derive its rows from an `entries` computed property");
 const matchesBody = picker.match(
-  /private func matches\(_ thread: ChatThread, query q: String\) -> Bool \{\n([\s\S]*?)\n    \}\n/,
+  /private func matches\(\s*_ thread: ChatThread,\s*query q: String\s*\) -> Bool \{([\s\S]*?)\n\s*\}\s*\n\s*\n/,
 );
 assert.ok(matchesBody, "the picker should decide per-thread matches in a `matches` helper");
 const search = `${entriesBody[1]}\n${matchesBody[1]}`;

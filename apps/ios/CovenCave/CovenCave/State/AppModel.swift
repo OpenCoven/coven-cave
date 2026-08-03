@@ -1709,8 +1709,9 @@ final class AppModel {
             }
     }
 
-    /// The thread a familiar's chat lands on: its pinned thread if it has one,
-    /// otherwise its newest-updated unarchived direct thread — `directThreads`
+    /// The thread a familiar's chat lands on: its pinned thread if it has an
+    /// unarchived one, otherwise its newest-updated unarchived direct thread.
+    /// Archived threads are never eligible, pinned or not — `directThreads`
     /// sorts pinned-first, then by recency, and this takes the first eligible
     /// entry. Callers that render a timestamp are showing the landing thread's
     /// activity, which is deliberately NOT always the familiar's latest.

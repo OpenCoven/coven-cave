@@ -334,6 +334,15 @@ struct ChatView: View {
                                         path: $pickerPath,
                                         zoomNamespace: pickerZoomNamespace)
                 }
+            } else {
+                // Group threads and any thread whose familiar no longer
+                // resolves have no per-familiar session list to show. Say so
+                // rather than presenting an empty sheet.
+                ContentUnavailableView {
+                    Label("No sessions to pick", systemImage: "bubble.left.and.bubble.right")
+                } description: {
+                    Text("This conversation isn't scoped to a single familiar.")
+                }
             }
         }
     }

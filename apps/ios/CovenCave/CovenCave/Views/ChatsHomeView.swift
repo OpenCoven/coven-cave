@@ -301,7 +301,7 @@ struct ChatsHomeView: View {
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if app.hasUnread(familiar.id) {
                             Button { app.markFamiliarViewed([familiar.id]) } label: {
-                                Label("Mark read", systemImage: "checkmark.circle")
+                                Label("Mark all read", systemImage: "checkmark.circle")
                             }
                             .tint(.indigo)
                         }
