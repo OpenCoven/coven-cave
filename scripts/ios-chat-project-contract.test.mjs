@@ -147,6 +147,11 @@ assert.match(
 );
 assert.match(
   chat,
+  /if thread\.needsProjectSelection \|\| !thread\.canSendMessages \{[\s\S]*?ChatProjectPicker\(/,
+  "resolved chats must not keep a persistent Project control above the composer",
+);
+assert.match(
+  chat,
   /startFreshThread\(familiarIds: thread\.familiarIds,[\s\S]*projectRoot: thread\.projectRoot\)/,
   "/new must preserve the current project context",
 );
