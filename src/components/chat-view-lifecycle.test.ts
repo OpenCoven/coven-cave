@@ -367,9 +367,20 @@ assert.match(
   "Regenerate is hidden while busy and on pending turns (CHAT-D6-02)",
 );
 
+// The backwards walk for the preceding user turn moved into a named helper
+// when the reader's "You asked" card needed the same turn (cave-r8gfl). The
+// guarantee is unchanged and split across two assertions: the helper finds the
+// nearest USER turn, and regenerate still reuses that turn's controls plus the
+// assistant's authoritative retry model.
 assert.match(
   source,
-  /function regenerateFor\(turn: Turn\)[\s\S]*?role === "user"[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?retryTurnModelRequest\(prevUser, turn\)[\s\S]*?modelControls: prevUser\.modelControls \?\? \{\}/,
+  /function precedingUserTurn\(turn: Turn\): Turn \| undefined \{[\s\S]*?candidate\.role === "user"/,
+  "The preceding-user-turn walk is a single named helper, not copied per caller (CHAT-D6-02)",
+);
+
+assert.match(
+  source,
+  /function regenerateFor\(turn: Turn\)[\s\S]*?const prevUser = precedingUserTurn\(turn\);[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?retryTurnModelRequest\(prevUser, turn\)[\s\S]*?modelControls: prevUser\.modelControls \?\? \{\}/,
   "Regenerate reuses the preceding user turn's controls and the assistant's authoritative retry model (CHAT-D6-02)",
 );
 
