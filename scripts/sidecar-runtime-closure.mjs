@@ -159,18 +159,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // of cross-platform headroom without relaxing the byte ceiling.
   // 2026-08-01 (Memory document reader): the shared reader traces 5,817 files
   // on Windows. Retain the established ten-file cross-platform headroom.
-  // 2026-08-01 (accretion across 58 added src/ files): measured 5,824 on
-  // macOS, 5,828 on Linux and 5,831 on Windows — the first time this budget
-  // was checked since it was set, because the merges in between reached main
-  // without CI (see CLAUDE.md, branch protection). No single feature is to
-  // blame and none is worth singling out: the additions span the daemon
-  // connection supervisor and its routes, the X API lib/component half, the
-  // chat Start-from bands, the shell inset layout and the research-mission
-  // surfaces. Retain the established ten-file cross-platform headroom over the
-  // highest platform (5,831) without relaxing the byte ceiling — measured
-  // bytes are 104 MB against a 200 MB cap, so size is not the pressure here,
-  // file count is.
-  fileCount: 5_887,
+  // 2026-08-01 (main integration tree): CI measures 5,828 files on Ubuntu
+  // and 5,831 on Windows after maps, declarations, nested dependencies, and
+  // non-runtime roots are excluded. Preserve the established ten-file
+  // cross-platform headroom.
+  fileCount: 5_841,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
