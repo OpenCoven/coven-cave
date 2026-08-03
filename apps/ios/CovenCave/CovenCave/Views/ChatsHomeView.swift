@@ -29,9 +29,6 @@ struct ChatsHomeView: View {
     /// Navigation *within* the detail column — e.g. a familiar's thread list
     /// pushing a conversation. Reset whenever the sidebar selection changes.
     @State private var detailPath: [ChatRoute] = []
-    /// Familiar reordering happens in a dedicated drag-to-reorder sheet rather
-    /// than List edit mode, which would fight the selection binding.
-    @State private var showReorder = false
     /// All-familiars roster sheet.
     @State private var showFamiliars = false
     @State private var showProjects = false
@@ -236,10 +233,6 @@ struct ChatsHomeView: View {
             Text("Chats")
                 .font(.largeTitle.weight(.bold))
             Spacer()
-            if canReorder {
-                Button("Reorder") { showReorder = true }
-                    .font(.subheadline.weight(.medium))
-            }
             CircularIconButton(systemImage: "folder",
                                label: "Projects") {
                 showProjects = true
@@ -289,12 +282,6 @@ struct ChatsHomeView: View {
         .glassChrome(.bottom)
     }
 
-    /// Reordering is only meaningful with ≥2 familiars and no active search
-    /// filter (the sheet reorders the full, unfiltered list).
-    private var canReorder: Bool {
-        app.familiars.count > 1 && query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
     private var homeList: some View {
         List(selection: $selection) {
             ForEach(filteredFamiliars) { familiar in
@@ -333,7 +320,6 @@ struct ChatsHomeView: View {
         }
         .listStyle(.plain)
         .themedListBackground()
-        .sheet(isPresented: $showReorder) { ReorderFamiliarsSheet() }
     }
 
     private func consumeGlobalRequests() {
@@ -459,99 +445,17 @@ struct FamiliarConversationRow: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(familiar.displayName). \(preview)")
-    }
-}
-
-/// Drag-to-reorder sheet for the Chats home familiar list (the home List owns a
-/// selection binding, so reordering lives here instead of List edit mode).
-struct ReorderFamiliarsSheet: View {
-    @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(app.familiars) { familiar in
-                    FamiliarRow(familiar: familiar)
-                }
-                .onMove { source, destination in
-                    app.moveFamiliar(fromOffsets: source, toOffset: destination)
-                }
-            }
-            .listStyle(.plain)
-            .themedListBackground()
-            .environment(\.editMode, .constant(.active))
-            .navigationTitle("Reorder familiars")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-        .themedSheetBackground()
-        .presentationDetents([.medium, .large])
-    }
-}
-
-/// A familiar row (avatar, name, role, trailing chat count + last activity),
-/// used by the reorder sheet.
-struct FamiliarRow: View {
-    @Environment(AppModel.self) private var app
-    @Environment(\.chrome) private var chrome
-    let familiar: Familiar
-
-    var body: some View {
-        HStack(spacing: 12) {
-            AvatarView(familiar: familiar,
-                       url: app.client?.avatarURL(for: familiar),
-                       size: 48, showStatus: true)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    // Unread: activity newer than the last time you opened it.
-                    if app.hasUnread(familiar.id) {
-                        Circle().fill(chrome.accent).frame(width: 7, height: 7)
-                    }
-                    Text(familiar.displayName).font(.headline).lineLimit(1)
-                }
-                if let role = familiar.role, !role.isEmpty {
-                    Text(role).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 3) {
-                let count = app.threadCount(for: familiar.id)
-                if let last = app.lastActivity(for: familiar.id) {
-                    Text(last, format: .relative(presentation: .numeric))
-                        .font(.caption).foregroundStyle(.tertiary)
-                }
-                Text(count == 0 ? "No chats" : "^[\(count) chat](inflect: true)")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        // Read the whole row as one VoiceOver element instead of four fragments.
-        .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
-        .accessibilityHint("Opens chats with this familiar")
     }
 
-    /// One spoken summary of the row: name, role, chat count, last activity.
+    /// VoiceOver hears the name, whether anything is unread, and the preview —
+    /// the unread state is a coloured dot otherwise, which announces nothing.
     private var accessibilityText: String {
         var parts: [String] = [familiar.displayName]
         if app.hasUnread(familiar.id) { parts.append("unread") }
-        if let role = familiar.role, !role.isEmpty { parts.append(role) }
-        let count = app.threadCount(for: familiar.id)
-        parts.append(count == 1 ? "1 chat" : "\(count) chats")
-        if let last = app.lastActivity(for: familiar.id) {
-            parts.append("last active " + Self.relativeFormatter.localizedString(for: last, relativeTo: Date()))
-        }
-        return parts.joined(separator: ", ")
+        parts.append(preview)
+        return parts.joined(separator: ". ")
     }
-
-    private static let relativeFormatter = RelativeDateTimeFormatter()
 }
 
 struct ThreadRow: View {

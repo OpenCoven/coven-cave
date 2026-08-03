@@ -93,7 +93,6 @@ final class AppModel {
     var familiarsError: String?
     /// User's preferred familiar order (ids), applied over the server's order
     /// and persisted locally. Unknown/new familiars fall to the end.
-    var familiarOrder: [String] = []
 
     var threads: [ChatThread] = []
     /// Default Chats destination: the newest active conversation. Pinning only
@@ -106,6 +105,15 @@ final class AppModel {
     /// Process-lifetime launch intent. It survives destination remounts until a
     /// matching hydrated thread can be opened, then is consumed exactly once.
     var launchThreadId: String?
+
+    /// Messages whose agent-activity trail the reader has opened.
+    ///
+    /// Deliberately not view-local `@State`: a transcript rebuild re-creates
+    /// the row, and state that lives on the row goes with it — silently
+    /// collapsing a trail the reader had just opened (cave-m5tao). Holding the
+    /// choice here means a re-created row re-reads it and stays open. In-memory
+    /// only; expansion is a reading position, not something to persist.
+    var expandedActivityMessages: Set<String> = []
 
     #if DEBUG
     /// Process-lifetime marker for the deterministic cold-connection preview.
@@ -169,6 +177,17 @@ final class AppModel {
     private func reportPartial(_ failed: Int, of total: Int, verb: String) {
         showToast(
             "Couldn’t \(verb) \(failed) of \(total) — those were restored",
+            systemImage: "exclamationmark.triangle.fill",
+            style: .error,
+        )
+        Haptics.error()
+    }
+
+    private func reportDeletePartial(restoredThreads: Int, failedSessions: Int, totalSessions: Int) {
+        let chats = "\(restoredThreads) chat\(restoredThreads == 1 ? "" : "s")"
+        let sessions = "\(failedSessions) of \(totalSessions) server session\(totalSessions == 1 ? "" : "s")"
+        showToast(
+            "Restored \(chats) — couldn’t delete \(sessions)",
             systemImage: "exclamationmark.triangle.fill",
             style: .error,
         )
@@ -370,11 +389,20 @@ final class AppModel {
             ChatTurnNotifier.shared.app = self
             return
         }
+
+        // Sibling fixture for the agent-activity trail — a settled turn whose
+        // steps cover every status a tool row can carry. Launch with
+        // `--ui-preview-tool-activity` and
+        // `CAVE_OPEN_THREAD=ui-preview-tool-activity`.
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-tool-activity") {
+            configureToolActivityPreview()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
         #endif
         // Threads hydrate off-main via the store — no file I/O in init.
         Task { await self.hydrateThreads() }
         loadCardLinks()
-        loadFamiliarOrder()
         loadFamiliarViews()
         if connection != nil { connectionState = .checking }
         ChatTurnNotifier.shared.app = self
@@ -468,6 +496,65 @@ final class AppModel {
                 id: "ui-preview-empty-chat",
                 title: "Chat with Nyx on Jul 26",
                 familiarIds: ["nyx"]
+            ),
+        ]
+        connectionState = .connected
+    }
+
+    /// Deterministic native screenshot fixture for the agent-activity trail.
+    /// One settled assistant turn whose steps cover every status a tool row can
+    /// carry: a succeeded call, a failed one with its reason, and an
+    /// informational notice. Release builds never carry fixture state.
+    private func configureToolActivityPreview() {
+        connection = nil
+        familiars = [
+            Familiar(
+                id: "nyx",
+                displayName: "Nyx",
+                role: "Code familiar",
+                description: "Keeps implementation work moving.",
+                pronouns: nil,
+                color: nil,
+                status: "active",
+                harness: "codex",
+                model: "gpt-5.6",
+                icon: "moon.stars.fill",
+                avatarUrl: nil,
+                activeSessions: 1,
+                memoryFreshness: "Fresh"
+            ),
+        ]
+        tasksLoaded = true
+        sessionsLoaded = true
+
+        var reply = DisplayMessage(
+            role: .assistant,
+            familiarId: "nyx",
+            text: "Fixed — the summary was reading the first line of a pretty-printed payload."
+        )
+        reply.activity = [
+            ActivityStep(id: "a", kind: .tool, title: "Read",
+                         detail: "src/lib/tool-arg-summary.ts", status: .ok, durationMs: 42),
+            ActivityStep(id: "b", kind: .tool, title: "Bash",
+                         detail: "pnpm test --filter tool-arg", status: .error,
+                         durationMs: 8_400,
+                         errorOutput: "error: cannot find module 'foo'\n  at Object.<anonymous> (tool-arg.test.ts:12:9)"),
+            ActivityStep(id: "c", kind: .progress, title: "Rate limited — retrying in 30s",
+                         status: .notice),
+            ActivityStep(id: "d", kind: .tool, title: "Edit",
+                         detail: "apps/ios/CovenCave/CovenCave/Models/AgentActivity.swift",
+                         status: .ok, durationMs: 1_200),
+        ]
+
+        threads = [
+            ChatThread(
+                id: "ui-preview-tool-activity",
+                title: "Chat with Nyx on Aug 3",
+                familiarIds: ["nyx"],
+                messages: [
+                    DisplayMessage(role: .user, text: "fix the ios tool calls"),
+                    reply,
+                ]
             ),
         ]
         connectionState = .connected
@@ -1120,7 +1207,7 @@ final class AppModel {
         let payload = await ConnectionBootstrap.load(using: client)
         switch payload.familiars {
         case .success(let loaded):
-            familiars = applyFamiliarOrder(loaded)
+            familiars = loaded
             seedFamiliarViews(familiars.map(\.id))
             familiarsError = nil
         case .failure(let error):
@@ -1496,7 +1583,7 @@ final class AppModel {
     func loadFamiliars() async {
         guard let client else { return }
         do {
-            familiars = applyFamiliarOrder(try await client.familiars())
+            familiars = try await client.familiars()
             seedFamiliarViews(familiars.map(\.id))
             familiarsError = nil
         } catch {
@@ -1562,28 +1649,6 @@ final class AppModel {
         if changed { persistFamiliarViews() }
     }
 
-    /// Drag-reorder familiars in the Chats destination; persists the new order.
-    func moveFamiliar(fromOffsets source: IndexSet, toOffset destination: Int) {
-        familiars.move(fromOffsets: source, toOffset: destination)
-        familiarOrder = familiars.map(\.id)
-        persistFamiliarOrder()
-    }
-
-    /// Sort a freshly-loaded familiar list by the saved order; ids not in the
-    /// saved order (new familiars) keep their server order at the end.
-    private func applyFamiliarOrder(_ loaded: [Familiar]) -> [Familiar] {
-        guard !familiarOrder.isEmpty else { return loaded }
-        let rank = Dictionary(uniqueKeysWithValues: familiarOrder.enumerated().map { ($1, $0) })
-        return loaded.enumerated().sorted { a, b in
-            let ra = rank[a.element.id], rb = rank[b.element.id]
-            switch (ra, rb) {
-            case let (.some(x), .some(y)): return x < y
-            case (.some, .none): return true
-            case (.none, .some): return false
-            case (.none, .none): return a.offset < b.offset   // stable
-            }
-        }.map(\.element)
-    }
 
     // MARK: - Sessions (server-side, for per-familiar thread lists)
 
@@ -1887,20 +1952,136 @@ final class AppModel {
     }
 
     func deleteThread(_ thread: ChatThread) {
-        threads.removeAll { $0.id == thread.id }
+        guard let index = threads.firstIndex(where: { $0.id == thread.id }) else { return }
+        let removed = threads[index]
+        threads.remove(at: index)
         persistThreads()
         Haptics.success()
         showToast("Chat deleted", systemImage: "trash.fill")
+        fanOutThreadDelete([(index, removed)])
     }
 
     /// Delete several threads at once (bulk select); persists once.
     func deleteThreads(_ ids: Set<String>) {
         guard !ids.isEmpty else { return }
-        let n = ids.count
+        // Capture positions before removing so a rejected delete can put each
+        // chat back where it was rather than at the end of the list.
+        let removed = threads.enumerated()
+            .filter { ids.contains($0.element.id) }
+            .map { ($0.offset, $0.element) }
+        // Count what was actually matched, not what was selected: a stale
+        // selection can name ids no longer in the list, and reporting those
+        // would claim deletions that never happened.
+        guard !removed.isEmpty else { return }
+        let n = removed.count
         threads.removeAll { ids.contains($0.id) }
         persistThreads()
         Haptics.success()
         showToast("\(n) chat\(n == 1 ? "" : "s") deleted", systemImage: "trash.fill")
+        fanOutThreadDelete(removed)
+    }
+
+    /// Sacrifice every session behind the removed threads.
+    ///
+    /// Deletion is already applied locally, so this restores any thread whose
+    /// sessions the server refused — a delete that did not happen must not keep
+    /// looking like it did. Threads that own no session (never sent) are dropped
+    /// locally and need no server call. Successful earlier deletions shift the
+    /// failed rows' insertion points left, preserving the surviving original
+    /// order instead of blindly reusing stale absolute indexes.
+    private func fanOutThreadDelete(_ removed: [(Int, ChatThread)]) {
+        guard let client, !removed.isEmpty else { return }
+        let targets = removed.filter { !serverSessionIds($0.1).isEmpty }
+        guard !targets.isEmpty else { return }
+        let targetSessionIDs = Set(targets.flatMap { serverSessionIds($0.1) })
+        let suppressedSessions = Self.suppressServerSessions(
+            serverSessions,
+            withIDs: targetSessionIDs
+        )
+        self.serverSessions = suppressedSessions.remaining
+        Task { [weak self] in
+            var restoreIDs: Set<String> = []
+            var failedSessionIDs: Set<String> = []
+            var successfulSessionIDs: Set<String> = []
+            var failedSessions = 0
+            var totalSessions = 0
+            for (_, thread) in targets {
+                guard let sessionIds = self?.serverSessionIds(thread) else { continue }
+                totalSessions += sessionIds.count
+                var threadFailed = 0
+                await withTaskGroup(of: (String, Bool).self) { group in
+                    for sessionId in sessionIds {
+                        group.addTask {
+                            do {
+                                try await client.deleteSession(sessionId: sessionId)
+                                return (sessionId, true)
+                            } catch {
+                                return (sessionId, false)
+                            }
+                        }
+                    }
+                    for await (sessionId, ok) in group {
+                        if ok {
+                            successfulSessionIDs.insert(sessionId)
+                        } else {
+                            threadFailed += 1
+                            failedSessionIDs.insert(sessionId)
+                        }
+                    }
+                }
+                if threadFailed > 0 {
+                    failedSessions += threadFailed
+                    restoreIDs.insert(thread.id)
+                }
+            }
+            guard let self else { return }
+            self.serverSessions.removeAll { successfulSessionIDs.contains($0.id) }
+            for row in suppressedSessions.suppressed.filter({ failedSessionIDs.contains($0.id) })
+            where !self.serverSessions.contains(where: { $0.id == row.id }) {
+                self.serverSessions.append(row)
+            }
+            guard !restoreIDs.isEmpty else { return }
+            self.threads = Self.restoringDeletedThreads(
+                current: self.threads,
+                removed: removed,
+                restoring: restoreIDs
+            )
+            self.persistThreads()
+            self.reportDeletePartial(
+                restoredThreads: restoreIDs.count,
+                failedSessions: failedSessions,
+                totalSessions: totalSessions
+            )
+        }
+    }
+
+    static func suppressServerSessions(
+        _ sessions: [SessionRow],
+        withIDs ids: Set<String>
+    ) -> (remaining: [SessionRow], suppressed: [SessionRow]) {
+        (
+            sessions.filter { !ids.contains($0.id) },
+            sessions.filter { ids.contains($0.id) }
+        )
+    }
+
+    static func restoringDeletedThreads(
+        current: [ChatThread],
+        removed: [(index: Int, thread: ChatThread)],
+        restoring restoreIDs: Set<String>
+    ) -> [ChatThread] {
+        var restored = current
+        let successfulIndexes = removed
+            .filter { !restoreIDs.contains($0.thread.id) }
+            .map(\.index)
+
+        for item in removed.filter({ restoreIDs.contains($0.thread.id) }).sorted(by: { $0.index < $1.index }) {
+            guard !restored.contains(where: { $0.id == item.thread.id }) else { continue }
+            let successfulBefore = successfulIndexes.count { $0 < item.index }
+            let shiftedIndex = item.index - successfulBefore
+            restored.insert(item.thread, at: min(max(shiftedIndex, 0), restored.count))
+        }
+        return restored
     }
 
     /// Rename a thread (local title only); no-ops on a blank or unchanged name.
@@ -1919,6 +2100,9 @@ final class AppModel {
               target.archived != archived else { return }
         target.archived = archived
         persistThreads()
+        fanOutThreadFlag(target, verb: archived ? "archive" : "unarchive") { client, sessionId in
+            try await client.setSessionFlags(sessionId: sessionId, archived: archived)
+        } rollback: { $0.archived = !archived }
     }
 
     /// Pin or unpin a thread; pinned threads sort to the top of their list.
@@ -1927,6 +2111,59 @@ final class AppModel {
               target.pinned != pinned else { return }
         target.pinned = pinned
         persistThreads()
+        fanOutThreadFlag(target, verb: pinned ? "pin" : "unpin") { client, sessionId in
+            try await client.setSessionFlags(sessionId: sessionId, pinned: pinned)
+        } rollback: { $0.pinned = !pinned }
+    }
+
+    /// Session ids a thread owns on the server. A thread that has never been
+    /// sent owns none — there is nothing to persist remotely and its flags stay
+    /// device-local until the first send creates a session.
+    private func serverSessionIds(_ thread: ChatThread) -> [String] {
+        thread.sessionIds.values.filter { !$0.isEmpty }
+    }
+
+    /// In-flight flag writes per thread, so a rapid pin/unpin cannot let the
+    /// older result land last (same hazard as `statusWrites` for tasks).
+    @ObservationIgnored private var threadFlagWrites: [String: Task<Void, Never>] = [:]
+
+    /// Push a thread-level flag to every session the thread owns.
+    ///
+    /// The caller has already applied the change locally, so this is the
+    /// optimistic tail: on failure it rolls the flag back and says so, rather
+    /// than leaving the list showing a state the server never accepted. A
+    /// thread owns at most one session per familiar, so the fan-out is small
+    /// and runs unbounded — unlike the reminder fan-out, which is over an
+    /// arbitrary selection and is width-limited.
+    private func fanOutThreadFlag(
+        _ thread: ChatThread,
+        verb: String,
+        _ call: @escaping @Sendable (CaveClient, String) async throws -> Void,
+        rollback: @escaping (ChatThread) -> Void,
+    ) {
+        guard let client else { return }
+        let ids = serverSessionIds(thread)
+        guard !ids.isEmpty else { return }
+        let threadId = thread.id
+        threadFlagWrites[threadId]?.cancel()
+        threadFlagWrites[threadId] = Task { [weak self] in
+            var failed = 0
+            await withTaskGroup(of: Bool.self) { group in
+                for sessionId in ids {
+                    group.addTask {
+                        do { try await call(client, sessionId); return true } catch { return false }
+                    }
+                }
+                for await ok in group where !ok { failed += 1 }
+            }
+            guard let self, !Task.isCancelled else { return }
+            if failed > 0 {
+                rollback(thread)
+                self.persistThreads()
+                self.reportPartial(failed, of: ids.count, verb: verb)
+            }
+            self.threadFlagWrites[threadId] = nil
+        }
     }
 
     /// Mute or unmute a thread's notifications (persisted; honoured by the
@@ -2196,29 +2433,6 @@ final class AppModel {
             return
         }
         cardThreadLinks = map
-    }
-
-    private var familiarOrderFileURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("cave-familiar-order.json")
-    }
-
-    private func persistFamiliarOrder() {
-        do {
-            let data = try JSONEncoder().encode(familiarOrder)
-            try data.write(to: familiarOrderFileURL, options: .atomic)
-        } catch {
-            // Non-fatal: best-effort persistence.
-        }
-    }
-
-    private func loadFamiliarOrder() {
-        guard let data = try? Data(contentsOf: familiarOrderFileURL),
-              let order = try? JSONDecoder().decode([String].self, from: data) else {
-            return
-        }
-        familiarOrder = order
     }
 
     private var familiarViewsFileURL: URL {
