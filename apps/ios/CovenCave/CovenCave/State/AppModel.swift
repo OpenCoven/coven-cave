@@ -1644,6 +1644,13 @@ final class AppModel {
             }
     }
 
+    /// The thread a familiar's chat opens on: its newest unarchived direct
+    /// thread (pinned first, per `directThreads`). Nil when the familiar has
+    /// no eligible thread — callers start a new chat instead.
+    func mostRecentDirectThread(for familiarId: String) -> ChatThread? {
+        directThreads(for: familiarId).first { !$0.archived }
+    }
+
     /// Every group thread, newest first — shown as its own rows on the Chats
     /// home (a group has no single familiar to file it under).
     var groupThreads: [ChatThread] {
