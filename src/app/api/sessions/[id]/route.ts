@@ -6,6 +6,7 @@ import {
   extendSessionAutoArchiveLocal,
   sacrificeSessionLocal,
   setSessionKeepLocal,
+  setSessionPinnedLocal,
   setSessionTitle,
   summonSessionLocal,
 } from "@/lib/cave-config";
@@ -21,6 +22,8 @@ type PatchBody = {
   archived?: boolean;
   /** true → mark keep (never auto-archived), false → clear the mark. */
   keep?: boolean;
+  /** true → pin to the top of chat lists, false → unpin. */
+  pinned?: boolean;
   /** Push the auto-archive deadline out by N days from now (1–365). */
   extendDays?: number;
 };
@@ -59,6 +62,7 @@ export async function PATCH(
     title?: string | null;
     archivedAt?: string | null;
     keep?: boolean;
+    pinned?: boolean;
     extendedUntil?: string;
   } = { ok: true };
 
@@ -80,6 +84,10 @@ export async function PATCH(
 
   if (typeof body.keep === "boolean") {
     result.keep = await setSessionKeepLocal(id, body.keep);
+  }
+
+  if (typeof body.pinned === "boolean") {
+    result.pinned = await setSessionPinnedLocal(id, body.pinned);
   }
 
   if (extendDays != null) {

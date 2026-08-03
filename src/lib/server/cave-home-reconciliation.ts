@@ -938,6 +938,7 @@ const STATE_MAPS = [
   "sessionArchived",
   "sessionSacrificed",
   "sessionKeep",
+  "sessionPinned",
   "sessionArchiveExtendedUntil",
   "sessionOwned",
   "mergedPrAutoArchived",
@@ -947,6 +948,7 @@ const TIMESTAMP_STATE_MAPS = new Set<string>([
   "sessionArchived",
   "sessionSacrificed",
   "sessionKeep",
+  "sessionPinned",
   "sessionArchiveExtendedUntil",
   "sessionOwned",
 ]);
@@ -955,6 +957,7 @@ const DELETABLE_STATE_MAPS = new Set<string>([
   "sessionTitles",
   "sessionArchived",
   "sessionKeep",
+  "sessionPinned",
 ]);
 
 function mergeRecordMap(
