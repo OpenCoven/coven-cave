@@ -201,7 +201,7 @@ test("bucket filter announcements run outside React state updaters", () => {
   );
   assert.doesNotMatch(
     surface,
-    /setBucketFilter\(\s*(?:\(\s*prev\s*\)|prev)\s*=>/,
+    /\bsetBucketFilter\(\s*(?:\(\s*(?:[A-Za-z_$][\w$]*)?\s*\)|[A-Za-z_$][\w$]*)\s*=>/,
   );
 });
 
