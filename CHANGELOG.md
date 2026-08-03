@@ -9,9 +9,26 @@ breaking config changes; patch releases stay additive.
 
 ## [0.2.3] - 2026-08-03
 
-> _One-line teaser — edit before merge._
+> Live call transcripts, `/auto` mission mode, the analytics workbench, and a
+> familiars-first iOS chat home.
 
-Patch release on top of v0.2.2.
+Patch release on top of v0.2.2, covering 169 commits.
+
+### Highlights
+
+- **Voice** — live call transcript with spoken-word highlighting and in-call
+  replies, centralized voice configuration in Settings, and speech
+  normalization that trims per-segment TTS dead air.
+- **`/auto` mission mode** — status cards and feedback across desktop and iOS.
+- **Analytics** — familiar analytics rebuilt as a dock + stage workbench.
+- **Chat** — answer rewriting in the reader (Full / Condense / ELI5), prompt
+  echo with edit & rerun, and worktree citations as their own source cards.
+- **Research** — SVG/PNG infographic stat posters and screenplay-formatted
+  podcast scripts.
+- **iOS** — familiars-first chat home, server-persisted thread archive/pin/
+  delete, and scoped Select All and revert behavior.
+- **Windows** — the notch and quick chat stay visible across spaces and over
+  fullscreen apps.
 
 ### Changes
 - docs(search): define global search foundation
