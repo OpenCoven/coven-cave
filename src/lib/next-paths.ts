@@ -185,8 +185,7 @@ export function extractNextPaths(text: string): { visible: string; suggestions: 
     .map((l) => l.replace(/^\s*[-*•]\s*/, "").trim())
     .map((line) => parseNextPath(line, closeAt === -1))
     .filter((suggestion): suggestion is NextPath => suggestion !== null)
-    // At most 4 pills ever render — the chip row's product cap (an over-eager
-    // agent that lists more gets trimmed, not a fifth row).
+    // Keep the parser as the single product cap so every renderer stays aligned.
     .slice(0, DEFAULT_NEXT_PATHS_COUNT);
   const visible = (markerSafeText.slice(0, open) + markerSafeText.slice(blockEnd)).trimEnd();
   return { visible, suggestions };

@@ -376,7 +376,9 @@
 }
 
 .cave-chat-followups .cave-followup-cards__grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-template-columns: none;
 }
 
 /* The dock is the one place next steps read as a compact prompt palette: the
@@ -425,8 +427,7 @@
 
 .cave-followup-cards__grid {
   display: grid;
-  /* Chat.dc.html 2a ⑤ — suggestions take equal shares of ONE row (next-paths
-     caps the strip at 3), so the strip never renders a ragged 2+1 (#2672). */
+  /* Suggestions take equal shares of one row up to the parser's product cap. */
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
   gap: var(--space-2);
@@ -465,10 +466,6 @@
     grid-auto-flow: row;
     grid-auto-columns: unset;
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .cave-chat-followups .cave-followup-cards__grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .cave-chat-followups .cave-followup-card {
