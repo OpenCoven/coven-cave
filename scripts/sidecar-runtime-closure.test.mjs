@@ -7,6 +7,7 @@ import path from "node:path";
 import {
   assembleSidecarRuntime,
   collectTracedDependencies,
+  isInsideAllowedRoots,
   SIDECAR_FORBIDDEN_ROOTS,
   SIDECAR_NEXT_RUNTIME_FILES,
   SIDECAR_RUNTIME_BUDGETS,
@@ -530,3 +531,52 @@ try {
 }
 
 console.log("sidecar-runtime-closure.test.mjs: ok");
+
+// ── Allowed-root containment survives path aliases (cave-24dps) ─────────────
+// The roots are built with path.resolve, which normalizes but does not resolve
+// symlinks; a candidate that has been through realpath is fully canonical.
+// Comparing one spelling against the other rejected links that were plainly
+// inside an allowed root. On macOS this is the default state of every temp dir
+// (/var -> /private/var), which made the api suite unrunnable there. Built here
+// with an explicit symlink so it pins the behaviour on any platform.
+{
+  const aliasFixture = await mkdtemp(path.join(os.tmpdir(), "coven-sidecar-alias-"));
+  try {
+    const realRoot = path.join(aliasFixture, "real-root");
+    const inside = path.join(realRoot, "pkg");
+    const outside = path.join(aliasFixture, "outside");
+    await mkdir(inside, { recursive: true });
+    await mkdir(outside, { recursive: true });
+    const aliasRoot = path.join(aliasFixture, "alias-root");
+    let linked = true;
+    try {
+      await symlink(realRoot, aliasRoot, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (!["EPERM", "EACCES", "ENOSYS"].includes(error.code)) throw error;
+      linked = false;
+      console.warn(`sidecar-runtime-closure.test: alias containment skipped (${error.code})`);
+    }
+    if (linked) {
+      // The root is spelled through the symlink; the candidate is canonical.
+      assert.equal(
+        await isInsideAllowedRoots([aliasRoot], inside),
+        true,
+        "a canonical candidate is inside a root spelled through a symlink",
+      );
+      // The guard still refuses what is genuinely outside, under either spelling.
+      assert.equal(
+        await isInsideAllowedRoots([aliasRoot], outside),
+        false,
+        "canonicalizing roots must not admit paths outside them",
+      );
+    }
+    // A root that cannot be resolved contains nothing, and does not throw.
+    assert.equal(
+      await isInsideAllowedRoots([path.join(aliasFixture, "missing")], inside),
+      false,
+      "an unresolvable root contains nothing",
+    );
+  } finally {
+    await rm(aliasFixture, { recursive: true, force: true });
+  }
+}
