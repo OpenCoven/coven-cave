@@ -119,11 +119,16 @@ never fake production data.
   edits, and what was answered.
 
   Lanes, titles, owners, projects and the needs-a-human flag are real writes to
-  `/api/board`. The one thing the board cannot store is which card *waits on*
-  which, so that lives as the operator's chart overlay in the room's own
+  `/api/board`. Which card *waits on* which is, today, the one thing the board
+  cannot store, so it lives as the operator's chart overlay in the room's own
   surface state (`chart-room-model.ts`) and is drawn over the real cards —
   never written back as if the board knew about it. Dangling edges are pruned
-  on every read.
+  on every read. That overlay is per-familiar and per-browser, which is
+  precisely why it is being retired: the server and every other familiar are
+  blind to it. Dependencies become canonical board fields under
+  [`orchestration-ready-tasks.md`](./orchestration-ready-tasks.md), and the
+  overlay is imported once and removed. Until that lands, the overlay remains
+  the only dependency store and is still not authoritative.
 - **Review Deck** (`reviewer-review-deck`, role `reviewer`) — a tri-pane deck: a
   summary strip; a filterable, collapsible review queue built from sessions
   carrying PRs, working changes, or branches; a center change viewer with file

@@ -95,6 +95,24 @@ Hard rules, enforced by gates (not advisory):
   state copy). `scripts/ui-consistency.test.mjs` pins the §10 headings and
   the doc's factual claims (palette counts, token values, cited paths).
 
+## Orchestration-Ready Tasks (any Board or Chart Room work)
+
+[`docs/orchestration-ready-tasks.md`](docs/orchestration-ready-tasks.md) is the
+shared task contract for every familiar, surface, and orchestrator; the design
+rationale is in
+[`docs/superpowers/specs/2026-08-03-orchestration-ready-task-shape-design.md`](docs/superpowers/specs/2026-08-03-orchestration-ready-task-shape-design.md).
+
+The load-bearing rule: **a blocked task must carry unresolved dependencies, one
+named primary blocker, and one imperative next step.** Failure-blocked is the
+same contract — a failed run synthesizes an `execution` dependency rather than
+taking a weaker path into Blocked. Enforcement belongs in the `cave-board.ts`
+mutators, not route handlers, because Enhance calls `updateCard` directly.
+
+Two boundaries automation must not cross: `nextStep.requiresApproval` blocks
+dispatch outright, and human-authored dependencies or next steps are proposed
+against, never overwritten. Auto-application is gated on checks the Cave can
+verify itself — a model's self-reported confidence is not one of them.
+
 ## Starting The Tauri Desktop App
 
 Use the desktop shell when validating native-only surfaces such as the terminal,
