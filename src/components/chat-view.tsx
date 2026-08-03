@@ -101,7 +101,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
 import { ChatFindBand } from "@/components/chat-find-band";
-import { ChatParticipants } from "@/components/chat-participants";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ChatEmptyState } from "@/components/chat-empty-state";
 import { ChatNewDashboard } from "@/components/chat-new-dashboard";
@@ -325,8 +324,7 @@ type Props = {
    *  switched this view to a different session. */
   openVoiceSessionId?: string;
   daemonRunning?: boolean;
-  /** Roster behind the title row's participants cluster — who you could add to
-   *  this chat to make it a coven (cave-9xadi). */
+  /** Roster used to promote this chat into a coven from the familiar rail. */
   familiars?: Familiar[];
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
@@ -6259,12 +6257,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // are archive-free by default — chat-siderail-hide-archived) but the
   // transcript survives, reachable via the chat list's "Show archived" toggle
   // where the same menu item unarchives it back onto the rail.
-  // Participants cluster (cave-9xadi): adding a familiar turns this solo
-  // thread into a coven. A coven is a set of ordinary per-familiar sessions,
-  // so nothing migrates — the group pins THIS session as the host's, and the
-  // coven surface resumes it. The latch pair (tab + group id) mirrors how the
-  // Projects/Skills tabs hand off, so the surface lands on the new coven
-  // rather than its empty state.
+  // Rail drag-to-promote retains this callback for turning a solo chat into a coven.
   const promoteToCoven = useCallback(
     (addedId: string) => {
       const added = familiars.find((f) => f.id === addedId);
@@ -6291,11 +6284,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [announce, familiar.display_name, familiar.id, familiars, resolvedProjectId, sessionId],
   );
 
-  // Drag a familiar from the rail's switcher into this thread (cave-76yfq) —
-  // the same outcome as the participants `+`, which stays the primary,
-  // keyboard-reachable affordance. The zone arms only for a familiar this
-  // thread can actually accept, so dragging the host over their own transcript
-  // shows nothing rather than a target that would reject the drop.
+  // Drag a familiar from the rail's switcher into this thread (cave-76yfq).
+  // The zone arms only for a familiar this thread can actually accept, so
+  // dragging the host over their own transcript shows nothing rather than a
+  // target that would reject the drop.
   const [familiarDrag, setFamiliarDrag] = useState<FamiliarDragDetail | null>(null);
   const [dropHover, setDropHover] = useState(false);
 
@@ -7073,16 +7065,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           generateTitle={generateTitleFromTranscript}
         >
           <div className="cave-chat-session-actions">
-            {/* cave-9xadi: the participants cluster leads the action group —
-                who is in this conversation reads before what you can do to it.
-                The dashed + is the coven entry point, per the design's own
-                note: "a solo session becomes a coven by adding someone here." */}
-            <ChatParticipants
-              familiar={familiar}
-              familiars={familiars}
-              daemonRunning={daemonRunning ?? null}
-              onAddFamiliar={promoteToCoven}
-            />
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
                 no longer hides them). Voice joins the hover-reveal quick set;
                 Archive stays always-visible (the design's "Mark done" slot,

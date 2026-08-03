@@ -8,9 +8,8 @@
  * transcript) live in different panels, so they coordinate over window
  * CustomEvents plus a DataTransfer MIME rather than React props.
  *
- * This is a second affordance, never the only one — the participants cluster's
- * `+` remains the primary, keyboard-reachable path to the same outcome
- * (cave-9xadi). Drag is a shortcut for people already holding a mouse.
+ * Rail drag/drop is the retained optional pointer path for promoting a solo
+ * chat. Group chat owns the explicit add-familiar control once a coven is open.
  */
 
 /** DataTransfer type carried by a familiar drag (value = the familiar id). */
@@ -53,10 +52,9 @@ export function readFamiliarDrag(transfer: Pick<DataTransfer, "getData">): strin
 /**
  * Whether a dragged familiar may be dropped into this thread.
  *
- * Mirrors `addableFamiliars` — the rule the `+` already enforces — so the two
- * affordances can never disagree about who is addable. The host cannot be
- * added to their own thread, and an id that is not a known familiar is not a
- * drop target at all.
+ * Applies the eligibility set produced by `addableFamiliars` to rail drops.
+ * The host cannot be added to their own thread, and an id that is not a known
+ * familiar is not a drop target at all.
  */
 export function canDropFamiliar(input: {
   draggedId: string | null;

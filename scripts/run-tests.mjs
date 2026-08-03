@@ -491,7 +491,7 @@ export const SUITES = {
     "src/lib/canvas-generation-registry.test.ts",
     "src/components/chat-view-render-optimization.test.ts",
     "src/components/chat-attachment-cards.test.ts",
-    "src/components/chat-participants.test.ts",
+    "src/components/chat-header-chrome.test.ts",
     "src/components/chat-find-band.test.ts",
     "src/components/project-picker-frecency.test.ts",
     "src/components/chat-view-canvas-artifact.test.ts",
