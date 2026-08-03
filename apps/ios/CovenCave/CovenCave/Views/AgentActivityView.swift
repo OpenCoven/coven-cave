@@ -11,10 +11,17 @@ struct AgentActivityView: View {
     /// Whether the owning bubble is still streaming — the only state that may
     /// animate a spinner, so a persisted step can never spin after reload.
     let streaming: Bool
+    /// Identifies the owning message. The expanded/collapsed choice is keyed by
+    /// it in `AppModel` rather than held here, because a transcript rebuild
+    /// re-creates this view and view-local `@State` would go with it — the
+    /// trail collapsing itself moments after the reader opened it (cave-m5tao).
+    let messageId: String
 
-    @State private var expanded = false
+    @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var expanded: Bool { app.expandedActivityMessages.contains(messageId) }
 
     /// Expanded list cap — the tail is where the action is, and a bubble
     /// shouldn't scroll for pages of settled steps.
@@ -35,7 +42,11 @@ struct AgentActivityView: View {
     private var chipButton: some View {
         Button {
             withAnimation(reduceMotion ? nil : .snappy(duration: 0.22)) {
-                expanded.toggle()
+                if expanded {
+                    app.expandedActivityMessages.remove(messageId)
+                } else {
+                    app.expandedActivityMessages.insert(messageId)
+                }
             }
             Haptics.tap()
         } label: {

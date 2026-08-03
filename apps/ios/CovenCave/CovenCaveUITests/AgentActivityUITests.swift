@@ -29,17 +29,15 @@ final class AgentActivityUITests: XCTestCase {
         // one of these rows read "{".
         let firstArgument = app.staticTexts["src/lib/tool-arg-summary.ts"]
         chip.tap()
-
-        // Expansion is view-local `@State`, so a transcript rebuild arriving
-        // just after the tap re-creates the view and collapses the trail again
-        // — observed once in three runs, with the chevron back to its closed
-        // position. Re-open rather than fail the run on it; the underlying
-        // state-reset is tracked separately.
-        if !firstArgument.waitForExistence(timeout: 5) {
-            chip.tap()
-        }
         XCTAssertTrue(firstArgument.waitForExistence(timeout: 5),
                       "a tool row shows its argument, not a brace")
+
+        // One tap, and it stays open. The expansion used to be view-local
+        // @State, so a transcript rebuild landing just after the tap re-created
+        // the row and collapsed the trail under the reader (cave-m5tao).
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertTrue(firstArgument.exists,
+                      "the trail stays open — a re-created row re-reads the choice")
         XCTAssertTrue(app.staticTexts["pnpm test --filter tool-arg"].exists,
                       "a shell row leads with its command")
 

@@ -107,6 +107,15 @@ final class AppModel {
     /// matching hydrated thread can be opened, then is consumed exactly once.
     var launchThreadId: String?
 
+    /// Messages whose agent-activity trail the reader has opened.
+    ///
+    /// Deliberately not view-local `@State`: a transcript rebuild re-creates
+    /// the row, and state that lives on the row goes with it — silently
+    /// collapsing a trail the reader had just opened (cave-m5tao). Holding the
+    /// choice here means a re-created row re-reads it and stays open. In-memory
+    /// only; expansion is a reading position, not something to persist.
+    var expandedActivityMessages: Set<String> = []
+
     #if DEBUG
     /// Process-lifetime marker for the deterministic cold-connection preview.
     /// The app lifecycle uses it to skip only live connection work.
