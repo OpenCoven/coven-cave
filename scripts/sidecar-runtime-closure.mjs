@@ -182,6 +182,49 @@ function isInside(root, candidate) {
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
 }
 
+/**
+ * Containment check that survives symlinks (cave-awj6q).
+ *
+ * isInside only path.resolve()s — that normalises `..` and makes a path
+ * absolute, but does NOT follow links. Comparing a realpath'd link target
+ * against roots that were never resolved compares two different namespaces, so
+ * a legitimate link is rejected purely because its spelling changed. On macOS
+ * every temp path hits this, since /var is a symlink to /private/var:
+ *
+ *   /var/folders/.../locked-production/node_modules/next
+ *   -> /private/var/folders/.../project/node_modules/unrelated-next
+ *
+ * Both are inside the same directory; nothing escaped. Not macOS-specific —
+ * any checkout reached through a symlinked component (home, volume mount,
+ * linked worktree) produces the same false rejection in a real build.
+ *
+ * Raw comparison first: it costs no syscall and answers the overwhelmingly
+ * common case where nothing is linked. Only when that fails do we pay for
+ * realpath, which is precisely the case resolution exists for.
+ */
+async function isInsideAllowedRoots(roots, candidate) {
+  if (roots.some((root) => isInside(root, candidate))) return true;
+
+  let resolvedCandidate;
+  try {
+    resolvedCandidate = await realpath(candidate);
+  } catch {
+    return false;
+  }
+  for (const root of roots) {
+    let resolvedRoot;
+    try {
+      resolvedRoot = await realpath(root);
+    } catch {
+      // A root that does not exist yet cannot contain anything, and the raw
+      // comparison above already had its chance.
+      continue;
+    }
+    if (isInside(resolvedRoot, resolvedCandidate)) return true;
+  }
+  return false;
+}
+
 function packageParts(relativePath) {
   const parts = relativePath.split(path.sep);
   if (parts[0] !== "node_modules") return null;
@@ -214,7 +257,7 @@ function shouldSkipPackageEntry(relativePath, entryName, _isDirectory) {
 }
 
 async function copyResolvedEntry(source, destination, options, relativePath = "") {
-  if (!options.allowedLinkRoots.some((root) => isInside(root, source))) {
+  if (!(await isInsideAllowedRoots(options.allowedLinkRoots, source))) {
     throw new Error(`sidecar runtime input escapes its allowed roots: ${source}`);
   }
   const metadata = await lstat(source);
@@ -226,7 +269,7 @@ async function copyResolvedEntry(source, destination, options, relativePath = ""
       throw new Error(`sidecar runtime input must not contain links: ${source}`);
     }
     resolvedSource = await realpath(source);
-    if (!options.allowedLinkRoots.some((root) => isInside(root, resolvedSource))) {
+    if (!(await isInsideAllowedRoots(options.allowedLinkRoots, resolvedSource))) {
       throw new Error(`sidecar dependency link escapes its allowed roots: ${source} -> ${resolvedSource}`);
     }
     resolvedMetadata = await stat(resolvedSource);
