@@ -809,6 +809,45 @@ struct CaveClient {
 
     struct ReminderActionResponse: Decodable { var ok: Bool; var error: String?; var item: Reminder? }
 
+    /// What a bulk call actually did, per item (cave-ioswipe.2). The endpoint
+    /// echoes only what it changed, so an id requested but present in NEITHER
+    /// list did not take effect — that absence is the per-item failure signal,
+    /// and it is why a partial failure no longer has to revert the whole batch.
+    struct BulkInboxOutcome: Decodable {
+        var ok: Bool
+        var updated: [Reminder]
+        var deletedIds: [String]
+
+        enum CodingKeys: String, CodingKey { case ok, updated, deletedIds }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+            updated = (try? c.decode([Reminder].self, forKey: .updated)) ?? []
+            deletedIds = (try? c.decode([String].self, forKey: .deletedIds)) ?? []
+        }
+    }
+
+    /// `POST /api/inbox/bulk` — one round trip for read/unread/dismiss/done/
+    /// delete over many ids, replacing N sequential per-id calls.
+    ///
+    /// Snooze is deliberately NOT routed here: the endpoint has no `snooze`
+    /// action and no slot for its `minutes` argument. AppModel fans that one out
+    /// with bounded concurrency instead, which the bead's acceptance criteria
+    /// allow ("one round trip OR bounded concurrency"). Extending the server
+    /// action set is a separate, deliberate change — not something to slip in.
+    func bulkInboxAction(_ action: String, ids: [String]) async throws -> BulkInboxOutcome {
+        let body = try JSONSerialization.data(withJSONObject: ["action": action, "ids": ids])
+        let req = try request("api/inbox/bulk", method: "POST", body: body)
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(BulkInboxOutcome.self, from: data)
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
     /// `POST /api/inbox/{id}/{action}` — done / dismiss / snooze. Returns the
     /// server's updated item when present.
     @discardableResult

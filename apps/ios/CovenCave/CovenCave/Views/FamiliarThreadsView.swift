@@ -102,8 +102,10 @@ struct FamiliarThreadsView: View {
                 }
             }
         }
+        // Pull-to-refresh is explicit user intent — always hit the server.
         .refreshable { await app.loadSessions() }
-        .task { await app.loadSessions() }
+        // Re-appearance is not: reuse a list fetched moments ago (cave-ioswipe.5).
+        .task { await app.loadSessionsIfStale() }
         .onAppear { app.markFamiliarViewed([familiar.id]) }
         .safeAreaInset(edge: .bottom) {
             if selectMode {
