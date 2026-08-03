@@ -1,6 +1,4 @@
 import type { IconName } from "@/lib/icon";
-import type { SkillBrowserEntry } from "@/lib/skill-directory";
-import type { SkillEntry as SkillDetailEntry } from "@/components/skill-detail-drawer";
 import type { KindFilter, SortKey } from "@/lib/marketplace-catalog";
 import { caveCrafts } from "@/lib/feature-flags";
 
@@ -72,17 +70,3 @@ export const MARKETPLACE_SORT_OPTIONS: ReadonlyArray<{ id: SortKey; label: strin
   { id: "installed", label: "Installed first" },
 ];
 
-/** Maps a scanned local skill to the detail drawer's stable input contract. */
-export function toSkillDetail(skill: SkillBrowserEntry): SkillDetailEntry {
-  const owner = skill.owner && skill.repo ? `${skill.owner}/${skill.repo}` : skill.owner;
-  return {
-    id: skill.id,
-    name: skill.name,
-    description: skill.description,
-    version: skill.local?.version,
-    category: skill.installed ? "Installed" : "Directory",
-    owner,
-    tags: [...new Set([...(skill.tags ?? []), ...(skill.topics ?? [])])],
-    source: skill.path,
-  };
-}

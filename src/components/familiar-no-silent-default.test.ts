@@ -26,8 +26,6 @@ const chatListSource = read("./chat-list.tsx");
 const chatRouter = code("./chat-router.tsx");
 const skillBuilder = code("./marketplace/skill-builder.tsx");
 const marketplace = read("./marketplace-view.tsx");
-const drawer = code("./skill-detail-drawer.tsx");
-const drawerSource = read("./skill-detail-drawer.tsx");
 
 // ── Starting a chat ──────────────────────────────────────────────────────────
 // Scoped to one familiar, that choice carries. Unscoped, hand null down so
@@ -94,8 +92,18 @@ assert.match(marketplace, /activeFamiliarId=\{activeFamiliarId\}/, "the surface 
 // The eval loop is per-familiar. Rendering familiars[0]'s status unlabelled, in
 // a panel whose own copy says every familiar can load the skill, was showing
 // one arbitrary familiar's state as if it were the skill's.
-assert.doesNotMatch(drawer, /familiars\[0\]/, "the skill drawer does not query an arbitrary familiar");
-assert.doesNotMatch(drawer, /Eval loop:/, "the unattributed eval-loop readout is gone");
-assert.match(drawerSource, /Every familiar can load this skill/, "the panel still states the skill is not familiar-owned");
+// The skill drawer's version of this bug (it queried familiars[0] for an
+// eval-loop status and rendered it unattributed) is gone by a stronger route:
+// the component was orphaned — nothing imported it — and has been deleted
+// outright, along with the adapter that fed it. Assert the file's absence
+// rather than its contents.
+// Assert ENOENT specifically. A bare assert.throws passes for ANY error — a
+// renamed directory or a bad URL would satisfy it while telling us nothing
+// about whether the drawer is gone, which is the one thing this pins.
+assert.throws(
+  () => readFileSync(new URL("./skill-detail-drawer.tsx", import.meta.url)),
+  (error) => error instanceof Error && error.code === "ENOENT",
+  "the orphaned skill drawer is deleted, not merely corrected",
+);
 
 console.log("familiar-no-silent-default.test.ts OK");
