@@ -1225,11 +1225,21 @@ final class AppModel {
                 group.addTask { (index, await Self.probe(base)) }
             }
             var collected = [ProbeResult?](repeating: nil, count: rest.count)
+            // Short-circuit WITHOUT breaking ordered adjudication. Candidate
+            // order is a preference ranking, so cancelling on the first .ok to
+            // *arrive* would let a later port win purely on timing and get
+            // persisted over an earlier one that also worked. Instead, stop only
+            // once some candidate has succeeded AND every candidate ranked above
+            // it has already reported — at which point no earlier winner is
+            // still possible and the remaining probes cannot change the answer.
+            var earliestSuccess: Int?
             for await (index, result) in group {
                 collected[index] = result
-                // Short-circuit: a reachable endpoint is enough, so stop paying
-                // for the slowest probe in the list.
-                if case .ok = result {
+                if case .ok = result, index < earliestSuccess ?? Int.max {
+                    earliestSuccess = index
+                }
+                if let winner = earliestSuccess,
+                   (0..<winner).allSatisfy({ collected[$0] != nil }) {
                     group.cancelAll()
                     break
                 }

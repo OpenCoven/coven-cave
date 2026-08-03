@@ -204,10 +204,20 @@ assert.match(
 );
 
 // The unpaired sweep stops paying for the slowest probe once one answers.
+// Short-circuit, but not at the cost of ordered adjudication: candidate order
+// is a preference ranking, so cancelling on the first .ok to ARRIVE would let a
+// later port win on timing and be persisted over an earlier one that also
+// worked. The sweep may only stop once every candidate ranked above the winner
+// has reported.
 assert.match(
   model,
-  /if case \.ok = result \{\s*\n\s*group\.cancelAll\(\)/,
-  "the concurrent sweep must cancel remaining probes on first success",
+  /group\.cancelAll\(\)/,
+  "the concurrent sweep must cancel remaining probes once the answer is settled",
+);
+assert.match(
+  model,
+  /\(0\.\.<winner\)\.allSatisfy\(\{ collected\[\$0\] != nil \}\)/,
+  "it may only stop once no higher-ranked candidate can still win — order is preference, not timing",
 );
 
 // Persisting the winner is what makes the fast path available next launch.
