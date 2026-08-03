@@ -22,6 +22,10 @@ export type CallState = {
   /** How a live loop-based call hears (cave-vpe1); unset for realtime providers. */
   earsEngine?: VoiceEarsEngine;
   mouthEngine?: VoiceMouthEngine;
+  /** Whether this call's provider accepts a typed turn (cave-zr9dx). The live
+   *  session object is a ref, so the reply box needs the answer in state to
+   *  render at all. */
+  canSendText?: boolean;
 };
 
 export const initialState: CallState = { state: "idle", muted: false };
@@ -32,7 +36,13 @@ export type CallEvent =
   | { type: "MIC_FAILED"; errorCode: string; hint?: string; canOpenSettings?: boolean }
   | { type: "SESSION_GRANTED"; callId: string }
   | { type: "SESSION_FAILED"; errorCode: string; missingKey?: string; hint?: string }
-  | { type: "CONNECTED"; startedAt: number; earsEngine?: VoiceEarsEngine; mouthEngine?: VoiceMouthEngine }
+  | {
+      type: "CONNECTED";
+      startedAt: number;
+      earsEngine?: VoiceEarsEngine;
+      mouthEngine?: VoiceMouthEngine;
+      canSendText?: boolean;
+    }
   | { type: "DISCONNECTED" }
   | { type: "PROVIDER_ERROR"; errorCode: string; hint?: string }
   | { type: "CLOSE_REQUEST" }
@@ -69,7 +79,14 @@ export function reduce(s: CallState, ev: CallEvent): CallState {
       };
     case "CONNECTED":
       if (s.state !== "connecting") return s;
-      return { ...s, state: "live", startedAt: ev.startedAt, earsEngine: ev.earsEngine, mouthEngine: ev.mouthEngine };
+      return {
+        ...s,
+        state: "live",
+        startedAt: ev.startedAt,
+        earsEngine: ev.earsEngine,
+        mouthEngine: ev.mouthEngine,
+        canSendText: ev.canSendText,
+      };
     case "PROVIDER_ERROR":
       // Explicitly clear missingKey — a stale key name from an earlier mint
       // failure must not dress an unrelated connect error as key-fixable.

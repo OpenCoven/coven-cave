@@ -216,9 +216,29 @@ const chatSendSource = read("../app/api/chat/send/route.ts");
 assert.match(chatSendSource, /env: harnessSpawnEnv\(body\.familiarId\)/, "familiar chat spawn injects only granted keys");
 assert.doesNotMatch(chatSendSource, /covenSpawnEnv/, "chat/send no longer forwards the unscoped spawn env");
 
+// The one-shot spawn moved into a shared runner when the reader's Rewrite
+// control needed it too (cave-xailn). Asserted end to end: the runner scopes
+// the env by familiar, and every caller hands it a familiar id — a runner that
+// scopes correctly is worthless if a caller passes nothing.
+const oneShotSource = read("./server/coven-oneshot.ts");
+assert.match(oneShotSource, /env: harnessSpawnEnv\(familiarId\)/, "one-shot harness spawn is familiar-scoped");
+assert.doesNotMatch(oneShotSource, /covenSpawnEnv/);
+
 const enrichSource = read("../app/api/board/enrich-steps/route.ts");
-assert.match(enrichSource, /env: harnessSpawnEnv\(familiarId\)/, "enrich-steps harness spawn is familiar-scoped");
+assert.match(
+  enrichSource,
+  /runCovenOneShot\(args, req\.signal, workspace, familiarId\)/,
+  "enrich-steps runs through the shared runner with its familiar id",
+);
 assert.doesNotMatch(enrichSource, /covenSpawnEnv/);
+
+const rewriteSource = read("../app/api/chat/rewrite/route.ts");
+assert.match(
+  rewriteSource,
+  /runCovenOneShot\(args, req\.signal, workspace, familiarId\)/,
+  "reader rewrite runs through the shared runner with its familiar id",
+);
+assert.doesNotMatch(rewriteSource, /covenSpawnEnv/);
 
 const automationSource = read("./server/automation-runner.ts");
 assert.match(automationSource, /env: harnessSpawnEnv\(\)/, "automation runs no longer inherit the full process env");

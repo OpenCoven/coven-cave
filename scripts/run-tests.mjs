@@ -225,6 +225,7 @@ export const SUITES = {
     "src/lib/chat-thread-instruments.test.ts",
     "src/lib/chat-tool-batches.test.ts",
     "src/lib/reader-outline.test.ts",
+    "src/lib/reader-rewrite.test.ts",
     "src/lib/reader-provenance.test.ts",
     "src/lib/chat-queue-followups.test.ts",
     "src/lib/chat-review-requests.test.ts",
@@ -1323,6 +1324,10 @@ export const SUITES = {
     "src/lib/voice/local-tts.test.ts",
     "src/lib/voice/speak-message.test.ts",
     "src/lib/voice/speech-loop.test.ts",
+    "src/lib/voice/call-transcript.test.ts",
+    // Landed unwired with /auto mission mode (3bde7b0); check:tests-wired
+    // fails on `main` until it is listed. Passes as-is.
+    "src/lib/auto-status-blocks.test.ts",
     "src/lib/voice/microphone-access.test.ts",
     "src/lib/voice/native-stt.test.ts",
     "src/lib/voice/familiar-brain.test.ts",
@@ -1437,6 +1442,7 @@ export const SUITES = {
     "scripts/ios-task-notes-reader.test.mjs",
     "scripts/ios-task-notes-edit.test.mjs",
     "scripts/ios-task-actions.test.mjs",
+    "scripts/ios-task-revert-scope.test.mjs",
     "scripts/ios-ipad-split-tasks.test.mjs",
     "scripts/ios-ipad-split-chats.test.mjs",
     "scripts/ios-task-search-familiar-scope.test.mjs",
