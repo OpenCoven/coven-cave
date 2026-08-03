@@ -378,13 +378,12 @@ struct ChatView: View {
 
     @ViewBuilder
     private var projectContext: some View {
-        if thread.needsProjectSelection || !thread.canSendMessages {
+        if thread.canChangeProject && (thread.needsProjectSelection || !thread.canSendMessages) {
             ChatProjectPicker(
                 familiarIds: thread.familiarIds,
                 recentRoots: app.recentProjectRoots,
                 selectedRoot: $thread.projectRoot,
                 isResolved: $projectResolved,
-                locked: !thread.canChangeProject,
                 requiresExplicitSelection: thread.needsProjectSelection
             ) {
                 thread.needsProjectSelection = false
