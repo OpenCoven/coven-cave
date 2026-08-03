@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 export const SUITES = {
   app: [
     "src/lib/array-content-equal.test.ts",
+    "src/lib/native-notify.test.ts",
     "src/lib/session-list-equal.test.ts",
     "src/lib/familiar-workspace-sessions.test.ts",
     "src/lib/session-list-deletes.test.ts",
