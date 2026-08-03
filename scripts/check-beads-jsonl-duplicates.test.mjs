@@ -12,7 +12,9 @@
 // check alone would have missed the causing event entirely.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -60,6 +62,16 @@ test("copies that share an id but differ are flagged as NOT identical", () => {
   assert.equal(dup.identical, false, "differing copies must not look safe to auto-drop");
 });
 
+test("copies differing only by whitespace are NOT called identical", () => {
+  // `identical` claims byte-identity and is the signal that a copy is safe to
+  // drop. Comparing trimmed text would overstate that: these two lines encode
+  // the same record but are not the same bytes, so a human should look.
+  const text = [rec("a"), "  " + rec("a")].join("\n");
+  const [dup] = findDuplicateIds(text).duplicates;
+  assert.equal(dup.id, "a");
+  assert.equal(dup.identical, false, "whitespace-only differences must not read as byte-identical");
+});
+
 test("unparseable lines are reported rather than silently skipped", () => {
   const text = [rec("a"), "{not json", rec("b")].join("\n");
   const { malformed, records } = findDuplicateIds(text);
@@ -95,15 +107,61 @@ test("the repository's own .beads/*.jsonl have no duplicate ids", () => {
   }
 });
 
-test("the guard is reachable as a CLI, not only as a module", () => {
-  // A checker nothing invokes is not a guard. Keep the package script and the
-  // executable entry point pinned together.
+test("the guard actually RUNS as a CLI and exits non-zero on duplicates", () => {
+  // Deliberately executes the script instead of matching its source. A
+  // source-text pin cannot tell a working CLI entry from a broken one: the
+  // original spelling (`file://${process.argv[1]}`) matched the pattern and
+  // worked on a plain POSIX path, yet would silently no-op under a checkout
+  // path containing a space, because it does not percent-encode. A checker
+  // that quietly does nothing is the worst failure mode here, so prove it
+  // runs.
+  const script = join(repoRoot, "scripts/check-beads-jsonl-duplicates.mjs");
+
+  const dir = mkdtempSync(join(tmpdir(), "beads-dup-guard-"));
+  const clean = join(dir, "clean.jsonl");
+  const dirty = join(dir, "dirty.jsonl");
+  writeFileSync(clean, [rec("a"), rec("b")].join("\n") + "\n");
+  writeFileSync(dirty, [rec("a"), rec("b"), rec("a")].join("\n") + "\n");
+
+  const run = (file) => spawnSync(process.execPath, [script, file], { encoding: "utf8" });
+
+  const ok = run(clean);
+  assert.equal(ok.status, 0, `clean file should exit 0, got ${ok.status}\n${ok.stderr}`);
+  assert.match(ok.stdout, /no duplicate ids/, "and say so on stdout");
+
+  const bad = run(dirty);
+  assert.equal(bad.status, 1, "a duplicated id must exit non-zero or nothing gates on it");
+  assert.match(bad.stderr, /1 duplicated id/, "and name the problem on stderr");
+  assert.match(bad.stderr, /cave-1poit/, "pointing at the bead that explains the cause");
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a checkout path containing a space still runs the CLI", () => {
+  // The concrete regression the percent-encoding fix addresses: copy the
+  // script under a directory with a space and confirm it still executes.
+  const dir = mkdtempSync(join(tmpdir(), "beads dup guard "));
+  const script = join(dir, "check.mjs");
+  copyFileSync(join(repoRoot, "scripts/check-beads-jsonl-duplicates.mjs"), script);
+  const dirty = join(dir, "dirty.jsonl");
+  writeFileSync(dirty, [rec("a"), rec("a")].join("\n") + "\n");
+
+  const res = spawnSync(process.execPath, [script, dirty], { encoding: "utf8" });
+  assert.equal(
+    res.status,
+    1,
+    `CLI must still run from a path with a space (got ${res.status}); ` +
+      "a naive file:// concatenation silently no-ops here",
+  );
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("the guard is exposed as a package script", () => {
+  // A checker nothing invokes is not a guard.
   const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
   assert.equal(
     pkg.scripts["check:beads-jsonl"],
     "node scripts/check-beads-jsonl-duplicates.mjs",
     "package.json must expose the guard as a runnable script",
   );
-  const source = readFileSync(join(repoRoot, "scripts/check-beads-jsonl-duplicates.mjs"), "utf8");
-  assert.match(source, /import\.meta\.url === `file:\/\/\$\{process\.argv\[1\]\}`/, "has a CLI entry");
 });

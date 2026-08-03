@@ -20,8 +20,9 @@
 // arrives via a PR, and the wired test calls this. The pre-commit hook is fast
 // local feedback, not the guarantee.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * Scan JSONL text for repeated `id` values and unparseable lines.
@@ -55,7 +56,11 @@ export function findDuplicateIds(text) {
     if (typeof id !== "string" || id === "") continue;
     const entry = byId.get(id) ?? { lines: [], texts: new Set() };
     entry.lines.push(i + 1);
-    entry.texts.add(trimmed);
+    // Record the RAW line, not the trimmed one. `identical` is the signal that
+    // a copy is safe to drop, and it claims byte-identity — comparing trimmed
+    // text would call two lines identical when they differ by leading or
+    // trailing whitespace, which is precisely the claim it must not overstate.
+    entry.texts.add(raw);
     byId.set(id, entry);
   }
 
@@ -153,6 +158,28 @@ function main(argv) {
   return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// "Am I being run directly?" — compared as REAL paths, not as URL strings.
+//
+// Two ways the naive `import.meta.url === \`file://${process.argv[1]}\`` goes
+// wrong, and both make main() silently never run, which is the worst failure
+// mode for a checker:
+//   1. no percent-encoding — a checkout under a path containing a space gives
+//      `file:///tmp/a b/x.mjs` where import.meta.url is `file:///tmp/a%20b/x.mjs`;
+//   2. symlinks — on macOS `/var` is a symlink to `/private/var`, so argv[1]
+//      can be `/var/folders/...` while import.meta.url resolves to
+//      `/private/var/folders/...`. pathToFileURL alone does NOT fix this.
+// realpathSync on both sides collapses both cases. Verified by an executable
+// test that runs this file from a temp directory whose name contains a space.
+function isDirectRun() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectRun()) {
   process.exit(main(process.argv.slice(2)));
 }
