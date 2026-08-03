@@ -329,6 +329,8 @@ export function ComposerContextChips(props: ComposerContextProps) {
         modelOptions={context.config.modelOptions}
         onPickRuntime={context.config.onPickRuntime}
         onPickModel={context.config.onPickModel}
+        promotableModel={context.config.promotableModel ?? null}
+        onPromoteModelToDefault={context.config.onPromoteModelToDefault}
       />
       {context.hasGit ? (
         <GitBranchMenuPopover
