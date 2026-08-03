@@ -1449,7 +1449,6 @@ export const SUITES = {
     "scripts/ios-export-all-zip.test.mjs",
     "scripts/ios-bulk-delete-threads.test.mjs",
     "scripts/ios-export-selected-zip.test.mjs",
-    "scripts/ios-reorder-familiars.test.mjs",
     "scripts/ios-theme.test.mjs",
     "scripts/ios-auto-reconnect.test.mjs",
     "scripts/ios-ats-protections.test.mjs",

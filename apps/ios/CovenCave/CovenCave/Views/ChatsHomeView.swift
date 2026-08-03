@@ -35,7 +35,6 @@ struct ChatsHomeView: View {
     @State private var pendingDelete: ChatThread?
     /// Rail avatars aren't List rows, so familiar reordering happens in a
     /// dedicated drag-to-reorder sheet instead of List edit mode.
-    @State private var showReorder = false
     /// Reveal archived chats in the list.
     @State private var showArchived = false
     /// All-familiars roster sheet.
@@ -226,10 +225,6 @@ struct ChatsHomeView: View {
             Text("Chats")
                 .font(.largeTitle.weight(.bold))
             Spacer()
-            if canReorder {
-                Button("Reorder") { showReorder = true }
-                    .font(.subheadline.weight(.medium))
-            }
             CircularIconButton(systemImage: "folder",
                                label: "Projects") {
                 showProjects = true
@@ -277,12 +272,6 @@ struct ChatsHomeView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .glassChrome(.bottom)
-    }
-
-    /// Reordering is only meaningful with ≥2 familiars and no active search
-    /// filter (the sheet reorders the full, unfiltered list).
-    private var canReorder: Bool {
-        app.familiars.count > 1 && query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var homeList: some View {
@@ -385,7 +374,6 @@ struct ChatsHomeView: View {
             Button("Delete", role: .destructive) { app.deleteThread(thread) }
             Button("Cancel", role: .cancel) {}
         } message: { thread in Text(thread.title) }
-        .sheet(isPresented: $showReorder) { ReorderFamiliarsSheet() }
     }
 
     private func consumeGlobalRequests() {
@@ -680,97 +668,6 @@ struct RecentThreadRow: View {
         } else if let last = lastMessage {
             let prefix = senderPrefix(for: last).map { $0 + ": " } ?? ""
             parts.append(prefix + flattened(last.text))
-        }
-        return parts.joined(separator: ", ")
-    }
-
-    private static let relativeFormatter = RelativeDateTimeFormatter()
-}
-
-/// Drag-to-reorder sheet for the familiar rail (rail avatars aren't List rows,
-/// so reordering lives here instead of List edit mode).
-struct ReorderFamiliarsSheet: View {
-    @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(app.familiars) { familiar in
-                    FamiliarRow(familiar: familiar)
-                }
-                .onMove { source, destination in
-                    app.moveFamiliar(fromOffsets: source, toOffset: destination)
-                }
-            }
-            .listStyle(.plain)
-            .themedListBackground()
-            .environment(\.editMode, .constant(.active))
-            .navigationTitle("Reorder familiars")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-        .themedSheetBackground()
-        .presentationDetents([.medium, .large])
-    }
-}
-
-/// A familiar row (avatar, name, role, trailing chat count + last activity),
-/// used by the reorder sheet.
-struct FamiliarRow: View {
-    @Environment(AppModel.self) private var app
-    @Environment(\.chrome) private var chrome
-    let familiar: Familiar
-
-    var body: some View {
-        HStack(spacing: 12) {
-            AvatarView(familiar: familiar,
-                       url: app.client?.avatarURL(for: familiar),
-                       size: 48, showStatus: true)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    // Unread: activity newer than the last time you opened it.
-                    if app.hasUnread(familiar.id) {
-                        Circle().fill(chrome.accent).frame(width: 7, height: 7)
-                    }
-                    Text(familiar.displayName).font(.headline).lineLimit(1)
-                }
-                if let role = familiar.role, !role.isEmpty {
-                    Text(role).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 3) {
-                let count = app.threadCount(for: familiar.id)
-                if let last = app.lastActivity(for: familiar.id) {
-                    Text(last, format: .relative(presentation: .numeric))
-                        .font(.caption).foregroundStyle(.tertiary)
-                }
-                Text(count == 0 ? "No chats" : "^[\(count) chat](inflect: true)")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        // Read the whole row as one VoiceOver element instead of four fragments.
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
-        .accessibilityHint("Opens chats with this familiar")
-    }
-
-    /// One spoken summary of the row: name, role, chat count, last activity.
-    private var accessibilityText: String {
-        var parts: [String] = [familiar.displayName]
-        if app.hasUnread(familiar.id) { parts.append("unread") }
-        if let role = familiar.role, !role.isEmpty { parts.append(role) }
-        let count = app.threadCount(for: familiar.id)
-        parts.append(count == 1 ? "1 chat" : "\(count) chats")
-        if let last = app.lastActivity(for: familiar.id) {
-            parts.append("last active " + Self.relativeFormatter.localizedString(for: last, relativeTo: Date()))
         }
         return parts.joined(separator: ", ")
     }
