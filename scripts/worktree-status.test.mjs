@@ -102,6 +102,28 @@ test("unmerged + uncommitted work is DIRTY", () => {
   }
 });
 
+test("rev-list failure fails closed to SCRATCH, never SAFE-RETIRE", () => {
+  const dir = scaffold();
+  try {
+    // A clean worktree at the main tip — normally the clearest SAFE-RETIRE.
+    git(dir, "branch", "feat/x", "main");
+    git(dir, "worktree", "add", "-q", join(dir, "wt-x"), "feat/x");
+    // Compare against a branch that does not exist, so
+    // `rev-list <default>...feat/x` errors. A false SAFE-RETIRE here is exactly
+    // the data-loss bug the fail-closed rule guards against: the script must
+    // degrade to SCRATCH, not imply "merged/identical, safe to delete".
+    const out = execFileSync("node", [script, "--json"], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, WT_DEFAULT_BRANCH: "no-such-branch" },
+    });
+    const row = JSON.parse(out).rows.find((r) => r.branch === "feat/x");
+    assert.equal(row.verdict, "SCRATCH");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("--prune emits remove commands only for the SAFE-RETIRE tree", () => {
   const dir = scaffold();
   try {
