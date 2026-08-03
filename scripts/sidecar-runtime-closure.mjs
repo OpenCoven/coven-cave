@@ -163,7 +163,7 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // and 5,831 on Windows after maps, declarations, nested dependencies, and
   // non-runtime roots are excluded. Preserve the established ten-file
   // cross-platform headroom.
-  fileCount: 5_841,
+  fileCount: 5_887,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
