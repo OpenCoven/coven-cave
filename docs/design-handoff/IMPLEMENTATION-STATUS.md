@@ -82,11 +82,11 @@ surface it describes.
 | `Coven Tui v2.dc.html` | 153 | # Coven Cave code reading experience | Terminal workbench; also `cave-98o51`. |
 | `OpenCoven Landing - Reforged.dc.html` | 150 | Interactive Landing Page Redesign | **Out of scope for this repo** — marketing site, no `coven-cave` surface. |
 | `Writer Workspace.dc.html` | 147 | Shells and hero flow planning | In no exported zip. No corresponding surface. Tracked by `cave-c7zgz`. |
+| `AnswerFlow.dc.html` | 15 | Shells and hero flow planning | A decision-capture card: one question with a blocking tier, "Why it matters", the config keys it "Writes to", expandable provenance rows (source · locator · quote · confidence), N option cards with editable pros/cons/risks/notes, and a footer that records an answer with a rationale then locks to "Decision written" with a reopen. **Adjacent to but not the same as** `src/components/proposal-approval.tsx`, which captures a *binary* approve/reject with a rationale — scope against it before building. Tracked by `cave-c7zgz`. |
 | `Coven Tui.dc.html` | 108 | # Coven Cave code reading experience | v1 of the above. |
 | `Coven Podcast.dc.html` | 86 | (Started) Podcast Page Redesign | Research studio has podcast *generation* (`c6987fe200`, `c483d94a15`) but no podcast **page**. Tracked by `cave-q00l6`. |
 | `Coven Pr.dc.html` | 75 | # Coven Cave code reading experience | |
 | `Memories - Rethought.dc.html` | 59 | Form feedback requested | Newer than the landed Memories redesign; in no exported zip. Tracked by `cave-tj24b`. |
-| `AnswerFlow.dc.html` | 15 | Shells and hero flow planning | In no exported zip. Tracked by `cave-c7zgz`. |
 
 ### Not deliverables
 
