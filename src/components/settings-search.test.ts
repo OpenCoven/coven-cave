@@ -62,13 +62,18 @@ assert.doesNotMatch(shell, /params\.get\("familiarTab"\)/, "Settings no longer a
 
 // One index entry per destination. `section` + `group` is the entire address
 // `open-setting` can navigate to, and BOTH consumers key their rendered rows off
-// exactly that pair — the palette as `setting:${section}:${group}` and the
-// settings shell as `${section}:${group}`. A second entry for the same pair is
-// therefore not extra search coverage: it is a duplicate React key plus a second
-// row that opens the identical panel. Profile › Identity was split across a
-// name/pronouns entry and an avatar entry, so any query matching both (e.g.
-// "profile") tripped React's duplicate-key error (cave-x7v6b). Put new keywords
-// on the existing entry for that destination instead of adding a sibling.
+// exactly that pair — the palette as `setting:${section}:${group ?? "overview"}`
+// (command-palette.tsx) and the settings shell as `${section}:${group ?? ""}`
+// (settings-shell.tsx). The two differ only in what they substitute for a
+// missing group, which is why the check below normalizes to one of them: a pair
+// that collides under either spelling collides under both.
+//
+// A second entry for the same pair is therefore not extra search coverage: it is
+// a duplicate React key plus a second row that opens the identical panel.
+// Profile › Identity was split across a name/pronouns entry and an avatar entry,
+// so any query matching both (e.g. "profile") tripped React's duplicate-key
+// error (cave-x7v6b). Put new keywords on the existing entry for that
+// destination instead of adding a sibling.
 {
   const seen = new Map();
   for (const entry of SETTINGS_INDEX) {
