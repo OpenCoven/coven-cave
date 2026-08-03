@@ -1047,6 +1047,7 @@ export const SUITES = {
     "src/lib/familiar-rehabilitation.test.ts",
     "src/lib/next-paths.test.ts",
     "src/components/chat-follow-up-cards.test.ts",
+    "src/components/chat-follow-up-layout.test.ts",
     "src/components/chat-follow-up-task-review.test.ts",
     "src/components/chat-follow-up-intents-wiring.test.ts",
     "src/components/board-clear-done.test.ts",
