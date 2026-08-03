@@ -31,7 +31,7 @@ test("3a — Expand opens the reader, and frame 1a's sheet is gone", () => {
   );
   assert.match(
     bubble,
-    /<MessageReader[\s\S]{0,1400}<MarkdownBlock\s*\n\s*text=\{renderCitedBody\(text\)\.body\}[\s\S]{0,200}<\/MessageReader>/,
+    /<MessageReader[\s\S]{0,2000}<MarkdownContent\s*\n\s*text=\{readerCited\.body\}[\s\S]{0,300}<\/MessageReader>/,
     "the reader takes the rendered answer as children — it must not import the markdown pipeline itself",
   );
   assert.doesNotMatch(
@@ -73,14 +73,37 @@ test("3a — the reader renders the CITED body, not raw footnote plumbing", () =
   // footnote definition block into the prose.
   assert.match(
     bubble,
-    /<MarkdownBlock\s*\n\s*text=\{renderCitedBody\(text\)\.body\}/,
+    /const readerCited = useMemo\(\(\) => renderCitedBody\(text\), \[text\]\);/,
     "the reader's body is the cited body, exactly as the bubble renders it",
+  );
+  assert.match(
+    bubble,
+    /text=\{readerCited\.body\}/,
+    "and that cited body is what gets rendered",
   );
   assert.match(
     bubble,
     /<MessageReader\s*\n\s*text=\{text\}/,
     "`text` stays RAW on the reader — Copy/Export hand back portable markdown "
       + "and the Sources tab needs the footnote definitions to parse",
+  );
+});
+
+test("3a — cited sources are interactive chips, not bare links", () => {
+  // MarkdownBlock renders markdown; MarkdownContent is the renderer that also
+  // mounts InlineCitationPreviews against its container ref. The reader used
+  // the former, so citations degraded to plain underlined links while the
+  // transcript showed real source chips.
+  assert.match(
+    bubble,
+    /<MarkdownContent\s*\n\s*text=\{readerCited\.body\}\s*\n\s*citations=\{readerCited\.citations\}/,
+    "the reader passes citations to the renderer that wires the previews",
+  );
+  assert.match(
+    bubble,
+    /className=\{`cave-md\$\{className \? ` \$\{className\}` : ""\}`\}/,
+    "MarkdownContent takes an optional className so a surface sets its own "
+      + "reading scale instead of forking the component",
   );
 });
 
