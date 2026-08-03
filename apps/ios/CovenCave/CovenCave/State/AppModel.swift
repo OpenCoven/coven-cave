@@ -511,8 +511,16 @@ final class AppModel {
     /// row back to a status the user already moved off of.
     func requestTaskStatus(_ card: BoardCard, _ status: CardStatus) {
         statusWrites[card.id]?.cancel()
-        statusWrites[card.id] = Task { [weak self] in
+        let cardId = card.id
+        statusWrites[cardId] = Task { [weak self] in
             await self?.setTaskStatus(card, status)
+            // Drop the finished task so the map tracks only in-flight writes
+            // rather than accumulating one retained Task per card ever touched.
+            // Skip when cancelled: being cancelled means a newer write already
+            // replaced this entry, and clearing would lose the handle needed to
+            // cancel *that* one.
+            guard !Task.isCancelled else { return }
+            self?.statusWrites[cardId] = nil
         }
     }
 

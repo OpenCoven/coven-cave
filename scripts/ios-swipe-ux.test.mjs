@@ -59,8 +59,22 @@ assert.match(
 // -- Status-write races ---------------------------------------------------
 assert.match(
   model,
-  /func requestTaskStatus\(_ card: BoardCard, _ status: CardStatus\) \{\s*\n\s*statusWrites\[card\.id\]\?\.cancel\(\)\s*\n\s*statusWrites\[card\.id\] = Task \{/,
+  /func requestTaskStatus\(_ card: BoardCard, _ status: CardStatus\) \{\s*\n\s*statusWrites\[card\.id\]\?\.cancel\(\)/,
   "a newer status write must cancel the one it supersedes, keyed by card id",
+);
+
+// The map must track only in-flight writes. Without the clear it grows one
+// retained Task per card ever mutated; without the cancellation guard on the
+// clear, a finishing task would delete the entry belonging to the newer write
+// that superseded it, losing the handle needed to cancel that one.
+const request = model.match(
+  /func requestTaskStatus\(_ card: BoardCard, _ status: CardStatus\) \{[\s\S]*?\n {4}\}/,
+);
+assert.ok(request, "requestTaskStatus must still exist");
+assert.match(
+  request[0],
+  /guard !Task\.isCancelled else \{ return \}\s*\n\s*self\?\.statusWrites\[cardId\] = nil/,
+  "a finished write must clear its entry, and only when it was not superseded",
 );
 
 // The two cancellation guards are the substance of the fix. Without the first,
