@@ -263,6 +263,7 @@ import {
   modelIntentForSend,
   isModelOverrideScope,
   isValidModelOverrideIntent,
+  offlineQueuedModelIntent,
   persistedTurnControls,
   persistSendModelIntent,
   resolveSendModelMetadata,
@@ -531,13 +532,17 @@ async function maybeQueueOfflineChat(args: {
   if (travelStatus.authority !== "travel-local") return null;
 
   const sessionId = args.body.sessionId ?? crypto.randomUUID();
+  const queuedModelIntent = offlineQueuedModelIntent({
+    body: args.body,
+    responseMetadata: args.responseMetadata,
+  });
   const payload: OfflineChatQueuePayload = {
     familiarId: args.body.familiarId,
     prompt: args.promptText,
     sessionId,
     projectRoot: args.body.projectRoot,
-    modelOverride: args.body.modelOverride,
-    modelOverrideScope: args.body.modelOverrideScope,
+    modelOverride: queuedModelIntent.modelOverride,
+    modelOverrideScope: queuedModelIntent.modelOverrideScope,
     reasoningEffort: args.body.reasoningEffort,
     responseSpeed: args.body.responseSpeed,
     modelControls: args.body.modelControls,

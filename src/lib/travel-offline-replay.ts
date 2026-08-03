@@ -45,9 +45,22 @@ type DaemonSessionResponse = { id?: string; status?: string };
 type WorkflowEngineResponse = { ok?: boolean; runId?: string; status?: string; error?: string };
 
 function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
-  if (!Object.prototype.hasOwnProperty.call(payload, "modelOverride")) return undefined;
-  if (payload.modelOverride === "") return "";
-  const model = cleanModelId(payload.modelOverride);
+  const hasModelOverride = Object.prototype.hasOwnProperty.call(payload, "modelOverride");
+  const metadata = record(payload.responseMetadata);
+  const modelSource = metadata.modelSource;
+  const queuedModel = hasModelOverride
+    ? payload.modelOverride
+    : modelSource === "runtime-default"
+      ? ""
+      : modelSource === "global-default" ||
+          modelSource === "familiar-default" ||
+          modelSource === "session" ||
+          modelSource === "next-message"
+        ? metadata.desiredModel ?? metadata.model
+        : undefined;
+  if (queuedModel === undefined) return undefined;
+  if (queuedModel === "") return "";
+  const model = cleanModelId(queuedModel);
   if (!model) throw new Error("queued chat model id is not safe for launch");
   return model;
 }

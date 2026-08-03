@@ -4,6 +4,7 @@ import {
   modelIntentForSend,
   isModelOverrideScope,
   isValidModelOverrideIntent,
+  offlineQueuedModelIntent,
   persistedTurnControls,
   persistSendModelIntent,
   resolveSendModelMetadata,
@@ -111,6 +112,44 @@ assert.deepEqual(
   ),
   { modelOverrideScope: "runtime-default" },
   "a one-turn Runtime-default retry keeps its semantic intent for another retry without persisting a model id",
+);
+assert.deepEqual(
+  offlineQueuedModelIntent({
+    body: { familiarId: "sage" },
+    responseMetadata: {
+      model: "openai/gpt-5.5",
+      desiredModel: "openai/gpt-5.5",
+      modelSource: "familiar-default",
+    },
+  }),
+  { modelOverride: "openai/gpt-5.5", modelOverrideScope: undefined },
+  "offline replay must carry a resolved Cave familiar/default model to the hub launch",
+);
+assert.deepEqual(
+  offlineQueuedModelIntent({
+    body: { familiarId: "sage" },
+    responseMetadata: {
+      model: "",
+      modelSource: "runtime-default",
+    },
+  }),
+  { modelOverride: "", modelOverrideScope: "runtime-default" },
+  "offline replay must preserve runtime-owned default intent without pinning a model",
+);
+assert.deepEqual(
+  offlineQueuedModelIntent({
+    body: {
+      familiarId: "sage",
+      modelOverride: "anthropic/claude-opus-4-6",
+      modelOverrideScope: "session",
+    },
+    responseMetadata: {
+      model: "anthropic/claude-opus-4-6",
+      modelSource: "session",
+    },
+  }),
+  { modelOverride: "anthropic/claude-opus-4-6", modelOverrideScope: "session" },
+  "offline replay must preserve an explicit per-session model selection",
 );
 
 const inheritedRuntimeDefault = {

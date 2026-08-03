@@ -91,8 +91,13 @@ assert.match(
 );
 assert.match(
   replay,
-  /const model = cleanModelId\(payload\.modelOverride\)[\s\S]*queued chat model id is not safe for launch/,
+  /const model = cleanModelId\(queuedModel\)[\s\S]*queued chat model id is not safe for launch/,
   "travel replay rejects a malformed persisted model instead of silently using the runtime default",
+);
+assert.match(
+  replay,
+  /modelSource === "familiar-default"[\s\S]*metadata\.desiredModel \?\? metadata\.model/,
+  "travel replay preserves model intent from older queued items that predate the explicit override field",
 );
 assert.match(
   replay,

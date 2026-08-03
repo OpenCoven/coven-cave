@@ -211,6 +211,32 @@ export function persistedTurnControls(
   };
 }
 
+/** Offline replay launches the hub session directly, so carry the resolved
+ * Cave model intent instead of asking the daemon to rediscover Cave scopes. */
+export function offlineQueuedModelIntent(args: {
+  body: Pick<ModelRequest, "modelOverride" | "modelOverrideScope">;
+  responseMetadata: {
+    model: string;
+    desiredModel?: string;
+    modelSource?: ChatModelState["source"];
+  };
+}): Pick<ModelRequest, "modelOverride" | "modelOverrideScope"> {
+  const runtimeDefault =
+    args.body.modelOverrideScope === "runtime-default" ||
+    args.responseMetadata.modelSource === "runtime-default";
+  const modelOverride = args.body.modelOverride !== undefined
+    ? args.body.modelOverride
+    : runtimeDefault
+      ? ""
+      : args.responseMetadata.desiredModel ?? args.responseMetadata.model;
+  const modelOverrideScope = args.body.modelOverrideScope !== undefined
+    ? args.body.modelOverrideScope
+    : runtimeDefault
+      ? "runtime-default" as const
+      : undefined;
+  return { modelOverride, modelOverrideScope };
+}
+
 /** Prefer runtime confirmation, then explicit user intent, then the model that
  * was actually routed. All three are absent for authenticated dynamic defaults. */
 export function turnRetryModel(input: {
