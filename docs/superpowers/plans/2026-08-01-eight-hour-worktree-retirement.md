@@ -250,7 +250,7 @@ durations.
 Run:
 
 ```bash
-rg -n "last 24 hours|older than 24 hours|24-hour cooldown|now_epoch - 86400|numeric 24-hour cutoff" \
+rg -n "last 24 hours|older than 24 hours|24-hour cooldown|24-hour recency window|now_epoch - 86400|numeric 24-hour cutoff" \
   .agents/skills/branch-curator \
   src/lib/worktree-lifecycle.ts \
   src/lib/worktree-lifecycle.test.ts \
