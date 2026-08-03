@@ -1107,7 +1107,9 @@ details[open] > .cave-tool-summary::before {
 }
 
 .voice-call-overlay__dialog {
-  width: min(360px, calc(100vw - 32px));
+  /* Wide enough to read a live transcript, not so wide it stops reading like
+     a call (cave-zr9dx). */
+  width: min(460px, calc(100vw - 32px));
   overflow: hidden;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
@@ -1159,9 +1161,17 @@ details[open] > .cave-tool-summary::before {
 .voice-call-overlay__body {
   display: grid;
   min-height: 120px;
-  place-items: center;
+  align-content: center;
+  justify-items: center;
   gap: var(--space-2);
   padding: var(--space-5) var(--space-4);
+}
+
+.voice-call-overlay__engines {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
 }
 
 /* How the call hears (cave-vpe1) and speaks (cave-vony): honest engine
@@ -1174,6 +1184,174 @@ details[open] > .cave-tool-summary::before {
   border-radius: var(--radius-pill);
   padding: 2px 10px;
   letter-spacing: 0.02em;
+}
+
+/* Live call transcript (cave-zr9dx) — the conversation as it happens, with
+   the sentence the familiar is voicing marked in place. */
+.voice-call-overlay__transcript {
+  display: grid;
+  width: 100%;
+  max-height: 320px;
+  gap: var(--space-3);
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overscroll-behavior: contain;
+}
+
+.voice-call-overlay__transcript-empty {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  text-align: center;
+}
+
+.voice-call-overlay__turn {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+}
+
+.voice-call-overlay__turn--user {
+  justify-items: end;
+  text-align: right;
+}
+
+.voice-call-overlay__turn-author {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.voice-call-overlay__turn-text {
+  max-width: 90%;
+  margin: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-base) 45%, transparent);
+  padding: 6px 10px;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.voice-call-overlay__turn--user .voice-call-overlay__turn-text {
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+/* The words being spoken right now. A tinted run rather than a block
+   highlight: it has to be legible against a bubble that is already tinted,
+   in both themes. */
+.voice-call-overlay__spoken {
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  padding: 0 2px;
+  color: var(--text-primary);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.voice-call-overlay__turn.is-speaking .voice-call-overlay__turn-text {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+}
+
+.voice-call-overlay__turn-reply {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.voice-call-overlay__turn-reply:hover {
+  color: var(--text-primary);
+}
+
+/* Reply without speaking — a typed turn barges in on the synthesizer and
+   lands in the same conversation. */
+.voice-call-overlay__reply {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--border-hairline);
+  padding: var(--space-3) var(--space-4);
+}
+
+.voice-call-overlay__reply-target {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.voice-call-overlay__reply-author {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.voice-call-overlay__reply-snippet {
+  overflow: hidden;
+  flex: 1 1 auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-call-overlay__reply-clear {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 0;
+  background: none;
+  padding: 2px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.voice-call-overlay__reply-row {
+  display: flex;
+  gap: 6px;
+}
+
+.voice-call-overlay__reply-input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-base) 70%, transparent);
+  padding: 6px var(--space-2);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.voice-call-overlay__reply-send {
+  display: inline-flex;
+  min-width: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.voice-call-overlay__reply-send:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.voice-call-overlay__reply-send:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .voice-call-overlay__error {
@@ -1232,6 +1410,12 @@ details[open] > .cave-tool-summary::before {
 .voice-call-overlay__fix-error {
   color: var(--color-danger);
   font-size: var(--text-xs);
+}
+
+.voice-call-overlay__controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .voice-call-overlay__footer {
