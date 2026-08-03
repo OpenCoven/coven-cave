@@ -82,11 +82,32 @@ assert.equal(
   packageJson.version,
   "iOS MARKETING_VERSION must match package.json version",
 );
-assert.equal(
+// App Store Connect requires CFBundleVersion to be unique and increasing for
+// the app, so a hand-kept "1" is not a valid pin: it collides on every upload
+// after the first, and it blocked the v0.2.3 TestFlight upload on 2026-08-03.
+// Pin the shape instead — a YYYYMMDDHH UTC stamp, which is monotonic without
+// anyone tracking the last uploaded value.
+assert.match(
   iosBuildVersion,
-  "1",
-  "iOS CURRENT_PROJECT_VERSION must remain 1 for this release",
+  /^\d{10}$/,
+  "iOS CURRENT_PROJECT_VERSION must be a 10-digit YYYYMMDDHH UTC build stamp",
 );
+assert.ok(
+  Number(iosBuildVersion) < 4294967296,
+  "iOS CURRENT_PROJECT_VERSION must stay below the CFBundleVersion integer ceiling",
+);
+{
+  const [y, m, d, h] = [
+    Number(iosBuildVersion.slice(0, 4)),
+    Number(iosBuildVersion.slice(4, 6)),
+    Number(iosBuildVersion.slice(6, 8)),
+    Number(iosBuildVersion.slice(8, 10)),
+  ];
+  assert.ok(y >= 2026 && y <= 2100, `build stamp year out of range: ${y}`);
+  assert.ok(m >= 1 && m <= 12, `build stamp month out of range: ${m}`);
+  assert.ok(d >= 1 && d <= 31, `build stamp day out of range: ${d}`);
+  assert.ok(h <= 23, `build stamp hour out of range: ${h}`);
+}
 
 assert.throws(
   () =>
