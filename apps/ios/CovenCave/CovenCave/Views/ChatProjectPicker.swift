@@ -155,7 +155,7 @@ struct ChatProjectPicker: View {
             return
         }
 
-        guard let client = app.client else {
+        guard app.client != nil else {
             projects = []
             isResolved = false
             errorMessage = "Connect to your Cave to load projects."
@@ -167,7 +167,18 @@ struct ChatProjectPicker: View {
         isResolved = false
         errorMessage = nil
         do {
-            let loaded = try await client.projects(familiarIds: familiarKey)
+            let loaded = try await ChatProjectSelection.loadProjectsWithRecovery(
+                load: {
+                    guard let currentClient = app.client else {
+                        throw CaveError.notConfigured
+                    }
+                    return try await currentClient.projects(familiarIds: familiarKey)
+                },
+                recover: { _ in
+                    await app.recoverConnectionInBackground()
+                    return app.connectionState == .connected
+                }
+            )
             try Task.checkCancellation()
             projects = loaded
             selectedRoot = requiresExplicitSelection
