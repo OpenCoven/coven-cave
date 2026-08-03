@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { SETTINGS_INDEX } from "./settings-sections.ts";
 
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const sections = readFileSync(new URL("./settings-sections.ts", import.meta.url), "utf8");
@@ -58,5 +59,33 @@ assert.match(
 );
 assert.match(shell, /params\.get\("group"\)/, "Settings accepts a group deep-link target");
 assert.doesNotMatch(shell, /params\.get\("familiarTab"\)/, "Settings no longer accepts a retired familiar studio-tab target");
+
+// One index entry per destination. `section` + `group` is the entire address
+// `open-setting` can navigate to, and BOTH consumers key their rendered rows off
+// exactly that pair — the palette as `setting:${section}:${group ?? "overview"}`
+// (command-palette.tsx) and the settings shell as `${section}:${group ?? ""}`
+// (settings-shell.tsx). The two differ only in what they substitute for a
+// missing group, which is why the check below normalizes to one of them: a pair
+// that collides under either spelling collides under both.
+//
+// A second entry for the same pair is therefore not extra search coverage: it is
+// a duplicate React key plus a second row that opens the identical panel.
+// Profile › Identity was split across a name/pronouns entry and an avatar entry,
+// so any query matching both (e.g. "profile") tripped React's duplicate-key
+// error (cave-x7v6b). Put new keywords on the existing entry for that
+// destination instead of adding a sibling.
+{
+  const seen = new Map();
+  for (const entry of SETTINGS_INDEX) {
+    const address = `${entry.section}:${entry.group ?? "overview"}`;
+    assert.equal(
+      seen.has(address),
+      false,
+      `SETTINGS_INDEX has two entries for ${address} — merge their keywords into one entry instead:\n` +
+        `  kept:      ${seen.get(address)}\n  duplicate: ${entry.keywords}`,
+    );
+    seen.set(address, entry.keywords);
+  }
+}
 
 console.log("settings-search.test.ts OK");

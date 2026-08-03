@@ -19,6 +19,12 @@
             "statusMessage": "Checking worktree/branch safety…",
             "timeout": 15,
             "type": "command"
+          },
+          {
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/worktree-autolock.mjs\"",
+            "statusMessage": "Protecting at-risk worktrees…",
+            "timeout": 15,
+            "type": "command"
           }
         ],
         "matcher": "Bash"

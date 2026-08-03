@@ -145,7 +145,7 @@ gh api repos/OpenCoven/coven-cave/rulesets/19123333 \
 
 ```bash
 # work on a branch (in a worktree, per the convention below)
-git worktree add -b <branch> .worktrees/<branch> origin/main
+pnpm beads:worktrees:create --bead <id> --branch <branch> --owner <you> --purpose "…"
 # … commit (signed, per the global -S rule) …
 git push -u origin <branch>
 gh pr create --base main --head <branch> --title "…" --body "…"
@@ -203,9 +203,48 @@ Use `.worktrees/<branch-name>/` subdirectories inside the repo. Confirmed in use
 **Create:**
 
 ```bash
-git worktree add -b <branch> .worktrees/<branch> origin/main
-cd .worktrees/<branch> && pnpm install   # ~10s with pnpm's CAS store
+pnpm beads:worktrees:create --bead cave-123 --branch fix/cave-123-example --owner <you> --purpose "…"
+cd .worktrees/cave-123-example && pnpm install   # ~10s with pnpm's CAS store
 ```
+
+⚠️ **The directory is not `.worktrees/<branch>`.** The script slugifies the
+branch (`worktree-lifecycle-create.ts`): it strips one leading `feat/`, `fix/`,
+`docs/` or `chore/`, then replaces every remaining character outside
+`A-Za-z0-9._-` with `-`. So `fix/cave-123-example` lands at
+`.worktrees/cave-123-example`, and an unlisted prefix like `release/foo` lands at
+`.worktrees/release-foo`. `cd .worktrees/<branch>` works only for a branch with
+no prefix at all.
+
+This is the form [`AGENTS.md`](AGENTS.md) mandates, and it is the *only* one that
+produces a retirable worktree: it writes the `metadata.coven.worktree` record
+onto the owning bead, which is exactly what the retirement gate reads
+(`src/lib/worktree-lifecycle.ts`). `--bead`, `--branch`, `--owner` and
+`--purpose` are all required; `--start-point` defaults to `origin/main`, and the
+worktree lands under `.worktrees/` (the script refuses any path escaping it).
+**No `--` before the flags** — pnpm forwards it and the parser rejects it
+outright with `unknown option: --`. That broken form was documented here and in
+`AGENTS.md` until 2026-08-03.
+
+⚠️ **The managed command can refuse to run, and the fallback has a cost.** It
+builds a *complete* lifecycle inventory first, which needs live GitHub queries,
+so it fails when the GraphQL quota is exhausted and when any commit's PR
+association returns `malformed fields or a mismatched head OID` — the latter is
+repo state, not a transient, so waiting does not clear it. Both were hit on
+2026-08-03. When it will not run:
+
+```bash
+git worktree add -b <branch> .worktrees/<branch> origin/main   # fallback only
+```
+
+A worktree made this way has **no lifecycle metadata**, so `pnpm beads:worktrees`
+reports it `uncertain` — *"structured lifecycle metadata backfill required
+before automated retirement can proceed"* — permanently, and
+`pnpm beads:worktrees:apply` can never retire it (`allowLegacyMissingMetadata`
+is hard-coded `false`; there is no flag to relax it). Retire it by hand with the
+archive-tag route in the worktree-guard section below. **Do not hand-write the
+missing metadata onto the bead** to make the patrol pass: that record is the
+evidence the gate exists to check, and forging it is the bypass the guard rules
+out. See `cave-l52dt`.
 
 **When to use a worktree:**
 
@@ -298,6 +337,29 @@ Map PIDs to session JSONLs in `~/.claude/projects/-Users-buns-Documents-GitHub-O
 **Surface-claim guard (automatic).** A PreToolUse hook — `scripts/surface-claim-guard.mjs`, wired in `.claude/settings.json` — records each session's claim on the files it edits in the primary checkout (`.claude/claims.json`, gitignored, ~2h TTL) and warns when another live session has already claimed the same file. It's advisory-only (never blocks an edit) and skips `.worktrees/` paths. So if you get a "⚠️ Multi-session collision on `<file>`" message, another session may be editing that file — coordinate or move to a worktree before clobbering it. This operationalizes §1 of the coordination doc; you no longer have to grep claims.json by hand.
 
 **Worktree guard (automatic, BLOCKING).** A second PreToolUse hook — `scripts/worktree-guard.mjs`, matcher Bash — blocks (exit 2) destruction of live work: `git worktree remove`/`rm -rf` of a worktree root that is dirty or whose HEAD is on no remote ref, `git branch -D` of an unpushed tip, and `git push --delete` of a branch that still heads an OPEN PR. Clean+pushed cleanup and husk GC pass silently. **"Retained" counts a remote branch OR a tag pushed to a remote** — so the right way to retire a branch whose commits you want kept but off the branch list is to archive it: `git tag -s archive/<branch-with-slashes-as-dashes> <oid> && git push origin <that-tag>`, then delete freely. Flatten the slashes (`fix/foo` → `archive/fix-foo-<date>`) — git cannot hold both a tag `archive/fix` and a tag `archive/fix/foo`, so nested archive names collide as soon as a second branch shares a prefix. A pushed tag is *more* durable than a branch (merging deletes the branch, never the tag); a **local-only tag does not count**, and if the remote is unreachable the tag check fails closed and blocks. If destruction is deliberate, re-run prefixed with `WT_GUARD_BYPASS=1 ` (the prefix must lead the WHOLE command string — a prefix buried inside `bash -c` or after a leading assignment does not reach the hook). Every bypass AND every block is appended to `.claude/worktree-guard-bypass.log` (gitignored, JSON lines with a `verdict` field) — after cave-boor8, where a destroyed worktree's post-mortem couldn't tell an override from a hole. Exists because on 2026-07-03 an actor merged another session's in-progress branch (PR #2290) and its post-merge cleanup destroyed that session's worktree mid-edit (coordination doc §5). Corollary disciplines: **push your branch to origin after every commit** — the remote is the only store a local actor can't destroy — and **any audit of a dirty worktree records `git status --porcelain` paths, never just a count** (cave-boor8: a count is unrecoverable; paths make lost-found search possible).
+
+**Worktree auto-lock (automatic, NON-blocking).** A third PreToolUse hook —
+`scripts/worktree-autolock.mjs`, matcher Bash — runs `git worktree lock` on any
+registered worktree that is dirty or holds commits absent from every remote. It
+exists because the guard above only sees Bash from a Claude Code session, and
+the actor that actually destroys worktrees here is **GitHub Desktop**: on
+2026-08-03 it executed 18 `git worktree remove` calls and 114 direct
+`git push origin main:main`, and it removed two live worktrees mid-session.
+
+A lock is the only defence that reaches outside Claude Code. Git refuses to
+remove a locked worktree unless `--force` is given **twice** (verified: plain
+remove and a single `--force` both fail with *"cannot remove a locked working
+tree"*); Desktop has never escalated past one force in any observed removal.
+
+It deliberately **skips clean, fully-pushed worktrees** — removing one of those
+loses nothing, and locking it would only force an unlock during routine
+cleanup. So a lock appearing on your worktree means it holds something no
+remote has. Clear it yourself when you are done: `git worktree unlock <path>`.
+Locking by hand is a snapshot; this re-applies as worktrees appear, throttled
+to once a minute via `.claude/worktree-autolock.stamp`. Every lock is appended
+to `.claude/worktree-autolock.log` (gitignored, JSON lines). Disable for a
+command with `WT_AUTOLOCK_DISABLE=1`. It never blocks a tool call and always
+exits 0 — if it cannot read a worktree, it leaves it alone.
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
