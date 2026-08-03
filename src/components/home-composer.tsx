@@ -80,6 +80,11 @@ import {
   shouldClearHomeComposerProjectSelection,
 } from "@/lib/home-composer-context";
 import { publishBoardChanged } from "@/lib/board-cache-events";
+import {
+  cancelSystemBrowserUrlWindow,
+  openSystemBrowserUrl,
+  reserveSystemBrowserUrlWindow,
+} from "@/lib/open-external";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -645,6 +650,8 @@ export function HomeComposer({
           requestSummonFamiliar();
           return;
         }
+        const systemBrowserReservation = reserveSystemBrowserUrlWindow();
+        let systemBrowserReservationConsumed = false;
         setSending(true);
         try {
           const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
@@ -664,9 +671,12 @@ export function HomeComposer({
           clearDraft();
           clearAttachments();
           onToast("Omnigent session started — opening…");
-          const { openExternalUrl } = await import("@/lib/open-external");
-          void openExternalUrl(result.webUrl);
+          systemBrowserReservationConsumed = true;
+          void openSystemBrowserUrl(result.webUrl, { reservation: systemBrowserReservation });
         } finally {
+          if (!systemBrowserReservationConsumed) {
+            cancelSystemBrowserUrlWindow(systemBrowserReservation);
+          }
           setSending(false);
         }
         return;

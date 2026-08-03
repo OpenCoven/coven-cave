@@ -221,7 +221,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     () => new Map(familiars.map((entry) => [entry.id, entry])),
     [familiars],
   );
-  const fallbackFamiliarId = familiar?.id ?? familiars[0]?.id ?? null;
+  // Scoped to one familiar? That is the user's own choice and it carries into a
+  // new chat. UNSCOPED there is no correct default: handing familiars[0]
+  // downstream starts the chat with whichever familiar happens to sort first
+  // AND makes it the active one, skipping the NewChatLaunch picker that exists
+  // precisely to ask (same defect as #4203/#4208).
+  const scopedFamiliarId = familiar?.id ?? null;
+  // The control stays live whenever a chat can start at all — the familiar is
+  // chosen downstream, not defaulted here.
+  const canStartChat = familiars.length > 0;
   const panelTitle = familiar?.display_name ?? "Familiars";
   const panelRole = familiar?.role ?? "All project conversations";
   const panelRuntime = familiar ? (familiar.harness ?? "codex") : "mixed";
@@ -426,7 +434,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         projectRoot: null,
         projectName: null,
         sessions: rows,
-        defaultFamiliarId: latest?.familiarId ?? fallbackFamiliarId,
+        defaultFamiliarId: latest?.familiarId ?? scopedFamiliarId,
         updatedAt: latest ? (latest.updated_at || latest.created_at) : null,
       }];
     }
@@ -439,7 +447,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       return { ...group, sessions: ordered };
     });
     return changed ? next : scopedGroups;
-  }, [effectiveSelection, groupBy, scopedGroups, sessionOrder, pinnedIds, fallbackFamiliarId]);
+  }, [effectiveSelection, groupBy, scopedGroups, sessionOrder, pinnedIds, scopedFamiliarId]);
   // Calendar-day sections for the "Group by date" mode: header metadata keyed
   // by the first row index of each local day (Today / Yesterday / formatted).
   const daySectionsByIndex = useMemo(() => {
@@ -710,7 +718,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         }}
         onNewChat={(root) => {
           const group = sidebarGroups.find((g) => g.projectRoot === root);
-          onNewChat(root ?? undefined, group?.defaultFamiliarId ?? fallbackFamiliarId);
+          onNewChat(root ?? undefined, group?.defaultFamiliarId ?? scopedFamiliarId);
         }}
       />
       )}
@@ -765,8 +773,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             {/* + Session CTA */}
             <button
               type="button"
-              onClick={() => onNewChat(undefined, fallbackFamiliarId)}
-              disabled={!fallbackFamiliarId}
+              onClick={() => onNewChat(undefined, scopedFamiliarId)}
+              disabled={!canStartChat}
               className="chat-list-new-button mt-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[length:var(--text-sm)] font-semibold text-[var(--accent-presence-foreground)] shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
             >
               <Icon name="ph:plus-bold" width={11} />
@@ -922,8 +930,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           {familiar && (
             <button
               type="button"
-              onClick={() => onNewChat(undefined, fallbackFamiliarId)}
-              disabled={!fallbackFamiliarId}
+              onClick={() => onNewChat(undefined, scopedFamiliarId)}
+              disabled={!canStartChat}
               className="chat-list-new-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[length:var(--text-sm)] font-semibold text-[var(--accent-presence-foreground)] shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
             >
               <Icon name="ph:plus-bold" width={11} />
@@ -1013,8 +1021,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                   variant="primary"
                   size="sm"
                   leadingIcon="ph:plus-bold"
-                  onClick={() => onNewChat(undefined, fallbackFamiliarId)}
-                  disabled={!fallbackFamiliarId}
+                  onClick={() => onNewChat(undefined, scopedFamiliarId)}
+                  disabled={!canStartChat}
                 >
                   Start with context
                 </Button>
@@ -1118,7 +1126,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                       className="chat-list-group-new touch-always-visible flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onNewChat(projectRoot ?? undefined, defaultFamiliarId ?? fallbackFamiliarId);
+                        onNewChat(projectRoot ?? undefined, defaultFamiliarId ?? scopedFamiliarId);
                       }}
                       title={`New session in ${projectRoot ? repoName(projectRoot) : "no project"}`}
                       aria-label={`New session in ${projectRoot ? repoName(projectRoot) : "no project"}`}

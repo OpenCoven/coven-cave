@@ -63,7 +63,7 @@ async function openProjectAccess(page: Page, seed: GrantRow[]): Promise<GrantRow
   });
 
   await page.goto("/?mode=chat");
-  await page.getByRole("tab", { name: "Projects" }).click();
+  await page.getByTestId("detail").getByRole("tab", { name: "Projects" }).click();
   // The Projects surface is a lazy chunk; its FIRST dev compile can run well
   // past the 5s default on a loaded machine.
   await expect(page.locator(".projects-access")).toBeVisible({ timeout: 180_000 });

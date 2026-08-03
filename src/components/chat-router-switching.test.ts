@@ -52,7 +52,7 @@ assert.match(
 
 // ── Chat-first IA (cave-hsa6): boot into a compose view, not the list ───────
 const bootComposeEffect =
-  source.match(/const bootComposeRef = useRef\(false\);[\s\S]*?\}, \[familiar\?\.id, fallbackFamiliar\?\.id\]\);/)?.[0] ?? "";
+  source.match(/const bootComposeRef = useRef\(false\);[\s\S]*?\}, \[familiar\?\.id, visibleFamiliars\.length\]\);/)?.[0] ?? "";
 assert.match(
   bootComposeEffect,
   /if \(bootComposeRef\.current\) return;/,
@@ -75,8 +75,22 @@ assert.match(
 );
 assert.match(
   bootComposeEffect,
-  /prev\.kind === "list" \? \{ kind: "chat", sessionId: null, familiarId: bootFamiliarId \} : prev/,
+  /prev\.kind === "list"\s*\?\s*\{ kind: "chat", sessionId: null, familiarId: familiar\?\.id \?\? null \}/,
   "booting into chat opens a zero-session compose view (ChatEmptyState + composer), no server session created",
+);
+// …and does NOT choose a familiar. An active one carries; absent one the view
+// opens unbound so NewChatLaunch asks, rather than binding the composer to
+// visibleFamiliars[0] and sending the user's first message to whichever
+// familiar sorted first.
+assert.doesNotMatch(
+  bootComposeEffect,
+  /fallbackFamiliar/,
+  "boot-compose does not adopt the first familiar in the roster",
+);
+assert.match(
+  bootComposeEffect,
+  /if \(visibleFamiliars\.length === 0\) return;/,
+  "boot still waits for the roster to load before leaving the list view",
 );
 
 // ── CHAT-D9-01: URL deep links (#chat-<sessionId>) ───────────────────────────

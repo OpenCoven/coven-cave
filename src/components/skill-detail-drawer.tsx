@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { Icon } from "@/lib/icon";
 import { SkillDryRunTester } from "@/components/marketplace/skill-builder";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -52,24 +52,14 @@ export function SkillDetailDrawer({
   // behind the backdrop).
   useFocusTrap(Boolean(skill), panelRef, { onEscape: onClose });
 
-  // Daemon eval-loop state, when the loop is active for a familiar
-  // (docs/authoring-assist.md §3.3, cave-cyfc): authored skills and evaluated
-  // skills stop being different worlds. Quiet when the daemon is offline.
-  const [evalStatus, setEvalStatus] = useState<string | null>(null);
-  const familiarId = familiars[0]?.id;
-  useEffect(() => {
-    setEvalStatus(null);
-    if (!skill || !familiarId) return;
-    const ctl = new AbortController();
-    fetch(`/api/skills/eval-loop/${encodeURIComponent(familiarId)}`, { cache: "no-store", signal: ctl.signal })
-      .then((res) => res.json())
-      .then((json: { ok?: boolean; state?: { status?: unknown } | null }) => {
-        if (ctl.signal.aborted || !json.ok || !json.state) return;
-        if (typeof json.state.status === "string" && json.state.status) setEvalStatus(json.state.status);
-      })
-      .catch(() => {});
-    return () => ctl.abort();
-  }, [skill, familiarId]);
+  // The daemon's eval loop is per-FAMILIAR, not per-skill. This drawer used to
+  // query familiars[0] and render the answer as "Eval loop: <status>" with no
+  // attribution — so with more than one familiar it showed whichever one sorted
+  // first, labelled as if it described the skill. This panel's own copy says
+  // "Every familiar can load this skill while it works", so there is no single
+  // familiar for it to report on. Removed rather than re-pointed: showing one
+  // arbitrary familiar's loop here cannot be made correct (cave-cyfc's
+  // authored/evaluated link belongs on a familiar-scoped surface).
 
   if (!skill) return null;
 
@@ -170,13 +160,6 @@ export function SkillDetailDrawer({
               </div>
             </div>
           )}
-
-          {evalStatus ? (
-            <p className="flex items-center gap-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-              <Icon name="ph:arrows-clockwise" width={11} aria-hidden />
-              Eval loop: {evalStatus}
-            </p>
-          ) : null}
 
           {/* Dry-run: would a familiar pick this skill up? (cave-cyfc) */}
           {skill.description ? (

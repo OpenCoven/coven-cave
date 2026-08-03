@@ -118,7 +118,12 @@ import {
 } from "@/lib/chat-archive-nudge";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import type { Card } from "@/lib/cave-board-types";
-import { openExternalUrl } from "@/lib/open-external";
+import {
+  cancelSystemBrowserUrlWindow,
+  openExternalUrl,
+  openSystemBrowserUrl,
+  reserveSystemBrowserUrlWindow,
+} from "@/lib/open-external";
 import { githubIcon, githubLabel, repoName } from "@/components/composer-linked-work-actions";
 import { LinkedContextRow } from "@/components/composer-linked-work-actions";
 import { ComposerContextChips } from "@/components/composer-context-pill";
@@ -4565,6 +4570,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         ? controlsOverride.queuedRuntimeHost
         : (controlsOverride?.runtimeHost ?? runtimeHost);
     if (isOmnigentHostOptionId(fleetHost) && submitPrompt) {
+      const systemBrowserReservation = reserveSystemBrowserUrlWindow();
+      let systemBrowserReservationConsumed = false;
       setBusy(true);
       setError(null);
       let started = false;
@@ -4584,12 +4591,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         appendSystem(
           `Started Omnigent session ${result.sessionId}. Open: ${result.webUrl}`,
         );
-        void openExternalUrl(result.webUrl);
+        systemBrowserReservationConsumed = true;
+        void openSystemBrowserUrl(result.webUrl, { reservation: systemBrowserReservation });
         announce("Omnigent session started");
         started = true;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Omnigent run failed");
       } finally {
+        if (!systemBrowserReservationConsumed) {
+          cancelSystemBrowserUrlWindow(systemBrowserReservation);
+        }
         setBusy(false);
         if (started) drainNextQueuedMessage();
       }

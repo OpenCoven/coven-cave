@@ -397,13 +397,11 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
 
   const toggleBucket = useCallback(
     (bucket: keyof DeckSummary) => {
-      setBucketFilter((prev) => {
-        const next = prev === bucket ? null : bucket;
-        announce(next ? `Queue filtered to ${BUCKET_LABELS[next].toLowerCase()}.` : "Queue filter cleared.");
-        return next;
-      });
+      const next = bucketFilter === bucket ? null : bucket;
+      setBucketFilter(next);
+      announce(next ? `Queue filtered to ${BUCKET_LABELS[next].toLowerCase()}.` : "Queue filter cleared.");
     },
-    [announce],
+    [announce, bucketFilter],
   );
 
   const draft = useCallback(() => {

@@ -206,13 +206,12 @@ function renderCodeBlockFrame({
   );
 
   const labelHtml = `<span class="cave-code-lang">${escHtml(lang)}</span>`;
-  // Name first, directory after and muted — the eye lands on the file the block
-  // claims to be, and the path that qualifies it follows. Same order as the
-  // reading inspector's header, so the two read as one surface.
+  // The path reads dir-then-name with the directory muted, so the eye lands on
+  // the file the block claims to be without losing where it lives.
   const filenameHtml = filename
-    ? `<span class="cave-code-filename" title="${escHtml(filename)}">${escHtml(
-        block.name ?? filename,
-      )}${block.dir ? `<span class="cave-code-dir">${escHtml(block.dir)}</span>` : ""}</span>`
+    ? `<span class="cave-code-filename" title="${escHtml(filename)}">${
+        block.dir ? `<span class="cave-code-dir">${escHtml(block.dir)}/</span>` : ""
+      }${escHtml(block.name ?? filename)}</span>`
     : "";
 
   // ── Reading chrome (cave-f6mu9) ───────────────────────────────────────────

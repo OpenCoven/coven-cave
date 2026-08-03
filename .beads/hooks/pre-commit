@@ -145,6 +145,23 @@ fi
 
 info "ok (${#STAGED_FILES[@]} files scanned)"
 
+# ---- 3. Duplicate record ids in .beads/*.jsonl (cave-1poit) ---------------
+# These are append-only audit logs; a repeated id means the log reports one
+# event twice. Fast local feedback only — `git merge` does NOT run pre-commit,
+# and the duplicates that prompted this were born in a merge commit, so the
+# authoritative gate is the wired test in CI (pnpm check:beads-jsonl).
+if grep -qz '^\.beads/.*\.jsonl$' "$STAGED_FILE" 2>/dev/null; then
+  if command -v node >/dev/null 2>&1 && [ -f scripts/check-beads-jsonl-duplicates.mjs ]; then
+    if ! node scripts/check-beads-jsonl-duplicates.mjs >/dev/null 2>&1; then
+      node scripts/check-beads-jsonl-duplicates.mjs >&2 || true
+      fail "duplicate record ids in .beads/*.jsonl — see cave-1poit"
+      BLOCKED=1
+    else
+      info "beads jsonl: no duplicate record ids"
+    fi
+  fi
+fi
+
 # --- BEGIN BEADS INTEGRATION v1.0.5 ---
 # This section is managed by beads. Do not remove these markers.
 if command -v bd >/dev/null 2>&1; then

@@ -193,7 +193,7 @@ test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-com
       releaseWorkflow.indexOf('gh release upload "$RELEASE_TAG" "${APPIMAGE}.sig" --clobber'),
     "the repacked AppImage itself must be uploaded before its regenerated signature",
   );
-  const stripStepStart = releaseWorkflow.indexOf("name: Strip bundled GLib/libmount from AppImage");
+  const stripStepStart = releaseWorkflow.indexOf("name: Strip bundled GLib from AppImage");
   const stripStepEnd = releaseWorkflow.indexOf("name: Upload and re-sign stripped AppImage");
   assert.ok(stripStepStart !== -1, "strip step must exist under its exact name");
   assert.ok(stripStepEnd > stripStepStart, "upload/re-sign step must follow the strip step");

@@ -20,6 +20,7 @@
 - `.agents/skills/branch-curator/evals/evals.json` — evaluation prompt and expected cutoff behavior.
 - `docs/superpowers/specs/2026-07-31-automatic-local-branch-retirement-design.md` — current automatic-retirement architecture.
 - `docs/superpowers/specs/2026-08-01-eight-hour-worktree-retirement-design.md` — approved change design.
+- `docs/workflows/beads-familiars.md` — familiar patrol lifecycle lane documentation.
 
 ### Task 1: Pin the eight-hour classifier boundary
 
@@ -196,6 +197,7 @@ git commit -S -m "test(worktrees): use eight-hour landing cooldown"
 - Modify: `.agents/skills/branch-curator/references/deletion-proof.md`
 - Modify: `.agents/skills/branch-curator/evals/evals.json`
 - Modify: `docs/superpowers/specs/2026-07-31-automatic-local-branch-retirement-design.md`
+- Modify: `docs/workflows/beads-familiars.md`
 
 - [ ] **Step 1: Update the curator rule**
 
@@ -236,7 +238,14 @@ rg -n "24 hours|24-hour|86400" \
 Replace only retirement-recency references with 8-hour wording. Do not change
 maintenance-gate lease limits or unrelated durations.
 
-- [ ] **Step 5: Verify no stale retirement policy remains**
+- [ ] **Step 5: Align the familiar workflow cooldown lane**
+
+In `docs/workflows/beads-familiars.md`, change only the lifecycle `cooldown`
+lane's retirement-recency statement from a mandatory 24-hour window to a
+mandatory 8-hour window. Preserve all maintenance/deletion gates and unrelated
+durations.
+
+- [ ] **Step 6: Verify no stale retirement policy remains**
 
 Run:
 
@@ -246,12 +255,13 @@ rg -n "last 24 hours|older than 24 hours|24-hour cooldown|now_epoch - 86400|nume
   src/lib/worktree-lifecycle.ts \
   src/lib/worktree-lifecycle.test.ts \
   scripts/worktree-lifecycle-patrol.test.mjs \
-  docs/superpowers/specs/2026-07-31-automatic-local-branch-retirement-design.md
+  docs/superpowers/specs/2026-07-31-automatic-local-branch-retirement-design.md \
+  docs/workflows/beads-familiars.md
 ```
 
 Expected: no matches.
 
-- [ ] **Step 6: Commit policy alignment**
+- [ ] **Step 7: Commit policy alignment**
 
 Run:
 
@@ -260,7 +270,8 @@ git add \
   .agents/skills/branch-curator/SKILL.md \
   .agents/skills/branch-curator/references/deletion-proof.md \
   .agents/skills/branch-curator/evals/evals.json \
-  docs/superpowers/specs/2026-07-31-automatic-local-branch-retirement-design.md
+  docs/superpowers/specs/2026-07-31-automatic-local-branch-retirement-design.md \
+  docs/workflows/beads-familiars.md
 git commit -S -m "docs(worktrees): require eight-hour retirement recency"
 ```
 
