@@ -261,6 +261,12 @@
   max-width: none;
 }
 
+.settings-voice {
+  container-name: settings-general;
+  container-type: inline-size;
+  min-width: 0;
+}
+
 .settings-group--ruled {
   scroll-margin-top: var(--space-4);
 }

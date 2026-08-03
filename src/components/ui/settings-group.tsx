@@ -1,10 +1,7 @@
 import type { ReactNode } from "react";
+import { settingsGroupId } from "@/lib/settings-group-id";
 
-/** Stable DOM id for a group, derived from its label, so Settings search can
- *  scroll/highlight the matching group. Shared with the search index. */
-export function settingsGroupId(label: string): string {
-  return `settings-group-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`;
-}
+export { settingsGroupId };
 
 export type SettingsGroupVariant = "card" | "ruled";
 

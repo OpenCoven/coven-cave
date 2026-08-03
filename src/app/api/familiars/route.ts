@@ -16,6 +16,8 @@ import {
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { scaffoldFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
 import { removedFamiliarIds, takeTombstone } from "@/lib/server/familiar-tombstones";
+import { loadPreferences } from "@/lib/server/preferences-store";
+import { voiceBindingForNewFamiliar } from "@/lib/voice/new-familiar-defaults";
 
 export const dynamic = "force-dynamic";
 
@@ -246,6 +248,8 @@ export async function POST(req: Request) {
 
   // Upsert only this familiar's binding. No `defaults` key → global defaults
   // are preserved (see the doc comment above).
+  const preferences = await loadPreferences();
+  const voiceBinding = voiceBindingForNewFamiliar(preferences.voice);
   await saveConfig({
     familiars: {
       [draft.id]: {
@@ -253,6 +257,10 @@ export async function POST(req: Request) {
         model: draft.model,
         ...(draft.hermesProfile ? { hermesProfile: draft.hermesProfile } : {}),
         ...(draft.runtime ? { runtime: draft.runtime } : {}),
+        voiceProvider: null,
+        voiceModel: null,
+        voiceName: null,
+        ...voiceBinding,
       },
     },
   });

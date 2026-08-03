@@ -563,6 +563,11 @@ async function main() {
       },
       general: { stopPhrase: "halt", celebrations: false },
       phone: { mobileMode: false },
+      voice: {
+        defaultProvider: "elevenlabs",
+        defaultModel: "eleven_turbo_v2_5",
+        defaultVoice: "21m00Tcm4TlvDq8ikWAM",
+      },
     };
     const savePreferences = await fetch(`${baseUrl}/api/preferences`, {
       method: "PATCH",
@@ -626,6 +631,7 @@ async function main() {
     assert.equal(restored.appearance.backdrop.image.mime, "image/png");
     assert.deepEqual(restored.general, preferencePatch.general);
     assert.deepEqual(restored.phone, preferencePatch.phone);
+    assert.deepEqual(restored.voice, preferencePatch.voice);
 
     const documentResponse = await fetch(baseUrl, {
       headers: authenticatedHeaders(baseUrl),

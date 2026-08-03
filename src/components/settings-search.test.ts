@@ -1,18 +1,21 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { SETTINGS_INDEX } from "./settings-sections.ts";
+import { SECTIONS, SETTINGS_INDEX } from "./settings-sections.ts";
+import { settingsGroupId } from "../lib/settings-group-id.ts";
 
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const sections = readFileSync(new URL("./settings-sections.ts", import.meta.url), "utf8");
 const group = readFileSync(new URL("./ui/settings-group.tsx", import.meta.url), "utf8");
+const groupId = readFileSync(new URL("../lib/settings-group-id.ts", import.meta.url), "utf8");
 const foundations = readFileSync(
   new URL("../styles/globals/foundations.css", import.meta.url),
   "utf8",
 );
 
 // SettingsGroup exposes a stable, label-derived id so search can scroll to it.
-assert.match(group, /export function settingsGroupId\(label: string\): string/, "settings-group exports settingsGroupId");
+assert.match(groupId, /export function settingsGroupId\(label: string\): string/, "the stable group id is dependency-free");
+assert.match(group, /settingsGroupId.*from "@\/lib\/settings-group-id"/, "SettingsGroup consumes the pure id helper");
 assert.match(
   group,
   /id=\{settingsGroupId\(label\)\}\s+data-settings-group/,
@@ -87,5 +90,35 @@ assert.doesNotMatch(shell, /params\.get\("familiarTab"\)/, "Settings no longer a
     seen.set(address, entry.keywords);
   }
 }
+
+const voiceDestinations = SETTINGS_INDEX
+  .filter((entry) => entry.section === "voice")
+  .map((entry) => `Voice › ${entry.group}`);
+assert.deepEqual(
+  voiceDestinations,
+  [
+    "Voice › Default for new familiars",
+    "Voice › ElevenLabs",
+    "Voice › OpenAI Realtime",
+    "Voice › Local speech",
+    "Voice › Familiar brain",
+  ],
+  "Voice exposes one search destination per owned settings group",
+);
+assert.equal(
+  SETTINGS_INDEX.some((entry) => entry.section === "general" && entry.group === "Local speech"),
+  false,
+  "General no longer owns Local speech",
+);
+
+const localSpeechDeepLink = new URL("https://cave.local/settings?group=Local+speech#voice");
+assert.equal(localSpeechDeepLink.hash, "#voice");
+assert.equal(SECTIONS.some((section) => section.id === localSpeechDeepLink.hash.slice(1)), true);
+assert.equal(localSpeechDeepLink.searchParams.get("group"), "Local speech");
+assert.equal(
+  settingsGroupId(localSpeechDeepLink.searchParams.get("group")),
+  "settings-group-local-speech",
+  "?group=Local+speech#voice resolves the Voice page's Local speech group id",
+);
 
 console.log("settings-search.test.ts OK");

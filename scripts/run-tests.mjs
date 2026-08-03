@@ -842,6 +842,9 @@ export const SUITES = {
     "src/components/settings-section-tabs.test.ts",
     "src/components/settings-overview.test.ts",
     "src/components/voice-engine-settings.test.ts",
+    "src/components/voice-provider-settings.test.tsx",
+    "src/components/voice-provider-settings.integration.test.tsx",
+    "src/components/use-openai-voice-preview.test.tsx",
     "src/components/theme-script.test.ts",
     "src/components/ui/error-state.test.ts",
     "src/components/ui/avatar-lightbox.test.ts",
@@ -1318,6 +1321,9 @@ export const SUITES = {
     "src/lib/server/automation-log-paths.test.ts",
     "src/lib/server/user-avatar-file.test.ts",
     "src/app/api/profile-route.test.ts",
+    "src/lib/voice/provider-catalog.test.ts",
+    "src/lib/voice/new-familiar-defaults.test.ts",
+    "src/lib/voice/settings-client.test.ts",
     "src/lib/voice/registry.test.ts",
     "src/lib/voice/speech-models.test.ts",
     "src/lib/voice/sidecar-whisper.test.ts",
@@ -1328,8 +1334,8 @@ export const SUITES = {
     "src/lib/voice/speech-loop.test.ts",
     "src/lib/voice/call-transcript.test.ts",
 
-    // Landed unwired with /auto mission mode (3bde7b0); check:tests-wired
-    // fails on `main` until it is listed. Passes as-is.
+    // Landed unwired with /auto mission mode (3bde7b0); main's
+    // check:tests-wired fails until the existing test is listed.
     "src/lib/auto-status-blocks.test.ts",
     "src/lib/voice/microphone-access.test.ts",
     "src/lib/voice/native-stt.test.ts",
@@ -1344,6 +1350,7 @@ export const SUITES = {
     "src/lib/voice/dictation-controller.test.ts",
     "src/lib/voice/use-dictation.test.ts",
     "src/app/api/voice/session/route.test.ts",
+    "src/app/api/voice/credential-status/route.test.ts",
     "src/app/api/voice/engines/route.test.ts",
     "src/app/api/voice/engines/whisper/route.test.ts",
     "src/app/api/voice/preview/route.test.ts",
@@ -1552,6 +1559,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/github/diff/route.test.ts",
   // imports the route module, which resolves "@/lib/server/..." aliases.
   "src/app/api/daemon/travel/reconcile/route.test.ts",
+  "src/app/api/familiars/route.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-models.test.ts",
   "src/lib/opencode-compatibility.test.ts",
@@ -1747,6 +1755,9 @@ const VITEST_TESTS = new Set([
   "src/components/familiar-x-section-behavior.test.tsx",
   "src/components/role-surfaces/research-x-sources.test.tsx",
   "src/components/role-surfaces/use-research-missions.test.tsx",
+  "src/components/voice-provider-settings.test.tsx",
+  "src/components/voice-provider-settings.integration.test.tsx",
+  "src/components/use-openai-voice-preview.test.tsx",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */
