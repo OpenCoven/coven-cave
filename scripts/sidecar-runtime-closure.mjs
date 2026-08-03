@@ -175,6 +175,45 @@ function isInside(root, candidate) {
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
 }
 
+/**
+ * Containment against a set of allowed roots, tolerant of path aliases.
+ *
+ * `isInside` is lexical, so it only answers correctly when both sides are
+ * spelled the same way. The roots here are built with `path.resolve`, which
+ * normalizes but does NOT resolve symlinks, while a candidate that has been
+ * through `realpath` is fully canonical. On macOS that difference is routine
+ * rather than exotic — `/var` is a symlink to `/private/var` and `/tmp` to
+ * `/private/tmp`, so every temp-dir path has two spellings — and comparing one
+ * against the other rejected links that were plainly inside an allowed root.
+ *
+ * The lexical check runs first and answers almost every call. Only when it says
+ * "outside" do we canonicalize the roots and ask again, so the extra syscalls
+ * land on the path that was about to throw anyway. This narrows what is
+ * rejected, never widens it: containment is still required, just measured
+ * between two spellings of the same filesystem location.
+ */
+export async function isInsideAllowedRoots(roots, candidate) {
+  if (roots.some((root) => isInside(root, candidate))) return true;
+  // Canonicalize BOTH sides before the second opinion. Canonicalizing only one
+  // of them just moves the mismatch: an aliased root against a canonical
+  // candidate fails exactly as an aliased candidate against a canonical root
+  // does. A path that cannot be resolved keeps its lexical spelling, which is
+  // the best available answer for something that does not exist yet.
+  const canonicalCandidate = await canonicalize(candidate);
+  for (const root of roots) {
+    if (isInside(await canonicalize(root), canonicalCandidate)) return true;
+  }
+  return false;
+}
+
+async function canonicalize(target) {
+  try {
+    return await realpath(target);
+  } catch {
+    return path.resolve(target);
+  }
+}
+
 function packageParts(relativePath) {
   const parts = relativePath.split(path.sep);
   if (parts[0] !== "node_modules") return null;
@@ -207,7 +246,7 @@ function shouldSkipPackageEntry(relativePath, entryName, _isDirectory) {
 }
 
 async function copyResolvedEntry(source, destination, options, relativePath = "") {
-  if (!options.allowedLinkRoots.some((root) => isInside(root, source))) {
+  if (!(await isInsideAllowedRoots(options.allowedLinkRoots, source))) {
     throw new Error(`sidecar runtime input escapes its allowed roots: ${source}`);
   }
   const metadata = await lstat(source);
@@ -219,7 +258,7 @@ async function copyResolvedEntry(source, destination, options, relativePath = ""
       throw new Error(`sidecar runtime input must not contain links: ${source}`);
     }
     resolvedSource = await realpath(source);
-    if (!options.allowedLinkRoots.some((root) => isInside(root, resolvedSource))) {
+    if (!(await isInsideAllowedRoots(options.allowedLinkRoots, resolvedSource))) {
       throw new Error(`sidecar dependency link escapes its allowed roots: ${source} -> ${resolvedSource}`);
     }
     resolvedMetadata = await stat(resolvedSource);
@@ -422,7 +461,7 @@ async function copyNextRuntimeFiles(projectRoot, standaloneRoot, dependencyRoot,
       const candidate = path.join(root, relativePath);
       try {
         const resolvedNextRoot = await realpath(root);
-        if (!resolvedPackageRoots.some((allowedRoot) => isInside(allowedRoot, resolvedNextRoot))) {
+        if (!(await isInsideAllowedRoots(resolvedPackageRoots, resolvedNextRoot))) {
           throw new Error(`sidecar dependency link escapes its allowed roots: ${root} -> ${resolvedNextRoot}`);
         }
         const nextPackage = JSON.parse(await readFile(path.join(resolvedNextRoot, "package.json"), "utf8"));
