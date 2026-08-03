@@ -951,12 +951,22 @@ final class AppModel {
     /// retry/discovery path. A successful probe also gives the rolling token
     /// renewal a chance to run for long-foregrounded devices.
     func validateConnectionOnForeground() async {
+        await validateCurrentConnection(refreshProfile: true)
+    }
+
+    /// Keep a long-lived foreground session honest even when the network path
+    /// itself never changes. This prevents the next chat send from being the
+    /// first operation to discover that the desktop restarted or moved.
+    func maintainConnectionWhileActive() async {
+        await validateCurrentConnection(refreshProfile: false)
+    }
+
+    private func validateCurrentConnection(refreshProfile: Bool) async {
         guard connection != nil, connectionState == .connected else { return }
         if let client, await client.ping() {
-            // Profile first (the just-succeeded ping proves the current token is
-            // valid), then the rolling token renewal + queue flush stay adjacent
-            // — the offline-compose flush invariant pins that pair.
-            await loadOperatorProfile()
+            if refreshProfile {
+                await loadOperatorProfile()
+            }
             await refreshAccessTokenIfNeeded()
             flushQueuedMessages()
             return

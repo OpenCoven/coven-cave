@@ -378,21 +378,24 @@ struct ChatView: View {
         .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
     }
 
+    @ViewBuilder
     private var projectContext: some View {
-        ChatProjectPicker(
-            familiarIds: thread.familiarIds,
-            recentRoots: app.recentProjectRoots,
-            selectedRoot: $thread.projectRoot,
-            isResolved: $projectResolved,
-            locked: !thread.canChangeProject,
-            requiresExplicitSelection: thread.needsProjectSelection
-        ) {
-            thread.needsProjectSelection = false
-            app.touch(thread)
+        if thread.needsProjectSelection || !thread.canSendMessages {
+            ChatProjectPicker(
+                familiarIds: thread.familiarIds,
+                recentRoots: app.recentProjectRoots,
+                selectedRoot: $thread.projectRoot,
+                isResolved: $projectResolved,
+                locked: !thread.canChangeProject,
+                requiresExplicitSelection: thread.needsProjectSelection
+            ) {
+                thread.needsProjectSelection = false
+                app.touch(thread)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(chrome.bgRaised)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(chrome.bgRaised)
     }
 
     private func sessionControlRow<Control: View>(

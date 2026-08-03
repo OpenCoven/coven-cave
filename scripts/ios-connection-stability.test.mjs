@@ -14,6 +14,7 @@ const terminal = await read("apps/ios/CovenCave/CovenCave/Networking/PtyTerminal
 const model = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
 const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");
 const app = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
+const rootView = await read("apps/ios/CovenCave/CovenCave/Views/RootView.swift");
 const connectView = await read("apps/ios/CovenCave/CovenCave/Views/ConnectionView.swift");
 
 // --- Shared URLSessions: sessions are never deallocated, so per-request
@@ -123,6 +124,16 @@ assert.match(
   app,
   /else if app\.connectionState == \.connected \{\s*\n\s*Task \{ await app\.validateConnectionOnForeground\(\) \}/,
   "the app should validate a stale connected state on foreground",
+);
+assert.match(
+  rootView,
+  /case \.connected:[\s\S]*?connectedTicks >= 6[\s\S]*?maintainConnectionWhileActive\(\)/,
+  "a long-lived active app should validate a nominally connected desktop once a minute",
+);
+assert.match(
+  model,
+  /func maintainConnectionWhileActive\(\) async[\s\S]*?validateCurrentConnection\(refreshProfile: false\)/,
+  "the active heartbeat should use the shared connection validation path without reloading profile data",
 );
 
 // --- Quiet retry: the unreachable screen re-probes without UI bouncing ------
