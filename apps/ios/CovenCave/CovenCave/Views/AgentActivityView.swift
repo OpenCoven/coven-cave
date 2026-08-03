@@ -54,6 +54,10 @@ struct AgentActivityView: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    // "Bash — <argument>": keep the tool name and the end of
+                    // the argument, drop the middle. Same reasoning as the
+                    // detail line in an expanded row.
+                    .truncationMode(.middle)
                     // A ticking label shouldn't pop — crossfade between steps.
                     .contentTransition(reduceMotion ? .identity : .opacity)
                 Image(systemName: "chevron.down")
@@ -117,6 +121,11 @@ struct AgentActivityView: View {
                         .font(.caption2.monospaced())
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
+                        // Both ends identify the argument; the middle rarely
+                        // does. Clipping the tail cost a path its filename —
+                        // "apps/ios/CovenCave/CovenCave/Mod…" — and would cost
+                        // a long command its arguments.
+                        .truncationMode(.middle)
                 }
                 if let failure = step.errorOutput, !failure.isEmpty {
                     // Why it failed. Wraps rather than truncating to one line —
