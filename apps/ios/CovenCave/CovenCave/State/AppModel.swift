@@ -1889,12 +1889,16 @@ final class AppModel {
     /// Delete several threads at once (bulk select); persists once.
     func deleteThreads(_ ids: Set<String>) {
         guard !ids.isEmpty else { return }
-        let n = ids.count
         // Capture positions before removing so a rejected delete can put each
         // chat back where it was rather than at the end of the list.
         let removed = threads.enumerated()
             .filter { ids.contains($0.element.id) }
             .map { ($0.offset, $0.element) }
+        // Count what was actually matched, not what was selected: a stale
+        // selection can name ids no longer in the list, and reporting those
+        // would claim deletions that never happened.
+        guard !removed.isEmpty else { return }
+        let n = removed.count
         threads.removeAll { ids.contains($0.id) }
         persistThreads()
         Haptics.success()

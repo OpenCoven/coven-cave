@@ -435,10 +435,15 @@ struct CaveClient {
         return try await patchTask(cardId: cardId, payload: payload)
     }
 
-    /// Server-side flags a session patch can carry. Encoded by hand so an
-    /// unset field stays ABSENT from the body: `/api/sessions/{id}` updates a
-    /// flag only when its key is present, so encoding `nil` as `null` — or as
-    /// `false` — would silently unarchive a chat you only meant to pin.
+    /// Server-side flags a session patch can carry.
+    ///
+    /// The contract is that an unset field is ABSENT from the body:
+    /// `/api/sessions/{id}` updates a flag only when its key is present, so
+    /// sending `false` for a flag the caller never touched would silently
+    /// unarchive a chat you only meant to pin. Synthesised `Encodable` already
+    /// omits nil optionals, so this encoder is not correcting it — it is
+    /// stating the requirement at the point it matters, so that adding a
+    /// non-optional field or a `?? false` default reads as the mistake it is.
     struct SessionFlagsPatch: Encodable {
         var archived: Bool?
         var pinned: Bool?

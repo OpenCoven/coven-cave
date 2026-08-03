@@ -152,6 +152,11 @@ assert.match(
   /threads\.enumerated\(\)\s*\n\s*\.filter \{ ids\.contains\(\$0\.element\.id\) \}\s*\n\s*\.map \{ \(\$0\.offset, \$0\.element\) \}/,
   "deleteThreads must capture every position before removing",
 );
+assert.match(
+  many,
+  /guard !removed\.isEmpty else \{ return \}[\s\S]*?let n = removed\.count/,
+  "deleteThreads must report only chats actually removed and no-op for stale-only selections",
+);
 assert.match(many, /fanOutThreadDelete\(removed, verb: "delete"\)/, "deleteThreads must fan out");
 
 // -- No thread mutation may go back to being local-only -------------------
