@@ -200,6 +200,11 @@ test("3a — the selection ask-bar only exists where there is somewhere to ask",
     /setSelection\(picked\.length > 1 \? picked : null\);/,
     "a stray click collapses the range — it must not raise the bar",
   );
+  assert.match(
+    reader,
+    /onMouseUp=\{onSelect\}\s*\n\s*onKeyUp=\{onSelect\}\s*\n\s*onTouchEnd=\{onSelect\}/,
+    "mouse, keyboard, and touch selection all surface the same ask-bar",
+  );
 });
 
 test("3a — Ask about this stages the SELECTION, not the whole turn", () => {
@@ -252,6 +257,29 @@ test("3a — the chrome is tokenised and survives reduced motion", () => {
     css,
     /@media \(max-width: 60rem\)[\s\S]*?\.cave-reader-rail \{\s*\n\s*position: absolute;/,
     "below two-column width the rail overlays rather than eating the measure",
+  );
+  assert.match(
+    css,
+    /\.cave-reader-stat--sources \{ color: var\(--accent-presence\); \}/,
+    "reader status colours should come from shared tokens rather than fixed values",
+  );
+  assert.match(
+    reader,
+    /import \{ smoothScrollBehavior \} from "@\/lib\/use-prefers-reduced-motion";/,
+    "imperative scrolling should reuse the shared reduced-motion helper",
+  );
+  assert.match(
+    reader,
+    /scrollIntoView\(\{ behavior: smoothScrollBehavior\(\), block: "start" \}\);/,
+    "rail jumps should honor reduced-motion preferences",
+  );
+});
+
+test("3a — the export menu is named for assistive tech", () => {
+  assert.match(
+    reader,
+    /<span className="cave-reader-menu" role="menu" aria-label="Export options">/,
+    "menus need an accessible name so screen readers announce what opened",
   );
 });
 

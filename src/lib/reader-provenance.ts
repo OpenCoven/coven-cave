@@ -89,15 +89,18 @@ function stepTarget(input: string | undefined): string {
 }
 
 export function toolSteps(tools: readonly BatchTool[]): ToolStep[] {
-  return tools.map((tool, i) => ({
-    id: tool.id,
-    n: i + 1,
-    name: tool.name.trim() || "tool",
-    category: toolCategory(tool.name),
-    target: stepTarget(tool.input),
-    status: tool.status,
-    durationMs: tool.durationMs,
-  }));
+  return tools.map((tool, i) => {
+    const name = tool.name.trim() || "tool";
+    return {
+      id: tool.id,
+      n: i + 1,
+      name,
+      category: toolCategory(name),
+      target: stepTarget(tool.input),
+      status: tool.status,
+      durationMs: tool.durationMs,
+    };
+  });
 }
 
 /** The Skills tab's "By type" split: harness skills, then connected servers.

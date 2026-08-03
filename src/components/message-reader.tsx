@@ -47,6 +47,7 @@ import { createPortal } from "react-dom";
 
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
+import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Segmented } from "@/components/ui/settings-controls";
@@ -234,7 +235,7 @@ export function MessageReader({
   const goTo = useCallback((id: string) => {
     const target = docRef.current?.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
     if (!target) return;
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    target.scrollIntoView({ behavior: smoothScrollBehavior(), block: "start" });
     setActiveId(id);
   }, []);
 
@@ -331,7 +332,7 @@ export function MessageReader({
                 <Icon name="ph:download-simple" width={12} aria-hidden />
               </button>
               {exportOpen ? (
-                <span className="cave-reader-menu" role="menu">
+                <span className="cave-reader-menu" role="menu" aria-label="Export options">
                   <span className="cave-reader-menu__head">Export this answer</span>
                   <button
                     type="button"
@@ -421,6 +422,8 @@ export function MessageReader({
               className="cave-reader-doc"
               onScroll={onScroll}
               onMouseUp={onSelect}
+              onKeyUp={onSelect}
+              onTouchEnd={onSelect}
             >
               <div className="cave-reader-measure">
                 {skills.length ? (

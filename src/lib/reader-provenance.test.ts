@@ -98,6 +98,13 @@ test("a call with no input shows nothing rather than a truncated blob", () => {
   assert.equal(toolSteps([tool({ id: "a", name: "Read" })])[0].target, "");
 });
 
+test("timeline tinting follows the displayed tool name", () => {
+  const [step] = toolSteps([tool({ id: "a", name: "  Read  " })]);
+
+  assert.equal(step.name, "Read");
+  assert.equal(step.category, "read");
+});
+
 test("skills split into harness skills then connected servers", () => {
   const groups = skillGroups([
     { id: "mcp:github", name: "github", source: "mcp", calls: 2 },

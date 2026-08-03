@@ -499,7 +499,7 @@
   border-radius: var(--radius-pill);
   background: currentColor;
 }
-.cave-reader-stat--sources { color: oklch(0.74 0.13 235); }
+.cave-reader-stat--sources { color: var(--accent-presence); }
 .cave-reader-stat--steps { color: var(--color-success); }
 .cave-reader-stat--skills { color: var(--accent-presence); }
 .cave-reader-stat--errors { color: var(--color-danger); }

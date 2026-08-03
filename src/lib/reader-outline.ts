@@ -93,9 +93,9 @@ export function readerOutline(text: string): ReaderHeading[] {
   return headings;
 }
 
-/** Words and read time for the rail's footer. Fenced code is counted — the
- *  reader still has to move through it — but its syntax is not tokenised into
- *  dozens of fake words, so a diff does not read as a novel. */
+/** Words and read time for the rail's footer. Fenced code is stripped before
+ *  counting, so shell scripts and diffs do not read as prose. Inline code and
+ *  link syntax are collapsed to their visible text. */
 export function readingStats(text: string): ReadingStats {
   const prose = text
     .replace(/```[\s\S]*?```/g, " ")
