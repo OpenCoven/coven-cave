@@ -85,6 +85,14 @@ export type MessageReaderProps = {
   /** Ask a follow-up about the selected passage. Without it, selecting text in
    *  the reader does nothing special — the ask-bar is not rendered. */
   onAsk?: (quote: string) => void;
+  /** The prompt that produced this answer. Absent — a root turn, or a turn
+   *  whose prompt is empty — renders no card at all rather than an empty one. */
+  prompt?: { text: string; createdAt?: string };
+  /** Rerun from an edited prompt. Absent while the thread is busy or this turn
+   *  is not the tip, which is exactly when a rerun would be a lie: the answer
+   *  it replaces is not the one on screen. Display of the prompt is NOT gated
+   *  on this — reading what you asked is always safe. */
+  onRerunWith?: (prompt: string) => void;
 };
 
 type FootTab = "sources" | "tools" | "skills";
@@ -103,6 +111,15 @@ const VIEW_LABELS: Record<ToolsView | SkillsView, string> = {
 };
 const viewLabel = (view: ToolsView | SkillsView) => VIEW_LABELS[view];
 
+/** The prompt's clock time, in the reader's locale. Falls back to nothing
+ *  rather than an invalid-date string when the turn carries no usable stamp. */
+function fmtAskTime(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
 /** A filename the OS will accept, derived from the familiar's name. */
 function exportFilename(label: string): string {
   const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -117,6 +134,8 @@ export function MessageReader({
   tools,
   durationMs,
   onAsk,
+  prompt,
+  onRerunWith,
 }: MessageReaderProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const docRef = useRef<HTMLDivElement | null>(null);
@@ -157,6 +176,8 @@ export function MessageReader({
   const [footTab, setFootTab] = useState<FootTab>("sources");
   const [toolsView, setToolsView] = useState<ToolsView>("batches");
   const [skillsView, setSkillsView] = useState<SkillsView>("cards");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(prompt?.text ?? "");
   const [selection, setSelection] = useState<string | null>(null);
   const [viewer, setViewer] = useState<Citation | null>(null);
 
@@ -426,6 +447,71 @@ export function MessageReader({
               onTouchEnd={onSelect}
             >
               <div className="cave-reader-measure">
+                {prompt ? (
+                  <div className="cave-reader-ask">
+                    <div className="cave-reader-ask__head">
+                      <span className="cave-reader-eyebrow">You asked</span>
+                      {prompt.createdAt ? (
+                        <span className="cave-reader-ask__when">{fmtAskTime(prompt.createdAt)}</span>
+                      ) : null}
+                      {onRerunWith && !editing ? (
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn--ghost ui-btn--xs focus-ring cave-reader-ask__edit"
+                          onClick={() => {
+                            setDraft(prompt.text);
+                            setEditing(true);
+                          }}
+                        >
+                          <Icon name="ph:note-pencil" width={10} aria-hidden />
+                          Edit &amp; rerun
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {editing ? (
+                      <div className="cave-reader-ask__edit-body">
+                        <textarea
+                          className="cave-reader-ask__input"
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          aria-label="Edit the prompt"
+                          rows={3}
+                        />
+                        <div className="cave-reader-ask__actions">
+                          <button
+                            type="button"
+                            className="ui-btn ui-btn--primary ui-btn--sm focus-ring"
+                            disabled={!draft.trim()}
+                            onClick={() => {
+                              const next = draft.trim();
+                              if (!next) return;
+                              onRerunWith?.(next);
+                              // Close: the answer behind this card is the one
+                              // being replaced, so leaving the reader open on it
+                              // would show a result the rerun has superseded.
+                              setEditing(false);
+                              onClose();
+                            }}
+                          >
+                            Rerun this turn
+                          </button>
+                          <button
+                            type="button"
+                            className="ui-btn ui-btn--ghost ui-btn--sm focus-ring"
+                            onClick={() => setEditing(false)}
+                          >
+                            Cancel
+                          </button>
+                          <span className="cave-reader-ask__note">replaces the answer below</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="cave-reader-ask__text">{prompt.text}</p>
+                    )}
+                  </div>
+                ) : null}
+
                 {skills.length ? (
                   <div className="cave-reader-turnmeta">
                     <span className="cave-reader-eyebrow">Skills</span>

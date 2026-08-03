@@ -37,7 +37,7 @@ assert.match(
 // ── 3. Latest-ref pattern: reassigned every render, all typed actions ───────
 assert.match(
   src,
-  /transcriptHandlersRef\.current = \{\s*siblingsFor,\s*switchBranch,\s*editTurnInComposer,\s*regenerateFor,\s*replyFor,\s*askAboutFor,\s*send,\s*activateFollowUp: handleFollowUp,\s*\};/,
+  /transcriptHandlersRef\.current = \{\s*siblingsFor,\s*switchBranch,\s*editTurnInComposer,\s*regenerateFor,\s*replyFor,\s*askAboutFor,\s*readerPromptFor,\s*rerunWithFor,\s*send,\s*activateFollowUp: handleFollowUp,\s*\};/,
   "the handlers ref must be reassigned in the render body so closures never go stale",
 );
 

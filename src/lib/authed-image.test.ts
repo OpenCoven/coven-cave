@@ -170,8 +170,14 @@ for (const rel of [
   // footer-collaborator rows.
   "../components/dashboard/bento-dashboard.tsx",
 ]) {
+  // The analytics workbench splits across three files — the view owns loading,
+  // the content composes, and the dock is where the familiar's avatar renders.
   const src = rel === "../components/familiar-analytics-view.tsx"
-    ? [read(rel), read("../components/familiar-analytics-content.tsx")].join("\n")
+    ? [
+        read(rel),
+        read("../components/familiar-analytics-content.tsx"),
+        read("../components/familiar-analytics-dock.tsx"),
+      ].join("\n")
     : read(rel);
   assert.match(src, /AuthedImage/, `${rel} renders avatars via <AuthedImage>`);
   assert.doesNotMatch(
