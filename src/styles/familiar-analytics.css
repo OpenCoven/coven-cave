@@ -2582,7 +2582,11 @@
    driven by matchMedia in the component, because the rail is a different tree
    than the expanded dock — CSS can't hide a branch that isn't rendered. */
 @media (max-width: 1180px) {
-  .fa-stage-grid { grid-template-columns: minmax(0, 1fr); }
+  .fa-stage { overflow-y: auto; }
+  .fa-stage-grid {
+    flex: 0 0 auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
   .fa-stage-grid > * { min-height: 320px; }
   .fa-stats { flex-wrap: wrap; height: auto; }
   .fa-stats > * { flex: 1 1 200px; }

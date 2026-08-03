@@ -78,6 +78,8 @@ export type FamiliarAnalyticsModel = {
   signalTrends: SignalTrends;
   healRequests: SelfHealRequest[];
   threadReports: ThreadSelfReport[];
+  /** Complete persisted metric history for time-windowed trend reads. */
+  metricSnapshots: ThreadMetricSnapshot[];
   /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
   modelFeedback: MessageFeedbackRollup;
   /**
@@ -253,6 +255,7 @@ export function buildFamiliarAnalyticsModel(
     signalTrends,
     healRequests,
     threadReports: data.threadReports,
+    metricSnapshots: data.metricSnapshots,
     modelFeedback: data.modelFeedback,
     progression: familiar
       ? {
