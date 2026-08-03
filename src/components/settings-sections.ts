@@ -38,8 +38,12 @@ export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
 };
 
 export const SETTINGS_INDEX: SettingsIndexEntry[] = [
-  { section: "profile", group: "Identity", keywords: "profile name display pronouns identity operator user you" },
-  { section: "profile", group: "Identity", keywords: "avatar image photo picture upload face profile" },
+  // One entry per destination, never one per control: `section` + `group` is the
+  // full address `open-setting` can navigate to, and both the palette and the
+  // settings search key their rows off exactly that pair. Identity was split
+  // across two entries (name/pronouns, avatar) so a query matching both rendered
+  // duplicate React keys and two rows opening the same panel (cave-x7v6b).
+  { section: "profile", group: "Identity", keywords: "profile name display pronouns identity operator user you avatar image photo picture upload face" },
   { section: "profile", group: "Context", keywords: "bio about timezone time zone familiar draft" },
   { section: "profile", group: "Personality", keywords: "personality mbti type axes tone familiar" },
   { section: "profile", group: "Links", keywords: "links github socials url website portfolio" },
