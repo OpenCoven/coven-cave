@@ -15,6 +15,8 @@ import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import type { CodexAutomation } from "@/lib/codex-automations-types";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { cleanModelId } from "@/lib/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
@@ -45,7 +47,9 @@ type WorkflowEngineResponse = { ok?: boolean; runId?: string; status?: string; e
 function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
   if (!Object.prototype.hasOwnProperty.call(payload, "modelOverride")) return undefined;
   if (payload.modelOverride === "") return "";
-  return stringValue(payload.modelOverride);
+  const model = cleanModelId(payload.modelOverride);
+  if (!model) throw new Error("queued chat model id is not safe for launch");
+  return model;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -113,8 +117,9 @@ async function spawnHubSession(args: {
   projectRoot?: string | null;
   title: string;
 }): Promise<string> {
-  if (!isAllowedHarness(args.harness)) {
-    throw new Error(`harness '${args.harness}' can't run as an agent session`);
+  const harness = canonicalHarnessId(args.harness);
+  if (!isAllowedHarness(harness)) {
+    throw new Error(`harness '${harness}' can't run as an agent session`);
   }
   const projectRoot = normalizeProjectRoot(args.projectRoot ?? process.cwd());
   if (!projectRoot) throw new Error("invalid project root");
@@ -124,7 +129,7 @@ async function spawnHubSession(args: {
     path: "/api/v1/sessions",
     body: {
       projectRoot,
-      harness: args.harness,
+      harness,
       prompt: args.prompt,
       ...(args.model ? { model: args.model } : {}),
       ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
@@ -171,6 +176,10 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   });
 
   const binding = bindingFor(config, familiarId);
+  const modelOverride = queuedModelOverride(payload);
+  if (modelOverride && !isModelAllowedByRuntime(binding.harness, modelOverride)) {
+    throw new Error("queued chat model id is not allowed by the selected runtime");
+  }
   const queuedMetadata = record(payload.responseMetadata);
   const queuedHarness = stringValue(queuedMetadata.harness);
   if (
@@ -195,7 +204,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     // runtime-default request. The daemon receives no model argument in both
     // cases, while the scope marker prevents this replay path from treating a
     // cleared model as an accidental static/catalog fallback.
-    model: queuedModelOverride(payload),
+    model: modelOverride,
     ...(payload.modelOverrideScope === "runtime-default"
       ? { modelOverrideScope: "runtime-default" as const }
       : {}),

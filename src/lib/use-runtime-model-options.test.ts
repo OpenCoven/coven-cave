@@ -9,17 +9,17 @@ const source = readFileSync(
 
 assert.match(
   source,
-  /runtimeInventory\.key === inventoryKey &&[\s\S]*?runtimeInventory\.inventory !== null[\s\S]*?\.\.\.runtimeInventory\.inventory,[\s\S]*?loading: false/,
+  /runtimeInventory\.key === inventoryKey &&[\s\S]*?runtimeInventory\.inventory !== null[\s\S]*?\.\.\.runtimeInventory\.inventory,[\s\S]*?loading: runtimeInventory\.loading/,
   "dynamic model menus apply only the current runtime and familiar's full inventory",
 );
 assert.match(
   source,
-  /current\.key === inventoryKey[\s\S]{0,80}\? current[\s\S]{0,80}: \{ key: inventoryKey, inventory: null \}/,
+  /current\.key === inventoryKey[\s\S]{0,100}\? \{ \.\.\.current, loading: true \}[\s\S]{0,100}: \{ key: inventoryKey, inventory: null, loading: true \}/,
   "same-scope polling remains stable while a changed scope fails closed",
 );
 assert.match(
   source,
-  /usePausablePoll\([\s\S]{0,180}INVENTORY_REFRESH_MS[\s\S]{0,100}enabled: dynamicInventory/,
+  /usePausablePoll\([\s\S]{0,400}INVENTORY_REFRESH_MS[\s\S]{0,160}enabled: dynamicInventory/,
   "dynamic provider inventories refresh on the shared hidden-tab-safe bounded poll",
 );
 assert.match(

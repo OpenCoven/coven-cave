@@ -35,6 +35,16 @@ assert.match(
 assert.match(route, /bindingFor\(config, familiarId\)/);
 assert.match(route, /resolveChatModelState/);
 assert.match(route, /loadConversation\(sessionId\)/);
+assert.match(
+  route,
+  /const conversationHarness = conversation\?\.harness[\s\S]*?harness: conversationHarness \?\? canonicalHarnessId\(binding\.harness\)/,
+  "model state must use the persisted conversation harness that chat/send will launch",
+);
+assert.match(
+  route,
+  /if \(conversation && conversation\.familiarId !== familiarId\)[\s\S]*?jsonError\("not found", 404\)/,
+  "model-state GET must not expose another familiar's session model intent",
+);
 assert.match(route, /saveConfig/);
 assert.match(route, /saveConversation/);
 assert.match(
@@ -62,8 +72,8 @@ assert.equal(
 );
 assert.match(
   route,
-  /isModelAllowedByRuntime\(binding\.harness, model\)/,
-  "model-state writes enforce the selected runtime custom-id policy rather than trusting picker validation",
+  /const modelValidationHarness = scope === "session"[\s\S]*?canonicalHarnessId\(sessionConversation\?\.harness \?\? binding\.harness\)[\s\S]*?isModelAllowedByRuntime\(modelValidationHarness, model\)/,
+  "model-state writes enforce the active conversation runtime custom-id policy rather than trusting picker validation",
 );
 assert.match(
   route,

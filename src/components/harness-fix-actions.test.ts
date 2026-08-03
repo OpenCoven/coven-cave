@@ -77,6 +77,11 @@ import { readFile } from "node:fs/promises";
   );
   assert.match(
     source,
+    /async function handleUseHarnessFix\(runtime: string\) \{[\s\S]*?if \(sessionId\) \{[\s\S]*?conversation is pinned to its original runtime[\s\S]*?announce\(message, "assertive"\)[\s\S]*?return;/,
+    "the fix handler must not claim to switch an existing conversation whose persisted harness pins the retry",
+  );
+  assert.match(
+    source,
     /onUseHarness=\{lastFailedSend \? handleUseHarnessFix : undefined\}/,
     "the strip only offers a switch when there is a failed send to retry",
   );
@@ -104,6 +109,11 @@ import { readFile } from "node:fs/promises";
     source,
     /await retryReply\(reply\)/,
     "after rebinding, the group-chat fix should re-run just that reply",
+  );
+  assert.match(
+    source,
+    /const useHarnessForReply = useCallback\([\s\S]*?if \(reply\.sessionId \|\| activeGroupRef\.current\?\.sessions\[reply\.familiarId\]\) \{[\s\S]*?reply is pinned to its original runtime[\s\S]*?return;/,
+    "group-chat recovery must not rebind a familiar when the failed reply already has a pinned session",
   );
 }
 

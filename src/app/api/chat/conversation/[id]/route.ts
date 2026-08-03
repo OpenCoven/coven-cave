@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cleanModelId } from "@/lib/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import { cleanModelControlValues } from "@/lib/model-control-capabilities";
 import {
@@ -539,7 +540,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
 
     if (body.modelIntent === null) {
-      delete existing.modelIntent;
+      existing.modelIntent = {
+        model: "",
+        source: "session",
+        applicationState: "saved",
+        reason: "Using the runtime's configured default model.",
+      };
       await saveConversation(existing);
       return NextResponse.json({ ok: true, conversation: existing });
     }
@@ -548,14 +554,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       if (!body.modelIntent || typeof body.modelIntent !== "object" || Array.isArray(body.modelIntent)) {
         return jsonError("invalid model intent", 400);
       }
-      const model = cleanModelId(body.modelIntent.model);
-      if (!model) return jsonError("invalid model", 400);
+      const model = body.modelIntent.model === ""
+        ? ""
+        : cleanModelId(body.modelIntent.model);
+      if (model === null) return jsonError("invalid model", 400);
       if (body.modelIntent.source !== "session") {
         return jsonError("model intent source must be session", 400);
       }
+      if (model && !isModelAllowedByRuntime(existing.harness, model)) {
+        return jsonError("model is not allowed by this runtime", 400);
+      }
       const reason = MODEL_APPLICATION_REASONS.has(String(body.modelIntent.reason))
         ? body.modelIntent.reason as string
-        : "Saved for this chat.";
+        : model === ""
+          ? "Using the runtime's configured default model."
+          : "Saved for this chat.";
       existing.modelIntent = {
         model,
         source: "session",

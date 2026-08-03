@@ -122,7 +122,7 @@ export function ComposerRuntimePopover({
                     setOpen(false);
                   }}
                 >
-                  {hasRuntimeDefault ? "Runtime default" : "Cave default"}
+                  Runtime default
                 </PopoverItem>
               ) : null}
               {modelIsOutsideInventory ? (

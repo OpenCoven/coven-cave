@@ -266,6 +266,7 @@ import {
   persistedTurnControls,
   persistSendModelIntent,
   resolveSendModelMetadata,
+  savedModelSelectionRejection,
   turnRetryModel,
 } from "./chat-send-models";
 import {
@@ -2034,13 +2035,51 @@ export async function POST(req: Request) {
     binding.harness !== "grok" &&
     binding.harness !== "hermes" &&
     ((await probeCovenCapability(covenRunSupportsAddDir)) ?? false);
-  const { desiredModel, modelState } = resolveSendModelMetadata({
+  const { desiredModel, modelState, invalidSavedModel, suppressedSavedModel } = resolveSendModelMetadata({
     body,
     config,
     binding,
     existingConversation,
     modelForwardingEnabled,
   });
+  const savedModelRejection = savedModelSelectionRejection({
+    desiredModel,
+    modelState,
+    harness: binding.harness,
+    modelForwardingEnabled,
+    invalidSavedModel,
+    suppressedSavedModel,
+  });
+  if (savedModelRejection === "invalid") {
+    return NextResponse.json({
+      ok: false,
+      code: "invalid_saved_model",
+      error: "The saved model selection is not safe for launch.",
+      desiredModel,
+      modelApplicationState: "rejected",
+      modelApplicationReason: "The saved model id failed launch-boundary validation.",
+    }, { status: 400 });
+  }
+  if (savedModelRejection === "unsupported") {
+    return NextResponse.json({
+      ok: false,
+      code: "unsupported_saved_model",
+      error: "The saved model selection is not allowed by this runtime.",
+      desiredModel,
+      modelApplicationState: "rejected",
+      modelApplicationReason: "The selected runtime does not allow this model id.",
+    }, { status: 400 });
+  }
+  if (savedModelRejection === "forwarding") {
+    return NextResponse.json({
+      ok: false,
+      code: "unsupported_saved_model",
+      error: "The saved model selection cannot be applied by this runtime.",
+      desiredModel,
+      modelApplicationState: "rejected",
+      modelApplicationReason: "Model forwarding is unavailable for this runtime binding.",
+    }, { status: 400 });
+  }
   const grokForwardModel = grokShouldUseCliDefault({
     modelSource: modelState.source,
     globalDefaultModel: config.defaults.model,

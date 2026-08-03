@@ -982,11 +982,18 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     ],
   );
 
-  // Recovery for a harness/runtime failure on one reply: rebind that familiar
-  // to the chosen adapter via /api/config, then re-run just their reply.
+  // Recovery for a harness/runtime failure on one reply: before a session is
+  // pinned, rebind that familiar via /api/config, then re-run just their reply.
   const useHarnessForReply = useCallback(
     async (reply: GroupReply, runtime: string) => {
       if (busy) return;
+      if (reply.sessionId || activeGroupRef.current?.sessions[reply.familiarId]) {
+        announce(
+          "This reply is pinned to its original runtime. Start a new coven turn to use another runtime.",
+          "assertive",
+        );
+        return;
+      }
       try {
         const res = await fetch("/api/config", {
           method: "PATCH",

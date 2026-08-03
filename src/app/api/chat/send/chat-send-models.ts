@@ -8,6 +8,7 @@ import {
   resolveChatModelState,
   type ChatModelState,
 } from "@/lib/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { buildCovenMarkersDirective } from "@/lib/coven-marker-directive";
 import { buildCitationsDirective } from "@/lib/citations-directive";
@@ -68,7 +69,12 @@ export function resolveSendModelMetadata(args: {
   binding: FamiliarBinding;
   existingConversation: ConversationFile | null;
   modelForwardingEnabled: boolean;
-}): { desiredModel: string; modelState: ChatModelState } {
+}): {
+  desiredModel: string;
+  modelState: ChatModelState;
+  invalidSavedModel: boolean;
+  suppressedSavedModel: boolean;
+} {
   const requestedModel = cleanModelId(args.body.modelOverride);
   const nextMessageRuntimeDefault =
     args.body.modelOverrideScope === "next-message" &&
@@ -92,7 +98,52 @@ export function resolveSendModelMetadata(args: {
     application: { supported: args.modelForwardingEnabled },
   });
   const desiredModel = modelState.effectiveModel === "unknown" ? args.binding.model : modelState.effectiveModel;
-  return { desiredModel, modelState };
+  const rawSavedModel = args.body.modelOverrideScope === "next-message" || args.body.modelOverrideScope === "runtime-default"
+    ? undefined
+    : args.body.modelOverrideScope === "session"
+      ? args.body.modelOverride
+      : args.existingConversation?.modelIntent?.model ?? args.config.familiars[args.body.familiarId]?.model;
+  const invalidSavedModel = rawSavedModel !== undefined && rawSavedModel !== null && rawSavedModel !== ""
+    && cleanModelId(rawSavedModel) === null;
+  const savedModel = cleanModelId(rawSavedModel);
+  const suppressedSavedModel = Boolean(
+    savedModel &&
+    modelState.source !== "session" &&
+    modelState.source !== "familiar-default",
+  );
+  return { desiredModel, modelState, invalidSavedModel, suppressedSavedModel };
+}
+
+export function savedModelSelectionRejection(args: {
+  desiredModel: string;
+  modelState: ChatModelState;
+  harness: string;
+  modelForwardingEnabled: boolean;
+  invalidSavedModel?: boolean;
+  suppressedSavedModel?: boolean;
+}): "invalid" | "unsupported" | "forwarding" | null {
+  if (args.invalidSavedModel) return "invalid";
+  if (args.suppressedSavedModel) return "unsupported";
+  if (args.modelState.source !== "session" && args.modelState.source !== "familiar-default") return null;
+  const desiredModel = cleanModelId(args.desiredModel);
+  if (!desiredModel) return null;
+  if (!isModelAllowedByRuntime(args.harness, desiredModel)) return "unsupported";
+  return args.modelForwardingEnabled ? null : "forwarding";
+}
+
+/** A saved Cave model is an explicit launch intent, not a hint that can be
+ * silently ignored when the selected runtime cannot forward model ids. */
+export function savedModelSelectionRequiresForwarding(args: {
+  desiredModel: string;
+  modelState: ChatModelState;
+  harness?: string;
+  modelForwardingEnabled: boolean;
+  invalidSavedModel?: boolean;
+}): boolean {
+  return savedModelSelectionRejection({
+    ...args,
+    harness: args.harness ?? args.modelState.harness,
+  }) === "forwarding";
 }
 
 export function modelIntentForSend(

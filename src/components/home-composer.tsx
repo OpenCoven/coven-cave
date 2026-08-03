@@ -1201,9 +1201,7 @@ export function HomeComposer({
                     options: [
                       {
                         value: "",
-                        label: modelState?.source === "runtime-default" || runtimeOwnsDefault
-                          ? "Runtime default"
-                          : "Cave default",
+                        label: "Runtime default",
                       },
                       ...runtimeModelOptions.map((m) => ({ value: m.id, label: m.label })),
                     ],

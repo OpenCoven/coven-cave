@@ -63,12 +63,20 @@ function paramsFor(id: string) {
   return { params: Promise.resolve({ id }) };
 }
 
-const { DELETE, GET } = await import("./route.ts");
+const { DELETE, GET, PATCH } = await import("./route.ts");
 const { PUT, POST } = await import("./route.ts");
 
 function writeReq(bodyObj: unknown) {
   return new Request("http://test/api/chat/conversation/x", {
     method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(bodyObj),
+  });
+}
+
+function patchReq(bodyObj: unknown) {
+  return new Request("http://test/api/chat/conversation/x", {
+    method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(bodyObj),
   });
@@ -309,6 +317,42 @@ test("GET preserves the canonical model application reason", async () => {
     json.conversation.turns[0].responseMetadata.modelApplicationReason,
     "Saved for this chat.",
     "safe application metadata should remain available to the transcript",
+  );
+});
+
+test("PATCH model intent keeps an explicit runtime-default sentinel", async () => {
+  writeConversation("sess-patch-runtime-default", []);
+  const seed = JSON.parse(readFileSync(conversationPath("sess-patch-runtime-default"), "utf8"));
+  seed.modelIntent = {
+    model: "anthropic/claude-sonnet-4-6",
+    source: "session",
+  };
+  writeFileSync(conversationPath("sess-patch-runtime-default"), JSON.stringify(seed));
+
+  const cleared = await PATCH(
+    patchReq({ modelIntent: null }),
+    paramsFor("sess-patch-runtime-default"),
+  );
+  const clearedJson = await cleared.json();
+  assert.equal(cleared.status, 200);
+  assert.equal(clearedJson.conversation.modelIntent.model, "");
+
+  const explicitEmpty = await PATCH(
+    patchReq({
+      modelIntent: {
+        model: "",
+        source: "session",
+      },
+    }),
+    paramsFor("sess-patch-runtime-default"),
+  );
+  const explicitJson = await explicitEmpty.json();
+  assert.equal(explicitEmpty.status, 200);
+  assert.equal(explicitJson.conversation.modelIntent.model, "");
+  assert.equal(
+    JSON.parse(readFileSync(conversationPath("sess-patch-runtime-default"), "utf8")).modelIntent.model,
+    "",
+    "the empty sentinel survives the conversation persistence path",
   );
 });
 

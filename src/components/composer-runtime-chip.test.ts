@@ -90,7 +90,7 @@ assert.match(
 // ── Runtime switching is real: familiar-level config, optimistic + refetch ──
 assert.match(
   chatView,
-  /const handleSelectRuntime = useCallback\(\s*\n\s*\(runtime: string\) => \{[\s\S]{0,240}?const nextModel = modelForRuntimeSwitch\(runtime\);/,
+  /const handleSelectRuntime = useCallback\(\s*\n\s*\(runtime: string\) => \{[\s\S]*?const nextModel = modelForRuntimeSwitch\(runtime\);/,
   "a runtime pick uses the runtime-switch policy instead of carrying a foreign model id",
 );
 assert.match(
@@ -98,12 +98,12 @@ assert.match(
   /fetch\("\/api\/config", \{\s*\n\s*method: "PATCH",[\s\S]{0,300}?familiars: \{[\s\S]*?\[familiar\.id\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel,/,
   "runtime switches persist through /api/config with explicit default intent",
 );
-assert.match(
-  chatView,
-  /if \(sessionId\) \{[\s\S]{0,500}?fetch\("\/api\/chat\/model-state", \{[\s\S]{0,300}?sessionId,[\s\S]{0,180}?model: "",[\s\S]{0,120}?scope: "session"/,
-  "switching runtime clears a prior session model intent before the new runtime can send",
-);
 const selectRuntimeBlock = chatView.match(/const handleSelectRuntime = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
+assert.match(
+  selectRuntimeBlock,
+  /if \(sessionId\) \{[\s\S]*?Runtime switching applies to new chats[\s\S]*?announce\(message, "assertive"\)[\s\S]*?return;/,
+  "an active conversation rejects runtime rebinding because its persisted harness pins the next send",
+);
 assert.match(
   selectRuntimeBlock,
   /const optimistic: ChatModelState = \{[\s\S]*?harness: runtime,[\s\S]*?effectiveModel: nextModel,[\s\S]*?modelStateRef\.current = optimistic;\s*\n\s*setModelState\(optimistic\)/,
@@ -207,7 +207,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /\{\s*value: "",\s*label: modelState\?\.source === "runtime-default" \|\| composerRuntimeOwnsDefault[\s\S]*?"Runtime default"[\s\S]*?"Cave default"/ ,
+  /\{\s*value: "",\s*label: "Runtime default"/,
   "the empty model entry is labeled as the durable runtime-default clear action",
 );
 

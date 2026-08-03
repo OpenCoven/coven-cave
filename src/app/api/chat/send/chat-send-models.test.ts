@@ -7,6 +7,8 @@ import {
   persistedTurnControls,
   persistSendModelIntent,
   resolveSendModelMetadata,
+  savedModelSelectionRejection,
+  savedModelSelectionRequiresForwarding,
   turnRetryModel,
 } from "./chat-send-models.ts";
 
@@ -251,6 +253,75 @@ assert.equal(
   ),
   undefined,
   "one-turn Runtime default does not mutate the durable session model intent",
+);
+
+assert.equal(
+  savedModelSelectionRequiresForwarding({
+    desiredModel: sessionState.effectiveModel,
+    modelState: sessionState,
+    modelForwardingEnabled: false,
+  }),
+  true,
+  "a saved model must fail closed instead of silently running the runtime default",
+);
+assert.equal(
+  savedModelSelectionRequiresForwarding({
+    desiredModel: sessionState.effectiveModel,
+    modelState: sessionState,
+    modelForwardingEnabled: true,
+  }),
+  false,
+  "a saved model may launch when the runtime confirms model forwarding",
+);
+assert.equal(
+  savedModelSelectionRequiresForwarding({
+    desiredModel: "",
+    modelState: inheritedRuntimeDefault,
+    modelForwardingEnabled: false,
+  }),
+  false,
+  "runtime-owned defaults remain launchable without a model argument",
+);
+assert.equal(
+  savedModelSelectionRejection({
+    desiredModel: "provider/custom",
+    modelState: { ...sessionState, harness: "future-unknown" },
+    harness: "future-unknown",
+    modelForwardingEnabled: true,
+  }),
+  "unsupported",
+  "a saved safe id is rejected when the selected runtime has no custom-id policy",
+);
+assert.equal(
+  savedModelSelectionRejection({
+    desiredModel: "openai/gpt-5.6-sol",
+    modelState: { ...sessionState, source: "global-default" },
+    harness: "claude",
+    modelForwardingEnabled: true,
+    invalidSavedModel: true,
+  }),
+  "invalid",
+  "a malformed persisted selection is rejected instead of silently falling back",
+);
+
+const staleGrokModel = resolveSendModelMetadata({
+  body: { familiarId: "nyx" },
+  config: { defaults: { model: "openai/gpt-5.6-sol" }, familiars: { nyx: { model: "openai/gpt-5.6-sol" } } },
+  binding: { harness: "grok", model: "" },
+  existingConversation: null,
+  modelForwardingEnabled: true,
+});
+assert.equal(staleGrokModel.modelState.source, "runtime-default");
+assert.equal(
+  savedModelSelectionRejection({
+    desiredModel: staleGrokModel.desiredModel,
+    modelState: staleGrokModel.modelState,
+    harness: "grok",
+    modelForwardingEnabled: true,
+    suppressedSavedModel: staleGrokModel.suppressedSavedModel,
+  }),
+  "unsupported",
+  "a provider-qualified model suppressed by a switched runtime must fail closed",
 );
 
 console.log("chat-send-models.test.ts: ok");

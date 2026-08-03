@@ -89,6 +89,21 @@ assert.match(
   /queuedModelOverride\(payload\)[\s\S]*modelOverrideScope:[\s\S]*reasoningEffort: stringValue\(payload\.reasoningEffort\),[\s\S]*responseSpeed: stringValue\(payload\.responseSpeed\),[\s\S]*modelControls: record\(payload\.modelControls\)/,
   "travel replay extracts queued model and capability intent before the daemon boundary",
 );
+assert.match(
+  replay,
+  /const model = cleanModelId\(payload\.modelOverride\)[\s\S]*queued chat model id is not safe for launch/,
+  "travel replay rejects a malformed persisted model instead of silently using the runtime default",
+);
+assert.match(
+  replay,
+  /modelOverride && !isModelAllowedByRuntime\(binding\.harness, modelOverride\)[\s\S]*queued chat model id is not allowed by the selected runtime/,
+  "travel replay validates a queued model against the current runtime before spawning",
+);
+assert.match(
+  replay,
+  /const harness = canonicalHarnessId\(args\.harness\)[\s\S]*path: "\/api\/v1\/sessions"[\s\S]*body:[\s\S]*harness,/,
+  "travel replay canonicalizes runtime aliases before the hub launch boundary",
+);
 
 assert.match(
   replay,

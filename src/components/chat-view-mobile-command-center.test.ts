@@ -102,6 +102,12 @@ assert.match(
 
 assert.match(
   source,
+  /const composerAutocompletePosition = inlineComposer \? "top-full mt-2" : "bottom-full mb-2"/,
+  "Composer popovers should retain their bounded above/below placement contract",
+);
+
+assert.match(
+  source,
   /className="cave-composer-controls"/,
   "Composer controls should expose a mobile layout hook",
 );

@@ -86,9 +86,16 @@ async function currentState(
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
   const conversation = sessionId ? await loadConversation(sessionId) : null;
+  const conversationHarness = conversation?.harness
+    ? canonicalHarnessId(conversation.harness)
+    : null;
   return resolveChatModelState({
     familiarId,
-    harness: canonicalHarnessId(binding.harness),
+    // Chat/send treats a persisted conversation harness as the execution
+    // contract. Model state must resolve against the same harness or a
+    // familiar rebind can render Hermes controls while the next turn still
+    // launches the old Claude conversation (and vice versa).
+    harness: conversationHarness ?? canonicalHarnessId(binding.harness),
     runtime: conversation?.runtime ?? runtimeForBinding(binding),
     globalDefaultModel: config.defaults.model,
     familiarModel: config.familiars[familiarId]?.model ?? null,
@@ -119,6 +126,13 @@ export async function GET(req: Request) {
   }
   if (rawPreviewModel !== null && previewModel === null) {
     return jsonError("invalid model", 400);
+  }
+
+  if (sessionId) {
+    const conversation = await loadConversation(sessionId);
+    if (conversation && conversation.familiarId !== familiarId) {
+      return jsonError("not found", 404);
+    }
   }
 
   const state = await currentState(familiarId, sessionId, previewModel);
@@ -202,14 +216,25 @@ export async function PATCH(req: Request) {
   if (!clearModel && !model) return jsonError("invalid model", 400);
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
-  if (model && !isModelAllowedByRuntime(binding.harness, model)) {
-    return jsonError("model is not allowed by this runtime", 400);
-  }
   if (scope === "next-message") {
     return jsonError("next-message scope is composer-local", 400);
   }
   if (scope !== "familiar-default" && scope !== "session") {
     return jsonError("unsupported scope", 400);
+  }
+
+  const sessionConversation = scope === "session" && sessionId
+    ? await loadConversation(sessionId)
+    : null;
+  if (scope === "session" && sessionId &&
+      (!sessionConversation || sessionConversation.familiarId !== familiarId)) {
+    return jsonError("not found", 404);
+  }
+  const modelValidationHarness = scope === "session"
+    ? canonicalHarnessId(sessionConversation?.harness ?? binding.harness)
+    : canonicalHarnessId(binding.harness);
+  if (model && !isModelAllowedByRuntime(modelValidationHarness, model)) {
+    return jsonError("model is not allowed by this runtime", 400);
   }
 
   if (scope === "familiar-default") {

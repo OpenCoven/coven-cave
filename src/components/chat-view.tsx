@@ -2639,8 +2639,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   // Switch the runtime from the composer chip. Familiar-level, like the home
   // composer's selectRuntime (/api/config is the only channel that rebinds a
-  // harness) — and it applies from the next send, because the send route
-  // re-resolves the familiar's binding from current config on every turn.
+  // harness) — and it applies from the next send only before a session exists.
+  // Existing conversations are pinned to their persisted harness by the send
+  // route, so a runtime picker must not claim to rebind an active session.
   // cave-pkapw: inside a session, picking a model writes SESSION scope, so the
   // familiar's own default is untouched and "use this for every new chat" has
   // no path from here — you had to go to Home or the Familiar studio. This
@@ -2687,12 +2688,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
+      if (sessionId) {
+        const message = "Runtime switching applies to new chats. Start a new chat to switch runtimes.";
+        setError(message);
+        announce(message, "assertive");
+        return;
+      }
       const selectionRevision = ++modelSelectionRevisionRef.current;
       const nextModel = modelForRuntimeSwitch(runtime);
       pendingModelOverrideRef.current = nextModel;
-      pendingModelScopeRef.current = nextModel
-        ? sessionId ? "session" : "next-message"
-        : sessionId ? "runtime-default" : "next-message";
+      pendingModelScopeRef.current = "next-message";
       // A runtime switch invalidates the previous runtime's controls before
       // the async scoped capability refresh returns.
       setModelCapabilities([]);
@@ -2727,22 +2732,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }),
         });
         if (!res.ok) return false;
-        // A session intent belongs to the old runtime. Clear it through the
-        // serialized model-state path before the next refresh, otherwise a
-        // Claude model can be sent after switching the familiar to Hermes.
-        if (sessionId) {
-          const clearSessionModel = await fetch("/api/chat/model-state", {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              familiarId: familiar.id,
-              sessionId,
-              model: "",
-              scope: "session",
-            }),
-          });
-          if (!clearSessionModel.ok) return false;
-        }
         // The roster's familiar.harness feeds the empty-state identity line
         // (and anything else reading the familiars list) — refresh it now
         // rather than waiting out the next natural reload.
@@ -2770,7 +2759,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       );
       runtimeMutationRef.current = runtimeMutation;
     },
-    [familiar.id, refreshModelState, sessionId],
+    [announce, familiar.id, refreshModelState, sessionId],
   );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -3301,9 +3290,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           options: [
             {
               value: "",
-              label: modelState?.source === "runtime-default" || composerRuntimeOwnsDefault
-                ? "Runtime default"
-                : "Cave default",
+              label: "Runtime default",
             },
             ...composerModelOptions.map((m) => ({ value: m.id, label: m.label })),
           ],
@@ -5125,12 +5112,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     retryFailedSend();
   }
 
-  // Recovery for a harness/runtime failure: rebind the familiar to the chosen
-  // adapter via /api/config (the only channel that rebinds a harness — the
-  // send route re-resolves the binding on every turn), then retry the send.
+  // Recovery for a harness/runtime failure: before a session exists, rebind
+  // the familiar to the chosen adapter via /api/config, then retry the send.
+  // Existing conversations are pinned to their persisted harness.
   const switchingHarnessRef = useRef(false);
   async function handleUseHarnessFix(runtime: string) {
     if (busy || switchingHarnessRef.current) return;
+    if (sessionId) {
+      const message = "This conversation is pinned to its original runtime. Start a new chat to use another runtime.";
+      setError(message);
+      announce(message, "assertive");
+      return;
+    }
     switchingHarnessRef.current = true;
     const selectionRevision = ++modelSelectionRevisionRef.current;
     try {

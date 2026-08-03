@@ -6,6 +6,7 @@ import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { canonicalHarnessId, isTrustedChatHarness } from "@/lib/harness-adapters";
 import { cleanModelId } from "@/lib/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
@@ -224,6 +225,37 @@ export async function POST(
       { status: 400 },
     );
   }
+  if (taskModelOverride && !isModelAllowedByRuntime(binding.harness, taskModelOverride)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "unsupported_model_override",
+        error: "The task model id is not allowed by this runtime.",
+      },
+      { status: 400 },
+    );
+  }
+  const configuredModel = binding.model ? cleanModelId(binding.model) : null;
+  if (binding.model && !configuredModel) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "invalid_configured_model",
+        error: "The familiar's configured model id is not safe for launch.",
+      },
+      { status: 400 },
+    );
+  }
+  if (configuredModel && !isModelAllowedByRuntime(binding.harness, configuredModel)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "unsupported_configured_model",
+        error: "The familiar's configured model is not allowed by this runtime.",
+      },
+      { status: 400 },
+    );
+  }
   if (card.modelOverride && !taskModelOverride) {
     await updateCard(card.id, { modelOverride: null, modelOverrideHarness: null });
   }
@@ -355,8 +387,8 @@ export async function POST(
     body: {
       projectRoot: sessionRoot,
       harness: binding.harness,
-      ...((taskModelOverride ?? binding.model)
-        ? { model: taskModelOverride ?? binding.model }
+      ...((taskModelOverride ?? configuredModel)
+        ? { model: taskModelOverride ?? configuredModel }
         : {}),
       prompt: buildInitialTaskChatPrompt(card),
       // Non-interactive launch: the daemon streams the initial prompt's

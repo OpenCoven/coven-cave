@@ -169,7 +169,7 @@ assert.match(
 
 assert.match(
   source,
-  /\.\.\.\(runtimeOwnsDefault \|\| runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?label: modelState\?\.source === "runtime-default" \|\| runtimeOwnsDefault[\s\S]*?"Runtime default"[\s\S]*?"Cave default"[\s\S]*?runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\)[\s\S]*?handleSelectModel\(id \|\| null\)/,
+  /\.\.\.\(runtimeOwnsDefault \|\| runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?label: "Runtime default"[\s\S]*?runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\)[\s\S]*?handleSelectModel\(id \|\| null\)/,
   "the Options menu Model section lists inventory and exposes the durable runtime-default clear action",
 );
 
