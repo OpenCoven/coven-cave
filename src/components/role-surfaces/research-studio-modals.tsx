@@ -1130,6 +1130,10 @@ export function GenerationViewerModal({
   const footerCopyLabel =
     content?.kind === "diagram" ? "Copy Mermaid" : content?.kind === "thread" ? "Copy thread" : "Copy";
   const mediaUrl = `/api/research/generations/media?familiarId=${encodeURIComponent(generation.familiarId)}&id=${encodeURIComponent(generation.id)}`;
+  const infographicUrl =
+    content?.kind === "infographic" && content.stats.length > 0
+      ? `/api/research/generations/infographic?familiarId=${encodeURIComponent(generation.familiarId)}&id=${encodeURIComponent(generation.id)}`
+      : null;
 
   return (
     <StudioModal
@@ -1232,6 +1236,19 @@ export function GenerationViewerModal({
           </div>
         ) : null}
 
+        {infographicUrl ? (
+          <div className="research-studio-viewer__media">
+            <span className="research-studio-viewer__label">Infographic preview</span>
+            {/* SVG format keeps the preview crisp at any zoom; the PNG export
+                below rasterizes the same server-rendered poster. */}
+            <img
+              className="research-studio-viewer__infographic"
+              src={`${infographicUrl}&format=svg`}
+              alt={`Infographic poster with ${content?.kind === "infographic" ? content.stats.length : 0} extracted stats from ${generation.sourceTitle}`}
+            />
+          </div>
+        ) : null}
+
         {points ? (
           <div className="research-studio-viewer__points">
             <span className="research-studio-viewer__label">{points.label}</span>
@@ -1293,6 +1310,20 @@ export function GenerationViewerModal({
           >
             ⤓ Download media
           </a>
+        ) : null}
+        {infographicUrl ? (
+          <>
+            <a className="research-studio-act" href={`${infographicUrl}&download=1`} download>
+              ⤓ Download .png
+            </a>
+            <a
+              className="research-studio-act"
+              href={`${infographicUrl}&format=svg&download=1`}
+              download
+            >
+              ⤓ Download .svg
+            </a>
+          </>
         ) : null}
         <button
           type="button"
