@@ -33,6 +33,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import dynamic from "next/dynamic";
 import { parse } from "@create-markdown/core";
 import type { Block } from "@create-markdown/core";
 import type { PreviewPlugin } from "@create-markdown/preview";
@@ -55,7 +56,13 @@ import {
 } from "@/lib/code-reading";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { SpeakBubble } from "@/components/speak-bubble";
-import { MessageReader } from "@/components/message-reader";
+// Lazy: the reader is a modal opened by an explicit click, and it carries its
+// own stylesheet. Loading it eagerly puts both on the / route's first paint for
+// every session, including the ones that never expand a message.
+const MessageReader = dynamic(
+  () => import("@/components/message-reader").then((m) => m.MessageReader),
+  { ssr: false },
+);
 import type { BatchTool } from "@/lib/chat-tool-batches";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";

@@ -25,6 +25,14 @@
  * owns that, and would otherwise import this file back).
  */
 
+// The reader's own sheet, imported HERE rather than from the cave-chat.css
+// facade: the facade is loaded by every chat surface and therefore by the /
+// route's first paint, so a sheet for a modal most sessions never open was
+// being paid for on every visit (bundle-budget: initial / route CSS). Owned by
+// the component, it rides the lazy chunk that only loads when Expand is
+// clicked. Same reasoning as the cave-md.css note in message-bubble.tsx.
+import "@/styles/cave-chat/reader.css";
+
 import {
   useCallback,
   useEffect,

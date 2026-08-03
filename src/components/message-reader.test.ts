@@ -39,7 +39,28 @@ test("3a — Expand opens the reader, and frame 1a's sheet is gone", () => {
     /MarkdownBlock|@create-markdown/,
     "message-bubble owns the markdown pipeline; importing it back would cycle",
   );
-  assert.match(facade, /@import "\.\/cave-chat\/reader\.css";/, "the sheet is in the cascade");
+});
+
+test("3a — the reader's weight is paid on open, not on every visit to /", () => {
+  // The reader is a modal behind an explicit click. Shipping its sheet through
+  // the cave-chat.css facade put ~17 KB on the / route's first paint for every
+  // session, including the ones that never expand a message — which is exactly
+  // what blew `bundle-budget: initial / route CSS` (882 KB vs 865 KB).
+  assert.doesNotMatch(
+    facade,
+    /reader\.css/,
+    "the facade is loaded by every chat surface — the reader sheet must not ride it",
+  );
+  assert.match(
+    reader,
+    /import "@\/styles\/cave-chat\/reader\.css";/,
+    "the component owns its sheet, so the CSS rides its lazy chunk",
+  );
+  assert.match(
+    bubble,
+    /const MessageReader = dynamic\(\s*\n\s*\(\) => import\("@\/components\/message-reader"\)\.then\(\(m\) => m\.MessageReader\),\s*\n\s*\{ ssr: false \},\s*\n\s*\);/,
+    "and the component itself loads only when Expand is clicked",
+  );
 });
 
 test("3a — the rail and the reading estimate come from the pure model", () => {
