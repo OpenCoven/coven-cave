@@ -500,18 +500,48 @@ final class AppModel {
 
     /// Optimistically set a task's status, then reconcile with the server's
     /// echoed card (it stamps lifecycle/updatedAt). Reverts on failure.
+    /// In-flight status writes, keyed by card id, so a newer intent can cancel
+    /// the one it supersedes (cave-ioswipe.4).
+    @ObservationIgnored private var statusWrites: [String: Task<Void, Never>] = [:]
+
+    /// Entry point for every status mutation. Views must call this rather than
+    /// wrapping `setTaskStatus` in their own `Task { }`: a detached task cannot
+    /// be cancelled, so a rapid done/reopen swipe sequence would leave two
+    /// writes racing and let the *older* server response land last, snapping the
+    /// row back to a status the user already moved off of.
+    func requestTaskStatus(_ card: BoardCard, _ status: CardStatus) {
+        statusWrites[card.id]?.cancel()
+        statusWrites[card.id] = Task { [weak self] in
+            await self?.setTaskStatus(card, status)
+        }
+    }
+
+    /// Restore a single card, mirroring `revert(_:to:)` for reminders. Assigning
+    /// the whole `tasks` array back would also roll back concurrent edits to
+    /// *other* cards that succeeded while this one was in flight.
+    private func revertTask(id: String, to previous: [BoardCard]) {
+        guard let old = previous.first(where: { $0.id == id }) else { return }
+        applyTask(id: id) { $0 = old }
+    }
+
     func setTaskStatus(_ card: BoardCard, _ status: CardStatus) async {
         guard let client, status != card.status else { return }
         let previous = tasks
         applyTask(id: card.id) { $0.statusRaw = status.rawValue }
         do {
             let updated = try await client.updateTask(cardId: card.id, status: status)
+            // A newer write for this card already applied its own optimistic
+            // state; landing this stale response would undo it.
+            guard !Task.isCancelled else { return }
             applyTask(id: card.id) { $0 = updated }
             Haptics.tap()
             await LiveActivityManager.shared.reconcile(tasks)
             publishWidgetSnapshot()
         } catch {
-            tasks = previous
+            // Cancellation surfaces here as a thrown CancellationError. Reverting
+            // on it would clobber the newer intent that did the cancelling.
+            guard !Task.isCancelled else { return }
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
             reportRevert("update the task")
         }

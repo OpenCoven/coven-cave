@@ -39,7 +39,12 @@ struct LinkedTasksSheet: View {
                                 }
                             }
                             .buttonStyle(.plain)
-                            .swipeActions {
+                            // No full swipe on a destructive action that runs
+                            // immediately — unlinkTask has no confirmation and no
+                            // undo. Matches ChatsHomeView/FamiliarThreadsView;
+                            // TasksView may allow it because its trailing swipe
+                            // only opens a confirmation (cave-ioswipe.4).
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) { app.unlinkTask(card) } label: {
                                     Label("Unlink", systemImage: "link.badge.minus")
                                 }
