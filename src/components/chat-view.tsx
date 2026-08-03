@@ -3403,15 +3403,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // typed cards directly above the composer (aligned to the reading column) —
   // the most actionable element sits closest to the input. That turn's in-turn
   // card row is suppressed (followUp.turnId → TurnRow) so the suggestions
-  // never render twice; older turns keep their in-turn rows. Capped at 4 and
-  // laid out on the uniform-rows data-count grammar (never a 3+1 wrap).
+  // never render twice; older turns keep their in-turn rows. The parser owns
+  // the product cap so every renderer stays aligned.
   const followUp = useMemo(() => {
     const empty = { turnId: null as string | null, suggestions: [] as NextPath[] };
     const last = [...activePath]
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return empty;
-    const suggestions = extractNextPaths(splitReasoning(last.text).visible).suggestions.slice(0, 4);
+    const suggestions = extractNextPaths(splitReasoning(last.text).visible).suggestions;
     return suggestions.length ? { turnId: last.id, suggestions } : empty;
   }, [activePath]);
 
