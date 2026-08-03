@@ -5292,16 +5292,64 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // assistant turns with no preceding user turn (e.g. system-injected), and
   // on assistant turns that are NOT the last on the active path (only the tip
   // gets a regenerate button so earlier branches keep their settled answers).
+  /** The user turn that produced this answer: the nearest `user` turn before it
+   *  on the active path. Both the Regenerate action and the reader's "You asked"
+   *  card key off this, so it lives in one place — a second copy of the walk is
+   *  a second thing to get wrong when branching changes. */
+  function precedingUserTurn(turn: Turn): Turn | undefined {
+    const idx = activePath.findIndex((t) => t.id === turn.id);
+    if (idx < 0) return undefined;
+    for (let j = idx - 1; j >= 0; j -= 1) {
+      const candidate = activePath[j];
+      if (candidate && candidate.role === "user") return candidate;
+    }
+    return undefined;
+  }
+
+  /** What the reader echoes above the answer. Display only, so it is NOT gated
+   *  on being the tip or on `busy` the way rerunning is — every settled answer
+   *  had a prompt, and showing it is always honest. */
+  function readerPromptFor(turn: Turn): { text: string; createdAt?: string } | undefined {
+    if (turn.role !== "assistant" || turn.pending) return undefined;
+    const prevUser = precedingUserTurn(turn);
+    const text = prevUser?.text?.trim();
+    return text ? { text, createdAt: prevUser?.createdAt } : undefined;
+  }
+
+  /** Rerun this turn from an EDITED prompt. Same send path, attachments, model
+   *  request and controls as Regenerate — only the text differs — and the same
+   *  `parentTurnId`, so the new answer lands as a sibling rather than appending.
+   *  That is what the design means by "replaces the answer below".
+   *  Gated exactly as regenerateFor is: a rerun mutates the thread. */
+  function rerunWithFor(turn: Turn): ((prompt: string) => void) | undefined {
+    if (busy || turn.role !== "assistant" || turn.pending) return undefined;
+    if (activePath[activePath.length - 1]?.id !== turn.id) return undefined;
+    const prevUser = precedingUserTurn(turn);
+    if (!prevUser) return undefined;
+    const { attachments: prevAttachments, parentId } = prevUser;
+    return (prompt: string) => {
+      const next = prompt.trim();
+      if (!next) return;
+      void sendRaw(
+        next,
+        prevAttachments ?? [],
+        [],
+        { parentTurnId: parentId ?? null, ...retryTurnModelRequest(prevUser, turn) },
+        {
+          thinkingEffort,
+          responseSpeed,
+          modelControls: prevUser.modelControls ?? {},
+          permissionMode,
+          runtimeHost: runtimeHost ?? undefined,
+        },
+      );
+    };
+  }
+
   function regenerateFor(turn: Turn): (() => void) | undefined {
     if (busy || turn.role !== "assistant" || turn.pending) return undefined;
     if (activePath[activePath.length - 1]?.id !== turn.id) return undefined;
-    const idx = activePath.findIndex((t) => t.id === turn.id);
-    if (idx < 0) return undefined;
-    let prevUser: Turn | undefined;
-    for (let j = idx - 1; j >= 0; j -= 1) {
-      const candidate = activePath[j];
-      if (candidate && candidate.role === "user") { prevUser = candidate; break; }
-    }
+    const prevUser = precedingUserTurn(turn);
     if (!prevUser) return undefined;
     const { text, attachments: prevAttachments, parentId } = prevUser;
     if (!text.trim() && !prevAttachments?.length) return undefined;
@@ -5472,6 +5520,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     regenerateFor,
     replyFor,
     askAboutFor,
+    readerPromptFor,
+    rerunWithFor,
     send,
     activateFollowUp: handleFollowUp,
   };
@@ -7577,6 +7627,8 @@ type TranscriptHandlers = {
   regenerateFor: (turn: Turn) => (() => void) | undefined;
   replyFor: (turn: Turn) => (() => void) | undefined;
   askAboutFor: (turn: Turn) => ((quote: string) => void) | undefined;
+  readerPromptFor: (turn: Turn) => { text: string; createdAt?: string } | undefined;
+  rerunWithFor: (turn: Turn) => ((prompt: string) => void) | undefined;
   send: (override?: string) => Promise<void>;
   activateFollowUp: (path: NextPath) => void;
 };
@@ -7673,6 +7725,8 @@ const TranscriptRows = memo(function TranscriptRows({
           onRegenerate={handlers().regenerateFor(t)}
           onReply={handlers().replyFor(t)}
           onAskAbout={handlers().askAboutFor(t)}
+          readerPrompt={handlers().readerPromptFor(t)}
+          onRerunWith={handlers().rerunWithFor(t)}
           onOpenUrl={onOpenUrl}
           onSuggestion={(path) => handlers().activateFollowUp(path)}
           onRequest={(prompt) => void handlers().send(prompt)}
@@ -7724,6 +7778,8 @@ const TranscriptRows = memo(function TranscriptRows({
               onRegenerate={handlers().regenerateFor(t)}
               onReply={handlers().replyFor(t)}
               onAskAbout={handlers().askAboutFor(t)}
+              readerPrompt={handlers().readerPromptFor(t)}
+              onRerunWith={handlers().rerunWithFor(t)}
               onOpenUrl={onOpenUrl}
               onSuggestion={(path) => handlers().activateFollowUp(path)}
               onRequest={(prompt) => void handlers().send(prompt)}
@@ -7753,6 +7809,8 @@ function TurnRowImpl({
   onRegenerate,
   onReply,
   onAskAbout,
+  readerPrompt,
+  onRerunWith,
   onOpenUrl,
   expanded = false,
   onToggleAvatar,
@@ -7784,6 +7842,11 @@ function TurnRowImpl({
   /** Ask about a passage selected in the Expand reader — stages the selection
    *  as the composer's quoted reply target. Assistant turns only. */
   onAskAbout?: (quote: string) => void;
+  /** The prompt that produced this answer, echoed above it in the reader. */
+  readerPrompt?: { text: string; createdAt?: string };
+  /** Rerun the turn from an edited prompt. Absent while busy or off the tip,
+   *  which is what hides the reader's Edit affordance. */
+  onRerunWith?: (prompt: string) => void;
   onOpenUrl?: (url: string) => void;
   expanded?: boolean;
   onToggleAvatar?: () => void;
@@ -8128,6 +8191,8 @@ function TurnRowImpl({
                   readerTools={settledTools}
                   readerDurationMs={turn.durationMs}
                   onAskAbout={onAskAbout}
+                  readerPrompt={readerPrompt}
+                  onRerunWith={onRerunWith}
                   branchNav={branchNav}
                 />
                 <ResponseModelStatus metadata={turn.responseMetadata} />

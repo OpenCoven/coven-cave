@@ -990,6 +990,10 @@ export type MessageBubbleProps = {
   /** Ask a follow-up about a passage selected inside the reader. Without it
    *  the reader's selection ask-bar is not rendered. */
   onAskAbout?: (quote: string) => void;
+  /** The prompt that produced this answer, echoed above it in the reader. */
+  readerPrompt?: { text: string; createdAt?: string };
+  /** Rerun this turn from an edited prompt. Absent while busy or off the tip. */
+  onRerunWith?: (prompt: string) => void;
   /** Branching: when a turn has siblings, render a compact ‹ index/total ›
    *  switcher. Omitted (or total <= 1) hides it. */
   branchNav?: {
@@ -1000,7 +1004,7 @@ export type MessageBubbleProps = {
   };
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, readerTools, readerDurationMs, onAskAbout, branchNav }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, readerTools, readerDurationMs, onAskAbout, readerPrompt, onRerunWith, branchNav }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
   const [vote, setVote] = useState<Feedback | null>(() => (messageId ? getFeedback(messageId) : null));
   const applyVote = (v: Feedback) => {
@@ -1203,6 +1207,8 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
             tools={readerTools}
             durationMs={readerDurationMs}
             onAskAbout={onAskAbout}
+            prompt={readerPrompt}
+            onRerunWith={onRerunWith}
           />
           <CopyBubble text={content} />
           {role === "assistant" ? (
@@ -1249,12 +1255,16 @@ function ExpandBubble({
   tools,
   durationMs,
   onAskAbout,
+  prompt,
+  onRerunWith,
 }: {
   text: string;
   label: string;
   tools?: readonly BatchTool[];
   durationMs?: number;
   onAskAbout?: (quote: string) => void;
+  prompt?: { text: string; createdAt?: string };
+  onRerunWith?: (prompt: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const readerCited = useMemo(() => renderCitedBody(text), [text]);
@@ -1276,6 +1286,8 @@ function ExpandBubble({
           tools={tools}
           durationMs={durationMs}
           onAsk={onAskAbout}
+          prompt={prompt}
+          onRerunWith={onRerunWith}
           onClose={() => setOpen(false)}
         >
           {/* MarkdownContent, not MarkdownBlock: it is the renderer that wires
