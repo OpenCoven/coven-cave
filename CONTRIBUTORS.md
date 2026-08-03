@@ -6,6 +6,13 @@ improvements.
 
 ## Community Contributors
 
+### Andrew Peltekci ([@appletechie](https://github.com/appletechie))
+
+Andrew contributed the per-host Omnigent workspace map and the follow-up that
+opens authenticated Omnigent sessions in the system browser so first-party
+session cookies work outside Cave's embedded Browser.
+(proposed in [#3247](https://github.com/OpenCoven/coven-cave/pull/3247))
+
 ### Timothy Wayne Gregg ([@CompleteDotTech](https://github.com/CompleteDotTech))
 
 Timothy contributed the Queue project readiness contract: a persisted
