@@ -41,19 +41,28 @@ struct RootView: View {
         .overlay {
             ConnectedMomentOverlay()
         }
-        // While the pill is up over the shell, quietly re-probe so a desktop
-        // that comes back (restarted, woke from sleep) reconnects on its own.
-        // The Connect screen has its own ticker for the pre-surfaces case;
-        // the hasLoadedSurfaces guard keeps the two from double-probing.
-        // Keyed on scenePhase so backgrounding stops the timer.
+        // Keep the active app connected for long sessions. Unreachable Cave
+        // instances retry every tick; a nominally connected instance gets a
+        // cheap heartbeat once a minute so a same-path desktop restart is
+        // discovered before the user's next send.
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
+            var connectedTicks = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
                 if Task.isCancelled { return }
-                guard app.hasLoadedSurfaces,
-                      case .unreachable = app.connectionState else { continue }
-                await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
+                switch app.connectionState {
+                case .connected:
+                    connectedTicks += 1
+                    guard connectedTicks >= 6 else { continue }
+                    connectedTicks = 0
+                    await app.maintainConnectionWhileActive()
+                case .unreachable where app.hasLoadedSurfaces:
+                    connectedTicks = 0
+                    await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
+                default:
+                    connectedTicks = 0
+                }
             }
         }
         .background(chrome.bgBase.ignoresSafeArea())
