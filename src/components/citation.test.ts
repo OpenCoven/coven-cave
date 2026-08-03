@@ -30,7 +30,7 @@ test("the Citation UI exposes inline provider previews through the shared Popove
   );
   assert.match(
     citation,
-    /line-clamp-2[^"]*text-\[length:var\(--text-md\)\]/,
+    /text-\[length:var\(--text-md\)\][\s\S]{0,900}?line-clamp-2 min-w-0/,
     "long source titles stay compact",
   );
   assert.match(
@@ -127,5 +127,41 @@ test("research cites the mission's used sources under the synthesis", () => {
     research,
     /sourcesToCitations\(mission\.sources\.filter\(\(source\) => source\.status === "used"\)\)/,
     "only the sources the mission actually used are cited",
+  );
+});
+
+test("a worktree citation renders the repo source card, not a web card (SourceCard.dc.html)", () => {
+  const card = citation;
+  assert.match(card, /function RepoCitationCard/, "the repo variant is its own card");
+  assert.match(
+    card,
+    /if \(citation\.file\) return <RepoCitationCard citation=\{citation\} \/>;/,
+    "a citation carrying a file ref takes the repo variant",
+  );
+  // The three things that identify a worktree source: path, range, lines.
+  assert.match(card, /title=\{file\.path\}/, "the full path is available on hover when it truncates");
+  assert.match(card, /const range = lineRangeLabel\(file\)/, "the line range comes from the shared helper");
+  assert.match(card, /\{firstLine \+ index\}/, "peek lines are numbered from the range start");
+  // The peek must be the citation's own snippet — never read off disk here, or
+  // the card could show a preview the citation never carried.
+  assert.match(
+    card,
+    /const peek = \(citation\.snippet \?\? ""\)[\s\S]{0,40}\.slice\(0, 4\)/,
+    "the peek is the citation's own quoted text, capped at four lines",
+  );
+  assert.match(card, /Open in Code/, "the repo card offers the code destination, not an external link");
+  assert.doesNotMatch(
+    card.slice(card.indexOf("function RepoCitationCard"), card.indexOf("function CitationCard")),
+    /target="_blank"/,
+    "a worktree path is never opened in a browser tab",
+  );
+});
+
+test("the web source card carries its marker number", () => {
+  const card = citation;
+  assert.match(
+    card,
+    /\{citation\.n\}\s*\n\s*<\/span>/,
+    "the card shows the same number as the inline chip that opened it",
   );
 });

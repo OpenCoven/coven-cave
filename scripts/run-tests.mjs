@@ -890,6 +890,7 @@ export const SUITES = {
     "src/lib/theme-palettes.test.ts",
     "src/lib/theme-contrast-audit.test.ts",
     "src/lib/design-token-drift.test.ts",
+    "src/lib/design-handoff-ledger.test.ts",
     "src/lib/dev-shell-recovery.test.ts",
     "src/lib/cave-backdrop.test.ts",
     "src/lib/cave-backdrop-blaze.test.ts",

@@ -47,6 +47,14 @@ binding contract for tokens, density, elevation, motion, voice, and interface
 copy — read it before editing any surface, and walk its §9 shipping checklist
 before opening a UI PR. The live token reference renders at `/aesthetic`.
 
+Implementing a **Claude Design handoff**? Read
+[`docs/design-handoff/IMPLEMENTATION-STATUS.md`](docs/design-handoff/IMPLEMENTATION-STATUS.md)
+first — it maps every frame to what landed it, lists what is still outstanding,
+and carries the import recipe. Its two load-bearing warnings: the zips in
+`~/Downloads` are stale snapshots that miss live frames entirely, and the
+prototype palette *is* our token set (`#9386d0` is `--accent-presence`), so a
+handoff never needs a hand-copied hex.
+
 Where the truth lives:
 
 - `src/styles/globals/foundations.css` — the annotated token contract

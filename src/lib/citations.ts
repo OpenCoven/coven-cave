@@ -23,9 +23,25 @@ export type Citation = {
   domain?: string;
   /** A short excerpt / claim / note shown in the source card. */
   snippet?: string;
+  /**
+   * A reference to a file in this worktree rather than a page on the web.
+   * A familiar citing its own reading writes `[^1]: src/lib/foo.ts#L12-L18`,
+   * which has no URL to open and no domain to name — the source card shows the
+   * path, the line range, and the quoted lines instead.
+   */
+  file?: CitationFileRef;
+};
+
+export type CitationFileRef = {
+  /** Repo-relative path, as written. */
+  path: string;
+  /** 1-based inclusive line range, when the reference named one. */
+  lineStart?: number;
+  lineEnd?: number;
 };
 
 export type CitationSourceKind =
+  | "repo"
   | "github"
   | "arxiv"
   | "doi"
@@ -112,7 +128,25 @@ function githubPresentation(citation: Citation, url: URL): CitationSourcePresent
 
 const DOCUMENT_EXTENSIONS = new Set(["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx"]);
 
+export function lineRangeLabel(file: CitationFileRef): string | undefined {
+  if (file.lineStart === undefined) return undefined;
+  return file.lineEnd !== undefined && file.lineEnd !== file.lineStart
+    ? `L${file.lineStart}–${file.lineEnd}`
+    : `L${file.lineStart}`;
+}
+
 export function citationSourcePresentation(citation: Citation): CitationSourcePresentation {
+  if (citation.file) {
+    const range = lineRangeLabel(citation.file);
+    return {
+      kind: "repo",
+      provider: "This worktree",
+      context: range ? `${citation.file.path} · ${range}` : citation.file.path,
+      summary:
+        citation.snippet?.trim() ||
+        "Cited from a file in this worktree — open it in Code to read the surrounding change.",
+    };
+  }
   const url = parsedUrl(citation.url);
   if (!url) {
     return {
@@ -225,9 +259,40 @@ const REF_RE = /\[\^([^\]]+)\](?!:)/g;
 const MD_LINK_RE = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)(?:[ \t]+—[ \t]+(.+))?$/;
 const ANGLE_URL_RE = /^<(https?:\/\/[^\s>]+)>(?:[ \t]+—[ \t]+(.+))?$/;
 const BARE_URL_RE = /^(https?:\/\/\S+)(?:[ \t]+"([^"]+)")?(?:[ \t]+—[ \t]+(.+))?$/;
+// A worktree file reference: a repo-relative path with an extension, optionally
+// carrying a line range in either the GitHub (`#L12-L18`) or editor (`:12-18`)
+// form. Anchored and extension-gated so ordinary prose starting with a word
+// cannot be mistaken for a path.
+const FILE_REF_RE =
+  /^((?:[\w.@~-]+\/)+[\w.@-]+\.[a-z0-9]{1,12})(?:#L(\d+)(?:[-–]L?(\d+))?|:(\d+)(?:[-–](\d+))?)?(?:[ \t]+"([^"]+)")?(?:[ \t]+—[ \t]+(.+))?$/i;
 
-function parseDefinitionContent(raw: string): { title: string; url?: string; snippet?: string } {
+/** Parse a worktree file reference, or null when the text is not one. */
+export function parseFileRef(raw: string): (CitationFileRef & { title?: string; snippet?: string }) | null {
+  const m = raw.trim().match(FILE_REF_RE);
+  if (!m) return null;
+  const start = m[2] ?? m[4];
+  const end = m[3] ?? m[5];
+  return {
+    path: m[1],
+    lineStart: start ? Number(start) : undefined,
+    lineEnd: end ? Number(end) : undefined,
+    title: m[6]?.trim() || undefined,
+    snippet: m[7]?.trim() || undefined,
+  };
+}
+
+function parseDefinitionContent(raw: string): {
+  title: string;
+  url?: string;
+  snippet?: string;
+  file?: CitationFileRef;
+} {
   const content = raw.trim();
+  const fileRef = parseFileRef(content);
+  if (fileRef) {
+    const { title, snippet, ...file } = fileRef;
+    return { title: title || file.path.split("/").pop() || file.path, snippet, file };
+  }
   const md = content.match(MD_LINK_RE);
   if (md) return { title: md[1].trim(), url: md[2], snippet: md[3]?.trim() || undefined };
   const angle = content.match(ANGLE_URL_RE);
@@ -286,7 +351,7 @@ export function renderCitationReferences(
  * markers stay so the renderer can turn them into superscript anchors.
  */
 export function parseCitations(text: string): ParsedCitations {
-  const defs = new Map<string, { title: string; url?: string; snippet?: string }>();
+  const defs = new Map<string, ReturnType<typeof parseDefinitionContent>>();
   let m: RegExpExecArray | null;
   DEF_RE.lastIndex = 0;
   while ((m = DEF_RE.exec(text)) !== null) {
@@ -314,6 +379,7 @@ export function parseCitations(text: string): ParsedCitations {
         url: def.url,
         domain: domainFromUrl(def.url),
         snippet: def.snippet,
+        file: def.file,
       };
     });
 
