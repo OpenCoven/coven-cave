@@ -6,10 +6,27 @@
 - Use branches and worktrees only as short-lived PR transport for active implementation. Do not use branches as durable storage, coordination logs, or half-finished agent memory.
 - Keep durable coordination in tracked workflow artifacts: plans, specs, issues, PR descriptions/checklists, release notes, and handoff docs.
 - Before opening a PR, make the branch PR-shaped: scoped diff, relevant local verification, and a summary of what changed.
-- Create managed worktrees through `pnpm beads:worktrees:create -- --bead
-  cave-123 --branch fix/cave-123-example --owner kitty --purpose "Repair
-  example"` so the owning Bead records structured lifecycle metadata and
-  budget admission.
+- Create managed worktrees through `pnpm beads:worktrees:create --bead cave-123
+  --branch fix/cave-123-example --owner kitty --purpose "Repair example"` so the
+  owning Bead records structured lifecycle metadata and budget admission. Do
+  **not** insert `--` before the flags: pnpm forwards it to the script, and the
+  parser rejects every unrecognised option including a bare `--`
+  (`worktree-lifecycle-create: unknown option: --`). `--bead`, `--branch`,
+  `--owner` and `--purpose` are all required; `--start-point` defaults to
+  `origin/main` and the worktree is placed under `.worktrees/`.
+- That command refuses to create anything unless it can build a **complete**
+  lifecycle inventory, which means live GitHub queries. It therefore fails when
+  the GraphQL quota is exhausted (`API rate limit already exceeded`) and when any
+  commit's PR association comes back malformed (`pull request node returned
+  malformed fields or a mismatched head OID`) — a repo-state condition no amount
+  of waiting clears. When it will not run, fall back to `git worktree add -b
+  <branch> .worktrees/<branch> origin/main` and know the trade: that worktree
+  carries no lifecycle metadata, so `pnpm beads:worktrees` will class it
+  `uncertain` ("structured lifecycle metadata backfill required") forever and
+  `pnpm beads:worktrees:apply` can never retire it. Retire it by hand through the
+  archive-tag route in [`CLAUDE.md`](CLAUDE.md), and never hand-write the missing
+  metadata onto the Bead — that record is the evidence the retirement gate
+  checks.
 - After a PR merges, run `pnpm beads:worktrees`, record the merged unit's
   disposition, and use `pnpm beads:worktrees:apply` only when it reports a
   complete repository maintenance transaction. Local cleanup is bounded and
