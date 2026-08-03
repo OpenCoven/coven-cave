@@ -30,6 +30,7 @@ import {
   type ReactNode,
 } from "react";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { copyText } from "@/lib/clipboard";
 import {
@@ -306,6 +307,30 @@ export function downloadGenerationMarkdown(
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Download an authenticated `/api/...` artifact via the patched `window.fetch`
+ * (which carries the sidecar auth token in the packaged app) instead of a
+ * native `<a href>` navigation, which would 401 against the fail-closed
+ * `/api/` gate. Mirrors `downloadGenerationMarkdown`'s blob-anchor flow.
+ */
+async function downloadGenerationArtifact(url: string, filename: string): Promise<void> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch {
+    // Network failure: leave the surface as-is; the action is retryable.
+  }
 }
 
 // ── copy flash (design genAct: ⧉ → ✓ for 1200ms) ────────────────────────────
@@ -1130,6 +1155,10 @@ export function GenerationViewerModal({
   const footerCopyLabel =
     content?.kind === "diagram" ? "Copy Mermaid" : content?.kind === "thread" ? "Copy thread" : "Copy";
   const mediaUrl = `/api/research/generations/media?familiarId=${encodeURIComponent(generation.familiarId)}&id=${encodeURIComponent(generation.id)}`;
+  const infographicUrl =
+    content?.kind === "infographic" && content.stats.length > 0
+      ? `/api/research/generations/infographic?familiarId=${encodeURIComponent(generation.familiarId)}&id=${encodeURIComponent(generation.id)}`
+      : null;
 
   return (
     <StudioModal
@@ -1232,6 +1261,21 @@ export function GenerationViewerModal({
           </div>
         ) : null}
 
+        {infographicUrl ? (
+          <div className="research-studio-viewer__media">
+            <span className="research-studio-viewer__label">Infographic preview</span>
+            {/* SVG format keeps the preview crisp at any zoom; the PNG export
+                below rasterizes the same server-rendered poster. AuthedImage
+                fetches through the patched window.fetch so the packaged app's
+                /api auth gate doesn't 401 the native image load. */}
+            <AuthedImage
+              className="research-studio-viewer__infographic"
+              src={`${infographicUrl}&format=svg`}
+              alt={`Infographic poster with ${content?.kind === "infographic" ? content.stats.length : 0} extracted stats from ${generation.sourceTitle}`}
+            />
+          </div>
+        ) : null}
+
         {points ? (
           <div className="research-studio-viewer__points">
             <span className="research-studio-viewer__label">{points.label}</span>
@@ -1293,6 +1337,34 @@ export function GenerationViewerModal({
           >
             ⤓ Download media
           </a>
+        ) : null}
+        {infographicUrl ? (
+          <>
+            <button
+              type="button"
+              className="research-studio-act"
+              onClick={() =>
+                void downloadGenerationArtifact(
+                  infographicUrl,
+                  `infographic-${slugify(generation.sourceTitle) || generation.id}.png`,
+                )
+              }
+            >
+              ⤓ Download .png
+            </button>
+            <button
+              type="button"
+              className="research-studio-act"
+              onClick={() =>
+                void downloadGenerationArtifact(
+                  `${infographicUrl}&format=svg`,
+                  `infographic-${slugify(generation.sourceTitle) || generation.id}.svg`,
+                )
+              }
+            >
+              ⤓ Download .svg
+            </button>
+          </>
         ) : null}
         <button
           type="button"
