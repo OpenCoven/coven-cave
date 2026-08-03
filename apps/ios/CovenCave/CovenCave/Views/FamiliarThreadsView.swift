@@ -279,9 +279,23 @@ struct FamiliarThreadsView: View {
     private var localThreads: [ChatThread] {
         app.directThreads(for: familiar.id).filter { showArchived || !$0.archived }
     }
+    /// The local threads actually on screen. `entries` is narrowed by the
+    /// archive toggle AND the search query, so this is derived from it rather
+    /// than re-deriving the filters — it cannot drift from what renders.
+    ///
+    /// Select All uses this, not `localThreads`: selecting rows the user
+    /// cannot see and then deleting them is unrecoverable (cave-2qyqu). The
+    /// bulk actions still operate on `selectedIds`, so a selection made before
+    /// searching survives the search rather than being silently dropped.
+    private var visibleLocalThreads: [ChatThread] {
+        entries.compactMap { entry in
+            if case .local(let thread) = entry { return thread }
+            return nil
+        }
+    }
     private var hasLocalThreads: Bool { !app.directThreads(for: familiar.id).isEmpty }
     private var allLocalSelected: Bool {
-        !localThreads.isEmpty && Set(localThreads.map(\.id)).isSubset(of: selectedIds)
+        !visibleLocalThreads.isEmpty && Set(visibleLocalThreads.map(\.id)).isSubset(of: selectedIds)
     }
 
     private func tapEntry(_ entry: Entry) {
@@ -295,7 +309,7 @@ struct FamiliarThreadsView: View {
         if selectedIds.contains(id) { selectedIds.remove(id) } else { selectedIds.insert(id) }
     }
     private func toggleSelectAll() {
-        if allLocalSelected { selectedIds.removeAll() } else { selectedIds = Set(localThreads.map(\.id)) }
+        if allLocalSelected { selectedIds.removeAll() } else { selectedIds = Set(visibleLocalThreads.map(\.id)) }
     }
     private func exitSelect() {
         withAnimation { selectMode = false; selectedIds.removeAll() }
