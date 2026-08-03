@@ -85,7 +85,7 @@ assert.match(
   "switchModel should PATCH an existing session, or clear the familiar default before the first session",
 );
 
-for (const command of ["/journal", "/automations", "/remind", "/attach", "/tui", "/toggle-agent"]) {
+for (const command of ["/auto", "/journal", "/automations", "/remind", "/attach", "/tui", "/toggle-agent"]) {
   const escaped = command.replace("/", "\\/");
   assert.match(
     iosSlash,
