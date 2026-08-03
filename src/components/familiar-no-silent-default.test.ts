@@ -69,6 +69,20 @@ assert.doesNotMatch(
   "the retired fallback is not reachable from a new chat",
 );
 
+// Booting into chat is the same decision at startup: a first run, or a cleared
+// or deleted active familiar, used to land on a composer silently bound to
+// visibleFamiliars[0] — and the user's FIRST message went to it.
+assert.match(
+  chatRouter,
+  /familiarId: familiar\?\.id \?\? null \}/,
+  "boot-compose opens the composer unbound when no familiar is active",
+);
+assert.match(
+  chatRouter,
+  /if \(visibleFamiliars\.length === 0\) return;/,
+  "boot-compose waits for the roster instead of adopting its first entry",
+);
+
 // ── Running an LLM call ──────────────────────────────────────────────────────
 // Enhance runs through a familiar's model, so it takes the ACTIVE one and
 // tolerates null (usePromptEnhance has a hosted fallback for exactly this).

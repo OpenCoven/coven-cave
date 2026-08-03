@@ -572,13 +572,21 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         return;
       }
     }
-    const bootFamiliarId = familiar?.id ?? fallbackFamiliar?.id ?? null;
-    if (!bootFamiliarId) return; // wait until a familiar is available
+    // Boot into chat rather than the list — but do not choose WHO for the user.
+    // An active familiar carries. Absent one this used to adopt
+    // visibleFamiliars[0], so a first run (or a cleared/deleted active familiar)
+    // landed on a composer silently bound to whichever familiar sorted first,
+    // and the user's FIRST message went to it. Open the compose view unbound
+    // instead: chatFamiliar stays null and NewChatLaunch asks, which keeps the
+    // chat-first landing without making the choice.
+    if (visibleFamiliars.length === 0) return; // wait until the roster has loaded
     bootComposeRef.current = true;
     setView((prev) =>
-      prev.kind === "list" ? { kind: "chat", sessionId: null, familiarId: bootFamiliarId } : prev,
+      prev.kind === "list"
+        ? { kind: "chat", sessionId: null, familiarId: familiar?.id ?? null }
+        : prev,
     );
-  }, [familiar?.id, fallbackFamiliar?.id]);
+  }, [familiar?.id, visibleFamiliars.length]);
 
   useImperativeHandle(
     ref,
