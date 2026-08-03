@@ -88,13 +88,6 @@ enum SlashCatalog {
                      description: "Pick or set the model for this chat. Pass an id/name or open the picker.",
                      argPlaceholder: "model", section: .chat,
                      availability: .native, action: .switchModel),
-        // Desktop-only: iOS has no autonomous-mission plumbing, so the command
-        // is catalogued (recognised, and explained when typed) rather than
-        // silently unknown. Promote to .native if iOS ever runs missions.
-        SlashCommand(name: "/auto", aliases: ["/autopilot"], hint: "hands-off mission",
-                     description: "Run a mission autonomously: the familiar may ask a few clarifying questions up front, then works silently and only pings you on completion or when blocked.",
-                     argPlaceholder: "mission…", section: .chat,
-                     availability: .desktopOnly, action: .desktopOnly("Autopilot")),
         SlashCommand(name: "/skill", hint: "run a skill",
                      description: "Invoke a skill — pass a name or pick from the menu as you type.",
                      argPlaceholder: "name", section: .chat,
