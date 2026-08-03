@@ -58,11 +58,33 @@ assert.match(
 // --- While the pill is up, something must actually retry ---------------------
 // The Connect screen's own 10s ticker no longer runs for unreachable-with-
 // surfaces (that screen isn't mounted), so RootView carries its own quiet
-// re-probe, mutually exclusive via the hasLoadedSurfaces guard.
+// re-probe, mutually exclusive via the hasLoadedSurfaces condition.
+//
+// Assert the CONTRACT, not the syntax that expresses it. This block has been
+// written as a `guard … else { continue }` and as a `switch` with a
+// `case .unreachable where app.hasLoadedSurfaces:`; both re-probe exactly the
+// same states. A regex pinning one spelling (down to a literal newline) broke
+// `main` when the ticker grew a connected-heartbeat branch, even though the
+// behaviour under test never changed.
+const scenePhaseTasks = [...root.matchAll(/\.task\(id: scenePhase\) \{[\s\S]*?\n {8}\}/g)].map(
+  (match) => match[0],
+);
+const quietReprobe = scenePhaseTasks.find((block) =>
+  /await app\.refreshConnection\(reloadLoadedSurfaces: true, quiet: true\)/.test(block),
+);
+assert.ok(
+  quietReprobe,
+  "RootView carries a scenePhase-keyed ticker that quietly re-probes (so backgrounding stops it)",
+);
 assert.match(
-  root,
-  /\.task\(id: scenePhase\) \{[\s\S]*?guard app\.hasLoadedSurfaces,\s*\n\s*case \.unreachable = app\.connectionState else \{ continue \}[\s\S]*?await app\.refreshConnection\(reloadLoadedSurfaces: true, quiet: true\)/,
-  "RootView quietly re-probes while the pill covers an unreachable desktop",
+  quietReprobe,
+  /\.unreachable/,
+  "the quiet re-probe is reached from the unreachable state",
+);
+assert.match(
+  quietReprobe,
+  /app\.hasLoadedSurfaces/,
+  "the quiet re-probe is gated on hasLoadedSurfaces, so it cannot double-probe with the Connect screen's own ticker",
 );
 
 // --- AppModel: honest 'last seen' + shared surfaces gate ---------------------

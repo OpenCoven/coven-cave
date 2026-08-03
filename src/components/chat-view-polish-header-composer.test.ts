@@ -244,8 +244,8 @@ assert.match(
 );
 assert.match(
   homeComposer,
-  /initialControls: runtimeHost \? \{ runtimeHost \} : undefined/,
-  "the home composer threads only the host pick into the opened chat; selected-model controls resolve in Chat",
+  /initialControls: initialChatControls/,
+  "the home composer threads host and staged model intent into the opened chat",
 );
 assert.match(
   source,

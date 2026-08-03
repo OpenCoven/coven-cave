@@ -97,7 +97,7 @@ test.describe("chat sidebar (session navigator)", () => {
     await expect.poll(() => page.evaluate(() => window.localStorage.getItem("cave:shell:nav-open"))).toBe("1");
   });
 
-  test("defaults to the Recent view; Organize menu switches to project folders", async ({ page }) => {
+  test("defaults to the Recent view; grouping tabs switch to project folders", async ({ page }) => {
     await gotoChat(page);
     const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
 
@@ -114,11 +114,10 @@ test.describe("chat sidebar (session navigator)", () => {
     // Bare row times — no "ago" suffix anywhere in the sidebar.
     await expect(sidebar.getByText(/\bago\b/)).toHaveCount(0);
 
-    // Organize sidebar → By project restores the folder grouping.
-    await sidebar.getByRole("button", { name: "Sidebar options" }).click();
-    const menu = page.getByRole("dialog", { name: "Sidebar options" });
-    await expect(menu.getByRole("menuitemradio", { name: "Recent chats" })).toHaveAttribute("aria-checked", "true");
-    await menu.getByRole("menuitemradio", { name: "By project" }).click();
+    // The sidebar-owned grouping tabs replace the old Organize menu choice.
+    const groupingTabs = sidebar.getByRole("tablist", { name: "Group chats" });
+    await expect(groupingTabs.getByRole("tab", { name: "Recent" })).toHaveAttribute("aria-selected", "true");
+    await groupingTabs.getByRole("tab", { name: "Projects" }).click();
     await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
     await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) beta threads/ })).toBeVisible();
 

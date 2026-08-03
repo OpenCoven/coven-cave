@@ -38,6 +38,19 @@ enum ChatProjectSelection {
         return sorted(projects).first?.root
     }
 
+    static func loadProjectsWithRecovery(
+        load: () async throws -> [ProjectInfo],
+        recover: (Error) async -> Bool
+    ) async throws -> [ProjectInfo] {
+        do {
+            return try await load()
+        } catch {
+            if error is CancellationError { throw error }
+            guard await recover(error) else { throw error }
+            return try await load()
+        }
+    }
+
     /// A New Chat import's explicit familiar selection is the permission scope
     /// used to choose its project. Transcript authors remain attributed in the
     /// restored messages, but cannot silently widen the next-send fan-out.

@@ -317,6 +317,8 @@
 .cnav__switcher .familiar-switcher__trigger--labeled {
   height: 32px;
   justify-content: flex-start;
+  border-color: color-mix(in oklch, var(--accent-presence) 58%, var(--border-hairline));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 16%, transparent);
 }
 
 /* One-row quick actions: New chat takes the slack; Scheduled/Plugins ride
@@ -425,6 +427,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Grouping is a first-class choice, not a setting hidden in the overflow menu.
+   The two visible tabs mirror the reference rail while retaining the existing
+   persisted Recent/Projects preference. */
+.cnav__tabs {
+  margin: 0 var(--cnav-pad) var(--space-2);
+}
+
 /* Search */
 .cnav__search-wrap {
   padding: 2px var(--cnav-pad) var(--space-2);
@@ -519,6 +528,14 @@
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-primary);
+}
+.cnav__label::before {
+  content: "";
+  width: 2px;
+  height: var(--space-3);
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 58%, transparent);
 }
 .cnav__label-text {
   flex: 0 1 auto;

@@ -115,7 +115,7 @@ lanes are:
 
 - `active` — local changes or a live owner still needs the worktree.
 - `recovery` — detached, WIP, backup, or unlanded work still protects data.
-- `cooldown` — landed work is inside the mandatory 24-hour recency window.
+- `cooldown` — landed work is inside the mandatory 8-hour recency window.
 - `retire-after-gate` — old, clean, landed work is cleanup-ready. Automatic
   retirement still requires the full repository-wide maintenance gate; explicit
   maintainer authorization in the current task may instead activate Branch

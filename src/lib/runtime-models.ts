@@ -24,6 +24,45 @@ import { canonicalHarnessId } from "./harness-adapters.ts";
 
 export type RuntimeModelOption = { id: string; label: string };
 
+export type RuntimeModelInventoryProvenance =
+  | "live"
+  | "cached"
+  | "fallback"
+  | "runtime-managed"
+  | "unavailable";
+
+export type RuntimeModelInventoryFreshness =
+  | "fresh"
+  | "cached"
+  | "seed"
+  | "runtime-managed"
+  | "unavailable";
+
+export type RuntimeModelInventoryRefreshState = "ready" | "degraded";
+export type RuntimeModelInventoryAvailability = "available" | "degraded" | "unavailable";
+
+/** Non-secret identity for the inventory request. Credential values and
+ * provider URLs deliberately never cross this boundary. */
+export type RuntimeModelInventoryScope = {
+  familiarId: string | null;
+  runtime: string;
+  provider: RuntimeProvider;
+  credentialScope: "familiar" | "global" | "runtime-managed" | "unavailable";
+  providerConfiguration: "familiar" | "global" | "runtime-managed" | "unavailable";
+};
+
+export type RuntimeModelInventory = {
+  runtime: string;
+  models: RuntimeModelOption[];
+  provenance: RuntimeModelInventoryProvenance;
+  freshness: RuntimeModelInventoryFreshness;
+  refreshState: RuntimeModelInventoryRefreshState;
+  availability: RuntimeModelInventoryAvailability;
+  defaultOwner: "cave" | "runtime";
+  allowCustom: boolean;
+  scope: RuntimeModelInventoryScope;
+};
+
 type RuntimeModelTransformMetadata = {
   id: string;
   modelIdTransform?: unknown;
@@ -192,6 +231,82 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
 
 const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.6-sol";
 
+const DYNAMIC_INVENTORY_RUNTIMES = new Set([
+  "claude",
+  "copilot",
+  "grok",
+  "hermes",
+  "opencode",
+]);
+const INVENTORY_FAMILIAR_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+export function runtimeModelInventoryScope(
+  runtime: string,
+  familiarId?: string | null,
+): RuntimeModelInventoryScope {
+  const canonicalRuntime = canonicalHarnessId(runtime);
+  const candidateFamiliarId = typeof familiarId === "string" ? familiarId.trim() : "";
+  const normalizedFamiliarId = INVENTORY_FAMILIAR_ID.test(candidateFamiliarId)
+    ? candidateFamiliarId
+    : null;
+  const catalog = catalogForRuntime(canonicalRuntime);
+  const knownRuntime = catalog !== null;
+  const credentialScope = !knownRuntime
+    ? "unavailable"
+    : DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime)
+      ? normalizedFamiliarId ? "familiar" : "global"
+      : catalog?.provider
+        ? "global"
+        : "runtime-managed";
+  const providerConfiguration = !knownRuntime
+    ? "unavailable"
+    : DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime)
+      ? normalizedFamiliarId ? "familiar" : "global"
+      : catalog?.provider
+        ? "global"
+        : "runtime-managed";
+  return {
+    familiarId: normalizedFamiliarId,
+    runtime: canonicalRuntime,
+    provider: catalog?.provider ?? null,
+    credentialScope,
+    providerConfiguration,
+  };
+}
+
+export function runtimeModelInventoryFreshness(
+  provenance: RuntimeModelInventoryProvenance,
+): RuntimeModelInventoryFreshness {
+  switch (provenance) {
+    case "live": return "fresh";
+    case "cached": return "cached";
+    case "fallback": return "seed";
+    case "runtime-managed": return "runtime-managed";
+    case "unavailable": return "unavailable";
+  }
+}
+
+export function runtimeModelInventoryAvailability(
+  provenance: RuntimeModelInventoryProvenance,
+): RuntimeModelInventoryAvailability {
+  switch (provenance) {
+    case "live":
+    case "cached":
+      return "available";
+    case "fallback":
+    case "runtime-managed":
+      return "degraded";
+    case "unavailable":
+      return "unavailable";
+  }
+}
+
+export function runtimeModelInventoryRefreshState(
+  provenance: RuntimeModelInventoryProvenance,
+): RuntimeModelInventoryRefreshState {
+  return provenance === "live" || provenance === "cached" ? "ready" : "degraded";
+}
+
 export function catalogForRuntime(runtime: string): RuntimeModelCatalog | null {
   const canonicalRuntime = canonicalHarnessId(runtime);
   const curated = RUNTIME_MODEL_CATALOG[canonicalRuntime];
@@ -221,18 +336,29 @@ export function runtimeOwnsModelDefault(runtime: string): boolean {
   return catalogForRuntime(canonical)?.defaultOwner === "runtime";
 }
 
+/** Enforce the selected runtime's custom-id policy at every write/launch
+ * boundary, not only in picker rendering. Known catalogs that allow custom
+ * ids accept safe ids; runtimes without a catalog fail closed. */
+export function isModelAllowedByRuntime(runtime: string, modelId: string): boolean {
+  const catalog = catalogForRuntime(runtime);
+  if (!catalog || !modelId) return false;
+  return catalog.allowCustom || catalog.models.some((model) => model.id === modelId);
+}
+
 /**
  * Resolve the model value persisted during a runtime switch. Explicit user
- * selections win; otherwise runtime-owned defaults stay empty so config merge
- * paths remove any stale model from the previous runtime.
+ * selections win; otherwise the explicit empty value records runtime-default
+ * intent so config merge paths do not reconstruct a stale previous model.
  */
 export function modelForRuntimeSwitch(
-  runtime: string,
+  _runtime: string,
   selectedModel?: string | null,
 ): string {
   const explicitModel = selectedModel?.trim() ?? "";
   if (explicitModel) return explicitModel;
-  return runtimeOwnsModelDefault(runtime) ? "" : defaultModelForRuntime(runtime);
+  // A runtime switch without a user model pick is a default-intent change.
+  // Catalog entries are conservative seeds, never an implicit launch override.
+  return "";
 }
 
 export function isModelInCatalog(runtime: string, modelId: string): boolean {

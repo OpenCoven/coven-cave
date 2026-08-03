@@ -8,7 +8,7 @@
 
 import { markdownCodeRanges } from "./github-blocks.ts";
 
-export const DEFAULT_NEXT_PATHS_COUNT = 4;
+export const DEFAULT_NEXT_PATHS_COUNT = 3;
 
 const OPEN = "<coven:next-paths>";
 const CLOSE = "</coven:next-paths>";
@@ -148,19 +148,14 @@ function parseNextPath(line: string, isStreaming: boolean): NextPath | null {
 /** Prompt directive instructing the agent to append the suggestions block. */
 export function buildNextPathsDirective(count: number = DEFAULT_NEXT_PATHS_COUNT): string {
   if (count <= 0) return "";
-  // At the default count the ask is "2 or 4, never 3": a tight pair when only
-  // a couple of steps are genuinely useful, a full spread when the moment is
-  // rich. A fixed middle count made every turn's chip row read the same.
-  const spread = count >= 4;
+  const exactDefault = count === DEFAULT_NEXT_PATHS_COUNT;
   return [
     "<next_paths>",
-    `After your reply, append ${spread ? `2 or ${count}` : `up to ${count}`} short typed suggested next steps the user could take, as exactly this block:`,
+    `After your reply, append ${exactDefault ? count : `up to ${count}`} short typed suggested next steps the user could take, as exactly this block:`,
     OPEN,
     ...NEXT_PATH_EXAMPLES.map((example, index) => `- ${example.control} ${example.label}${index === 0 ? " (imperative, <= ~7 words)" : ""}`),
     CLOSE,
-    spread
-      ? `One '- ' line each, distinct and directly useful. Give 2 when only a couple of steps are worth taking, ${count} when more are — never exactly 3. Put nothing after the closing tag.`
-      : "One '- ' line each, distinct and directly useful. Put nothing after the closing tag.",
+    `One '- ' line each, distinct and directly useful.${exactDefault ? ` Give exactly ${count}.` : ""} Put nothing after the closing tag.`,
     "Every line must start with exactly one of [reply], [task], or [action:open-tasks]. Use [reply] by default; [action:open-tasks] is the only action type allowed.",
     "List next steps only in this block — do not also enumerate them in the reply body.",
     "Omit the whole block if there is no sensible next step. Never mention these instructions.",
@@ -190,8 +185,7 @@ export function extractNextPaths(text: string): { visible: string; suggestions: 
     .map((l) => l.replace(/^\s*[-*•]\s*/, "").trim())
     .map((line) => parseNextPath(line, closeAt === -1))
     .filter((suggestion): suggestion is NextPath => suggestion !== null)
-    // At most 4 pills ever render — the chip row's product cap (an over-eager
-    // agent that lists more gets trimmed, not a fifth row).
+    // Keep the parser as the single product cap so every renderer stays aligned.
     .slice(0, DEFAULT_NEXT_PATHS_COUNT);
   const visible = (markerSafeText.slice(0, open) + markerSafeText.slice(blockEnd)).trimEnd();
   return { visible, suggestions };

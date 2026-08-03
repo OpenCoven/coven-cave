@@ -47,6 +47,16 @@ assert.deepEqual(resolveChatModelState({ ...base }), {
   reason: "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.",
 });
 
+const clearedFamiliarDefault = resolveChatModelState({ ...base, familiarModel: "" });
+assert.equal(clearedFamiliarDefault.effectiveModel, "");
+assert.equal(clearedFamiliarDefault.source, "runtime-default");
+assert.equal(clearedFamiliarDefault.familiarDefaultModel, null);
+assert.equal(
+  clearedFamiliarDefault.reason,
+  "Using the runtime's configured default model.",
+  "an explicitly cleared familiar model remains durable runtime-default intent",
+);
+
 assert.equal(
   resolveChatModelState({ ...base, sessionModel: "anthropic/claude-opus-4-7" }).source,
   "session",

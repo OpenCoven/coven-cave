@@ -56,17 +56,30 @@ assert.match(
   "chat-router should default fallbackFamiliar to the first non-archived familiar",
 );
 
-// 5. fallbackFamiliarId same story.
+// 5. The new-chat paths now satisfy this guard by a STRONGER route: they do not
+// substitute a familiar at all. `fallbackFamiliarId` existed to be the
+// archive-aware default for "Start a new chat"; that default is gone, so the
+// user cannot be dropped onto an archived familiar there because they are not
+// dropped onto ANY familiar — the NewChatLaunch picker asks instead. Not
+// dropping the guard, restating it at the strength the code now holds.
 assert.doesNotMatch(
   source,
-  /fallbackFamiliarId\s*=\s*familiar\?\.id\s*\?\?\s*familiars\[0\]\?\.id/,
-  "chat-router should not derive fallbackFamiliarId from raw familiars[0] (could be archived)",
+  /fallbackFamiliarId/,
+  "the new-chat default is retired entirely — no fallback to be archived or otherwise",
 );
-
 assert.match(
   source,
-  /fallbackFamiliarId\s*=\s*familiar\?\.id\s*\?\?\s*visibleFamiliars\[0\]\?\.id/,
-  "chat-router should derive fallbackFamiliarId from the first non-archived familiar",
+  /const next = familiarId \? selectFamiliarForChat\(familiarId\) : null;/,
+  "an unspecified familiar stays unspecified, so no archived familiar can be adopted",
 );
+assert.match(
+  source,
+  /const nextFamiliarId = group\?\.defaultFamiliarId \?\? familiar\?\.id \?\? null;/,
+  "the project-grouped new chat asks rather than defaulting",
+);
+
+// `fallbackFamiliar` (no Id) survives for the OTHER flows that still resolve a
+// familiar — resuming a session that recorded none, and boot-compose — so the
+// archive-aware derivation asserted in (4) above is still load-bearing there.
 
 console.log("chat-router-hide-archived.test.ts: ok");

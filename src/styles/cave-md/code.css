@@ -154,6 +154,109 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+/* RTL above keeps the ellipsis on the LEFT so a deep path truncates to the
+   part that identifies it (…/lib/oauth-loopback.ts, never src/lib/oau…).
+   The children are re-isolated so their own text still reads left-to-right. */
+.cave-code-filename > * {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.cave-code-dir {
+  color: var(--code-chrome-ink-muted);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   READING CHROME (cave-f6mu9)
+   Provenance tells the reader what a block can do; staleness tells them
+   whether it is still true. Both sit inline in the header rather than in a
+   hover-only affordance — a block that no longer matches disk must say so
+   without being asked.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-code-prov {
+  order: 1;
+  flex-shrink: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  padding: 0.05em 0.45em;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--code-chrome-border);
+  color: var(--code-chrome-ink-faint);
+  white-space: nowrap;
+}
+/* File-backed is the only provenance that earns accent: it is the one that
+   can be opened and compared. Patch and quoted stay neutral so the accent
+   keeps meaning "this connects to something real on disk". */
+.cave-code-prov--file-backed {
+  border-color: color-mix(in oklch, var(--code-chrome-accent) 42%, transparent);
+  background: color-mix(in oklch, var(--code-chrome-accent) 12%, transparent);
+  color: color-mix(in oklch, var(--code-chrome-accent) 78%, var(--code-chrome-ink));
+}
+
+/* Sits beside the provenance pill rather than beside the path: the two are one
+   statement — what this block is, and whether it is still true. */
+.cave-code-stale {
+  order: 1;
+  flex-shrink: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  padding: 0.05em 0.45em;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  border: 1px solid color-mix(in oklch, var(--code-chrome-danger) 46%, transparent);
+  background: color-mix(in oklch, var(--code-chrome-danger) 14%, transparent);
+  color: var(--code-chrome-danger);
+}
+.cave-code-stale[hidden] {
+  display: none;
+}
+
+/* Hidden until a surface with an inspector wires them (wireCodeReading adds
+   --readable). Non-chat surfaces that render the same markdown — settings
+   memory, journal, the command palette — show no control they cannot honor. */
+.cave-code-read-btn,
+.cave-code-compare-btn {
+  display: none;
+}
+.cave-code-wrap--readable .cave-code-read-btn,
+.cave-code-wrap--readable .cave-code-compare-btn {
+  order: 3;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding: 0.2em 0.6em;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--code-chrome-border);
+  background: var(--code-chrome-surface-control);
+  color: var(--code-chrome-ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.1s, background 0.1s;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.cave-code-wrap--readable .cave-code-read-btn:hover,
+.cave-code-wrap--readable .cave-code-compare-btn:hover {
+  color: var(--code-chrome-ink);
+  background: var(--code-chrome-surface-control-hover);
+}
+.cave-code-wrap--readable .cave-code-read-btn:focus-visible,
+.cave-code-wrap--readable .cave-code-compare-btn:focus-visible {
+  opacity: 1;
+}
+/* A block that has drifted keeps Compare visible without a hover: the reader
+   needs to know the way to check BEFORE they act on stale lines. */
+.cave-code-wrap[data-code-staleness="stale"].cave-code-wrap--readable .cave-code-compare-btn {
+  opacity: 1;
+  border-color: color-mix(in oklch, var(--code-chrome-danger) 42%, transparent);
+  color: var(--code-chrome-danger);
 }
 
 /* The qualifying path, after the name and dimmer. Truncating here costs only

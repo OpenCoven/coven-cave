@@ -194,6 +194,17 @@ test("the queue derives from the familiar's real sessions", () => {
   assert.match(surface, /useRoleSurfaceState<ReviewerState>/);
 });
 
+test("bucket filter announcements run outside React state updaters", () => {
+  assert.match(
+    surface,
+    /const next = bucketFilter === bucket \? null : bucket;\s*setBucketFilter\(next\);\s*announce\(/,
+  );
+  assert.doesNotMatch(
+    surface,
+    /\bsetBucketFilter\(\s*(?:\(\s*(?:[A-Za-z_$][\w$]*)?\s*\)|[A-Za-z_$][\w$]*)\s*=>/,
+  );
+});
+
 test("the deck exposes errors and expansion state accessibly", () => {
   assert.match(surface, /\bSurfaceError\b/);
   assert.match(surface, /aria-current=\{active \? "true" : undefined\}/);

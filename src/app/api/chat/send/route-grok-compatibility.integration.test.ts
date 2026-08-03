@@ -138,7 +138,7 @@ try {
   const conversation = await loadConversation(structuredDone.sessionId);
   assert.equal(conversation?.harnessSessionId, "native_grok_session", "the route persists Grok's native resume id separately from Cave's id");
 
-  const guardedModel = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+  const guardedModel = await POST(new Request("http://localhost/api/chat/send", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({
       familiarId: "opal",
@@ -147,17 +147,22 @@ try {
       modelOverride: "provider/--sandbox",
       modelOverrideScope: "next-message",
     }),
-  })));
-  const guardedModelDone = guardedModel.events.findLast((event) => event.kind === "done");
+  }));
+  assert.equal(guardedModel.status, 400, "unsafe model ids are rejected before a runtime spawn");
+  const guardedModelBody = await guardedModel.json() as {
+    code?: string;
+    modelApplicationState?: string;
+    modelApplicationReason?: string;
+  };
   assert.equal(
-    guardedModelDone?.responseMetadata?.confirmedModel,
-    undefined,
-    "a model omitted by the post-transform argv guard is never reported as confirmed",
+    guardedModelBody.code,
+    "invalid_model_override",
+    "the launch boundary reports unsafe model input with a stable machine-readable code",
   );
-  assert.notEqual(
-    guardedModelDone?.responseMetadata?.modelApplicationState,
-    "applied",
-    "a successful default-model run cannot make an omitted model appear applied",
+  assert.equal(
+    guardedModelBody.modelApplicationState,
+    "rejected",
+    "unsafe model input is represented as rejected rather than silently falling back",
   );
 
   process.env.GROK_TEST_MODE = "tool-activity";

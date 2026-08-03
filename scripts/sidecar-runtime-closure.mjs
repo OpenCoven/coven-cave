@@ -35,6 +35,15 @@ export const SIDECAR_DYNAMIC_PACKAGES = Object.freeze([
   "ws",
 ]);
 
+// Next's server config loader resolves these files dynamically at startup.
+// NFT does not retain them in the sparse standalone dependency tree, so keep
+// the small compiled webpack bootstrap explicitly in the sidecar closure.
+export const SIDECAR_NEXT_RUNTIME_FILES = Object.freeze([
+  "dist/compiled/webpack/webpack-lib.js",
+  "dist/compiled/webpack/webpack.js",
+  "dist/compiled/webpack/bundle5.js",
+]);
+
 export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // Headroom over the ~5.2k baseline: .agents/skills is a runtime root, so
   // each first-party skill shipped to familiars adds a file here (covenwiki
@@ -150,18 +159,20 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // of cross-platform headroom without relaxing the byte ceiling.
   // 2026-08-01 (Memory document reader): the shared reader traces 5,817 files
   // on Windows. Retain the established ten-file cross-platform headroom.
-  // 2026-08-01 (accretion across 58 added src/ files): measured 5,824 on
-  // macOS, 5,828 on Linux and 5,831 on Windows — the first time this budget
-  // was checked since it was set, because the merges in between reached main
-  // without CI (see CLAUDE.md, branch protection). No single feature is to
-  // blame and none is worth singling out: the additions span the daemon
-  // connection supervisor and its routes, the X API lib/component half, the
-  // chat Start-from bands, the shell inset layout and the research-mission
-  // surfaces. Retain the established ten-file cross-platform headroom over the
-  // highest platform (5,831) without relaxing the byte ceiling — measured
-  // bytes are 104 MB against a 200 MB cap, so size is not the pressure here,
-  // file count is.
-  fileCount: 5_841,
+  // 2026-08-01 (main integration tree): CI measures 5,828 files on Ubuntu
+  // and 5,831 on Windows after maps, declarations, nested dependencies, and
+  // non-runtime roots are excluded. Preserve the established ten-file
+  // cross-platform headroom.
+  // 2026-08-03 (src/app/api/x/ route handlers, #4235): CI measures 5,874 on
+  // Ubuntu and 5,877 on Windows. Set from the HIGHER figure plus the same
+  // ten-file headroom.
+  //
+  // This number was reverted to 5_841 once already, by a local merge of a
+  // superseded branch citing the stale 5,831 line above (#4249). The routes
+  // needing this headroom are still present, so it must not move DOWN while
+  // they exist — and any bump belongs here, beside the measurement that
+  // justifies it, or the next reader reverts it again.
+  fileCount: 5_887,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
@@ -171,6 +182,45 @@ const PLATFORM_OPTIONAL_PACKAGE_RE = /^(?:@img\/sharp-|@next\/swc-)/;
 function isInside(root, candidate) {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
+}
+
+/**
+ * Containment against a set of allowed roots, tolerant of path aliases.
+ *
+ * `isInside` is lexical, so it only answers correctly when both sides are
+ * spelled the same way. The roots here are built with `path.resolve`, which
+ * normalizes but does NOT resolve symlinks, while a candidate that has been
+ * through `realpath` is fully canonical. On macOS that difference is routine
+ * rather than exotic — `/var` is a symlink to `/private/var` and `/tmp` to
+ * `/private/tmp`, so every temp-dir path has two spellings — and comparing one
+ * against the other rejected links that were plainly inside an allowed root.
+ *
+ * The lexical check runs first and answers almost every call. Only when it says
+ * "outside" do we canonicalize the roots and ask again, so the extra syscalls
+ * land on the path that was about to throw anyway. This narrows what is
+ * rejected, never widens it: containment is still required, just measured
+ * between two spellings of the same filesystem location.
+ */
+export async function isInsideAllowedRoots(roots, candidate) {
+  if (roots.some((root) => isInside(root, candidate))) return true;
+  // Canonicalize BOTH sides before the second opinion. Canonicalizing only one
+  // of them just moves the mismatch: an aliased root against a canonical
+  // candidate fails exactly as an aliased candidate against a canonical root
+  // does. A path that cannot be resolved keeps its lexical spelling, which is
+  // the best available answer for something that does not exist yet.
+  const canonicalCandidate = await canonicalize(candidate);
+  for (const root of roots) {
+    if (isInside(await canonicalize(root), canonicalCandidate)) return true;
+  }
+  return false;
+}
+
+async function canonicalize(target) {
+  try {
+    return await realpath(target);
+  } catch {
+    return path.resolve(target);
+  }
 }
 
 function packageParts(relativePath) {
@@ -205,7 +255,7 @@ function shouldSkipPackageEntry(relativePath, entryName, _isDirectory) {
 }
 
 async function copyResolvedEntry(source, destination, options, relativePath = "") {
-  if (!options.allowedLinkRoots.some((root) => isInside(root, source))) {
+  if (!(await isInsideAllowedRoots(options.allowedLinkRoots, source))) {
     throw new Error(`sidecar runtime input escapes its allowed roots: ${source}`);
   }
   const metadata = await lstat(source);
@@ -217,7 +267,7 @@ async function copyResolvedEntry(source, destination, options, relativePath = ""
       throw new Error(`sidecar runtime input must not contain links: ${source}`);
     }
     resolvedSource = await realpath(source);
-    if (!options.allowedLinkRoots.some((root) => isInside(root, resolvedSource))) {
+    if (!(await isInsideAllowedRoots(options.allowedLinkRoots, resolvedSource))) {
       throw new Error(`sidecar dependency link escapes its allowed roots: ${source} -> ${resolvedSource}`);
     }
     resolvedMetadata = await stat(resolvedSource);
@@ -398,6 +448,60 @@ async function copyNextAliases(standaloneRoot, destination, allowedLinkRoots) {
   }
 }
 
+async function copyNextRuntimeFiles(projectRoot, standaloneRoot, dependencyRoot, destination) {
+  const nextRoots = [
+    path.join(standaloneRoot, "node_modules", "next"),
+    path.join(dependencyRoot, "next"),
+  ];
+  // A required file can be beneath a symlinked `next` package directory, so
+  // checking only the final directory entry is not enough to enforce the
+  // package boundary. Resolve the package root and candidate before copying,
+  // while still letting copyResolvedEntry apply its existing final-entry link
+  // checks. A required entry may only resolve within its own `next` package;
+  // allowing the broader project or node_modules roots could copy unrelated
+  // dependency trees into the sidecar.
+  const resolvedPackageRoots = await Promise.all(
+    [standaloneRoot, path.join(projectRoot, "node_modules"), dependencyRoot].map((root) => realpath(root)),
+  );
+
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    let source = null;
+    for (const root of nextRoots) {
+      const candidate = path.join(root, relativePath);
+      try {
+        const resolvedNextRoot = await realpath(root);
+        if (!(await isInsideAllowedRoots(resolvedPackageRoots, resolvedNextRoot))) {
+          throw new Error(`sidecar dependency link escapes its allowed roots: ${root} -> ${resolvedNextRoot}`);
+        }
+        const nextPackage = JSON.parse(await readFile(path.join(resolvedNextRoot, "package.json"), "utf8"));
+        if (nextPackage.name !== "next") {
+          throw new Error(`sidecar Next package root is not the Next package: ${root} -> ${resolvedNextRoot}`);
+        }
+        const resolvedCandidate = await realpath(candidate);
+        if (!isInside(resolvedNextRoot, resolvedCandidate)) {
+          throw new Error(`sidecar dependency link escapes its allowed roots: ${candidate} -> ${resolvedCandidate}`);
+        }
+        const metadata = await stat(resolvedCandidate);
+        if (!metadata.isFile()) {
+          throw new Error(`required Next sidecar runtime file is not a regular file: ${relativePath}`);
+        }
+        source = { path: resolvedCandidate, root: resolvedNextRoot };
+        break;
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+    if (!source) {
+      throw new Error(`required Next sidecar runtime file is missing: ${relativePath}`);
+    }
+    await copyResolvedEntry(
+      source.path,
+      path.join(destination, "node_modules", "next", relativePath),
+      { followLinks: true, allowedLinkRoots: [source.root] },
+    );
+  }
+}
+
 export async function assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination) {
   const roots = [projectRoot, standaloneRoot, dependencyRoot].map((root) => path.resolve(root));
   [projectRoot, standaloneRoot, dependencyRoot, destination] = [
@@ -485,6 +589,7 @@ export async function assembleSidecarRuntime(projectRoot, standaloneRoot, depend
   for (const packageName of SIDECAR_DYNAMIC_PACKAGES) {
     await copyDynamicPackage(packageName, dependencyRoot, destination, roots);
   }
+  await copyNextRuntimeFiles(projectRoot, standaloneRoot, dependencyRoot, destination);
   await copyDynamicNativePackages(dependencyRoot, destination, roots);
   await copyNextAliases(standaloneRoot, destination, roots);
 
@@ -532,13 +637,26 @@ export async function verifySidecarRuntime(root) {
     "node_modules/react-dom/package.json",
     "node_modules/sharp/package.json",
     "node_modules/ws/package.json",
+    ...SIDECAR_NEXT_RUNTIME_FILES.map((relativePath) => path.join("node_modules/next", relativePath)),
     "package.json",
     "public/sandbox/react-runtime.js",
     "server.js",
     "server.mjs",
     "vault.yaml",
   ];
-  for (const relativePath of required) await stat(path.join(root, relativePath));
+  for (const relativePath of required) {
+    try {
+      const metadata = await stat(path.join(root, relativePath));
+      if (!metadata.isFile()) {
+        throw new Error(`required sidecar runtime file is not a regular file: ${relativePath}`);
+      }
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        throw new Error(`required sidecar runtime file is missing: ${relativePath}`);
+      }
+      throw error;
+    }
+  }
   for (const forbiddenRoot of SIDECAR_FORBIDDEN_ROOTS) {
     try {
       await stat(path.join(root, forbiddenRoot));

@@ -275,6 +275,15 @@ const contracts: RouteContract[] = [
   { route: "/workflows", methods: ["GET"], kind: "json" },
   { route: "/weaves", methods: ["GET"], kind: "json" },
   { route: "/weaves/[id]", methods: ["GET"], kind: "json" },
+  // cave-lsj8u: the X route handlers, landed after their lib/ and
+  // components/ halves. All five reject non-local requests; the four that
+  // read a body go through readJsonBody, which returns its own guarded
+  // response on malformed JSON.
+  { route: "/x/connection", methods: ["GET", "DELETE"], kind: "json", localOriginGuard: true },
+  { route: "/x/oauth/start", methods: ["POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/x/posts/lookup", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/x/posts/search", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/x/sources", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
 ];
 
 function walkRoutes(dir: string): string[] {
@@ -318,6 +327,14 @@ function effectiveRouteSource(file: string, source: string): string {
   if (source.includes('from "@/lib/proposal-decision-body"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "proposal-decision-body.ts"), "utf8"));
   }
+  // cave-lsj8u: /x/oauth/start is only wiring — its handlers are built by
+  // createXOAuthStartRouteHandlers so they can be tested without a server.
+  // Inline that lib the same way, or the contract checks below read a file
+  // with no response construction in it and conclude the route returns
+  // nothing.
+  if (source.includes('from "@/lib/server/x-oauth-start-route"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "x-oauth-start-route.ts"), "utf8"));
+  }
   return parts.join("\n");
 }
 
@@ -358,11 +375,16 @@ for (const contract of contracts) {
     assert.match(source, /status:\s*403/, `${contract.route} path guard must preserve 403 response`);
   }
   if (contract.localOriginGuard) {
-    assert.match(source, /isLocalOrigin|rejectNonLocalRequest/, `${contract.route} must preserve local-origin guard`);
-    if (source.includes("rejectNonLocalRequest")) {
-      assert.match(source, /rejectNonLocalRequest\(req\)/, `${contract.route} must call the shared local-origin guard`);
+    // effectiveSource, not source — matching the readsJson/invalidJson checks
+    // above. A route may apply the guard through an injected dependency
+    // (/x/oauth/start passes rejectNonLocalRequest into
+    // createXOAuthStartRouteHandlers, which calls it), and reading only the
+    // route file would report that as a missing guard when it is present.
+    assert.match(effectiveSource, /isLocalOrigin|rejectNonLocalRequest/, `${contract.route} must preserve local-origin guard`);
+    if (effectiveSource.includes("rejectNonLocalRequest")) {
+      assert.match(effectiveSource, /rejectNonLocalRequest\(req\)/, `${contract.route} must call the shared local-origin guard`);
     } else {
-      assert.match(source, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
+      assert.match(effectiveSource, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
     }
   }
 }

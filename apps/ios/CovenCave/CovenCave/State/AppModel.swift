@@ -951,12 +951,22 @@ final class AppModel {
     /// retry/discovery path. A successful probe also gives the rolling token
     /// renewal a chance to run for long-foregrounded devices.
     func validateConnectionOnForeground() async {
+        await validateCurrentConnection(refreshProfile: true)
+    }
+
+    /// Keep a long-lived foreground session honest even when the network path
+    /// itself never changes. This prevents the next chat send from being the
+    /// first operation to discover that the desktop restarted or moved.
+    func maintainConnectionWhileActive() async {
+        await validateCurrentConnection(refreshProfile: false)
+    }
+
+    private func validateCurrentConnection(refreshProfile: Bool) async {
         guard connection != nil, connectionState == .connected else { return }
         if let client, await client.ping() {
-            // Profile first (the just-succeeded ping proves the current token is
-            // valid), then the rolling token renewal + queue flush stay adjacent
-            // — the offline-compose flush invariant pins that pair.
-            await loadOperatorProfile()
+            if refreshProfile {
+                await loadOperatorProfile()
+            }
             await refreshAccessTokenIfNeeded()
             flushQueuedMessages()
             return
@@ -1013,7 +1023,9 @@ final class AppModel {
         // (state + loads must run once, not per caller). A joiner's
         // surface-reload intent is OR-merged onto the probe so the launcher
         // applies it — the joiner returning early must not drop it.
-        let candidates = connection.candidateBaseURLs
+        // Last-good first (cave-ioswipe.3): the ordinary reconnect then costs a
+        // single probe instead of walking the candidate list.
+        let candidates = connection.prioritizedCandidateBaseURLs
         // Identity of the endpoint this probe describes. `configure()` cancels
         // the in-flight probe, but a launcher that already passed its
         // `Task.isCancelled` check races that cancel — without this capture it
@@ -1047,6 +1059,13 @@ final class AppModel {
             // refresh owns the state.
             return
         case .found(let working):
+            // Remember what answered, keyed by the host we probed, so the next
+            // reconnect starts here (cave-ioswipe.3). Recorded even when the URL
+            // is unchanged: a first success is exactly what makes the fast path
+            // available on the following launch.
+            if let host = self.connection?.host {
+                CaveConnection.saveLastGoodBaseURL(working, forHost: host)
+            }
             if working != self.connection?.baseURL {
                 // Relocate: persist the working endpoint so future launches
                 // connect directly. Stored as bare `host:port` when the
@@ -1175,24 +1194,66 @@ final class AppModel {
     /// already succeeded or rejected it. Unpaired probes carry no secret, so they
     /// may still run concurrently for the cold-launch wall-clock win.
     static func discoverBaseURL(_ candidates: [URL]) async -> DiscoveryOutcome {
-        guard !candidates.isEmpty else { return .unreachable(nil) }
+        guard let preferred = candidates.first else { return .unreachable(nil) }
+
+        // Fast path (cave-ioswipe.3): probe the preferred endpoint ALONE first.
+        // Callers put the last-good URL at the head, so the ordinary reconnect —
+        // same desktop, same port — costs exactly one probe instead of walking
+        // up to 16 candidates. This is also what keeps the preferred endpoint
+        // authoritative: racing the whole list could relocate to a different
+        // working port purely on timing, persisting an endpoint the user never
+        // chose.
+        var strongest: ProbeFailure?
+        switch await Self.probe(preferred) {
+        case .ok: return .found(preferred)
+        case .unauthorized: return .unauthorized
+        case .failed(let failure): strongest = failure
+        }
+
+        let rest = Array(candidates.dropFirst())
+        guard !rest.isEmpty else { return .unreachable(strongest) }
+
+        // The paired path stays SEQUENTIAL by design: every candidate carries
+        // the Bearer token, and fanning it across ports concurrently would widen
+        // credential exposure. Only the unpaired sweep races.
         if CaveConnection.accessToken != nil {
-            return await discoverBaseURLSequentially(candidates)
+            return await discoverBaseURLSequentially(rest, seededWith: strongest)
         }
 
         let results = await withTaskGroup(of: (Int, ProbeResult).self) { group in
-            for (index, base) in candidates.enumerated() {
+            for (index, base) in rest.enumerated() {
                 group.addTask { (index, await Self.probe(base)) }
             }
-            var collected = [ProbeResult?](repeating: nil, count: candidates.count)
-            for await (index, result) in group { collected[index] = result }
+            var collected = [ProbeResult?](repeating: nil, count: rest.count)
+            // Short-circuit WITHOUT breaking ordered adjudication. Candidate
+            // order is a preference ranking, so cancelling on the first .ok to
+            // *arrive* would let a later port win purely on timing and get
+            // persisted over an earlier one that also worked. Instead, stop only
+            // once some candidate has succeeded AND every candidate ranked above
+            // it has already reported — at which point no earlier winner is
+            // still possible and the remaining probes cannot change the answer.
+            var earliestSuccess: Int?
+            for await (index, result) in group {
+                collected[index] = result
+                if case .ok = result, index < earliestSuccess ?? Int.max {
+                    earliestSuccess = index
+                }
+                if let winner = earliestSuccess,
+                   (0..<winner).allSatisfy({ collected[$0] != nil }) {
+                    group.cancelAll()
+                    break
+                }
+            }
             return collected
         }
-        return adjudicateDiscoveryResults(results, candidates: candidates)
+        return adjudicateDiscoveryResults(results, candidates: rest, seededWith: strongest)
     }
 
-    private static func discoverBaseURLSequentially(_ candidates: [URL]) async -> DiscoveryOutcome {
-        var strongest: ProbeFailure?
+    private static func discoverBaseURLSequentially(
+        _ candidates: [URL],
+        seededWith seed: ProbeFailure? = nil,
+    ) async -> DiscoveryOutcome {
+        var strongest: ProbeFailure? = seed
         for base in candidates {
             switch await Self.probe(base) {
             case .ok: return .found(base)
@@ -1203,8 +1264,15 @@ final class AppModel {
         return .unreachable(strongest)
     }
 
-    private static func adjudicateDiscoveryResults(_ results: [ProbeResult?], candidates: [URL]) -> DiscoveryOutcome {
-        var strongest: ProbeFailure?
+    private static func adjudicateDiscoveryResults(
+        _ results: [ProbeResult?],
+        candidates: [URL],
+        seededWith seed: ProbeFailure? = nil,
+    ) -> DiscoveryOutcome {
+        // Seeded with the preferred endpoint's failure so the diagnosis the user
+        // sees still reflects the endpoint they configured, not only the
+        // alternates.
+        var strongest: ProbeFailure? = seed
         for (index, result) in results.enumerated() {
             switch result {
             case .ok: return .found(candidates[index])

@@ -69,8 +69,12 @@ assert.match(
   "Dossier identity row (avatar + name + role) renders only in all-familiars mode — the sidebar already names the selected familiar",
 );
 
+// Placement guard, not a familiar-selection one: what matters is that the CTA
+// sits inside the `{familiar && …}` branch. The argument is named only to
+// anchor the match — it was renamed fallbackFamiliarId → scopedFamiliarId when
+// the silent familiars[0] default was retired.
 assert.match(
   source,
-  /\{familiar && \(\s*<button[\s\S]*?onNewChat\(undefined, fallbackFamiliarId\)/,
+  /\{familiar && \(\s*<button[\s\S]*?onNewChat\(undefined, scopedFamiliarId\)/,
   "With the identity row hidden, the + Chat CTA moves into the search/filter row",
 );

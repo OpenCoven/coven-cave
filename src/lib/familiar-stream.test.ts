@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { streamFamiliarText } from "./familiar-stream.ts";
+import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
@@ -122,6 +123,33 @@ describe("streamFamiliarText", () => {
     assert.equal(error, null);
   });
 
+  it("returns and publishes requested-versus-applied response metadata", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({
+        kind: "done",
+        responseMetadata: {
+          familiarId: "nova",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-5",
+          runtime: "local:/tmp",
+          requestedModel: "anthropic/claude-sonnet-5",
+          forwardedModel: "claude-sonnet-5",
+          requestedControls: { reasoning: "high" },
+          forwardedControls: { reasoning: "high" },
+        },
+      }),
+    ])) as typeof fetch;
+
+    let published: ChatResponseMetadata | undefined;
+    const result = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+      onResponseMetadata: (metadata) => { published = metadata; },
+    });
+    assert.equal(result.responseMetadata?.forwardedModel, "claude-sonnet-5");
+    assert.equal(published?.requestedControls?.reasoning, "high");
+  });
+
   it("surfaces an error frame", async () => {
     globalThis.fetch = (async () => sseResponse([
       frame({ kind: "assistant_chunk", text: "partial" }),
@@ -189,5 +217,29 @@ describe("streamFamiliarText", () => {
     const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
     assert.equal(text, "héllo");
     assert.equal(error, null);
+  });
+
+  it("preserves the runtime-default sentinel and typed controls", async () => {
+    let body = "";
+    globalThis.fetch = (async (_url: unknown, init: { body?: string }) => {
+      body = init.body ?? "";
+      return sseResponse([frame({ kind: "done" })]);
+    }) as typeof fetch;
+
+    await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "p",
+      modelOverride: "",
+      modelOverrideScope: "runtime-default",
+      modelControls: { reasoning: "medium" },
+    });
+
+    assert.deepEqual(JSON.parse(body), {
+      familiarId: "nova",
+      prompt: "p",
+      modelOverride: "",
+      modelOverrideScope: "runtime-default",
+      modelControls: { reasoning: "medium" },
+    });
   });
 });

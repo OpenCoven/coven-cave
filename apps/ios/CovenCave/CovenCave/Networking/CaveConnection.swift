@@ -83,8 +83,15 @@ struct CaveConnection: Codable, Equatable {
             add("https://\(hostname)")        // bare 443
         } else {
             // The desktop falls back through 3000-3010 when ports are taken
-            // (scripts/dev-app.sh / server.ts PORT), so probe the whole range —
-            // discovery is concurrent, so the extra candidates cost no wall time.
+            // (scripts/dev-app.sh / server.ts PORT), so probe the whole range.
+            //
+            // These extra candidates are NOT free: the paired path probes
+            // sequentially on purpose (see AppModel.discoverBaseURL — fanning
+            // the Bearer token across ports concurrently would widen credential
+            // exposure), so 16 candidates x a 6s timeout is a 96s worst case
+            // when packets are silently dropped. `lastGoodBaseURL` is what keeps
+            // the common case at a single probe; do not add candidates on the
+            // assumption that they cost nothing (cave-ioswipe.3).
             for port in 3000...3010 { add("http://\(hostname):\(port)") }
             for port in ["4500", "4555", "8443"] { add("http://\(hostname):\(port)") }
             add("https://\(hostname):8443")
@@ -107,7 +114,48 @@ struct CaveConnection: Codable, Equatable {
 
     static func clear() {
         UserDefaults.standard.removeObject(forKey: storageKey)
+        UserDefaults.standard.removeObject(forKey: lastGoodKey)
         KeychainStore.remove(tokenKey)
+    }
+
+    /// The base URL that last answered a successful probe, per host
+    /// (cave-ioswipe.3). Discovery tries this first, which turns the common
+    /// reconnect — same desktop, same port — into ONE probe instead of walking
+    /// the candidate list. Keyed by host so a remembered port for one desktop
+    /// is never tried against a different one.
+    ///
+    /// Not a secret (the host string beside it is already plain UserDefaults),
+    /// so it does not belong in the Keychain.
+    static let lastGoodKey = "cave.connection.last-good"
+
+    private static func lastGoodMap() -> [String: String] {
+        UserDefaults.standard.dictionary(forKey: lastGoodKey) as? [String: String] ?? [:]
+    }
+
+    static func lastGoodBaseURL(forHost host: String) -> URL? {
+        let key = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty, let raw = lastGoodMap()[key] else { return nil }
+        return URL(string: raw)
+    }
+
+    static func saveLastGoodBaseURL(_ url: URL, forHost host: String) {
+        let key = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return }
+        var map = lastGoodMap()
+        map[key] = url.absoluteString
+        UserDefaults.standard.set(map, forKey: lastGoodKey)
+    }
+
+    /// Candidates with the last-good URL hoisted to the front. Kept separate
+    /// from `candidateBaseURLs` so that property stays pure and testable; only
+    /// this one reads persisted state.
+    var prioritizedCandidateBaseURLs: [URL] {
+        let candidates = candidateBaseURLs
+        guard let remembered = Self.lastGoodBaseURL(forHost: host),
+              candidates.contains(remembered),
+              candidates.first != remembered
+        else { return candidates }
+        return [remembered] + candidates.filter { $0 != remembered }
     }
 
     /// The mobile access credential, when this desktop's API is token-gated

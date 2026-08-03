@@ -39,6 +39,7 @@ import { consumeFamiliarSettingsPending, type FamiliarSettingsTab } from "@/lib/
 import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { listVoiceProviders } from "@/lib/voice/registry";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
+import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 import { relativeTime } from "@/lib/relative-time";
 import { FamiliarSkillsSection } from "@/components/familiar-tab-skills";
 import { FamiliarIdentitySection } from "@/components/familiar-tab-identity";
@@ -133,7 +134,13 @@ function FamiliarIdentityHero({
   const runtimeModelOptions = runtimeModelInventory.models;
   const modelValue = familiar.model ?? "";
   const modelOptions: StandardSelectOption<string>[] = [
-    { value: "", label: "Provider default", detail: "Runtime picks the model" },
+    {
+      value: "",
+      label: familiar.model === "" || runtimeModelInventory.defaultOwner === "runtime"
+        ? "Runtime default"
+        : "Cave default",
+      detail: inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading),
+    },
     ...runtimeModelOptions.map((m) => ({ value: m.id, label: m.label ?? m.id, detail: m.id })),
   ];
   if (modelValue && !modelOptions.some((o) => o.value === modelValue)) {
@@ -205,7 +212,7 @@ function FamiliarIdentityHero({
           <StandardSelect
             label="Runtime"
             value={runtimeValue}
-            onChange={(v) => void bind({ harness: v })}
+            onChange={(v) => void bind({ harness: v, model: modelForRuntimeSwitch(v) })}
             options={runtimeOptions}
           />
           <StandardSelect

@@ -17,8 +17,10 @@ const source = readFileSync(
 
 test("familiar picker drives the ask — options advertise the connected model", () => {
   assert.match(source, /pickAskFamiliar\(/, "default familiar comes from the shared fallback helper");
-  assert.match(source, /familiarModelLabel|defaultModelForRuntime/, "options fall back to the harness default model label");
-  assert.match(source, /\{f\.display_name\} — \{familiarModelLabel\(f\)\}/, "option text pairs familiar name with its model");
+  assert.match(source, /familiarModelLabel/, "options use the shared model ownership/inventory label");
+  assert.match(source, /inventoryProvenanceLabel/, "the selected familiar option exposes inventory state");
+  assert.doesNotMatch(source, /defaultModelForRuntime/, "options never advertise a static implicit model");
+  assert.match(source, /\{f\.display_name\} — \{familiarModelLabel\(/, "option text pairs familiar name with its model");
   assert.match(
     source,
     /aria-label="Familiar whose connected model writes the answers"/,

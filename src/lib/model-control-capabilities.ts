@@ -1,4 +1,5 @@
 import { isModelInCatalog } from "./runtime-models.ts";
+import { canonicalHarnessId } from "./harness-adapters.ts";
 
 /**
  * A runtime-neutral description of controls that may be offered for one
@@ -25,16 +26,26 @@ export type ModelControlValue = {
   label: string;
 };
 
+export type ModelControlValidation = {
+  incompatibleWith?: readonly ModelControlFamily[];
+};
+
 export type ModelControlCapability = {
   family: ModelControlFamily;
   label: string;
   delivery: ModelControlDelivery;
   values: readonly ModelControlValue[];
+  validation: ModelControlValidation;
   /** Provider/CLI wire name. Never expose this as user-facing copy. */
   parameter?: string;
 };
 
 export type ModelControlValues = Partial<Record<ModelControlFamily, string>>;
+
+export type LegacyModelControlInput = {
+  reasoningEffort?: unknown;
+  responseSpeed?: unknown;
+};
 
 const MODEL_CONTROL_FAMILIES = new Set<ModelControlFamily>([
   "reasoning",
@@ -55,6 +66,7 @@ const reasoning = (delivery: ModelControlDelivery, parameter?: string): ModelCon
     { value: "medium", label: "Medium" },
     { value: "high", label: "High" },
   ],
+  validation: {},
   ...(parameter ? { parameter } : {}),
 });
 
@@ -67,6 +79,7 @@ const verbosity = (delivery: ModelControlDelivery, parameter?: string): ModelCon
     { value: "medium", label: "Medium" },
     { value: "high", label: "High" },
   ],
+  validation: {},
   ...(parameter ? { parameter } : {}),
 });
 
@@ -79,7 +92,11 @@ export function modelControlCapabilities(
   runtime: string,
   model: string | null | undefined,
 ): readonly ModelControlCapability[] {
-  const canonicalRuntime = runtime.trim().toLowerCase();
+  // Bindings can retain package/binary aliases from older setup flows. The
+  // inventory and launch paths already canonicalize those aliases; controls
+  // must use the same identity or a Claude/Hermes capability can disappear
+  // only on one surface.
+  const canonicalRuntime = canonicalHarnessId(runtime);
   const canonicalModel = model?.trim().toLowerCase() ?? "";
 
   // Hermes's Responses API transport is OpenAI-compatible only for explicit
@@ -132,7 +149,51 @@ export function validateModelControlValues(
     }
     accepted[capability.family] = value;
   }
-  return { values: accepted, rejected };
+  const rejectedSet = new Set(rejected);
+  for (const capability of capabilities) {
+    if (accepted[capability.family] === undefined) continue;
+    for (const incompatibleFamily of capability.validation.incompatibleWith ?? []) {
+      if (accepted[incompatibleFamily] === undefined) continue;
+      delete accepted[capability.family];
+      delete accepted[incompatibleFamily];
+      rejectedSet.add(capability.family);
+      rejectedSet.add(incompatibleFamily);
+    }
+  }
+  return { values: accepted, rejected: [...rejectedSet] };
+}
+
+/**
+ * Translate the two historical request fields only when the selected model
+ * advertises a matching typed capability. This keeps old clients useful for
+ * verified reasoning controls while preventing legacy Speed from becoming a
+ * universal latency promise. Explicit typed values win over the legacy field.
+ */
+export function modelControlInputWithLegacy(
+  capabilities: readonly ModelControlCapability[],
+  legacy: LegacyModelControlInput,
+  typed: unknown,
+): unknown {
+  const migrated: ModelControlValues = {};
+  const reasoningCapability = capabilities.find((capability) => capability.family === "reasoning");
+  if (
+    reasoningCapability &&
+    typeof legacy.reasoningEffort === "string" &&
+    reasoningCapability.values.some((option) => option.value === legacy.reasoningEffort)
+  ) {
+    migrated.reasoning = legacy.reasoningEffort;
+  }
+  const performanceCapability = capabilities.find((capability) => capability.family === "performance");
+  if (
+    performanceCapability &&
+    typeof legacy.responseSpeed === "string" &&
+    performanceCapability.values.some((option) => option.value === legacy.responseSpeed)
+  ) {
+    migrated.performance = legacy.responseSpeed;
+  }
+  if (typed === undefined) return migrated;
+  if (!typed || typeof typed !== "object" || Array.isArray(typed)) return typed;
+  return { ...migrated, ...(typed as Record<string, unknown>) };
 }
 
 /**

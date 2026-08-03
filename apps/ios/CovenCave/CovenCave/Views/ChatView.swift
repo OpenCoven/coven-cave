@@ -29,8 +29,6 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage("cave.chat.thinking") private var thinkingRaw = ChatThinkingEffort.high.rawValue
-    @AppStorage("cave.chat.responseSpeed") private var responseSpeedRaw = ChatResponseSpeed.fast.rawValue
     @Bindable var thread: ChatThread
     @State private var draft: String = ""
     /// The message being quoted in the next send, if any (swipe-to-reply).
@@ -378,21 +376,24 @@ struct ChatView: View {
         .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
     }
 
+    @ViewBuilder
     private var projectContext: some View {
-        ChatProjectPicker(
-            familiarIds: thread.familiarIds,
-            recentRoots: app.recentProjectRoots,
-            selectedRoot: $thread.projectRoot,
-            isResolved: $projectResolved,
-            locked: !thread.canChangeProject,
-            requiresExplicitSelection: thread.needsProjectSelection
-        ) {
-            thread.needsProjectSelection = false
-            app.touch(thread)
+        if thread.needsProjectSelection || !thread.canSendMessages {
+            ChatProjectPicker(
+                familiarIds: thread.familiarIds,
+                recentRoots: app.recentProjectRoots,
+                selectedRoot: $thread.projectRoot,
+                isResolved: $projectResolved,
+                locked: !thread.canChangeProject,
+                requiresExplicitSelection: thread.needsProjectSelection
+            ) {
+                thread.needsProjectSelection = false
+                app.touch(thread)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(chrome.bgRaised)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(chrome.bgRaised)
     }
 
     private func sessionControlRow<Control: View>(
@@ -485,7 +486,10 @@ struct ChatView: View {
     }
 
     private var presentedModelPickerAllowsRuntimeDefault: Bool {
-        modelPresentationIsCurrent && modelPickerAllowsRuntimeDefault
+        // A Cave-owned default still needs an explicit clear action after a
+        // session model has been selected; runtime ownership only controls
+        // whether the unselected state is the normal initial default.
+        modelPresentationIsCurrent && (modelPickerAllowsRuntimeDefault || sessionModelState != nil)
     }
 
     private var presentedModelPickerProvenance: String? {
@@ -533,14 +537,6 @@ struct ChatView: View {
             confirmedState: presentedSessionModelState,
             hasSession: modelSessionId(familiarId) != nil
         )
-    }
-
-    private var thinkingEffort: ChatThinkingEffort {
-        ChatThinkingEffort(rawValue: thinkingRaw) ?? .high
-    }
-
-    private var responseSpeed: ChatResponseSpeed {
-        ChatResponseSpeed(rawValue: responseSpeedRaw) ?? .fast
     }
 
     private func conciseModelName(_ id: String) -> String {
@@ -1266,8 +1262,6 @@ struct ChatView: View {
             // the next reconnect (AppModel.flushQueuedMessages).
             if app.connectionState != .connected {
                 thread.enqueue(outgoing, attachments: attachments,
-                               reasoningEffort: thinkingEffort,
-                               responseSpeed: responseSpeed,
                                modelControls: modelControlValues,
                                modelOverride: modelBinding.modelOverride,
                                modelOverrideScope: modelBinding.scope)
@@ -1276,8 +1270,6 @@ struct ChatView: View {
                 return
             }
             thread.send(outgoing, attachments: attachments,
-                        reasoningEffort: thinkingEffort,
-                        responseSpeed: responseSpeed,
                         modelControls: modelControlValues,
                         modelOverride: modelBinding.modelOverride,
                         modelOverrideScope: modelBinding.scope,
@@ -1294,18 +1286,14 @@ struct ChatView: View {
         }
         let modelBinding = turnModelBinding
         if app.connectionState != .connected {
-            thread.enqueue(text, reasoningEffort: thinkingEffort,
-                           responseSpeed: responseSpeed,
-                           modelControls: modelControlValues,
+            thread.enqueue(text, modelControls: modelControlValues,
                            modelOverride: modelBinding.modelOverride,
                            modelOverrideScope: modelBinding.scope)
             app.touch(thread)
             app.showToast("Queued — sends when reconnected", systemImage: "clock")
             return
         }
-        thread.send(text, reasoningEffort: thinkingEffort,
-                    responseSpeed: responseSpeed,
-                    modelControls: modelControlValues,
+        thread.send(text, modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
                     client: client) { app.touch(thread) }
@@ -1481,6 +1469,13 @@ struct ChatView: View {
             return
         }
 
+        if ["default", "runtime-default"].contains(trimmed.lowercased()) {
+            if let task = selectModel(nil, familiarId: familiarId, sessionId: sessionId) {
+                await task.value
+            }
+            return
+        }
+
         // Resolve the argument: exact id/label, then substring, else a custom id.
         let lower = trimmed.lowercased()
         let match = options.first { $0.id.lowercased() == lower || $0.label.lowercased() == lower }
@@ -1518,8 +1513,26 @@ struct ChatView: View {
         Haptics.tap()
 
         guard sessionId != nil || model == nil else {
+            // A new chat has no session PATCH to reconcile. Still resolve the
+            // selected model's capabilities immediately so the first Send
+            // cannot inherit controls from the previously selected model (or
+            // appear to support none simply because the thread is new).
+            guard let client = app.client,
+                  let request = modelRequests.beginLoad(for: target) else {
+                app.showToast("Model set for this chat", systemImage: "cpu", style: .info)
+                return nil
+            }
             app.showToast("Model set for this chat", systemImage: "cpu", style: .info)
-            return nil
+            return modelMutationQueue.enqueue {
+                await self.loadPendingModelCapabilities(
+                    model: stagedModel,
+                    familiarId: familiarId,
+                    sessionId: sessionId,
+                    target: target,
+                    request: request,
+                    client: client
+                )
+            }
         }
         guard let client = app.client else {
             app.showToast("Model queued for this chat", systemImage: "cpu", style: .warning)
@@ -1542,6 +1555,45 @@ struct ChatView: View {
                 model: stagedModel,
                 mutationFailed: mutationFailed
             )
+        }
+    }
+
+    /// Resolve controls for a staged model before a new chat owns a session.
+    /// The server treats `model` on GET as a read-only next-message preview, so
+    /// this cannot mutate familiar/session intent or race the eventual Send.
+    private func loadPendingModelCapabilities(
+        model: String,
+        familiarId: String,
+        sessionId: String?,
+        target: ChatModelRequestTarget,
+        request: ChatModelRequest,
+        client: CaveClient
+    ) async {
+        do {
+            let response = try await client.chatModelState(
+                familiarId: familiarId,
+                sessionId: sessionId,
+                previewModel: model
+            )
+            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
+                  thread.pendingModelOverride == model,
+                  rekeyModelPresentation(for: target, response: response) else { return }
+            sessionModelState = response.state
+            modelControlCapabilities = response.controls ?? []
+            let allowed = Dictionary(uniqueKeysWithValues: modelControlCapabilities.map {
+                ($0.family, Set($0.values.map(\.value)))
+            })
+            modelControlValues = modelControlValues.filter {
+                allowed[$0.key]?.contains($0.value) == true
+            }
+            modelPickerOptions = response.options ?? []
+            modelPickerAllowsRuntimeDefault = response.inventory?.allowsRuntimeDefault ?? false
+            modelPickerProvenance = response.inventory?.provenance ?? "unavailable"
+            modelPickerCurrent = model
+            app.touch(thread)
+        } catch {
+            // The model selection remains staged and will still ride the first
+            // turn. Keep controls empty rather than inventing legacy globals.
         }
     }
 
@@ -1686,9 +1738,7 @@ struct ChatView: View {
             return
         }
         let modelBinding = turnModelBinding
-        thread.send(trimmed, reasoningEffort: thinkingEffort,
-                    responseSpeed: responseSpeed,
-                    modelControls: modelControlValues,
+        thread.send(trimmed, modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
                     client: client) { app.touch(thread) }
@@ -1840,8 +1890,6 @@ struct ChatView: View {
             destination.send(
                 prompt,
                 displayText: displayText,
-                reasoningEffort: thinkingEffort,
-                responseSpeed: responseSpeed,
                 modelControls: [:],
                 modelOverride: destinationModelBinding.modelOverride,
                 modelOverrideScope: destinationModelBinding.scope,

@@ -12,10 +12,11 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { COMPATIBILITY_ADAPTERS, isSummonableLocalHarness } from "@/lib/harness-adapters";
 import { slugifyFamiliarId } from "@/lib/onboarding-familiars";
+import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
 import {
-  defaultModelForRuntime,
-  runtimeOwnsModelDefault,
-} from "@/lib/runtime-models";
+  inventoryProvenanceLabel,
+  useRuntimeModelInventory,
+} from "@/lib/use-runtime-model-options";
 import { setFamiliarOverride } from "@/lib/cave-familiar-overrides";
 import { clearSummoningDraft, readSummoningDraft, saveSummoningDraft } from "@/lib/summoning-draft";
 import { setGlyphOverride } from "@/lib/cave-glyph-overrides";
@@ -254,6 +255,7 @@ function SummoningRite({
 
   // Stage IV — fine-tuning.
   const [model, setModel] = useState(draft?.model ?? "");
+  const modelInventory = useRuntimeModelInventory(harness ?? "", null);
 
   // Persist the rite as it evolves; stop once summoned (success owns the
   // clear — a re-save from the settle re-render would resurrect the draft).
@@ -460,7 +462,7 @@ function SummoningRite({
       ? "chosen by the agent"
       : model.trim() ||
         (harness && !runtimeOwnsModelDefault(harness)
-          ? defaultModelForRuntime(harness)
+          ? "Cave default · " + inventoryProvenanceLabel(modelInventory.provenance, modelInventory.loading)
           : "Runtime default");
 
   async function handleSummon() {
@@ -1564,7 +1566,7 @@ function EnhancementRite({
         const res = await fetch("/api/config", {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ familiars: { [familiar.id]: { model: model.trim() || null } } }),
+          body: JSON.stringify({ familiars: { [familiar.id]: { model: model.trim() } } }),
         });
         if (!res.ok) throw new Error(`Model change failed (HTTP ${res.status}).`);
       }

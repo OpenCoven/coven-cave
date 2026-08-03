@@ -236,7 +236,10 @@ struct MessageBubble: View {
                     bubble
                         .contextMenu { messageActions }
                 }
-                if !isUser { responseControlStatus }
+                if !isUser {
+                    responseModelStatus
+                    responseControlStatus
+                }
 
                 // Rich preview card for the first link in a finished message.
                 if !message.streaming, let link = firstLink(in: parsed.visible) {
@@ -301,12 +304,13 @@ struct MessageBubble: View {
         let requested = message.requestedControls ?? [:]
         let rejected = Set(message.rejectedControlFamilies ?? [])
         let promptGuidance = Set((message.promptGuidanceControls ?? [:]).keys)
+        let forwarded = Set((message.forwardedControls ?? [:]).keys)
         let applied = Set((message.appliedControls ?? [:]).keys)
         if !requested.isEmpty || !rejected.isEmpty {
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(Array(requested.keys).sorted(), id: \.self) { family in
                     let value = requested[family] ?? ""
-                    let status = rejected.contains(family) ? "Rejected" : promptGuidance.contains(family) ? "Prompt guidance" : applied.contains(family) ? "Applied" : "Requested — not confirmed"
+                    let status = rejected.contains(family) ? "Rejected" : promptGuidance.contains(family) ? "Prompt guidance" : applied.contains(family) ? "Applied" : forwarded.contains(family) ? "Forwarded — not confirmed" : "Requested — not confirmed"
                     Text("\(status): \(family) \(value)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -319,6 +323,57 @@ struct MessageBubble: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Response controls")
+        }
+    }
+
+    @ViewBuilder private var responseModelStatus: some View {
+        let requested = message.requestedModel
+        let desired = message.desiredModel
+        let forwarded = message.forwardedModel
+        let confirmed = message.confirmedModel
+        let state = message.modelApplicationState
+        let source = message.modelSource
+        let reason = message.modelApplicationReason
+        if requested != nil || desired != nil || confirmed != nil || state != nil {
+            VStack(alignment: .leading, spacing: 3) {
+                if let requested {
+                    let requestedLabel = requested.isEmpty ? "Runtime default" : requested
+                    Text("Requested model: \(requestedLabel)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let desired, !desired.isEmpty, desired != confirmed {
+                    Text("Resolved model: \(desired)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let forwarded, !forwarded.isEmpty, forwarded != desired, forwarded != confirmed {
+                    Text("Forwarded model: \(forwarded)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let confirmed, !confirmed.isEmpty {
+                    Text("Applied model: \(confirmed)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if let state, !state.isEmpty {
+                    Text("Model: \(state.capitalized)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let source, !source.isEmpty {
+                    Text("Model source: \(source)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let reason, !reason.isEmpty, confirmed == nil {
+                    Text(reason)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Model application status")
         }
     }
 

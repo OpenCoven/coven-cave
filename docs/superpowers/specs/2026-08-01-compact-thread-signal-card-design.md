@@ -1,5 +1,12 @@
 # Compact Thread Signal Card Design
 
+> **Superseded by
+> [`2026-08-03-thread-signal-triage-card-design.md`](./2026-08-03-thread-signal-triage-card-design.md).**
+> The density and accessibility rules below still hold. The score layout does
+> not: the card now carries six tiles at a `2 → 3` column breakpoint, so the
+> "render the three score items in one column", "switch at `560px`", and "do not
+> introduce a two-column intermediate layout" rules are historical.
+
 ## Goal
 
 Reduce the visual footprint of Thread Signal cards in chat without hiding

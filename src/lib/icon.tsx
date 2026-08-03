@@ -176,6 +176,8 @@ export const ICON_NAMES = [
   "ph:file-code",
   "ph:file-bold",
   "ph:file-text",
+  "ph:file-md",
+  "ph:printer",
   "ph:flask",
   "ph:flag",
   "ph:flag-fill",

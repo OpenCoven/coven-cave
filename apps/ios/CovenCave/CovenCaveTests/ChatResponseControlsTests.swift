@@ -348,17 +348,25 @@ final class ChatResponseControlsTests: XCTestCase {
         let event = try XCTUnwrap(StreamEvent.decode(
             """
             {"kind":"done","isError":false,"sessionId":"session-1",
-             "responseMetadata":{"retryModel":"openai/gpt-5.6-sol","requestedControls":{"reasoning":"medium"},"appliedControls":{"reasoning":"medium"}}}
+             "responseMetadata":{"requestedModel":"","desiredModel":"","forwardedModel":"gpt-5.6-sol","modelSource":"runtime-default","modelApplicationState":"saved","modelApplicationReason":"Using the runtime default.","retryModel":"openai/gpt-5.6-sol","requestedControls":{"reasoning":"medium"},"forwardedControls":{"reasoning":"medium"},"appliedControls":{"reasoning":"medium"}}}
             """
         ))
 
-        guard case .done(let isError, let sessionId, let retryModel, let requestedControls, let promptGuidanceControls, let appliedControls, let rejectedControlFamilies) = event else {
+        guard case .done(let isError, let sessionId, let requestedModel, let desiredModel, let forwardedModel, let confirmedModel, let modelSource, let modelApplicationState, let modelApplicationReason, let retryModel, let requestedControls, let forwardedControls, let promptGuidanceControls, let appliedControls, let rejectedControlFamilies) = event else {
             return XCTFail("expected done event")
         }
         XCTAssertFalse(isError)
         XCTAssertEqual(sessionId, "session-1")
+        XCTAssertEqual(requestedModel, "")
+        XCTAssertEqual(desiredModel, "")
+        XCTAssertEqual(forwardedModel, "gpt-5.6-sol")
+        XCTAssertNil(confirmedModel)
+        XCTAssertEqual(modelSource, "runtime-default")
+        XCTAssertEqual(modelApplicationState, "saved")
+        XCTAssertEqual(modelApplicationReason, "Using the runtime default.")
         XCTAssertEqual(retryModel, "openai/gpt-5.6-sol")
         XCTAssertEqual(requestedControls, ["reasoning": "medium"])
+        XCTAssertEqual(forwardedControls, ["reasoning": "medium"])
         XCTAssertNil(promptGuidanceControls)
         XCTAssertEqual(appliedControls, ["reasoning": "medium"])
         XCTAssertNil(rejectedControlFamilies)

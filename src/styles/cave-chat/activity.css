@@ -379,17 +379,19 @@ details[open] > .cave-tool-summary::before {
 .cave-tool-name { color: color-mix(in oklch, var(--tool-accent) 80%, var(--text-secondary)); }
 
 /* One tint set for every category-coded surface in the card — the row, the
-   run, and the batch band above them. Grouping with :is() keeps a fourth
-   consumer from costing a fourth selector list. */
-:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="shell"]  { --tool-accent: oklch(0.80 0.15 150); } /* green */
-:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="read"]   { --tool-accent: oklch(0.74 0.13 235); } /* blue */
-:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="search"] { --tool-accent: oklch(0.74 0.16 295); } /* violet */
-:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="edit"]   { --tool-accent: oklch(0.82 0.14 75); }  /* amber */
-:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="agent"]  { --tool-accent: oklch(0.74 0.18 350); } /* magenta */
-:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="web"]    { --tool-accent: oklch(0.78 0.12 200); } /* teal */
-:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="task"]   { --tool-accent: oklch(0.80 0.13 95); }  /* lime */
-:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="mcp"]    { --tool-accent: oklch(0.72 0.14 270); } /* indigo */
-:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch)[data-tool-category="other"]  { --tool-accent: var(--text-muted); }
+   run, the batch band above them, and the reader's provenance footer
+   (cave-chat/reader.css). Grouping with :is() keeps a fifth consumer from
+   costing a fifth selector list — and keeps a batch the SAME colour in the
+   reader as it is in the stream, which two copies of these values could not. */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="shell"]  { --tool-accent: oklch(0.80 0.15 150); } /* green */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="read"]   { --tool-accent: oklch(0.74 0.13 235); } /* blue */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="search"] { --tool-accent: oklch(0.74 0.16 295); } /* violet */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="edit"]   { --tool-accent: oklch(0.82 0.14 75); }  /* amber */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="agent"]  { --tool-accent: oklch(0.74 0.18 350); } /* magenta */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="web"]    { --tool-accent: oklch(0.78 0.12 200); } /* teal */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="task"]   { --tool-accent: oklch(0.80 0.13 95); }  /* lime */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="mcp"]    { --tool-accent: oklch(0.72 0.14 270); } /* indigo */
+:is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="other"]  { --tool-accent: var(--text-muted); }
 
 /* ── Batch band (Chat.dc.html 2a ④) ────────────────────────────────────────
    A turn's calls arrive in blocks: the agent fires several, writes prose,

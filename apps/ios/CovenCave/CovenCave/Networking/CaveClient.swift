@@ -469,9 +469,16 @@ struct CaveClient {
     }
 
     /// The model this chat resolves to, plus the pickable menu for its runtime.
-    func chatModelState(familiarId: String, sessionId: String?) async throws -> ChatModelStateResponse {
+    /// `previewModel` is read-only and resolves controls for a staged model
+    /// before a new chat has a server session or durable model intent.
+    func chatModelState(
+        familiarId: String,
+        sessionId: String?,
+        previewModel: String? = nil
+    ) async throws -> ChatModelStateResponse {
         var path = "api/chat/model-state?familiarId=\(urlQuery(familiarId))"
         if let sessionId, !sessionId.isEmpty { path += "&sessionId=\(urlQuery(sessionId))" }
+        if let previewModel { path += "&model=\(urlQuery(previewModel))" }
         let req = try request(path)
         let (data, resp) = try await data(for: req)
         try Self.check(resp)
@@ -540,8 +547,11 @@ struct CaveClient {
         /// re-attachable after a transport drop.
         var runId: String? = nil
         /// Real per-send controls consumed by `/api/chat/send`.
-        var reasoningEffort: ChatThinkingEffort = .high
-        var responseSpeed: ChatResponseSpeed = .fast
+        /// Legacy fields remain decodable/encodable for older callers and
+        /// persisted turns, but new capability-aware sends leave them nil.
+        /// A nil value must not become an implicit prompt-only request.
+        var reasoningEffort: ChatThinkingEffort? = nil
+        var responseSpeed: ChatResponseSpeed? = nil
         var modelControls: [String: String]? = nil
         /// A model selected before the first server session exists travels with
         /// the send instead of mutating the familiar's global default.

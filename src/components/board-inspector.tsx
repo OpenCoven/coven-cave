@@ -38,7 +38,12 @@ import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
 import { CHAT_OPEN_PROJECTS_EVENT, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
-import { openExternalUrl } from "@/lib/open-external";
+import {
+  cancelSystemBrowserUrlWindow,
+  openExternalUrl,
+  openSystemBrowserUrl,
+  reserveSystemBrowserUrlWindow,
+} from "@/lib/open-external";
 import { InlineAsanaPATSetup } from "@/components/asana-connect-inline";
 import { attachmentIcon, fileToAttachment, hasDraggedFiles } from "@/lib/chat-attachments";
 import type { CardPatch } from "@/lib/board-card-ops";
@@ -1636,21 +1641,29 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                       className="board-drawer-chat-cta"
                       title="Run on Omnigent fleet"
                       onClick={() => {
+                        const systemBrowserReservation = reserveSystemBrowserUrlWindow();
                         void (async () => {
-                          const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
-                          const { openExternalUrl } = await import("@/lib/open-external");
-                          const result = await startOmnigentRunFromBrowser({
-                            prompt: card.title,
-                            familiarId: card.familiarId ?? undefined,
-                            boardCardId: card.id,
-                            title: card.title,
-                            source: "cave-board",
-                          });
-                          if (!result.ok) {
-                            window.alert(result.error);
-                            return;
+                          let systemBrowserReservationConsumed = false;
+                          try {
+                            const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
+                            const result = await startOmnigentRunFromBrowser({
+                              prompt: card.title,
+                              familiarId: card.familiarId ?? undefined,
+                              boardCardId: card.id,
+                              title: card.title,
+                              source: "cave-board",
+                            });
+                            if (!result.ok) {
+                              window.alert(result.error);
+                              return;
+                            }
+                            systemBrowserReservationConsumed = true;
+                            void openSystemBrowserUrl(result.webUrl, { reservation: systemBrowserReservation });
+                          } finally {
+                            if (!systemBrowserReservationConsumed) {
+                              cancelSystemBrowserUrlWindow(systemBrowserReservation);
+                            }
                           }
-                          void openExternalUrl(result.webUrl);
                         })();
                       }}
                     >

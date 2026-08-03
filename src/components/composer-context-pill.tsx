@@ -73,6 +73,9 @@ export type ComposerContextProps = {
    *  "Register this folder" row (spec 2026-07-24). */
   registerCurrentRoot?: string;
   onRegisterCurrentRoot?: () => void;
+  /** New-session composers sit near the top of the page, so their menus should
+   *  prefer opening below. Docked composers keep each picker's existing side. */
+  popoverPlacement?: "bottom-start" | "top-start";
   disabled?: boolean;
 };
 
@@ -189,12 +192,14 @@ export function ComposerContextPickers({
         addingProject={context.addFlow.adding}
         registerCurrentRoot={context.config.registerCurrentRoot}
         onRegisterCurrentRoot={context.config.onRegisterCurrentRoot}
+        placement={context.config.popoverPlacement === "bottom-start" ? "bottom-start" : undefined}
         ariaLabel="Choose project"
       />
       <ComposerRuntimePopover
         open={view === "model"}
         onOpenChange={(open) => onViewChange(open ? "model" : null)}
         anchorRef={anchorRef}
+        placement={context.config.popoverPlacement}
         runtime={context.config.runtime}
         modelValue={context.config.modelValue}
         modelOptions={context.config.modelOptions}
@@ -207,6 +212,7 @@ export function ComposerContextPickers({
         open={view === "branch"}
         onOpenChange={(open) => onViewChange(open ? "branch" : null)}
         anchorRef={anchorRef}
+        placement={context.config.popoverPlacement}
         projectRoot={context.root}
         onSwitched={context.reload}
         {...branchPopoverExtras(context)}
@@ -318,23 +324,28 @@ export function ComposerContextChips(props: ComposerContextProps) {
         addingProject={context.addFlow.adding}
         registerCurrentRoot={context.config.registerCurrentRoot}
         onRegisterCurrentRoot={context.config.onRegisterCurrentRoot}
+        placement={context.config.popoverPlacement === "bottom-start" ? "bottom-start" : undefined}
         ariaLabel="Choose project"
       />
       <ComposerRuntimePopover
         open={menu === "model"}
         onOpenChange={(open) => setMenu(open ? "model" : null)}
         anchorRef={modelRef}
+        placement={context.config.popoverPlacement}
         runtime={context.config.runtime}
         modelValue={context.config.modelValue}
         modelOptions={context.config.modelOptions}
         onPickRuntime={context.config.onPickRuntime}
         onPickModel={context.config.onPickModel}
+        promotableModel={context.config.promotableModel ?? null}
+        onPromoteModelToDefault={context.config.onPromoteModelToDefault}
       />
       {context.hasGit ? (
         <GitBranchMenuPopover
           open={menu === "branch"}
           onOpenChange={(open) => setMenu(open ? "branch" : null)}
           anchorRef={branchRef}
+          placement={context.config.popoverPlacement}
           projectRoot={context.root}
           onSwitched={context.reload}
           {...branchPopoverExtras(context)}

@@ -1,6 +1,11 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { modelSlashOptions, resolveModelArg, formatModelList } from "./slash-model.ts";
+import {
+  modelSlashOptions,
+  resolveModelArg,
+  formatModelList,
+  isRuntimeDefaultModelArg,
+} from "./slash-model.ts";
 
 // --- modelSlashOptions: only active in /model arg position -------------------
 assert.equal(modelSlashOptions("/mod", "claude"), null, "not /model arg position until a space is typed");
@@ -48,6 +53,9 @@ assert.equal(
 );
 assert.equal(resolveModelArg("  ", "claude"), null, "empty arg → null");
 assert.equal(resolveModelArg("not a model!!", "claude"), null, "malformed custom id → null");
+assert.equal(isRuntimeDefaultModelArg("default"), true, "default clears the model override");
+assert.equal(isRuntimeDefaultModelArg(" runtime-default "), true, "runtime-default clears the model override");
+assert.equal(isRuntimeDefaultModelArg("openai/gpt-5.6"), false, "model ids are not clear commands");
 assert.equal(
   resolveModelArg("provider/not-offered", "claude", dynamicClaude, false),
   null,
@@ -79,6 +87,11 @@ assert.match(
   formatModelList("opencode", null, discovered),
   /OpenCode Big Pickle/,
   "dynamic inventory is listed by the /model command",
+);
+assert.match(
+  formatModelList("claude", ""),
+  /Current model: Runtime default[\s\S]*`\/model default`/,
+  "the /model listing exposes the durable clear command and renders its sentinel honestly",
 );
 
 console.log("slash-model.test.ts: ok");

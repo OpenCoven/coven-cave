@@ -991,7 +991,22 @@ function fetchPullRequests(
     }
   }
   if (canonicalRepo === null) {
-    globalErrors.push("pull request inventory canonical repository is unavailable");
+    // Distinguish "GitHub did not answer" from "GitHub answered and the
+    // repository identity was wrong". Both used to surface as the latter, which
+    // sent the reader looking at repository configuration when the real cause
+    // was an exhausted GraphQL budget (its 5000/hr pool is separate from REST,
+    // so `gh api rate_limit` can look healthy while every graphql call fails).
+    // The per-OID errors already carry the true reason; this promotes it
+    // instead of overwriting it (cave-v59dk).
+    const attempted = new Set(heads).size;
+    const firstFailure = [...errorsByOid.values()][0] ?? null;
+    globalErrors.push(
+      attempted > 0 && errorsByOid.size === attempted && firstFailure !== null
+        ? `pull request inventory could not query GitHub — all ${attempted} commit association ${
+            attempted === 1 ? "query" : "queries"
+          } failed: ${firstFailure}`
+        : "pull request inventory canonical repository is unavailable",
+    );
   }
 
   if (
@@ -1053,6 +1068,106 @@ function fetchPullRequests(
     globalErrors: [...new Set(globalErrors)],
     canonicalRepo,
   };
+}
+
+/** Stable identity for a lifecycle unit within one patrol run. */
+function lifecycleUnitKey(unit: { kind: string; path: string | null; ref: string | null }): string {
+  return `${unit.kind}\0${unit.path ?? ""}\0${unit.ref ?? ""}`;
+}
+
+/**
+ * Which units — if any — had their own inputs move while the patrol ran.
+ *
+ * Returns a reason per affected unit; an empty map means nothing a verdict
+ * depends on changed. Throws only when a snapshot cannot be parsed, which the
+ * caller escalates to a whole-run failure.
+ */
+function unitScopedDrift({
+  units,
+  initialWorktreeRaw,
+  initialRefsRaw,
+  finalWorktreeRaw,
+  finalRefsRaw,
+}: {
+  units: Array<{ kind: string; path: string | null; ref: string | null; head: string }>;
+  initialWorktreeRaw: string;
+  initialRefsRaw: string;
+  finalWorktreeRaw: string;
+  finalRefsRaw: string;
+}): Map<string, string> {
+  const drift = new Map<string, string>();
+  if (finalWorktreeRaw === initialWorktreeRaw && finalRefsRaw === initialRefsRaw) {
+    return drift;
+  }
+
+  // Drift is measured INITIAL → FINAL, never against the unit's own fields. A
+  // unit can start out inconsistent — a registered worktree whose ref is absent
+  // from the branch inventory, or whose HEAD differs from that ref, both of
+  // which `initialErrors` already reports — and comparing the final snapshot to
+  // those fields would blame the patrol window for a discrepancy that predates
+  // it. Only a real change between the two reads is drift.
+  const initialEntries = parseWorktrees(initialWorktreeRaw);
+  const finalEntries = parseWorktrees(finalWorktreeRaw);
+  const initialOidByRef = new Map(
+    parseLocalBranchRefs(initialRefsRaw).map((localRef) => [localRef.ref, localRef.oid]),
+  );
+  const finalOidByRef = new Map(
+    parseLocalBranchRefs(finalRefsRaw).map((localRef) => [localRef.ref, localRef.oid]),
+  );
+  const initialEntryByPath = new Map(initialEntries.map((entry) => [entry.path, entry]));
+  const finalEntryByPath = new Map(finalEntries.map((entry) => [entry.path, entry]));
+  const pathsByRef = (entries: ReturnType<typeof parseWorktrees>) => {
+    const byRef = new Map<string, string[]>();
+    for (const entry of entries) {
+      if (entry.ref === null) continue;
+      byRef.set(entry.ref, [...(byRef.get(entry.ref) ?? []), entry.path].sort());
+    }
+    return byRef;
+  };
+  const initialPathsByRef = pathsByRef(initialEntries);
+  const finalPathsByRef = pathsByRef(finalEntries);
+
+  for (const unit of units) {
+    const key = lifecycleUnitKey(unit);
+    if (unit.kind === "worktree" && unit.path !== null) {
+      const before = initialEntryByPath.get(unit.path);
+      const after = finalEntryByPath.get(unit.path);
+      if (before !== undefined) {
+        if (after === undefined) {
+          drift.set(key, "worktree was unregistered while the patrol was running");
+          continue;
+        }
+        if (after.head !== before.head || after.ref !== before.ref) {
+          drift.set(key, "worktree HEAD moved while the patrol was running");
+          continue;
+        }
+      }
+    }
+    if (unit.ref !== null) {
+      const oidBefore = initialOidByRef.get(unit.ref);
+      const oidAfter = finalOidByRef.get(unit.ref);
+      // A ref the initial snapshot never had is not something this window
+      // changed; `initialErrors` already covers that inconsistency.
+      if (oidBefore !== undefined) {
+        if (oidAfter === undefined) {
+          drift.set(key, "branch was deleted while the patrol was running");
+          continue;
+        }
+        if (oidAfter !== oidBefore) {
+          drift.set(key, "branch moved while the patrol was running");
+          continue;
+        }
+      }
+      // A ref gaining or losing a worktree changes what retiring it would mean,
+      // even when the OID held still.
+      const pathsBefore = (initialPathsByRef.get(unit.ref) ?? []).join("\0");
+      const pathsAfter = (finalPathsByRef.get(unit.ref) ?? []).join("\0");
+      if (pathsBefore !== pathsAfter) {
+        drift.set(key, "the worktrees holding this branch changed while the patrol was running");
+      }
+    }
+  }
+  return drift;
 }
 
 function fetchWorkflowSweep(
@@ -1178,21 +1293,78 @@ function fetchWorkflowSweep(
   };
 }
 
+/**
+ * Errors that mean "the repository moved while we were reading it", as opposed
+ * to "the data is wrong". Runs start, finish and change state continuously, so
+ * a paginated read on a busy repo routinely lands mid-flight: pages disagree on
+ * total_count, the collected rows fall short of the total, or two verification
+ * sweeps see different sets. None of these indicate a problem with the
+ * inventory — they indicate CI is running — and every one of them is expected
+ * to resolve on a re-read.
+ */
+const RETRYABLE_SWEEP_ERROR =
+  /(returned partial data|returned inconsistent totals|changed between verification sweeps)/;
+
+/**
+ * How many times to attempt a stable read before giving up.
+ *
+ * An attempt is one sweep, plus a second confirming sweep only if the first
+ * succeeded — a first sweep that fails with retryable drift ends the attempt
+ * immediately, since there is nothing to confirm against.
+ *
+ * Deliberately no backoff between attempts. Each sweep is itself several
+ * round-trips to GitHub, so a re-read is already far enough after the last one
+ * to see a settled state; adding a sleep would only lengthen the window during
+ * which the repository can change again. It would also be the one blocking
+ * primitive in an otherwise spawn-bound script, which is a poor thing to
+ * introduce into a path that runs while a maintenance gate is held.
+ */
+const WORKFLOW_SWEEP_ATTEMPTS = 4;
+
+/**
+ * A stable snapshot of the active workflow runs.
+ *
+ * The safety requirement is unchanged: two consecutive sweeps must agree before
+ * the result is trusted, because a partial inventory could miss a run that is
+ * live against a worktree and let it be retired. What changed is that ordinary
+ * churn no longer *ends* the attempt — a disagreement is retried rather than
+ * reported. On a repo with runs in flight the first pair almost never agrees,
+ * which is why this previously reported "partial data" whenever CI was busy and
+ * left every unit `uncertain` (cave-v59dk).
+ *
+ * Genuine inconsistencies — a duplicate run ID, conflicting statuses, malformed
+ * JSON, the 1000-run cap, a failed `gh` call — are NOT retried. Those do not
+ * settle on a second read, and retrying them would only delay a real report.
+ */
 function fetchWorkflows(
   repo: string,
   root: string,
 ): { runs: WorkflowRun[]; error: string | null } {
-  const first = fetchWorkflowSweep(repo, root);
-  if (first.error) return first;
-  const second = fetchWorkflowSweep(repo, root);
-  if (second.error) return second;
-  if (JSON.stringify(first.runs) !== JSON.stringify(second.runs)) {
-    return {
-      runs: [],
-      error: "workflow inventory changed between verification sweeps",
-    };
+  let lastError = "workflow inventory did not stabilize";
+  for (let attempt = 1; attempt <= WORKFLOW_SWEEP_ATTEMPTS; attempt += 1) {
+    const first = fetchWorkflowSweep(repo, root);
+    if (first.error) {
+      if (!RETRYABLE_SWEEP_ERROR.test(first.error)) return first;
+      lastError = first.error;
+    } else {
+      const second = fetchWorkflowSweep(repo, root);
+      if (second.error) {
+        if (!RETRYABLE_SWEEP_ERROR.test(second.error)) return second;
+        lastError = second.error;
+      } else if (JSON.stringify(first.runs) === JSON.stringify(second.runs)) {
+        return first;
+      } else {
+        lastError = "workflow inventory changed between verification sweeps";
+      }
+    }
   }
-  return first;
+  // Still moving after every attempt. Report the last reason AND the fact that
+  // it was retried, so the reader knows this is sustained churn rather than a
+  // one-off — otherwise the message invites exactly the wrong diagnosis.
+  return {
+    runs: [],
+    error: `${lastError} (unstable across ${WORKFLOW_SWEEP_ATTEMPTS} verification attempts — CI is likely busy)`,
+  };
 }
 
 function fetchClaims(root: string): {
@@ -2528,11 +2700,41 @@ export function collectWorktreeLifecycleInventory(
   ]);
   const finalGrafts = graftInventory(commonGitDir);
   const finalHistoryOverrides = historyOverrideProbe(root, commonGitDir);
-  if (
-    finalWorktreeRaw !== initialWorktreeRaw ||
-    finalRefsRaw !== initialRefsRaw
-  ) {
-    throw new Error("worktree or branch inventory changed during patrol");
+  // Local git state moving during the patrol used to abort the entire run. On a
+  // checkout shared by several agents that fires constantly — one session
+  // committing on its own branch discarded a multi-minute inventory of every
+  // other unit — so the patrol could not be run to completion at all
+  // (cave-63m12).
+  //
+  // Drift is now scoped to the units it can actually affect. What each unit's
+  // verdict rests on is its OWN ref OID, its OWN worktree registration, and the
+  // set of worktrees holding its ref. Nothing else in `refs/heads` can change a
+  // conclusion about it: default-branch ancestry is measured against the
+  // REMOTE-tracking ref, which this snapshot does not even cover.
+  //
+  // Two asymmetries make this safe rather than merely convenient:
+  //   - A unit that gained drift is marked `uncertain`, never retired. Losing a
+  //     verdict is free; acting on a stale one is not.
+  //   - Refs and worktrees that APPEAR mid-run are simply absent from this
+  //     report. A unit that is not reported is never retired, so an incomplete
+  //     snapshot is conservative by construction.
+  //
+  // A snapshot that cannot be parsed is still a global failure: that is an
+  // integrity problem rather than ordinary churn.
+  let driftReasonByUnitKey: Map<string, string>;
+  try {
+    driftReasonByUnitKey = unitScopedDrift({
+      units,
+      initialWorktreeRaw,
+      initialRefsRaw,
+      finalWorktreeRaw,
+      finalRefsRaw,
+    });
+  } catch (error) {
+    // Keep the parse failure attached: this is now the ONLY whole-run abort, so
+    // "changed during patrol" with no detail would be the least diagnosable
+    // message in the script.
+    throw new Error("worktree or branch inventory changed during patrol", { cause: error });
   }
   if (
     finalHistoryOverrides.replaceRefsState !== initialHistoryOverrides.replaceRefsState ||
@@ -2612,8 +2814,18 @@ export function collectWorktreeLifecycleInventory(
     ).length,
   });
 
+  // A unit whose own inputs moved carries that as a probe error, which lands it
+  // in `uncertain` — the same posture the whole-run abort had, applied only
+  // where it is warranted.
+  const driftedObservations = observations.map((observation) => {
+    const reason = driftReasonByUnitKey.get(lifecycleUnitKey(observation));
+    return reason === undefined
+      ? observation
+      : { ...observation, probeErrors: [...observation.probeErrors, reason] };
+  });
+
   return {
-    items: observations.map((observation) =>
+    items: driftedObservations.map((observation) =>
       classifyInventoryObservation(observation, options.nowMs),
     ),
     budgets,

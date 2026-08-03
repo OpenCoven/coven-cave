@@ -20,11 +20,16 @@ import { attachmentIcon, type ChatAttachment } from "@/lib/chat-attachments";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import type { QueuedQuickChatMessage, QuickChatMessage } from "@/lib/use-quick-chat";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
+import type {
+  ModelControlCapability,
+  ModelControlFamily,
+  ModelControlValues,
+} from "@/lib/model-control-capabilities";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
-import { formatModelList, resolveModelArg } from "@/lib/slash-model";
+import { formatModelList, isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import {
   buildSkillPrompt,
   formatSkillList,
@@ -223,6 +228,10 @@ export function QuickChatComposer({
   onSendText,
   modelOverride,
   onModelOverrideChange,
+  modelCapabilities = [],
+  modelControls = {},
+  modelControlsLoading = false,
+  onModelControlChange,
   queued,
   onRemoveQueued,
   onSteerQueued,
@@ -263,6 +272,11 @@ export function QuickChatComposer({
   modelOverride?: string | null;
   /** /model pick — set the thread's model override. */
   onModelOverrideChange?: (id: string | null) => void;
+  /** Selected-model controls negotiated by the shared model-state contract. */
+  modelCapabilities?: readonly ModelControlCapability[];
+  modelControls?: ModelControlValues;
+  modelControlsLoading?: boolean;
+  onModelControlChange?: (family: ModelControlFamily, value: string) => void;
   /** Messages parked behind the in-flight turn (chips above the actions row). */
   queued?: QueuedQuickChatMessage[];
   onRemoveQueued?: (id: string) => void;
@@ -408,6 +422,11 @@ export function QuickChatComposer({
                 runtimeModelInventory.allowCustom,
               ),
             );
+            return;
+          }
+          if (isRuntimeDefaultModelArg(args)) {
+            onModelOverrideChange?.("");
+            onLocalNote?.("Model reset to the Runtime default for this thread.");
             return;
           }
           const id = resolveModelArg(
@@ -655,6 +674,33 @@ export function QuickChatComposer({
             }
           }}
         />
+      ) : null}
+      {familiar && (modelControlsLoading || modelCapabilities.length > 0) ? (
+        <div
+          className="quick-chat-overlay__controls"
+          role="group"
+          aria-label="Selected model controls"
+          aria-busy={modelControlsLoading}
+        >
+          {modelControlsLoading ? (
+            <span className="min-w-0 truncate text-xs text-[var(--fg-muted)]" role="status">
+              Loading model controls…
+            </span>
+          ) : modelCapabilities.map((capability) => (
+            <QuickChatSelect
+              key={capability.family}
+              label={`${capability.label} · ${capability.delivery === "prompt-only" ? "Prompt guidance" : "Native"}`}
+              value={modelControls[capability.family] ?? ""}
+              disabled={sending || !onModelControlChange}
+              onChange={(value) => onModelControlChange?.(capability.family, value)}
+              options={[
+                { value: "", label: "Not set" },
+                ...capability.values.map((option) => ({ value: option.value, label: option.label })),
+              ]}
+              className="min-w-0 flex-1"
+            />
+          ))}
+        </div>
       ) : null}
       {error ? (
         <p className="quick-chat-overlay__error" role="alert">

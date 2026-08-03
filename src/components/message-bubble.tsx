@@ -33,7 +33,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { parse } from "@create-markdown/core";
 import type { Block } from "@create-markdown/core";
 import type { PreviewPlugin } from "@create-markdown/preview";
@@ -56,9 +56,16 @@ import {
 } from "@/lib/code-reading";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { SpeakBubble } from "@/components/speak-bubble";
+// Lazy: the reader is a modal opened by an explicit click, and it carries its
+// own stylesheet. Loading it eagerly puts both on the / route's first paint for
+// every session, including the ones that never expand a message.
+const MessageReader = dynamic(
+  () => import("@/components/message-reader").then((m) => m.MessageReader),
+  { ssr: false },
+);
+import type { BatchTool } from "@/lib/chat-tool-batches";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
-import { useFocusTrap } from "@/lib/use-focus-trap";
 import { resolveShikiLang, diffContentLang } from "@/lib/code-lang";
 import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
 import { loadMarkdownPreview } from "@/lib/markdown-preview";
@@ -206,13 +213,12 @@ function renderCodeBlockFrame({
   );
 
   const labelHtml = `<span class="cave-code-lang">${escHtml(lang)}</span>`;
-  // Name first, directory after and muted — the eye lands on the file the block
-  // claims to be, and the path that qualifies it follows. Same order as the
-  // reading inspector's header, so the two read as one surface.
+  // The path reads dir-then-name with the directory muted, so the eye lands on
+  // the file the block claims to be without losing where it lives.
   const filenameHtml = filename
-    ? `<span class="cave-code-filename" title="${escHtml(filename)}">${escHtml(
-        block.name ?? filename,
-      )}${block.dir ? `<span class="cave-code-dir">${escHtml(block.dir)}</span>` : ""}</span>`
+    ? `<span class="cave-code-filename" title="${escHtml(filename)}">${
+        block.dir ? `<span class="cave-code-dir">${escHtml(block.dir)}/</span>` : ""
+      }${escHtml(block.name ?? filename)}</span>`
     : "";
 
   // ── Reading chrome (cave-f6mu9) ───────────────────────────────────────────
@@ -971,6 +977,15 @@ export type MessageBubbleProps = {
    *  text span streams (progressive markdown + ▌ cursor); earlier spans
    *  render settled. */
   segments?: MessageBubbleSegment[];
+  /** The turn's tool events, forwarded to the reader's "How this was made"
+   *  footer (batches, skills, error count). Assistant role only; absent turns
+   *  simply have no footer — see message-reader.tsx. */
+  readerTools?: readonly BatchTool[];
+  /** Wall time for the whole turn, shown in the reader's footer receipt. */
+  readerDurationMs?: number;
+  /** Ask a follow-up about a passage selected inside the reader. Without it
+   *  the reader's selection ask-bar is not rendered. */
+  onAskAbout?: (quote: string) => void;
   /** Branching: when a turn has siblings, render a compact ‹ index/total ›
    *  switcher. Omitted (or total <= 1) hides it. */
   branchNav?: {
@@ -981,7 +996,7 @@ export type MessageBubbleProps = {
   };
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, branchNav }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, readerTools, readerDurationMs, onAskAbout, branchNav }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
   const [vote, setVote] = useState<Feedback | null>(() => (messageId ? getFeedback(messageId) : null));
   const applyVote = (v: Feedback) => {
@@ -1178,7 +1193,13 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
               </button>
             </span>
           ) : null}
-          <ExpandBubble text={content} label={label ?? "Familiar response"} />
+          <ExpandBubble
+            text={content}
+            label={label ?? "Familiar response"}
+            tools={readerTools}
+            durationMs={readerDurationMs}
+            onAskAbout={onAskAbout}
+          />
           <CopyBubble text={content} />
           {role === "assistant" ? (
             <SpeakBubble text={content} familiarId={feedbackContext?.familiarId} />
@@ -1215,10 +1236,22 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
 }
 
 // ---------------------------------------------------------------------------
-// ExpandBubble — opens the message in a full-width markdown reading view
+// ExpandBubble — opens the message in the reader (message-reader.tsx)
 // ---------------------------------------------------------------------------
 
-function ExpandBubble({ text, label }: { text: string; label: string }) {
+function ExpandBubble({
+  text,
+  label,
+  tools,
+  durationMs,
+  onAskAbout,
+}: {
+  text: string;
+  label: string;
+  tools?: readonly BatchTool[];
+  durationMs?: number;
+  onAskAbout?: (quote: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -1231,88 +1264,21 @@ function ExpandBubble({ text, label }: { text: string; label: string }) {
       >
         <Icon name="ph:arrows-out-simple" width={11} aria-hidden />
       </button>
-      {open ? <MarkdownExpandModal text={text} label={label} onClose={() => setOpen(false)} /> : null}
+      {open ? (
+        <MessageReader
+          text={text}
+          label={label}
+          tools={tools}
+          durationMs={durationMs}
+          onAsk={onAskAbout}
+          onClose={() => setOpen(false)}
+        >
+          {/* The reader's own reading scale (.cave-md--reader in
+              cave-md/prose.css) — the transcript's dense 14px is right in the
+              stream, wrong for a full-screen reading surface. */}
+          <MarkdownBlock text={text} className="cave-md--expanded cave-md--reader" />
+        </MessageReader>
+      ) : null}
     </>
-  );
-}
-
-function MarkdownExpandModal({
-  text,
-  label,
-  onClose,
-}: {
-  text: string;
-  label: string;
-  onClose: () => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-
-  // CHAT-D11-02: shared focus trap — focuses the first control on open,
-  // cycles Tab/Shift+Tab inside the dialog, closes on Escape, and restores
-  // focus to the Expand trigger on close. Always active: this component only
-  // mounts while the modal is open.
-  useFocusTrap(true, dialogRef, { onEscape: onClose });
-
-  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
-
-  const copy = useCallback(async () => {
-    if (!(await copyText(text))) return;
-    setCopied(true);
-    if (copyTimer.current) clearTimeout(copyTimer.current);
-    copyTimer.current = setTimeout(() => setCopied(false), 2000);
-  }, [text]);
-
-  // Portal to <body>: transcript rows use `content-visibility: auto`, which
-  // establishes layout containment around the message. Rendered inline, the
-  // overlay can be clamped to that turn instead of the viewport. Portaling
-  // keeps `inset-0` anchored to the real viewport. See ui/modal.tsx.
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        ref={dialogRef}
-        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Expanded ${label}`}
-        tabIndex={-1}
-      >
-        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-5 py-3">
-          <Icon name="ph:book-open" width={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-          <span className="flex-1 truncate text-[length:var(--text-base)] font-medium text-[var(--text-secondary)]">{label}</span>
-          <button
-            type="button"
-            onClick={() => void copy()}
-            className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name={copied ? "ph:check" : "ph:copy"} width={11} aria-hidden />
-            {copied ? "Copied" : "Copy"}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ml-1 flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-            aria-label="Close expanded view"
-          >
-            <Icon name="ph:x-bold" width={11} aria-hidden />
-          </button>
-        </div>
-        {/* Reader body: a centered book measure with its own reading scale
-            (.cave-md--reader in cave-chat.css) — the transcript's dense 14px
-            is right in the stream, wrong for a full-screen reading surface. */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-10 sm:px-12">
-          <div className="mx-auto w-full max-w-[72ch]">
-            <MarkdownBlock text={text} className="cave-md--expanded cave-md--reader" />
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
   );
 }

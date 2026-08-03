@@ -441,9 +441,17 @@ function mergeFamiliarConfigs(
     const next: Partial<FamiliarBinding> = { ...(updated[id] ?? {}) };
     for (const [key, value] of Object.entries(entry)) {
       if (
+        key === "model" &&
+        (value === null || (typeof value === "string" && value.trim() === ""))
+      ) {
+        // Model clearing is an intent, not an ordinary optional-field delete.
+        // Keep the explicit sentinel so binding/config merges cannot resurrect
+        // a previous Cave or provider default on the next launch.
+        next.model = "";
+      } else if (
         value === null ||
         value === undefined ||
-        (typeof value === "string" && value.trim() === "")
+        (typeof value === "string" && value.trim() === "" && key !== "model")
       ) {
         delete next[key as keyof FamiliarBinding];
       } else if (key === "omnigent" && value && typeof value === "object" && !Array.isArray(value)) {
