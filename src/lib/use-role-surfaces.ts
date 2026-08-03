@@ -209,25 +209,26 @@ export function useRoleSurfaceSession(input: {
     focusCard,
     refreshTasks,
   } = input;
-  const familiarId = familiar?.id ?? null;
   const candidateFamiliars = useMemo(() => {
-    const candidates = familiar ? [familiar] : scopedFamiliars;
+    // The scoped roster is authoritative when it is present. A caller may
+    // still carry a non-null primary familiar while a multi-scope transition
+    // is settling, and letting that primary replace the roster would hide the
+    // rest of the selected rooms.
+    const candidates = scopedFamiliars.length > 0 ? scopedFamiliars : familiar ? [familiar] : [];
     const seen = new Set<string>();
     return candidates.filter((candidate) => {
       if (seen.has(candidate.id)) return false;
       seen.add(candidate.id);
       return true;
-    });
+    }).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   }, [familiar, scopedFamiliars]);
   // A null familiar without candidates is the intentionally unfetched state
   // used during roster hydration and by callers that have no scope yet.
   // Once the roster is available, All/multi scope gets one shared manifest
   // request rather than one request per familiar.
-  const scopeKey = familiarId ?? (
-    candidateFamiliars.length > 0
-      ? `scope:${candidateFamiliars.map((candidate) => candidate.id).join(",")}`
-      : null
-  );
+  const scopeKey = candidateFamiliars.length === 0
+    ? null
+    : `scope:${candidateFamiliars.map((candidate) => candidate.id).join(",")}`;
 
   const [roleLoadState, setRoleLoadState] = useState<{
     scopeKey: string | null;
@@ -356,7 +357,9 @@ export function useRoleSurfaceSession(input: {
     refreshTasksStable,
   ]);
 
-  const context = familiar ? contextsByFamiliarId.get(familiar.id) ?? null : null;
+  const context = familiar && candidateFamiliars.length === 1 && candidateFamiliars[0]?.id === familiar.id
+    ? contextsByFamiliarId.get(familiar.id) ?? null
+    : null;
   const { visibleSurfaces, surfaceFamiliarIds } = useMemo(() => {
     const surfaces = listRoleSurfaces();
     const visibleById = new Map<string, RoleSurface>();

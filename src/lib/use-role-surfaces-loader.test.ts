@@ -507,3 +507,251 @@ test("role-surface session aggregates All-scope rooms and records deterministic 
     unregisterCode();
   }
 });
+
+test("role-surface session keeps the selected multi-scope union when a primary familiar is present", async () => {
+  const unregisterResearch = registerRoleSurface({
+    id: "loader-test-multi-research-room",
+    role: "researcher",
+    title: "Multi Research Room",
+    iconName: "ph:book-open",
+    description: "research",
+    priority: 20,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const unregisterCode = registerRoleSurface({
+    id: "loader-test-multi-code-room",
+    role: "coder",
+    title: "Multi Code Room",
+    iconName: "ph:code",
+    description: "code",
+    priority: 10,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const unregisterReview = registerRoleSurface({
+    id: "loader-test-multi-review-room",
+    role: "reviewer",
+    title: "Multi Review Room",
+    iconName: "ph:git-diff",
+    description: "review",
+    priority: 5,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: Array<{
+    visibleSurfaceIds: string[];
+    surfaceFamiliarIds: Record<string, readonly string[]>;
+    contextFamiliarId: string | null;
+  }> = [];
+  const research = familiar("research");
+  const code = familiar("code", "Coder");
+  const review = familiar("review", "Reviewer");
+  let renderer!: ReactTestRenderer;
+
+  function MultiProbe({ candidates }: { candidates: Array<ReturnType<typeof familiar>> }) {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      // Deliberately provide a stale primary while the selected roster is multi.
+      familiar: research,
+      familiars: candidates,
+      sessions: [],
+      activeSessionId: null,
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    snapshots.push({
+      visibleSurfaceIds: session.visibleSurfaces.map((surface) => surface.id),
+      surfaceFamiliarIds: session.surfaceFamiliarIds,
+      contextFamiliarId: session.context?.activeFamiliar.id ?? null,
+    });
+    return createElement("role-surface-multi-probe");
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(MultiProbe, { candidates: [research, code, review] }));
+    });
+    assert.equal(fetch.pending.length, 1);
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    const first = snapshots.at(-1)!;
+    assert.deepEqual(first.visibleSurfaceIds, [
+      "loader-test-multi-research-room",
+      "loader-test-multi-code-room",
+      "loader-test-multi-review-room",
+    ]);
+    assert.deepEqual(first.surfaceFamiliarIds, {
+      "loader-test-multi-research-room": ["research"],
+      "loader-test-multi-code-room": ["code"],
+      "loader-test-multi-review-room": ["review"],
+    });
+    assert.equal(first.contextFamiliarId, null);
+
+    snapshots.length = 0;
+    await act(async () => {
+      renderer.update(createElement(MultiProbe, { candidates: [research, code] }));
+    });
+    assert.equal(fetch.pending.length, 1);
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    const selected = snapshots.at(-1)!;
+    assert.deepEqual(selected.visibleSurfaceIds, [
+      "loader-test-multi-research-room",
+      "loader-test-multi-code-room",
+    ]);
+    assert.deepEqual(selected.surfaceFamiliarIds, {
+      "loader-test-multi-research-room": ["research"],
+      "loader-test-multi-code-room": ["code"],
+    });
+    assert.equal(selected.contextFamiliarId, null);
+
+    snapshots.length = 0;
+    await act(async () => {
+      renderer.update(createElement(MultiProbe, { candidates: [code, research] }));
+    });
+    assert.equal(fetch.pending.length, 0, "reordering a scope must not reload the role manifest");
+    const reordered = snapshots.at(-1)!;
+    assert.deepEqual(reordered.visibleSurfaceIds, selected.visibleSurfaceIds);
+    assert.deepEqual(reordered.surfaceFamiliarIds, selected.surfaceFamiliarIds);
+    assert.equal(reordered.contextFamiliarId, null);
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregisterResearch();
+    unregisterCode();
+    unregisterReview();
+  }
+});
+
+test("role-surface session keeps shared-owner rooms aggregate without choosing an owner", async () => {
+  const unregister = registerRoleSurface({
+    id: "loader-test-shared-room",
+    role: "researcher",
+    title: "Shared Research Room",
+    iconName: "ph:book-open",
+    description: "shared",
+    priority: 20,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: Array<{
+    visibleSurfaceIds: string[];
+    surfaceFamiliarIds: Record<string, readonly string[]>;
+    contextFamiliarId: string | null;
+  }> = [];
+  let renderer!: ReactTestRenderer;
+
+  function SharedProbe() {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      familiar: null,
+      familiars: [familiar("research-a"), familiar("research-b")],
+      sessions: [],
+      activeSessionId: null,
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    snapshots.push({
+      visibleSurfaceIds: session.visibleSurfaces.map((surface) => surface.id),
+      surfaceFamiliarIds: session.surfaceFamiliarIds,
+      contextFamiliarId: session.context?.activeFamiliar.id ?? null,
+    });
+    return createElement("role-surface-shared-probe");
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(SharedProbe));
+    });
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    const latest = snapshots.at(-1)!;
+    assert.deepEqual(latest.visibleSurfaceIds, ["loader-test-shared-room"]);
+    assert.deepEqual(latest.surfaceFamiliarIds, {
+      "loader-test-shared-room": ["research-a", "research-b"],
+    });
+    assert.equal(latest.contextFamiliarId, null);
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregister();
+  }
+});
+
+test("role-surface session ignores a late manifest response from a prior scope", async () => {
+  const unregister = registerRoleSurface({
+    id: "loader-test-late-room",
+    role: "manifest-only",
+    title: "Manifest Room",
+    iconName: "ph:book-open",
+    description: "manifest",
+    priority: 20,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: Array<{
+    visibleSurfaceIds: string[];
+    rolesLoaded: boolean;
+    rolesLoadedSuccessfully: boolean;
+  }> = [];
+  const first = familiar("manifest-a", "General");
+  const second = familiar("manifest-b", "General");
+  let renderer!: ReactTestRenderer;
+
+  function ScopeProbe({ candidate }: { candidate: ReturnType<typeof familiar> }) {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      familiar: null,
+      familiars: [candidate],
+      sessions: [],
+      activeSessionId: null,
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    snapshots.push({
+      visibleSurfaceIds: session.visibleSurfaces.map((surface) => surface.id),
+      rolesLoaded: session.rolesLoaded,
+      rolesLoadedSuccessfully: session.rolesLoadedSuccessfully,
+    });
+    return createElement("role-surface-scope-probe");
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(ScopeProbe, { candidate: first }));
+    });
+    const firstResponse = fetch.pending.shift()!;
+    await act(async () => {
+      renderer.update(createElement(ScopeProbe, { candidate: second }));
+    });
+    const secondResponse = fetch.pending.shift()!;
+    await settleRoles(secondResponse, {
+      roles: [{ id: "manifest-only", familiar: "manifest-b", active: true }],
+    });
+    assert.deepEqual(snapshots.at(-1), {
+      visibleSurfaceIds: ["loader-test-late-room"],
+      rolesLoaded: true,
+      rolesLoadedSuccessfully: true,
+    });
+
+    await settleRoles(firstResponse, {
+      roles: [{ id: "manifest-only", familiar: "manifest-a", active: true }],
+    });
+    assert.deepEqual(snapshots.at(-1), {
+      visibleSurfaceIds: ["loader-test-late-room"],
+      rolesLoaded: true,
+      rolesLoadedSuccessfully: true,
+    });
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregister();
+  }
+});
