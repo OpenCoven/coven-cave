@@ -46,9 +46,12 @@ test("3a — the reader's weight is paid on open, not on every visit to /", () =
   // the cave-chat.css facade put ~17 KB on the / route's first paint for every
   // session, including the ones that never expand a message — which is exactly
   // what blew `bundle-budget: initial / route CSS` (882 KB vs 865 KB).
+  // Asserted on the @import STATEMENT rather than the bare substring: the
+  // contract is "the facade does not pull the reader sheet into the cascade",
+  // and a substring check also fires on any copy of the sheet's own text.
   assert.doesNotMatch(
     facade,
-    /reader\.css/,
+    /@import\s+["'][^"']*reader\.css["']/,
     "the facade is loaded by every chat surface — the reader sheet must not ride it",
   );
   assert.match(
