@@ -119,8 +119,26 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // Home lands at 2.32% and root at 3.14% — both above the THIN threshold for the
 // first time in this series, which is what two extractions bought that one could
 // not. 35 of the 37 reclaimed KiB are given back rather than banked.
+// RAISED home 865→880 (2026-08-03, cave-vkegj): the Thread Signal card became a
+// triage surface — six score tiles with a per-metric rationale strip and a ranked
+// signal queue whose row detail opens as an overlay — which is +6.8 KiB of source
+// CSS in shell-cards-and-controls.css. Home measured 862.2 KiB against the 865
+// ceiling: within budget but 0.3% headroom, i.e. the gate would have failed the
+// NEXT css PR of any size, which is the same stopgap situation cave-iktbc hit.
+// The obvious reclaim — a #3264 extraction — is the wrong tool here: cave-ii7xi
+// deliberately KEPT this file in the facade three days ago because every consumer
+// (chat-view, group-chat-view, github-card, thread-signal-card, quick-chat,
+// tools-update) is always-loaded shell, and extracting it would move CSS out of
+// the root layout only to have `/` pay for it again through the chat surface.
+// Root is untouched at 588 KiB (2.1% headroom) and every declaration in the new
+// block is tokenized — tokenize-css.mjs is a no-op over it and the drift ratchets
+// for font/space/radius all held. 880 is the smallest ceiling that clears the 2%
+// THIN threshold (17.8 KiB / 2.0% headroom) rather than landing still-thin and
+// handing the same warning to whoever ships next — which is the whole failure
+// this raise exists to end. It is a ceiling for this surface's growth, not a
+// licence for the next one.
 const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 600) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 865) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 880) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(
