@@ -2203,8 +2203,20 @@ export async function POST(req: Request) {
   // Knowledge Vault — curated, cross-harness reference knowledge, separate from
   // memory. Injected here so every harness (claude/codex/hermes/openclaw) that
   // consumes `harnessPrompt` below receives the same authoritative context.
-  const knowledgeVaultEntries = await readKnowledgeVaultForPrompt(body.familiarId);
-  const knowledgeVaultCollections = await listCollections();
+  //
+  // Except for `enhance`: that origin is the one-shot utility lane (prompt
+  // enhance, reply recommendation, gh review draft, thread reflection). Those
+  // runs are self-contained — their whole input is in the prompt — so curated
+  // repo reference material is pure ballast. It actively corrupted the thread
+  // self-report signal: reflection runs inherited the vault and then rated
+  // their OWN view as `critical` context pressure ("the actual exchange is
+  // truncated while a very large knowledge vault dominates the context"),
+  // reporting pressure that the thread being judged never had.
+  const skipKnowledgeVault = body.origin === "enhance";
+  const knowledgeVaultEntries = skipKnowledgeVault
+    ? []
+    : await readKnowledgeVaultForPrompt(body.familiarId);
+  const knowledgeVaultCollections = skipKnowledgeVault ? [] : await listCollections();
 
   // Reuse the task card already loaded to authorize this reserved handoff.
   // Besides avoiding a second board-store read on every chat turn, this keeps

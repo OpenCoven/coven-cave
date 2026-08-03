@@ -226,6 +226,8 @@ export const SUITES = {
     "src/lib/chat-tool-batches.test.ts",
     "src/lib/reader-outline.test.ts",
     "src/lib/auto-status-blocks.test.ts",
+    "src/lib/auto-mission-state.test.ts",
+    "src/lib/auto-mode-preferences.test.ts",
     "src/lib/reader-rewrite.test.ts",
     "src/lib/reader-provenance.test.ts",
     "src/lib/chat-queue-followups.test.ts",
