@@ -66,6 +66,7 @@ tests), so when a project gains or loses a frame, update this table by hand.
 | `SourceCard.dc.html` | `src/components/ui/citation.tsx` — both variants (web card carries its marker; worktree card shows path, line range and a numbered peek) | `cave-mdu1n` |
 | `Memory.dc.html` | `src/components/canonical-memory-reader.tsx` — the privacy gate is already fail-closed (content shows only when `classification === "public" && revealRequired === false`); `src/components/familiars-memory-reader.tsx` carries the frame's own "Select a memory to read" empty state | `cave-5u8l4` |
 | `Activity Details Panel.dc.html` | `src/components/automations/reminder-detail-panel.tsx` — the frame's exact "Reminder details" / "Activity details" heading split, pinned by `automations-view.test.ts` | `cave-5u8l4` |
+| `Coven Podcast.dc.html` | `src/components/role-surfaces/podcast-transcript.tsx` — the screenplay transcript (cast, cold open, speaker runs) in the studio review sheet and viewer. The frame's public-microsite chrome (own fonts, own palette, fixed nav, hero) is **not** adopted: like `OpenCoven Landing`, that half is a marketing site, not an app surface. | `cave-q00l6` |
 | `Coven Cave App.dc.html` (iOS) | `apps/ios/CovenCave` | `157dee8d5d` (#3736), `d4f619b6c8` (`cave-4bsu`), `01a3d91bc8` (`cave-32fp`) — gated by `scripts/ios-claude-design-fidelity.test.mjs` |
 
 ## Outstanding
@@ -84,7 +85,6 @@ surface it describes.
 | `Writer Workspace.dc.html` | 147 | Shells and hero flow planning | In no exported zip. No corresponding surface. Tracked by `cave-c7zgz`. |
 | `AnswerFlow.dc.html` | 15 | Shells and hero flow planning | A decision-capture card: one question with a blocking tier, "Why it matters", the config keys it "Writes to", expandable provenance rows (source · locator · quote · confidence), N option cards with editable pros/cons/risks/notes, and a footer that records an answer with a rationale then locks to "Decision written" with a reopen. **Adjacent to but not the same as** `src/components/proposal-approval.tsx`, which captures a *binary* approve/reject with a rationale — scope against it before building. Tracked by `cave-c7zgz`. |
 | `Coven Tui.dc.html` | 108 | # Coven Cave code reading experience | v1 of the above. |
-| `Coven Podcast.dc.html` | 86 | (Started) Podcast Page Redesign | Research studio has podcast *generation* (`c6987fe200`, `c483d94a15`) but no podcast **page**. Tracked by `cave-q00l6`. |
 | `Coven Pr.dc.html` | 75 | # Coven Cave code reading experience | |
 | `Memories - Rethought.dc.html` | 59 | Form feedback requested | Newer than the landed Memories redesign; in no exported zip. Tracked by `cave-tj24b`. |
 
