@@ -1088,6 +1088,14 @@ if [ "$1" = "api" ] &&
       fail "associated PR query repeated for duplicate OID $OID_ARG"
     : > "$ASSOCIATION_MARKER"
 
+    # Every association query fails the way an exhausted GraphQL budget fails:
+    # nonzero exit with the real cause on stderr. The inventory must surface
+    # THAT, not "canonical repository is unavailable" (cave-v59dk).
+    if [ "\${LIFECYCLE_GRAPHQL_BUDGET_EXHAUSTED:-0}" = "1" ]; then
+      printf '%s\\n' 'API rate limit already exceeded for user ID 68980965.' >&2
+      exit 1
+    fi
+
     REPOSITORY="OpenCoven/coven-cave"
     if [ "\${LIFECYCLE_BAD_CANONICAL_REPO:-0}" = "1" ] &&
        [ "$OID_ARG" = "${oldHead}" ]; then
@@ -1229,6 +1237,21 @@ case "$*" in
       else
         : > "$WORKFLOW_MARKER"
         printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
+      fi
+    elif [ "\${LIFECYCLE_ALWAYS_UNSTABLE_WORKFLOW:-0}" = "1" ] &&
+         [ "$WORKFLOW_STATUS" = "queued" ]; then
+      # Never settles: every single sweep disagrees with the one before it, so
+      # no pair of verification sweeps can ever match. Models a repo where CI
+      # churns continuously for the whole patrol run (cave-v59dk).
+      WORKFLOW_TICK=${JSON.stringify(
+        path.join(fixtureRoot, "workflow-tick-"),
+      )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
+      printf 'x' >> "$WORKFLOW_TICK"
+      WORKFLOW_TICKS=\$(wc -c < "$WORKFLOW_TICK" | tr -d ' ')
+      if [ \$(( WORKFLOW_TICKS % 2 )) -eq 1 ]; then
+        printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
+      else
+        printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":9005,"status":"queued","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run/9005"}]}]'
       fi
     elif [ "$WORKFLOW_STATUS" = "queued" ]; then
       printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":9000,"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/9000"}]}]'
@@ -2193,7 +2216,20 @@ exit 0
     ["LIFECYCLE_MALFORMED_WORKFLOW_ID", /workflow inventory returned malformed data/i],
     ["LIFECYCLE_MISMATCHED_WORKFLOW_STATUS", /workflow inventory returned malformed data/i],
     ["LIFECYCLE_CONFLICTING_WORKFLOW_STATUS", /workflow inventory.*conflicting.*status/i],
-    ["LIFECYCLE_UNSTABLE_WORKFLOW", /workflow inventory changed between verification sweeps/i],
+    // Sustained churn still fails closed — and says it was retried, so the
+    // reader knows this is a busy repo rather than corrupt data (cave-v59dk).
+    [
+      "LIFECYCLE_ALWAYS_UNSTABLE_WORKFLOW",
+      /workflow inventory changed between verification sweeps \(unstable across \d+ verification attempts/i,
+    ],
+    // A dead GraphQL budget names itself rather than blaming the repository.
+    // Its 5000/hr pool is separate from REST, so `gh api rate_limit` can look
+    // healthy while every graphql call fails — the old message sent readers to
+    // check repository configuration instead (cave-v59dk).
+    [
+      "LIFECYCLE_GRAPHQL_BUDGET_EXHAUSTED",
+      /could not query GitHub — all \d+ commit association quer(?:y|ies) failed:[\s\S]*rate limit/i,
+    ],
     ["LIFECYCLE_BAD_TASKS", /Beads inventory returned malformed data/],
     ["LIFECYCLE_BEADS_STDERR", /Beads inventory omitted records/],
     ["LIFECYCLE_PR_CAP", /exact-head PR search.*(?:cap|1000)/i],
@@ -2228,6 +2264,28 @@ exit 0
     const failedOld = failedReport.items.find((item) => item.branch === "feat/old");
     assert.equal(failedOld.lane, "uncertain", `${environment} fails closed`);
     assert.match(failedOld.probeErrors.join("\n"), expectedReason);
+  }
+
+  // TRANSIENT churn recovers instead of failing closed (cave-v59dk). The stub
+  // disagrees with itself once and is then stable, which is what an ordinary
+  // busy repo looks like: a run started or finished between two sweeps. Before
+  // the retry, this single disagreement ended the attempt and left every unit
+  // `uncertain`, so the patrol was unusable whenever CI was running.
+  {
+    const recoveredReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_UNSTABLE_WORKFLOW: "1" }),
+    );
+    const recoveredOld = recoveredReport.items.find((item) => item.branch === "feat/old");
+    assert.doesNotMatch(
+      recoveredOld.probeErrors.join("\n"),
+      /workflow inventory/i,
+      "a one-off sweep disagreement is retried, not reported",
+    );
+    assert.notEqual(
+      recoveredOld.lane,
+      "uncertain",
+      "transient workflow churn no longer forces a unit into uncertain",
+    );
   }
 
   const activeSessionReport = JSON.parse(
