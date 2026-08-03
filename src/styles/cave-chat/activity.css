@@ -1124,7 +1124,7 @@ details[open] > .cave-tool-summary::before {
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-md);
   background: color-mix(in oklch, var(--bg-base) 45%, transparent);
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   color: var(--text-primary);
   font-size: var(--text-sm);
   line-height: 1.5;
