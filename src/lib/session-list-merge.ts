@@ -60,6 +60,7 @@ function localConversationToSession(
   projectRootForCwd?: (cwd: string) => string | null,
 ): SessionRow {
   const keep = Boolean(state.sessionKeep?.[conv.sessionId]);
+  const pinned = Boolean(state.sessionPinned?.[conv.sessionId]);
   const extendedUntil = state.sessionArchiveExtendedUntil?.[conv.sessionId] ?? null;
   const title =
     state.sessionTitles[conv.sessionId] ?? sanitizeSessionTitle(conv.title) ?? "Chat";
@@ -92,6 +93,7 @@ function localConversationToSession(
     ...(conv.prUrl ? { chatPrUrl: conv.prUrl } : {}),
     initiator: conv.initiator ?? { kind: "human", label: "Cave user", channel: "cave" },
     ...(keep ? { keep: true } : {}),
+    ...(pinned ? { pinned: true } : {}),
     ...(extendedUntil ? { archive_extended_until: extendedUntil } : {}),
   };
 }
@@ -160,6 +162,7 @@ export function mergeSessionRows({
     const titleOverride = state.sessionTitles[session.id];
     const archivedLocal = state.sessionArchived[session.id] ?? null;
     const keep = Boolean(state.sessionKeep?.[session.id]);
+    const pinned = Boolean(state.sessionPinned?.[session.id]);
     const extendedUntil = state.sessionArchiveExtendedUntil?.[session.id] ?? null;
     const archived_at = archivedLocal ?? session.archived_at;
     const localUpdatedAt = localUpdatedById.get(session.id);
@@ -206,6 +209,7 @@ export function mergeSessionRows({
       ...(!local && inferOrigin(session) === "chat" ? { generated: true } : {}),
       ...(local ? { hasLocalConversation: true } : {}),
       ...(keep ? { keep: true } : {}),
+      ...(pinned ? { pinned: true } : {}),
       ...(extendedUntil ? { archive_extended_until: extendedUntil } : {}),
       familiarId,
       initiator: session.initiator ?? initiatorFromSessionKey("", familiarId ?? session.harness),
