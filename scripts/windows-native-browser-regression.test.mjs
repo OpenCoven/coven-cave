@@ -342,17 +342,21 @@ assert.match(source, /unrelatedProcessTerminationInvoked = \$false/);
 // these spawns used to carry left so little headroom that a contended runner
 // tripped it — and a tripped budget is indistinguishable from a real failure
 // at the assertion, because spawnSync kills the child and reports
-// `status: null` with no output to explain itself. That reded a PR whose diff
-// touched only apps/ios/**, which CI never builds (cave-rx5yl). Generous
+// `status: null` with no output to explain itself. That turned a PR red whose
+// diff touched only apps/ios/**, which CI never builds (cave-rx5yl). Generous
 // enough that only a genuine hang trips it, still bounded so a hang fails the
 // job rather than hanging it.
 const POWERSHELL_TIMEOUT_MS = 120_000;
 
 function runPowerShell(args, extraOptions = {}) {
+  // Caller options go first on purpose: the budget and encoding are the two
+  // things this helper exists to guarantee, and a caller that overrode the
+  // timeout would reintroduce the flake while describeSpawn still reported
+  // POWERSHELL_TIMEOUT_MS — a diagnostic that lies is worse than none.
   return spawnSync("powershell.exe", args, {
+    ...extraOptions,
     encoding: "utf8",
     timeout: POWERSHELL_TIMEOUT_MS,
-    ...extraOptions,
   });
 }
 
