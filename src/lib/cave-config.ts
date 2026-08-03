@@ -131,6 +131,7 @@ function defaultState(): CaveState {
     sessionArchived: {},
     sessionSacrificed: {},
     sessionKeep: {},
+    sessionPinned: {},
     sessionArchiveExtendedUntil: {},
     sessionOwned: {},
     mergedPrAutoArchived: {},
@@ -334,6 +335,8 @@ export type CaveState = {
   sessionSacrificed: Record<string, string>;
   /** Session to ISO timestamp when marked keep (never auto-archived). */
   sessionKeep: Record<string, string>;
+  /** Session id -> ISO stamp when it was pinned. Absent means unpinned. */
+  sessionPinned: Record<string, string>;
   /** Session to ISO deadline before which auto-archive sweeps must skip it. */
   sessionArchiveExtendedUntil: Record<string, string>;
   /** Sessions created through Cave's browser-facing session API. */
@@ -660,6 +663,7 @@ async function loadStateUnlocked(): Promise<CaveState> {
       sessionArchived: parsed.sessionArchived ?? {},
       sessionSacrificed: parsed.sessionSacrificed ?? {},
       sessionKeep: parsed.sessionKeep ?? {},
+      sessionPinned: parsed.sessionPinned ?? {},
       sessionArchiveExtendedUntil: parsed.sessionArchiveExtendedUntil ?? {},
       sessionOwned: parsed.sessionOwned ?? {},
       mergedPrAutoArchived: parsed.mergedPrAutoArchived ?? {},
@@ -930,6 +934,20 @@ export async function summonSessionLocal(sessionId: string): Promise<void> {
 }
 
 /** Mark or unmark a session keep (never auto-archived). Manual archive still works. */
+/** Pin or unpin a session so chat lists sort it to the top. Stored like
+ *  `sessionKeep`: an ISO stamp when set, key absent when cleared. */
+export async function setSessionPinnedLocal(sessionId: string, pinned: boolean): Promise<boolean> {
+  await updateState((state) => {
+    if (pinned) {
+      state.sessionPinned[sessionId] = new Date().toISOString();
+    } else {
+      delete state.sessionPinned[sessionId];
+    }
+  });
+  invalidateSessionsListCache();
+  return pinned;
+}
+
 export async function setSessionKeepLocal(sessionId: string, keep: boolean): Promise<boolean> {
   await updateState((state) => {
     if (keep) {
