@@ -55,6 +55,13 @@ reduction (cave-lgcb): stored values still resolve safely through
 `RETIRED_FAMILIAR_TYPE_SUCCESSORS`, and their rooms stay reachable because
 the registry carries the retired words as aliases (above).
 
+When the familiar selector is in **All familiars** or another multi-familiar
+scope, Cave renders the union of the registered rooms for that scope. A room
+row with one matching owner narrows to that familiar before the room opens, so
+the room still receives its familiar-bound context; shared ownership remains
+in the aggregate scope. Project grants authorize project-backed actions inside
+the room, but they are not room-visibility or unlock records.
+
 ## Adding a new role surface
 
 ```tsx

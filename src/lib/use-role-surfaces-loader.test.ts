@@ -5,6 +5,7 @@ import { createElement, useCallback } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import * as roleSurfaceHooks from "./use-role-surfaces.ts";
+import { registerRoleSurface } from "./role-surfaces.ts";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -153,11 +154,11 @@ function deferredRoleSurfaceFetch() {
   };
 }
 
-function familiar(id: string) {
+function familiar(id: string, role = "Researcher") {
   return {
     id,
     display_name: id,
-    role: "Researcher",
+    role,
   };
 }
 
@@ -430,5 +431,384 @@ test("role-surface session keeps a missing familiar unsettled and unfetched", as
   } finally {
     await act(async () => renderer?.unmount());
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("role-surface session aggregates All-scope rooms and records deterministic owners", async () => {
+  const unregisterResearch = registerRoleSurface({
+    id: "loader-test-research-room",
+    role: "researcher",
+    title: "Loader Research Room",
+    iconName: "ph:book-open",
+    description: "research",
+    priority: 20,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const unregisterCode = registerRoleSurface({
+    id: "loader-test-code-room",
+    role: "coder",
+    title: "Loader Code Room",
+    iconName: "ph:code",
+    description: "code",
+    priority: 10,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: Array<{
+    visibleSurfaceIds: string[];
+    surfaceFamiliarIds: Record<string, readonly string[]>;
+    rolesLoaded: boolean;
+  }> = [];
+  let renderer!: ReactTestRenderer;
+
+  function AggregateProbe() {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      familiar: null,
+      familiars: [familiar("research"), familiar("code", "Coder")],
+      sessions: [],
+      activeSessionId: null,
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    snapshots.push({
+      visibleSurfaceIds: session.visibleSurfaces.map((surface) => surface.id),
+      surfaceFamiliarIds: session.surfaceFamiliarIds,
+      rolesLoaded: session.rolesLoaded,
+    });
+    return createElement("role-surface-aggregate-probe");
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(AggregateProbe));
+    });
+    assert.equal(fetch.pending.length, 1);
+    assert.equal(fetch.pending[0]?.url, "/api/roles");
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    const latest = snapshots.at(-1)!;
+    assert.deepEqual(latest.visibleSurfaceIds, [
+      "loader-test-research-room",
+      "loader-test-code-room",
+    ]);
+    assert.deepEqual(latest.surfaceFamiliarIds, {
+      "loader-test-research-room": ["research"],
+      "loader-test-code-room": ["code"],
+    });
+    assert.equal(latest.rolesLoaded, true);
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregisterResearch();
+    unregisterCode();
+  }
+});
+
+test("role-surface session keeps the selected multi-scope union when a primary familiar is present", async () => {
+  const unregisterResearch = registerRoleSurface({
+    id: "loader-test-multi-research-room",
+    role: "researcher",
+    title: "Multi Research Room",
+    iconName: "ph:book-open",
+    description: "research",
+    priority: 20,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const unregisterCode = registerRoleSurface({
+    id: "loader-test-multi-code-room",
+    role: "coder",
+    title: "Multi Code Room",
+    iconName: "ph:code",
+    description: "code",
+    priority: 10,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const unregisterReview = registerRoleSurface({
+    id: "loader-test-multi-review-room",
+    role: "reviewer",
+    title: "Multi Review Room",
+    iconName: "ph:git-diff",
+    description: "review",
+    priority: 5,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: Array<{
+    visibleSurfaceIds: string[];
+    surfaceFamiliarIds: Record<string, readonly string[]>;
+    contextFamiliarId: string | null;
+  }> = [];
+  const research = familiar("research");
+  const code = familiar("code", "Coder");
+  const review = familiar("review", "Reviewer");
+  let renderer!: ReactTestRenderer;
+
+  function MultiProbe({ candidates }: { candidates: Array<ReturnType<typeof familiar>> }) {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      // Deliberately provide a stale primary while the selected roster is multi.
+      familiar: research,
+      familiars: candidates,
+      sessions: [],
+      activeSessionId: null,
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    snapshots.push({
+      visibleSurfaceIds: session.visibleSurfaces.map((surface) => surface.id),
+      surfaceFamiliarIds: session.surfaceFamiliarIds,
+      contextFamiliarId: session.context?.activeFamiliar.id ?? null,
+    });
+    return createElement("role-surface-multi-probe");
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(MultiProbe, { candidates: [research, code, review] }));
+    });
+    assert.equal(fetch.pending.length, 1);
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    const first = snapshots.at(-1)!;
+    assert.deepEqual(first.visibleSurfaceIds, [
+      "loader-test-multi-research-room",
+      "loader-test-multi-code-room",
+      "loader-test-multi-review-room",
+    ]);
+    assert.deepEqual(first.surfaceFamiliarIds, {
+      "loader-test-multi-research-room": ["research"],
+      "loader-test-multi-code-room": ["code"],
+      "loader-test-multi-review-room": ["review"],
+    });
+    assert.equal(first.contextFamiliarId, null);
+
+    snapshots.length = 0;
+    await act(async () => {
+      renderer.update(createElement(MultiProbe, { candidates: [research, code] }));
+    });
+    assert.equal(fetch.pending.length, 1);
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    const selected = snapshots.at(-1)!;
+    assert.deepEqual(selected.visibleSurfaceIds, [
+      "loader-test-multi-research-room",
+      "loader-test-multi-code-room",
+    ]);
+    assert.deepEqual(selected.surfaceFamiliarIds, {
+      "loader-test-multi-research-room": ["research"],
+      "loader-test-multi-code-room": ["code"],
+    });
+    assert.equal(selected.contextFamiliarId, null);
+
+    snapshots.length = 0;
+    await act(async () => {
+      renderer.update(createElement(MultiProbe, { candidates: [code, research] }));
+    });
+    assert.equal(fetch.pending.length, 0, "reordering a scope must not reload the role manifest");
+    const reordered = snapshots.at(-1)!;
+    assert.deepEqual(reordered.visibleSurfaceIds, selected.visibleSurfaceIds);
+    assert.deepEqual(reordered.surfaceFamiliarIds, selected.surfaceFamiliarIds);
+    assert.equal(reordered.contextFamiliarId, null);
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregisterResearch();
+    unregisterCode();
+    unregisterReview();
+  }
+});
+
+test("role-surface session keeps shared-owner rooms aggregate without choosing an owner", async () => {
+  const unregister = registerRoleSurface({
+    id: "loader-test-shared-room",
+    role: "researcher",
+    title: "Shared Research Room",
+    iconName: "ph:book-open",
+    description: "shared",
+    priority: 20,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: Array<{
+    visibleSurfaceIds: string[];
+    surfaceFamiliarIds: Record<string, readonly string[]>;
+    contextFamiliarId: string | null;
+  }> = [];
+  let renderer!: ReactTestRenderer;
+
+  function SharedProbe() {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      familiar: null,
+      familiars: [familiar("research-a"), familiar("research-b")],
+      sessions: [],
+      activeSessionId: null,
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    snapshots.push({
+      visibleSurfaceIds: session.visibleSurfaces.map((surface) => surface.id),
+      surfaceFamiliarIds: session.surfaceFamiliarIds,
+      contextFamiliarId: session.context?.activeFamiliar.id ?? null,
+    });
+    return createElement("role-surface-shared-probe");
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(SharedProbe));
+    });
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    const latest = snapshots.at(-1)!;
+    assert.deepEqual(latest.visibleSurfaceIds, ["loader-test-shared-room"]);
+    assert.deepEqual(latest.surfaceFamiliarIds, {
+      "loader-test-shared-room": ["research-a", "research-b"],
+    });
+    assert.equal(latest.contextFamiliarId, null);
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregister();
+  }
+});
+
+test("role-surface session does not leak an active thread into another familiar context", async () => {
+  const observed = new Map<string, { activeSessionId: string | null; currentThreadId: string | null }>();
+  const unregister = registerRoleSurface({
+    id: "loader-test-thread-isolation-room",
+    role: "researcher",
+    title: "Thread Isolation Room",
+    iconName: "ph:book-open",
+    description: "thread isolation",
+    priority: 20,
+    shouldDisplay: (context) => {
+      observed.set(context.activeFamiliar.id, {
+        activeSessionId: context.runtimeState.activeSessionId,
+        currentThreadId: context.currentThread?.id ?? null,
+      });
+      return true;
+    },
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  let renderer!: ReactTestRenderer;
+
+  function ThreadProbe() {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      familiar: null,
+      familiars: [familiar("research-a"), familiar("research-b")],
+      sessions: [
+        { id: "session-a", familiarId: "research-a" },
+        { id: "session-b", familiarId: "research-b" },
+      ],
+      activeSessionId: "session-a",
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    return createElement("role-surface-thread-probe", {
+      visible: session.visibleSurfaces.length,
+    });
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(ThreadProbe));
+    });
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    assert.deepEqual(observed, new Map([
+      ["research-a", { activeSessionId: "session-a", currentThreadId: "session-a" }],
+      ["research-b", { activeSessionId: null, currentThreadId: null }],
+    ]));
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregister();
+  }
+});
+
+test("role-surface session ignores a late manifest response from a prior scope", async () => {
+  const unregister = registerRoleSurface({
+    id: "loader-test-late-room",
+    role: "manifest-only",
+    title: "Manifest Room",
+    iconName: "ph:book-open",
+    description: "manifest",
+    priority: 20,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: Array<{
+    visibleSurfaceIds: string[];
+    rolesLoaded: boolean;
+    rolesLoadedSuccessfully: boolean;
+  }> = [];
+  const first = familiar("manifest-a", "General");
+  const second = familiar("manifest-b", "General");
+  let renderer!: ReactTestRenderer;
+
+  function ScopeProbe({ candidate }: { candidate: ReturnType<typeof familiar> }) {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      familiar: null,
+      familiars: [candidate],
+      sessions: [],
+      activeSessionId: null,
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    snapshots.push({
+      visibleSurfaceIds: session.visibleSurfaces.map((surface) => surface.id),
+      rolesLoaded: session.rolesLoaded,
+      rolesLoadedSuccessfully: session.rolesLoadedSuccessfully,
+    });
+    return createElement("role-surface-scope-probe");
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(ScopeProbe, { candidate: first }));
+    });
+    const firstResponse = fetch.pending.shift()!;
+    await act(async () => {
+      renderer.update(createElement(ScopeProbe, { candidate: second }));
+    });
+    const secondResponse = fetch.pending.shift()!;
+    await settleRoles(secondResponse, {
+      roles: [{ id: "manifest-only", familiar: "manifest-b", active: true }],
+    });
+    assert.deepEqual(snapshots.at(-1), {
+      visibleSurfaceIds: ["loader-test-late-room"],
+      rolesLoaded: true,
+      rolesLoadedSuccessfully: true,
+    });
+
+    await settleRoles(firstResponse, {
+      roles: [{ id: "manifest-only", familiar: "manifest-a", active: true }],
+    });
+    assert.deepEqual(snapshots.at(-1), {
+      visibleSurfaceIds: ["loader-test-late-room"],
+      rolesLoaded: true,
+      rolesLoadedSuccessfully: true,
+    });
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregister();
   }
 });

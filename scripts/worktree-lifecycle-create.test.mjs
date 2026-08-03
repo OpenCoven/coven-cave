@@ -6,6 +6,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -1616,5 +1617,65 @@ await withFixture({}, async (fixture) => {
     1,
   );
 });
+
+// A created worktree starts with its HEAD equal to the default tip, which the
+// landing-time probe cannot date ("unprovable when candidate equals captured
+// default"). That is a per-unit probe error, and while creation aborted on any
+// probe error anywhere in the repo it meant every successful create poisoned the
+// inventory for the next one — worktree #1 blocked worktree #2, for a different
+// bead, forever. Creation reads only owned paths and budgets, neither of which a
+// probe touches, so an unrelated unit's probe error must not block it
+// (cave-t9tlm).
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    const first = runCreate(fixture, createArgs());
+    assert.equal(first.status, 0, `first create must succeed: ${first.stderr}`);
+
+    // Give the unit created above a real per-unit probe error. Dropping its
+    // reflog is exactly how production produced one: `__dolt_remote_info__` is
+    // written by Dolt rather than by git commands, so it carries no reflog and
+    // the recency probe reports "branch/worktree recency unavailable" for it.
+    // Without a reproduction the assertion below passes either way — the
+    // fixture's stub always supplies a merged-PR timestamp, so nothing else in
+    // it can fail a probe.
+    rmSync(path.join(fixture.repo, ".git", "logs", "refs", "heads", "feat"), {
+      recursive: true,
+      force: true,
+    });
+    for (const dir of readdirSync(path.join(fixture.repo, ".git", "worktrees"), {
+      withFileTypes: true,
+    })) {
+      if (dir.isDirectory()) {
+        rmSync(path.join(fixture.repo, ".git", "worktrees", dir.name, "logs"), {
+          recursive: true,
+          force: true,
+        });
+      }
+    }
+
+    const second = runCreate(
+      fixture,
+      createArgs({ bead: "cave-unit2", branch: "feat/cave-unit2-example" }),
+    );
+    assert.doesNotMatch(
+      second.stderr,
+      /lifecycle inventory is incomplete/,
+      "an existing unit's probe error must not block an unrelated creation",
+    );
+    assert.equal(second.status, 0, `second create must succeed: ${second.stderr}`);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit2-example") !== null,
+      true,
+      "the second branch is actually created",
+    );
+
+    // The global-outage stop (GitHub unreachable => abort) keeps its own
+    // coverage in the CAVE_TEST_GH_FAIL case earlier in this file, which still
+    // passes with the gate scoped. It is deliberately not re-asserted here: this
+    // bead already owns a worktree by now, so admission would refuse for that
+    // reason and the assertion would prove nothing about the inventory gate.
+  },
+);
 
 console.log("worktree-lifecycle-create.test.mjs: ok");

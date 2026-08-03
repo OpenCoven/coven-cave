@@ -751,15 +751,29 @@ function exceptionForPath(
   return unique.values().next().value ?? null;
 }
 
+/**
+ * Errors that can actually make a CREATION decision wrong.
+ *
+ * Creation reads exactly two things out of the inventory: the paths this bead
+ * already owns ({@link existingOwnedPaths}) and the budget counts. The first is
+ * derived from each item's path, taskIds and bead metadata, so a metadata error
+ * can hide an owned path and let creation past a budget it should have hit —
+ * that stays a hard stop, repo-wide. The second comes from local git facts
+ * (worktree count, branch count, exception counts) and no probe touches it.
+ *
+ * `probeErrors` are deliberately NOT included. They answer "is this unit safe to
+ * RETIRE" — landing time, PR association, ref recency — which creation never
+ * asks. Aggregating them here meant one unrelated unit denied `create` to every
+ * bead, and the units that tripped it were ones creation has no opinion about:
+ * the `__dolt_remote_info__` bookkeeping ref (protected, local commits GitHub has
+ * never seen, no reflog), and any branch whose HEAD still equals the default tip
+ * — which is every freshly-created worktree, so each new worktree blocked the
+ * next one. The inventory already reports probe failures per unit and lands that
+ * unit in `uncertain`; this makes the create gate agree with that posture instead
+ * of re-aborting the whole run (cave-c4f97).
+ */
 function inventoryErrors(items: WorktreeLifecycleItem[]): string[] {
-  return [
-    ...new Set(
-      items.flatMap((item) => [
-        ...item.probeErrors,
-        ...item.metadataErrors,
-      ]),
-    ),
-  ];
+  return [...new Set(items.flatMap((item) => item.metadataErrors))];
 }
 
 function existingOwnedPaths(
@@ -1501,7 +1515,11 @@ function execute(
     nowMs: Date.now(),
   });
   heartbeatBoth(leases, "after lifecycle inventory");
-  const errors = inventoryErrors(inventory.items);
+  // Global failures still abort: if GitHub was unreachable or the canonical
+  // repository could not be resolved, the run did not see the repository at all
+  // and no admission decision it makes is trustworthy. Per-unit probe errors do
+  // not abort — see {@link inventoryErrors}.
+  const errors = [...inventory.globalErrors, ...inventoryErrors(inventory.items)];
   if (errors.length > 0) {
     throw new CliError(`lifecycle inventory is incomplete: ${errors.join("; ")}`);
   }

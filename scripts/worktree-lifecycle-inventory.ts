@@ -31,6 +31,15 @@ export interface WorktreeLifecycleInventory {
   items: WorktreeLifecycleItem[];
   budgets: WorktreeLifecycleBudgets;
   inventoryFingerprint: string;
+  /**
+   * Failures of a whole probe rather than of one unit — GitHub unreachable, the
+   * canonical repository unresolvable, the Beads or workflow inventory
+   * unreadable. They are also folded into every unit's `probeErrors` so each
+   * unit fails closed on its own, but callers that need to tell "the run could
+   * not see the repo" apart from "this unit has an unprovable landing time"
+   * read them here (cave-t9tlm).
+   */
+  globalErrors: string[];
 }
 
 type CommandResult = {
@@ -2847,6 +2856,7 @@ export function collectWorktreeLifecycleInventory(
       classifyInventoryObservation(observation, options.nowMs),
     ),
     budgets,
+    globalErrors: [...new Set(branchGlobalErrors)],
     inventoryFingerprint: fingerprint(
       initialWorktreeRaw,
       initialRefsRaw,
