@@ -1455,6 +1455,7 @@ export const SUITES = {
     "scripts/ios-connection-stability.test.mjs",
     "scripts/ios-bulk-reminders.test.mjs",
     "scripts/ios-session-refetch.test.mjs",
+    "scripts/ios-thread-server-persistence.test.mjs",
     "scripts/ios-swipe-ux.test.mjs",
     "scripts/ios-reconnect-pill.test.mjs",
     "scripts/ios-port-discovery.test.mjs",

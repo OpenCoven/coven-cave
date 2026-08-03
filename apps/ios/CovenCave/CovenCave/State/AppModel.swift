@@ -1877,20 +1877,72 @@ final class AppModel {
     }
 
     func deleteThread(_ thread: ChatThread) {
-        threads.removeAll { $0.id == thread.id }
+        guard let index = threads.firstIndex(where: { $0.id == thread.id }) else { return }
+        let removed = threads[index]
+        threads.remove(at: index)
         persistThreads()
         Haptics.success()
         showToast("Chat deleted", systemImage: "trash.fill")
+        fanOutThreadDelete([(index, removed)], verb: "delete")
     }
 
     /// Delete several threads at once (bulk select); persists once.
     func deleteThreads(_ ids: Set<String>) {
         guard !ids.isEmpty else { return }
         let n = ids.count
+        // Capture positions before removing so a rejected delete can put each
+        // chat back where it was rather than at the end of the list.
+        let removed = threads.enumerated()
+            .filter { ids.contains($0.element.id) }
+            .map { ($0.offset, $0.element) }
         threads.removeAll { ids.contains($0.id) }
         persistThreads()
         Haptics.success()
         showToast("\(n) chat\(n == 1 ? "" : "s") deleted", systemImage: "trash.fill")
+        fanOutThreadDelete(removed, verb: "delete")
+    }
+
+    /// Sacrifice every session behind the removed threads.
+    ///
+    /// Deletion is already applied locally, so this restores any thread whose
+    /// sessions the server refused — a delete that did not happen must not keep
+    /// looking like it did. Threads that own no session (never sent) are dropped
+    /// locally and need no server call. Restoring walks ascending so each
+    /// original index is still valid as earlier rows are reinserted.
+    private func fanOutThreadDelete(_ removed: [(Int, ChatThread)], verb: String) {
+        guard let client, !removed.isEmpty else { return }
+        let targets = removed.filter { !serverSessionIds($0.1).isEmpty }
+        guard !targets.isEmpty else { return }
+        Task { [weak self] in
+            var restore: [(Int, ChatThread)] = []
+            var failedSessions = 0
+            var totalSessions = 0
+            for (index, thread) in targets {
+                guard let sessionIds = self?.serverSessionIds(thread) else { continue }
+                totalSessions += sessionIds.count
+                var threadFailed = 0
+                await withTaskGroup(of: Bool.self) { group in
+                    for sessionId in sessionIds {
+                        group.addTask {
+                            do { try await client.deleteSession(sessionId: sessionId); return true }
+                            catch { return false }
+                        }
+                    }
+                    for await ok in group where !ok { threadFailed += 1 }
+                }
+                if threadFailed > 0 {
+                    failedSessions += threadFailed
+                    restore.append((index, thread))
+                }
+            }
+            guard let self, !restore.isEmpty else { return }
+            for (index, thread) in restore.sorted(by: { $0.0 < $1.0 }) {
+                guard !self.threads.contains(where: { $0.id == thread.id }) else { continue }
+                self.threads.insert(thread, at: min(index, self.threads.count))
+            }
+            self.persistThreads()
+            self.reportPartial(failedSessions, of: totalSessions, verb: verb)
+        }
     }
 
     /// Rename a thread (local title only); no-ops on a blank or unchanged name.
@@ -1909,6 +1961,9 @@ final class AppModel {
               target.archived != archived else { return }
         target.archived = archived
         persistThreads()
+        fanOutThreadFlag(target, verb: archived ? "archive" : "unarchive") { client, sessionId in
+            try await client.setSessionFlags(sessionId: sessionId, archived: archived)
+        } rollback: { $0.archived = !archived }
     }
 
     /// Pin or unpin a thread; pinned threads sort to the top of their list.
@@ -1917,6 +1972,59 @@ final class AppModel {
               target.pinned != pinned else { return }
         target.pinned = pinned
         persistThreads()
+        fanOutThreadFlag(target, verb: pinned ? "pin" : "unpin") { client, sessionId in
+            try await client.setSessionFlags(sessionId: sessionId, pinned: pinned)
+        } rollback: { $0.pinned = !pinned }
+    }
+
+    /// Session ids a thread owns on the server. A thread that has never been
+    /// sent owns none — there is nothing to persist remotely and its flags stay
+    /// device-local until the first send creates a session.
+    private func serverSessionIds(_ thread: ChatThread) -> [String] {
+        thread.sessionIds.values.filter { !$0.isEmpty }
+    }
+
+    /// In-flight flag writes per thread, so a rapid pin/unpin cannot let the
+    /// older result land last (same hazard as `statusWrites` for tasks).
+    @ObservationIgnored private var threadFlagWrites: [String: Task<Void, Never>] = [:]
+
+    /// Push a thread-level flag to every session the thread owns.
+    ///
+    /// The caller has already applied the change locally, so this is the
+    /// optimistic tail: on failure it rolls the flag back and says so, rather
+    /// than leaving the list showing a state the server never accepted. A
+    /// thread owns at most one session per familiar, so the fan-out is small
+    /// and runs unbounded — unlike the reminder fan-out, which is over an
+    /// arbitrary selection and is width-limited.
+    private func fanOutThreadFlag(
+        _ thread: ChatThread,
+        verb: String,
+        _ call: @escaping @Sendable (CaveClient, String) async throws -> Void,
+        rollback: @escaping (ChatThread) -> Void,
+    ) {
+        guard let client else { return }
+        let ids = serverSessionIds(thread)
+        guard !ids.isEmpty else { return }
+        let threadId = thread.id
+        threadFlagWrites[threadId]?.cancel()
+        threadFlagWrites[threadId] = Task { [weak self] in
+            var failed = 0
+            await withTaskGroup(of: Bool.self) { group in
+                for sessionId in ids {
+                    group.addTask {
+                        do { try await call(client, sessionId); return true } catch { return false }
+                    }
+                }
+                for await ok in group where !ok { failed += 1 }
+            }
+            guard let self, !Task.isCancelled else { return }
+            if failed > 0 {
+                rollback(thread)
+                self.persistThreads()
+                self.reportPartial(failed, of: ids.count, verb: verb)
+            }
+            self.threadFlagWrites[threadId] = nil
+        }
     }
 
     /// Mute or unmute a thread's notifications (persisted; honoured by the
