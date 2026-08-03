@@ -87,6 +87,13 @@ final class ToolArgSummaryTests: XCTestCase {
                        "the value, not the key — \"file_path\" tells the reader nothing")
     }
 
+    func testAnObjectBlobWithNoIdentifyingTokenSaysNothing() {
+        // Truncated past every quoted value, there is no argument left to show
+        // — and returning the raw text would put the brace straight back.
+        XCTAssertNil(ToolArgSummary.summary(name: "Edit", input: "{"))
+        XCTAssertNil(ToolArgSummary.summary(name: "Edit", input: "{\n  \"old_st"))
+    }
+
     func testArrayPayloadJoinsItsEntries() {
         XCTAssertEqual(ToolArgSummary.summary(name: "Glob", input: "[\"src\", \"docs\"]"),
                        "src docs")

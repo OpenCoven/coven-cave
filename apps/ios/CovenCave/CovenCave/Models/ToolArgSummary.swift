@@ -55,9 +55,11 @@ enum ToolArgSummary {
         }
 
         // A payload that looks like an object but did not parse — a truncated
-        // `{ "file_path": "src/foo…` blob. Pull the first identifying token.
-        if raw.hasPrefix("{"), let token = firstIdentifyingToken(in: raw) {
-            return ellipsize(token, max)
+        // `{ "file_path": "src/foo…` blob. Pull the first identifying token,
+        // and stop there: with no token to find, falling through to the raw
+        // text would put the braces straight back on the chip.
+        if raw.hasPrefix("{") {
+            return firstIdentifyingToken(in: raw).flatMap { ellipsize($0, max) }
         }
 
         // Plain payload (a bare shell command line, a search string) — as-is.
