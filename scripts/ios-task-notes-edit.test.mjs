@@ -17,10 +17,32 @@ assert.match(
 assert.match(client, /if let notes \{ try c\.encode\(notes, forKey: \.notes\) \}/, "TaskFieldsPatch should encode notes when set");
 
 // Model exposes an optimistic notes setter that reverts on failure.
+// Scope the match to setTaskNotes' own body by brace matching. The previous
+// form was one regex over the whole file with `[\s\S]*` between clauses, so
+// after `catch` it ran greedily into LATER functions — it passed while
+// setTaskNotes itself still reverted the whole array, because some other
+// mutation further down had the per-card call (cave-rlmot).
+function blockAfter(src, marker) {
+  const start = src.indexOf(marker);
+  if (start < 0) return null;
+  let depth = 0;
+  for (let i = start + marker.length - 1; i < src.length; i += 1) {
+    if (src[i] === "{") depth += 1;
+    else if (src[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return src.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+const setNotes = blockAfter(model, "func setTaskNotes(_ card: BoardCard, _ notes: String) async {");
+assert.ok(setNotes, "setTaskNotes should exist");
+assert.match(setNotes, /applyTask\(id: card\.id\) \{ \$0\.notes = trimmed \}/, "setTaskNotes should apply optimistically");
+assert.match(setNotes, /client\.updateTask\(cardId: card\.id, notes: trimmed\)/, "setTaskNotes should PATCH the notes");
 assert.match(
-  model,
-  /func setTaskNotes\(_ card: BoardCard, _ notes: String\) async \{[\s\S]*applyTask\(id: card\.id\) \{ \$0\.notes = trimmed \}[\s\S]*client\.updateTask\(cardId: card\.id, notes: trimmed\)[\s\S]*catch[\s\S]*tasks = previous/,
-  "setTaskNotes should be optimistic with revert",
+  setNotes,
+  /catch \{\s*\n\s*revertTask\(id: card\.id, to: previous\)/,
+  "setTaskNotes should revert on failure — and only its own card (cave-rlmot)",
 );
 assert.match(
   model,
