@@ -18,6 +18,7 @@ try {
     sessionArchived: {},
     sessionSacrificed: {},
     sessionKeep: {},
+    sessionPinned: {},
     sessionArchiveExtendedUntil: {},
     sessionOwned: {},
     mergedPrAutoArchived: {},
@@ -150,6 +151,7 @@ try {
     sessionArchived: {},
     sessionSacrificed: { "session-1": sacrificedAt },
     sessionKeep: {},
+    sessionPinned: {},
     sessionOwned: {},
     mergedPrAutoArchived: { "session-1": "OpenCoven/coven-cave#42" },
     travel: {
