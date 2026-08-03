@@ -441,7 +441,7 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /escalateBlockers\(model\.familiarId, threadSignalsAggregate, model\.healRequests\)/);
     assert.match(stageSource, /request\{healRequests\.length === 1 \? "" : "s"\}/, "the self-heal stat pluralizes its count");
     assert.doesNotMatch(source, /ResponseConfidenceSection/, "response confidence analytics retired (cave-7ku5)");
-    assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{model\.threadReports\}/);
+    assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{windowReports\}/);
     assert.doesNotMatch(source, /EvalLoopPanel/);
     assert.doesNotMatch(source, /fa-eval/);
   });
@@ -541,6 +541,20 @@ describe("FamiliarAnalyticsView", () => {
       contentSource,
       /window\.matchMedia\("\(min-width: 901px\) and \(max-width: 1180px\)"\)[\s\S]*setDockCollapsed\(query\.matches\)/,
       "the dock collapse is driven by matchMedia, not by CSS alone",
+    );
+    const tablet = faCss.slice(
+      faCss.indexOf("@media (max-width: 1180px)"),
+      faCss.indexOf("@media (max-width: 900px)"),
+    );
+    assert.match(
+      tablet,
+      /\.fa-stage \{[^}]*overflow-y: auto/,
+      "the fixed-height tablet stage provides a scroll path for both stacked evidence panels",
+    );
+    assert.match(
+      tablet,
+      /\.fa-stage-grid \{[^}]*flex: 0 0 auto/,
+      "the stacked tablet grid keeps its content height instead of shrinking two 320px panels into the viewport",
     );
     // It is a BAND, not a ceiling. Below 900px the frame stacks into a page, so
     // the rail saves nothing — and a rail stretched across the width turns the
@@ -662,6 +676,11 @@ describe("FamiliarAnalyticsView", () => {
       /const openOverlay = useCallback\(\(next: Exclude<Overlay, null>\) => \{\s*setContractOpen\(false\);\s*setPulseOpen\(false\);/,
       "opening a stage overlay retires the contract panel and the pulse",
     );
+    assert.match(
+      contentSource,
+      /const openAction = useCallback\(\(request: SelfHealRequest\) => \{\s*setBoardOpen\(false\);\s*setActionModal\(buildActionModal\(request\)\);/,
+      "opening board action detail retires the board before activating the next modal focus trap",
+    );
 
     // A face turned away is hidden to the eye by backface-visibility, but that
     // alone leaves its buttons in the tab order.
@@ -740,6 +759,44 @@ describe("session tracking + tracing (recent sessions, pulse drill, trace overla
 });
 
 describe("confidence from thread analysis + metric labeling", () => {
+  it("applies the selected time window to every thread-report analytic on the stage", () => {
+    assert.match(
+      contentSource,
+      /const windowConfidence = useMemo\(\s*\(\) => deriveThreadConfidence\(windowReports\),\s*\[windowReports\],\s*\);/,
+      "headline confidence is recomputed from the visible report window",
+    );
+    assert.match(
+      contentSource,
+      /model\.metricSnapshots\.filter\(\(snapshot\) => withinWindow\(snapshot\.reportedAt, windowId, now\)\)/,
+      "the complete persisted trend history is filtered to the visible window",
+    );
+    assert.match(
+      contentSource,
+      /deriveSignalTrends\(windowSnapshots, now\)/,
+      "trend buckets are recomputed from the scoped snapshot history",
+    );
+    assert.match(
+      contentSource,
+      /windowReports\.length > 0 \? aggregateThreadSignals\(windowReports\) : null/,
+      "signal aggregation uses only reports in the visible window",
+    );
+    assert.match(
+      contentSource,
+      /<ThreadAnalysisBody\s+confidence=\{windowConfidence\}\s+trends=\{windowSignalTrends\}/,
+      "the confidence panel renders the scoped confidence and trends",
+    );
+    assert.match(
+      contentSource,
+      /<ThreadSignalsSection familiarId=\{model\.familiarId\} reports=\{windowReports\} \/>/,
+      "the full signal view receives the same scoped reports as its counts and queue",
+    );
+    assert.doesNotMatch(
+      contentSource,
+      /\{model\.threadReports\.length\} · \{reviewQueue\.length\} queued/,
+      "signal summaries do not pair a lifetime report count with a windowed queue",
+    );
+  });
+
   it("drives the fa-confidence panel from real thread metrics, not synthetic factors", () => {
     // The synthetic weighted-factor breakdown (familiar-confidence.ts) is gone
     // from this page — the panel renders the self-reported metric averages.
