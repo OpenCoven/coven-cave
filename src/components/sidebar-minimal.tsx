@@ -67,7 +67,7 @@ export type SidebarMinimalProps = {
   /** Multiselect scope (≥2 ids) — the header switcher checks members and
    *  summarizes the count on its trigger. */
   selectedFamiliarIds?: ReadonlySet<string>;
-  onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean }) => void;
+  onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => void;
   responseNeeded?: Set<string>;
   notificationBadgeCount?: number;
   onOpenInbox?: () => void;
@@ -271,7 +271,9 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
                 state={sidebarRowState(room.mode, mode, props.splitPageModes)}
                 description={room.description}
                 onClick={() => {
-                  if (room.familiarId) onFamiliarScopeChange(room.familiarId);
+                  if (room.familiarId && room.familiarId !== activeFamiliarId) {
+                    onFamiliarScopeChange(room.familiarId, { preserveSurface: true });
+                  }
                   onModeChange(room.mode);
                 }}
               />

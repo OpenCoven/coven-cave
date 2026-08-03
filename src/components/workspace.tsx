@@ -713,6 +713,10 @@ export function Workspace() {
   modeRef.current = mode;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
+  // Keep an already-open role room from undoing an explicit switch to the All
+  // or multi-familiar scope. The room can stay honestly unavailable until the
+  // user selects a unique owner row; deep links and mode changes still narrow.
+  const roleSurfaceScopeChangeSuppressedModeRef = useRef<string | null>(null);
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
@@ -1169,6 +1173,11 @@ export function Workspace() {
   // (⌘/Ctrl-click) the id is toggled in/out of the multiselect set; a plain
   // click replaces the scope with just that familiar (today's behavior).
   const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => {
+    if (id == null || opts?.multi) {
+      roleSurfaceScopeChangeSuppressedModeRef.current = isRoleSurfaceMode(modeRef.current)
+        ? modeRef.current
+        : null;
+    }
     setScopeIds((prev) => (id == null ? new Set<string>() : toggleFamiliarSelection(prev, id, opts?.multi ?? false)));
     if (!id) return;
     // A multi-toggle shouldn't yank the surface around — only a plain single
@@ -2852,8 +2861,13 @@ export function Workspace() {
   // multi-select). Resolve a unique owner before the host renders its
   // familiar-bound context. Sidebar/palette clicks do this in the same event;
   // this effect covers restored URLs and persisted last-surface state.
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const suppressedMode = roleSurfaceScopeChangeSuppressedModeRef.current;
+    if (suppressedMode !== null && suppressedMode !== mode) {
+      roleSurfaceScopeChangeSuppressedModeRef.current = null;
+    }
     if (activeId !== null || !isRoleSurfaceMode(mode)) return;
+    if (roleSurfaceScopeChangeSuppressedModeRef.current === mode) return;
     const surfaceId = parseRoleSurfaceMode(mode);
     if (!surfaceId) return;
     const owners = roleSurfaceSession.surfaceFamiliarIds[surfaceId];

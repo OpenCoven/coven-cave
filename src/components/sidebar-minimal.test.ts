@@ -101,7 +101,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(room\.familiarId\) onFamiliarScopeChange\(room\.familiarId\)/,
+  /if \(room\.familiarId && room\.familiarId !== activeFamiliarId\) \{[\s\S]*onFamiliarScopeChange\(room\.familiarId, \{ preserveSurface: true \}\)/,
   "aggregate room rows narrow to their owning familiar before entering a room",
 );
 assert.match(
@@ -133,7 +133,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /onFamiliarScopeChange: \(id: string \| null, opts\?: \{ multi\?: boolean \}\) => void/,
+  /onFamiliarScopeChange: \(id: string \| null, opts\?: \{ multi\?: boolean; preserveSurface\?: boolean \}\) => void/,
   "Sidebar exposes a nullable familiar scope change callback (multi-capable for the header strip)",
 );
 
