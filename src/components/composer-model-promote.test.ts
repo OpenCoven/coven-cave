@@ -44,7 +44,11 @@ test("the promote PATCH omits sessionId, or it would write session scope", () =>
   assert.match(body, /familiarId: familiar\.id/, "targets the familiar");
   assert.match(body, /scope: "familiar-default"/, "sends familiar-default");
   assert.doesNotMatch(body, /sessionId/, "must NOT send sessionId — that would scope it to the session");
-  assert.match(body, /refreshModelState\(\)/, "re-reads server state rather than trusting the write");
+  assert.match(
+    body,
+    /refreshModelState\(\s*\(\) => selectionRevision === modelSelectionRevisionRef\.current,\s*selectionRevision,\s*\)/,
+    "re-reads server state with the stale-selection guard rather than trusting the write",
+  );
 });
 
 test("the row is offered only when it would do something", () => {

@@ -109,6 +109,8 @@ export const SUITES = {
     "src/components/chat-view-chunk-coalescing.test.ts",
     "src/lib/chunk-coalescer.test.ts",
     "src/components/chat-view-scroll-pin.test.ts",
+    "src/components/home/use-home-model-state.test.ts",
+    "src/lib/model-selection-mutation-queue.test.ts",
     "src/lib/perf/web-vitals-format.test.ts",
     "src/lib/app-version.test.ts",
     "src/lib/endpoint-validators.test.ts",
@@ -1109,6 +1111,7 @@ export const SUITES = {
     "src/lib/testing/wait-for.test.ts",
     "src/lib/server/claude-models.test.ts",
     "src/lib/server/copilot-models.test.ts",
+    "src/lib/server/grok-models.test.ts",
     "src/lib/server/hermes-models.test.ts",
     "src/lib/server/runtime-model-options.test.ts",
     "src/lib/server/global-npm-install-lane.test.ts",
@@ -1512,6 +1515,7 @@ const ALIAS_LOADER = new Set([
   // Imports the module under test, which resolves "@/lib/github-repo-link".
   "src/lib/project-setup-validation.test.ts",
   "src/lib/use-role-surfaces-loader.test.ts",
+  "src/components/home/use-home-model-state.test.ts",
   "src/components/role-surfaces/researcher-status.test.ts",
   // review-readiness resolves "@/lib/github-checks" for its check rollups.
   "src/components/role-surfaces/review-readiness.test.ts",
@@ -1520,6 +1524,7 @@ const ALIAS_LOADER = new Set([
   // imports the route module, which resolves "@/lib/server/..." aliases.
   "src/app/api/daemon/travel/reconcile/route.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
+  "src/lib/opencode-models.test.ts",
   "src/lib/opencode-compatibility.test.ts",
   "src/lib/opencode-stream.test.ts",
   "src/lib/cave-conversations.test.ts",
@@ -1537,6 +1542,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/chat/send/route-openclaw-resume-harness.integration.test.ts",
   "src/app/api/x/research-routes.test.ts",
   "src/lib/server/runtime-model-options.test.ts",
+  "src/lib/server/grok-models.test.ts",
   "src/lib/familiar-workspace-sessions.test.ts",
   "src/lib/use-projects-scope-transition.test.ts",
   "src/lib/use-runtime-model-options-behavior.test.ts",

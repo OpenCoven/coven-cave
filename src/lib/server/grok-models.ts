@@ -55,7 +55,11 @@ export function listGrokModels(
       try { child.kill("SIGTERM"); } catch { /* discovery stays unavailable */ }
       done([]);
     }, dependencies.timeoutMs ?? MODEL_LIST_TIMEOUT_MS);
-    child.once("close", () => done(parseGrokModels(output).models));
+    // A CLI can print a parseable partial catalog and still exit non-zero
+    // (authentication, provider, or command errors). Treat that as failed
+    // discovery; otherwise the shared resolver would label the partial output
+    // as live entitlement.
+    child.once("close", (code) => done(code === 0 ? parseGrokModels(output).models : []));
     child.once("error", () => done([]));
   });
 }

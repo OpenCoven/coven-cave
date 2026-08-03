@@ -2,6 +2,12 @@ import { canonicalHarnessId } from "../harness-adapters.ts";
 import { cleanModelId, isSyntheticLocalModel } from "../chat-model-state.ts";
 import {
   catalogForRuntime,
+  runtimeModelInventoryAvailability,
+  runtimeModelInventoryFreshness,
+  runtimeModelInventoryRefreshState,
+  runtimeModelInventoryScope,
+  type RuntimeModelInventory,
+  type RuntimeModelInventoryProvenance,
   type RuntimeModelOption,
 } from "../runtime-models.ts";
 import { listClaudeModelInventory, listClaudeModels } from "./claude-models.ts";
@@ -44,36 +50,44 @@ function sanitizeModels(
   return [...models.values()];
 }
 
-export type RuntimeModelInventoryProvenance =
-  | "live"
-  | "cached"
-  | "fallback"
-  | "runtime-managed"
-  | "unavailable";
+function withProvenance(
+  inventory: RuntimeModelInventory,
+  provenance: RuntimeModelInventoryProvenance,
+  models: RuntimeModelOption[] = inventory.models,
+): RuntimeModelInventory {
+  return {
+    ...inventory,
+    models,
+    provenance,
+    freshness: runtimeModelInventoryFreshness(provenance),
+    refreshState: runtimeModelInventoryRefreshState(provenance),
+    availability: runtimeModelInventoryAvailability(provenance),
+  };
+}
 
-export type RuntimeModelInventory = {
-  runtime: string;
-  models: RuntimeModelOption[];
-  provenance: RuntimeModelInventoryProvenance;
-  defaultOwner: "cave" | "runtime";
-  allowCustom: boolean;
-};
-
-function fallbackInventory(runtime: string): RuntimeModelInventory {
+function fallbackInventory(
+  runtime: string,
+  familiarId?: string | null,
+): RuntimeModelInventory {
   const catalog = catalogForRuntime(runtime);
   const models = [...(catalog?.models ?? [])];
-  return {
+  const provenance: RuntimeModelInventoryProvenance =
+    models.length > 0
+      ? "fallback"
+      : catalog?.defaultOwner === "runtime"
+        ? "runtime-managed"
+        : "unavailable";
+  return withProvenance({
     runtime,
     models,
-    provenance:
-      models.length > 0
-        ? "fallback"
-        : catalog?.defaultOwner === "runtime"
-          ? "runtime-managed"
-          : "unavailable",
     defaultOwner: catalog?.defaultOwner ?? "runtime",
     allowCustom: catalog?.allowCustom ?? false,
-  };
+    scope: runtimeModelInventoryScope(runtime, familiarId),
+    provenance,
+    freshness: runtimeModelInventoryFreshness(provenance),
+    refreshState: runtimeModelInventoryRefreshState(provenance),
+    availability: runtimeModelInventoryAvailability(provenance),
+  }, provenance);
 }
 
 /** One capability-aware inventory for browser, iOS, and other API clients. */
@@ -83,9 +97,9 @@ export async function listRuntimeModelInventory(
   dependencies: RuntimeModelOptionsDependencies = {},
 ): Promise<RuntimeModelInventory> {
   const canonicalRuntime = canonicalHarnessId(runtime);
-  const fallback = fallbackInventory(canonicalRuntime);
+  const fallback = fallbackInventory(canonicalRuntime, familiarId);
   const degraded = canonicalRuntime === "hermes"
-    ? { ...fallback, models: [], provenance: "runtime-managed" as const }
+    ? withProvenance(fallback, "runtime-managed", [])
     : fallback;
   try {
     let result: {
@@ -128,11 +142,7 @@ export async function listRuntimeModelInventory(
     if (result && result.models.length > 0) {
       const models = sanitizeModels(canonicalRuntime, result.models);
       if (models.length === 0) return degraded;
-      return {
-        ...degraded,
-        models,
-        provenance: result.provenance,
-      };
+      return withProvenance(degraded, result.provenance, models);
     }
   } catch {
     return degraded;

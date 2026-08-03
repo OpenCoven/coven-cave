@@ -4,6 +4,7 @@
 // The SSE frame parser is exported pure so it can be unit-tested.
 
 import { extractArtifact, type ArtifactKind } from "@/lib/canvas-artifacts";
+import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 
 export type SketchStreamEvent = {
   kind?: string;
@@ -11,6 +12,7 @@ export type SketchStreamEvent = {
   sessionId?: string;
   isError?: boolean;
   message?: string;
+  responseMetadata?: ChatResponseMetadata;
 };
 
 /**

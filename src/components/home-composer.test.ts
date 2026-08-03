@@ -139,8 +139,8 @@ assert.match(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: runtimeHost \? \{ runtimeHost \} : undefined,[\s\S]*?\}\)/,
-  "HomeComposer should hand the selected project root and any host pick to chat start without inventing response controls",
+  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: initialChatControls,[\s\S]*?\}\)/,
+  "HomeComposer should hand the selected project root, host, and staged model intent to chat start",
 );
 
 assert.match(
@@ -169,8 +169,8 @@ assert.match(
 
 assert.match(
   source,
-  /\.\.\.\(runtimeOwnsDefault \|\| runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?"Runtime default"[\s\S]*?runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\)[\s\S]*?handleSelectModel\(id \|\| null\)/,
-  "the Options menu Model section lists inventory and exposes the runtime-owned default as a real choice",
+  /\.\.\.\(runtimeOwnsDefault \|\| runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?label: "Runtime default"[\s\S]*?runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\)[\s\S]*?handleSelectModel\(id \|\| null\)/,
+  "the Options menu Model section lists inventory and exposes the durable runtime-default clear action",
 );
 
 assert.match(
@@ -181,8 +181,8 @@ assert.match(
 
 assert.match(
   source,
-  /effectiveModel &&[\s\S]*?\(runtimeOwnsDefault \|\|[\s\S]*?runtimeModelOptions\.some[\s\S]*?: runtimeOwnsDefault[\s\S]*?\? ""/,
-  "HomeComposer should keep runtime-owned runtimes on their configured default when no explicit model is selected",
+  /const selectedModelId = effectiveModel;/,
+  "HomeComposer should keep an explicit custom model visible while inventory is incomplete",
 );
 
 assert.doesNotMatch(
@@ -199,8 +199,8 @@ assert.doesNotMatch(
 
 assert.match(
   modelStateHook,
-  /body: JSON\.stringify\(\{[\s\S]*?\[selectedFamiliarId\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel \|\| null,[\s\S]*?\}\)/,
-  "useHomeModelState should persist runtime and model together when the combined selector changes runtime",
+  /body: JSON\.stringify\(\{[\s\S]*?\[familiarId\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel,[\s\S]*?\}\)/,
+  "useHomeModelState should persist runtime and explicit default intent together when the combined selector changes runtime",
 );
 
 assert.doesNotMatch(
@@ -229,8 +229,14 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: runtimeHost \? \{ runtimeHost \} : undefined,[\s\S]*?\}\)/,
-  "HomeComposer should hand the selected agent chat prompt, attachments, and any host pick to the workspace; selected-model controls resolve in Chat",
+  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: initialChatControls,[\s\S]*?\}\)/,
+  "HomeComposer should hand the selected agent chat prompt, attachments, host, and model intent to the workspace",
+);
+
+assert.match(
+  source,
+  /const initialModelOverride =\s*\n\s*pendingModelOverride !== undefined[\s\S]{0,700}?modelOverride: initialModelOverride, modelOverrideScope: "next-message"/,
+  "Home carries an explicit model selection through the first-send handoff instead of relying on a racing default PATCH",
 );
 
 assert.match(
@@ -539,6 +545,11 @@ assert.match(
   /command === "\/model"/,
   "HomeComposer handles the /model command",
 );
+assert.match(
+  source,
+  /command === "\/model"[\s\S]{0,800}isRuntimeDefaultModelArg\(args\)[\s\S]{0,180}handleSelectModel\(null\)/,
+  "HomeComposer treats /model default as a durable runtime-default clear instead of a custom id",
+);
 
 assert.doesNotMatch(
   modelStateHook,
@@ -778,6 +789,6 @@ assert.match(
 
 assert.match(
   source,
-  /const runtimeOwnsDefault = runtimeModelInventory\.defaultOwner === "runtime";[\s\S]*?const effectiveModel =[\s\S]*?const selectedModelId =[\s\S]*?: runtimeOwnsDefault[\s\S]*?\? ""[\s\S]*?: runtimeModelOptions\[0\]\?\.id/,
-  "the shared inventory owns default semantics, so a runtime-owned adapter never displays its first discovered model as the default",
+  /const runtimeOwnsDefault = runtimeModelInventory\.defaultOwner === "runtime";[\s\S]*?const effectiveModel =[\s\S]*?const selectedModelId = effectiveModel;/,
+  "the shared inventory owns default semantics without hiding a persisted custom model",
 );

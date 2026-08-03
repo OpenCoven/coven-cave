@@ -12,6 +12,12 @@ const source = read("./composer-options-menu.tsx");
 const hosts = read("./composer-host-chip.tsx");
 const popover = read("./ui/popover.tsx");
 
+assert.match(
+  source,
+  /showUnlistedValue = false[\s\S]*?Current selection · \$\{value\} \(not in current inventory\)/,
+  "model controls retain a persisted selection while scoped inventory is unavailable",
+);
+
 assert.match(source, /export function useComposerResponseHosts\(hostValue: string\)/);
 assert.match(
   source,

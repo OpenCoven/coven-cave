@@ -6,7 +6,12 @@ export type ChatResponseMetadata = {
   harness: string;
   model: string;
   runtime: string;
+  /** Explicit user model intent, including the empty runtime-default sentinel. */
+  requestedModel?: string;
   desiredModel?: string;
+  /** Model id actually handed to the selected runtime boundary, after the
+   * registry-owned canonical-to-native transform. */
+  forwardedModel?: string;
   confirmedModel?: string;
   /** Exact model safe to pin for a retry. Omitted for dynamic CLI defaults. */
   retryModel?: string;
@@ -15,6 +20,9 @@ export type ChatResponseMetadata = {
   modelApplicationReason?: string;
   /** Controls the client asked Cave to apply for this selected model. */
   requestedControls?: ModelControlValues;
+  /** Accepted controls delivered as native parameters, CLI arguments, or
+   * explicitly generated prompt guidance for this attempt. */
+  forwardedControls?: ModelControlValues;
   /** Requested controls delivered only as explicit prompt guidance. */
   promptGuidanceControls?: ModelControlValues;
   /** Controls the provider/runtime accepted for this completed attempt. */

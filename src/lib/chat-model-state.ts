@@ -223,6 +223,18 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
+  // A familiar-scoped empty value is the durable clear sentinel. It is
+  // intentionally distinct from an absent config field, which may inherit
+  // Cave's configured global default for Cave-owned runtimes.
+  if (input.familiarModel === "") {
+    return chatModelState(input, {
+      effectiveModel: "",
+      source: "runtime-default",
+      applicationState: "saved",
+      reason: "Using the runtime's configured default model.",
+    });
+  }
+
   const familiarModel = effectiveModelForHarness(input.familiarModel, input.harness);
   if (familiarModel) {
     const application = input.application ? modelApplicationForHarness(input.application) : null;

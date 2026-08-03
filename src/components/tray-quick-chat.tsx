@@ -257,6 +257,10 @@ export function QuickChatTabPane({
     note,
     modelOverride,
     setModelOverride,
+    modelCapabilities,
+    modelControls,
+    modelControlsLoading,
+    setModelControl,
     cancel,
     newThread,
     regenerate,
@@ -298,7 +302,7 @@ export function QuickChatTabPane({
       window.location.href = `/#chat-${encodeURIComponent(sessionId)}`;
     }
   }, [selectedFamiliarId, sessionId]);
-  const modelLabel = modelOverride ?? "auto";
+  const modelLabel = modelOverride === "" ? "Runtime default" : modelOverride ?? "auto";
 
   return (
     <section
@@ -353,6 +357,10 @@ export function QuickChatTabPane({
         onSendText={(text) => void sendText(text)}
         modelOverride={modelOverride}
         onModelOverrideChange={setModelOverride}
+        modelCapabilities={modelCapabilities}
+        modelControls={modelControls}
+        modelControlsLoading={modelControlsLoading}
+        onModelControlChange={setModelControl}
         leading={
           <div className="flex min-w-0 items-center gap-1.5">
             <IconButton
@@ -364,9 +372,9 @@ export function QuickChatTabPane({
               onClick={() => void openFullSession()}
             />
             {selectedFamiliar ? (
-              // Quick chat has no selected-model capability negotiation. Keep
-              // this compact entry point honest and show only its model intent;
-              // detailed native/prompt controls live in the full Chat surface.
+              // The control selectors below are capability-gated; this compact
+              // chip keeps the selected model intent visible even when the
+              // runtime has no native or prompt-only controls to offer.
               <span
                 className="quick-chat-meta-chips"
                 role="group"
