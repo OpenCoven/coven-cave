@@ -61,38 +61,32 @@ function escapeRegExp(value: string): string {
 test("server SVG uses a concrete palette pinned to the Coven foundations", async () => {
   const svg = storyboardSceneToSvg(scene);
   assert.doesNotMatch(svg, /var\(/);
+  // Sharp's librsvg silently renders oklch() fills as black (cave-6f88w), so
+  // every palette color must be plain hex and no oklch may reach the SVG.
+  assert.doesNotMatch(svg, /oklch\(/);
   for (const value of Object.values(COVEN_VIDEO_RENDER_PALETTE)) {
+    assert.match(value, /^#[0-9a-f]{6}$/);
     assert.match(svg, new RegExp(escapeRegExp(value)));
   }
 
+  // The hex values are the sRGB equivalents of these foundations.css
+  // declarations; if the source tokens move, this pin flags the drift.
+  const paletteSources: Record<string, string> = {
+    "--background": "oklch(0.225 0.004 291)",
+    "--accent-presence": COVEN_VIDEO_RENDER_PALETTE.accent,
+    "--foreground": "oklch(0.985 0 0)",
+    "--muted-foreground": "oklch(0.66 0.010 291)",
+  };
   const foundations = await readFile(
     new URL("../../styles/globals/foundations.css", import.meta.url),
     "utf8",
   );
-  assert.match(
-    foundations,
-    new RegExp(
-      `--background:\\s*${escapeRegExp(COVEN_VIDEO_RENDER_PALETTE.background)}`,
-    ),
-  );
-  assert.match(
-    foundations,
-    new RegExp(
-      `--accent-presence:\\s*${escapeRegExp(COVEN_VIDEO_RENDER_PALETTE.accent)}`,
-    ),
-  );
-  assert.match(
-    foundations,
-    new RegExp(
-      `--foreground:\\s*${escapeRegExp(COVEN_VIDEO_RENDER_PALETTE.primaryText)}`,
-    ),
-  );
-  assert.match(
-    foundations,
-    new RegExp(
-      `--muted-foreground:\\s*${escapeRegExp(COVEN_VIDEO_RENDER_PALETTE.secondaryText)}`,
-    ),
-  );
+  for (const [token, value] of Object.entries(paletteSources)) {
+    assert.match(
+      foundations,
+      new RegExp(`${escapeRegExp(token)}:\\s*${escapeRegExp(value)}`),
+    );
+  }
 });
 
 test("Sharp emits an opaque 1280x720 still with distinct background and accent", async () => {
