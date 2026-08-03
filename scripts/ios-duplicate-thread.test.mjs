@@ -4,7 +4,6 @@ const read = (rel) => readFile(new URL(`../${rel}`, import.meta.url), "utf8");
 const iosRoot = "apps/ios/CovenCave/CovenCave";
 
 const model = await read(`${iosRoot}/State/AppModel.swift`);
-const home = await read(`${iosRoot}/Views/ChatsHomeView.swift`);
 const familiarThreads = await read(`${iosRoot}/Views/FamiliarThreadsView.swift`);
 
 assert.match(model, /func duplicateThread\(_ thread: ChatThread\) -> ChatThread/, "AppModel should duplicate a thread");
@@ -15,7 +14,9 @@ assert.match(model, /let copy = ChatThread\(title:[\s\S]*threads\.insert\(copy, 
 // No server session copied — duplicate starts clean.
 assert.doesNotMatch(model, /func duplicateThread[\s\S]*sessionIds/, "the duplicate should not copy server sessionIds");
 
-for (const [name, src] of [["ChatsHomeView", home], ["FamiliarThreadsView", familiarThreads]]) {
+// Duplicating is a thread affordance, so it lives in the session picker; the
+// Chats home lists familiars and has no thread rows.
+for (const [name, src] of [["FamiliarThreadsView", familiarThreads]]) {
   assert.match(src, /Button \{ app\.duplicateThread\(thread\) \} label: \{[\s\S]*Label\("Duplicate", systemImage: "plus\.square\.on\.square"\)/, `${name} should offer a Duplicate action`);
 }
 

@@ -23,7 +23,9 @@ assert.match(
 const sortCount = (model.match(/if a\.pinned != b\.pinned \{ return a\.pinned \}/g) || []).length;
 assert.ok(sortCount >= 2, `pinned-first sort should apply to both lists (found ${sortCount})`);
 
-for (const [name, src] of [["ChatsHomeView", home], ["FamiliarThreadsView", familiarThreads]]) {
+// Pinning is a thread affordance, so it lives in the session picker; the Chats
+// home lists familiars and has no thread rows.
+for (const [name, src] of [["FamiliarThreadsView", familiarThreads]]) {
   assert.match(src, /app\.setThreadPinned\(thread, !thread\.pinned\)/, `${name} should toggle pin state`);
   assert.match(src, /thread\.pinned \? "Unpin" : "Pin"/, `${name} should label the pin action by state`);
 }
