@@ -198,12 +198,19 @@ test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-com
       releaseWorkflow.indexOf('gh release upload "$RELEASE_TAG" "${APPIMAGE}.sig" --clobber'),
     "the repacked AppImage itself must be uploaded before its regenerated signature",
   );
-  // Must match the step's CURRENT name. It was renamed to add "/libmount" in
-  // #2987 and this lookup kept the old spelling, so it resolved to -1 and the
-  // assertion below failed on every branch — main included.
-  const stripStepStart = releaseWorkflow.indexOf(STRIP_STEP_NAME);
+  // Match the step by shape rather than by its exact title. What this guard is
+  // actually about is the SLICE — the lines below assert the strip step carries
+  // no GH_TOKEN and no signing key — and pinning the full name coupled that
+  // safety check to cosmetic wording. #2987 added libmount stripping, renamed
+  // the step to "Strip bundled GLib/libmount from AppImage", and turned main
+  // red on a required check (cave-ewnel).
+  const stripStepMatch = releaseWorkflow.match(/name: Strip bundled [^\n]*AppImage/);
+  const stripStepStart = stripStepMatch?.index ?? -1;
   const stripStepEnd = releaseWorkflow.indexOf("name: Upload and re-sign stripped AppImage");
-  assert.ok(stripStepStart !== -1, "strip step must exist under its exact name");
+  assert.ok(
+    stripStepStart !== -1,
+    "strip step must exist (a step named 'Strip bundled … AppImage')",
+  );
   assert.ok(stripStepEnd > stripStepStart, "upload/re-sign step must follow the strip step");
   const stripStep = releaseWorkflow.slice(stripStepStart, stripStepEnd);
   assert.ok(stripStep.length > 0, "strip-step slice must be non-empty for the secret-isolation guard to mean anything");
