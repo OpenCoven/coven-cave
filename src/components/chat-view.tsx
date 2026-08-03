@@ -5244,7 +5244,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // the model sees what's being replied to and it persists across reload — the
   // composer just shows a dismissible chip until then. Assistant turns quote
   // only the visible prose (not hidden reasoning); the draft is never touched.
-  function replyToTurn(turn: Turn) {
+  function replyToTurn(turn: Turn, quote?: string) {
     const author =
       turn.role === "assistant"
         ? familiar.display_name
@@ -5255,7 +5255,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // value could go stale (chat-view memo notes below).
           : userDisplayName(readUserProfileSnapshot()?.profile);
     const source = turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
-    const snippet = buildReplySnippet(source);
+    // A quote is a passage the reader selected inside the Expand reader; with
+    // none, the whole turn is the subject, exactly as the Reply action means.
+    const snippet = buildReplySnippet(quote ?? source);
     if (!snippet) return;
     setReplyTarget({ turnId: turn.id, author, snippet });
     inputRef.current?.focus();
@@ -5275,6 +5277,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       replyableTurnCache.set(turn, canReply);
     }
     return canReply ? () => replyToTurn(turn) : undefined;
+  }
+
+  /** Ask about a passage selected in the Expand reader — the same quoted-reply
+   *  target the Reply action stages, narrowed to the selection. Gated like
+   *  Reply so it is absent wherever quoting the turn is. */
+  function askAboutFor(turn: Turn): ((quote: string) => void) | undefined {
+    return replyFor(turn) ? (quote: string) => replyToTurn(turn, quote) : undefined;
   }
 
   // CHAT-D6-02: regenerate. Re-sends the PRECEDING user turn (text +
@@ -5462,6 +5471,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     editTurnInComposer,
     regenerateFor,
     replyFor,
+    askAboutFor,
     send,
     activateFollowUp: handleFollowUp,
   };
@@ -7566,6 +7576,7 @@ type TranscriptHandlers = {
   editTurnInComposer: (turn: Turn) => void;
   regenerateFor: (turn: Turn) => (() => void) | undefined;
   replyFor: (turn: Turn) => (() => void) | undefined;
+  askAboutFor: (turn: Turn) => ((quote: string) => void) | undefined;
   send: (override?: string) => Promise<void>;
   activateFollowUp: (path: NextPath) => void;
 };
@@ -7661,6 +7672,7 @@ const TranscriptRows = memo(function TranscriptRows({
           onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
           onRegenerate={handlers().regenerateFor(t)}
           onReply={handlers().replyFor(t)}
+          onAskAbout={handlers().askAboutFor(t)}
           onOpenUrl={onOpenUrl}
           onSuggestion={(path) => handlers().activateFollowUp(path)}
           onRequest={(prompt) => void handlers().send(prompt)}
@@ -7711,6 +7723,7 @@ const TranscriptRows = memo(function TranscriptRows({
               onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
               onRegenerate={handlers().regenerateFor(t)}
               onReply={handlers().replyFor(t)}
+              onAskAbout={handlers().askAboutFor(t)}
               onOpenUrl={onOpenUrl}
               onSuggestion={(path) => handlers().activateFollowUp(path)}
               onRequest={(prompt) => void handlers().send(prompt)}
@@ -7739,6 +7752,7 @@ function TurnRowImpl({
   onEdit,
   onRegenerate,
   onReply,
+  onAskAbout,
   onOpenUrl,
   expanded = false,
   onToggleAvatar,
@@ -7767,6 +7781,9 @@ function TurnRowImpl({
   /** Reply to Chat: present on settled, non-empty turns of either role —
    *  stages this turn as the composer's quoted reply target. */
   onReply?: () => void;
+  /** Ask about a passage selected in the Expand reader — stages the selection
+   *  as the composer's quoted reply target. Assistant turns only. */
+  onAskAbout?: (quote: string) => void;
   onOpenUrl?: (url: string) => void;
   expanded?: boolean;
   onToggleAvatar?: () => void;
@@ -8105,6 +8122,12 @@ function TurnRowImpl({
                   // the text segments concatenate to `visible` anyway, so prose
                   // renders identically with the tool blocks omitted.
                   segments={renderSegments}
+                  // The reader's "How this was made" footer reads the same
+                  // settled tool events the stream already renders, so the
+                  // provenance it shows can never disagree with the transcript.
+                  readerTools={settledTools}
+                  readerDurationMs={turn.durationMs}
+                  onAskAbout={onAskAbout}
                   branchNav={branchNav}
                 />
                 <ResponseModelStatus metadata={turn.responseMetadata} />

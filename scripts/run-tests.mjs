@@ -221,6 +221,8 @@ export const SUITES = {
     "src/lib/chat-start-from.test.ts",
     "src/lib/chat-thread-instruments.test.ts",
     "src/lib/chat-tool-batches.test.ts",
+    "src/lib/reader-outline.test.ts",
+    "src/lib/reader-provenance.test.ts",
     "src/lib/chat-queue-followups.test.ts",
     "src/lib/chat-review-requests.test.ts",
     "src/lib/chat-starter-suggestions.test.ts",
@@ -467,6 +469,7 @@ export const SUITES = {
     "src/components/chat-empty-state.test.ts",
     "src/components/chat-session-chrome.test.ts",
     "src/components/chat-tool-batches-ui.test.ts",
+    "src/components/message-reader.test.ts",
     "src/components/chat-queue-group.test.ts",
     "src/components/chat-reviews-group.test.ts",
     "src/components/chat-start-from-bands.test.ts",
@@ -1510,6 +1513,8 @@ const STRIP_TYPES_MJS = new Set([
 const ALIAS_LOADER = new Set([
   // resolves "@/lib/tool-visual" for the batch band's tint
   "src/lib/chat-tool-batches.test.ts",
+  // the reader's footer views resolve "@/lib/tool-visual" for the same tints
+  "src/lib/reader-provenance.test.ts",
   // reaches @/lib/next-paths and @/lib/familiar-stream through the draft module
   "src/lib/gh-review-draft.test.ts",
   // Imports the module under test, which resolves "@/lib/github-repo-link".
