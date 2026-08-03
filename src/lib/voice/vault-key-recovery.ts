@@ -4,17 +4,28 @@
 // key-shaped (a missing or rejected vault secret for ElevenLabs, OpenAI, or
 // any keyed provider), the call overlay offers an inline editor that saves
 // the key to the Vault and retries without leaving the call. This module is
-// the single source of truth for which vault key backs each keyed voice
-// provider, and for deciding whether an error is fixable by updating it.
+// the recovery-policy seam; provider-to-key identity comes from the shared
+// catalog below.
+
+import { VOICE_PROVIDER_CATALOG } from "./provider-catalog.ts";
+import type { VoiceProviderVaultKey } from "./provider-catalog.ts";
+import type { VoiceProviderId } from "./types.ts";
 
 /** Vault key backing each keyed voice provider. The "local" and "familiar"
  *  providers mint keyless (their brain is a loopback server or the
  *  familiar's own harness) and deliberately have no entry here. */
-export const VOICE_VAULT_KEY_BY_PROVIDER: Record<string, string> = {
-  openai: "OPENAI_API_KEY",
-  gemini: "GOOGLE_API_KEY",
-  elevenlabs: "ELEVENLABS_API_KEY",
-};
+const voiceVaultKeyByProvider: Partial<
+  Record<VoiceProviderId, VoiceProviderVaultKey>
+> = {};
+for (const provider of VOICE_PROVIDER_CATALOG) {
+  if (provider.vaultKey !== null) {
+    voiceVaultKeyByProvider[provider.id] = provider.vaultKey;
+  }
+}
+
+export const VOICE_VAULT_KEY_BY_PROVIDER: Readonly<
+  Partial<Record<VoiceProviderId, VoiceProviderVaultKey>>
+> = Object.freeze(voiceVaultKeyByProvider);
 
 /** Error codes that name their own vault key, whatever provider raised them
  *  (the ElevenLabs TTS proxy can fail mid-call after a clean mint). */
@@ -58,7 +69,8 @@ export function voiceRecoveryVaultKey(opts: {
   const named = KEY_ERROR_VAULT_KEYS[code];
   if (named) return named;
   if (PROVIDER_KEY_ERROR_CODES.has(code) && opts.providerId) {
-    return VOICE_VAULT_KEY_BY_PROVIDER[opts.providerId] ?? null;
+    const provider = VOICE_PROVIDER_CATALOG.find(({ id }) => id === opts.providerId);
+    return provider ? VOICE_VAULT_KEY_BY_PROVIDER[provider.id] ?? null : null;
   }
   return null;
 }
