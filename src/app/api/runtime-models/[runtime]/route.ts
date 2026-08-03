@@ -3,6 +3,7 @@ import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
 
@@ -11,11 +12,7 @@ export const runtime = "nodejs";
 
 function cleanFamiliarId(value: string | null): string | null {
   const familiarId = value?.trim() ?? "";
-  if (
-    !familiarId ||
-    familiarId.length > 200 ||
-    /[\u0000-\u001f\u007f]/.test(familiarId)
-  ) {
+  if (!familiarId || !isValidFamiliarId(familiarId)) {
     return null;
   }
   return familiarId;

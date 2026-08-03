@@ -13,6 +13,10 @@ import { chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat
 import { buildPromptWithAttachments, type ChatAttachment } from "@/lib/chat-attachments";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import type { CodexAutomation } from "@/lib/codex-automations-types";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { isSshRuntime } from "@/lib/familiar-runtime";
+import { cleanModelId } from "@/lib/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
@@ -40,6 +44,27 @@ export type TravelOfflineReplayResult = {
 type DaemonSessionResponse = { id?: string; status?: string };
 type WorkflowEngineResponse = { ok?: boolean; runId?: string; status?: string; error?: string };
 
+function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
+  const hasModelOverride = Object.prototype.hasOwnProperty.call(payload, "modelOverride");
+  const metadata = record(payload.responseMetadata);
+  const modelSource = metadata.modelSource;
+  const queuedModel = hasModelOverride
+    ? payload.modelOverride
+    : modelSource === "runtime-default"
+      ? ""
+      : modelSource === "global-default" ||
+          modelSource === "familiar-default" ||
+          modelSource === "session" ||
+          modelSource === "next-message"
+        ? metadata.desiredModel ?? metadata.model
+        : undefined;
+  if (queuedModel === undefined) return undefined;
+  if (queuedModel === "") return "";
+  const model = cleanModelId(queuedModel);
+  if (!model) throw new Error("queued chat model id is not safe for launch");
+  return model;
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
 }
@@ -55,6 +80,31 @@ function objectArray<T>(value: unknown): T[] {
 function queuedRuntime(payload: Record<string, unknown>): string | null {
   const metadata = record(payload.responseMetadata);
   return stringValue(metadata.runtime);
+}
+
+/**
+ * The hub daemon's session endpoint currently accepts model selection but not
+ * per-turn control families. Do not let a replay appear synced after the JSON
+ * parser silently ignores those fields.
+ */
+export function daemonReplayControlFamilies(payload: Record<string, unknown>): string[] {
+  const families = new Set<string>();
+  if (stringValue(payload.reasoningEffort)) families.add("reasoning");
+  if (stringValue(payload.responseSpeed)) families.add("performance");
+  const modelControls = record(payload.modelControls);
+  const knownFamilies = new Set([
+    "reasoning",
+    "performance",
+    "verbosity",
+    "output-limit",
+    "modalities",
+    "tool-support",
+  ]);
+  for (const [family, value] of Object.entries(modelControls)) {
+    if (value === undefined || value === null || value === "") continue;
+    families.add(knownFamilies.has(family) ? family : "model-controls");
+  }
+  return [...families];
 }
 
 function replayError(err: unknown): string {
@@ -73,14 +123,16 @@ async function spawnHubSession(args: {
   harness: string;
   prompt: string;
   model?: string | null;
+  modelOverrideScope?: "runtime-default";
   reasoningEffort?: string | null;
   responseSpeed?: string | null;
   modelControls?: Record<string, unknown>;
   projectRoot?: string | null;
   title: string;
 }): Promise<string> {
-  if (!isAllowedHarness(args.harness)) {
-    throw new Error(`harness '${args.harness}' can't run as an agent session`);
+  const harness = canonicalHarnessId(args.harness);
+  if (!isAllowedHarness(harness)) {
+    throw new Error(`harness '${harness}' can't run as an agent session`);
   }
   const projectRoot = normalizeProjectRoot(args.projectRoot ?? process.cwd());
   if (!projectRoot) throw new Error("invalid project root");
@@ -90,9 +142,10 @@ async function spawnHubSession(args: {
     path: "/api/v1/sessions",
     body: {
       projectRoot,
-      harness: args.harness,
+      harness,
       prompt: args.prompt,
       ...(args.model ? { model: args.model } : {}),
+      ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
       ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
       ...(args.responseSpeed ? { responseSpeed: args.responseSpeed } : {}),
       ...(Object.keys(args.modelControls ?? {}).length ? { modelControls: args.modelControls } : {}),
@@ -117,6 +170,12 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const familiarId = stringValue(payload.familiarId);
   const prompt = stringValue(payload.prompt);
   if (!familiarId || !prompt) throw new Error("queued chat payload missing familiarId or prompt");
+  const controlFamilies = daemonReplayControlFamilies(payload);
+  if (controlFamilies.length) {
+    throw new Error(
+      `queued model controls cannot be replayed through the current hub session contract (${controlFamilies.join(", ")})`,
+    );
+  }
   const runtime = queuedRuntime(payload);
   if (runtime?.startsWith("ssh:")) {
     throw new Error("queued SSH-runtime chat cannot be replayed as a local hub session");
@@ -130,6 +189,21 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   });
 
   const binding = bindingFor(config, familiarId);
+  const modelOverride = queuedModelOverride(payload);
+  if (modelOverride && !isModelAllowedByRuntime(binding.harness, modelOverride)) {
+    throw new Error("queued chat model id is not allowed by the selected runtime");
+  }
+  const queuedMetadata = record(payload.responseMetadata);
+  const queuedHarness = stringValue(queuedMetadata.harness);
+  if (
+    queuedHarness &&
+    canonicalHarnessId(queuedHarness) !== canonicalHarnessId(binding.harness)
+  ) {
+    throw new Error("queued chat runtime binding changed while offline; choose the runtime again before replaying");
+  }
+  if (runtime?.startsWith("local:") && isSshRuntime(binding.runtime)) {
+    throw new Error("queued local-runtime chat cannot be replayed after this familiar moved to SSH");
+  }
   const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
   if (profileBlock) throw new Error(profileBlock);
   const attachments = objectArray<ChatAttachment>(payload.attachments);
@@ -139,7 +213,14 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     familiarId,
     harness: binding.harness,
     prompt: replayPrompt,
-    model: stringValue(payload.modelOverride),
+    // Preserve the distinction between an omitted model and an explicit
+    // runtime-default request. The daemon receives no model argument in both
+    // cases, while the scope marker prevents this replay path from treating a
+    // cleared model as an accidental static/catalog fallback.
+    model: modelOverride,
+    ...(payload.modelOverrideScope === "runtime-default"
+      ? { modelOverrideScope: "runtime-default" as const }
+      : {}),
     reasoningEffort: stringValue(payload.reasoningEffort),
     responseSpeed: stringValue(payload.responseSpeed),
     modelControls: record(payload.modelControls),

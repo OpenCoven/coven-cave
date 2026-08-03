@@ -14,6 +14,57 @@ import type { QuickChatMessage } from "@/lib/use-quick-chat";
 import { FamiliarMark, QUICK_CHAT_SUGGESTIONS } from "./quick-chat-primitives";
 import { lastRegenerableQuickChatMessageId } from "@/lib/quick-chat-thread-state";
 
+function QuickChatResponseMetadata({ metadata }: { metadata?: QuickChatMessage["responseMetadata"] }) {
+  if (!metadata) return null;
+  const lines: string[] = [];
+  if (metadata.requestedModel !== undefined) {
+    lines.push(`Requested model: ${metadata.requestedModel || "Runtime default"}`);
+  }
+  if (metadata.desiredModel) lines.push(`Effective model: ${metadata.desiredModel}`);
+  if (metadata.forwardedModel && metadata.forwardedModel !== metadata.desiredModel) {
+    lines.push(`Forwarded model: ${metadata.forwardedModel}`);
+  }
+  if (metadata.confirmedModel) lines.push(`Applied model: ${metadata.confirmedModel}`);
+  else if (metadata.modelApplicationState) lines.push(`Model: ${metadata.modelApplicationState}`);
+  if (metadata.modelSource) lines.push(`Source: ${metadata.modelSource}`);
+  if (metadata.modelApplicationReason && !metadata.confirmedModel) {
+    lines.push(metadata.modelApplicationReason);
+  }
+  const promptOnly = new Set(Object.keys(metadata.promptGuidanceControls ?? {}));
+  const forwarded = new Set(Object.keys(metadata.forwardedControls ?? {}));
+  const applied = new Set(Object.keys(metadata.appliedControls ?? {}));
+  const rejected = new Set(metadata.rejectedControlFamilies ?? []);
+  for (const [family, value] of Object.entries(metadata.requestedControls ?? {})) {
+    const status = rejected.has(family)
+      ? "Rejected"
+      : promptOnly.has(family)
+        ? "Prompt guidance"
+        : applied.has(family)
+          ? "Applied"
+          : forwarded.has(family)
+            ? "Forwarded — not confirmed"
+            : "Requested — not confirmed";
+    lines.push(`${status}: ${family} ${value}`);
+  }
+  if (lines.length === 0) return null;
+  return (
+    <div
+      className="mt-2 flex flex-wrap gap-1.5"
+      role="status"
+      aria-label={`Response model and controls. ${lines.join(". ")}`}
+    >
+      {lines.map((line) => (
+        <span
+          key={line}
+          className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--fg-muted)]"
+        >
+          {line}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function QuickChatBubble({
   message,
   familiar,
@@ -124,6 +175,8 @@ function QuickChatBubble({
         ) : null}
 
         {message.error ? <p className="quick-chat-turn__error">{message.error}</p> : null}
+
+        <QuickChatResponseMetadata metadata={message.responseMetadata} />
 
         {canAct ? (
           <div className="quick-chat-turn__actions">

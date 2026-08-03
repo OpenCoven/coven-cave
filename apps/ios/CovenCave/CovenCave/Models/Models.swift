@@ -129,8 +129,23 @@ struct TurnUsage: Codable, Hashable {
 /// are intentionally limited to display and retry state; provider credentials
 /// and runtime configuration never cross the history boundary.
 struct ChatTurnResponseMetadata: Codable, Hashable {
+    /// Explicit user intent. An empty string is the durable runtime-default
+    /// sentinel; nil means the turn had no explicit model selection.
+    var requestedModel: String?
+    /// Model selected by Cave after resolving familiar/session/runtime scope.
+    var desiredModel: String?
+    /// Native/runtime id handed to the launch boundary after Cave's transform.
+    var forwardedModel: String?
+    /// Model the runtime actually confirmed, when the transport can prove it.
+    var confirmedModel: String?
+    var modelSource: String?
+    var modelApplicationState: String?
+    /// Safe, user-visible explanation for a pending, rejected, or degraded
+    /// model application. Provider payloads never cross this boundary.
+    var modelApplicationReason: String?
     var retryModel: String?
     var requestedControls: [String: String]?
+    var forwardedControls: [String: String]?
     var promptGuidanceControls: [String: String]?
     var appliedControls: [String: String]?
     var rejectedControlFamilies: [String]?

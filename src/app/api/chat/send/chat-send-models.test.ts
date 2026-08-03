@@ -2,11 +2,53 @@
 import assert from "node:assert/strict";
 import {
   modelIntentForSend,
+  isModelOverrideScope,
+  isValidModelOverrideIntent,
+  offlineQueuedModelIntent,
   persistedTurnControls,
   persistSendModelIntent,
   resolveSendModelMetadata,
+  savedModelSelectionRejection,
+  savedModelSelectionRequiresForwarding,
   turnRetryModel,
 } from "./chat-send-models.ts";
+
+for (const scope of [undefined, "next-message", "session", "runtime-default"]) {
+  assert.equal(isModelOverrideScope(scope), true, `${String(scope)} is a supported model scope`);
+}
+for (const scope of ["future-scope", "", 42, {}, []]) {
+  assert.equal(isModelOverrideScope(scope), false, `${JSON.stringify(scope)} is rejected at launch`);
+}
+
+assert.equal(isValidModelOverrideIntent({}), true, "ordinary sends have no model intent");
+assert.equal(
+  isValidModelOverrideIntent({ modelOverride: "anthropic/claude-opus-4-6", modelOverrideScope: "session" }),
+  true,
+  "session-scoped model ids form a complete intent",
+);
+assert.equal(
+  isValidModelOverrideIntent({ modelOverride: "", modelOverrideScope: "next-message" }),
+  true,
+  "one-turn runtime-default clears form a complete intent",
+);
+assert.equal(
+  isValidModelOverrideIntent({ modelOverrideScope: "runtime-default" }),
+  true,
+  "runtime-owned defaults may omit the model argument entirely",
+);
+for (const invalidIntent of [
+  { modelOverride: "anthropic/claude-opus-4-6" },
+  { modelOverride: "", modelOverrideScope: "session" },
+  { modelOverrideScope: "session" },
+  { modelOverrideScope: "next-message" },
+  { modelOverride: "", modelOverrideScope: undefined },
+]) {
+  assert.equal(
+    isValidModelOverrideIntent(invalidIntent),
+    false,
+    `partial model intent is rejected: ${JSON.stringify(invalidIntent)}`,
+  );
+}
 
 const sessionState = {
   familiarId: "nyx",
@@ -70,6 +112,44 @@ assert.deepEqual(
   ),
   { modelOverrideScope: "runtime-default" },
   "a one-turn Runtime-default retry keeps its semantic intent for another retry without persisting a model id",
+);
+assert.deepEqual(
+  offlineQueuedModelIntent({
+    body: { familiarId: "sage" },
+    responseMetadata: {
+      model: "openai/gpt-5.5",
+      desiredModel: "openai/gpt-5.5",
+      modelSource: "familiar-default",
+    },
+  }),
+  { modelOverride: "openai/gpt-5.5", modelOverrideScope: undefined },
+  "offline replay must carry a resolved Cave familiar/default model to the hub launch",
+);
+assert.deepEqual(
+  offlineQueuedModelIntent({
+    body: { familiarId: "sage" },
+    responseMetadata: {
+      model: "",
+      modelSource: "runtime-default",
+    },
+  }),
+  { modelOverride: "", modelOverrideScope: "runtime-default" },
+  "offline replay must preserve runtime-owned default intent without pinning a model",
+);
+assert.deepEqual(
+  offlineQueuedModelIntent({
+    body: {
+      familiarId: "sage",
+      modelOverride: "anthropic/claude-opus-4-6",
+      modelOverrideScope: "session",
+    },
+    responseMetadata: {
+      model: "anthropic/claude-opus-4-6",
+      modelSource: "session",
+    },
+  }),
+  { modelOverride: "anthropic/claude-opus-4-6", modelOverrideScope: "session" },
+  "offline replay must preserve an explicit per-session model selection",
 );
 
 const inheritedRuntimeDefault = {
@@ -212,6 +292,75 @@ assert.equal(
   ),
   undefined,
   "one-turn Runtime default does not mutate the durable session model intent",
+);
+
+assert.equal(
+  savedModelSelectionRequiresForwarding({
+    desiredModel: sessionState.effectiveModel,
+    modelState: sessionState,
+    modelForwardingEnabled: false,
+  }),
+  true,
+  "a saved model must fail closed instead of silently running the runtime default",
+);
+assert.equal(
+  savedModelSelectionRequiresForwarding({
+    desiredModel: sessionState.effectiveModel,
+    modelState: sessionState,
+    modelForwardingEnabled: true,
+  }),
+  false,
+  "a saved model may launch when the runtime confirms model forwarding",
+);
+assert.equal(
+  savedModelSelectionRequiresForwarding({
+    desiredModel: "",
+    modelState: inheritedRuntimeDefault,
+    modelForwardingEnabled: false,
+  }),
+  false,
+  "runtime-owned defaults remain launchable without a model argument",
+);
+assert.equal(
+  savedModelSelectionRejection({
+    desiredModel: "provider/custom",
+    modelState: { ...sessionState, harness: "future-unknown" },
+    harness: "future-unknown",
+    modelForwardingEnabled: true,
+  }),
+  "unsupported",
+  "a saved safe id is rejected when the selected runtime has no custom-id policy",
+);
+assert.equal(
+  savedModelSelectionRejection({
+    desiredModel: "openai/gpt-5.6-sol",
+    modelState: { ...sessionState, source: "global-default" },
+    harness: "claude",
+    modelForwardingEnabled: true,
+    invalidSavedModel: true,
+  }),
+  "invalid",
+  "a malformed persisted selection is rejected instead of silently falling back",
+);
+
+const staleGrokModel = resolveSendModelMetadata({
+  body: { familiarId: "nyx" },
+  config: { defaults: { model: "openai/gpt-5.6-sol" }, familiars: { nyx: { model: "openai/gpt-5.6-sol" } } },
+  binding: { harness: "grok", model: "" },
+  existingConversation: null,
+  modelForwardingEnabled: true,
+});
+assert.equal(staleGrokModel.modelState.source, "runtime-default");
+assert.equal(
+  savedModelSelectionRejection({
+    desiredModel: staleGrokModel.desiredModel,
+    modelState: staleGrokModel.modelState,
+    harness: "grok",
+    modelForwardingEnabled: true,
+    suppressedSavedModel: staleGrokModel.suppressedSavedModel,
+  }),
+  "unsupported",
+  "a provider-qualified model suppressed by a switched runtime must fail closed",
 );
 
 console.log("chat-send-models.test.ts: ok");

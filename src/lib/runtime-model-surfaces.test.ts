@@ -13,6 +13,8 @@ const hero = source("../components/chat-familiar-capabilities.tsx");
 const studio = source("../components/familiar-studio-brain-tab.tsx");
 const board = source("../components/board-inspector.tsx");
 const modelState = source("../app/api/chat/model-state/route.ts");
+const salem = source("../components/salem/ask-salem-view.tsx");
+const summoning = source("../components/familiar-summoning-circle.tsx");
 
 for (const [name, contents, options] of [
   ["home composer", home, "runtimeModelOptions"],
@@ -76,6 +78,23 @@ assert.match(
   modelState,
   /listRuntimeModelInventory\(\s*state\.harness,\s*familiarId,/,
   "the aggregate model-state response gives non-web clients the same inventory",
+);
+assert.match(
+  salem,
+  /inventoryProvenanceLabel[\s\S]*useRuntimeModelInventory\(/,
+  "Ask Salem derives its selected familiar model status from the shared inventory",
+);
+assert.match(
+  summoning,
+  /useRuntimeModelInventory\(harness \?\? "", null\)/,
+  "familiar summoning uses the shared runtime inventory for its model preview",
+);
+assert.doesNotMatch(salem, /defaultModelForRuntime/, "Ask Salem never advertises a static implicit model");
+assert.doesNotMatch(summoning, /defaultModelForRuntime/, "summoning never advertises a static implicit model");
+assert.doesNotMatch(
+  summoning,
+  /modelInventory\.models\[0\]/,
+  "summoning never turns a curated seed into an implicit selected model",
 );
 
 console.log("runtime-model-surfaces.test.ts: ok");

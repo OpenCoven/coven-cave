@@ -948,7 +948,7 @@ export function BoardView({
           familiars: {
             [familiarId]: {
               harness: runtime,
-              model: modelForRuntimeSwitch(runtime) || null,
+              model: modelForRuntimeSwitch(runtime),
             },
           },
         }),

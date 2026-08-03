@@ -124,7 +124,19 @@ final class AgentActivityTests: XCTestCase {
         XCTAssertNil(ActivityFold.fold([], event: .done(
             isError: false,
             sessionId: nil,
-            retryModel: nil
+            requestedModel: nil,
+            desiredModel: nil,
+            forwardedModel: nil,
+            confirmedModel: nil,
+            modelSource: nil,
+            modelApplicationState: nil,
+            modelApplicationReason: nil,
+            retryModel: nil,
+            requestedControls: nil,
+            forwardedControls: nil,
+            promptGuidanceControls: nil,
+            appliedControls: nil,
+            rejectedControlFamilies: nil
         )))
     }
 

@@ -39,7 +39,7 @@ type ClaudeModelDependencies = {
 
 type CacheEntry = { expiresAt: number; models: RuntimeModelOption[] };
 const cache = new Map<string, CacheEntry>();
-const inFlight = new Map<string, Promise<{ models: RuntimeModelOption[]; discovered: boolean }>>();
+const inFlight = new Map<string, Promise<{ models: RuntimeModelOption[] }>>();
 
 function positiveLimit(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0
@@ -167,7 +167,7 @@ async function discoverClaudeModels(
   familiarId: string | null | undefined,
   providerEnv: Record<string, string | undefined>,
   dependencies: ClaudeModelDependencies,
-): Promise<{ models: RuntimeModelOption[]; discovered: boolean }> {
+): Promise<{ models: RuntimeModelOption[] }> {
   const versionOutput = await readVersion(dependencies);
   const models = withClaudeOpus5(seedModels(), {
     versionOutput,
@@ -186,11 +186,18 @@ async function discoverClaudeModels(
       positiveLimit(dependencies.maxCacheEntries, MAX_CACHE_ENTRIES),
     );
   }
-  return { models, discovered: Boolean(parseClaudeCodeVersion(versionOutput)) };
+  // `claude --version` only proves that the CLI is installed. The remaining
+  // entries are Cave's conservative seed (and an Opus 5 choice inferred from
+  // provider configuration), not an authenticated provider model listing.
+  // Keep this result degraded until Claude exposes a bounded entitlement
+  // discovery path that can validate the complete inventory.
+  return { models };
 }
 
 /** Return the Claude seed augmented only when this familiar's concrete
- * Claude Code/provider configuration can route Opus 5. */
+ * Claude Code/provider configuration can route Opus 5. Version probing is an
+ * availability check, not a provider entitlement listing, so this adapter
+ * never claims a live/cached inventory for its seed-derived result. */
 export async function listClaudeModelInventory(
   familiarId?: string | null,
   dependencies: ClaudeModelDependencies = {},
@@ -210,12 +217,12 @@ export async function listClaudeModelInventory(
   if (cached) {
     cache.delete(key);
     cache.set(key, cached);
-    return { models: [...cached.models], provenance: "cached" };
+    return { models: [...cached.models], provenance: "fallback" };
   }
   const pending = inFlight.get(key);
   if (pending) {
     const result = await pending;
-    return { models: [...result.models], provenance: result.discovered ? "live" : "fallback" };
+    return { models: [...result.models], provenance: "fallback" };
   }
   if (
     inFlight.size >= positiveLimit(
@@ -237,7 +244,7 @@ export async function listClaudeModelInventory(
   const result = await discovery;
   return {
     models: [...result.models],
-    provenance: result.discovered ? "live" : "fallback",
+    provenance: "fallback",
   };
 }
 
