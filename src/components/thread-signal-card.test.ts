@@ -71,37 +71,74 @@ describe("topPersistentBlocker", () => {
 });
 
 describe("thread-signal-card module wiring", () => {
-  it("thread-signal-card.tsx exports ThreadSignalCard and topPersistentBlocker", () => {
+  it("exports the card and drives it off the single-report builders", () => {
     assert.match(source, /export function ThreadSignalCard/);
-    assert.match(source, /topPersistentBlocker/);
-    assert.match(source, /onClick=\{\(event\) => stopAndRun\(event, onViewFull\)\}/);
-    assert.match(source, /onClick=\{\(event\) => stopAndRun\(event, onDismiss\)\}/);
+    assert.match(source, /buildThreadSignalScoreTiles\(report\)/);
+    assert.match(source, /buildThreadSignalRows\(report\)/);
+    assert.match(source, /onClick=\{onViewFull\}/);
   });
 
-  it("keeps the card compact and switches directly from one to three score columns", () => {
+  it("launches resolution threads through the shared prompt + cross-page launcher", () => {
+    assert.match(source, /requestAgentsNewChat\(/);
+    assert.match(source, /buildThreadSignalResolutionPrompt\(targets\[0\]\)/);
+    assert.match(source, /buildThreadSignalBatchResolutionPrompt\(targets\)/);
+    // One thread for all remaining criticals, not one per signal.
+    assert.match(source, /launch\(\s*openCriticals,/);
+  });
+
+  it("defers the dismissal upward so Undo can restore the card", () => {
+    assert.match(source, /const \[dismissed, setDismissed\] = useState\(false\)/);
+    assert.match(source, /setTimeout\(\(\) => onDismissRef\.current\(\), DISMISS_UNDO_MS\)/);
+    assert.match(source, /onClick=\{\(\) => setDismissed\(false\)\}/);
+  });
+
+  it("keeps every interactive element keyboard-reachable and announced", () => {
+    assert.match(source, /useAnnouncer\(\)/);
+    assert.match(source, /className="tsc-row-btn focus-ring-inset"/);
+    assert.match(source, /tsc-tile focus-ring/);
+    assert.match(source, /aria-expanded=\{open\}/);
+    // Escape closes an open row overlay.
+    assert.match(source, /event\.key !== "Escape"/);
+  });
+
+  it("keeps the card compact and grows the tile grid from two to three columns", () => {
     assert.match(
       styles,
       /\.tsc-card\s*\{[\s\S]*?container-name:\s*thread-signal;[\s\S]*?container-type:\s*inline-size;[\s\S]*?gap:\s*var\(--space-2\);[\s\S]*?padding:\s*var\(--space-2\);[\s\S]*?border-radius:\s*var\(--radius-sm\);/,
     );
     assert.match(
       styles,
-      /\.tsc-scores\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+      /\.tsc-tiles\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/,
     );
     assert.match(
       styles,
-      /\.tsc-score-item\s*\{[\s\S]*?padding:\s*var\(--space-1\);[\s\S]*?border-radius:\s*var\(--radius-sm\);/,
+      /\.tsc-tile\s*\{[\s\S]*?padding:\s*var\(--space-1\);[\s\S]*?border-radius:\s*var\(--radius-sm\);/,
     );
     assert.match(
       styles,
-      /\.tsc-actions button\s*\{[\s\S]*?min-height:\s*var\(--space-6\);/,
+      /@container thread-signal \(min-width:\s*300px\)\s*\{[\s\S]*?\.tsc-tiles\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/,
     );
+  });
+
+  it("floats the row detail above the row so the card height never changes", () => {
+    assert.match(styles, /\.tsc-row\s*\{[\s\S]*?position:\s*relative;/);
     assert.match(
       styles,
-      /@container thread-signal \(min-width:\s*560px\)\s*\{[\s\S]*?\.tsc-scores\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/,
+      /\.tsc-pop\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?bottom:\s*calc\(100% \+ var\(--space-1\)\);/,
     );
-    assert.doesNotMatch(
-      styles,
-      /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
-    );
+    // An inline expansion would push the transcript; the overlay must not be
+    // converted back to one.
+    assert.doesNotMatch(styles, /\.tsc-pop\s*\{[\s\S]*?position:\s*static;/);
+  });
+
+  it("carries severity on shared tone utilities rather than per-element colors", () => {
+    for (const rule of [
+      /\.tsc-tone--ok\s*\{\s*color:\s*var\(--color-success\);/,
+      /\.tsc-tone--warn\s*\{\s*color:\s*var\(--color-warning\);/,
+      /\.tsc-tone--crit\s*\{\s*color:\s*var\(--color-danger\);/,
+      /\.tsc-fill--crit\s*\{\s*background:\s*var\(--color-danger\);/,
+    ]) {
+      assert.match(styles, rule);
+    }
   });
 });
