@@ -1569,12 +1569,14 @@ final class AppModel {
     }
 
     /// When the session list was last fetched. Not observable — it gates a
-    /// refetch, it does not drive any view.
-    private var lastSessionsLoadedAt: Date?
+    /// refetch, it does not drive any view. In an @Observable type stored
+    /// properties are observable by default, so the attribute is what makes
+    /// that true; the comment alone did not.
+    @ObservationIgnored private var lastSessionsLoadedAt: Date?
 
     /// How long a freshly-loaded session list is considered good enough to
     /// reuse when a view re-appears (cave-ioswipe.5).
-    static let sessionsStaleAfter: TimeInterval = 30
+    private static let sessionsStaleAfter: TimeInterval = 30
 
     /// Load sessions unless they were fetched moments ago.
     ///
