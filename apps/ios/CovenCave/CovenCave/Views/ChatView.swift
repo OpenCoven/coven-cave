@@ -53,6 +53,11 @@ struct ChatView: View {
     @State private var permissionsFamiliar: Familiar?
     @State private var showPermissionFamiliarPicker = false
     @State private var showSessionDetails = false
+    @State private var showSessionPicker = false
+    /// Navigation path handed to the session picker. It pushes nothing, but
+    /// FamiliarThreadsView requires the binding.
+    @State private var pickerPath: [ChatRoute] = []
+    @Namespace private var pickerZoomNamespace
     @State private var atBottom = true
     /// Coalesces streaming auto-scroll: several text flushes can land inside
     /// one display frame (group fan-out, resume replay) — issue one scrollTo.
@@ -321,6 +326,16 @@ struct ChatView: View {
         .fullScreenCover(item: $zoomTarget) { target in
             ZoomableContentView(target: target)
         }
+        .sheet(isPresented: $showSessionPicker) {
+            if let familiarId = thread.familiarIds.first,
+               let familiar = app.familiar(familiarId) {
+                NavigationStack {
+                    FamiliarThreadsView(familiar: familiar,
+                                        path: $pickerPath,
+                                        zoomNamespace: pickerZoomNamespace)
+                }
+            }
+        }
     }
 
     private var sessionDetailsCard: some View {
@@ -355,6 +370,19 @@ struct ChatView: View {
                 systemImage: "info.circle"
             )
             Divider()
+            Button {
+                showSessionDetails = false
+                showSessionPicker = true
+            } label: {
+                sessionDetailRow(
+                    "Session",
+                    value: thread.title,
+                    systemImage: "bubble.left.and.bubble.right",
+                    showsChevron: true
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(thread.isGroup)
             ForEach(presentedModelControlCapabilities) { capability in
                 Divider()
                 sessionControlRow(systemImage: capability.family == "reasoning" ? "brain" : "slider.horizontal.3") {
