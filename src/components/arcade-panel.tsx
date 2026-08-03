@@ -23,7 +23,7 @@
  */
 
 import { useMemo, useRef, useState } from "react";
-import { Icon } from "@iconify/react";
+import { Icon } from "@/lib/icon";
 import { ARCADE_TAGLINE, ARCADE_TITLE, buildArcadeSrcDoc } from "@/lib/arcade/glitter-crypt";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 
@@ -49,7 +49,7 @@ export function ArcadePanel({ waitingLabel, onClose }: Props) {
     <section className="arcade-panel" aria-label={`${ARCADE_TITLE} — something to do while you wait`}>
       <header className="arcade-panel__header">
         <div className="arcade-panel__heading">
-          <Icon icon="ph:magic-wand-fill" aria-hidden="true" />
+          <Icon name="ph:magic-wand-fill" aria-hidden />
           <strong className="arcade-panel__title">{ARCADE_TITLE}</strong>
         </div>
         <p className="arcade-panel__tagline">{waitingLabel ?? ARCADE_TAGLINE}</p>
@@ -66,7 +66,7 @@ export function ArcadePanel({ waitingLabel, onClose }: Props) {
               requestAnimationFrame(() => frameRef.current?.focus());
             }}
           >
-            <Icon icon="ph:arrow-counter-clockwise" />
+            <Icon name="ph:arrow-counter-clockwise" />
           </button>
           <button
             type="button"
@@ -75,7 +75,7 @@ export function ArcadePanel({ waitingLabel, onClose }: Props) {
             title="Close"
             onClick={onClose}
           >
-            <Icon icon="ph:x" />
+            <Icon name="ph:x" />
           </button>
         </div>
       </header>
