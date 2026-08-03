@@ -106,13 +106,51 @@ assert.match(
   "chat-view should wire the add-project action into the error strip",
 );
 
-// ── Organize sidebar: recency view (default) + by-project, via a header menu. ─
+// ── Visible grouping tabs: recency view (default) + by-project. ───────────────
 assert.match(
   workspaceSidebar,
   /deriveChatRecencyBuckets\(/,
   "ChatSidebar should derive time buckets for the Recent view",
 );
-assert.match(workspaceSidebar, /Organize sidebar/, "ChatSidebar should expose the Organize sidebar menu");
+assert.match(
+  workspaceSidebar,
+  /<Tabs<ChatSidebarView>/,
+  "ChatSidebar should use the shared accessible tabs primitive",
+);
+assert.match(
+  workspaceSidebar,
+  /idPrefix="chat-sidebar-group"/,
+  "Grouping tabs should emit stable ids and aria-controls",
+);
+assert.match(
+  workspaceSidebar,
+  /id="chat-sidebar-group-panel"[\s\S]*?role="tabpanel"[\s\S]*?aria-labelledby=\{`chat-sidebar-group-tab-\$\{view\}`\}[\s\S]*?<nav aria-label="Chat threads">/,
+  "The active thread list should be associated with its selected grouping tab",
+);
+const chatSidebarPanelOpenTag = workspaceSidebar.match(
+  /<div\s*\n\s*id="chat-sidebar-group-panel"[\s\S]*?>/,
+)?.[0] ?? "";
+assert.ok(chatSidebarPanelOpenTag, "ChatSidebar should render the active grouping panel");
+assert.doesNotMatch(
+  chatSidebarPanelOpenTag,
+  /tabIndex=/,
+  "the tabpanel should not add a redundant keyboard stop before its interactive rows",
+);
+assert.match(
+  workspaceSidebar,
+  /id: "recent",[\s\S]*?label: "Recent",[\s\S]*?icon: "ph:clock-counter-clockwise",[\s\S]*?controlsId: "chat-sidebar-group-panel"/,
+  "ChatSidebar should expose the Recent grouping tab",
+);
+assert.match(
+  workspaceSidebar,
+  /id: "projects",[\s\S]*?label: "Projects",[\s\S]*?icon: "ph:folders-bold",[\s\S]*?controlsId: "chat-sidebar-group-panel"/,
+  "ChatSidebar should expose the Projects grouping tab",
+);
+assert.match(
+  workspaceSidebar,
+  /<PopoverLabel>Chat visibility<\/PopoverLabel>/,
+  "Sidebar overflow should retain archive visibility without duplicating grouping",
+);
 assert.match(
   workspaceSidebar,
   /readChatSidebarView\(\)/,
