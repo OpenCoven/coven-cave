@@ -25,7 +25,6 @@ import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
-import type { FamiliarForSkill } from "@/components/skill-detail-drawer";
 import { handlePlaceholderTab, placeholderSpans } from "@/lib/prompt-placeholders";
 import { buildSkillAgentPrompt } from "@/lib/skill-agent-prompt";
 import {
@@ -69,10 +68,13 @@ type Props = {
   /** Jumps to the Skills tab (the success panel's "View in Skills"). */
   onViewSkills?: () => void;
   /** Familiars roster — powers the model-backed Enhance (offline fallback otherwise). */
-  familiars?: FamiliarForSkill[];
+  /** The familiar the user is actually working as. Enhance runs an LLM call
+   *  through it, so it must not be guessed — null falls back to the hosted
+   *  path rather than borrowing whichever familiar sorts first. */
+  activeFamiliarId?: string | null;
 };
 
-export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
+export function SkillBuilder({ onSaved, onViewSkills, activeFamiliarId = null }: Props) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [tagsText, setTagsText] = useState("");
@@ -122,7 +124,7 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
   const enhancer = usePromptEnhance({
     draft: instructions,
     setDraft: setInstructions,
-    familiarId: familiars[0]?.id ?? null,
+    familiarId: activeFamiliarId,
     mode: "task",
     disabled: saving,
   });
