@@ -49,6 +49,7 @@ export const SUITES = {
     "scripts/canonical-memory-smoke-lifecycle.test.mjs",
     "scripts/test-alias-loader.test.mjs",
     "scripts/maintenance-gate.test.mjs",
+    "scripts/check-beads-jsonl-duplicates.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
     "scripts/worktree-lifecycle-patrol.test.mjs",
     "src/lib/board-cache-events.test.ts",
