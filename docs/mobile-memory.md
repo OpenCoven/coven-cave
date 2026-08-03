@@ -16,21 +16,25 @@ pnpm mobile:tailscale:app
 ```
 
 The command keeps Next.js on loopback, publishes that backend with Tailscale
-Serve, and prints a credential-bearing HTTPS pairing URL and QR code. In Coven
-Memory, scan the QR or paste the URL. Do not send the URL through chat, paste it
-into an issue, or capture it in a screenshot or terminal recording.
+Serve, and prints a credential-bearing HTTPS pairing URL and QR code. The URL
+carries the current shared mobile access secret and remains valid until that
+secret is rotated. In Coven Memory, scan the QR or paste the URL. Do not send
+the URL through chat, paste it into an issue, or capture it in a screenshot or
+terminal recording.
 
-The app then reads only:
+The app uses these bearer-protected routes:
 
 - `GET /api/mobile/coven-memory`
 - `GET /api/mobile/coven-memory/overview`
 - `GET /api/mobile/coven-memory/{id}`
+- `POST /api/mobile-token/refresh`
 
 Every request needs a currently valid mobile bearer credential. Cave validates
 that boundary before reading configuration or contacting the loopback Coven
 socket. The routes are read-only, force dynamic responses, return
 `private, no-store`, omit daemon paths, and fail closed when Coven is missing,
-incompatible, or returns an invalid payload.
+incompatible, or returns an invalid payload. Token refresh renews the active
+credential but does not mutate memory.
 
 ## Status, stop, and recovery
 

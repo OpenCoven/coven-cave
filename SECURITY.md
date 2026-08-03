@@ -69,16 +69,18 @@ The following properties are design goals of OpenCoven. If you find a way to vio
 
 ### Coven Memory mobile boundary
 
-The standalone iOS memory client reaches only Cave's bearer-protected
-`/api/mobile/coven-memory` GET routes over the existing Tailscale Serve flow.
-Tailscale membership alone is not authorization. Cave validates the mobile
-marker before configuration or daemon access, keeps responses private and
-uncacheable, strips daemon paths, and exposes no mutation route.
+The standalone iOS memory client reaches Cave's bearer-protected
+`/api/mobile/coven-memory` GET routes and `POST /api/mobile-token/refresh` over
+the existing Tailscale Serve flow. Tailscale membership alone is not
+authorization. Cave validates the mobile marker before configuration or daemon
+access, keeps responses private and uncacheable, strips daemon paths, and
+exposes no memory mutation route.
 
 Pairing URLs and the persisted mobile access secret are credentials. Never put
 them in logs, screenshots, fixtures, issues, PR text, or support transcripts.
-The current credential is shared across paired mobile clients; a lost device
-requires global secret rotation and re-pairing, as documented in
+The invite remains usable until its shared credential is rotated. The current
+credential is shared across paired mobile clients; a lost device requires
+global secret rotation and re-pairing, as documented in
 [`docs/mobile-memory.md`](docs/mobile-memory.md). Screen capture by a device
 owner remains outside the app's control, so review and beta evidence must use
 synthetic status-only data.
