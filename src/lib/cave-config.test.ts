@@ -256,6 +256,14 @@ try {
     "",
     "binding resolution must preserve the explicit runtime-default sentinel",
   );
+  await config.saveConfig({ familiars: { nova: { model: null } } });
+  cfg = await config.loadConfig();
+  assert.equal(
+    cfg.familiars.nova.model,
+    "",
+    "a null model patch must preserve the runtime-default sentinel through config merges",
+  );
+  assert.equal(config.bindingFor(cfg, "nova").model, "");
   await config.saveConfig({ familiars: { nova: { model: "anthropic/claude-sonnet-4-6" } } });
   cfg = await config.loadConfig();
 

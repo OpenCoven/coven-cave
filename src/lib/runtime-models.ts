@@ -238,14 +238,16 @@ const DYNAMIC_INVENTORY_RUNTIMES = new Set([
   "hermes",
   "opencode",
 ]);
+const INVENTORY_FAMILIAR_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 export function runtimeModelInventoryScope(
   runtime: string,
   familiarId?: string | null,
 ): RuntimeModelInventoryScope {
   const canonicalRuntime = canonicalHarnessId(runtime);
-  const normalizedFamiliarId = typeof familiarId === "string" && familiarId.trim()
-    ? familiarId.trim()
+  const candidateFamiliarId = typeof familiarId === "string" ? familiarId.trim() : "";
+  const normalizedFamiliarId = INVENTORY_FAMILIAR_ID.test(candidateFamiliarId)
+    ? candidateFamiliarId
     : null;
   const catalog = catalogForRuntime(canonicalRuntime);
   const knownRuntime = catalog !== null;
@@ -332,6 +334,15 @@ export function defaultModelForRuntime(runtime: string): string {
 export function runtimeOwnsModelDefault(runtime: string): boolean {
   const canonical = canonicalHarnessId(runtime);
   return catalogForRuntime(canonical)?.defaultOwner === "runtime";
+}
+
+/** Enforce the selected runtime's custom-id policy at every write/launch
+ * boundary, not only in picker rendering. Known catalogs that allow custom
+ * ids accept safe ids; runtimes without a catalog fail closed. */
+export function isModelAllowedByRuntime(runtime: string, modelId: string): boolean {
+  const catalog = catalogForRuntime(runtime);
+  if (!catalog || !modelId) return false;
+  return catalog.allowCustom || catalog.models.some((model) => model.id === modelId);
 }
 
 /**

@@ -39,6 +39,7 @@ import { consumeFamiliarSettingsPending, type FamiliarSettingsTab } from "@/lib/
 import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { listVoiceProviders } from "@/lib/voice/registry";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
+import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 import { relativeTime } from "@/lib/relative-time";
 import { FamiliarSkillsSection } from "@/components/familiar-tab-skills";
 import { FamiliarIdentitySection } from "@/components/familiar-tab-identity";
@@ -211,7 +212,7 @@ function FamiliarIdentityHero({
           <StandardSelect
             label="Runtime"
             value={runtimeValue}
-            onChange={(v) => void bind({ harness: v })}
+            onChange={(v) => void bind({ harness: v, model: modelForRuntimeSwitch(v) })}
             options={runtimeOptions}
           />
           <StandardSelect

@@ -14,6 +14,11 @@ import {
 // the partial argument (possibly empty right after the space).
 const MODEL_ARG_RE = /^\/(?:model|m)\s+(.*)$/i;
 
+/** Reserved `/model` arguments for returning to the runtime-owned default. */
+export function isRuntimeDefaultModelArg(arg: string): boolean {
+  return /^(?:default|runtime-default)$/i.test(arg.trim());
+}
+
 function modelsFor(
   harness: string | null | undefined,
   discoveredModels?: RuntimeModelOption[],
@@ -71,7 +76,11 @@ export function formatModelList(
   allowCustom = catalogForRuntime(harness ?? "claude")?.allowCustom ?? false,
 ): string {
   const models = modelsFor(harness, discoveredModels);
-  const head = current ? `Current model: ${current}` : "No model set yet.";
+  const head = current === ""
+    ? "Current model: Runtime default"
+    : current
+      ? `Current model: ${current}`
+      : "No model set yet.";
   if (models.length === 0) {
     return allowCustom
       ? `${head}\nThis runtime has no model menu — type \`/model <id>\` to set one.`
@@ -79,7 +88,7 @@ export function formatModelList(
   }
   const lines = models.map((m) => `  ${m.id === current ? "●" : "○"} ${m.label} — \`${m.id}\``);
   const guidance = allowCustom
-    ? "type `/model <id>` or pick from the menu"
-    : "pick one of these ids";
+    ? "type `/model <id>` or `/model default`, or pick from the menu"
+    : "pick one of these ids, or type `/model default`";
   return `${head}\nAvailable models (${guidance}):\n${lines.join("\n")}`;
 }

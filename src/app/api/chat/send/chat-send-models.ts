@@ -19,6 +19,42 @@ type ModelRequest = {
   modelOverrideScope?: "next-message" | "session" | "runtime-default";
 };
 
+const MODEL_OVERRIDE_SCOPES = new Set([
+  "next-message",
+  "session",
+  "runtime-default",
+]);
+
+/** JSON callers are untyped at the launch boundary; reject future/unknown
+ * scopes instead of silently treating them as an inherited model. */
+export function isModelOverrideScope(value: unknown): value is ModelRequest["modelOverrideScope"] {
+  return value === undefined || (typeof value === "string" && MODEL_OVERRIDE_SCOPES.has(value));
+}
+
+/** A model id and its scope are one wire-level intent. Keep malformed or
+ * legacy partial pairs from silently falling back to the conversation's old
+ * model after the boundary has accepted the request. The id's safety is
+ * checked separately by the send route. */
+export function isValidModelOverrideIntent(value: {
+  modelOverride?: unknown;
+  modelOverrideScope?: unknown;
+}): boolean {
+  const hasModelOverride = Object.prototype.hasOwnProperty.call(value, "modelOverride");
+  const modelOverride = value.modelOverride;
+  switch (value.modelOverrideScope) {
+    case undefined:
+      return !hasModelOverride || modelOverride === undefined;
+    case "runtime-default":
+      return !hasModelOverride || modelOverride === undefined || modelOverride === "";
+    case "next-message":
+      return hasModelOverride && typeof modelOverride === "string";
+    case "session":
+      return hasModelOverride && typeof modelOverride === "string" && modelOverride.trim().length > 0;
+    default:
+      return false;
+  }
+}
+
 type ResponseControlRequest = {
   modelControls?: ModelControlValues;
   modelOverride?: string;

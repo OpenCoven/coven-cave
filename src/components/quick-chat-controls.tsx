@@ -29,7 +29,7 @@ import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-ru
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
-import { formatModelList, resolveModelArg } from "@/lib/slash-model";
+import { formatModelList, isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import {
   buildSkillPrompt,
   formatSkillList,
@@ -422,6 +422,11 @@ export function QuickChatComposer({
                 runtimeModelInventory.allowCustom,
               ),
             );
+            return;
+          }
+          if (isRuntimeDefaultModelArg(args)) {
+            onModelOverrideChange?.("");
+            onLocalNote?.("Model reset to the Runtime default for this thread.");
             return;
           }
           const id = resolveModelArg(

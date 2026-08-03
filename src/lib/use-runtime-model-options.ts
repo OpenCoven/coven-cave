@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import {
@@ -24,6 +24,7 @@ type ModelResponse = { ok?: boolean } & Partial<RuntimeModelInventory>;
 type RuntimeInventoryState = {
   key: string | null;
   inventory: RuntimeModelInventory | null;
+  loading: boolean;
 };
 export type RuntimeModelInventoryResult = RuntimeModelInventory & {
   loading: boolean;
@@ -135,6 +136,9 @@ function isInventoryResponse(
     value?.ok === true &&
     value.runtime === runtime &&
     Array.isArray(value.models) &&
+    // An empty successful response is not evidence of provider entitlement;
+    // keep it degraded until discovery returns at least one validated model.
+    (value.provenance !== "live" || value.models.length > 0) &&
     value.models.every((option) =>
       option &&
       typeof option.id === "string" &&
@@ -182,12 +186,21 @@ export function useRuntimeModelInventory(
   const [runtimeInventory, setRuntimeInventory] = useState<RuntimeInventoryState>({
     key: null,
     inventory: null,
+    loading: false,
   });
   const [refreshRevision, setRefreshRevision] = useState(0);
+  const inventoryRequestGenerationRef = useRef(0);
   const dynamicInventory = DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime);
 
   usePausablePoll(
-    () => setRefreshRevision((revision) => revision + 1),
+    () => {
+      // Mark a retained same-scope result as loading in the poll callback
+      // itself, before the effect that starts the replacement request runs.
+      setRuntimeInventory((current) => current.key === inventoryKey
+        ? { ...current, loading: true }
+        : current);
+      setRefreshRevision((revision) => revision + 1);
+    },
     INVENTORY_REFRESH_MS,
     { enabled: dynamicInventory },
   );
@@ -201,7 +214,10 @@ export function useRuntimeModelInventory(
       // A config event may change provider credentials or a runtime profile
       // without changing the familiar/runtime key. Mask the old scope first;
       // timer refreshes are the only path allowed to retain same-scope data.
-      setRuntimeInventory({ key: null, inventory: null });
+      // Invalidate the in-flight request before scheduling the replacement so
+      // a stale response cannot win the event/effect-cleanup race.
+      inventoryRequestGenerationRef.current += 1;
+      setRuntimeInventory({ key: null, inventory: null, loading: true });
       setRefreshRevision((revision) => revision + 1);
     };
     window.addEventListener("cave:familiars-refresh", refreshAfterConfigWrite);
@@ -213,11 +229,12 @@ export function useRuntimeModelInventory(
   useEffect(() => {
     if (!dynamicInventory) return;
     let cancelled = false;
+    const requestGeneration = ++inventoryRequestGenerationRef.current;
     // A scope change fails closed synchronously. A background refresh for the
     // same scope may keep its already-validated inventory mounted.
     setRuntimeInventory((current) => current.key === inventoryKey
-      ? current
-      : { key: inventoryKey, inventory: null });
+      ? { ...current, loading: true }
+      : { key: inventoryKey, inventory: null, loading: true });
     const params = new URLSearchParams();
     if (inventoryFamiliarId) params.set("familiarId", inventoryFamiliarId);
     const base = `/api/runtime-models/${encodeURIComponent(canonicalRuntime)}`;
@@ -225,15 +242,16 @@ export function useRuntimeModelInventory(
     void fetch(url, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((json: ModelResponse | null) => {
-        if (cancelled) return;
+        if (cancelled || requestGeneration !== inventoryRequestGenerationRef.current) return;
         setRuntimeInventory({
           key: inventoryKey,
           inventory: isInventoryResponse(json, canonicalRuntime, inventoryFamiliarId) ? json : fallback,
+          loading: false,
         });
       })
       .catch(() => {
-        if (!cancelled) {
-          setRuntimeInventory({ key: inventoryKey, inventory: fallback });
+        if (!cancelled && requestGeneration === inventoryRequestGenerationRef.current) {
+          setRuntimeInventory({ key: inventoryKey, inventory: fallback, loading: false });
         }
       });
     return () => { cancelled = true; };
@@ -255,7 +273,7 @@ export function useRuntimeModelInventory(
   ) {
     return {
       ...runtimeInventory.inventory,
-      loading: false,
+      loading: runtimeInventory.loading,
       key: inventoryKey,
     };
   }

@@ -143,7 +143,7 @@ import type { ComposerOptionSection } from "@/components/composer-options-menu";
 import { ComposerActionsMenu } from "@/components/composer-actions-menu";
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { DebugPane } from "@/components/debug-pane";
-import { resolveModelArg, formatModelList } from "@/lib/slash-model";
+import { isRuntimeDefaultModelArg, resolveModelArg, formatModelList } from "@/lib/slash-model";
 import {
   resolveSkillInvocation,
   formatSkillList,
@@ -160,6 +160,7 @@ import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippet
 import {
   modelForRuntimeSwitch,
 } from "@/lib/runtime-models";
+import { createModelSelectionMutationQueue } from "@/lib/model-selection-mutation-queue";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
@@ -1990,6 +1991,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const modelStateRef = useRef<ChatModelState | null>(null);
   const modelStateRequestRef = useRef(0);
   const modelSelectionRevisionRef = useRef(0);
+  const modelMutationQueueRef = useRef(createModelSelectionMutationQueue());
+  const pendingModelOverrideRef = useRef<string | undefined>(undefined);
+  const pendingModelScopeRef = useRef<"next-message" | "session" | "runtime-default" | undefined>(undefined);
+  const runtimeMutationRef = useRef<Promise<boolean> | null>(null);
+  useEffect(() => {
+    pendingModelOverrideRef.current = undefined;
+    pendingModelScopeRef.current = undefined;
+    runtimeMutationRef.current = null;
+  }, [familiar.id, sessionId]);
   const [usagePlan, setUsagePlan] = useState<ChatUsagePlanSnapshot | null>(null);
   // "Save as default" (Chat.dc.html 2b): pins the current project so a
   // brand-new chat stops inferring it from the most recent chat. Project only —
@@ -2557,62 +2567,68 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleSelectModel = useCallback(
     (modelId: string | null) => {
       const selectionRevision = ++modelSelectionRevisionRef.current;
+      const stagedModel = modelId ?? "";
+      pendingModelOverrideRef.current = stagedModel;
+      pendingModelScopeRef.current = modelId
+        ? sessionId ? "session" : "next-message"
+        : sessionId ? "runtime-default" : "next-message";
       // A staged model switch invalidates every prior model's controls until
       // the scoped capability response arrives; never render/send stale native values.
       setModelCapabilities([]);
       setModelControls({});
       const current = modelStateRef.current;
-      if (current) {
-        const optimistic: ChatModelState = {
-          ...current,
-          effectiveModel: modelId ?? "",
-          source: modelId ? (sessionId ? "session" : "familiar-default") : "runtime-default",
-          applicationState: "pending",
-          reason: modelId
-            ? "Applying the selected model."
-            : "Using the runtime's configured default model.",
-        };
-        modelStateRef.current = optimistic;
-        setModelState(optimistic);
-      }
-      void (async () => {
-        try {
-          const res = await fetch("/api/chat/model-state", {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              familiarId: familiar.id,
-              sessionId: sessionId ?? undefined,
-              // Empty is the durable Runtime-default sentinel. Do not turn a
-              // clear into a missing field that can re-expose an old default.
-              model: modelId ?? "",
-              scope: sessionId ? "session" : "familiar-default",
-            }),
-          });
-          if (selectionRevision !== modelSelectionRevisionRef.current) return;
-          const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
-          if (json.ok && json.state) {
-            modelStateRef.current = json.state;
-            setModelState(json.state);
-            await refreshModelState(
-              () => selectionRevision === modelSelectionRevisionRef.current,
-              selectionRevision,
-            );
-          } else {
-            await refreshModelState(
-              () => selectionRevision === modelSelectionRevisionRef.current,
-              selectionRevision,
-            );
-          }
-        } catch {
-          if (selectionRevision === modelSelectionRevisionRef.current) {
-            await refreshModelState(
-              () => selectionRevision === modelSelectionRevisionRef.current,
-              selectionRevision,
-            );
-          }
+      const optimistic: ChatModelState = {
+        familiarId: familiar.id,
+        harness: current?.harness ?? canonicalHarnessId(familiar.harness ?? "claude"),
+        runtime: current?.runtime ?? session?.runtime ?? null,
+        effectiveModel: stagedModel,
+        source: modelId ? (sessionId ? "session" : "familiar-default") : "runtime-default",
+        familiarDefaultModel: sessionId ? current?.familiarDefaultModel ?? null : stagedModel || null,
+        applicationState: "pending",
+        reason: modelId
+          ? "Applying the selected model."
+          : "Using the runtime's configured default model.",
+      };
+      modelStateRef.current = optimistic;
+      setModelState(optimistic);
+      void modelMutationQueueRef.current.enqueue(async () => {
+        const res = await fetch("/api/chat/model-state", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            familiarId: familiar.id,
+            sessionId: sessionId ?? undefined,
+            // Empty is the durable Runtime-default sentinel. Do not turn a
+            // clear into a missing field that can re-expose an old default.
+            model: modelId ?? "",
+            scope: sessionId ? "session" : "familiar-default",
+          }),
+        });
+        return (await res.json()) as { ok?: boolean; state?: ChatModelState };
+      }).then(async (json) => {
+        if (selectionRevision !== modelSelectionRevisionRef.current) return;
+        if (json.ok && json.state) {
+          modelStateRef.current = json.state;
+          setModelState(json.state);
         }
-      })();
+        if (selectionRevision === modelSelectionRevisionRef.current) {
+          pendingModelOverrideRef.current = undefined;
+          pendingModelScopeRef.current = undefined;
+        }
+        await refreshModelState(
+          () => selectionRevision === modelSelectionRevisionRef.current,
+          selectionRevision,
+        );
+      }).catch(async () => {
+        if (selectionRevision === modelSelectionRevisionRef.current) {
+          pendingModelOverrideRef.current = undefined;
+          pendingModelScopeRef.current = undefined;
+          await refreshModelState(
+            () => selectionRevision === modelSelectionRevisionRef.current,
+            selectionRevision,
+          );
+        }
+      });
     },
     [familiar.id, sessionId, refreshModelState],
   );
@@ -2641,78 +2657,115 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       : null;
   const handlePromoteModelToDefault = useCallback(() => {
     if (!promotableModel) return;
-    void (async () => {
-      try {
-        await fetch("/api/chat/model-state", {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            familiarId: familiar.id,
-            model: promotableModel,
-            scope: "familiar-default",
-          }),
-        });
-      } finally {
+    const selectionRevision = ++modelSelectionRevisionRef.current;
+    void modelMutationQueueRef.current.enqueue(async () => {
+      await fetch("/api/chat/model-state", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiarId: familiar.id,
+          model: promotableModel,
+          scope: "familiar-default",
+        }),
+      });
+    }).catch(() => undefined).finally(() => {
+      if (selectionRevision === modelSelectionRevisionRef.current) {
         // Re-read either way: the chip must reflect what the server actually
         // holds, not what we hoped it would.
-        await refreshModelState();
+        void refreshModelState(
+          () => selectionRevision === modelSelectionRevisionRef.current,
+          selectionRevision,
+        );
       }
-    })();
+    });
   }, [familiar.id, promotableModel, refreshModelState]);
 
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
       const selectionRevision = ++modelSelectionRevisionRef.current;
       const nextModel = modelForRuntimeSwitch(runtime);
+      pendingModelOverrideRef.current = nextModel;
+      pendingModelScopeRef.current = nextModel
+        ? sessionId ? "session" : "next-message"
+        : sessionId ? "runtime-default" : "next-message";
       // A runtime switch invalidates the previous runtime's controls before
       // the async scoped capability refresh returns.
       setModelCapabilities([]);
       setModelControls({});
       // Optimistic: the chip flips immediately; the refetch reconciles.
       const current = modelStateRef.current;
-      if (current) {
-        const optimistic: ChatModelState = {
-          ...current,
-          harness: runtime,
-          effectiveModel: nextModel,
-          source: nextModel ? "familiar-default" : "runtime-default",
-          reason: nextModel
-            ? "Selected from the chat composer."
-            : "Using the runtime's configured default model.",
-        };
-        modelStateRef.current = optimistic;
-        setModelState(optimistic);
-      }
-      void (async () => {
-        try {
-          const res = await fetch("/api/config", {
+      const optimistic: ChatModelState = {
+        familiarId: familiar.id,
+        harness: runtime,
+        runtime: current?.runtime ?? session?.runtime ?? null,
+        effectiveModel: nextModel,
+        source: nextModel ? "familiar-default" : "runtime-default",
+        familiarDefaultModel: nextModel || null,
+        applicationState: "pending",
+        reason: nextModel
+          ? "Selected from the chat composer."
+          : "Using the runtime's configured default model.",
+      };
+      modelStateRef.current = optimistic;
+      setModelState(optimistic);
+      const runtimeMutation = modelMutationQueueRef.current.enqueue(async () => {
+        const res = await fetch("/api/config", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            familiars: {
+              [familiar.id]: {
+                harness: runtime,
+                model: nextModel,
+              },
+            },
+          }),
+        });
+        if (!res.ok) return false;
+        // A session intent belongs to the old runtime. Clear it through the
+        // serialized model-state path before the next refresh, otherwise a
+        // Claude model can be sent after switching the familiar to Hermes.
+        if (sessionId) {
+          const clearSessionModel = await fetch("/api/chat/model-state", {
             method: "PATCH",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              familiars: {
-                [familiar.id]: {
-                  harness: runtime,
-                  model: nextModel,
-                },
-              },
+              familiarId: familiar.id,
+              sessionId,
+              model: "",
+              scope: "session",
             }),
           });
-          if (selectionRevision !== modelSelectionRevisionRef.current) return;
-          // The roster's familiar.harness feeds the empty-state identity line
-          // (and anything else reading the familiars list) — refresh it now
-          // rather than waiting out the next natural reload.
-          if (res.ok) window.dispatchEvent(new Event("cave:familiars-refresh"));
-        } finally {
-          if (selectionRevision === modelSelectionRevisionRef.current) {
-            await refreshModelState(
-              () => selectionRevision === modelSelectionRevisionRef.current,
-              selectionRevision,
-            );
-          }
+          if (!clearSessionModel.ok) return false;
         }
-      })();
+        // The roster's familiar.harness feeds the empty-state identity line
+        // (and anything else reading the familiars list) — refresh it now
+        // rather than waiting out the next natural reload.
+        if (res.ok) window.dispatchEvent(new Event("cave:familiars-refresh"));
+        return true;
+      }).finally(async () => {
+        if (selectionRevision === modelSelectionRevisionRef.current) {
+          await refreshModelState(
+            () => selectionRevision === modelSelectionRevisionRef.current,
+            selectionRevision,
+          );
+        }
+      }).then(
+        (ok) => {
+          const saved = ok === true;
+          if (selectionRevision === modelSelectionRevisionRef.current) {
+            if (saved) {
+              pendingModelOverrideRef.current = undefined;
+              pendingModelScopeRef.current = undefined;
+            }
+          }
+          return saved;
+        },
+        () => false,
+      );
+      runtimeMutationRef.current = runtimeMutation;
     },
-    [familiar.id, refreshModelState],
+    [familiar.id, refreshModelState, sessionId],
   );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -3186,7 +3239,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const composerModelOptions = composerModelInventory.models;
   const composerRuntimeOwnsDefault = composerModelInventory.defaultOwner === "runtime";
   const composerModelValue =
-      modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+      pendingModelOverrideRef.current !== undefined
+      ? pendingModelOverrideRef.current
+      : modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
       : "";
   const {
@@ -3237,8 +3292,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           id: "model",
           label: `Model · ${inventoryProvenanceLabel(composerModelInventory.provenance, composerModelInventory.loading)}`,
           value: composerModelValue,
+          showUnlistedValue: true,
           options: [
-            { value: "", label: modelState?.source === "runtime-default" || composerRuntimeOwnsDefault ? "Runtime default" : "Cave default" },
+            {
+              value: "",
+              label: modelState?.source === "runtime-default" || composerRuntimeOwnsDefault
+                ? "Runtime default"
+                : "Cave default",
+            },
             ...composerModelOptions.map((m) => ({ value: m.id, label: m.label })),
           ],
           onChange: (id: string) => handleSelectModel(id || null),
@@ -4198,6 +4259,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setInput("");
         return true;
       }
+      if (isRuntimeDefaultModelArg(args)) {
+        handleSelectModel(null);
+        appendSystem("Model reset to the runtime default.");
+        setInput("");
+        return true;
+      }
       const id = resolveModelArg(
         args,
         modelHarness,
@@ -4355,6 +4422,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     controlsOverride?: ChatSendControls,
     allowBusy = false,
   ) => {
+    // A runtime picker writes the familiar binding through /api/config. Wait
+    // for that read-modify-write before resolving the send body; otherwise an
+    // immediate send can launch the old harness even though the chip already
+    // shows the new one.
+    const runtimeMutation = runtimeMutationRef.current;
+    if (runtimeMutation) {
+      const runtimeSaved = await runtimeMutation;
+      if (runtimeMutationRef.current === runtimeMutation && runtimeSaved) {
+        runtimeMutationRef.current = null;
+      }
+      if (!runtimeSaved) {
+        setError("Runtime selection could not be saved; message not sent.");
+        return;
+      }
+    }
     const trimmed = text.trim();
     const submitPrompt = opts?.promptOverride?.trim() || trimmed;
     if (!trimmed && outgoingAttachments.length === 0) return;
@@ -4367,9 +4449,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const pendingRuntimeDefault =
       currentModelState?.source === "runtime-default" &&
       currentModelState.applicationState === "pending";
+    const pendingModelOverride = pendingModelOverrideRef.current;
+    const hasPendingModelOverride = pendingModelOverride !== undefined;
     const modelOverrideForRequest =
       opts?.modelOverride !== undefined
         ? opts.modelOverride
+        : hasPendingModelOverride
+          ? pendingModelOverride
         : currentModelState?.source === "runtime-default"
           ? ""
           : (currentModelState?.source === "session" || pendingFamiliarModel) &&
@@ -4381,6 +4467,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       opts?.modelOverrideScope ??
       (opts?.modelOverride !== undefined
         ? modelOverrideForRequest ? "session" as const : undefined
+        : hasPendingModelOverride
+          ? pendingModelScopeRef.current
         : currentModelState?.source === "runtime-default"
           ? pendingRuntimeDefault && sessionId
             ? "runtime-default" as const
@@ -4401,6 +4489,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         ? { modelOverrideScope: modelOverrideScopeForRequest }
         : {}),
     };
+    if (hasPendingModelOverride) {
+      pendingModelOverrideRef.current = undefined;
+      pendingModelScopeRef.current = undefined;
+    }
     const requestProject =
       requestedProjectRoot === activeProjectRoot
         ? selectedProject
@@ -5031,9 +5123,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   async function handleUseHarnessFix(runtime: string) {
     if (busy || switchingHarnessRef.current) return;
     switchingHarnessRef.current = true;
+    const selectionRevision = ++modelSelectionRevisionRef.current;
     try {
       const nextModel = modelForRuntimeSwitch(runtime);
-      const res = await fetch("/api/config", {
+      const runtimeMutation = modelMutationQueueRef.current.enqueue(() => fetch("/api/config", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -5044,13 +5137,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             },
           },
         }),
-      });
+      }));
+      runtimeMutationRef.current = runtimeMutation.then((response) => response.ok, () => false);
+      const res = await runtimeMutation;
       if (!res.ok) {
         setError(`Could not switch harness (${res.status}). Try again from the composer's runtime picker.`);
         return;
       }
+      if (selectionRevision !== modelSelectionRevisionRef.current) return;
       window.dispatchEvent(new Event("cave:familiars-refresh"));
-      void refreshModelState();
+      void refreshModelState(
+        () => selectionRevision === modelSelectionRevisionRef.current,
+        selectionRevision,
+      );
       // The saved failure belongs to the old harness. Let the retry resolve
       // the newly selected runtime instead of forwarding a stale model id.
       retryFailedSend({ modelOverride: null, modelOverrideScope: undefined });
@@ -5117,6 +5216,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         projectRoot: project.root,
         ...(failed.promptOverride ? { promptOverride: failed.promptOverride } : {}),
       },
+      failed.controls,
     );
   }
 
@@ -5389,7 +5489,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // The home composer's host pick rides the first send explicitly (state
       // set below lands too late for this closure) and seeds the chip.
       if (initialControls?.runtimeHost) setRuntimeHost(initialControls.runtimeHost);
-      const initialSendOptions = initialModelOverride ? { modelOverride: initialModelOverride } : undefined;
+      const stagedInitialModelOverride = initialModelOverride !== undefined
+        ? initialModelOverride
+        : initialControls?.modelOverride;
+      const stagedInitialModelScope = initialModelOverride !== undefined
+        ? undefined
+        : initialControls?.modelOverrideScope;
+      const initialSendOptions = stagedInitialModelOverride !== undefined
+        ? {
+            modelOverride: stagedInitialModelOverride,
+            ...(stagedInitialModelScope
+              ? { modelOverrideScope: stagedInitialModelScope }
+              : {}),
+          }
+        : undefined;
       void sendRaw(
         initialPrompt,
         initialAttachments ?? [],

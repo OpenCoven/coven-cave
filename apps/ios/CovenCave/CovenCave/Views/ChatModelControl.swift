@@ -170,7 +170,10 @@ struct ChatModelBar: View {
     }
 
     private var presentedAllowsRuntimeDefault: Bool {
-        presentationIsCurrent && allowsRuntimeDefault
+        // Clearing an explicit Cave-owned model must remain available even
+        // though the runtime's catalog owns no default. A loaded state proves
+        // that this is a real model picker rather than an uninitialized chip.
+        presentationIsCurrent && (allowsRuntimeDefault || state != nil)
     }
 
     private var presentedProvenance: String? {

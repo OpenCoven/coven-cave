@@ -136,6 +136,11 @@ assert.match(
 );
 assert.match(
   source,
+  /case "\/model":\s*\{[\s\S]{0,700}isRuntimeDefaultModelArg\(args\)[\s\S]{0,180}onModelOverrideChange\?\.\(""\)/,
+  "quick chat can clear a prior explicit model through the shared Runtime-default sentinel",
+);
+assert.match(
+  source,
   /<QuickChatSelect[\s\S]*label="Project"/,
   "the remaining project selector uses the shared QuickChatSelect primitive",
 );

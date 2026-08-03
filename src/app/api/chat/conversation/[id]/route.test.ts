@@ -215,6 +215,155 @@ test("PUT keeps response facts bounded and rejects secret-bearing model metadata
   );
 });
 
+test("PUT does not persist secret-bearing runtime or untrusted provider reasons", async () => {
+  const runtimeSecret = await PUT(
+    writeReq({
+      familiarId: "milo",
+      harness: "claude",
+      turns: [{
+        role: "assistant",
+        text: "safe reply",
+        responseMetadata: {
+          familiarId: "milo",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4-6",
+          runtime: "https://user:secret@example.invalid/chat",
+        },
+      }],
+    }),
+    paramsFor("sess-runtime-secret"),
+  );
+  const runtimeJson = await runtimeSecret.json();
+  assert.equal(runtimeSecret.status, 200);
+  assert.equal("responseMetadata" in runtimeJson.conversation.turns[0], false);
+
+  const runtimeQuerySecret = await PUT(
+    writeReq({
+      familiarId: "milo",
+      harness: "claude",
+      turns: [{
+        role: "assistant",
+        text: "safe reply",
+        responseMetadata: {
+          familiarId: "milo",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4-6",
+          runtime: "local:/repos/cave?token=secret",
+        },
+      }],
+    }),
+    paramsFor("sess-runtime-query-secret"),
+  );
+  const runtimeQueryJson = await runtimeQuerySecret.json();
+  assert.equal(runtimeQuerySecret.status, 200);
+  assert.equal(
+    "responseMetadata" in runtimeQueryJson.conversation.turns[0],
+    false,
+    "a single URL query delimiter is still rejected from runtime metadata",
+  );
+
+  const reasonSecret = await PUT(
+    writeReq({
+      familiarId: "milo",
+      harness: "claude",
+      turns: [{
+        role: "assistant",
+        text: "safe reply",
+        responseMetadata: {
+          familiarId: "milo",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4-6",
+          runtime: "local:/repos/cave",
+          modelApplicationReason: "provider error: https://user:secret@example.invalid/raw",
+          requestedControls: { reasoning: "https://user:secret@example.invalid/raw" },
+        },
+      }],
+    }),
+    paramsFor("sess-reason-secret"),
+  );
+  const reasonJson = await reasonSecret.json();
+  assert.equal(reasonSecret.status, 200);
+  assert.equal(
+    "responseMetadata" in reasonJson.conversation.turns[0],
+    false,
+    "client-authored provider reasons and control payloads stay out of assistant metadata",
+  );
+});
+
+test("GET preserves the canonical model application reason", async () => {
+  writeConversation("sess-safe-model-reason", [{
+    role: "assistant",
+    text: "safe reply",
+    responseMetadata: {
+      familiarId: "milo",
+      harness: "claude",
+      model: "anthropic/claude-sonnet-4-6",
+      runtime: "local:/repos/cave",
+      modelApplicationReason: "Saved for this chat.",
+    },
+  }]);
+  const res = await GET(new Request("http://test/api/chat/conversation/sess-safe-model-reason"), paramsFor("sess-safe-model-reason"));
+  const json = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(
+    json.conversation.turns[0].responseMetadata.modelApplicationReason,
+    "Saved for this chat.",
+    "safe application metadata should remain available to the transcript",
+  );
+});
+
+test("PUT does not persist client-authored response metadata on a user turn", async () => {
+  const res = await PUT(
+    writeReq({
+      familiarId: "milo",
+      harness: "claude",
+      turns: [{
+        role: "user",
+        text: "Use the configured runtime default",
+        responseMetadata: {
+          familiarId: "milo",
+          harness: "claude",
+          model: "anthropic/claude-opus-4-6",
+          runtime: "ssh:prod:https://user:secret@example.invalid/repo",
+          modelApplicationState: "applied",
+          modelApplicationReason: "provider returned a raw payload with a secret",
+        },
+      }],
+    }),
+    paramsFor("sess-user-forged-metadata"),
+  );
+  const json = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(
+    "responseMetadata" in json.conversation.turns[0],
+    false,
+    "client-authored response facts must not enter persisted user turns",
+  );
+});
+
+test("PUT rejects URL-shaped familiar metadata", async () => {
+  const res = await PUT(
+    writeReq({
+      familiarId: "milo",
+      harness: "claude",
+      turns: [{
+        role: "assistant",
+        text: "safe reply",
+        responseMetadata: {
+          familiarId: "https://user:secret@example.invalid/familiar",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4-6",
+          runtime: "local:/repos/cave",
+        },
+      }],
+    }),
+    paramsFor("sess-familiar-url-metadata"),
+  );
+  const json = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal("responseMetadata" in json.conversation.turns[0], false);
+});
+
 test("PUT preserves retry controls on user turns", async () => {
   const res = await PUT(
     writeReq({
@@ -313,4 +462,38 @@ test("GET preserves persisted OpenCode compatibility diagnostics", async () => {
     [{ id: "opencode-compatibility", label: "OpenCode compatibility notice", detail: "unrecognized event", status: "error", createdAt: "2026-07-25T00:00:00.000Z" }],
     "stored compatibility diagnostics survive the conversation API reload path",
   );
+});
+
+test("GET redacts legacy secret-bearing response metadata and model intent", async () => {
+  writeConversation("sess-legacy-redacted-metadata", [{
+    id: "assistant-legacy-redacted",
+    role: "assistant",
+    text: "Reply",
+    createdAt: "2026-07-25T00:00:00.000Z",
+    responseMetadata: {
+      familiarId: "milo",
+      harness: "claude",
+      model: "anthropic/claude-sonnet-4-6",
+      runtime: "local:/repos/cave",
+      modelApplicationReason: "provider error https://user:secret@example.invalid/raw",
+      requestedControls: { reasoning: "https://user:secret@example.invalid/raw" },
+    },
+  }]);
+  const file = JSON.parse(readFileSync(conversationPath("sess-legacy-redacted-metadata"), "utf8"));
+  file.modelIntent = {
+    model: "anthropic/claude-sonnet-4-6",
+    source: "session",
+    reason: "provider error https://user:secret@example.invalid/raw",
+  };
+  writeFileSync(conversationPath("sess-legacy-redacted-metadata"), JSON.stringify(file));
+
+  const res = await GET(
+    new Request("http://test/api/chat/conversation/sess-legacy-redacted-metadata"),
+    paramsFor("sess-legacy-redacted-metadata"),
+  );
+  const json = await res.json();
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(JSON.stringify(json), /secret|example\.invalid|provider error/);
+  assert.equal(json.conversation.turns[0].responseMetadata.model, "anthropic/claude-sonnet-4-6");
+  assert.equal(json.conversation.modelIntent.reason, undefined);
 });

@@ -55,6 +55,16 @@ assert.match(
 assert.match(route, /scope !== "familiar-default" && scope !== "session"/);
 assert.match(route, /next-message scope is composer-local/);
 assert.match(route, /const clearModel = body\.model === null \|\| body\.model === ""/);
+assert.equal(
+  route.match(/isValidFamiliarId\(familiarId\)/g)?.length,
+  2,
+  "GET and PATCH reject URL-shaped familiar ids before echoing them in model state",
+);
+assert.match(
+  route,
+  /isModelAllowedByRuntime\(binding\.harness, model\)/,
+  "model-state writes enforce the selected runtime custom-id policy rather than trusting picker validation",
+);
 assert.match(
   route,
   /if \(clearModel\) \{[\s\S]*?conversation\.modelIntent = \{[\s\S]*?model: "",[\s\S]*?source: "session"/,

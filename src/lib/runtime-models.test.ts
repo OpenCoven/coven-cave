@@ -9,6 +9,8 @@ import {
   modelForCaveFromRuntimeEcho,
   modelForRuntimeLaunch,
   runtimeOwnsModelDefault,
+  isModelAllowedByRuntime,
+  runtimeModelInventoryScope,
   runtimeModelIdForLaunch,
   transformModelIdForRuntime,
 } from "./runtime-models.ts";
@@ -315,5 +317,16 @@ assert.equal(
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/--allow-all-tools"), null);
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/../escape"), null);
 assert.equal(runtimeModelIdForLaunch("copilot", null), null);
+assert.equal(
+  runtimeModelInventoryScope("claude", "https://user:secret@example.invalid/familiar").familiarId,
+  null,
+  "inventory scope must not echo a URL-shaped familiar id into an API response",
+);
+assert.equal(
+  runtimeModelInventoryScope("claude", "sage-remote").familiarId,
+  "sage-remote",
+  "valid familiar slugs remain scoped for discovery",
+);
+assert.equal(isModelAllowedByRuntime("future-unknown", "provider/custom"), false);
 
 console.log("runtime-models.test.ts: ok");

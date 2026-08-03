@@ -170,7 +170,9 @@ struct FamiliarDetailView: View {
     }
 
     private var presentedModelAllowsRuntimeDefault: Bool {
-        modelPresentationIsCurrent && modelAllowsRuntimeDefault
+        // Keep clearing explicit Cave-owned model choices available. The
+        // inventory owner describes the initial default, not picker actions.
+        modelPresentationIsCurrent && (modelAllowsRuntimeDefault || modelState != nil)
     }
 
     private var presentedModelProvenance: String? {

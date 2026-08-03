@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { appendBoundedModelOutput, MAX_MODEL_LIST_OUTPUT_BYTES } from "./server/opencode-models.ts";
 import { parseOpenCodeModels } from "./opencode-models.ts";
 
 assert.deepEqual(
@@ -22,6 +23,17 @@ assert.deepEqual(
 );
 
 const serverSource = readFileSync(new URL("./server/opencode-models.ts", import.meta.url), "utf8");
+assert.equal(
+  appendBoundedModelOutput("a", "b"),
+  "ab",
+  "inventory output stays intact below the response budget",
+);
+assert.equal(
+  appendBoundedModelOutput("x".repeat(MAX_MODEL_LIST_OUTPUT_BYTES), "y"),
+  null,
+  "an oversized OpenCode inventory is rejected before it can grow in memory",
+);
+assert.match(serverSource, /MAX_MODEL_LIST_OUTPUT_BYTES/, "OpenCode inventory has a hard response-size budget");
 assert.match(
   serverSource,
   /listOpenCodeModels\(familiarId\?: string \| null\)[\s\S]*?openCodeSpawnEnv\(familiarId\)/,

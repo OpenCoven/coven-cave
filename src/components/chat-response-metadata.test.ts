@@ -87,8 +87,8 @@ assert.match(
 assert.match(conversationRoute, /function normalizeResponseMetadata\(/, "conversation writes normalize response metadata");
 assert.match(
   conversationRoute,
-  /const responseMetadata = normalizeResponseMetadata\(value\.responseMetadata\)/,
-  "conversation restore writes preserve model application metadata",
+  /const responseMetadata = value\.role === "user"[\s\S]*normalizeResponseMetadata\(value\.responseMetadata\)/,
+  "conversation restore writes preserve only harness-owned model application metadata",
 );
 assert.doesNotMatch(
   chatRoute,

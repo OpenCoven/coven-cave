@@ -14,6 +14,9 @@ export type InitialCommandControls = Partial<CommandControls> & {
   /** Composer Host chip: "local" or a registered ssh host id (see chat-hosts).
    *  Rides the opened chat's first send and seeds its Host chip. */
   runtimeHost?: string;
+  /** A model intent staged before a new ChatView owns a server session. */
+  modelOverride?: string;
+  modelOverrideScope?: "next-message" | "session" | "runtime-default";
 };
 
 export const COMMAND_CONTROL_DEFAULTS: CommandControls = {

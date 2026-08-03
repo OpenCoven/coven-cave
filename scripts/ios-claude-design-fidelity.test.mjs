@@ -220,8 +220,23 @@ assert.match(
 );
 assert.match(
   modelControl,
-  /allowsRuntimeDefault:[\s\S]*?Button \{[\s\S]*?onSelect\(nil\)[\s\S]*?Text\("Runtime default"\)/,
-  "runtime-owned inventories offer an actionable Runtime default choice",
+  /presentedAllowsRuntimeDefault:[\s\S]{0,500}\(allowsRuntimeDefault \|\| state != nil\)/,
+  "loaded iOS model state keeps Runtime default actionable for explicit Cave-owned choices",
+);
+assert.match(
+  modelControl,
+  /allowsRuntimeDefault: presentedAllowsRuntimeDefault,/,
+  "the compact iOS model picker receives the current clear-action capability",
+);
+assert.match(
+  modelControl,
+  /onSelect\(nil\)/,
+  "the compact iOS model picker can persist a clear action",
+);
+assert.match(
+  modelControl,
+  /Text\("Runtime default"\)/,
+  "the compact iOS model picker labels the clear action",
 );
 assert.match(
   modelControl,
@@ -250,6 +265,11 @@ assert.match(
 );
 assert.match(
   chat,
+  /presentedModelPickerAllowsRuntimeDefault:[\s\S]{0,500}\(modelPickerAllowsRuntimeDefault \|\| sessionModelState != nil\)/,
+  "chat keeps Runtime default actionable for explicit Cave-owned choices",
+);
+assert.match(
+  chat,
   /sessionDetailRow\(\s*"Inventory",[\s\S]{0,180}ChatModelInventoryProvenancePresentation\.label\(for: presentedModelPickerProvenance\)/,
   "chat session details expose inventory provenance before the picker opens",
 );
@@ -257,6 +277,11 @@ assert.match(
   chat,
   /prepareModelStateLoad\(for target:[\s\S]{0,320}modelPresentationScope\.beginLoading\(for: target\)[\s\S]{0,320}modelPickerOptions = \[\][\s\S]{0,220}modelControlCapabilities = \[\]/,
   "a changed familiar/session masks prior inventory and selected-model controls",
+);
+assert.match(
+  familiars,
+  /presentedModelAllowsRuntimeDefault:[\s\S]{0,500}\(modelAllowsRuntimeDefault \|\| modelState != nil\)/,
+  "familiar defaults keep Runtime default actionable for explicit Cave-owned choices",
 );
 assert.match(
   familiars,
@@ -386,6 +411,11 @@ assert.match(
   chat,
   /_ = selectModel\(id, familiarId: familiarId, sessionId: modelSessionId\(familiarId\)\)/,
   "the model picker stages intent synchronously before its sheet dismisses",
+);
+assert.match(
+  chat,
+  /if \["default", "runtime-default"\]\.contains\(trimmed\.lowercased\(\)\)\s*\{[\s\S]{0,180}selectModel\(nil, familiarId: familiarId, sessionId: sessionId\)/,
+  "iOS /model default clears the override instead of selecting a custom model named default",
 );
 assert.match(
   chat,

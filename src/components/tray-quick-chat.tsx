@@ -302,7 +302,7 @@ export function QuickChatTabPane({
       window.location.href = `/#chat-${encodeURIComponent(sessionId)}`;
     }
   }, [selectedFamiliarId, sessionId]);
-  const modelLabel = modelOverride ?? "auto";
+  const modelLabel = modelOverride === "" ? "Runtime default" : modelOverride ?? "auto";
 
   return (
     <section

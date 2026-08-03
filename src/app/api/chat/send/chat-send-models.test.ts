@@ -2,11 +2,50 @@
 import assert from "node:assert/strict";
 import {
   modelIntentForSend,
+  isModelOverrideScope,
+  isValidModelOverrideIntent,
   persistedTurnControls,
   persistSendModelIntent,
   resolveSendModelMetadata,
   turnRetryModel,
 } from "./chat-send-models.ts";
+
+for (const scope of [undefined, "next-message", "session", "runtime-default"]) {
+  assert.equal(isModelOverrideScope(scope), true, `${String(scope)} is a supported model scope`);
+}
+for (const scope of ["future-scope", "", 42, {}, []]) {
+  assert.equal(isModelOverrideScope(scope), false, `${JSON.stringify(scope)} is rejected at launch`);
+}
+
+assert.equal(isValidModelOverrideIntent({}), true, "ordinary sends have no model intent");
+assert.equal(
+  isValidModelOverrideIntent({ modelOverride: "anthropic/claude-opus-4-6", modelOverrideScope: "session" }),
+  true,
+  "session-scoped model ids form a complete intent",
+);
+assert.equal(
+  isValidModelOverrideIntent({ modelOverride: "", modelOverrideScope: "next-message" }),
+  true,
+  "one-turn runtime-default clears form a complete intent",
+);
+assert.equal(
+  isValidModelOverrideIntent({ modelOverrideScope: "runtime-default" }),
+  true,
+  "runtime-owned defaults may omit the model argument entirely",
+);
+for (const invalidIntent of [
+  { modelOverride: "anthropic/claude-opus-4-6" },
+  { modelOverride: "", modelOverrideScope: "session" },
+  { modelOverrideScope: "session" },
+  { modelOverrideScope: "next-message" },
+  { modelOverride: "", modelOverrideScope: undefined },
+]) {
+  assert.equal(
+    isValidModelOverrideIntent(invalidIntent),
+    false,
+    `partial model intent is rejected: ${JSON.stringify(invalidIntent)}`,
+  );
+}
 
 const sessionState = {
   familiarId: "nyx",

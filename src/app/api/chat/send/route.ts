@@ -101,6 +101,7 @@ import {
   type RuntimeAvailability,
 } from "@/lib/runtime-availability";
 import {
+  isModelAllowedByRuntime,
   modelForCaveFromRuntimeEcho,
   modelForRuntimeLaunch,
   runtimeModelIdForLaunch,
@@ -260,6 +261,8 @@ import {
 import {
   buildPromptWithResponseControls,
   modelIntentForSend,
+  isModelOverrideScope,
+  isValidModelOverrideIntent,
   persistedTurnControls,
   persistSendModelIntent,
   resolveSendModelMetadata,
@@ -1422,6 +1425,19 @@ export async function POST(req: Request) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
+  const rawModelOverrideScope = (body as { modelOverrideScope?: unknown }).modelOverrideScope;
+  if (!isModelOverrideScope(rawModelOverrideScope)) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        code: "invalid_model_scope",
+        error: "modelOverrideScope is not supported",
+        modelApplicationState: "rejected",
+        modelApplicationReason: "The model override scope must be next-message, session, or runtime-default.",
+      }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  }
   if (
     body.modelOverrideScope === "runtime-default" &&
     body.modelOverride !== undefined &&
@@ -1434,6 +1450,18 @@ export async function POST(req: Request) {
         error: "runtime-default scope cannot carry a model id",
         modelApplicationState: "rejected",
         modelApplicationReason: "Runtime-owned defaults are represented by omitting the model id.",
+      }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  }
+  if (!isValidModelOverrideIntent(body)) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        code: "invalid_model_scope",
+        error: "modelOverride and modelOverrideScope must describe one complete intent",
+        modelApplicationState: "rejected",
+        modelApplicationReason: "Explicit model ids require session or next-message scope; clearing requires a runtime-default scope.",
       }),
       { status: 400, headers: { "content-type": "application/json" } },
     );
@@ -1968,6 +1996,19 @@ export async function POST(req: Request) {
             : binding.harness === "grok" ||
               (binding.harness !== "openclaw" && ((await probeCovenCapability(covenRunSupportsModel)) ?? false));
   const explicitModelSelection = body.modelOverride !== undefined && body.modelOverride !== "";
+  if (explicitModelSelection && (!requestedModel || !isModelAllowedByRuntime(binding.harness, requestedModel))) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        code: "unsupported_model_override",
+        error: "The selected model is not allowed by this runtime.",
+        requestedModel,
+        modelApplicationState: "rejected",
+        modelApplicationReason: "The selected runtime does not allow this model id.",
+      }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  }
   if (explicitModelSelection && !modelForwardingEnabled) {
     return new Response(
       JSON.stringify({

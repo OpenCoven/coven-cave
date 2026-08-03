@@ -13,6 +13,8 @@ import { chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat
 import { buildPromptWithAttachments, type ChatAttachment } from "@/lib/chat-attachments";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import type { CodexAutomation } from "@/lib/codex-automations-types";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { isSshRuntime } from "@/lib/familiar-runtime";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
@@ -61,6 +63,31 @@ function objectArray<T>(value: unknown): T[] {
 function queuedRuntime(payload: Record<string, unknown>): string | null {
   const metadata = record(payload.responseMetadata);
   return stringValue(metadata.runtime);
+}
+
+/**
+ * The hub daemon's session endpoint currently accepts model selection but not
+ * per-turn control families. Do not let a replay appear synced after the JSON
+ * parser silently ignores those fields.
+ */
+export function daemonReplayControlFamilies(payload: Record<string, unknown>): string[] {
+  const families = new Set<string>();
+  if (stringValue(payload.reasoningEffort)) families.add("reasoning");
+  if (stringValue(payload.responseSpeed)) families.add("performance");
+  const modelControls = record(payload.modelControls);
+  const knownFamilies = new Set([
+    "reasoning",
+    "performance",
+    "verbosity",
+    "output-limit",
+    "modalities",
+    "tool-support",
+  ]);
+  for (const [family, value] of Object.entries(modelControls)) {
+    if (value === undefined || value === null || value === "") continue;
+    families.add(knownFamilies.has(family) ? family : "model-controls");
+  }
+  return [...families];
 }
 
 function replayError(err: unknown): string {
@@ -125,6 +152,12 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const familiarId = stringValue(payload.familiarId);
   const prompt = stringValue(payload.prompt);
   if (!familiarId || !prompt) throw new Error("queued chat payload missing familiarId or prompt");
+  const controlFamilies = daemonReplayControlFamilies(payload);
+  if (controlFamilies.length) {
+    throw new Error(
+      `queued model controls cannot be replayed through the current hub session contract (${controlFamilies.join(", ")})`,
+    );
+  }
   const runtime = queuedRuntime(payload);
   if (runtime?.startsWith("ssh:")) {
     throw new Error("queued SSH-runtime chat cannot be replayed as a local hub session");
@@ -138,6 +171,17 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   });
 
   const binding = bindingFor(config, familiarId);
+  const queuedMetadata = record(payload.responseMetadata);
+  const queuedHarness = stringValue(queuedMetadata.harness);
+  if (
+    queuedHarness &&
+    canonicalHarnessId(queuedHarness) !== canonicalHarnessId(binding.harness)
+  ) {
+    throw new Error("queued chat runtime binding changed while offline; choose the runtime again before replaying");
+  }
+  if (runtime?.startsWith("local:") && isSshRuntime(binding.runtime)) {
+    throw new Error("queued local-runtime chat cannot be replayed after this familiar moved to SSH");
+  }
   const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
   if (profileBlock) throw new Error(profileBlock);
   const attachments = objectArray<ChatAttachment>(payload.attachments);

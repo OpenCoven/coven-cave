@@ -483,7 +483,10 @@ struct ChatView: View {
     }
 
     private var presentedModelPickerAllowsRuntimeDefault: Bool {
-        modelPresentationIsCurrent && modelPickerAllowsRuntimeDefault
+        // A Cave-owned default still needs an explicit clear action after a
+        // session model has been selected; runtime ownership only controls
+        // whether the unselected state is the normal initial default.
+        modelPresentationIsCurrent && (modelPickerAllowsRuntimeDefault || sessionModelState != nil)
     }
 
     private var presentedModelPickerProvenance: String? {
@@ -1460,6 +1463,13 @@ struct ChatView: View {
             modelPickerOptions = options
             modelPickerCurrent = thread.pendingModelOverride ?? resp.state.effectiveModel
             showModelPicker = true
+            return
+        }
+
+        if ["default", "runtime-default"].contains(trimmed.lowercased()) {
+            if let task = selectModel(nil, familiarId: familiarId, sessionId: sessionId) {
+                await task.value
+            }
             return
         }
 

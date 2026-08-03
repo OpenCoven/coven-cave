@@ -11,9 +11,11 @@ import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
 import { modelControlCapabilities } from "@/lib/model-control-capabilities";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { hermesApiConfig } from "@/lib/hermes-responses-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { isValidFamiliarId } from "@/lib/server/familiar-id";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -111,6 +113,7 @@ export async function GET(req: Request) {
       ? ""
       : cleanModelId(rawPreviewModel);
   if (!familiarId) return jsonError("familiarId is required", 400);
+  if (!isValidFamiliarId(familiarId)) return jsonError("invalid familiar id", 400);
   if (sessionId && !isSafeConversationSessionId(sessionId)) {
     return jsonError("invalid session id", 400);
   }
@@ -192,10 +195,16 @@ export async function PATCH(req: Request) {
   const scope = body.scope;
 
   if (!familiarId) return jsonError("familiarId is required", 400);
+  if (!isValidFamiliarId(familiarId)) return jsonError("invalid familiar id", 400);
   if (sessionId && !isSafeConversationSessionId(sessionId)) {
     return jsonError("invalid session id", 400);
   }
   if (!clearModel && !model) return jsonError("invalid model", 400);
+  const config = await loadConfig();
+  const binding = bindingFor(config, familiarId);
+  if (model && !isModelAllowedByRuntime(binding.harness, model)) {
+    return jsonError("model is not allowed by this runtime", 400);
+  }
   if (scope === "next-message") {
     return jsonError("next-message scope is composer-local", 400);
   }
@@ -204,7 +213,6 @@ export async function PATCH(req: Request) {
   }
 
   if (scope === "familiar-default") {
-    const config = await loadConfig();
     await saveConfig({
       familiars: {
         [familiarId]: {

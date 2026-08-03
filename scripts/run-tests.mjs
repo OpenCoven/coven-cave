@@ -106,6 +106,8 @@ export const SUITES = {
     "src/components/chat-view-chunk-coalescing.test.ts",
     "src/lib/chunk-coalescer.test.ts",
     "src/components/chat-view-scroll-pin.test.ts",
+    "src/components/home/use-home-model-state.test.ts",
+    "src/lib/model-selection-mutation-queue.test.ts",
     "src/lib/perf/web-vitals-format.test.ts",
     "src/lib/app-version.test.ts",
     "src/lib/endpoint-validators.test.ts",

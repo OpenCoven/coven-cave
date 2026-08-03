@@ -9,6 +9,8 @@ import {
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
 import { canonicalHarnessId, isBindableRuntimeChoice } from "@/lib/harness-adapters";
+import { createModelSelectionMutationQueue } from "@/lib/model-selection-mutation-queue";
+import { modelForRuntimeSwitch, runtimeOwnsModelDefault } from "@/lib/runtime-models";
 import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 import type { RuntimeModelOption } from "@/lib/grok-build";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
@@ -98,8 +100,8 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [draftHarness, setDraftHarness] = useState(familiar.harnessOverride ?? "");
   const [draftModel, setDraftModel] = useState(familiar.model ?? "");
   // Explicit "Custom..." mode. Without this flag an empty draft is ambiguous:
-  // "" is both "Inherit default" and "custom id being typed", so the select
-  // could never actually display Inherit default (it always fell through to
+  // "" is both "Runtime default" and "custom id being typed", so the select
+  // could never actually display Runtime default (it always fell through to
   // Custom). Non-empty unlisted ids still force custom mode via render logic.
   const [modelCustomMode, setModelCustomMode] = useState(false);
   const [draftNote, setDraftNote] = useState(familiar.note ?? "");
@@ -143,6 +145,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
   const previewAbortRef = useRef<AbortController | null>(null);
+  const modelMutationQueueRef = useRef(createModelSelectionMutationQueue());
   // Generation counter: bumping it invalidates any preview fetch still in
   // flight, so a stop click (or voice switch) can't be overtaken by late audio.
   const previewGenRef = useRef(0);
@@ -285,7 +288,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const modelOptions = runtimeModelInventory.models;
   const allowCustomModel = runtimeModelInventory.allowCustom;
   const draftModelIsListed = modelOptions.some((option) => option.id === draftModel);
-  // "" means Inherit default — only a non-empty unlisted id (or the user
+  // "" means Runtime default — only a non-empty unlisted id (or the user
   // explicitly picking Custom...) should switch the select to Custom.
   const modelIsCustom = modelCustomMode || (draftModel !== "" && !draftModelIsListed);
 
@@ -828,8 +831,14 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                     label="Runtime"
                     value={draftHarness}
                     onChange={(next) => {
+                      // A runtime switch invalidates the previous runtime's
+                      // model. Keep an explicit empty sentinel so a stale
+                      // provider-qualified id cannot follow the familiar.
+                      const nextModel = modelForRuntimeSwitch(next);
                       setDraftHarness(next);
-                      void save({ harness: next || null });
+                      setDraftModel(nextModel);
+                      setModelCustomMode(false);
+                      void modelMutationQueueRef.current.enqueue(() => save({ harness: next || null, model: nextModel }));
                     }}
                     className="familiar-studio-brain__input"
                     options={[
@@ -887,11 +896,16 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         }
                         setModelCustomMode(false);
                         setDraftModel(next);
-                        void save({ model: next });
+                        void modelMutationQueueRef.current.enqueue(() => save({ model: next }));
                       }}
                       className="familiar-studio-brain__input"
                       options={[
-                        { value: "", label: "Inherit default" },
+                        {
+                          value: "",
+                          label: familiar.model === "" || runtimeOwnsModelDefault(harnessId)
+                            ? "Runtime default"
+                            : "Cave default",
+                        },
                         ...(modelIsCustom && draftModel && !allowCustomModel
                           ? [{
                               value: draftModel,
@@ -911,10 +925,10 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                       onChange={(e) => setDraftModel(e.target.value)}
                       onBlur={() => {
                         const trimmed = draftModel.trim();
-                        // Blurring an empty custom field falls back to Inherit
+                        // Blurring an empty custom field falls back to Runtime
                         // default instead of lingering as a blank Custom row.
                         if (!trimmed) setModelCustomMode(false);
-                        void save({ model: trimmed });
+                        void modelMutationQueueRef.current.enqueue(() => save({ model: trimmed }));
                       }}
                       placeholder="provider/model"
                       autoCapitalize="none"
