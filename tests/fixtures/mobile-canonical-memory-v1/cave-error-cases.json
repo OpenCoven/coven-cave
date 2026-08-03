@@ -1,0 +1,30 @@
+[
+  {
+    "ok": false,
+    "code": "mobile_access_required"
+  },
+  {
+    "ok": false,
+    "code": "local_daemon_required"
+  },
+  {
+    "ok": false,
+    "code": "canonical_memory_unavailable"
+  },
+  {
+    "ok": false,
+    "code": "capability_unavailable"
+  },
+  {
+    "ok": false,
+    "code": "daemon_update_required"
+  },
+  {
+    "ok": false,
+    "code": "invalid_daemon_payload"
+  },
+  {
+    "ok": false,
+    "code": "memory_not_found"
+  }
+]
