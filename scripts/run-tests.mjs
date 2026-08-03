@@ -1523,6 +1523,7 @@ const ALIAS_LOADER = new Set([
   // Imports the module under test, which resolves "@/lib/github-repo-link".
   "src/lib/project-setup-validation.test.ts",
   "src/lib/use-role-surfaces-loader.test.ts",
+  "src/lib/workspace-url-state.test.ts",
   "src/components/home/use-home-model-state.test.ts",
   "src/components/role-surfaces/researcher-status.test.ts",
   // review-readiness resolves "@/lib/github-checks" for its check rollups.
