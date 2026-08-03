@@ -89,7 +89,10 @@ for (const command of ["/auto", "/journal", "/automations", "/remind", "/attach"
   const escaped = command.replace("/", "\\/");
   assert.match(
     iosSlash,
-    new RegExp(`name: "${escaped}"[\\s\\S]{0,260}availability: \\.desktopOnly`),
+    // Bounded by the NEXT SlashCommand( rather than a character count: a
+    // fixed window is too small for a verbose description and, widened,
+    // starts matching the following entry's availability instead.
+    new RegExp(`name: "${escaped}"(?:(?!SlashCommand\\()[\\s\\S])*?availability: \\.desktopOnly`),
     `${command} should remain recognized but hidden because it has no iOS surface`,
   );
 }
