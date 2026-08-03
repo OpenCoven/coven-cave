@@ -150,7 +150,7 @@ export type WorktreeLifecycleBudgets = {
   };
 };
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+export const RETIREMENT_COOLDOWN_MS = 8 * 60 * 60 * 1000;
 const RECOVERY_BRANCH = /^(?:backup|archive|rescue)\//i;
 const WIP_BRANCH = /(?:^|[/-])wip(?:$|[/-])/i;
 const DISPOSABLE_IGNORED_ROOTS = [
@@ -418,15 +418,15 @@ function classifyLifecycleUnitInternal(
   }
 
   const ageMs = nowMs - observation.updatedAtMs;
-  if (ageMs < DAY_MS) {
+  if (ageMs < RETIREMENT_COOLDOWN_MS) {
     return withReasons(observation, "cooldown", [
-      "landed work remains inside the mandatory 24-hour cooldown",
+      "landed work remains inside the mandatory 8-hour cooldown",
       ...reviewAfterReasons(observation.metadata, nowMs),
     ]);
   }
 
   return withReasons(observation, "retire-after-gate", [
-    "clean landed work is older than 24 hours",
+    "clean landed work is older than 8 hours",
     "removal still requires the repository-wide maintenance gate and final deletion proof",
     ...reviewAfterReasons(observation.metadata, nowMs),
   ]);
@@ -468,14 +468,14 @@ function classifyLifecycleUnitWithoutMetadata(
   }
 
   const ageMs = nowMs - observation.updatedAtMs;
-  if (ageMs < DAY_MS) {
+  if (ageMs < RETIREMENT_COOLDOWN_MS) {
     return withReasons(observation, "cooldown", [
-      "landed work remains inside the mandatory 24-hour cooldown",
+      "landed work remains inside the mandatory 8-hour cooldown",
     ]);
   }
 
   return withReasons(observation, "retire-after-gate", [
-    "clean landed work is older than 24 hours",
+    "clean landed work is older than 8 hours",
     "removal still requires the repository-wide maintenance gate and final deletion proof",
   ]);
 }

@@ -6,11 +6,17 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 const workspaceSidebar = await readFile(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const shellNavigation = await readFile(new URL("../styles/globals/shell-navigation.css", import.meta.url), "utf8");
 
 // workspace-sidebar.tsx feature assertions
 assert.match(workspaceSidebar, /deriveChatProjectGroups\(applyProjectOverrides/, "should group by project with overrides");
 assert.match(workspaceSidebar, /handleRegister/, "should offer register-as-project for unregistered roots");
 assert.match(workspaceSidebar, /Register \$\{label\} as a project/, "register label must be accessible");
+assert.match(
+  shellNavigation,
+  /\.cnav__error-text\s*\{[\s\S]*?overflow-wrap:\s*anywhere;[\s\S]*?white-space:\s*normal;/,
+  "the sidebar keeps the actionable project-registration error readable instead of ellipsizing it",
+);
 assert.match(workspaceSidebar, /deriveChatRecencyBuckets\(/, "should derive time buckets for Recent view");
 assert.match(workspaceSidebar, /Organize sidebar/, "should expose Organize sidebar menu");
 assert.match(workspaceSidebar, /readChatSidebarView\(\)/, "organize mode should hydrate from persisted pref");

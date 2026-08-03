@@ -22,6 +22,11 @@ The result must preserve the branch curator's fail-closed safety model:
 - no apply-mode mutation is enabled until the repository-wide maintenance gate
   excludes every supported local and remote writer.
 
+The separately specified
+[manual maintainer-authorized cleanup profile](2026-08-01-maintainer-authorized-branch-cleanup-design.md)
+does not enable automatic apply mode or remote deletion by automation. It is a
+bounded operator path with fresh proof and exact expected-OID mutations.
+
 ## Current state
 
 The repository already has three relevant pieces:
@@ -184,7 +189,7 @@ maintenance transaction:
    request, or active workflow owns the path, branch, or exact OID.
 6. Every liveness query is complete and schema-valid.
 7. The latest commit, branch reflog, worktree HEAD reflog, and exact merge are
-   outside the mandatory 24-hour cooldown.
+   outside the mandatory 8-hour cooldown.
 8. The exact local OID is on the freshly fetched default branch or exactly
    matches the recorded head of a pull request merged into that default branch.
 9. Structured lifecycle metadata exists and no unexpired exception or recovery
@@ -378,4 +383,4 @@ lifecycle cases. Existing safety cases must not regress.
 - No age-only or name-only stale inference.
 - No automatic cleanup of unstructured legacy state before metadata backfill.
 - No claim that raw Git worktree creation is universally blocked.
-- No weakening of the 24-hour cooldown or existing recovery guarantees.
+- No weakening of the 8-hour cooldown or existing recovery guarantees.

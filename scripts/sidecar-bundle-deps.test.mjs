@@ -79,6 +79,17 @@ for (const forbiddenRoot of [
 }
 assert.match(closureSource, /fileCount: 5_841/, "runtime closure must retain combined cross-platform headroom");
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
+for (const runtimeFile of [
+  "dist/compiled/webpack/webpack-lib.js",
+  "dist/compiled/webpack/webpack.js",
+  "dist/compiled/webpack/bundle5.js",
+]) {
+  assert.match(
+    closureSource,
+    new RegExp(runtimeFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    `runtime closure must retain Next startup file ${runtimeFile}`,
+  );
+}
 
 // App-size: runtime bundles must drop test/dev packages and metadata that are
 // useful only while developing or debugging the build machine.

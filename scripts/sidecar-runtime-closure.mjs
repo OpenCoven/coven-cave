@@ -35,6 +35,15 @@ export const SIDECAR_DYNAMIC_PACKAGES = Object.freeze([
   "ws",
 ]);
 
+// Next's server config loader resolves these files dynamically at startup.
+// NFT does not retain them in the sparse standalone dependency tree, so keep
+// the small compiled webpack bootstrap explicitly in the sidecar closure.
+export const SIDECAR_NEXT_RUNTIME_FILES = Object.freeze([
+  "dist/compiled/webpack/webpack-lib.js",
+  "dist/compiled/webpack/webpack.js",
+  "dist/compiled/webpack/bundle5.js",
+]);
+
 export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // Headroom over the ~5.2k baseline: .agents/skills is a runtime root, so
   // each first-party skill shipped to familiars adds a file here (covenwiki
@@ -398,6 +407,60 @@ async function copyNextAliases(standaloneRoot, destination, allowedLinkRoots) {
   }
 }
 
+async function copyNextRuntimeFiles(projectRoot, standaloneRoot, dependencyRoot, destination) {
+  const nextRoots = [
+    path.join(standaloneRoot, "node_modules", "next"),
+    path.join(dependencyRoot, "next"),
+  ];
+  // A required file can be beneath a symlinked `next` package directory, so
+  // checking only the final directory entry is not enough to enforce the
+  // package boundary. Resolve the package root and candidate before copying,
+  // while still letting copyResolvedEntry apply its existing final-entry link
+  // checks. A required entry may only resolve within its own `next` package;
+  // allowing the broader project or node_modules roots could copy unrelated
+  // dependency trees into the sidecar.
+  const resolvedPackageRoots = await Promise.all(
+    [standaloneRoot, path.join(projectRoot, "node_modules"), dependencyRoot].map((root) => realpath(root)),
+  );
+
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    let source = null;
+    for (const root of nextRoots) {
+      const candidate = path.join(root, relativePath);
+      try {
+        const resolvedNextRoot = await realpath(root);
+        if (!resolvedPackageRoots.some((allowedRoot) => isInside(allowedRoot, resolvedNextRoot))) {
+          throw new Error(`sidecar dependency link escapes its allowed roots: ${root} -> ${resolvedNextRoot}`);
+        }
+        const nextPackage = JSON.parse(await readFile(path.join(resolvedNextRoot, "package.json"), "utf8"));
+        if (nextPackage.name !== "next") {
+          throw new Error(`sidecar Next package root is not the Next package: ${root} -> ${resolvedNextRoot}`);
+        }
+        const resolvedCandidate = await realpath(candidate);
+        if (!isInside(resolvedNextRoot, resolvedCandidate)) {
+          throw new Error(`sidecar dependency link escapes its allowed roots: ${candidate} -> ${resolvedCandidate}`);
+        }
+        const metadata = await stat(resolvedCandidate);
+        if (!metadata.isFile()) {
+          throw new Error(`required Next sidecar runtime file is not a regular file: ${relativePath}`);
+        }
+        source = { path: resolvedCandidate, root: resolvedNextRoot };
+        break;
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+    if (!source) {
+      throw new Error(`required Next sidecar runtime file is missing: ${relativePath}`);
+    }
+    await copyResolvedEntry(
+      source.path,
+      path.join(destination, "node_modules", "next", relativePath),
+      { followLinks: true, allowedLinkRoots: [source.root] },
+    );
+  }
+}
+
 export async function assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination) {
   const roots = [projectRoot, standaloneRoot, dependencyRoot].map((root) => path.resolve(root));
   [projectRoot, standaloneRoot, dependencyRoot, destination] = [
@@ -485,6 +548,7 @@ export async function assembleSidecarRuntime(projectRoot, standaloneRoot, depend
   for (const packageName of SIDECAR_DYNAMIC_PACKAGES) {
     await copyDynamicPackage(packageName, dependencyRoot, destination, roots);
   }
+  await copyNextRuntimeFiles(projectRoot, standaloneRoot, dependencyRoot, destination);
   await copyDynamicNativePackages(dependencyRoot, destination, roots);
   await copyNextAliases(standaloneRoot, destination, roots);
 
@@ -532,13 +596,26 @@ export async function verifySidecarRuntime(root) {
     "node_modules/react-dom/package.json",
     "node_modules/sharp/package.json",
     "node_modules/ws/package.json",
+    ...SIDECAR_NEXT_RUNTIME_FILES.map((relativePath) => path.join("node_modules/next", relativePath)),
     "package.json",
     "public/sandbox/react-runtime.js",
     "server.js",
     "server.mjs",
     "vault.yaml",
   ];
-  for (const relativePath of required) await stat(path.join(root, relativePath));
+  for (const relativePath of required) {
+    try {
+      const metadata = await stat(path.join(root, relativePath));
+      if (!metadata.isFile()) {
+        throw new Error(`required sidecar runtime file is not a regular file: ${relativePath}`);
+      }
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        throw new Error(`required sidecar runtime file is missing: ${relativePath}`);
+      }
+      throw error;
+    }
+  }
   for (const forbiddenRoot of SIDECAR_FORBIDDEN_ROOTS) {
     try {
       await stat(path.join(root, forbiddenRoot));

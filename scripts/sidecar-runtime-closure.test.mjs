@@ -8,6 +8,7 @@ import {
   assembleSidecarRuntime,
   collectTracedDependencies,
   SIDECAR_FORBIDDEN_ROOTS,
+  SIDECAR_NEXT_RUNTIME_FILES,
   SIDECAR_RUNTIME_BUDGETS,
   verifySidecarRuntime,
 } from "./sidecar-runtime-closure.mjs";
@@ -80,6 +81,9 @@ try {
     await packageFixture(projectRoot, packageName);
     await packageFixture(path.dirname(dependencyRoot), packageName);
   }
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    await write(dependencyRoot, path.join("next", relativePath), "next runtime fixture\n");
+  }
   await write(projectRoot, "node_modules/@img/sharp-win32-x64/lib/libvips-42.dll", "native dependency\n");
   await write(dependencyRoot, "@img/sharp-win32-x64/lib/libvips-42.dll", "native dependency\n");
   await write(projectRoot, "node_modules/foo/node_modules/evil/index.js", "must not be copied\n");
@@ -109,6 +113,12 @@ try {
   assert.equal(await readFile(path.join(destination, "marketplace/plugins/example/plugin.json"), "utf8"), "{}\n");
   assert.equal(await readFile(path.join(destination, "workflows/example.yaml"), "utf8"), "id: example\n");
   assert.equal(await readFile(path.join(destination, "public/sandbox/tailwind.js"), "utf8"), "tailwind\n");
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    assert.equal(
+      await readFile(path.join(destination, "node_modules", "next", relativePath), "utf8"),
+      "next runtime fixture\n",
+    );
+  }
   assert.equal(await readFile(path.join(destination, "node_modules/foo/index.js"), "utf8"), 'module.exports = "foo";\n');
   assert.equal(
     await readFile(path.join(destination, "node_modules/@img/sharp-win32-x64/lib/libvips-42.dll"), "utf8"),
@@ -119,6 +129,39 @@ try {
   for (const forbiddenRoot of SIDECAR_FORBIDDEN_ROOTS) {
     assert.ok(await missing(path.join(destination, forbiddenRoot)), `${forbiddenRoot} must be excluded`);
   }
+
+  const missingRuntimePath = SIDECAR_NEXT_RUNTIME_FILES[0];
+  await rm(path.join(dependencyRoot, "next", missingRuntimePath));
+  await assert.rejects(
+    assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+    new RegExp(`required Next sidecar runtime file is missing: ${missingRuntimePath.replace(/[.*+?^${}()|[\\]\\]/g, "\\\\$&")}`),
+    "assembly must fail clearly when a required Next runtime file is absent",
+  );
+  await write(dependencyRoot, path.join("next", missingRuntimePath), "next runtime fixture\n");
+
+  const directoryRuntimePath = SIDECAR_NEXT_RUNTIME_FILES[1];
+  await rm(path.join(dependencyRoot, "next", directoryRuntimePath));
+  await mkdir(path.join(dependencyRoot, "next", directoryRuntimePath), { recursive: true });
+  await assert.rejects(
+    assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+    /required Next sidecar runtime file is not a regular file/,
+    "assembly must reject a directory where a required Next runtime file belongs",
+  );
+  await rm(path.join(dependencyRoot, "next", directoryRuntimePath), { recursive: true });
+  await write(dependencyRoot, path.join("next", directoryRuntimePath), "next runtime fixture\n");
+  await assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination);
+
+  const verifiedDirectoryPath = SIDECAR_NEXT_RUNTIME_FILES[2];
+  const verifiedDirectory = path.join(destination, "node_modules", "next", verifiedDirectoryPath);
+  await rm(verifiedDirectory);
+  await mkdir(verifiedDirectory, { recursive: true });
+  await assert.rejects(
+    verifySidecarRuntime(destination),
+    /required sidecar runtime file is not a regular file: node_modules[\\/]next[\\/]dist[\\/]compiled[\\/]webpack[\\/]bundle5\.js/,
+    "final runtime verification must reject a non-file required entry",
+  );
+  await rm(verifiedDirectory, { recursive: true });
+  await write(destination, path.join("node_modules", "next", verifiedDirectoryPath), "next runtime fixture\n");
 
   const optionalPackage = "@next/swc-linux-x64-gnu";
   await packageFixture(projectRoot, optionalPackage);
@@ -169,6 +212,91 @@ try {
   } finally {
     await rm(path.join(dependencyRoot, "sharp"), { recursive: true, force: true });
     await packageFixture(path.dirname(dependencyRoot), "sharp");
+  }
+
+  // The explicit Next runtime files are nested below a package root, so the
+  // package directory itself must also be confined rather than only its final
+  // file entry.
+  const externalNextRoot = path.join(projectRoot, "outside-allowed-roots", "next");
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    await write(externalNextRoot, relativePath, "outside runtime\n");
+  }
+  await packageFixture(standaloneRoot, "next");
+  await rm(path.join(dependencyRoot, "next"), { recursive: true, force: true });
+  try {
+    await symlink(
+      externalNextRoot,
+      path.join(dependencyRoot, "next"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await assert.rejects(
+      assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+      /sidecar dependency link escapes its allowed roots/,
+      "Next runtime files must not follow a package-root link outside the locked production root",
+    );
+  } catch (error) {
+    if (!["EPERM", "EACCES", "ENOSYS"].includes(error.code)) throw error;
+    console.warn(`sidecar-runtime-closure.test: Next package-link confinement skipped (${error.code})`);
+  } finally {
+    await rm(path.join(dependencyRoot, "next"), { recursive: true, force: true });
+    await packageFixture(path.dirname(dependencyRoot), "next");
+    for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+      await write(dependencyRoot, path.join("next", relativePath), "next runtime fixture\n");
+    }
+  }
+
+  // A package-root link that stays inside node_modules must still point to the
+  // actual Next package; otherwise the explicit paths could import an
+  // unrelated dependency tree that happens to contain matching filenames.
+  const unrelatedNextRoot = path.join(projectRoot, "node_modules", "unrelated-next");
+  await packageFixture(projectRoot, "unrelated-next");
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    await write(unrelatedNextRoot, relativePath, "unrelated runtime\n");
+  }
+  await rm(path.join(dependencyRoot, "next"), { recursive: true, force: true });
+  try {
+    await symlink(
+      unrelatedNextRoot,
+      path.join(dependencyRoot, "next"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await assert.rejects(
+      assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+      /sidecar Next package root is not the Next package/,
+      "an allowed-root link must still resolve to the actual Next package",
+    );
+  } catch (error) {
+    if (!(["EPERM", "EACCES", "ENOSYS"].includes(error.code))) throw error;
+    console.warn(`sidecar-runtime-closure.test: internal Next package-link confinement skipped (${error.code})`);
+  } finally {
+    await rm(path.join(dependencyRoot, "next"), { recursive: true, force: true });
+    await packageFixture(path.dirname(dependencyRoot), "next");
+    for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+      await write(dependencyRoot, path.join("next", relativePath), "next runtime fixture\n");
+    }
+  }
+
+  const externalNextFile = path.join(projectRoot, "node_modules", "unrelated-runtime.js");
+  await writeFile(externalNextFile, "outside runtime\n", "utf8");
+  const linkedRuntimePath = path.join(dependencyRoot, "next", SIDECAR_NEXT_RUNTIME_FILES[0]);
+  await rm(linkedRuntimePath);
+  try {
+    await symlink(
+      externalNextFile,
+      linkedRuntimePath,
+      process.platform === "win32" ? "file" : undefined,
+    );
+    await assert.rejects(
+      assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+      /sidecar dependency link escapes its allowed roots/,
+      "Next runtime files must not follow a link into an unrelated dependency tree",
+    );
+  } catch (error) {
+    if (!(["EPERM", "EACCES", "ENOSYS"].includes(error.code))) throw error;
+    console.warn(`sidecar-runtime-closure.test: Next file-link confinement skipped (${error.code})`);
+  } finally {
+    await rm(linkedRuntimePath, { force: true });
+    await write(dependencyRoot, linkedRuntimePath.slice(dependencyRoot.length + 1), "next runtime fixture\n");
   }
 
   const publishedArchive = path.join(fixture, "published", "server.tar.zst");

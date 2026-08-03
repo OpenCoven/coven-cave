@@ -598,15 +598,15 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
     assert.match(budget, new RegExp("FROM `" + table + "`"), `budget must inspect MSI ${table} rows`);
   }
   for (const [metric, limit] of Object.entries({
-    fileRows: 382,
-    componentRows: 387,
-    createFolderRows: 382,
-    directoryRows: 50,
+    fileRows: 741,
+    componentRows: 746,
+    createFolderRows: 741,
+    directoryRows: 88,
   })) {
     assert.match(
       budget,
       new RegExp(`${metric} = ${limit}`),
-      `${metric} must stay pinned to the independently measured post-placeholder baseline`,
+      `${metric} must stay pinned to the independently measured v0.2.2 Kokoro baseline`,
     );
   }
   assert.doesNotMatch(

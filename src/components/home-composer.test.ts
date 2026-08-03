@@ -32,8 +32,28 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /useProjects\(\{\s*enabled: Boolean\(selectedFamiliarId\),\s*familiarId: selectedFamiliarId \|\| null,\s*\}\)/,
-  "HomeComposer should load projects only for a selected familiar, never through the unscoped fallback",
+  /useProjects\(\{\s*enabled: true,\s*familiarId: selectedFamiliarId \|\| null,\s*\}\)/,
+  "HomeComposer should keep the operator project registry visible before a familiar is selected",
+);
+assert.match(
+  source,
+  /projectsForHomeComposerScope\(scopedProjects, selectedFamiliarId\)/,
+  "HomeComposer should apply the operator-versus-familiar project scope helper",
+);
+assert.match(
+  source,
+  /shouldClearHomeComposerProjectSelection\(projects, selectedProjectId, projectsLoadedSuccessfully\)/,
+  "HomeComposer should not clear a selected project while the familiar-scoped list is still loading",
+);
+assert.match(
+  source,
+  /homeComposerProjectLaunchMessage\(\{[\s\S]*familiarId: selectedFamiliarId[\s\S]*projectsLoading[\s\S]*projectsError[\s\S]*projectsLoadedSuccessfully[\s\S]*projectCount: projects\.length,/,
+  "HomeComposer should derive launch guidance from the familiar and authoritative project state",
+);
+assert.match(
+  source,
+  /destination === "chat" && !projectLaunchReady/,
+  "HomeComposer should not show chat-only launch guidance for task creation",
 );
 
 // Chat revamp 1a + minimal pass: the hero is the hearth card's heading —

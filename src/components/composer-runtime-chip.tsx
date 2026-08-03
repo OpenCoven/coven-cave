@@ -49,6 +49,8 @@ export function ComposerRuntimePopover({
   modelOptions,
   onPickRuntime,
   onPickModel,
+  promotableModel = null,
+  onPromoteModelToDefault,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -58,6 +60,13 @@ export function ComposerRuntimePopover({
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
   onPickModel: (id: string | null) => void;
+  /** cave-pkapw: a session-scoped model id to offer promoting to the familiar
+   *  default. This component renders the row whenever the value is non-null and
+   *  cannot check it itself; the CALLER owes the "would actually change the
+   *  default" test (chat-view compares against `familiarDefaultModel`) and
+   *  passes null otherwise, which hides the row. */
+  promotableModel?: string | null;
+  onPromoteModelToDefault?: () => void;
 }) {
   const setOpen = onOpenChange;
   const hasRuntimeDefault = runtimeOwnsModelDefault(runtime);
@@ -125,6 +134,26 @@ export function ComposerRuntimePopover({
                   {m.label}
                 </PopoverItem>
               ))}
+              {/* cave-pkapw: inside a session a model pick is session-scoped,
+                  so the familiar's default is untouched. This promotes it
+                  using the same PATCH a brand-new chat's pick already sends
+                  (scope "familiar-default", no sessionId). Shown only when the
+                  session model differs from that default — otherwise the
+                  action is a no-op and the row is noise. */}
+              {promotableModel && onPromoteModelToDefault ? (
+                <>
+                  <PopoverSeparator />
+                  <PopoverItem
+                    title={`New chats with this familiar will start on ${promotableModel}`}
+                    onSelect={() => {
+                      onPromoteModelToDefault();
+                      setOpen(false);
+                    }}
+                  >
+                    Set as default for new chats
+                  </PopoverItem>
+                </>
+              ) : null}
             </>
           )}
         </PopoverBody>

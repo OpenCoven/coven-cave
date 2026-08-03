@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 const {
   BRANCH_WARNING_BUDGET,
+  RETIREMENT_COOLDOWN_MS,
   WORKTREE_WARNING_BUDGET,
   assessManagedWorktreeCreation,
   calculateLifecycleBudgets,
@@ -15,7 +16,14 @@ const {
 } = await import("./worktree-lifecycle.ts");
 
 const NOW = Date.parse("2026-07-29T22:00:00Z");
+const HOUR = 60 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
+
+assert.equal(
+  RETIREMENT_COOLDOWN_MS,
+  8 * HOUR,
+  "retirement cooldown remains the mandatory eight-hour window",
+);
 
 {
   for (const equivalent of [
@@ -277,22 +285,25 @@ function legacyObservation(overrides = {}) {
     observation({
       metadata: metadata({ disposition: "pr" }),
       mergedPr: { number: 46, headOid: "a".repeat(40), url: "https://example.test/46" },
-      updatedAtMs: NOW - 2 * 60 * 60 * 1000,
+      updatedAtMs: NOW - RETIREMENT_COOLDOWN_MS + 1,
     }),
     NOW,
   );
-  assert.equal(item.lane, "cooldown", "same-day merged work stays visible during the recency window");
-  assert.match(item.reasons.join("\n"), /24-hour cooldown/);
+  assert.equal(item.lane, "cooldown");
+  assert.match(item.reasons.join("\n"), /8-hour cooldown/);
 }
 
 {
-  const item = classifyWorktree(
-    legacyObservation({
+  const item = classifyLifecycleUnit(
+    observation({
+      metadata: metadata({ disposition: "pr" }),
       mergedPr: { number: 47, headOid: "a".repeat(40), url: "https://example.test/47" },
+      updatedAtMs: NOW - RETIREMENT_COOLDOWN_MS,
     }),
     NOW,
   );
   assert.equal(item.lane, "retire-after-gate", "old exact merged heads become owner-actionable");
+  assert.match(item.reasons.join("\n"), /older than 8 hours/);
   assert.match(item.reasons.join("\n"), /maintenance gate/);
 }
 
