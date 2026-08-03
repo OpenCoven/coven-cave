@@ -124,6 +124,7 @@ struct ChatModelBar: View {
     @State private var inventoryProvenance: String?
     @State private var responseBindingScope: String?
     @State private var presentationScope = ChatModelPresentationScope()
+    @State private var modelMutationQueue = ChatModelMutationQueue()
     @State private var showPicker = false
     @State private var busy = false
 
@@ -281,27 +282,30 @@ struct ChatModelBar: View {
         } else if state?.source == "runtime-default" && state?.effectiveModel.isEmpty == true {
             return
         }
-        busy = true
-        defer { busy = false }
         let target = requestTarget
-        // Per-chat when the chat has a server session; otherwise change the
-        // familiar's default so the choice still sticks for the next message.
-        let scope = sessionId != nil ? "session" : "familiar-default"
-        do {
-            let resp = try await client.setChatModel(
-                familiarId: familiarId, sessionId: sessionId, model: model, scope: scope)
-            guard presentationScope.canApplyResponse(
-                for: target,
-                currentTarget: requestTarget
-            ) else { return }
-            state = resp.state
-            if let opts = resp.options { options = opts }
-            allowsRuntimeDefault = resp.inventory?.allowsRuntimeDefault ?? allowsRuntimeDefault
-            inventoryProvenance = resp.inventory?.provenance ?? inventoryProvenance
-            Haptics.tap()
-        } catch {
-            // Leave the prior state in place on failure.
+        busy = true
+        let mutation = modelMutationQueue.enqueue {
+            defer { self.busy = false }
+            // Per-chat when the chat has a server session; otherwise change the
+            // familiar's default so the choice still sticks for the next message.
+            let scope = self.sessionId != nil ? "session" : "familiar-default"
+            do {
+                let resp = try await client.setChatModel(
+                    familiarId: familiarId, sessionId: self.sessionId, model: model, scope: scope)
+                guard self.presentationScope.canApplyResponse(
+                    for: target,
+                    currentTarget: self.requestTarget
+                ) else { return }
+                self.state = resp.state
+                if let opts = resp.options { self.options = opts }
+                self.allowsRuntimeDefault = resp.inventory?.allowsRuntimeDefault ?? self.allowsRuntimeDefault
+                self.inventoryProvenance = resp.inventory?.provenance ?? self.inventoryProvenance
+                Haptics.tap()
+            } catch {
+                // Leave the prior state in place on failure.
+            }
         }
+        await mutation.value
     }
 
     private func shortModel(_ id: String) -> String {

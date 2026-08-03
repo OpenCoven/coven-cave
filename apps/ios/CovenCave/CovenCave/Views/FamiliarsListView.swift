@@ -138,6 +138,7 @@ struct FamiliarDetailView: View {
     @State private var showModelPicker = false
     @State private var showPermissions = false
     @State private var changingModel = false
+    @State private var modelMutationQueue = ChatModelMutationQueue()
 
     private var assignedTasks: [BoardCard] {
         app.tasks.filter { $0.familiarId == familiar.id && $0.status.isActive }
@@ -445,28 +446,31 @@ struct FamiliarDetailView: View {
     private func chooseModel(_ model: String?) async {
         guard let client = app.client else { return }
         changingModel = true
-        defer { changingModel = false }
         let target = modelRequestTarget
-        do {
-            let response = try await client.setChatModel(
-                familiarId: familiar.id,
-                sessionId: nil,
-                model: model,
-                scope: "familiar-default")
-            guard modelPresentationScope.canApplyResponse(
-                for: target,
-                currentTarget: modelRequestTarget
-            ) else { return }
-            modelState = response.state
-            modelOptions = response.options ?? modelOptions
-            modelAllowsRuntimeDefault =
-                response.inventory?.allowsRuntimeDefault ?? modelAllowsRuntimeDefault
-            modelProvenance = response.inventory?.provenance ?? modelProvenance
-            app.showToast("Default model updated", systemImage: "cpu")
-        } catch {
-            app.showToast("Couldn’t update the model",
-                          systemImage: "exclamationmark.triangle.fill",
-                          style: .error)
+        let mutation = modelMutationQueue.enqueue {
+            defer { self.changingModel = false }
+            do {
+                let response = try await client.setChatModel(
+                    familiarId: familiar.id,
+                    sessionId: nil,
+                    model: model,
+                    scope: "familiar-default")
+                guard self.modelPresentationScope.canApplyResponse(
+                    for: target,
+                    currentTarget: self.modelRequestTarget
+                ) else { return }
+                self.modelState = response.state
+                self.modelOptions = response.options ?? self.modelOptions
+                self.modelAllowsRuntimeDefault =
+                    response.inventory?.allowsRuntimeDefault ?? self.modelAllowsRuntimeDefault
+                self.modelProvenance = response.inventory?.provenance ?? self.modelProvenance
+                self.app.showToast("Default model updated", systemImage: "cpu")
+            } catch {
+                self.app.showToast("Couldn’t update the model",
+                                  systemImage: "exclamationmark.triangle.fill",
+                                  style: .error)
+            }
         }
+        await mutation.value
     }
 }

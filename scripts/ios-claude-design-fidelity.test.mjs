@@ -329,6 +329,16 @@ assert.match(
   "the model picker explains a familiar-default mutation",
 );
 assert.match(
+  modelControl,
+  /@State private var modelMutationQueue = ChatModelMutationQueue\(\)[\s\S]{0,7000}private func choose\([\s\S]{0,1300}modelMutationQueue\.enqueue[\s\S]{0,1100}client\.setChatModel/,
+  "chat model PATCHes are serialized in selection order",
+);
+assert.match(
+  familiars,
+  /@State private var modelMutationQueue = ChatModelMutationQueue\(\)[\s\S]{0,12000}private func chooseModel\([\s\S]{0,900}modelMutationQueue\.enqueue[\s\S]{0,900}client\.setChatModel/,
+  "familiar-default model PATCHes are serialized in selection order",
+);
+assert.match(
   familiars,
   /familiar\.activeSessions\.map\(String\.init\) \?\? "Unknown"/,
   "missing live activity is labelled unknown rather than fabricated as zero",
