@@ -894,6 +894,7 @@ export const SUITES = {
     "src/lib/theme-contrast-audit.test.ts",
     "src/lib/design-token-drift.test.ts",
     "src/lib/design-handoff-ledger.test.ts",
+    "src/lib/podcast-script.test.ts",
     "src/lib/dev-shell-recovery.test.ts",
     "src/lib/cave-backdrop.test.ts",
     "src/lib/cave-backdrop-blaze.test.ts",
@@ -1325,6 +1326,7 @@ export const SUITES = {
     "src/lib/voice/speak-message.test.ts",
     "src/lib/voice/speech-loop.test.ts",
     "src/lib/voice/call-transcript.test.ts",
+
     // Landed unwired with /auto mission mode (3bde7b0); check:tests-wired
     // fails on `main` until it is listed. Passes as-is.
     "src/lib/auto-status-blocks.test.ts",
@@ -1530,6 +1532,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint
   "src/lib/chat-tool-batches.test.ts",
   // the reader's footer views resolve "@/lib/tool-visual" for the same tints

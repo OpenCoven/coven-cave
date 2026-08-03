@@ -30,6 +30,7 @@ import {
   type ReactNode,
 } from "react";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { PodcastTranscript } from "@/components/role-surfaces/podcast-transcript";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { copyText } from "@/lib/clipboard";
@@ -518,16 +519,12 @@ export function GenerationReviewModal({
           </dl>
         ) : null}
         {content?.kind === "podcast" ? (
-          <ol className="research-studio-review__list">
-            {content.script.map((segment) => (
-              <li key={segment.id}>
-                {segment.speaker ? (
-                  <strong>{segment.speaker === "host" ? "Host" : "Guest"}</strong>
-                ) : null}
-                <span>{segment.text}</span>
-              </li>
-            ))}
-          </ol>
+          <PodcastTranscript
+            script={content.script}
+            voices={generation.renderConfig?.voices}
+            voice={generation.renderConfig?.voice}
+            density="compact"
+          />
         ) : content?.kind === "short-video" ? (
           <ol className="research-studio-review__list">
             {content.storyboard.map((scene) => (
@@ -1244,6 +1241,20 @@ export function GenerationViewerModal({
             >
               Your browser cannot play this audio file.
             </audio>
+          </div>
+        ) : null}
+
+        {/* The script rides under the player so the episode can be read along
+            with — or instead of — the audio, which is the only way a dialogue
+            is scannable. */}
+        {content?.kind === "podcast" ? (
+          <div className="research-studio-viewer__points">
+            <span className="research-studio-viewer__label">Transcript</span>
+            <PodcastTranscript
+              script={content.script}
+              voices={generation.renderConfig?.voices}
+              voice={generation.renderConfig?.voice}
+            />
           </div>
         ) : null}
 
