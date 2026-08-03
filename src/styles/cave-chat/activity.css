@@ -1171,7 +1171,7 @@ details[open] > .cave-tool-summary::before {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 /* How the call hears (cave-vpe1) and speaks (cave-vony): honest engine
@@ -1209,7 +1209,7 @@ details[open] > .cave-tool-summary::before {
 
 .voice-call-overlay__turn {
   display: grid;
-  gap: 2px;
+  gap: var(--space-1);
   justify-items: start;
 }
 
@@ -1231,7 +1231,7 @@ details[open] > .cave-tool-summary::before {
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-md);
   background: color-mix(in oklch, var(--bg-base) 45%, transparent);
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   color: var(--text-primary);
   font-size: var(--text-sm);
   line-height: 1.5;
@@ -1278,7 +1278,7 @@ details[open] > .cave-tool-summary::before {
    lands in the same conversation. */
 .voice-call-overlay__reply {
   display: grid;
-  gap: 6px;
+  gap: var(--space-1);
   border-top: 1px solid var(--border-hairline);
   padding: var(--space-3) var(--space-4);
 }
@@ -1287,7 +1287,7 @@ details[open] > .cave-tool-summary::before {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
@@ -1311,14 +1311,14 @@ details[open] > .cave-tool-summary::before {
   align-items: center;
   border: 0;
   background: none;
-  padding: 2px;
+  padding: var(--space-1);
   color: var(--text-muted);
   cursor: pointer;
 }
 
 .voice-call-overlay__reply-row {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .voice-call-overlay__reply-input {
@@ -1327,7 +1327,7 @@ details[open] > .cave-tool-summary::before {
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--bg-base) 70%, transparent);
-  padding: 6px var(--space-2);
+  padding: var(--space-2);
   color: var(--text-primary);
   font-size: var(--text-sm);
 }
@@ -1415,7 +1415,7 @@ details[open] > .cave-tool-summary::before {
 .voice-call-overlay__controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .voice-call-overlay__footer {
