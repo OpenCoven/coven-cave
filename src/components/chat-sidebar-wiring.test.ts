@@ -127,6 +127,15 @@ assert.match(
   /id="chat-sidebar-group-panel"[\s\S]*?role="tabpanel"[\s\S]*?aria-labelledby=\{`chat-sidebar-group-tab-\$\{view\}`\}[\s\S]*?<nav aria-label="Chat threads">/,
   "The active thread list should be associated with its selected grouping tab",
 );
+const chatSidebarPanelOpenTag = workspaceSidebar.match(
+  /<div\s*\n\s*id="chat-sidebar-group-panel"[\s\S]*?>/,
+)?.[0] ?? "";
+assert.ok(chatSidebarPanelOpenTag, "ChatSidebar should render the active grouping panel");
+assert.doesNotMatch(
+  chatSidebarPanelOpenTag,
+  /tabIndex=/,
+  "the tabpanel should not add a redundant keyboard stop before its interactive rows",
+);
 assert.match(
   workspaceSidebar,
   /id: "recent",[\s\S]*?label: "Recent",[\s\S]*?icon: "ph:clock-counter-clockwise",[\s\S]*?controlsId: "chat-sidebar-group-panel"/,

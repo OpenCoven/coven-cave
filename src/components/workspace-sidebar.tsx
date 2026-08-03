@@ -720,7 +720,6 @@ export function WorkspaceSidebar({
           id="chat-sidebar-group-panel"
           role="tabpanel"
           aria-labelledby={`chat-sidebar-group-tab-${view}`}
-          tabIndex={0}
           className="cnav__scroll focus-ring-inset"
         >
           <nav aria-label="Chat threads">
