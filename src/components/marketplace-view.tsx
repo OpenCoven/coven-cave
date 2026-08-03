@@ -33,7 +33,6 @@ import { MarketplaceConfigure } from "@/components/marketplace/marketplace-confi
 import { SkillBuilder } from "@/components/marketplace/skill-builder";
 import { SkillsComingSoon } from "@/components/marketplace/skills-coming-soon";
 import { type SkillBrowserEntry } from "@/lib/skill-directory";
-import { type FamiliarForSkill } from "@/components/skill-detail-drawer";
 import { SkillExploreCard } from "@/components/marketplace/skill-explore-card";
 import { SkillExploreDrawer } from "@/components/marketplace/skill-explore-drawer";
 import {
@@ -75,8 +74,10 @@ export type { MarketplaceSection } from "@/components/marketplace/marketplace-vi
 type Props = {
   /** Which section to land on — deep links from the roles/capabilities modes. */
   initialSection?: MarketplaceSection;
-  /** Familiars offered by the skill detail drawer's "try it" affordances. */
-  familiars?: FamiliarForSkill[];
+  /** The familiar the user is working as. Threaded to the Skill Builder's
+   *  Enhance, which runs an LLM call through it — that is the user's choice to
+   *  make, not the roster's sort order. */
+  activeFamiliarId?: string | null;
   /** Opens a chat with the familiar that owns a role. Unused while the Roles
    *  section is hidden; kept so re-enabling Roles is a UI-only change. */
   onOpenChat?: (familiarId: string) => void;
@@ -84,7 +85,7 @@ type Props = {
 
 export function MarketplaceViewSurface({
   initialSection = "browse",
-  familiars = [],
+  activeFamiliarId = null,
 }: Props = {}) {
   const craftsEnabled = caveCrafts();
   // Roles and Capabilities are hidden: their deep links land on Browse.
@@ -954,7 +955,7 @@ export function MarketplaceViewSurface({
           className="flex min-h-0 flex-1 flex-col"
         >
           <SkillBuilder
-            familiars={familiars}
+            activeFamiliarId={activeFamiliarId}
             onSaved={() => {
               invalidateSurfaceResources("marketplace:skills");
               void loadSkills(true);

@@ -790,6 +790,7 @@ export const SUITES = {
     "src/lib/gh-review-draft.test.ts",
     "src/components/skill-stage-card-wiring.test.ts",
     "src/lib/github-stage.test.ts",
+    "src/components/familiar-no-silent-default.test.ts",
     "src/components/github-view-polish.test.ts",
     "src/components/github-advanced.test.ts",
     "src/components/github-native-open.test.ts",

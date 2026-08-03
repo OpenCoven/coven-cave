@@ -252,7 +252,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     ? familiars.find((entry) => entry.id === activeSession.familiarId) ?? null
     : null;
   const chatFamiliar = selectedViewFamiliar ?? sessionFamiliar ?? familiar ?? null;
-  const fallbackFamiliarId = familiar?.id ?? visibleFamiliars[0]?.id ?? null;
   const { projects } = useProjects();
   const projectOverrides = useProjectOverrides();
 
@@ -723,7 +722,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           if (fq) setPendingFind({ query: fq, nonce: Date.now() });
         }}
         onNewChat={(projectRoot, familiarId) => {
-          const next = selectFamiliarForChat(familiarId);
+          // No familiar supplied means the user has not chosen one. Leave it
+          // null so NewChatLaunch renders and asks, rather than adopting
+          // visibleFamiliars[0] and silently making it the active familiar.
+          const next = familiarId ? selectFamiliarForChat(familiarId) : null;
           setView({ kind: "chat", sessionId: null, projectRoot, familiarId: next?.id ?? familiarId ?? null });
         }}
       />
@@ -880,8 +882,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         onOpenSessionInSplit={enableSplit ? handleOpenSessionInSplit : undefined}
         onNewChat={(root) => {
           const group = sidebarGroups.find((g) => g.projectRoot === root);
-          const nextFamiliarId = group?.defaultFamiliarId ?? fallbackFamiliarId;
-          const next = selectFamiliarForChat(nextFamiliarId);
+          // The group's own latest familiar is a real signal. Absent it, ask
+          // rather than fall back to whichever familiar sorts first.
+          const nextFamiliarId = group?.defaultFamiliarId ?? familiar?.id ?? null;
+          const next = nextFamiliarId ? selectFamiliarForChat(nextFamiliarId) : null;
           setView({
             kind: "chat",
             sessionId: null,
