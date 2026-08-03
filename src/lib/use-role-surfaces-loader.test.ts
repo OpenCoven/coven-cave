@@ -682,6 +682,63 @@ test("role-surface session keeps shared-owner rooms aggregate without choosing a
   }
 });
 
+test("role-surface session does not leak an active thread into another familiar context", async () => {
+  const observed = new Map<string, { activeSessionId: string | null; currentThreadId: string | null }>();
+  const unregister = registerRoleSurface({
+    id: "loader-test-thread-isolation-room",
+    role: "researcher",
+    title: "Thread Isolation Room",
+    iconName: "ph:book-open",
+    description: "thread isolation",
+    priority: 20,
+    shouldDisplay: (context) => {
+      observed.set(context.activeFamiliar.id, {
+        activeSessionId: context.runtimeState.activeSessionId,
+        currentThreadId: context.currentThread?.id ?? null,
+      });
+      return true;
+    },
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  let renderer!: ReactTestRenderer;
+
+  function ThreadProbe() {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      familiar: null,
+      familiars: [familiar("research-a"), familiar("research-b")],
+      sessions: [
+        { id: "session-a", familiarId: "research-a" },
+        { id: "session-b", familiarId: "research-b" },
+      ],
+      activeSessionId: "session-a",
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    return createElement("role-surface-thread-probe", {
+      visible: session.visibleSurfaces.length,
+    });
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(ThreadProbe));
+    });
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    assert.deepEqual(observed, new Map([
+      ["research-a", { activeSessionId: "session-a", currentThreadId: "session-a" }],
+      ["research-b", { activeSessionId: null, currentThreadId: null }],
+    ]));
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregister();
+  }
+});
+
 test("role-surface session ignores a late manifest response from a prior scope", async () => {
   const unregister = registerRoleSurface({
     id: "loader-test-late-room",

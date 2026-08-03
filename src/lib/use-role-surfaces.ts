@@ -311,6 +311,7 @@ export function useRoleSurfaceSession(input: {
     for (const candidate of candidateFamiliars) {
       const scoped = sessions.filter((s) => !s.familiarId || s.familiarId === candidate.id);
       const activeManifests = manifests.filter((manifest) => manifest.active && manifest.familiar === candidate.id);
+      const currentThread = scoped.find((s) => s.id === activeSessionId) ?? null;
       const tools: ToolRegistry = {
         async listTools() {
           return activeManifests.flatMap((manifest) => [
@@ -333,8 +334,8 @@ export function useRoleSurfaceSession(input: {
       contexts.set(candidate.id, {
         activeFamiliar: candidate,
         activePerson: null, // the Cave has no person model yet — honest null
-        currentThread: scoped.find((s) => s.id === activeSessionId) ?? null,
-        runtimeState: { daemonRunning, sessions: scoped, activeSessionId },
+        currentThread,
+        runtimeState: { daemonRunning, sessions: scoped, activeSessionId: currentThread?.id ?? null },
         memory: createMemoryAccess(candidate.id),
         tools,
         plugins,
