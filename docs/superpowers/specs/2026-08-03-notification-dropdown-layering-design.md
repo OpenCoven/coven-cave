@@ -34,4 +34,3 @@ mobile layout, and dismissal behavior remain unchanged.
 - Run changed-file lint, the design codemod check, and `git diff --check`.
 - Open the bell in the native Tauri shell and confirm it paints above the
   workspace content.
-

@@ -83,4 +83,3 @@ git status --short
 Expected: the dropdown is unobscured and the product diff contains only the
 conditional CSS rule plus its regression assertion. Do not commit without
 explicit maintainer authorization.
-
