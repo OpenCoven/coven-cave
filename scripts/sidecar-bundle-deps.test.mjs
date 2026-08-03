@@ -174,6 +174,26 @@ assert.ok(
 );
 assert.match(src, /bundle_piper_runtime\(\)/, "release bundling must provision the pinned Piper runtime");
 assert.match(src, /Piper runtime checksum mismatch/, "Piper runtime downloads must be integrity-checked");
+assert.match(
+  src,
+  /piper-phonemize\/releases\/download\/2023\.11\.14-4/,
+  "macOS Piper bundles must source their missing dylib closure from the pinned piper-phonemize release",
+);
+assert.match(
+  src,
+  /Piper phonemize runtime checksum mismatch/,
+  "the supplemental macOS Piper dylib archive must be integrity-checked",
+);
+assert.match(
+  src,
+  /cp -a "\$phonemize_lib_root\/"\*\.dylib "\$PIPER_RUNTIME_DIR\/"/,
+  "macOS Piper bundles must preserve the complete dylib closure and its compatibility symlinks",
+);
+assert.match(
+  src,
+  /install_name_tool -add_rpath @executable_path/,
+  "macOS Piper executables must resolve their staged @rpath dylibs beside the executable",
+);
 assert.ok(
   baseConfig.bundle.resources.includes("resources/kokoro/**/*"),
   "desktop bundles must retain the local Kokoro (sherpa-onnx) runtime",
