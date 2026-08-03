@@ -1524,6 +1524,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  /* Absorb the panel's slack across the three blocks rather than pooling it
+     under the last one — a tall panel should read as composed, not unfinished. */
+  flex: 1;
+  min-height: 0;
+  justify-content: space-between;
 }
 .fa-trend {
   display: flex;
@@ -2583,6 +2588,8 @@
   .fa-stats > * { flex: 1 1 200px; }
   .fa-stat--flip { min-height: 102px; }
   .fa-scope { padding: var(--space-2) var(--space-3); }
+  /* Once the bar wraps, a vertical divider lands mid-air between rows. */
+  .fa-scope__rule { display: none; }
   .fa-scope__summary { flex: 1 1 100%; order: 9; }
   .fa-foot__meta { display: none; }
   .fa-pulse-panel { left: var(--space-4); }
@@ -2609,6 +2616,9 @@
   }
   .fa-dock > * { flex: 1 1 240px; }
   .fa-dock__crumb { flex: 1 1 100%; }
+  /* The rail's children are fixed-size marks — stretching them turns the
+     avatar into a smear and the trust pip into a lozenge. */
+  .fa-dock--rail > * { flex: none; }
   .fa-stage { overflow: visible; padding: var(--space-3); }
   .fa-stats { height: auto; }
   .fa-stats > * { flex: 1 1 190px; }

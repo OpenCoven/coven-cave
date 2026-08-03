@@ -539,9 +539,13 @@ describe("FamiliarAnalyticsView", () => {
     // be real state — CSS cannot hide a branch that was never rendered.
     assert.match(
       contentSource,
-      /window\.matchMedia\("\(max-width: 1180px\)"\)[\s\S]*setDockCollapsed\(query\.matches\)/,
+      /window\.matchMedia\("\(min-width: 901px\) and \(max-width: 1180px\)"\)[\s\S]*setDockCollapsed\(query\.matches\)/,
       "the dock collapse is driven by matchMedia, not by CSS alone",
     );
+    // It is a BAND, not a ceiling. Below 900px the frame stacks into a page, so
+    // the rail saves nothing — and a rail stretched across the width turns the
+    // avatar into a smear. The full dock has to come back.
+    assert.match(faCss, /\.fa-dock--rail > \* \{ flex: none; \}/, "rail marks never stretch, whatever tier they land in");
   });
 
   it("orders the stage scope → stats → open queue → evidence panels", () => {

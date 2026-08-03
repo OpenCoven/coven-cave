@@ -200,7 +200,7 @@ function ThreadTrendBlock({ trends }: { trends: SignalTrends }) {
           role="img"
           aria-label={`Weighted thread score per ${trends.granularity} over the ${windowPhrase}: ${TREND_VERDICT_COPY[overall.direction].toLowerCase()}`}
         >
-          <Sparkline points={points} color={trendTokenFor(overall.direction)} height={40} />
+          <Sparkline points={points} color={trendTokenFor(overall.direction)} height={72} />
           <figcaption aria-hidden>
             Weighted score per {trends.granularity}, oldest to newest · hover for values
           </figcaption>
@@ -1594,11 +1594,14 @@ export function FamiliarAnalyticsContent({
     setTimeToFirstReply(ms === null ? null : formatTimeToFirstReply(ms));
   }, []);
 
-  // The narrow breakpoint folds the dock through real state, because the rail
-  // is a different tree — CSS alone can't hide a branch that isn't rendered.
+  // The tablet band folds the dock through real state, because the rail is a
+  // different tree — CSS alone can't hide a branch that isn't rendered. It is a
+  // BAND, not a ceiling: below 900px the frame stacks into a page and the rail
+  // has nothing to save, so the full dock comes back rather than stretching a
+  // column of icon buttons across the width.
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const query = window.matchMedia("(max-width: 1180px)");
+    const query = window.matchMedia("(min-width: 901px) and (max-width: 1180px)");
     const apply = () => setDockCollapsed(query.matches);
     apply();
     query.addEventListener("change", apply);
@@ -1791,7 +1794,7 @@ export function FamiliarAnalyticsContent({
                     onClick={() => setConfidenceFlipped(true)}
                     title="Flip to every report"
                   >
-                    {windowReports.length} reports
+                    Ledger
                     <Icon name="ph:table" width={11} aria-hidden />
                   </button>
                 </PanelHead>
