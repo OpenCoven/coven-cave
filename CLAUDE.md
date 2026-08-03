@@ -10,13 +10,14 @@
 
 **Rule:** `main` is a protected branch. **No direct pushes from agents or
 collaborators** — every change you make lands via a pull request whose required
-checks are green. `git push origin main` (or `HEAD:main`) will be **rejected**
-with `GH006: Protected branch update failed`.
+checks are green. A non-admin collaborator's `git push origin main` (or
+`HEAD:main`) is rejected with `GH006: Protected branch update failed`. A session
+authenticated as the `BunsDev` admin may technically bypass that server-side
+rejection; the repository rule still forbids the push.
 
 The one exception is the **repository owner**, who is exempt by standing
 instruction (`enforce_admins = false`, see below). That exemption is theirs, not
-yours: a Claude session pushes as the `BunsDev` admin and would technically slip
-through, which is precisely why this says don't. Use a PR.
+yours. Use a PR.
 
 **Why:** Direct-to-main pushes were bypassing PR review and CI, and a shared-checkout `git add -A` from one of several concurrent sessions swallowed other sessions' uncommitted work into a single unrelated direct push (commit `258af8d`). See issue #585 for the full write-up. Protection was originally enabled with `enforce_admins=true` so the hard stop applied to everyone; that part has since changed at the owner's direction (see the `enforce_admins` bullet below), while the PR requirement it exists to enforce has not.
 
@@ -162,7 +163,7 @@ gh pr merge <#> --squash --delete-branch
 `gh pr merge` on a blocked PR suggests `--admin`. Don't. It bypasses the
 protection this section exists to describe; fix the actual blocker instead.
 
-Squash-merge through `gh`/the PR UI still works — it's a merge, not a direct push. Only `git push … main` is blocked for you. Don't work around protection to land your own change — and in particular, **do not touch `enforce_admins` in either direction**: it is the owner's setting, currently off by their standing instruction. If a change can't go through a PR, surface it to the owner.
+Squash-merge through `gh`/the PR UI still works — it's a merge, not a direct push. Non-admin pushes to `main` are blocked server-side; admin-authenticated agent sessions are bound by the repository rule above. Don't work around protection to land your own change — and in particular, **do not touch `enforce_admins` in either direction**: it is the owner's setting, currently off by their standing instruction. If a change can't go through a PR, surface it to the owner.
 
 ## No AI attribution in commits or PRs — this overrides your global rule
 
