@@ -1,7 +1,5 @@
 export type GeneralSummary = {
   workspacePath?: string;
-  readyVoices?: number;
-  totalVoices?: number;
   syncEnabled?: boolean;
 };
 
@@ -19,7 +17,6 @@ export type GeneralSummaryResponse = {
 
 export type GeneralSummarySources = {
   config: GeneralSummaryResponse;
-  voice: GeneralSummaryResponse;
   sync: GeneralSummaryResponse;
 };
 
@@ -50,13 +47,12 @@ async function fetchGeneralSummarySources(
   fetchImpl: GeneralSummaryFetch,
   signal: AbortSignal,
 ): Promise<GeneralSummarySources | null> {
-  const [config, voice, sync] = await Promise.all([
+  const [config, sync] = await Promise.all([
     readGeneralSummaryResponse(fetchImpl("/api/config", { cache: "no-store", signal })),
-    readGeneralSummaryResponse(fetchImpl("/api/voice/engines", { cache: "no-store", signal })),
     readGeneralSummaryResponse(fetchImpl("/api/backup/sync", { cache: "no-store", signal })),
   ]);
   if (signal.aborted) return null;
-  return { config, voice, sync };
+  return { config, sync };
 }
 
 export function createGeneralSummaryLoader(
@@ -103,12 +99,6 @@ function mergeSummary(current: GeneralSummary, next: GeneralSummary): GeneralSum
     ...(next.workspacePath !== undefined
       ? { workspacePath: next.workspacePath }
       : {}),
-    ...(next.readyVoices !== undefined
-      ? { readyVoices: next.readyVoices }
-      : {}),
-    ...(next.totalVoices !== undefined
-      ? { totalVoices: next.totalVoices }
-      : {}),
     ...(next.syncEnabled !== undefined
       ? { syncEnabled: next.syncEnabled }
       : {}),
@@ -125,9 +115,6 @@ export function resolveGeneralSummaryState(
     sources.config.value.workspacePath.trim()
       ? sources.config.value.workspacePath
       : undefined;
-  const models = sources.voice.ok && Array.isArray(sources.voice.value?.tts)
-    ? sources.voice.value.tts
-    : null;
   const syncConfig =
     sources.sync.ok &&
     sources.sync.value?.config &&
@@ -137,21 +124,12 @@ export function resolveGeneralSummaryState(
       : null;
   const next: GeneralSummary = {
     workspacePath,
-    readyVoices: models
-      ? models.filter((model) => {
-          if (!model || typeof model !== "object") return false;
-          const item = model as Record<string, unknown>;
-          return item.ready === true && item.verified === true;
-        }).length
-      : undefined,
-    totalVoices: models?.length,
     syncEnabled:
       typeof syncConfig?.enabled === "boolean" ? syncConfig.enabled : undefined,
   };
   const summary = mergeSummary(current.summary, next);
   const sourceSucceeded = [
     workspacePath !== undefined,
-    models !== null,
     typeof syncConfig?.enabled === "boolean",
   ];
   const failedSourceCount = sourceSucceeded.filter((succeeded) => !succeeded).length;

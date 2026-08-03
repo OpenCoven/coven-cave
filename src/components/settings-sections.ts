@@ -6,6 +6,7 @@
 export type Section =
   | "profile"
   | "general"
+  | "voice"
   | "daemon"
   | "mobile"
   | "appearance"
@@ -22,6 +23,7 @@ export type SettingsIndexEntry = {
 export const SECTIONS: SectionMeta[] = [
   { id: "profile", label: "Profile", icon: "ph:user-circle", description: "Your name, image, and details familiars know you by.", accent: "#f0c987" },
   { id: "general", label: "General", icon: "ph:sliders-horizontal", description: "Workspace, startup, and app-wide defaults.", accent: "#9386d0" },
+  { id: "voice", label: "Voice", icon: "ph:waveform", description: "Providers, voices, local speech, and defaults for new familiars.", accent: "var(--accent-presence)" },
   { id: "daemon", label: "Daemon", icon: "ph:terminal-window", description: "Local runtime status and process controls.", accent: "#69d6a6" },
   { id: "mobile", label: "Phone", icon: "ph:device-mobile", description: "Native iOS handoff over your Tailscale network.", accent: "#73d9d0" },
   { id: "appearance", label: "Appearance", icon: "ph:paint-brush", description: "Theme, typography, and reading controls.", accent: "#ff9fb5" },
@@ -31,6 +33,7 @@ export const SECTIONS: SectionMeta[] = [
 export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
   profile: ["Identity & pronouns", "Context & personality", "Portrait & links"],
   general: ["Workspace path", "Encrypted backup", "Launch behavior"],
+  voice: ["Provider readiness", "Voices & models", "New familiar defaults"],
   daemon: ["Runtime health", "Local/hub routing", "Socket & version"],
   mobile: ["Mobile mode", "Tailscale handoff", "Native iOS guide"],
   appearance: ["Theme & colors", "Typography", "Reading comfort"],
@@ -49,10 +52,14 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "profile", group: "Links", keywords: "links github socials url website portfolio" },
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
   { section: "general", group: "Home", keywords: "news headlines rss carousel media home digest daily summary" },
-  { section: "general", group: "Local speech", keywords: "voice speech piper tts offline download model remove" },
   { section: "general", group: "Progression", keywords: "celebrations milestones renown streak toast flourish gamification quiet dial down" },
   { section: "general", group: "Backup", keywords: "backup export restore encrypted passphrase archive vault recovery" },
   { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },
+  { section: "voice", group: "Default for new familiars", keywords: "voice provider model default new familiar tts speech" },
+  { section: "voice", group: "ElevenLabs", keywords: "elevenlabs key vault saved voices tts models cloud" },
+  { section: "voice", group: "OpenAI Realtime", keywords: "openai realtime key vault voices preview cloud" },
+  { section: "voice", group: "Local speech", keywords: "local speech piper kokoro offline download model remove" },
+  { section: "voice", group: "Familiar brain", keywords: "familiar brain true voice runtime keyless" },
   { section: "daemon", group: "Status", keywords: "daemon status running start stop restart hub server executor private network tailscale" },
   { section: "daemon", group: "Connection", keywords: "daemon hub server executor private network tailscale remote multihost multi host" },
   { section: "daemon", group: "Info", keywords: "daemon info version socket pid api" },

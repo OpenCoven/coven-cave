@@ -60,6 +60,7 @@ import { openExternalUrl } from "@/lib/open-external";
 import { getBackupPassphraseGuidance } from "@/lib/backup-passphrase-strength";
 import { BackdropSettings } from "@/components/backdrop-settings";
 import { VoiceEngineSettings } from "@/components/voice-engine-settings";
+import { VoiceProviderSettings } from "@/components/voice-provider-settings";
 import {
   flushAppPreferences,
   readAppPreferences,
@@ -304,6 +305,7 @@ export function SettingsShell() {
         >
           {section === "profile" && <ProfileSection />}
           {section === "general" && <GeneralSection />}
+          {section === "voice" && <VoiceSection />}
           {section === "daemon" && (
             <DaemonSection
               suggestedHubUrl={suggestedHubUrl}
@@ -340,7 +342,6 @@ function GeneralSection() {
       <SettingsGroup label="Chat" variant="ruled" panel={false}>
         <StopPhraseField />
       </SettingsGroup>
-      <VoiceEngineSettings />
       <SettingsGroup label="Progression" variant="ruled" panel={false}>
         <div className="settings-progression-card">
           <CelebrationsToggle />
@@ -360,6 +361,22 @@ function GeneralSection() {
         </div>
       </SettingsGroup>
     </SettingsPage>
+  );
+}
+
+// ─── Section: Voice ───────────────────────────────────────────────────────────
+
+function VoiceSection() {
+  return (
+    <div className="settings-voice">
+      <SettingsPage
+        section="voice"
+        title="Voice"
+        description="Providers, models, voices, and creation defaults."
+      >
+        <VoiceProviderSettings localSpeechSettings={<VoiceEngineSettings />} />
+      </SettingsPage>
+    </div>
   );
 }
 
