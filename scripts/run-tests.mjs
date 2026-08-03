@@ -1524,6 +1524,7 @@ const ALIAS_LOADER = new Set([
   // imports the route module, which resolves "@/lib/server/..." aliases.
   "src/app/api/daemon/travel/reconcile/route.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
+  "src/lib/opencode-models.test.ts",
   "src/lib/opencode-compatibility.test.ts",
   "src/lib/opencode-stream.test.ts",
   "src/lib/cave-conversations.test.ts",
