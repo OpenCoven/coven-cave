@@ -372,4 +372,44 @@ assert.match(
   "the send button reads as disabled while the reply draft is empty",
 );
 
+// ── Arcade ───────────────────────────────────────────────────────────────────
+// The point of mounting a game here is the dead air: mic prompt, session mint,
+// connect. These assertions pin the three properties that make it acceptable
+// to put a game inside a phone call — opt-in, silent, and disposable.
+assert.match(
+  component,
+  /const WAITING_STATES = new Set\(\["requesting-mic", "minting-session", "connecting"\]\)/,
+  "the arcade is offered exactly in the states where nothing is happening yet",
+);
+assert.match(
+  component,
+  /useState\(false\);\s*\n\s*const waiting = WAITING_STATES\.has\(state\.state\)/,
+  "the arcade is opt-in — it never opens on its own",
+);
+assert.match(
+  component,
+  /\{waiting && !arcadeOpen && \(/,
+  "the invitation only appears during the wait, never mid-conversation",
+);
+assert.match(
+  component,
+  /aria-pressed=\{arcadeOpen\}/,
+  "the footer arcade control reports its pressed state to assistive tech",
+);
+assert.doesNotMatch(
+  component,
+  /<ArcadePanel[^>]*\bautoPlay\b/,
+  "nothing auto-starts the game",
+);
+assert.match(
+  styles,
+  /\.arcade-panel__frame\s*\{[\s\S]*?aspect-ratio:/,
+  "the game window holds a stable shape instead of collapsing to zero height",
+);
+assert.match(
+  styles,
+  /\.voice-call-overlay__arcade-invite\s*\{[\s\S]*?background:\s*color-mix\(in oklch, var\(--accent-presence\)/,
+  "the invitation is a token-derived tint, not a hardcoded color",
+);
+
 console.log("voice-call-overlay.test.ts: ok");

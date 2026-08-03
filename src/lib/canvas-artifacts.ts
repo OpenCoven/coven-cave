@@ -197,8 +197,48 @@ export function clampArtifactCode(code: string): string {
  * familiar. Constrains output to one self-contained document so extraction is
  * deterministic — no build step, no external files, no prose.
  */
-export function buildSketchPrompt(userPrompt: string): string {
-  const ask = (userPrompt ?? "").trim() || "a simple example UI";
+export type SketchPromptOptions = {
+  /**
+   * Ask for something *playable* rather than something to look at.
+   *
+   * The default contract produces a polished, static-ish component, which is
+   * the wrong shape for a game: a game needs its own loop, its own input
+   * handling, and a way to start over without a reload. Turning this on swaps
+   * in those requirements instead of bolting them onto the ask, so the model
+   * is not left to infer them from the word "game".
+   */
+  playable?: boolean;
+};
+
+export function buildSketchPrompt(userPrompt: string, options: SketchPromptOptions = {}): string {
+  const ask = (userPrompt ?? "").trim() || (options.playable ? "a tiny arcade game" : "a simple example UI");
+  if (options.playable) {
+    return [
+      "You are generating a PLAYABLE GAME for a live sandbox inside a design canvas.",
+      "",
+      "Output EXACTLY ONE fenced code block and nothing else — no prose before or after.",
+      "Use a ```html block: a COMPLETE self-contained document starting with `<!doctype html>`,",
+      "with all CSS inlined in <style> and all JS inlined in <script>. No external files,",
+      "no CDN, no network access of any kind — it must run on an opaque origin.",
+      "",
+      "It MUST actually be playable:",
+      "- Run a real loop with `requestAnimationFrame` and delta time, not `setInterval` ticks.",
+      "- Handle keyboard on `window` (WASD and/or arrows) AND provide touch or click controls,",
+      "  so it works without a keyboard. Call `preventDefault()` on the keys you consume.",
+      "- Show live state — score, lives, or progress — as visible text.",
+      "- Have a fail or win condition and a restart control that returns to the first frame",
+      "  WITHOUT reloading the page.",
+      "- Never use `localStorage`, `sessionStorage`, cookies, or `fetch`: the sandbox has no",
+      "  same-origin access and any such call throws.",
+      "- Stay SILENT. No `Audio`, no `AudioContext`, no `getUserMedia`. It may be played over",
+      "  a live voice call.",
+      "- Respect `prefers-reduced-motion: reduce` by damping screen shake and flashing.",
+      "",
+      "Size the play area to the viewport and keep it responsive.",
+      "",
+      `Build this game: ${ask}`,
+    ].join("\n");
+  }
   return [
     "You are generating a UI for a live preview sandbox inside a design canvas.",
     "",

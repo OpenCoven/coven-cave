@@ -177,10 +177,18 @@ assert.match(
   "the three modes render with the mock's tooltips",
 );
 assert.match(editor, /aria-pressed=\{mode === id\}/, "mode toggles expose pressed state");
+// The inspector's injected handler preventDefaults every trusted click, so
+// leaving it on is what made a generated sketch impossible to actually use.
+// Play mode turns it off; nothing else may.
 assert.match(
   editor,
-  /if \(!inspectorLoaded\) return;[\s\S]{0,120}?setEnabled\(true\)/,
-  "selection is enabled in every mode once the inspector authenticates",
+  /if \(!inspectorLoaded\) return;[\s\S]{0,160}?setEnabled\(mode !== "play"\)/,
+  "selection is enabled in every mode except play, once the inspector authenticates",
+);
+assert.match(
+  editor,
+  /modeButton\("play", "Play", "Run the sketch for real — clicks and keys reach it"\)/,
+  "play is offered as a first-class mode alongside select/comment/edit",
 );
 
 // Escape routes through the shared resolver: field → selection → expand.
