@@ -211,11 +211,14 @@ describe("aggregateThreadSignals", () => {
     assert.match(source, /fa-thread-table__row--added/, "promoted rows read as settled");
   });
 
-  it("spans both analytics columns and scrolls under a max height", () => {
+  it("gets the whole stage in the analytics workbench, and scrolls under a max height", () => {
+    // The workbench opens Thread signals as a full-stage overlay rather than a
+    // grid cell — the section is dense enough that a column would truncate it,
+    // and the overlay deliberately leaves the familiar dock on screen.
     assert.match(
       analyticsSource,
-      /id="fa-thread-signals"[\s\S]*?wide=\{model\.threadReports\.length > 0\}/,
-      "the Thread signals section spans both fa-grid columns when it has data",
+      /<StageOverlay\s+label="Thread signals"[\s\S]*?<ThreadSignalsSection familiarId=\{model\.familiarId\} reports=\{model\.threadReports\} \/>/,
+      "the Thread signals section is hosted by the stage overlay",
     );
     assert.match(
       faCss,
