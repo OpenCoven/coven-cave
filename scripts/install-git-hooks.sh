@@ -19,3 +19,21 @@ git -C "$REPO_ROOT" config core.hooksPath scripts/git-hooks
 
 echo "OK core.hooksPath -> scripts/git-hooks"
 echo "  installed hooks: $(ls "$HOOKS_DIR" | xargs)"
+
+# cave-1poit: register the .beads/interactions.jsonl merge driver named in
+# .gitattributes. A merge driver's implementation lives in git config, which is
+# per-clone and cannot be committed, so this has to be installed rather than
+# checked in. Until it is, git falls back to the default text merge — a
+# divergent append conflicts loudly instead of silently duplicating records,
+# which is the correct direction to fail.
+git -C "$REPO_ROOT" config merge.beads-jsonl.name \
+  "union .beads/interactions.jsonl by record id (cave-1poit)"
+# %O/%A/%B are QUOTED: git substitutes paths into this command and runs it
+# through a shell, so an unquoted placeholder is word-split when a path
+# contains a space — which happens on any clone under a home directory with a
+# space in it. The driver would then receive broken arguments and silently do
+# the wrong thing.
+git -C "$REPO_ROOT" config merge.beads-jsonl.driver \
+  'node scripts/beads-jsonl-merge-driver.mjs "%O" "%A" "%B"'
+
+echo "OK merge.beads-jsonl -> scripts/beads-jsonl-merge-driver.mjs"
