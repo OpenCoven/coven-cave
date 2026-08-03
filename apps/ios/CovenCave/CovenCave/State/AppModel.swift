@@ -106,6 +106,15 @@ final class AppModel {
     /// matching hydrated thread can be opened, then is consumed exactly once.
     var launchThreadId: String?
 
+    /// Messages whose agent-activity trail the reader has opened.
+    ///
+    /// Deliberately not view-local `@State`: a transcript rebuild re-creates
+    /// the row, and state that lives on the row goes with it — silently
+    /// collapsing a trail the reader had just opened (cave-m5tao). Holding the
+    /// choice here means a re-created row re-reads it and stays open. In-memory
+    /// only; expansion is a reading position, not something to persist.
+    var expandedActivityMessages: Set<String> = []
+
     #if DEBUG
     /// Process-lifetime marker for the deterministic cold-connection preview.
     /// The app lifecycle uses it to skip only live connection work.
@@ -380,6 +389,16 @@ final class AppModel {
             ChatTurnNotifier.shared.app = self
             return
         }
+
+        // Sibling fixture for the agent-activity trail — a settled turn whose
+        // steps cover every status a tool row can carry. Launch with
+        // `--ui-preview-tool-activity` and
+        // `CAVE_OPEN_THREAD=ui-preview-tool-activity`.
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-tool-activity") {
+            configureToolActivityPreview()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
         #endif
         // Threads hydrate off-main via the store — no file I/O in init.
         Task { await self.hydrateThreads() }
@@ -477,6 +496,65 @@ final class AppModel {
                 id: "ui-preview-empty-chat",
                 title: "Chat with Nyx on Jul 26",
                 familiarIds: ["nyx"]
+            ),
+        ]
+        connectionState = .connected
+    }
+
+    /// Deterministic native screenshot fixture for the agent-activity trail.
+    /// One settled assistant turn whose steps cover every status a tool row can
+    /// carry: a succeeded call, a failed one with its reason, and an
+    /// informational notice. Release builds never carry fixture state.
+    private func configureToolActivityPreview() {
+        connection = nil
+        familiars = [
+            Familiar(
+                id: "nyx",
+                displayName: "Nyx",
+                role: "Code familiar",
+                description: "Keeps implementation work moving.",
+                pronouns: nil,
+                color: nil,
+                status: "active",
+                harness: "codex",
+                model: "gpt-5.6",
+                icon: "moon.stars.fill",
+                avatarUrl: nil,
+                activeSessions: 1,
+                memoryFreshness: "Fresh"
+            ),
+        ]
+        tasksLoaded = true
+        sessionsLoaded = true
+
+        var reply = DisplayMessage(
+            role: .assistant,
+            familiarId: "nyx",
+            text: "Fixed — the summary was reading the first line of a pretty-printed payload."
+        )
+        reply.activity = [
+            ActivityStep(id: "a", kind: .tool, title: "Read",
+                         detail: "src/lib/tool-arg-summary.ts", status: .ok, durationMs: 42),
+            ActivityStep(id: "b", kind: .tool, title: "Bash",
+                         detail: "pnpm test --filter tool-arg", status: .error,
+                         durationMs: 8_400,
+                         errorOutput: "error: cannot find module 'foo'\n  at Object.<anonymous> (tool-arg.test.ts:12:9)"),
+            ActivityStep(id: "c", kind: .progress, title: "Rate limited — retrying in 30s",
+                         status: .notice),
+            ActivityStep(id: "d", kind: .tool, title: "Edit",
+                         detail: "apps/ios/CovenCave/CovenCave/Models/AgentActivity.swift",
+                         status: .ok, durationMs: 1_200),
+        ]
+
+        threads = [
+            ChatThread(
+                id: "ui-preview-tool-activity",
+                title: "Chat with Nyx on Aug 3",
+                familiarIds: ["nyx"],
+                messages: [
+                    DisplayMessage(role: .user, text: "fix the ios tool calls"),
+                    reply,
+                ]
             ),
         ]
         connectionState = .connected

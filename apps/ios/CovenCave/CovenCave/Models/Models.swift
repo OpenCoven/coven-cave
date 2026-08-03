@@ -118,6 +118,9 @@ struct ToolCall: Identifiable, Codable, Hashable {
     var input: String?
     var output: String?
     var status: String?
+    /// Wall-clock the server recorded when the call settled. Persisted with the
+    /// turn, so a reloaded transcript keeps the timings a live turn showed.
+    var durationMs: Int?
 }
 
 struct TurnUsage: Codable, Hashable {
