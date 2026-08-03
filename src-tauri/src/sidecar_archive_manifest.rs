@@ -6,8 +6,8 @@ pub(super) const MANIFEST_SCHEMA_VERSION: u32 = 3;
 pub(super) const ARCHIVE_FORMAT: &str = "tar.zst";
 pub(super) const MAX_ARCHIVE_BYTES: u64 = 80 * 1024 * 1024;
 pub(super) const MAX_UNPACKED_BYTES: u64 = 200 * 1024 * 1024 - 1;
-// Keep this in sync with scripts/sidecar-runtime-closure.mjs. The shared Memory
-// document reader traces 5,817 files on Windows; preserve ten-file headroom.
+// Keep this in sync with scripts/sidecar-runtime-closure.mjs. On 2026-08-03,
+// the cross-platform closure peaked at 5,877 files; preserve ten-file headroom.
 pub(super) const MAX_FILE_COUNT: u64 = 5_887;
 
 #[derive(Debug, Deserialize)]

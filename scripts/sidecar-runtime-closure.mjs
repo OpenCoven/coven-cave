@@ -167,9 +167,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // connection supervisor and its routes, the X API lib/component half, the
   // chat Start-from bands, the shell inset layout and the research-mission
   // surfaces. Retain the established ten-file cross-platform headroom over the
-  // highest platform (5,831) without relaxing the byte ceiling — measured
+  // then-highest platform (5,831) without relaxing the byte ceiling — measured
   // bytes are 104 MB against a 200 MB cap, so size is not the pressure here,
   // file count is.
+  // 2026-08-03 (X API route handlers): CI measured 5,874 files on Ubuntu and
+  // 5,877 on Windows. Retain the established ten-file cross-platform headroom.
   fileCount: 5_887,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
