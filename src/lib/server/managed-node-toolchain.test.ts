@@ -1,22 +1,38 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { constants } from "node:fs";
+import { access, lstat, mkdtemp, readFile, readlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import { gzipSync } from "node:zlib";
 import { safeArchiveDestination, extractSafeTarGz, extractSafeZip } from "./managed-node-archive.ts";
 import { managedNodePaths, managedNodeRoot, managedNodeSpawnEnv, probeManagedNodeToolchain } from "./managed-node-toolchain.ts";
 
+const execFileAsync = promisify(execFile);
+
+type TarEntry = { name: string; body?: string; mode?: number; type?: "0" | "1" | "2" | "5"; linkName?: string };
+
+function tarArchive(entries: TarEntry[]): Buffer {
+  const blocks: Buffer[] = [];
+  for (const entry of entries) {
+    const header = Buffer.alloc(512);
+    const data = Buffer.from(entry.body ?? "");
+    header.write(entry.name, 0, "utf8");
+    header.write((entry.mode ?? 0o644).toString(8).padStart(7, "0") + "\0", 100, "ascii");
+    header.write(data.length.toString(8).padStart(11, "0") + "\0", 124, "ascii");
+    header[156] = (entry.type ?? "0").charCodeAt(0);
+    if (entry.linkName) header.write(entry.linkName, 157, "utf8");
+    header.write("ustar\0", 257, "ascii");
+    const padding = Buffer.alloc((512 - (data.length % 512)) % 512);
+    blocks.push(header, data, padding);
+  }
+  return Buffer.concat([...blocks, Buffer.alloc(1024)]);
+}
+
 function tarFile(name: string, body: string): Buffer {
-  const header = Buffer.alloc(512);
-  header.write(name, 0, "utf8");
-  header.write("0000644\0", 100, "ascii");
-  header.write(body.length.toString(8).padStart(11, "0") + "\0", 124, "ascii");
-  header[156] = "0".charCodeAt(0);
-  header.write("ustar\0", 257, "ascii");
-  const data = Buffer.from(body);
-  const padding = Buffer.alloc((512 - (data.length % 512)) % 512);
-  return Buffer.concat([header, data, padding, Buffer.alloc(1024)]);
+  return tarArchive([{ name, body }]);
 }
 
 function storedZip(name: string, body: string): Buffer {
@@ -59,6 +75,67 @@ test("safe tar extraction accepts ordinary files and rejects traversal", async (
     await extractSafeTarGz(gzipSync(tarFile("node-v22/bin/node", "node")), root);
     assert.equal(await readFile(path.join(root, "node-v22", "bin", "node"), "utf8"), "node");
     await assert.rejects(extractSafeTarGz(gzipSync(tarFile("../outside", "no")), root), /escapes/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("safe tar extraction supports Node-style internal links and executable files", { skip: process.platform === "win32" }, async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "coven-managed-node-layout-"));
+  try {
+    const archive = tarArchive([
+      { name: "node-v24/bin/node", body: "#!/bin/sh\nprintf 'managed-node-ok\\n'\n", mode: 0o755 },
+      { name: "node-v24/lib/node_modules/corepack/dist/corepack.js", body: "corepack" },
+      { name: "node-v24/lib/node_modules/npm/bin/npm-cli.js", body: "npm" },
+      { name: "node-v24/lib/node_modules/npm/bin/npx-cli.js", body: "npx" },
+      { name: "node-v24/bin/corepack", type: "2", linkName: "../lib/node_modules/corepack/dist/corepack.js", mode: 0o777 },
+      { name: "node-v24/bin/npm", type: "2", linkName: "../lib/node_modules/npm/bin/npm-cli.js", mode: 0o777 },
+      { name: "node-v24/bin/npx", type: "2", linkName: "../lib/node_modules/npm/bin/npx-cli.js", mode: 0o777 },
+    ]);
+    await extractSafeTarGz(gzipSync(archive), root);
+
+    const runtime = path.join(root, "node-v24", "bin", "node");
+    await access(runtime, constants.X_OK);
+    assert.equal((await execFileAsync(runtime)).stdout, "managed-node-ok\n");
+    const npm = path.join(root, "node-v24", "bin", "npm");
+    assert.ok((await lstat(npm)).isSymbolicLink());
+    assert.equal(await readlink(npm), "../lib/node_modules/npm/bin/npm-cli.js");
+    assert.equal(await readFile(npm, "utf8"), "npm");
+    assert.equal(await readFile(path.join(root, "node-v24", "bin", "npx"), "utf8"), "npx");
+    assert.equal(await readFile(path.join(root, "node-v24", "bin", "corepack"), "utf8"), "corepack");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("safe tar extraction rejects escaping links and unsupported hard links", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "coven-managed-node-links-"));
+  try {
+    await assert.rejects(
+      extractSafeTarGz(gzipSync(tarArchive([
+        { name: "node-v24/bin/npm", type: "2", linkName: "../../../outside" },
+      ])), root),
+      /link target escapes/,
+    );
+    await assert.rejects(
+      extractSafeTarGz(gzipSync(tarArchive([
+        { name: "node-v24/bin/npm", type: "1", linkName: "node-v24/bin/node" },
+      ])), root),
+      /unsupported entry type/,
+    );
+    await assert.rejects(
+      extractSafeTarGz(gzipSync(tarArchive([
+        { name: "node-v24/bin/npm", type: "2", linkName: "/tmp/outside" },
+      ])), root),
+      /link target is absolute/,
+    );
+    await assert.rejects(
+      extractSafeTarGz(gzipSync(tarArchive([
+        { name: "node-v24/lib", type: "2", linkName: "internal" },
+        { name: "node-v24/lib/package.js", body: "package" },
+      ])), root),
+      /could not create symbolic link/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

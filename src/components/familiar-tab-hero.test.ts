@@ -66,6 +66,11 @@ test("hero selects edit the live binding through the canonical /api/config write
   );
   // The three live selects, sourced from canonical live inventories — no second mapping.
   assert.match(src, /label="Runtime"[\s\S]{0,150}?options=\{runtimeOptions\}/, "Runtime select");
+  assert.match(
+    src,
+    /label="Runtime"[\s\S]{0,220}?bind\(\{ harness: v, model: modelForRuntimeSwitch\(v\) \}\)/,
+    "switching runtime clears the old provider model through the durable default sentinel",
+  );
   assert.match(src, /label=\{`Model · \$\{inventoryProvenanceLabel[\s\S]{0,220}?options=\{modelOptions\}/, "Model select");
   assert.match(src, /label="Voice"[\s\S]{0,150}?options=\{voiceOptions\}/, "Voice select");
   assert.match(

@@ -72,8 +72,13 @@ import { readFile } from "node:fs/promises";
   );
   assert.match(
     source,
-    /handleUseHarnessFix[\s\S]{0,600}method: "PATCH"[\s\S]{0,300}familiars: \{[\s\S]*?\[familiar\.id\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel \|\| null/,
+    /handleUseHarnessFix[\s\S]{0,600}method: "PATCH"[\s\S]{0,300}familiars: \{[\s\S]*?\[familiar\.id\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel/,
     "the fix handler should rebind the familiar via /api/config PATCH",
+  );
+  assert.match(
+    source,
+    /async function handleUseHarnessFix\(runtime: string\) \{[\s\S]*?if \(sessionId\) \{[\s\S]*?conversation is pinned to its original runtime[\s\S]*?announce\(message, "assertive"\)[\s\S]*?return;/,
+    "the fix handler must not claim to switch an existing conversation whose persisted harness pins the retry",
   );
   assert.match(
     source,
@@ -97,13 +102,18 @@ import { readFile } from "node:fs/promises";
   );
   assert.match(
     source,
-    /familiars: \{[\s\S]*?\[reply\.familiarId\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: modelForRuntimeSwitch\(runtime\) \|\| null/,
+    /familiars: \{[\s\S]*?\[reply\.familiarId\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: modelForRuntimeSwitch\(runtime\)/,
     "the group-chat fix should rebind the failing reply's familiar",
   );
   assert.match(
     source,
     /await retryReply\(reply\)/,
     "after rebinding, the group-chat fix should re-run just that reply",
+  );
+  assert.match(
+    source,
+    /const useHarnessForReply = useCallback\([\s\S]*?if \(reply\.sessionId \|\| activeGroupRef\.current\?\.sessions\[reply\.familiarId\]\) \{[\s\S]*?reply is pinned to its original runtime[\s\S]*?return;/,
+    "group-chat recovery must not rebind a familiar when the failed reply already has a pinned session",
   );
 }
 

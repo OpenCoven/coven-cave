@@ -1,4 +1,6 @@
 import type { ChatAttachment } from "./chat-attachments";
+import type { ChatResponseMetadata } from "./chat-response-metadata";
+import type { ModelControlValues } from "./model-control-capabilities";
 import type { SessionOrigin } from "./types";
 // Client helper: stream a one-shot prompt to a familiar through the chat bridge
 // (`/api/chat/send`, SSE) and return the concatenated assistant text. This is the
@@ -29,8 +31,10 @@ export async function streamFamiliarText(opts: {
    *  hidden/meta generations so prompt-injected transcript text cannot trigger
    *  privileged tool execution. */
   permissionMode?: "read" | "full";
+  /** Empty string is the explicit Runtime-default sentinel. */
   modelOverride?: string;
-  modelOverrideScope?: "next-message" | "session";
+  modelOverrideScope?: "next-message" | "session" | "runtime-default";
+  modelControls?: ModelControlValues;
   /** Session provenance — set by generator surfaces (e.g. "journal") so the
    *  chat lists can hide the run; user-facing chats leave it unset. */
   origin?: SessionOrigin;
@@ -42,7 +46,14 @@ export async function streamFamiliarText(opts: {
    *  the stream completes — so callers can keep the thread resumable even if
    *  the run is aborted mid-stream. */
   onSession?: (sessionId: string) => void;
-}): Promise<{ text: string; error: string | null; sessionId?: string }> {
+  /** Completed-turn facts, kept separate from the streamed assistant text. */
+  onResponseMetadata?: (metadata: ChatResponseMetadata) => void;
+}): Promise<{
+  text: string;
+  error: string | null;
+  sessionId?: string;
+  responseMetadata?: ChatResponseMetadata;
+}> {
   let res: Response;
   try {
     res = await fetch("/api/chat/send", {
@@ -58,8 +69,11 @@ export async function streamFamiliarText(opts: {
         ...(opts.reasoningEffort ? { reasoningEffort: opts.reasoningEffort } : {}),
         ...(opts.responseSpeed ? { responseSpeed: opts.responseSpeed } : {}),
         ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
-        ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
+        ...(opts.modelOverride !== undefined ? { modelOverride: opts.modelOverride } : {}),
         ...(opts.modelOverrideScope ? { modelOverrideScope: opts.modelOverrideScope } : {}),
+        ...(opts.modelControls && Object.keys(opts.modelControls).length
+          ? { modelControls: opts.modelControls }
+          : {}),
         // Provenance for generated runs (journal narratives, …) so the chat
         // lists can keep them out of the conversation rail (#2719 model).
         ...(opts.origin ? { origin: opts.origin } : {}),
@@ -77,6 +91,7 @@ export async function streamFamiliarText(opts: {
   let text = "";
   let error: string | null = null;
   let sessionId: string | undefined;
+  let responseMetadata: ChatResponseMetadata | undefined;
 
   const noteSession = (id: string | undefined) => {
     if (!id) return;
@@ -95,6 +110,10 @@ export async function streamFamiliarText(opts: {
     } else if (ev.kind === "session") noteSession(ev.sessionId);
     else if (ev.kind === "done") {
       noteSession(ev.sessionId);
+      if (ev.responseMetadata) {
+        responseMetadata = ev.responseMetadata;
+        opts.onResponseMetadata?.(ev.responseMetadata);
+      }
       if (ev.isError) error = error ?? "the familiar reported an error";
     } else if (ev.kind === "error") error = ev.message ?? "generation error";
   };
@@ -113,5 +132,5 @@ export async function streamFamiliarText(opts: {
   // and process a last frame that arrived without its trailing blank line.
   buffer += decoder.decode();
   if (buffer.trim()) handleFrame(buffer);
-  return { text, error, sessionId };
+  return { text, error, sessionId, responseMetadata };
 }

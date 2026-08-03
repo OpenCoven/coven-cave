@@ -8,6 +8,7 @@ const glass = readFileSync(new URL("../styles/quick-chat-glass.css", import.meta
 const overlayStyles = readFileSync(new URL("../styles/globals/surface-chat-overlays.css", import.meta.url), "utf8");
 const foundations = readFileSync(new URL("../styles/globals/foundations.css", import.meta.url), "utf8");
 const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
+const quickHook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
 
 // ── Readable measure ─────────────────────────────────────────────────────────
 assert.match(
@@ -36,6 +37,11 @@ assert.match(
   tray,
   /className="quick-chat-meta-chip" title="Model"/,
   "Model chip labels itself via tooltip",
+);
+assert.doesNotMatch(
+  quickHook,
+  /reasoningEffort:|responseSpeed:/,
+  "Quick Chat does not send global Thinking or Speed defaults without selected-model metadata",
 );
 
 // ── Disabled Send stays visible ──────────────────────────────────────────────

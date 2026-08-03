@@ -22,6 +22,7 @@ const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift")
 const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelControl.swift");
 const responseControls = await read("apps/ios/CovenCave/CovenCave/Models/ChatResponseControls.swift");
 const models = await read("apps/ios/CovenCave/CovenCave/Models/Models.swift");
+const messageBubble = await read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
 const caveClient = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
 const appModel = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
 const caveApp = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
@@ -219,8 +220,23 @@ assert.match(
 );
 assert.match(
   modelControl,
-  /allowsRuntimeDefault:[\s\S]*?Button \{[\s\S]*?onSelect\(nil\)[\s\S]*?Text\("Runtime default"\)/,
-  "runtime-owned inventories offer an actionable Runtime default choice",
+  /presentedAllowsRuntimeDefault:[\s\S]{0,500}\(allowsRuntimeDefault \|\| state != nil\)/,
+  "loaded iOS model state keeps Runtime default actionable for explicit Cave-owned choices",
+);
+assert.match(
+  modelControl,
+  /allowsRuntimeDefault: presentedAllowsRuntimeDefault,/,
+  "the compact iOS model picker receives the current clear-action capability",
+);
+assert.match(
+  modelControl,
+  /onSelect\(nil\)/,
+  "the compact iOS model picker can persist a clear action",
+);
+assert.match(
+  modelControl,
+  /Text\("Runtime default"\)/,
+  "the compact iOS model picker labels the clear action",
 );
 assert.match(
   modelControl,
@@ -249,6 +265,11 @@ assert.match(
 );
 assert.match(
   chat,
+  /presentedModelPickerAllowsRuntimeDefault:[\s\S]{0,500}\(modelPickerAllowsRuntimeDefault \|\| sessionModelState != nil\)/,
+  "chat keeps Runtime default actionable for explicit Cave-owned choices",
+);
+assert.match(
+  chat,
   /sessionDetailRow\(\s*"Inventory",[\s\S]{0,180}ChatModelInventoryProvenancePresentation\.label\(for: presentedModelPickerProvenance\)/,
   "chat session details expose inventory provenance before the picker opens",
 );
@@ -256,6 +277,11 @@ assert.match(
   chat,
   /prepareModelStateLoad\(for target:[\s\S]{0,320}modelPresentationScope\.beginLoading\(for: target\)[\s\S]{0,320}modelPickerOptions = \[\][\s\S]{0,220}modelControlCapabilities = \[\]/,
   "a changed familiar/session masks prior inventory and selected-model controls",
+);
+assert.match(
+  familiars,
+  /presentedModelAllowsRuntimeDefault:[\s\S]{0,500}\(modelAllowsRuntimeDefault \|\| modelState != nil\)/,
+  "familiar defaults keep Runtime default actionable for explicit Cave-owned choices",
 );
 assert.match(
   familiars,
@@ -303,6 +329,16 @@ assert.match(
   "the model picker explains a familiar-default mutation",
 );
 assert.match(
+  modelControl,
+  /@State private var modelMutationQueue = ChatModelMutationQueue\(\)[\s\S]{0,7000}private func choose\([\s\S]{0,1300}modelMutationQueue\.enqueue[\s\S]{0,1100}client\.setChatModel/,
+  "chat model PATCHes are serialized in selection order",
+);
+assert.match(
+  familiars,
+  /@State private var modelMutationQueue = ChatModelMutationQueue\(\)[\s\S]{0,12000}private func chooseModel\([\s\S]{0,900}modelMutationQueue\.enqueue[\s\S]{0,900}client\.setChatModel/,
+  "familiar-default model PATCHes are serialized in selection order",
+);
+assert.match(
   familiars,
   /familiar\.activeSessions\.map\(String\.init\) \?\? "Unknown"/,
   "missing live activity is labelled unknown rather than fabricated as zero",
@@ -312,8 +348,8 @@ for (const section of ["Identity", "Defaults", "Access"]) {
 }
 
 // Session controls are transported, persisted for offline replay, and truthful.
-assert.match(client, /var reasoningEffort: ChatThinkingEffort/, "send body carries reasoning effort");
-assert.match(client, /var responseSpeed: ChatResponseSpeed/, "send body carries response speed");
+assert.match(client, /var reasoningEffort: ChatThinkingEffort\?/, "send body keeps legacy reasoning effort optional");
+assert.match(client, /var responseSpeed: ChatResponseSpeed\?/, "send body keeps legacy response speed optional");
 assert.match(client, /var modelOverride: String\?/, "send body carries the selected model");
 assert.match(
   client,
@@ -385,6 +421,40 @@ assert.match(
   chat,
   /_ = selectModel\(id, familiarId: familiarId, sessionId: modelSessionId\(familiarId\)\)/,
   "the model picker stages intent synchronously before its sheet dismisses",
+);
+assert.match(
+  chat,
+  /if \["default", "runtime-default"\]\.contains\(trimmed\.lowercased\(\)\)\s*\{[\s\S]{0,180}selectModel\(nil, familiarId: familiarId, sessionId: sessionId\)/,
+  "iOS /model default clears the override instead of selecting a custom model named default",
+);
+assert.match(
+  chat,
+  /guard sessionId != nil \|\| model == nil else \{[\s\S]{0,1000}loadPendingModelCapabilities\(/,
+  "a pre-first-send model selection immediately previews the selected model capabilities",
+);
+assert.match(
+  chat,
+  /private func loadPendingModelCapabilities\([\s\S]{0,700}previewModel: model/,
+  "the pending-model preview requests capabilities for the selected model",
+);
+assert.match(caveClient, /func chatModelState\(/, "iOS exposes the shared model-state client");
+assert.match(caveClient, /previewModel: String\? = nil/, "iOS can request a pending-model preview");
+assert.ok(
+  caveClient.includes(String.raw`if let previewModel { path += "&model=\(urlQuery(previewModel))" }`),
+  "iOS sends a read-only model preview query after staging a new-chat selection",
+);
+assert.match(models, /requestedModel: String\?/, "iOS decodes requested model intent metadata");
+assert.match(models, /confirmedModel: String\?/, "iOS decodes confirmed model metadata");
+assert.match(models, /modelApplicationState: String\?/, "iOS decodes model application state metadata");
+assert.match(
+  messageBubble,
+  /private var responseModelStatus:[\s\S]*?Requested model:[\s\S]*?Applied model:/,
+  "iOS renders requested and applied model status separately",
+);
+assert.match(
+  messageBubble,
+  /let reason = message\.modelApplicationReason[\s\S]*?Model source:/,
+  "iOS renders safe model source and degraded reason metadata",
 );
 assert.match(
   chat,

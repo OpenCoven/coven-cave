@@ -136,6 +136,11 @@ assert.match(
 );
 assert.match(
   source,
+  /case "\/model":\s*\{[\s\S]{0,700}isRuntimeDefaultModelArg\(args\)[\s\S]{0,180}onModelOverrideChange\?\.\(""\)/,
+  "quick chat can clear a prior explicit model through the shared Runtime-default sentinel",
+);
+assert.match(
+  source,
   /<QuickChatSelect[\s\S]*label="Project"/,
   "the remaining project selector uses the shared QuickChatSelect primitive",
 );
@@ -354,7 +359,7 @@ assert.match(
   );
   assert.match(
     hook,
-    /if \(status === "done"\) \{[\s\S]*?sendTextRef\.current\(next\.text, next\.attachments \?\? \[\]\)/,
+    /if \(status === "done"\) \{[\s\S]*?sendTextRef\.current\(next\.text, next\.attachments \?\? \[\], \{/,
     "the queue drains only on NATURAL completion — Stop and failures park it",
   );
   assert.match(
@@ -411,19 +416,39 @@ assert.match(
   );
   assert.match(
     hook,
-    /const steerQueued = useCallback\(\(id: string\) => \{[\s\S]*?void sendTextRef\.current\(next\.text, next\.attachments \?\? \[\]\);/,
+    /const steerQueued = useCallback\(\(id: string\) => \{[\s\S]*?void sendTextRef\.current\(next\.text, next\.attachments \?\? \[\], \{[\s\S]*?modelOverride: next\.modelOverride/,
     "steering a queued message reorders it (or immediately resumes it) through the normal send pipeline",
   );
   assert.match(
     hook,
-    /void deliver\(target, resume, lastUserAttachmentsRef\.current\)/,
-    "regenerate re-sends the last user turn's files, not just its text",
+    /void deliver\(target, resume, lastUserAttachmentsRef\.current, \{[\s\S]*?lastUserIntentRef\.current/,
+    "regenerate re-sends the last user turn's files and model/control intent",
+  );
+  assert.match(
+    hook,
+    /void sendTextRef\.current\(next\.text, next\.attachments \?\? \[\], \{[\s\S]*?modelOverride: next\.modelOverride/,
+    "steering a queued turn preserves its model/control intent",
+  );
+  assert.match(
+    hook,
+    /api\/chat\/model-state\?\$\{params\.toString\(\)\}/,
+    "quick chat negotiates controls through the shared model-state endpoint",
+  );
+  assert.match(
+    hook,
+    /modelControlsRef\.current = \{\};[\s\S]*?setModelOverrideState\(id\)/,
+    "a model mutation clears controls synchronously so a stale capability cannot reach the first send",
   );
   const stream = readFileSync(new URL("../lib/familiar-stream.ts", import.meta.url), "utf8");
   assert.match(
     stream,
     /\.\.\.\(opts\.attachments\?\.length \? \{ attachments: opts\.attachments \} : \{\}\)/,
     "streamFamiliarText forwards attachments to the chat bridge (native support)",
+  );
+  assert.match(
+    thread,
+    /QuickChatResponseMetadata[\s\S]*?Forwarded — not confirmed/,
+    "quick chat renders requested, forwarded, and applied model/control outcomes",
   );
 }
 

@@ -9,6 +9,8 @@ import {
   modelForCaveFromRuntimeEcho,
   modelForRuntimeLaunch,
   runtimeOwnsModelDefault,
+  isModelAllowedByRuntime,
+  runtimeModelInventoryScope,
   runtimeModelIdForLaunch,
   transformModelIdForRuntime,
 } from "./runtime-models.ts";
@@ -227,7 +229,7 @@ assert.equal(runtimeOwnsModelDefault("grok"), true);
 assert.equal(runtimeOwnsModelDefault("opencode"), true);
 assert.equal(runtimeOwnsModelDefault("opencode-ai"), true, "OpenCode package aliases preserve runtime-owned defaults");
 assert.equal(runtimeOwnsModelDefault("openclaw"), true);
-assert.equal(modelForRuntimeSwitch("codex"), "openai/gpt-5.6-sol");
+assert.equal(modelForRuntimeSwitch("codex"), "", "runtime switches preserve default intent instead of selecting a catalog seed");
 assert.equal(modelForRuntimeSwitch("hermes"), "");
 assert.equal(modelForRuntimeSwitch("hermes", "nous/hermes-4"), "nous/hermes-4");
 
@@ -315,5 +317,16 @@ assert.equal(
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/--allow-all-tools"), null);
 assert.equal(runtimeModelIdForLaunch("copilot", "provider/../escape"), null);
 assert.equal(runtimeModelIdForLaunch("copilot", null), null);
+assert.equal(
+  runtimeModelInventoryScope("claude", "https://user:secret@example.invalid/familiar").familiarId,
+  null,
+  "inventory scope must not echo a URL-shaped familiar id into an API response",
+);
+assert.equal(
+  runtimeModelInventoryScope("claude", "sage-remote").familiarId,
+  "sage-remote",
+  "valid familiar slugs remain scoped for discovery",
+);
+assert.equal(isModelAllowedByRuntime("future-unknown", "provider/custom"), false);
 
 console.log("runtime-models.test.ts: ok");

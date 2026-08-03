@@ -100,7 +100,9 @@ try {
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
-  await saveConfig({ familiars: { wren: { harness: "openclaw", model: "openai/gpt-5.6-sol" } } });
+  // OpenClaw owns model selection and cannot accept a Cave model override;
+  // keep this bridge fixture on the explicit runtime-default sentinel.
+  await saveConfig({ familiars: { wren: { harness: "openclaw", model: "" } } });
   const project = await createProject({ name: "OpenClaw route fixture", root: workspace });
   await grantProjectToFamiliar({ familiarId: "wren", projectId: project.id, source: "human", access: "write" });
   const send = (prompt) => POST(new Request("http://localhost/api/chat/send", {

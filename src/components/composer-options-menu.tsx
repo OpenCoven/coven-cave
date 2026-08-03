@@ -28,22 +28,34 @@ export type ComposerOptionSection = {
   label: string;
   value: string;
   options: ComposerOptionChoice[];
+  /** Keep a persisted model visible while scoped discovery is loading/degraded. */
+  showUnlistedValue?: boolean;
   onChange: (value: string) => void;
 };
 
 /** One labeled single-select rendered as a proper radiogroup: roving tabindex
  *  plus arrow-key navigation, so keyboard users move between options with one
  *  Tab stop per group rather than tabbing through every pill. */
-export function ComposerOptionRadioGroup({ label, value, options, onChange }: ComposerOptionSection) {
+export function ComposerOptionRadioGroup({
+  label,
+  value,
+  options,
+  showUnlistedValue = false,
+  onChange,
+}: ComposerOptionSection) {
   const groupRef = useRef<HTMLDivElement | null>(null);
+  const visibleOptions =
+    showUnlistedValue && value && !options.some((option) => option.value === value)
+      ? [{ value, label: `Current selection · ${value} (not in current inventory)` }, ...options]
+      : options;
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(e.key)) return;
     e.preventDefault();
-    const idx = Math.max(0, options.findIndex((o) => o.value === value));
+    const idx = Math.max(0, visibleOptions.findIndex((o) => o.value === value));
     const dir = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
-    const nextIdx = (idx + dir + options.length) % options.length;
-    const next = options[nextIdx];
+    const nextIdx = (idx + dir + visibleOptions.length) % visibleOptions.length;
+    const next = visibleOptions[nextIdx];
     if (!next) return;
     onChange(next.value);
     groupRef.current
@@ -61,7 +73,7 @@ export function ComposerOptionRadioGroup({ label, value, options, onChange }: Co
         aria-label={label}
         onKeyDown={onKeyDown}
       >
-        {options.map((opt) => {
+        {visibleOptions.map((opt) => {
           const checked = opt.value === value;
           return (
             <button

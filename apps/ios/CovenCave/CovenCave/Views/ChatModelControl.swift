@@ -18,6 +18,8 @@ struct ChatModelControlCapability: Codable, Hashable, Identifiable {
     let label: String
     let delivery: String
     let values: [ChatModelControlValue]
+    /// Runtime/provider wire name. It is intentionally not rendered as copy.
+    var parameter: String?
     var id: String { family }
 }
 
@@ -31,12 +33,24 @@ struct ChatModelState: Codable {
     var reason: String?
 }
 
+struct ChatModelInventoryScope: Codable {
+    let familiarId: String?
+    let runtime: String
+    let provider: String?
+    let credentialScope: String
+    let providerConfiguration: String
+}
+
 struct ChatModelInventory: Codable {
     let runtime: String
     let models: [ChatModelOption]
     let provenance: String
+    var freshness: String?
+    var refreshState: String?
+    var availability: String?
     let defaultOwner: String
     let allowCustom: Bool
+    var scope: ChatModelInventoryScope?
 
     var allowsRuntimeDefault: Bool { defaultOwner == "runtime" }
 }
@@ -110,6 +124,7 @@ struct ChatModelBar: View {
     @State private var inventoryProvenance: String?
     @State private var responseBindingScope: String?
     @State private var presentationScope = ChatModelPresentationScope()
+    @State private var modelMutationQueue = ChatModelMutationQueue()
     @State private var showPicker = false
     @State private var busy = false
 
@@ -156,7 +171,10 @@ struct ChatModelBar: View {
     }
 
     private var presentedAllowsRuntimeDefault: Bool {
-        presentationIsCurrent && allowsRuntimeDefault
+        // Clearing an explicit Cave-owned model must remain available even
+        // though the runtime's catalog owns no default. A loaded state proves
+        // that this is a real model picker rather than an uninitialized chip.
+        presentationIsCurrent && (allowsRuntimeDefault || state != nil)
     }
 
     private var presentedProvenance: String? {
@@ -264,27 +282,31 @@ struct ChatModelBar: View {
         } else if state?.source == "runtime-default" && state?.effectiveModel.isEmpty == true {
             return
         }
-        busy = true
-        defer { busy = false }
+        let selectedSessionId = sessionId
         let target = requestTarget
-        // Per-chat when the chat has a server session; otherwise change the
-        // familiar's default so the choice still sticks for the next message.
-        let scope = sessionId != nil ? "session" : "familiar-default"
-        do {
-            let resp = try await client.setChatModel(
-                familiarId: familiarId, sessionId: sessionId, model: model, scope: scope)
-            guard presentationScope.canApplyResponse(
-                for: target,
-                currentTarget: requestTarget
-            ) else { return }
-            state = resp.state
-            if let opts = resp.options { options = opts }
-            allowsRuntimeDefault = resp.inventory?.allowsRuntimeDefault ?? allowsRuntimeDefault
-            inventoryProvenance = resp.inventory?.provenance ?? inventoryProvenance
-            Haptics.tap()
-        } catch {
-            // Leave the prior state in place on failure.
+        busy = true
+        let mutation = modelMutationQueue.enqueue {
+            defer { self.busy = false }
+            // Per-chat when the chat has a server session; otherwise change the
+            // familiar's default so the choice still sticks for the next message.
+            let scope = selectedSessionId != nil ? "session" : "familiar-default"
+            do {
+                let resp = try await client.setChatModel(
+                    familiarId: familiarId, sessionId: selectedSessionId, model: model, scope: scope)
+                guard self.presentationScope.canApplyResponse(
+                    for: target,
+                    currentTarget: self.requestTarget
+                ) else { return }
+                self.state = resp.state
+                if let opts = resp.options { self.options = opts }
+                self.allowsRuntimeDefault = resp.inventory?.allowsRuntimeDefault ?? self.allowsRuntimeDefault
+                self.inventoryProvenance = resp.inventory?.provenance ?? self.inventoryProvenance
+                Haptics.tap()
+            } catch {
+                // Leave the prior state in place on failure.
+            }
         }
+        await mutation.value
     }
 
     private func shortModel(_ id: String) -> String {

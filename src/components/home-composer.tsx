@@ -20,8 +20,9 @@ import {
   useState,
 } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
+import type { InitialCommandControls } from "@/lib/command-controls";
 import { Icon } from "@/lib/icon";
-import { resolveModelArg } from "@/lib/slash-model";
+import { isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
   resolveSkillInvocation,
@@ -101,7 +102,7 @@ type Props = {
     familiarId: string,
     projectRoot: string | null,
     opts?: {
-      initialControls?: { runtimeHost?: string };
+      initialControls?: InitialCommandControls;
       /** Files staged in the home composer; the opened chat auto-sends with them. */
       initialAttachments?: ChatAttachment[];
     },
@@ -215,7 +216,13 @@ export function HomeComposer({
     () => resolveHomeComposerFamiliar(familiars, activeFamiliarId, archivedFamiliars),
     [familiars, activeFamiliarId, archivedFamiliars],
   );
-  const { modelState, selectModel: handleSelectModel, selectRuntime: handleSelectRuntime } =
+  const {
+    modelState,
+    pendingModelOverride,
+    waitForRuntimeWrite,
+    selectModel: handleSelectModel,
+    selectRuntime: handleSelectRuntime,
+  } =
     useHomeModelState(selectedFamiliarId);
   // Keep the operator registry query alive even before a familiar exists. The
   // home add-project action can register a folder before familiar setup, and
@@ -240,6 +247,28 @@ export function HomeComposer({
   // Host chip: where the opened chat should execute. Per-composer state, not a
   // sticky pref — mirrors the chat composer's Host chip (#2337/#2340).
   const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
+  // Carry an explicit Home model intent through the new-chat handoff. This is
+  // needed even when the familiar-default PATCH is still in flight: Home
+  // unmounts as soon as ChatView takes ownership of the first send.
+  const initialModelOverride =
+    pendingModelOverride !== undefined
+      ? pendingModelOverride
+      : modelState?.source === "runtime-default"
+        ? ""
+        : modelState?.source === "familiar-default" &&
+            modelState.effectiveModel &&
+            modelState.effectiveModel !== "unknown"
+          ? modelState.effectiveModel
+          : undefined;
+  const initialChatControls: InitialCommandControls | undefined =
+    runtimeHost || initialModelOverride !== undefined
+      ? {
+          ...(runtimeHost ? { runtimeHost } : {}),
+          ...(initialModelOverride !== undefined
+            ? { modelOverride: initialModelOverride, modelOverrideScope: "next-message" as const }
+            : {}),
+        }
+      : undefined;
   // The project the most recent chat ran in: the default for the next chat
   // when the user hasn't explicitly picked one (kept live as sessions load).
   const recentProjectRoot = useMemo(
@@ -276,13 +305,10 @@ export function HomeComposer({
     modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
       : "";
-  const selectedModelId = effectiveModel &&
-    (runtimeOwnsDefault ||
-      runtimeModelOptions.some((model) => model.id === effectiveModel))
-    ? effectiveModel
-    : runtimeOwnsDefault
-      ? ""
-      : runtimeModelOptions[0]?.id ?? "";
+  // Keep a safe custom or stale-but-persisted model visible even when live
+  // discovery has not returned it. Hiding it as the empty default would make
+  // the picker look cleared while the next send still uses that model.
+  const selectedModelId = effectiveModel;
   const keys = useKeySymbols();
   const runtimeSectionOptions = useMemo(
     () =>
@@ -363,7 +389,7 @@ export function HomeComposer({
   // (or a hint-less skill) starts the chat. Mirrors chat-view's
   // invokeSkillOption.
   const invokeSkill = useCallback(
-    (skill: SkillOption, args = "") => {
+    async (skill: SkillOption, args = "") => {
       const filled = `/skill ${skill.id}`;
       if (skill.argumentHint && !args && text.trim().toLowerCase() !== filled.toLowerCase()) {
         setText(`${filled} `);
@@ -378,9 +404,13 @@ export function HomeComposer({
         onToast(projectLaunchMessage);
         return;
       }
+      if (!(await waitForRuntimeWrite())) {
+        onToast("Runtime selection could not be saved; chat was not started.");
+        return;
+      }
       setText("");
       onStartChat(buildSkillPrompt(skill, args), selectedFamiliarId, selectedProjectRoot, {
-        initialControls: runtimeHost ? { runtimeHost } : undefined,
+        initialControls: initialChatControls,
       });
     },
     [
@@ -390,6 +420,7 @@ export function HomeComposer({
       projectLaunchReady,
       projectLaunchMessage,
       runtimeHost,
+      initialChatControls,
       onStartChat,
       onToast,
       text,
@@ -544,6 +575,11 @@ export function HomeComposer({
           onToast(current ? `Model: ${current}` : "Type /model <id> to pick a model.");
           return;
         }
+        if (isRuntimeDefaultModelArg(args)) {
+          handleSelectModel(null);
+          onToast("Model reset to the runtime default.");
+          return;
+        }
         const id = resolveModelArg(
           args,
           modelHarness,
@@ -663,6 +699,10 @@ export function HomeComposer({
             onToast(projectLaunchMessage);
             break;
           }
+          if (!(await waitForRuntimeWrite())) {
+            onToast("Runtime selection could not be saved; chat was not started.");
+            break;
+          }
           // Hand the prompt to ChatView, which owns the streaming send. Doing
           // the send here and canceling on the session event aborts the
           // request server-side — the harness is killed mid-run and the
@@ -679,7 +719,7 @@ export function HomeComposer({
           clearAttachments();
           promptEnhance.reset();
           onStartChat(prompt, selectedFamiliarId, selectedProjectRoot, {
-            initialControls: runtimeHost ? { runtimeHost } : undefined,
+            initialControls: initialChatControls,
             initialAttachments: outgoing,
           });
           break;
@@ -732,6 +772,8 @@ export function HomeComposer({
     runtimeModelOptions,
     runtimeModelInventory.allowCustom,
     runtimeHost,
+    initialChatControls,
+    waitForRuntimeWrite,
     sending,
     attachments,
     clearDraft,
@@ -1150,15 +1192,17 @@ export function HomeComposer({
                 options: runtimeSectionOptions,
                 onChange: (id: string) => handleSelectRuntime(id),
               } satisfies ComposerOptionSection,
-              ...(runtimeOwnsDefault || runtimeModelOptions.length > 0
+              ...(runtimeOwnsDefault || runtimeModelOptions.length > 0 || runtimeModelInventory.loading
                 ? [{
                     id: "model",
                     label: `Model · ${inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}`,
                     value: selectedModelId,
+                    showUnlistedValue: true,
                     options: [
-                      ...(runtimeOwnsDefault
-                        ? [{ value: "", label: "Runtime default" }]
-                        : []),
+                      {
+                        value: "",
+                        label: "Runtime default",
+                      },
                       ...runtimeModelOptions.map((m) => ({ value: m.id, label: m.label })),
                     ],
                     onChange: (id: string) => handleSelectModel(id || null),

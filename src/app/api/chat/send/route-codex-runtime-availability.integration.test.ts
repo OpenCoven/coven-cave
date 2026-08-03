@@ -242,6 +242,7 @@ try {
       familiarId: "opal",
       prompt: "silent child",
       modelOverride: "openai/gpt-5.6-sol",
+      modelOverrideScope: "next-message",
       projectRoot: familiarWorkspace,
       sessionId: silentExitSessionId,
     }),
@@ -292,6 +293,7 @@ try {
       familiarId: "opal",
       prompt: "silent stderr",
       modelOverride: "openai/gpt-5.6-sol",
+      modelOverrideScope: "next-message",
       projectRoot: familiarWorkspace,
     }),
   }));

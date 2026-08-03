@@ -25,13 +25,24 @@ function Probe({ runtime = "claude", familiarId, snapshots }: {
 }
 
 function inventory(familiarId: string, provenance = "live") {
+  const freshness = provenance === "live" ? "fresh" : provenance === "cached" ? "cached" : "seed";
   return {
     ok: true,
     runtime: "claude",
     models: [{ id: `anthropic/${familiarId}`, label: familiarId }],
     provenance,
+    freshness,
+    refreshState: provenance === "live" || provenance === "cached" ? "ready" : "degraded",
+    availability: provenance === "live" || provenance === "cached" ? "available" : "degraded",
     defaultOwner: "cave",
     allowCustom: false,
+    scope: {
+      familiarId,
+      runtime: "claude",
+      provider: "anthropic",
+      credentialScope: "familiar",
+      providerConfiguration: "familiar",
+    },
   };
 }
 
@@ -84,11 +95,12 @@ test("runtime inventory masks scope transitions and preserves same-scope refresh
     assert.ok(
       snapshots.every((snapshot) =>
         snapshot.models.some((model) => model.id === "anthropic/familiar-a") &&
-        !snapshot.loading
+        snapshot.loading
       ),
-      "a same-scope refresh keeps the last validated inventory mounted",
+      "a same-scope refresh keeps the last validated inventory mounted while marked loading",
     );
     await settle(pending.shift()!, inventory("familiar-a", "cached"));
+    assert.equal(snapshots.at(-1)?.loading, false);
 
     snapshots.length = 0;
     await act(async () => {
@@ -162,6 +174,44 @@ test("Hermes transport failures never reconstruct static OpenAI seeds", async ()
   }
 });
 
+test("an empty live response falls back instead of claiming model entitlement", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    ...inventory("sage"),
+    models: [],
+  }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  })) as typeof fetch;
+  globalThis.setInterval = (() => 1) as typeof setInterval;
+  globalThis.clearInterval = (() => {}) as typeof clearInterval;
+
+  const snapshots: RuntimeModelInventoryResult[] = [];
+  let renderer: ReturnType<typeof create> | null = null;
+  try {
+    await act(async () => {
+      renderer = create(createElement(Probe, {
+        runtime: "claude",
+        familiarId: "sage",
+        snapshots,
+      }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const settled = snapshots.at(-1);
+    assert.equal(settled?.loading, false);
+    assert.equal(settled?.provenance, "fallback");
+    assert.ok((settled?.models.length ?? 0) > 0, "static seeds remain visibly fallback data");
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    globalThis.fetch = originalFetch;
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+  }
+});
+
 test("a completed config write retries a Hermes request that raced the save", async () => {
   const originalFetch = globalThis.fetch;
   const originalSetInterval = globalThis.setInterval;
@@ -169,6 +219,7 @@ test("a completed config write retries a Hermes request that raced the save", as
   const originalWindow = globalThis.window;
   const originalDocument = globalThis.document;
   const pending: DeferredResponse[] = [];
+  let poll: (() => void) | null = null;
   const browserEvents = new EventTarget();
   const documentEvents = new EventTarget();
   Object.defineProperty(documentEvents, "visibilityState", {
@@ -191,7 +242,10 @@ test("a completed config write retries a Hermes request that raced the save", as
         : input.url;
     return await new Promise((resolve) => pending.push({ url, resolve }));
   }) as typeof fetch;
-  globalThis.setInterval = (() => 1) as typeof setInterval;
+  globalThis.setInterval = ((callback: () => void) => {
+    poll = callback;
+    return 1;
+  }) as typeof setInterval;
   globalThis.clearInterval = (() => {}) as typeof clearInterval;
 
   const snapshots: RuntimeModelInventoryResult[] = [];
@@ -208,27 +262,79 @@ test("a completed config write retries a Hermes request that raced the save", as
     await settle(pending.shift()!, {
       ok: true,
       runtime: "hermes",
-      models: [],
-      provenance: "runtime-managed",
+      models: [{ id: "openrouter/old", label: "Old inventory" }],
+      provenance: "live",
+      freshness: "fresh",
+      refreshState: "ready",
+      availability: "available",
       defaultOwner: "runtime",
       allowCustom: false,
+      scope: {
+        familiarId: "sage",
+        runtime: "hermes",
+        provider: "openai",
+        credentialScope: "familiar",
+        providerConfiguration: "familiar",
+      },
     });
+    assert.deepEqual(snapshots.at(-1)?.models.map((model) => model.id), ["openrouter/old"]);
 
+    snapshots.length = 0;
+    await act(async () => {
+      poll?.();
+    });
+    assert.equal(pending.length, 1, "the refresh request is in flight before the config event");
     await act(async () => {
       browserEvents.dispatchEvent(new Event("cave:familiars-refresh"));
     });
     assert.equal(
       pending.length,
-      1,
-      "the post-save event starts a same-key retry without waiting for the poll",
+      2,
+      "the post-save event starts a same-key retry without waiting for the in-flight refresh",
+    );
+    assert.ok(
+      snapshots.at(-1)?.models.length === 0 && snapshots.at(-1)?.loading === true,
+      "a config/profile change masks the prior inventory before its replacement arrives",
+    );
+    await settle(pending.shift()!, {
+      ok: true,
+      runtime: "hermes",
+      models: [{ id: "openrouter/stale", label: "Stale inventory" }],
+      provenance: "live",
+      freshness: "fresh",
+      refreshState: "ready",
+      availability: "available",
+      defaultOwner: "runtime",
+      allowCustom: false,
+      scope: {
+        familiarId: "sage",
+        runtime: "hermes",
+        provider: "openai",
+        credentialScope: "familiar",
+        providerConfiguration: "familiar",
+      },
+    });
+    assert.ok(
+      snapshots.at(-1)?.models.length === 0 && snapshots.at(-1)?.loading === true,
+      "the pre-event response cannot repopulate the masked inventory",
     );
     await settle(pending.shift()!, {
       ok: true,
       runtime: "hermes",
       models: [{ id: "openrouter/auto", label: "OpenRouter Auto" }],
       provenance: "live",
+      freshness: "fresh",
+      refreshState: "ready",
+      availability: "available",
       defaultOwner: "runtime",
       allowCustom: false,
+      scope: {
+        familiarId: "sage",
+        runtime: "hermes",
+        provider: "openai",
+        credentialScope: "familiar",
+        providerConfiguration: "familiar",
+      },
     });
     assert.deepEqual(
       snapshots.at(-1)?.models.map((model) => model.id),
