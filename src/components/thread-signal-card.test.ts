@@ -89,7 +89,27 @@ describe("thread-signal-card module wiring", () => {
   it("defers the dismissal upward so Undo can restore the card", () => {
     assert.match(source, /const \[dismissed, setDismissed\] = useState\(false\)/);
     assert.match(source, /setTimeout\(\(\) => onDismissRef\.current\(\), DISMISS_UNDO_MS\)/);
-    assert.match(source, /onClick=\{\(\) => setDismissed\(false\)\}/);
+    assert.match(source, /setDismissed\(false\);\s*\n\s*announce\("Thread Signal restored\."\)/);
+    assert.match(source, /setDismissed\(true\);\s*\n\s*announce\("Thread Signal dismissed/);
+  });
+
+  it("resets per-report state when a newer report lands on the same instance", () => {
+    // chat-view reuses this instance via setThreadSignalReport, and launched/
+    // tasked are keyed by kind:sourceId — keys that repeat across reports.
+    // Without the reset the new report's rows render as already actioned.
+    assert.match(source, /const \[renderedReportId, setRenderedReportId\] = useState\(report\.id\)/);
+    assert.match(source, /if \(renderedReportId !== report\.id\) \{/);
+    for (const setter of [
+      /setRenderedReportId\(report\.id\)/,
+      /setSelectedTile\(weakestTileId\(tiles\)\)/,
+      /setOpenRow\(null\)/,
+      /setLaunched\(new Set\(\)\)/,
+      /setTasked\(new Set\(\)\)/,
+      /setTaskPending\(new Set\(\)\)/,
+      /setDismissed\(false\)/,
+    ]) {
+      assert.match(source, setter);
+    }
   });
 
   it("keeps every interactive element keyboard-reachable and announced", () => {

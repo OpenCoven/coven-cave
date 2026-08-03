@@ -17,6 +17,7 @@ import {
   deriveThreadScore,
   type ThreadSelfReport,
   type ThreadSignalRow,
+  type ThreadSignalScoreTile,
 } from "@/lib/thread-self-report";
 
 type ThreadSignalCardProps = {
@@ -38,6 +39,13 @@ function rowKey(row: ThreadSignalRow): string {
   return `${row.kind}:${row.sourceId}`;
 }
 
+/** Open on the weakest scored tile: the card's whole job is to explain the number
+ *  that will bother you, and that is never "Score" itself. */
+function weakestTileId(tiles: ThreadSignalScoreTile[]): string | null {
+  const scored = tiles.filter((tile) => tile.id !== "score" && tile.id !== "context");
+  return [...scored].sort((a, b) => a.percent - b.percent)[0]?.id ?? null;
+}
+
 export function ThreadSignalCard({ report, onViewFull, onDismiss }: ThreadSignalCardProps) {
   const { announce } = useAnnouncer();
   const tiles = useMemo(() => buildThreadSignalScoreTiles(report), [report]);
@@ -46,17 +54,30 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss }: ThreadSignal
   const name = report.threadTitle?.trim() || report.familiarId;
   const age = relativeTime(report.reportedAt);
 
-  // Open on the weakest scored tile: the card's whole job is to explain the
-  // number that will bother you, and that is never "Score" itself.
-  const [selectedTile, setSelectedTile] = useState<string | null>(() => {
-    const scored = tiles.filter((tile) => tile.id !== "score" && tile.id !== "context");
-    return [...scored].sort((a, b) => a.percent - b.percent)[0]?.id ?? null;
-  });
+  const [selectedTile, setSelectedTile] = useState<string | null>(() => weakestTileId(tiles));
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [launched, setLaunched] = useState<Set<string>>(() => new Set());
   const [tasked, setTasked] = useState<Set<string>>(() => new Set());
   const [taskPending, setTaskPending] = useState<Set<string>>(() => new Set());
   const [dismissed, setDismissed] = useState(false);
+
+  // Every piece of state above belongs to ONE report, and chat-view reuses this
+  // instance when a newer self-report lands for the same session
+  // (setThreadSignalReport). Without this reset the card would highlight the old
+  // report's tile and mark the new report's rows as already launched or already
+  // filed, because both sets are keyed by kind:sourceId and those repeat across
+  // reports. React's documented "adjust state when a prop changes" pattern —
+  // kept in the component so a caller cannot forget to pass a key.
+  const [renderedReportId, setRenderedReportId] = useState(report.id);
+  if (renderedReportId !== report.id) {
+    setRenderedReportId(report.id);
+    setSelectedTile(weakestTileId(tiles));
+    setOpenRow(null);
+    setLaunched(new Set());
+    setTasked(new Set());
+    setTaskPending(new Set());
+    setDismissed(false);
+  }
 
   // Commit the dismissal upward only after the undo window closes, so Undo can
   // restore a card the parent has not yet dropped.
@@ -146,7 +167,14 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss }: ThreadSignal
     return (
       <div className="tsc-dismissed" role="status">
         Thread Signal dismissed
-        <button type="button" className="tsc-undo focus-ring" onClick={() => setDismissed(false)}>
+        <button
+          type="button"
+          className="tsc-undo focus-ring"
+          onClick={() => {
+            setDismissed(false);
+            announce("Thread Signal restored.");
+          }}
+        >
           Undo
         </button>
       </div>
@@ -198,7 +226,10 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss }: ThreadSignal
           icon="ph:x-bold"
           aria-label="Dismiss Thread Signal"
           title="Dismiss"
-          onClick={() => setDismissed(true)}
+          onClick={() => {
+            setDismissed(true);
+            announce("Thread Signal dismissed. Undo is available for a few seconds.");
+          }}
         />
       </div>
 
