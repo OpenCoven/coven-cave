@@ -1275,8 +1275,18 @@ function ExpandBubble({
         >
           {/* The reader's own reading scale (.cave-md--reader in
               cave-md/prose.css) — the transcript's dense 14px is right in the
-              stream, wrong for a full-screen reading surface. */}
-          <MarkdownBlock text={text} className="cave-md--expanded cave-md--reader" />
+              stream, wrong for a full-screen reading surface.
+
+              Renders the CITED body, exactly as the bubble does: raw `text`
+              still carries the footnote definitions, so a reader opened on a
+              cited answer would otherwise show `[^label]` markers inline and
+              dump the definition block into the prose. `text` stays raw on the
+              reader itself — Copy/Export hand back portable markdown, and the
+              Sources tab needs those definitions to parse. */}
+          <MarkdownBlock
+            text={renderCitedBody(text).body}
+            className="cave-md--expanded cave-md--reader"
+          />
         </MessageReader>
       ) : null}
     </>
