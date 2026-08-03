@@ -203,9 +203,17 @@ Use `.worktrees/<branch-name>/` subdirectories inside the repo. Confirmed in use
 **Create:**
 
 ```bash
-pnpm beads:worktrees:create --bead <id> --branch <branch> --owner <you> --purpose "…"
-cd .worktrees/<branch> && pnpm install   # ~10s with pnpm's CAS store
+pnpm beads:worktrees:create --bead cave-123 --branch fix/cave-123-example --owner <you> --purpose "…"
+cd .worktrees/cave-123-example && pnpm install   # ~10s with pnpm's CAS store
 ```
+
+⚠️ **The directory is not `.worktrees/<branch>`.** The script slugifies the
+branch (`worktree-lifecycle-create.ts`): it strips one leading `feat/`, `fix/`,
+`docs/` or `chore/`, then replaces every remaining character outside
+`A-Za-z0-9._-` with `-`. So `fix/cave-123-example` lands at
+`.worktrees/cave-123-example`, and an unlisted prefix like `release/foo` lands at
+`.worktrees/release-foo`. `cd .worktrees/<branch>` works only for a branch with
+no prefix at all.
 
 This is the form [`AGENTS.md`](AGENTS.md) mandates, and it is the *only* one that
 produces a retirable worktree: it writes the `metadata.coven.worktree` record
