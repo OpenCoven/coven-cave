@@ -84,8 +84,8 @@ function git(cwd, ...args) {
  * record BEFORE the shared block and `theirs` writes its own AFTER, so the
  * added hunks overlap without matching.
  */
-function buildDivergedRepo(mergeAttribute) {
-  const dir = mkdtempSync(join(tmpdir(), "beads-merge-"));
+function buildDivergedRepo(mergeAttribute, prefix = "beads-merge-") {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
   git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "commit.gpgsign", "false");
   mkdirSync(join(dir, ".beads"), { recursive: true });
@@ -138,7 +138,7 @@ test("the driver merges the same divergence with NO duplicates and NO loss", () 
   const { dir, log } = buildDivergedRepo("merge=beads-jsonl");
   try {
     git(dir, "config", "merge.beads-jsonl.name", "test");
-    git(dir, "config", "merge.beads-jsonl.driver", `node ${driver} %O %A %B`);
+    git(dir, "config", "merge.beads-jsonl.driver", `node "${driver}" "%O" "%A" "%B"`);
     git(dir, "merge", "-q", "--no-edit", "other");
 
     const { counts, ids } = idCounts(log);

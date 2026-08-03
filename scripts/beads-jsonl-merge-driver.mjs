@@ -22,9 +22,23 @@
 // silently keep a stale issue state. A loud conflict is the right outcome
 // there.
 //
-// Invoked by git as: node scripts/beads-jsonl-merge-driver.mjs %O %A %B
+// Invoked by git as:
+//   node scripts/beads-jsonl-merge-driver.mjs "%O" "%A" "%B"
 //   %O ancestor   %A ours (also the OUTPUT path)   %B theirs
-// Exit 0 = merged cleanly; exit 1 = conflict left in %A.
+// The placeholders are quoted in the git config as defence in depth. MEASURED
+// behaviour (2026-08-03): git substitutes RELATIVE, space-free temp names in
+// the repository root — argv came back as
+//     [".merge_file_KoLys3", ".merge_file_49gj9e", ".merge_file_18nC3m"]
+// even when the repository itself sat under a directory containing a space. So
+// unquoted placeholders are not a live bug here, and a regression test for it
+// cannot distinguish quoted from unquoted. Quoting is kept because it costs
+// nothing if git ever passes a path instead; do not add a test that "proves"
+// it, because it will pass either way.
+//
+// Exit codes: 0 = merged cleanly, 2 = called wrongly. This driver never
+// reports a conflict (git's convention for that is a non-zero exit with
+// markers left in %A) because a union keyed by an immutable record id has no
+// conflicting case: every record from either side is kept exactly once.
 
 import { readFileSync, writeFileSync } from "node:fs";
 
