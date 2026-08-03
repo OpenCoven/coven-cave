@@ -299,6 +299,29 @@ Map PIDs to session JSONLs in `~/.claude/projects/-Users-buns-Documents-GitHub-O
 
 **Worktree guard (automatic, BLOCKING).** A second PreToolUse hook — `scripts/worktree-guard.mjs`, matcher Bash — blocks (exit 2) destruction of live work: `git worktree remove`/`rm -rf` of a worktree root that is dirty or whose HEAD is on no remote ref, `git branch -D` of an unpushed tip, and `git push --delete` of a branch that still heads an OPEN PR. Clean+pushed cleanup and husk GC pass silently. **"Retained" counts a remote branch OR a tag pushed to a remote** — so the right way to retire a branch whose commits you want kept but off the branch list is to archive it: `git tag -s archive/<branch-with-slashes-as-dashes> <oid> && git push origin <that-tag>`, then delete freely. Flatten the slashes (`fix/foo` → `archive/fix-foo-<date>`) — git cannot hold both a tag `archive/fix` and a tag `archive/fix/foo`, so nested archive names collide as soon as a second branch shares a prefix. A pushed tag is *more* durable than a branch (merging deletes the branch, never the tag); a **local-only tag does not count**, and if the remote is unreachable the tag check fails closed and blocks. If destruction is deliberate, re-run prefixed with `WT_GUARD_BYPASS=1 ` (the prefix must lead the WHOLE command string — a prefix buried inside `bash -c` or after a leading assignment does not reach the hook). Every bypass AND every block is appended to `.claude/worktree-guard-bypass.log` (gitignored, JSON lines with a `verdict` field) — after cave-boor8, where a destroyed worktree's post-mortem couldn't tell an override from a hole. Exists because on 2026-07-03 an actor merged another session's in-progress branch (PR #2290) and its post-merge cleanup destroyed that session's worktree mid-edit (coordination doc §5). Corollary disciplines: **push your branch to origin after every commit** — the remote is the only store a local actor can't destroy — and **any audit of a dirty worktree records `git status --porcelain` paths, never just a count** (cave-boor8: a count is unrecoverable; paths make lost-found search possible).
 
+**Worktree auto-lock (automatic, NON-blocking).** A third PreToolUse hook —
+`scripts/worktree-autolock.mjs`, matcher Bash — runs `git worktree lock` on any
+registered worktree that is dirty or holds commits absent from every remote. It
+exists because the guard above only sees Bash from a Claude Code session, and
+the actor that actually destroys worktrees here is **GitHub Desktop**: on
+2026-08-03 it executed 18 `git worktree remove` calls and 114 direct
+`git push origin main:main`, and it removed two live worktrees mid-session.
+
+A lock is the only defence that reaches outside Claude Code. Git refuses to
+remove a locked worktree unless `--force` is given **twice** (verified: plain
+remove and a single `--force` both fail with *"cannot remove a locked working
+tree"*); Desktop has never escalated past one force in any observed removal.
+
+It deliberately **skips clean, fully-pushed worktrees** — removing one of those
+loses nothing, and locking it would only force an unlock during routine
+cleanup. So a lock appearing on your worktree means it holds something no
+remote has. Clear it yourself when you are done: `git worktree unlock <path>`.
+Locking by hand is a snapshot; this re-applies as worktrees appear, throttled
+to once a minute via `.claude/worktree-autolock.stamp`. Every lock is appended
+to `.claude/worktree-autolock.log` (gitignored, JSON lines). Disable for a
+command with `WT_AUTOLOCK_DISABLE=1`. It never blocks a tool call and always
+exits 0 — if it cannot read a worktree, it leaves it alone.
+
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 ## Beads Issue Tracker
