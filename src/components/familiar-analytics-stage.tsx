@@ -711,8 +711,11 @@ export const PulseOverlay = memo(function PulseOverlay({
     null,
   );
   const mean = pulse.length > 0 ? total / pulse.length : 0;
+  // A region, not a dialog: this expands in flow inside the stage, takes no
+  // focus and traps none. role="dialog" would have AT announce a modal that
+  // never arrives.
   return (
-    <div className="fa-pulse-panel" role="dialog" aria-modal="false" aria-label="Activity — last 14 days">
+    <section className="fa-pulse-panel" aria-label={`Activity — last ${pulse.length} days`}>
       <div className="fa-pulse-panel__head">
         <Icon name="ph:chart-line-up" width={15} aria-hidden />
         <b>Activity — last {pulse.length} days</b>
@@ -766,6 +769,6 @@ export const PulseOverlay = memo(function PulseOverlay({
           <small>{streakDays > 0 ? `${streakDays}-day streak alive` : "no streak running"}</small>
         </span>
       </div>
-    </div>
+    </section>
   );
 });

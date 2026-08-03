@@ -60,12 +60,25 @@ export const TrustRing = memo(function TrustRing({
   /** `lg` is the trust modal's hero ring; `sm` rides in the dock. */
   size?: "sm" | "lg";
 }) {
-  const score = Math.max(0, Math.min(100, confidence.score));
-  const dash = confidence.hasData ? (score / 100) * RING_CIRCUMFERENCE : 0;
+  // One clamped number feeds both the arc and the printed score — an
+  // out-of-range value must not let the ring and the digits disagree.
+  const score = confidence.hasData ? Math.max(0, Math.min(100, confidence.score)) : null;
+  const dash = score === null ? 0 : (score / 100) * RING_CIRCUMFERENCE;
   const tier = confidence.hasData ? confidenceTier(confidence.label) : "none";
+  // In the dock the ring sits inside a button that already names the score, so
+  // it is decoration. As the trust modal's hero it IS the headline — hiding it
+  // would leave assistive tech with no score at all.
+  const ringAria = size === "lg"
+    ? {
+        role: "img" as const,
+        "aria-label": score === null
+          ? "Trust not measured yet — no thread self-reports"
+          : `Trust ${score} of 100, ${confidence.label}, from ${confidence.reportCount} thread report${confidence.reportCount === 1 ? "" : "s"}`,
+      }
+    : { "aria-hidden": true as const };
   return (
-    <span className={`fa-ring fa-ring--${size} fa-ring--${tier}`} aria-hidden>
-      <svg viewBox="0 0 100 100">
+    <span className={`fa-ring fa-ring--${size} fa-ring--${tier}`} {...ringAria}>
+      <svg viewBox="0 0 100 100" aria-hidden>
         <circle className="fa-ring__track" cx="50" cy="50" r={RING_RADIUS} />
         <circle
           className="fa-ring__value"
@@ -76,8 +89,8 @@ export const TrustRing = memo(function TrustRing({
           transform="rotate(-90 50 50)"
         />
       </svg>
-      <span className="fa-ring__label">
-        <strong>{confidence.hasData ? confidence.score : "—"}</strong>
+      <span className="fa-ring__label" aria-hidden={size === "lg"}>
+        <strong>{score ?? "—"}</strong>
         {size === "lg" ? <span>{confidence.hasData ? confidence.label : "No data"}</span> : null}
       </span>
     </span>

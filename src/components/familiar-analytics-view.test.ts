@@ -797,7 +797,19 @@ describe("confidence from thread analysis + metric labeling", () => {
   it("renders the dock's trust ring from thread confidence with an unmeasured state", () => {
     assert.match(dockSource, /fa-ring--\$\{size\} fa-ring--\$\{tier\}/, "ring tier class tracks the derived tier");
     assert.match(dockSource, /confidence\.hasData \? confidenceTier\(confidence\.label\) : "none"/, "no reports → neutral ring, never a fake Low");
-    assert.match(dockSource, /"Trust not measured yet"/, "the unmeasured ring says so to AT");
+    assert.match(dockSource, /Trust not measured yet — no thread self-reports/, "the unmeasured hero ring says so to AT");
+    // In the dock the ring is decoration (its button already names the score);
+    // as the trust modal's hero it IS the headline and must be exposed.
+    assert.match(
+      dockSource,
+      /const ringAria = size === "lg"[\s\S]*role: "img" as const[\s\S]*: \{ "aria-hidden": true as const \}/,
+      "the hero ring is announced, the decorative one is not",
+    );
+    assert.match(
+      dockSource,
+      /const score = confidence\.hasData \? Math\.max\(0, Math\.min\(100, confidence\.score\)\) : null/,
+      "one clamped number feeds both the arc and the printed score",
+    );
     assert.match(dockSource, /from \$\{confidence\.reportCount\} report/, "the measured ring cites its report count");
     const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     assert.match(faCss, /\.fa-ring--none\s*\{[^}]*--fa-ring-color:\s*var\(--border-strong\)/, "the unmeasured tier stays neutral (tokens only)");
