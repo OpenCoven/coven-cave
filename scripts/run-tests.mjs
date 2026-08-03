@@ -37,6 +37,7 @@ export const SUITES = {
     "src/lib/familiar-drag.test.ts",
     "src/lib/sidebar-nav-state.test.ts",
     "src/lib/workspace-mode.test.ts",
+    "src/lib/workspace-url-state.test.ts",
     "src/lib/pending-code-navigation.test.ts",
     "src/lib/workspace-navigation.test.ts",
     "src/lib/workspace-navigation-history.test.ts",
