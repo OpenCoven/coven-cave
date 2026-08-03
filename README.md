@@ -241,6 +241,11 @@ pnpm mobile:tailscale:app      # pair the native iOS app to a daemon over Tailsc
 pnpm mobile:ios:sim            # build & run the native iOS app in the simulator
 ```
 
+The standalone Coven Memory iOS client uses the same **Open on phone**
+bearer/Tailscale boundary and Cave's read-only canonical-memory routes. See
+[`docs/mobile-memory.md`](docs/mobile-memory.md) for enablement, pairing,
+global credential rotation, recovery, and privacy constraints.
+
 The native SwiftUI app has its own notes in
 [`apps/ios/CovenCave/README.md`](apps/ios/CovenCave/README.md).
 
