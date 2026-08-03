@@ -97,8 +97,12 @@ assert.match(marketplace, /activeFamiliarId=\{activeFamiliarId\}/, "the surface 
 // the component was orphaned — nothing imported it — and has been deleted
 // outright, along with the adapter that fed it. Assert the file's absence
 // rather than its contents.
+// Assert ENOENT specifically. A bare assert.throws passes for ANY error — a
+// renamed directory or a bad URL would satisfy it while telling us nothing
+// about whether the drawer is gone, which is the one thing this pins.
 assert.throws(
   () => readFileSync(new URL("./skill-detail-drawer.tsx", import.meta.url)),
+  (error) => error instanceof Error && error.code === "ENOENT",
   "the orphaned skill drawer is deleted, not merely corrected",
 );
 
