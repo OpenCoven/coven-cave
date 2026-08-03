@@ -159,18 +159,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // of cross-platform headroom without relaxing the byte ceiling.
   // 2026-08-01 (Memory document reader): the shared reader traces 5,817 files
   // on Windows. Retain the established ten-file cross-platform headroom.
-  // 2026-08-01 (accretion across 58 added src/ files): measured 5,824 on
-  // macOS, 5,828 on Linux and 5,831 on Windows — the first time this budget
-  // was checked since it was set, because the merges in between reached main
-  // without CI (see CLAUDE.md, branch protection). No single feature is to
-  // blame and none is worth singling out: the additions span the daemon
-  // connection supervisor and its routes, the X API lib/component half, the
-  // chat Start-from bands, the shell inset layout and the research-mission
-  // surfaces. Retain the established ten-file cross-platform headroom over the
-  // highest platform (5,831) without relaxing the byte ceiling — measured
-  // bytes are 104 MB against a 200 MB cap, so size is not the pressure here,
-  // file count is.
-  fileCount: 5_887,
+  // 2026-08-01 (main integration tree): CI measures 5,828 files on Ubuntu
+  // and 5,831 on Windows after maps, declarations, nested dependencies, and
+  // non-runtime roots are excluded. Preserve the established ten-file
+  // cross-platform headroom.
+  fileCount: 5_841,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
@@ -180,6 +173,45 @@ const PLATFORM_OPTIONAL_PACKAGE_RE = /^(?:@img\/sharp-|@next\/swc-)/;
 function isInside(root, candidate) {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
+}
+
+/**
+ * Containment against a set of allowed roots, tolerant of path aliases.
+ *
+ * `isInside` is lexical, so it only answers correctly when both sides are
+ * spelled the same way. The roots here are built with `path.resolve`, which
+ * normalizes but does NOT resolve symlinks, while a candidate that has been
+ * through `realpath` is fully canonical. On macOS that difference is routine
+ * rather than exotic — `/var` is a symlink to `/private/var` and `/tmp` to
+ * `/private/tmp`, so every temp-dir path has two spellings — and comparing one
+ * against the other rejected links that were plainly inside an allowed root.
+ *
+ * The lexical check runs first and answers almost every call. Only when it says
+ * "outside" do we canonicalize the roots and ask again, so the extra syscalls
+ * land on the path that was about to throw anyway. This narrows what is
+ * rejected, never widens it: containment is still required, just measured
+ * between two spellings of the same filesystem location.
+ */
+export async function isInsideAllowedRoots(roots, candidate) {
+  if (roots.some((root) => isInside(root, candidate))) return true;
+  // Canonicalize BOTH sides before the second opinion. Canonicalizing only one
+  // of them just moves the mismatch: an aliased root against a canonical
+  // candidate fails exactly as an aliased candidate against a canonical root
+  // does. A path that cannot be resolved keeps its lexical spelling, which is
+  // the best available answer for something that does not exist yet.
+  const canonicalCandidate = await canonicalize(candidate);
+  for (const root of roots) {
+    if (isInside(await canonicalize(root), canonicalCandidate)) return true;
+  }
+  return false;
+}
+
+async function canonicalize(target) {
+  try {
+    return await realpath(target);
+  } catch {
+    return path.resolve(target);
+  }
 }
 
 function packageParts(relativePath) {
@@ -214,7 +246,7 @@ function shouldSkipPackageEntry(relativePath, entryName, _isDirectory) {
 }
 
 async function copyResolvedEntry(source, destination, options, relativePath = "") {
-  if (!options.allowedLinkRoots.some((root) => isInside(root, source))) {
+  if (!(await isInsideAllowedRoots(options.allowedLinkRoots, source))) {
     throw new Error(`sidecar runtime input escapes its allowed roots: ${source}`);
   }
   const metadata = await lstat(source);
@@ -226,7 +258,7 @@ async function copyResolvedEntry(source, destination, options, relativePath = ""
       throw new Error(`sidecar runtime input must not contain links: ${source}`);
     }
     resolvedSource = await realpath(source);
-    if (!options.allowedLinkRoots.some((root) => isInside(root, resolvedSource))) {
+    if (!(await isInsideAllowedRoots(options.allowedLinkRoots, resolvedSource))) {
       throw new Error(`sidecar dependency link escapes its allowed roots: ${source} -> ${resolvedSource}`);
     }
     resolvedMetadata = await stat(resolvedSource);
@@ -429,7 +461,7 @@ async function copyNextRuntimeFiles(projectRoot, standaloneRoot, dependencyRoot,
       const candidate = path.join(root, relativePath);
       try {
         const resolvedNextRoot = await realpath(root);
-        if (!resolvedPackageRoots.some((allowedRoot) => isInside(allowedRoot, resolvedNextRoot))) {
+        if (!(await isInsideAllowedRoots(resolvedPackageRoots, resolvedNextRoot))) {
           throw new Error(`sidecar dependency link escapes its allowed roots: ${root} -> ${resolvedNextRoot}`);
         }
         const nextPackage = JSON.parse(await readFile(path.join(resolvedNextRoot, "package.json"), "utf8"));
