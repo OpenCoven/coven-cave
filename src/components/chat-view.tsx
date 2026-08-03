@@ -5,13 +5,36 @@ import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
 import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import dynamic from "next/dynamic";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { FeedbackContext } from "@/lib/message-feedback";
 import { matchesStopPhrase, readStopPhrase } from "@/lib/stop-phrase";
 import { extractLinks } from "@/lib/link-extractor";
 import { LINK_CATEGORY_META, type LinkCategory } from "@/lib/link-organizer";
 import { RichText } from "@/components/rich-text";
-import { FileLinkResolverContext, MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
+import {
+  CodeReadingContext,
+  FileLinkResolverContext,
+  MessageBubble,
+  SyntaxBlock,
+  type CodeReading,
+  type MessageBubbleSegment,
+} from "@/components/message-bubble";
+// Lazy so the inspector's markup AND its stylesheet code-split out of the home
+// first load (#3264) — nobody pays ~15 KB of CSS for a panel they have not
+// opened. `ssr: false` is honest about it: the panel only ever exists after a
+// click, so there is nothing to prerender.
+const CodeReadingInspector = dynamic(
+  () => import("@/components/code-reading-inspector").then((m) => m.CodeReadingInspector),
+  { ssr: false },
+);
+import type { CodeReadingTarget } from "@/components/code-reading-inspector";
+import type { InspectorPin } from "@/lib/code-reading";
+import {
+  DEFAULT_CODE_READING_PIN,
+  readCodeReadingPin,
+  writeCodeReadingPin,
+} from "@/lib/code-reading-pref";
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
@@ -2161,6 +2184,41 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     session?.project_root ??
     projectRoot ??
     "";
+  // ── Code reading (cave-f6mu9) ─────────────────────────────────────────────
+  // A code block in the transcript is a claim about a file; the inspector is
+  // where the reader checks it against the working tree and carries lines back
+  // into the reply. State lives here because the panel outlives the block that
+  // opened it — scrolling the transcript must not close what you're reading.
+  const [readingTarget, setReadingTarget] = useState<CodeReadingTarget | null>(null);
+  const [readingPin, setReadingPin] = useState<InspectorPin>(DEFAULT_CODE_READING_PIN);
+  // localStorage is unavailable during SSR, so the stored pin is adopted after
+  // mount rather than read during render (which would hydrate-mismatch).
+  useEffect(() => {
+    setReadingPin(readCodeReadingPin(familiar.id));
+  }, [familiar.id]);
+  const changeReadingPin = useCallback(
+    (pin: InspectorPin) => {
+      setReadingPin(pin);
+      writeCodeReadingPin(pin, familiar.id);
+    },
+    [familiar.id],
+  );
+  const codeReading = useMemo<CodeReading>(
+    () => ({
+      projectRoot: activeProjectRoot || null,
+      onRead: (request) =>
+        setReadingTarget({
+          ...request,
+          origin: {
+            sessionTitle: session?.title ?? null,
+            familiar: familiar.display_name,
+            messageIndex: null,
+          },
+        }),
+    }),
+    [activeProjectRoot, familiar.display_name, session?.title],
+  );
+
   const projectLaunchReady =
     projectsLoadedSuccessfully &&
     !projectsLoading &&
@@ -2188,6 +2246,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const overflowAddProject = useAddProjectFlow({
     familiarId: familiar?.id ?? null,
     createProject,
+    createProjectOrThrow,
     projects,
     onAdded: (newProjectId) => {
       setProjectIdDraft(newProjectId);
@@ -2501,6 +2560,46 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // composer's selectRuntime (/api/config is the only channel that rebinds a
   // harness) — and it applies from the next send, because the send route
   // re-resolves the familiar's binding from current config on every turn.
+  // cave-pkapw: inside a session, picking a model writes SESSION scope, so the
+  // familiar's own default is untouched and "use this for every new chat" has
+  // no path from here — you had to go to Home or the Familiar studio. This
+  // promotes the session's current model to that default using the SAME
+  // server-side mechanism a brand-new chat's pick already uses: PATCH with
+  // scope "familiar-default" and no sessionId. Deliberately not a new store —
+  // cave-x0k78 was closed because a second one would fight this config.
+  // `source: "session"` alone is NOT enough to offer promotion: the resolver
+  // reports it whenever a session intent exists, even when that intent already
+  // matches the familiar's default. Gating on it alone made the row a no-op in
+  // that case, and — worse — left it on screen after a successful promotion,
+  // because promoting does not clear the session intent. Compare against the
+  // familiar's stored default so the row appears only when it would change it.
+  const promotableModel =
+    modelState?.source === "session" &&
+    modelState.effectiveModel !== "unknown" &&
+    modelState.effectiveModel !== modelState.familiarDefaultModel
+      ? modelState.effectiveModel
+      : null;
+  const handlePromoteModelToDefault = useCallback(() => {
+    if (!promotableModel) return;
+    void (async () => {
+      try {
+        await fetch("/api/chat/model-state", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            familiarId: familiar.id,
+            model: promotableModel,
+            scope: "familiar-default",
+          }),
+        });
+      } finally {
+        // Re-read either way: the chip must reflect what the server actually
+        // holds, not what we hoped it would.
+        await refreshModelState();
+      }
+    })();
+  }, [familiar.id, promotableModel, refreshModelState]);
+
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
       const nextModel = modelForRuntimeSwitch(runtime);
@@ -4907,6 +5006,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         root,
         familiarId: familiar?.id ?? null,
         createProject,
+        createProjectOrThrow,
         existingProjectId: projectIdForRoot(root, projects),
       });
       if (result.ok) {
@@ -6462,6 +6562,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         onProjectChange: setProjectIdDraft,
                         familiarId: familiar.id ?? null,
                         createProject,
+                        createProjectOrThrow,
                         runtime: modelHarness,
                         modelValue: composerModelValue,
                         modelOptions: composerModelOptions,
@@ -6565,11 +6666,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     onProjectChange={setProjectIdDraft}
                     familiarId={familiar.id ?? null}
                     createProject={createProject}
+                    createProjectOrThrow={createProjectOrThrow}
                     runtime={modelHarness}
                     modelValue={composerModelValue}
                     modelOptions={composerModelOptions}
                     onPickRuntime={handleSelectRuntime}
                     onPickModel={handleSelectModel}
+                    promotableModel={promotableModel}
+                    onPromoteModelToDefault={handlePromoteModelToDefault}
                     modelDisabled={busy}
                     projectRoot={activeProjectRoot}
                     onOpenUrl={onOpenUrl}
@@ -6717,6 +6821,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 }
               />
             )}
+            {overflowAddProject.addError ? (
+              <p className="cave-project-picker__error" role="alert">
+                {overflowAddProject.addError}
+              </p>
+            ) : null}
             {overflowAddProject.addProjectModal}
             <ProjectSetupModal
               root={projectSetupRoot}
@@ -6781,6 +6890,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
+      <CodeReadingContext.Provider value={codeReading}>
+      {/* Row, so a `split` inspector docks BESIDE the transcript and narrows it
+          rather than covering it. With no inspector open the row collapses to
+          the transcript alone and the layout is unchanged. Overlay and modal
+          are fixed-position and escape this row on their own. */}
+      <div className="flex min-h-0 flex-1">
       <div
         ref={scrollRef}
         tabIndex={0}
@@ -6887,6 +7002,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onProjectChange={setProjectIdDraft}
                 projects={projects}
                 createProject={createProject}
+                createProjectOrThrow={createProjectOrThrow}
                 fileMentions={Boolean(mentionRoot)}
                 sessionId={sessionId}
                 sessions={sessions}
@@ -6973,6 +7089,41 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </button>
         )}
       </div>
+      {readingTarget ? (
+        <CodeReadingInspector
+          target={readingTarget}
+          projectRoot={activeProjectRoot || null}
+          pin={readingPin}
+          onPinChange={changeReadingPin}
+          onClose={() => setReadingTarget(null)}
+          onReference={(label) =>
+            setInput((prev) => {
+              const sep = prev && !/\s$/.test(prev) ? " " : "";
+              return `${prev}${sep}\`${label}\` `;
+            })
+          }
+          onQuote={(markdown) =>
+            setInput((prev) => (prev ? `${prev.replace(/\s*$/, "")}\n\n${markdown}` : markdown))
+          }
+          onOpenInWorkshop={({ path, line, selectionLabel: range, origin }) => {
+            // The workshop consumes this through the same shell handler that
+            // inline file refs use (workspace.tsx → pending-code-open), so the
+            // handoff has one route, not a second parallel one.
+            window.dispatchEvent(
+              new CustomEvent("cave:open-project-file", {
+                detail: {
+                  path,
+                  line: line ?? undefined,
+                  origin: { ...origin, selectionLabel: range },
+                },
+              }),
+            );
+            setReadingTarget(null);
+          }}
+        />
+      ) : null}
+      </div>
+      </CodeReadingContext.Provider>
       </FileLinkResolverContext.Provider>
       </ToolProjectRootContext.Provider>
 

@@ -42,11 +42,10 @@ const ROOT = "/w/app";
   });
 
   assert.deepEqual(result, { ok: true, projectId: "p-spaced" });
-  assert.deepEqual(
-    calls[0],
-    ["create", SPACED_NAME, ROOT, { emitMutation: false }],
-    "the spaced display name is registered verbatim — not split, slugified, or encoded",
-  );
+  assert.equal(calls[0][0], "create");
+  assert.equal(calls[0][1], SPACED_NAME, "the spaced display name is registered verbatim");
+  assert.equal(calls[0][2], ROOT, "the root is passed unchanged");
+  assert.equal(calls[0][3].emitMutation, false, "the bundled grant owns the registry notification");
   // The grant travels by id. A display name appearing in this payload would
   // make it a de-facto connection identifier, which is the bug this bead is about.
   assert.deepEqual(calls[1][2], { targetFamiliarId: "sage", projectId: "p-spaced" });

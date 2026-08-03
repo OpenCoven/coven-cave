@@ -512,12 +512,19 @@
   cursor:pointer;
 }
 .gh-stream-verb:hover { background:var(--bg-hover); color:var(--text-primary); }
-.gh-stream-verb--accent {
+/* The row's ONE accented verb. The hand-off is now a host-rendered slot rather
+   than a button this component styles, so the accent reaches it by selector —
+   the alternative was a second copy of these declarations living next to the
+   slot, which is how two "accents" drift apart. Whatever the host renders into
+   the slot inherits the row's accent, and there is still exactly one. */
+.gh-stream-verb--accent,
+.gh-stream-handoff .ui-btn {
   border-color:color-mix(in oklch,var(--accent-presence) 40%,transparent);
   background:color-mix(in oklch,var(--accent-presence) 15%,transparent);
   color:var(--accent-presence);
 }
-.gh-stream-verb--accent:hover {
+.gh-stream-verb--accent:hover,
+.gh-stream-handoff .ui-btn:hover {
   background:color-mix(in oklch,var(--accent-presence) 26%,transparent);
   color:var(--text-primary);
 }
@@ -710,3 +717,9 @@
   overflow:hidden;
 }
 .gh-budget-fill { display:block; height:100%; background:currentColor; border-radius:2px; }
+
+/* The row's hand-off slot. The host renders the familiar picker into it, so
+   the sizing lives here rather than in the stream — the row only guarantees
+   the space and the hover reveal. (.gh-action-wrap is already inline-flex; it
+   does not need restating here.) */
+.gh-stream-handoff { display:inline-flex; align-items:center; }

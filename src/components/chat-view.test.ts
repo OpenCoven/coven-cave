@@ -313,3 +313,19 @@ assert.match(
   /<ProjectSetupModal[\s\S]*?createProject=\{createProjectOrThrow\}/,
   "the setup modal gets the throwing create variant for real error messages",
 );
+assert.match(
+  source,
+  /const overflowAddProject = useAddProjectFlow\(\{[\s\S]*?createProject,[\s\S]*?createProjectOrThrow,/,
+  "the chat overflow add flow preserves local-only creation guidance",
+);
+assert.match(
+  source,
+  /<ComposerContextChips[\s\S]*?createProject=\{createProject\}[\s\S]*?createProjectOrThrow=\{createProjectOrThrow\}/,
+  "the primary chat composer picker receives the throwing creator",
+);
+assert.match(
+  source,
+  /<ChatEmptyState[\s\S]*?createProject=\{createProject\}[\s\S]*?createProjectOrThrow=\{createProjectOrThrow\}/,
+  "the chat empty-state picker receives the throwing creator",
+);
+assert.match(source, /\{overflowAddProject\.addError \? \(/, "the chat overflow picker renders add-project failures");

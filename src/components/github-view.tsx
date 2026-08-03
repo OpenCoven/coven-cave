@@ -536,21 +536,61 @@ function SafeMergeAction({
   item,
   linkedCards,
   familiars,
+  familiarsFailed = false,
 }: {
   item: GitHubItem;
   linkedCards: Card[];
   familiars: Familiar[];
+  /** The familiars load FAILED — an empty list then means "couldn't load",
+   *  not "none exist" (cave-59cv). */
+  familiarsFailed?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const { announce } = useAnnouncer();
   const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  // Close the familiar picker on outside click / Escape (same posture as
+  // OpenChatAction's card picker).
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function onDoc(ev: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(ev.target as Node)) setPickerOpen(false);
+    }
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === "Escape") setPickerOpen(false);
+    }
+    const id = window.setTimeout(() => document.addEventListener("mousedown", onDoc), 30);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(id);
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pickerOpen]);
+
   if (item.kind !== "pr" && item.kind !== "review_request") return null;
 
   const linkedCard = linkedCards.find((card) => card.cwd) ?? linkedCards[0] ?? null;
-  const familiarId = linkedCard?.familiarId ?? familiars[0]?.id ?? null;
+  // A linked card carries a familiar the user already chose for this work.
+  // Absent that there is no correct default — safe merge creates a worktree and
+  // drives a merge, so the familiar it lands on is the user's call, not
+  // whichever one happens to sort first (cave-26sg4).
+  const linkedFamiliarId = linkedCard?.familiarId ?? null;
 
-  async function startSafeMerge(e: React.MouseEvent) {
+  function handleClick(e: React.MouseEvent) {
     e.stopPropagation();
+    setError(null);
+    if (linkedFamiliarId) {
+      void startSafeMerge(linkedFamiliarId);
+      return;
+    }
+    setPickerOpen((v) => !v);
+  }
+
+  async function startSafeMerge(familiarId: string) {
+    setPickerOpen(false);
     setBusy(true);
     setError(null);
     let safeMergeRoot: string | null = linkedCard?.cwd ?? null;
@@ -613,13 +653,42 @@ function SafeMergeAction({
         size="xs"
         variant="secondary"
         leadingIcon="ph:git-merge"
-        onClick={startSafeMerge}
+        onClick={handleClick}
         disabled={busy}
-        title="Safely merge from a worktree"
+        aria-expanded={pickerOpen}
+        title={linkedFamiliarId ? "Safely merge from a worktree" : "Safely merge — choose a familiar"}
       >
         {busy ? "Prep…" : "Merge"}
       </Button>
       {error && <span className="gh-action-error" role="img" aria-label={`Error: ${error}`} title={error}>!</span>}
+
+      {pickerOpen && (
+        <div ref={pickerRef} className="gh-action-popover" onClick={(e) => e.stopPropagation()}>
+          <p className="gh-action-popover-title">Merge with…</p>
+          {familiars.length === 0 ? (
+            // An empty roster and a failed load are different claims: one says
+            // "you have none", the other says "we could not tell".
+            <p className="gh-action-popover-title">
+              {familiarsFailed ? "Could not load your familiars." : "No familiars yet."}
+            </p>
+          ) : (
+            <ul className="gh-action-popover-list">
+              {familiars.map((f) => (
+                <li key={f.id}>
+                  <button
+                    type="button"
+                    onClick={() => void startSafeMerge(f.id)}
+                    disabled={busy}
+                    className="gh-action-popover-item"
+                  >
+                    <span className="gh-action-popover-item-title">{f.display_name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2630,7 +2699,7 @@ function GitHubItemGlassPanel({
                 cardsFailed={cardsFailed}
                 onAfterLink={onAfterLink}
               />
-              <SafeMergeAction item={item} linkedCards={linkedCards} familiars={familiars} />
+              <SafeMergeAction item={item} linkedCards={linkedCards} familiars={familiars} familiarsFailed={familiarsFailed} />
             </div>
 
             <dl className="gh-next-wire">
@@ -3616,20 +3685,26 @@ export function GitHubView({
                   onTogglePeek={togglePeek}
                   onSelect={selectRow}
                   onOpen={openDetail}
+                  // The row's hand-off. OpenChatAction opens the familiar
+                  // picker (GitHubActionPopover reads /api/familiars), so the
+                  // work always goes to a familiar the user chose from their
+                  // own roster — the stream never names or defaults one.
+                  renderHandOff={(item) => (
+                    <OpenChatAction
+                      item={item}
+                      linkedCards={linkedMap.get(item.id) ?? []}
+                      familiars={familiars}
+                      cards={cards}
+                      familiarsFailed={familiarsFailed}
+                      cardsFailed={cardsFailed}
+                      onJumpToSession={onJumpToSession}
+                      onAfterLink={refreshLinkedWork}
+                    />
+                  )}
                   renderRowActions={(item) => {
                     const linked = linkedMap.get(item.id) ?? [];
                     return (
                       <>
-                        <OpenChatAction
-                          item={item}
-                          linkedCards={linked}
-                          familiars={familiars}
-                          cards={cards}
-                          familiarsFailed={familiarsFailed}
-                          cardsFailed={cardsFailed}
-                          onJumpToSession={onJumpToSession}
-                          onAfterLink={refreshLinkedWork}
-                        />
                         <AddToBoardAction
                           item={item}
                           familiars={familiars}
@@ -3638,7 +3713,7 @@ export function GitHubView({
                           cardsFailed={cardsFailed}
                           onAfterLink={refreshLinkedWork}
                         />
-                        <SafeMergeAction item={item} linkedCards={linked} familiars={familiars} />
+                        <SafeMergeAction item={item} linkedCards={linked} familiars={familiars} familiarsFailed={familiarsFailed} />
                         <IconButton
                           icon="ph:arrow-square-out"
                           size="xs"

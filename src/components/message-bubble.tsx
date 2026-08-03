@@ -47,6 +47,13 @@ import {
 } from "@/lib/citations";
 import { InlineCitationPreviews } from "@/components/ui/citation";
 import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-code-fences";
+import {
+  deriveReadingBlock,
+  provenanceLabel,
+  provenanceTitle,
+  canCompare,
+  type ReadingBlock,
+} from "@/lib/code-reading";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { SpeakBubble } from "@/components/speak-bubble";
 import { copyText } from "@/lib/clipboard";
@@ -63,8 +70,9 @@ import {
   scanFenceFilenames,
   type MarkdownRenderGate,
 } from "@/lib/message-markdown-stream";
-import { FileLinkResolverContext, useWireCopyButtons } from "./message-dom-wiring";
-export { FileLinkResolverContext } from "./message-dom-wiring";
+import { CodeReadingContext, FileLinkResolverContext, useWireCopyButtons } from "./message-dom-wiring";
+export { CodeReadingContext, FileLinkResolverContext } from "./message-dom-wiring";
+export type { CodeReading, CodeReadingRequest } from "./message-dom-wiring";
 export type { FileLinkResolver } from "./message-dom-wiring";
 
 // ---------------------------------------------------------------------------
@@ -125,6 +133,7 @@ function renderCodeBlockFrame({
   highlighted,
   isDiff,
   diffLines,
+  block,
 }: {
   code: string;
   lang: string;
@@ -132,6 +141,8 @@ function renderCodeBlockFrame({
   highlighted: string;
   isDiff: boolean;
   diffLines: DiffLine[] | null;
+  /** Provenance-classified view of the fence (cave-f6mu9). */
+  block: ReadingBlock;
 }): string {
   const lines = code.split("\n");
   const showLineNums = lines.length > 5;
@@ -195,8 +206,29 @@ function renderCodeBlockFrame({
   );
 
   const labelHtml = `<span class="cave-code-lang">${escHtml(lang)}</span>`;
+  // Name first, directory after and muted — the eye lands on the file the block
+  // claims to be, and the path that qualifies it follows. Same order as the
+  // reading inspector's header, so the two read as one surface.
   const filenameHtml = filename
-    ? `<span class="cave-code-filename" title="${escHtml(filename)}">${escHtml(filename)}</span>`
+    ? `<span class="cave-code-filename" title="${escHtml(filename)}">${escHtml(
+        block.name ?? filename,
+      )}${block.dir ? `<span class="cave-code-dir">${escHtml(block.dir)}</span>` : ""}</span>`
+    : "";
+
+  // ── Reading chrome (cave-f6mu9) ───────────────────────────────────────────
+  // The provenance pill is the load-bearing part: it tells the reader whether
+  // this block is backed by a file (openable, comparable), a patch (appliable)
+  // or merely quoted (neither). Every action below is gated on it, so a
+  // control never offers something the block cannot deliver.
+  const provHtml = `<span class="cave-code-prov cave-code-prov--${block.provenance}" title="${escHtml(
+    provenanceTitle(block.provenance),
+  )}">${escHtml(provenanceLabel(block.provenance))}</span>`;
+  // Filled in by the working-tree check after render (wireCodeReading); hidden
+  // until then so a block never claims freshness it has not verified.
+  const staleHtml = `<span class="cave-code-stale" hidden></span>`;
+  const readHtml = `<button type="button" class="cave-code-read-btn" aria-label="Read this code block">Read</button>`;
+  const compareHtml = canCompare(block.provenance)
+    ? `<button type="button" class="cave-code-compare-btn" aria-label="Compare with the working tree">Compare</button>`
     : "";
   // Collapse toggle (chevron) folds the block down to just this header so a
   // long code dump can be tucked away; blocks render expanded by default. The
@@ -207,12 +239,24 @@ function renderCodeBlockFrame({
   // No data-code attribute (CHAT-D7-04): wireCopyButtons reads the code text
   // back out of the rendered DOM at click time instead of carrying a second
   // copy of every block's source in an attribute.
-  const headerHtml = `<div class="cave-code-header">${collapseBtn}${labelHtml}${filenameHtml}${linesHtml}<button type="button" class="cave-copy-btn cave-copy-btn-mounted">Copy</button></div>`;
+  const headerHtml = `<div class="cave-code-header">${collapseBtn}${labelHtml}${provHtml}${filenameHtml}${staleHtml}${linesHtml}${readHtml}${compareHtml}<button type="button" class="cave-copy-btn cave-copy-btn-mounted">Copy</button></div>`;
   const expandHtml = lines.length >= CODE_EXPAND_MIN_LINES
     ? `<div class="cave-code-expand"><button type="button" class="cave-code-expand-btn">Show more</button></div>`
     : "";
 
-  return `<div class="cave-code-wrap">${headerHtml}${lineWrapped}${expandHtml}</div>`;
+  // Provenance/path/lang ride on the wrap rather than on each button: the
+  // wiring layer reads the code text back out of the DOM at click time
+  // (CHAT-D7-04), and the same rule applies here — one carrier, no second copy
+  // of the block's identity to drift out of sync.
+  const dataAttrs = [
+    `data-code-provenance="${escHtml(block.provenance)}"`,
+    `data-code-lang="${escHtml(block.lang)}"`,
+    block.path ? `data-code-path="${escHtml(block.path)}"` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return `<div class="cave-code-wrap" ${dataAttrs}>${headerHtml}${lineWrapped}${expandHtml}</div>`;
 }
 
 async function renderCodeBlock(
@@ -221,7 +265,11 @@ async function renderCodeBlock(
   { highlightCode = true }: { highlightCode?: boolean } = {},
 ): Promise<string> {
   const { lang, filename } = parseFenceInfo(info);
-  const isDiff = lang === "diff";
+  const block = deriveReadingBlock(info);
+  // One classifier decides "is this a patch", so the rendering and the
+  // provenance pill can never disagree — `patch` and `DIFF` are diffs too, and
+  // before this they got the "patch" pill with none of the diff parsing.
+  const isDiff = block.isDiff;
   const diffLang = isDiff ? diffContentLang(code) : "text";
   let diffLines = isDiff && diffLang !== "text" ? classifyDiffLines(code) : null;
   const doc = diffLines ? diffLines.map((line) => line.content).join("\n") : code;
@@ -258,6 +306,7 @@ async function renderCodeBlock(
     highlighted,
     isDiff,
     diffLines,
+    block,
   });
 }
 
@@ -711,7 +760,10 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [] }: MarkdownC
   // the surface's resolver (FileLinkResolverContext) confirms the file exists
   // under the session's project root. No resolver ⇒ refs stay plain text.
   const fileLinkResolver = useContext(FileLinkResolverContext);
-  const containerRef = useWireCopyButtons(html, onOpenUrl, fileLinkResolver);
+  // Same posture for code blocks (cave-f6mu9): Read/Compare stay hidden until a
+  // surface supplies an inspector to receive them.
+  const reading = useContext(CodeReadingContext);
+  const containerRef = useWireCopyButtons(html, onOpenUrl, fileLinkResolver, reading);
   // mdToHtml is async and several streaming renders can be in flight at once.
   // The gate orders their commits and invalidates pre-settle work synchronously
   // during render, before React runs passive-effect cleanup or the final pass.

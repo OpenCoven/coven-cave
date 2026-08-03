@@ -278,6 +278,9 @@ async function main() {
     "marketplace/plugins/prompt-pack-essentials/plugin.json",
     "public/sandbox/react-runtime.js",
     "public/sandbox/tailwind.js",
+    "node_modules/next/dist/compiled/webpack/webpack-lib.js",
+    "node_modules/next/dist/compiled/webpack/webpack.js",
+    "node_modules/next/dist/compiled/webpack/bundle5.js",
     "vault.yaml",
     "workflows/release-review.yaml",
   ]) {

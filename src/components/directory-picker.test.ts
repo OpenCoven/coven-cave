@@ -40,6 +40,9 @@ test("the fs-browse route is loopback-gated and walks from trusted volume roots"
 test("the modal navigates via the fs-browse API with up/select controls", () => {
   const src = read("./directory-picker-modal.tsx");
   assert.match(src, /\/api\/fs-browse\?dir=\$\{encodeURIComponent\(dir\)\}/, "fetches the browse API");
+  assert.match(src, /LOCAL_REQUEST_REQUIRED_CODE/, "reads the stable local-only error code from fs-browse");
+  assert.match(src, /LOCAL_PROJECT_CREATION_MESSAGE/, "maps local-only browse failures to project-registration guidance");
+  assert.match(src, /body\.code === LOCAL_REQUEST_REQUIRED_CODE/, "uses the machine-readable code instead of matching forbidden text");
   assert.match(src, /aria-label="Up one folder"/, "has an up-a-level control");
   assert.match(src, />\s*New folder\s*</, "shows a visible New folder action");
   assert.match(src, /const selectLabel = pendingName \? `Select \$\{truncateName\(pendingName\)\}` : atDrivesList \? "Open a drive" : "Select home";/, "the primary action names the folder it will select");
