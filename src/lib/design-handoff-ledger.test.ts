@@ -78,28 +78,38 @@ if (bareFiles.size > 0) {
 // ── every cited commit must resolve ─────────────────────────────────────────
 
 // A ledger row's whole value is that you can go read the change it points at.
-// Shallow clones can't resolve history, so this asserts only when the object
-// is reachable at all — but a WRONG sha (never in this repo) still fails.
+//
+// A shallow clone genuinely cannot resolve old history, so the check has to be
+// conditional — but "conditional" must not mean "quietly absent". Ask git
+// whether the clone is shallow and say so out loud; anything else is a gate
+// that reports success for work it never did.
 const shas = new Set([...doc.matchAll(/\|\s*`([0-9a-f]{10})`/g)].map((m) => m[1]));
 assert.ok(shas.size >= 10, `expected the ledger to cite landing commits, found ${shas.size}`);
-let resolvable = 0;
+
+const shallow =
+  execFileSync("git", ["rev-parse", "--is-shallow-repository"], { cwd: root, encoding: "utf8" }).trim() === "true";
+
+const missing: string[] = [];
 for (const sha of shas) {
   try {
     execFileSync("git", ["cat-file", "-e", `${sha}^{commit}`], { cwd: root, stdio: "ignore" });
-    resolvable += 1;
   } catch {
-    // Unreachable here: either a shallow clone, or a bad sha. Distinguished below.
+    missing.push(sha);
   }
 }
-// If ANY resolve, history is present — so the ones that didn't are wrong.
-if (resolvable > 0) {
+if (shallow) {
+  console.warn(
+    `[design-handoff-ledger] shallow clone — ${missing.length}/${shas.size} cited commits unverifiable. ` +
+      `Run with full history (actions/checkout fetch-depth: 0) to gate them.`,
+  );
+} else {
   assert.equal(
-    resolvable,
-    shas.size,
-    `${LEDGER} cites ${shas.size - resolvable} commit(s) this repo has never seen`,
+    missing.length,
+    0,
+    `${LEDGER} cites commit(s) this repo has never seen: ${missing.join(", ")}`,
   );
 }
 
 console.log(
-  `design-handoff-ledger.test.ts OK (${cited.size} paths, ${bareFiles.size} files, ${shas.size} commits${resolvable === 0 ? " — shallow clone, commits unchecked" : ""})`,
+  `design-handoff-ledger.test.ts OK (${cited.size} paths, ${bareFiles.size} files, ${shas.size} commits${shallow ? " — SHALLOW CLONE, unverified" : ""})`,
 );

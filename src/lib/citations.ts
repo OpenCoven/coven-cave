@@ -266,16 +266,31 @@ const BARE_URL_RE = /^(https?:\/\/\S+)(?:[ \t]+"([^"]+)")?(?:[ \t]+—[ \t]+(.+)
 const FILE_REF_RE =
   /^((?:[\w.@~-]+\/)+[\w.@-]+\.[a-z0-9]{1,12})(?:#L(\d+)(?:[-–]L?(\d+))?|:(\d+)(?:[-–](\d+))?)?(?:[ \t]+"([^"]+)")?(?:[ \t]+—[ \t]+(.+))?$/i;
 
-/** Parse a worktree file reference, or null when the text is not one. */
-export function parseFileRef(raw: string): (CitationFileRef & { title?: string; snippet?: string }) | null {
+/**
+ * Parse a worktree file reference, or null when the text is not one. Named
+ * apart from `parseFileRef` in lib/file-ref (which linkifies inline prose) —
+ * this one reads a citation *definition* and carries a range, not a caret.
+ *
+ * An inverted range (`:99-42`) is normalised rather than trusted: the card
+ * numbers its peek lines from `lineStart`, so a backwards range would print
+ * line numbers that count away from the quoted text.
+ */
+export function parseCitationFileRef(
+  raw: string,
+): (CitationFileRef & { title?: string; snippet?: string }) | null {
   const m = raw.trim().match(FILE_REF_RE);
   if (!m) return null;
-  const start = m[2] ?? m[4];
-  const end = m[3] ?? m[5];
+  const rawStart = m[2] ?? m[4];
+  const rawEnd = m[3] ?? m[5];
+  let lineStart = rawStart ? Number(rawStart) : undefined;
+  let lineEnd = rawEnd ? Number(rawEnd) : undefined;
+  if (lineStart !== undefined && lineEnd !== undefined && lineEnd < lineStart) {
+    [lineStart, lineEnd] = [lineEnd, lineStart];
+  }
   return {
     path: m[1],
-    lineStart: start ? Number(start) : undefined,
-    lineEnd: end ? Number(end) : undefined,
+    lineStart,
+    lineEnd,
     title: m[6]?.trim() || undefined,
     snippet: m[7]?.trim() || undefined,
   };
@@ -288,7 +303,7 @@ function parseDefinitionContent(raw: string): {
   file?: CitationFileRef;
 } {
   const content = raw.trim();
-  const fileRef = parseFileRef(content);
+  const fileRef = parseCitationFileRef(content);
   if (fileRef) {
     const { title, snippet, ...file } = fileRef;
     return { title: title || file.path.split("/").pop() || file.path, snippet, file };
