@@ -31,8 +31,8 @@ cleanup_staging() {
 trap cleanup_staging EXIT
 
 bundle_piper_runtime() {
-  local platform asset expected_sha archive extract_root executable runtime_root actual_sha
-  local phonemize_asset phonemize_sha phonemize_archive phonemize_extract_root phonemize_lib_root mac_executable
+  local platform asset expected_sha archive extract_root executable runtime_executable_path runtime_root actual_sha
+  local phonemize_asset phonemize_sha phonemize_archive phonemize_extract_root phonemize_lib_path phonemize_lib_root mac_executable
   platform="$(node -p 'process.platform')"
   case "$platform/$(node -p 'process.arch')" in
     linux/x64)
@@ -87,11 +87,12 @@ bundle_piper_runtime() {
     *.zip) unzip -q "$archive" -d "$extract_root" ;;
     *.tar.gz) tar -xzf "$archive" -C "$extract_root" ;;
   esac
-  runtime_root="$(dirname "$(find "$extract_root" -type f -name "$executable" -print -quit)")"
-  if [ -z "$runtime_root" ] || [ ! -f "$runtime_root/$executable" ]; then
+  runtime_executable_path="$(find "$extract_root" -type f -name "$executable" -print -quit)"
+  if [ -z "$runtime_executable_path" ]; then
     echo "ERROR: Piper archive does not contain $executable" >&2
     exit 1
   fi
+  runtime_root="$(dirname "$runtime_executable_path")"
   cp -a "$runtime_root/." "$PIPER_RUNTIME_DIR/"
   chmod +x "$PIPER_RUNTIME_DIR/$executable" 2>/dev/null || true
   if [ -f "$PIPER_RUNTIME_DIR/espeak-ng" ]; then
@@ -121,8 +122,13 @@ bundle_piper_runtime() {
     rm -rf "$phonemize_extract_root"
     mkdir -p "$phonemize_extract_root"
     tar -xzf "$phonemize_archive" -C "$phonemize_extract_root"
-    phonemize_lib_root="$(dirname "$(find "$phonemize_extract_root" -type f -name 'libpiper_phonemize.*.dylib' -print -quit)")"
-    if [ -z "$phonemize_lib_root" ] || [ ! -e "$phonemize_lib_root/libespeak-ng.1.dylib" ] \
+    phonemize_lib_path="$(find "$phonemize_extract_root" -type f -name 'libpiper_phonemize.*.dylib' -print -quit)"
+    if [ -z "$phonemize_lib_path" ]; then
+      echo "ERROR: Piper phonemize archive does not contain the required macOS dylib closure" >&2
+      exit 1
+    fi
+    phonemize_lib_root="$(dirname "$phonemize_lib_path")"
+    if [ ! -e "$phonemize_lib_root/libespeak-ng.1.dylib" ] \
       || [ ! -e "$phonemize_lib_root/libonnxruntime.1.14.1.dylib" ] \
       || [ ! -e "$phonemize_lib_root/libpiper_phonemize.1.dylib" ]; then
       echo "ERROR: Piper phonemize archive does not contain the required macOS dylib closure" >&2

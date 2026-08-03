@@ -176,6 +176,11 @@ assert.match(src, /bundle_piper_runtime\(\)/, "release bundling must provision t
 assert.match(src, /Piper runtime checksum mismatch/, "Piper runtime downloads must be integrity-checked");
 assert.match(
   src,
+  /runtime_executable_path="\$\(find[\s\S]*?if \[ -z "\$runtime_executable_path" \]; then[\s\S]*?runtime_root="\$\(dirname "\$runtime_executable_path"\)"/,
+  "Piper staging must reject a missing executable before deriving its runtime directory",
+);
+assert.match(
+  src,
   /piper-phonemize\/releases\/download\/2023\.11\.14-4/,
   "macOS Piper bundles must source their missing dylib closure from the pinned piper-phonemize release",
 );
@@ -183,6 +188,11 @@ assert.match(
   src,
   /Piper phonemize runtime checksum mismatch/,
   "the supplemental macOS Piper dylib archive must be integrity-checked",
+);
+assert.match(
+  src,
+  /phonemize_lib_path="\$\(find[\s\S]*?if \[ -z "\$phonemize_lib_path" \]; then[\s\S]*?phonemize_lib_root="\$\(dirname "\$phonemize_lib_path"\)"/,
+  "macOS Piper staging must reject a missing dylib match before deriving its closure directory",
 );
 assert.match(
   src,
