@@ -18,6 +18,7 @@ const {
   concatPcmWav,
   createPodcastMediaJobDefinition,
   readBoundedElevenLabsAudio,
+  trimPcmWavSilence,
 } = await import("./research-podcast-pipeline.ts");
 const {
   openResearchGenerationMedia,
@@ -94,6 +95,27 @@ test("PCM WAV concatenation preserves one valid header and all samples", () => {
     [0, 1, 2, 3].map((index) => view.getInt16(44 + index * 2, true)),
     [1, 2, 3, 4],
   );
+});
+
+test("segment silence trimming caps dead air while preserving every audible sample", () => {
+  // 5s of silence on each side of 100 loud frames at the 8kHz test rate.
+  const silence = (seconds: number) => new Array<number>(seconds * 8_000).fill(0);
+  const speech = new Array<number>(100).fill(1_000);
+  const trimmed = trimPcmWavSilence(wav([...silence(5), ...speech, ...silence(5)]));
+  const view = new DataView(trimmed.buffer);
+  // Kept: 250ms lead (2000 frames) + speech (100) + 450ms tail (3600 frames).
+  assert.equal(view.getUint32(40, true), (2_000 + 100 + 3_600) * 2, "silence capped on both sides");
+  assert.equal(view.getInt16(44 + 2_000 * 2, true), 1_000, "first audible sample survives");
+  assert.equal(view.getInt16(44 + (2_000 + 99) * 2, true), 1_000, "last audible sample survives");
+});
+
+test("segment silence trimming leaves natural pauses and silent segments alone", () => {
+  const shortPause = new Array<number>(800).fill(0); // 100ms at 8kHz
+  const speech = new Array<number>(50).fill(2_000);
+  const natural = wav([...shortPause, ...speech, ...shortPause]);
+  assert.equal(trimPcmWavSilence(natural), natural, "sub-cap silence is untouched");
+  const silent = wav(new Array<number>(1_600).fill(0));
+  assert.equal(trimPcmWavSilence(silent), silent, "an all-silent segment passes through unmasked");
 });
 
 test("podcast uses the exact frozen provider and voice and stores measured metadata", async () => {
