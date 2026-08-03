@@ -208,16 +208,22 @@ async function isInsideAllowedRoots(roots, candidate) {
   let resolvedCandidate;
   try {
     resolvedCandidate = await realpath(candidate);
-  } catch {
+  } catch (error) {
+    // ENOENT only. Anything else — EACCES, ELOOP, ENOTDIR — is a real fault,
+    // and swallowing it here would surface as "escapes its allowed roots",
+    // pointing whoever debugs it at a containment problem that does not exist.
+    if (error?.code !== "ENOENT") throw error;
     return false;
   }
   for (const root of roots) {
     let resolvedRoot;
     try {
       resolvedRoot = await realpath(root);
-    } catch {
+    } catch (error) {
       // A root that does not exist yet cannot contain anything, and the raw
-      // comparison above already had its chance.
+      // comparison above already had its chance. Same narrowing: only a
+      // missing root is benign.
+      if (error?.code !== "ENOENT") throw error;
       continue;
     }
     if (isInside(resolvedRoot, resolvedCandidate)) return true;
