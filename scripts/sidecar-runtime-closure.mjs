@@ -172,7 +172,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // needing this headroom are still present, so it must not move DOWN while
   // they exist — and any bump belongs here, beside the measurement that
   // justifies it, or the next reader reverts it again.
-  fileCount: 5_887,
+  // 2026-08-03 (research infographic renderer, cave-ga0t5): the
+  // /api/research/generations/infographic route plus the SVG/PNG renderer
+  // chunk traced at 5,888 on Ubuntu and 5,891 on Windows. Set from the
+  // HIGHER figure plus the same ten-file headroom.
+  fileCount: 5_901,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
