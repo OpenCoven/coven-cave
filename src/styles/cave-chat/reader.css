@@ -364,6 +364,65 @@
    clear of the head rather than flush against it. */
 .cave-reader-doc :is(h1, h2, h3, h4, h5, h6) { scroll-margin-top: var(--space-6); }
 
+/* "You asked" — the prompt that produced the answer, echoed above it so the
+   reader is a record of the exchange rather than half of one. */
+.cave-reader-ask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--foreground) 3%, transparent);
+}
+.cave-reader-ask__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.cave-reader-ask__when {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.cave-reader-ask__edit { margin-left: auto; }
+.cave-reader-ask__text {
+  margin: 0;
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  color: var(--text-secondary);
+}
+.cave-reader-ask__edit-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.cave-reader-ask__input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--accent-presence-soft) 45%, transparent);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  outline: none;
+}
+.cave-reader-ask__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.cave-reader-ask__note {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
 /* The turn's own eyebrow row — skills the answer reached for, and the
    collapsed agent-work line. Both are real turn data or they are absent. */
 .cave-reader-turnmeta {

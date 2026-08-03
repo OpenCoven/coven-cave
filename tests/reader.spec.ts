@@ -26,6 +26,9 @@ test.describe.configure({ mode: "serial", timeout: 180_000 });
 
 const ISO = "2026-08-03T14:02:00.000Z";
 
+/** The prompt the reader echoes back above the answer. */
+const USER_PROMPT = "Review PR #4188 for correctness and regressions.";
+
 /** An answer with headings (rail), footnote citations (chips + Sources) and
  *  enough prose that the document scrolls. */
 const CITED_ANSWER = `Reviewing PR #4188 for correctness and regressions.
@@ -112,7 +115,7 @@ async function openReader(page: Page, turn: TurnSpec) {
         ok: true,
         conversation: {
           turns: [
-            { id: "u1", role: "user", text: "Review PR #4188.", createdAt: ISO },
+            { id: "u1", role: "user", text: USER_PROMPT, createdAt: ISO },
             { id: "a1", role: "assistant", text: turn.text, createdAt: ISO, durationMs: 134_000, tools: turn.tools ?? [] },
           ],
         },
@@ -232,4 +235,37 @@ test("Escape unwinds one layer at a time: source viewer, then menu, then reader"
   // Only now does Escape close the reader itself.
   await page.keyboard.press("Escape");
   await expect(page.locator(".cave-reader")).toHaveCount(0);
+});
+
+test("the reader echoes the prompt that produced the answer", async ({ page }) => {
+  await openReader(page, { text: CITED_ANSWER, tools: TOOLS });
+
+  const ask = page.locator(".cave-reader-ask");
+  await expect(ask).toBeVisible();
+  await expect(ask).toContainText("You asked");
+  await expect(ask.locator(".cave-reader-ask__text")).toHaveText(USER_PROMPT);
+
+  // The card sits ABOVE the answer — it frames what follows, it is not a footnote.
+  const askBox = await ask.boundingBox();
+  const firstHeading = await page.locator(".cave-reader-doc h2").first().boundingBox();
+  expect(askBox!.y).toBeLessThan(firstHeading!.y);
+});
+
+test("Edit opens the prompt for editing and Cancel puts it back", async ({ page }) => {
+  await openReader(page, { text: CITED_ANSWER, tools: TOOLS });
+  const ask = page.locator(".cave-reader-ask");
+
+  await ask.getByRole("button", { name: /Edit & rerun/i }).click();
+  const input = ask.locator(".cave-reader-ask__input");
+  await expect(input).toHaveValue(USER_PROMPT);
+  // The prose form is replaced while editing, not duplicated beside it.
+  await expect(ask.locator(".cave-reader-ask__text")).toHaveCount(0);
+
+  await input.fill("");
+  // An empty prompt cannot be rerun — there is nothing to send.
+  await expect(ask.getByRole("button", { name: "Rerun this turn" })).toBeDisabled();
+
+  await ask.getByRole("button", { name: "Cancel" }).click();
+  await expect(ask.locator(".cave-reader-ask__input")).toHaveCount(0);
+  await expect(ask.locator(".cave-reader-ask__text")).toHaveText(USER_PROMPT);
 });
