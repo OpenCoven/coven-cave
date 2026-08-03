@@ -1436,6 +1436,7 @@ export const SUITES = {
     "scripts/ios-task-notes-reader.test.mjs",
     "scripts/ios-task-notes-edit.test.mjs",
     "scripts/ios-task-actions.test.mjs",
+    "scripts/ios-task-revert-scope.test.mjs",
     "scripts/ios-ipad-split-tasks.test.mjs",
     "scripts/ios-ipad-split-chats.test.mjs",
     "scripts/ios-task-search-familiar-scope.test.mjs",

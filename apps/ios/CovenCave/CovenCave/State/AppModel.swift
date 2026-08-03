@@ -652,7 +652,7 @@ final class AppModel {
             applyTask(id: card.id) { $0 = updated }
             Haptics.tap()
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
             reportRevert("update the task")
         }
@@ -670,7 +670,7 @@ final class AppModel {
             let updated = try await client.updateTask(cardId: card.id, steps: newSteps)
             applyTask(id: card.id) { $0 = updated }
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
         }
     }
@@ -710,7 +710,7 @@ final class AppModel {
             let updated = try await client.updateTask(cardId: card.id, steps: steps)
             applyTask(id: card.id) { $0 = updated }
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
         }
     }
@@ -726,7 +726,7 @@ final class AppModel {
             let updated = try await client.updateTask(cardId: card.id, notes: trimmed)
             applyTask(id: card.id) { $0 = updated }
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
         }
     }
@@ -742,7 +742,7 @@ final class AppModel {
             let updated = try await client.updateTaskTitle(cardId: card.id, title: trimmed)
             applyTask(id: card.id) { $0 = updated }
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
         }
     }
@@ -758,7 +758,7 @@ final class AppModel {
             applyTask(id: card.id) { $0 = updated }
             Haptics.tap()
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
             reportRevert("reschedule the task")
         }
@@ -766,17 +766,27 @@ final class AppModel {
 
     /// Optimistically remove a task, then DELETE it. Reinserts on failure.
     func deleteTask(_ card: BoardCard) async {
-        guard let client else { return }
-        let previous = tasks
-        tasks.removeAll { $0.id == card.id }
+        guard let client, let index = tasks.firstIndex(where: { $0.id == card.id }) else { return }
+        let removed = tasks[index]
+        tasks.remove(at: index)
         do {
             try await client.deleteTask(cardId: card.id)
             Haptics.success()
         } catch {
-            tasks = previous
+            // `revertTask` edits a card that is still in the array, so it cannot
+            // restore one that was removed: `applyTask` finds no index and
+            // no-ops, silently dropping the task the delete failed to remove.
+            reinsertTask(removed, at: index)
             tasksError = error.localizedDescription
             reportRevert("delete the task")
         }
+    }
+
+    /// Put an optimistically-removed card back at the position it held rather
+    /// than at the end of the list. No-ops if it is already back.
+    private func reinsertTask(_ card: BoardCard, at index: Int) {
+        guard !tasks.contains(where: { $0.id == card.id }) else { return }
+        tasks.insert(card, at: min(index, tasks.count))
     }
 
     private func applyTask(id: String, _ mutate: (inout BoardCard) -> Void) {
