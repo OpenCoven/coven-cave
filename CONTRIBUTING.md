@@ -12,10 +12,36 @@ game. The full flow — DCO sign-off, what we're looking for, and getting starte
 - **Keep it focused.** One concern per PR; smaller diffs review faster.
 - **Sign off your commits** (`git commit -s`) per the DCO below.
 - **Make sure CI is green** before requesting review.
+- **Don't merge `main` into your branch to "stay current."** It is never
+  required here and it actively delays your PR — see below.
 - **Open an issue first for large or design-heavy changes** so we can align on
   the approach before you invest the work.
 - **Report security issues privately** through [SECURITY.md](./SECURITY.md) —
   never in a public PR or issue.
+
+### Once CI is running, leave the branch alone
+
+Your branch does **not** need to be up to date with `main` to merge. Branch
+protection runs with `strict: false`, so being behind `main` is never the reason
+a PR is blocked, and a merge commit from `main` will not unblock one.
+
+Pushing anything — including a merge of `main` — while CI is running cancels the
+in-flight run and starts over. If you are contributing from a fork for the first
+time, GitHub also re-holds each new run at `action_required` until a maintainer
+approves it again, so every extra push adds a full CI cycle *plus* a wait for a
+human.
+
+This is not hypothetical: three PRs in a single afternoon reached a fully green
+run and were pushed over before they could be merged, each time by a merge of
+`main` that changed nothing about the diff.
+
+So:
+
+- **Push while you are still working.** That is what branches are for, and the
+  remote is the only copy a local accident cannot destroy.
+- **Stop once CI starts**, unless you are pushing a real fix.
+- **Only update from `main` if you have an actual conflict**, or a maintainer
+  asks. Prefer `git rebase origin/main` over a merge commit when you do.
 
 ---
 
