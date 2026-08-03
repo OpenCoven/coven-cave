@@ -368,11 +368,13 @@
   padding: 10px clamp(16px, 3vw, 34px) var(--space-4);
 }
 
-/* ── Typed follow-up cards above the composer ─────────────────────────────── */
+/* ── Typed follow-up options in the composer footer ───────────────────────── */
 .cave-chat-followups {
+  flex: 0 0 100%;
   width: 100%;
-  max-width: var(--cave-chat-measure);
-  margin: 0 auto;
+  min-width: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-hairline);
 }
 
 .cave-chat-followups .cave-followup-cards__grid {
@@ -381,9 +383,13 @@
   grid-template-columns: none;
 }
 
-/* The dock is the one place next steps read as a compact prompt palette: the
+/* The footer is the one place next steps read as a compact prompt palette: the
    full typed-action metadata remains available to assistive technology through
    each button's aria-label, while the visual row stays as quiet as the input. */
+.cave-chat-followups .cave-followup-cards > small {
+  display: none;
+}
+
 .cave-chat-followups .cave-followup-card {
   display: block;
   min-width: 0;

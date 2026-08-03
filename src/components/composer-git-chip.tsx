@@ -108,6 +108,7 @@ export function GitBranchMenuPopover({
   open,
   onOpenChange,
   anchorRef,
+  placement = "top-start",
   projectRoot,
   onSwitched,
   pr,
@@ -117,6 +118,7 @@ export function GitBranchMenuPopover({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   anchorRef: React.RefObject<HTMLElement | null>;
+  placement?: "bottom-start" | "top-start";
   /** Repo root the menu operates on (undefined disables everything). */
   projectRoot: string | undefined;
   /** Called after a successful branch switch (e.g. reload the status poll). */
@@ -273,7 +275,7 @@ export function GitBranchMenuPopover({
         else onOpenChange(true);
       }}
       anchorRef={anchorRef}
-      placement="top-start"
+      placement={placement}
       minWidth={240}
       ariaLabel="Switch branch"
     >

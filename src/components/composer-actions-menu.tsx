@@ -181,7 +181,7 @@ export function ComposerActionsMenu({
           else closePanel();
         }}
         anchorRef={triggerRef}
-        placement="top-start"
+        placement={contextProps.popoverPlacement ?? "top-start"}
         minWidth={260}
         ariaLabel="Chat options"
         className="composer-actions__panel"

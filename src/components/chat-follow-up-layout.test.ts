@@ -11,8 +11,8 @@ const nextPaths = readFileSync(new URL("../lib/next-paths.ts", import.meta.url),
 
 assert.match(
   styles,
-  /\.cave-chat-followups \{[\s\S]*?width: 100%;[\s\S]*?max-width: var\(--cave-chat-measure\);/,
-  "composer follow-ups align to the prompt input measure",
+  /\.cave-chat-followups \{[\s\S]*?flex: 0 0 100%;[\s\S]*?width: 100%;[\s\S]*?border-top: 1px solid var\(--border-hairline\);/,
+  "composer follow-ups span the attached footer below its context row",
 );
 assert.match(
   styles,
