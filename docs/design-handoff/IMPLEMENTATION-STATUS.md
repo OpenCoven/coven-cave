@@ -82,8 +82,6 @@ surface it describes.
 | `Cody Code Reading.dc.html` | 183 | # Coven Cave code reading experience | v1 of the above. |
 | `Coven Tui v2.dc.html` | 153 | # Coven Cave code reading experience | Terminal workbench; also `cave-98o51`. |
 | `OpenCoven Landing - Reforged.dc.html` | 150 | Interactive Landing Page Redesign | **Out of scope for this repo** — marketing site, no `coven-cave` surface. |
-| `Writer Workspace.dc.html` | 147 | Shells and hero flow planning | In no exported zip. No corresponding surface. Tracked by `cave-c7zgz`. |
-| `AnswerFlow.dc.html` | 15 | Shells and hero flow planning | A decision-capture card: one question with a blocking tier, "Why it matters", the config keys it "Writes to", expandable provenance rows (source · locator · quote · confidence), N option cards with editable pros/cons/risks/notes, and a footer that records an answer with a rationale then locks to "Decision written" with a reopen. **Adjacent to but not the same as** `src/components/proposal-approval.tsx`, which captures a *binary* approve/reject with a rationale — scope against it before building. Tracked by `cave-c7zgz`. |
 | `Coven Tui.dc.html` | 108 | # Coven Cave code reading experience | v1 of the above. |
 | `Coven Pr.dc.html` | 75 | # Coven Cave code reading experience | |
 | `Memories - Rethought.dc.html` | 59 | Form feedback requested | Newer than the landed Memories redesign; in no exported zip. Tracked by `cave-tj24b`. |
@@ -102,6 +100,13 @@ These are specs, baselines and explorations — read them, don't build them:
   each was chosen and shipped.
 - `Nocturne` — a design-system project (foundations/components/templates), not
   a screen.
+- **`Writer Workspace.dc.html` + `AnswerFlow.dc.html`** (Shells and hero flow
+  planning) — a **different product**. The Writer shell is branded
+  "CompleteTech Writer" over a project called "Offline Sync Rewrite", and both
+  frames import the Nocturne design system (`_ds/nocturne-…/styles.css`,
+  `var(--color-accent)`) rather than this app's tokens. AnswerFlow is that
+  product's decision-capture card, which is why nothing here produces the
+  questions it renders. Not coven-cave work — same call as `OpenCoven Landing`.
 
 ---
 
