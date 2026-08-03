@@ -7,9 +7,18 @@ import {
 } from "./familiar-analytics-data.ts";
 import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources.ts";
 
+// The workbench is three files: the view owns loading, the content composes
+// the frame + stage, and the dock is the fixed identity column. `source` is the
+// whole surface; `dockSource` / `stageSource` pin the pieces that must live in
+// a specific file (the dock is what stays on screen behind every overlay).
+const dockSource = readFileSync(new URL("./familiar-analytics-dock.tsx", import.meta.url), "utf8");
+const stageSource = readFileSync(new URL("./familiar-analytics-stage.tsx", import.meta.url), "utf8");
+const contentSource = readFileSync(new URL("./familiar-analytics-content.tsx", import.meta.url), "utf8");
 const source = [
   readFileSync(new URL("./familiar-analytics-view.tsx", import.meta.url), "utf8"),
-  readFileSync(new URL("./familiar-analytics-content.tsx", import.meta.url), "utf8"),
+  contentSource,
+  dockSource,
+  stageSource,
 ].join("\n");
 
 afterEach(() => {
@@ -430,45 +439,48 @@ describe("FamiliarAnalyticsView", () => {
     assert.equal(model.healRequests.length, 1);
     assert.equal(model.threadReports.length, 1);
     assert.match(source, /escalateBlockers\(model\.familiarId, threadSignalsAggregate, model\.healRequests\)/);
-    assert.match(source, /healRequests\.length === 1 \? "request" : "requests"/);
+    assert.match(stageSource, /request\{healRequests\.length === 1 \? "" : "s"\}/, "the self-heal stat pluralizes its count");
     assert.doesNotMatch(source, /ResponseConfidenceSection/, "response confidence analytics retired (cave-7ku5)");
     assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{model\.threadReports\}/);
     assert.doesNotMatch(source, /EvalLoopPanel/);
     assert.doesNotMatch(source, /fa-eval/);
   });
 
-  it("renders a confidence ring and a scannable KPI summary row", () => {
-    // Hero confidence ring (radial progress) replaces the flat score box.
-    assert.match(source, /<ConfidenceRing confidence=\{model\.confidence\}/, "header uses the confidence ring");
-    assert.match(source, /className="fa-ring__value"/, "ring draws a progress arc");
-    assert.match(source, /strokeDasharray/, "ring arc length tracks the score");
+  it("renders a trust ring in the dock and a scannable stat band on the stage", () => {
+    // The trust ring (radial progress) is the dock's headline read.
+    assert.match(dockSource, /<TrustRing confidence=\{confidence\}/, "the dock renders the trust ring");
+    assert.match(dockSource, /className="fa-ring__value"/, "ring draws a progress arc");
+    assert.match(dockSource, /strokeDasharray/, "ring arc length tracks the score");
 
-    // KPI row surfaces growth / contract / heal / thread signals up top.
-    assert.match(source, /<FamiliarKpis model=\{model\} healRequestCount=\{healRequests\.length\}/, "KPI row is wired to the model");
-    assert.match(source, /function deriveKpis/, "KPIs are derived from the model");
-    assert.match(source, /model\.growthReport/, "KPIs read the (previously unsurfaced) growth report");
-    assert.match(source, /contract\.properties\.filter\(\(p\) => p\.pass\)/, "contract KPI shows the pass rate");
-    assert.match(source, /className=\{`fa-kpi\$\{kpi\.tone/, "KPI tiles tint by tone");
+    // The stat band replaces the KPI row: activity / contract / self-heal flip
+    // cards, plus the signals entry and the pulse.
+    assert.match(contentSource, /<StatBand[\s\S]*model=\{model\}/, "the stat band is wired to the model");
+    assert.match(stageSource, /export const StatBand/, "the band is its own component");
+    assert.match(stageSource, /contract\.properties\.filter\(\(property\) => property\.pass\)/, "the contract stat shows the pass rate");
+    assert.match(stageSource, /className=\{`fa-stat__value\$\{/, "stat values tint by tone");
+    assert.match(stageSource, /aria-pressed=\{flipped\}/, "a flipped card exposes its state to AT");
   });
 
-  it("synthesizes a plain-language needs-attention banner above the KPIs", () => {
-    assert.match(source, /import \{ deriveAnalyticsInsight \} from "@\/lib\/familiar-analytics-insight"/, "view uses the insight helper");
-    assert.match(source, /<AnalyticsInsightBanner[\s\S]*model=\{model\}[\s\S]*healRequestCount=\{healRequests\.length\}/, "banner is rendered with the model");
-    assert.match(source, /deriveAnalyticsInsight\(model, healRequestCount\)/, "banner derives the insight from the model");
-    assert.match(source, /fa-insight--\$\{insight\.tone\}/, "banner is tinted by tone");
-    // The modernized banner carries state chips + a prioritized action list.
-    assert.match(source, /function deriveNextActions/, "the banner derives its prioritized actions from the heal requests");
-    assert.match(source, /className="fa-attention__stats"/, "the banner renders the at-a-glance state chips");
+  it("synthesizes a plain-language needs-attention card in the dock", () => {
+    assert.match(dockSource, /import \{ deriveAnalyticsInsight \} from "@\/lib\/familiar-analytics-insight"/, "the dock uses the insight helper");
+    assert.match(dockSource, /deriveAnalyticsInsight\(model, healRequestCount\)/, "the card derives its lede from the model");
+    assert.match(dockSource, /fa-insight--\$\{insight\.tone\}/, "the card is tinted by tone");
+    assert.match(dockSource, /className="fa-attention__lede">\{insight\.text\}/, "the plain-language line is the insight's own text");
+    // Prioritized actions come from the same heal requests the strip shows.
+    assert.match(contentSource, /function deriveNextActions/, "the dock's actions are derived from the heal requests");
+    assert.match(contentSource, /actions=\{nextActions\}/, "the dock receives them");
+    assert.match(dockSource, /className="fa-attention__list"/, "the card renders the prioritized list");
   });
 
-  it("folds progression into the hero header, above the attention banner, with intentional copy", () => {
+  it("gives progression its own dock card, under the identity and above trust", () => {
     assert.match(
-      source,
-      /<ProgressionBand progression=\{model\.progression\} \/>[\s\S]*<\/header>[\s\S]*<AnalyticsInsightBanner/,
-      "progression is folded into the header, ahead of the attention banner and KPI summary",
+      dockSource,
+      /<RenownCard progression=\{model\.progression\} \/>[\s\S]*className="fa-trust-card focus-ring"/,
+      "renown sits between the identity card and the trust ring",
     );
-    assert.match(source, /"Top of the ladder"/, "top-tier accessible copy remains explicit");
-    assert.match(source, /"a session today starts a streak"/, "zero streaks use invitational copy");
+    assert.match(dockSource, /Top of the ladder/, "top-tier accessible copy remains explicit");
+    assert.match(dockSource, /A session today starts a streak/, "zero streaks use invitational copy");
+    assert.match(dockSource, /Renown unavailable/, "an unreadable canonical memory says so rather than showing a fake zero");
   });
 
   it("derives a 14-day session pulse and renders it in the hero", async () => {
@@ -480,8 +492,8 @@ describe("FamiliarAnalyticsView", () => {
     // All ten mock sessions land on 2026-06-25 — the newest pulse day.
     assert.equal(model.sessionPulse[13].count, 10);
     assert.equal(model.sessionPulse[13].key, "2026-06-25");
-    assert.match(source, /<PulseBars/, "hero renders the pulse bars");
-    assert.match(source, /model\.sessionPulse/, "pulse is wired to the model");
+    assert.match(stageSource, /<PulseBars/, "the stat band renders the pulse bars");
+    assert.match(stageSource, /const pulse = model\.sessionPulse/, "pulse is wired to the model");
   });
 
   it("surfaces thumbs-vote model/runtime performance from the feedback rollup", async () => {
@@ -492,19 +504,22 @@ describe("FamiliarAnalyticsView", () => {
     assert.equal(model.modelFeedback.total, 3, "the rollup rides the model");
     assert.equal(model.modelFeedback.models[0].key, "claude-sonnet-4");
     assert.equal(model.modelFeedback.runtimes[0].up, 2);
-    assert.match(source, /id="fa-model-performance"/, "the view renders a Model performance section");
-    assert.match(source, /<ModelFeedbackSection rollup=\{model\.modelFeedback\}/, "section is wired to the rollup");
+    assert.match(contentSource, /<b>Model performance<\/b>/, "the footer carries a Model performance deep dive");
+    assert.match(contentSource, /openOverlay\("model"\)/, "the deep dive opens the full-stage view");
+    assert.match(source, /<ModelFeedbackSection rollup=\{model\.modelFeedback\}/, "the panel is wired to the rollup");
     assert.match(source, /ph:thumbs-up/, "rows show up-vote counts");
     assert.match(source, /ph:thumbs-down/, "rows show down-vote counts");
   });
 
-  it("makes each KPI tile a drill-through link to the section it summarizes", () => {
-    assert.match(source, /href: "#fa-contract"/);
-    assert.match(source, /href: "#fa-heal"/);
-    assert.match(source, /href: "#fa-thread-signals"/);
-    assert.match(source, /href: "\/dashboard\/familiars\/growth"/, "activity KPI links to the growth page");
-    assert.match(source, /href=\{kpi\.href\}/, "tiles render as anchors");
-    assert.match(source, /<section id=\{id\}/, "sections carry the ids the tiles target");
+  it("makes every stat tile a drill-through into the evidence behind it", () => {
+    // The band's tiles no longer scroll the page — the workbench has no page
+    // scroll — so each one opens the surface that proves its number.
+    assert.match(stageSource, /onOpenSignals\}/, "the Signals tile opens the thread-signals overlay");
+    assert.match(stageSource, /onTogglePulse\}/, "the pulse tile expands the activity detail");
+    assert.match(contentSource, /id="fa-confidence"/, "the confidence panel keeps its stable anchor");
+    assert.match(contentSource, /id="fa-sessions"/, "the sessions panel keeps its stable anchor");
+    assert.match(contentSource, /<div className="fa-panel-slot" id=\{id\}>/, "panels carry the ids the drills target");
+    assert.match(dockSource, /href="\/dashboard\/familiars\/growth"/, "the dock breadcrumb still reaches the roster");
   });
 
   it("announces refreshes to assistive tech", () => {
@@ -512,44 +527,57 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /announce\("Analytics refreshed\."\)/, "manual refresh is announced");
   });
 
-  it("lays sections out in a container-responsive grid (inspector-pane safe)", () => {
+  it("collapses the two-pane workbench in tiers rather than letting it clip", () => {
     // The .fa-* surface CSS is component-imported (not in the global bundle) per
     // #3264, so these rules live in src/styles/familiar-analytics.css.
     const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
-    assert.match(source, /className="fa-grid"/, "sections are wrapped in the grid");
-    assert.match(faCss, /\.fa-grid\s*\{/, ".fa-grid rule exists");
-    assert.match(faCss, /container-name: fa/, ".fa-page is a size container");
-    assert.match(faCss, /@container fa \(max-width: 880px\)/, "grid collapses by pane width, not viewport");
-  });
-
-  it("leads the grid with the full-width self-heal queue and closes with wide contract compliance", () => {
+    assert.match(contentSource, /className="fa-stage-grid"/, "the two panels share the stage grid");
+    assert.match(faCss, /\.fa-stage-grid \{/, ".fa-stage-grid rule exists");
+    assert.match(faCss, /@media \(max-width: 1180px\)/, "tablet tier folds the stage grid to one column");
+    assert.match(faCss, /@media \(max-width: 900px\)/, "narrow tier stacks the whole frame");
+    // The rail is a different tree than the expanded dock, so the fold has to
+    // be real state — CSS cannot hide a branch that was never rendered.
     assert.match(
-      source,
-      /id="fa-contract"\s+title="Contract compliance"\s+wide/,
-      "contract compliance opts into the full-width section layout",
+      contentSource,
+      /window\.matchMedia\("\(min-width: 901px\) and \(max-width: 1180px\)"\)[\s\S]*setDockCollapsed\(query\.matches\)/,
+      "the dock collapse is driven by matchMedia, not by CSS alone",
     );
-
-    const grid = source.slice(source.indexOf('<div className="fa-grid">'), source.indexOf("{traceTarget ?"));
-    const healIndex = grid.indexOf('id="fa-heal"');
-    const sessionsIndex = grid.indexOf('id="fa-sessions"');
-    const contractIndex = grid.indexOf("<ContractCompliance");
-    assert.ok(healIndex >= 0 && healIndex < sessionsIndex, "the actionable self-heal queue leads the grid full-width");
-    assert.ok(sessionsIndex >= 0 && sessionsIndex < contractIndex, "contract compliance closes the grid after the sessions pair");
+    // It is a BAND, not a ceiling. Below 900px the frame stacks into a page, so
+    // the rail saves nothing — and a rail stretched across the width turns the
+    // avatar into a smear. The full dock has to come back.
+    assert.match(faCss, /\.fa-dock--rail > \* \{ flex: none; \}/, "rail marks never stretch, whatever tier they land in");
   });
 
-  it("stretches grid rows and centers empty states so short empty cards don't leave holes", () => {
+  it("orders the stage scope → stats → open queue → evidence panels", () => {
+    const stage = contentSource.slice(
+      contentSource.indexOf('<div className="fa-stage">'),
+      contentSource.indexOf("{pulseOpen ?"),
+    );
+    const scope = stage.indexOf("<ScopeBar");
+    const stats = stage.indexOf("<StatBand");
+    const heal = stage.indexOf("<SelfHealStrip");
+    const panels = stage.indexOf('className="fa-stage-grid"');
+    assert.ok(scope >= 0 && scope < stats, "the lens/window scope leads — it governs everything under it");
+    assert.ok(stats < heal, "the headline stats read before the queue they summarize");
+    assert.ok(heal >= 0 && heal < panels, "the actionable self-heal queue precedes the evidence panels");
+    // The contract lives in the dock now (the claim), not the stage (the proof).
+    assert.match(dockSource, /aria-label="Contract compliance"/, "the contract check rides the identity dock");
+    assert.match(contentSource, /<ContractPanel/, "expanding it opens the anchored detail panel");
+  });
+
+  it("stretches panels and centers empty states so a short empty panel leaves no hole", () => {
     const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
-    const grid = faCss.match(/\.fa-grid\s*\{[^}]*\}/);
-    assert.ok(grid, ".fa-grid rule should exist");
+    const grid = faCss.match(/\.fa-stage-grid \{[^}]*\}/);
+    assert.ok(grid, ".fa-stage-grid rule should exist");
     assert.doesNotMatch(
       grid![0],
       /align-items:/,
-      "grid rows stretch (the default), so an empty card fills its row instead of floating over a blank gap",
+      "grid rows stretch (the default), so a panel fills its row instead of floating over a blank gap",
     );
     assert.match(
       faCss,
-      /\.fa-section > \.ui-empty-state,\s*\.fa-section > \.fa-thread-empty\s*\{[^}]*margin-block:\s*auto/,
-      "empty states center vertically inside a stretched card",
+      /\.fa-panel__body > \.ui-empty-state,\s*\.fa-panel__body > \.fa-thread-empty \{ margin-block: auto; \}/,
+      "empty states center vertically inside a stretched panel",
     );
   });
 
@@ -588,47 +616,77 @@ describe("FamiliarAnalyticsView", () => {
     );
   });
 
-  it("makes .fa-page own its vertical scroll (html/body are overflow:hidden)", () => {
+  it("keeps the workbench inside the viewport and scrolls the panes, not the page", () => {
     const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
-    const block = faCss.match(/\.fa-page\s*\{[^}]*\}/);
-    assert.ok(block, ".fa-page rule should exist");
-    assert.match(block![0], /overflow-y:\s*auto/, ".fa-page must scroll its own content on the full-page route");
-    assert.doesNotMatch(block![0], /min-height:\s*100%/, ".fa-page should fill (height:100%), not just min-height, so overflow can trigger");
+    const page = faCss.match(/\.fa-page \{[^}]*\}/);
+    assert.ok(page, ".fa-page rule should exist");
+    assert.match(page![0], /height: 100%/, ".fa-page fills its definite-height parent (html/body are overflow:hidden)");
+    const frame = faCss.match(/\.fa-frame \{[^}]*\}/);
+    assert.ok(frame, ".fa-frame rule should exist");
+    assert.match(frame![0], /overflow: hidden/, "the frame never scrolls as a whole — its panes do");
+    assert.match(faCss, /\.fa-dock \{[^}]*overflow-y: auto/, "the dock scrolls its own column");
+    assert.match(faCss, /\.fa-panel__body \{[^}]*overflow-y: auto/, "each panel scrolls its own body");
+    // Below the narrow breakpoint the workbench gives up and becomes a page.
+    assert.match(
+      faCss,
+      /@media \(max-width: 900px\) \{[\s\S]*\.fa-page \{[^}]*overflow-y: auto/,
+      "the narrow tier hands scrolling back to the page",
+    );
   });
 
-  it("modernized chrome: sticky freshness topbar, drill flashes, actionable insight (cave UX audit)", () => {
-    // All .fa-* surface rules — including the reduced-motion and phone-width
+  it("workbench chrome: truthful freshness, refresh progress, degradation band (cave UX audit)", () => {
+    // All .fa-* surface rules — including the reduced-motion and narrow-width
     // overrides — are component-imported (#3264), so they live in the
     // familiar-analytics sheet, not the global facade.
     const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
 
-    // Truthful freshness stamp + visible refresh progress in a sticky topbar.
+    // Truthful freshness stamp + visible refresh progress.
     assert.match(source, /setUpdatedAt\(new Date\(\)\.toISOString\(\)\)/, "updatedAt is stamped by the load that actually landed");
-    assert.match(source, /Updated <RelativeTime iso=\{updatedAt\} \/>/, "topbar renders the freshness stamp");
-    assert.match(source, /refreshing \? " is-refreshing" : ""/, "refresh button carries a refreshing state class");
-    assert.match(faCss, /\.fa-topbar\s*\{[^}]*position:\s*sticky/, "breadcrumb topbar is sticky");
-    assert.match(faCss, /fa-refresh-spin/, "refresh spins while a quiet reload is in flight");
+    assert.match(contentSource, /Updated <RelativeTime iso=\{updatedAt\} \/>/, "the footer renders the freshness stamp");
+    assert.match(dockSource, /refreshing \? " is-refreshing" : ""/, "the refresh button carries a refreshing state class");
+    assert.match(faCss, /\.fa-icon-btn\.is-refreshing svg \{ animation: fa-spin/, "refresh spins while a quiet reload is in flight");
 
-    // Drill-throughs glide and flash their landing section.
-    assert.match(faCss, /\.fa-page\s*\{[^}]*scroll-behavior:\s*smooth/, "in-page drills scroll smoothly");
-    assert.match(faCss, /\.fa-section\s*\{[^}]*scroll-margin-top/, "sections land clear of the sticky bar");
-    assert.match(faCss, /\.fa-section:target\s*\{/, "the landing section flashes for orientation");
+    // A partial load degrades into a dismissible band, never a blank surface.
+    assert.match(contentSource, /className="fa-error-band" role="alert"/, "partial failures announce themselves");
+    assert.match(contentSource, /everything else is from the last good read/, "the band says what is still trustworthy");
+    assert.match(contentSource, /setErrorDismissed\(true\)/, "the band is dismissible");
 
-    // KPI tiles carry a reveal-on-hover drill cue.
-    assert.match(source, /className="fa-kpi__go"/, "KPI tiles render the drill chevron");
+    // Deep dives cover the stage, never the dock — the identity stays put.
+    assert.match(contentSource, /covers the stage — the dock stays put/, "the overlay states its own scope");
+    assert.match(faCss, /\.fa-overlay \{[^}]*position: absolute/, "the overlay is scoped to the stage, not the viewport");
+    assert.match(contentSource, /useFocusTrap\(true, ref, \{ onEscape: onClose \}\)/, "stage overlays trap focus and close on Esc");
+    // Two live focus traps would fight over the tab ring, so opening the top
+    // layer retires the anchored panels underneath it first.
+    assert.match(
+      contentSource,
+      /const openOverlay = useCallback\(\(next: Exclude<Overlay, null>\) => \{\s*setContractOpen\(false\);\s*setPulseOpen\(false\);/,
+      "opening a stage overlay retires the contract panel and the pulse",
+    );
 
-    // Actionable insight banners carry their own next step.
-    assert.match(source, /className="fa-insight__action focus-ring" href="#fa-heal"/, "attention insights link to the heal section");
+    // A face turned away is hidden to the eye by backface-visibility, but that
+    // alone leaves its buttons in the tab order.
+    assert.match(
+      faCss,
+      /\.fa-panel-pivot:not\(\.is-flipped\) > \.fa-panel--back,\s*\.fa-panel-pivot\.is-flipped > \.fa-panel:not\(\.fa-panel--back\) \{ visibility: hidden; \}/,
+      "the away-facing panel leaves the tab order, not just the screen",
+    );
+    assert.match(
+      faCss,
+      /\.fa-panel \{ transition: visibility 0s linear var\(--duration-slow\); \}/,
+      "the retirement waits for the flip so the face never vanishes mid-turn",
+    );
 
     // All decorative motion holds still under prefers-reduced-motion.
     assert.match(
       faCss,
-      /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.fa-page\s*\{\s*scroll-behavior:\s*auto/,
-      "smooth scrolling is disabled under reduced motion",
+      /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*\.fa-panel-pivot \{ transition: none/,
+      "panel flips are instant under reduced motion",
     );
-
-    // Narrow-pane tier exists (inspector tab / phones).
-    assert.match(faCss, /@container fa \(max-width: 420px\)/, "a phone-width container tier hardens the narrowest panes");
+    assert.match(
+      faCss,
+      /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*\.fa-renown__shine \{ animation: none/,
+      "the renown sheen stops under reduced motion",
+    );
   });
 });
 
@@ -646,8 +704,9 @@ describe("session tracking + tracing (recent sessions, pulse drill, trace overla
   });
 
   it("renders a Recent sessions section with open-thread and trace actions", () => {
-    assert.match(source, /id="fa-sessions"/, "the section carries its drill anchor");
-    assert.match(source, /<RecentSessionsSection/, "section renders the sessions list");
+    assert.match(contentSource, /id="fa-sessions"/, "the panel carries its drill anchor");
+    assert.match(contentSource, /<RecentSessionsBody/, "the panel front renders the sessions list");
+    assert.match(contentSource, /<SessionLog sessions=\{windowSessions\}/, "its other face is the full session log");
     assert.match(
       source,
       /href=\{`\/#chat-\$\{encodeURIComponent\(session\.id\)\}`\}/,
@@ -659,12 +718,14 @@ describe("session tracking + tracing (recent sessions, pulse drill, trace overla
     assert.match(source, /aria-label="Next page of sessions"/, "the pager exposes an accessible next-page control");
   });
 
-  it("makes the hero pulse interactive — a clicked day filters the sessions list", () => {
-    assert.match(source, /onSelectDay=\{handleSelectDay\}/, "hero pulse takes the day-select handler");
-    assert.match(source, /selectedKey=\{selectedDay\?\.key \?\? null\}/, "selection state rides back into the bars");
-    assert.match(source, /sessionDayKey\(session\.updated_at\) === selectedDay\.key/, "the list filters by the pulse's own day bucketing");
-    assert.match(source, /getElementById\("fa-sessions"\)\?\.scrollIntoView/, "selecting a day lands the reader on the list");
-    assert.match(source, /className="fa-day-chip focus-ring"/, "an active day filter shows a clearable chip");
+  it("makes the pulse interactive — a clicked day filters the sessions list", () => {
+    assert.match(contentSource, /onSelectDay=\{handleSelectDay\}/, "the stat band's pulse takes the day-select handler");
+    assert.match(contentSource, /selectedDayKey=\{selectedDay\?\.key \?\? null\}/, "selection state rides back into the bars");
+    assert.match(contentSource, /sessionDayKey\(session\.updated_at\) === selectedDay\.key/, "the list filters by the pulse's own day bucketing");
+    // The panel is always on screen in the workbench, so a day filter has
+    // nothing to scroll to — it must instead un-flip the panel showing the log.
+    assert.match(contentSource, /setSessionsFlipped\(false\)/, "selecting a day turns the sessions panel to the filtered list");
+    assert.match(contentSource, /className="fa-day-chip focus-ring"/, "an active day filter shows a clearable chip");
     // The interactive bars are real buttons with pressed state (not color alone).
     const pulseBars = readFileSync(new URL("./ui/pulse-bars.tsx", import.meta.url), "utf8");
     assert.match(pulseBars, /aria-pressed=\{selected\}/, "selected day is exposed to AT");
@@ -684,9 +745,10 @@ describe("confidence from thread analysis + metric labeling", () => {
     // from this page — the panel renders the self-reported metric averages.
     assert.doesNotMatch(source, /CONFIDENCE_FACTOR_COPY/, "no synthetic factor copy remains");
     assert.doesNotMatch(source, /familiar-confidence/, "the view no longer imports the heuristic lib");
-    assert.match(source, /ThreadAnalysisSection/, "the thread-analysis panel replaces the factor list");
-    assert.match(source, /id="fa-confidence"/, "the panel keeps the stable fa-confidence anchor");
-    assert.match(source, /title="Confidence from thread analysis"/, "the panel is named for its real source");
+    assert.match(source, /ThreadAnalysisBody/, "the thread-analysis panel replaces the factor list");
+    assert.match(contentSource, /id="fa-confidence"/, "the panel keeps the stable fa-confidence anchor");
+    assert.match(contentSource, /title="Confidence from thread analysis"/, "the panel is named for its real source");
+    assert.match(contentSource, /<ReportLedger reports=\{windowReports\}/, "its other face is the report-by-report ledger");
     assert.match(source, /THREAD_METRIC_COPY/, "each metric carries plain-language meaning");
     assert.match(source, /className="fa-factor-info"/, "an info affordance explains each metric");
     assert.match(source, /adds up to \$\{Math\.round\(weight \* 100\)\} points of the headline score's 100/, "tooltips state each metric's max contribution, not a fixed share");
@@ -732,11 +794,23 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(source, /formatDelta/, "deltas render signed (+8 / -6)");
   });
 
-  it("renders the hero ring from thread confidence with an unmeasured state", () => {
-    assert.match(source, /fa-ring--\$\{tier\}/, "ring tier class tracks the derived tier");
-    assert.match(source, /confidence\.hasData \? confidenceTier\(confidence\.label\) : "none"/, "no reports → neutral ring, never a fake Low");
-    assert.match(source, /Thread confidence not measured yet/, "the unmeasured ring says so to AT");
-    assert.match(source, /from \$\{reportPhrase\}/, "the measured ring cites its report count");
+  it("renders the dock's trust ring from thread confidence with an unmeasured state", () => {
+    assert.match(dockSource, /fa-ring--\$\{size\} fa-ring--\$\{tier\}/, "ring tier class tracks the derived tier");
+    assert.match(dockSource, /confidence\.hasData \? confidenceTier\(confidence\.label\) : "none"/, "no reports → neutral ring, never a fake Low");
+    assert.match(dockSource, /Trust not measured yet — no thread self-reports/, "the unmeasured hero ring says so to AT");
+    // In the dock the ring is decoration (its button already names the score);
+    // as the trust modal's hero it IS the headline and must be exposed.
+    assert.match(
+      dockSource,
+      /const ringAria = size === "lg"[\s\S]*role: "img" as const[\s\S]*: \{ "aria-hidden": true as const \}/,
+      "the hero ring is announced, the decorative one is not",
+    );
+    assert.match(
+      dockSource,
+      /const score = confidence\.hasData \? Math\.max\(0, Math\.min\(100, confidence\.score\)\) : null/,
+      "one clamped number feeds both the arc and the printed score",
+    );
+    assert.match(dockSource, /from \$\{confidence\.reportCount\} report/, "the measured ring cites its report count");
     const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     assert.match(faCss, /\.fa-ring--none\s*\{[^}]*--fa-ring-color:\s*var\(--border-strong\)/, "the unmeasured tier stays neutral (tokens only)");
   });
@@ -745,7 +819,7 @@ describe("confidence from thread analysis + metric labeling", () => {
     const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     assert.match(source, /className="fa-metric-unit"/, "0–100 scores carry a muted unit suffix");
     assert.match(faCss, /\.fa-metric-unit\s*\{/, "the metric-unit style exists");
-    assert.match(faCss, /\.fa-factor-bar\s*\{[\s\S]*?min-width:\s*44px/, "the metric bar keeps a min-width floor in narrow cells");
+    assert.match(faCss, /\.fa-factor-bar \{[\s\S]*?min-width: 44px/, "the metric bar keeps a min-width floor in narrow cells");
     assert.match(faCss, /\.fa-thread-analysis\s*\{/, "the thread-analysis panel has its own layout block");
   });
 });
