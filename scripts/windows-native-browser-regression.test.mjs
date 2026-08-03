@@ -337,6 +337,41 @@ assert.match(source, /installedAppMutationInvoked = \$false/);
 assert.match(source, /msiMutationInvoked = \$false/);
 assert.match(source, /unrelatedProcessTerminationInvoked = \$false/);
 
+// PowerShell needs seconds just to start on a cold GitHub Windows runner,
+// before this fixture parses and runs a script of this size. The 15s budget
+// these spawns used to carry left so little headroom that a contended runner
+// tripped it — and a tripped budget is indistinguishable from a real failure
+// at the assertion, because spawnSync kills the child and reports
+// `status: null` with no output to explain itself. That reded a PR whose diff
+// touched only apps/ios/**, which CI never builds (cave-rx5yl). Generous
+// enough that only a genuine hang trips it, still bounded so a hang fails the
+// job rather than hanging it.
+const POWERSHELL_TIMEOUT_MS = 120_000;
+
+function runPowerShell(args, extraOptions = {}) {
+  return spawnSync("powershell.exe", args, {
+    encoding: "utf8",
+    timeout: POWERSHELL_TIMEOUT_MS,
+    ...extraOptions,
+  });
+}
+
+/** Explain a spawn result well enough to act on — a timeout says so by name,
+ *  rather than surfacing as `null !== 0` above two empty strings. */
+function describeSpawn(label, result) {
+  let cause;
+  if (result.error?.code === "ETIMEDOUT") {
+    cause = `timed out after ${POWERSHELL_TIMEOUT_MS}ms (killed with ${result.signal ?? "no signal"})`;
+  } else if (result.error) {
+    cause = `spawn failed: ${result.error.message}`;
+  } else if (result.signal) {
+    cause = `killed with ${result.signal}`;
+  } else {
+    cause = `exited with status ${result.status}`;
+  }
+  return `${label}: ${cause}\nstdout:\n${result.stdout ?? ""}\nstderr:\n${result.stderr ?? ""}`;
+}
+
 // On Windows, exercise the production script's parser and DryRun path as a
 // fast fixture. node.exe is only an identity fixture: DryRun must not launch it.
 if (process.platform === "win32") {
@@ -344,43 +379,40 @@ if (process.platform === "win32") {
   const output = `${fixtureRoot}.json`;
   const profile = `${fixtureRoot}-profile`;
   try {
-    const parse = spawnSync(
-      "powershell.exe",
+    // Previously unbounded: a PowerShell that never returned would have hung
+    // the job to its own timeout rather than failing this test.
+    const parse = runPowerShell(
       [
         "-NoProfile",
         "-NonInteractive",
         "-Command",
         "$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile($env:COVEN_HARNESS_PATH,[ref]$t,[ref]$e)|Out-Null;if($e.Count){$e|% Message;exit 1}",
       ],
-      { encoding: "utf8", env: { ...process.env, COVEN_HARNESS_PATH: scriptPath } },
+      { env: { ...process.env, COVEN_HARNESS_PATH: scriptPath } },
     );
-    assert.equal(parse.status, 0, `PowerShell parser rejected ${basename(scriptPath)}:\n${parse.stderr}\n${parse.stdout}`);
+    assert.equal(parse.status, 0, describeSpawn(`PowerShell parser rejected ${basename(scriptPath)}`, parse));
 
-    const dryRun = spawnSync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        scriptPath,
-        "-Executable",
-        process.execPath,
-        "-WebView2Profile",
-        profile,
-        "-PreparationMode",
-        "Passive",
-        "-StartupProbeOnly",
-        "-Cycles",
-        "0",
-        "-OutputPath",
-        output,
-        "-DryRun",
-      ],
-      { encoding: "utf8", timeout: 15_000 },
-    );
-    assert.equal(dryRun.status, 0, `DryRun fixture failed:\n${dryRun.stderr}\n${dryRun.stdout}`);
+    const dryRun = runPowerShell([
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      scriptPath,
+      "-Executable",
+      process.execPath,
+      "-WebView2Profile",
+      profile,
+      "-PreparationMode",
+      "Passive",
+      "-StartupProbeOnly",
+      "-Cycles",
+      "0",
+      "-OutputPath",
+      output,
+      "-DryRun",
+    ]);
+    assert.equal(dryRun.status, 0, describeSpawn("DryRun fixture failed", dryRun));
     const report = JSON.parse(readFileSync(output, "utf8"));
     assert.equal(report.status, "dry-run");
     assert.equal(resolve(report.candidate.path), resolve(process.execPath));
@@ -410,22 +442,26 @@ if (process.platform === "win32") {
     );
 
     mkdirSync(profile);
-    const existingProfile = spawnSync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        scriptPath,
-        "-Executable",
-        process.execPath,
-        "-WebView2Profile",
-        profile,
-        "-DryRun",
-      ],
-      { encoding: "utf8", timeout: 15_000 },
+    const existingProfile = runPowerShell([
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      scriptPath,
+      "-Executable",
+      process.execPath,
+      "-WebView2Profile",
+      profile,
+      "-DryRun",
+    ]);
+    // A killed process reports `status: null`, which `notEqual(…, 0)` accepts —
+    // so demand a real exit code first. Otherwise a timeout could read as the
+    // very rejection this asserts, turning a guard into a false green.
+    assert.equal(
+      typeof existingProfile.status,
+      "number",
+      describeSpawn("pre-existing-profile rejection never ran to completion", existingProfile),
     );
     assert.notEqual(existingProfile.status, 0, "a pre-existing profile path must be rejected even when empty");
     assert.match(`${existingProfile.stderr}\n${existingProfile.stdout}`, /Launch profile must not already exist/);
