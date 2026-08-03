@@ -1060,6 +1060,9 @@ export const SUITES = {
     "src/components/grimoire-nav-state.test.ts",
     "src/components/marketplace/marketplace-view-model.test.ts",
     "src/components/onboarding-model.test.ts",
+    "src/lib/onboarding-readiness.test.ts",
+    "src/lib/onboarding-status-probes.test.ts",
+    "src/lib/onboarding-status-ui.test.ts",
     "src/components/settings-multihost.test.ts",
   ],
   api: [
