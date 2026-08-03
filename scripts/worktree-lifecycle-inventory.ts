@@ -1100,9 +1100,21 @@ function unitScopedDrift({
     return drift;
   }
 
+  // Drift is measured INITIAL → FINAL, never against the unit's own fields. A
+  // unit can start out inconsistent — a registered worktree whose ref is absent
+  // from the branch inventory, or whose HEAD differs from that ref, both of
+  // which `initialErrors` already reports — and comparing the final snapshot to
+  // those fields would blame the patrol window for a discrepancy that predates
+  // it. Only a real change between the two reads is drift.
+  const initialEntries = parseWorktrees(initialWorktreeRaw);
   const finalEntries = parseWorktrees(finalWorktreeRaw);
-  const finalRefs = parseLocalBranchRefs(finalRefsRaw);
-  const finalOidByRef = new Map(finalRefs.map((localRef) => [localRef.ref, localRef.oid]));
+  const initialOidByRef = new Map(
+    parseLocalBranchRefs(initialRefsRaw).map((localRef) => [localRef.ref, localRef.oid]),
+  );
+  const finalOidByRef = new Map(
+    parseLocalBranchRefs(finalRefsRaw).map((localRef) => [localRef.ref, localRef.oid]),
+  );
+  const initialEntryByPath = new Map(initialEntries.map((entry) => [entry.path, entry]));
   const finalEntryByPath = new Map(finalEntries.map((entry) => [entry.path, entry]));
   const pathsByRef = (entries: ReturnType<typeof parseWorktrees>) => {
     const byRef = new Map<string, string[]>();
@@ -1112,37 +1124,45 @@ function unitScopedDrift({
     }
     return byRef;
   };
-  const initialPathsByRef = pathsByRef(parseWorktrees(initialWorktreeRaw));
+  const initialPathsByRef = pathsByRef(initialEntries);
   const finalPathsByRef = pathsByRef(finalEntries);
 
   for (const unit of units) {
     const key = lifecycleUnitKey(unit);
     if (unit.kind === "worktree" && unit.path !== null) {
-      const entry = finalEntryByPath.get(unit.path);
-      if (!entry) {
-        drift.set(key, "worktree was unregistered while the patrol was running");
-        continue;
-      }
-      if (entry.head !== unit.head || entry.ref !== unit.ref) {
-        drift.set(key, "worktree HEAD moved while the patrol was running");
-        continue;
+      const before = initialEntryByPath.get(unit.path);
+      const after = finalEntryByPath.get(unit.path);
+      if (before !== undefined) {
+        if (after === undefined) {
+          drift.set(key, "worktree was unregistered while the patrol was running");
+          continue;
+        }
+        if (after.head !== before.head || after.ref !== before.ref) {
+          drift.set(key, "worktree HEAD moved while the patrol was running");
+          continue;
+        }
       }
     }
     if (unit.ref !== null) {
-      const oid = finalOidByRef.get(unit.ref);
-      if (oid === undefined) {
-        drift.set(key, "branch was deleted while the patrol was running");
-        continue;
-      }
-      if (oid !== unit.head) {
-        drift.set(key, "branch moved while the patrol was running");
-        continue;
+      const oidBefore = initialOidByRef.get(unit.ref);
+      const oidAfter = finalOidByRef.get(unit.ref);
+      // A ref the initial snapshot never had is not something this window
+      // changed; `initialErrors` already covers that inconsistency.
+      if (oidBefore !== undefined) {
+        if (oidAfter === undefined) {
+          drift.set(key, "branch was deleted while the patrol was running");
+          continue;
+        }
+        if (oidAfter !== oidBefore) {
+          drift.set(key, "branch moved while the patrol was running");
+          continue;
+        }
       }
       // A ref gaining or losing a worktree changes what retiring it would mean,
       // even when the OID held still.
-      const before = (initialPathsByRef.get(unit.ref) ?? []).join("\0");
-      const after = (finalPathsByRef.get(unit.ref) ?? []).join("\0");
-      if (before !== after) {
+      const pathsBefore = (initialPathsByRef.get(unit.ref) ?? []).join("\0");
+      const pathsAfter = (finalPathsByRef.get(unit.ref) ?? []).join("\0");
+      if (pathsBefore !== pathsAfter) {
         drift.set(key, "the worktrees holding this branch changed while the patrol was running");
       }
     }
@@ -2710,8 +2730,11 @@ export function collectWorktreeLifecycleInventory(
       finalWorktreeRaw,
       finalRefsRaw,
     });
-  } catch {
-    throw new Error("worktree or branch inventory changed during patrol");
+  } catch (error) {
+    // Keep the parse failure attached: this is now the ONLY whole-run abort, so
+    // "changed during patrol" with no detail would be the least diagnosable
+    // message in the script.
+    throw new Error("worktree or branch inventory changed during patrol", { cause: error });
   }
   if (
     finalHistoryOverrides.replaceRefsState !== initialHistoryOverrides.replaceRefsState ||

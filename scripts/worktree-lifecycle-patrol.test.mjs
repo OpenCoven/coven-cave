@@ -3347,6 +3347,7 @@ exit 0
   {
     const movedReport = JSON.parse(patrol(["--json"], { LIFECYCLE_UNIT_DRIFT: "1" }));
     const movedUnit = movedReport.items.find((item) => item.branch === "feat/branch-only");
+    assert.ok(movedUnit, "the drifted unit is still reported");
     assert.equal(movedUnit.lane, "uncertain", "a unit whose branch moved fails closed");
     assert.match(
       movedUnit.probeErrors.join("\n"),
@@ -3354,6 +3355,7 @@ exit 0
       "the drifted unit says what moved",
     );
     const untouched = movedReport.items.find((item) => item.branch === "feat/old");
+    assert.ok(untouched, "its neighbours are still reported");
     assert.doesNotMatch(
       untouched.probeErrors.join("\n"),
       /while the patrol was running/,
