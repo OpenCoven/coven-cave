@@ -112,6 +112,35 @@ test("the duplicate-id guard still blocks, and names the bead", () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("the duplicate-id guard works when invoked with a FOREIGN cwd", () => {
+  // The checker resolves .beads/ from process.cwd(), so a hook inherited with
+  // a different cwd would scan the wrong directory — and finding no files
+  // looks identical to finding no duplicates.
+  //
+  // git itself always hands pre-commit the worktree toplevel (measured), so
+  // this is not reachable via `git commit`. It IS reachable by any other
+  // caller that invokes the hook directly, which is why the hook pins its own
+  // cwd rather than trusting the one it is given.
+  const dir = scaffold();
+  try {
+    mkdirSync(join(dir, "sub", "deeper"), { recursive: true });
+    writeFileSync(join(dir, ".beads/interactions.jsonl"), '{"id":"a"}\n{"id":"a"}\n');
+    git(dir, "add", "-A");
+    let blocked = false;
+    let output = "";
+    try {
+      output = execFileSync("bash", [join(dir, ".beads/hooks/pre-commit")], {
+        cwd: join(dir, "sub", "deeper"), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      blocked = true;
+      output = `${error.stdout ?? ""}${error.stderr ?? ""}`;
+    }
+    assert.equal(blocked, true, "duplicates must still be caught from a foreign cwd");
+    assert.match(output, /cave-1poit/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("a missing canonical scanner BLOCKS rather than passing silently", () => {
   const dir = scaffold();
   try {

@@ -43,8 +43,17 @@ if git diff --cached --name-only --diff-filter=ACMR -z \
    | tr '\0' '\n' | grep -qE '^\.beads/.*\.jsonl$'; then
   CHECKER="$REPO_ROOT/scripts/check-beads-jsonl-duplicates.mjs"
   if command -v node >/dev/null 2>&1 && [ -f "$CHECKER" ]; then
-    if ! node "$CHECKER" >/dev/null 2>&1; then
-      node "$CHECKER" >&2 || true
+    # Run FROM $REPO_ROOT. check-beads-jsonl-duplicates.mjs resolves .beads/
+    # relative to process.cwd(), so an inherited cwd elsewhere would make it
+    # scan the wrong directory — and finding no files reads exactly like
+    # finding no duplicates.
+    #
+    # Measured: git itself invokes pre-commit with cwd already at the worktree
+    # toplevel, even for `git commit` run from a subdirectory, so this is not
+    # reachable through git. It is cheap insurance against callers that do not
+    # replicate that guarantee — GUI clients drive this repo too.
+    if ! (cd "$REPO_ROOT" && node "$CHECKER") >/dev/null 2>&1; then
+      (cd "$REPO_ROOT" && node "$CHECKER") >&2 || true
       printf '\033[31m[pre-commit blocked]\033[0m %s\n' \
         "duplicate record ids in .beads/*.jsonl — see cave-1poit" >&2
       exit 1
