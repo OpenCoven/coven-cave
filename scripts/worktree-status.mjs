@@ -116,10 +116,16 @@ function classify(root, wt) {
   let ahead = 0;
   let behind = 0;
   const counts = git(root, ["rev-list", "--left-right", "--count", `${DEFAULT_BRANCH}...${wt.branch}`]);
-  if (counts.ok) {
+  if (!counts.ok) {
+    return { verdict: "SCRATCH", merged: false, dirty, ahead: 0, behind: 0 };
+  }
+  {
     const m = counts.out.split(/\s+/);
     behind = Number(m[0] || 0); // commits on default not in branch
     ahead = Number(m[1] || 0); // commits on branch not in default
+    if (!Number.isFinite(behind) || !Number.isFinite(ahead)) {
+      return { verdict: "SCRATCH", merged: false, dirty, ahead: 0, behind: 0 };
+    }
   }
 
   let verdict;
@@ -129,7 +135,6 @@ function classify(root, wt) {
     verdict = dirty === 0 ? "ACTIVE" : "DIRTY";
   }
   return { verdict, merged: merged || ahead === 0, dirty, ahead, behind };
-}
 
 function dirtyCount(wtPath) {
   // Default porcelain already excludes gitignored paths, so this counts only
