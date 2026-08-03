@@ -19,6 +19,11 @@ import test from "node:test";
 // Fixing 2 without 1 (or vice versa) leaves a real user-visible hole, which is
 // why they are pinned together rather than in separate assertions elsewhere.
 
+// Trait 2 is not notch-specific. Quick chat is the other always_on_top window
+// built here, and it had the identical gap: the pill was fixed while the panel
+// it expands from was still pinned to one space and still vanished under a
+// fullscreen app. Both are pinned below so neither regresses alone.
+
 const src = await readFile(new URL("./src/window_geometry.rs", import.meta.url), "utf8");
 
 // Scope every assertion to the notch builder so a matching call on the
@@ -26,6 +31,16 @@ const src = await readFile(new URL("./src/window_geometry.rs", import.meta.url),
 const notchStart = src.indexOf('NOTCH_WINDOW_LABEL,');
 assert.ok(notchStart > 0, "notch window builder not found in window_geometry.rs");
 const notch = src.slice(notchStart);
+
+// ...and conversely, scope the quick-chat assertions to the region before the
+// notch builder so the notch's own calls can't satisfy them.
+const quickChatStart = src.indexOf('QUICK_CHAT_WINDOW_LABEL,');
+assert.ok(quickChatStart > 0, "quick chat window builder not found in window_geometry.rs");
+assert.ok(
+  quickChatStart < notchStart,
+  "quick chat builder is expected to precede the notch builder; the slice below assumes it",
+);
+const quickChat = src.slice(quickChatStart, notchStart);
 
 test("the notch sits at NSStatusWindowLevel so the menu bar cannot cover it", () => {
   assert.match(
@@ -64,5 +79,41 @@ test("collection behavior is OR-ed into the existing mask, never assigned", () =
     notch,
     /current\s*\|\s*CAN_JOIN_ALL_SPACES\s*\|\s*FULL_SCREEN_AUXILIARY/,
     "OR the two traits into the current mask rather than overwriting it",
+  );
+});
+
+test("quick chat joins all spaces and survives another app going fullscreen", () => {
+  // Same defect as the notch's trait 2, on the sibling always_on_top window:
+  // always_on_top orders the panel only against windows on the space it is
+  // already on, so a default collection behavior pins it there and hides it
+  // under a fullscreen app.
+  assert.match(
+    quickChat,
+    /CAN_JOIN_ALL_SPACES:\s*usize\s*=\s*1\s*<<\s*0/,
+    "canJoinAllSpaces is bit 0 of NSWindowCollectionBehavior",
+  );
+  assert.match(
+    quickChat,
+    /FULL_SCREEN_AUXILIARY:\s*usize\s*=\s*1\s*<<\s*8/,
+    "fullScreenAuxiliary is bit 8 of NSWindowCollectionBehavior",
+  );
+  assert.match(
+    quickChat,
+    /current\s*\|\s*CAN_JOIN_ALL_SPACES\s*\|\s*FULL_SCREEN_AUXILIARY/,
+    "OR the traits into the current mask rather than overwriting what tao set",
+  );
+});
+
+test("quick chat is NOT raised to status level — it is a panel, not a menu-bar resident", () => {
+  // The notch needs setLevel 25 because it parks flush with the top edge and
+  // the menu bar would otherwise paint over it. Quick chat has no such
+  // constraint, and lifting it to status level would put a full chat panel
+  // above the menu bar. always_on_top(true) already gives it
+  // NSFloatingWindowLevel, which is the correct level; this pins the decision
+  // so a later copy-paste of the notch block does not quietly import it.
+  assert.doesNotMatch(
+    quickChat,
+    /setLevel:/,
+    "quick chat must keep the floating level always_on_top gives it, not the notch's status level",
   );
 });

@@ -231,6 +231,32 @@ pub(super) fn show_quick_chat_window(app: &tauri::AppHandle, quick_chat_url: &Ur
                 {
                     log::warn!("[cave] quick chat vibrancy unavailable: {}", e);
                 }
+                // always_on_top only orders this panel against windows on the
+                // space it already lives on. With a default collection
+                // behavior it stays pinned to the space it opened on and is
+                // hidden outright while another app is fullscreen — the same
+                // disappearing act the notch had, on the sibling window.
+                //
+                // Deliberately no setLevel here: quick chat is a floating
+                // panel rather than a menu-bar resident, so the
+                // NSFloatingWindowLevel that always_on_top(true) already gives
+                // it is the right level. Only the collection behavior needs
+                // widening. Flags are OR'd into whatever tao set so we add
+                // these two traits without clobbering ones we do not own.
+                let win = window.clone();
+                let _ = window.run_on_main_thread(move || {
+                    let Ok(ns_ptr) = win.ns_window() else { return };
+                    unsafe {
+                        use objc2::msg_send;
+                        use objc2::runtime::AnyObject;
+                        let ns_window = ns_ptr as *mut AnyObject;
+                        const CAN_JOIN_ALL_SPACES: usize = 1 << 0;
+                        const FULL_SCREEN_AUXILIARY: usize = 1 << 8;
+                        let current: usize = msg_send![&*ns_window, collectionBehavior];
+                        let behavior = current | CAN_JOIN_ALL_SPACES | FULL_SCREEN_AUXILIARY;
+                        let _: () = msg_send![&*ns_window, setCollectionBehavior: behavior];
+                    }
+                });
             }
             let _ = window.show();
             let _ = window.set_focus();
