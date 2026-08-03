@@ -37,6 +37,7 @@ export const SUITES = {
     "src/lib/familiar-drag.test.ts",
     "src/lib/sidebar-nav-state.test.ts",
     "src/lib/workspace-mode.test.ts",
+    "src/lib/workspace-url-state.test.ts",
     "src/lib/pending-code-navigation.test.ts",
     "src/lib/workspace-navigation.test.ts",
     "src/lib/workspace-navigation-history.test.ts",
@@ -1227,6 +1228,7 @@ export const SUITES = {
     "src/app/api/chat/send/route-hermes-availability.integration.test.ts",
     "src/app/api/chat/send/route-codex-runtime-availability.integration.test.ts",
     "src/app/api/chat/send/route-claude-availability.integration.test.ts",
+    "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
     "src/app/api/chat/send/route-openclaw-bridge.integration.test.ts",
     "src/app/api/chat/send/route-openclaw-resume-harness.integration.test.ts",
     "src/app/api/chat/send/offline-queue.test.ts",
@@ -1526,6 +1528,7 @@ const ALIAS_LOADER = new Set([
   // Imports the module under test, which resolves "@/lib/github-repo-link".
   "src/lib/project-setup-validation.test.ts",
   "src/lib/use-role-surfaces-loader.test.ts",
+  "src/lib/workspace-url-state.test.ts",
   "src/components/home/use-home-model-state.test.ts",
   "src/components/role-surfaces/researcher-status.test.ts",
   // review-readiness resolves "@/lib/github-checks" for its check rollups.
@@ -1548,6 +1551,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/chat/send/route-hermes-availability.integration.test.ts",
   "src/app/api/chat/send/route-codex-runtime-availability.integration.test.ts",
   "src/app/api/chat/send/route-claude-availability.integration.test.ts",
+  "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
   "src/app/api/chat/send/harness-routing-codex-direct.test.ts",
   "src/app/api/chat/send/route-openclaw-bridge.integration.test.ts",
   "src/app/api/chat/send/route-openclaw-resume-harness.integration.test.ts",

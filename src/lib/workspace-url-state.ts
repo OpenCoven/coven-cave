@@ -1,4 +1,5 @@
 import { isWorkspaceMode, type WorkspaceMode } from "@/lib/workspace-mode";
+import { isRoleSurfaceMode, type RoleSurfaceMode } from "@/lib/role-surfaces";
 
 const CHAT_HASH_PREFIX = "#chat-";
 
@@ -16,10 +17,11 @@ export function clearChatHash() {
   window.history.replaceState(null, "", window.location.pathname + window.location.search);
 }
 
-export function readModeParam(): WorkspaceMode | null {
+export function readModeParam(): WorkspaceMode | RoleSurfaceMode | null {
   if (typeof window === "undefined") return null;
   const raw = new URLSearchParams(window.location.search).get("mode");
-  return raw && isWorkspaceMode(raw) ? raw : null;
+  if (!raw) return null;
+  return isWorkspaceMode(raw) || isRoleSurfaceMode(raw) ? raw : null;
 }
 
 export function clearModeParam() {
