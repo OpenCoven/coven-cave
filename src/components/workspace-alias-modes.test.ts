@@ -91,8 +91,8 @@ assert.doesNotMatch(
 
 assert.match(
   urlState,
-  /function readModeParam\(\): WorkspaceMode \| null \{[\s\S]{0,300}?isWorkspaceMode\(raw\)/,
-  "?mode= deep links validate via isWorkspaceMode (canonical + alias vocabulary)",
+  /function readModeParam\(\): WorkspaceMode \| RoleSurfaceMode \| null \{[\s\S]{0,350}?isWorkspaceMode\(raw\) \|\| isRoleSurfaceMode\(raw\)/,
+  "?mode= deep links validate built-in modes and generic role-surface modes",
 );
 assert.match(
   workspace,

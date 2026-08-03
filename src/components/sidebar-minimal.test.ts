@@ -101,6 +101,11 @@ assert.match(
 );
 assert.match(
   source,
+  /if \(room\.familiarId && room\.familiarId !== activeFamiliarId\) \{[\s\S]*onFamiliarScopeChange\(room\.familiarId, \{ preserveSurface: true \}\)/,
+  "aggregate room rows narrow to their owning familiar before entering a room",
+);
+assert.match(
+  source,
   /import \{[\s\S]*VISIBLE_WORKSPACE_NAV_ITEMS,[\s\S]*\} from "@\/lib\/workspace-navigation"/,
   "the sidebar consumes the shared registry's already-filtered visible rows",
 );
@@ -128,7 +133,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /onFamiliarScopeChange: \(id: string \| null, opts\?: \{ multi\?: boolean \}\) => void/,
+  /onFamiliarScopeChange: \(id: string \| null, opts\?: \{ multi\?: boolean; preserveSurface\?: boolean \}\) => void/,
   "Sidebar exposes a nullable familiar scope change callback (multi-capable for the header strip)",
 );
 

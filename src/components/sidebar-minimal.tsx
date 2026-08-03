@@ -34,11 +34,14 @@ import {
 
 export type SidebarRoleSurfaceRow = {
   /** Generic workspace mode string (`surface:<id>`) — the sidebar never
-   *  interprets it, only round-trips it through onModeChange. */
+   *  interprets it, only round-trips it through navigation callbacks. */
   mode: string;
   label: string;
   iconName: Parameters<typeof Icon>[0]["name"];
   description: string;
+  /** In All/multi scope, selecting a room first narrows to this owner so the
+   *  host can provide its familiar-bound context. */
+  familiarId?: string;
 };
 
 export type SidebarMinimalProps = {
@@ -47,7 +50,7 @@ export type SidebarMinimalProps = {
    *  Their rows get a lighter "open in split" wash instead of the active fill,
    *  so the highlight stays honest when a page renders beside the primary. */
   splitPageModes?: readonly string[];
-  /** Role Surface rooms visible for the active familiar. Registry-driven —
+  /** Role Surface rooms visible for the active scope. Registry-driven —
    *  rendered as their own cluster; empty/omitted hides the cluster. */
   roleSurfaces?: readonly SidebarRoleSurfaceRow[];
   sessions: SessionRow[];
@@ -64,7 +67,7 @@ export type SidebarMinimalProps = {
   /** Multiselect scope (≥2 ids) — the header switcher checks members and
    *  summarizes the count on its trigger. */
   selectedFamiliarIds?: ReadonlySet<string>;
-  onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean }) => void;
+  onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => void;
   responseNeeded?: Set<string>;
   notificationBadgeCount?: number;
   onOpenInbox?: () => void;
@@ -249,7 +252,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           />
         ))}
 
-        {/* Role Surface rooms — the active familiar's vocation workspaces.
+        {/* Role Surface rooms — the active familiar's or selected scope's
+            vocation workspaces.
             Registry-driven: the sidebar renders whatever it's handed and never
             names a role. The cluster label keeps them reading as chambers of
             the Cave rather than more app tabs. */}
@@ -267,6 +271,9 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
                 state={sidebarRowState(room.mode, mode, props.splitPageModes)}
                 description={room.description}
                 onClick={() => {
+                  if (room.familiarId && room.familiarId !== activeFamiliarId) {
+                    onFamiliarScopeChange(room.familiarId, { preserveSurface: true });
+                  }
                   onModeChange(room.mode);
                 }}
               />

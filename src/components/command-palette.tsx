@@ -55,7 +55,7 @@ type PaletteIntent =
   | { kind: "open-tui-session"; sessionId: string }
   | { kind: "open-board" }
   | { kind: "set-board-view"; view: "kanban" | "table" | "gantt" }
-  | { kind: "go-to-surface"; mode: WorkspaceNavMode | `surface:${string}` }
+  | { kind: "go-to-surface"; mode: WorkspaceNavMode | `surface:${string}`; familiarId?: string }
   | { kind: "open-project"; root: string }
   | { kind: "focus-card"; cardId: string }
   | { kind: "create-task"; title: string }
@@ -111,10 +111,15 @@ type Props = {
   familiars: Familiar[];
   sessions: SessionRow[];
   activeFamiliarId: string | null;
-  /** Role Surface rooms visible for the active familiar — appended to the
+  /** Role Surface rooms visible for the active scope — appended to the
    *  "Go to" launcher rows so ⌘K reaches rooms exactly like sidebar surfaces
    *  (cave-cc5r). Registry-driven; empty/omitted adds nothing. */
-  roleSurfaces?: readonly { mode: `surface:${string}`; label: string; description: string }[];
+  roleSurfaces?: readonly {
+    mode: `surface:${string}`;
+    label: string;
+    description: string;
+    familiarId?: string;
+  }[];
   initialQuery?: string;
   onQueryChange?: (query: string) => void;
   onIntent: (intent: PaletteIntent) => void;
@@ -556,7 +561,7 @@ export function CommandPalette({
             kind: "command" as const,
             name: `Go to ${room.label}`,
             hint: room.description,
-            intent: { kind: "go-to-surface", mode: room.mode } as PaletteIntent,
+            intent: { kind: "go-to-surface", mode: room.mode, familiarId: room.familiarId } as PaletteIntent,
           })),
         ];
 
