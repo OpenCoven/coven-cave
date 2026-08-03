@@ -350,7 +350,7 @@ export function WorkspaceSidebar({
   scheduledCount,
   onOpenSettings,
 }: Props) {
-  const { projects, createProject, reload } = useProjects({ familiarId: activeFamiliarId });
+  const { projects, createProject, createProjectOrThrow, reload } = useProjects({ familiarId: activeFamiliarId });
   const overrides = useProjectOverrides();
   const minuteTick = useMinuteTick();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -551,6 +551,7 @@ export function WorkspaceSidebar({
         root: group.projectRoot,
         familiarId: activeFamiliarId ?? null,
         createProject,
+        createProjectOrThrow,
       });
       if (result.ok) reload();
       else setRegisterError(result.error);

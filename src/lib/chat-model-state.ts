@@ -21,6 +21,13 @@ export type ChatModelState = {
   runtime: string | null;
   effectiveModel: string;
   source: ModelScope;
+  /**
+   * The familiar's own stored default, independent of which scope produced
+   * `effectiveModel`. `source: "session"` only means a session intent exists —
+   * it does NOT imply the session model differs from this — so anything
+   * offering to promote a model to the familiar default must compare the two.
+   */
+  familiarDefaultModel: string | null;
   applicationState: ModelApplicationState;
   reason?: string;
 };
@@ -250,12 +257,17 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
 
 function chatModelState(
   input: ResolveChatModelStateInput,
-  state: Omit<ChatModelState, "familiarId" | "harness" | "runtime">,
+  state: Omit<ChatModelState, "familiarId" | "harness" | "runtime" | "familiarDefaultModel">,
 ): ChatModelState {
   return {
     familiarId: input.familiarId,
     harness: input.harness,
     runtime: input.runtime ?? null,
+    // Normalized through the same helper the resolver uses on every other
+    // model id, so a caller can compare it to `effectiveModel` directly. Set
+    // here rather than per-branch because it describes the familiar's stored
+    // default, which does not vary with the scope that happened to win.
+    familiarDefaultModel: effectiveModelForHarness(input.familiarModel, input.harness) || null,
     ...state,
   };
 }

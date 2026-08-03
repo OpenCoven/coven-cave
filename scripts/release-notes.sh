@@ -129,24 +129,36 @@ shasum -a 256 -c SHA256SUMS
 
 INSTALL_REST
 
-# Build provenance (cave-yp21x). The signed OpenCode/Grok schema-registry gates
-# are fail-closed for tag pushes and skippable only on an emergency manual run.
-# v0.2.0 shipped through that hatch and said so nowhere a reader would find:
-# the only trace was a `skipped` step inside the Actions log. When the hatch is
-# used, the body states it plainly.
-#
-# Worded as provenance, not a warning. These gates guard against FUTURE schema
-# drift; a build without them uses the same built-in baseline parsers every
-# release before the gates existed used, so this is not a user-facing defect.
-if [ "${COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED:-}" = "true" ]; then
+# Build provenance for explicit manual-release recovery hatches. Tag pushes
+# remain fail-closed; when a maintainer uses a manual override, the permanent
+# release body records it instead of leaving the only evidence in an Actions log.
+registry_guards_skipped="${COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED:-}"
+x_guard_skipped="${COVEN_RELEASE_X_GUARD_SKIPPED:-}"
+if [ "$registry_guards_skipped" = "true" ] || [ "$x_guard_skipped" = "true" ]; then
   cat <<'PROVENANCE'
 ## Build provenance
 
+PROVENANCE
+fi
+
+if [ "$registry_guards_skipped" = "true" ]; then
+  cat <<'PROVENANCE'
 This release was built on a manual run with `allow_unconfigured_registries`
 enabled, so the signed OpenCode and Grok compatibility-registry checks did not
 run. The build uses the built-in baseline schema parsers.
 
 Releases published from a tag push cannot skip those checks.
+
+PROVENANCE
+fi
+
+if [ "$x_guard_skipped" = "true" ]; then
+  cat <<'PROVENANCE'
+This release was built on a manual run with `allow_unconfigured_x_app` enabled.
+The X app configuration check was explicitly bypassed. The incomplete X
+integration remains disabled in this build.
+
+Releases published from a tag push cannot skip the X app configuration check.
 
 PROVENANCE
 fi

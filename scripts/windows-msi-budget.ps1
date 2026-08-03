@@ -10,11 +10,12 @@ $ErrorActionPreference = "Stop"
 # Keep exact, independently reviewed baselines per table. Sharing the largest
 # value would leave silent slack in smaller tables; upper bounds would also hide
 # missing or incorrectly staged resources when a table unexpectedly shrinks.
+# These values are the measured v0.2.2 package after adding the Kokoro runtime.
 $rowBaselines = [ordered]@{
-    fileRows = 382
-    componentRows = 387
-    createFolderRows = 382
-    directoryRows = 50
+    fileRows = 741
+    componentRows = 746
+    createFolderRows = 741
+    directoryRows = 88
 }
 $rowInspectionLimit = 4096
 $byteBudget = 256MB

@@ -1,8 +1,18 @@
 import { NextResponse } from "next/server.js";
 
+import { LOCAL_REQUEST_REQUIRED_CODE } from "../project-errors.ts";
 import { isLocalOrigin } from "./local-origin.ts";
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+
+function localRequestRequired(): NextResponse {
+  // Keep the legacy forbidden error for callers that only understand the old
+  // response, while the code gives clients a stable repair path.
+  return NextResponse.json(
+    { ok: false, code: LOCAL_REQUEST_REQUIRED_CODE, error: "forbidden" },
+    { status: 403 },
+  );
+}
 
 export type JsonBodyResult<T> =
   | { ok: true; body: T }
@@ -24,7 +34,7 @@ export function rejectNonLocalRequest(req: Request): NextResponse | null {
   // lives in exactly one place (see local-origin.ts). We then layer this
   // route family's stricter Origin-header parsing on top.
   if (!isLocalOrigin(req)) {
-    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    return localRequestRequired();
   }
 
   const origin = req.headers.get("origin");
@@ -33,10 +43,10 @@ export function rejectNonLocalRequest(req: Request): NextResponse | null {
     try {
       parsed = new URL(origin);
     } catch {
-      return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+      return localRequestRequired();
     }
     if (!isLocalHost(parsed.host)) {
-      return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+      return localRequestRequired();
     }
   }
 

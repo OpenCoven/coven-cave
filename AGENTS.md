@@ -14,6 +14,12 @@
   disposition, and use `pnpm beads:worktrees:apply` only when it reports a
   complete repository maintenance transaction. Local cleanup is bounded and
   exact-OID guarded; remote deletion remains proposal-only.
+- Run `pnpm beads:worktrees` before closing PR-backed work. Record each local
+  worktree as removed and verified or intentionally preserved with an owner and
+  reason; `retire-after-gate` is a classification, not automatic deletion
+  authority. Automatic retirement requires the full maintenance gate. Explicit
+  maintainer authorization in the current task may activate Branch Curator's
+  bounded manual deletion proof.
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
 

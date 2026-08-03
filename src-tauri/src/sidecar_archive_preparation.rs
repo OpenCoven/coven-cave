@@ -1,5 +1,118 @@
 use super::*;
 
+pub(super) const ACTIVATION_RETRY_DELAYS: [Duration; 5] = [
+    Duration::from_millis(50),
+    Duration::from_millis(100),
+    Duration::from_millis(200),
+    Duration::from_millis(400),
+    Duration::from_millis(800),
+];
+
+fn is_retryable_activation_error(error: &io::Error) -> bool {
+    matches!(
+        error.raw_os_error(),
+        Some(code)
+            if code == ERROR_ACCESS_DENIED as i32 || code == ERROR_SHARING_VIOLATION as i32
+    )
+}
+
+fn cache_path_label(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "<cache-root>".to_string())
+}
+
+pub(super) fn activate_extracted_cache_with(
+    staging: &Path,
+    destination: &Path,
+    manifest: &SidecarArchiveManifest,
+    mut rename: impl FnMut(&Path, &Path) -> io::Result<()>,
+    mut wait: impl FnMut(Duration),
+) -> Result<(), String> {
+    let started = Instant::now();
+    let maximum_attempts = ACTIVATION_RETRY_DELAYS.len() + 1;
+
+    for attempt in 1..=maximum_attempts {
+        let error = match rename(staging, destination) {
+            Ok(()) => {
+                if attempt > 1 {
+                    log::info!(
+                        "[cave] sidecar cache activation recovered attempt={attempt}/{maximum_attempts} elapsed_ms={}",
+                        started.elapsed().as_millis()
+                    );
+                }
+                return Ok(());
+            }
+            Err(error) => error,
+        };
+
+        let source_exists = staging.exists();
+        let destination_exists = destination.exists();
+        let destination_ready = cache_is_ready(destination, manifest);
+        if destination_ready {
+            match remove_cache_path_io(staging) {
+                Ok(()) => log::info!(
+                    "[cave] sidecar cache activation reused concurrent destination attempt={attempt}/{maximum_attempts} elapsed_ms={} staging={}",
+                    started.elapsed().as_millis(),
+                    cache_path_label(staging)
+                ),
+                Err(cleanup_error) => log::warn!(
+                    "[cave] sidecar cache activation reused concurrent destination but staging cleanup failed attempt={attempt}/{maximum_attempts} elapsed_ms={} staging={} cleanup_kind={:?} cleanup_raw_os_error={:?}",
+                    started.elapsed().as_millis(),
+                    cache_path_label(staging),
+                    cleanup_error.kind(),
+                    cleanup_error.raw_os_error()
+                ),
+            }
+            return Ok(());
+        }
+
+        if is_retryable_activation_error(&error) {
+            if let Some(delay) = ACTIVATION_RETRY_DELAYS.get(attempt - 1).copied() {
+                log::warn!(
+                    "[cave] sidecar cache activation retry attempt={attempt}/{maximum_attempts} delay_ms={} elapsed_ms={} kind={:?} raw_os_error={:?} staging={} destination={} source_exists={source_exists} destination_exists={destination_exists} destination_ready={destination_ready}",
+                    delay.as_millis(),
+                    started.elapsed().as_millis(),
+                    error.kind(),
+                    error.raw_os_error(),
+                    cache_path_label(staging),
+                    cache_path_label(destination)
+                );
+                wait(delay);
+                continue;
+            }
+        }
+
+        let cleanup_error = remove_cache_path_io(staging).err();
+        log::warn!(
+            "[cave] sidecar cache activation failed attempt={attempt}/{maximum_attempts} elapsed_ms={} kind={:?} raw_os_error={:?} staging={} destination={} source_exists={source_exists} destination_exists={destination_exists} destination_ready={destination_ready} cleanup={}",
+            started.elapsed().as_millis(),
+            error.kind(),
+            error.raw_os_error(),
+            cache_path_label(staging),
+            cache_path_label(destination),
+            if cleanup_error.is_some() { "failed" } else { "succeeded" }
+        );
+        let cleanup_detail = cleanup_error
+            .map(|cleanup_error| {
+                format!(
+                    "; staging cleanup also failed (kind: {:?}, raw OS error: {:?})",
+                    cleanup_error.kind(),
+                    cleanup_error.raw_os_error()
+                )
+            })
+            .unwrap_or_default();
+        return Err(format!(
+            "could not activate extracted sidecar cache {} after {attempt} attempt(s): {error} (kind: {:?}, raw OS error: {:?}){cleanup_detail}",
+            destination.display(),
+            error.kind(),
+            error.raw_os_error()
+        ));
+    }
+
+    unreachable!("activation attempts are bounded by a non-empty delay schedule")
+}
+
 pub(super) fn prepare_runtime_from_files(
     archive_path: &Path,
     manifest_path: &Path,
@@ -97,18 +210,12 @@ pub(super) fn prepare_runtime_from_files_with_space(
         return Err(error);
     }
 
-    match fs::rename(&staging, &destination) {
-        Ok(()) => Ok(destination),
-        Err(_error) if cache_is_ready(&destination, &manifest) => {
-            let _ = remove_cache_path(&staging);
-            Ok(destination)
-        }
-        Err(error) => {
-            let _ = remove_cache_path(&staging);
-            Err(format!(
-                "could not activate extracted sidecar cache {}: {error}",
-                destination.display()
-            ))
-        }
-    }
+    activate_extracted_cache_with(
+        &staging,
+        &destination,
+        &manifest,
+        |source, destination| fs::rename(source, destination),
+        thread::sleep,
+    )?;
+    Ok(destination)
 }

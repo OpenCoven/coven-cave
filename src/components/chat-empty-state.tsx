@@ -115,6 +115,7 @@ export function ChatEmptyState({
   onProjectChange,
   projects,
   createProject,
+  createProjectOrThrow,
   fileMentions = false,
   sessionId = null,
   sessions = [],
@@ -136,6 +137,8 @@ export function ChatEmptyState({
   projects: CaveProject[];
   /** From useProjects() — enables the picker's "Add project…" row. */
   createProject?: (name: string, root: string) => Promise<CaveProject | null>;
+  /** Throwing creator from useProjects(); preserves server guidance in the picker. */
+  createProjectOrThrow?: (name: string, root: string) => Promise<CaveProject>;
   /** True when the chat knows a project root, so `@` opens the file picker (CHAT-D1-04). */
   fileMentions?: boolean;
   /** Non-null when this is an existing zero-turn session (e.g. a fresh task chat). */
@@ -433,6 +436,7 @@ export function ChatEmptyState({
                 onChange={onProjectChange}
                 familiarId={familiar.id}
                 createProject={createProject}
+                createProjectOrThrow={createProjectOrThrow}
                 ariaLabel="Project for this chat"
               />
             </span>

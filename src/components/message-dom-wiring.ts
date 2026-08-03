@@ -3,6 +3,15 @@ import { copyText } from "@/lib/clipboard";
 import { parseFileRef, type FileRef } from "@/lib/file-ref";
 import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
 import { FOCUSABLE } from "@/lib/use-focus-trap";
+import {
+  isCodeProvenance,
+  stalenessForRead,
+  stalenessLabel,
+  stalenessTitle,
+  type CodeProvenance,
+  type InspectorTabId,
+  type WorkingTreeRead,
+} from "@/lib/code-reading";
 import { wireMermaidDiagrams } from "./mermaid-viewer";
 
 export type FileLinkResolver = (ref: FileRef) => boolean;
@@ -10,6 +19,33 @@ export type FileLinkResolver = (ref: FileRef) => boolean;
 /** Chat provides a resolver over its transcript; everywhere else (group chat,
  *  quick chat, previews) the default null keeps prose refs as plain text. */
 export const FileLinkResolverContext = createContext<FileLinkResolver | null>(null);
+
+// ── Code reading (cave-f6mu9) ────────────────────────────────────────────────
+
+/** What the Read/Compare buttons hand to the surface that owns the inspector. */
+export type CodeReadingRequest = {
+  code: string;
+  lang: string;
+  /** Repo-relative path when the fence named one. */
+  path: string | null;
+  provenance: CodeProvenance;
+  /** Which tab to land on — Compare jumps straight to the diff. */
+  tab: InspectorTabId;
+};
+
+export type CodeReading = {
+  /** Absolute project root; null disables the working-tree check. */
+  projectRoot: string | null;
+  onRead: (request: CodeReadingRequest) => void;
+};
+
+/**
+ * Only surfaces that can actually *show* an inspector provide this. Everywhere
+ * else the default null leaves the reading controls hidden rather than
+ * rendering buttons that do nothing — the same posture as file links, which
+ * stay plain text until a resolver confirms they resolve.
+ */
+export const CodeReadingContext = createContext<CodeReading | null>(null);
 
 /**
  * Click-time code extraction (CHAT-D7-04). The rendered block is the source
@@ -194,6 +230,122 @@ function openTableLightbox(scroll: HTMLElement) {
   close.focus();
 }
 
+// ── Code reading wiring ──────────────────────────────────────────────────────
+
+/**
+ * One read per absolute path, shared across every block that quotes the same
+ * file. A long answer routinely quotes one file three times; without this each
+ * block would issue its own request for identical bytes.
+ *
+ * Entries expire so a file edited by the agent mid-conversation is re-read
+ * rather than judged against a cached copy of its old contents — a staleness
+ * check that is itself stale is worse than none. The window is short enough
+ * that a write lands within one exchange and long enough that re-rendering a
+ * transcript (which re-wires every block) does not re-fetch the whole file set.
+ */
+const DISK_CACHE_TTL_MS = 15_000;
+const diskCache = new Map<string, { at: number; content: Promise<WorkingTreeRead> }>();
+
+function readWorkingTree(absPath: string): Promise<WorkingTreeRead> {
+  const hit = diskCache.get(absPath);
+  if (hit && Date.now() - hit.at < DISK_CACHE_TTL_MS) return hit.content;
+  const pending = (async (): Promise<WorkingTreeRead> => {
+    try {
+      const res = await fetch(`/api/project-file?path=${encodeURIComponent(absPath)}`, {
+        cache: "no-store",
+      });
+      // Only a 404 means the file is not there. A 403 (outside a granted root),
+      // a 413 (too large) or a transport failure means we could not look —
+      // which must never render as a confident "gone".
+      if (res.status === 404) return { kind: "absent" };
+      const json = (await res.json().catch(() => null)) as
+        | { ok?: boolean; kind?: string; content?: string }
+        | null;
+      if (!res.ok || !json?.ok || json.kind !== "text" || typeof json.content !== "string") {
+        return { kind: "unreadable" };
+      }
+      return { kind: "text", content: json.content };
+    } catch {
+      // Offline or no daemon: unverified, so the block claims nothing.
+      return { kind: "unreadable" };
+    }
+  })();
+  diskCache.set(absPath, { at: Date.now(), content: pending });
+  return pending;
+}
+
+export function clearWorkingTreeCache(): void {
+  diskCache.clear();
+}
+
+/** Join a project root and a repo-relative path without doubling the slash. */
+export function joinProjectPath(root: string, relative: string): string {
+  return `${root.replace(/[/\\]+$/, "")}/${relative.replace(/^[/\\]+/, "")}`;
+}
+
+function codeTextFromWrapEl(wrap: Element): string {
+  const codeEl = wrap.querySelector("pre code");
+  if (!codeEl) return "";
+  const lineEls = Array.from(codeEl.querySelectorAll(".cave-line"));
+  if (lineEls.length === 0) return codeEl.textContent ?? "";
+  return lineEls
+    .map((line) => {
+      const clone = line.cloneNode(true) as HTMLElement;
+      for (const ln of Array.from(clone.querySelectorAll(".cave-ln"))) ln.remove();
+      return clone.textContent ?? "";
+    })
+    .join("\n");
+}
+
+function markStaleness(wrap: HTMLElement, root: string, relPath: string) {
+  const marker = wrap.querySelector<HTMLElement>(".cave-code-stale");
+  if (!marker) return;
+  void readWorkingTree(joinProjectPath(root, relPath)).then((read) => {
+    // The transcript may have re-rendered under us; the marker we captured is
+    // then detached and writing to it is a no-op we skip rather than a crash.
+    if (!marker.isConnected) return;
+    const state = stalenessForRead(codeTextFromWrapEl(wrap), read);
+    const label = stalenessLabel(state);
+    wrap.setAttribute("data-code-staleness", state);
+    if (!label) {
+      marker.hidden = true;
+      marker.textContent = "";
+      return;
+    }
+    marker.hidden = false;
+    marker.textContent = label;
+    marker.className = `cave-code-stale cave-code-stale--${state}`;
+    const title = stalenessTitle(state);
+    if (title) marker.title = title;
+  });
+}
+
+function wireCodeReading(container: HTMLElement, reading: CodeReading | null) {
+  for (const wrap of Array.from(container.querySelectorAll<HTMLElement>(".cave-code-wrap"))) {
+    const flagged = wrap as HTMLElement & { _caveReadingWired?: boolean };
+    const raw = wrap.getAttribute("data-code-provenance");
+    if (!isCodeProvenance(raw)) continue;
+    const provenance = raw;
+    const path = wrap.getAttribute("data-code-path");
+    const lang = wrap.getAttribute("data-code-lang") ?? "text";
+
+    // Reveal the controls only where an inspector exists to receive them.
+    if (reading) wrap.classList.add("cave-code-wrap--readable");
+    else wrap.classList.remove("cave-code-wrap--readable");
+
+    if (reading && provenance === "file-backed" && path && reading.projectRoot) {
+      markStaleness(wrap, reading.projectRoot, path);
+    }
+
+    if (flagged._caveReadingWired || !reading) continue;
+    flagged._caveReadingWired = true;
+    const open = (tab: InspectorTabId) => () =>
+      reading.onRead({ code: codeTextFromWrapEl(wrap), lang, path, provenance, tab });
+    wrap.querySelector<HTMLButtonElement>(".cave-code-read-btn")?.addEventListener("click", open("snippet"));
+    wrap.querySelector<HTMLButtonElement>(".cave-code-compare-btn")?.addEventListener("click", open("compare"));
+  }
+}
+
 function wireExpandableTables(container: HTMLElement) {
   for (const scroll of Array.from(container.querySelectorAll<HTMLElement>(".cave-table-scroll"))) {
     const flagged = scroll as HTMLElement & { _caveTableWired?: boolean };
@@ -216,7 +368,12 @@ function wireExpandableTables(container: HTMLElement) {
 
 /** Wires DOM injected by markdown and Shiki renderers, preserving rerender,
  * streaming, keyboard, and focus behavior across all message surfaces. */
-export function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void, fileLinkResolver: FileLinkResolver | null = null) {
+export function useWireCopyButtons(
+  html: string | null,
+  onOpenUrl?: (url: string) => void,
+  fileLinkResolver: FileLinkResolver | null = null,
+  reading: CodeReading | null = null,
+) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = containerRef.current;
@@ -227,11 +384,12 @@ export function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string
       wireMermaidDiagrams(el);
       wireExpandableTables(el);
       wireFilePathLinks(el, fileLinkResolver);
+      wireCodeReading(el, reading);
     };
     wireAll();
     const observer = new MutationObserver(() => wireAll());
     observer.observe(el, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [html, onOpenUrl, fileLinkResolver]);
+  }, [html, onOpenUrl, fileLinkResolver, reading]);
   return containerRef;
 }

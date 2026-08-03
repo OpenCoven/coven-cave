@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./use-projects.ts", import.meta.url), "utf8");
 const cacheSource = readFileSync(new URL("./use-projects-cache.ts", import.meta.url), "utf8");
 const mutationSource = readFileSync(new URL("./project-registry-mutation.ts", import.meta.url), "utf8");
+const errorsSource = readFileSync(new URL("./project-errors.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
@@ -147,8 +148,23 @@ assert.match(
 
 assert.match(
   source,
-  /error: typeof data\?\.error === "string" \? data\.error : `Could not create project \(HTTP \$\{res\.status\}\)`/,
-  "the throwing create path preserves the safe API error string or falls back to a clear HTTP message",
+  /type ProjectMutationPayload = \{ ok\?: boolean; project\?: CaveProject; code\?: string; error\?: string \};/,
+  "project creation reads the stable server error code",
+);
+assert.match(
+  source,
+  /code === LOCAL_REQUEST_REQUIRED_CODE\s*\? LOCAL_PROJECT_CREATION_MESSAGE/,
+  "local-only rejection becomes actionable project-creation copy",
+);
+assert.match(
+  source,
+  /function reportCreateFailure\(options: CreateProjectOptions \| undefined, error: ProjectCreationError\)/,
+  "nullable creation can report the typed failure without changing its null return contract",
+);
+assert.match(
+  source,
+  /reportCreateFailure\(options, new ProjectCreationError\(error, code\)\)/,
+  "the nullable path reports stable response codes to bundled callers",
 );
 
 assert.match(
@@ -159,9 +175,12 @@ assert.match(
 
 assert.match(
   source,
-  /const createProjectOrThrow = useCallback\(async \(name: string, root: string, options\?: CreateProjectOptions\): Promise<CaveProject> => \{[\s\S]*const result = await requestCreateProject\(name, root, options\);[\s\S]*if \(result\.ok\) return result\.project;[\s\S]*throw new Error\(result\.error\);/,
-  "createProjectOrThrow reuses the shared mutation path and throws the actionable error text",
+  /const createProjectOrThrow = useCallback\(async \(name: string, root: string, options\?: CreateProjectOptions\): Promise<CaveProject> => \{[\s\S]*const result = await requestCreateProject\(name, root, options\);[\s\S]*if \(result\.ok\) return result\.project;[\s\S]*throw new ProjectCreationError\(result\.error, result\.code\);/,
+  "createProjectOrThrow reuses the shared mutation path and carries the actionable error code",
 );
+
+assert.match(errorsSource, /LOCAL_REQUEST_REQUIRED_CODE = "local_request_required"/, "local-only code is defined in a shared client-safe module");
+assert.match(errorsSource, /LOCAL_PROJECT_CREATION_MESSAGE =/, "local-only project creation copy is shared with the client path");
 
 assert.match(
   source,
