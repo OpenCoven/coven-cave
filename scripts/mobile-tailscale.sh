@@ -500,28 +500,6 @@ const [backendUrl, input] = process.argv.slice(2);
 NODE
 }
 
-tailscale_ip_host() {
-  local self_json
-  if ! self_json="$(tailscale_capture status --self --json 2>/dev/null)"; then
-    return 1
-  fi
-
-  node - "$self_json" <<'NODE'
-const input = process.argv[2] || "";
-let status;
-try {
-  status = JSON.parse(input);
-} catch {
-  process.exit(1);
-}
-const rawIps = status?.Self?.TailscaleIPs ?? status?.TailscaleIPs;
-const ips = Array.isArray(rawIps) ? rawIps.filter((ip) => typeof ip === "string") : [];
-const ipv4 = ips.find((ip) => /^100\.\d+\.\d+\.\d+$/.test(ip));
-if (!ipv4) process.exit(1);
-console.log(ipv4);
-NODE
-}
-
 create_invite() {
   need node
   load_or_create_token
@@ -642,9 +620,9 @@ app_command() {
     APP_URL="$(serve_url_from_status "$TAILSCALE_BACKEND" "$status_json" 2>/dev/null || true)"
   fi
   if [ -z "$APP_URL" ]; then
-    APP_IP_HOST="$(tailscale_ip_host)"
-    tailscale_cmd serve --bg --http="$PORT" "$TAILSCALE_BACKEND" >/dev/null
-    APP_URL="http://${APP_IP_HOST}:${PORT}/"
+    echo "Could not determine an HTTPS Tailscale Serve URL for the native app." >&2
+    echo "Confirm MagicDNS and HTTPS are enabled, run 'pnpm mobile:tailscale:stop', then retry." >&2
+    exit 1
   fi
 
   APP_PAIRING_URL="$(node -e "const url = new URL(process.argv[1]); url.searchParams.set('coven_access_token', process.argv[2]); process.stdout.write(url.toString())" "$APP_URL" "$ACCESS_TOKEN")"

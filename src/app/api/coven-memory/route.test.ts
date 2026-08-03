@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -24,6 +25,19 @@ const ORIGINAL_ENV = {
   COVEN_SOCKET: process.env.COVEN_SOCKET,
   COVEN_CAVE_AUTH_TOKEN: process.env.COVEN_CAVE_AUTH_TOKEN,
 };
+
+function readFixture(name: string): unknown {
+  const fixturePath = path.resolve(
+    import.meta.dirname,
+    "../../../../tests/fixtures/mobile-canonical-memory-v1",
+    name,
+  );
+  return JSON.parse(readFileSync(fixturePath, "utf8"));
+}
+
+const listSuccessFixture = readFixture("cave-list-success.json");
+const overviewSuccessFixture = readFixture("cave-overview-success.json");
+const detailSuccessFixture = readFixture("cave-detail-success.json");
 
 mkdirSync(COVEN_HOME, { recursive: true });
 mkdirSync(CAVE_HOME, { recursive: true });
@@ -302,6 +316,9 @@ test("mobile canonical-memory routes require a verified mobile request before da
   });
   assert.equal(overviewBody.overview.totals.entries, 1);
   assert.equal(detailBody.entry.id, MEMORY_ID);
+  assert.deepEqual(listBody, listSuccessFixture);
+  assert.deepEqual(overviewBody, overviewSuccessFixture);
+  assert.deepEqual(detailBody, detailSuccessFixture);
 
   before = socketPaths.length;
   for (const [routeModule, pathname] of [

@@ -256,6 +256,16 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 
   const refresh = read("../app/api/mobile-token/refresh/route.ts");
   assert.match(refresh, /await recordMobileSeen\(\);/, "a successful token refresh records the paired-device beat");
+  assert.match(
+    refresh,
+    /const PRIVATE_NO_STORE_HEADERS = \{\s*"Cache-Control": "private, no-store",?\s*\}/,
+    "token refresh declares the private no-store response boundary",
+  );
+  assert.equal(
+    refresh.match(/headers: PRIVATE_NO_STORE_HEADERS/g)?.length,
+    2,
+    "token refresh applies private no-store headers to success and failure responses",
+  );
 
   const modal = read("../components/mobile-handoff-modal.tsx");
   assert.match(modal, /chatId \? \{ action: "app-start", chatId \} : \{ action: "app-start" \}/, "the modal forwards its chatId to app-start");
