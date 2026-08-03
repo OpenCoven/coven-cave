@@ -1,10 +1,28 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { parseWorktrees, reasonFor, riskOf } from "./worktree-autolock.mjs";
+
+const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
+
+// Push a file's mtime past the index entry so git cannot classify a
+// same-tick rewrite as unchanged. See the call site for why this matters.
+function touchForward(file) {
+  const ahead = new Date(Date.now() + 5_000);
+  utimesSync(file, ahead, ahead);
+}
 
 // --- parsing ----------------------------------------------------------------
 // `locked` appears bare or with a reason; both must register as locked.
@@ -66,8 +84,10 @@ const git = (args, cwd) =>
       GIT_AUTHOR_EMAIL: "t@e",
       GIT_COMMITTER_NAME: "T",
       GIT_COMMITTER_EMAIL: "t@e",
-      GIT_CONFIG_GLOBAL: "/dev/null",
-      GIT_CONFIG_SYSTEM: "/dev/null",
+      // NUL on Windows — "/dev/null" does not exist there, and the
+      // cross-environment CI legs run on windows-latest.
+      GIT_CONFIG_GLOBAL: NULL_DEVICE,
+      GIT_CONFIG_SYSTEM: NULL_DEVICE,
     },
   });
 
@@ -88,7 +108,13 @@ try {
   assert.equal(riskOf(repo), null, "a clean, fully pushed worktree is not locked");
 
   // 2. uncommitted edit → at risk (nothing else holds that content).
+  //
+  // Bump the mtime clear of the index entry. A file rewritten inside the same
+  // filesystem-timestamp tick as the commit can be read as "racily clean", and
+  // `riskOf` runs git with GIT_OPTIONAL_LOCKS=0 so the index is never refreshed
+  // to settle it. Observed failing 1 run in 4 before this line existed.
   writeFileSync(path.join(repo, "seed.txt"), "edited\n");
+  touchForward(path.join(repo, "seed.txt"));
   const dirty = riskOf(repo);
   assert.ok(dirty, "an uncommitted edit is at risk");
   assert.equal(dirty.dirty, 1);
@@ -119,6 +145,67 @@ try {
   assert.equal(riskOf(path.join(scratch, "does-not-exist")), null, "missing paths are skipped");
 } finally {
   rmSync(scratch, { recursive: true, force: true });
+}
+
+// --- the hook actually FIRES when invoked the way a hook is invoked ----------
+// Regression for the naive `import.meta.url === \`file://${process.argv[1]}\``
+// direct-run check. It fails on percent-encoding (a path with a space) and on
+// symlinks (macOS /tmp -> /private/tmp), and the symptom is silence: the hook
+// exits 0 having locked nothing, so worktrees look protected while they are
+// not. Both cases are exercised here at once.
+{
+  const box = mkdtempSync(path.join(tmpdir(), "autolock-run-"));
+  try {
+    const spaced = path.join(box, "dir with space");
+    mkdirSync(spaced);
+    const script = path.join(spaced, "worktree-autolock.mjs");
+    copyFileSync(fileURLToPath(new URL("./worktree-autolock.mjs", import.meta.url)), script);
+
+    // Reach the script through a symlink so argv[1] and import.meta.url differ.
+    const linked = path.join(box, "link");
+    symlinkSync(spaced, linked);
+    const viaSymlink = path.join(linked, "worktree-autolock.mjs");
+
+    const repo = path.join(box, "repo");
+    execFileSync("git", ["init", "--quiet", "-b", "main", repo], { cwd: box });
+    execFileSync("git", ["commit", "--quiet", "--allow-empty", "--no-gpg-sign", "-m", "seed"], {
+      cwd: repo,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "T",
+        GIT_AUTHOR_EMAIL: "t@e",
+        GIT_COMMITTER_NAME: "T",
+        GIT_COMMITTER_EMAIL: "t@e",
+        GIT_CONFIG_GLOBAL: NULL_DEVICE,
+        GIT_CONFIG_SYSTEM: NULL_DEVICE,
+      },
+    });
+    execFileSync("git", ["worktree", "add", "--quiet", "-b", "risky", path.join(repo, "wt")], {
+      cwd: repo,
+    });
+    writeFileSync(path.join(repo, "wt", "unsaved.txt"), "would be lost\n");
+
+    execFileSync(process.execPath, [viaSymlink], {
+      cwd: repo,
+      env: { ...process.env, CLAUDE_PROJECT_DIR: repo },
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 30_000,
+    });
+
+    const porcelain = execFileSync("git", ["worktree", "list", "--porcelain"], {
+      cwd: repo,
+      encoding: "utf8",
+    });
+    const wt = parseWorktrees(porcelain).find((w) => w.path.endsWith("wt"));
+    assert.ok(wt, "the worktree is still registered");
+    assert.equal(
+      wt.locked,
+      true,
+      "the hook must fire and lock when run through a symlinked path containing a space",
+    );
+  } finally {
+    rmSync(box, { recursive: true, force: true });
+  }
 }
 
 console.log("worktree-autolock.test.mjs: ok");
