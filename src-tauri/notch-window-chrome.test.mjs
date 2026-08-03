@@ -26,21 +26,21 @@ import test from "node:test";
 
 const src = await readFile(new URL("./src/window_geometry.rs", import.meta.url), "utf8");
 
-// Scope every assertion to the notch builder so a matching call on the
-// quick-chat window can't satisfy these by accident.
-const notchStart = src.indexOf('NOTCH_WINDOW_LABEL,');
-assert.ok(notchStart > 0, "notch window builder not found in window_geometry.rs");
-const notch = src.slice(notchStart);
+// Scope assertions to the relevant function bodies so a matching call elsewhere
+// in window_geometry.rs can't satisfy these by accident.
+const FN_MARKER = "pub(super) fn ";
+function sliceFn(start) {
+  const next = src.indexOf(FN_MARKER, start + 1);
+  return next === -1 ? src.slice(start) : src.slice(start, next);
+}
 
-// ...and conversely, scope the quick-chat assertions to the region before the
-// notch builder so the notch's own calls can't satisfy them.
-const quickChatStart = src.indexOf('QUICK_CHAT_WINDOW_LABEL,');
-assert.ok(quickChatStart > 0, "quick chat window builder not found in window_geometry.rs");
-assert.ok(
-  quickChatStart < notchStart,
-  "quick chat builder is expected to precede the notch builder; the slice below assumes it",
-);
-const quickChat = src.slice(quickChatStart, notchStart);
+const notchStart = src.indexOf("pub(super) fn show_notch_window");
+assert.ok(notchStart >= 0, "show_notch_window not found in window_geometry.rs");
+const notch = sliceFn(notchStart);
+
+const quickChatStart = src.indexOf("pub(super) fn show_quick_chat_window");
+assert.ok(quickChatStart >= 0, "show_quick_chat_window not found in window_geometry.rs");
+const quickChat = sliceFn(quickChatStart);
 
 test("the notch sits at NSStatusWindowLevel so the menu bar cannot cover it", () => {
   assert.match(
