@@ -163,6 +163,15 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // and 5,831 on Windows after maps, declarations, nested dependencies, and
   // non-runtime roots are excluded. Preserve the established ten-file
   // cross-platform headroom.
+  // 2026-08-03 (src/app/api/x/ route handlers, #4235): CI measures 5,874 on
+  // Ubuntu and 5,877 on Windows. Set from the HIGHER figure plus the same
+  // ten-file headroom.
+  //
+  // This number was reverted to 5_841 once already, by a local merge of a
+  // superseded branch citing the stale 5,831 line above (#4249). The routes
+  // needing this headroom are still present, so it must not move DOWN while
+  // they exist — and any bump belongs here, beside the measurement that
+  // justifies it, or the next reader reverts it again.
   fileCount: 5_887,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
