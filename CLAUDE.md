@@ -15,7 +15,7 @@
 **Current settings** (verified live; `gh api repos/OpenCoven/coven-cave/branches/main/protection`):
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
-- Required status checks — **all NINE** must pass (widened 2026-08-01 from five): `Frontend build`, `Rust check`, `E2E (Playwright)`, `Cross-environment (ubuntu-latest)`, `Cross-environment (windows-latest)`, `Cross-environment required`, `Sidecar runtime (ubuntu-latest)`, `Sidecar runtime (windows-latest)`, `Sidecar runtime required`. The four matrix legs were added alongside their `*-required` rollups. The rollups already fail unless `needs.<job>.result == 'success'`, so this is defense in depth rather than a gap being closed — it removes the dependency on those aggregation scripts staying correct. **Both layers carry the same nine** (classic protection and ruleset `19123333`), so they cannot disagree. Only `ci.yml` runs on `pull_request` and no job carries a skippable `if:`, which is why requiring the legs is safe — a required context that never reports is what leaves a PR stuck `BLOCKED` with nothing failing. **`CodeQL` is retired** (2026-07-31): the ruleset's `code_scanning` rule went first, then the required context in classic branch protection, and now the workflow itself. Code scanning is fully off — GitHub default setup is `not-configured`, so nothing scans in its place. If you ever see a PR stuck `BLOCKED` with `mergeable: MERGEABLE`, no failing check and every conversation resolved, suspect a required context that no longer reports; compare `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the checks the PR actually runs. The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
+- Required status checks — **all NINE** must pass (widened 2026-08-01 from five): `Frontend build`, `Rust check`, `E2E (Playwright)`, `Cross-environment (ubuntu-latest)`, `Cross-environment (windows-latest)`, `Cross-environment required`, `Sidecar runtime (ubuntu-latest)`, `Sidecar runtime (windows-latest)`, `Sidecar runtime required`. The four matrix legs were added alongside their `*-required` rollups. The rollups already fail unless `needs.<job>.result == 'success'`, so this is defense in depth rather than a gap being closed — it removes the dependency on those aggregation scripts staying correct. Classic branch protection is the active enforcement layer. Ruleset `19123333` lists the same nine checks but is currently disabled, so it does not provide a second gate. Only `ci.yml` runs on `pull_request` and no job carries a skippable `if:`, which is why requiring the legs is safe — a required context that never reports is what leaves a PR stuck `BLOCKED` with nothing failing. **`CodeQL` is retired** (2026-07-31): the ruleset's `code_scanning` rule went first, then the required context in classic branch protection, and now the workflow itself. Code scanning is fully off — GitHub default setup is `not-configured`, so nothing scans in its place. If you ever see a PR stuck `BLOCKED` with `mergeable: MERGEABLE`, no failing check and every conversation resolved, suspect a required context that no longer reports; compare `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the checks the PR actually runs. The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
 - Review conversations are **no longer required to be resolved**
   (`required_conversation_resolution` was turned OFF on 2026-08-01, at the
   user's direction). A PR with green checks merges with open threads.
@@ -103,13 +103,17 @@ A related tell: `main`'s CI runs keep showing `cancelled` rather than
 completing, because each new push supersedes the previous run. If you cannot
 find a completed run for a commit on `main`, suspect push churn, not a CI bug.
 
-⚠️ **Remaining gap — the ruleset layer.** Protection is two layers and a push
-must satisfy BOTH, so classic protection is what blocks today. But ruleset
-`19123333` still carries `bypass_actors: [{actor_type: OrganizationAdmin,
-bypass_mode: always}]` over its `deletion` / `required_status_checks` /
-`pull_request` rules. If classic protection is ever retired in favour of
-rulesets alone, that bypass silently becomes the whole story. Check with
-`gh api repos/OpenCoven/coven-cave/rulesets/19123333 --jq .bypass_actors`.
+⚠️ **Remaining gap — the ruleset layer is disabled.** Classic protection is
+the only active gate today. Ruleset `19123333` has `enforcement: disabled` and
+still carries `bypass_actors: [{actor_type: OrganizationAdmin, bypass_mode:
+always}]` over its `deletion` / `required_status_checks` / `pull_request`
+rules. Enabling that ruleset as-is would exempt organization admins rather
+than provide an independent backstop. Check both fields with:
+
+```bash
+gh api repos/OpenCoven/coven-cave/rulesets/19123333 \
+  --jq '{enforcement, bypass_actors}'
+```
 
 **How to apply (the only path to `main`):**
 
