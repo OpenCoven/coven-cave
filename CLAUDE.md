@@ -145,7 +145,7 @@ gh api repos/OpenCoven/coven-cave/rulesets/19123333 \
 
 ```bash
 # work on a branch (in a worktree, per the convention below)
-git worktree add -b <branch> .worktrees/<branch> origin/main
+pnpm beads:worktrees:create --bead <id> --branch <branch> --owner <you> --purpose "…"
 # … commit (signed, per the global -S rule) …
 git push -u origin <branch>
 gh pr create --base main --head <branch> --title "…" --body "…"
@@ -203,9 +203,48 @@ Use `.worktrees/<branch-name>/` subdirectories inside the repo. Confirmed in use
 **Create:**
 
 ```bash
-git worktree add -b <branch> .worktrees/<branch> origin/main
-cd .worktrees/<branch> && pnpm install   # ~10s with pnpm's CAS store
+pnpm beads:worktrees:create --bead cave-123 --branch fix/cave-123-example --owner <you> --purpose "…"
+cd .worktrees/cave-123-example && pnpm install   # ~10s with pnpm's CAS store
 ```
+
+⚠️ **The directory is not `.worktrees/<branch>`.** The script slugifies the
+branch (`worktree-lifecycle-create.ts`): it strips one leading `feat/`, `fix/`,
+`docs/` or `chore/`, then replaces every remaining character outside
+`A-Za-z0-9._-` with `-`. So `fix/cave-123-example` lands at
+`.worktrees/cave-123-example`, and an unlisted prefix like `release/foo` lands at
+`.worktrees/release-foo`. `cd .worktrees/<branch>` works only for a branch with
+no prefix at all.
+
+This is the form [`AGENTS.md`](AGENTS.md) mandates, and it is the *only* one that
+produces a retirable worktree: it writes the `metadata.coven.worktree` record
+onto the owning bead, which is exactly what the retirement gate reads
+(`src/lib/worktree-lifecycle.ts`). `--bead`, `--branch`, `--owner` and
+`--purpose` are all required; `--start-point` defaults to `origin/main`, and the
+worktree lands under `.worktrees/` (the script refuses any path escaping it).
+**No `--` before the flags** — pnpm forwards it and the parser rejects it
+outright with `unknown option: --`. That broken form was documented here and in
+`AGENTS.md` until 2026-08-03.
+
+⚠️ **The managed command can refuse to run, and the fallback has a cost.** It
+builds a *complete* lifecycle inventory first, which needs live GitHub queries,
+so it fails when the GraphQL quota is exhausted and when any commit's PR
+association returns `malformed fields or a mismatched head OID` — the latter is
+repo state, not a transient, so waiting does not clear it. Both were hit on
+2026-08-03. When it will not run:
+
+```bash
+git worktree add -b <branch> .worktrees/<branch> origin/main   # fallback only
+```
+
+A worktree made this way has **no lifecycle metadata**, so `pnpm beads:worktrees`
+reports it `uncertain` — *"structured lifecycle metadata backfill required
+before automated retirement can proceed"* — permanently, and
+`pnpm beads:worktrees:apply` can never retire it (`allowLegacyMissingMetadata`
+is hard-coded `false`; there is no flag to relax it). Retire it by hand with the
+archive-tag route in the worktree-guard section below. **Do not hand-write the
+missing metadata onto the bead** to make the patrol pass: that record is the
+evidence the gate exists to check, and forging it is the bypass the guard rules
+out. See `cave-l52dt`.
 
 **When to use a worktree:**
 
