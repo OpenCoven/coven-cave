@@ -13,7 +13,7 @@
 ## File Structure
 
 - Modify `src/components/role-surfaces/reviewer-surface.tsx`: separate bucket-filter state calculation from the live-region announcement.
-- Modify `src/components/role-surfaces/reviewer-surface.test.ts`: prevent announcements from returning inside React functional state updaters.
+- Modify `src/components/role-surfaces/reviewer-surface.test.ts`: prevent announcements from running inside React functional state updaters.
 
 ### Task 1: Make bucket-filter announcements render-safe
 
@@ -33,7 +33,7 @@ test("bucket filter announcements run outside React state updaters", () => {
   );
   assert.doesNotMatch(
     surface,
-    /setBucketFilter\(\(prev\) => \{[\s\S]*?announce\(/,
+    /setBucketFilter\(\s*(?:\(\s*prev\s*\)|prev)\s*=>/,
   );
 });
 ```
