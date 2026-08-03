@@ -1,0 +1,1017 @@
+/* Expand reader — Reader.dc.html frame 3a, "the reader as it ships".
+ *
+ * Replaces the plain 1100px/72ch sheet (frame 1a) with the production pass:
+ * a read-progress hairline, a collapsible contents rail with scroll-spy, the
+ * familiar's sigil in the head, a selection ask-bar, and a "How this was made"
+ * footer that opens onto the turn's real sources, tool batches and skills.
+ *
+ * Every literal in the mock resolved to a token already in foundations.css —
+ * the design was drawn from this palette, so the translation is 1:1 rather
+ * than an approximation. Tool-batch tints reuse `data-tool-category` from
+ * activity.css so a batch reads the same colour here as it does in the stream.
+ */
+
+/* ---------------------------------------------------------------- shell -- */
+
+.cave-reader-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--backdrop-scrim);
+  backdrop-filter: blur(3px);
+}
+
+.cave-reader {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 94vw;
+  max-width: 1180px;
+  height: 92vh;
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  box-shadow: 0 25px 50px -12px color-mix(in oklch, var(--shadow-color) 60%, transparent);
+}
+
+/* Read progress — a 3px hairline across the very top. It is the only thing in
+   the reader that tracks the scroll position continuously, so it stays cheap:
+   a transform, never a layout-affecting width. */
+.cave-reader-progress {
+  flex: none;
+  height: 3px;
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.cave-reader-progress__bar {
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: linear-gradient(90deg, var(--accent-presence-soft), var(--accent-presence));
+  box-shadow: 0 0 10px color-mix(in oklch, var(--accent-presence-soft) 55%, transparent);
+  transition: transform var(--duration-fast) linear;
+}
+
+/* ----------------------------------------------------------------- head -- */
+
+.cave-reader-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 49px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.cave-reader-head__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.cave-reader-head__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cave-reader-head__divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border-hairline);
+}
+
+/* The familiar's mark, lit from within. The glow is the only ambient motion in
+   the chrome; it is the first thing suppressed under reduced motion. */
+.cave-reader-sigil {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--accent-presence-soft) 40%, transparent);
+  background: linear-gradient(
+    140deg,
+    color-mix(in oklch, var(--accent-presence) 42%, var(--bg-panel)),
+    var(--bg-panel)
+  );
+  color: color-mix(in oklch, var(--accent-presence) 72%, var(--foreground));
+  animation: cave-reader-glow 5s ease-in-out infinite;
+}
+
+@keyframes cave-reader-glow {
+  0%,
+  100% { box-shadow: 0 0 9px color-mix(in oklch, var(--accent-presence-soft) 20%, transparent); }
+  50%  { box-shadow: 0 0 16px color-mix(in oklch, var(--accent-presence-soft) 45%, transparent); }
+}
+
+/* Icon buttons in the head — square, quiet until hovered. */
+.cave-reader-iconbtn {
+  position: relative;
+  overflow: hidden;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.cave-reader-iconbtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+/* The rail toggle and close read as chrome, not controls: no filled ground. */
+.cave-reader-iconbtn--ghost {
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  color: var(--text-muted);
+}
+.cave-reader-iconbtn--ghost:hover {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--text-primary);
+}
+.cave-reader-iconbtn--close {
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+}
+.cave-reader-iconbtn--close:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+/* Copy confirmation wipes across the button rather than swapping the glyph in
+   place — the motion is what reads as "taken" at a glance. */
+.cave-reader-copyfill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: var(--color-success);
+  animation: cave-reader-fill 300ms var(--ease-emphasized) both;
+}
+.cave-reader-copybtn__glyph { position: relative; }
+.cave-reader-copybtn__glyph--done { color: var(--color-success-foreground); }
+
+@keyframes cave-reader-fill {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+/* Export menu ------------------------------------------------------------ */
+
+.cave-reader-menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.cave-reader-menu {
+  position: absolute;
+  z-index: 130;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  width: 236px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-popover, 0 20px 54px color-mix(in oklch, var(--shadow-color) 62%, transparent));
+  animation: cave-reader-pop 170ms var(--ease-decelerate) both;
+}
+.cave-reader-menu__head,
+.cave-reader-menu__foot {
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.cave-reader-menu__head {
+  border-bottom: 1px solid var(--border-hairline);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+.cave-reader-menu__foot { border-top: 1px solid var(--border-hairline); }
+.cave-reader-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 34px;
+  padding: 0 var(--space-3);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.cave-reader-menu__item:hover {
+  background: color-mix(in oklch, var(--accent-presence-soft) 10%, transparent);
+}
+.cave-reader-menu__ext {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+@keyframes cave-reader-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ----------------------------------------------------------------- body -- */
+
+.cave-reader-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Contents rail ---------------------------------------------------------- */
+
+.cave-reader-rail {
+  flex: none;
+  width: 216px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4) var(--space-3);
+  overflow-y: auto;
+  border-right: 1px solid var(--border-hairline);
+  animation: cave-reader-slide 220ms var(--ease-decelerate) both;
+}
+
+@keyframes cave-reader-slide {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.cave-reader-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.cave-reader-rail__eyebrow { padding: 0 var(--space-2) var(--space-3); }
+
+.cave-reader-rail__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* A rail entry is the heading it points at: the active one takes the accent
+   bar and a tinted ground, so the reader's position is never ambiguous. */
+.cave-reader-rail__link {
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-control);
+  padding: var(--space-2);
+  padding-left: calc(var(--space-2) + (var(--reader-depth, 0) * var(--space-3)));
+  background: transparent;
+  text-align: left;
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.cave-reader-rail__link:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--text-primary);
+}
+.cave-reader-rail__link[aria-current="true"] {
+  border-left-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence-soft) 13%, transparent);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cave-reader-rail__foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-hairline);
+}
+.cave-reader-rail__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* Document --------------------------------------------------------------- */
+
+.cave-reader-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cave-reader-doc {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-8) 0 var(--space-10);
+}
+
+/* 88ch, up from 1a's 72ch: the rail takes 216px off the measure, and the
+   reader is where a long answer is read whole rather than skimmed. */
+.cave-reader-measure {
+  max-width: 88ch;
+  margin: 0 auto;
+  padding: 0 var(--space-10);
+}
+
+/* Heading anchors the rail scrolls to. The offset keeps a targeted heading
+   clear of the head rather than flush against it. */
+.cave-reader-doc :is(h1, h2, h3, h4, h5, h6) { scroll-margin-top: var(--space-6); }
+
+/* The turn's own eyebrow row — skills the answer reached for, and the
+   collapsed agent-work line. Both are real turn data or they are absent. */
+.cave-reader-turnmeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.cave-reader-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+.cave-reader-chip__count { color: var(--text-muted); }
+
+/* The closing ornament — the answer ends deliberately rather than trailing
+   off into the footer chrome. */
+.cave-reader-rule {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  margin: var(--space-6) 0 var(--space-1);
+  color: color-mix(in oklch, var(--accent-presence-soft) 60%, transparent);
+}
+.cave-reader-rule__line {
+  width: 48px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--accent-presence-soft) 40%, transparent));
+}
+.cave-reader-rule__line--right {
+  background: linear-gradient(90deg, color-mix(in oklch, var(--accent-presence-soft) 40%, transparent), transparent);
+}
+
+/* Selection ask-bar ------------------------------------------------------- */
+
+.cave-reader-selbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 46px;
+  padding: 0 var(--space-4);
+  border-top: 1px solid color-mix(in oklch, var(--accent-presence-soft) 40%, transparent);
+  background: color-mix(in oklch, var(--accent-presence-soft) 10%, transparent);
+  animation: cave-reader-rise 200ms var(--ease-decelerate) both;
+}
+.cave-reader-selbar__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+@keyframes cave-reader-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* --------------------------------------------------------------- footer -- */
+
+.cave-reader-foot {
+  position: relative;
+  z-index: 20;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--foreground) 2.5%, transparent);
+}
+
+.cave-reader-foot__toggle {
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 44px;
+  padding: 0 var(--space-4);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.cave-reader-foot__toggle:hover {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+.cave-reader-foot__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+}
+
+/* The summary reads as a receipt: what the answer stood on, how it ran, and
+   whether anything failed — countable facts only. */
+.cave-reader-foot__summary {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 27px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.cave-reader-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.cave-reader-stat__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+.cave-reader-stat--sources { color: oklch(0.74 0.13 235); }
+.cave-reader-stat--steps { color: var(--color-success); }
+.cave-reader-stat--skills { color: var(--accent-presence); }
+.cave-reader-stat--errors { color: var(--color-danger); }
+
+.cave-reader-foot__chev {
+  color: var(--text-muted);
+  transition: transform var(--duration-slow) var(--ease-emphasized);
+}
+.cave-reader-foot__toggle[aria-expanded="true"] .cave-reader-foot__chev {
+  transform: rotate(180deg);
+}
+
+.cave-reader-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 348px;
+  max-height: 46vh;
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+  animation: cave-reader-rise 240ms var(--ease-decelerate) both;
+}
+.cave-reader-panel__tabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 42px;
+  padding: 0 var(--space-4);
+}
+.cave-reader-tab {
+  height: 25px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.cave-reader-tab:hover { color: var(--text-primary); }
+.cave-reader-tab[aria-selected="true"] {
+  background: color-mix(in oklch, var(--accent-presence-soft) 16%, transparent);
+  color: var(--text-primary);
+}
+/* The tabs themselves; the per-tab view switch beside them is the shared
+   Segmented primitive (components/ui/settings-controls), not a second one. */
+.cave-reader-tablist {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cave-reader-panel__scroll {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-1) var(--space-4) var(--space-4);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* A footer row — one source, one batch, one skill. The tint is the row's
+   classification; the shape is shared. */
+.cave-reader-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 34px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--foreground) 3%, transparent);
+  text-align: left;
+  color: inherit;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+button.cave-reader-row { cursor: pointer; }
+.cave-reader-row__mark {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.cave-reader-row__title {
+  flex: none;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.cave-reader-row__sub {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.cave-reader-row__trail {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* Sources take the presence hue — they are what the answer leaned on. */
+.cave-reader-row--source {
+  border-color: color-mix(in oklch, var(--accent-presence-soft) 26%, transparent);
+  background: color-mix(in oklch, var(--accent-presence-soft) 7%, transparent);
+}
+.cave-reader-row--source:hover {
+  border-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence-soft) 14%, transparent);
+}
+.cave-reader-row--source .cave-reader-row__mark,
+.cave-reader-row--source .cave-reader-row__trail { color: var(--accent-presence); }
+
+/* Batches take their category tint from activity.css, which lists this class
+   alongside the stream's own consumers — one definition, so a batch cannot
+   read one colour here and another in the transcript. */
+.cave-reader-row--batch {
+  --tool-accent: var(--text-muted);
+  border-color: color-mix(in oklch, var(--tool-accent) 22%, transparent);
+  background: color-mix(in oklch, var(--tool-accent) 7%, transparent);
+}
+.cave-reader-row--batch:hover {
+  border-color: color-mix(in oklch, var(--tool-accent) 55%, transparent);
+  background: color-mix(in oklch, var(--tool-accent) 13%, transparent);
+}
+.cave-reader-row__batchdot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--tool-accent);
+}
+.cave-reader-row__batchno {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--tool-accent);
+}
+.cave-reader-row__batchlabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.cave-reader-row--error .cave-reader-row__trail { color: var(--color-danger); }
+
+.cave-reader-row__toolname {
+  flex: none;
+  width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--tool-accent);
+}
+/* The share bar is the point of the by-tool view: which tool the turn actually
+   spent its time in, not which it called most often. */
+.cave-reader-share {
+  flex: none;
+  width: 56px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+  overflow: hidden;
+}
+.cave-reader-share__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--tool-accent);
+}
+
+/* Timeline — one line per call, numbered, at the density of a log. */
+.cave-reader-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 22px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.cave-reader-step:hover { background: color-mix(in oklch, var(--foreground) 6%, transparent); }
+.cave-reader-step__n {
+  flex: none;
+  width: 20px;
+  text-align: right;
+  color: color-mix(in oklch, var(--foreground) 34%, transparent);
+}
+.cave-reader-step__dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--tool-accent);
+}
+.cave-reader-step__tool {
+  flex: none;
+  width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--tool-accent);
+}
+.cave-reader-step__target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.cave-reader-step__status { flex: none; }
+.cave-reader-step[data-status="error"] .cave-reader-step__status { color: var(--color-danger); }
+.cave-reader-step[data-status="running"] .cave-reader-step__status { color: var(--color-warning); }
+
+/* By-type — the skills the harness loaded, then the servers it connected. */
+.cave-reader-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.cave-reader-group__head { padding: var(--space-2) 2px var(--space-1); }
+
+/* Skills grid — one card per capability the turn actually reached for. */
+.cave-reader-skillgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+  align-content: start;
+}
+.cave-reader-skillcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--accent-presence-soft) 26%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--accent-presence-soft) 7%, transparent);
+}
+.cave-reader-skillcard__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.cave-reader-skillcard__mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--accent-presence-soft) 40%, transparent);
+  background: linear-gradient(
+    140deg,
+    color-mix(in oklch, var(--accent-presence) 45%, var(--bg-panel)),
+    var(--bg-panel)
+  );
+  color: color-mix(in oklch, var(--accent-presence) 72%, var(--foreground));
+}
+.cave-reader-skillcard__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.cave-reader-badge {
+  flex: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--accent-presence-soft) 16%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  color: var(--accent-presence);
+}
+.cave-reader-skillcard__calls {
+  margin-top: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--accent-presence);
+}
+
+.cave-reader-panel__empty {
+  margin: auto;
+  padding: var(--space-6);
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* -------------------------------------------------------------- viewer --- */
+
+/* Click a source row and it opens over the reader rather than navigating away
+   — the answer stays behind it, so checking a citation never costs your place. */
+.cave-reader-viewer {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+  background:
+    radial-gradient(640px 420px at 50% 42%, color-mix(in oklch, var(--accent-presence) 26%, transparent), transparent 70%),
+    color-mix(in oklch, var(--bg-base) 78%, transparent);
+  backdrop-filter: blur(3px);
+}
+.cave-reader-viewer__card {
+  width: 620px;
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  box-shadow: 0 34px 90px color-mix(in oklch, var(--shadow-color) 62%, transparent);
+  animation: cave-reader-pop 180ms var(--ease-decelerate) both;
+}
+.cave-reader-viewer__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 46px;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.cave-reader-viewer__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.cave-reader-viewer__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.cave-reader-viewer__summary {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+}
+/* The excerpt is set in the serif the design reserves for quoted material —
+   it is someone else's words, and it should not read as ours. */
+.cave-reader-viewer__excerpt {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--accent-presence);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  background: color-mix(in oklch, var(--accent-presence-soft) 7%, transparent);
+  font-family: var(--font-serif, "EB Garamond", Georgia, serif);
+  font-size: var(--text-base);
+  font-style: italic;
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+}
+.cave-reader-viewer__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.cave-reader-viewer__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 38px;
+  padding: 0 var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--foreground) 3%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.cave-reader-viewer__hint { margin-left: auto; }
+
+/* ------------------------------------------------------------ responsive - */
+
+/* Below the rail's own width plus a readable measure there is no room for two
+   columns; the rail becomes an overlay the toggle summons, and the document
+   keeps the full width. */
+@media (max-width: 60rem) {
+  .cave-reader { width: 100vw; height: 100vh; max-width: none; border: 0; border-radius: 0; }
+  .cave-reader-rail {
+    position: absolute;
+    z-index: 40;
+    top: 52px;
+    bottom: 0;
+    left: 0;
+    background: var(--bg-panel);
+    box-shadow: var(--shadow-popover, 0 20px 54px color-mix(in oklch, var(--shadow-color) 50%, transparent));
+  }
+  .cave-reader-measure { padding: 0 var(--space-5); }
+}
+
+/* ----------------------------------------------------------------- print - */
+
+/* Export → PDF is the browser's own print pipeline, so the reader has to BE
+   the page for the duration: the app behind it is hidden, the reader loses its
+   overlay geometry and flows as a document, and the chrome that only makes
+   sense on screen (rail, footer, progress, controls) drops out. Without this,
+   "Export PDF" prints the transcript underneath with a modal pasted over it. */
+@media print {
+  body > *:not(.cave-reader-backdrop) { display: none !important; }
+
+  .cave-reader-backdrop {
+    position: static;
+    display: block;
+    padding: 0;
+    background: none;
+    backdrop-filter: none;
+  }
+  .cave-reader {
+    width: auto;
+    max-width: none;
+    height: auto;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+  .cave-reader-progress,
+  .cave-reader-rail,
+  .cave-reader-foot,
+  .cave-reader-selbar,
+  .cave-reader-viewer,
+  .cave-reader-head__actions {
+    display: none !important;
+  }
+  .cave-reader-head { border-bottom: 1px solid var(--border-hairline); }
+  .cave-reader-body,
+  .cave-reader-main { display: block; }
+  .cave-reader-doc {
+    overflow: visible;
+    padding: 0;
+  }
+  .cave-reader-measure {
+    max-width: none;
+    padding: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- motion - */
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-reader-sigil,
+  .cave-reader-copyfill,
+  .cave-reader-menu,
+  .cave-reader-rail,
+  .cave-reader-selbar,
+  .cave-reader-panel,
+  .cave-reader-viewer__card {
+    animation: none;
+  }
+  .cave-reader-progress__bar,
+  .cave-reader-foot__chev {
+    transition: none;
+  }
+  /* Without the wipe the copy button must still confirm, so the fill lands
+     instantly rather than not at all. */
+  .cave-reader-copyfill { transform: scaleX(1); }
+}

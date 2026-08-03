@@ -3,5 +3,6 @@
 @import "./cave-chat/activity.css";
 @import "./cave-chat/transcript.css";
 @import "./cave-chat/auxiliary-surfaces.css";
+@import "./cave-chat/reader.css";
 @import "./cave-chat/start-from.css";
 @import "./cave-chat/session-chrome.css";
