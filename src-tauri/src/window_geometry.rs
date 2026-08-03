@@ -593,6 +593,27 @@ pub(super) fn show_notch_window(app: &tauri::AppHandle, notch_url: &Url) {
                         use objc2::runtime::AnyObject;
                         let ns_window = ns_ptr as *mut AnyObject;
                         let _: () = msg_send![&*ns_window, setLevel: 25isize];
+                        // Window level alone only orders the notch against
+                        // windows *on the space it already lives on*. A default
+                        // collection behavior pins it to the space it opened on
+                        // and hides it outright while another app is
+                        // fullscreen — so a pill that is supposed to be always
+                        // present disappears the moment you switch space or go
+                        // fullscreen, which reads as "the notch went behind the
+                        // active window".
+                        //
+                        // canJoinAllSpaces (1 << 0) makes it follow the user
+                        // across spaces the way a menu-bar item does;
+                        // fullScreenAuxiliary (1 << 8) lets it draw over a
+                        // fullscreen app instead of being hidden with the rest
+                        // of the desktop. OR into whatever tao already set
+                        // rather than assigning, so we add these two traits
+                        // without clobbering flags we do not own.
+                        const CAN_JOIN_ALL_SPACES: usize = 1 << 0;
+                        const FULL_SCREEN_AUXILIARY: usize = 1 << 8;
+                        let current: usize = msg_send![&*ns_window, collectionBehavior];
+                        let behavior = current | CAN_JOIN_ALL_SPACES | FULL_SCREEN_AUXILIARY;
+                        let _: () = msg_send![&*ns_window, setCollectionBehavior: behavior];
                     }
                 });
             }
