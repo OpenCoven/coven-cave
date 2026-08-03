@@ -162,6 +162,19 @@ final class AppModel {
         Haptics.error()
     }
 
+    /// A batch that partly landed (cave-ioswipe.2). Says how many of how many
+    /// failed, because the old wholesale "reverted" message was actively
+    /// misleading here: most of the batch DID take effect server-side, and only
+    /// the named few came back.
+    private func reportPartial(_ failed: Int, of total: Int, verb: String) {
+        showToast(
+            "Couldn’t \(verb) \(failed) of \(total) — those were restored",
+            systemImage: "exclamationmark.triangle.fill",
+            style: .error,
+        )
+        Haptics.error()
+    }
+
     /// Ask the chat list to open a thread (switches to Chats first).
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
@@ -743,14 +756,24 @@ final class AppModel {
     }
 
 
-    /// Optimistically remove reminders, then DELETE each; reverts on failure.
+    /// Optimistically remove reminders, then delete them in ONE round trip
+    /// (cave-ioswipe.2). Previously this was N sequential DELETEs that reverted
+    /// the whole batch on any failure — so item 20 failing silently undid the
+    /// optimistic removal of items 1-19 whose server-side deletes had already
+    /// succeeded, leaving the UI disagreeing with the server. Now only the ids
+    /// the server did NOT confirm come back.
     func deleteReminders(_ ids: Set<String>) async {
         guard let client, !ids.isEmpty else { return }
         let previous = reminders
         reminders.removeAll { ids.contains($0.id) }
         do {
-            for id in ids { try await client.deleteReminder(id: id) }
-            Haptics.success()
+            let outcome = try await client.bulkInboxAction("delete", ids: Array(ids))
+            let deleted = Set(outcome.deletedIds)
+            let missed = ids.subtracting(deleted)
+            guard !missed.isEmpty else { Haptics.success(); return }
+            // Restore only what did not take effect, preserving list order.
+            reminders = previous.filter { !deleted.contains($0.id) }
+            reportPartial(missed.count, of: ids.count, verb: "delete")
         } catch {
             reminders = previous
             remindersError = error.localizedDescription
@@ -788,32 +811,108 @@ final class AppModel {
     // MARK: - Bulk reminder actions
 
     func markRemindersDone(_ ids: Set<String>) async {
-        await bulkReminderAction(ids, optimistic: "done") { try await $0.markReminderDone(id: $1) }
+        await bulkServerAction(ids, optimistic: "done", action: "done", verb: "mark done")
     }
     func dismissReminders(_ ids: Set<String>) async {
-        await bulkReminderAction(ids, optimistic: "dismissed") { try await $0.dismissReminder(id: $1) }
-    }
-    func snoozeReminders(_ ids: Set<String>, minutes: Int) async {
-        await bulkReminderAction(ids, optimistic: "snoozed") { try await $0.snoozeReminder(id: $1, minutes: minutes) }
+        await bulkServerAction(ids, optimistic: "dismissed", action: "dismiss", verb: "dismiss")
     }
 
-    /// Apply an action to every selected reminder: optimistic status for all,
-    /// then run each server call reconciling its echoed item; revert all on any
-    /// failure.
-    private func bulkReminderAction(_ ids: Set<String>, optimistic: String,
-                                    _ call: @escaping (CaveClient, String) async throws -> Reminder?) async {
+    /// Snooze is the one bulk action WITHOUT a server counterpart: the bulk
+    /// endpoint has no `snooze` action and no slot for its `minutes` argument.
+    /// The bead's acceptance criteria allow "one round trip OR bounded
+    /// concurrency", so this fans out with a small in-flight cap rather than
+    /// extending a request-guarded API surface as a side effect of a client fix.
+    func snoozeReminders(_ ids: Set<String>, minutes: Int) async {
+        await boundedReminderFanOut(ids, optimistic: "snoozed", verb: "snooze") {
+            try await $0.snoozeReminder(id: $1, minutes: minutes)
+        }
+    }
+
+    /// One round trip for the actions the bulk endpoint supports. Items echoed
+    /// in `updated` succeeded; ids absent from it did not take effect and are
+    /// the only ones reverted — the old all-or-nothing revert made the UI
+    /// disagree with a server that had already applied most of the batch.
+    /// `verb` is what the user is told, and it is passed rather than derived
+    /// from `action` because the two are not the same vocabulary: the wire
+    /// action is "done", the sentence needs "mark done".
+    private func bulkServerAction(_ ids: Set<String>, optimistic: String, action: String, verb: String) async {
         guard let client, !ids.isEmpty else { return }
         let previous = reminders
         for id in ids { applyReminder(id: id) { $0.status = optimistic } }
         do {
-            for id in ids {
-                if let updated = try await call(client, id) { applyReminder(id: id) { $0 = updated } }
+            let outcome = try await client.bulkInboxAction(action, ids: Array(ids))
+            var confirmed = Set<String>()
+            for item in outcome.updated {
+                applyReminder(id: item.id) { $0 = item }
+                confirmed.insert(item.id)
             }
-            Haptics.success()
+            for id in outcome.deletedIds { confirmed.insert(id) }
+            let missed = ids.subtracting(confirmed)
+            guard !missed.isEmpty else { Haptics.success(); return }
+            revert(missed, to: previous)
+            reportPartial(missed.count, of: ids.count, verb: verb)
         } catch {
             reminders = previous
             remindersError = error.localizedDescription
             reportRevert("update the reminders")
+        }
+    }
+
+    /// Bounded concurrent fan-out for actions with no bulk endpoint. Caps
+    /// in-flight requests so a large selection cannot open one socket per item,
+    /// and reverts only the items that actually failed.
+    private static let reminderFanOutWidth = 4
+
+    private func boundedReminderFanOut(
+        _ ids: Set<String>,
+        optimistic: String,
+        verb: String,
+        _ call: @escaping @Sendable (CaveClient, String) async throws -> Reminder?,
+    ) async {
+        guard let client, !ids.isEmpty else { return }
+        let previous = reminders
+        for id in ids { applyReminder(id: id) { $0.status = optimistic } }
+
+        let ordered = Array(ids)
+        let width = min(Self.reminderFanOutWidth, ordered.count)
+        let results = await withTaskGroup(of: (String, Reminder?, Bool).self) { group -> [(String, Reminder?, Bool)] in
+            var next = 0
+            func addTask() {
+                guard next < ordered.count else { return }
+                let id = ordered[next]
+                next += 1
+                group.addTask {
+                    do { return (id, try await call(client, id), true) }
+                    catch { return (id, nil, false) }
+                }
+            }
+            for _ in 0..<width { addTask() }
+            var out: [(String, Reminder?, Bool)] = []
+            while let finished = await group.next() {
+                out.append(finished)
+                addTask()   // keep exactly `width` in flight
+            }
+            return out
+        }
+
+        var failed = Set<String>()
+        for (id, updated, ok) in results {
+            if ok { if let updated { applyReminder(id: id) { $0 = updated } } } else { failed.insert(id) }
+        }
+        guard !failed.isEmpty else { Haptics.success(); return }
+        revert(failed, to: previous)
+        reportPartial(failed.count, of: ids.count, verb: verb)
+    }
+
+    /// Put back only the named ids, leaving successful siblings applied.
+    private func revert(_ ids: Set<String>, to previous: [Reminder]) {
+        for id in ids {
+            guard let old = previous.first(where: { $0.id == id }) else { continue }
+            if let idx = reminders.firstIndex(where: { $0.id == id }) {
+                reminders[idx] = old
+            } else {
+                reminders.append(old)
+            }
         }
     }
 
