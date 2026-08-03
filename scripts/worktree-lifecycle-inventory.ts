@@ -1070,6 +1070,86 @@ function fetchPullRequests(
   };
 }
 
+/** Stable identity for a lifecycle unit within one patrol run. */
+function lifecycleUnitKey(unit: { kind: string; path: string | null; ref: string | null }): string {
+  return `${unit.kind}\0${unit.path ?? ""}\0${unit.ref ?? ""}`;
+}
+
+/**
+ * Which units — if any — had their own inputs move while the patrol ran.
+ *
+ * Returns a reason per affected unit; an empty map means nothing a verdict
+ * depends on changed. Throws only when a snapshot cannot be parsed, which the
+ * caller escalates to a whole-run failure.
+ */
+function unitScopedDrift({
+  units,
+  initialWorktreeRaw,
+  initialRefsRaw,
+  finalWorktreeRaw,
+  finalRefsRaw,
+}: {
+  units: Array<{ kind: string; path: string | null; ref: string | null; head: string }>;
+  initialWorktreeRaw: string;
+  initialRefsRaw: string;
+  finalWorktreeRaw: string;
+  finalRefsRaw: string;
+}): Map<string, string> {
+  const drift = new Map<string, string>();
+  if (finalWorktreeRaw === initialWorktreeRaw && finalRefsRaw === initialRefsRaw) {
+    return drift;
+  }
+
+  const finalEntries = parseWorktrees(finalWorktreeRaw);
+  const finalRefs = parseLocalBranchRefs(finalRefsRaw);
+  const finalOidByRef = new Map(finalRefs.map((localRef) => [localRef.ref, localRef.oid]));
+  const finalEntryByPath = new Map(finalEntries.map((entry) => [entry.path, entry]));
+  const pathsByRef = (entries: ReturnType<typeof parseWorktrees>) => {
+    const byRef = new Map<string, string[]>();
+    for (const entry of entries) {
+      if (entry.ref === null) continue;
+      byRef.set(entry.ref, [...(byRef.get(entry.ref) ?? []), entry.path].sort());
+    }
+    return byRef;
+  };
+  const initialPathsByRef = pathsByRef(parseWorktrees(initialWorktreeRaw));
+  const finalPathsByRef = pathsByRef(finalEntries);
+
+  for (const unit of units) {
+    const key = lifecycleUnitKey(unit);
+    if (unit.kind === "worktree" && unit.path !== null) {
+      const entry = finalEntryByPath.get(unit.path);
+      if (!entry) {
+        drift.set(key, "worktree was unregistered while the patrol was running");
+        continue;
+      }
+      if (entry.head !== unit.head || entry.ref !== unit.ref) {
+        drift.set(key, "worktree HEAD moved while the patrol was running");
+        continue;
+      }
+    }
+    if (unit.ref !== null) {
+      const oid = finalOidByRef.get(unit.ref);
+      if (oid === undefined) {
+        drift.set(key, "branch was deleted while the patrol was running");
+        continue;
+      }
+      if (oid !== unit.head) {
+        drift.set(key, "branch moved while the patrol was running");
+        continue;
+      }
+      // A ref gaining or losing a worktree changes what retiring it would mean,
+      // even when the OID held still.
+      const before = (initialPathsByRef.get(unit.ref) ?? []).join("\0");
+      const after = (finalPathsByRef.get(unit.ref) ?? []).join("\0");
+      if (before !== after) {
+        drift.set(key, "the worktrees holding this branch changed while the patrol was running");
+      }
+    }
+  }
+  return drift;
+}
+
 function fetchWorkflowSweep(
   repo: string,
   root: string,
@@ -2600,10 +2680,37 @@ export function collectWorktreeLifecycleInventory(
   ]);
   const finalGrafts = graftInventory(commonGitDir);
   const finalHistoryOverrides = historyOverrideProbe(root, commonGitDir);
-  if (
-    finalWorktreeRaw !== initialWorktreeRaw ||
-    finalRefsRaw !== initialRefsRaw
-  ) {
+  // Local git state moving during the patrol used to abort the entire run. On a
+  // checkout shared by several agents that fires constantly — one session
+  // committing on its own branch discarded a multi-minute inventory of every
+  // other unit — so the patrol could not be run to completion at all
+  // (cave-63m12).
+  //
+  // Drift is now scoped to the units it can actually affect. What each unit's
+  // verdict rests on is its OWN ref OID, its OWN worktree registration, and the
+  // set of worktrees holding its ref. Nothing else in `refs/heads` can change a
+  // conclusion about it: default-branch ancestry is measured against the
+  // REMOTE-tracking ref, which this snapshot does not even cover.
+  //
+  // Two asymmetries make this safe rather than merely convenient:
+  //   - A unit that gained drift is marked `uncertain`, never retired. Losing a
+  //     verdict is free; acting on a stale one is not.
+  //   - Refs and worktrees that APPEAR mid-run are simply absent from this
+  //     report. A unit that is not reported is never retired, so an incomplete
+  //     snapshot is conservative by construction.
+  //
+  // A snapshot that cannot be parsed is still a global failure: that is an
+  // integrity problem rather than ordinary churn.
+  let driftReasonByUnitKey: Map<string, string>;
+  try {
+    driftReasonByUnitKey = unitScopedDrift({
+      units,
+      initialWorktreeRaw,
+      initialRefsRaw,
+      finalWorktreeRaw,
+      finalRefsRaw,
+    });
+  } catch {
     throw new Error("worktree or branch inventory changed during patrol");
   }
   if (
@@ -2684,8 +2791,18 @@ export function collectWorktreeLifecycleInventory(
     ).length,
   });
 
+  // A unit whose own inputs moved carries that as a probe error, which lands it
+  // in `uncertain` — the same posture the whole-run abort had, applied only
+  // where it is warranted.
+  const driftedObservations = observations.map((observation) => {
+    const reason = driftReasonByUnitKey.get(lifecycleUnitKey(observation));
+    return reason === undefined
+      ? observation
+      : { ...observation, probeErrors: [...observation.probeErrors, reason] };
+  });
+
   return {
-    items: observations.map((observation) =>
+    items: driftedObservations.map((observation) =>
       classifyInventoryObservation(observation, options.nowMs),
     ),
     budgets,

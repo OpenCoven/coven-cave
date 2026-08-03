@@ -1283,6 +1283,13 @@ if [ "\${LIFECYCLE_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "drift
   touch "${path.join(fixtureRoot, "drift-once")}"
   git -C "${repo}" branch feat/drift origin/main
 fi
+# Moves an EXISTING unit's ref rather than adding a new one. feat/branch-only
+# has no worktree, so this is exactly "another session committed on its branch"
+# — the case that must invalidate that one unit and nothing else (cave-63m12).
+if [ "\${LIFECYCLE_UNIT_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "unit-drift-once")}" ]; then
+  touch "${path.join(fixtureRoot, "unit-drift-once")}"
+  git -C "${repo}" update-ref refs/heads/feat/branch-only ${JSON.stringify(defaultHead)}
+fi
 if [ "\${LIFECYCLE_GRAFT_DRIFT:-0}" = "1" ]; then
   printf '%s %s\n' ${JSON.stringify(defaultHead)} ${JSON.stringify(oldHead)} > ${JSON.stringify(path.join(repo, ".git", "info", "grafts"))}
 fi
@@ -3314,11 +3321,45 @@ exit 0
   );
   assert.equal(readFileSync(path.join(live, "uncommitted.txt"), "utf8"), "live\n");
 
-  assert.throws(
-    () => patrol(["--json"], { LIFECYCLE_DRIFT: "1" }),
-    /worktree or branch inventory changed during patrol/,
-    "a concurrent branch change aborts instead of returning an incomplete success",
-  );
+  // A branch APPEARING mid-run no longer discards the whole inventory
+  // (cave-63m12). The new ref is simply absent from this report, and a unit that
+  // is not reported is never retired — so an incomplete snapshot is
+  // conservative rather than dangerous. Every unit that did not move keeps the
+  // verdict the patrol spent minutes computing.
+  {
+    const addedReport = JSON.parse(patrol(["--json"], { LIFECYCLE_DRIFT: "1" }));
+    const addedOld = addedReport.items.find((item) => item.branch === "feat/old");
+    assert.ok(addedOld, "a concurrent branch addition still returns a report");
+    assert.doesNotMatch(
+      addedOld.probeErrors.join("\n"),
+      /during the patrol|during patrol/i,
+      "an unrelated branch appearing does not taint other units",
+    );
+    assert.equal(
+      addedReport.items.some((item) => item.branch === "feat/drift"),
+      false,
+      "a ref that appeared mid-run is out of scope for this report",
+    );
+  }
+
+  // A unit whose OWN ref moved is the case that must still fail closed — but
+  // only for that unit.
+  {
+    const movedReport = JSON.parse(patrol(["--json"], { LIFECYCLE_UNIT_DRIFT: "1" }));
+    const movedUnit = movedReport.items.find((item) => item.branch === "feat/branch-only");
+    assert.equal(movedUnit.lane, "uncertain", "a unit whose branch moved fails closed");
+    assert.match(
+      movedUnit.probeErrors.join("\n"),
+      /branch moved while the patrol was running/,
+      "the drifted unit says what moved",
+    );
+    const untouched = movedReport.items.find((item) => item.branch === "feat/old");
+    assert.doesNotMatch(
+      untouched.probeErrors.join("\n"),
+      /while the patrol was running/,
+      "one unit's drift does not invalidate its neighbours",
+    );
+  }
 
   let graftDriftError;
   try {
@@ -3347,17 +3388,27 @@ exit 0
     "worktree-lifecycle-patrol: history override inventory changed during patrol",
   );
 
-  let registrationDriftError;
-  try {
-    patrol(["--json"], { LIFECYCLE_WORKTREE_DRIFT: "1", NODE_NO_WARNINGS: "1" });
-  } catch (error) {
-    registrationDriftError = error;
+  // A worktree REGISTERED mid-run is detached — no ref, and a path no existing
+  // unit owns — so it cannot change any verdict already computed. Like a new
+  // branch, it is out of scope for this report rather than a reason to discard
+  // it (cave-63m12).
+  {
+    const registeredReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_WORKTREE_DRIFT: "1", NODE_NO_WARNINGS: "1" }),
+    );
+    const registeredOld = registeredReport.items.find((item) => item.branch === "feat/old");
+    assert.ok(registeredOld, "a concurrent worktree registration still returns a report");
+    assert.doesNotMatch(
+      registeredOld.probeErrors.join("\n"),
+      /while the patrol was running/,
+      "a worktree registered elsewhere does not taint unrelated units",
+    );
+    assert.equal(
+      registeredReport.items.some((item) => item.path === registeredDrift),
+      false,
+      "a worktree registered mid-run is out of scope for this report",
+    );
   }
-  assert.ok(registrationDriftError, "a concurrent worktree registration must abort patrol");
-  assert.equal(
-    registrationDriftError.stderr.trim(),
-    "worktree-lifecycle-patrol: worktree or branch inventory changed during patrol",
-  );
 } finally {
   if (existsSync(registeredDrift)) {
     git(["worktree", "remove", registeredDrift], repo);
