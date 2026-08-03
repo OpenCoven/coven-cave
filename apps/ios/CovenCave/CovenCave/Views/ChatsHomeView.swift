@@ -29,14 +29,9 @@ struct ChatsHomeView: View {
     /// Navigation *within* the detail column — e.g. a familiar's thread list
     /// pushing a conversation. Reset whenever the sidebar selection changes.
     @State private var detailPath: [ChatRoute] = []
-    @State private var renamingThread: ChatThread?
-    /// A thread awaiting delete confirmation (swipe or context menu).
-    @State private var pendingDelete: ChatThread?
     /// Familiar reordering happens in a dedicated drag-to-reorder sheet rather
     /// than List edit mode, which would fight the selection binding.
     @State private var showReorder = false
-    /// Reveal archived chats in the list.
-    @State private var showArchived = false
     /// All-familiars roster sheet.
     @State private var showFamiliars = false
     @State private var showProjects = false
@@ -150,8 +145,7 @@ struct ChatsHomeView: View {
             Group {
                 switch selection {
                 case .familiar(let familiar):
-                    FamiliarThreadsView(familiar: familiar, path: $detailPath,
-                                        zoomNamespace: zoomNamespace)
+                    familiarChat(familiar)
                 case .thread(let thread):
                     ChatView(thread: thread)
                 case nil:
@@ -185,6 +179,23 @@ struct ChatsHomeView: View {
         } else {
             ChatView(thread: thread)
                 .navigationTransition(.zoom(sourceID: thread.id, in: zoomNamespace))
+        }
+    }
+
+    /// A familiar's conversation: its landing thread, or an invitation to start
+    /// one. Session switching happens in ChatView's config card, not here.
+    @ViewBuilder
+    private func familiarChat(_ familiar: Familiar) -> some View {
+        if let thread = app.landingDirectThread(for: familiar.id) {
+            ChatView(thread: thread)
+        } else {
+            ContentUnavailableView {
+                Label("No chats with \(familiar.displayName)", systemImage: "bubble.left.and.bubble.right")
+            } description: {
+                Text("Start one to begin.")
+            } actions: {
+                Button("New chat") { startNewChat(with: familiar) }
+            }
         }
     }
 
@@ -345,10 +356,6 @@ struct ChatsHomeView: View {
         app.threadToOpen = nil
     }
 
-    private var deleteDialogBinding: Binding<Bool> {
-        Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
-    }
-
     /// Familiars matching the search query (name or role). Empty query → all.
     private var filteredFamiliars: [Familiar] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -357,9 +364,6 @@ struct ChatsHomeView: View {
             $0.displayName.lowercased().contains(q) || ($0.role?.lowercased().contains(q) ?? false)
         }
     }
-
-    /// Number of archived chats (drives the show/hide-archived toggle).
-    private var archivedCount: Int { app.threads.filter(\.archived).count }
 
     private var emptyState: some View {
         ContentUnavailableView {

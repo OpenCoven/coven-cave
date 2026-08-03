@@ -67,4 +67,23 @@ assert.match(
   "the row keeps the unread indicator the rail had",
 );
 
+// --- One tap lands in the conversation ---------------------------------------
+// The detail column resolves a familiar to its chat. FamiliarThreadsView is no
+// longer the tap target; it becomes the session picker (Task 4).
+assert.match(
+  home,
+  /case \.familiar\(let familiar\):\s*\n\s*familiarChat\(familiar\)/,
+  "selecting a familiar shows its chat, not a thread list",
+);
+assert.match(
+  home,
+  /private func familiarChat[\s\S]{0,400}?app\.landingDirectThread\(for: familiar\.id\)/,
+  "the chat resolves through the familiar's landing thread",
+);
+assert.match(
+  home,
+  /private func familiarChat[\s\S]{0,600}?ContentUnavailableView/,
+  "a familiar with no thread gets a start-a-chat placeholder, not a blank pane",
+);
+
 console.log("ios-chat-familiars-home.test.mjs: ok");
