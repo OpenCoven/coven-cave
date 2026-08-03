@@ -7,6 +7,184 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-03
+
+> _One-line teaser — edit before merge._
+
+Patch release on top of v0.2.2.
+
+### Changes
+- docs(search): define global search foundation
+- chore(sidecar): raise the runtime file-count budget to 5,915 for the call transcript
+- test: repair two more wiring pins /auto mission mode left red on main
+- fix(ios): catalogue /auto so the cross-platform slash contract passes
+- fix(ios): mirror /auto into the slash catalog, unbreaking main
+- fix(ios): Select All should cover only the visible sessions (cave-2qyqu)
+- fix(ci): restore the auto-status-blocks registration the rebase dropped
+- feat(settings): centralize voice configuration
+- fix(ci): raise the sidecar file budget for the rewrite route, wire a stray test
+- feat(chat): Rewrite the answer in the reader — Full / Condense / ELI5
+- test(chat): unstick the turn-split assertion from the marker chain's tail
+- feat(voice): live call transcript with a spoken-word highlight and in-call replies
+- docs(design): Writer Workspace and AnswerFlow are a different product
+- feat(research): render a podcast script as a screenplay, not a flat list
+- test(ios): repoint the task-revert pins and close a hole in one of them
+- feat(ios): familiars-first chat home with session selection in the config card (#4287)
+- docs: design marketplace brand logos
+- docs(contributing): tell contributors not to merge main into their branch (#4293)
+- Add /auto mission mode with status and feedback
+- fix(ios): revert only the card that failed, not the whole task list
+- test(windows): stop the native-browser fixture flaking on a 15s budget (#4292)
+- fix(research): hex palette for video renderer — sharp/librsvg renders oklch() as black (#4291)
+- test(e2e): stop the reader spec racing its own cold-start budget (#4286)
+- fix(research): normalize ~N and word+word for speech; trim per-segment TTS dead air
+- feat(research): render infographic generations as SVG/PNG stat posters (#4279)
+- fix(ios): show a tool call's argument instead of a bare "{" (#4281)
+- fix(chat): make the source card's Open a real action, and the ledger gate honest (#4285)
+- Update interactions.jsonl
+- feat(ios): remove familiar reordering from the Chats screen (#4280)
+- fix(windows): keep the notch and quick chat visible across spaces and over fullscreen apps (#4270)
+- Update interactions.jsonl
+- fix(ios): reconcile partial thread deletes
+- feat(chat): give a worktree citation its own source card (SourceCard.dc.html)
+- fix(notch): keep pill visible across spaces and over fullscreen apps; include quick chat
+- docs(design): ledger every Claude Design frame against what landed
+- Initial plan
+- fix(ios): count chats actually removed in the bulk-delete toast
+- fix(analytics): align scoped workbench evidence
+- feat(analytics): rebuild familiar analytics as a dock + stage workbench (#4277)
+- Update interactions.jsonl
+- feat(ios): persist thread archive, pin and delete to the server
+- fix(analytics): announce the hero trust ring, and stop calling the pulse a dialog
+- fix(analytics): fold the dock in a band, and fill the confidence panel
+- feat(chat): echo the prompt that produced the answer, with edit & rerun (#4276)
+- fix(analytics): keep one focus trap live and retire away-facing panel faces
+- fix(notify): keep the OS banner when the notification sound is Silent (#4267)
+- fix: show role rooms in All familiar scope (#4253)
+- fix(chat): keep Claude tool bubbles through the rate-limit usage notice (#4268)
+- feat(analytics): rebuild familiar analytics as a dock + stage workbench
+- fix(lifecycle): scope the create gate to errors that can affect creation (#4275)
+- test(e2e): cover the Expand reader by rendering it (#4274)
+- feat(api): persist chat pin as server state so it reaches other clients (#4271)
+- fix(lifecycle): stop treating squash-merged PR associations as malformed (#4269)
+- fix(lifecycle): stop treating squash-merged PR associations as malformed
+- docs: fix the managed worktree command in both agent guides (#4266)
+- docs: name the real managed worktree directory, not .worktrees/<branch>
+- docs: fix the managed worktree command in both agent guides
+- fix(ios): make destructive swipes recoverable and status writes cancellable (#4263)
+- fix(chat): give the reader real citation chips, not bare links (#4265)
+- fix(chat): give the reader real citation chips, not bare links
+- fix(chat): render the cited body in the reader, not raw footnote plumbing (#4264)
+- fix(chat): render the cited body in the reader, not raw footnote plumbing
+- feat(worktrees): auto-lock worktrees holding unrecoverable work (#4260)
+- fix(settings): one search-index entry per destination (#4262)
+- fix(mobile): prevent refresh response caching
+- chore(beads): record the cave-zhmto close in the interactions log (#4259)
+- fix(mobile): require HTTPS native pairing
+- fix(ios): stop refetching every session each time a threads view appears (#4261)
+- chore(beads): record the cave-zhmto close in the interactions log
+- fix(ios): batch bulk reminder actions and stop reverting the whole batch (#4258)
+- feat(chat): rebuild the Expand reader as Reader.dc.html frame 3a (#4255)
+- Update interactions.jsonl
+- fix reader review feedback
+- test(chat): pin the facade contract on the @import, not a substring
+- test(chat): name the reader as a consumer of the shared tool tints
+- test(chat): widen the reply pin for quotes, register the reader as a modal
+- test(chat): admit askAboutFor to the transcript handler-bag pin
+- fix(chat): pay the reader's weight on open, not on every visit to /
+- feat(chat): rebuild the Expand reader as Reader.dc.html frame 3a
+- test(mobile): lock Coven Memory response contract
+- feat(chat): Thread Signal card becomes a triage surface (#4256)
+- fix(sidecar): bundle missing macOS Piper dylib closure (#4252)
+- fix(ios): one-probe reconnect via last-good URL, short-circuit the sweep (#4254)
+- fix(onboarding): extract official Node archives safely (#4239)
+- feat(model-capabilities): unify runtime inventory, defaults, and controls (#4221)
+- Update interactions.jsonl
+- docs: record admin push on main as the owner's standing setting (#4248)
+- fix: unblock main — restore the sidecar budget and unpin the iOS reconnect assertion (#4251)
+- docs(sidecar): record the 5,874/5,877 measurement beside the budget
+- fix(sidecar): restore the 5,887 file-count budget reverted onto main
+- fix(test): assert the iOS reconnect ticker by contract, not by syntax
+- fix(ios): pin the reconnect re-probe by behaviour, unbreaking main
+- Update interactions.jsonl
+- docs: qualify the owner branch-protection exemption
+- fix(build): exclude temporary standalone artifacts
+- docs(sidecar): record the 5,874/5,877 measurement beside the budget
+- fix(sidecar): restore the 5,887 file-count budget reverted onto main
+- Update interactions.jsonl
+- docs: record admin push on main as the owner's standing setting
+- fix(sidecar): compare allowed roots and candidates in the same namespace (cave-24dps) (#4245)
+- fix(hooks): stop the installer disabling the hooks it does not own (#4243)
+- fix(patrol): scope inventory drift to the units it can affect (cave-63m12) (#4236)
+- chore(marketplace): delete the orphaned skill detail drawer and its dead adapter (#4237)
+- fix(beads): replace merge=union with a union-by-record-id merge driver (#4238)
+- fix(test): match the AppImage strip step by shape, not exact title
+- fix(ci): use the release step's current name, unbreaking main (#4240)
+- fix: resolve stash-pop conflict markers committed in chat-view
+- Update interactions.jsonl
+- fix(test): match the AppImage strip step by shape, not exact title
+- Move follow-ups to composer footer band
+- feat(x): land the src/app/api/x/ route handlers (#4235)
+- fix(omnigent): open session UI in system browser (#4234)
+- fix(patrol): retry transient inventory drift instead of failing closed (cave-v59dk) (#4232)
+- fix(chat): boot-compose asks which familiar instead of picking one (#4233)
+- docs(patrol): describe an attempt accurately
+- feat(chat): refine the conversation siderail (#4218)
+- fix(patrol): retry transient inventory drift instead of failing closed
+- feat(beads): guard against duplicate record ids in .beads/*.jsonl (#4231)
+- fix(reviewer): announce bucket filters outside state updates (#4226)
+- fix(beads): remove 20 duplicate interaction records (cave-1poit) (#4229)
+- fix(familiars): stop three surfaces picking a familiar the user never chose (#4228)
+- fix(chat): stretch partial follow-up rows
+- docs(worktrees): align workflow retirement cooldown (#4223)
+- chore(beads): backfill 16 uncommitted interaction records (#4227)
+- Compact chat suggested next steps (#4188)
+- docs(chat): align follow-up cap comment
+- chore(beads): land the cave-vmmlf status interaction record (#4225)
+- fix(composer): render the promote row from the composer's model chip (#4224)
+- Update interactions.jsonl
+- docs(worktrees): align workflow retirement cooldown
+- fix(ios): recover new chat setup
+- docs: refresh branch protection notes (#4213)
+- fix(ios): sustain chat connectivity
+- fix(projects): keep local registrations visible before familiar setup (#4219)
+- fix(windows): recover transient sidecar cache activation
+- fix(release): accept v0.2.2 Windows runtime (#4217)
+- fix(git): retain squash PR heads without global scans (#4216)
+- fix(worktrees): use an eight-hour retirement cooldown (#4215)
+- feat(composer): promote a session model to the familiar default (cave-pkapw) (#4209)
+- fix(git): allow maintainer-authorized branch cleanup (#4214)
+- fix(release): overlay hidden-X recovery tooling (#4212)
+- fix(github): safe merge asks which familiar instead of taking the first (cave-26sg4) (#4208)
+- fix(release): allow explicit hidden-X recovery (#4211)
+- fix(projects): support throwing-only picker creators
+- fix(projects): keep local-only error guidance readable
+- fix(projects): surface local-only picker failures
+- fix(projects): preserve local-only creation errors
+- fix(projects): surface local-only creation failures
+- update code reading design
+- Update bead interaction history
+- feat(chat): compact suggested next steps
+- Update interactions.jsonl
+- fix(projects): strip legacyRoot at the write boundary, and probe the store's own key
+- fix(projects): serve one project-root form, and follow it in client stores
+- test(worktrees): bind retirement fixture origin identity
+- docs(ci): ground sidecar budget rationale in measurements
+- fix(ci): restore sidecar runtime headroom
+- test(e2e): mock daemon connection for canonical memory
+- test(e2e): point the chat landing spec at the Start-from bands
+- fix(ci): drop two suite entries for X route tests that never landed
+- test(x): restore the OAuth validator and launcher-sanitisation coverage
+- fix(x): restore the X OAuth function bodies their imports already reference
+- fix(worktrees): repair lifecycle patrol merge regressions
+- docs: specify board-canonical orchestration
+- Block lifecycle fixture roots from standalone
+- Potential fix for pull request finding
+- Potential fix for pull request finding
+- fix: verify appimagetool before release signing
+- fix(reply-recommendation): force read-only recommendation runs
+
+
 ## [0.2.2] - 2026-08-01
 
 ### Added
