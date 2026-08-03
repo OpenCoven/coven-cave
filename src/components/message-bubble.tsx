@@ -756,9 +756,13 @@ type MarkdownContentProps = {
   pending?: boolean;
   onOpenUrl?: (url: string) => void;
   citations?: readonly Citation[];
+  /** Extra classes on the markdown container — the Expand reader uses this to
+   *  set its own reading scale (.cave-md--reader). Omitted in the transcript,
+   *  which reads at the stream's density. */
+  className?: string;
 };
 
-function MarkdownContent({ text, pending, onOpenUrl, citations = [] }: MarkdownContentProps) {
+function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }: MarkdownContentProps) {
   const [html, setHtml] = useState<string | null>(
     () => pending ? null : renderCacheGet(text) ?? null,
   );
@@ -860,7 +864,7 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [] }: MarkdownC
 
   if (!html) {
     return (
-      <span className="whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed">
+      <span className={`whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed${className ? ` ${className}` : ""}`}>
         {text}
         {pending && text ? (
           <span aria-hidden className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
@@ -873,7 +877,7 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [] }: MarkdownC
     <>
       <div
         ref={containerRef}
-        className="cave-md"
+        className={`cave-md${className ? ` ${className}` : ""}`}
         // Markdown output is sanitized in mdToHtml before DOM insertion.
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: html }}
@@ -1253,6 +1257,7 @@ function ExpandBubble({
   onAskAbout?: (quote: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const readerCited = useMemo(() => renderCitedBody(text), [text]);
   return (
     <>
       <button
@@ -1273,18 +1278,24 @@ function ExpandBubble({
           onAsk={onAskAbout}
           onClose={() => setOpen(false)}
         >
-          {/* The reader's own reading scale (.cave-md--reader in
-              cave-md/prose.css) — the transcript's dense 14px is right in the
-              stream, wrong for a full-screen reading surface.
+          {/* MarkdownContent, not MarkdownBlock: it is the renderer that wires
+              InlineCitationPreviews, so a cited answer gets the same interactive
+              source chips the transcript shows instead of bare links. It also
+              carries the file-link and code-reading wiring — the portal keeps
+              those contexts, so they behave as they do in the stream.
 
-              Renders the CITED body, exactly as the bubble does: raw `text`
-              still carries the footnote definitions, so a reader opened on a
-              cited answer would otherwise show `[^label]` markers inline and
-              dump the definition block into the prose. `text` stays raw on the
-              reader itself — Copy/Export hand back portable markdown, and the
-              Sources tab needs those definitions to parse. */}
-          <MarkdownBlock
-            text={renderCitedBody(text).body}
+              Renders the CITED body: raw `text` still carries the footnote
+              definitions, so the reader would otherwise show `[^label]` markers
+              inline and dump the definition block into the prose. `text` stays
+              raw on the reader itself — Copy/Export hand back portable
+              markdown, and the Sources tab needs those definitions to parse.
+
+              The reader's own reading scale (.cave-md--reader in
+              cave-md/prose.css): the transcript's dense 14px is right in the
+              stream, wrong for a full-screen reading surface. */}
+          <MarkdownContent
+            text={readerCited.body}
+            citations={readerCited.citations}
             className="cave-md--expanded cave-md--reader"
           />
         </MessageReader>
