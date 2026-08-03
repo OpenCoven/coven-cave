@@ -1445,6 +1445,7 @@ export const SUITES = {
     "scripts/ios-ats-protections.test.mjs",
     "scripts/ios-self-healing-sync.test.mjs",
     "scripts/ios-connection-stability.test.mjs",
+    "scripts/ios-bulk-reminders.test.mjs",
     "scripts/ios-reconnect-pill.test.mjs",
     "scripts/ios-port-discovery.test.mjs",
     "scripts/ios-legacy-token-migration.test.mjs",
