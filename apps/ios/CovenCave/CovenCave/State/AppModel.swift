@@ -1565,6 +1565,33 @@ final class AppModel {
             sessionsError = handleSurfaceError(error)
         }
         sessionsLoaded = true
+        lastSessionsLoadedAt = Date()
+    }
+
+    /// When the session list was last fetched. Not observable — it gates a
+    /// refetch, it does not drive any view.
+    private var lastSessionsLoadedAt: Date?
+
+    /// How long a freshly-loaded session list is considered good enough to
+    /// reuse when a view re-appears (cave-ioswipe.5).
+    static let sessionsStaleAfter: TimeInterval = 30
+
+    /// Load sessions unless they were fetched moments ago.
+    ///
+    /// A view that re-appears often (opening a familiar's threads, backing out,
+    /// opening another) was refetching the WHOLE session list every time, while
+    /// the equivalent call in ChatsHomeView has always been guarded. A bare
+    /// `if !sessionsLoaded` guard would fix the churn but leave the list stale
+    /// until a reconnect or a manual pull, so this expires instead: frequent
+    /// re-appearances reuse, a genuinely old list refetches.
+    ///
+    /// Pull-to-refresh deliberately does NOT come through here — an explicit
+    /// user refresh must always hit the server.
+    func loadSessionsIfStale(maxAge: TimeInterval = AppModel.sessionsStaleAfter) async {
+        if sessionsLoaded, let at = lastSessionsLoadedAt, Date().timeIntervalSince(at) < maxAge {
+            return
+        }
+        await loadSessions()
     }
 
     /// Direct (1:1) on-device threads for a familiar, newest-updated first.
