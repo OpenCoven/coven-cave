@@ -93,10 +93,24 @@ function RepoCitationCard({ citation }: { citation: Citation }) {
         <span className="min-w-0 truncate font-[family-name:var(--font-mono)] text-[length:var(--text-2xs)] text-[var(--text-muted)]">
           {citation.title}
         </span>
-        <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-[length:var(--text-2xs)] font-medium text-[var(--text-secondary)]">
+        {/* A real action, not a label that looks like one: this is the same
+            `cave:open-project-file` bridge the inline file links dispatch, so
+            the Code rail opens the cited file at the cited line. */}
+        <button
+          type="button"
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent("cave:open-project-file", {
+                detail: { path: file.path, line: file.lineStart },
+              }),
+            )
+          }
+          title={`Open ${file.path}${file.lineStart ? `:${file.lineStart}` : ""} in the Code workspace`}
+          className="focus-ring ml-auto inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-2xs)] font-medium text-[var(--accent-presence)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)]"
+        >
           Open in Code
           <Icon name="ph:arrow-square-out" width={10} height={10} aria-hidden />
-        </span>
+        </button>
       </footer>
     </article>
   );

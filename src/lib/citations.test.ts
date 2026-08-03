@@ -7,7 +7,7 @@ import {
   domainFromUrl,
   lineRangeLabel,
   parseCitations,
-  parseFileRef,
+  parseCitationFileRef,
   renderCitedBody,
   renderCitationReferences,
   sourceToCitation,
@@ -259,49 +259,49 @@ test("parseCitations is a no-op without footnotes and ignores unreferenced defs"
 // `[^1]: src/lib/foo.ts#L12-L18 "why"` is the form it already writes, so the
 // parser recognises it rather than degrading it to an unlinked "reference".
 
-{
-  const parsed = parseCitations(
-    'Read it.[^1]\n\n[^1]: src/lib/citations.ts#L12-L18 "The parser" — the footnote reader\n',
-  );
-  assert.equal(parsed.citations.length, 1);
-  const [citation] = parsed.citations;
-  assert.deepEqual(citation.file, { path: "src/lib/citations.ts", lineStart: 12, lineEnd: 18 });
-  assert.equal(citation.title, "The parser");
-  assert.equal(citation.snippet, "the footnote reader");
-  assert.equal(citation.url, undefined, "a worktree path is not a URL to open");
-  assert.equal(citation.domain, undefined, "a worktree path has no domain");
+test("parseCitations reads a worktree file reference into a repo citation", () => {
+  {
+    const parsed = parseCitations(
+      'Read it.[^1]\n\n[^1]: src/lib/citations.ts#L12-L18 "The parser" — the footnote reader\n',
+    );
+    assert.equal(parsed.citations.length, 1);
+    const [citation] = parsed.citations;
+    assert.deepEqual(citation.file, { path: "src/lib/citations.ts", lineStart: 12, lineEnd: 18 });
+    assert.equal(citation.title, "The parser");
+    assert.equal(citation.snippet, "the footnote reader");
+    assert.equal(citation.url, undefined, "a worktree path is not a URL to open");
+    assert.equal(citation.domain, undefined, "a worktree path has no domain");
 
-  const presentation = citationSourcePresentation(citation);
-  assert.equal(presentation.kind, "repo");
-  assert.equal(presentation.provider, "This worktree");
-  assert.equal(presentation.context, "src/lib/citations.ts · L12–18");
-}
+    const presentation = citationSourcePresentation(citation);
+    assert.equal(presentation.kind, "repo");
+    assert.equal(presentation.provider, "This worktree");
+    assert.equal(presentation.context, "src/lib/citations.ts · L12–18");
+  }
 
-// The editor form and a single line both work; a bare path keeps no range.
-assert.deepEqual(parseFileRef("apps/ios/CovenCave/App.swift:42-99"), {
-  path: "apps/ios/CovenCave/App.swift",
-  lineStart: 42,
-  lineEnd: 99,
-  title: undefined,
-  snippet: undefined,
+  // The editor form and a single line both work; a bare path keeps no range.
+  assert.deepEqual(parseCitationFileRef("apps/ios/CovenCave/App.swift:42-99"), {
+    path: "apps/ios/CovenCave/App.swift",
+    lineStart: 42,
+    lineEnd: 99,
+    title: undefined,
+    snippet: undefined,
+  });
+  assert.equal(parseCitationFileRef("src/lib/x.ts#L7")?.lineStart, 7);
+  assert.equal(parseCitationFileRef("src/lib/x.ts#L7")?.lineEnd, undefined);
+  assert.equal(parseCitationFileRef("src/styles/globals.css")?.path, "src/styles/globals.css");
+  assert.equal(lineRangeLabel({ path: "a/b.ts", lineStart: 5, lineEnd: 5 }), "L5", "a degenerate range reads as one line");
+  assert.equal(lineRangeLabel({ path: "a/b.ts" }), undefined);
+
+  // Prose must not be mistaken for a path — that would turn an ordinary note
+  // into a file card pointing at nothing.
+  assert.equal(parseCitationFileRef("Notes from the meeting on 4.5 things"), null);
+  assert.equal(parseCitationFileRef("https://example.com/a/b.html"), null, "a URL stays a URL");
+  assert.equal(parseCitationFileRef("justafile.ts"), null, "a bare filename with no directory is prose");
+
+  // A URL definition still parses as a web source, unchanged.
+  {
+    const parsed = parseCitations('Cited.[^1]\n\n[^1]: <https://example.com/a> — a note\n');
+    assert.equal(parsed.citations[0].file, undefined);
+    assert.equal(parsed.citations[0].domain, "example.com");
+  }
 });
-assert.equal(parseFileRef("src/lib/x.ts#L7")?.lineStart, 7);
-assert.equal(parseFileRef("src/lib/x.ts#L7")?.lineEnd, undefined);
-assert.equal(parseFileRef("src/styles/globals.css")?.path, "src/styles/globals.css");
-assert.equal(lineRangeLabel({ path: "a/b.ts", lineStart: 5, lineEnd: 5 }), "L5", "a degenerate range reads as one line");
-assert.equal(lineRangeLabel({ path: "a/b.ts" }), undefined);
-
-// Prose must not be mistaken for a path — that would turn an ordinary note
-// into a file card pointing at nothing.
-assert.equal(parseFileRef("Notes from the meeting on 4.5 things"), null);
-assert.equal(parseFileRef("https://example.com/a/b.html"), null, "a URL stays a URL");
-assert.equal(parseFileRef("justafile.ts"), null, "a bare filename with no directory is prose");
-
-// A URL definition still parses as a web source, unchanged.
-{
-  const parsed = parseCitations('Cited.[^1]\n\n[^1]: <https://example.com/a> — a note\n');
-  assert.equal(parsed.citations[0].file, undefined);
-  assert.equal(parsed.citations[0].domain, "example.com");
-}
-
-console.log("citations.test.ts: worktree citations ok");
