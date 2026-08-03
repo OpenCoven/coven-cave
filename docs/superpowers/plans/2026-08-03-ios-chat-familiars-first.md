@@ -19,7 +19,7 @@
 
 | File | Responsibility | Change |
 |---|---|---|
-| `apps/ios/CovenCave/CovenCave/State/AppModel.swift` | thread/familiar data | add `mostRecentDirectThread(for:)` |
+| `apps/ios/CovenCave/CovenCave/State/AppModel.swift` | thread/familiar data | add `landingDirectThread(for:)` |
 | `apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift` | Chats home + split | rail → vertical rows; delete recents; `case .familiar` → chat |
 | `apps/ios/CovenCave/CovenCave/Views/ChatView.swift` | conversation + config card | add `Session` row + picker sheet |
 | `scripts/ios-chat-familiars-home.test.mjs` | new contract | create |
@@ -53,17 +53,17 @@ const model = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
 // which already sorts pinned-first then newest-updated.
 assert.match(
   model,
-  /func mostRecentDirectThread\(for familiarId: String\) -> ChatThread\?/,
+  /func landingDirectThread\(for familiarId: String\) -> ChatThread\?/,
   "AppModel exposes the familiar's most recent direct thread",
 );
 assert.match(
   model,
-  /func mostRecentDirectThread[\s\S]{0,240}?directThreads\(for: familiarId\)/,
+  /func landingDirectThread[\s\S]{0,240}?directThreads\(for: familiarId\)/,
   "it reuses directThreads(for:) rather than re-sorting",
 );
 assert.match(
   model,
-  /func mostRecentDirectThread[\s\S]{0,240}?\.first \{ !\$0\.archived \}/,
+  /func landingDirectThread[\s\S]{0,240}?\.first \{ !\$0\.archived \}/,
   "an archived thread is never the landing target",
 );
 
@@ -101,7 +101,7 @@ In `AppModel.swift`, directly below `directThreads(for:)`:
     /// The thread a familiar's chat opens on: its newest unarchived direct
     /// thread (pinned first, per `directThreads`). Nil when the familiar has
     /// no eligible thread — callers start a new chat instead.
-    func mostRecentDirectThread(for familiarId: String) -> ChatThread? {
+    func landingDirectThread(for familiarId: String) -> ChatThread? {
         directThreads(for: familiarId).first { !$0.archived }
     }
 ```
@@ -176,7 +176,7 @@ assert.match(
 );
 assert.match(
   home,
-  /struct FamiliarConversationRow[\s\S]*?app\.mostRecentDirectThread\(for: familiar\.id\)/,
+  /struct FamiliarConversationRow[\s\S]*?app\.landingDirectThread\(for: familiar\.id\)/,
   "the row derives its preview from the familiar's current thread",
 );
 assert.match(
@@ -236,7 +236,7 @@ struct FamiliarConversationRow: View {
     @Environment(\.chrome) private var chrome
     let familiar: Familiar
 
-    private var thread: ChatThread? { app.mostRecentDirectThread(for: familiar.id) }
+    private var thread: ChatThread? { app.landingDirectThread(for: familiar.id) }
 
     private var preview: String {
         guard let text = thread?.messages.last?.text, !text.isEmpty else {
@@ -339,7 +339,7 @@ assert.match(
 );
 assert.match(
   home,
-  /private func familiarChat[\s\S]*?app\.mostRecentDirectThread\(for: familiar\.id\)/,
+  /private func familiarChat[\s\S]*?app\.landingDirectThread\(for: familiar\.id\)/,
   "the chat resolves through the familiar's current thread",
 );
 assert.match(
@@ -377,7 +377,7 @@ Add beside `chatDestination(_:)`:
     /// one. Session switching happens in ChatView's config card, not here.
     @ViewBuilder
     private func familiarChat(_ familiar: Familiar) -> some View {
-        if let thread = app.mostRecentDirectThread(for: familiar.id) {
+        if let thread = app.landingDirectThread(for: familiar.id) {
             ChatView(thread: thread)
         } else {
             ContentUnavailableView {
@@ -664,7 +664,7 @@ Session row in the config popover → Task 4. `FamiliarThreadsView` as picker �
 Task 4 Step 5. Coupled tests → Task 5. Rail removal → Task 2 Step 4. Empty
 familiar → Task 3 Step 3.
 
-**Type consistency:** `mostRecentDirectThread(for:)` is defined in Task 1 and
+**Type consistency:** `landingDirectThread(for:)` is defined in Task 1 and
 used in Tasks 2 and 3 under that exact name. `FamiliarConversationRow` is
 defined in Task 2 and asserted in Task 2. `familiarChat(_:)` is defined in
 Task 3 and asserted in Tasks 3 and 5. `showSessionPicker` is declared in

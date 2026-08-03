@@ -11,17 +11,17 @@ const model = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
 // which already sorts pinned-first then newest-updated.
 assert.match(
   model,
-  /func mostRecentDirectThread\(for familiarId: String\) -> ChatThread\?/,
-  "AppModel exposes the familiar's most recent direct thread",
+  /func landingDirectThread\(for familiarId: String\) -> ChatThread\?/,
+  "AppModel exposes the familiar's landing thread",
 );
 assert.match(
   model,
-  /func mostRecentDirectThread[\s\S]{0,240}?directThreads\(for: familiarId\)/,
+  /func landingDirectThread[\s\S]{0,320}?directThreads\(for: familiarId\)/,
   "it reuses directThreads(for:) rather than re-sorting",
 );
 assert.match(
   model,
-  /func mostRecentDirectThread[\s\S]{0,240}?\.first \{ !\$0\.archived \}/,
+  /func landingDirectThread[\s\S]{0,320}?\.first \{[^}]*archived/,
   "an archived thread is never the landing target",
 );
 

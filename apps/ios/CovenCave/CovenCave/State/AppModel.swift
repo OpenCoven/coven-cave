@@ -1644,10 +1644,13 @@ final class AppModel {
             }
     }
 
-    /// The thread a familiar's chat opens on: its newest unarchived direct
-    /// thread (pinned first, per `directThreads`). Nil when the familiar has
-    /// no eligible thread — callers start a new chat instead.
-    func mostRecentDirectThread(for familiarId: String) -> ChatThread? {
+    /// The thread a familiar's chat lands on: its pinned thread if it has one,
+    /// otherwise its newest-updated unarchived direct thread — `directThreads`
+    /// sorts pinned-first, then by recency, and this takes the first eligible
+    /// entry. Callers that render a timestamp are showing the landing thread's
+    /// activity, which is deliberately NOT always the familiar's latest.
+    /// Nil when the familiar has no eligible thread — callers start a new chat.
+    func landingDirectThread(for familiarId: String) -> ChatThread? {
         directThreads(for: familiarId).first { !$0.archived }
     }
 
