@@ -702,7 +702,25 @@ function parsePullRequestNode(value: unknown, expectedOid: string | null): PullR
     value.headRefName.length === 0 ||
     typeof value.headRefOid !== "string" ||
     !OID.test(value.headRefOid) ||
-    (expectedOid !== null && value.headRefOid !== expectedOid) ||
+    // Only an OPEN pull request still has its head where we are looking.
+    //
+    // The commit-association caller passes the oid it queried, and every oid it
+    // queries is a TIP (a worktree HEAD or a branch tip), so for an open PR
+    // "this commit is the PR's head" is a real invariant worth enforcing.
+    //
+    // For a MERGED PR it is never true under squash merges: GitHub associates
+    // the squash commit on the base branch with the PR, but that PR's
+    // headRefOid is the PRE-SQUASH branch tip, a commit that no longer heads
+    // anything. Enforcing equality there rejected every squash-merged commit as
+    // "malformed", and because the create gate aggregates inventory errors
+    // repo-wide, one such commit blocked `beads:worktrees:create` for every
+    // bead — worsening with each PR that landed. Confirmed against live GitHub
+    // on three merges (#4256, #4264, #4252): head oid was the branch tip in
+    // every case, never the squash commit (cave-c4f97).
+    //
+    // CLOSED-unmerged is excluded for the same reason: the head it names may
+    // have been rewritten or deleted, so the oid carries no promise either.
+    (expectedOid !== null && value.state === "OPEN" && value.headRefOid !== expectedOid) ||
     (value.headRepository !== null && headRepository === null) ||
     (value.state === "OPEN" && headRepository === null) ||
     typeof value.baseRefName !== "string" ||
