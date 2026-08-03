@@ -67,7 +67,6 @@ type Props = {
   onSaved?: () => void;
   /** Jumps to the Skills tab (the success panel's "View in Skills"). */
   onViewSkills?: () => void;
-  /** Familiars roster — powers the model-backed Enhance (offline fallback otherwise). */
   /** The familiar the user is actually working as. Enhance runs an LLM call
    *  through it, so it must not be guessed — null falls back to the hosted
    *  path rather than borrowing whichever familiar sorts first. */
