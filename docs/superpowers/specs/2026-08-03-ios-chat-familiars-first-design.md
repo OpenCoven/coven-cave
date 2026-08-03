@@ -5,10 +5,12 @@
 
 ## Problem
 
-The Chats home shows three competing things at once: a horizontal familiar
-rail, a flat list of recent threads across every familiar, and the familiar
-list itself. A thread is reachable two ways, the same familiar appears twice
-on one screen, and nothing on the page says which conversation you are in.
+The Chats home is a horizontal familiar rail sitting above a flat vertical
+list of every recent thread across every familiar. Familiars exist only as a
+56pt avatar strip; the screen's real estate belongs to threads, sorted by
+recency and detached from whoever they belong to. Two different things
+compete for the same page, and the familiar — the thing you actually pick
+first — is the smaller of them.
 
 iMessage answers this with one list of conversations and one focused thread.
 This adopts that shape.
@@ -89,7 +91,7 @@ conversation you are in.
 
 | file | change |
 |---|---|
-| `Views/ChatsHomeView.swift` | drop the rail and the recents section; familiar row gains preview + timestamp; tap opens the chat |
+| `Views/ChatsHomeView.swift` | convert `familiarRail`'s items into vertical `FamiliarConversationRow`s (preview + timestamp + unread); delete the recents section; `case .familiar` in the detail column shows the chat |
 | `Views/ChatModelControl.swift` | add the `Session` row |
 | `Views/FamiliarThreadsView.swift` | reachable from the `Session` row; returns a selection |
 | `State/AppModel.swift` | resolve "most recent unarchived session for familiar" |
@@ -115,11 +117,13 @@ they are the gate.
     shows the **chat**, not the thread list — the same shape iMessage uses on
     iPad, and consistent with the iPhone tap.
 
-  Its `open(.familiar(familiar))` assertion **survives**: the comment above it
-  says "familiar rail items should drive the selection", but the only call
-  site is inside `ForEach(filteredFamiliars)` (line 438) — the familiars list,
-  which we keep. The comment is stale; correct it while touching the file so
-  the next reader is not misled into thinking the rail is load-bearing.
+  Its `open(.familiar(familiar))` assertion **survives, but only by
+  construction**: that call site is inside `familiarRail` (line 438), the very
+  thing being removed. The new vertical familiar rows must call `open(.familiar(…))`
+  too, which they do — it is how a row drives the sidebar selection. The
+  test's comment ("familiar rail items should drive the selection") is
+  accurate today and becomes stale after this change; update it to say
+  familiar rows.
 
 **Verified not coupled** (they reference `ChatsHomeView` for the familiars
 list, theme or presence, none of which change): `ios-archive-threads`,
