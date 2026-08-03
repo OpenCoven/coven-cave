@@ -38,7 +38,7 @@ const asJson = args.has("--json");
 const emitPrune = args.has("--prune");
 
 function git(cwd, gitArgs) {
-  const res = spawnSync("git", ["-C", cwd, "--no-optional-locks", ...gitArgs], {
+  const res = spawnSync("git", ["-C", cwd, ...gitArgs], {
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
   });
