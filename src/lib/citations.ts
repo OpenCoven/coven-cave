@@ -256,6 +256,10 @@ export function sourcesToCitations(sources: readonly SourceLike[]): Citation[] {
 const DEF_RE = /^\[\^([^\]]+)\]:[ \t]+(.+?)[ \t]*$/gm;
 // An inline reference: `[^label]` NOT immediately followed by `:` (that's a def).
 const REF_RE = /\[\^([^\]]+)\](?!:)/g;
+// After definition lines are removed, a remaining `[^label]` is a reference
+// even when a colon follows it in prose ("the levers[^1]: are…") — REF_RE's
+// lookahead would skip exactly that shape and leak it as literal text.
+const REF_AFTER_DEFS_RE = /\[\^([^\]]+)\]/g;
 const MD_LINK_RE = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)(?:[ \t]+—[ \t]+(.+))?$/;
 const ANGLE_URL_RE = /^<(https?:\/\/[^\s>]+)>(?:[ \t]+—[ \t]+(.+))?$/;
 const BARE_URL_RE = /^(https?:\/\/\S+)(?:[ \t]+"([^"]+)")?(?:[ \t]+—[ \t]+(.+))?$/;
@@ -341,21 +345,55 @@ export type ParsedCitations = {
   order: Map<string, number>;
 };
 
+/** A numeric footnote label (`[^1]`). Only these are safe to strip when
+ * orphaned — an alphabetic `[^a-z]` in prose is more likely a regex class. */
+const NUMERIC_LABEL_RE = /^\d{1,4}$/;
+
+/**
+ * Apply `fn` to the stretches of `text` outside fenced code blocks and inline
+ * code spans, leaving code verbatim. Line-based fences (```), backtick-run
+ * aware inline spans.
+ */
+function replaceOutsideCode(text: string, fn: (segment: string) => string): string {
+  const lines = text.split("\n");
+  let inFence = false;
+  const out = lines.map((line) => {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      return line;
+    }
+    if (inFence) return line;
+    // Split into inline-code spans (kept) and prose (transformed).
+    return line
+      .split(/(`+[^`]*`+)/g)
+      .map((part) => (part.startsWith("`") ? part : fn(part)))
+      .join("");
+  });
+  return out.join("\n");
+}
+
 export function renderCitationReferences(
   text: string,
   parsed: Pick<ParsedCitations, "citations" | "order">,
 ): string {
-  if (parsed.citations.length === 0) return text;
   const byNumber = new Map(parsed.citations.map((citation) => [citation.n, citation]));
   const withoutDefinitions = text.replace(DEF_RE, "");
   const body = withoutDefinitions === text
     ? text
     : withoutDefinitions.replace(/\n{3,}/g, "\n\n").trimEnd();
-  return body.replace(REF_RE, (whole, label: string) => {
-    const n = parsed.order.get(label);
-    const citation = n ? byNumber.get(n) : undefined;
-    return citation ? `[${citationInlineLabel(citation)}](#cite-${n})` : whole;
-  });
+  if (!body.includes("[^")) return body;
+  return replaceOutsideCode(body, (segment) =>
+    segment.replace(REF_AFTER_DEFS_RE, (whole, label: string) => {
+      const n = parsed.order.get(label);
+      const citation = n ? byNumber.get(n) : undefined;
+      if (citation) return `[${citationInlineLabel(citation)}](#cite-${n})`;
+      // Orphan ref — the model cited a footnote it never defined. Leaking the
+      // literal `[^1]` into prose reads as a typo, so numeric orphans are
+      // dropped. Non-numeric labels stay: they may be regex classes or other
+      // legitimate bracket text.
+      return NUMERIC_LABEL_RE.test(label) ? "" : whole;
+    }),
+  );
 }
 
 /**
@@ -411,7 +449,9 @@ export function parseCitations(text: string): ParsedCitations {
  */
 export function renderCitedBody(text: string): { body: string; citations: Citation[] } {
   const parsed = parseCitations(text);
-  if (parsed.citations.length === 0) return { body: text, citations: [] };
+  // Run the reference pass even with zero citations: it strips orphan numeric
+  // refs (`[^1]` with no matching definition) that would otherwise leak into
+  // the rendered prose as literal text.
   return {
     body: renderCitationReferences(parsed.body, parsed),
     citations: parsed.citations,
