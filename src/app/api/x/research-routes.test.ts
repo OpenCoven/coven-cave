@@ -83,10 +83,27 @@ assert.match(sources, /action must be save, attach or refresh/, "unknown actions
 assert.match(sources, /saveCachedXPostAsSource\(/);
 assert.match(sources, /created: result\.created/);
 
-// attach re-reads the mission from the store instead of echoing the request —
-// the caller rejects a mission whose id/familiarId do not match.
+// attach must AUTHORIZE the mission against this familiar before it mutates
+// anything or returns it. Neither layer below enforces ownership:
+// setXSourceMissionAttached checks only the id's format, and
+// loadResearchMission is unscoped. Without the check, research capability on
+// one familiar would read another familiar's mission in full.
 assert.match(sources, /setXSourceMissionAttached\(familiarId, sourceId, missionId\)/);
 assert.match(sources, /loadResearchMission\(missionId\)/);
+assert.match(
+  sources,
+  /mission\.familiarId !== familiarId/,
+  "attach must reject a mission belonging to another familiar",
+);
+{
+  // Ordering is part of the fix, not a style preference: attaching first left
+  // the source mutated with a foreign mission id even when the check failed.
+  const loadAt = sources.indexOf("loadResearchMission(missionId)");
+  const ownerAt = sources.indexOf("mission.familiarId !== familiarId");
+  const mutateAt = sources.indexOf("setXSourceMissionAttached(familiarId, sourceId, missionId)");
+  assert.ok(loadAt >= 0 && ownerAt > loadAt && mutateAt > ownerAt,
+    "attach must load and authorize the mission BEFORE writing the attachment");
+}
 
 // refresh is the one source action that must hit upstream; its purpose is to
 // re-read the post and re-derive availability.

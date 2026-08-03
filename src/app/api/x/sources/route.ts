@@ -98,12 +98,24 @@ export async function POST(req: Request) {
       case "attach": {
         const sourceId = requireString(body.sourceId, "sourceId");
         const missionId = requireString(body.missionId, "missionId");
-        await setXSourceMissionAttached(familiarId, sourceId, missionId);
-        // The caller rejects any mission whose id or familiarId does not
-        // match what it asked for, so read the mission back rather than
-        // echoing the request — that way the response reflects stored state.
+        // AUTHORIZE BEFORE MUTATING OR DISCLOSING. Neither layer below does
+        // it: setXSourceMissionAttached only validates the mission id's
+        // FORMAT, and loadResearchMission looks a mission up globally with no
+        // familiar scoping. Without this check a caller holding the research
+        // capability on one familiar could pass another familiar's missionId
+        // and both receive that mission in full and record a foreign id on
+        // their own source.
+        //
+        // `not-found` rather than a forbidden code on purpose: a distinct
+        // error would let a caller probe which mission ids exist.
         const mission = await loadResearchMission(missionId);
-        if (!mission) throw new XApiError("not-found", "Research mission was not found");
+        if (!mission || mission.familiarId !== familiarId) {
+          throw new XApiError("not-found", "Research mission was not found");
+        }
+        // Only now is the attachment safe to write; doing it first left the
+        // source mutated even when the mission turned out to be missing or
+        // to belong to someone else.
+        await setXSourceMissionAttached(familiarId, sourceId, missionId);
         return NextResponse.json({ ok: true, mission });
       }
 
