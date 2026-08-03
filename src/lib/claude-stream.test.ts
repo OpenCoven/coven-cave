@@ -184,6 +184,45 @@ assert.equal(
   false,
   "known stream metadata is not a compatibility failure",
 );
+// Captured verbatim from `coven run claude --stream-json` on Claude Code
+// 2.1.220. Claude interleaves this usage notice with the message stream once
+// utilization crosses its warning threshold, so it only appears on some
+// accounts on some turns — which is exactly why it reached users.
+const rateLimitFrame = {
+  type: "rate_limit_event",
+  rate_limit_info: {
+    status: "allowed_warning",
+    resetsAt: 1785902400,
+    rateLimitType: "seven_day",
+    utilization: 0.86,
+    isUsingOverage: false,
+    surpassedThreshold: 0.75,
+  },
+  uuid: "a917cee1-5b74-4b62-bab8-3af62e56d2f5",
+  session_id: "e0c0b587-3115-4fff-b382-cfe0b64b58a9",
+};
+for (const profile of CLAUDE_COMPATIBILITY_PROFILES) {
+  assert.equal(
+    hasUnsupportedClaudeToolFrame(rateLimitFrame, profile),
+    false,
+    `${profile.id} treats the usage notice as known metadata rather than disabling tool activity`,
+  );
+}
+assert.deepEqual(
+  parseClaudeMessageEnvelope(rateLimitFrame, v2),
+  [],
+  "the usage notice carries no message content, so it decodes to no chat or tool events",
+);
+assert.deepEqual(
+  parseClaudeTextOnlyEnvelope(rateLimitFrame),
+  [],
+  "the usage notice never reaches the transcript as assistant text",
+);
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "rate_limit_event", message: { content: [{ type: "future_tool", id: "x" }] } }, v2),
+  true,
+  "a usage notice that grows message content is an unknown frame again, not a silent drop",
+);
 assert.equal(
   hasUnsupportedClaudeToolFrame({ type: "output", text: "untrusted tool payload" }, v2),
   true,
