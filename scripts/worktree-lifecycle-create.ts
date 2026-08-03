@@ -795,13 +795,59 @@ function existingOwnedPaths(
   ];
 }
 
-function refusalOutcome(reasons: string[]): Outcome {
+const EXCEPTION_SUGGESTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/**
+ * The `--exception-*` rerun that this refusal would admit.
+ *
+ * A gate that does not name its own escape hatch gets routed around: the only
+ * workaround the prose docs used to offer was a bare `git worktree add`, which
+ * produces a unit with no lifecycle metadata that automated retirement can never
+ * remove. That is how a budget meant to cap sprawl came to feed it. Printing the
+ * admissible command makes the sanctioned path the easy one.
+ *
+ * Only pass this for refusals an exception genuinely lifts — see
+ * {@link assessManagedWorktreeCreation}, whose every reason qualifies.
+ */
+function exceptionSuggestion(options: ManagedCreateOptions, worktreePath: string): string[] {
+  const expiresAt = new Date(Date.now() + EXCEPTION_SUGGESTION_WINDOW_MS).toISOString();
+  return [
+    "",
+    "The worktree budget counts every registered worktree in this checkout, not",
+    "just yours, so a concurrent session can block you and retiring your own units",
+    "may not lift it.",
+    "",
+    "Do not fall back to a bare `git worktree add`: a worktree created that way",
+    "carries no lifecycle metadata, so the patrol reports it `uncertain`",
+    "permanently and `pnpm beads:worktrees:apply` can never retire it.",
+    "",
+    "If this worktree is worth exceeding the budget, rerun with an attributed,",
+    "expiring exception. The same gate admits it and the unit stays retirable:",
+    "",
+    "  pnpm beads:worktrees:create \\",
+    `    --bead ${shellQuote(options.beadId)} \\`,
+    `    --branch ${shellQuote(options.branch)} \\`,
+    `    --owner ${shellQuote(options.owner)} \\`,
+    `    --purpose ${shellQuote(options.purpose)} \\`,
+    `    --exception-owner ${shellQuote(options.owner)} \\`,
+    "    --exception-reason 'why this is worth exceeding the budget' \\",
+    `    --exception-expires-at ${expiresAt} \\`,
+    `    --exception-path ${shellQuote(worktreePath)}`,
+  ];
+}
+
+function refusalOutcome(reasons: string[], suggestion: string[] = []): Outcome {
   return {
     status: 2,
     stdout: null,
     stderr: [
       ...reasons.map((reason) => `worktree-lifecycle-create: ${reason}`),
       "Suggestion: pnpm beads:worktrees:apply",
+      ...suggestion,
     ],
     createdReport: null,
   };
@@ -1478,7 +1524,10 @@ function execute(
     initialNowMs,
   );
   if (!localPreflight.assessment.allowed) {
-    return refusalOutcome(localPreflight.assessment.reasons);
+    return refusalOutcome(
+      localPreflight.assessment.reasons,
+      exceptionSuggestion(options, worktreePath),
+    );
   }
   const initialRecords = [
     ...(initialCoven.primary ? [initialCoven.primary] : []),
@@ -1494,9 +1543,12 @@ function execute(
     throw new CliError("intended worktree duplicates existing metadata");
   }
   if (initialCoven.primary !== null && initialException === null) {
-    return refusalOutcome([
-      `Bead ${options.beadId} already has structured worktree metadata; a current worktree exception is required to append another record`,
-    ]);
+    return refusalOutcome(
+      [
+        `Bead ${options.beadId} already has structured worktree metadata; a current worktree exception is required to append another record`,
+      ],
+      exceptionSuggestion(options, worktreePath),
+    );
   }
   if (
     initialCoven.primary !== null &&
@@ -1539,7 +1591,9 @@ function execute(
     budgets: inventory.budgets,
     exception: exceptionForAssessment(admissionException),
   });
-  if (!assessment.allowed) return refusalOutcome(assessment.reasons);
+  if (!assessment.allowed) {
+    return refusalOutcome(assessment.reasons, exceptionSuggestion(options, worktreePath));
+  }
 
   assertRefAndPathAbsent(root, fullRef, worktreePath);
   heartbeatBoth(leases, "before git worktree add");
@@ -1700,6 +1754,7 @@ function execute(
           (reason) => `worktree-lifecycle-create: ${reason}`,
         ),
         "Suggestion: pnpm beads:worktrees:apply",
+        ...exceptionSuggestion(options, worktreePath),
       ],
     );
   }

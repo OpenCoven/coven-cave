@@ -130,6 +130,16 @@ export type WorktreeLifecycleRenderOptions = {
   includeFooter?: boolean;
 };
 
+// These thresholds serve two surfaces with deliberately different arithmetic.
+// The patrol reports `exceeded` as `count > budget` — "the repository is over
+// its budget right now". Managed creation refuses at `count >= budget`, because
+// one more unit is what would take it over. So at exactly the budget the patrol
+// reports nothing while creation is refused; that is the intended reading of
+// "creating a worktree WOULD exceed", not an off-by-one.
+//
+// For the patrol the number is advisory, which is what "warning" names. For
+// creation it is a hard refusal, so the refusal text in
+// {@link assessManagedWorktreeCreation} deliberately does not call it a warning.
 export const WORKTREE_WARNING_BUDGET = 12;
 export const BRANCH_WARNING_BUDGET = 30;
 
@@ -607,6 +617,12 @@ export function calculateLifecycleBudgets({
   };
 }
 
+/**
+ * Every reason this returns is lifted by a valid exception — each one is guarded
+ * on `!validException` below. Callers may therefore present the `--exception-*`
+ * invocation as a real remedy for any refusal from here, which is not true of
+ * refusals assembled elsewhere.
+ */
 export function assessManagedWorktreeCreation({
   beadId,
   requestedPath,
@@ -629,11 +645,13 @@ export function assessManagedWorktreeCreation({
     reasons.push(`active Bead ${beadId} already owns a registered worktree`);
   }
   if (!validException && budgets.worktrees.count >= budgets.worktrees.warning) {
-    reasons.push(`creating a worktree would exceed the ${WORKTREE_WARNING_BUDGET}-worktree warning budget`);
+    reasons.push(
+      `creating a worktree would exceed the ${WORKTREE_WARNING_BUDGET}-worktree budget`,
+    );
   }
   if (!validException && budgets.branches.count >= budgets.branches.warning) {
     reasons.push(
-      `creating a branch would exceed the ${BRANCH_WARNING_BUDGET}-local-branch warning budget`,
+      `creating a branch would exceed the ${BRANCH_WARNING_BUDGET}-local-branch budget`,
     );
   }
 

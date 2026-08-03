@@ -1083,9 +1083,17 @@ await withFixture({}, async (fixture) => {
   );
   assert.equal(refused.status, 2, refused.stderr);
   assert.match(refused.stderr, /already owns a registered worktree/);
-  assert.match(refused.stderr, /12-worktree warning budget/);
-  assert.match(refused.stderr, /30-local-branch warning budget/);
+  assert.match(refused.stderr, /12-worktree budget/);
+  assert.match(refused.stderr, /30-local-branch budget/);
   assert.match(refused.stderr, /Suggestion: pnpm beads:worktrees:apply/);
+  // The refusal must name the escape hatch it would accept. Without this the
+  // only workaround the docs offered was a bare `git worktree add`, whose units
+  // automated retirement can never remove (cave-no5nr).
+  assert.match(refused.stderr, /--exception-owner/);
+  assert.match(refused.stderr, /--exception-reason/);
+  assert.match(refused.stderr, /--exception-expires-at/);
+  assert.match(refused.stderr, /--exception-path/);
+  assert.match(refused.stderr, /do not fall back to a bare `git worktree add`/i);
   assert.equal(readJson(fixture.stateFile).counts.update, 0);
   assert.equal(
     refState(fixture.repo, "refs/heads/feat/cave-unit1-budget-refused"),

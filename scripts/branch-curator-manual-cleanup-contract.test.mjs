@@ -421,7 +421,9 @@ test("evals cover every new authorization and race boundary", () => {
   assert.match(eval39.expected_output, /never mutates the remote/i);
   assert.match(eval39.expected_output, /Commit age is not remote-ref recency/);
 
-  assert.match(byId.get(43).expected_output, /12-worktree warning budget/i);
+  assert.match(byId.get(43).expected_output, /12-worktree budget/i);
+  assert.match(byId.get(43).expected_output, /exception that would be admitted/i);
+  assert.match(byId.get(43).expected_output, /never be retired/i);
   assert.match(byId.get(43).expected_output, /does not delete any existing work/i);
   assert.match(byId.get(44).expected_output, /cleanup-ready patrol unit/i);
   assert.match(byId.get(44).expected_output, /reports any remote ref as a proposal rather than deleting it/i);
