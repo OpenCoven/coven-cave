@@ -8,7 +8,11 @@ options:
 settings:
   base:
     MARKETING_VERSION: "0.2.3"
-    CURRENT_PROJECT_VERSION: "1"
+    # Build number, YYYYMMDDHH in UTC. App Store Connect requires this to be
+    # unique and increasing for the app, and a hand-kept "1" collides on every
+    # upload after the first (it rejected the v0.2.3 upload on 2026-08-03).
+    # A date stamp is monotonic without anyone tracking the last value.
+    CURRENT_PROJECT_VERSION: "2026080322"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: "9LR8Z8UQ9X"
     CODE_SIGN_STYLE: Automatic
