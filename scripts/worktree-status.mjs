@@ -89,20 +89,14 @@ function listWorktrees(root) {
 
 // The lock reason lives in .git/worktrees/<id>/locked; `worktree list` only
 // tells us that a lock exists, not why. Read it directly for the human view.
-function lockReason(root, wtPath) {
-  const id = path.basename(wtPath);
-  for (const p of [
-    path.join(root, ".git", "worktrees", id, "locked"),
-    path.join(wtPath, ".git"), // linked worktrees store a gitdir pointer; fall through
-  ]) {
-    try {
-      const body = readFileSync(p, "utf8").trim();
-      if (body && !body.startsWith("gitdir:")) return body;
-    } catch {
-      /* ignore */
-    }
+function lockReason(_root, wtPath) {
+  const gitDir = git(wtPath, ["rev-parse", "--path-format=absolute", "--git-dir"]);
+  if (!gitDir.ok || !gitDir.out) return "";
+  try {
+    return readFileSync(path.join(gitDir.out, "locked"), "utf8").trim();
+  } catch {
+    return "";
   }
-  return "";
 }
 
 function classify(root, wt) {
