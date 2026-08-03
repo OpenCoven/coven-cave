@@ -135,6 +135,7 @@ function classify(root, wt) {
     verdict = dirty === 0 ? "ACTIVE" : "DIRTY";
   }
   return { verdict, merged: merged || ahead === 0, dirty, ahead, behind };
+}
 
 function dirtyCount(wtPath) {
   // Default porcelain already excludes gitignored paths, so this counts only
