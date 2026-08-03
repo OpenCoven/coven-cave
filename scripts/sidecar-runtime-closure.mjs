@@ -176,7 +176,12 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // /api/research/generations/infographic route plus the SVG/PNG renderer
   // chunk traced at 5,888 on Ubuntu and 5,891 on Windows. Set from the
   // HIGHER figure plus the same ten-file headroom.
-  fileCount: 5_901,
+  // +1 (2026-08-03, cave-xailn): POST /api/chat/rewrite backs the reader's
+  // Rewrite control. One new route handler, one new file in the closure —
+  // measured at 5,902 on Ubuntu CI. Nothing else in that change reaches the
+  // sidecar: the shared one-shot runner it adds replaces code that was already
+  // inside enrich-steps' route.
+  fileCount: 5_902,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
