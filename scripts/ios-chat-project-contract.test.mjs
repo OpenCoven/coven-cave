@@ -80,8 +80,18 @@ assert.match(
 );
 assert.match(
   picker,
-  /client\.projects\(familiarIds: familiarKey\)/,
+  /currentClient\.projects\(familiarIds: familiarKey\)/,
   "the picker must request projects scoped to every selected familiar",
+);
+assert.match(
+  picker,
+  /loadProjectsWithRecovery\([\s\S]*recoverConnectionInBackground\(\)[\s\S]*connectionState == \.connected/,
+  "new-chat project discovery must recover a stale connection before surfacing failure",
+);
+assert.match(
+  nativeSelectionTests,
+  /testProjectLoadRetriesOnceAfterConnectionRecovery[\s\S]*testProjectLoadPreservesOriginalErrorWhenRecoveryFails/,
+  "native tests must bound new-chat project recovery to one retry",
 );
 assert.match(
   picker,
@@ -144,6 +154,11 @@ assert.match(
   chat,
   /ChatProjectPicker\([\s\S]*selectedRoot: \$thread\.projectRoot[\s\S]*locked: !thread\.canChangeProject[\s\S]*requiresExplicitSelection: thread\.needsProjectSelection/,
   "Chat must repair legacy/stale threads and lock server-owned provenance",
+);
+assert.match(
+  chat,
+  /if thread\.needsProjectSelection \|\| !thread\.canSendMessages \{[\s\S]*?ChatProjectPicker\(/,
+  "resolved chats must not keep a persistent Project control above the composer",
 );
 assert.match(
   chat,

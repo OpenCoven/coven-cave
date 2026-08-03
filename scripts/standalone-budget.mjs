@@ -22,6 +22,7 @@ export const STANDALONE_FORBIDDEN_ROOTS = Object.freeze([
   ".git",
   ".next/cache",
   ".next/dev",
+  ".tmp",
   ".worktrees",
   "artifacts",
   "release",
