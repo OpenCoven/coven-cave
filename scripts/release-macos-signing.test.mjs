@@ -171,8 +171,13 @@ test("Linux release job forces AppImage extract-and-run mode", () => {
   );
 });
 
+// One spelling of the step name, used by every reference below. Three copies
+// drifted apart once already (#2987 renamed the step; one lookup kept the old
+// name and silently resolved to -1), so this is deliberately a single constant.
+const STRIP_STEP_NAME = "name: Strip bundled GLib/libmount from AppImage";
+
 test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-compatible", () => {
-  assert.match(releaseWorkflow, /name: Strip bundled GLib\/libmount from AppImage/);
+  assert.ok(releaseWorkflow.includes(STRIP_STEP_NAME), "strip step must exist under its exact name");
   assert.match(releaseWorkflow, /libglib-2\.0\*/);
   assert.match(releaseWorkflow, /APPIMAGETOOL_SHA256: \$\{\{ vars\.APPIMAGETOOL_SHA256 \}\}/);
   assert.match(releaseWorkflow, /sha256sum --check --status/);
@@ -185,7 +190,7 @@ test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-com
   assert.match(releaseWorkflow, /pnpm exec tauri signer sign/);
   assert(
     releaseWorkflow.indexOf("name: Sign Linux/Windows updater artifact") <
-      releaseWorkflow.indexOf("name: Strip bundled GLib/libmount from AppImage"),
+      releaseWorkflow.indexOf(STRIP_STEP_NAME),
     "GLib strip must run after initial signing so the repacked artifact is the final signed version",
   );
   assert(
@@ -193,7 +198,10 @@ test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-com
       releaseWorkflow.indexOf('gh release upload "$RELEASE_TAG" "${APPIMAGE}.sig" --clobber'),
     "the repacked AppImage itself must be uploaded before its regenerated signature",
   );
-  const stripStepStart = releaseWorkflow.indexOf("name: Strip bundled GLib from AppImage");
+  // Must match the step's CURRENT name. It was renamed to add "/libmount" in
+  // #2987 and this lookup kept the old spelling, so it resolved to -1 and the
+  // assertion below failed on every branch — main included.
+  const stripStepStart = releaseWorkflow.indexOf(STRIP_STEP_NAME);
   const stripStepEnd = releaseWorkflow.indexOf("name: Upload and re-sign stripped AppImage");
   assert.ok(stripStepStart !== -1, "strip step must exist under its exact name");
   assert.ok(stripStepEnd > stripStepStart, "upload/re-sign step must follow the strip step");
