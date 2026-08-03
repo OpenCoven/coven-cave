@@ -10,9 +10,13 @@ struct ActivityStep: Codable, Hashable, Identifiable {
     }
 
     /// `running` animates; terminal states render a settled glyph. Raw values
-    /// mirror the server's `tool_use` statuses (`progress` "done" maps to `ok`).
+    /// mirror the server's statuses: `tool_use` sends running/ok/error, and
+    /// `progress` sends running/done/notice/error ("done" maps to `ok`).
+    /// `notice` is an informational line the harness reports — a compatibility
+    /// warning, a rate-limit note — and is terminal on arrival, so it must not
+    /// decode as `running` or it spins for the rest of the turn.
     enum Status: String, Codable {
-        case running, ok, error
+        case running, ok, error, notice
     }
 
     var id: String
@@ -80,7 +84,10 @@ enum ActivityFold {
             var step = steps[idx]
             var changed = false
             if step.status != parsedStatus { step.status = parsedStatus; changed = true }
-            if step.detail == nil, let detail = cap(input) { step.detail = detail; changed = true }
+            if step.detail == nil, let detail = argSummary(name: name, input: input) {
+                step.detail = detail
+                changed = true
+            }
             if let durationMs, step.durationMs != durationMs {
                 step.durationMs = durationMs
                 changed = true
@@ -91,8 +98,8 @@ enum ActivityFold {
             return updated
         }
         let step = ActivityStep(id: id ?? UUID().uuidString, kind: .tool, title: name,
-                                detail: cap(input), status: parsedStatus,
-                                durationMs: durationMs)
+                                detail: argSummary(name: name, input: input),
+                                status: parsedStatus, durationMs: durationMs)
         return append(step, to: steps)
     }
 
@@ -137,13 +144,21 @@ enum ActivityFold {
         return updated
     }
 
+    /// Progress details are already prose — one line, capped.
     private static func cap(_ text: String?) -> String? {
         guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty else { return nil }
-        // One line only — a multi-line tool input reads as noise in a chip.
+        // One line only — a multi-line detail reads as noise in a chip.
         let firstLine = trimmed.split(separator: "\n", maxSplits: 1,
                                       omittingEmptySubsequences: false)[0]
         return String(firstLine.prefix(detailCap))
+    }
+
+    /// Tool inputs are pretty-printed JSON, whose first line is a bare `{`.
+    /// Summarise the payload down to its most identifying argument instead —
+    /// the same one-liner the web chat shows beside a tool name.
+    private static func argSummary(name: String, input: String?) -> String? {
+        ToolArgSummary.summary(name: name, input: input, max: detailCap)
     }
 
     /// Map a persisted conversation turn's tool calls into activity steps so
@@ -153,8 +168,9 @@ enum ActivityFold {
         guard let tools, !tools.isEmpty else { return nil }
         return tools.suffix(maxSteps).map { tool in
             ActivityStep(id: tool.id, kind: .tool, title: tool.name,
-                         detail: cap(tool.input),
-                         status: tool.status == "error" ? .error : .ok)
+                         detail: argSummary(name: tool.name, input: tool.input),
+                         status: tool.status == "error" ? .error : .ok,
+                         durationMs: tool.durationMs)
         }
     }
 }

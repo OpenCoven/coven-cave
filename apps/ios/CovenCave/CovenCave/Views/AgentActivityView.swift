@@ -142,6 +142,12 @@ struct AgentActivityView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+        case .notice:
+            // Informational, not an outcome — a harness note the run carried on
+            // past. Settled on arrival, so it never spins.
+            Image(systemName: "info.circle")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         case .error:
             Image(systemName: "xmark.circle.fill")
                 .font(.caption2)
