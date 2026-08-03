@@ -23,6 +23,16 @@ const FAMILIARS = {
   ],
 };
 
+// Two familiars, so "whichever sorts first" is an actual choice being made —
+// with one, adopting it is indistinguishable from asking.
+const FAMILIARS_TWO = {
+  ok: true,
+  familiars: [
+    { id: "aster", display_name: "Aster", role: "Builder", status: "active", icon: "ph:sparkle-fill" },
+    { id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" },
+  ],
+};
+
 const SESSION_S1 = {
   id: "s1",
   title: "Refactor auth flow",
@@ -54,6 +64,15 @@ const BOARD = {
     },
   ],
 };
+
+async function seedWithoutActiveFamiliar(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cave:onboarding:dismissed", "1");
+  });
+  await page.route("**/api/familiars**", (route) => route.fulfill({ json: FAMILIARS_TWO }));
+  await page.route("**/api/board**", (route) => route.fulfill({ json: BOARD }));
+  await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+}
 
 async function seed(page: Page) {
   await page.addInitScript(() => {
@@ -204,4 +223,25 @@ test.describe("chat boot landing", () => {
     await expect(page.getByRole("menuitem", { name: "Enhance prompt" })).toBeVisible();
     await page.keyboard.press("Escape");
   });
+});
+
+// Boot with NO active familiar — a first run, or after clearing storage or
+// deleting the active familiar. This used to open a composer silently bound to
+// whichever familiar sorted first, so the user's FIRST message went to it.
+// It must ask instead.
+test("booting with no active familiar asks which one instead of picking", async ({ page }) => {
+  await seedWithoutActiveFamiliar(page);
+  await page.goto("/?mode=chat", { waitUntil: "domcontentloaded" });
+
+  // The chat-first landing still happens — we did not fall back to the list.
+  const launch = page.locator(".cave-launch");
+  await expect(launch).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole("heading", { name: "Start a new chat" })).toBeVisible();
+
+  // Both familiars are offered; neither has been chosen for the user.
+  await expect(launch.getByText("Aster")).toBeVisible();
+  await expect(launch.getByText("Nova")).toBeVisible();
+
+  // And no composer is sitting there already bound to one of them.
+  await expect(page.getByTestId("chat-new-dashboard")).toHaveCount(0);
 });

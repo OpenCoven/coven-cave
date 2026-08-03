@@ -150,6 +150,16 @@ assert.match(
 );
 assert.match(
   source,
+  /pendingModelOverrideRef\.current = stagedModel[\s\S]*?const optimistic: ChatModelState[\s\S]*?modelStateRef\.current = optimistic/,
+  "a model selected before the initial model-state read is staged synchronously for the first send",
+);
+assert.match(
+  source,
+  /hasPendingModelOverride[\s\S]*?modelOverrideForRequest =[\s\S]*?hasPendingModelOverride[\s\S]*?pendingModelOverride/,
+  "the staged model wins over a still-null or stale rendered model state",
+);
+assert.match(
+  source,
   /currentModelState\?\.source === "runtime-default"[\s\S]*?pendingRuntimeDefault && sessionId[\s\S]*?"runtime-default" as const[\s\S]*?: "next-message" as const/,
   "an inherited or no-session runtime default is a one-turn sentinel, while only an explicit Reset on an existing chat persists a clear",
 );
@@ -162,6 +172,11 @@ assert.match(
   source,
   /const handleSelectRuntime = useCallback\([\s\S]*?setModelCapabilities\(\[\]\);[\s\S]*?setModelControls\(\{\}\);/,
   "runtime switches clear the previous runtime's controls before async capability refresh",
+);
+assert.match(
+  source,
+  /const runtimeMutation = runtimeMutationRef\.current;[\s\S]*?await runtimeMutation[\s\S]*?Runtime selection could not be saved; message not sent\./,
+  "a send waits for the runtime binding write instead of launching the previous harness",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
 // "Both" reconciliation (2026-07-21): the context pill returned with the
@@ -181,6 +196,11 @@ assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composi
 // Model selection moved out of the composer UI into the /model slash command.
 assert.doesNotMatch(source, /ChatModelControl/, "the model picker is gone from the chat composer");
 assert.match(source, /command === "\/model"/, "the chat composer handles the /model command");
+assert.match(
+  source,
+  /command === "\/model"[\s\S]{0,900}isRuntimeDefaultModelArg\(args\)[\s\S]{0,180}handleSelectModel\(null\)/,
+  "the chat composer treats /model default as a runtime-default clear instead of a custom id",
+);
 
 // Options render as inline radio pills — no nested StandardSelect popover in the panel.
 const optionsSource = readFileSync(new URL("./composer-options-menu.tsx", import.meta.url), "utf8");
@@ -192,6 +212,11 @@ assert.match(
   source,
   /thinkingEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed,[\s\S]*modelControls: controlsOverride\?\.modelControls \?\? modelControls,/,
   "Send payload should preserve legacy command controls and the selected model-control snapshot",
+);
+assert.match(
+  source,
+  /handlePickProjectFix[\s\S]{0,1800}failed\.controls,/,
+  "a project-access repair retry must preserve the selected model controls",
 );
 
 assert.match(

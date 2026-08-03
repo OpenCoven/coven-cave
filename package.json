@@ -37,6 +37,7 @@
     "lint:design": "eslint \"src/components/**/*.tsx\" --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "check:tests-wired": "node scripts/check-tests-wired.mjs",
+    "check:beads-jsonl": "node scripts/check-beads-jsonl-duplicates.mjs",
     "test": "node scripts/run-tests.mjs app",
     "test:app": "node scripts/run-tests.mjs app",
     "test:api": "node scripts/run-tests.mjs api",

@@ -1088,6 +1088,14 @@ if [ "$1" = "api" ] &&
       fail "associated PR query repeated for duplicate OID $OID_ARG"
     : > "$ASSOCIATION_MARKER"
 
+    # Every association query fails the way an exhausted GraphQL budget fails:
+    # nonzero exit with the real cause on stderr. The inventory must surface
+    # THAT, not "canonical repository is unavailable" (cave-v59dk).
+    if [ "\${LIFECYCLE_GRAPHQL_BUDGET_EXHAUSTED:-0}" = "1" ]; then
+      printf '%s\\n' 'API rate limit already exceeded for user ID 68980965.' >&2
+      exit 1
+    fi
+
     REPOSITORY="OpenCoven/coven-cave"
     if [ "\${LIFECYCLE_BAD_CANONICAL_REPO:-0}" = "1" ] &&
        [ "$OID_ARG" = "${oldHead}" ]; then
@@ -1230,6 +1238,21 @@ case "$*" in
         : > "$WORKFLOW_MARKER"
         printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
       fi
+    elif [ "\${LIFECYCLE_ALWAYS_UNSTABLE_WORKFLOW:-0}" = "1" ] &&
+         [ "$WORKFLOW_STATUS" = "queued" ]; then
+      # Never settles: every single sweep disagrees with the one before it, so
+      # no pair of verification sweeps can ever match. Models a repo where CI
+      # churns continuously for the whole patrol run (cave-v59dk).
+      WORKFLOW_TICK=${JSON.stringify(
+        path.join(fixtureRoot, "workflow-tick-"),
+      )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
+      printf 'x' >> "$WORKFLOW_TICK"
+      WORKFLOW_TICKS=\$(wc -c < "$WORKFLOW_TICK" | tr -d ' ')
+      if [ \$(( WORKFLOW_TICKS % 2 )) -eq 1 ]; then
+        printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]'
+      else
+        printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":9005,"status":"queued","head_branch":"feat/old","head_sha":"${oldHead}","html_url":"https://example.test/run/9005"}]}]'
+      fi
     elif [ "$WORKFLOW_STATUS" = "queued" ]; then
       printf '%s\n' '[{"total_count":1,"workflow_runs":[{"id":9000,"status":"queued","head_branch":"feat/live","head_sha":"${workflowHead}","html_url":"https://example.test/run/9000"}]}]'
     else
@@ -1259,6 +1282,13 @@ fi
 if [ "\${LIFECYCLE_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "drift-once")}" ]; then
   touch "${path.join(fixtureRoot, "drift-once")}"
   git -C "${repo}" branch feat/drift origin/main
+fi
+# Moves an EXISTING unit's ref rather than adding a new one. feat/branch-only
+# has no worktree, so this is exactly "another session committed on its branch"
+# — the case that must invalidate that one unit and nothing else (cave-63m12).
+if [ "\${LIFECYCLE_UNIT_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "unit-drift-once")}" ]; then
+  touch "${path.join(fixtureRoot, "unit-drift-once")}"
+  git -C "${repo}" update-ref refs/heads/feat/branch-only ${JSON.stringify(defaultHead)}
 fi
 if [ "\${LIFECYCLE_GRAFT_DRIFT:-0}" = "1" ]; then
   printf '%s %s\n' ${JSON.stringify(defaultHead)} ${JSON.stringify(oldHead)} > ${JSON.stringify(path.join(repo, ".git", "info", "grafts"))}
@@ -2193,7 +2223,20 @@ exit 0
     ["LIFECYCLE_MALFORMED_WORKFLOW_ID", /workflow inventory returned malformed data/i],
     ["LIFECYCLE_MISMATCHED_WORKFLOW_STATUS", /workflow inventory returned malformed data/i],
     ["LIFECYCLE_CONFLICTING_WORKFLOW_STATUS", /workflow inventory.*conflicting.*status/i],
-    ["LIFECYCLE_UNSTABLE_WORKFLOW", /workflow inventory changed between verification sweeps/i],
+    // Sustained churn still fails closed — and says it was retried, so the
+    // reader knows this is a busy repo rather than corrupt data (cave-v59dk).
+    [
+      "LIFECYCLE_ALWAYS_UNSTABLE_WORKFLOW",
+      /workflow inventory changed between verification sweeps \(unstable across \d+ verification attempts/i,
+    ],
+    // A dead GraphQL budget names itself rather than blaming the repository.
+    // Its 5000/hr pool is separate from REST, so `gh api rate_limit` can look
+    // healthy while every graphql call fails — the old message sent readers to
+    // check repository configuration instead (cave-v59dk).
+    [
+      "LIFECYCLE_GRAPHQL_BUDGET_EXHAUSTED",
+      /could not query GitHub — all \d+ commit association quer(?:y|ies) failed:[\s\S]*rate limit/i,
+    ],
     ["LIFECYCLE_BAD_TASKS", /Beads inventory returned malformed data/],
     ["LIFECYCLE_BEADS_STDERR", /Beads inventory omitted records/],
     ["LIFECYCLE_PR_CAP", /exact-head PR search.*(?:cap|1000)/i],
@@ -2228,6 +2271,28 @@ exit 0
     const failedOld = failedReport.items.find((item) => item.branch === "feat/old");
     assert.equal(failedOld.lane, "uncertain", `${environment} fails closed`);
     assert.match(failedOld.probeErrors.join("\n"), expectedReason);
+  }
+
+  // TRANSIENT churn recovers instead of failing closed (cave-v59dk). The stub
+  // disagrees with itself once and is then stable, which is what an ordinary
+  // busy repo looks like: a run started or finished between two sweeps. Before
+  // the retry, this single disagreement ended the attempt and left every unit
+  // `uncertain`, so the patrol was unusable whenever CI was running.
+  {
+    const recoveredReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_UNSTABLE_WORKFLOW: "1" }),
+    );
+    const recoveredOld = recoveredReport.items.find((item) => item.branch === "feat/old");
+    assert.doesNotMatch(
+      recoveredOld.probeErrors.join("\n"),
+      /workflow inventory/i,
+      "a one-off sweep disagreement is retried, not reported",
+    );
+    assert.notEqual(
+      recoveredOld.lane,
+      "uncertain",
+      "transient workflow churn no longer forces a unit into uncertain",
+    );
   }
 
   const activeSessionReport = JSON.parse(
@@ -3256,11 +3321,47 @@ exit 0
   );
   assert.equal(readFileSync(path.join(live, "uncommitted.txt"), "utf8"), "live\n");
 
-  assert.throws(
-    () => patrol(["--json"], { LIFECYCLE_DRIFT: "1" }),
-    /worktree or branch inventory changed during patrol/,
-    "a concurrent branch change aborts instead of returning an incomplete success",
-  );
+  // A branch APPEARING mid-run no longer discards the whole inventory
+  // (cave-63m12). The new ref is simply absent from this report, and a unit that
+  // is not reported is never retired — so an incomplete snapshot is
+  // conservative rather than dangerous. Every unit that did not move keeps the
+  // verdict the patrol spent minutes computing.
+  {
+    const addedReport = JSON.parse(patrol(["--json"], { LIFECYCLE_DRIFT: "1" }));
+    const addedOld = addedReport.items.find((item) => item.branch === "feat/old");
+    assert.ok(addedOld, "a concurrent branch addition still returns a report");
+    assert.doesNotMatch(
+      addedOld.probeErrors.join("\n"),
+      /during the patrol|during patrol/i,
+      "an unrelated branch appearing does not taint other units",
+    );
+    assert.equal(
+      addedReport.items.some((item) => item.branch === "feat/drift"),
+      false,
+      "a ref that appeared mid-run is out of scope for this report",
+    );
+  }
+
+  // A unit whose OWN ref moved is the case that must still fail closed — but
+  // only for that unit.
+  {
+    const movedReport = JSON.parse(patrol(["--json"], { LIFECYCLE_UNIT_DRIFT: "1" }));
+    const movedUnit = movedReport.items.find((item) => item.branch === "feat/branch-only");
+    assert.ok(movedUnit, "the drifted unit is still reported");
+    assert.equal(movedUnit.lane, "uncertain", "a unit whose branch moved fails closed");
+    assert.match(
+      movedUnit.probeErrors.join("\n"),
+      /branch moved while the patrol was running/,
+      "the drifted unit says what moved",
+    );
+    const untouched = movedReport.items.find((item) => item.branch === "feat/old");
+    assert.ok(untouched, "its neighbours are still reported");
+    assert.doesNotMatch(
+      untouched.probeErrors.join("\n"),
+      /while the patrol was running/,
+      "one unit's drift does not invalidate its neighbours",
+    );
+  }
 
   let graftDriftError;
   try {
@@ -3289,17 +3390,27 @@ exit 0
     "worktree-lifecycle-patrol: history override inventory changed during patrol",
   );
 
-  let registrationDriftError;
-  try {
-    patrol(["--json"], { LIFECYCLE_WORKTREE_DRIFT: "1", NODE_NO_WARNINGS: "1" });
-  } catch (error) {
-    registrationDriftError = error;
+  // A worktree REGISTERED mid-run is detached — no ref, and a path no existing
+  // unit owns — so it cannot change any verdict already computed. Like a new
+  // branch, it is out of scope for this report rather than a reason to discard
+  // it (cave-63m12).
+  {
+    const registeredReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_WORKTREE_DRIFT: "1", NODE_NO_WARNINGS: "1" }),
+    );
+    const registeredOld = registeredReport.items.find((item) => item.branch === "feat/old");
+    assert.ok(registeredOld, "a concurrent worktree registration still returns a report");
+    assert.doesNotMatch(
+      registeredOld.probeErrors.join("\n"),
+      /while the patrol was running/,
+      "a worktree registered elsewhere does not taint unrelated units",
+    );
+    assert.equal(
+      registeredReport.items.some((item) => item.path === registeredDrift),
+      false,
+      "a worktree registered mid-run is out of scope for this report",
+    );
   }
-  assert.ok(registrationDriftError, "a concurrent worktree registration must abort patrol");
-  assert.equal(
-    registrationDriftError.stderr.trim(),
-    "worktree-lifecycle-patrol: worktree or branch inventory changed during patrol",
-  );
 } finally {
   if (existsSync(registeredDrift)) {
     git(["worktree", "remove", registeredDrift], repo);

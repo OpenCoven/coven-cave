@@ -44,7 +44,11 @@ test("the promote PATCH omits sessionId, or it would write session scope", () =>
   assert.match(body, /familiarId: familiar\.id/, "targets the familiar");
   assert.match(body, /scope: "familiar-default"/, "sends familiar-default");
   assert.doesNotMatch(body, /sessionId/, "must NOT send sessionId — that would scope it to the session");
-  assert.match(body, /refreshModelState\(\)/, "re-reads server state rather than trusting the write");
+  assert.match(
+    body,
+    /refreshModelState\(\s*\(\) => selectionRevision === modelSelectionRevisionRef\.current,\s*selectionRevision,\s*\)/,
+    "re-reads server state with the stale-selection guard rather than trusting the write",
+  );
 });
 
 test("the row is offered only when it would do something", () => {
@@ -72,9 +76,18 @@ test("the row is offered only when it would do something", () => {
 });
 
 test("the props are threaded, not dropped mid-way", () => {
-  // A prop typed but never passed is the quiet failure here: the row would
-  // never render and look like a feature that does not work.
-  assert.match(chips, /promotableModel=\{context\.config\.promotableModel \?\? null\}/, "chips pass it down");
-  assert.match(chips, /onPromoteModelToDefault=\{context\.config\.onPromoteModelToDefault\}/, "and the handler");
+  // cave-9f9nj: this test used to assert the FILE contained the prop-passing
+  // text. composer-context-pill has TWO <ComposerRuntimePopover> sites —
+  // ComposerContextPickers (the actions-menu path) and ComposerContextChips
+  // (the composer footer's model chip, which is what chat-view and
+  // home-composer actually render). Only the first forwarded the props, and a
+  // file-level match cannot tell them apart, so the row never rendered from
+  // the chip while this test stayed green. Check EVERY site instead.
+  const sites = chips.match(/<ComposerRuntimePopover[\s\S]*?\/>/g) ?? [];
+  assert.ok(sites.length >= 2, `expected every ComposerRuntimePopover site to be checked, found ${sites.length}`);
+  for (const [i, site] of sites.entries()) {
+    assert.match(site, /promotableModel=\{context\.config\.promotableModel \?\? null\}/, `site ${i} passes promotableModel`);
+    assert.match(site, /onPromoteModelToDefault=\{context\.config\.onPromoteModelToDefault\}/, `site ${i} passes the handler`);
+  }
   assert.match(chatView, /promotableModel=\{promotableModel\}/, "chat-view supplies it");
 });

@@ -93,8 +93,8 @@ test("2a ④ — the skills eyebrow is derived, counted, and absent when empty",
 test("2a ④ — the band reuses the card's category tints instead of a second palette", () => {
   assert.match(
     activityCss,
-    /:is\(\.cave-tool-block, \.cave-tool-run, \.cave-tool-batch\)\[data-tool-category="shell"\]/,
-    "one tint set serves the row, the run and the band",
+    /:is\(\.cave-tool-block, \.cave-tool-run, \.cave-tool-batch, \.cave-reader-row--batch\)\[data-tool-category="shell"\]/,
+    "one tint set serves the row, the run, the band and the reader's provenance footer",
   );
   assert.doesNotMatch(
     activityCss,

@@ -66,7 +66,7 @@ assert.match(
 );
 assert.match(
   homeModelState,
-  /if \(json\.ok\) \{\s*\n[\s\S]{0,200}?window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\);/,
+  /if \(\n\s*!ok\n\s*\|\| familiarId !== selectedFamiliarIdRef\.current[\s\S]{0,500}?window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\);/,
   "a home runtime switch fires the roster refresh (only on a successful PATCH)",
 );
 
@@ -90,41 +90,51 @@ assert.match(
 // ── Runtime switching is real: familiar-level config, optimistic + refetch ──
 assert.match(
   chatView,
-  /const handleSelectRuntime = useCallback\(\s*\n\s*\(runtime: string\) => \{\s*\n\s*const nextModel = modelForRuntimeSwitch\(runtime\);/,
+  /const handleSelectRuntime = useCallback\(\s*\n\s*\(runtime: string\) => \{[\s\S]*?const nextModel = modelForRuntimeSwitch\(runtime\);/,
   "a runtime pick uses the runtime-switch policy instead of carrying a foreign model id",
 );
 assert.match(
   chatView,
-  /fetch\("\/api\/config", \{\s*\n\s*method: "PATCH",[\s\S]{0,300}?familiars: \{[\s\S]*?\[familiar\.id\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel \|\| null,/,
-  "runtime switches persist through /api/config — the same channel the home composer's selectRuntime uses; the send route re-resolves the binding per turn, so the switch applies from the next message",
+  /fetch\("\/api\/config", \{\s*\n\s*method: "PATCH",[\s\S]{0,300}?familiars: \{[\s\S]*?\[familiar\.id\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel,/,
+  "runtime switches persist through /api/config with explicit default intent",
 );
 const selectRuntimeBlock = chatView.match(/const handleSelectRuntime = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
 assert.match(
   selectRuntimeBlock,
-  /const optimistic: ChatModelState = \{[\s\S]{0,300}?harness: runtime,\s*\n\s*effectiveModel: nextModel,[\s\S]{0,300}?modelStateRef\.current = optimistic;\s*\n\s*setModelState\(optimistic\)/,
+  /if \(sessionId\) \{[\s\S]*?Runtime switching applies to new chats[\s\S]*?announce\(message, "assertive"\)[\s\S]*?return;/,
+  "an active conversation rejects runtime rebinding because its persisted harness pins the next send",
+);
+assert.match(
+  selectRuntimeBlock,
+  /const optimistic: ChatModelState = \{[\s\S]*?harness: runtime,[\s\S]*?effectiveModel: nextModel,[\s\S]*?modelStateRef\.current = optimistic;\s*\n\s*setModelState\(optimistic\)/,
   "the chip flips optimistically before the network round-trip",
 );
 assert.match(
   selectRuntimeBlock,
-  /finally \{\s*\n\s*await refreshModelState\(\);/,
+  /finally\(async \(\) => \{[\s\S]{0,220}?await refreshModelState\(/,
   "the model-state refetch reconciles the optimistic flip (even when the PATCH fails)",
 );
 
 const selectModelBlock = chatView.match(/const handleSelectModel = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
 assert.match(
   selectModelBlock,
-  /effectiveModel: modelId \?\? "",[\s\S]{0,160}?source: modelId \? \(sessionId \? "session" : "familiar-default"\) : "runtime-default"[\s\S]{0,260}?modelStateRef\.current = optimistic;\s*\n\s*setModelState\(optimistic\)/,
+  /effectiveModel: stagedModel,[\s\S]*?source: modelId \? \(sessionId \? "session" : "familiar-default"\) : "runtime-default"[\s\S]*?modelStateRef\.current = optimistic;\s*\n\s*setModelState\(optimistic\)/,
   "clearing a model synchronously stages the runtime default before its PATCH",
 );
 assert.match(
   selectModelBlock,
-  /if \(json\.ok && json\.state\) \{[\s\S]*?setModelState\(json\.state\);[\s\S]*?await refreshModelState\(\);/,
+  /if \(json\.ok && json\.state\) \{[\s\S]*?setModelState\(json\.state\);[\s\S]{0,260}?await refreshModelState\(/,
   "a successful model selection refreshes capability controls from the authoritative state response",
 );
 assert.match(
   chatView,
   /const currentModelState = modelStateRef\.current;[\s\S]{0,500}?const modelOverrideForRequest =[\s\S]{0,300}?currentModelState\?\.source === "session"/,
   "send snapshots the synchronously staged model state rather than the prior render",
+);
+assert.match(
+  chatView,
+  /const stagedInitialModelOverride = initialModelOverride !== undefined[\s\S]{0,420}?initialControls\?\.modelOverride[\s\S]{0,260}?modelOverrideScope: stagedInitialModelScope/,
+  "a Home handoff carries its staged model intent into the first Chat send",
 );
 
 // ── The chip face: runtime logo + model, one accessible name ─────────────────
@@ -145,8 +155,13 @@ assert.match(
 );
 assert.match(
   chip,
-  /\(hasRuntimeDefault \|\| modelOptions\.length > 0\) && \([\s\S]*?<PopoverLabel>Model<\/PopoverLabel>[\s\S]*?Runtime default/,
+  /\(hasRuntimeDefault \|\| modelOptions\.length > 0 \|\| modelIsOutsideInventory\) && \([\s\S]*?<PopoverLabel>Model<\/PopoverLabel>[\s\S]*?Runtime default/,
   "the model group exposes runtime-owned defaults even when no inventory is available",
+);
+assert.match(
+  chip,
+  /modelIsOutsideInventory[\s\S]*?Current selection · \{modelValue\} \(not in current inventory\)/,
+  "a persisted custom or stale model remains visible and explicitly marked when scoped inventory omits it",
 );
 
 // ── Two-step pick: a runtime pick keeps the menu open for the model pick ─────
@@ -187,8 +202,13 @@ assert.match(hostCss, /\.cave-composer-host-chip \{[\s\S]*?border-radius: var\(-
 
 assert.match(
   chatView,
-  /modelState\?\.effectiveModel && modelState\.effectiveModel !== "unknown"[\s\S]*?: composerRuntimeOwnsDefault[\s\S]*?\? ""/,
-  "an unconfigured runtime-owned chat shows the runtime default rather than an unselected inventory entry",
+  /const composerModelValue =\s*\n\s*pendingModelOverrideRef\.current !== undefined\s*\n\s*\? pendingModelOverrideRef\.current[\s\S]*?modelState\?\.effectiveModel && modelState\.effectiveModel !== "unknown"[\s\S]*?: "";/,
+  "the composer preserves a pending explicit model intent and otherwise carries an explicit empty runtime-default value",
+);
+assert.match(
+  chatView,
+  /\{\s*value: "",\s*label: "Runtime default"/,
+  "the empty model entry is labeled as the durable runtime-default clear action",
 );
 
 console.log("composer-runtime-chip.test.ts: ok");

@@ -48,9 +48,9 @@ assert.match(
   /allowCustomModel/,
   "Brain tab should keep a free-text fallback for ids not in the curated catalog",
 );
-// ── Model select: Inherit default must be representable (2026-07-12) ─────────
+// ── Model select: Runtime default must be representable (2026-07-12) ────────
 // The select's value used to be `draftModelIsListed ? draftModel : "__custom__"`,
-// so "" (Inherit default) always rendered as Custom... with an empty text box.
+// so "" (Runtime default) always rendered as Custom... with an empty text box.
 // Custom mode is now explicit state; "" only means inherit.
 assert.match(
   source,
@@ -65,12 +65,12 @@ assert.match(
 assert.match(
   source,
   /value=\{modelIsCustom && allowCustomModel \? "__custom__" : draftModel\}/,
-  "Inherit default (empty draft) must render as the empty option, not Custom...",
+  "Runtime default (empty draft) must render as the empty option, not Custom...",
 );
 assert.match(
   source,
   /if \(!trimmed\) setModelCustomMode\(false\)/,
-  "Blurring an empty custom field falls back to Inherit default",
+  "Blurring an empty custom field falls back to Runtime default",
 );
 assert.match(
   source,
@@ -90,6 +90,26 @@ assert.match(
   source,
   /label: `Inherit workspace default: \$\{defaultHarnessLabel\}`/,
   "Default runtime copy should clarify that this familiar inherits the workspace default",
+);
+assert.match(
+  source,
+  /modelForRuntimeSwitch\(next\)/,
+  "switching runtime derives the durable default sentinel",
+);
+assert.match(
+  source,
+  /setDraftModel\(nextModel\)[\s\S]{0,180}save\(\{ harness: next \|\| null, model: nextModel \}\)/,
+  "switching runtime clears the old provider model through the durable default sentinel",
+);
+assert.match(
+  source,
+  /createModelSelectionMutationQueue\(\)/,
+  "runtime and model writes use the shared serialized mutation queue",
+);
+assert.match(
+  source,
+  /modelMutationQueueRef\.current\.enqueue\(\(\) => save\(\{ harness: next \|\| null, model: nextModel \}\)\)/,
+  "a runtime switch cannot be overtaken by an older model write",
 );
 assert.match(
   source,

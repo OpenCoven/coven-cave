@@ -8,6 +8,7 @@ import {
   resolveChatModelState,
   type ChatModelState,
 } from "@/lib/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { buildCovenMarkersDirective } from "@/lib/coven-marker-directive";
 import { buildCitationsDirective } from "@/lib/citations-directive";
@@ -18,6 +19,42 @@ type ModelRequest = {
   modelOverride?: string;
   modelOverrideScope?: "next-message" | "session" | "runtime-default";
 };
+
+const MODEL_OVERRIDE_SCOPES = new Set([
+  "next-message",
+  "session",
+  "runtime-default",
+]);
+
+/** JSON callers are untyped at the launch boundary; reject future/unknown
+ * scopes instead of silently treating them as an inherited model. */
+export function isModelOverrideScope(value: unknown): value is ModelRequest["modelOverrideScope"] {
+  return value === undefined || (typeof value === "string" && MODEL_OVERRIDE_SCOPES.has(value));
+}
+
+/** A model id and its scope are one wire-level intent. Keep malformed or
+ * legacy partial pairs from silently falling back to the conversation's old
+ * model after the boundary has accepted the request. The id's safety is
+ * checked separately by the send route. */
+export function isValidModelOverrideIntent(value: {
+  modelOverride?: unknown;
+  modelOverrideScope?: unknown;
+}): boolean {
+  const hasModelOverride = Object.prototype.hasOwnProperty.call(value, "modelOverride");
+  const modelOverride = value.modelOverride;
+  switch (value.modelOverrideScope) {
+    case undefined:
+      return !hasModelOverride || modelOverride === undefined;
+    case "runtime-default":
+      return !hasModelOverride || modelOverride === undefined || modelOverride === "";
+    case "next-message":
+      return hasModelOverride && typeof modelOverride === "string";
+    case "session":
+      return hasModelOverride && typeof modelOverride === "string" && modelOverride.trim().length > 0;
+    default:
+      return false;
+  }
+}
 
 type ResponseControlRequest = {
   modelControls?: ModelControlValues;
@@ -32,7 +69,12 @@ export function resolveSendModelMetadata(args: {
   binding: FamiliarBinding;
   existingConversation: ConversationFile | null;
   modelForwardingEnabled: boolean;
-}): { desiredModel: string; modelState: ChatModelState } {
+}): {
+  desiredModel: string;
+  modelState: ChatModelState;
+  invalidSavedModel: boolean;
+  suppressedSavedModel: boolean;
+} {
   const requestedModel = cleanModelId(args.body.modelOverride);
   const nextMessageRuntimeDefault =
     args.body.modelOverrideScope === "next-message" &&
@@ -56,7 +98,52 @@ export function resolveSendModelMetadata(args: {
     application: { supported: args.modelForwardingEnabled },
   });
   const desiredModel = modelState.effectiveModel === "unknown" ? args.binding.model : modelState.effectiveModel;
-  return { desiredModel, modelState };
+  const rawSavedModel = args.body.modelOverrideScope === "next-message" || args.body.modelOverrideScope === "runtime-default"
+    ? undefined
+    : args.body.modelOverrideScope === "session"
+      ? args.body.modelOverride
+      : args.existingConversation?.modelIntent?.model ?? args.config.familiars[args.body.familiarId]?.model;
+  const invalidSavedModel = rawSavedModel !== undefined && rawSavedModel !== null && rawSavedModel !== ""
+    && cleanModelId(rawSavedModel) === null;
+  const savedModel = cleanModelId(rawSavedModel);
+  const suppressedSavedModel = Boolean(
+    savedModel &&
+    modelState.source !== "session" &&
+    modelState.source !== "familiar-default",
+  );
+  return { desiredModel, modelState, invalidSavedModel, suppressedSavedModel };
+}
+
+export function savedModelSelectionRejection(args: {
+  desiredModel: string;
+  modelState: ChatModelState;
+  harness: string;
+  modelForwardingEnabled: boolean;
+  invalidSavedModel?: boolean;
+  suppressedSavedModel?: boolean;
+}): "invalid" | "unsupported" | "forwarding" | null {
+  if (args.invalidSavedModel) return "invalid";
+  if (args.suppressedSavedModel) return "unsupported";
+  if (args.modelState.source !== "session" && args.modelState.source !== "familiar-default") return null;
+  const desiredModel = cleanModelId(args.desiredModel);
+  if (!desiredModel) return null;
+  if (!isModelAllowedByRuntime(args.harness, desiredModel)) return "unsupported";
+  return args.modelForwardingEnabled ? null : "forwarding";
+}
+
+/** A saved Cave model is an explicit launch intent, not a hint that can be
+ * silently ignored when the selected runtime cannot forward model ids. */
+export function savedModelSelectionRequiresForwarding(args: {
+  desiredModel: string;
+  modelState: ChatModelState;
+  harness?: string;
+  modelForwardingEnabled: boolean;
+  invalidSavedModel?: boolean;
+}): boolean {
+  return savedModelSelectionRejection({
+    ...args,
+    harness: args.harness ?? args.modelState.harness,
+  }) === "forwarding";
 }
 
 export function modelIntentForSend(
@@ -122,6 +209,32 @@ export function persistedTurnControls(
       ? { modelOverrideScope: "runtime-default" as const }
       : {}),
   };
+}
+
+/** Offline replay launches the hub session directly, so carry the resolved
+ * Cave model intent instead of asking the daemon to rediscover Cave scopes. */
+export function offlineQueuedModelIntent(args: {
+  body: Pick<ModelRequest, "modelOverride" | "modelOverrideScope">;
+  responseMetadata: {
+    model: string;
+    desiredModel?: string;
+    modelSource?: ChatModelState["source"];
+  };
+}): Pick<ModelRequest, "modelOverride" | "modelOverrideScope"> {
+  const runtimeDefault =
+    args.body.modelOverrideScope === "runtime-default" ||
+    args.responseMetadata.modelSource === "runtime-default";
+  const modelOverride = args.body.modelOverride !== undefined
+    ? args.body.modelOverride
+    : runtimeDefault
+      ? ""
+      : args.responseMetadata.desiredModel ?? args.responseMetadata.model;
+  const modelOverrideScope = args.body.modelOverrideScope !== undefined
+    ? args.body.modelOverrideScope
+    : runtimeDefault
+      ? "runtime-default" as const
+      : undefined;
+  return { modelOverride, modelOverrideScope };
 }
 
 /** Prefer runtime confirmation, then explicit user intent, then the model that

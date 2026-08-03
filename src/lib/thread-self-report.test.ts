@@ -4,9 +4,14 @@ import {
   aggregateThreadSignals,
   buildReflectTranscript,
   buildThreadReflectPrompt,
+  buildThreadSignalBatchResolutionPrompt,
   buildThreadSignalResolutionPrompt,
+  buildThreadSignalRows,
+  buildThreadSignalScoreTiles,
+  compositeTone,
   contextPressureLabel,
   deriveThreadScore,
+  metricTone,
   type ThreadSelfReport,
 } from "./thread-self-report.ts";
 
@@ -425,5 +430,134 @@ describe("aggregateThreadSignals stale signal clearing", () => {
     const aggregate = aggregateThreadSignals([staleOnly, older, newest]);
     assert.deepEqual(aggregate.persistentBlockers.map((item) => item.id), ["still-active"]);
     assert.equal(aggregate.persistentBlockers[0].frequency, 3);
+  });
+});
+
+describe("in-chat Thread Signal card builders", () => {
+  it("grades the composite harder than its inputs", () => {
+    // 60 is a warning for the headline number and merely unremarkable for one
+    // contributing metric — the card's two scales, pinned so they cannot merge.
+    assert.equal(compositeTone(60), "warn");
+    assert.equal(metricTone(60), "neutral");
+    assert.equal(compositeTone(39), "crit");
+    assert.equal(metricTone(39), "crit");
+    assert.equal(metricTone(59), "warn");
+    assert.equal(metricTone(95), "ok");
+    assert.equal(compositeTone(70), "ok");
+  });
+
+  it("builds six score tiles whose rationale quotes the report", () => {
+    const tiles = buildThreadSignalScoreTiles(fullReport());
+    assert.deepEqual(
+      tiles.map((tile) => tile.id),
+      ["score", "confidence", "tools", "memory", "files", "context"],
+    );
+    assert.equal(tiles[0].value, "71");
+    assert.equal(tiles[0].formula, "conf x .35 + tools x .25 + memory x .20 + files x .20");
+    // Only the composite carries a formula line.
+    assert.deepEqual(tiles.slice(1).map((tile) => tile.formula), [undefined, undefined, undefined, undefined, undefined]);
+    assert.equal(tiles[1].rationale, "Most signals were healthy.");
+    assert.equal(tiles[2].rationale, "One transient failure.");
+    assert.equal(tiles[5].value, "Tight");
+    assert.equal(tiles[5].weight, "not scored");
+    // The composite names its own extremes, which no single field records.
+    assert.match(tiles[0].rationale, /Strongest input files at 90, weakest memory at 50\./);
+  });
+
+  it("falls back to derived tool copy when the report left notes empty", () => {
+    const report = fullReport();
+    report.toolReliability = { score: 100, failedTools: [], unreliableTools: [] };
+    assert.equal(
+      buildThreadSignalScoreTiles(report)[2].rationale,
+      "No failed or unreliable tools reported this thread.",
+    );
+    report.toolReliability = { score: 40, failedTools: ["build"], unreliableTools: ["search"] };
+    assert.equal(
+      buildThreadSignalScoreTiles(report)[2].rationale,
+      "Failed: build. Unreliable: search.",
+    );
+  });
+
+  it("ranks one report's signals critical-first, then by rank", () => {
+    const rows = buildThreadSignalRows(fullReport());
+    assert.deepEqual(
+      rows.map((row) => `${row.severity}:${row.kind}`),
+      [
+        "critical:capability",
+        "critical:skill-access",
+        "warning:blocker",
+        "warning:context-pressure",
+        "warning:skill-clarity",
+        "warning:low-score",
+      ],
+    );
+    assert.equal(rows[0].kindLabel, "Capability");
+    assert.equal(rows[2].resolution, "Mock route responses.");
+    assert.equal(rows[2].meta, "infra · medium impact");
+  });
+
+  it("does not inherit the aggregate's frequency-based criticality", () => {
+    // aggregateThreadSignals([one report]) scores every blocker crit because
+    // frequency / total is always 1. A single report grades on impact instead.
+    const report = fullReport();
+    report.capabilitiesLacking = [];
+    report.skillsNeedingAccess = [];
+    const rows = buildThreadSignalRows(report);
+    const blocker = rows.find((row) => row.kind === "blocker");
+    assert.equal(blocker?.severity, "warning", "a medium-impact blocker is not critical");
+  });
+
+  it("promotes high-impact blockers and drops nice-to-have capability gaps", () => {
+    const report = fullReport();
+    report.persistentBlockers = [
+      { id: "b", title: "Stale cache", category: "infra", impact: "high", detail: "d" },
+    ];
+    report.capabilitiesLacking = [
+      { name: "Nice thing", importance: "nice-to-have", detail: "d" },
+      { name: "Needed thing", importance: "important", detail: "d" },
+    ];
+    const rows = buildThreadSignalRows(report);
+    assert.equal(rows.find((row) => row.kind === "blocker")?.severity, "critical");
+    assert.deepEqual(
+      rows.filter((row) => row.kind === "capability").map((row) => row.title),
+      ["Needed thing"],
+    );
+  });
+
+  it("returns no rows for a clean thread", () => {
+    const report = fullReport();
+    report.persistentBlockers = [];
+    report.capabilitiesLacking = [];
+    report.skillsNeedingAccess = [];
+    report.skillsNeedingClarity = [];
+    report.contextPressure = "adequate";
+    report.memoryRecallScore = 90;
+    assert.deepEqual(buildThreadSignalRows(report), []);
+  });
+
+  it("caps the queue at six rows", () => {
+    const report = fullReport();
+    report.persistentBlockers = Array.from({ length: 9 }, (_unused, index) => ({
+      id: `b${index}`,
+      title: `Blocker ${index}`,
+      category: "infra" as const,
+      impact: "blocking" as const,
+      detail: "d",
+    }));
+    assert.equal(buildThreadSignalRows(report).length, 6);
+  });
+
+  it("batches several signals into one resolution thread", () => {
+    const rows = buildThreadSignalRows(fullReport()).slice(0, 2);
+    const prompt = buildThreadSignalBatchResolutionPrompt(rows);
+    assert.match(prompt, /Resolve these 2 signals/);
+    assert.match(prompt, /1\. \*\*Self-report API\*\*/);
+    assert.match(prompt, /2\. \*\*github\*\*/);
+    assert.match(prompt, /Verify each fix/);
+  });
+
+  it("degrades a one-item batch to the single-signal prompt", () => {
+    const [row] = buildThreadSignalRows(fullReport());
+    assert.equal(buildThreadSignalBatchResolutionPrompt([row]), buildThreadSignalResolutionPrompt(row));
   });
 });

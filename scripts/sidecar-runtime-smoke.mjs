@@ -256,7 +256,7 @@ async function main() {
     assert.match(manifest.payloadSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.treeSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.archiveSha256, /^[a-f0-9]{64}$/);
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_841);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_887);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
@@ -278,6 +278,9 @@ async function main() {
     "marketplace/plugins/prompt-pack-essentials/plugin.json",
     "public/sandbox/react-runtime.js",
     "public/sandbox/tailwind.js",
+    "node_modules/next/dist/compiled/webpack/webpack-lib.js",
+    "node_modules/next/dist/compiled/webpack/webpack.js",
+    "node_modules/next/dist/compiled/webpack/bundle5.js",
     "vault.yaml",
     "workflows/release-review.yaml",
   ]) {

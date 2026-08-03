@@ -729,13 +729,18 @@ assert.match(
 // the new thread's model/plan; the effects pass () => !cancelled.
 assert.match(
   source,
-  /refreshModelState = useCallback\(async \(shouldApply: \(\) => boolean = \(\) => true\)[\s\S]*?if \(shouldApply\(\)\) \{\s*\n\s*modelStateRef\.current = next;\s*\n\s*setModelState\(next\);\s*\n\s*setModelCapabilities\(/,
+  /refreshModelState = useCallback\(async \([\s\S]*?shouldApply: \(\) => boolean = \(\) => true[\s\S]*?if \(canApply\(\)\) \{\s*\n\s*modelStateRef\.current = next;\s*\n\s*setModelState\(next\);\s*\n\s*setModelCapabilities\(/,
   "refreshModelState only applies its result when the caller's shouldApply() allows it",
 );
 assert.match(
   source,
   /void refreshModelState\(\(\) => !cancelled\);/,
   "the model-state effect vetoes a stale apply via () => !cancelled",
+);
+assert.match(
+  source,
+  /modelStateRequestRef = useRef\(0\)[\s\S]*modelSelectionRevisionRef = useRef\(0\)[\s\S]*requestId === modelStateRequestRef\.current[\s\S]*expectedSelectionRevision === modelSelectionRevisionRef\.current/,
+  "rapid model/runtime mutations drop older model-state responses",
 );
 assert.match(
   source,

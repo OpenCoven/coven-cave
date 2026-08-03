@@ -3249,7 +3249,7 @@ export function Workspace() {
       <MarketplaceView
         key={mode}
         initialSection={mode === "roles" ? "roles" : mode === "capabilities" ? "capabilities" : "browse"}
-        familiars={resolvedFamiliars}
+        activeFamiliarId={activeId}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
       />
     ) : mode === "submissions" ? (

@@ -77,8 +77,19 @@ for (const forbiddenRoot of [
 ]) {
   assert.match(closureSource, new RegExp(forbiddenRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `runtime verifier must exclude ${forbiddenRoot}`);
 }
-assert.match(closureSource, /fileCount: 5_841/, "runtime closure must retain combined cross-platform headroom");
+assert.match(closureSource, /fileCount: 5_887/, "runtime closure must retain combined cross-platform headroom");
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
+for (const runtimeFile of [
+  "dist/compiled/webpack/webpack-lib.js",
+  "dist/compiled/webpack/webpack.js",
+  "dist/compiled/webpack/bundle5.js",
+]) {
+  assert.match(
+    closureSource,
+    new RegExp(runtimeFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    `runtime closure must retain Next startup file ${runtimeFile}`,
+  );
+}
 
 // App-size: runtime bundles must drop test/dev packages and metadata that are
 // useful only while developing or debugging the build machine.
@@ -163,6 +174,36 @@ assert.ok(
 );
 assert.match(src, /bundle_piper_runtime\(\)/, "release bundling must provision the pinned Piper runtime");
 assert.match(src, /Piper runtime checksum mismatch/, "Piper runtime downloads must be integrity-checked");
+assert.match(
+  src,
+  /runtime_executable_path="\$\(find[\s\S]*?if \[ -z "\$runtime_executable_path" \]; then[\s\S]*?runtime_root="\$\(dirname "\$runtime_executable_path"\)"/,
+  "Piper staging must reject a missing executable before deriving its runtime directory",
+);
+assert.match(
+  src,
+  /piper-phonemize\/releases\/download\/2023\.11\.14-4/,
+  "macOS Piper bundles must source their missing dylib closure from the pinned piper-phonemize release",
+);
+assert.match(
+  src,
+  /Piper phonemize runtime checksum mismatch/,
+  "the supplemental macOS Piper dylib archive must be integrity-checked",
+);
+assert.match(
+  src,
+  /phonemize_lib_path="\$\(find[\s\S]*?if \[ -z "\$phonemize_lib_path" \]; then[\s\S]*?phonemize_lib_root="\$\(dirname "\$phonemize_lib_path"\)"/,
+  "macOS Piper staging must reject a missing dylib match before deriving its closure directory",
+);
+assert.match(
+  src,
+  /cp -a "\$phonemize_lib_root\/"\*\.dylib "\$PIPER_RUNTIME_DIR\/"/,
+  "macOS Piper bundles must preserve the complete dylib closure and its compatibility symlinks",
+);
+assert.match(
+  src,
+  /install_name_tool -add_rpath @executable_path/,
+  "macOS Piper executables must resolve their staged @rpath dylibs beside the executable",
+);
 assert.ok(
   baseConfig.bundle.resources.includes("resources/kokoro/**/*"),
   "desktop bundles must retain the local Kokoro (sherpa-onnx) runtime",
@@ -242,7 +283,7 @@ assert.match(
 );
 assert.match(
   rustArchiveSource,
-  /const MAX_FILE_COUNT: u64 = 5_841;/,
+  /const MAX_FILE_COUNT: u64 = 5_887;/,
   "Windows archive extractor must accept the shared runtime file-count budget",
 );
 assert.match(manifestSource, /isSymbolicLink\(\)/, "archive input must reject symlinks");

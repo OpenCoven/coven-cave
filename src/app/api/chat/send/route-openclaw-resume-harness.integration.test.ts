@@ -66,7 +66,9 @@ try {
     sessionId,
     familiarId: "wren",
     harness: "openclaw",
-    model: "openai/gpt-5.6-sol",
+    // OpenClaw owns model selection; an older conversation must therefore
+    // retain the runtime-default sentinel rather than a Cave override.
+    model: "",
     runtime: `local:${workspace}`,
     createdAt: now,
     updatedAt: now,
@@ -74,7 +76,7 @@ try {
     activeLeafId: "first-user",
   });
   // Simulate the familiar being edited after this conversation began.
-  await saveConfig({ familiars: { wren: { harness: "claude", model: "anthropic/claude-opus-5" } } });
+  await saveConfig({ familiars: { wren: { harness: "claude", model: "" } } });
   const project = await createProject({ name: "OpenClaw resume fixture", root: workspace });
   await grantProjectToFamiliar({ familiarId: "wren", projectId: project.id, source: "human", access: "write" });
 

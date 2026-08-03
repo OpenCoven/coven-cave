@@ -169,6 +169,97 @@ try {
   assert.equal(finalStatus.pendingQueueCount, 0);
   assert.equal(finalStatus.staleCache, false);
 
+  const inheritedModelQueued = await config.enqueueOfflineTravelItem(
+    {
+      kind: "chat",
+      summary: "Offline Sage inherited model",
+      payload: {
+        familiarId: "sage",
+        prompt: "queued with a familiar model",
+        projectRoot: process.cwd(),
+        responseMetadata: {
+          familiarId: "sage",
+          harness: "codex",
+          model: "openai/gpt-5.5",
+          desiredModel: "openai/gpt-5.5",
+          modelSource: "familiar-default",
+          runtime: `local:${process.cwd()}`,
+        },
+      },
+    },
+    new Date("2026-06-30T12:02:30.000Z"),
+  );
+  const inheritedModelResult = await replay.syncOfflineTravelQueue(savedConfig, { maxItems: 1 });
+  assert.deepEqual(inheritedModelResult, { attempted: 1, synced: 1, failed: 0, errors: [] });
+  assert.equal(
+    sessionRequests[1]?.model,
+    "openai/gpt-5.5",
+    "offline replay must forward the resolved familiar/default model instead of using the daemon default",
+  );
+  state = await config.loadState();
+  assert.equal(
+    state.travel.offlineQueue.find((entry) => entry.id === inheritedModelQueued.id)?.status,
+    "synced",
+  );
+
+  const controlledQueued = await config.enqueueOfflineTravelItem(
+    {
+      kind: "chat",
+      summary: "Offline Sage controlled message",
+      payload: {
+        familiarId: "sage",
+        prompt: "queued with a selected reasoning control",
+        projectRoot: process.cwd(),
+        reasoningEffort: "high",
+        modelControls: { reasoning: "medium" },
+      },
+    },
+    new Date("2026-06-30T12:03:00.000Z"),
+  );
+  const controlledResult = await replay.syncOfflineTravelQueue(savedConfig, { maxItems: 1 });
+  assert.equal(controlledResult.attempted, 1);
+  assert.equal(controlledResult.synced, 0, "unsupported control intent must not be reported as synced");
+  assert.equal(controlledResult.failed, 1);
+  assert.match(controlledResult.errors[0]?.error ?? "", /model controls cannot be replayed/);
+  assert.equal(sessionRequests.length, 2, "the hub must not receive a launch that cannot carry the controls");
+  state = await config.loadState();
+  assert.equal(
+    state.travel.offlineQueue.find((entry) => entry.id === controlledQueued.id)?.status,
+    "failed",
+  );
+
+  const movedQueued = await config.enqueueOfflineTravelItem(
+    {
+      kind: "chat",
+      summary: "Offline Sage runtime transition",
+      payload: {
+        familiarId: "sage",
+        prompt: "queued before the runtime changed",
+        projectRoot: process.cwd(),
+        responseMetadata: {
+          familiarId: "sage",
+          harness: "codex",
+          model: "",
+          runtime: `local:${process.cwd()}`,
+        },
+      },
+    },
+    new Date("2026-06-30T12:04:00.000Z"),
+  );
+  await config.saveConfig({ familiars: { sage: { harness: "claude" } } });
+  const movedConfig = await config.loadConfig();
+  const movedResult = await replay.syncOfflineTravelQueue(movedConfig, { maxItems: 2 });
+  assert.equal(movedResult.attempted, 2);
+  assert.equal(movedResult.synced, 0, "a queued turn must not be rerouted onto the new harness");
+  assert.equal(movedResult.failed, 2);
+  assert.match(movedResult.errors.at(-1)?.error ?? "", /runtime binding changed while offline/);
+  assert.equal(sessionRequests.length, 2, "a stale queued runtime must not reach the hub");
+  state = await config.loadState();
+  assert.equal(
+    state.travel.offlineQueue.find((entry) => entry.id === movedQueued.id)?.status,
+    "failed",
+  );
+
   console.log("travel-network-drop-proof.test.ts: ok");
 } finally {
   await closeHub();

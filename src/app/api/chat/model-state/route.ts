@@ -11,9 +11,11 @@ import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
 import { modelControlCapabilities } from "@/lib/model-control-capabilities";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { hermesApiConfig } from "@/lib/hermes-responses-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { isValidFamiliarId } from "@/lib/server/familiar-id";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -84,9 +86,16 @@ async function currentState(
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
   const conversation = sessionId ? await loadConversation(sessionId) : null;
+  const conversationHarness = conversation?.harness
+    ? canonicalHarnessId(conversation.harness)
+    : null;
   return resolveChatModelState({
     familiarId,
-    harness: canonicalHarnessId(binding.harness),
+    // Chat/send treats a persisted conversation harness as the execution
+    // contract. Model state must resolve against the same harness or a
+    // familiar rebind can render Hermes controls while the next turn still
+    // launches the old Claude conversation (and vice versa).
+    harness: conversationHarness ?? canonicalHarnessId(binding.harness),
     runtime: conversation?.runtime ?? runtimeForBinding(binding),
     globalDefaultModel: config.defaults.model,
     familiarModel: config.familiars[familiarId]?.model ?? null,
@@ -100,12 +109,33 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const familiarId = cleanText(url.searchParams.get("familiarId"));
   const sessionId = cleanText(url.searchParams.get("sessionId"));
+  const rawPreviewModel = url.searchParams.get("model");
+  // A model preview is intentionally read-only. Clients use it after staging
+  // a pre-first-send selection so the response controls are resolved for that
+  // pending model rather than for the familiar/session model that was visible
+  // before the selection.
+  const previewModel = rawPreviewModel === null
+    ? undefined
+    : rawPreviewModel === ""
+      ? ""
+      : cleanModelId(rawPreviewModel);
   if (!familiarId) return jsonError("familiarId is required", 400);
+  if (!isValidFamiliarId(familiarId)) return jsonError("invalid familiar id", 400);
   if (sessionId && !isSafeConversationSessionId(sessionId)) {
     return jsonError("invalid session id", 400);
   }
+  if (rawPreviewModel !== null && previewModel === null) {
+    return jsonError("invalid model", 400);
+  }
 
-  const state = await currentState(familiarId, sessionId);
+  if (sessionId) {
+    const conversation = await loadConversation(sessionId);
+    if (conversation && conversation.familiarId !== familiarId) {
+      return jsonError("not found", 404);
+    }
+  }
+
+  const state = await currentState(familiarId, sessionId, previewModel);
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
   // Also hand back the pickable model menu for this chat's runtime so non-web
@@ -171,15 +201,21 @@ export async function PATCH(req: Request) {
 
   const familiarId = cleanText(body.familiarId);
   const sessionId = cleanText(body.sessionId);
-  const clearModel = body.model === null;
+  // Both null (older clients) and the empty string (new clients that need to
+  // preserve the sentinel through JSON/config merges) mean explicit runtime
+  // default intent. Whitespace is still rejected as an invalid model id.
+  const clearModel = body.model === null || body.model === "";
   const model = clearModel ? null : cleanModelId(body.model);
   const scope = body.scope;
 
   if (!familiarId) return jsonError("familiarId is required", 400);
+  if (!isValidFamiliarId(familiarId)) return jsonError("invalid familiar id", 400);
   if (sessionId && !isSafeConversationSessionId(sessionId)) {
     return jsonError("invalid session id", 400);
   }
   if (!clearModel && !model) return jsonError("invalid model", 400);
+  const config = await loadConfig();
+  const binding = bindingFor(config, familiarId);
   if (scope === "next-message") {
     return jsonError("next-message scope is composer-local", 400);
   }
@@ -187,13 +223,29 @@ export async function PATCH(req: Request) {
     return jsonError("unsupported scope", 400);
   }
 
+  const sessionConversation = scope === "session" && sessionId
+    ? await loadConversation(sessionId)
+    : null;
+  if (scope === "session" && sessionId &&
+      (!sessionConversation || sessionConversation.familiarId !== familiarId)) {
+    return jsonError("not found", 404);
+  }
+  const modelValidationHarness = scope === "session"
+    ? canonicalHarnessId(sessionConversation?.harness ?? binding.harness)
+    : canonicalHarnessId(binding.harness);
+  if (model && !isModelAllowedByRuntime(modelValidationHarness, model)) {
+    return jsonError("model is not allowed by this runtime", 400);
+  }
+
   if (scope === "familiar-default") {
-    const config = await loadConfig();
     await saveConfig({
       familiars: {
         [familiarId]: {
           ...(config.familiars[familiarId] ?? {}),
-          model,
+          // Empty model is a durable Runtime-default intent. A null patch
+          // remains accepted for old clients, but must not erase the intent
+          // and expose a stale familiar/global fallback on the next send.
+          model: clearModel ? "" : model,
         },
       },
     });

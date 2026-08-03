@@ -86,8 +86,52 @@ assert.match(
 
 assert.match(
   replay,
-  /model: stringValue\(payload\.modelOverride\),[\s\S]*reasoningEffort: stringValue\(payload\.reasoningEffort\),[\s\S]*responseSpeed: stringValue\(payload\.responseSpeed\),[\s\S]*modelControls: record\(payload\.modelControls\)/,
-  "travel replay carries an iOS queued explicit model and capability controls through the daemon session contract",
+  /queuedModelOverride\(payload\)[\s\S]*modelOverrideScope:[\s\S]*reasoningEffort: stringValue\(payload\.reasoningEffort\),[\s\S]*responseSpeed: stringValue\(payload\.responseSpeed\),[\s\S]*modelControls: record\(payload\.modelControls\)/,
+  "travel replay extracts queued model and capability intent before the daemon boundary",
+);
+assert.match(
+  replay,
+  /const model = cleanModelId\(queuedModel\)[\s\S]*queued chat model id is not safe for launch/,
+  "travel replay rejects a malformed persisted model instead of silently using the runtime default",
+);
+assert.match(
+  replay,
+  /modelSource === "familiar-default"[\s\S]*metadata\.desiredModel \?\? metadata\.model/,
+  "travel replay preserves model intent from older queued items that predate the explicit override field",
+);
+assert.match(
+  replay,
+  /modelOverride && !isModelAllowedByRuntime\(binding\.harness, modelOverride\)[\s\S]*queued chat model id is not allowed by the selected runtime/,
+  "travel replay validates a queued model against the current runtime before spawning",
+);
+assert.match(
+  replay,
+  /const harness = canonicalHarnessId\(args\.harness\)[\s\S]*path: "\/api\/v1\/sessions"[\s\S]*body:[\s\S]*harness,/,
+  "travel replay canonicalizes runtime aliases before the hub launch boundary",
+);
+
+assert.match(
+  replay,
+  /export function daemonReplayControlFamilies\([\s\S]*?if \(stringValue\(payload\.reasoningEffort\)\)[\s\S]*?if \(stringValue\(payload\.responseSpeed\)\)/,
+  "travel replay identifies legacy and typed control intent before it reaches the daemon",
+);
+
+assert.match(
+  replay,
+  /const controlFamilies = daemonReplayControlFamilies\(payload\);[\s\S]*?queued model controls cannot be replayed through the current hub session contract/,
+  "travel replay must fail visibly instead of marking unsupported controls synced",
+);
+
+assert.match(
+  replay,
+  /queuedMetadata = record\(payload\.responseMetadata\)[\s\S]*canonicalHarnessId\(queuedHarness\) !== canonicalHarnessId\(binding\.harness\)/,
+  "travel replay must not silently move a queued turn onto a newly selected harness",
+);
+
+assert.match(
+  replay,
+  /runtime\?\.startsWith\("local:"\) && isSshRuntime\(binding\.runtime\)[\s\S]*queued local-runtime chat cannot be replayed after this familiar moved to SSH/,
+  "travel replay must fail closed across a local-to-SSH binding change",
 );
 
 assert.match(

@@ -33,7 +33,8 @@ import {
   emitChatSessionDragEnd,
   emitChatSessionDragStart,
 } from "@/lib/chat-split";
-import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
+import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
@@ -73,6 +74,20 @@ type Props = {
 };
 
 const THREADS_PREVIEW = 6;
+const CHAT_SIDEBAR_TABS: ReadonlyArray<TabItem<ChatSidebarView>> = [
+  {
+    id: "recent",
+    label: "Recent",
+    icon: "ph:clock-counter-clockwise",
+    controlsId: "chat-sidebar-group-panel",
+  },
+  {
+    id: "projects",
+    label: "Projects",
+    icon: "ph:folders-bold",
+    controlsId: "chat-sidebar-group-panel",
+  },
+];
 
 function bareTime(iso: string): string {
   return relativeTime(iso, Date.now(), "bare");
@@ -594,15 +609,8 @@ export function WorkspaceSidebar({
             ariaLabel="Sidebar options"
           >
             <div ref={menuBodyRef} tabIndex={-1}>
-              <PopoverBody role="menu" ariaLabel="Organize sidebar">
-                <PopoverLabel>Organize sidebar</PopoverLabel>
-                <PopoverItem icon="ph:clock" checked={view === "recent"} onSelect={() => selectView("recent")}>
-                  Recent chats
-                </PopoverItem>
-                <PopoverItem icon="ph:folder" checked={view === "projects"} onSelect={() => selectView("projects")}>
-                  By project
-                </PopoverItem>
-                <PopoverSeparator />
+              <PopoverBody role="menu" ariaLabel="Sidebar options">
+                <PopoverLabel>Chat visibility</PopoverLabel>
                 <PopoverItem
                   icon="ph:archive"
                   checked={showArchived}
@@ -649,6 +657,17 @@ export function WorkspaceSidebar({
             <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />
           </button>
         </div>
+
+        <Tabs<ChatSidebarView>
+          items={CHAT_SIDEBAR_TABS}
+          value={view}
+          onChange={selectView}
+          ariaLabel="Group chats"
+          className="cnav__tabs"
+          size="sm"
+          idPrefix="chat-sidebar-group"
+          fill
+        />
 
         <div className="cnav__search-wrap">
           <label className="cnav__search">
@@ -697,7 +716,13 @@ export function WorkspaceSidebar({
           </div>
         ) : null}
 
-        <nav aria-label="Chat threads" className="cnav__scroll">
+        <div
+          id="chat-sidebar-group-panel"
+          role="tabpanel"
+          aria-labelledby={`chat-sidebar-group-tab-${view}`}
+          className="cnav__scroll focus-ring-inset"
+        >
+          <nav aria-label="Chat threads">
           {!hasSearch && pinnedSessions.length > 0 ? (
             <section aria-label="Pinned threads">
               <div className="cnav__label">
@@ -925,7 +950,8 @@ export function WorkspaceSidebar({
               })}
             </ul>
           )}
-        </nav>
+          </nav>
+        </div>
 
         {/* Shared footer (Dashboard + Settings + version) so Chat keeps the same
             side-panel footer as every other surface; it sits below the scrolling

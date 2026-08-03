@@ -8,14 +8,23 @@
 
 ## Branch protection on `main` — all changes go through a PR
 
-**Rule:** `main` is a protected branch. There are **no direct pushes** — not for collaborators, not for admins, not for Claude sessions (which push as the `BunsDev` admin). Every change lands via a pull request whose required checks are green. `git push origin main` (or `HEAD:main`) will be **rejected** with `GH006: Protected branch update failed`.
+**Rule:** `main` is a protected branch. **No direct pushes from agents or
+collaborators** — every change you make lands via a pull request whose required
+checks are green. A non-admin collaborator's `git push origin main` (or
+`HEAD:main`) is rejected with `GH006: Protected branch update failed`. A session
+authenticated as the `BunsDev` admin may technically bypass that server-side
+rejection; the repository rule still forbids the push.
 
-**Why:** Direct-to-main pushes were bypassing PR review and CI, and a shared-checkout `git add -A` from one of several concurrent sessions swallowed other sessions' uncommitted work into a single unrelated direct push (commit `258af8d`). See issue #585 for the full write-up. Protection was enabled with `enforce_admins=true` to make the hard stop apply to everyone.
+The one exception is the **repository owner**, who is exempt by standing
+instruction (`enforce_admins = false`, see below). That exemption is theirs, not
+yours. Use a PR.
+
+**Why:** Direct-to-main pushes were bypassing PR review and CI, and a shared-checkout `git add -A` from one of several concurrent sessions swallowed other sessions' uncommitted work into a single unrelated direct push (commit `258af8d`). See issue #585 for the full write-up. Protection was originally enabled with `enforce_admins=true` so the hard stop applied to everyone; that part has since changed at the owner's direction (see the `enforce_admins` bullet below), while the PR requirement it exists to enforce has not.
 
 **Current settings** (verified live; `gh api repos/OpenCoven/coven-cave/branches/main/protection`):
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
-- Required status checks — **all NINE** must pass (widened 2026-08-01 from five): `Frontend build`, `Rust check`, `E2E (Playwright)`, `Cross-environment (ubuntu-latest)`, `Cross-environment (windows-latest)`, `Cross-environment required`, `Sidecar runtime (ubuntu-latest)`, `Sidecar runtime (windows-latest)`, `Sidecar runtime required`. The four matrix legs were added alongside their `*-required` rollups. The rollups already fail unless `needs.<job>.result == 'success'`, so this is defense in depth rather than a gap being closed — it removes the dependency on those aggregation scripts staying correct. **Both layers carry the same nine** (classic protection and ruleset `19123333`), so they cannot disagree. Only `ci.yml` runs on `pull_request` and no job carries a skippable `if:`, which is why requiring the legs is safe — a required context that never reports is what leaves a PR stuck `BLOCKED` with nothing failing. **`CodeQL` is retired** (2026-07-31): the ruleset's `code_scanning` rule went first, then the required context in classic branch protection, and now the workflow itself. Code scanning is fully off — GitHub default setup is `not-configured`, so nothing scans in its place. If you ever see a PR stuck `BLOCKED` with `mergeable: MERGEABLE`, no failing check and every conversation resolved, suspect a required context that no longer reports; compare `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the checks the PR actually runs. The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
+- Required status checks — **all NINE** must pass (widened 2026-08-01 from five): `Frontend build`, `Rust check`, `E2E (Playwright)`, `Cross-environment (ubuntu-latest)`, `Cross-environment (windows-latest)`, `Cross-environment required`, `Sidecar runtime (ubuntu-latest)`, `Sidecar runtime (windows-latest)`, `Sidecar runtime required`. The four matrix legs were added alongside their `*-required` rollups. The rollups already fail unless `needs.<job>.result == 'success'`, so this is defense in depth rather than a gap being closed — it removes the dependency on those aggregation scripts staying correct. Classic branch protection is the active enforcement layer. Ruleset `19123333` lists the same nine checks but is currently disabled, so it does not provide a second gate. Only `ci.yml` runs on `pull_request` and no job carries a skippable `if:`, which is why requiring the legs is safe — a required context that never reports is what leaves a PR stuck `BLOCKED` with nothing failing. **`CodeQL` is retired** (2026-07-31): the ruleset's `code_scanning` rule went first, then the required context in classic branch protection, and now the workflow itself. Code scanning is fully off — GitHub default setup is `not-configured`, so nothing scans in its place. If you ever see a PR stuck `BLOCKED` with `mergeable: MERGEABLE`, no failing check and every conversation resolved, suspect a required context that no longer reports; compare `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the checks the PR actually runs. The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
 - Review conversations are **no longer required to be resolved**
   (`required_conversation_resolution` was turned OFF on 2026-08-01, at the
   user's direction). A PR with green checks merges with open threads.
@@ -57,17 +66,34 @@
   merely advised.
 - Branches do **not** need to be up to date with `main` (`strict: false`), so
   being behind is never the reason a merge is blocked.
-- `enforce_admins = true` — admins are **not** exempt. This flipped back on
-  2026-08-01 at the user's direction, and the paragraph that used to sit here
-  (calling `false` "deliberate, not drift — leave it alone") was wrong enough
-  to be worth a warning. See "What `enforce_admins = false` actually cost"
-  below. The `--admin` flag `gh` dangles at you on a blocked merge is still not
-  the fix — fix the actual blocker.
+- 🔒 `enforce_admins = false` — **the repository owner is exempt, by standing
+  instruction. Do not change this back.** Set on 2026-08-03 at the owner's
+  explicit direction ("enable pushing origin for me on main branch as project
+  admin and never change that"). It grants the owner a direct `git push origin
+  main`; it is not a lever for an agent to reach for.
+
+  This setting has been flipped in both directions before, each time by the
+  owner, so the history below reads as an argument rather than a record. To be
+  unambiguous: the cost documented in the next section is **known and accepted**.
+  Do not cite it as grounds for re-enabling, do not "restore" it during
+  cleanup, and do not treat a red `main` as evidence the setting is wrong.
+  If you believe it should change, say so to the owner and leave it alone.
+
+  Nothing here changes how **agents** land work. Every rule below still binds
+  us: work on a branch, open a PR, wait for the nine required checks. The
+  `--admin` flag `gh` dangles at you on a blocked merge is still not the fix —
+  fix the actual blocker.
 - Force-pushes and deletion of `main` are blocked. `allow_deletions = false`
   holds regardless of `enforce_admins`: two `git push origin :main` attempts on
   2026-08-01 were both rejected with exit 1.
 
-### What `enforce_admins = false` actually cost
+### What `enforce_admins = false` cost when it was last off
+
+*Kept as history, not as an argument.* The setting is deliberately off again as
+of 2026-08-03 (see above) and this section is **not** grounds to change it. Its
+value now is diagnostic: when `main` goes red or a worktree vanishes, this is
+what that failure mode looks like, so you can recognise it quickly instead of
+re-deriving it.
 
 While it was off, **GitHub Desktop** — the desktop app, run from its UI — was
 merging feature branches into `main` locally and pushing straight to it. On
@@ -103,13 +129,17 @@ A related tell: `main`'s CI runs keep showing `cancelled` rather than
 completing, because each new push supersedes the previous run. If you cannot
 find a completed run for a commit on `main`, suspect push churn, not a CI bug.
 
-⚠️ **Remaining gap — the ruleset layer.** Protection is two layers and a push
-must satisfy BOTH, so classic protection is what blocks today. But ruleset
-`19123333` still carries `bypass_actors: [{actor_type: OrganizationAdmin,
-bypass_mode: always}]` over its `deletion` / `required_status_checks` /
-`pull_request` rules. If classic protection is ever retired in favour of
-rulesets alone, that bypass silently becomes the whole story. Check with
-`gh api repos/OpenCoven/coven-cave/rulesets/19123333 --jq .bypass_actors`.
+⚠️ **Remaining gap — the ruleset layer is disabled.** Classic protection is
+the only active gate today. Ruleset `19123333` has `enforcement: disabled` and
+still carries `bypass_actors: [{actor_type: OrganizationAdmin, bypass_mode:
+always}]` over its `deletion` / `required_status_checks` / `pull_request`
+rules. Enabling that ruleset as-is would exempt organization admins rather
+than provide an independent backstop. Check both fields with:
+
+```bash
+gh api repos/OpenCoven/coven-cave/rulesets/19123333 \
+  --jq '{enforcement, bypass_actors}'
+```
 
 **How to apply (the only path to `main`):**
 
@@ -133,7 +163,7 @@ gh pr merge <#> --squash --delete-branch
 `gh pr merge` on a blocked PR suggests `--admin`. Don't. It bypasses the
 protection this section exists to describe; fix the actual blocker instead.
 
-Squash-merge through `gh`/the PR UI still works — it's a merge, not a direct push. Only `git push … main` is blocked. Don't try to "work around" protection (e.g. flipping `enforce_admins` off to push) — if a change can't go through a PR, surface it to the user.
+Squash-merge through `gh`/the PR UI still works — it's a merge, not a direct push. Non-admin pushes to `main` are blocked server-side; admin-authenticated agent sessions are bound by the repository rule above. Don't work around protection to land your own change — and in particular, **do not touch `enforce_admins` in either direction**: it is the owner's setting, currently off by their standing instruction. If a change can't go through a PR, surface it to the owner.
 
 ## No AI attribution in commits or PRs — this overrides your global rule
 

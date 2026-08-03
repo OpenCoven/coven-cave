@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import {
   clearClaudeModelCache,
+  listClaudeModelInventory,
   listClaudeModels,
 } from "./claude-models.ts";
 
@@ -55,7 +56,7 @@ function versionSpawn(
 clearClaudeModelCache();
 let capturedArgs: readonly string[] = [];
 let capturedEnv: NodeJS.ProcessEnv | undefined;
-const direct = await listClaudeModels("sage", {
+const directDependencies = {
   scopedEnv: () => ({
     PATH: "/scoped",
     ANTHROPIC_API_KEY: "fixture",
@@ -70,7 +71,14 @@ const direct = await listClaudeModels("sage", {
       capturedEnv = options?.env;
     },
   }),
-});
+};
+const directInventory = await listClaudeModelInventory("sage", directDependencies);
+const direct = directInventory.models;
+assert.equal(
+  directInventory.provenance,
+  "fallback",
+  "a version probe plus Cave seeds cannot claim live provider entitlement",
+);
 assert.equal(direct[0]?.id, "anthropic/claude-opus-5");
 assert.deepEqual(capturedArgs, ["--version"]);
 assert.equal(capturedEnv?.PATH, "/canonical");

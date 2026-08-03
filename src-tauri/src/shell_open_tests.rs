@@ -124,6 +124,7 @@ fn rejects_arbitrary_or_malformed_x_oauth_navigation() {
     for denied in [
         "http://x.com/i/oauth2/authorize",
         "https://example.com/i/oauth2/authorize",
+        "https://user:pass@x.com/i/oauth2/authorize",
         "https://x.com/i/oauth2/authorize#fragment",
         "https://x.com/other",
         "https://x.com/i/oauth2/authorize",

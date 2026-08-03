@@ -44,6 +44,7 @@ export function ComposerRuntimePopover({
   open,
   onOpenChange,
   anchorRef,
+  placement = "top-start",
   runtime,
   modelValue,
   modelOptions,
@@ -55,6 +56,7 @@ export function ComposerRuntimePopover({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   anchorRef: React.RefObject<HTMLElement | null>;
+  placement?: "bottom-start" | "top-start";
   runtime: string;
   modelValue: string;
   modelOptions: RuntimeModelOption[];
@@ -70,12 +72,14 @@ export function ComposerRuntimePopover({
 }) {
   const setOpen = onOpenChange;
   const hasRuntimeDefault = runtimeOwnsModelDefault(runtime);
+  const modelIsOutsideInventory =
+    Boolean(modelValue) && !modelOptions.some((option) => option.id === modelValue);
   return (
     <Popover
       open={open}
       onOpenChange={onOpenChange}
       anchorRef={anchorRef}
-      placement="top-start"
+      placement={placement}
       minWidth={230}
       ariaLabel="Runtime and model"
     >
@@ -106,11 +110,11 @@ export function ComposerRuntimePopover({
               {runtimeDisplayName(catalog.runtime)}
             </PopoverItem>
           ))}
-          {(hasRuntimeDefault || modelOptions.length > 0) && (
+          {(hasRuntimeDefault || modelOptions.length > 0 || modelIsOutsideInventory) && (
             <>
               <PopoverSeparator />
               <PopoverLabel>Model</PopoverLabel>
-              {hasRuntimeDefault ? (
+              {hasRuntimeDefault || modelOptions.length > 0 || modelIsOutsideInventory ? (
                 <PopoverItem
                   checked={!modelValue}
                   onSelect={() => {
@@ -119,6 +123,15 @@ export function ComposerRuntimePopover({
                   }}
                 >
                   Runtime default
+                </PopoverItem>
+              ) : null}
+              {modelIsOutsideInventory ? (
+                <PopoverItem
+                  checked
+                  disabled
+                  title={modelValue}
+                >
+                  Current selection · {modelValue} (not in current inventory)
                 </PopoverItem>
               ) : null}
               {modelOptions.map((m) => (

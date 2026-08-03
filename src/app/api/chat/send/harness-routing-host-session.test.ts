@@ -340,6 +340,11 @@ assert.match(
   "Response metadata should expose unsupported/saved state instead of claiming application",
 );
 assert.match(
+  chatRoute,
+  /savedModelSelectionRejection\(\{[\s\S]*?desiredModel,[\s\S]*?modelState,[\s\S]*?harness: binding\.harness,[\s\S]*?modelForwardingEnabled,[\s\S]*?invalidSavedModel,[\s\S]*?\}\)/,
+  "Saved model selections must fail closed when the runtime cannot accept or forward them",
+);
+assert.match(
   modelHelpers,
   /const sessionModel =[\s\S]*modelOverrideScope === "session"[\s\S]*\? requestedModel[\s\S]*: args\.existingConversation\?\.modelIntent\?\.model \?\? null/,
   "Session-scoped model overrides should feed the response model state, not only desiredModel",

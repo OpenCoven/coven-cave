@@ -149,4 +149,44 @@ final class ChatProjectSelectionTests: XCTestCase {
             ["sage", "nova"]
         )
     }
+
+    func testProjectLoadRetriesOnceAfterConnectionRecovery() async throws {
+        var attempts = 0
+        var recoveryErrors: [String] = []
+
+        let loaded = try await ChatProjectSelection.loadProjectsWithRecovery(
+            load: {
+                attempts += 1
+                if attempts == 1 { throw URLError(.networkConnectionLost) }
+                return [self.project("cave", "Cave", .write)]
+            },
+            recover: { error in
+                recoveryErrors.append(error.localizedDescription)
+                return true
+            }
+        )
+
+        XCTAssertEqual(attempts, 2)
+        XCTAssertEqual(recoveryErrors.count, 1)
+        XCTAssertEqual(loaded.map(\.id), ["cave"])
+    }
+
+    func testProjectLoadPreservesOriginalErrorWhenRecoveryFails() async {
+        var attempts = 0
+
+        do {
+            _ = try await ChatProjectSelection.loadProjectsWithRecovery(
+                load: {
+                    attempts += 1
+                    throw URLError(.cannotConnectToHost)
+                },
+                recover: { _ in false }
+            )
+            XCTFail("Expected project loading to fail")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .cannotConnectToHost)
+        }
+
+        XCTAssertEqual(attempts, 1)
+    }
 }
