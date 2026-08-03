@@ -811,10 +811,10 @@ final class AppModel {
     // MARK: - Bulk reminder actions
 
     func markRemindersDone(_ ids: Set<String>) async {
-        await bulkServerAction(ids, optimistic: "done", action: "done")
+        await bulkServerAction(ids, optimistic: "done", action: "done", verb: "mark done")
     }
     func dismissReminders(_ ids: Set<String>) async {
-        await bulkServerAction(ids, optimistic: "dismissed", action: "dismiss")
+        await bulkServerAction(ids, optimistic: "dismissed", action: "dismiss", verb: "dismiss")
     }
 
     /// Snooze is the one bulk action WITHOUT a server counterpart: the bulk
@@ -832,7 +832,10 @@ final class AppModel {
     /// in `updated` succeeded; ids absent from it did not take effect and are
     /// the only ones reverted — the old all-or-nothing revert made the UI
     /// disagree with a server that had already applied most of the batch.
-    private func bulkServerAction(_ ids: Set<String>, optimistic: String, action: String) async {
+    /// `verb` is what the user is told, and it is passed rather than derived
+    /// from `action` because the two are not the same vocabulary: the wire
+    /// action is "done", the sentence needs "mark done".
+    private func bulkServerAction(_ ids: Set<String>, optimistic: String, action: String, verb: String) async {
         guard let client, !ids.isEmpty else { return }
         let previous = reminders
         for id in ids { applyReminder(id: id) { $0.status = optimistic } }
@@ -847,7 +850,7 @@ final class AppModel {
             let missed = ids.subtracting(confirmed)
             guard !missed.isEmpty else { Haptics.success(); return }
             revert(missed, to: previous)
-            reportPartial(missed.count, of: ids.count, verb: "update")
+            reportPartial(missed.count, of: ids.count, verb: verb)
         } catch {
             reminders = previous
             remindersError = error.localizedDescription

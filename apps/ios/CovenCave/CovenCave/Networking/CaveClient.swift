@@ -841,7 +841,11 @@ struct CaveClient {
         let req = try request("api/inbox/bulk", method: "POST", body: body)
         let (data, resp) = try await data(for: req)
         try Self.check(resp)
-        return try JSONDecoder().decode(BulkInboxOutcome.self, from: data)
+        do {
+            return try JSONDecoder().decode(BulkInboxOutcome.self, from: data)
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
     }
 
     /// `POST /api/inbox/{id}/{action}` — done / dismiss / snooze. Returns the
