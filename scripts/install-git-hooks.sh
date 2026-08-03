@@ -46,13 +46,25 @@ if [ -n "$resolved_current" ] && [ -d "$resolved_current" ] \
   echo "  left alone: it already points at a hook directory, and replacing it"
   echo "  would silently disable every hook living there (cave-7g7py)."
   echo "  hooks present: $(ls "$resolved_current" 2>/dev/null | xargs)"
+  # -x, not -e: git only runs a hook that is EXECUTABLE. A present but
+  # non-executable file is exactly the silent no-op this script exists to
+  # surface, so treat it as a distinct, louder case rather than "fine".
   missing=""
+  not_exec=""
   for hook in pre-commit commit-msg; do
-    [ -e "$resolved_current/$hook" ] || missing="$missing $hook"
+    if [ ! -e "$resolved_current/$hook" ]; then
+      missing="$missing $hook"
+    elif [ ! -x "$resolved_current/$hook" ]; then
+      not_exec="$not_exec $hook"
+    fi
   done
   if [ -n "$missing" ]; then
     echo "  WARNING missing hook(s):$missing — those guards are NOT running." >&2
     echo "  Add a shim in that directory that execs $FALLBACK_HOOKS/<hook>." >&2
+  fi
+  if [ -n "$not_exec" ]; then
+    echo "  WARNING non-executable hook(s):$not_exec — present but git will NOT run them." >&2
+    echo "  Fix with: chmod +x $resolved_current/<hook>" >&2
   fi
 else
   git -C "$REPO_ROOT" config core.hooksPath "$FALLBACK_HOOKS"

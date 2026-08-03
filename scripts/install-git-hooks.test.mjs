@@ -120,6 +120,33 @@ test("a preserved hook directory missing a guard WARNS rather than passing silen
   }
 });
 
+test("a PRESENT but NON-EXECUTABLE hook warns — git will not run it", () => {
+  // git only runs a hook that is executable, so an `-e` existence check would
+  // call this fine while the guard stays dead — the same silent no-op this
+  // script exists to surface.
+  //
+  // Uses a THIRD directory on purpose. The installer chmod +x's both
+  // scripts/git-hooks and .beads/hooks, so neither of those can reach the
+  // check non-executable; the gap only exists for a hooksPath the installer
+  // does not own, which is exactly where it must not guess and must warn.
+  const dir = scaffold();
+  try {
+    mkdirSync(join(dir, "custom-hooks"), { recursive: true });
+    for (const hook of ["pre-commit", "commit-msg"]) {
+      writeFileSync(join(dir, "custom-hooks", hook), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o644 });
+    }
+    git(dir, "config", "core.hooksPath", "custom-hooks");
+    const combined = execFileSync("bash", ["-c", `bash "${dir}/scripts/install-git-hooks.sh" 2>&1`], {
+      cwd: dir, encoding: "utf8",
+    });
+    assert.match(combined, /WARNING non-executable hook\(s\):/, "a non-executable hook must be reported");
+    assert.doesNotMatch(combined, /WARNING missing hook/, "it is present — not missing");
+    assert.equal(git(dir, "config", "--get", "core.hooksPath"), "custom-hooks", "and still preserved");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the merge driver is registered regardless of the hook decision", () => {
   // The driver must never be collateral damage of the hooks branch — that
   // coupling is what made the original script unsafe to run at all.
