@@ -8,9 +8,17 @@
 
 ## Branch protection on `main` — all changes go through a PR
 
-**Rule:** `main` is a protected branch. There are **no direct pushes** — not for collaborators, not for admins, not for Claude sessions (which push as the `BunsDev` admin). Every change lands via a pull request whose required checks are green. `git push origin main` (or `HEAD:main`) will be **rejected** with `GH006: Protected branch update failed`.
+**Rule:** `main` is a protected branch. **No direct pushes from agents or
+collaborators** — every change you make lands via a pull request whose required
+checks are green. `git push origin main` (or `HEAD:main`) will be **rejected**
+with `GH006: Protected branch update failed`.
 
-**Why:** Direct-to-main pushes were bypassing PR review and CI, and a shared-checkout `git add -A` from one of several concurrent sessions swallowed other sessions' uncommitted work into a single unrelated direct push (commit `258af8d`). See issue #585 for the full write-up. Protection was enabled with `enforce_admins=true` to make the hard stop apply to everyone.
+The one exception is the **repository owner**, who is exempt by standing
+instruction (`enforce_admins = false`, see below). That exemption is theirs, not
+yours: a Claude session pushes as the `BunsDev` admin and would technically slip
+through, which is precisely why this says don't. Use a PR.
+
+**Why:** Direct-to-main pushes were bypassing PR review and CI, and a shared-checkout `git add -A` from one of several concurrent sessions swallowed other sessions' uncommitted work into a single unrelated direct push (commit `258af8d`). See issue #585 for the full write-up. Protection was originally enabled with `enforce_admins=true` so the hard stop applied to everyone; that part has since changed at the owner's direction (see the `enforce_admins` bullet below), while the PR requirement it exists to enforce has not.
 
 **Current settings** (verified live; `gh api repos/OpenCoven/coven-cave/branches/main/protection`):
 
@@ -57,17 +65,34 @@
   merely advised.
 - Branches do **not** need to be up to date with `main` (`strict: false`), so
   being behind is never the reason a merge is blocked.
-- `enforce_admins = true` — admins are **not** exempt. This flipped back on
-  2026-08-01 at the user's direction, and the paragraph that used to sit here
-  (calling `false` "deliberate, not drift — leave it alone") was wrong enough
-  to be worth a warning. See "What `enforce_admins = false` actually cost"
-  below. The `--admin` flag `gh` dangles at you on a blocked merge is still not
-  the fix — fix the actual blocker.
+- 🔒 `enforce_admins = false` — **the repository owner is exempt, by standing
+  instruction. Do not change this back.** Set on 2026-08-03 at the owner's
+  explicit direction ("enable pushing origin for me on main branch as project
+  admin and never change that"). It grants the owner a direct `git push origin
+  main`; it is not a lever for an agent to reach for.
+
+  This setting has been flipped in both directions before, each time by the
+  owner, so the history below reads as an argument rather than a record. To be
+  unambiguous: the cost documented in the next section is **known and accepted**.
+  Do not cite it as grounds for re-enabling, do not "restore" it during
+  cleanup, and do not treat a red `main` as evidence the setting is wrong.
+  If you believe it should change, say so to the owner and leave it alone.
+
+  Nothing here changes how **agents** land work. Every rule below still binds
+  us: work on a branch, open a PR, wait for the nine required checks. The
+  `--admin` flag `gh` dangles at you on a blocked merge is still not the fix —
+  fix the actual blocker.
 - Force-pushes and deletion of `main` are blocked. `allow_deletions = false`
   holds regardless of `enforce_admins`: two `git push origin :main` attempts on
   2026-08-01 were both rejected with exit 1.
 
-### What `enforce_admins = false` actually cost
+### What `enforce_admins = false` cost when it was last off
+
+*Kept as history, not as an argument.* The setting is deliberately off again as
+of 2026-08-03 (see above) and this section is **not** grounds to change it. Its
+value now is diagnostic: when `main` goes red or a worktree vanishes, this is
+what that failure mode looks like, so you can recognise it quickly instead of
+re-deriving it.
 
 While it was off, **GitHub Desktop** — the desktop app, run from its UI — was
 merging feature branches into `main` locally and pushing straight to it. On
@@ -137,7 +162,7 @@ gh pr merge <#> --squash --delete-branch
 `gh pr merge` on a blocked PR suggests `--admin`. Don't. It bypasses the
 protection this section exists to describe; fix the actual blocker instead.
 
-Squash-merge through `gh`/the PR UI still works — it's a merge, not a direct push. Only `git push … main` is blocked. Don't try to "work around" protection (e.g. flipping `enforce_admins` off to push) — if a change can't go through a PR, surface it to the user.
+Squash-merge through `gh`/the PR UI still works — it's a merge, not a direct push. Only `git push … main` is blocked for you. Don't work around protection to land your own change — and in particular, **do not touch `enforce_admins` in either direction**: it is the owner's setting, currently off by their standing instruction. If a change can't go through a PR, surface it to the owner.
 
 ## No AI attribution in commits or PRs — this overrides your global rule
 
