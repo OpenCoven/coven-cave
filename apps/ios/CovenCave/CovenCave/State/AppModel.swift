@@ -1719,6 +1719,17 @@ final class AppModel {
             }
     }
 
+    /// The thread a familiar's chat lands on: its pinned thread if it has an
+    /// unarchived one, otherwise its newest-updated unarchived direct thread.
+    /// Archived threads are never eligible, pinned or not — `directThreads`
+    /// sorts pinned-first, then by recency, and this takes the first eligible
+    /// entry. Callers that render a timestamp are showing the landing thread's
+    /// activity, which is deliberately NOT always the familiar's latest.
+    /// Nil when the familiar has no eligible thread — callers start a new chat.
+    func landingDirectThread(for familiarId: String) -> ChatThread? {
+        directThreads(for: familiarId).first { !$0.archived }
+    }
+
     /// Every group thread, newest first — shown as its own rows on the Chats
     /// home (a group has no single familiar to file it under).
     var groupThreads: [ChatThread] {

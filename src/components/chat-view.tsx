@@ -198,9 +198,13 @@ import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
+import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
+import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
 import { GitHubCard } from "@/components/github-card";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
+import { AutoStatusCard } from "@/components/auto-status-card";
+import { AutoModeFeedbackModal } from "@/components/auto-mode-feedback-modal";
 import {
   NO_PROJECT_ID,
   chatProjectById,
@@ -1958,6 +1962,50 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const timer = window.setTimeout(() => setReflectError(null), 4500);
     return () => window.clearTimeout(timer);
   }, [reflectError]);
+
+  // `/auto` mission tracking (cave auto-mode): the mission text for the
+  // in-flight /auto run in THIS chat, so the blocked/done watcher below knows
+  // what to notify about and the feedback modal knows what to attribute
+  // ratings to. Cleared when a new /auto starts or the chat is cleared.
+  const [autoMission, setAutoMission] = useState<string | null>(null);
+  const [autoFeedbackOpen, setAutoFeedbackOpen] = useState(false);
+  // Turn ids already notified-for, so a settle re-render (or a second
+  // <coven:auto-status> marker of the same terminal state) never double-pings
+  // the human or double-opens the questionnaire.
+  const autoNotifiedTurnsRef = useRef<Set<string>>(new Set());
+
+  // Watch settled assistant turns for a terminal `<coven:auto-status>` marker
+  // (auto-status-blocks.ts). "blocked" and "done" are the ONLY two states
+  // that should draw the human back in — see buildAutoModeDirective. Blocked
+  // fires a response-needed inbox item (something only a human can resolve);
+  // done fires an agent inbox item AND opens the feedback questionnaire so
+  // the mission's outcome can shape the next one.
+  useEffect(() => {
+    if (!autoMission) return;
+    for (const t of turns) {
+      if (t.role !== "assistant" || t.pending || !t.text) continue;
+      if (autoNotifiedTurnsRef.current.has(t.id)) continue;
+      const { update } = extractAutoStatusMarkers(t.text);
+      if (!update || (update.state !== "blocked" && update.state !== "done")) continue;
+      autoNotifiedTurnsRef.current.add(t.id);
+      const blocked = update.state === "blocked";
+      void fetch("/api/inbox", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: blocked ? "response-needed" : "agent",
+          title: blocked ? "Auto mission needs you" : "Auto mission complete",
+          body: update.note || autoMission,
+          source: "agent",
+          familiarId: familiar.id,
+          sessionId,
+          auto: "auto-mission",
+          link: sessionId ? { kind: "session", ref: sessionId } : null,
+        }),
+      }).catch(() => undefined);
+      if (!blocked) setAutoFeedbackOpen(true);
+    }
+  }, [autoMission, familiar.id, sessionId, turns]);
 
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
@@ -4227,6 +4275,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setTurns([]);
       setActiveLeafId("");
       setInput("");
+      setAutoMission(null);
+      autoNotifiedTurnsRef.current.clear();
       return true;
     }
     if (command === "/help") {
@@ -4271,6 +4321,28 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       handleSelectModel(id);
       appendSystem(`Model set to ${id}.`);
       setInput("");
+      return true;
+    }
+    if (command === "/auto" || command === "/autopilot") {
+      if (!args.trim()) {
+        appendSystem(
+          "Give it a mission — e.g. /auto clean up the failing tests in src/lib. It may ask a few clarifying questions up front, then works silently and only pings you again on completion or when blocked.",
+        );
+        setInput("");
+        return true;
+      }
+      const mission = args.trim();
+      setInput("");
+      setAutoMission(mission);
+      setAutoFeedbackOpen(false);
+      void fetch(`/api/auto-mode/feedback?familiarId=${encodeURIComponent(familiar.id)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json: { digest?: string } | null) => {
+          setTimeout(() => sendRaw(buildAutoModeDirective(mission, json?.digest)), 0);
+        })
+        .catch(() => {
+          setTimeout(() => sendRaw(buildAutoModeDirective(mission)), 0);
+        });
       return true;
     }
     if (command === "/skill" || command === "/skills") {
@@ -7497,6 +7569,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onClose={() => setSaveTemplateSeed(null)}
         initialBody={saveTemplateSeed ?? ""}
       />
+      <AutoModeFeedbackModal
+        open={autoFeedbackOpen}
+        onClose={() => setAutoFeedbackOpen(false)}
+        familiarId={familiar.id}
+        mission={autoMission ?? ""}
+      />
       <Modal
         open={debugModalOpen}
         onClose={() => setDebugModalOpen(false)}
@@ -7998,7 +8076,11 @@ function TurnRowImpl({
   // skill, what stage" visibility while the agent works (design §5). The
   // extraction also strips partial tails so raw tags never flash.
   const skillSplit = extractSkillMarkers(ghSafeVisible);
-  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(skillSplit.visible);
+  // Auto-mission status card (design mirrors skill markers): extracted the
+  // same way, on both the streaming and settled path, so the phase chip
+  // (clarifying/working/blocked/done) updates live.
+  const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
+  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(autoStatusSplit.visible);
   const visible = turn.pending ? visibleWithGh : stripGitHubMarkers(visibleWithGh);
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
@@ -8230,6 +8312,14 @@ function TurnRowImpl({
                 {skillSplit.updates.map((u) => (
                   <SkillStageCard key={u.name} name={u.name} stage={u.stage} note={u.note} />
                 ))}
+              </div>
+            ) : null}
+            {/* Auto-mission status card: one per turn, updated in place by
+                repeated <coven:auto-status> markers — the human-visible half
+                of the /auto watcher above that fires the blocked/done ping. */}
+            {autoStatusSplit.update ? (
+              <div className="mt-2">
+                <AutoStatusCard state={autoStatusSplit.update.state} note={autoStatusSplit.update.note} />
               </div>
             ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}

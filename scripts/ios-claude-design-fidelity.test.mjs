@@ -135,8 +135,8 @@ assert.match(
 // Authored navigation and discovery surfaces.
 assert.match(
   home,
-  /List\(selection: \$selection\) \{\s*Section \{\s*familiarRail/s,
-  "Chats renders the familiar rail it defines",
+  /List\(selection: \$selection\) \{\s*ForEach\(filteredFamiliars\) \{ familiar in\s*FamiliarConversationRow\(familiar: familiar\)/s,
+  "Chats renders the familiar list it defines",
 );
 assert.match(root, /CaveNavigationDrawer\(/, "the global Claude Design drawer is mounted at app root");
 assert.doesNotMatch(root, /TabView/, "the primary shell does not retain a native tab view");
