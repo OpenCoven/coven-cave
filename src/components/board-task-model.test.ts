@@ -56,7 +56,11 @@ assert.match(
   "new task sessions canonicalize the card runtime and only use an override from the familiar's current runtime",
 );
 assert.match(taskRoute, /updateCard\(card\.id, \{ modelOverride: null, modelOverrideHarness: null \}\)/, "a stale task model is cleared before launch");
-assert.match(taskRoute, /model: taskModelOverride \?\? binding\.model/, "new task sessions otherwise use the familiar default model");
+assert.match(
+  taskRoute,
+  /const configuredModel = binding\.model \? cleanModelId\(binding\.model\) : null[\s\S]*?model: taskModelOverride \?\? configuredModel/,
+  "new task sessions otherwise use the validated familiar default model",
+);
 // cave-aikv: board task sessions must never spawn an immortal, never-attached
 // interactive harness TUI. A local copilot task takes the native Chat bridge
 // (its daemon PTY is the worst offender + nonInteractive mangles its prompt);
