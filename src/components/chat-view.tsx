@@ -8275,6 +8275,7 @@ function TurnRowImpl({
                   onAskAbout={onAskAbout}
                   readerPrompt={readerPrompt}
                   onRerunWith={onRerunWith}
+                  readerFamiliarId={familiar.id}
                   branchNav={branchNav}
                 />
                 <ResponseModelStatus metadata={turn.responseMetadata} />

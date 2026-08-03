@@ -225,6 +225,7 @@ export const SUITES = {
     "src/lib/chat-thread-instruments.test.ts",
     "src/lib/chat-tool-batches.test.ts",
     "src/lib/reader-outline.test.ts",
+    "src/lib/reader-rewrite.test.ts",
     "src/lib/reader-provenance.test.ts",
     "src/lib/chat-queue-followups.test.ts",
     "src/lib/chat-review-requests.test.ts",
