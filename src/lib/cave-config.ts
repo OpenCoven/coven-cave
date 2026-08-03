@@ -934,6 +934,18 @@ export async function summonSessionLocal(sessionId: string): Promise<void> {
 }
 
 /** Mark or unmark a session keep (never auto-archived). Manual archive still works. */
+export async function setSessionKeepLocal(sessionId: string, keep: boolean): Promise<boolean> {
+  await updateState((state) => {
+    if (keep) {
+      state.sessionKeep[sessionId] = new Date().toISOString();
+    } else {
+      delete state.sessionKeep[sessionId];
+    }
+  });
+  invalidateSessionsListCache();
+  return keep;
+}
+
 /** Pin or unpin a session so chat lists sort it to the top. Stored like
  *  `sessionKeep`: an ISO stamp when set, key absent when cleared. */
 export async function setSessionPinnedLocal(sessionId: string, pinned: boolean): Promise<boolean> {
@@ -946,18 +958,6 @@ export async function setSessionPinnedLocal(sessionId: string, pinned: boolean):
   });
   invalidateSessionsListCache();
   return pinned;
-}
-
-export async function setSessionKeepLocal(sessionId: string, keep: boolean): Promise<boolean> {
-  await updateState((state) => {
-    if (keep) {
-      state.sessionKeep[sessionId] = new Date().toISOString();
-    } else {
-      delete state.sessionKeep[sessionId];
-    }
-  });
-  invalidateSessionsListCache();
-  return keep;
 }
 
 /** Push a session's auto-archive deadline out to `untilIso`. */

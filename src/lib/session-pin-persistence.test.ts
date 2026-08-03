@@ -31,7 +31,7 @@ assert.equal(unpinned.length, 1);
 assert.ok(
   !("pinned" in unpinned[0]),
   "an unpinned row must OMIT the key, not carry pinned:false — the existing " +
-    "deepEqual row tests assert exact shape and a always-present key breaks them",
+    "deepEqual row tests assert exact shape and an always-present key breaks them",
 );
 
 const pinned = localConversationSessionRows(
@@ -106,9 +106,18 @@ const route = await readFile(
   new URL("../app/api/sessions/[id]/route.ts", import.meta.url),
   "utf8",
 );
+// Two independent single-line matches rather than one regex spanning the
+// block: the previous form hard-required specific whitespace after the `if`
+// opened, so reformatting the route could fail a test whose behaviour was
+// unchanged. Both still fail if the branch is removed.
 assert.match(
   route,
-  /if \(typeof body\.pinned === "boolean"\) \{\s*\n\s*result\.pinned = await setSessionPinnedLocal\(id, body\.pinned\);/,
+  /typeof body\.pinned === "boolean"/,
+  "PATCH must gate on a boolean, so an absent field is never treated as an unpin",
+);
+assert.match(
+  route,
+  /result\.pinned = await setSessionPinnedLocal\(id, body\.pinned\)/,
   "PATCH must apply pinned and echo it back",
 );
 
