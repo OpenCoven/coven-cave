@@ -80,8 +80,18 @@ assert.match(
 );
 assert.match(
   picker,
-  /client\.projects\(familiarIds: familiarKey\)/,
+  /currentClient\.projects\(familiarIds: familiarKey\)/,
   "the picker must request projects scoped to every selected familiar",
+);
+assert.match(
+  picker,
+  /loadProjectsWithRecovery\([\s\S]*recoverConnectionInBackground\(\)[\s\S]*connectionState == \.connected/,
+  "new-chat project discovery must recover a stale connection before surfacing failure",
+);
+assert.match(
+  nativeSelectionTests,
+  /testProjectLoadRetriesOnceAfterConnectionRecovery[\s\S]*testProjectLoadPreservesOriginalErrorWhenRecoveryFails/,
+  "native tests must bound new-chat project recovery to one retry",
 );
 assert.match(
   picker,
