@@ -47,7 +47,17 @@ assert.match(
 // ── the card: a11y + packaged-app image loading ─────────────────────────────
 assert.match(carousel, /AuthedImage/, "pictures load through AuthedImage (packaged sidecar auth gate)");
 assert.match(carousel, /usePrefersReducedMotion/, "the slide track has a reduced-motion story");
+assert.match(
+  carousel,
+  /reducedMotion \? "" : "transition-all duration-\[var\(--duration-fast\)\]"/,
+  "dot width changes do not animate when reduced motion is requested",
+);
 assert.match(carousel, /useFocusTrap\(true, dialogRef/, "the lightbox traps focus and returns it on dismiss");
+assert.match(
+  carousel,
+  /<AuthedImage\s+src=\{image\.src\}[\s\S]*?fallback=\{/,
+  "the lightbox preserves an image-load fallback instead of opening an empty dialog",
+);
 assert.match(carousel, /aria-roledescription=\{multiple \? "carousel" : undefined\}/, "a multi-image deck announces itself as a carousel");
 assert.match(carousel, /aria-live="polite"/, "slide changes are announced");
 assert.match(carousel, /aria-label="Previous image"/, "prev control is named");

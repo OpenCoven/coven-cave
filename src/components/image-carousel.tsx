@@ -122,6 +122,11 @@ function ImageLightbox({
           <AuthedImage
             src={image.src}
             alt={imageLabel(image, index, total)}
+            fallback={
+              <span className="flex h-40 w-full items-center justify-center text-[var(--text-muted)]">
+                <Icon name="ph:image-bold" width={24} />
+              </span>
+            }
             className="rounded-lg object-contain block [max-height:75vh]! [max-width:min(85vw,_100%)]! [width:auto]! [height:auto]!"
           />
           {total > 1 ? (
@@ -270,7 +275,7 @@ export function ImageCarousel({ images, label }: Props) {
                 aria-controls={trackId}
                 aria-current={i === safeIndex ? "true" : undefined}
                 aria-label={`Show image ${i + 1} of ${total}`}
-                className={`focus-ring h-1.5 rounded-full transition-all duration-[var(--duration-fast)] ${
+                className={`focus-ring h-1.5 rounded-full ${reducedMotion ? "" : "transition-all duration-[var(--duration-fast)]"} ${
                   i === safeIndex
                     ? "w-4 bg-[var(--accent-presence)]"
                     : "w-1.5 bg-[var(--text-muted)]/40 hover:bg-[var(--text-muted)]/70"
