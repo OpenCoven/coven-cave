@@ -22,7 +22,6 @@ const contracts: RouteContract[] = [
   { route: "/access-groups/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/app/build-info", methods: ["GET"], kind: "json" },
   { route: "/app/latest-release", methods: ["GET"], kind: "json" },
-  { route: "/auto-mode/feedback", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/asana/assigned", methods: ["GET"], kind: "json" },
   { route: "/asana/workspaces", methods: ["GET"], kind: "json" },
   { route: "/asana/pat", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },

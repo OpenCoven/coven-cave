@@ -7,6 +7,53 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-03
+
+> Live call transcripts, answer rewriting in the reader, a familiar analytics
+> workbench, and a familiars-first iOS chat home.
+
+### Added
+
+- Added a live call transcript with spoken-word highlighting and in-call replies, and centralized voice configuration in Settings.
+- Added answer rewriting in the chat reader — Full, Condense, and ELI5 — alongside a prompt echo that shows what produced an answer and allows edit and rerun (#4276).
+- Rebuilt familiar analytics as a dock + stage workbench with a hero trust ring, confidence panel, and scoped evidence (#4277).
+- Rebuilt the Expand reader as a dedicated reading surface with real citation chips, rendered cited bodies, and worktree citations as their own source cards (#4255).
+- Added a familiars-first iOS chat home with session selection in the config card, and server-persisted thread archive, pin, and delete (#4287).
+- Added `/auto` mission mode with status cards and feedback across desktop and iOS.
+- Added infographic generations rendered as SVG/PNG stat posters, and podcast scripts rendered as screenplays rather than flat lists (#4279).
+- Added the Thread Signal card as a triage surface, plus a refined conversation siderail (#4218, #4256).
+- Added a unified runtime model inventory with shared defaults and controls, and promotion of a session model to the familiar default (#4209, #4221).
+- Added chat pin persistence as server state so it reaches other clients (#4271).
+- Added automatic locking of worktrees holding unrecoverable work, and duplicate-record-id guards for `.beads/*.jsonl` (#4231, #4260).
+- Added the `src/app/api/x/` route handlers (#4235).
+
+### Changed
+
+- Moved voice configuration into one Settings surface and normalized speech output, trimming per-segment TTS dead air.
+- Removed familiar reordering from the iOS Chats screen and stopped refetching every session when a threads view appears (#4280).
+- Retired the orphaned marketplace skill detail drawer and its dead adapter (#4237).
+- Consolidated project-root handling: one canonical form served and followed by client stores, with `legacyRoot` stripped at the write boundary.
+- Raised the sidecar runtime file-count budget for the call transcript and rewrite route, with the measurements recorded beside the budget.
+- Moved worktree lifecycle retirement to an eight-hour cooldown and scoped inventory drift to the units it can affect (cave-63m12, cave-v59dk).
+
+### Fixed
+
+- Fixed the Windows notch and quick chat so both stay visible across spaces and over fullscreen apps.
+- Fixed the research video renderer painting black — `sharp`/`librsvg` render `oklch()` as black, so the palette is now hex (#4291).
+- Fixed three surfaces picking a familiar the user never chose, including boot compose and GitHub safe merge (cave-26sg4).
+- Fixed iOS Select All covering hidden sessions, bulk-delete toasts counting the wrong number, partial thread deletes, and reverts applying to the whole task list instead of the card that failed (cave-2qyqu).
+- Fixed iOS tool calls rendering as a bare `{` instead of their argument (#4281).
+- Fixed iOS connectivity with a one-probe reconnect via the last-good URL, recoverable destructive swipes, and cancellable status writes.
+- Fixed the chat reader's weight being paid on every visit to `/` rather than on open, and made the source card's Open a real action (#4285).
+- Fixed Claude tool bubbles disappearing through the rate-limit usage notice.
+- Fixed local-only project creation and picker failures being swallowed instead of surfaced, and kept local registrations visible before familiar setup.
+- Fixed the OS notification banner disappearing when the notification sound is Silent.
+- Fixed the macOS sidecar missing its Piper dylib closure, and Windows transient sidecar cache activation.
+- Fixed lifecycle patrol treating squash-merged PR associations as malformed, and scoped the create gate to errors that can actually affect creation.
+- Fixed release tooling: `appimagetool` is verified before signing, hidden-X recovery is explicit, and the v0.2.2 Windows runtime is accepted.
+- Fixed mobile refresh responses being cached and required HTTPS for native pairing.
+- Fixed safe extraction of official Node archives during onboarding.
+
 ## [0.2.2] - 2026-08-01
 
 ### Added
