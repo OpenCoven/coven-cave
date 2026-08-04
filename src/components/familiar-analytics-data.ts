@@ -180,7 +180,10 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     fetchResource<SessionsResponse>("/api/sessions/list", { ok: false, sessions: [] }),
     loadCanonicalMemoryList(),
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
-    fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=30`, { ok: false, reports: [], total: 0 }),
+    // The workbench's ALL window and report ledger are complete evidence, not a
+    // newest-page sample. The route retains bounded pagination for consumers
+    // that need it; this explicit mode is for the single-familiar evidence view.
+    fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=all`, { ok: false, reports: [], total: 0 }),
     fetchResource<MetricSnapshotsResponse>(`/api/familiars/${encodedId}/self-reports/snapshots`, { ok: false, snapshots: [], total: 0 }),
     fetchResource<MessageFeedbackResponse>(`/api/feedback/message?familiarId=${encodedId}`, { ok: false }),
   ]);

@@ -83,6 +83,17 @@ describe("familiar self-report storage", () => {
     assert.deepEqual(listed.reports.map((item) => item.id), ["new", "mid"]);
   });
 
+  it("listSelfReports returns every report for the full-evidence mode", async () => {
+    await appendSelfReport("cody", report({ id: "old", sessionId: "s1", reportedAt: "2026-06-23T10:00:00.000Z" }));
+    await appendSelfReport("cody", report({ id: "new", sessionId: "s2", reportedAt: "2026-06-25T10:00:00.000Z" }));
+    await appendSelfReport("cody", report({ id: "mid", sessionId: "s3", reportedAt: "2026-06-24T10:00:00.000Z" }));
+
+    const listed = await listSelfReports("cody", { limit: "all" });
+
+    assert.equal(listed.total, 3);
+    assert.deepEqual(listed.reports.map((item) => item.id), ["new", "mid", "old"]);
+  });
+
   it("listSelfReports applies the before cursor after sorting", async () => {
     await appendSelfReport("cody", report({ id: "new", sessionId: "s1", reportedAt: "2026-06-25T10:00:00.000Z" }));
     await appendSelfReport("cody", report({ id: "mid", sessionId: "s2", reportedAt: "2026-06-24T10:00:00.000Z" }));

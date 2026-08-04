@@ -1740,6 +1740,7 @@ export function FamiliarAnalyticsContent({
     <div className="fa-frame">
       <FamiliarAnalyticsDock
         model={model}
+        confidence={windowConfidence}
         healRequestCount={allHealRequests.length}
         actions={nextActions}
         contractReport={model.contractReport}
@@ -2109,8 +2110,8 @@ export function FamiliarAnalyticsContent({
 
       {trustOpen ? (
         <TrustModal
-          confidence={model.confidence}
-          trends={model.signalTrends}
+          confidence={windowConfidence}
+          trends={windowSignalTrends}
           onClose={() => setTrustOpen(false)}
         />
       ) : null}

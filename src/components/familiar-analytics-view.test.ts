@@ -5,6 +5,10 @@ import {
   buildFamiliarAnalyticsModel,
   loadFamiliarAnalyticsData,
 } from "./familiar-analytics-data.ts";
+import { withinWindow } from "../lib/analytics-window.ts";
+import { deriveThreadConfidence } from "../lib/thread-confidence.ts";
+import { deriveSignalTrends, snapshotFromReport } from "../lib/signal-trends.ts";
+import { aggregateThreadSignals, buildThreadSignalReviewQueue, type ThreadSelfReport } from "../lib/thread-self-report.ts";
 import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources.ts";
 
 // The workbench is three files: the view owns loading, the content composes
@@ -224,7 +228,7 @@ function mockFetchFor(score: "low" | "trusted") {
       },
     ],
     [
-      "/api/familiars/cody/self-reports?limit=30",
+      "/api/familiars/cody/self-reports?limit=all",
       {
         ok: true,
         total: score === "trusted" ? 1 : 0,
@@ -759,6 +763,64 @@ describe("session tracking + tracing (recent sessions, pulse drill, trace overla
 });
 
 describe("confidence from thread analysis + metric labeling", () => {
+  it("keeps confidence, trends, counts, queue, and evidence on the same window", () => {
+    const now = Date.parse("2026-08-03T12:00:00.000Z");
+    const report = (id: string, reportedAt: string, score: number, contextPressure: ThreadSelfReport["contextPressure"]): ThreadSelfReport => ({
+      id,
+      familiarId: "cody",
+      sessionId: `session-${id}`,
+      reportedAt,
+      overallConfidence: score,
+      toolReliability: { score, failedTools: [], unreliableTools: [] },
+      contextPressure,
+      skillsUsed: [],
+      skillsNeedingClarity: [],
+      skillsNeedingAccess: [],
+      capabilitiesLacking: [],
+      capabilitiesVital: [],
+      memoryRecallScore: score,
+      fileLocatabilityScore: score,
+      persistentBlockers: [],
+    });
+    const reports = [
+      report("current", "2026-08-02T12:00:00.000Z", 90, "adequate"),
+      report("older", "2026-07-26T12:00:00.000Z", 20, "critical"),
+    ];
+    const snapshots = reports.map(snapshotFromReport);
+    const sessions = [
+      { id: "current", updated_at: "2026-08-02T12:00:00.000Z" },
+      { id: "older", updated_at: "2026-07-26T12:00:00.000Z" },
+    ];
+    const scoped = (windowId: "7d" | "14d") => {
+      const visibleReports = reports.filter((entry) => withinWindow(entry.reportedAt, windowId, now));
+      const visibleSnapshots = snapshots.filter((entry) => withinWindow(entry.reportedAt, windowId, now));
+      const aggregate = aggregateThreadSignals(visibleReports);
+      return {
+        confidence: deriveThreadConfidence(visibleReports),
+        trends: deriveSignalTrends(visibleSnapshots, now),
+        queue: buildThreadSignalReviewQueue(aggregate),
+        evidenceCount: visibleReports.length,
+        sessionCount: sessions.filter((entry) => withinWindow(entry.updated_at, windowId, now)).length,
+      };
+    };
+
+    const sevenDays = scoped("7d");
+    const fourteenDays = scoped("14d");
+
+    assert.equal(sevenDays.confidence.reportCount, 1);
+    assert.equal(fourteenDays.confidence.reportCount, 2);
+    assert.equal(sevenDays.trends.snapshotCount, 1);
+    assert.equal(fourteenDays.trends.snapshotCount, 2);
+    assert.equal(sevenDays.trends.overall.direction, "insufficient");
+    assert.equal(fourteenDays.trends.overall.direction, "improving");
+    assert.equal(sevenDays.queue.length, 0);
+    assert.ok(fourteenDays.queue.some((item) => item.sourceId === "context-pressure"));
+    assert.equal(sevenDays.evidenceCount, 1);
+    assert.equal(fourteenDays.evidenceCount, 2);
+    assert.equal(sevenDays.sessionCount, 1);
+    assert.equal(fourteenDays.sessionCount, 2);
+  });
+
   it("applies the selected time window to every thread-report analytic on the stage", () => {
     assert.match(
       contentSource,
@@ -785,6 +847,17 @@ describe("confidence from thread analysis + metric labeling", () => {
       /<ThreadAnalysisBody\s+confidence=\{windowConfidence\}\s+trends=\{windowSignalTrends\}/,
       "the confidence panel renders the scoped confidence and trends",
     );
+    assert.match(
+      contentSource,
+      /<FamiliarAnalyticsDock\s+model=\{model\}\s+confidence=\{windowConfidence\}/,
+      "the dock trust ring uses the same scoped confidence as the stage",
+    );
+    assert.match(
+      contentSource,
+      /<TrustModal\s+confidence=\{windowConfidence\}\s+trends=\{windowSignalTrends\}/,
+      "the trust modal uses the same scoped confidence and trends as the stage",
+    );
+
     assert.match(
       contentSource,
       /<ThreadSignalsSection familiarId=\{model\.familiarId\} reports=\{windowReports\} \/>/,
@@ -825,7 +898,7 @@ describe("confidence from thread analysis + metric labeling", () => {
     // The verdict chip answers "is the familiar improving?" from the weighted score.
     assert.match(source, /function ThreadTrendBlock/, "the trend block is its own component");
     assert.match(source, /<ThreadTrendBlock trends=\{trends\}/, "the thread-analysis panel renders it");
-    assert.match(source, /trends=\{model\.signalTrends\}/, "trends ride the model, computed by the pure lib");
+    assert.match(source, /trends=\{windowSignalTrends\}/, "trends use the selected window's persisted evidence");
     assert.match(source, /insufficient: "Not enough history yet"/, "insufficient history says so — no invented direction");
     assert.match(source, /fa-trend-verdict--\$\{overall\.direction\}/, "verdict chip carries its direction class");
     // Tokens only: improving = presence accent, regressing = warning.

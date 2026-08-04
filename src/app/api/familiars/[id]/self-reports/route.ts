@@ -14,7 +14,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const url = new URL(req.url);
   const limitRaw = url.searchParams.get("limit");
-  const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+  const limit = limitRaw === "all"
+    ? "all" as const
+    : limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
   const before = url.searchParams.get("before") ?? undefined;
   const result = await listSelfReports(id, { limit, before });
   return NextResponse.json({ ok: true, reports: redactSecretsDeep(result.reports), total: result.total });
