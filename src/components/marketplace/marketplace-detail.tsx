@@ -25,6 +25,7 @@ import {
 } from "@/components/marketplace/craft-draft-preview";
 import { deriveCraftDisplayName, type CraftDraft } from "@/lib/craft-draft";
 import { KnowledgePackDetail } from "@/components/marketplace/knowledge-pack-detail";
+import { MarketplaceBrandMark, marketplaceBrandMark } from "@/components/marketplace/marketplace-brand-mark";
 
 type PackPrompt = PromptOption;
 
@@ -491,6 +492,7 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
   );
   const state = plugin.unlisted ? "added" : pluginBadgeState(plugin);
   const decisionItems = detailDecisionItems(plugin);
+  const brandMark = marketplaceBrandMark(plugin.id);
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-[var(--backdrop-scrim)]" onClick={onClose}>
       <div
@@ -504,7 +506,11 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
-              <Icon name={kindIcon(plugin.kind)} width={18} className="text-[var(--text-muted)]" />
+              {brandMark ? (
+                <MarketplaceBrandMark mark={brandMark} size="detail" />
+              ) : (
+                <Icon name={kindIcon(plugin.kind)} width={18} className="text-[var(--text-muted)]" />
+              )}
             </span>
             <div className="min-w-0">
               <h2 className="truncate text-[length:var(--text-lg)] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>

@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { pluginBadgeState, type MarketplacePlugin } from "@/lib/marketplace-catalog";
+import { MarketplaceBrandMark, marketplaceBrandMark } from "@/components/marketplace/marketplace-brand-mark";
 
 const TRUST_LABEL: Record<string, string> = {
   "official-remote": "Official",
@@ -105,6 +106,7 @@ export const MarketplaceCard = memo(function MarketplaceCard({
   const setup = setupEffortLabel(plugin);
   const capability = capabilityPreview(plugin);
   const roleFit = roleFitLabel(plugin);
+  const brandMark = marketplaceBrandMark(plugin.id);
   return (
     <div className="marketplace-card flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
@@ -114,7 +116,11 @@ export const MarketplaceCard = memo(function MarketplaceCard({
           className="focus-ring flex min-w-0 items-center gap-3 rounded-md text-left"
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
-            <Icon name={kindIcon(plugin.kind)} width={16} className="text-[var(--text-muted)]" />
+            {brandMark ? (
+              <MarketplaceBrandMark mark={brandMark} size="card" />
+            ) : (
+              <Icon name={kindIcon(plugin.kind)} width={16} className="text-[var(--text-muted)]" />
+            )}
           </span>
           <span className="min-w-0">
             <span className="block truncate text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">

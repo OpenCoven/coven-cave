@@ -132,6 +132,20 @@
   background: color-mix(in oklch, var(--bg-panel) 88%, transparent);
   padding: var(--space-3);
 }
+.marketplace-brand-mark {
+  display: block;
+  flex: none;
+  object-fit: contain;
+  color: var(--text-secondary);
+}
+.marketplace-brand-mark--card {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+.marketplace-brand-mark--detail {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+}
 .marketplace-card__decision {
   display: flex;
   flex-wrap: wrap;

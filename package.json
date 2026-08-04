@@ -25,7 +25,9 @@
     "mobile:tailscale:stop": "bash scripts/mobile-tailscale.sh stop",
     "pwa:icons": "node scripts/generate-pwa-icons.mjs",
     "icons:subset": "node scripts/generate-icon-subset.mjs",
-    "prebuild": "node scripts/generate-icon-subset.mjs && node scripts/generate-pwa-icons.mjs && node scripts/build-sandbox-runtime.mjs",
+    "generate:marketplace-brands": "node scripts/generate-marketplace-brand-marks.mjs",
+    "check:marketplace-brands": "node scripts/generate-marketplace-brand-marks.mjs --check",
+    "prebuild": "pnpm generate:marketplace-brands && node scripts/generate-icon-subset.mjs && node scripts/generate-pwa-icons.mjs && node scripts/build-sandbox-runtime.mjs",
     "build": "next build && pnpm build:server",
     "postbuild": "node scripts/bundle-budget.mjs && node scripts/standalone-budget.mjs",
     "test:bundle": "node scripts/bundle-budget.mjs",
@@ -120,6 +122,7 @@
     "yaml": "2.9.0"
   },
   "devDependencies": {
+    "@iconify-json/logos": "1.2.12",
     "@next/bundle-analyzer": "16.2.12",
     "@playwright/test": "1.62.0",
     "@tailwindcss/postcss": "4.3.3",
@@ -134,6 +137,8 @@
     "eslint": "10.8.0",
     "highlight.js": "11.11.1",
     "react-test-renderer": "19.2.8",
+    "saxes": "6.0.0",
+    "simple-icons": "16.28.0",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
     "vitest": "4.1.10"
