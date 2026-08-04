@@ -237,12 +237,14 @@ gate blocked three real defects in a single day while it was on, each one past a
 fully green suite.
 
 ```bash
-gh api graphql -f query='{repository(owner:"OpenCoven",name:"coven-cave"){pullRequest(number:<#>){reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved path comments(first:1){nodes{author{login} body}}}}}}}'
+gh api graphql -f query='{repository(owner:"OpenCoven",name:"coven-cave"){pullRequest(number:<#>){reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved path comments(first:100){pageInfo{hasNextPage endCursor} nodes{author{login} body}}}}}}}'
 ```
 
 Page with `reviewThreads(first:100, after:"<endCursor>")` until `hasNextPage` is
-false — a partial listing is worse than none. Fix what is real, reply naming the
-fixing commit, then optionally resolve:
+false — a partial listing is worse than none. Also page any thread whose
+`comments` pageInfo has `hasNextPage: true`: query that thread by node id with
+`comments(first:100, after:"<endCursor>")` until false. Fix what is real, reply
+naming the fixing commit, then optionally resolve:
 
 ```bash
 gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -f t=<PRRT_…>

@@ -128,6 +128,16 @@ test("skill mirrors the protected-main policy that governs its PR lifecycle", ()
     "CLAUDE.md no longer documents review-thread pagination",
   );
   assert.match(skill, /Page with `reviewThreads\(first:100, after:"<endCursor>"\)` until `hasNextPage` is/);
+  assert.match(
+    skill,
+    /comments\(first:100\)\{pageInfo\{hasNextPage endCursor\}/,
+    "the initial review-thread query must read every comment on ordinary threads",
+  );
+  assert.match(
+    skill,
+    /Also page any thread whose\n`comments` pageInfo has `hasNextPage: true`/,
+    "the skill must not omit replies when a review thread has more than 100 comments",
+  );
 
   assert.match(
     claude,
