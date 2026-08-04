@@ -34,8 +34,6 @@ const HARNESS_FRAME: Record<string, string> = {
   openclaw: "#8d8f99",
 };
 
-const DEFAULT_FRAME = "#9386d0";
-const DEFAULT_AURA = "#9386d0";
 
 export type FamiliarCardPreviewProps = {
   name: string;
@@ -69,8 +67,10 @@ export function FamiliarCardPreview({
   const [flipped, setFlipped] = useState(false);
   const [qr, setQr] = useState<QrMatrix | null>(null);
 
-  const frame = HARNESS_FRAME[harness ?? ""] ?? DEFAULT_FRAME;
-  const accent = aura ?? DEFAULT_AURA;
+  // Both fall back to a token in familiar-card.css rather than a literal here,
+  // so no colour reaches render from TSX (coven-design/no-render-hex-color).
+  const frame = HARNESS_FRAME[harness ?? ""];
+  const accent = aura;
   const ctx = contextWindowForModel(model ?? undefined);
   const ctxLabel = formatTokens(ctx.tokens) ?? String(ctx.tokens);
 
@@ -151,8 +151,8 @@ export function FamiliarCardPreview({
   };
 
   const styleVars = {
-    "--frame": frame,
-    "--aura": accent,
+    ...(frame ? { "--frame": frame } : {}),
+    ...(accent ? { "--aura": accent } : {}),
     ...(plateUrl ? { "--holo-tex": `url(${plateUrl})` } : {}),
   } as React.CSSProperties;
 
@@ -173,7 +173,7 @@ export function FamiliarCardPreview({
             <img className="famcard__art" src={artUrl} alt="" />
           ) : (
             <div className="famcard__empty">
-              <Icon name="ph:image" width={24} height={24} aria-hidden />
+              <Icon name="ph:image-bold" width={24} height={24} aria-hidden />
               <span>Drop a likeness to see the card take shape</span>
             </div>
           )}

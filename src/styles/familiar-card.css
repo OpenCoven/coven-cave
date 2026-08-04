@@ -21,6 +21,11 @@
   --tilt-x: 0deg;
   --tilt-y: 0deg;
   --glow: 0;
+  /* Defaults live here, not in TSX: the design gate forbids colour literals
+     reaching render. The component only sets these when it has a real harness
+     frame or a sampled aura. */
+  --frame: var(--accent-presence);
+  --aura: var(--accent-presence);
 
   position: relative;
   aspect-ratio: 5 / 7;
