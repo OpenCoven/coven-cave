@@ -94,14 +94,10 @@ export type FamiliarAnalyticsModel = {
   } | null;
   /** Per-day session counts for the trailing 14 days (oldest first). */
   sessionPulse: PulseDay[];
-  /** This familiar's sessions, newest first, capped for the drill-through list. */
+  /** This familiar's complete session history, newest first, for scoped evidence. */
   recentSessions: SessionRow[];
   errors: string[];
 };
-
-/** Cap on the drill-through session list — enough history to trace without
- *  turning the analytics page into a full session browser. */
-const RECENT_SESSIONS_CAP = 40;
 
 const EMPTY_SNAPSHOT: RetroRunsSnapshot = {
   generatedAt: new Date(0).toISOString(),
@@ -177,7 +173,10 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
   ] = await Promise.all([
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
     fetchResource<ContractResponse>(`/api/familiars/${encodedId}/contract`, { ok: false }),
-    fetchResource<SessionsResponse>("/api/sessions/list", { ok: false, sessions: [] }),
+    // The workbench's ALL window and session ledger are complete evidence,
+    // including archived sessions. Restricting at the route keeps the larger
+    // session response local to the familiar being inspected.
+    fetchResource<SessionsResponse>(`/api/sessions/list?includeArchived=1&familiarId=${encodedId}`, { ok: false, sessions: [] }),
     loadCanonicalMemoryList(),
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
     // The workbench's ALL window and report ledger are complete evidence, not a
@@ -269,8 +268,7 @@ export function buildFamiliarAnalyticsModel(
       : null,
     sessionPulse: buildSessionPulse(familiarSessions, data.familiarId, now),
     recentSessions: [...familiarSessions]
-      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
-      .slice(0, RECENT_SESSIONS_CAP),
+      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)),
     errors: data.errors,
   };
 }

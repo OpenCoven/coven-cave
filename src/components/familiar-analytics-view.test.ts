@@ -18,6 +18,7 @@ import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources
 const dockSource = readFileSync(new URL("./familiar-analytics-dock.tsx", import.meta.url), "utf8");
 const stageSource = readFileSync(new URL("./familiar-analytics-stage.tsx", import.meta.url), "utf8");
 const contentSource = readFileSync(new URL("./familiar-analytics-content.tsx", import.meta.url), "utf8");
+const dataSource = readFileSync(new URL("./familiar-analytics-data.ts", import.meta.url), "utf8");
 const source = [
   readFileSync(new URL("./familiar-analytics-view.tsx", import.meta.url), "utf8"),
   contentSource,
@@ -70,7 +71,7 @@ function mockFetchFor(score: "low" | "trusted") {
     ["/api/familiars", { ok: true, familiars: [familiar] }],
     ["/api/familiars/cody/contract", { ok: true, report: contract }],
     [
-      "/api/sessions/list",
+      "/api/sessions/list?includeArchived=1&familiarId=cody",
       {
         ok: true,
         sessions: score === "trusted"
@@ -714,6 +715,26 @@ describe("FamiliarAnalyticsView", () => {
 });
 
 describe("session tracking + tracing (recent sessions, pulse drill, trace overlay)", () => {
+  it("keeps the complete archived session history for the ALL evidence window", async () => {
+    mockFetchFor("trusted");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const template = data.sessions[0]!;
+    const sessions = Array.from({ length: 41 }, (_, index) => ({
+      ...template,
+      id: `historic-session-${index}`,
+      archived_at: "2026-06-01T00:00:00.000Z",
+      updated_at: new Date(Date.parse("2026-06-25T12:00:00.000Z") - index * 24 * 60 * 60_000).toISOString(),
+    }));
+    const model = buildFamiliarAnalyticsModel({ ...data, sessions });
+
+    assert.equal(model.recentSessions.length, 41, "the ALL session ledger is not capped at the newest 40 rows");
+    assert.match(
+      dataSource,
+      /\/api\/sessions\/list\?includeArchived=1&familiarId=\$\{encodedId\}/,
+      "the evidence read includes archived sessions instead of silently omitting history",
+    );
+  });
+
   it("exposes the familiar's recent sessions on the model, newest first", async () => {
     mockFetchFor("trusted");
     const data = await loadFamiliarAnalyticsData("cody");
