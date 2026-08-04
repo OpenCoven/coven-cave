@@ -79,13 +79,25 @@ test("skill lists exactly the required status checks CLAUDE.md documents", () =>
 });
 
 test("skill offers a PR as the only path onto main", () => {
-  assert.ok(skill.includes("A) Open a PR"));
+  assert.ok(skill.includes("A) Continue through a PR"));
   assert.ok(skill.includes("B) Leave as-is"));
   assert.ok(
     !/^\s*[BC]\) (Merge|Squash merge)/m.test(skill),
     "skill must not offer a local merge into the base branch",
   );
   assert.ok(skill.includes("gh pr merge <#> --squash --delete-branch"));
+});
+
+test("skill reuses an existing PR instead of creating a duplicate", () => {
+  assert.ok(skill.includes('gh pr list --head "$branch" --base main --state open'));
+  assert.ok(skill.includes("If it contains exactly one PR, reuse it"));
+  assert.ok(skill.includes("do not run `gh pr create`"));
+});
+
+test("skill requires all checks on the exact current PR head", () => {
+  assert.ok(skill.includes("expected_head=$(git rev-parse HEAD)"));
+  assert.ok(skill.includes("Before and after the watch, require `headRefOid` to equal `$expected_head`"));
+  assert.ok(skill.includes("pending, cancelled, stale, missing, or failed context"));
 });
 
 test("skill forbids the bypasses branch protection exists to stop", () => {
@@ -130,6 +142,15 @@ test("skill retires local units through the patrol, never by improvisation", () 
 test("skill bookends the work with Beads claim and close", () => {
   assert.ok(skill.includes("bd update <id> --claim"));
   assert.ok(skill.includes("bd close <id>"));
+});
+
+test("skill records the lifecycle patrol before closing the Bead", () => {
+  const closeout = skill.slice(skill.indexOf("## Phase 7:"));
+  assert.ok(closeout.includes("before closing the PR-backed work"));
+  assert.ok(
+    closeout.indexOf("pnpm beads:worktrees") < closeout.indexOf("bd close <id>"),
+    "the patrol evidence must be recorded before bd close",
+  );
 });
 
 test("skill names verification commands that package.json actually defines", () => {

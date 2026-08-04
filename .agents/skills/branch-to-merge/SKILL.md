@@ -128,13 +128,21 @@ resolve a real conflict — and rebase in your own worktree, never by touching
 
 ## Phase 3: Present the options
 
-Only two endings exist here. Present exactly these:
+Only two endings exist here. First discover whether the branch already has an
+open PR — never try to create a duplicate:
+
+```bash
+branch=$(git branch --show-current)
+gh pr list --head "$branch" --base main --state open --json number,url,headRefOid
+```
+
+Present exactly these:
 
 ```
 How would you like to finish this branch?
 
-  A) Open a PR   -- push, open a pull request, land it via squash merge
-  B) Leave as-is -- keep the branch and worktree, decide later
+  A) Continue through a PR -- push, create one if none exists, or use the existing PR; land it via squash merge
+  B) Leave as-is           -- keep the branch and worktree, decide later
 ```
 
 **STOP — wait for the choice.** Do not assume a default.
@@ -146,16 +154,27 @@ owner's admin exemption is theirs, not yours.
 If the answer is B, say so plainly and stop — no cleanup, no worktree removal,
 no branch deletion. An unfinished branch is preserved by default.
 
-## Phase 4: Open the pull request
+## Phase 4: Create or bind the pull request
 
 Commits must be signed (`required_signatures` is on; the server rejects
 unsigned commits). Push after **every** commit — the remote is the only store a
 local actor cannot destroy.
 
 ```bash
-git push -u origin <branch>
-gh pr create --base main --head <branch> --title "…" --body "…"
+branch=$(git branch --show-current)
+git push -u origin "$branch"
+gh pr list --head "$branch" --base main --state open --json number,url,headRefOid
 ```
+
+If the listing is empty, create the PR:
+
+```bash
+gh pr create --base main --head "$branch" --title "…" --body "…"
+```
+
+If it contains exactly one PR, reuse it; do not run `gh pr create`. If it
+contains more than one PR, or its base/head is not the intended `main`/branch
+pair, stop and ask the maintainer to resolve the ambiguity rather than guessing.
 
 **Title** — imperative, under ~70 characters, describes the change not the
 branch name.
@@ -185,7 +204,10 @@ count.
 Nine required checks must pass:
 
 ```bash
+expected_head=$(git rev-parse HEAD)
+gh pr view <#> --json headRefOid,mergeable,mergeStateStatus,statusCheckRollup
 gh pr checks <#> --watch
+gh pr view <#> --json headRefOid,mergeable,mergeStateStatus,statusCheckRollup
 ```
 
 - `Frontend build`
@@ -200,6 +222,10 @@ gh pr checks <#> --watch
 
 CodeQL is retired, and code scanning is fully off — nothing scans in its place.
 If a required context never reports, the PR sits `BLOCKED` with nothing failing.
+Before and after the watch, require `headRefOid` to equal `$expected_head` and
+each listed context to be complete and successful. A pass tied to an earlier
+SHA, or a pending, cancelled, stale, missing, or failed context, is incomplete;
+do not merge until the exact current head has all nine passes.
 
 The `E2E (Playwright)` leg runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs
 must dismiss onboarding and mock APIs via `page.route(...)` rather than expect a
@@ -238,14 +264,9 @@ bypasses the protection this skill exists to respect. Fix the actual blocker.
 
 ## Phase 7: Close out and retire the local unit
 
-```bash
-bd close <id> --reason="Merged in PR #<#>"
-```
-
-Close only after the merge lands, and record the branch, worktree, session,
-owner, and verification evidence on the Bead first.
-
-Then run the lifecycle patrol — it is the only sanctioned retirement route:
+Record the branch, worktree, session, owner, and verification evidence on the
+Bead, then run the lifecycle patrol before closing the PR-backed work — it is
+the only sanctioned retirement route:
 
 ```bash
 pnpm beads:worktrees                 # report only; changes nothing
@@ -258,6 +279,13 @@ reason. `retire-after-gate` is a classification, not deletion authority. A
 worktree created by bare `git worktree add` reports `uncertain` forever; retire
 it by hand through the archive-tag route and never hand-write the missing
 lifecycle metadata onto the Bead — that record is the evidence the gate checks.
+
+Only after the merge landed and that patrol evidence is recorded, close the
+Bead:
+
+```bash
+bd close <id> --reason="Merged in PR #<#>"
+```
 
 Destruction is guarded (`scripts/worktree-guard.mjs`, exit 2) for a dirty
 worktree, a HEAD on no remote ref, an unpushed branch tip, or a branch still
