@@ -1520,12 +1520,6 @@ function execute(
     initialException,
     initialNowMs,
   );
-  if (!localPreflight.assessment.allowed) {
-    return refusalOutcome(
-      localPreflight.assessment.reasons,
-      exceptionSuggestion(options, worktreePath),
-    );
-  }
   const initialRecords = [
     ...(initialCoven.primary ? [initialCoven.primary] : []),
     ...initialCoven.additional,
@@ -1539,24 +1533,13 @@ function execute(
   ) {
     throw new CliError("intended worktree duplicates existing metadata");
   }
-  if (initialCoven.primary !== null && initialException === null) {
-    return refusalOutcome(
-      [
-        `Bead ${options.beadId} already has structured worktree metadata; a current worktree exception is required to append another record`,
-      ],
-      exceptionSuggestion(options, worktreePath),
-    );
-  }
-  if (
+  const requiresCurrentException =
+    initialCoven.primary !== null && initialException === null;
+  const primaryRegistrationMissing =
     initialCoven.primary !== null &&
     !localPreflight.registeredPaths.has(
       canonicalExistingCandidate(initialCoven.primary.path),
-    )
-  ) {
-    return refusalOutcome([
-      `Bead ${options.beadId} primary structured worktree metadata is not currently registered`,
-    ]);
-  }
+    );
 
   const inventory = collectWorktreeLifecycleInventory({
     repo: REPOSITORY,
@@ -1571,6 +1554,29 @@ function execute(
   const errors = [...inventory.globalErrors, ...inventoryErrors(inventory.items)];
   if (errors.length > 0) {
     throw new CliError(`lifecycle inventory is incomplete: ${errors.join("; ")}`);
+  }
+  // A local admission preflight can identify a refusal cheaply, but it cannot
+  // replace the complete inventory. Check the inventory first so an outage
+  // remains an exit-1 error rather than advertising an exception that cannot
+  // reach admission.
+  if (!localPreflight.assessment.allowed) {
+    return refusalOutcome(
+      localPreflight.assessment.reasons,
+      exceptionSuggestion(options, worktreePath),
+    );
+  }
+  if (requiresCurrentException) {
+    return refusalOutcome(
+      [
+        `Bead ${options.beadId} already has structured worktree metadata; a current worktree exception is required to append another record`,
+      ],
+      exceptionSuggestion(options, worktreePath),
+    );
+  }
+  if (primaryRegistrationMissing) {
+    return refusalOutcome([
+      `Bead ${options.beadId} primary structured worktree metadata is not currently registered`,
+    ]);
   }
   const existingPaths = existingOwnedPaths(inventory.items, options.beadId);
 

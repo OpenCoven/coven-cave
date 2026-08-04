@@ -1091,11 +1091,20 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   updateFixture(fixture, (state) => {
     state.issues[0].id = bead;
   });
-  const refused = runCreate(
+  const incompleteInventory = runCreate(
     fixture,
     createArgs({ bead, branch, owner, purpose }),
     { CAVE_TEST_GH_FAIL: "1" },
   );
+  assert.equal(incompleteInventory.status, 1, incompleteInventory.stderr);
+  assert.match(incompleteInventory.stderr, /inventory.*unavailable/i);
+  assert.doesNotMatch(
+    incompleteInventory.stderr,
+    /--exception-(?:owner|reason|expires-at|path)/,
+    "an incomplete inventory must not advertise an exception before admission",
+  );
+
+  const refused = runCreate(fixture, createArgs({ bead, branch, owner, purpose }));
   assert.equal(refused.status, 2, refused.stderr);
   assert.match(refused.stderr, /already owns a registered worktree/);
   assert.match(refused.stderr, /12-worktree budget/);
@@ -1141,8 +1150,20 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   ]);
   assert.match(expiresAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   assert.ok(Date.parse(expiresAt) > Date.now(), `suggested expiry must be future: ${expiresAt}`);
-  assert.equal(readJson(fixture.stateFile).counts.update, 0);
-  assert.equal(refState(fixture.repo, `refs/heads/${branch}`), null);
+  assert.equal(readJson(fixture.stateFile).counts.update, 0, "the refused command must not persist metadata");
+  assert.equal(refState(fixture.repo, `refs/heads/${branch}`), null, "the refused command must not create a branch");
+
+  const admitted = runCreate(fixture, suggestedArgs.slice(1));
+  assert.equal(admitted.status, 0, admitted.stderr);
+  const report = parseJsonOutput(admitted);
+  assert.equal(report.branch, branch);
+  assert.equal(report.path, path.join(fixture.repo, ".worktrees", "cave-unit1-o-reilly"));
+  assert.deepEqual(report.metadata.coven.worktrees[0].exception, {
+    owner,
+    reason: "why this exception is needed",
+    expiresAt,
+    additionalPaths: [path.join(fixture.repo, ".worktrees", "cave-unit1-o-reilly")],
+  });
 });
 
 await withFixture({}, async (fixture) => {
@@ -1159,11 +1180,7 @@ await withFixture({}, async (fixture) => {
     ".worktrees",
     "cave-unit1-stale-replacement",
   );
-  const refused = runCreate(
-    fixture,
-    createArgs({ branch }),
-    { CAVE_TEST_GH_FAIL: "1" },
-  );
+  const refused = runCreate(fixture, createArgs({ branch }));
   assert.equal(refused.status, 2, refused.stderr);
   assert.match(refused.stderr, /structured worktree metadata|exception/i);
   assert.equal(pathEntry(requestedPath).exists, false);
@@ -1195,11 +1212,7 @@ await withFixture({}, async (fixture) => {
       },
     });
   });
-  const refused = runCreate(
-    fixture,
-    createArgs({ branch }),
-    { CAVE_TEST_GH_FAIL: "1" },
-  );
+  const refused = runCreate(fixture, createArgs({ branch }));
   assert.equal(refused.status, 2, refused.stderr);
   assert.match(refused.stderr, /primary.*registered|registered.*primary/i);
   assert.equal(pathEntry(requestedPath).exists, false);
