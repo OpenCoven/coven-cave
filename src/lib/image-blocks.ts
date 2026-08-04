@@ -186,9 +186,7 @@ export function sliceImageBlocks(text: string): ImageTextPiece[] {
     // A marker that names a different group starts (or rejoins) that group
     // even when it happens to be adjacent to another deck. Otherwise two
     // explicitly independent groups would be welded together by whitespace.
-    const target: ImageCarouselDescriptor | null = group
-      ? existingGroup ?? (adjacent?.group === group ? adjacent : null)
-      : adjacent;
+    const target: ImageCarouselDescriptor | null = group ? existingGroup ?? null : adjacent;
 
     if (target) {
       // Adjacency swallows the whitespace it merged across; a group merge
