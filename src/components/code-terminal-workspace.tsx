@@ -17,18 +17,36 @@
  * rather than a second PTY API: the focused pane reports what the user typed
  * and this host mirrors it into the other leaves, which is why a broadcast
  * keystroke never echoes back into its source.
+ *
+ * Two guards the count cap does not cover (cave-uod42):
+ *
+ *  - splitting is refused when the focused pane is already too small to halve,
+ *    measured rather than assumed, so a narrow Room never offers a split that
+ *    produces an unreadable shell;
+ *  - the Room's keyboard shortcuts are resolved through a pure module and
+ *    ignored while the user is typing in a real text field, so no binding can
+ *    quietly eat a keystroke meant for a running shell.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { BottomTerminal, type TerminalWriterHandle } from "@/components/bottom-terminal";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
+  CODE_ROOM_SHORTCUT_HINTS,
+  isCodeRoomTypingTarget,
+  resolveCodeRoomShortcut,
+} from "@/lib/code-room-shortcuts";
+import {
+  MIN_TERMINAL_PANE_HEIGHT_PX,
+  MIN_TERMINAL_PANE_WIDTH_PX,
   PRIMARY_TERMINAL_PANE_ID,
+  canSplitPaneSize,
   canSplitTerminalPane,
   listTerminalPanes,
+  nextTerminalPaneId,
   terminalBroadcastTargets,
   terminalPaneThreadId,
   type TerminalLayoutNode,
@@ -36,9 +54,22 @@ import {
 
 /** Floors that keep a split pane wide/tall enough to read a shell in. Below
  *  these a terminal wraps into letter soup, so the divider stops rather than
- *  producing a pane nobody can use. */
-const MIN_PANE_WIDTH = "220px";
-const MIN_PANE_HEIGHT = "120px";
+ *  producing a pane nobody can use. Derived from the model's numbers so the
+ *  divider stop and the disabled split button cannot drift apart. */
+const MIN_PANE_WIDTH = `${MIN_TERMINAL_PANE_WIDTH_PX}px`;
+const MIN_PANE_HEIGHT = `${MIN_TERMINAL_PANE_HEIGHT_PX}px`;
+
+type PaneFits = { right: boolean; down: boolean };
+const DEFAULT_PANE_FITS: PaneFits = { right: true, down: true };
+
+function samePaneFits(a: Record<string, PaneFits>, b: Record<string, PaneFits>) {
+  const keys = Object.keys(b);
+  if (Object.keys(a).length !== keys.length) return false;
+  return keys.every((key) => {
+    const prev = a[key];
+    return prev !== undefined && prev.right === b[key].right && prev.down === b[key].down;
+  });
+}
 
 export type CodeTerminalWorkspaceProps = {
   sessionId: string;
@@ -69,7 +100,58 @@ export function CodeTerminalWorkspace({
   const { announce } = useAnnouncer();
   const panes = useMemo(() => listTerminalPanes(layout), [layout]);
   const paneCount = panes.length;
-  const canSplit = canSplitTerminalPane(layout);
+  const underPaneCap = canSplitTerminalPane(layout);
+
+  // Measured split capacity, per pane. The count cap alone lets a 380px Room
+  // offer a split that produces two unreadable shells, so the affordance also
+  // asks the pane being split whether it can survive being halved. Measuring
+  // only the focused pane would mis-state every other pane's own header
+  // buttons, which stay live whether or not that pane holds focus.
+  const paneElsRef = useRef(new Map<string, HTMLElement>());
+  const [fitsByPane, setFitsByPane] = useState<Record<string, PaneFits>>({});
+  const fitsByPaneRef = useRef(fitsByPane);
+  fitsByPaneRef.current = fitsByPane;
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") {
+      setFitsByPane({});
+      return;
+    }
+    const read = () => {
+      const next: Record<string, PaneFits> = {};
+      for (const pane of panes) {
+        const el = paneElsRef.current.get(pane.id);
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        next[pane.id] = {
+          right: canSplitPaneSize(rect, "horizontal"),
+          down: canSplitPaneSize(rect, "vertical"),
+        };
+      }
+      setFitsByPane((prev) => (samePaneFits(prev, next) ? prev : next));
+    };
+    read();
+    const observer = new ResizeObserver(read);
+    for (const pane of panes) {
+      const el = paneElsRef.current.get(pane.id);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [panes]);
+
+  // Unmeasurable is not the same as too small: an unknown pane stays enabled so
+  // a server-rendered or test environment never shows a control that latches
+  // disabled and never re-enables.
+  const paneFits = useCallback(
+    (paneId: string): PaneFits => fitsByPane[paneId] ?? DEFAULT_PANE_FITS,
+    [fitsByPane],
+  );
+
+  const focusedFits = paneFits(focusedPaneId);
+  const canSplitRight = underPaneCap && focusedFits.right;
+  const canSplitDown = underPaneCap && focusedFits.down;
+  const splitBlockedTitle = underPaneCap
+    ? "Not enough room to split"
+    : "Terminal limit reached";
 
   // One writer handle per live pane. A plain ref map (not state) — registering
   // a writer must not re-render the pane that just mounted.
@@ -97,14 +179,19 @@ export function CodeTerminalWorkspace({
 
   const handleSplit = useCallback(
     (paneId: string, direction: "horizontal" | "vertical") => {
-      if (!canSplit) {
+      if (!canSplitTerminalPane(layoutRef.current)) {
         announce("Terminal limit reached. Close a terminal before splitting again.");
+        return;
+      }
+      const fits = fitsByPaneRef.current[paneId] ?? DEFAULT_PANE_FITS;
+      if (!(direction === "horizontal" ? fits.right : fits.down)) {
+        announce("Not enough room to split this terminal.");
         return;
       }
       onSplit(paneId, direction);
       announce(direction === "horizontal" ? "Terminal split right." : "Terminal split down.");
     },
-    [announce, canSplit, onSplit],
+    [announce, onSplit],
   );
 
   const handleClose = useCallback(
@@ -120,20 +207,88 @@ export function CodeTerminalWorkspace({
     announce(broadcastRef.current ? "Broadcast input off." : "Broadcast input on.");
   }, [announce, onToggleBroadcast]);
 
+  const handleCycleFocus = useCallback(
+    (step: 1 | -1) => {
+      const nextId = nextTerminalPaneId(layoutRef.current, focusedPaneId, step);
+      if (nextId === focusedPaneId) return;
+      onFocusPane(nextId);
+      const label =
+        listTerminalPanes(layoutRef.current).find((pane) => pane.id === nextId)?.label ??
+        "Terminal";
+      announce(`${label} focused.`);
+    },
+    [announce, focusedPaneId, onFocusPane],
+  );
+
+  // Room shortcuts live on the workspace container, not on `window`: the Room
+  // can sit beside other surfaces, and a global listener would fire from them.
+  // Events bubble here from xterm's hidden textarea, which is why the typing
+  // guard has to make an exception for it rather than checking the tag name.
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const shortcut = resolveCodeRoomShortcut(event);
+      if (!shortcut) return;
+      if (isCodeRoomTypingTarget(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      switch (shortcut) {
+        case "focus-next-terminal":
+          handleCycleFocus(1);
+          return;
+        case "focus-previous-terminal":
+          handleCycleFocus(-1);
+          return;
+        case "split-right":
+          handleSplit(focusedPaneId, "horizontal");
+          return;
+        case "split-down":
+          handleSplit(focusedPaneId, "vertical");
+          return;
+        case "close-terminal":
+          if (focusedPaneId === PRIMARY_TERMINAL_PANE_ID) {
+            announce("The primary terminal cannot be closed.");
+            return;
+          }
+          handleClose(focusedPaneId);
+          return;
+        case "toggle-broadcast":
+          // Broadcast with one pane has no targets; the button is disabled
+          // there, so the shortcut has to refuse too rather than leave a
+          // pressed toggle that does nothing.
+          if (listTerminalPanes(layoutRef.current).length < 2) {
+            announce("Broadcast needs a second terminal.");
+            return;
+          }
+          handleToggleBroadcast();
+      }
+    },
+    [announce, focusedPaneId, handleClose, handleCycleFocus, handleSplit, handleToggleBroadcast],
+  );
+
   const renderLeaf = (paneId: string) => {
     const descriptor = panes.find((pane) => pane.id === paneId);
     const label = descriptor?.label ?? "Terminal";
     const isFocused = paneId === focusedPaneId;
     const isPrimary = paneId === PRIMARY_TERMINAL_PANE_ID;
+    // This pane's own measurement, not the focused pane's — its header buttons
+    // act on itself regardless of where focus currently sits.
+    const fits = paneFits(paneId);
+    const paneCanSplitRight = underPaneCap && fits.right;
+    const paneCanSplitDown = underPaneCap && fits.down;
     return (
       <section
         aria-label={label}
-        // Focus is a border weight + an explicit aria-current, never colour
-        // alone — the split is unreadable to anyone who can't see the tint.
+        // Focus is a border tint + a "Focused" chip + an explicit aria-current,
+        // never colour alone — the split is unreadable to anyone who can't see
+        // the tint.
         aria-current={isFocused ? "true" : undefined}
         data-focused={isFocused ? "true" : undefined}
         data-testid="code-terminal-pane"
         className="code-terminal-pane"
+        ref={(el) => {
+          if (el) paneElsRef.current.set(paneId, el);
+          else paneElsRef.current.delete(paneId);
+        }}
         onFocusCapture={() => onFocusPane(paneId)}
         onPointerDownCapture={() => onFocusPane(paneId)}
       >
@@ -146,8 +301,8 @@ export function CodeTerminalWorkspace({
                 type="button"
                 className="focus-ring code-terminal-pane__action"
                 aria-label={`Split ${label} right`}
-                title="Split right"
-                disabled={!canSplit}
+                title={paneCanSplitRight ? "Split right" : splitBlockedTitle}
+                disabled={!paneCanSplitRight}
                 onClick={() => handleSplit(paneId, "horizontal")}
               >
                 <Icon name="ph:columns" width={12} height={12} />
@@ -156,8 +311,8 @@ export function CodeTerminalWorkspace({
                 type="button"
                 className="focus-ring code-terminal-pane__action"
                 aria-label={`Split ${label} down`}
-                title="Split down"
-                disabled={!canSplit}
+                title={paneCanSplitDown ? "Split down" : splitBlockedTitle}
+                disabled={!paneCanSplitDown}
                 onClick={() => handleSplit(paneId, "vertical")}
               >
                 <Icon name="ph:rows" width={12} height={12} />
@@ -167,7 +322,7 @@ export function CodeTerminalWorkspace({
                   type="button"
                   className="focus-ring code-terminal-pane__action"
                   aria-label={`Close ${label}`}
-                  title="Close terminal"
+                  title={`Close terminal (${CODE_ROOM_SHORTCUT_HINTS["close-terminal"]})`}
                   onClick={() => handleClose(paneId)}
                 >
                   <Icon name="ph:x" width={12} height={12} />
@@ -222,7 +377,11 @@ export function CodeTerminalWorkspace({
   };
 
   return (
-    <div className="code-terminal-workspace" data-testid="code-terminal-workspace">
+    <div
+      className="code-terminal-workspace"
+      data-testid="code-terminal-workspace"
+      onKeyDown={handleKeyDown}
+    >
       <div className="code-terminal-workspace__bar">
         <span className="code-terminal-workspace__count">
           {paneCount === 1 ? "1 terminal" : `${paneCount} terminals`}
@@ -232,8 +391,12 @@ export function CodeTerminalWorkspace({
             type="button"
             className="focus-ring code-terminal-workspace__action"
             aria-label="Split terminal right"
-            title={canSplit ? "Split right" : "Terminal limit reached"}
-            disabled={!canSplit}
+            title={
+              canSplitRight
+                ? `Split right (${CODE_ROOM_SHORTCUT_HINTS["split-right"]})`
+                : splitBlockedTitle
+            }
+            disabled={!canSplitRight}
             onClick={() => handleSplit(focusedPaneId, "horizontal")}
           >
             <Icon name="ph:columns" width={12} height={12} />
@@ -243,8 +406,12 @@ export function CodeTerminalWorkspace({
             type="button"
             className="focus-ring code-terminal-workspace__action"
             aria-label="Split terminal down"
-            title={canSplit ? "Split down" : "Terminal limit reached"}
-            disabled={!canSplit}
+            title={
+              canSplitDown
+                ? `Split down (${CODE_ROOM_SHORTCUT_HINTS["split-down"]})`
+                : splitBlockedTitle
+            }
+            disabled={!canSplitDown}
             onClick={() => handleSplit(focusedPaneId, "vertical")}
           >
             <Icon name="ph:rows" width={12} height={12} />
@@ -258,7 +425,7 @@ export function CodeTerminalWorkspace({
             // would leave a pressed toggle that does nothing.
             disabled={paneCount < 2}
             aria-label={broadcast ? "Turn off broadcast input" : "Turn on broadcast input"}
-            title="Type once, send to every terminal"
+            title={`Type once, send to every terminal (${CODE_ROOM_SHORTCUT_HINTS["toggle-broadcast"]})`}
             onClick={handleToggleBroadcast}
           >
             <Icon name="ph:broadcast" width={12} height={12} />

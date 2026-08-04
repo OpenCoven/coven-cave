@@ -288,6 +288,11 @@ assert.match(
 );
 assert.match(
   contextDock,
+  /import\("@\/components\/github-view"\)/,
+  "GitHub is dynamic() so GitHubView's fetch stack stays out of the Room's initial chunk",
+);
+assert.match(
+  contextDock,
   /<SessionChangesInner\s+key=\{workRoot\}\s+projectRoot=\{workRoot\}\s+running=\{running\}/,
   "Changes mounts the proven changes panel keyed+scoped to the work root",
 );
@@ -298,8 +303,32 @@ assert.match(
 );
 assert.match(
   contextDock,
-  /if \(id === "browser"\) onSizeChange\("expanded"\)/,
-  "Browser opens the dock expanded — a native webview in a sidebar renders unusable wrapped text",
+  /codeDockTabWantsExpanded\(next\)[\s\S]{0,80}"expanded"/,
+  "the wide tabs (Browser, GitHub) open the dock expanded — a native webview or a list/detail split in a sidebar renders unusable wrapped text",
+);
+// Re-selecting the active tab with the dock already sized for it must not
+// re-announce; a live region that repeats on every click is noise, not feedback.
+assert.match(
+  contextDock,
+  /if \(next === tab && !wantedSize\) return;/,
+  "selecting the already-active tab is a no-op instead of a redundant state write and announcement",
+);
+// cave-uod42: the dock is the one zone whose content swaps under a stationary
+// cursor, so a change nobody can see must at least be a change somebody hears.
+assert.match(
+  contextDock,
+  /const \{ announce \} = useAnnouncer\(\)/,
+  "the dock announces through the shared live region",
+);
+assert.match(
+  contextDock,
+  /announce\(`\$\{DOCK_TAB_META\[next\]\.label\} context shown\.`\)/,
+  "every tab change is announced by name",
+);
+assert.match(
+  contextDock,
+  /announce\(DOCK_SIZE_ANNOUNCEMENT\[next\]\)/,
+  "every collapse/restore/expand is announced",
 );
 
 // The primary pane must keep the session's shared rail shell, or a shell
@@ -323,6 +352,19 @@ assert.match(
   terminalWorkspace,
   /aria-current=\{isFocused \? "true" : undefined\}/,
   "pane focus is exposed to AT, not signalled by colour alone",
+);
+// Split affordances read the pane they act on. Measuring only the focused pane
+// mis-states every other pane's header buttons, which stay live regardless of
+// where focus sits — and pointer focus is not committed before the click.
+assert.match(
+  terminalWorkspace,
+  /const fits = paneFits\(paneId\);/,
+  "each pane's split buttons use that pane's own measurement",
+);
+assert.match(
+  terminalWorkspace,
+  /const fits = fitsByPaneRef\.current\[paneId\] \?\? DEFAULT_PANE_FITS;/,
+  "the split handler re-checks the target pane's measurement, not the focused pane's",
 );
 assert.match(
   workbenchFiles,

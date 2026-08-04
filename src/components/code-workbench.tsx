@@ -210,6 +210,7 @@ export function CodeWorkbench({
               onTabChange={setDockTab}
               onSizeChange={setDockSize}
               onRefresh={onRefresh}
+              onJumpToSession={onJumpToSession}
             />
           </Panel>
         </Group>

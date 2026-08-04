@@ -13,6 +13,7 @@ import {
   isCodeDockTab,
   codeDockTabForWorkbenchTab,
   CODE_DOCK_TABS,
+  codeDockTabWantsExpanded,
   CODE_DOCK_SIZES,
   normalizeCodeTopTab,
   parseCodeDeepLink,
@@ -160,6 +161,11 @@ test("normalizeCodeTopTab maps legacy + unknown values", () => {
 
 test("dock tabs are a fixed vocabulary distinct from the retired workbench tabs", () => {
   for (const tab of CODE_DOCK_TABS) assert.ok(isCodeDockTab(tab));
+  assert.deepEqual(
+    [...CODE_DOCK_TABS],
+    ["changes", "files", "pr", "inspector", "github", "browser"],
+    "the approved dock, in tab order",
+  );
   assert.ok(!isCodeDockTab("terminal"), "the terminal is the center zone, never a dock tab");
   assert.ok(!isCodeDockTab("diff"), "diff was renamed to changes in the Room");
   assert.ok(!isCodeDockTab(null));
@@ -183,4 +189,14 @@ test("legacy ?wtab= deep links resolve onto the dock", () => {
 
 test("dock sizes are ordered widest-last so collapse/expand steps through them", () => {
   assert.deepEqual([...CODE_DOCK_SIZES], ["collapsed", "normal", "expanded"]);
+});
+
+// Some dock tabs are illegible at sidebar width, so selecting one has to widen
+// the dock rather than render something nobody can use.
+test("only the wide tabs force the dock open expanded", () => {
+  assert.ok(codeDockTabWantsExpanded("browser"), "a native webview needs the room");
+  assert.ok(codeDockTabWantsExpanded("github"), "a list/detail split needs the room");
+  for (const tab of ["changes", "files", "pr", "inspector"] as const) {
+    assert.ok(!codeDockTabWantsExpanded(tab), `${tab} reads fine at normal width`);
+  }
 });

@@ -25,6 +25,45 @@ export const MAX_TERMINAL_PANES = 4;
  *  session's shared `cave.rail.<sessionId>` PTY. */
 export const PRIMARY_TERMINAL_PANE_ID = "primary";
 
+/** Floors that keep a pane wide/tall enough to read a shell in. The count cap
+ *  above is not sufficient on its own: two panes in a 380px Room are already
+ *  unusable, so the affordance also has to answer "would THIS split produce a
+ *  pane below the floor?". The CSS `minSize` strings are derived from these so
+ *  the divider stop and the disabled button can never disagree. */
+export const MIN_TERMINAL_PANE_WIDTH_PX = 220;
+export const MIN_TERMINAL_PANE_HEIGHT_PX = 120;
+
+/** Would splitting a pane of this size leave both halves above the floor?
+ *  A split halves the axis it runs along and leaves the other axis untouched,
+ *  so only the split axis is checked. Zero/unmeasured sizes pass: an unmounted
+ *  or not-yet-measured pane must not present a disabled control that never
+ *  re-enables. */
+export function canSplitPaneSize(
+  size: { width: number; height: number },
+  direction: TerminalSplitDirection,
+): boolean {
+  const axis = direction === "horizontal" ? size.width : size.height;
+  if (!Number.isFinite(axis) || axis <= 0) return true;
+  const floor =
+    direction === "horizontal" ? MIN_TERMINAL_PANE_WIDTH_PX : MIN_TERMINAL_PANE_HEIGHT_PX;
+  return axis / 2 >= floor;
+}
+
+/** The pane after `paneId` in reading order, wrapping at the end. Reading order
+ *  is what the visible `Terminal 1..n` labels already follow, so "focus next"
+ *  moves the way the labels read rather than the way the tree nests. */
+export function nextTerminalPaneId(
+  node: TerminalLayoutNode,
+  paneId: string,
+  step: 1 | -1 = 1,
+): string {
+  const panes = listTerminalPanes(node);
+  if (panes.length === 0) return paneId;
+  const index = panes.findIndex((pane) => pane.id === paneId);
+  if (index < 0) return panes[0].id;
+  return panes[(index + step + panes.length) % panes.length].id;
+}
+
 export type TerminalSplitDirection = "horizontal" | "vertical";
 
 export type TerminalPaneNode = {
