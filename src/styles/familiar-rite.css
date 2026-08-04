@@ -1,0 +1,226 @@
+/* The summoning rite — card left, one question right (cave-3rz.3). */
+
+.rite {
+  display: grid;
+  grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+  gap: clamp(var(--space-6), 5vw, var(--space-10));
+  align-items: center;
+  padding: clamp(var(--space-6), 5vw, var(--space-10));
+  min-height: 100%;
+}
+
+@media (max-width: 60rem) {
+  .rite { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+}
+
+.rite__stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  /* The card floats rather than sitting in a panel — it should read as the
+     object being made, not as a preview pane. */
+  animation: rite-float 7s ease-in-out infinite;
+}
+
+@keyframes rite-float {
+  0%, 100% { transform: translateY(calc(var(--space-1) * -1)); }
+  50% { transform: translateY(var(--space-1)); }
+}
+
+.rite__telemetry {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 20rem;
+}
+
+.rite__ask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 34rem;
+}
+
+/* Progress reads as beads on a thread, not a stepper bar. */
+.rite__track { display: flex; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+
+.rite__bead {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-pill);
+  border: 0;
+  display: grid;
+  place-items: center;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.rite__bead--done { color: var(--text-primary); }
+.rite__bead--now {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent-presence);
+  color: var(--text-primary);
+}
+
+/* The question IS the label — there is no caption above a field anywhere. */
+.rite__question {
+  font-size: var(--text-display);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+.rite__aside { font-size: var(--text-base); color: var(--text-secondary); margin: 0; max-width: 42ch; }
+
+/* ── Likeness ─────────────────────────────────────────────────────────── */
+.rite__well {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-6);
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--border-strong);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.rite__well--live {
+  border-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+
+.rite__well-line { margin: 0; font-size: var(--text-base); }
+.rite__well kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+}
+.rite__file { display: none; }
+
+/* ── Vessels ──────────────────────────────────────────────────────────── */
+.rite__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: var(--space-2);
+}
+
+.rite__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.rite__tile:hover { background: var(--bg-hover); }
+.rite__tile--on { box-shadow: inset 0 0 0 1px var(--accent-presence); background: var(--bg-hover); }
+.rite__tile-label { font-size: var(--text-base); font-weight: 600; }
+.rite__tile-note { font-size: var(--text-2xs); color: var(--text-muted); line-height: 1.4; }
+
+/* ── Stones ───────────────────────────────────────────────────────────── */
+.rite__stones { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-4); }
+
+.rite__stone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.rite__stone:hover { background: var(--bg-subtle); }
+.rite__stone--on { background: color-mix(in oklch, var(--accent-presence) 14%, transparent); }
+
+/* Height is driven by the model's real context window — a bigger stone holds
+   more, which is a true statement, unlike a power rating. */
+.rite__crystal { display: block; height: calc(4.5rem * var(--stone-scale, 1)); }
+.rite__crystal svg { height: 100%; width: auto; overflow: visible; }
+.rite__crystal polygon {
+  fill: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  stroke: var(--accent-presence);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.rite__crystal-facet { fill: color-mix(in oklch, var(--accent-presence) 46%, transparent); stroke: none; }
+.rite__stone--on .rite__crystal polygon { fill: color-mix(in oklch, var(--accent-presence) 52%, transparent); }
+
+.rite__stone-ctx { font-family: var(--font-mono); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+.rite__stone-id { font-size: var(--text-2xs); color: var(--text-muted); }
+
+/* ── Sigils ───────────────────────────────────────────────────────────── */
+.rite__sigils { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-2); }
+
+.rite__sigil {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.rite__sigil:hover { background: var(--bg-hover); }
+.rite__sigil--on {
+  box-shadow: inset 0 0 0 1px var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+.rite__sigil-label { font-size: var(--text-base); font-weight: 600; }
+.rite__sigil-note { font-size: var(--text-2xs); color: var(--text-muted); line-height: 1.4; }
+
+/* ── Seal ─────────────────────────────────────────────────────────────── */
+.rite__seal { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); }
+.rite__name { display: flex; flex-direction: column; gap: var(--space-1); width: 100%; max-width: 22rem; }
+.rite__name-hint { font-size: var(--text-2xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+
+.rite__name-input {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  padding: var(--space-1) 0;
+}
+.rite__name-input:focus { outline: none; border-bottom-color: var(--accent-presence); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rite__stage { animation: none; }
+}
