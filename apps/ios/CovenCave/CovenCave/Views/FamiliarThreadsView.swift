@@ -209,6 +209,7 @@ struct FamiliarThreadsView: View {
                     }
                 }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("Thread row \(entry.id)")
                     .accessibilityAddTraits(
                         (selectMode && isSelected(entry)) || (isPicking && !selectMode && isCurrent(entry))
                             ? .isSelected : [])

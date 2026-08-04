@@ -399,6 +399,19 @@ final class AppModel {
         // fixture state and the preview never touches the saved thread store.
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-empty-chat") {
             configureEmptyChatPreview()
+            if ProcessInfo.processInfo.arguments.contains("--ui-preview-second-thread") {
+                // A second conversation with the same familiar, so the session
+                // switcher has somewhere to switch *to*. Without it the picker
+                // lists one row and a UI test cannot tell a working switch
+                // apart from the dead-end it replaced.
+                threads.append(
+                    ChatThread(
+                        id: "ui-preview-second-chat",
+                        title: "Chat with Nyx on Jul 27",
+                        familiarIds: ["nyx"]
+                    )
+                )
+            }
             ChatTurnNotifier.shared.app = self
             return
         }
