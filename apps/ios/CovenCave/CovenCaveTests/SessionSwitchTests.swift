@@ -48,17 +48,21 @@ final class SessionSwitchTests: XCTestCase {
         XCTAssertTrue(app.threadToOpen === chosen)
     }
 
-    /// The chosen session must stay put: consuming the request clears the
-    /// one-shot so nothing re-opens a different thread behind the user's back.
-    func testRequestIsAOneShotSoTheChosenSessionSticks() {
+    /// The chosen session must stay put once opened. After the view consumes
+    /// the one-shot request, that session is the current one — so the picker
+    /// offering it again must not re-request it and rebuild the live chat.
+    func testChosenSessionSticksAfterTheRequestIsConsumed() {
         let app = AppModel()
         let chosen = thread("sticky-session")
 
-        app.switchConversation(to: chosen, currentThreadId: "current-session")
+        XCTAssertTrue(app.switchConversation(to: chosen, currentThreadId: "previous-session"))
         XCTAssertTrue(app.threadToOpen === chosen)
 
         // ChatsHomeView clears the intent once it has opened the thread.
         app.threadToOpen = nil
+
+        // Re-picking it now that it is the open conversation must do nothing.
+        XCTAssertFalse(app.switchConversation(to: chosen, currentThreadId: chosen.id))
         XCTAssertNil(app.threadToOpen)
     }
 }
