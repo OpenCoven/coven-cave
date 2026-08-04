@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { buildCovenMarkersDirective } from "./coven-marker-directive.ts";
 import { sliceGitHubBlocks } from "./github-blocks.ts";
+import { isRenderableImageSrc, sliceImageBlocks } from "./image-blocks.ts";
 import { extractSkillMarkers } from "./skill-blocks.ts";
 
 const directive = buildCovenMarkersDirective();
@@ -53,6 +54,26 @@ assert.deepEqual(
   skill.updates,
   [{ name: "the-skill", stage: "running", note: "short status" }],
   "the taught skill example must parse into a stage update",
+);
+
+const exampleImage = directive.match(/<coven:image\s[^>]*\/>/)?.[0];
+assert.ok(exampleImage, "directive carries an image-marker example");
+const imagePieces = sliceImageBlocks(exampleImage);
+const deck = imagePieces.find((p) => p.kind === "carousel")?.carousel;
+assert.equal(deck?.images.length, 1, "the taught image example must parse into a one-image deck");
+assert.ok(
+  isRenderableImageSrc(deck?.images[0].src),
+  "the taught image example must use a src the parser accepts",
+);
+assert.match(
+  directive,
+  /collapse into ONE browsable carousel/,
+  "the merge rule is the whole point — teach it, or familiars emit N separate cards",
+);
+assert.match(
+  directive,
+  /group="…"/,
+  "the group attribute must be taught alongside adjacency",
 );
 
 // ── Coverage: every parseable kind/stage is taught ───────────────────────────

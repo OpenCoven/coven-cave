@@ -35,6 +35,7 @@ export type StandardSelectProps<T extends string> = {
   groupClassName?: string;
   showCaret?: boolean;
   renderValue?: (selected: StandardSelectOption<T> | null) => ReactNode;
+  "aria-describedby"?: string;
 };
 
 function isGroup<T extends string>(entry: SelectEntry<T>): entry is StandardSelectGroup<T> {
@@ -71,6 +72,7 @@ export function StandardSelect<T extends string>({
   groupClassName,
   showCaret = true,
   renderValue,
+  "aria-describedby": ariaDescribedBy,
 }: StandardSelectProps<T>) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -93,6 +95,7 @@ export function StandardSelect<T extends string>({
         style={style}
         title={title}
         aria-label={label}
+        aria-describedby={ariaDescribedBy}
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={disabled}

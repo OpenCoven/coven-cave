@@ -112,6 +112,7 @@ export const ICON_NAMES = [
   "ph:wrench",
   "ph:hammer",
   "ph:brain",
+  "ph:broadcast",
   "ph:bone",
   "ph:x",
   "ph:x-bold",

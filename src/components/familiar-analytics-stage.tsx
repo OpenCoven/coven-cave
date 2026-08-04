@@ -1,6 +1,12 @@
 "use client";
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  ANALYTICS_WINDOWS,
+  DEFAULT_WINDOW,
+  deriveScopedActivityCadence,
+  type WindowId,
+} from "@/lib/analytics-window";
 import type { FamiliarAnalyticsModel } from "@/components/familiar-analytics-data";
 import { PulseBars } from "@/components/ui/pulse-bars";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -12,36 +18,9 @@ import type { SessionRow } from "@/lib/types";
 // ─── Scope: one lens and one time window for the whole stage ─────────────────
 
 export type LensId = "all" | "crit" | "contract" | "skills";
-export type WindowId = "7d" | "14d" | "8w" | "all";
-
 export const DEFAULT_LENS: LensId = "all";
-export const DEFAULT_WINDOW: WindowId = "8w";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-export const ANALYTICS_WINDOWS: {
-  id: WindowId;
-  label: string;
-  title: string;
-  /** null = everything on record. */
-  days: number | null;
-}[] = [
-  { id: "7d", label: "7D", title: "Last 7 days", days: 7 },
-  { id: "14d", label: "14D", title: "Last 14 days", days: 14 },
-  { id: "8w", label: "8W", title: "Last 8 weeks", days: 56 },
-  { id: "all", label: "ALL", title: "Everything on record", days: null },
-];
-
-/** True when `iso` falls inside the window ending now. Unparseable timestamps
- *  are kept rather than dropped — a missing stamp is not evidence of age. */
-export function withinWindow(iso: string | null | undefined, windowId: WindowId, now: number): boolean {
-  const spec = ANALYTICS_WINDOWS.find((entry) => entry.id === windowId);
-  if (!spec || spec.days === null) return true;
-  if (!iso) return true;
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return true;
-  return now - ms <= spec.days * DAY_MS;
-}
+export type { WindowId } from "@/lib/analytics-window";
+export { ANALYTICS_WINDOWS, DEFAULT_WINDOW, withinWindow } from "@/lib/analytics-window";
 
 /** Does this heal request survive the lens? Lenses read real request fields —
  *  severity, source, and action kind — so a lens can never show a phantom. */
@@ -211,6 +190,8 @@ function isFailed(session: SessionRow): boolean {
 export const StatBand = memo(function StatBand({
   model,
   sessions,
+  now,
+  windowDays,
   healRequests,
   reportCount,
   queueCount,
@@ -223,6 +204,9 @@ export const StatBand = memo(function StatBand({
   model: FamiliarAnalyticsModel;
   /** Window-scoped sessions — the number the Activity card reports. */
   sessions: SessionRow[];
+  /** Shared scope clock and duration for the Activity card's breakdown. */
+  now: number;
+  windowDays: number | null;
   /** Lens-scoped heal requests — the number the Self-heal card reports. */
   healRequests: SelfHealRequest[];
   reportCount: number;
@@ -244,15 +228,9 @@ export const StatBand = memo(function StatBand({
 
   const pulse = model.sessionPulse;
   const pulseSessions = pulseTotal(pulse);
-  const busiest = pulse.reduce<PulseDay | null>(
-    (best, day) => (best === null || day.count > best.count ? day : best),
-    null,
-  );
+  const { activeNow, busiest, lastActive, perWeek } = deriveScopedActivityCadence(sessions, now, windowDays);
   const failed = sessions.filter(isFailed).length;
   const completed = sessions.length - failed;
-  const lastActive = model.growthReport?.lastActiveAt ?? model.recentSessions[0]?.updated_at ?? null;
-  const activeNow = pulse[pulse.length - 1]?.count > 0 || pulse[pulse.length - 2]?.count > 0;
-  const perWeek = pulse.length > 0 ? Math.round((pulseSessions / pulse.length) * 7) : 0;
 
   const contract = model.contractReport;
   const passCount = contract ? contract.properties.filter((property) => property.pass).length : 0;

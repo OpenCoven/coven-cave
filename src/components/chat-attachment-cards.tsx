@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { ImageCarousel } from "@/components/image-carousel";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { attachmentIcon, chatAttachmentSrc, type ChatAttachment } from "@/lib/chat-attachments";
 import { Icon } from "@/lib/icon";
@@ -130,14 +131,28 @@ export function AttachmentThumb({ attachment }: { attachment: ChatAttachment }) 
 }
 
 /**
- * Full-bleed inline rendering for image attachments a familiar produced
- * (e.g. /image generations) — a bounded picture in the transcript instead of
- * a filename chip. Click opens the same lightbox as the chip list.
+ * Full-bleed inline rendering for image attachments (a familiar's /image
+ * generations, a user's pasted screenshots). One picture renders bounded in
+ * place; TWO OR MORE route through the shared {@link ImageCarousel} so a batch
+ * is browsable instead of a ragged wrap of thumbnails — the same deck
+ * `<coven:image>` markers mount.
  */
 export function InlineImageAttachments({ attachments }: { attachments: ChatAttachment[] }) {
   const [selected, setSelected] = useState<ChatAttachment | null>(null);
   const images = attachments.filter(isInlineImageAttachment);
   if (images.length === 0) return null;
+  if (images.length > 1) {
+    return (
+      <ImageCarousel
+        images={images.map((attachment) => ({
+          // isInlineImageAttachment already proved there are pixels here.
+          src: chatAttachmentSrc(attachment) as string,
+          alt: attachment.name,
+        }))}
+        label={`${images.length} images`}
+      />
+    );
+  }
   return (
     <>
       <div className="mt-2 flex flex-wrap gap-2">

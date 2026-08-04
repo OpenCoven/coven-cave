@@ -17,7 +17,13 @@ let lastDataChannel: { onmessage: ((ev: { data: unknown }) => void) | null; clos
   onconnectionstatechange: unknown = null;
   addTrack() {}
   createDataChannel() {
-    lastDataChannel = { onmessage: null, close() {} };
+    lastDataChannel = {
+      onmessage: null,
+      readyState: "open",
+      sent: [],
+      send(payload: string) { this.sent.push(JSON.parse(payload)); },
+      close() {},
+    };
     return lastDataChannel;
   }
   async createOffer() { return { type: "offer", sdp: "v=0\r\n" }; }
@@ -182,4 +188,100 @@ test("data-channel error events surface provider message as hint under a stable 
   assert.ok(seen instanceof VoiceConnectError, "onError receives VoiceConnectError");
   assert.equal((seen as any).message, "provider_error");
   assert.equal((seen as any).hint, "session expired");
+});
+
+// ── Live transcript + typed replies (cave-zr9dx) ──────────────────────────
+
+test("assistant deltas accumulate into whole-turn partials and a speaking signal", async () => {
+  nextResponse = new Response("v=0\r\n", { status: 201 });
+  const partials: [string, string][] = [];
+  const speaking: (string | null)[] = [];
+  const finals: string[] = [];
+  await openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, {
+    ...noopCallbacks,
+    onPartialTranscript(role: string, text: string) { partials.push([role, text]); },
+    onSpeaking(utterance: string | null) { speaking.push(utterance); },
+    onAssistantTranscriptFinal(text: string) { finals.push(text); },
+  });
+  const deltas = ["The candles ", "are lit."];
+  for (const delta of deltas) {
+    lastDataChannel?.onmessage?.({
+      data: JSON.stringify({ type: "response.output_audio_transcript.delta", delta }),
+    });
+  }
+  // Every other provider reports the accumulated turn; this adapter owes the
+  // same contract so the live transcript renders by replacement.
+  assert.deepEqual(partials, [
+    ["assistant", "The candles "],
+    ["assistant", "The candles are lit."],
+  ]);
+  assert.deepEqual(speaking, ["The candles ", "The candles are lit."]);
+
+  lastDataChannel?.onmessage?.({
+    data: JSON.stringify({
+      type: "response.output_audio_transcript.done",
+      transcript: "The candles are lit.",
+    }),
+  });
+  assert.deepEqual(finals, ["The candles are lit."]);
+  assert.equal(speaking[speaking.length - 1], null, "the highlight clears when the turn ends");
+});
+
+test("a second response starts from empty, not from the previous turn's text", async () => {
+  nextResponse = new Response("v=0\r\n", { status: 201 });
+  const partials: string[] = [];
+  await openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, {
+    ...noopCallbacks,
+    onPartialTranscript(_role: string, text: string) { partials.push(text); },
+  });
+  const delta = (delta: string) =>
+    lastDataChannel?.onmessage?.({
+      data: JSON.stringify({ type: "response.output_audio_transcript.delta", delta }),
+    });
+  delta("First.");
+  lastDataChannel?.onmessage?.({
+    data: JSON.stringify({ type: "response.output_audio_transcript.done", transcript: "First." }),
+  });
+  delta("Second.");
+  assert.deepEqual(partials, ["First.", "Second."]);
+});
+
+test("sendText queues a user item, asks for a response, and reports the turn", async () => {
+  nextResponse = new Response("v=0\r\n", { status: 201 });
+  const userFinals: string[] = [];
+  const session = await openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, {
+    ...noopCallbacks,
+    onUserTranscriptFinal(text: string) { userFinals.push(text); },
+  });
+  session.sendText("  say that again  ");
+  assert.deepEqual(
+    lastDataChannel?.sent.map((ev: any) => ev.type),
+    ["conversation.item.create", "response.create"],
+  );
+  assert.deepEqual(lastDataChannel?.sent[0].item.content, [
+    { type: "input_text", text: "say that again" },
+  ]);
+  // A typed turn never passes through input-audio transcription, so the
+  // adapter is the only thing that can put it in the transcript.
+  assert.deepEqual(userFinals, ["say that again"]);
+  session.sendText("   ");
+  assert.equal(lastDataChannel?.sent.length, 2, "a blank reply sends nothing");
+});
+
+test("a typed reply mid-answer cancels the response first, and never otherwise", async () => {
+  nextResponse = new Response("v=0\r\n", { status: 201 });
+  const session = await openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, noopCallbacks);
+  // Nothing in flight: `response.cancel` with no active response comes back as
+  // an error event, so it must not be sent.
+  session.interrupt();
+  assert.deepEqual(lastDataChannel?.sent, []);
+
+  lastDataChannel?.onmessage?.({
+    data: JSON.stringify({ type: "response.output_audio_transcript.delta", delta: "Once upon" }),
+  });
+  session.sendText("stop");
+  assert.deepEqual(
+    lastDataChannel?.sent.map((ev: any) => ev.type),
+    ["response.cancel", "conversation.item.create", "response.create"],
+  );
 });

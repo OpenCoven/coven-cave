@@ -18,6 +18,8 @@
  *   - split chat panes (⌥↵ / ⌥⌘arrows / ⌥⌘W): chat-project-sidebar.tsx row
  *     keydown + the chat-router.tsx split-keyboard effect
  *   - browser pane: src/components/browser-pane.tsx (⌘L / ⌘K / [)
+ *   - terminal & panes: src/components/code-terminal-workspace.tsx onKeyDown,
+ *     resolved through src/lib/code-room-shortcuts.ts
  *   - ⌘S save: familiar-daily-notes.tsx;
  *     artifact refine ⌘↵: chat-artifact-viewer.tsx
  *
@@ -26,6 +28,12 @@
  * and a whole "Terminal & panes" group implemented only in the unmounted
  * ComuxView. Advertised-but-dead shortcuts erode trust in the whole sheet —
  * if a binding lands, add it here in the same change that wires it.
+ *
+ * (cave-uod42) "Terminal & panes" is back, and this time it is wired: the
+ * Coding Room's terminal center handles it. The bindings are ⇧⌘ rather than
+ * the ⌃/⌥ combos the old group used, because bare Ctrl+letter is shell signal
+ * territory and Alt+letter is an escape sequence — either would have been
+ * eaten by the very surface they control.
  */
 
 export type ShortcutEntry = {
@@ -35,7 +43,7 @@ export type ShortcutEntry = {
 };
 
 export type ShortcutGroup = {
-  id: "panels" | "browser" | "composer" | "slash-menu" | "other";
+  id: "panels" | "browser" | "terminal" | "composer" | "slash-menu" | "other";
   label: string;
   entries: ShortcutEntry[];
 };
@@ -59,6 +67,17 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: "⌥⌘W", description: "Close the focused split chat pane" },
       { keys: "/", description: "Focus the search (Familiars, Projects, Capabilities, Sessions)" },
       { keys: "⌘F", description: "Focus the sessions search" },
+    ],
+  },
+  {
+    id: "terminal",
+    label: "Terminal & panes (Coding Room)",
+    entries: [
+      { keys: "⇧⌘→ / ⇧⌘←", description: "Focus the next / previous terminal" },
+      { keys: "⇧⌘D", description: "Split the focused terminal right" },
+      { keys: "⇧⌘E", description: "Split the focused terminal down" },
+      { keys: "⇧⌘X", description: "Close the focused terminal (never the primary)" },
+      { keys: "⇧⌘B", description: "Toggle broadcast input across terminals" },
     ],
   },
   {

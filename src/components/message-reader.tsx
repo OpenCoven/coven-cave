@@ -59,6 +59,7 @@ import {
   type BatchTool,
 } from "@/lib/chat-tool-batches";
 import { outlineBaseLevel, readerOutline, readingStats } from "@/lib/reader-outline";
+import { REWRITE_MAX_CHARS, type RewriteTone } from "@/lib/reader-rewrite";
 import { skillGroups, toolRollups, toolSteps } from "@/lib/reader-provenance";
 
 const HEADING_SELECTOR = "h1, h2, h3, h4, h5, h6";
@@ -88,6 +89,10 @@ export type MessageReaderProps = {
   /** The prompt that produced this answer. Absent — a root turn, or a turn
    *  whose prompt is empty — renders no card at all rather than an empty one. */
   prompt?: { text: string; createdAt?: string };
+  /** Which familiar produced this answer — the Rewrite control asks it for the
+   *  rewrite, so the register matches the voice that wrote it. Without an id
+   *  the control is not offered. */
+  familiarId?: string;
   /** Rerun from an edited prompt. Absent while the thread is busy or this turn
    *  is not the tip, which is exactly when a rerun would be a lie: the answer
    *  it replaces is not the one on screen. Display of the prompt is NOT gated
@@ -102,6 +107,15 @@ type SkillsView = "cards" | "types";
 
 const TOOLS_VIEWS = ["batches", "tools", "timeline"] as const satisfies readonly ToolsView[];
 const SKILLS_VIEWS = ["cards", "types"] as const satisfies readonly SkillsView[];
+/** Full first: it is the answer as written, and the default every other lens
+ *  returns to. The two rewrites follow in increasing distance from it. */
+const LENSES = ["full", "brief", "eli5"] as const;
+const LENS_LABELS: Record<(typeof LENSES)[number], string> = {
+  full: "Full",
+  brief: "Condense",
+  eli5: "ELI5",
+};
+const lensLabel = (lens: (typeof LENSES)[number]) => LENS_LABELS[lens];
 const VIEW_LABELS: Record<ToolsView | SkillsView, string> = {
   batches: "Batches",
   tools: "By tool",
@@ -136,6 +150,7 @@ export function MessageReader({
   onAsk,
   prompt,
   onRerunWith,
+  familiarId,
 }: MessageReaderProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const docRef = useRef<HTMLDivElement | null>(null);
@@ -143,9 +158,28 @@ export function MessageReader({
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { announce } = useAnnouncer();
 
-  const outline = useMemo(() => readerOutline(text), [text]);
-  const stats = useMemo(() => readingStats(text), [text]);
+  // "full" is the answer as written and is never fetched. The other two are
+  // cached per turn: pressing Condense twice costs one model call, and coming
+  // back to Full always costs none.
+  const [lens, setLens] = useState<"full" | RewriteTone>("full");
+  const [rewrites, setRewrites] = useState<Partial<Record<RewriteTone, string>>>({});
+  const [rewriting, setRewriting] = useState<RewriteTone | null>(null);
+  const [rewriteError, setRewriteError] = useState<string | null>(null);
+  // Hidden once the server says this deployment cannot rewrite (501), rather
+  // than leaving a control that fails the same way on every press.
+  const [rewriteUnavailable, setRewriteUnavailable] = useState(false);
+
+  // Everything the reader DESCRIBES must describe what is on screen. Deriving
+  // the rail and the reading estimate from `text` left them describing the
+  // original while a rewrite was displayed: headings the body no longer had
+  // (so the rail scrolled nowhere) and a word count for prose nobody was
+  // reading. A condensed answer usually has no headings at all, which closes
+  // the rail — correct, rather than a rail pointing at nothing.
+  const shown = lens === "full" ? text : (rewrites[lens] ?? text);
+  const outline = useMemo(() => readerOutline(shown), [shown]);
+  const stats = useMemo(() => readingStats(shown), [shown]);
   const baseLevel = useMemo(() => outlineBaseLevel(outline), [outline]);
+
 
   const citations = useMemo(() => parseCitations(text).citations, [text]);
   const batches = useMemo(() => (tools?.length ? toolBatches(tools) : []), [tools]);
@@ -180,6 +214,7 @@ export function MessageReader({
   const [draft, setDraft] = useState(prompt?.text ?? "");
   const [selection, setSelection] = useState<string | null>(null);
   const [viewer, setViewer] = useState<Citation | null>(null);
+
 
   // The first available tab owns the panel — Sources is the default only when
   // the answer actually cites something.
@@ -261,16 +296,64 @@ export function MessageReader({
   }, []);
 
   const copy = useCallback(async () => {
-    if (!(await copyText(text))) return;
+    // What you see is what you take. Copying the original while a rewrite is
+    // displayed hands back text the reader never showed.
+    if (!(await copyText(shown))) return;
     setCopied(true);
     announce("Answer copied");
     if (copyTimer.current) clearTimeout(copyTimer.current);
     copyTimer.current = setTimeout(() => setCopied(false), 2000);
-  }, [text, announce]);
+  }, [shown, announce]);
+
+  const canRewrite =
+    !!familiarId && !rewriteUnavailable && text.trim().length > 0 && text.length <= REWRITE_MAX_CHARS;
+
+  const chooseLens = useCallback(
+    async (next: "full" | RewriteTone) => {
+      setRewriteError(null);
+      if (next === "full") {
+        setLens("full");
+        return;
+      }
+      // Cached: a lens already fetched for this turn costs nothing to revisit.
+      if (rewrites[next]) {
+        setLens(next);
+        return;
+      }
+      setRewriting(next);
+      try {
+        const res = await fetch("/api/chat/rewrite", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text, tone: next, familiarId }),
+        });
+        if (res.status === 501) {
+          // Not an error the reader should nag about — this deployment simply
+          // has no harness for it. Retire the control instead.
+          setRewriteUnavailable(true);
+          return;
+        }
+        const body = (await res.json().catch(() => null)) as
+          | { ok?: boolean; text?: string; error?: string }
+          | null;
+        if (!res.ok || !body?.ok || typeof body.text !== "string") {
+          setRewriteError(body?.error || "Rewrite failed");
+          return;
+        }
+        setRewrites((prev) => ({ ...prev, [next]: body.text as string }));
+        setLens(next);
+      } catch {
+        setRewriteError("Rewrite failed");
+      } finally {
+        setRewriting(null);
+      }
+    },
+    [rewrites, text, familiarId],
+  );
 
   const exportMarkdown = useCallback(() => {
     setExportOpen(false);
-    const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+    const blob = new Blob([shown], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -280,7 +363,7 @@ export function MessageReader({
     // in-flight download when the object URL disappears from under it.
     requestAnimationFrame(() => URL.revokeObjectURL(url));
     announce("Answer exported as Markdown");
-  }, [text, label, announce]);
+  }, [shown, label, announce]);
 
   const exportPdf = useCallback(() => {
     setExportOpen(false);
@@ -341,6 +424,23 @@ export function MessageReader({
           <span className="cave-reader-head__title">{label}</span>
 
           <div className="cave-reader-head__actions">
+            {canRewrite ? (
+              <span className="cave-reader-rewrite">
+                <span className="cave-reader-eyebrow">Rewrite</span>
+                <Segmented
+                  options={LENSES}
+                  value={lens}
+                  onChange={(next) => void chooseLens(next)}
+                  getLabel={lensLabel}
+                  ariaLabel="Rewrite"
+                />
+                {rewriting ? (
+                  <span className="cave-reader-rewrite__status" role="status">
+                    rewriting…
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
             <span className="cave-reader-menu-anchor">
               <button
                 type="button"
@@ -375,7 +475,9 @@ export function MessageReader({
                     PDF
                     <span className="cave-reader-menu__ext">print</span>
                   </button>
-                  <span className="cave-reader-menu__foot">exports the answer as written</span>
+                  <span className="cave-reader-menu__foot">
+                    {lens === "full" ? "exports the answer as written" : "exports the rewrite on screen"}
+                  </span>
                 </span>
               ) : null}
             </span>
@@ -531,7 +633,23 @@ export function MessageReader({
                   </div>
                 ) : null}
 
-                {children}
+                {lens === "full" || !rewrites[lens] ? (
+                  children
+                ) : (
+                  <div className="cave-reader-lens">
+                    <p className="cave-reader-lens__note">
+                      {lens === "brief" ? "Condensed" : "ELI5"} — a rewrite of the answer, not a new one.
+                      Sources and provenance below are unchanged.
+                    </p>
+                    <p className="cave-reader-lens__text">{rewrites[lens]}</p>
+                  </div>
+                )}
+
+                {rewriteError ? (
+                  <p className="cave-reader-lens__error" role="alert">
+                    {rewriteError} — showing the answer as written.
+                  </p>
+                ) : null}
 
                 <div className="cave-reader-rule" aria-hidden>
                   <span className="cave-reader-rule__line" />

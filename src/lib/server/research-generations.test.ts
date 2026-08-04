@@ -840,6 +840,7 @@ test("podcast drafter normalizes TTS-hostile glyphs into spoken words", () => {
       "## Throughput → cost curve",
       "",
       "- Throughput improved 3× at ≥ 90% recall (≈ baseline cost).",
+      "- Latency held near ~5 s once the spec+regression checks ran 2+2 times.",
     ].join("\n"),
   }, "standard", "debate");
   assert.equal(content.kind, "podcast");
@@ -848,7 +849,10 @@ test("podcast drafter normalizes TTS-hostile glyphs into spoken words", () => {
   assert.ok(narration.includes("Throughput to cost curve"), `arrow spoken as 'to' (${narration})`);
   assert.ok(narration.includes("3 times at at least 90%"), `× and ≥ spoken (${narration})`);
   assert.ok(narration.includes("about baseline cost"), `≈ spoken as 'about' (${narration})`);
-  for (const glyph of ["→", "×", "≥", "≈"]) {
+  assert.ok(narration.includes("about 5 s"), `~5 spoken as 'about 5' (${narration})`);
+  assert.ok(narration.includes("spec and regression"), `word+word spoken as 'and' (${narration})`);
+  assert.ok(narration.includes("2 plus 2 times"), `digit+digit spoken as 'plus' (${narration})`);
+  for (const glyph of ["→", "×", "≥", "≈", "~", "+"]) {
     assert.ok(!narration.includes(glyph), `no raw ${glyph} reaches speech`);
   }
 });

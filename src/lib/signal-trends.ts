@@ -56,6 +56,8 @@ export type SignalTrends = {
   granularity: TrendGranularity;
   /** Oldest → newest, spanning the full window (empty buckets included). */
   buckets: TrendBucket[];
+  /** Reader-facing name for the evidence window that produced these buckets. */
+  scopeLabel: string;
   /** Per-metric verdicts, in THREAD_METRIC_KEYS order. */
   metrics: MetricTrend[];
   /** Verdict on the weighted headline score — the one-word answer. */
@@ -76,6 +78,12 @@ export const TREND_WEEK_WINDOW = 8;
 export const TREND_FLAT_THRESHOLD = 5;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A caller-selected evidence range. `null` retains every persisted snapshot. */
+export type SignalTrendScope = {
+  days: number | null;
+  label: string;
+};
 
 function clampScore(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -183,8 +191,8 @@ export function bucketSnapshots(
   snapshots: ThreadMetricSnapshot[],
   granularity: TrendGranularity,
   now: number,
+  bucketCount = granularity === "day" ? TREND_DAY_WINDOW : TREND_WEEK_WINDOW,
 ): TrendBucket[] {
-  const bucketCount = granularity === "day" ? TREND_DAY_WINDOW : TREND_WEEK_WINDOW;
   const bucketMs = granularity === "day" ? DAY_MS : 7 * DAY_MS;
   const newestStart = granularity === "day" ? dayStartUtc(now) : weekStartUtc(now);
   const starts = Array.from({ length: bucketCount }, (_, index) => newestStart - (bucketCount - 1 - index) * bucketMs);
@@ -216,6 +224,28 @@ export function bucketSnapshots(
   });
 }
 
+function bucketCountForScope(
+  snapshots: ThreadMetricSnapshot[],
+  granularity: TrendGranularity,
+  now: number,
+  scope: SignalTrendScope | undefined,
+): number {
+  if (!scope) return granularity === "day" ? TREND_DAY_WINDOW : TREND_WEEK_WINDOW;
+
+  const bucketMs = granularity === "day" ? DAY_MS : 7 * DAY_MS;
+  const startOfBucket = granularity === "day" ? dayStartUtc : weekStartUtc;
+  const newestStart = startOfBucket(now);
+  const oldestSnapshot = snapshots.reduce<number | null>((oldest, snapshot) => {
+    const ms = Date.parse(snapshot.reportedAt);
+    return Number.isFinite(ms) && (oldest === null || ms < oldest) ? ms : oldest;
+  }, null);
+  const oldestStart = scope.days === null
+    ? oldestSnapshot === null ? newestStart : startOfBucket(oldestSnapshot)
+    : startOfBucket(now - scope.days * DAY_MS);
+
+  return Math.max(1, Math.floor((newestStart - oldestStart) / bucketMs) + 1);
+}
+
 function directionFor(latest: number | null, previous: number | null): TrendDirection {
   if (latest === null || previous === null) return "insufficient";
   const delta = latest - previous;
@@ -243,9 +273,23 @@ export function deriveSignalTrends(
   snapshots: ThreadMetricSnapshot[],
   now: number,
   granularity?: TrendGranularity,
+  scope?: SignalTrendScope,
 ): SignalTrends {
-  const resolved = granularity ?? pickTrendGranularity(snapshots, now);
-  const buckets = bucketSnapshots(snapshots, resolved, now);
+  let scopedSnapshots = snapshots;
+  if (scope && scope.days !== null) {
+    const start = now - scope.days * DAY_MS;
+    scopedSnapshots = snapshots.filter((snapshot) => {
+      const ms = Date.parse(snapshot.reportedAt);
+      return Number.isFinite(ms) && ms >= start && ms <= now;
+    });
+  }
+  const resolved = granularity ?? pickTrendGranularity(scopedSnapshots, now);
+  const buckets = bucketSnapshots(
+    scopedSnapshots,
+    resolved,
+    now,
+    bucketCountForScope(scopedSnapshots, resolved, now, scope),
+  );
   const metrics = THREAD_METRIC_KEYS.map((key) => ({
     key,
     ...trendFrom(buckets.map((bucket) => bucket.averages[key])),
@@ -255,6 +299,7 @@ export function deriveSignalTrends(
   return {
     granularity: resolved,
     buckets,
+    scopeLabel: scope?.label ?? `last ${buckets.length} ${resolved === "week" ? "weeks" : "days"}`,
     metrics,
     overall,
     snapshotCount: buckets.reduce((sum, bucket) => sum + bucket.count, 0),

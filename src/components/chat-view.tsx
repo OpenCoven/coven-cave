@@ -196,10 +196,22 @@ import { extractNextPaths, type NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
+import { imageCarouselKey, sliceImageBlocks, stripImageMarkers } from "@/lib/image-blocks";
 import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
+import {
+  AUTO_BRIEFED_KEY,
+  clearAutoMission,
+  isAutoMissionTimedOut,
+  pendingAutoMissionPings,
+  readAutoMission,
+  touchAutoMission,
+  writeAutoMission,
+  type AutoMissionRecord,
+} from "@/lib/auto-mission-state";
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
 import { GitHubCard } from "@/components/github-card";
+import { ImageCarousel } from "@/components/image-carousel";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -1961,39 +1973,56 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return () => window.clearTimeout(timer);
   }, [reflectError]);
 
-  // `/auto` mission tracking (cave auto-mode): the mission text for the
-  // in-flight /auto run in THIS chat, so the blocked/done watcher below knows
-  // what to notify about and the feedback modal knows what to attribute
-  // ratings to. Cleared when a new /auto starts or the chat is cleared.
-  const [autoMission, setAutoMission] = useState<string | null>(null);
+  // `/auto` mission tracking (cave auto-mode). The record lives in
+  // localStorage, not just component state, because /auto exists precisely for
+  // UNATTENDED runs: the human starts a mission and walks away, so a reload or
+  // an app restart is the expected case. State-only arming would silently drop
+  // the completion ping the feature exists to deliver. See auto-mission-state.ts.
+  const [autoMission, setAutoMission] = useState<AutoMissionRecord | null>(null);
   const [autoFeedbackOpen, setAutoFeedbackOpen] = useState(false);
-  // Turn ids already notified-for, so a settle re-render (or a second
-  // <coven:auto-status> marker of the same terminal state) never double-pings
-  // the human or double-opens the questionnaire.
-  const autoNotifiedTurnsRef = useRef<Set<string>>(new Set());
+
+  // Re-hydrate (or drop) the mission whenever the chat changes. Without this a
+  // mission started in chat A stays armed while chat B is on screen, and any
+  // auto-status marker over there pings against A's mission.
+  useEffect(() => {
+    setAutoFeedbackOpen(false);
+    setAutoMission(readAutoMission(sessionId, typeof window === "undefined" ? null : window.localStorage));
+  }, [sessionId]);
 
   // Watch settled assistant turns for a terminal `<coven:auto-status>` marker
-  // (auto-status-blocks.ts). "blocked" and "done" are the ONLY two states
-  // that should draw the human back in — see buildAutoModeDirective. Blocked
-  // fires a response-needed inbox item (something only a human can resolve);
-  // done fires an agent inbox item AND opens the feedback questionnaire so
-  // the mission's outcome can shape the next one.
+  // (auto-status-blocks.ts). Only blocked/failed/done draw the human back in —
+  // see buildAutoModeDirective. Blocked fires a response-needed inbox item and
+  // leaves the mission armed (answering it resumes the work); failed and done
+  // end the mission and flag feedback as pending.
   useEffect(() => {
-    if (!autoMission) return;
-    for (const t of turns) {
-      if (t.role !== "assistant" || t.pending || !t.text) continue;
-      if (autoNotifiedTurnsRef.current.has(t.id)) continue;
-      const { update } = extractAutoStatusMarkers(t.text);
-      if (!update || (update.state !== "blocked" && update.state !== "done")) continue;
-      autoNotifiedTurnsRef.current.add(t.id);
-      const blocked = update.state === "blocked";
+    const pings = pendingAutoMissionPings(autoMission, turns);
+    if (!pings.length || !autoMission) return;
+    const storage = typeof window === "undefined" ? null : window.localStorage;
+    let next: AutoMissionRecord = { ...autoMission, notified: [...autoMission.notified] };
+    let ended = false;
+    for (const ping of pings) {
+      next.notified.push(ping.turnId);
+      const blocked = ping.state === "blocked";
+      if (!blocked) {
+        ended = true;
+        next = {
+          ...next,
+          completedAt: new Date().toISOString(),
+          outcome: ping.state === "failed" ? "failed" : "done",
+          feedbackPending: true,
+        };
+      }
       void fetch("/api/inbox", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           kind: blocked ? "response-needed" : "agent",
-          title: blocked ? "Auto mission needs you" : "Auto mission complete",
-          body: update.note || autoMission,
+          title: blocked
+            ? "Auto mission needs you"
+            : ping.state === "failed"
+              ? "Auto mission couldn't finish"
+              : "Auto mission complete",
+          body: ping.note || autoMission.mission,
           source: "agent",
           familiarId: familiar.id,
           sessionId,
@@ -2001,8 +2030,69 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           link: sessionId ? { kind: "session", ref: sessionId } : null,
         }),
       }).catch(() => undefined);
-      if (!blocked) setAutoFeedbackOpen(true);
     }
+    writeAutoMission(sessionId, next, storage);
+    setAutoMission(next);
+    if (ended) setAutoFeedbackOpen(true);
+  }, [autoMission, familiar.id, sessionId, turns]);
+
+  // Keep the mission's liveness stamp current. The watchdog below measures from
+  // this, not from mission start, so a long mission that is visibly progressing
+  // is never declared timed out.
+  useEffect(() => {
+    if (!autoMission || autoMission.completedAt) return;
+    setAutoMission((prev) => {
+      if (!prev || prev.completedAt) return prev;
+      const touched = touchAutoMission(prev, Date.now());
+      if (touched === prev) return prev;
+      writeAutoMission(sessionId, touched, typeof window === "undefined" ? null : window.localStorage);
+      return touched;
+    });
+    // Only the transcript growing counts as a sign of life — depending on
+    // autoMission here would re-stamp on our own write and never expire.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turns.length, sessionId]);
+
+  // The watchdog. Everything above depends on the familiar volunteering a
+  // terminal marker; nothing guarantees it ever does. It can run out of
+  // context, die mid-stream, or simply forget the protocol — and then the
+  // transcript holds nothing to ping on, the mission stays armed forever, and
+  // the human never hears back at all. That is the one outcome /auto cannot
+  // afford, so the client stops waiting on its own clock.
+  useEffect(() => {
+    if (!autoMission || autoMission.completedAt) return;
+    const tick = () => {
+      setAutoMission((prev) => {
+        if (!isAutoMissionTimedOut(prev, turns, Date.now())) return prev;
+        if (!prev) return prev;
+        const ended: AutoMissionRecord = {
+          ...prev,
+          completedAt: new Date().toISOString(),
+          outcome: "timed-out",
+          feedbackPending: true,
+        };
+        writeAutoMission(sessionId, ended, typeof window === "undefined" ? null : window.localStorage);
+        void fetch("/api/inbox", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            kind: "response-needed",
+            title: "Auto mission went quiet",
+            body: `No word back on "${prev.mission}". Check the thread — it may have stalled.`,
+            source: "agent",
+            familiarId: familiar.id,
+            sessionId,
+            auto: "auto-mission",
+            link: sessionId ? { kind: "session", ref: sessionId } : null,
+          }),
+        }).catch(() => undefined);
+        setAutoFeedbackOpen(true);
+        return ended;
+      });
+    };
+    const timer = window.setInterval(tick, 60_000);
+    tick();
+    return () => window.clearInterval(timer);
   }, [autoMission, familiar.id, sessionId, turns]);
 
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
@@ -4274,7 +4364,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setActiveLeafId("");
       setInput("");
       setAutoMission(null);
-      autoNotifiedTurnsRef.current.clear();
+      setAutoFeedbackOpen(false);
+      clearAutoMission(sessionId, typeof window === "undefined" ? null : window.localStorage);
       return true;
     }
     if (command === "/help") {
@@ -4322,16 +4413,85 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       return true;
     }
     if (command === "/auto" || command === "/autopilot") {
+      const storage = typeof window === "undefined" ? null : window.localStorage;
+      const sub = args.trim().toLowerCase();
+      // `/auto stop` is the escape hatch: a mission only ends on its own when
+      // the familiar emits a `done` marker, and nothing guarantees it ever
+      // does. Without a manual end a mission that quietly derails stays armed
+      // forever, and the human has no way to rate what did happen.
+      if (sub === "stop" || sub === "end" || sub === "cancel") {
+        setInput("");
+        if (!autoMission || autoMission.completedAt) {
+          appendSystem("No auto mission is running in this chat.");
+          return true;
+        }
+        const ended: AutoMissionRecord = {
+          ...autoMission,
+          completedAt: new Date().toISOString(),
+          outcome: "cancelled",
+          feedbackPending: true,
+        };
+        writeAutoMission(sessionId, ended, storage);
+        setAutoMission(ended);
+        setAutoFeedbackOpen(true);
+        appendSystem("Auto mission ended. Rate it so the next one goes better.");
+        return true;
+      }
+      if (sub === "status") {
+        setInput("");
+        appendSystem(
+          autoMission && !autoMission.completedAt
+            ? `Auto mission running since ${new Date(autoMission.startedAt).toLocaleString()} — ${autoMission.mission}`
+            : "No auto mission is running in this chat.",
+        );
+        return true;
+      }
       if (!args.trim()) {
         appendSystem(
-          "Give it a mission — e.g. /auto clean up the failing tests in src/lib. It may ask a few clarifying questions up front, then works silently and only pings you again on completion or when blocked.",
+          "Give it a mission — e.g. /auto clean up the failing tests in src/lib. It may ask a few clarifying questions up front, then works silently and only pings you again on completion or when blocked. Use /auto stop to end one early, /auto status to check.",
         );
         setInput("");
         return true;
       }
       const mission = args.trim();
+      // First-run framing. /auto is the one command that changes the shape of
+      // the conversation itself — the familiar stops answering until it is
+      // finished — and silence is indistinguishable from a broken session if
+      // nobody told you to expect it. So the first mission spends one beat
+      // explaining the contract, with the command still loaded in the composer
+      // so confirming costs a single keystroke.
+      if (storage && !storage.getItem(AUTO_BRIEFED_KEY)) {
+        try {
+          storage.setItem(AUTO_BRIEFED_KEY, "1");
+        } catch {
+          /* storage unavailable — brief once per session rather than never */
+        }
+        appendSystem(
+          [
+            "Autonomous mission mode — how this goes:",
+            "• It may ask everything it needs up front, then goes quiet and works. Silence means working, not stuck.",
+            "• It comes back to you exactly twice-worth: when it finishes, or when it genuinely needs you (permissions, credentials, a call that is yours to make). Either way you get a notification, so you can close this and walk away.",
+            "• It won't take an irreversible action on your behalf without asking first.",
+            "• `/auto stop` ends it whenever you like; `/auto status` checks in without interrupting it.",
+            "",
+            "Press enter to start the mission.",
+          ].join("\n"),
+        );
+        setInput(trimmed);
+        return true;
+      }
       setInput("");
-      setAutoMission(mission);
+      const record: AutoMissionRecord = {
+        mission,
+        startedAt: new Date().toISOString(),
+        notified: [],
+        completedAt: null,
+        outcome: null,
+        lastActivityAt: Date.now(),
+        feedbackPending: false,
+      };
+      writeAutoMission(sessionId, record, storage);
+      setAutoMission(record);
       setAutoFeedbackOpen(false);
       void fetch(`/api/auto-mode/feedback?familiarId=${encodeURIComponent(familiar.id)}`)
         .then((res) => (res.ok ? res.json() : null))
@@ -7553,9 +7713,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       />
       <AutoModeFeedbackModal
         open={autoFeedbackOpen}
-        onClose={() => setAutoFeedbackOpen(false)}
+        onClose={() => {
+          setAutoFeedbackOpen(false);
+          // The rating is the only thing still owed once a mission ends —
+          // closing settles it either way so the prompt can't resurface.
+          setAutoMission((prev) => {
+            if (!prev) return prev;
+            const settled = { ...prev, feedbackPending: false };
+            writeAutoMission(sessionId, settled, typeof window === "undefined" ? null : window.localStorage);
+            return settled;
+          });
+        }}
         familiarId={familiar.id}
-        mission={autoMission ?? ""}
+        mission={autoMission?.mission ?? ""}
+        outcome={autoMission?.outcome ?? null}
       />
       <Modal
         open={debugModalOpen}
@@ -7622,6 +7793,18 @@ function splitTextForArtifacts(
   return out;
 }
 
+/**
+ * Apply artifact extraction without crossing an already-mounted inline card.
+ * Image decks split first so an explicit group can span GitHub/artifact
+ * boundaries; subsequent extractors only refine the remaining prose spans.
+ */
+function splitSegmentsForArtifacts(
+  segments: MessageBubbleSegment[],
+  ctx: { familiarId: string | null },
+): MessageBubbleSegment[] {
+  return segments.flatMap((seg) => (seg.kind === "text" ? splitTextForArtifacts(seg.text, ctx) : [seg]));
+}
+
 // GitHub cards (design §1-2, cave-fpqx.6): further split the artifact-split
 // text spans on `<coven:github …>` markers and bare-line github.com URLs,
 // mounting an inline GitHubCard at each reference's position. Settled turns
@@ -7661,6 +7844,41 @@ function splitSegmentsForGitHub(
           kind: "block",
           key: `gh-${si}-${pi}-${descriptorUrl(p.descriptor)}`,
           node: <GitHubCard descriptor={p.descriptor} onOpenUrl={onOpenUrl} familiar={familiar} />,
+        });
+      }
+    });
+  });
+  return out;
+}
+
+/**
+ * Split prose segments again on `<coven:image …>` markers, mounting one
+ * ImageCarousel per deck at the marker's position (src/lib/image-blocks.ts).
+ * This runs before the GitHub/artifact splits so a grouped deck can span either
+ * kind of inline block; those splitters only refine the remaining prose spans.
+ */
+function splitSegmentsForImages(segments: MessageBubbleSegment[]): MessageBubbleSegment[] {
+  const out: MessageBubbleSegment[] = [];
+  segments.forEach((seg, si) => {
+    if (seg.kind !== "text") {
+      out.push(seg);
+      return;
+    }
+    const pieces = sliceImageBlocks(seg.text);
+    if (pieces.length === 1 && pieces[0].kind === "text") {
+      // `sliceImageBlocks` also removes a terminal incomplete marker. Preserve
+      // that cleaned text when another block makes this segmented path render.
+      out.push(pieces[0].text === seg.text ? seg : { ...seg, text: pieces[0].text });
+      return;
+    }
+    pieces.forEach((p, pi) => {
+      if (p.kind === "text") {
+        if (p.text.trim()) out.push({ kind: "text", text: p.text });
+      } else {
+        out.push({
+          kind: "block",
+          key: `img-${si}-${pi}-${imageCarouselKey(p.carousel)}`,
+          node: <ImageCarousel images={p.carousel.images} />,
         });
       }
     });
@@ -8053,7 +8271,9 @@ function TurnRowImpl({
   // GitHub markers: while streaming, strip complete + partial `<coven:github…>`
   // tags so they never flash as raw text (cards mount on settle); settled
   // turns keep them for splitSegmentsForGitHub below to replace with cards.
-  const ghSafeVisible = turn.pending ? stripGitHubMarkers(reasoningSplit.visible) : reasoningSplit.visible;
+  const ghSafeVisible = turn.pending
+    ? stripImageMarkers(stripGitHubMarkers(reasoningSplit.visible))
+    : reasoningSplit.visible;
   // Skill markers extract on BOTH paths — the whole point is live "which
   // skill, what stage" visibility while the agent works (design §5). The
   // extraction also strips partial tails so raw tags never flash.
@@ -8063,7 +8283,7 @@ function TurnRowImpl({
   // (clarifying/working/blocked/done) updates live.
   const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
   const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(autoStatusSplit.visible);
-  const visible = turn.pending ? visibleWithGh : stripGitHubMarkers(visibleWithGh);
+  const visible = turn.pending ? visibleWithGh : stripImageMarkers(stripGitHubMarkers(visibleWithGh));
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
@@ -8106,12 +8326,17 @@ function TurnRowImpl({
     // you can watch them run as live feedback.
     renderSegments = bubbleSegments;
   } else {
-    // Settled: prose only (+ artifact viewers + GitHub cards). Tools are NOT
-    // woven into the text — they render in the designated ToolGroup section
-    // below. GitHub splitting runs on visibleWithGh (markers intact) so cards
-    // mount at the markers' positions; the `visible` fallback/content path is
-    // marker-free either way.
-    const split = splitSegmentsForGitHub(splitTextForArtifacts(visibleWithGh, artifactCtx), onOpenUrl, ghFamiliar);
+    // Settled: prose only (+ artifact viewers + GitHub cards + image
+    // carousels). Tools are NOT woven into the text — they render in the
+    // designated ToolGroup section below. Image splitting runs first, while
+    // every marker is still in one prose span, so `group` decks can cross an
+    // artifact or GitHub card. The later splitters refine only the remaining
+    // prose; the `visible` fallback/content path is marker-free either way.
+    const split = splitSegmentsForGitHub(
+      splitSegmentsForArtifacts(splitSegmentsForImages([{ kind: "text", text: visibleWithGh }]), artifactCtx),
+      onOpenUrl,
+      ghFamiliar,
+    );
     renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
   }
 
@@ -8257,6 +8482,7 @@ function TurnRowImpl({
                   onAskAbout={onAskAbout}
                   readerPrompt={readerPrompt}
                   onRerunWith={onRerunWith}
+                  readerFamiliarId={familiar.id}
                   branchNav={branchNav}
                 />
                 <ResponseModelStatus metadata={turn.responseMetadata} />

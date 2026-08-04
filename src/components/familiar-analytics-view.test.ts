@@ -5,7 +5,12 @@ import {
   buildFamiliarAnalyticsModel,
   loadFamiliarAnalyticsData,
 } from "./familiar-analytics-data.ts";
+import { deriveScopedActivityCadence, withinWindow } from "../lib/analytics-window.ts";
+import { deriveThreadConfidence } from "../lib/thread-confidence.ts";
+import { deriveSignalTrends, snapshotFromReport } from "../lib/signal-trends.ts";
+import { aggregateThreadSignals, buildThreadSignalReviewQueue, type ThreadSelfReport } from "../lib/thread-self-report.ts";
 import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources.ts";
+import type { SessionRow } from "../lib/types.ts";
 
 // The workbench is three files: the view owns loading, the content composes
 // the frame + stage, and the dock is the fixed identity column. `source` is the
@@ -14,6 +19,7 @@ import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources
 const dockSource = readFileSync(new URL("./familiar-analytics-dock.tsx", import.meta.url), "utf8");
 const stageSource = readFileSync(new URL("./familiar-analytics-stage.tsx", import.meta.url), "utf8");
 const contentSource = readFileSync(new URL("./familiar-analytics-content.tsx", import.meta.url), "utf8");
+const dataSource = readFileSync(new URL("./familiar-analytics-data.ts", import.meta.url), "utf8");
 const source = [
   readFileSync(new URL("./familiar-analytics-view.tsx", import.meta.url), "utf8"),
   contentSource,
@@ -66,7 +72,7 @@ function mockFetchFor(score: "low" | "trusted") {
     ["/api/familiars", { ok: true, familiars: [familiar] }],
     ["/api/familiars/cody/contract", { ok: true, report: contract }],
     [
-      "/api/sessions/list",
+      "/api/sessions/list?includeArchived=1&familiarId=cody",
       {
         ok: true,
         sessions: score === "trusted"
@@ -224,7 +230,7 @@ function mockFetchFor(score: "low" | "trusted") {
       },
     ],
     [
-      "/api/familiars/cody/self-reports?limit=30",
+      "/api/familiars/cody/self-reports?limit=all",
       {
         ok: true,
         total: score === "trusted" ? 1 : 0,
@@ -441,7 +447,7 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /escalateBlockers\(model\.familiarId, threadSignalsAggregate, model\.healRequests\)/);
     assert.match(stageSource, /request\{healRequests\.length === 1 \? "" : "s"\}/, "the self-heal stat pluralizes its count");
     assert.doesNotMatch(source, /ResponseConfidenceSection/, "response confidence analytics retired (cave-7ku5)");
-    assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{model\.threadReports\}/);
+    assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{windowReports\}/);
     assert.doesNotMatch(source, /EvalLoopPanel/);
     assert.doesNotMatch(source, /fa-eval/);
   });
@@ -541,6 +547,20 @@ describe("FamiliarAnalyticsView", () => {
       contentSource,
       /window\.matchMedia\("\(min-width: 901px\) and \(max-width: 1180px\)"\)[\s\S]*setDockCollapsed\(query\.matches\)/,
       "the dock collapse is driven by matchMedia, not by CSS alone",
+    );
+    const tablet = faCss.slice(
+      faCss.indexOf("@media (max-width: 1180px)"),
+      faCss.indexOf("@media (max-width: 900px)"),
+    );
+    assert.match(
+      tablet,
+      /\.fa-stage \{[^}]*overflow-y: auto/,
+      "the fixed-height tablet stage provides a scroll path for both stacked evidence panels",
+    );
+    assert.match(
+      tablet,
+      /\.fa-stage-grid \{[^}]*flex: 0 0 auto/,
+      "the stacked tablet grid keeps its content height instead of shrinking two 320px panels into the viewport",
     );
     // It is a BAND, not a ceiling. Below 900px the frame stacks into a page, so
     // the rail saves nothing — and a rail stretched across the width turns the
@@ -662,6 +682,11 @@ describe("FamiliarAnalyticsView", () => {
       /const openOverlay = useCallback\(\(next: Exclude<Overlay, null>\) => \{\s*setContractOpen\(false\);\s*setPulseOpen\(false\);/,
       "opening a stage overlay retires the contract panel and the pulse",
     );
+    assert.match(
+      contentSource,
+      /const openAction = useCallback\(\(request: SelfHealRequest\) => \{\s*setBoardOpen\(false\);\s*setActionModal\(buildActionModal\(request\)\);/,
+      "opening board action detail retires the board before activating the next modal focus trap",
+    );
 
     // A face turned away is hidden to the eye by backface-visibility, but that
     // alone leaves its buttons in the tab order.
@@ -691,6 +716,46 @@ describe("FamiliarAnalyticsView", () => {
 });
 
 describe("session tracking + tracing (recent sessions, pulse drill, trace overlay)", () => {
+  it("derives the Activity breakdown from the selected session window", () => {
+    const now = Date.parse("2026-08-03T12:00:00.000Z");
+    const session = (id: string, updated_at: string) => ({ id, updated_at, familiarId: "cody" }) as SessionRow;
+    const sessions = [
+      session("current", "2026-08-02T12:00:00.000Z"),
+      session("older-a", "2026-07-26T12:00:00.000Z"),
+      session("older-b", "2026-07-26T13:00:00.000Z"),
+    ];
+    const sevenDays = sessions.filter((entry) => withinWindow(entry.updated_at, "7d", now));
+
+    const recentCadence = deriveScopedActivityCadence(sevenDays, now, 7);
+    const allCadence = deriveScopedActivityCadence(sessions, now, null);
+
+    assert.equal(recentCadence.perWeek, 1);
+    assert.equal(recentCadence.busiest?.count, 1);
+    assert.equal(allCadence.perWeek, 3);
+    assert.equal(allCadence.busiest?.count, 2);
+    assert.equal(recentCadence.lastActive, "2026-08-02T12:00:00.000Z");
+  });
+
+  it("keeps the complete archived session history for the ALL evidence window", async () => {
+    mockFetchFor("trusted");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const template = data.sessions[0]!;
+    const sessions = Array.from({ length: 41 }, (_, index) => ({
+      ...template,
+      id: `historic-session-${index}`,
+      archived_at: "2026-06-01T00:00:00.000Z",
+      updated_at: new Date(Date.parse("2026-06-25T12:00:00.000Z") - index * 24 * 60 * 60_000).toISOString(),
+    }));
+    const model = buildFamiliarAnalyticsModel({ ...data, sessions });
+
+    assert.equal(model.recentSessions.length, 41, "the ALL session ledger is not capped at the newest 40 rows");
+    assert.match(
+      dataSource,
+      /\/api\/sessions\/list\?includeArchived=1&familiarId=\$\{encodedId\}/,
+      "the evidence read includes archived sessions instead of silently omitting history",
+    );
+  });
+
   it("exposes the familiar's recent sessions on the model, newest first", async () => {
     mockFetchFor("trusted");
     const data = await loadFamiliarAnalyticsData("cody");
@@ -740,6 +805,136 @@ describe("session tracking + tracing (recent sessions, pulse drill, trace overla
 });
 
 describe("confidence from thread analysis + metric labeling", () => {
+  it("keeps confidence, trends, counts, queue, and evidence on the same window", () => {
+    const now = Date.parse("2026-08-03T12:00:00.000Z");
+    const report = (id: string, reportedAt: string, score: number, contextPressure: ThreadSelfReport["contextPressure"]): ThreadSelfReport => ({
+      id,
+      familiarId: "cody",
+      sessionId: `session-${id}`,
+      reportedAt,
+      overallConfidence: score,
+      toolReliability: { score, failedTools: [], unreliableTools: [] },
+      contextPressure,
+      skillsUsed: [],
+      skillsNeedingClarity: [],
+      skillsNeedingAccess: [],
+      capabilitiesLacking: [],
+      capabilitiesVital: [],
+      memoryRecallScore: score,
+      fileLocatabilityScore: score,
+      persistentBlockers: [],
+    });
+    const reports = [
+      report("current", "2026-08-02T12:00:00.000Z", 90, "adequate"),
+      report("older", "2026-07-26T12:00:00.000Z", 20, "critical"),
+      report("history", "2026-06-07T12:00:00.000Z", 30, "critical"),
+      report("future", "2026-08-04T12:00:00.000Z", 10, "critical"),
+    ];
+    const snapshots = reports.map(snapshotFromReport);
+    const sessions = [
+      { id: "current", updated_at: "2026-08-02T12:00:00.000Z" },
+      { id: "older", updated_at: "2026-07-26T12:00:00.000Z" },
+      { id: "history", updated_at: "2026-06-07T12:00:00.000Z" },
+      { id: "future", updated_at: "2026-08-04T12:00:00.000Z" },
+    ];
+    const scoped = (windowId: "7d" | "14d" | "8w" | "all") => {
+      const visibleReports = reports.filter((entry) => withinWindow(entry.reportedAt, windowId, now));
+      const visibleSnapshots = snapshots.filter((entry) => withinWindow(entry.reportedAt, windowId, now));
+      const aggregate = aggregateThreadSignals(visibleReports);
+      return {
+        confidence: deriveThreadConfidence(visibleReports),
+        trends: deriveSignalTrends(visibleSnapshots, now, undefined, {
+          days: { "7d": 7, "14d": 14, "8w": 56, all: null }[windowId],
+          label: windowId,
+        }),
+        queue: buildThreadSignalReviewQueue(aggregate),
+        evidenceCount: visibleReports.length,
+        sessionCount: sessions.filter((entry) => withinWindow(entry.updated_at, windowId, now)).length,
+      };
+    };
+
+    const sevenDays = scoped("7d");
+    const fourteenDays = scoped("14d");
+    const eightWeeks = scoped("8w");
+    const all = scoped("all");
+
+    for (const window of [sevenDays, fourteenDays, eightWeeks, all]) {
+      assert.equal(window.confidence.reportCount, window.trends.snapshotCount);
+      assert.equal(window.confidence.reportCount, window.evidenceCount);
+      assert.equal(window.confidence.reportCount, window.sessionCount);
+    }
+
+    assert.equal(sevenDays.confidence.reportCount, 1);
+    assert.equal(fourteenDays.confidence.reportCount, 2);
+    assert.equal(sevenDays.trends.snapshotCount, 1);
+    assert.equal(fourteenDays.trends.snapshotCount, 2);
+    assert.equal(sevenDays.trends.overall.direction, "insufficient");
+    assert.equal(fourteenDays.trends.overall.direction, "improving");
+    assert.equal(sevenDays.queue.length, 0);
+    assert.ok(fourteenDays.queue.some((item) => item.sourceId === "context-pressure"));
+    assert.equal(sevenDays.evidenceCount, 1);
+    assert.equal(fourteenDays.evidenceCount, 2);
+    assert.equal(sevenDays.sessionCount, 1);
+    assert.equal(fourteenDays.sessionCount, 2);
+    assert.equal(eightWeeks.confidence.reportCount, 2);
+    assert.equal(eightWeeks.trends.snapshotCount, 2);
+    assert.equal(eightWeeks.evidenceCount, 2);
+    assert.equal(eightWeeks.sessionCount, 2);
+    assert.equal(all.confidence.reportCount, 3);
+    assert.equal(all.trends.snapshotCount, 3);
+    assert.equal(all.evidenceCount, 3);
+    assert.equal(all.sessionCount, 3);
+  });
+
+  it("applies the selected time window to every thread-report analytic on the stage", () => {
+    assert.match(
+      contentSource,
+      /const windowConfidence = useMemo\(\s*\(\) => deriveThreadConfidence\(windowReports\),\s*\[windowReports\],\s*\);/,
+      "headline confidence is recomputed from the visible report window",
+    );
+    assert.match(
+      contentSource,
+      /model\.metricSnapshots\.filter\(\(snapshot\) => withinWindow\(snapshot\.reportedAt, windowId, now\)\)/,
+      "the complete persisted trend history is filtered to the visible window",
+    );
+    assert.match(
+      contentSource,
+      /const windowSpec = ANALYTICS_WINDOWS\.find\(\(entry\) => entry\.id === windowId\)[\s\S]*deriveSignalTrends\(windowSnapshots, now, undefined, \{[\s\S]*days: windowSpec\.days,[\s\S]*label: windowSpec\.title,/,
+      "trend buckets retain the selected window's complete persisted history",
+    );
+    assert.match(
+      contentSource,
+      /windowReports\.length > 0 \? aggregateThreadSignals\(windowReports\) : null/,
+      "signal aggregation uses only reports in the visible window",
+    );
+    assert.match(
+      contentSource,
+      /<ThreadAnalysisBody\s+confidence=\{windowConfidence\}\s+trends=\{windowSignalTrends\}/,
+      "the confidence panel renders the scoped confidence and trends",
+    );
+    assert.match(
+      contentSource,
+      /<FamiliarAnalyticsDock\s+model=\{model\}\s+confidence=\{windowConfidence\}/,
+      "the dock trust ring uses the same scoped confidence as the stage",
+    );
+    assert.match(
+      contentSource,
+      /<TrustModal\s+confidence=\{windowConfidence\}\s+trends=\{windowSignalTrends\}/,
+      "the trust modal uses the same scoped confidence and trends as the stage",
+    );
+
+    assert.match(
+      contentSource,
+      /<ThreadSignalsSection familiarId=\{model\.familiarId\} reports=\{windowReports\} \/>/,
+      "the full signal view receives the same scoped reports as its counts and queue",
+    );
+    assert.doesNotMatch(
+      contentSource,
+      /\{model\.threadReports\.length\} · \{reviewQueue\.length\} queued/,
+      "signal summaries do not pair a lifetime report count with a windowed queue",
+    );
+  });
+
   it("drives the fa-confidence panel from real thread metrics, not synthetic factors", () => {
     // The synthetic weighted-factor breakdown (familiar-confidence.ts) is gone
     // from this page — the panel renders the self-reported metric averages.
@@ -768,7 +963,7 @@ describe("confidence from thread analysis + metric labeling", () => {
     // The verdict chip answers "is the familiar improving?" from the weighted score.
     assert.match(source, /function ThreadTrendBlock/, "the trend block is its own component");
     assert.match(source, /<ThreadTrendBlock trends=\{trends\}/, "the thread-analysis panel renders it");
-    assert.match(source, /trends=\{model\.signalTrends\}/, "trends ride the model, computed by the pure lib");
+    assert.match(source, /trends=\{windowSignalTrends\}/, "trends use the selected window's persisted evidence");
     assert.match(source, /insufficient: "Not enough history yet"/, "insufficient history says so — no invented direction");
     assert.match(source, /fa-trend-verdict--\$\{overall\.direction\}/, "verdict chip carries its direction class");
     // Tokens only: improving = presence accent, regressing = warning.

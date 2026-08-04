@@ -59,19 +59,19 @@ test.describe("code surface mobile drill-in", () => {
     const railRow = rail.getByText("Refactor auth flow");
     await expect(railRow).toBeVisible();
     await expect(page.getByRole("button", { name: "Back to sessions" })).toHaveCount(0);
-    await expect(page.getByRole("tablist", { name: "Session workbench" })).toHaveCount(0);
+    await expect(page.getByRole("tablist", { name: "Session context" })).toHaveCount(0);
 
     // Drill in: the workbench replaces the list.
     await railRow.click();
     await expect(page.getByRole("heading", { name: "Refactor auth flow" })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole("tablist", { name: "Session workbench" })).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "Session context" })).toBeVisible();
     await expect(railRow).toBeHidden();
 
     // Back: the list returns and stays (no auto-pick re-selects the session).
     await page.getByRole("button", { name: "Back to sessions" }).click();
     await expect(railRow).toBeVisible();
-    await expect(page.getByRole("tablist", { name: "Session workbench" })).toHaveCount(0);
+    await expect(page.getByRole("tablist", { name: "Session context" })).toHaveCount(0);
     await page.waitForTimeout(600);
-    await expect(page.getByRole("tablist", { name: "Session workbench" })).toHaveCount(0);
+    await expect(page.getByRole("tablist", { name: "Session context" })).toHaveCount(0);
   });
 });

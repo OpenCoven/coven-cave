@@ -182,6 +182,7 @@ const RenownCard = memo(function RenownCard({
  */
 export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
   model,
+  confidence,
   healRequestCount,
   actions,
   contractReport,
@@ -201,6 +202,8 @@ export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
   contractExpanded,
 }: {
   model: FamiliarAnalyticsModel;
+  /** Trust evidence follows the selected stage window. */
+  confidence: ThreadConfidence;
   healRequestCount: number;
   actions: DockAction[];
   contractReport: ContractReport | null;
@@ -222,7 +225,6 @@ export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
 }) {
   const familiarName = model.familiar?.display_name ?? model.familiarId;
   const familiarRole = model.familiar?.role || model.familiar?.harness || "Familiar";
-  const confidence = model.confidence;
   const sessionsTotal = model.recentSessions.length;
   const streakDays = model.progression?.streakDays ?? 0;
   const lastActive = model.growthReport?.lastActiveAt ?? model.recentSessions[0]?.updated_at ?? null;

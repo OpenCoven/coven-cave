@@ -21,7 +21,25 @@ assert.match(view, /func tapEntry\(_ entry: Entry\) \{[\s\S]*if selectMode \{[\s
 assert.match(view, /Button\("Select"\) \{ withAnimation \{ selectMode = true \} \}/, "a Select action enters the mode");
 assert.match(view, /Text\(selectedIds\.isEmpty \? "Delete" : "Delete \(\\\(selectedIds\.count\)\)"\)/, "a Delete (N) button reflects the count");
 assert.match(view, /app\.deleteThreads\(selectedIds\)\s*exitSelect\(\)/, "confirming deletes the selection then exits");
-assert.match(view, /Set\(localThreads\.map\(\\\.id\)\)\.isSubset\(of: selectedIds\)/, "Select All covers every local thread");
+// cave-2qyqu: Select All must cover what is ON SCREEN, not every local thread.
+// `entries` is narrowed by the archive toggle AND the search query, so a
+// Select All built from the unfiltered list selects rows the user cannot see —
+// and the next Delete is unrecoverable.
+assert.match(
+  view,
+  /Set\(visibleLocalThreads\.map\(\\\.id\)\)\.isSubset\(of: selectedIds\)/,
+  "Select All covers every VISIBLE local thread",
+);
+assert.match(
+  view,
+  /selectedIds = Set\(visibleLocalThreads\.map\(\\\.id\)\)/,
+  "toggling Select All selects only the visible threads",
+);
+assert.match(
+  view,
+  /private var visibleLocalThreads: \[ChatThread\] \{[\s\S]{0,300}?entries/,
+  "the visible set is derived from entries, so it cannot drift from what renders",
+);
 // Server-only sessions can't be bulk-deleted.
 assert.match(view, /if case \.local\(let thread\) = entry \{ toggleSelection\(thread\.id\) \}/, "only local threads are selectable");
 

@@ -10,6 +10,11 @@ import {
   isCodeRailSession,
   isCodeTopTab,
   isCodeWorkbenchTab,
+  isCodeDockTab,
+  codeDockTabForWorkbenchTab,
+  CODE_DOCK_TABS,
+  codeDockTabWantsExpanded,
+  CODE_DOCK_SIZES,
   normalizeCodeTopTab,
   parseCodeDeepLink,
 } from "./code-surface.ts";
@@ -146,4 +151,52 @@ test("normalizeCodeTopTab maps legacy + unknown values", () => {
   assert.equal(normalizeCodeTopTab("issues"), "issues");
   assert.equal(normalizeCodeTopTab("bogus"), "sessions");
   assert.equal(normalizeCodeTopTab(null), "sessions");
+});
+
+// ── Context dock vocabulary (cave-98o51) ────────────────────────────────────
+// The Room replaced the tabbed workbench with a persistent terminal center and
+// a dock on the right. Legacy `?wtab=` links predate that split, so they must
+// keep resolving — a `terminal` link now names the center, which is always on
+// screen, and therefore selects no dock tab at all.
+
+test("dock tabs are a fixed vocabulary distinct from the retired workbench tabs", () => {
+  for (const tab of CODE_DOCK_TABS) assert.ok(isCodeDockTab(tab));
+  assert.deepEqual(
+    [...CODE_DOCK_TABS],
+    ["changes", "files", "pr", "inspector", "github", "browser"],
+    "the approved dock, in tab order",
+  );
+  assert.ok(!isCodeDockTab("terminal"), "the terminal is the center zone, never a dock tab");
+  assert.ok(!isCodeDockTab("diff"), "diff was renamed to changes in the Room");
+  assert.ok(!isCodeDockTab(null));
+  assert.ok(!isCodeDockTab("bogus"));
+});
+
+test("legacy ?wtab= deep links resolve onto the dock", () => {
+  assert.equal(codeDockTabForWorkbenchTab("diff"), "changes");
+  assert.equal(codeDockTabForWorkbenchTab("files"), "files");
+  assert.equal(codeDockTabForWorkbenchTab("pr"), "pr");
+  assert.equal(
+    codeDockTabForWorkbenchTab("terminal"),
+    null,
+    "the terminal is always visible, so its link opens no dock tab",
+  );
+  // A stale/hand-edited ?wtab= value is untyped at runtime, so the guard must
+  // survive one even though the signature forbids it at compile time.
+  assert.equal(codeDockTabForWorkbenchTab("bogus" as never), null);
+  assert.equal(codeDockTabForWorkbenchTab(null), null);
+});
+
+test("dock sizes are ordered widest-last so collapse/expand steps through them", () => {
+  assert.deepEqual([...CODE_DOCK_SIZES], ["collapsed", "normal", "expanded"]);
+});
+
+// Some dock tabs are illegible at sidebar width, so selecting one has to widen
+// the dock rather than render something nobody can use.
+test("only the wide tabs force the dock open expanded", () => {
+  assert.ok(codeDockTabWantsExpanded("browser"), "a native webview needs the room");
+  assert.ok(codeDockTabWantsExpanded("github"), "a list/detail split needs the room");
+  for (const tab of ["changes", "files", "pr", "inspector"] as const) {
+    assert.ok(!codeDockTabWantsExpanded(tab), `${tab} reads fine at normal width`);
+  }
 });

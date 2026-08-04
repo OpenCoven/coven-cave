@@ -3,7 +3,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const component = readFileSync(new URL("./voice-call-overlay.tsx", import.meta.url), "utf8");
-const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+// cave-chat.css is an @import aggregator: the overlay's own rules live in the
+// partials it pulls in, so reading only the aggregator asserts against a file
+// that contains none of them.
+const styles = [
+  "cave-md",
+  "cave-composer",
+  "chat-list",
+  "calendar",
+  "cave-chat",
+  "cave-chat/activity",
+  "cave-chat/auxiliary-surfaces",
+]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 
@@ -15,8 +26,13 @@ assert.match(
 
 assert.match(
   component,
-  /useFocusTrap\(true,\s*dialogRef,\s*\{\s*onEscape:\s*\(\)\s*=>\s*dispatch\(\{\s*type:\s*"CLOSE_REQUEST"\s*\}\)\s*\}\)/,
-  "VoiceCallOverlay traps focus and closes cleanly on Escape",
+  /useFocusTrap\(true,\s*dialogRef,\s*\{\s*onEscape:/,
+  "VoiceCallOverlay traps focus and handles Escape",
+);
+assert.match(
+  component,
+  /onEscape:[\s\S]{0,220}dispatch\(\{\s*type:\s*"CLOSE_REQUEST"\s*\}\);?\s*\},/,
+  "Escape ends the call cleanly once nothing else is staged",
 );
 
 assert.match(
@@ -145,12 +161,12 @@ assert.match(
 );
 assert.match(
   component,
-  /onUserTranscriptFinal:\s*\(text\)\s*=>\s*\{\s*if \(persistTranscript\) postTranscript\(sessionId, callId, "user", text\);/,
+  /onUserTranscriptFinal:\s*\(text\)\s*=>\s*\{[\s\S]{0,160}if \(persistTranscript\) postTranscript\(sessionId, callId, "user", text\);/,
   "user transcript finals persist only when the provider does not",
 );
 assert.match(
   component,
-  /onAssistantTranscriptFinal:\s*\(text\)\s*=>\s*\{\s*if \(persistTranscript\) postTranscript\(sessionId, callId, "assistant", text\);/,
+  /onAssistantTranscriptFinal:\s*\(text\)\s*=>\s*\{[\s\S]{0,160}if \(persistTranscript\) postTranscript\(sessionId, callId, "assistant", text\);/,
   "assistant transcript finals persist only when the provider does not",
 );
 
@@ -179,17 +195,17 @@ assert.match(
 // dictation/browser modes tell the user their audio rides a service.
 assert.match(
   component,
-  /dispatch\(\{\s*type:\s*"CONNECTED",\s*startedAt:\s*Date\.now\(\),\s*earsEngine:\s*live\.earsEngine,\s*mouthEngine:\s*live\.mouthEngine\s*\}\)/,
+  /dispatch\(\{\s*type:\s*"CONNECTED",\s*startedAt:\s*Date\.now\(\),\s*earsEngine:\s*live\.earsEngine,\s*mouthEngine:\s*live\.mouthEngine,/,
   "CONNECTED carries the LiveSession's ears and mouth engines into call state",
 );
 assert.match(
   component,
-  /state\.state === "live" && state\.earsEngine && \(/,
+  /\{state\.earsEngine && \([\s\S]{0,120}className="voice-call-overlay__ears"/,
   "live calls render the ears-engine badge when a loop provider reports one",
 );
 assert.match(
   component,
-  /state\.state === "live" && state\.mouthEngine && \(/,
+  /\{state\.mouthEngine && \([\s\S]{0,120}className="voice-call-overlay__mouth"/,
   "live calls render the mouth-engine badge when a loop provider reports one (cave-vony)",
 );
 assert.match(
@@ -276,6 +292,124 @@ assert.match(
   styles,
   /\.voice-call-overlay__retry:disabled\s*\{[\s\S]*?opacity:/,
   "the save button reads as disabled while the draft is empty or saving",
+);
+
+// ── Live transcript, speaking highlight, in-call reply (cave-zr9dx) ────────
+
+assert.match(
+  component,
+  /className="voice-call-overlay__transcript"[\s\S]{0,200}role="log"[\s\S]{0,200}aria-live="polite"/,
+  "the live transcript is an announced log region",
+);
+assert.match(
+  component,
+  /aria-relevant="additions"/,
+  "only added turns are announced — a partial rewrites its own text constantly",
+);
+assert.match(
+  component,
+  /onSpeaking:\s*\(utterance\)\s*=>\s*\{\s*setTranscript\(\(t\)\s*=>\s*applySpeaking\(t,\s*utterance\)\)/,
+  "the overlay tracks the utterance the mouth is voicing",
+);
+assert.match(
+  component,
+  /splitSpokenText\(turn\.text,\s*isSpeaking \? transcript\.speaking : null\)/,
+  "only the turn being voiced is split for highlighting",
+);
+assert.match(
+  component,
+  /<mark className="voice-call-overlay__spoken">\{split\.match\}<\/mark>/,
+  "the spoken run renders as a semantic mark, not a styled span",
+);
+assert.match(
+  component,
+  /onPartialTranscript:\s*\(role,\s*text\)\s*=>\s*\{\s*setTranscript\(\(t\)\s*=>\s*applyPartial\(t,\s*role,\s*text\)\)/,
+  "in-flight text renders live without being persisted",
+);
+assert.match(
+  component,
+  /canSendText:\s*typeof live\.sendText === "function"/,
+  "the reply box only appears when the provider actually accepts typed turns",
+);
+assert.match(
+  component,
+  /live\.sendText\(buildQuotedPrompt\(replyTarget,\s*body\)\)/,
+  "a quoted reply uses the same prompt shape as the chat composer",
+);
+assert.match(
+  component,
+  /if \(replyTargetRef\.current\) \{\s*setReplyTarget\(null\);\s*return;\s*\}/,
+  "Escape cancels a staged reply before it ends the call",
+);
+assert.match(
+  component,
+  /aria-label="Stop speaking"[\s\S]{0,160}liveRef\.current\?\.interrupt\?\.\(\)/,
+  "barge-in is reachable without typing while the familiar is speaking",
+);
+assert.match(
+  component,
+  /className="voice-call-overlay__reply-input focus-ring"[\s\S]{0,200}aria-label="Reply without speaking"/,
+  "the reply field is labelled for assistive tech",
+);
+assert.match(
+  styles,
+  /\.voice-call-overlay__transcript\s*\{[\s\S]*?overflow-y:\s*auto;/,
+  "a long call scrolls inside the transcript rather than growing the dialog",
+);
+assert.match(
+  styles,
+  /\.voice-call-overlay__spoken\s*\{[\s\S]*?background:\s*color-mix\(in oklch, var\(--accent-presence\)/,
+  "the speaking highlight is a token-derived tint, not a hardcoded color",
+);
+assert.match(
+  styles,
+  /\.voice-call-overlay__spoken\s*\{[\s\S]*?box-decoration-break:\s*clone;/,
+  "a highlight that wraps across lines keeps its shape on every line",
+);
+assert.match(
+  styles,
+  /\.voice-call-overlay__reply-send:disabled\s*\{[\s\S]*?opacity:/,
+  "the send button reads as disabled while the reply draft is empty",
+);
+
+// ── Arcade ───────────────────────────────────────────────────────────────────
+// The point of mounting a game here is the dead air: mic prompt, session mint,
+// connect. These assertions pin the three properties that make it acceptable
+// to put a game inside a phone call — opt-in, silent, and disposable.
+assert.match(
+  component,
+  /const WAITING_STATES = new Set\(\["requesting-mic", "minting-session", "connecting"\]\)/,
+  "the arcade is offered exactly in the states where nothing is happening yet",
+);
+assert.match(
+  component,
+  /useState\(false\);\s*\n\s*const waiting = WAITING_STATES\.has\(state\.state\)/,
+  "the arcade is opt-in — it never opens on its own",
+);
+assert.match(
+  component,
+  /\{waiting && !arcadeOpen && \(/,
+  "the invitation only appears during the wait, never mid-conversation",
+);
+assert.match(
+  component,
+  /aria-pressed=\{arcadeOpen\}/,
+  "the footer arcade control reports its pressed state to assistive tech",
+);
+assert.doesNotMatch(
+  component,
+  /<ArcadePanel[^>]*\bautoPlay\b/,
+  "nothing auto-starts the game",
+);
+assert.match(
+  styles,
+  /\.arcade-panel__frame\s*\{[\s\S]*?aspect-ratio:/,
+  "the game window holds a stable shape instead of collapsing to zero height",
+);
+assert.match(
+  styles,
+  /\.voice-call-overlay__arcade-invite\s*\{[\s\S]*?background:\s*color-mix\(in oklch, var\(--accent-presence\)/,
+  "the invitation is a token-derived tint, not a hardcoded color",
 );
 
 console.log("voice-call-overlay.test.ts: ok");

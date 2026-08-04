@@ -217,7 +217,7 @@ describe("aggregateThreadSignals", () => {
     // and the overlay deliberately leaves the familiar dock on screen.
     assert.match(
       analyticsSource,
-      /<StageOverlay\s+label="Thread signals"[\s\S]*?<ThreadSignalsSection familiarId=\{model\.familiarId\} reports=\{model\.threadReports\} \/>/,
+      /<StageOverlay\s+label="Thread signals"[\s\S]*?<ThreadSignalsSection familiarId=\{model\.familiarId\} reports=\{windowReports\} \/>/,
       "the Thread signals section is hosted by the stage overlay",
     );
     assert.match(

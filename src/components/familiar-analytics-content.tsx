@@ -33,11 +33,17 @@ import {
 } from "@/components/familiar-analytics-stage";
 import { escalateBlockers, type SelfHealRequest } from "@/lib/familiar-heal-requests";
 import {
+  deriveThreadConfidence,
   THREAD_CONFIDENCE_EMPTY_STATE,
   type ThreadConfidence,
   type ThreadMetricKey,
 } from "@/lib/thread-confidence";
-import type { MetricTrend, SignalTrends, TrendDirection } from "@/lib/signal-trends";
+import {
+  deriveSignalTrends,
+  type MetricTrend,
+  type SignalTrends,
+  type TrendDirection,
+} from "@/lib/signal-trends";
 import type { ContractReport, FamiliarProperty } from "@/lib/familiar-contract";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon } from "@/lib/icon";
@@ -169,7 +175,7 @@ function ThreadTrendBlock({ trends }: { trends: SignalTrends }) {
     value: bucket.score,
   }));
   const granularityNoun = trends.granularity === "week" ? "weeks" : "days";
-  const windowPhrase = `last ${trends.buckets.length} ${granularityNoun}`;
+  const windowPhrase = trends.scopeLabel;
 
   return (
     <div className="fa-trend" role="group" aria-label="Thread metric changes over time">
@@ -1609,9 +1615,34 @@ export function FamiliarAnalyticsContent({
   }, []);
 
   // ── Derived data ─────────────────────────────────────────────────────────
+  const windowSessions = useMemo(
+    () => model.recentSessions.filter((session) => withinWindow(session.updated_at, windowId, now)),
+    [model.recentSessions, now, windowId],
+  );
+  const windowReports = useMemo(
+    () => model.threadReports.filter((report) => withinWindow(report.reportedAt, windowId, now)),
+    [model.threadReports, now, windowId],
+  );
+  const windowSnapshots = useMemo(
+    () => model.metricSnapshots.filter((snapshot) => withinWindow(snapshot.reportedAt, windowId, now)),
+    [model.metricSnapshots, now, windowId],
+  );
+  const windowConfidence = useMemo(
+    () => deriveThreadConfidence(windowReports),
+    [windowReports],
+  );
+  const windowSpec = ANALYTICS_WINDOWS.find((entry) => entry.id === windowId)
+    ?? ANALYTICS_WINDOWS.find((entry) => entry.id === DEFAULT_WINDOW)!;
+  const windowSignalTrends = useMemo(
+    () => deriveSignalTrends(windowSnapshots, now, undefined, {
+      days: windowSpec.days,
+      label: windowSpec.title,
+    }),
+    [now, windowSnapshots, windowSpec.days, windowSpec.title],
+  );
   const threadSignalsAggregate = useMemo(
-    () => model.threadReports.length > 0 ? aggregateThreadSignals(model.threadReports) : null,
-    [model.threadReports],
+    () => windowReports.length > 0 ? aggregateThreadSignals(windowReports) : null,
+    [windowReports],
   );
   const allHealRequests = useMemo(() => {
     if (!threadSignalsAggregate) return model.healRequests;
@@ -1624,14 +1655,6 @@ export function FamiliarAnalyticsContent({
   );
   const nextActions = useMemo(() => deriveNextActions(healRequests), [healRequests]);
 
-  const windowSessions = useMemo(
-    () => model.recentSessions.filter((session) => withinWindow(session.updated_at, windowId, now)),
-    [model.recentSessions, now, windowId],
-  );
-  const windowReports = useMemo(
-    () => model.threadReports.filter((report) => withinWindow(report.reportedAt, windowId, now)),
-    [model.threadReports, now, windowId],
-  );
   const reviewQueue = useMemo(
     () => threadSignalsAggregate ? buildThreadSignalReviewQueue(threadSignalsAggregate) : [],
     [threadSignalsAggregate],
@@ -1647,6 +1670,7 @@ export function FamiliarAnalyticsContent({
 
   // ── Actions ──────────────────────────────────────────────────────────────
   const openAction = useCallback((request: SelfHealRequest) => {
+    setBoardOpen(false);
     setActionModal(buildActionModal(request));
   }, []);
   const traceRequest = useCallback((request: SelfHealRequest) => {
@@ -1721,6 +1745,7 @@ export function FamiliarAnalyticsContent({
     <div className="fa-frame">
       <FamiliarAnalyticsDock
         model={model}
+        confidence={windowConfidence}
         healRequestCount={allHealRequests.length}
         actions={nextActions}
         contractReport={model.contractReport}
@@ -1755,6 +1780,8 @@ export function FamiliarAnalyticsContent({
         <StatBand
           model={model}
           sessions={windowSessions}
+          now={now}
+          windowDays={windowSpec.days}
           healRequests={healRequests}
           reportCount={windowReports.length}
           queueCount={reviewQueue.length}
@@ -1783,8 +1810,8 @@ export function FamiliarAnalyticsContent({
                   icon="ph:chart-line-up"
                   title="Confidence from thread analysis"
                   count={
-                    model.confidence.hasData
-                      ? `${model.confidence.reportCount} report${model.confidence.reportCount === 1 ? "" : "s"}`
+                    windowConfidence.hasData
+                      ? `${windowConfidence.reportCount} report${windowConfidence.reportCount === 1 ? "" : "s"}`
                       : "no reports"
                   }
                 >
@@ -1800,8 +1827,8 @@ export function FamiliarAnalyticsContent({
                 </PanelHead>
                 <div className="fa-panel__body">
                   <ThreadAnalysisBody
-                    confidence={model.confidence}
-                    trends={model.signalTrends}
+                    confidence={windowConfidence}
+                    trends={windowSignalTrends}
                     familiar={model.familiar}
                     onSelfReportEnabled={onRefresh}
                   />
@@ -1927,7 +1954,7 @@ export function FamiliarAnalyticsContent({
             <Icon name="ph:waveform-bold" width={13} aria-hidden />
             <b>Thread signals</b>
             <span className="fa-band-count">
-              {model.threadReports.length} · {reviewQueue.length} queued
+              {windowReports.length} · {reviewQueue.length} queued
             </span>
             <Icon name="ph:caret-up" className="fa-foot__caret" width={11} aria-hidden />
           </button>
@@ -1967,8 +1994,8 @@ export function FamiliarAnalyticsContent({
               <Icon name="ph:waveform-bold" width={14} aria-hidden />
               <b>Thread signals — summary</b>
               <span className="fa-band-count">
-                {reviewQueue.length} queued · {model.threadReports.length} report
-                {model.threadReports.length === 1 ? "" : "s"}
+                {reviewQueue.length} queued · {windowReports.length} report
+                {windowReports.length === 1 ? "" : "s"}
               </span>
               <button type="button" className="fa-primary-btn focus-ring" onClick={() => openOverlay("signals")}>
                 Open full view
@@ -2045,14 +2072,14 @@ export function FamiliarAnalyticsContent({
               <>
                 <h2 className="fa-overlay__title">Thread signals</h2>
                 <span className="fa-band-count">
-                  {model.threadReports.length} report{model.threadReports.length === 1 ? "" : "s"} ·{" "}
+                  {windowReports.length} report{windowReports.length === 1 ? "" : "s"} ·{" "}
                   {reviewQueue.length} queued
                 </span>
                 <span className="fa-band-hint">covers the stage — the dock stays put</span>
               </>
             }
           >
-            <ThreadSignalsSection familiarId={model.familiarId} reports={model.threadReports} />
+            <ThreadSignalsSection familiarId={model.familiarId} reports={windowReports} />
           </StageOverlay>
         ) : null}
 
@@ -2090,8 +2117,8 @@ export function FamiliarAnalyticsContent({
 
       {trustOpen ? (
         <TrustModal
-          confidence={model.confidence}
-          trends={model.signalTrends}
+          confidence={windowConfidence}
+          trends={windowSignalTrends}
           onClose={() => setTrustOpen(false)}
         />
       ) : null}

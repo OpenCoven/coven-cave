@@ -200,6 +200,19 @@ final class AppModel {
         threadToOpen = thread
     }
 
+    /// Switch the visible conversation to one chosen in the session picker.
+    ///
+    /// Re-choosing the conversation already open is a no-op: routing it through
+    /// `requestOpen` would tear down and rebuild the very chat being looked at,
+    /// losing scroll position for no gain. Returns whether a switch was
+    /// actually requested, so the caller can skip its haptic when nothing moved.
+    @discardableResult
+    func switchConversation(to chosen: ChatThread, currentThreadId: String?) -> Bool {
+        guard chosen.id != currentThreadId else { return false }
+        requestOpen(chosen)
+        return true
+    }
+
     /// Consume the launch-thread intent only after its thread is available.
     /// A delayed thread restore leaves the id pending for `ChatsHomeView` to
     /// retry when hydration publishes its matching thread.
@@ -386,6 +399,19 @@ final class AppModel {
         // fixture state and the preview never touches the saved thread store.
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-empty-chat") {
             configureEmptyChatPreview()
+            if ProcessInfo.processInfo.arguments.contains("--ui-preview-second-thread") {
+                // A second conversation with the same familiar, so the session
+                // switcher has somewhere to switch *to*. Without it the picker
+                // lists one row and a UI test cannot tell a working switch
+                // apart from the dead-end it replaced.
+                threads.append(
+                    ChatThread(
+                        id: "ui-preview-second-chat",
+                        title: "Chat with Nyx on Jul 27",
+                        familiarIds: ["nyx"]
+                    )
+                )
+            }
             ChatTurnNotifier.shared.app = self
             return
         }
@@ -652,7 +678,7 @@ final class AppModel {
             applyTask(id: card.id) { $0 = updated }
             Haptics.tap()
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
             reportRevert("update the task")
         }
@@ -670,7 +696,7 @@ final class AppModel {
             let updated = try await client.updateTask(cardId: card.id, steps: newSteps)
             applyTask(id: card.id) { $0 = updated }
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
         }
     }
@@ -710,7 +736,7 @@ final class AppModel {
             let updated = try await client.updateTask(cardId: card.id, steps: steps)
             applyTask(id: card.id) { $0 = updated }
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
         }
     }
@@ -726,7 +752,7 @@ final class AppModel {
             let updated = try await client.updateTask(cardId: card.id, notes: trimmed)
             applyTask(id: card.id) { $0 = updated }
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
         }
     }
@@ -742,7 +768,7 @@ final class AppModel {
             let updated = try await client.updateTaskTitle(cardId: card.id, title: trimmed)
             applyTask(id: card.id) { $0 = updated }
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
         }
     }
@@ -758,7 +784,7 @@ final class AppModel {
             applyTask(id: card.id) { $0 = updated }
             Haptics.tap()
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
             reportRevert("reschedule the task")
         }
@@ -766,17 +792,27 @@ final class AppModel {
 
     /// Optimistically remove a task, then DELETE it. Reinserts on failure.
     func deleteTask(_ card: BoardCard) async {
-        guard let client else { return }
-        let previous = tasks
-        tasks.removeAll { $0.id == card.id }
+        guard let client, let index = tasks.firstIndex(where: { $0.id == card.id }) else { return }
+        let removed = tasks[index]
+        tasks.remove(at: index)
         do {
             try await client.deleteTask(cardId: card.id)
             Haptics.success()
         } catch {
-            tasks = previous
+            // `revertTask` edits a card that is still in the array, so it cannot
+            // restore one that was removed: `applyTask` finds no index and
+            // no-ops, silently dropping the task the delete failed to remove.
+            reinsertTask(removed, at: index)
             tasksError = error.localizedDescription
             reportRevert("delete the task")
         }
+    }
+
+    /// Put an optimistically-removed card back at the position it held rather
+    /// than at the end of the list. No-ops if it is already back.
+    private func reinsertTask(_ card: BoardCard, at index: Int) {
+        guard !tasks.contains(where: { $0.id == card.id }) else { return }
+        tasks.insert(card, at: min(index, tasks.count))
     }
 
     private func applyTask(id: String, _ mutate: (inout BoardCard) -> Void) {
@@ -1707,6 +1743,17 @@ final class AppModel {
                 if a.pinned != b.pinned { return a.pinned }
                 return a.updatedAt > b.updatedAt
             }
+    }
+
+    /// The thread a familiar's chat lands on: its pinned thread if it has an
+    /// unarchived one, otherwise its newest-updated unarchived direct thread.
+    /// Archived threads are never eligible, pinned or not — `directThreads`
+    /// sorts pinned-first, then by recency, and this takes the first eligible
+    /// entry. Callers that render a timestamp are showing the landing thread's
+    /// activity, which is deliberately NOT always the familiar's latest.
+    /// Nil when the familiar has no eligible thread — callers start a new chat.
+    func landingDirectThread(for familiarId: String) -> ChatThread? {
+        directThreads(for: familiarId).first { !$0.archived }
     }
 
     /// Every group thread, newest first — shown as its own rows on the Chats

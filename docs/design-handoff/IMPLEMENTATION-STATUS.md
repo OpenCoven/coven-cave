@@ -66,6 +66,8 @@ tests), so when a project gains or loses a frame, update this table by hand.
 | `SourceCard.dc.html` | `src/components/ui/citation.tsx` — both variants (web card carries its marker; worktree card shows path, line range and a numbered peek) | `cave-mdu1n` |
 | `Memory.dc.html` | `src/components/canonical-memory-reader.tsx` — the privacy gate is already fail-closed (content shows only when `classification === "public" && revealRequired === false`); `src/components/familiars-memory-reader.tsx` carries the frame's own "Select a memory to read" empty state | `cave-5u8l4` |
 | `Activity Details Panel.dc.html` | `src/components/automations/reminder-detail-panel.tsx` — the frame's exact "Reminder details" / "Activity details" heading split, pinned by `automations-view.test.ts` | `cave-5u8l4` |
+| `Coven Podcast.dc.html` | `src/components/role-surfaces/podcast-transcript.tsx` — the screenplay transcript (cast, cold open, speaker runs) in the studio review sheet and viewer. The frame's public-microsite chrome (own fonts, own palette, fixed nav, hero) is **not** adopted: like `OpenCoven Landing`, that half is a marketing site, not an app surface. | `cave-q00l6` |
+| `Cody Code Reading v2.dc.html` + `Coven Tui v2.dc.html` (and their v1s) | The Coding Room's three-zone workbench: session rail \| persistent splittable terminal center (`src/components/code-terminal-workspace.tsx`, split model in `src/lib/code-terminal-tree.ts`) \| resizable context dock (`src/components/code-context-dock.tsx`), composed by `src/components/code-workbench.tsx` and styled by `src/styles/globals/surface-code-room.css`. The terminal is the center because both frames treat it as the room's constant, not a tab — the earlier tabbed shape (Diff \| Files \| Terminal \| PR) was rejected for hiding it. Primary pane reuses the Chat rail's `cave.rail.<id>` PTY, so the same shell follows you between surfaces; extra panes get `cave.code.<id>.<pane>`, capped at four. | `cave-98o51` |
 | `Coven Cave App.dc.html` (iOS) | `apps/ios/CovenCave` | `157dee8d5d` (#3736), `d4f619b6c8` (`cave-4bsu`), `01a3d91bc8` (`cave-32fp`) — gated by `scripts/ios-claude-design-fidelity.test.mjs` |
 
 ## Outstanding
@@ -76,15 +78,8 @@ surface it describes.
 | Frame | KB | Project | Note |
 |---|---:|---|---|
 | `Thread Signals.dc.html` | 514 | (WIP) Thread signal UI mockups | The largest frame in the corpus and in **no** exported zip. The smaller `Thread Signal Card` landed; this superset did not. Tracked by `cave-yd3qu`. |
-| `Cody Code Reading v2.dc.html` | 262 | # Coven Cave code reading experience | Tracked by `cave-98o51` (Coding Room). Only `Cody Github` from this project landed. |
 | `Coven Grimoire.dc.html` | 241 | (Started) Modern AI Blog Reader UI | **Name collision — read this before scoping.** This is a *publication*: "In this issue", "Written by a familiar", "Continue reading", "Eight voices. One Coven.", a contents rail and long-form essays. The repo's `src/components/grimoire-view.tsx` is the *memory* grimoire (a knowledge store) and shares only the word. Unbuilt. Tracked by `cave-wc0j7`. |
-| `Cody Code Reading.dc.html` | 183 | # Coven Cave code reading experience | v1 of the above. |
-| `Coven Tui v2.dc.html` | 153 | # Coven Cave code reading experience | Terminal workbench; also `cave-98o51`. |
 | `OpenCoven Landing - Reforged.dc.html` | 150 | Interactive Landing Page Redesign | **Out of scope for this repo** — marketing site, no `coven-cave` surface. |
-| `Writer Workspace.dc.html` | 147 | Shells and hero flow planning | In no exported zip. No corresponding surface. Tracked by `cave-c7zgz`. |
-| `AnswerFlow.dc.html` | 15 | Shells and hero flow planning | A decision-capture card: one question with a blocking tier, "Why it matters", the config keys it "Writes to", expandable provenance rows (source · locator · quote · confidence), N option cards with editable pros/cons/risks/notes, and a footer that records an answer with a rationale then locks to "Decision written" with a reopen. **Adjacent to but not the same as** `src/components/proposal-approval.tsx`, which captures a *binary* approve/reject with a rationale — scope against it before building. Tracked by `cave-c7zgz`. |
-| `Coven Tui.dc.html` | 108 | # Coven Cave code reading experience | v1 of the above. |
-| `Coven Podcast.dc.html` | 86 | (Started) Podcast Page Redesign | Research studio has podcast *generation* (`c6987fe200`, `c483d94a15`) but no podcast **page**. Tracked by `cave-q00l6`. |
 | `Coven Pr.dc.html` | 75 | # Coven Cave code reading experience | |
 | `Memories - Rethought.dc.html` | 59 | Form feedback requested | Newer than the landed Memories redesign; in no exported zip. Tracked by `cave-tj24b`. |
 
@@ -102,6 +97,13 @@ These are specs, baselines and explorations — read them, don't build them:
   each was chosen and shipped.
 - `Nocturne` — a design-system project (foundations/components/templates), not
   a screen.
+- **`Writer Workspace.dc.html` + `AnswerFlow.dc.html`** (Shells and hero flow
+  planning) — a **different product**. The Writer shell is branded
+  "CompleteTech Writer" over a project called "Offline Sync Rewrite", and both
+  frames import the Nocturne design system (`_ds/nocturne-…/styles.css`,
+  `var(--color-accent)`) rather than this app's tokens. AnswerFlow is that
+  product's decision-capture card, which is why nothing here produces the
+  questions it renders. Not coven-cave work — same call as `OpenCoven Landing`.
 
 ---
 

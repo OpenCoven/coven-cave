@@ -93,6 +93,26 @@ and authorization; never retry the refused removal in the current batch.`;
   assert.ok(proof.includes(guardFixContract));
 });
 
+test("worktree refusal docs require a future exception and confine the fallback", () => {
+  for (const [name, source] of [["AGENTS.md", agents], ["CLAUDE.md", read("CLAUDE.md")]]) {
+    const exitTwoStart = source.indexOf("Exit 2");
+    const exitOneStart = source.indexOf("Exit 1", exitTwoStart);
+    assert.notEqual(exitTwoStart, -1, `${name} must document exit 2`);
+    assert.notEqual(exitOneStart, -1, `${name} must document exit 1`);
+    const exitTwo = source.slice(exitTwoStart, exitOneStart);
+    const exitOne = source.slice(exitOneStart);
+    assert.match(exitTwo, /refused by (?:the )?admission gate/i);
+    assert.match(exitTwo, /--exception-reason "why this exception is needed"/);
+    assert.match(exitTwo, /--exception-expires-at 'REPLACE-WITH-FUTURE-UTC-ISO-INSTANT'/);
+    assert.match(exitTwo, /replace\s+`REPLACE-WITH-FUTURE-UTC-ISO-INSTANT`/i);
+    assert.doesNotMatch(exitTwo, /git worktree add -b/);
+    assert.doesNotMatch(exitTwo, /2026-08-10T00:00:00Z/);
+    assert.match(exitOne, /lifecycle inventory is incomplete/i);
+    assert.match(exitOne, /exception cannot rescue/i);
+    assert.match(exitOne, /git worktree add -b/);
+  }
+});
+
 test("normative proof scopes remote deletion and uses exact expected OIDs", () => {
   const selection = section(
     proof,
@@ -421,7 +441,9 @@ test("evals cover every new authorization and race boundary", () => {
   assert.match(eval39.expected_output, /never mutates the remote/i);
   assert.match(eval39.expected_output, /Commit age is not remote-ref recency/);
 
-  assert.match(byId.get(43).expected_output, /12-worktree warning budget/i);
+  assert.match(byId.get(43).expected_output, /12-worktree budget/i);
+  assert.match(byId.get(43).expected_output, /exception that would be admitted/i);
+  assert.match(byId.get(43).expected_output, /never be retired/i);
   assert.match(byId.get(43).expected_output, /does not delete any existing work/i);
   assert.match(byId.get(44).expected_output, /cleanup-ready patrol unit/i);
   assert.match(byId.get(44).expected_output, /reports any remote ref as a proposal rather than deleting it/i);

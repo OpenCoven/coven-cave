@@ -42,6 +42,7 @@ import {
 import { isTauri } from "@/lib/tauri-platform";
 import { loadNativeSttBridge, nativeSttAvailability } from "@/lib/voice/native-stt";
 import { isLocalTtsVoiceName } from "@/lib/voice/local-tts";
+import { VOICE_PROVIDER_CATALOG } from "@/lib/voice/provider-catalog";
 
 type Props = { familiar: ResolvedFamiliar };
 const LOCAL_VOICE_CATALOG_TIMEOUT_MS = 15_000;
@@ -636,6 +637,14 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   }, [elevenCatalog.models, draftVoiceModel]);
 
   const elevenCatalogReady = elevenCatalog.status === "ready";
+  const voiceProviderOptions = useMemo(() => [
+    { value: "", label: "None" },
+    ...VOICE_PROVIDER_CATALOG.map((provider) => ({
+      value: provider.id,
+      label: provider.label,
+      disabled: !provider.available,
+    })),
+  ], []);
   const localVoiceOptions = useMemo(() => {
     const known = new Set(localVoiceCatalog.voices.map((voice) => voice.id));
     const options: Array<{
@@ -1071,14 +1080,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                     void save({ voiceProvider: next || null });
                   }}
                   className="familiar-studio-brain__input"
-                  options={[
-                    { value: "", label: "None" },
-                    { value: "familiar", label: "Familiar brain (true voice)" },
-                    { value: "elevenlabs", label: "ElevenLabs (true voice)" },
-                    { value: "openai", label: "OpenAI Realtime" },
-                    { value: "local", label: "Local (on-device)" },
-                    { value: "gemini", label: "Gemini Live (v1.1)", disabled: true },
-                  ]}
+                  options={voiceProviderOptions}
                 />
               </div>
             </label>

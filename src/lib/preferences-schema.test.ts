@@ -9,6 +9,7 @@ import {
   preferencesToLegacyStorage,
   PreferencesValidationError,
   validatePreferencesPatch,
+  VOICE_PREFERENCE_ID_MAX_LENGTH,
 } from "./preferences-schema.ts";
 
 const defaults = createDefaultPreferences(false);
@@ -511,4 +512,176 @@ assert.equal(defaults.appearance.backdrop.style, "image");
   assert.equal(on.daemon.autoUpgradeCli, false, "one toggle does not enable its neighbours");
   const off = applyPreferencesPatch(on, { daemon: { autoRestart: false } });
   assert.equal(off.daemon.autoRestart, false, "the user can always turn it back off");
+}
+
+// ── Canonical non-secret voice preferences ──────────────────────────────────
+{
+  const voiceDefaults = createDefaultPreferences(false).voice;
+  assert.deepEqual(
+    voiceDefaults,
+    { defaultProvider: "", defaultModel: "", defaultVoice: "" },
+    "voice defaults are explicit and empty",
+  );
+  assert.doesNotMatch(
+    JSON.stringify(createDefaultPreferences(false)),
+    /API_KEY/,
+    "serialized preferences never contain provider credential fields",
+  );
+}
+{
+  const oldVersionOne = normalizeCavePreferences({
+    version: 1,
+    initialized: true,
+    revision: 4,
+  });
+  assert.deepEqual(
+    oldVersionOne.voice,
+    { defaultProvider: "", defaultModel: "", defaultVoice: "" },
+    "existing version-1 files without voice upgrade safely through normalization",
+  );
+}
+{
+  const normalized = normalizeCavePreferences({
+    voice: {
+      defaultProvider: "elevenlabs",
+      defaultModel: "  eleven_turbo_v2_5  ",
+      defaultVoice: "  21m00Tcm4TlvDq8ikWAM  ",
+    },
+  });
+  assert.deepEqual(normalized.voice, {
+    defaultProvider: "elevenlabs",
+    defaultModel: "eleven_turbo_v2_5",
+    defaultVoice: "21m00Tcm4TlvDq8ikWAM",
+  });
+
+  const overlong = "x".repeat(VOICE_PREFERENCE_ID_MAX_LENGTH + 20);
+  const capped = normalizeCavePreferences({
+    voice: {
+      defaultProvider: "openai",
+      defaultModel: `  ${overlong}  `,
+      defaultVoice: overlong,
+    },
+  });
+  assert.equal(capped.voice.defaultModel.length, VOICE_PREFERENCE_ID_MAX_LENGTH);
+  assert.equal(capped.voice.defaultVoice.length, VOICE_PREFERENCE_ID_MAX_LENGTH);
+}
+{
+  for (const defaultProvider of ["gemini", "unknown", 42, null]) {
+    const normalized = normalizeCavePreferences({
+      voice: { defaultProvider, defaultModel: "stale-model", defaultVoice: "stale-voice" },
+    });
+    assert.deepEqual(
+      normalized.voice,
+      { defaultProvider: "", defaultModel: "", defaultVoice: "" },
+      `${JSON.stringify(defaultProvider)} cannot persist as a default provider`,
+    );
+  }
+}
+{
+  assert.deepEqual(
+    validatePreferencesPatch({
+      voice: {
+        defaultProvider: "elevenlabs",
+        defaultModel: "  eleven_turbo_v2_5  ",
+        defaultVoice: "  21m00Tcm4TlvDq8ikWAM  ",
+      },
+    }).voice,
+    {
+      defaultProvider: "elevenlabs",
+      defaultModel: "eleven_turbo_v2_5",
+      defaultVoice: "21m00Tcm4TlvDq8ikWAM",
+    },
+    "strict voice patches accept selectable providers and trim identifier strings",
+  );
+  assert.deepEqual(
+    validatePreferencesPatch({ voice: { defaultProvider: "" } }).voice,
+    { defaultProvider: "" },
+    "the empty provider is a valid explicit patch",
+  );
+  for (const invalid of [
+    { voice: { defaultProvider: "gemini" } },
+    { voice: { defaultProvider: "unknown" } },
+    { voice: { defaultProvider: 42 } },
+    { voice: { apiKey: "secret" } },
+    { voice: { defaultModel: 42 } },
+    { voice: { defaultVoice: null } },
+    { voice: { defaultModel: ` ${"m".repeat(VOICE_PREFERENCE_ID_MAX_LENGTH + 1)} ` } },
+    { voice: { defaultVoice: ` ${"v".repeat(VOICE_PREFERENCE_ID_MAX_LENGTH + 1)} ` } },
+  ]) {
+    assert.throws(
+      () => validatePreferencesPatch(invalid),
+      PreferencesValidationError,
+      `strict voice validation rejects ${JSON.stringify(invalid)}`,
+    );
+  }
+}
+{
+  const elevenLabs = applyPreferencesPatch(
+    createDefaultPreferences(true),
+    validatePreferencesPatch({
+      voice: {
+        defaultProvider: "elevenlabs",
+        defaultModel: "eleven_turbo_v2_5",
+        defaultVoice: "21m00Tcm4TlvDq8ikWAM",
+      },
+    }),
+  );
+  const switched = applyPreferencesPatch(
+    elevenLabs,
+    validatePreferencesPatch({ voice: { defaultProvider: "openai" } }),
+  );
+  assert.deepEqual(
+    switched.voice,
+    { defaultProvider: "openai", defaultModel: "", defaultVoice: "" },
+    "changing providers clears stale model and voice ids when replacements are omitted",
+  );
+
+  const switchedWithIds = applyPreferencesPatch(
+    elevenLabs,
+    validatePreferencesPatch({
+      voice: { defaultProvider: "openai", defaultModel: "gpt-realtime", defaultVoice: "marin" },
+    }),
+  );
+  assert.deepEqual(switchedWithIds.voice, {
+    defaultProvider: "openai",
+    defaultModel: "gpt-realtime",
+    defaultVoice: "marin",
+  });
+
+  const sameProvider = applyPreferencesPatch(
+    elevenLabs,
+    validatePreferencesPatch({ voice: { defaultProvider: "elevenlabs" } }),
+  );
+  assert.deepEqual(
+    sameProvider.voice,
+    elevenLabs.voice,
+    "reasserting the same provider preserves its model and voice ids",
+  );
+  assert.equal(sameProvider.revision, elevenLabs.revision, "reasserting the same provider is a no-op");
+
+  const cleared = applyPreferencesPatch(
+    elevenLabs,
+    validatePreferencesPatch({
+      voice: { defaultProvider: "", defaultModel: "ignored", defaultVoice: "ignored" },
+    }),
+  );
+  assert.deepEqual(
+    cleared.voice,
+    { defaultProvider: "", defaultModel: "", defaultVoice: "" },
+    "switching to the empty provider clears every voice preference",
+  );
+
+  const modelOnly = applyPreferencesPatch(
+    elevenLabs,
+    validatePreferencesPatch({ voice: { defaultModel: "eleven_multilingual_v2" } }),
+  );
+  assert.equal(modelOnly.voice.defaultProvider, "elevenlabs", "partial voice patches merge");
+  assert.equal(modelOnly.voice.defaultVoice, "21m00Tcm4TlvDq8ikWAM", "unpatched voice id survives");
+  assert.equal(modelOnly.revision, elevenLabs.revision + 1, "a semantic voice change bumps revision");
+
+  const noOp = applyPreferencesPatch(
+    modelOnly,
+    validatePreferencesPatch({ voice: { defaultModel: "eleven_multilingual_v2" } }),
+  );
+  assert.equal(noOp.revision, modelOnly.revision, "a no-op voice patch does not bump revision");
 }
