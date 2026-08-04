@@ -19,8 +19,8 @@ assert.match(chatView, /function splitSegmentsForGitHub\(/, "has the segments→
 assert.match(chatView, /<GitHubCard descriptor=/, "renders GitHubCard as a block segment");
 assert.match(
   chatView,
-  /splitSegmentsForGitHub\(splitTextForArtifacts\(visibleWithGh, artifactCtx\), onOpenUrl, ghFamiliar\)/,
-  "settled path composes github splitting after artifact splitting on the marker-bearing text",
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(splitSegmentsForImages\(\[\{ kind: "text", text: visibleWithGh \}\]\), artifactCtx\),\s*onOpenUrl,\s*ghFamiliar,\s*\)/,
+  "settled path keeps GitHub splitting after artifacts while image groups remain intact across both boundaries",
 );
 assert.match(
   chatView,
@@ -29,8 +29,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /turn\.pending \? stripGitHubMarkers\(reasoningSplit\.visible\)/,
-  "streaming path strips markers so raw tags never flash",
+  /turn\.pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(reasoningSplit\.visible\)\)/,
+  "streaming path keeps GitHub stripping nested inside image-marker stripping so neither raw tag flashes",
 );
 assert.match(
   chatView,
