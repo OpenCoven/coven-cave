@@ -177,14 +177,16 @@ export async function listMetricSnapshots(
 
 export async function listSelfReports(
   familiarId: string,
-  opts: { limit?: number; before?: string },
+  opts: { limit?: number | "all"; before?: string },
 ): Promise<{ reports: ThreadSelfReport[]; total: number }> {
   const reports = await readAllReports(familiarId);
   const beforeMs = opts.before ? new Date(opts.before).getTime() : null;
   const filtered = Number.isFinite(beforeMs)
     ? reports.filter((report) => new Date(report.reportedAt).getTime() < (beforeMs as number))
     : reports;
-  const limit = Math.max(0, Math.min(100, Math.floor(opts.limit ?? 20)));
+  const limit = opts.limit === "all"
+    ? filtered.length
+    : Math.max(0, Math.min(100, Math.floor(opts.limit ?? 20)));
   return { reports: filtered.slice(0, limit), total: filtered.length };
 }
 
