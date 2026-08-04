@@ -7793,6 +7793,18 @@ function splitTextForArtifacts(
   return out;
 }
 
+/**
+ * Apply artifact extraction without crossing an already-mounted inline card.
+ * Image decks split first so an explicit group can span GitHub/artifact
+ * boundaries; subsequent extractors only refine the remaining prose spans.
+ */
+function splitSegmentsForArtifacts(
+  segments: MessageBubbleSegment[],
+  ctx: { familiarId: string | null },
+): MessageBubbleSegment[] {
+  return segments.flatMap((seg) => (seg.kind === "text" ? splitTextForArtifacts(seg.text, ctx) : [seg]));
+}
+
 // GitHub cards (design §1-2, cave-fpqx.6): further split the artifact-split
 // text spans on `<coven:github …>` markers and bare-line github.com URLs,
 // mounting an inline GitHubCard at each reference's position. Settled turns
@@ -7842,7 +7854,8 @@ function splitSegmentsForGitHub(
 /**
  * Split prose segments again on `<coven:image …>` markers, mounting one
  * ImageCarousel per deck at the marker's position (src/lib/image-blocks.ts).
- * Runs after the GitHub split so both marker families can appear in one turn.
+ * This runs before the GitHub/artifact splits so a grouped deck can span either
+ * kind of inline block; those splitters only refine the remaining prose spans.
  */
 function splitSegmentsForImages(segments: MessageBubbleSegment[]): MessageBubbleSegment[] {
   const out: MessageBubbleSegment[] = [];
@@ -8315,11 +8328,14 @@ function TurnRowImpl({
   } else {
     // Settled: prose only (+ artifact viewers + GitHub cards + image
     // carousels). Tools are NOT woven into the text — they render in the
-    // designated ToolGroup section below. Marker splitting runs on
-    // visibleWithGh (markers intact) so cards mount at the markers'
-    // positions; the `visible` fallback/content path is marker-free either way.
-    const split = splitSegmentsForImages(
-      splitSegmentsForGitHub(splitTextForArtifacts(visibleWithGh, artifactCtx), onOpenUrl, ghFamiliar),
+    // designated ToolGroup section below. Image splitting runs first, while
+    // every marker is still in one prose span, so `group` decks can cross an
+    // artifact or GitHub card. The later splitters refine only the remaining
+    // prose; the `visible` fallback/content path is marker-free either way.
+    const split = splitSegmentsForGitHub(
+      splitSegmentsForArtifacts(splitSegmentsForImages([{ kind: "text", text: visibleWithGh }]), artifactCtx),
+      onOpenUrl,
+      ghFamiliar,
     );
     renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
   }

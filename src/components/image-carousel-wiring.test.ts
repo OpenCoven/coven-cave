@@ -21,11 +21,12 @@ assert.match(
   "chat-view imports ImageCarousel",
 );
 assert.match(chatView, /function splitSegmentsForImages\(/, "has the segments→image splitter");
+assert.match(chatView, /function splitSegmentsForArtifacts\(/, "has a segment-preserving artifact splitter");
 assert.match(chatView, /<ImageCarousel images=\{p\.carousel\.images\} \/>/, "mounts the carousel as a block segment");
 assert.match(
   chatView,
-  /splitSegmentsForImages\(\s*splitSegmentsForGitHub\(/,
-  "settled path composes image splitting AFTER github splitting, so one turn can carry both marker families",
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(splitSegmentsForImages\(\[\{ kind: "text", text: visibleWithGh \}\]\), artifactCtx\)/,
+  "settled path splits images before GitHub/artifact cards, so one group deck can span either boundary",
 );
 assert.match(
   chatView,
