@@ -85,11 +85,12 @@ function parseAttrs(raw: string): Record<string, string> | null {
  */
 export function isRenderableImageSrc(src: string | null | undefined): boolean {
   if (!src) return false;
-  const value = src.trim();
   // Control characters (incl. a smuggled newline/tab inside `java\nscript:`)
-  // are never legitimate here and defeat prefix checks.
+  // are never legitimate here. Check the raw attribute before trimming so a
+  // leading or trailing newline/tab cannot be normalized into an allowed URL.
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f]/.test(value)) return false;
+  if (/[\u0000-\u001f\u007f]/.test(src)) return false;
+  const value = src.trim();
   if (value.startsWith("//")) return false;
   if (value.startsWith("/api/")) return true;
   if (value.startsWith("blob:")) return true;
@@ -102,8 +103,9 @@ export function isRenderableImageSrc(src: string | null | undefined): boolean {
 
 /** Descriptor from a marker's attributes; null when malformed or unsafe. */
 function imageFromAttrs(attrs: Record<string, string>): ImageBlockDescriptor | null {
-  const src = attrs.src?.trim();
-  if (!isRenderableImageSrc(src)) return null;
+  const rawSrc = attrs.src;
+  if (!isRenderableImageSrc(rawSrc)) return null;
+  const src = rawSrc.trim();
   const alt = attrs.alt?.trim() || undefined;
   const caption = attrs.caption?.trim() || undefined;
   return { src: src as string, alt, caption };

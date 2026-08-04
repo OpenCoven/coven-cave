@@ -46,6 +46,10 @@ test("src: refuses script, file, bare http, protocol-relative, and SVG payloads"
 test("src: control characters can't smuggle a scheme past the prefix checks", () => {
   assert.equal(isRenderableImageSrc("java\nscript:alert(1)"), false);
   assert.equal(isRenderableImageSrc("\u0000https://example.com/a.png"), false);
+  assert.equal(isRenderableImageSrc("\nhttps://example.com/a.png"), false);
+  assert.equal(isRenderableImageSrc("https://example.com/a.png\t"), false);
+  const pieces = sliceImageBlocks(`<coven:image src="\n${PNG}" />`);
+  assert.equal(pieces.some((piece) => piece.kind === "carousel"), false);
 });
 
 // ── slicing ──────────────────────────────────────────────────────────────────
