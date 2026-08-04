@@ -21,9 +21,15 @@ through `gh`, then retire the local unit through the lifecycle patrol. Every
 destructive step needs evidence, and anything ambiguous is preserved rather
 than cleaned up.
 
-**Never** run `git checkout main && git merge <branch>`, `git push origin
-main`, or `gh pr merge --admin`. If a change cannot go through a PR, stop and
-surface it to the maintainer.
+**Never** run any of these:
+
+```bash
+git checkout main && git merge <branch>
+git push origin main
+gh pr merge <#> --admin
+```
+
+If a change cannot go through a PR, stop and surface it to the maintainer.
 
 Force-pushing is not banned outright — rebasing your own PR branch is a normal
 part of Phase 2. Never force-push a branch you do not own, and never force-push
@@ -47,11 +53,17 @@ git -C . rev-parse --show-toplevel   # confirm you are in the worktree, not the 
 - The branch must be claimed: `bd update <id> --claim` if it is not.
 - Work from the branch's own worktree. The primary checkout usually holds other
   sessions' uncommitted files; committing from there sweeps up their work.
-- Managed worktrees come from `pnpm beads:worktrees:create --bead <id> --branch
-  <branch> --owner <you> --purpose "…"` (no `--` before the flags). If that
-  command refused on budget, the sanctioned rerun adds `--exception-owner`,
-  `--exception-reason`, `--exception-expires-at` and `--exception-path`; a bare
-  `git worktree add` produces a unit the patrol can never retire.
+- Managed worktrees come from the command below (no `--` before the flags):
+
+  ```bash
+  pnpm beads:worktrees:create --bead <id> --branch <branch> \
+    --owner <you> --purpose "…"
+  ```
+
+  If that command refused on budget, the sanctioned rerun adds
+  `--exception-owner`, `--exception-reason`, `--exception-expires-at` and
+  `--exception-path`; a bare `git worktree add` produces a unit the patrol can
+  never retire.
 
 ## Phase 1: Verify before anything else
 
@@ -304,4 +316,3 @@ improvise cleanup here.
 | `beads` | Claim in Phase 0, close in Phase 7 |
 | `branch-curator` | Owns multi-branch audit, pruning, and deletion proofs |
 | `run-cave-app` | Verifying a native-only surface before Phase 1 passes |
-| `requesting-code-review` | Optional between Phase 4 and Phase 5 |
