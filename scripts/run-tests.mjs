@@ -696,6 +696,7 @@ export const SUITES = {
     "src/lib/familiar-renown.test.ts",
     "src/lib/milestone-defs.test.ts",
     "src/lib/session-pulse.test.ts",
+    "src/lib/activity-lattice.test.ts",
     "src/lib/session-trace.test.ts",
     "src/lib/first-run-stamps.test.ts",
     "src/lib/summoning-draft.test.ts",
