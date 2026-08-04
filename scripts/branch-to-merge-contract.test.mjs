@@ -138,6 +138,11 @@ test("skill mirrors the protected-main policy that governs its PR lifecycle", ()
     /Also page any thread whose\n`comments` pageInfo has `hasNextPage: true`/,
     "the skill must not omit replies when a review thread has more than 100 comments",
   );
+  assert.match(
+    skill,
+    /node\(id:\$thread\)\{\.\.\. on PullRequestReviewThread\{comments\(first:100,after:\$cursor\)/,
+    "the skill must provide a copyable query for paginating comments on a thread",
+  );
 
   assert.match(
     claude,

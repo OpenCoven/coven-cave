@@ -247,6 +247,11 @@ false — a partial listing is worse than none. Also page any thread whose
 naming the fixing commit, then optionally resolve:
 
 ```bash
+gh api graphql -f query='query($thread:ID!,$cursor:String!){node(id:$thread){... on PullRequestReviewThread{comments(first:100,after:$cursor){pageInfo{hasNextPage endCursor} nodes{author{login} body}}}}}' \
+  -f thread=<PRRT_…> -f cursor='<endCursor>'
+```
+
+```bash
 gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -f t=<PRRT_…>
 ```
 
