@@ -54,13 +54,22 @@ export type FamiliarCardPreviewProps = {
   aura?: string | null;
   /** Payload the back's seal encodes. */
   sealUrl?: string | null;
+  /**
+   * A scry is reading this artwork right now.
+   *
+   * Drives the foil's hunting sweep in `familiar-card.css`. It reuses the
+   * plate this component already renders from `src/lib/foil` — the sweep only
+   * pans the spectrum that normally follows the pointer, so there is one foil
+   * system here, not a second one built for the wait.
+   */
+  scrying?: boolean;
 };
 
 type QrMatrix = { size: number; rows: string[] };
 
 export function FamiliarCardPreview({
   name, role, description, harness, vesselLabel, model,
-  typeIds, artUrl, plateUrl, aura, sealUrl,
+  typeIds, artUrl, plateUrl, aura, sealUrl, scrying,
 }: FamiliarCardPreviewProps) {
   const cardRef = useRef<HTMLButtonElement | null>(null);
   const sealRef = useRef<HTMLCanvasElement | null>(null);
@@ -161,7 +170,7 @@ export function FamiliarCardPreview({
       <button
         ref={cardRef}
         type="button"
-        className={`famcard focus-ring${flipped ? " famcard--flipped" : ""}`}
+        className={`famcard focus-ring${flipped ? " famcard--flipped" : ""}${scrying ? " famcard--scrying" : ""}`}
         style={styleVars}
         onPointerMove={handleMove}
         onPointerLeave={rest}

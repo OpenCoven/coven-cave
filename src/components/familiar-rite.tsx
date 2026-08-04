@@ -22,6 +22,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FamiliarCardPreview } from "@/components/familiar-card-preview";
+import { ScryMotes } from "@/components/scry-motes";
+import { ScryPanel } from "@/components/scry-panel";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -155,17 +157,18 @@ export function FamiliarRite() {
   const roleLabel = types.length
     ? FAMILIAR_TYPES.find((t) => t.id === types[0])?.label ?? ""
     : "";
-  const scryLine =
-    scry.status === "scrying"
-      ? "Scrying the likeness…"
-      : scry.status === "done"
-        ? `${scry.harnessLabel ?? "The scry"} looked. Everything it guessed is editable.`
-        : scry.status === "failed"
-          ? `${scry.error ?? "The scry did not come back."} Fill the fields in yourself.`
-          : null;
 
   return (
     <div className="rite">
+      {/* Motes lift off the artwork on the left and land in the slots on the
+          right. It draws across BOTH columns, so it hangs off the grid root
+          rather than either column, and it never intercepts a pointer. Reduced
+          motion is handled inside: the canvas simply never starts. */}
+      <ScryMotes
+        active={scry.status === "scrying"}
+        sourceSelector=".rite .famcard"
+        targetSelector=".rite [data-scry-slot]"
+      />
       <div className="rite__stage">
         {/* The card floats. Incompleteness shows HERE — no frame, dead foil —
             rather than as validation text or a disabled button. */}
@@ -181,6 +184,7 @@ export function FamiliarRite() {
           plateUrl={conjure.plateUrl}
           aura={conjure.aura}
           sealUrl={step === STEPS.length - 1 && name ? `https://opencoven.ai/f/${slug(name)}` : null}
+          scrying={scry.status === "scrying"}
         />
         {conjure.note ? <p className="rite__telemetry">{conjure.note}</p> : null}
       </div>
@@ -229,8 +233,10 @@ export function FamiliarRite() {
 
         {/* The scry runs in the background from the moment the image lands, and
             is never a gate: the rite advances without waiting, and a scry that
-            fails costs nothing but empty fields. */}
-        {scryLine ? <p className="rite__scry">{scryLine}</p> : null}
+            fails costs nothing but empty fields. The panel stays put across
+            every step so the four slots are visible from the drop onward — the
+            point is seeing WHAT is being extracted before any of it arrives. */}
+        {scry.status !== "idle" ? <ScryPanel scry={scry} /> : null}
 
         {current.key === "vessel" ? (
           <div className="rite__tiles" role="radiogroup" aria-label="Vessel">

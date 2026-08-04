@@ -17,6 +17,7 @@ import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { openCodeAvailabilityProbe, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
 import { listOpenClawAgents } from "@/lib/openclaw-bridge";
+import { writeHarnessReports } from "@/lib/server/harness-report-cache";
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
 import {
   resolveCopilotRuntimeLaunch,
@@ -348,5 +349,10 @@ export async function GET() {
   );
   const covenReports = (await covenSupportsAdapterList()) ? await loadCovenAdapterSummaries() : [];
   const harnesses: AdapterReport[] = mergeAdapterReports(reports, covenReports);
+  // Write-through only. This endpoint never READS the cache: onboarding polls
+  // it every 2s while a runtime installs and must see that install land. What
+  // the cache buys is a warm answer for `/api/scry`, which would otherwise pay
+  // this full ~3.4s probe inside a user's wait. See harness-report-cache.ts.
+  writeHarnessReports(harnesses);
   return NextResponse.json({ ok: true, runtimeHost: hostname(), harnesses });
 }

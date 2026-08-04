@@ -69,6 +69,8 @@ export const SUITES = {
     "src/lib/use-role-surfaces-loader.test.ts",
     "src/lib/familiar-types.test.ts",
     "src/lib/scry.test.ts",
+    "src/lib/scry-stream.test.ts",
+    "src/lib/server/harness-report-cache.test.ts",
     "src/lib/foil/plate.test.ts",
     "src/lib/research-missions.test.ts",
     "src/lib/research-autoloop.test.ts",

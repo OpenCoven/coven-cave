@@ -312,10 +312,32 @@
   text-align: center;
 }
 
+/* ── Hunting foil ─────────────────────────────────────────────────────────
+   While a scry is reading the artwork the card's plate is still blank, so the
+   foil is put to work: the SAME spectrum that normally pans with the pointer
+   sweeps across the plate on its own, like light being raked over a surface
+   looking for something. No second foil system — this only drives the
+   background-position the pointer would otherwise drive, and the plate texture
+   is the one src/lib/foil already generated from the artwork's own pixels. */
+.famcard--scrying .famcard__foil::before {
+  animation: famcard-hunt 2.6s var(--ease-standard, ease-in-out) infinite;
+}
+
+@keyframes famcard-hunt {
+  0%   { background-position: -190px -46px, var(--art-pos, 50% 12%); opacity: 0.34; }
+  50%  { background-position:  190px  46px, var(--art-pos, 50% 12%); opacity: 0.86; }
+  100% { background-position: -190px -46px, var(--art-pos, 50% 12%); opacity: 0.34; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .famcard,
   .famcard--live { transition: none; }
   .famcard__face { transition: none; }
   /* Hold a resting sheen rather than leaving the card looking unfinished. */
   .famcard { --glow: 0.55; }
+  /* A still, brighter plate says "being read" without any sweep. */
+  .famcard--scrying .famcard__foil::before {
+    animation: none;
+    opacity: 0.72;
+  }
 }
