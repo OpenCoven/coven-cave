@@ -198,6 +198,7 @@ export const SUITES = {
     "src/lib/github-activity.test.ts",
     "src/lib/stage-model.test.ts",
     "src/lib/skill-blocks.test.ts",
+    "src/lib/auto-status-blocks.test.ts",
     "src/lib/github-blocks.test.ts",
     "src/lib/coven-marker-directive.test.ts",
     "src/lib/citations-directive.test.ts",
