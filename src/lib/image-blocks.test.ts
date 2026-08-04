@@ -97,6 +97,21 @@ test("slice: distinct groups stay distinct decks", () => {
   assert.equal(pieces.filter((p) => p.kind === "carousel").length, 2);
 });
 
+test("slice: adjacent markers in distinct explicit groups stay distinct", () => {
+  const pieces = sliceImageBlocks(
+    `<coven:image src="${PNG}" group="before" />\n<coven:image src="${PNG2}" group="after" />`,
+  );
+  const carousels = pieces.filter((p) => p.kind === "carousel");
+  assert.equal(carousels.length, 2, "explicit groups must not be welded together by adjacency");
+  assert.deepEqual(carousels.map((p) => p.carousel.group), ["before", "after"]);
+});
+
+test("slice: duplicate attributes are rejected without leaking a raw marker", () => {
+  const pieces = sliceImageBlocks(`<coven:image src="javascript:alert(1)" src="${PNG}" />`);
+  assert.equal(pieces.filter((p) => p.kind === "carousel").length, 0);
+  assert.ok(!pieces.some((p) => p.kind === "text" && p.text.includes("<coven:image")));
+});
+
 test("slice: an unsafe marker is dropped silently and breaks the adjacency run", () => {
   const pieces = sliceImageBlocks(
     `<coven:image src="${PNG}" />\n<coven:image src="javascript:alert(1)" />\n<coven:image src="${PNG2}" />`,

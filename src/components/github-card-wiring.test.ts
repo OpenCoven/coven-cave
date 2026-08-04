@@ -29,8 +29,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /turn\.pending \? stripGitHubMarkers\(reasoningSplit\.visible\)/,
-  "streaming path strips markers so raw tags never flash",
+  /turn\.pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(reasoningSplit\.visible\)\)/,
+  "streaming path keeps GitHub stripping nested inside image-marker stripping so neither raw tag flashes",
 );
 assert.match(
   chatView,

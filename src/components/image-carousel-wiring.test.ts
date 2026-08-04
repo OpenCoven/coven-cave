@@ -47,6 +47,7 @@ assert.match(carousel, /aria-live="polite"/, "slide changes are announced");
 assert.match(carousel, /aria-label="Previous image"/, "prev control is named");
 assert.match(carousel, /aria-label="Next image"/, "next control is named");
 assert.match(carousel, /focus-ring/, "interactive elements carry the focus ring");
+assert.match(carousel, /bg-\[var\(--backdrop-scrim\)\]/, "the lightbox overlay uses the shared backdrop token");
 assert.match(
   carousel,
   /tabIndex=\{i === safeIndex \? 0 : -1\}/,

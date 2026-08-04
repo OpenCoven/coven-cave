@@ -55,11 +55,16 @@ export const MAX_CAROUSEL_IMAGES = 24;
 const MARKER_RE = /<coven:image\b((?:[^">]|"[^"]*")*?)\/?>/g;
 const ATTR_RE = /([a-zA-Z-]+)="([^"]*)"/g;
 
-function parseAttrs(raw: string): Record<string, string> {
+function parseAttrs(raw: string): Record<string, string> | null {
   const out: Record<string, string> = {};
   let m: RegExpExecArray | null;
   ATTR_RE.lastIndex = 0;
-  while ((m = ATTR_RE.exec(raw)) !== null) out[m[1]] = m[2];
+  while ((m = ATTR_RE.exec(raw)) !== null) {
+    // A model-generated duplicate is ambiguous (and browsers use different
+    // duplicate-attribute handling), so fail closed rather than choosing one.
+    if (Object.hasOwn(out, m[1])) return null;
+    out[m[1]] = m[2];
+  }
   return out;
 }
 
@@ -159,8 +164,9 @@ export function sliceImageBlocks(text: string): ImageTextPiece[] {
   while ((m = MARKER_RE.exec(text)) !== null) {
     if (inRanges(codeRanges, m.index)) continue;
     const between = text.slice(cursor, m.index);
-    const image = imageFromAttrs(parseAttrs(m[1] ?? ""));
-    const group = parseAttrs(m[1] ?? "").group?.trim() || undefined;
+    const attrs = parseAttrs(m[1] ?? "");
+    const image = attrs ? imageFromAttrs(attrs) : null;
+    const group = attrs?.group?.trim() || undefined;
     cursor = m.index + m[0].length;
 
     if (!image) {
@@ -177,7 +183,12 @@ export function sliceImageBlocks(text: string): ImageTextPiece[] {
     // exactly where this shot belongs.
     const adjacent: ImageCarouselDescriptor | null =
       openRun && between.trim() === "" ? openRun : null;
-    const target: ImageCarouselDescriptor | null = existingGroup ?? adjacent;
+    // A marker that names a different group starts (or rejoins) that group
+    // even when it happens to be adjacent to another deck. Otherwise two
+    // explicitly independent groups would be welded together by whitespace.
+    const target: ImageCarouselDescriptor | null = group
+      ? existingGroup ?? (adjacent?.group === group ? adjacent : null)
+      : adjacent;
 
     if (target) {
       // Adjacency swallows the whitespace it merged across; a group merge
@@ -197,7 +208,6 @@ export function sliceImageBlocks(text: string): ImageTextPiece[] {
 
   pushText(text.slice(cursor));
 
-  // A group whose every marker was unsafe leaves an empty deck behind.
   const out = pieces.filter((p) => p.kind === "text" || p.carousel.images.length > 0);
   return out.length ? out : [{ kind: "text", text: "" }];
 }
