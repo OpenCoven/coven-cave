@@ -22,9 +22,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * are kept rather than dropped — a missing stamp is not evidence of age. */
 export function withinWindow(iso: string | null | undefined, windowId: WindowId, now: number): boolean {
   const spec = ANALYTICS_WINDOWS.find((entry) => entry.id === windowId);
-  if (!spec || spec.days === null) return true;
   if (!iso) return true;
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return true;
-  return now - ms <= spec.days * DAY_MS;
+  if (ms > now) return false;
+  return !spec || spec.days === null || now - ms <= spec.days * DAY_MS;
 }

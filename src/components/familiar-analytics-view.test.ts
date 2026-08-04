@@ -786,12 +786,14 @@ describe("confidence from thread analysis + metric labeling", () => {
       report("current", "2026-08-02T12:00:00.000Z", 90, "adequate"),
       report("older", "2026-07-26T12:00:00.000Z", 20, "critical"),
       report("history", "2026-06-07T12:00:00.000Z", 30, "critical"),
+      report("future", "2026-08-04T12:00:00.000Z", 10, "critical"),
     ];
     const snapshots = reports.map(snapshotFromReport);
     const sessions = [
       { id: "current", updated_at: "2026-08-02T12:00:00.000Z" },
       { id: "older", updated_at: "2026-07-26T12:00:00.000Z" },
       { id: "history", updated_at: "2026-06-07T12:00:00.000Z" },
+      { id: "future", updated_at: "2026-08-04T12:00:00.000Z" },
     ];
     const scoped = (windowId: "7d" | "14d" | "8w" | "all") => {
       const visibleReports = reports.filter((entry) => withinWindow(entry.reportedAt, windowId, now));
@@ -813,6 +815,12 @@ describe("confidence from thread analysis + metric labeling", () => {
     const fourteenDays = scoped("14d");
     const eightWeeks = scoped("8w");
     const all = scoped("all");
+
+    for (const window of [sevenDays, fourteenDays, eightWeeks, all]) {
+      assert.equal(window.confidence.reportCount, window.trends.snapshotCount);
+      assert.equal(window.confidence.reportCount, window.evidenceCount);
+      assert.equal(window.confidence.reportCount, window.sessionCount);
+    }
 
     assert.equal(sevenDays.confidence.reportCount, 1);
     assert.equal(fourteenDays.confidence.reportCount, 2);
