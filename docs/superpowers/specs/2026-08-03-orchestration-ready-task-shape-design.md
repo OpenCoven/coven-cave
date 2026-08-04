@@ -56,7 +56,7 @@ export type TaskDependencyKind =
   | "credential"  // a secret, key, or account that must exist
   | "service"     // an external system that must be reachable or provisioned
   | "execution"   // a failed or cancelled run that must be resolved
-  | "external";   // any other named, resolvable condition
+  | "external"    // any other named, resolvable condition
 
 export type TaskDependencyState = "unresolved" | "resolved" | "waived";
 
