@@ -116,6 +116,15 @@ test("slice: duplicate attributes are rejected without leaking a raw marker", ()
   assert.ok(!pieces.some((p) => p.kind === "text" && p.text.includes("<coven:image")));
 });
 
+test("slice: malformed quote-edge markers cannot leak beside a valid carousel", () => {
+  const malformed = `<coven:image" src="javascript:alert(1)">`;
+  const pieces = sliceImageBlocks(`${malformed} prose <coven:image src="${PNG}" />`);
+  assert.equal(pieces.filter((p) => p.kind === "carousel").length, 1);
+  const text = pieces.filter((p) => p.kind === "text").map((p) => p.text).join("");
+  assert.ok(!text.includes("<coven:image"));
+  assert.ok(!text.includes("javascript:"));
+});
+
 test("slice: an unsafe marker is dropped silently and breaks the adjacency run", () => {
   const pieces = sliceImageBlocks(
     `<coven:image src="${PNG}" />\n<coven:image src="javascript:alert(1)" />\n<coven:image src="${PNG2}" />`,
@@ -163,6 +172,10 @@ test("slice: an incomplete terminal marker is dropped without exposing protocol 
 
 test("strip: complete markers vanish from the streamed text", () => {
   assert.equal(stripImageMarkers(`a <coven:image src="${PNG}" /> b`), "a  b");
+});
+
+test("strip: malformed quote-edge markers vanish from the streamed text", () => {
+  assert.equal(stripImageMarkers(`a <coven:image" src="javascript:alert(1)"> b`), "a  b");
 });
 
 test("strip: an unterminated tail hides until the stream completes it", () => {

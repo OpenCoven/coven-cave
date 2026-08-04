@@ -50,9 +50,10 @@ export type ImageTextPiece =
  */
 export const MAX_CAROUSEL_IMAGES = 24;
 
-// Attributes segment treats quoted strings as atomic so a `>` inside a quoted
-// caption can't terminate the match early (same contract as coven:github).
-const MARKER_RE = /<coven:image\b((?:[^">]|"[^"]*")*?)\/?>/g;
+// Attribute values must be double-quoted. Besides keeping a `>` in a caption
+// atomic, this makes a quote-edge malformed marker fail the strict match so the
+// recovery path can remove only that marker instead of swallowing later prose.
+const MARKER_RE = /<coven:image\b((?:\s+[a-zA-Z-]+="[^"]*")*)\s*\/?>/g;
 const ATTR_RE = /([a-zA-Z-]+)="([^"]*)"/g;
 
 function parseAttrs(raw: string): Record<string, string> | null {
@@ -138,6 +139,52 @@ function inRanges(ranges: Array<[number, number]>, index: number): boolean {
 }
 
 /**
+ * Remove malformed image-marker fragments the strict parser cannot consume.
+ * A malformed prefix can otherwise survive beside a later valid marker, making
+ * the segmented renderer expose model protocol text. Complete, quote-valid
+ * markers and fenced examples remain untouched for their respective callers.
+ */
+function stripMalformedImageMarkerFragments(text: string): string {
+  if (!text || !text.includes("<coven:i")) return text;
+  const codeRanges = markdownCodeRanges(text);
+  let out = "";
+  let cursor = 0;
+  let start = text.indexOf("<coven:i");
+
+  while (start !== -1) {
+    if (inRanges(codeRanges, start)) {
+      start = text.indexOf("<coven:i", start + "<coven:i".length);
+      continue;
+    }
+
+    MARKER_RE.lastIndex = start;
+    const complete = MARKER_RE.exec(text);
+    MARKER_RE.lastIndex = 0;
+    if (complete?.index === start) {
+      start = text.indexOf("<coven:i", start + complete[0].length);
+      continue;
+    }
+
+    const name = /^<coven:i[a-z]*/.exec(text.slice(start))?.[0] ?? "";
+    if (!("<coven:image".startsWith(name) || name.startsWith("<coven:image"))) {
+      start = text.indexOf("<coven:i", start + "<coven:i".length);
+      continue;
+    }
+
+    // This is not a complete, quote-valid marker, so the first close is only
+    // a recovery boundary. Dropping it fail-closed is safer than showing a
+    // malformed protocol tag (or its unsafe attributes) in the transcript.
+    const end = text.indexOf(">", start);
+    out += text.slice(cursor, start);
+    if (end === -1) return out;
+    cursor = end + 1;
+    start = text.indexOf("<coven:i", cursor);
+  }
+
+  return out + text.slice(cursor);
+}
+
+/**
  * Split one prose span into ordered text/carousel pieces. Adjacent markers
  * (whitespace-only between them) collapse into one deck; markers sharing a
  * `group` id join that group's deck wherever it was opened. Fenced markers
@@ -151,7 +198,7 @@ export function sliceImageBlocks(text: string): ImageTextPiece[] {
   // A generation can end with an incomplete marker. Treat that tail exactly as
   // the streaming path does so a sibling GitHub/artifact block cannot make the
   // segmented settled renderer expose raw model protocol text.
-  const visibleText = stripIncompleteImageMarker(text);
+  const visibleText = stripMalformedImageMarkerFragments(stripIncompleteImageMarker(text));
   if (!visibleText || !visibleText.includes("<coven:image")) return [{ kind: "text", text: visibleText }];
 
   const codeRanges = markdownCodeRanges(visibleText);
@@ -227,7 +274,7 @@ export function stripImageMarkers(text: string): string {
   const out = text.replace(MARKER_RE, (m, _attrs, index: number) =>
     inRanges(codeRanges, index) ? m : "",
   );
-  return stripIncompleteImageMarker(out);
+  return stripMalformedImageMarkerFragments(stripIncompleteImageMarker(out));
 }
 
 /** Remove only an unterminated marker tail, preserving complete markers for
@@ -237,7 +284,12 @@ export function stripIncompleteImageMarker(text: string): string {
   const tail = text.lastIndexOf("<coven:i");
   if (tail !== -1 && !hasUnquotedGt(text, tail) && !inRanges(markdownCodeRanges(text), tail)) {
     const frag = text.slice(tail);
-    if ("<coven:image".startsWith(frag.slice(0, "<coven:image".length))) {
+    const name = "<coven:image";
+    const afterName = frag.slice(name.length, name.length + 1);
+    if (
+      name.startsWith(frag.slice(0, name.length)) &&
+      (!afterName || /[\s/>]/.test(afterName))
+    ) {
       return text.slice(0, tail);
     }
   }
