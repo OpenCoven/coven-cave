@@ -112,6 +112,14 @@
 }
 .rite__file { display: none; }
 
+/* The scry's own line. Status, never a gate — the rite advances without it. */
+.rite__scry {
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
 /* ── Vessels ──────────────────────────────────────────────────────────── */
 .rite__tiles {
   display: grid;
@@ -202,7 +210,17 @@
   box-shadow: inset 0 0 0 1px var(--accent-presence);
   background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
 }
-.rite__sigil-label { font-size: var(--text-base); font-weight: 600; }
+.rite__sigil-label { font-size: var(--text-base); font-weight: 600; display: flex; align-items: baseline; gap: var(--space-2); }
+
+/* Marks a value the scry guessed, so a pre-filled choice never passes for one
+   the user made. */
+.rite__guess {
+  font-size: var(--text-2xs);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-presence);
+}
 .rite__sigil-note { font-size: var(--text-2xs); color: var(--text-muted); line-height: 1.4; }
 
 /* ── Seal ─────────────────────────────────────────────────────────────── */
@@ -220,6 +238,24 @@
   padding: var(--space-1) 0;
 }
 .rite__name-input:focus { outline: none; border-bottom-color: var(--accent-presence); }
+
+/* The scried fields. Same treatment as the name — a line to type on, not a
+   boxed form control, so a suggestion reads as a starting point. */
+.rite__guesses { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; max-width: 26rem; }
+.rite__field { display: flex; flex-direction: column; gap: var(--space-1); }
+.rite__field-hint { font-size: var(--text-2xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+
+.rite__field-input {
+  font-size: var(--text-base);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-primary);
+  padding: var(--space-1) 0;
+}
+.rite__field-input:focus { outline: none; border-bottom-color: var(--accent-presence); }
+
+.rite__note { margin: 0; font-size: var(--text-2xs); color: var(--text-muted); max-width: 42ch; }
 
 @media (prefers-reduced-motion: reduce) {
   .rite__stage { animation: none; }

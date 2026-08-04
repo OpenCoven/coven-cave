@@ -27,7 +27,9 @@ import { Icon, type IconName } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { contextWindowForModel } from "@/lib/context-meter";
 import { FAMILIAR_TYPES, type FamiliarTypeId } from "@/lib/familiar-types";
+import { SCRY_DEFAULT_PRONOUNS } from "@/lib/scry";
 import { useConjuredCard } from "@/lib/use-conjured-card";
+import { useScry } from "@/lib/use-scry";
 import { formatTokens } from "@/lib/usage-format";
 
 import "@/styles/familiar-rite.css";
@@ -68,17 +70,42 @@ export function FamiliarRite() {
   const [step, setStep] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [description, setDescription] = useState("");
+  // Never inferred from a face. The scry does not ask and does not parse it;
+  // this is a default the user is expected to change, and the rite says so.
+  const [pronouns, setPronouns] = useState(SCRY_DEFAULT_PRONOUNS);
   const [vessel, setVessel] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
   const [types, setTypes] = useState<FamiliarTypeId[]>([]);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Which fields the user has taken over. A suggestion fills a field only while
+  // it is still untouched — a scry that lands late must never overwrite typing.
+  const touched = useRef<Record<"name" | "role" | "description" | "types", boolean>>({
+    name: false, role: false, description: false, types: false,
+  });
 
   const theme = useMemo(
     () => [name, ...types].filter(Boolean).join(" "),
     [name, types],
   );
   const conjure = useConjuredCard(file, theme);
+  const scry = useScry(file);
+  const scried = scry.suggestions;
+
+  // Suggestions, not decisions: every one of these lands in an input the user
+  // can overwrite, and none of it is stored anywhere until they strike the seal.
+  useEffect(() => {
+    if (!scried) return;
+    if (scried.name && !touched.current.name) setName(scried.name);
+    if (scried.role && !touched.current.role) setRole(scried.role);
+    if (scried.description && !touched.current.description) setDescription(scried.description);
+    if (scried.typeIds.length && !touched.current.types) setTypes(scried.typeIds);
+    announce(
+      `The scry suggests ${scried.name || "no name"}. Every field is editable.`,
+    );
+  }, [announce, scried]);
 
   const goTo = useCallback((next: number) => {
     const clamped = Math.max(0, Math.min(STEPS.length - 1, next));
@@ -128,6 +155,14 @@ export function FamiliarRite() {
   const roleLabel = types.length
     ? FAMILIAR_TYPES.find((t) => t.id === types[0])?.label ?? ""
     : "";
+  const scryLine =
+    scry.status === "scrying"
+      ? "Scrying the likeness…"
+      : scry.status === "done"
+        ? `${scry.harnessLabel ?? "The scry"} looked. Everything it guessed is editable.`
+        : scry.status === "failed"
+          ? `${scry.error ?? "The scry did not come back."} Fill the fields in yourself.`
+          : null;
 
   return (
     <div className="rite">
@@ -136,7 +171,8 @@ export function FamiliarRite() {
             rather than as validation text or a disabled button. */}
         <FamiliarCardPreview
           name={name}
-          role={roleLabel}
+          role={role || roleLabel}
+          description={description}
           harness={vessel}
           vesselLabel={VESSELS.find((v) => v.id === vessel)?.label}
           model={model}
@@ -190,6 +226,11 @@ export function FamiliarRite() {
             />
           </div>
         ) : null}
+
+        {/* The scry runs in the background from the moment the image lands, and
+            is never a gate: the rite advances without waiting, and a scry that
+            fails costs nothing but empty fields. */}
+        {scryLine ? <p className="rite__scry">{scryLine}</p> : null}
 
         {current.key === "vessel" ? (
           <div className="rite__tiles" role="radiogroup" aria-label="Vessel">
@@ -253,10 +294,20 @@ export function FamiliarRite() {
                     role="checkbox"
                     aria-checked={on}
                     className={`rite__sigil focus-ring${on ? " rite__sigil--on" : ""}`}
-                    onClick={() => setTypes((prev) => on ? prev.filter((x) => x !== t.id) : [...prev, t.id])}
+                    onClick={() => {
+                      touched.current.types = true;
+                      setTypes((prev) => on ? prev.filter((x) => x !== t.id) : [...prev, t.id]);
+                    }}
                   >
                     <Icon name={t.iconName} width={22} height={22} aria-hidden />
-                    <span className="rite__sigil-label">{t.label}</span>
+                    <span className="rite__sigil-label">
+                      {t.label}
+                      {/* A pre-selected sigil says why it is on, so a guess is
+                          never mistaken for a decision the user made. */}
+                      {on && !touched.current.types && scried?.typeIds.includes(t.id) ? (
+                        <span className="rite__guess">scried</span>
+                      ) : null}
+                    </span>
                     <span className="rite__sigil-note">{t.description.split(" — ")[0]}</span>
                   </button>
                 );
@@ -277,11 +328,52 @@ export function FamiliarRite() {
               <input
                 className="rite__name-input"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => { touched.current.name = true; setName(e.target.value); }}
                 placeholder="give it a name"
                 aria-label="Familiar name"
               />
             </label>
+
+            {/* Everything the scry offered, as fields — pre-filled, plainly
+                overwritable, and never committed on the user's behalf. */}
+            <div className="rite__guesses">
+              <label className="rite__field">
+                <span className="rite__field-hint">Office</span>
+                <input
+                  className="rite__field-input"
+                  value={role}
+                  onChange={(e) => { touched.current.role = true; setRole(e.target.value); }}
+                  placeholder={roleLabel || "what it does"}
+                  aria-label="Familiar role"
+                />
+              </label>
+              <label className="rite__field">
+                <span className="rite__field-hint">In a line</span>
+                <input
+                  className="rite__field-input"
+                  value={description}
+                  onChange={(e) => { touched.current.description = true; setDescription(e.target.value); }}
+                  placeholder="what it is"
+                  aria-label="Familiar description"
+                />
+              </label>
+              <label className="rite__field">
+                <span className="rite__field-hint">Pronouns</span>
+                <input
+                  className="rite__field-input"
+                  value={pronouns}
+                  onChange={(e) => setPronouns(e.target.value)}
+                  aria-label="Familiar pronouns"
+                  aria-describedby="rite-pronouns-note"
+                />
+              </label>
+              {/* Deliberate: an image is not evidence of anyone's pronouns, so
+                  the scry never guesses them and the default says so out loud. */}
+              <p className="rite__note" id="rite-pronouns-note">
+                A default, not a reading — nothing about pronouns is taken from the image.
+              </p>
+            </div>
+
             <Button variant="primary" size="lg" disabled={!name || !file}>
               Summon {name || "it"}
             </Button>

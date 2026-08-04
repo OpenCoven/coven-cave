@@ -68,6 +68,8 @@ export const SUITES = {
     "src/lib/role-surfaces.test.ts",
     "src/lib/use-role-surfaces-loader.test.ts",
     "src/lib/familiar-types.test.ts",
+    "src/lib/scry.test.ts",
+    "src/lib/foil/plate.test.ts",
     "src/lib/research-missions.test.ts",
     "src/lib/research-autoloop.test.ts",
     "src/lib/research-mission-client.test.ts",
@@ -1748,6 +1750,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/voice/registry.test.ts",
   "src/lib/voice/elevenlabs.test.ts",
   "src/lib/project-root-migration.test.ts",
+  // the foil plate resolves "@/lib/foil/plate" through its own barrel.
+  "src/lib/foil/plate.test.ts",
 ]);
 
 // These gates inspect physical source files. The CSS facade expander would
