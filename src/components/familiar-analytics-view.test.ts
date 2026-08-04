@@ -5,11 +5,12 @@ import {
   buildFamiliarAnalyticsModel,
   loadFamiliarAnalyticsData,
 } from "./familiar-analytics-data.ts";
-import { withinWindow } from "../lib/analytics-window.ts";
+import { deriveScopedActivityCadence, withinWindow } from "../lib/analytics-window.ts";
 import { deriveThreadConfidence } from "../lib/thread-confidence.ts";
 import { deriveSignalTrends, snapshotFromReport } from "../lib/signal-trends.ts";
 import { aggregateThreadSignals, buildThreadSignalReviewQueue, type ThreadSelfReport } from "../lib/thread-self-report.ts";
 import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources.ts";
+import type { SessionRow } from "../lib/types.ts";
 
 // The workbench is three files: the view owns loading, the content composes
 // the frame + stage, and the dock is the fixed identity column. `source` is the
@@ -715,6 +716,26 @@ describe("FamiliarAnalyticsView", () => {
 });
 
 describe("session tracking + tracing (recent sessions, pulse drill, trace overlay)", () => {
+  it("derives the Activity breakdown from the selected session window", () => {
+    const now = Date.parse("2026-08-03T12:00:00.000Z");
+    const session = (id: string, updated_at: string) => ({ id, updated_at, familiarId: "cody" }) as SessionRow;
+    const sessions = [
+      session("current", "2026-08-02T12:00:00.000Z"),
+      session("older-a", "2026-07-26T12:00:00.000Z"),
+      session("older-b", "2026-07-26T13:00:00.000Z"),
+    ];
+    const sevenDays = sessions.filter((entry) => withinWindow(entry.updated_at, "7d", now));
+
+    const recentCadence = deriveScopedActivityCadence(sevenDays, now, 7);
+    const allCadence = deriveScopedActivityCadence(sessions, now, null);
+
+    assert.equal(recentCadence.perWeek, 1);
+    assert.equal(recentCadence.busiest?.count, 1);
+    assert.equal(allCadence.perWeek, 3);
+    assert.equal(allCadence.busiest?.count, 2);
+    assert.equal(recentCadence.lastActive, "2026-08-02T12:00:00.000Z");
+  });
+
   it("keeps the complete archived session history for the ALL evidence window", async () => {
     mockFetchFor("trusted");
     const data = await loadFamiliarAnalyticsData("cody");
@@ -878,7 +899,7 @@ describe("confidence from thread analysis + metric labeling", () => {
     );
     assert.match(
       contentSource,
-      /deriveSignalTrends\(windowSnapshots, now, undefined, \{[\s\S]*days: ANALYTICS_WINDOWS\.find\(\(entry\) => entry\.id === windowId\)\?\.days \?\? null,[\s\S]*label: ANALYTICS_WINDOWS\.find\(\(entry\) => entry\.id === windowId\)\?\.title \?\? "Everything on record",/,
+      /const windowSpec = ANALYTICS_WINDOWS\.find\(\(entry\) => entry\.id === windowId\)[\s\S]*deriveSignalTrends\(windowSnapshots, now, undefined, \{[\s\S]*days: windowSpec\.days,[\s\S]*label: windowSpec\.title,/,
       "trend buckets retain the selected window's complete persisted history",
     );
     assert.match(

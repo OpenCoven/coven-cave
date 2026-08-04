@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   ANALYTICS_WINDOWS,
   DEFAULT_WINDOW,
+  deriveScopedActivityCadence,
   type WindowId,
 } from "@/lib/analytics-window";
 import type { FamiliarAnalyticsModel } from "@/components/familiar-analytics-data";
@@ -189,6 +190,8 @@ function isFailed(session: SessionRow): boolean {
 export const StatBand = memo(function StatBand({
   model,
   sessions,
+  now,
+  windowDays,
   healRequests,
   reportCount,
   queueCount,
@@ -201,6 +204,9 @@ export const StatBand = memo(function StatBand({
   model: FamiliarAnalyticsModel;
   /** Window-scoped sessions — the number the Activity card reports. */
   sessions: SessionRow[];
+  /** Shared scope clock and duration for the Activity card's breakdown. */
+  now: number;
+  windowDays: number | null;
   /** Lens-scoped heal requests — the number the Self-heal card reports. */
   healRequests: SelfHealRequest[];
   reportCount: number;
@@ -222,15 +228,9 @@ export const StatBand = memo(function StatBand({
 
   const pulse = model.sessionPulse;
   const pulseSessions = pulseTotal(pulse);
-  const busiest = pulse.reduce<PulseDay | null>(
-    (best, day) => (best === null || day.count > best.count ? day : best),
-    null,
-  );
+  const { activeNow, busiest, lastActive, perWeek } = deriveScopedActivityCadence(sessions, now, windowDays);
   const failed = sessions.filter(isFailed).length;
   const completed = sessions.length - failed;
-  const lastActive = model.growthReport?.lastActiveAt ?? model.recentSessions[0]?.updated_at ?? null;
-  const activeNow = pulse[pulse.length - 1]?.count > 0 || pulse[pulse.length - 2]?.count > 0;
-  const perWeek = pulse.length > 0 ? Math.round((pulseSessions / pulse.length) * 7) : 0;
 
   const contract = model.contractReport;
   const passCount = contract ? contract.properties.filter((property) => property.pass).length : 0;

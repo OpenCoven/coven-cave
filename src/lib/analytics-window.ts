@@ -1,3 +1,6 @@
+import { sessionDayKey, type PulseDay } from "@/lib/session-pulse";
+import type { SessionRow } from "@/lib/types";
+
 /** Time-window contract shared by the analytics scope controls and evidence reads. */
 export type WindowId = "7d" | "14d" | "8w" | "all";
 
@@ -17,6 +20,56 @@ export const ANALYTICS_WINDOWS: {
 ];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type ScopedActivityCadence = {
+  activeNow: boolean;
+  busiest: PulseDay | null;
+  lastActive: string | null;
+  perWeek: number;
+};
+
+/**
+ * Derive the Activity card's breakdown from the same window-scoped sessions
+ * as its headline count. The fixed windows use their exact span; ALL measures
+ * the observed history through the current read, rather than a hidden 14-day
+ * pulse subset.
+ */
+export function deriveScopedActivityCadence(
+  sessions: readonly SessionRow[],
+  now: number,
+  days: number | null,
+): ScopedActivityCadence {
+  const stamped = sessions
+    .map((session) => ({ session, ms: Date.parse(session.updated_at) }))
+    .filter((entry) => Number.isFinite(entry.ms) && entry.ms <= now)
+    .sort((a, b) => b.ms - a.ms);
+  const counts = new Map<string, PulseDay>();
+  for (const { session } of stamped) {
+    const key = sessionDayKey(session.updated_at);
+    if (!key) continue;
+    const existing = counts.get(key);
+    counts.set(key, existing
+      ? { ...existing, count: existing.count + 1 }
+      : {
+          key,
+          label: new Date(session.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+          count: 1,
+        });
+  }
+  const busiest = [...counts.values()].reduce<PulseDay | null>(
+    (best, day) => best === null || day.count > best.count ? day : best,
+    null,
+  );
+  const oldest = stamped.at(-1)?.ms;
+  const spanDays = days ?? (oldest === undefined ? 0 : Math.max(1, Math.ceil((now - oldest) / DAY_MS)));
+
+  return {
+    activeNow: (stamped[0]?.ms ?? -Infinity) >= now - 2 * DAY_MS,
+    busiest,
+    lastActive: stamped[0]?.session.updated_at ?? null,
+    perWeek: spanDays > 0 ? Math.round((stamped.length / spanDays) * 7) : 0,
+  };
+}
 
 /** True when `iso` falls inside the window ending now. Unparseable timestamps
  * are kept rather than dropped — a missing stamp is not evidence of age. */

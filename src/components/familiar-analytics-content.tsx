@@ -1631,12 +1631,14 @@ export function FamiliarAnalyticsContent({
     () => deriveThreadConfidence(windowReports),
     [windowReports],
   );
+  const windowSpec = ANALYTICS_WINDOWS.find((entry) => entry.id === windowId)
+    ?? ANALYTICS_WINDOWS.find((entry) => entry.id === DEFAULT_WINDOW)!;
   const windowSignalTrends = useMemo(
     () => deriveSignalTrends(windowSnapshots, now, undefined, {
-      days: ANALYTICS_WINDOWS.find((entry) => entry.id === windowId)?.days ?? null,
-      label: ANALYTICS_WINDOWS.find((entry) => entry.id === windowId)?.title ?? "Everything on record",
+      days: windowSpec.days,
+      label: windowSpec.title,
     }),
-    [now, windowId, windowSnapshots],
+    [now, windowSnapshots, windowSpec.days, windowSpec.title],
   );
   const threadSignalsAggregate = useMemo(
     () => windowReports.length > 0 ? aggregateThreadSignals(windowReports) : null,
@@ -1778,6 +1780,8 @@ export function FamiliarAnalyticsContent({
         <StatBand
           model={model}
           sessions={windowSessions}
+          now={now}
+          windowDays={windowSpec.days}
           healRequests={healRequests}
           reportCount={windowReports.length}
           queueCount={reviewQueue.length}
