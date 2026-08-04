@@ -200,6 +200,19 @@ final class AppModel {
         threadToOpen = thread
     }
 
+    /// Switch the visible conversation to one chosen in the session picker.
+    ///
+    /// Re-choosing the conversation already open is a no-op: routing it through
+    /// `requestOpen` would tear down and rebuild the very chat being looked at,
+    /// losing scroll position for no gain. Returns whether a switch was
+    /// actually requested, so the caller can skip its haptic when nothing moved.
+    @discardableResult
+    func switchConversation(to chosen: ChatThread, currentThreadId: String?) -> Bool {
+        guard chosen.id != currentThreadId else { return false }
+        requestOpen(chosen)
+        return true
+    }
+
     /// Consume the launch-thread intent only after its thread is available.
     /// A delayed thread restore leaves the id pending for `ChatsHomeView` to
     /// retry when hydration publishes its matching thread.
