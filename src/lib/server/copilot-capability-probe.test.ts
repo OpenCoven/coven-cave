@@ -267,7 +267,7 @@ let receivedDiscoveryDeadline: number | undefined;
 let launchResolutionCalls = 0;
 let identityCalls = 0;
 let versionSpawnCalls = 0;
-const discoveryTimeout = await probeCopilotCapability("copilot", {
+const slowDiscoveryProbe = await probeCopilotCapability("copilot", {
   now: () => deadlineClock,
   spawnEnv: (discoveryDeadline) => {
     receivedDiscoveryDeadline = discoveryDeadline;
@@ -276,35 +276,25 @@ const discoveryTimeout = await probeCopilotCapability("copilot", {
   },
   resolveLaunchCommand: async () => {
     launchResolutionCalls += 1;
-    return { command: "copilot", fixedArgs: [] };
+    return { command: process.execPath, fixedArgs: [] };
   },
   binaryIdentity: async () => {
     identityCalls += 1;
-    return "must-not-run";
+    return "copilot-slow-discovery-fixture";
   },
-  spawnImpl: (() => {
+  spawnImpl: delayedVersionSpawn(0, () => {
     versionSpawnCalls += 1;
-    throw new Error("must not spawn after discovery exhausts the deadline");
-  }) as typeof import("node:child_process").spawn,
+  }),
 });
-assert.equal(discoveryTimeout.version, null);
-assert.equal(discoveryTimeout.diagnostic, "probe-timeout");
 assert.equal(
-  discoveryTimeout.availability.state,
-  "probe_failed",
-  "environment discovery that consumes the resolution budget fails closed",
-);
-assert.match(
-  discoveryTimeout.availability.state === "probe_failed"
-    ? discoveryTimeout.availability.message
-    : "",
-  /timed out/i,
-  "discovery timeout remains a launch-probe cause instead of schema incompatibility",
+  slowDiscoveryProbe.version,
+  "1.0.75",
+  "slow environment discovery cannot consume the exact-plan and capability budget",
 );
 assert.equal(receivedDiscoveryDeadline, 11_500, "spawnEnv receives the absolute deadline");
-assert.equal(launchResolutionCalls, 0, "launch resolution does not start after discovery times out");
-assert.equal(identityCalls, 0, "binary identity work does not start after discovery times out");
-assert.equal(versionSpawnCalls, 0, "the version process does not start after discovery times out");
+assert.equal(launchResolutionCalls, 1, "launch resolution receives its own bounded phase");
+assert.equal(identityCalls, 1, "binary identity uses the fresh launch-plan deadline");
+assert.equal(versionSpawnCalls, 1, "the version process starts after the exact plan is verified");
 
 for (const state of ["missing", "unlaunchable"] as const) {
   clearCopilotCapabilityProbeCache();
