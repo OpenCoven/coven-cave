@@ -25,6 +25,10 @@ assert.match(readinessSource, /A final probe closes the race/);
 assert.match(daemonStart, /sanitizeAboutDiagnosticText/, "daemon-start responses reuse the value-safe diagnostics sanitizer");
 assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stdout\)/, "launcher stdout is redacted before it reaches a client");
 assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stderr\)/, "launcher stderr is redacted before it reaches a client");
+assert.match(daemonStart, /assessDaemonStartupCompatibility/, "readiness must validate runtime coherence, not only socket reachability");
+assert.match(daemonStart, /code: "runtime_incompatible"/, "a stale or incompatible runtime has a stable actionable outcome");
+assert.match(daemonStart, /RuntimeStartupThrottle/, "repeated failed starts must be bounded to prevent a restart storm");
+assert.match(daemonStart, /activeDaemonStart/, "concurrent start requests must share one owned launch");
 
 function fakeChild(pid = 4321) {
   const child = Object.assign(new EventEmitter(), {
