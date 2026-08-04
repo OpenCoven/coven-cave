@@ -7,8 +7,8 @@ export type CapabilityImportance = "nice-to-have" | "important" | "blocking";
 /** One settled turn of a thread, condensed for the reflection prompt. */
 export type ReflectTranscriptTurn = { role: "user" | "assistant" | "system"; text: string };
 
-const REFLECT_MAX_TURNS = 24;
-const REFLECT_MAX_CHARS_PER_TURN = 600;
+const REFLECT_MAX_TURNS = 36;
+const REFLECT_MAX_CHARS_PER_TURN = 900;
 
 /** Render a compact, size-bounded transcript for embedding in the reflect prompt. */
 export function buildReflectTranscript(turns: readonly ReflectTranscriptTurn[]): string {
@@ -35,7 +35,7 @@ export function buildReflectTranscript(turns: readonly ReflectTranscriptTurn[]):
 export function buildThreadReflectPrompt(opts: { sessionId: string; transcript?: string }): string {
   const context = opts.transcript?.trim()
     ? `Here is the thread you just completed (session: ${opts.sessionId}), oldest to newest:\n\n${opts.transcript}\n\n`
-    : `Reflect on the thread just completed (session: ${opts.sessionId}).\n\n`;
+    : `No transcript was captured for the thread just completed (session: ${opts.sessionId}). Judge only what you can actually establish; do not treat the missing transcript as a finding about the thread.\n\n`;
   return `${context}Reflect honestly on how that thread went for you as the familiar.
 Return ONLY a valid JSON object matching this exact shape - no prose, no markdown fences:
 
@@ -61,6 +61,19 @@ Return ONLY a valid JSON object matching this exact shape - no prose, no markdow
   "fileLocatabilityNotes": "<optional>",
   "persistentBlockers": [{ "id": "<slug>", "title": "<title>", "category": "<auth|tooling|permission|infra|context|skill|other>", "impact": "<low|medium|high|blocking>", "detail": "<detail>", "suggestedResolution": "<optional>" }]
 }
+
+Scope rule for "contextPressure": rate the THREAD ABOVE, not this reflection run.
+This is a separate, deliberately minimal run whose transcript is condensed and
+may be clipped or missing entirely. That is normal and expected — it is a
+property of how reflection works, never evidence about the thread. So:
+- Do NOT rate pressure on how much of the transcript you can see here.
+- Do NOT cite this prompt's own size, injected reference material, or a
+  truncated/absent transcript as a cause of pressure.
+- Rate "critical" or "excess" only for pressure the thread itself actually hit:
+  the thread compacted, state had to be re-derived, work was dropped, or the
+  thread was given far more material than its task required.
+- If the transcript is too thin to judge, use "adequate" and say so in
+  "contextNotes" — an honest "not enough evidence" beats an inflated rating.
 
 Be honest. Underconfidence is more useful than overconfidence. Only report what you actually experienced.`;
 }

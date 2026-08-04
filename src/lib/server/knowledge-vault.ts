@@ -218,12 +218,63 @@ export function selectKnowledgeForFamiliar(
   });
 }
 
+/** Total characters of entry *body* text the vault block may contribute to a
+ *  prompt. The vault is background reference material, so it must never crowd
+ *  out the actual task: a single curated entry can be enormous (the "OpenCoven"
+ *  entry stitches five full repo READMEs into ~68 KB / ~17k tokens) and it was
+ *  previously injected verbatim into EVERY prompt for EVERY familiar. Threads
+ *  self-reported that as `excess` context pressure — "large KNOWLEDGE_VAULT
+ *  injected for a one-line PR count question; nearly all of it unused ballast".
+ *  Clipping keeps every entry *present and discoverable* while bounding cost. */
+export const KNOWLEDGE_VAULT_BODY_BUDGET = 12_000;
+
+/** Never clip an entry below this, so a vault with many entries still gives
+ *  each one enough room to be recognizable rather than a useless stub. */
+const KNOWLEDGE_VAULT_MIN_ENTRY_CHARS = 1_000;
+
+/** Clip `body` to `limit` chars on a line boundary where possible, marking what
+ *  was dropped so the familiar knows to read the full entry instead of assuming
+ *  it saw everything. */
+function clipEntryBody(body: string, limit: number, title: string): string {
+  if (body.length <= limit) return body;
+  const head = body.slice(0, limit);
+  const lastBreak = head.lastIndexOf("\n");
+  const kept = (lastBreak > limit * 0.5 ? head.slice(0, lastBreak) : head).trimEnd();
+  const dropped = body.length - kept.length;
+  return `${kept}\n\n[… ${dropped.toLocaleString("en-US")} more characters of "${title}" omitted to bound prompt size — open the Knowledge Vault entry for the full text.]`;
+}
+
+/** Apply {@link KNOWLEDGE_VAULT_BODY_BUDGET} across entries. Small entries pass
+ *  through whole and donate their unused allowance to oversized ones, so one
+ *  huge entry is clipped rather than every entry being truncated uniformly. */
+function budgetEntryBodies(
+  bodies: readonly { title: string; body: string }[],
+  budget: number,
+): string[] {
+  const total = bodies.reduce((sum, e) => sum + e.body.length, 0);
+  if (total <= budget) return bodies.map((e) => e.body);
+
+  const share = Math.max(KNOWLEDGE_VAULT_MIN_ENTRY_CHARS, Math.floor(budget / bodies.length));
+  // Entries under their share leave headroom; redistribute it to the oversized
+  // ones so a vault of one big + several small entries spends the full budget.
+  const surplus = bodies.reduce((sum, e) => sum + Math.max(0, share - e.body.length), 0);
+  const oversized = bodies.filter((e) => e.body.length > share).length;
+  const bonus = oversized > 0 ? Math.floor(surplus / oversized) : 0;
+
+  return bodies.map((e) =>
+    e.body.length <= share ? e.body : clipEntryBody(e.body, share + bonus, e.title),
+  );
+}
+
 /** Wrap a harness prompt with the Knowledge Vault block. Pure: same prompt back
- *  when there are no entries, so it's safe to call unconditionally. */
+ *  when there are no entries, so it's safe to call unconditionally. Entry bodies
+ *  are budgeted (see {@link KNOWLEDGE_VAULT_BODY_BUDGET}); pass `bodyBudget` to
+ *  override, or `Infinity` for the full unclipped text. */
 export function buildPromptWithKnowledgeVault(
   prompt: string,
   entries: readonly KnowledgeEntry[],
   collections: readonly { id: string; meta: KnowledgeCollectionMeta | null; count: number }[] = [],
+  opts: { bodyBudget?: number } = {},
 ): string {
   const text = prompt.trim();
   const usable = entries.filter((e) => e.enabled && e.body.trim());
@@ -240,11 +291,15 @@ export function buildPromptWithKnowledgeVault(
     .map((collection) => `- ${collection.id}: ${summaryOf(collection.meta)}`);
   if (usable.length === 0 && collectionIndex.length === 0) return text;
 
-  const blocks = usable.map((entry) => {
+  const budgeted = budgetEntryBodies(
+    usable.map((entry) => ({ title: entry.title, body: entry.body.trim() })),
+    opts.bodyBudget ?? KNOWLEDGE_VAULT_BODY_BUDGET,
+  );
+  const blocks = usable.map((entry, i) => {
     const heading = entry.tags.length
       ? `## ${entry.title}  [tags: ${entry.tags.join(", ")}]`
       : `## ${entry.title}`;
-    return [heading, entry.body.trim()].join("\n");
+    return [heading, budgeted[i]].join("\n");
   });
 
   const context = [

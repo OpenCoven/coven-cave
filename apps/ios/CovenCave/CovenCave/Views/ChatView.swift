@@ -54,6 +54,7 @@ struct ChatView: View {
     @State private var showPermissionFamiliarPicker = false
     @State private var showSessionDetails = false
     @State private var showSessionPicker = false
+    @State private var showVoiceCall = false
     /// Navigation path handed to the session picker. It pushes nothing, but
     /// FamiliarThreadsView requires the binding.
     @State private var pickerPath: [ChatRoute] = []
@@ -115,6 +116,22 @@ struct ChatView: View {
         return members.filter { $0.displayName.lowercased().contains(q) || $0.id.lowercased().contains(q) }
     }
     private var showingMentionMenu: Bool { !mentionMatches.isEmpty }
+
+    // A voice call targets a single familiar, so the call button only appears
+    // on one-to-one threads whose familiar is known. Group threads have no
+    // single callee.
+    private var voiceCallFamiliar: Familiar? {
+        guard !thread.isGroup, let id = thread.familiarIds.first else { return nil }
+        return app.familiar(id)
+    }
+
+    // The server session for the callee, when the thread already has one.
+    // Empty for a brand-new chat; the call engine treats that as a fresh
+    // session for the familiar.
+    private var voiceCallSessionId: String {
+        guard let id = thread.familiarIds.first else { return "" }
+        return thread.sessionIds[id] ?? ""
+    }
 
     private func writeDraftPersistence(_ value: String, key: String) {
         if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -199,6 +216,17 @@ struct ChatView: View {
                 .accessibilityLabel("\(thread.title), \(chatPresence.label)")
             }
             ToolbarItem(placement: .topBarTrailing) {
+                if let familiar = voiceCallFamiliar {
+                    Button {
+                        Haptics.tap()
+                        showVoiceCall = true
+                    } label: {
+                        Image(systemName: "phone.fill")
+                    }
+                    .accessibilityLabel("Call \(familiar.displayName)")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     Haptics.tap()
                     showSessionDetails.toggle()
@@ -269,6 +297,15 @@ struct ChatView: View {
         }
         .sheet(item: $responseReader) { item in
             ResponseReaderView(item: item)
+        }
+        .fullScreenCover(isPresented: $showVoiceCall) {
+            if let familiar = voiceCallFamiliar {
+                LiveVoiceCallView(
+                    familiar: familiar,
+                    sessionId: voiceCallSessionId,
+                    client: app.client
+                )
+            }
         }
         // A new chat linked to a task acquires its server session only after the
         // first reply; once streaming stops, push that sessionId onto the card.
@@ -415,13 +452,12 @@ struct ChatView: View {
 
     @ViewBuilder
     private var projectContext: some View {
-        if thread.needsProjectSelection || !thread.canSendMessages {
+        if thread.canChangeProject && (thread.needsProjectSelection || !thread.canSendMessages) {
             ChatProjectPicker(
                 familiarIds: thread.familiarIds,
                 recentRoots: app.recentProjectRoots,
                 selectedRoot: $thread.projectRoot,
                 isResolved: $projectResolved,
-                locked: !thread.canChangeProject,
                 requiresExplicitSelection: thread.needsProjectSelection
             ) {
                 thread.needsProjectSelection = false

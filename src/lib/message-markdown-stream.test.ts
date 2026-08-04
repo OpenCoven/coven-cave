@@ -82,3 +82,45 @@ test("a trailing callback keeps the stamp issued before a single settle", async 
   await Promise.resolve();
   assert.equal(gate.apply(scheduledStamp), false);
 });
+
+test("normalizePseudoLists joins wrapped item lines back onto their marker (lazy continuation)", () => {
+  const { normalizePseudoLists } = markdownStream;
+  assert.equal(
+    normalizePseudoLists("1. **one** — text that\nwraps onto a second line\n2. **two** — more"),
+    "1. **one** — text that wraps onto a second line\n2. **two** — more",
+  );
+  assert.equal(
+    normalizePseudoLists("- one — text\nwraps\n- two"),
+    "- one — text wraps\n- two",
+  );
+});
+
+test("normalizePseudoLists converts paren and bold-wrapped numbered markers in real runs", () => {
+  const { normalizePseudoLists } = markdownStream;
+  assert.equal(
+    normalizePseudoLists("Levers:\n1) one\n2) two\n3) three"),
+    "Levers:\n1. one\n2. two\n3. three",
+  );
+  assert.equal(
+    normalizePseudoLists("**1. Skills-first** — start here\n**2. Pipeline** — capture"),
+    "1. **Skills-first** — start here\n2. **Pipeline** — capture",
+  );
+  // A lone `1)` line is prose, not a list.
+  assert.equal(normalizePseudoLists("Levers:\n1) only item"), "Levers:\n1) only item");
+});
+
+test("normalizePseudoLists never rewrites fenced code and stops at block boundaries", () => {
+  const { normalizePseudoLists } = markdownStream;
+  const fenced = "```txt\n1) not a list\nwrapped\n2) still code\n```";
+  assert.equal(normalizePseudoLists(fenced), fenced);
+  // Blank lines end a run; paragraphs after the list stay separate.
+  assert.equal(
+    normalizePseudoLists("1. one\n2. two\n\nA closing paragraph."),
+    "1. one\n2. two\n\nA closing paragraph.",
+  );
+  // Headings and quotes are never swallowed as continuations.
+  assert.equal(
+    normalizePseudoLists("1. one\n# Heading\n2. two"),
+    "1. one\n# Heading\n2. two",
+  );
+});

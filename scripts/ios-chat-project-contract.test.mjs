@@ -103,10 +103,10 @@ assert.match(
   /requiresExplicitSelection[\s\S]*\\? nil[\s\S]*ChatProjectSelection\.resolvedRoot/,
   "a rejected project must require an explicit replacement instead of silently retrying",
 );
-assert.match(
+assert.doesNotMatch(
   picker,
-  /if locked \{[\s\S]*lockedProject[\s\S]*Start a new chat to use another project\./,
-  "the project must become read-only after the first server session",
+  /\blocked\b|lockedProject|Start a new chat to use another project\./,
+  "the project picker must not contain a read-only started-chat presentation",
 );
 assert.doesNotMatch(
   picker,
@@ -122,8 +122,8 @@ assert.doesNotMatch(
 // All user-visible constructors route through selection and preserve the root.
 assert.match(
   newChat,
-  /ChatProjectPicker\([\s\S]*familiarIds: selectedFamiliarIds[\s\S]*\.disabled\([\s\S]*!projectResolved[\s\S]*selectedProjectRoot == nil/,
-  "New Chat must remain blocked until the scoped project resolves",
+  /Section\("Project"\) \{[\s\S]*ChatProjectPicker\([\s\S]*familiarIds: selectedFamiliarIds[\s\S]*selectedRoot: \$selectedProjectRoot[\s\S]*isResolved: \$projectResolved[\s\S]*\.disabled\([\s\S]*!projectResolved[\s\S]*selectedProjectRoot == nil/,
+  "New Chat must retain project selection and remain blocked until it resolves",
 );
 assert.match(
   newChat,
@@ -152,13 +152,13 @@ assert.match(
 );
 assert.match(
   chat,
-  /ChatProjectPicker\([\s\S]*selectedRoot: \$thread\.projectRoot[\s\S]*locked: !thread\.canChangeProject[\s\S]*requiresExplicitSelection: thread\.needsProjectSelection/,
-  "Chat must repair legacy/stale threads and lock server-owned provenance",
+  /if thread\.canChangeProject && \(thread\.needsProjectSelection \|\| !thread\.canSendMessages\) \{[\s\S]*ChatProjectPicker\([\s\S]*selectedRoot: \$thread\.projectRoot[\s\S]*requiresExplicitSelection: thread\.needsProjectSelection/,
+  "Chat must show project recovery only while the thread can still change project",
 );
-assert.match(
+assert.doesNotMatch(
   chat,
-  /if thread\.needsProjectSelection \|\| !thread\.canSendMessages \{[\s\S]*?ChatProjectPicker\(/,
-  "resolved chats must not keep a persistent Project control above the composer",
+  /locked: !thread\.canChangeProject/,
+  "started chats must not configure a locked Project band",
 );
 assert.match(
   chat,

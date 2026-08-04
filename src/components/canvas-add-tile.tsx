@@ -83,6 +83,9 @@ export function CanvasAddTile({
   onActiveArtifactChange: (id: string | null) => void;
 }) {
   const [state, dispatch] = useReducer(addTileReducer, INITIAL_ADD_TILE_STATE);
+  // Not reducer state: it survives across generations on purpose, because
+  // someone building a game makes several in a row.
+  const [playable, setPlayable] = useState(false);
   const [chosenFamiliar, setChosenFamiliar] = useState<string | null>(null);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [refineText, setRefineText] = useState("");
@@ -274,14 +277,14 @@ export function CanvasAddTile({
       purpose: "create",
       prompt: state.prompt,
       title: titleFromPrompt(state.prompt),
-      generationPrompt: buildSketchPrompt(state.prompt),
+      generationPrompt: buildSketchPrompt(state.prompt, { playable }),
       originalIntent: state.prompt,
     });
     if (started.runId !== runId) return;
     ownedRunsRef.current.set(runId, revision);
     setHiddenRunId(null);
     dispatch({ type: "begin-generation", runId, identity });
-  }, [activeFamiliar, state.identity, state.prompt, state.revision]);
+  }, [activeFamiliar, playable, state.identity, state.prompt, state.revision]);
 
   const refine = useCallback(() => {
     const ask = refineText.trim();
@@ -712,6 +715,24 @@ export function CanvasAddTile({
               </div>
             ) : null}
             <div className="chat-canvas-add__row">
+              {/* Playable is a different output contract, not a phrasing hint —
+                  a game needs a loop, input handling, and a restart, and
+                  asking for them in prose does not reliably get them. */}
+              <button
+                type="button"
+                className="chat-canvas-add__playable focus-ring"
+                aria-pressed={playable}
+                aria-label="Generate a playable game instead of a static sketch"
+                title="Make it playable"
+                onClick={() => {
+                  const next = !playable;
+                  setPlayable(next);
+                  announce(next ? "Playable game mode on" : "Playable game mode off");
+                }}
+              >
+                <Icon name="ph:magic-wand" width={12} />
+                <span>Playable</span>
+              </button>
               {/* Who draws this is an identity, not a form field — the avatar
                   and name carry it the way the roster does everywhere else. */}
               <button

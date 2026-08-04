@@ -101,7 +101,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
 import { ChatFindBand } from "@/components/chat-find-band";
-import { ChatParticipants } from "@/components/chat-participants";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ChatEmptyState } from "@/components/chat-empty-state";
 import { ChatNewDashboard } from "@/components/chat-new-dashboard";
@@ -199,6 +198,16 @@ import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
+import {
+  AUTO_BRIEFED_KEY,
+  clearAutoMission,
+  isAutoMissionTimedOut,
+  pendingAutoMissionPings,
+  readAutoMission,
+  touchAutoMission,
+  writeAutoMission,
+  type AutoMissionRecord,
+} from "@/lib/auto-mission-state";
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
 import { GitHubCard } from "@/components/github-card";
 import { GitHubActionCard } from "@/components/github-action-card";
@@ -325,8 +334,7 @@ type Props = {
    *  switched this view to a different session. */
   openVoiceSessionId?: string;
   daemonRunning?: boolean;
-  /** Roster behind the title row's participants cluster — who you could add to
-   *  this chat to make it a coven (cave-9xadi). */
+  /** Roster used to promote this chat into a coven from the familiar rail. */
   familiars?: Familiar[];
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
@@ -1963,39 +1971,56 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return () => window.clearTimeout(timer);
   }, [reflectError]);
 
-  // `/auto` mission tracking (cave auto-mode): the mission text for the
-  // in-flight /auto run in THIS chat, so the blocked/done watcher below knows
-  // what to notify about and the feedback modal knows what to attribute
-  // ratings to. Cleared when a new /auto starts or the chat is cleared.
-  const [autoMission, setAutoMission] = useState<string | null>(null);
+  // `/auto` mission tracking (cave auto-mode). The record lives in
+  // localStorage, not just component state, because /auto exists precisely for
+  // UNATTENDED runs: the human starts a mission and walks away, so a reload or
+  // an app restart is the expected case. State-only arming would silently drop
+  // the completion ping the feature exists to deliver. See auto-mission-state.ts.
+  const [autoMission, setAutoMission] = useState<AutoMissionRecord | null>(null);
   const [autoFeedbackOpen, setAutoFeedbackOpen] = useState(false);
-  // Turn ids already notified-for, so a settle re-render (or a second
-  // <coven:auto-status> marker of the same terminal state) never double-pings
-  // the human or double-opens the questionnaire.
-  const autoNotifiedTurnsRef = useRef<Set<string>>(new Set());
+
+  // Re-hydrate (or drop) the mission whenever the chat changes. Without this a
+  // mission started in chat A stays armed while chat B is on screen, and any
+  // auto-status marker over there pings against A's mission.
+  useEffect(() => {
+    setAutoFeedbackOpen(false);
+    setAutoMission(readAutoMission(sessionId, typeof window === "undefined" ? null : window.localStorage));
+  }, [sessionId]);
 
   // Watch settled assistant turns for a terminal `<coven:auto-status>` marker
-  // (auto-status-blocks.ts). "blocked" and "done" are the ONLY two states
-  // that should draw the human back in — see buildAutoModeDirective. Blocked
-  // fires a response-needed inbox item (something only a human can resolve);
-  // done fires an agent inbox item AND opens the feedback questionnaire so
-  // the mission's outcome can shape the next one.
+  // (auto-status-blocks.ts). Only blocked/failed/done draw the human back in —
+  // see buildAutoModeDirective. Blocked fires a response-needed inbox item and
+  // leaves the mission armed (answering it resumes the work); failed and done
+  // end the mission and flag feedback as pending.
   useEffect(() => {
-    if (!autoMission) return;
-    for (const t of turns) {
-      if (t.role !== "assistant" || t.pending || !t.text) continue;
-      if (autoNotifiedTurnsRef.current.has(t.id)) continue;
-      const { update } = extractAutoStatusMarkers(t.text);
-      if (!update || (update.state !== "blocked" && update.state !== "done")) continue;
-      autoNotifiedTurnsRef.current.add(t.id);
-      const blocked = update.state === "blocked";
+    const pings = pendingAutoMissionPings(autoMission, turns);
+    if (!pings.length || !autoMission) return;
+    const storage = typeof window === "undefined" ? null : window.localStorage;
+    let next: AutoMissionRecord = { ...autoMission, notified: [...autoMission.notified] };
+    let ended = false;
+    for (const ping of pings) {
+      next.notified.push(ping.turnId);
+      const blocked = ping.state === "blocked";
+      if (!blocked) {
+        ended = true;
+        next = {
+          ...next,
+          completedAt: new Date().toISOString(),
+          outcome: ping.state === "failed" ? "failed" : "done",
+          feedbackPending: true,
+        };
+      }
       void fetch("/api/inbox", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           kind: blocked ? "response-needed" : "agent",
-          title: blocked ? "Auto mission needs you" : "Auto mission complete",
-          body: update.note || autoMission,
+          title: blocked
+            ? "Auto mission needs you"
+            : ping.state === "failed"
+              ? "Auto mission couldn't finish"
+              : "Auto mission complete",
+          body: ping.note || autoMission.mission,
           source: "agent",
           familiarId: familiar.id,
           sessionId,
@@ -2003,8 +2028,69 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           link: sessionId ? { kind: "session", ref: sessionId } : null,
         }),
       }).catch(() => undefined);
-      if (!blocked) setAutoFeedbackOpen(true);
     }
+    writeAutoMission(sessionId, next, storage);
+    setAutoMission(next);
+    if (ended) setAutoFeedbackOpen(true);
+  }, [autoMission, familiar.id, sessionId, turns]);
+
+  // Keep the mission's liveness stamp current. The watchdog below measures from
+  // this, not from mission start, so a long mission that is visibly progressing
+  // is never declared timed out.
+  useEffect(() => {
+    if (!autoMission || autoMission.completedAt) return;
+    setAutoMission((prev) => {
+      if (!prev || prev.completedAt) return prev;
+      const touched = touchAutoMission(prev, Date.now());
+      if (touched === prev) return prev;
+      writeAutoMission(sessionId, touched, typeof window === "undefined" ? null : window.localStorage);
+      return touched;
+    });
+    // Only the transcript growing counts as a sign of life — depending on
+    // autoMission here would re-stamp on our own write and never expire.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turns.length, sessionId]);
+
+  // The watchdog. Everything above depends on the familiar volunteering a
+  // terminal marker; nothing guarantees it ever does. It can run out of
+  // context, die mid-stream, or simply forget the protocol — and then the
+  // transcript holds nothing to ping on, the mission stays armed forever, and
+  // the human never hears back at all. That is the one outcome /auto cannot
+  // afford, so the client stops waiting on its own clock.
+  useEffect(() => {
+    if (!autoMission || autoMission.completedAt) return;
+    const tick = () => {
+      setAutoMission((prev) => {
+        if (!isAutoMissionTimedOut(prev, turns, Date.now())) return prev;
+        if (!prev) return prev;
+        const ended: AutoMissionRecord = {
+          ...prev,
+          completedAt: new Date().toISOString(),
+          outcome: "timed-out",
+          feedbackPending: true,
+        };
+        writeAutoMission(sessionId, ended, typeof window === "undefined" ? null : window.localStorage);
+        void fetch("/api/inbox", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            kind: "response-needed",
+            title: "Auto mission went quiet",
+            body: `No word back on "${prev.mission}". Check the thread — it may have stalled.`,
+            source: "agent",
+            familiarId: familiar.id,
+            sessionId,
+            auto: "auto-mission",
+            link: sessionId ? { kind: "session", ref: sessionId } : null,
+          }),
+        }).catch(() => undefined);
+        setAutoFeedbackOpen(true);
+        return ended;
+      });
+    };
+    const timer = window.setInterval(tick, 60_000);
+    tick();
+    return () => window.clearInterval(timer);
   }, [autoMission, familiar.id, sessionId, turns]);
 
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
@@ -4276,7 +4362,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setActiveLeafId("");
       setInput("");
       setAutoMission(null);
-      autoNotifiedTurnsRef.current.clear();
+      setAutoFeedbackOpen(false);
+      clearAutoMission(sessionId, typeof window === "undefined" ? null : window.localStorage);
       return true;
     }
     if (command === "/help") {
@@ -4324,16 +4411,85 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       return true;
     }
     if (command === "/auto" || command === "/autopilot") {
+      const storage = typeof window === "undefined" ? null : window.localStorage;
+      const sub = args.trim().toLowerCase();
+      // `/auto stop` is the escape hatch: a mission only ends on its own when
+      // the familiar emits a `done` marker, and nothing guarantees it ever
+      // does. Without a manual end a mission that quietly derails stays armed
+      // forever, and the human has no way to rate what did happen.
+      if (sub === "stop" || sub === "end" || sub === "cancel") {
+        setInput("");
+        if (!autoMission || autoMission.completedAt) {
+          appendSystem("No auto mission is running in this chat.");
+          return true;
+        }
+        const ended: AutoMissionRecord = {
+          ...autoMission,
+          completedAt: new Date().toISOString(),
+          outcome: "cancelled",
+          feedbackPending: true,
+        };
+        writeAutoMission(sessionId, ended, storage);
+        setAutoMission(ended);
+        setAutoFeedbackOpen(true);
+        appendSystem("Auto mission ended. Rate it so the next one goes better.");
+        return true;
+      }
+      if (sub === "status") {
+        setInput("");
+        appendSystem(
+          autoMission && !autoMission.completedAt
+            ? `Auto mission running since ${new Date(autoMission.startedAt).toLocaleString()} — ${autoMission.mission}`
+            : "No auto mission is running in this chat.",
+        );
+        return true;
+      }
       if (!args.trim()) {
         appendSystem(
-          "Give it a mission — e.g. /auto clean up the failing tests in src/lib. It may ask a few clarifying questions up front, then works silently and only pings you again on completion or when blocked.",
+          "Give it a mission — e.g. /auto clean up the failing tests in src/lib. It may ask a few clarifying questions up front, then works silently and only pings you again on completion or when blocked. Use /auto stop to end one early, /auto status to check.",
         );
         setInput("");
         return true;
       }
       const mission = args.trim();
+      // First-run framing. /auto is the one command that changes the shape of
+      // the conversation itself — the familiar stops answering until it is
+      // finished — and silence is indistinguishable from a broken session if
+      // nobody told you to expect it. So the first mission spends one beat
+      // explaining the contract, with the command still loaded in the composer
+      // so confirming costs a single keystroke.
+      if (storage && !storage.getItem(AUTO_BRIEFED_KEY)) {
+        try {
+          storage.setItem(AUTO_BRIEFED_KEY, "1");
+        } catch {
+          /* storage unavailable — brief once per session rather than never */
+        }
+        appendSystem(
+          [
+            "Autonomous mission mode — how this goes:",
+            "• It may ask everything it needs up front, then goes quiet and works. Silence means working, not stuck.",
+            "• It comes back to you exactly twice-worth: when it finishes, or when it genuinely needs you (permissions, credentials, a call that is yours to make). Either way you get a notification, so you can close this and walk away.",
+            "• It won't take an irreversible action on your behalf without asking first.",
+            "• `/auto stop` ends it whenever you like; `/auto status` checks in without interrupting it.",
+            "",
+            "Press enter to start the mission.",
+          ].join("\n"),
+        );
+        setInput(trimmed);
+        return true;
+      }
       setInput("");
-      setAutoMission(mission);
+      const record: AutoMissionRecord = {
+        mission,
+        startedAt: new Date().toISOString(),
+        notified: [],
+        completedAt: null,
+        outcome: null,
+        lastActivityAt: Date.now(),
+        feedbackPending: false,
+      };
+      writeAutoMission(sessionId, record, storage);
+      setAutoMission(record);
       setAutoFeedbackOpen(false);
       void fetch(`/api/auto-mode/feedback?familiarId=${encodeURIComponent(familiar.id)}`)
         .then((res) => (res.ok ? res.json() : null))
@@ -6259,12 +6415,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // are archive-free by default — chat-siderail-hide-archived) but the
   // transcript survives, reachable via the chat list's "Show archived" toggle
   // where the same menu item unarchives it back onto the rail.
-  // Participants cluster (cave-9xadi): adding a familiar turns this solo
-  // thread into a coven. A coven is a set of ordinary per-familiar sessions,
-  // so nothing migrates — the group pins THIS session as the host's, and the
-  // coven surface resumes it. The latch pair (tab + group id) mirrors how the
-  // Projects/Skills tabs hand off, so the surface lands on the new coven
-  // rather than its empty state.
+  // Rail drag-to-promote retains this callback for turning a solo chat into a coven.
   const promoteToCoven = useCallback(
     (addedId: string) => {
       const added = familiars.find((f) => f.id === addedId);
@@ -6291,11 +6442,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [announce, familiar.display_name, familiar.id, familiars, resolvedProjectId, sessionId],
   );
 
-  // Drag a familiar from the rail's switcher into this thread (cave-76yfq) —
-  // the same outcome as the participants `+`, which stays the primary,
-  // keyboard-reachable affordance. The zone arms only for a familiar this
-  // thread can actually accept, so dragging the host over their own transcript
-  // shows nothing rather than a target that would reject the drop.
+  // Drag a familiar from the rail's switcher into this thread (cave-76yfq).
+  // The zone arms only for a familiar this thread can actually accept, so
+  // dragging the host over their own transcript shows nothing rather than a
+  // target that would reject the drop.
   const [familiarDrag, setFamiliarDrag] = useState<FamiliarDragDetail | null>(null);
   const [dropHover, setDropHover] = useState(false);
 
@@ -7073,16 +7223,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           generateTitle={generateTitleFromTranscript}
         >
           <div className="cave-chat-session-actions">
-            {/* cave-9xadi: the participants cluster leads the action group —
-                who is in this conversation reads before what you can do to it.
-                The dashed + is the coven entry point, per the design's own
-                note: "a solo session becomes a coven by adding someone here." */}
-            <ChatParticipants
-              familiar={familiar}
-              familiars={familiars}
-              daemonRunning={daemonRunning ?? null}
-              onAddFamiliar={promoteToCoven}
-            />
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
                 no longer hides them). Voice joins the hover-reveal quick set;
                 Archive stays always-visible (the design's "Mark done" slot,
@@ -7571,9 +7711,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       />
       <AutoModeFeedbackModal
         open={autoFeedbackOpen}
-        onClose={() => setAutoFeedbackOpen(false)}
+        onClose={() => {
+          setAutoFeedbackOpen(false);
+          // The rating is the only thing still owed once a mission ends —
+          // closing settles it either way so the prompt can't resurface.
+          setAutoMission((prev) => {
+            if (!prev) return prev;
+            const settled = { ...prev, feedbackPending: false };
+            writeAutoMission(sessionId, settled, typeof window === "undefined" ? null : window.localStorage);
+            return settled;
+          });
+        }}
         familiarId={familiar.id}
-        mission={autoMission ?? ""}
+        mission={autoMission?.mission ?? ""}
+        outcome={autoMission?.outcome ?? null}
       />
       <Modal
         open={debugModalOpen}

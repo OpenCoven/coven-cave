@@ -74,6 +74,7 @@ import {
   closeTrailingFence,
   createMarkdownRenderGate,
   getRenderedMarkdown as renderCacheGet,
+  normalizePseudoLists,
   scanFenceFilenames,
   type MarkdownRenderGate,
 } from "@/lib/message-markdown-stream";
@@ -668,8 +669,13 @@ async function mdToHtml(
   // cascades and swallows the rest of the message as a fake code block.
   // Pre-scan filenames (positional, one per fence opener) so we can re-attach
   // them after stripping the suffix for the parser.
-  const fenceFilenames = scanFenceFilenames(markdown);
-  const normalized = markdown.replace(/^(\s*```\s*[\w+.-]+):\S+/gm, "$1");
+  // Pseudo-list normalization runs first: @create-markdown/core lacks lazy
+  // continuation, so wrapped list items (and `1)` / `**1. Title**` markers)
+  // otherwise render as dense paragraph fragments. Fence lines pass through
+  // untouched, so the positional filename scan stays aligned.
+  const listNormalized = normalizePseudoLists(markdown);
+  const fenceFilenames = scanFenceFilenames(listNormalized);
+  const normalized = listNormalized.replace(/^(\s*```\s*[\w+.-]+):\S+/gm, "$1");
 
   const blocks: Block[] = coalesceAdjacentNumberedLists(parse(normalized));
 

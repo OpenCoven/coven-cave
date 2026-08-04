@@ -51,3 +51,31 @@ test("extract: text with no marker at all returns unchanged, no update", () => {
   assert.equal(visible, "just plain text");
   assert.equal(update, null);
 });
+
+test("state matching is case-insensitive and accepts the obvious synonyms", () => {
+  for (const spelling of ["done", "Done", "DONE", "complete", "completed", "finished", " success "]) {
+    const { update } = extractAutoStatusMarkers(`<coven:auto-status state="${spelling}" />`);
+    assert.equal(update?.state, "done", `"${spelling}" must reach the human`);
+  }
+  assert.equal(
+    extractAutoStatusMarkers('<coven:auto-status state="In_Progress" />').update?.state,
+    "working",
+  );
+  assert.equal(
+    extractAutoStatusMarkers('<coven:auto-status state="needs-approval" />').update?.state,
+    "blocked",
+  );
+});
+
+test("failed is a first-class state, distinct from blocked", () => {
+  const { update, visible } = extractAutoStatusMarkers(
+    'ran out of road <coven:auto-status state="error" note="no credentials on disk" />',
+  );
+  assert.equal(update?.state, "failed");
+  assert.equal(update?.note, "no credentials on disk");
+  assert.equal(visible.trim(), "ran out of road");
+});
+
+test("a genuinely unknown state is still dropped rather than guessed at", () => {
+  assert.equal(extractAutoStatusMarkers('<coven:auto-status state="banana" />').update, null);
+});

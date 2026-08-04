@@ -44,6 +44,7 @@ assert.match(
   // between the skill split and next-paths (auto-mission status was the last),
   // and naming the immediate argument makes this assertion stale every time.
   /const reasoningSplit = splitReasoning\(extractAgentAttachmentMarkers\(turn\.text\)\.text\)[\s\S]*const inlineReasoning = reasoningSplit\.reasoning[\s\S]*const skillSplit = extractSkillMarkers\([\s\S]*const \{ visible: visibleWithGh, suggestions: nextPaths \} = extractNextPaths\(/,
+
   "Assistant turns should split visible content from collapsible reasoning before extracting next-path suggestions",
 );
 
