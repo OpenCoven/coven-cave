@@ -37,6 +37,11 @@ assert.match(
   /stripImageMarkers\(stripGitHubMarkers\(visibleWithGh\)\)/,
   "the settled fallback text path is image-marker-free too",
 );
+assert.match(
+  chatView,
+  /out\.push\(pieces\[0\]\.text === seg\.text \? seg : \{ \.\.\.seg, text: pieces\[0\]\.text \}\)/,
+  "the settled segmented path retains image-block cleanup instead of restoring an incomplete raw marker",
+);
 
 // ── the card: a11y + packaged-app image loading ─────────────────────────────
 assert.match(carousel, /AuthedImage/, "pictures load through AuthedImage (packaged sidecar auth gate)");

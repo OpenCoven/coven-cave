@@ -7853,7 +7853,9 @@ function splitSegmentsForImages(segments: MessageBubbleSegment[]): MessageBubble
     }
     const pieces = sliceImageBlocks(seg.text);
     if (pieces.length === 1 && pieces[0].kind === "text") {
-      out.push(seg);
+      // `sliceImageBlocks` also removes a terminal incomplete marker. Preserve
+      // that cleaned text when another block makes this segmented path render.
+      out.push(pieces[0].text === seg.text ? seg : { ...seg, text: pieces[0].text });
       return;
     }
     pieces.forEach((p, pi) => {

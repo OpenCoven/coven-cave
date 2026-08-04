@@ -150,6 +150,11 @@ test("slice: text with no markers returns unchanged", () => {
   assert.deepEqual(pieces, [{ kind: "text", text: "just prose" }]);
 });
 
+test("slice: an incomplete terminal marker is dropped without exposing protocol text", () => {
+  const pieces = sliceImageBlocks(`Before <coven:image src="${PNG}`);
+  assert.deepEqual(pieces, [{ kind: "text", text: "Before " }]);
+});
+
 // ── streaming strip ──────────────────────────────────────────────────────────
 
 test("strip: complete markers vanish from the streamed text", () => {

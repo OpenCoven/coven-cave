@@ -146,9 +146,13 @@ function inRanges(ranges: Array<[number, number]>, index: number): boolean {
  * so callers can cheaply detect "no images".
  */
 export function sliceImageBlocks(text: string): ImageTextPiece[] {
-  if (!text || !text.includes("<coven:image")) return [{ kind: "text", text }];
+  // A generation can end with an incomplete marker. Treat that tail exactly as
+  // the streaming path does so a sibling GitHub/artifact block cannot make the
+  // segmented settled renderer expose raw model protocol text.
+  const visibleText = stripIncompleteImageMarker(text);
+  if (!visibleText || !visibleText.includes("<coven:image")) return [{ kind: "text", text: visibleText }];
 
-  const codeRanges = markdownCodeRanges(text);
+  const codeRanges = markdownCodeRanges(visibleText);
   const pieces: ImageTextPiece[] = [];
   const byGroup = new Map<string, ImageCarouselDescriptor>();
   let cursor = 0;
@@ -161,9 +165,9 @@ export function sliceImageBlocks(text: string): ImageTextPiece[] {
 
   MARKER_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = MARKER_RE.exec(text)) !== null) {
+  while ((m = MARKER_RE.exec(visibleText)) !== null) {
     if (inRanges(codeRanges, m.index)) continue;
-    const between = text.slice(cursor, m.index);
+    const between = visibleText.slice(cursor, m.index);
     const attrs = parseAttrs(m[1] ?? "");
     const image = attrs ? imageFromAttrs(attrs) : null;
     const group = attrs?.group?.trim() || undefined;
@@ -204,7 +208,7 @@ export function sliceImageBlocks(text: string): ImageTextPiece[] {
     openRun = carousel;
   }
 
-  pushText(text.slice(cursor));
+  pushText(visibleText.slice(cursor));
 
   const out = pieces.filter((p) => p.kind === "text" || p.carousel.images.length > 0);
   return out.length ? out : [{ kind: "text", text: "" }];
