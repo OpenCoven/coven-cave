@@ -519,6 +519,129 @@
 
 .rite__note { margin: 0; font-size: var(--text-2xs); color: var(--text-muted); max-width: 42ch; }
 
+/* A failed summoning. Never a blocking dialog — the rite is still standing and
+   the seal can be struck again once the reason is dealt with. */
+.rite__error {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--danger-text);
+  max-width: 46ch;
+}
+
+/* Struck. The card carries the real mark now; this column only says so and
+   hands over. */
+.rite__struck {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.rite__struck-line {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rite__struck-outs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+
+.rite__id {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+
+/* The way out to the summoning circle. Same object as the step-I paths, but it
+   sits alone under the tiles rather than in the two-path grid. */
+.rite__path--aside { width: 100%; }
+
+/* ── The rite as an overlay ────────────────────────────────────────────────
+   Mirrors the summoning circle's dialog so the two rituals read as the same
+   kind of surface. No backdrop click handler on purpose: the rite holds a
+   dropped File that nothing can restore. */
+.rite-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--backdrop-scrim);
+}
+
+.rite-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(1040px, 100%);
+  max-height: min(820px, calc(100vh - 2 * var(--space-4)));
+  overflow: hidden;
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .rite-dialog { background: var(--bg-raised); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .rite-dialog { background: var(--bg-raised); backdrop-filter: none; }
+}
+
+.rite-dialog__body { flex: 1; min-height: 0; overflow: auto; }
+
+.rite-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.rite-chrome__crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.rite-chrome__sep { color: var(--text-muted); }
+.rite-chrome__acts { display: flex; align-items: center; gap: var(--space-2); }
+
+.rite-chrome__close {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.rite-chrome__close:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* Leaving is the only other irreversible act in the rite, so it asks. */
+.rite-leave {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+}
+
+.rite-leave__line { margin: 0; font-size: var(--text-md); font-weight: 600; color: var(--text-primary); }
+.rite-leave__note { margin: 0; font-size: var(--text-2xs); color: var(--text-muted); max-width: 60ch; }
+.rite-leave__acts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+
 @media (prefers-reduced-motion: reduce) {
   .rite__stage { animation: none; }
 

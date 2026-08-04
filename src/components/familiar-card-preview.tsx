@@ -74,13 +74,22 @@ export type FamiliarCardPreviewProps = {
    * system here, not a second one built for the wait.
    */
   scrying?: boolean;
+  /**
+   * The seal has been struck — the familiar exists.
+   *
+   * Turns the card over once, so the mark it now carries is the thing you see
+   * rather than something you have to think to go looking for. It does NOT pin
+   * the card face-down: a card you cannot turn back over is a screen, not a
+   * card.
+   */
+  sealed?: boolean;
 };
 
 type QrMatrix = { size: number; rows: string[] };
 
 export function FamiliarCardPreview({
   name, role, description, harness, vesselLabel, model,
-  typeIds, artUrl, plateUrl, aura, sealUrl, scrying,
+  typeIds, artUrl, plateUrl, aura, sealUrl, scrying, sealed,
 }: FamiliarCardPreviewProps) {
   const cardRef = useRef<HTMLButtonElement | null>(null);
   const sealRef = useRef<HTMLCanvasElement | null>(null);
@@ -166,6 +175,12 @@ export function FamiliarCardPreview({
   }, [flipped]);
 
   useEffect(() => { rest(); }, [rest]);
+
+  // Struck once, not held: this fires on the transition into `sealed`, so a
+  // user who turns the card back to the portrait keeps it that way.
+  useEffect(() => {
+    if (sealed) setFlipped(true);
+  }, [sealed]);
 
   // The QR encoder is only needed once a payload exists, so it is loaded lazily
   // rather than shipped in the summoning bundle.
