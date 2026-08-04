@@ -187,7 +187,13 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // Windows — so 5,902 was the Ubuntu figure with no headroom at all, and the
   // Windows leg was still red at it. Set from the HIGHER figure plus the same
   // ten-file cross-platform headroom the entries above use.
-  fileCount: 5_915,
+  // 2026-08-04 (image carousel, #4315): src/components/image-carousel.tsx and the
+  // chat-view wiring that renders it join the closure. CI measured 5,913 on Ubuntu
+  // and 5,916 on Windows — the ten-file headroom above was fully consumed and the
+  // Windows leg went one over while Ubuntu still passed, which is why only that
+  // leg was red. Set from the HIGHER figure plus the same ten-file cross-platform
+  // headroom every entry above uses.
+  fileCount: 5_926,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
