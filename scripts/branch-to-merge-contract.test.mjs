@@ -174,6 +174,18 @@ test("skill handles a managed-worktree inventory outage without forging metadata
   assert.ok(skill.includes("never hand-write lifecycle metadata onto the Bead"));
 });
 
+test("skill distinguishes a managed-worktree budget refusal from an inventory outage", () => {
+  assert.match(
+    skill,
+    /\| `worktree-lifecycle-create` budget refusal \| Rerun with the printed `--exception-\*` flags\. Do not fall back to `git worktree add` for a budget refusal\. \|/,
+    "a budget refusal must use its exception flags, while an inventory outage uses the documented fallback",
+  );
+  assert.ok(
+    skill.includes("If the command cannot build its complete lifecycle\n  inventory"),
+    "an inventory outage must retain the documented bare-worktree fallback",
+  );
+});
+
 test("skill refuses commits from the primary checkout", () => {
   assert.ok(skill.includes("git rev-parse --path-format=absolute --git-common-dir"));
   assert.ok(skill.includes('test "$root" != "$primary"'));

@@ -315,7 +315,7 @@ improvise cleanup here.
 | "the base branch policy prohibits the merge" | Generic. Check required contexts, then whether `required_conversation_resolution` was re-enabled. |
 | Push rejected — unsigned commit | Signatures are required; sign with `-S` and re-push. |
 | Worktree guard exits 2 | Live work. Investigate; bypass only with explicit maintainer authorization. |
-| `worktree-lifecycle-create` budget refusal | Rerun with the printed `--exception-*` flags. Never fall back to `git worktree add`. |
+| `worktree-lifecycle-create` budget refusal | Rerun with the printed `--exception-*` flags. Do not fall back to `git worktree add` for a budget refusal. |
 | `unknown option: --` | Drop the `--` before the flags; pnpm forwards it. |
 | Patrol reports `uncertain` | Preserve the unit and record owner + reason. |
 | Merge conflict | Resolve in the worktree, re-verify, force-push your own branch only. |
