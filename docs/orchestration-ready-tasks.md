@@ -23,9 +23,8 @@ Concretely, every task in `blocked` carries all three:
 2. A **primary blocker** — one of those unresolved dependencies, named.
 3. A **next step** — one imperative action.
 
-A task that cannot state all three is not blocked; it is unfinished. This is
-enforced on the server, on every write path, so there is no way to route around
-it — including from Enhance.
+A task that cannot state all three cannot be newly written as blocked; the write is rejected as incomplete.
+This is enforced on the server, on every write path, so there is no way to route around it — including from Enhance.
 
 ## Dependencies
 
