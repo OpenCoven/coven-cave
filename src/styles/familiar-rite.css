@@ -7,7 +7,7 @@
   align-items: center;
   padding: clamp(var(--space-6), 5vw, var(--space-10));
   min-height: 100%;
-  /* The mote canvas spans both columns and is positioned against this. */
+  /* The scry-glitch canvas spans both columns and is positioned against this. */
   position: relative;
 }
 
@@ -65,6 +65,19 @@
 }
 
 .rite__bead--done { color: var(--text-primary); }
+
+/* A held step reads as WAITING, not as broken: it keeps its accent, dimmed, and
+   breathes at the same rate as the scry rail's live pip. It stays clickable —
+   the step explains itself when you get there. */
+.rite__bead--held {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  animation: rite-held 2.4s var(--ease-standard) infinite;
+}
+
+@keyframes rite-held {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
 .rite__bead--now {
   background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
   box-shadow: inset 0 0 0 1px var(--accent-presence);
@@ -83,7 +96,98 @@
 
 .rite__aside { font-size: var(--text-base); color: var(--text-secondary); margin: 0; max-width: 42ch; }
 
-/* ── Likeness ─────────────────────────────────────────────────────────── */
+/* ── Likeness ─────────────────────────────────────────────────────────────
+   Two paths at step I. The scry is the default and takes the wider column; the
+   manual rite sits beside it as a real choice rather than a link underneath.
+   Same level, not same weight. */
+.rite__paths {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: stretch;
+}
+
+@media (max-width: 48rem) {
+  .rite__paths { grid-template-columns: minmax(0, 1fr); }
+}
+
+.rite__path {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.rite__path:hover {
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px var(--accent-presence);
+}
+
+.rite__path-label { font-size: var(--text-base); font-weight: 600; }
+.rite__path-note { font-size: var(--text-2xs); color: var(--text-muted); line-height: 1.45; }
+
+/* A manual rite says so on every step. Muted, one line, never an alert — this
+   is a mode the user is in, not a problem they have. */
+.rite__manual {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* Takes the row so the "use the scry after all" button sits beside the
+   explanation rather than orphaned under it. */
+.rite__manual-line { flex: 1 1 24rem; min-width: 0; }
+
+/* ── The held office step ─────────────────────────────────────────────────
+   Shown INSTEAD of the sigils while the scry is still reading the likeness.
+   It must read as waiting on something real — never as disabled, never as an
+   error — and it must always offer a way onward, so the seal is one click from
+   here. */
+.rite__held {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 40%, var(--border-strong));
+  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-subtle));
+}
+
+.rite__held-mark {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  color: var(--accent-presence);
+  animation: rite-held 2.4s var(--ease-standard) infinite;
+}
+
+.rite__held-line { margin: 0; font-size: var(--text-md); font-weight: 600; color: var(--text-primary); }
+.rite__held-note { margin: 0; font-size: var(--text-base); color: var(--text-secondary); max-width: 46ch; line-height: 1.5; }
+.rite__held-outs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+
 .rite__well {
   display: flex;
   flex-direction: column;
@@ -120,16 +224,28 @@
    real wall clock read as a hang. See src/components/scry-panel.tsx for which
    parts of it are observed and which one second of it is choreographed. */
 
-/* Motes are drawn on ONE canvas over the whole rite, so they can travel from
-   the artwork in the left column to the slots in the right one. Above both
-   columns, never in the way of a pointer. */
-.scry-motes {
+/* The glitch is drawn on ONE canvas over the whole rite: the card's artwork
+   tears in place in the left column and the shards it sheds travel to the slots
+   in the right one, which only works if both are the same drawing surface.
+   Above both columns, never in the way of a pointer. */
+.scry-glitch {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
   z-index: 2;
+  /* Its own compositing layer, with `isolation: isolate` on `.famcard` as the
+     other half of the pair. The card carries two blend layers (the foil screens,
+     the glare overlays); a full-viewport canvas repainting at 60 Hz on top of
+     them made the browser re-composite that blended stack every frame. MEASURED
+     on this machine at devicePixelRatio 2: 27 fps with a 33 ms median frame gap
+     — the page running at half refresh — against 55 fps and 16.7 ms with the
+     card's blend layers hidden. Either half of the pair alone recovers ~45 fps;
+     both together restore the full 55 fps / 16.7 ms, matching a page with the
+     glitch switched off entirely. The canvas drawing itself was never the cost:
+     the JS stayed at 0.6-1.1 ms a frame throughout. */
+  will-change: transform;
 }
 
 .scry {
@@ -406,15 +522,21 @@
 @media (prefers-reduced-motion: reduce) {
   .rite__stage { animation: none; }
 
-  /* Drifting particles are exactly the kind of ambient motion this setting
-     exists to switch off, so the whole canvas goes — the component also
-     refuses to start its loop, so nothing is merely hidden while still
-     burning frames. What remains still communicates stage and completion:
-     the pip rail fills, the stage line names where the scry is, the elapsed
-     readout keeps counting, and each slot still lights up when its value
-     lands (all four at once rather than staggered — see scry-panel.tsx). */
-  .scry-motes { display: none; }
+  /* Datamoshing is a strong vestibular trigger — tearing, channel separation
+     and stepped motion are close to the worst case for it — so the whole canvas
+     goes. There is no "gentle glitch" worth shipping here. The component also
+     refuses to start its loop, so nothing is merely hidden while still burning
+     frames. What remains still communicates stage and completion: the pip rail
+     fills, the stage line names where the scry is, the elapsed readout keeps
+     counting, and each slot still lights up when its value lands (all four at
+     once rather than staggered — see scry-panel.tsx). */
+  .scry-glitch { display: none; }
   .scry__pip--now { animation: none; }
+
+  /* The held step keeps its accent ring and its words; only the breathing
+     goes. Nothing about the hold is communicated by the pulse alone. */
+  .rite__bead--held,
+  .rite__held-mark { animation: none; }
   .scry-slot--landed .scry-slot__value { animation: none; }
 
   /* The placeholder keeps its identity as an unfilled slot without pulsing. */

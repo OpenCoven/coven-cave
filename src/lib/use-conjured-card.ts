@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { buildFoilPlate, extractAura, type MaskStrategy } from "@/lib/foil/browser";
+import { buildGlitchSource, type GlitchSource } from "@/lib/glitch-source";
 
 /** Working resolution for mask + plate. Large enough that the halftone reads at
  *  card size, small enough that a rebuild stays imperceptible. */
@@ -24,6 +25,15 @@ export type ConjuredCard = {
   aura: string | null;
   coverage: number;
   strategy: MaskStrategy | null;
+  /**
+   * The artwork reduced to something the scry glitch can tear apart.
+   *
+   * Built in THIS pass on purpose. `getImageData` is the expensive call on a
+   * drop and it already happens here for the foil; the glitch adds a downscale
+   * over the buffer that is already in hand rather than reading the image a
+   * second time from a canvas of its own.
+   */
+  glitch: GlitchSource | null;
   pending: boolean;
   /** Human-readable status for the stage, or null when there is nothing to say. */
   note: string | null;
@@ -31,7 +41,7 @@ export type ConjuredCard = {
 
 const EMPTY: ConjuredCard = {
   artUrl: null, plateUrl: null, aura: null,
-  coverage: 0, strategy: null, pending: false, note: null,
+  coverage: 0, strategy: null, glitch: null, pending: false, note: null,
 };
 
 export function useConjuredCard(file: File | null, theme: string): ConjuredCard {
@@ -66,6 +76,16 @@ export function useConjuredCard(file: File | null, theme: string): ConjuredCard 
         const image = ctx.getImageData(0, 0, w, h);
         const aura = extractAura(image, "#9386d0");
         const plate = buildFoilPlate({ image, theme: themeRef.current, seed: file.name });
+        // Seeded off the filename so the same likeness always tears the same
+        // way — a glitch that is different on every drop reads as randomness
+        // rather than as a property of this picture.
+        const glitch = buildGlitchSource({
+          data: image.data,
+          width: w,
+          height: h,
+          mask: plate.mask,
+          seed: hashSeed(file.name),
+        });
 
         if (cancelled) return;
         setState({
@@ -74,6 +94,7 @@ export function useConjuredCard(file: File | null, theme: string): ConjuredCard 
           aura,
           coverage: plate.coverage,
           strategy: plate.strategy,
+          glitch,
           pending: false,
           note: `Foil struck on ${(plate.coverage * 100).toFixed(1)}% of the likeness · ${
             plate.strategy.textureGate ? "bright ground, texture-gated" : "dark ground, luminance only"
@@ -94,4 +115,14 @@ export function useConjuredCard(file: File | null, theme: string): ConjuredCard 
   }, [file]);
 
   return useMemo(() => state, [state]);
+}
+
+/** FNV-1a over the filename — a stable 32-bit seed, no dependency. */
+function hashSeed(value: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
 }

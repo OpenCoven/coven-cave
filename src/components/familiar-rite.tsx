@@ -14,6 +14,21 @@
  *  · Everything after the image is skippable, so you can drop a likeness and
  *    summon immediately. A rite that requires four answers is a form in a robe.
  *
+ * **The rite is sequenced around the scry.** The scry costs 12-18 s and it is
+ * what fills the offices. While it is in flight the rite offers only the two
+ * choices the scry never touches — the vessel and the mind — and holds the
+ * office step until the likeness has actually been read. That removes the race
+ * the `touched` ref used to paper over (it is kept below as belt-and-braces),
+ * and turns the wait into work. The hold cannot deadlock: `src/lib/rite-flow.ts`
+ * opens it on done, on failure, in manual mode, and on a ceiling — and the seal
+ * stays reachable throughout, so nobody is trapped behind it.
+ *
+ * **Manual mode** is a first-class choice at step I, not a buried link: no scry
+ * fires, every step is open at once, and nothing is pre-filled or badged
+ * "scried". It is also where the rite lands when the endpoint reports
+ * `no_local_vision_harness` — a machine with no local vision harness gets a
+ * plain explanation and a working rite rather than an error banner.
+ *
  * Built beside the existing Summoning Circle rather than inside it: that
  * component's stage machine is a hand-written 0|1|2|3 union pinned by a
  * source-text regex test, so extending it in place is worse than replacing it.
@@ -22,13 +37,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FamiliarCardPreview } from "@/components/familiar-card-preview";
-import { ScryMotes } from "@/components/scry-motes";
+import { ScryGlitch } from "@/components/scry-glitch";
 import { ScryPanel } from "@/components/scry-panel";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { contextWindowForModel } from "@/lib/context-meter";
 import { FAMILIAR_TYPES, type FamiliarTypeId } from "@/lib/familiar-types";
+import {
+  OFFICE_HOLD_CEILING_MS,
+  officeStepHeld,
+  shouldFallBackToManual,
+} from "@/lib/rite-flow";
 import { SCRY_DEFAULT_PRONOUNS } from "@/lib/scry";
 import { useConjuredCard } from "@/lib/use-conjured-card";
 import { useScry } from "@/lib/use-scry";
@@ -45,6 +65,17 @@ const STEPS: Array<{ key: StepKey; numeral: string; question: string; aside: str
   { key: "office", numeral: "IV", question: "What office does it hold?", aside: "Each sigil opens a room. Take as many as fit." },
   { key: "seal", numeral: "V", question: "Strike the seal", aside: "The card becomes fixed." },
 ];
+
+const OFFICE_STEP = STEPS.findIndex((s) => s.key === "office");
+const SEAL_STEP = STEPS.length - 1;
+
+/** Why the rite is being filled in by hand. Drives one line of explanation —
+ *  the two reasons are not the same story and must not share wording. */
+type ManualReason =
+  /** The user took the skip at step I. */
+  | "chosen"
+  /** Nothing on this machine can look at an image; there was never a choice. */
+  | "no-vision";
 
 /** Vessels the rite offers. Marks are distinct per harness — the shipped circle
  *  gives every one the same terminal glyph, which tells you nothing. */
@@ -81,6 +112,10 @@ export function FamiliarRite() {
   const [model, setModel] = useState<string | null>(null);
   const [types, setTypes] = useState<FamiliarTypeId[]>([]);
   const [dragging, setDragging] = useState(false);
+  /** Null while the rite is still the default, scry-led path. */
+  const [manualReason, setManualReason] = useState<ManualReason | null>(null);
+  const manual = manualReason !== null;
+  const [waitedTooLong, setWaitedTooLong] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   // Which fields the user has taken over. A suggestion fills a field only while
   // it is still untouched — a scry that lands late must never overwrite typing.
@@ -93,8 +128,14 @@ export function FamiliarRite() {
     [name, types],
   );
   const conjure = useConjuredCard(file, theme);
-  const scry = useScry(file);
+  // Manual mode passes no file, so no request is ever made — and an in-flight
+  // one is aborted the moment the rite turns manual. "No scry fires" is
+  // enforced here, not by hiding the panel.
+  const scry = useScry(manual ? null : file);
   const scried = scry.suggestions;
+
+  /** The office step is held while the scry that fills it is still reading. */
+  const officeHeld = officeStepHeld({ manual, status: scry.status, waitedTooLong });
 
   // Suggestions, not decisions: every one of these lands in an input the user
   // can overwrite, and none of it is stored anywhere until they strike the seal.
@@ -109,10 +150,56 @@ export function FamiliarRite() {
     );
   }, [announce, scried]);
 
+  /**
+   * No local harness can look at an image. That is a property of the machine,
+   * not a failure of this scry, so retrying is pointless and an error banner is
+   * the wrong shape: the rite becomes a manual one and says why.
+   */
+  useEffect(() => {
+    if (manual) return;
+    if (!shouldFallBackToManual(scry.status, scry.errorCode)) return;
+    setManualReason("no-vision");
+    announce(
+      "No local harness here can read an image, so the rite continues by hand. Every step is open and nothing is filled in.",
+    );
+  }, [announce, manual, scry.errorCode, scry.status]);
+
+  /**
+   * The hold's own release valve. `useScry` already guarantees a terminal
+   * state, so this should never fire — which is exactly why it is here: a lock
+   * whose release depends on another module's invariant is one that will
+   * eventually not release.
+   */
+  useEffect(() => {
+    if (scry.status !== "scrying") {
+      setWaitedTooLong(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setWaitedTooLong(true), OFFICE_HOLD_CEILING_MS);
+    return () => window.clearTimeout(timer);
+  }, [scry.status]);
+
+  // Announced rather than silently swapped: the offices arriving is the whole
+  // reason the step was held, and the user is usually reading somewhere else.
+  const wasHeld = useRef(false);
+  useEffect(() => {
+    if (wasHeld.current && !officeHeld) {
+      announce("The likeness has been read. The offices are open.");
+    }
+    wasHeld.current = officeHeld;
+  }, [announce, officeHeld]);
+
+  // Read inside goTo, which must not be rebuilt on every scry frame.
+  const heldRef = useRef(officeHeld);
+  heldRef.current = officeHeld;
+
   const goTo = useCallback((next: number) => {
     const clamped = Math.max(0, Math.min(STEPS.length - 1, next));
     setStep(clamped);
-    announce(`Rite ${STEPS[clamped].numeral}. ${STEPS[clamped].question}`);
+    const waiting = clamped === OFFICE_STEP && heldRef.current
+      ? " The likeness is still being read; these arrive with it."
+      : "";
+    announce(`Rite ${STEPS[clamped].numeral}. ${STEPS[clamped].question}${waiting}`);
   }, [announce]);
 
   /** Picking advances. This is the single rule that keeps it from reading as a
@@ -130,6 +217,22 @@ export function FamiliarRite() {
     if (!name) setName(suggestName(f.name));
     window.setTimeout(() => goTo(1), 420);
   }, [goTo, name]);
+
+  /** The skip at step I: a rite with no scry at all. Offered beside the drop
+   *  well as its own choice, because "I'll do this myself" is a decision, not a
+   *  fallback — but the scry stays the default path and the larger target. */
+  const chooseManual = useCallback(() => {
+    setManualReason("chosen");
+    announce("A manual rite. Nothing is read from a likeness; every step is open.");
+    goTo(1);
+  }, [announce, goTo]);
+
+  /** Only ever offered for a manual mode the user chose — a machine with no
+   *  vision harness has nothing to go back to. */
+  const resumeScry = useCallback(() => {
+    setManualReason(null);
+    announce("The scry is on again. A likeness will be read when one is dropped.");
+  }, [announce]);
 
   // Paste support. A likeness usually lives on the clipboard, not on disk, and
   // making people save it to a file first is the most form-like step of all.
@@ -154,19 +257,31 @@ export function FamiliarRite() {
   }, [goTo, step]);
 
   const current = STEPS[step];
+  // A held step must not describe choices it is not offering yet.
+  const asideLine = current.key === "office" && officeHeld
+    ? "They arrive with the scry, which is still reading the likeness."
+    : current.aside;
   const roleLabel = types.length
     ? FAMILIAR_TYPES.find((t) => t.id === types[0])?.label ?? ""
     : "";
 
   return (
     <div className="rite">
-      {/* Motes lift off the artwork on the left and land in the slots on the
-          right. It draws across BOTH columns, so it hangs off the grid root
-          rather than either column, and it never intercepts a pointer. Reduced
-          motion is handled inside: the canvas simply never starts. */}
-      <ScryMotes
-        active={scry.status === "scrying"}
-        sourceSelector=".rite .famcard"
+      {/* The likeness comes apart while it is being read: the card's own pixels
+          tear on the left and travel to the slots on the right as shards. It
+          draws across BOTH columns, so it hangs off the grid root rather than
+          either column, and it never intercepts a pointer.
+
+          `quietSelector` is what keeps the card readable — those rects are
+          punched out of the canvas clip every frame, so the name and the stat
+          plate cannot be torn no matter how hard the rest of it is glitching.
+          Reduced motion is handled inside: the canvas simply never starts. */}
+      <ScryGlitch
+        status={scry.status}
+        stage={scry.stage}
+        source={conjure.glitch}
+        artSelector=".rite .famcard__art"
+        quietSelector=".rite .famcard__head, .rite .famcard__plate"
         targetSelector=".rite [data-scry-slot]"
       />
       <div className="rite__stage">
@@ -191,48 +306,87 @@ export function FamiliarRite() {
 
       <div className="rite__ask">
         <ol className="rite__track" aria-label="Rite progress">
-          {STEPS.map((s, i) => (
-            <li key={s.key}>
-              <button
-                type="button"
-                className={`rite__bead focus-ring${i === step ? " rite__bead--now" : ""}${i < step ? " rite__bead--done" : ""}`}
-                onClick={() => goTo(i)}
-                aria-current={i === step}
-                aria-label={`Rite ${s.numeral}. ${s.question}`}
-              >
-                {s.numeral}
-              </button>
-            </li>
-          ))}
+          {STEPS.map((s, i) => {
+            // A held bead is still navigable — the step explains itself when you
+            // get there, which is far better than a dead control that doesn't.
+            const held = i === OFFICE_STEP && officeHeld;
+            return (
+              <li key={s.key}>
+                <button
+                  type="button"
+                  className={`rite__bead focus-ring${i === step ? " rite__bead--now" : ""}${i < step ? " rite__bead--done" : ""}${held ? " rite__bead--held" : ""}`}
+                  onClick={() => goTo(i)}
+                  aria-current={i === step}
+                  aria-label={`Rite ${s.numeral}. ${s.question}${held ? " Waiting on the scry." : ""}`}
+                >
+                  {s.numeral}
+                </button>
+              </li>
+            );
+          })}
         </ol>
 
         <h2 className="rite__question">{current.question}</h2>
-        <p className="rite__aside">{current.aside}</p>
+        <p className="rite__aside">{asideLine}</p>
 
         {current.key === "likeness" ? (
-          <div
-            className={`rite__well${dragging ? " rite__well--live" : ""}`}
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => { e.preventDefault(); setDragging(false); takeFile(e.dataTransfer.files?.[0] ?? null); }}
-          >
-            <Icon name="ph:image-bold" width={28} height={28} aria-hidden />
-            <p className="rite__well-line">Drop it here, or press <kbd>⌘V</kbd></p>
-            <Button variant="secondary" size="sm" leadingIcon="ph:camera" onClick={() => inputRef.current?.click()}>
-              Choose a file
-            </Button>
-            <input
-              ref={inputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="rite__file"
-              onChange={(e) => takeFile(e.target.files?.[0] ?? null)}
-            />
+          /* Two paths, side by side. The scry is the default and keeps the
+             larger target; the manual rite sits beside it as its own choice
+             rather than as a link hidden under the well, because "I'll fill
+             this in myself" is a decision about how the rite runs. */
+          <div className="rite__paths">
+            <div
+              className={`rite__well${dragging ? " rite__well--live" : ""}`}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => { e.preventDefault(); setDragging(false); takeFile(e.dataTransfer.files?.[0] ?? null); }}
+            >
+              <Icon name="ph:image-bold" width={28} height={28} aria-hidden />
+              <p className="rite__well-line">Drop it here, or press <kbd>⌘V</kbd></p>
+              <Button variant="secondary" size="sm" leadingIcon="ph:camera" onClick={() => inputRef.current?.click()}>
+                Choose a file
+              </Button>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="rite__file"
+                onChange={(e) => takeFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
+
+            {manual ? null : (
+              <button type="button" className="rite__path focus-ring" onClick={chooseManual}>
+                <Icon name="ph:pen-nib-bold" width={22} height={22} aria-hidden />
+                <span className="rite__path-label">Summon without a scry</span>
+                <span className="rite__path-note">
+                  No likeness is read. Every step opens at once and nothing is
+                  guessed for you.
+                </span>
+              </button>
+            )}
           </div>
         ) : null}
 
-        {/* The scry runs in the background from the moment the image lands, and
-            is never a gate: the rite advances without waiting, and a scry that
+        {/* A manual rite says so on every step — otherwise the absence of the
+            scry panel is the only signal, and an absence explains nothing. */}
+        {manual ? (
+          <p className="rite__manual">
+            <span className="rite__manual-line">
+              {manualReason === "no-vision"
+                ? "No local harness here can look at an image — scrying needs a local runtime such as Codex or Claude Code. The rite carries on by hand: every step is open, and nothing has been filled in."
+                : "A manual rite. Nothing is read from a likeness, so every step is open and nothing is filled in."}
+            </span>
+            {manualReason === "chosen" ? (
+              <Button variant="ghost" size="xs" onClick={resumeScry}>Use the scry after all</Button>
+            ) : null}
+          </p>
+        ) : null}
+
+        {/* The scry runs in the background from the moment the image lands. It
+            no longer races the office step — that step is held until this lands
+            (see rite-flow) — but it is still never a gate: the vessel and the
+            mind are open throughout, the seal is reachable, and a scry that
             fails costs nothing but empty fields. The panel stays put across
             every step so the four slots are visible from the drop onward — the
             point is seeing WHAT is being extracted before any of it arrives. */}
@@ -288,7 +442,33 @@ export function FamiliarRite() {
           </div>
         ) : null}
 
-        {current.key === "office" ? (
+        {/* Held, not disabled. The sigils are the one thing the scry writes, so
+            offering them mid-flight is offering a choice about to be overruled.
+            What the user gets instead is the reason, the two choices the scry
+            never touches, and a way through to the seal — never a dead end. */}
+        {current.key === "office" && officeHeld ? (
+          <div className="rite__held">
+            <span className="rite__held-mark" aria-hidden>
+              <Icon name="ph:hourglass" width={20} height={20} />
+            </span>
+            <p className="rite__held-line">The likeness is still being read.</p>
+            <p className="rite__held-note">
+              {scry.harnessLabel ? `${scry.harnessLabel} is looking at it now, and the` : "The"} offices
+              arrive with what it finds — so they are not yours to pick yet. The vessel and the
+              mind are: the scry never touches either.
+            </p>
+            <div className="rite__held-outs">
+              <Button variant="secondary" size="sm" onClick={() => goTo(1)}>
+                Choose the vessel meanwhile
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => goTo(SEAL_STEP)}>
+                Skip to the seal
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {current.key === "office" && !officeHeld ? (
           <>
             <div className="rite__sigils" role="group" aria-label="Offices">
               {FAMILIAR_TYPES.filter((t) => t.id !== "general").map((t) => {

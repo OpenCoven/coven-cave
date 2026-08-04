@@ -70,6 +70,8 @@ export const SUITES = {
     "src/lib/familiar-types.test.ts",
     "src/lib/scry.test.ts",
     "src/lib/scry-stream.test.ts",
+    "src/lib/rite-flow.test.ts",
+    "src/lib/glitch-source.test.ts",
     "src/lib/server/harness-report-cache.test.ts",
     "src/lib/foil/plate.test.ts",
     "src/lib/research-missions.test.ts",

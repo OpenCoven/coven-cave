@@ -154,6 +154,17 @@ export type FoilPlateOutput = {
   dataUrl: string;
   coverage: number;
   strategy: MaskStrategy;
+  /**
+   * The specular mask this plate was cut from, one byte per source pixel.
+   *
+   * Returned rather than recomputed because a second consumer exists: the scry
+   * glitch lifts its shards preferentially from the reflective regions
+   * (`glitch-source.ts`). Handing back the mask keeps that a reuse of this
+   * pipeline instead of a second, subtly different one — and `extractSpecularMask`
+   * is the most expensive step here, so running it twice per drop is the one
+   * cost worth avoiding.
+   */
+  mask: Uint8ClampedArray;
 };
 
 /**
@@ -209,6 +220,7 @@ export function buildFoilPlate(input: FoilPlateInput): FoilPlateOutput {
     dataUrl: canvas.toDataURL("image/png"),
     coverage: lit / (W * H),
     strategy,
+    mask,
   };
 }
 
