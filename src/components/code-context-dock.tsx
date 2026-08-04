@@ -3,7 +3,7 @@
 /**
  * CodeContextDock — the Coding Room's right zone (cave-98o51).
  *
- * Changes, Files, Pull request, Inspector, GitHub context and Browser, docked
+ * Changes, Files, Pull request, Inspector and Browser, docked
  * BESIDE the terminal center rather than replacing it. Every tab reuses its
  * proven implementation; the dock only owns which one is showing and how much
  * room it takes.
@@ -102,7 +102,12 @@ export function CodeContextDock({
               key={id}
               type="button"
               role="tab"
-              aria-selected={!collapsed && tab === id}
+              // aria-selected tracks the active tab even while collapsed.
+              // Forcing it false left the tablist with NO selected tab, so a
+              // screen reader lost the current position entirely; "the panel
+              // is hidden" is carried by the collapse control's aria-expanded,
+              // which is the state that actually changed.
+              aria-selected={tab === id}
               className="focus-ring code-context-dock__tab"
               data-selected={!collapsed && tab === id ? "true" : undefined}
               onClick={() => {
@@ -137,7 +142,11 @@ export function CodeContextDock({
             type="button"
             className="focus-ring code-context-dock__action"
             aria-label={collapsed ? "Show context" : "Collapse context"}
-            aria-pressed={collapsed}
+            // aria-expanded, not aria-pressed: this reveals and hides the dock
+            // body, so it is a disclosure. It is also what now carries the
+            // collapsed state, since the tabs keep their real selection.
+            aria-expanded={!collapsed}
+            aria-controls={`code-context-dock-body-${row.id}`}
             title={collapsed ? "Show context" : "Collapse context"}
             onClick={() => onSizeChange(collapsed ? "normal" : "collapsed")}
           >
@@ -146,7 +155,7 @@ export function CodeContextDock({
         </div>
       </div>
       {collapsed ? null : (
-        <div className="code-context-dock__body">
+        <div className="code-context-dock__body" id={`code-context-dock-body-${row.id}`}>
           {tab === "changes" ? (
             // Keyed by work root: the panel's file/diff/checkpoint state is
             // per-repo, and switching sessions must never show stale rows.

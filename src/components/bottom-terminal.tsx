@@ -284,6 +284,22 @@ export function BottomTerminal({
     ctrlStickyRef.current = false;
     setCtrlActive(false);
   };
+  // Sticky Ctrl (mobile key bar): fold the next single character into its C0
+  // control code (Ctrl-C, Ctrl-A, …), then drop back to normal input.
+  //
+  // Shared by BOTH transports on purpose. This used to live inline in the
+  // Tauri desktop handler only, which meant the key bar — a touch affordance —
+  // did nothing on the WS bridge, the transport iOS, Android and the browser
+  // actually use: Ctrl-C sent a literal "c". Folding once here also keeps the
+  // `onUserInput` contract honest, since broadcast must mirror the folded
+  // bytes so a sibling pane receives Ctrl-C as Ctrl-C.
+  const foldStickyCtrlRef = useRef<(data: string) => string>((data) => data);
+  foldStickyCtrlRef.current = (data: string) => {
+    if (!ctrlStickyRef.current || data.length !== 1) return data;
+    const code = data.toUpperCase().charCodeAt(0);
+    clearCtrlRef.current();
+    return code >= 0x40 && code <= 0x5f ? String.fromCharCode(code & 0x1f) : data;
+  };
   const sendKey = useCallback((seq: string) => {
     const term = termRef.current;
     if (!term) return;
@@ -551,14 +567,7 @@ export function BottomTerminal({
       sendToPtyRef.current = writeToPty;
       const onDataDispose = term.onData((data) => {
         if (stopped) return;
-        let out = data;
-        // Sticky Ctrl (mobile key bar): fold the next single character into its
-        // C0 control code (Ctrl-C, Ctrl-A, …), then drop back to normal input.
-        if (ctrlStickyRef.current && data.length === 1) {
-          const code = data.toUpperCase().charCodeAt(0);
-          if (code >= 0x40 && code <= 0x5f) out = String.fromCharCode(code & 0x1f);
-          clearCtrlRef.current();
-        }
+        const out = foldStickyCtrlRef.current(data);
         writeToPty(out);
         // Broadcast mirrors the FOLDED bytes, so a Ctrl-C typed on the mobile
         // key bar reaches sibling panes as a Ctrl-C rather than a literal "c".
@@ -781,8 +790,11 @@ export function BottomTerminal({
       };
       sendToPtyRef.current = writeToPty;
       const onDataDispose = term.onData((data) => {
-        writeToPty(data);
-        onUserInputRef.current?.(data);
+        // The key bar's sticky Ctrl folds here too — this is the transport
+        // iOS, Android and the browser use, which is where that bar lives.
+        const out = foldStickyCtrlRef.current(data);
+        writeToPty(out);
+        onUserInputRef.current?.(out);
       });
 
       const resizer = makeResizer(term, fit, () => visibleRef.current, (cols, rows) => {

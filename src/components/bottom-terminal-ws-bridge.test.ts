@@ -103,3 +103,24 @@ assert.match(
 );
 assert.match(src, /removeEventListener\("visibilitychange", onForeground\)/, "foreground listeners are torn down on cleanup");
 console.log("bottom-terminal iOS-resume assertions: ok");
+
+// ── Sticky Ctrl reaches the WS bridge (the mobile key bar's only transport) ──
+// The fold used to live inline in the Tauri desktop handler alone, so the key
+// bar — a touch affordance — did nothing on browser/iOS/Android, where the WS
+// bridge is the transport: Ctrl-C sent a literal "c". One shared helper now
+// serves both, so pin that neither path folds on its own again.
+assert.match(
+  src,
+  /const foldStickyCtrlRef = useRef<\(data: string\) => string>/,
+  "sticky-Ctrl folding is a single shared helper, not per-transport",
+);
+assert.equal(
+  (src.match(/foldStickyCtrlRef\.current\(data\)/g) ?? []).length,
+  2,
+  "BOTH transports fold sticky Ctrl — desktop IPC and the WS bridge",
+);
+assert.doesNotMatch(
+  src,
+  /if \(ctrlStickyRef\.current && data\.length === 1\)/,
+  "no transport re-implements the fold inline",
+);

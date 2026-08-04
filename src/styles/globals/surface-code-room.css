@@ -3,9 +3,11 @@
    chrome, focus treatment, and the dock's collapsed / normal / expanded
    sizes. Semantic tokens only — every palette and mode combination must hold.
 
-   Focus and selection are never signalled by colour alone: a focused terminal
-   pane carries a border weight change plus an explicit "Focused" chip, and a
-   selected dock tab carries a filled background plus aria-selected. */
+   Focus and selection are never signalled by colour alone. A focused terminal
+   pane tints its border (width stays 1px — the tint is the colour channel),
+   and the non-colour channels are an explicit "Focused" chip in the pane bar
+   plus aria-current on the pane itself. A selected dock tab carries a filled
+   background plus aria-selected. */
 
 /* ── Room split: terminal center | context dock ── */
 .code-room__group {
