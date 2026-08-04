@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FamiliarGlyph } from "./familiar-glyph";
+import { FamiliarCardTrigger } from "./familiar-card-trigger";
 import { AvatarLightbox } from "./ui/avatar-lightbox";
 import { useAuthedImageState } from "@/lib/authed-image";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -20,9 +21,19 @@ type Props = {
   /** Footer actions inside the expanded preview (e.g. an "Edit" link) —
    *  forwarded to AvatarLightbox. Only meaningful with `expandable`. */
   expandFooterActions?: ReactNode;
+  /**
+   * On a familiar's own profile, opening the avatar opens the familiar's CARD
+   * rather than the generic picture lightbox — the portrait is the card's art,
+   * so the card is strictly the richer view of the same image. Everywhere else
+   * `expandable` keeps the shared lightbox gesture unchanged.
+   *
+   * Wins over `expandable` when both are set. Falls back to the lightbox if the
+   * glyph is showing, because there is no portrait to make a card out of.
+   */
+  asCard?: boolean;
 };
 
-export function FamiliarAvatar({ familiar, size = "md", className, title, expandable, expandFooterActions }: Props) {
+export function FamiliarAvatar({ familiar, size = "md", className, title, expandable, expandFooterActions, asCard }: Props) {
   const px = PX[size];
   // Prefer the avatar image over the glyph, and try EVERY available image source
   // before ever falling back to the glyph. The glyph is the last resort — it
@@ -77,6 +88,10 @@ export function FamiliarAvatar({ familiar, size = "md", className, title, expand
       title={title}
     />
   );
+
+  if (asCard && hasImage && resolvedSrc) {
+    return <FamiliarCardTrigger familiar={familiar}>{imgEl}</FamiliarCardTrigger>;
+  }
 
   if (expandable && hasImage && resolvedSrc) {
     return (

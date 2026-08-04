@@ -19,6 +19,7 @@ import {
   inventoryProvenanceLabel,
   useRuntimeModelInventory,
 } from "@/lib/use-runtime-model-options";
+import { clearFamiliarFoil } from "@/lib/cave-familiar-foil";
 import { setFamiliarOverride } from "@/lib/cave-familiar-overrides";
 import { clearSummoningDraft, readSummoningDraft, saveSummoningDraft } from "@/lib/summoning-draft";
 import { setGlyphOverride } from "@/lib/cave-glyph-overrides";
@@ -1596,6 +1597,9 @@ function EnhancementRite({
           body: avatarFile,
         });
         if (!res.ok) throw new Error(`Portrait upload failed (HTTP ${res.status}).`);
+        // A new portrait retires the card's foil plate — it was cut from the
+        // old one's pixels. The next card opened rebuilds it.
+        void clearFamiliarFoil(familiar.id);
       }
       if (mindDirty) {
         const res = await fetch("/api/config", {

@@ -59,6 +59,7 @@ import { ScryPanel } from "@/components/scry-panel";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { setFamiliarFoil } from "@/lib/cave-familiar-foil";
 import { setFamiliarOverride } from "@/lib/cave-familiar-overrides";
 import { contextWindowForModel } from "@/lib/context-meter";
 import { FAMILIAR_TYPES, type FamiliarTypeId } from "@/lib/familiar-types";
@@ -407,6 +408,18 @@ export function FamiliarRite({
           headers: { "content-type": file.type || "application/octet-stream" },
           body: file,
         });
+      } catch {
+        /* non-blocking */
+      }
+      // The foil plate the rite already struck, kept so that opening this
+      // familiar's card later RE-READS it rather than re-cutting it. It is
+      // stored without a source key: the daemon has not yet told anyone what
+      // the new avatar's URL will be, and the first card to read this plate
+      // stamps it (see cave-familiar-foil.ts).
+      try {
+        if (conjure.plateUrl) {
+          await setFamiliarFoil(newId, { dataUrl: conjure.plateUrl });
+        }
       } catch {
         /* non-blocking */
       }

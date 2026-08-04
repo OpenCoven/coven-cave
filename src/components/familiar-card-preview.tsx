@@ -45,6 +45,72 @@ const HARNESS_FRAME: Record<string, string> = {
  */
 const OFFICE_CYCLE_MS = 3_600;
 
+/**
+ * Spin: how far the pointer has to travel before a press stops being a click.
+ *
+ * The card already had one gesture on it — press to flip — and spin has to
+ * share the same pointer without either one guessing. A press is a FLIP until
+ * it moves this far; past it the press is a spin and the click that follows is
+ * swallowed. Six pixels is above hand tremor and well under any deliberate
+ * drag, so neither gesture ever fires when the other was meant.
+ */
+const SPIN_SLOP_PX = 6;
+
+/** Degrees of rotation per pixel dragged. Tuned so a drag across the card's own
+ *  width turns it most of the way round — the card follows the hand rather than
+ *  being a slider that happens to rotate. */
+const SPIN_DEG_PER_PX = 0.55;
+
+/**
+ * Release physics: a damped spring back to face-on.
+ *
+ * Not a CSS transition, because a throw has to be able to carry the card PAST
+ * a half-turn and settle from the other side; a transition can only interpolate
+ * to the target the shortest way and would visibly rewind. Per frame:
+ * velocity gains −k·angle, loses (1−damping), and is added to the angle.
+ */
+const SPIN_STIFFNESS = 0.055;
+const SPIN_DAMPING = 0.9;
+/** Below this (deg, deg/step) the spring is at rest and the loop stops. */
+const SPIN_REST_DEG = 0.08;
+/** One integration step — 60Hz, so the constants above read as "per frame" on
+ *  the reference display while the spring stays clock-driven. */
+const SPIN_STEP_MS = 1000 / 60;
+/** Never integrate more than this per frame: after a long stall (a backgrounded
+ *  window) catching up in one go would fling the card rather than resume it. */
+const SPIN_MAX_STEPS_PER_FRAME = 6;
+
+/** Ceiling on release velocity, in degrees per frame. A flick on a trackpad can
+ *  report an absurd instantaneous speed; without this the card becomes a blur
+ *  that takes seconds to settle, which reads as a bug rather than a throw. */
+const SPIN_MAX_VELOCITY = 34;
+
+const clampSpin = (v: number) =>
+  Math.max(-SPIN_MAX_VELOCITY, Math.min(SPIN_MAX_VELOCITY, Number.isFinite(v) ? v : 0));
+
+/** Keyboard parity for the spin: an impulse, not a fixed angle, so the card
+ *  behaves the same whether it was thrown by hand or by key. */
+const KEY_SPIN: Record<string, { x: number; y: number }> = {
+  ArrowLeft: { x: 0, y: -10 },
+  ArrowRight: { x: 0, y: 10 },
+  ArrowUp: { x: 10, y: 0 },
+  ArrowDown: { x: -10, y: 0 },
+};
+
+type DragState = {
+  pointerId: number;
+  originX: number;
+  originY: number;
+  /** Spin the card already carried when the press started. */
+  fromX: number;
+  fromY: number;
+  lastX: number;
+  lastY: number;
+  lastAt: number;
+  velX: number;
+  velY: number;
+  travelled: boolean;
+};
 
 export type FamiliarCardPreviewProps = {
   name: string;
@@ -83,6 +149,22 @@ export type FamiliarCardPreviewProps = {
    * card.
    */
   sealed?: boolean;
+  /**
+   * Let the card be spun by dragging it.
+   *
+   * Opt-in rather than always-on: the rite's card sits inside a stepped flow
+   * where a stray drag across it should do nothing, while a card opened
+   * fullscreen is the only thing on screen and picking it up is the point.
+   *
+   * The split with the gestures already here is deliberate — drag spins, a
+   * press that does not travel still flips, hover still drives the foil. Under
+   * `prefers-reduced-motion: reduce` the spin is not offered at all (no drag
+   * rotation, no release momentum); the card is still fully viewable and still
+   * flips by press or key, because flipping is a state change, not motion.
+   */
+  spinnable?: boolean;
+  /** Extra class on the card's slot — lets a host size the card. */
+  slotClassName?: string;
 };
 
 type QrMatrix = { size: number; rows: string[] };
@@ -90,6 +172,7 @@ type QrMatrix = { size: number; rows: string[] };
 export function FamiliarCardPreview({
   name, role, description, harness, vesselLabel, model,
   typeIds, artUrl, plateUrl, aura, sealUrl, scrying, sealed,
+  spinnable, slotClassName,
 }: FamiliarCardPreviewProps) {
   const cardRef = useRef<HTMLButtonElement | null>(null);
   const sealRef = useRef<HTMLCanvasElement | null>(null);
@@ -145,6 +228,44 @@ export function FamiliarCardPreview({
     return () => window.clearInterval(timer);
   }, [cycling, offices.length]);
 
+  /**
+   * The card's rotation has three independent contributors and they must be
+   * composed, never overwritten: the FLIP (a half turn of state), the HOVER
+   * tilt (follows the pointer, returns to zero when it leaves), and the SPIN
+   * (dragged, then sprung back). Each writes only its own ref and asks for a
+   * repaint, so a spin in flight survives a flip and a hover tilt does not
+   * cancel a spin mid-throw.
+   */
+  const hoverTiltRef = useRef({ x: 0, y: 0 });
+  const spinRef = useRef({ x: 0, y: 0 });
+  const springRef = useRef<number | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  /** A press that travelled is a spin, so the click it ends with is not a flip. */
+  const swallowClickRef = useRef(false);
+
+  const paintTransform = useCallback(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const spin = spinRef.current;
+    const hover = hoverTiltRef.current;
+    const turn = (flipped ? 180 : 0) + hover.y + spin.y;
+    el.style.setProperty("--tilt-x", `${(hover.x + spin.x).toFixed(2)}deg`);
+    el.style.setProperty("--tilt-y", `${turn.toFixed(2)}deg`);
+
+    // Which face is actually pointing at the viewer.
+    //
+    // The card carries no `backface-visibility` — the blend layers inside each
+    // face flatten the 3D context and the browser's own culling gets it wrong,
+    // so which face shows is decided explicitly (see familiar-card.css). The
+    // FLIP alone used to decide it, which was true while 180 degrees was the
+    // only rotation there was. A spin can leave the card at any angle, and past
+    // edge-on the front was still being painted — mirrored, with its own text
+    // backwards. So the answer is recomputed from the real angle instead.
+    const facing = (((turn % 360) + 360) % 360);
+    const showsBack = facing > 90 && facing < 270;
+    el.classList.toggle("famcard--reversed", showsBack !== flipped);
+  }, [flipped]);
+
   const setVars = useCallback((x: number, y: number, glow: number) => {
     const el = cardRef.current;
     if (!el) return;
@@ -155,11 +276,9 @@ export function FamiliarCardPreview({
     el.style.setProperty("--fx", ((x - 50) * 2.6).toFixed(1));
     el.style.setProperty("--fy", ((y - 50) * 2.6).toFixed(1));
     el.style.setProperty("--glow", String(glow));
-    const rx = (0.5 - y / 100) * 22;
-    const ry = (x / 100 - 0.5) * 22;
-    el.style.setProperty("--tilt-x", `${rx.toFixed(2)}deg`);
-    el.style.setProperty("--tilt-y", `${(flipped ? 180 + ry : ry).toFixed(2)}deg`);
-  }, [flipped]);
+    hoverTiltRef.current = { x: (0.5 - y / 100) * 22, y: (x / 100 - 0.5) * 22 };
+    paintTransform();
+  }, [paintTransform]);
 
   const rest = useCallback(() => {
     const el = cardRef.current;
@@ -170,11 +289,141 @@ export function FamiliarCardPreview({
     el.style.setProperty("--fx", "0");
     el.style.setProperty("--fy", "0");
     el.style.setProperty("--glow", "0");
-    el.style.setProperty("--tilt-x", "0deg");
-    el.style.setProperty("--tilt-y", flipped ? "180deg" : "0deg");
-  }, [flipped]);
+    hoverTiltRef.current = { x: 0, y: 0 };
+    paintTransform();
+  }, [paintTransform]);
 
   useEffect(() => { rest(); }, [rest]);
+
+  // ── Spin ────────────────────────────────────────────────────────────────
+  //
+  // Two switches, not one, and the distinction matters.
+  //
+  // `dragArmed` is the GESTURE: a press that travels is a drag rather than a
+  // click, and that is true whether or not the user wants motion. It stays on
+  // under reduced motion so the split is identical in both modes — otherwise a
+  // drag across the card would land as a click and flip it, which is a gesture
+  // nobody made.
+  //
+  // `spinning` is the MOTION: rotation under the hand, and the spring after it.
+  // That is what reduced motion removes. The card is still fully readable and
+  // still flips, because a flip is a change of state rather than an animation
+  // (familiar-card.css already strips its transition).
+  const dragArmed = Boolean(spinnable);
+  const spinning = dragArmed && !reducedMotion;
+
+  const stopSpring = useCallback(() => {
+    if (springRef.current !== null) cancelAnimationFrame(springRef.current);
+    springRef.current = null;
+  }, []);
+
+  const releaseSpin = useCallback((vx: number, vy: number) => {
+    stopSpring();
+    // JS owns the angle for the duration, so the face swap must be immediate —
+    // the 190ms visibility delay exists to land the FLIP's swap edge-on and
+    // would lag a spin by a fifth of a second.
+    cardRef.current?.classList.add("famcard--turning");
+    let velX = clampSpin(vx);
+    let velY = clampSpin(vy);
+    let previous = 0;
+    let carry = 0;
+    const step = (now: number) => {
+      // The spring integrates in FIXED steps against the clock, not once per
+      // animation frame. Tying it to frames makes the same throw settle in one
+      // second on a 120Hz display and in three on a throttled one — measured:
+      // a card thrown in headless Chromium was still 12 degrees out after three
+      // seconds because the frame rate was about 35Hz.
+      const elapsed = previous ? Math.min(120, now - previous) : SPIN_STEP_MS;
+      previous = now;
+      carry += elapsed;
+      let steps = 0;
+      while (carry >= SPIN_STEP_MS && steps < SPIN_MAX_STEPS_PER_FRAME) {
+        carry -= SPIN_STEP_MS;
+        steps++;
+        const spin = spinRef.current;
+        velX = (velX - SPIN_STIFFNESS * spin.x) * SPIN_DAMPING;
+        velY = (velY - SPIN_STIFFNESS * spin.y) * SPIN_DAMPING;
+        spin.x += velX;
+        spin.y += velY;
+      }
+      carry = Math.min(carry, SPIN_STEP_MS);
+      const spin = spinRef.current;
+      const settled =
+        Math.abs(spin.x) < SPIN_REST_DEG && Math.abs(velX) < SPIN_REST_DEG &&
+        Math.abs(spin.y) < SPIN_REST_DEG && Math.abs(velY) < SPIN_REST_DEG;
+      if (settled) {
+        spinRef.current = { x: 0, y: 0 };
+        springRef.current = null;
+        paintTransform();
+        cardRef.current?.classList.remove("famcard--turning");
+        return;
+      }
+      paintTransform();
+      springRef.current = requestAnimationFrame(step);
+    };
+    springRef.current = requestAnimationFrame(step);
+  }, [paintTransform, stopSpring]);
+
+  // A card unmounted mid-throw must not keep a frame loop alive.
+  useEffect(() => stopSpring, [stopSpring]);
+
+  // Turning spin off (reduced motion switched on while the card is open) must
+  // put the card back face-on rather than freeze it wherever it was left.
+  useEffect(() => {
+    if (spinning) return;
+    stopSpring();
+    spinRef.current = { x: 0, y: 0 };
+    paintTransform();
+  }, [spinning, stopSpring, paintTransform]);
+
+  const handleDown = (ev: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragArmed || ev.button !== 0) return;
+    const el = cardRef.current;
+    if (!el) return;
+    stopSpring();
+    el.setPointerCapture?.(ev.pointerId);
+    dragRef.current = {
+      pointerId: ev.pointerId,
+      originX: ev.clientX, originY: ev.clientY,
+      fromX: spinRef.current.x, fromY: spinRef.current.y,
+      lastX: ev.clientX, lastY: ev.clientY, lastAt: ev.timeStamp,
+      velX: 0, velY: 0, travelled: false,
+    };
+  };
+
+  const handleUp = (ev: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    dragRef.current = null;
+    cardRef.current?.releasePointerCapture?.(drag.pointerId);
+    cardRef.current?.classList.remove("famcard--live");
+    if (!drag.travelled || !spinning) {
+      cardRef.current?.classList.remove("famcard--turning");
+    }
+    if (!drag.travelled) return;
+    // The press became a drag, so the click that follows is not a flip.
+    swallowClickRef.current = true;
+    if (spinning) releaseSpin(drag.velX, drag.velY);
+    ev.preventDefault();
+  };
+
+  const handleKey = (ev: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!spinning) return;
+    const impulse = KEY_SPIN[ev.key];
+    if (!impulse) return;
+    // Spin has to be reachable without a pointer, or it is a feature only a
+    // mouse user has. Enter/Space stay the flip, untouched.
+    ev.preventDefault();
+    releaseSpin(impulse.x, impulse.y);
+  };
+
+  const handleClick = () => {
+    if (swallowClickRef.current) {
+      swallowClickRef.current = false;
+      return;
+    }
+    setFlipped((v) => !v);
+  };
 
   // Struck once, not held: this fires on the transition into `sealed`, so a
   // user who turns the card back to the portrait keeps it that way.
@@ -214,9 +463,40 @@ export function FamiliarCardPreview({
   }, [qr]);
 
   const handleMove = (ev: React.PointerEvent<HTMLButtonElement>) => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const el = cardRef.current;
     if (!el) return;
+
+    // A drag in progress owns the pointer: the card turns with the hand and the
+    // hover tilt stays out of it, or the two would fight over the same axes.
+    // Deliberately ABOVE the reduced-motion guard — recognising the gesture is
+    // not motion, and under reduced motion this branch still runs so the press
+    // is not mistaken for a click; it simply never rotates anything.
+    const drag = dragRef.current;
+    if (drag) {
+      const dx = ev.clientX - drag.originX;
+      const dy = ev.clientY - drag.originY;
+      if (!drag.travelled && Math.hypot(dx, dy) < SPIN_SLOP_PX) return;
+      drag.travelled = true;
+      if (!spinning) return;
+      spinRef.current = {
+        x: drag.fromX - dy * SPIN_DEG_PER_PX,
+        y: drag.fromY + dx * SPIN_DEG_PER_PX,
+      };
+      // Velocity in degrees per 60Hz frame, from the last sample rather than
+      // the whole gesture — a throw is what the hand was doing at RELEASE.
+      const dt = Math.max(1, ev.timeStamp - drag.lastAt);
+      drag.velY = ((ev.clientX - drag.lastX) * SPIN_DEG_PER_PX * 16) / dt;
+      drag.velX = (-(ev.clientY - drag.lastY) * SPIN_DEG_PER_PX * 16) / dt;
+      drag.lastX = ev.clientX;
+      drag.lastY = ev.clientY;
+      drag.lastAt = ev.timeStamp;
+      el.classList.add("famcard--live", "famcard--turning");
+      paintTransform();
+      return;
+    }
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
     const r = el.getBoundingClientRect();
     const x = Math.max(0, Math.min(100, ((ev.clientX - r.left) / r.width) * 100));
     const y = Math.max(0, Math.min(100, ((ev.clientY - r.top) / r.height) * 100));
@@ -231,19 +511,23 @@ export function FamiliarCardPreview({
   } as React.CSSProperties;
 
   return (
-    <div className="famcard-slot">
+    <div className={`famcard-slot${slotClassName ? ` ${slotClassName}` : ""}`}>
       <button
         ref={cardRef}
         type="button"
-        className={`famcard focus-ring${flipped ? " famcard--flipped" : ""}${scrying ? " famcard--scrying" : ""}`}
+        className={`famcard focus-ring${flipped ? " famcard--flipped" : ""}${scrying ? " famcard--scrying" : ""}${spinning ? " famcard--spinnable" : ""}`}
         style={styleVars}
         onPointerMove={handleMove}
+        onPointerDown={handleDown}
+        onPointerUp={handleUp}
+        onPointerCancel={handleUp}
+        onKeyDown={handleKey}
         onPointerEnter={() => setHovering(true)}
         onPointerLeave={() => { setHovering(false); rest(); }}
-        onClick={() => setFlipped((v) => !v)}
+        onClick={handleClick}
         aria-label={`Familiar card for ${name || "your familiar"}.${
           offices.length ? ` ${offices.length > 1 ? "Offices" : "Office"}: ${offices.map((o) => o.label).join(", ")}.` : ""
-        } Activate to turn it over.`}
+        } Activate to turn it over.${spinning ? " Drag, or use the arrow keys, to spin it." : ""}`}
       >
         <div className="famcard__face famcard__face--front">
           {artUrl ? (

@@ -545,6 +545,7 @@ export const SUITES = {
     "src/components/familiars-view.test.ts",
     "src/components/familiar-summoning-circle.test.ts",
     "src/components/familiar-rite.test.ts",
+    "src/components/familiar-card-overlay.test.ts",
     "src/components/workspace-familiars-landing.test.ts",
     "src/components/board-kanban-keyboard.test.ts",
     "src/components/board-inspector-a11y.test.ts",
@@ -871,6 +872,7 @@ export const SUITES = {
     "src/components/workspace-sessions-navigation.test.ts",
     "src/lib/cave-familiar-archive.test.ts",
     "src/lib/cave-familiar-images.test.ts",
+    "src/lib/cave-familiar-foil.test.ts",
     "src/lib/cave-familiar-overrides.test.ts",
     "src/lib/cave-project-images.test.ts",
     "src/lib/chat-assistant-filter.test.ts",
@@ -1562,6 +1564,8 @@ const STRIP_TYPES_MJS = new Set([
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
   "src/lib/podcast-script.test.ts",
+  // the foil-plate store resolves "@/lib/avatar-idb" for its IndexedDB driver
+  "src/lib/cave-familiar-foil.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint
   "src/lib/chat-tool-batches.test.ts",
   // the reader's footer views resolve "@/lib/tool-visual" for the same tints

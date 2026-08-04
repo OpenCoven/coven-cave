@@ -31,7 +31,10 @@ test("hero identity contract: resolved avatar, serif name, role line, presence",
   // Avatar resolution rides the same pipeline as every other identity surface
   // (Cave-local overrides, workspace avatar → upload fallback → glyph).
   assert.match(src, /useResolvedFamiliars\(heroList, \{ includeArchived: true \}\)/, "hero resolves the familiar");
-  assert.match(src, /<FamiliarAvatar familiar=\{resolved\} size="xl" expandable \/>/, "expandable xl avatar");
+  // The avatar opens the familiar's CARD here (cave-3rz.2): the portrait is
+  // the card's own art, so on the familiar's profile the card is the richer
+  // view of the same image. `expandable` stays as the no-portrait fallback.
+  assert.match(src, /<FamiliarAvatar familiar=\{resolved\} size="xl" expandable asCard \/>/, "xl avatar opens the familiar card");
   assert.match(src, /<h2 className="familiar-tab__name">/, "display name is the tab's h2");
   assert.match(
     css,
