@@ -193,6 +193,17 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // Windows leg went one over while Ubuntu still passed, which is why only that
   // leg was red. Set from the HIGHER figure plus the same ten-file cross-platform
   // headroom every entry above uses.
+  // 2026-08-04 (headroom rate, cave-k5n56): worth recording that the entry
+  // above is a rate problem, not a one-feature one. main's Windows leg measured
+  // 5,914 at ab27ef62d8 and 5,915 at 39eadf26eb — sitting exactly ON the budget,
+  // reporting green with zero headroom — before #4315 added the single file that
+  // crossed it. Growth is roughly a file per merge, diffuse across many PRs, and
+  // Windows governs at a consistent +3 over Ubuntu (5914/5911, 5915/5912,
+  // 5916/5913). So read a red here as the headroom running out rather than as the
+  // last merge misbehaving, and check the previous runs' measured counts before
+  // attributing it. Ten files is about ten merges at this rate, so this will
+  // recur; the durable fix is to size the headroom to the growth rate or stop the
+  // closure growing, not to keep adding ten.
   fileCount: 5_926,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
