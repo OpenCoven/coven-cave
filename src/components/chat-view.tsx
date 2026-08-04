@@ -196,6 +196,7 @@ import { extractNextPaths, type NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
+import { imageCarouselKey, sliceImageBlocks, stripImageMarkers } from "@/lib/image-blocks";
 import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
 import {
@@ -210,6 +211,7 @@ import {
 } from "@/lib/auto-mission-state";
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
 import { GitHubCard } from "@/components/github-card";
+import { ImageCarousel } from "@/components/image-carousel";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -7837,6 +7839,38 @@ function splitSegmentsForGitHub(
   return out;
 }
 
+/**
+ * Split prose segments again on `<coven:image …>` markers, mounting one
+ * ImageCarousel per deck at the marker's position (src/lib/image-blocks.ts).
+ * Runs after the GitHub split so both marker families can appear in one turn.
+ */
+function splitSegmentsForImages(segments: MessageBubbleSegment[]): MessageBubbleSegment[] {
+  const out: MessageBubbleSegment[] = [];
+  segments.forEach((seg, si) => {
+    if (seg.kind !== "text") {
+      out.push(seg);
+      return;
+    }
+    const pieces = sliceImageBlocks(seg.text);
+    if (pieces.length === 1 && pieces[0].kind === "text") {
+      out.push(seg);
+      return;
+    }
+    pieces.forEach((p, pi) => {
+      if (p.kind === "text") {
+        if (p.text.trim()) out.push({ kind: "text", text: p.text });
+      } else {
+        out.push({
+          kind: "block",
+          key: `img-${si}-${pi}-${imageCarouselKey(p.carousel)}`,
+          node: <ImageCarousel images={p.carousel.images} />,
+        });
+      }
+    });
+  });
+  return out;
+}
+
 // ── Transcript rows (cave-likl perf) ─────────────────────────────────────────
 // The grouped-turn shapes built by ChatView's `groupedTurns` memo.
 /**
@@ -8222,7 +8256,9 @@ function TurnRowImpl({
   // GitHub markers: while streaming, strip complete + partial `<coven:github…>`
   // tags so they never flash as raw text (cards mount on settle); settled
   // turns keep them for splitSegmentsForGitHub below to replace with cards.
-  const ghSafeVisible = turn.pending ? stripGitHubMarkers(reasoningSplit.visible) : reasoningSplit.visible;
+  const ghSafeVisible = turn.pending
+    ? stripImageMarkers(stripGitHubMarkers(reasoningSplit.visible))
+    : reasoningSplit.visible;
   // Skill markers extract on BOTH paths — the whole point is live "which
   // skill, what stage" visibility while the agent works (design §5). The
   // extraction also strips partial tails so raw tags never flash.
@@ -8232,7 +8268,7 @@ function TurnRowImpl({
   // (clarifying/working/blocked/done) updates live.
   const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
   const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(autoStatusSplit.visible);
-  const visible = turn.pending ? visibleWithGh : stripGitHubMarkers(visibleWithGh);
+  const visible = turn.pending ? visibleWithGh : stripImageMarkers(stripGitHubMarkers(visibleWithGh));
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
@@ -8275,12 +8311,14 @@ function TurnRowImpl({
     // you can watch them run as live feedback.
     renderSegments = bubbleSegments;
   } else {
-    // Settled: prose only (+ artifact viewers + GitHub cards). Tools are NOT
-    // woven into the text — they render in the designated ToolGroup section
-    // below. GitHub splitting runs on visibleWithGh (markers intact) so cards
-    // mount at the markers' positions; the `visible` fallback/content path is
-    // marker-free either way.
-    const split = splitSegmentsForGitHub(splitTextForArtifacts(visibleWithGh, artifactCtx), onOpenUrl, ghFamiliar);
+    // Settled: prose only (+ artifact viewers + GitHub cards + image
+    // carousels). Tools are NOT woven into the text — they render in the
+    // designated ToolGroup section below. Marker splitting runs on
+    // visibleWithGh (markers intact) so cards mount at the markers'
+    // positions; the `visible` fallback/content path is marker-free either way.
+    const split = splitSegmentsForImages(
+      splitSegmentsForGitHub(splitTextForArtifacts(visibleWithGh, artifactCtx), onOpenUrl, ghFamiliar),
+    );
     renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
   }
 

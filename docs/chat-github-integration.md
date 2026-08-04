@@ -289,6 +289,42 @@ open, and verification evidence at close (MAP phase `cave-fpqx.3` is the
 standing discipline of keeping that triangle intact; `cave-fpqx.5` re-audits
 the capability map after the waves land).
 
+## §10 Image carousel (`src/lib/image-blocks.ts`)
+
+**Marker:** `<coven:image src="…" alt="…" caption="…" group="…" />` — the same
+streaming-safe scanner shape as every other `coven:` marker (quote-atomic
+attributes, fenced markers stay literal, partial tails hide mid-stream).
+
+**One deck, one card.** Markers that are ADJACENT (only whitespace between
+them) or that share a `group` id collapse into a single **ImageCarousel**
+(`src/components/image-carousel.tsx`) mounted at the first marker's position.
+Five renders become one browsable frame instead of five stacked pictures that
+push the answer off screen. A single image renders bounded with no carousel
+chrome. A deck is capped at `MAX_CAROUSEL_IMAGES` (24).
+
+**`src` is a security barrier, not a nicety.** Marker text is model output, so
+the allow-list is narrow: `https:`, `data:image/{png,jpeg,jpg,gif,webp,avif}`
+base64, `blob:`, and same-origin `/api/…` (fetched through `AuthedImage` so the
+packaged sidecar's auth gate is satisfied). `image/svg+xml` is excluded — an
+inline SVG is script-bearing markup. `javascript:`, `file:`, bare `http:`,
+protocol-relative `//host`, and anything carrying control characters are
+refused and the marker is dropped silently — never rendered as a raw tag.
+
+**One component for every picture in chat.** Image *attachments* route through
+the same carousel once there are two or more (`InlineImageAttachments`), so a
+batch of pasted screenshots and a batch of generated images look and behave
+identically.
+
+**A11y:** `aria-roledescription="carousel"` only when there is something to
+browse, labelled prev/next controls, a textual `n / total` (position is never
+color-only), a polite live region for slide changes, arrow-key navigation,
+`tabIndex={-1}` on off-screen slides, `prefers-reduced-motion` honored on the
+slide track, and a zoom overlay that portals out, traps focus, and returns it.
+
+**Familiar awareness:** `buildCovenMarkersDirective` teaches the marker on
+every turn, and `coven-marker-directive.test.ts` keeps the taught example
+parseable by the real extractor.
+
 ## Acceptance criteria (from the goal, restated testably)
 
 1. Pasting an issue/PR URL in chat renders a live card; comment/close from it
