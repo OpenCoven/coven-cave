@@ -187,7 +187,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // Windows — so 5,902 was the Ubuntu figure with no headroom at all, and the
   // Windows leg was still red at it. Set from the HIGHER figure plus the same
   // ten-file cross-platform headroom the entries above use.
-  fileCount: 5_915,
+  // 2026-08-04 (bounded PTY streaming and replay cursors, #4317): Windows
+  // CI measures 5,916 files. Keep the established ten-file cross-platform
+  // headroom rather than accepting the exact measured count.
+  fileCount: 5_926,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
