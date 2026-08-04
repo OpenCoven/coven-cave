@@ -163,7 +163,7 @@ struct FamiliarThreadsView: View {
             FamiliarPermissionsSheet(familiar: familiar)
         }
         .sheet(isPresented: $showNewChat) {
-            NewChatView(initialFamiliarIds: [familiar.id]) { thread in
+            NewChatView(fixedFamiliarId: familiar.id) { thread in
                 showNewChat = false
                 Haptics.tap()
                 path.append(.thread(thread))

@@ -12,16 +12,26 @@ struct ChatProjectPicker: View {
     @Binding var isResolved: Bool
     var requiresExplicitSelection = false
     var onResolved: (() -> Void)?
+    let refreshToken: Int
+    var onManageAccess: (() -> Void)?
 
     @State private var projects: [ProjectInfo] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var resolvedLoadKey: LoadKey?
     @State private var reloadToken = 0
+    @State private var loadGeneration = 0
 
     private struct LoadKey: Hashable {
-        var familiarIds: [String]
-        var reloadToken: Int
-        var requiresExplicitSelection: Bool
+        let familiarIds: [String]
+        let refreshToken: Int
+        let reloadToken: Int
+        let requiresExplicitSelection: Bool
+    }
+
+    private struct LoadIdentity: Hashable {
+        let key: LoadKey
+        let generation: Int
     }
 
     private var familiarKey: [String] {
@@ -31,6 +41,7 @@ struct ChatProjectPicker: View {
     private var loadKey: LoadKey {
         LoadKey(
             familiarIds: familiarKey,
+            refreshToken: refreshToken,
             reloadToken: reloadToken,
             requiresExplicitSelection: requiresExplicitSelection
         )
@@ -44,7 +55,7 @@ struct ChatProjectPicker: View {
                     systemImage: "person.crop.circle.badge.questionmark"
                 )
                 .foregroundStyle(.secondary)
-            } else if isLoading {
+            } else if resolvedLoadKey != loadKey {
                 ProgressView("Finding shared projects…")
             } else if let errorMessage {
                 VStack(alignment: .leading, spacing: 8) {
@@ -53,13 +64,18 @@ struct ChatProjectPicker: View {
                     Button("Retry") { reloadToken += 1 }
                 }
             } else if projects.isEmpty {
-                Label(
-                    familiarKey.count == 1
-                        ? "This familiar has no accessible projects."
-                        : "These familiars do not share an accessible project.",
-                    systemImage: "folder.badge.questionmark"
-                )
-                .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(
+                        familiarKey.count == 1
+                            ? "This familiar has no accessible projects."
+                            : "These familiars do not share an accessible project.",
+                        systemImage: "folder.badge.questionmark"
+                    )
+                    .foregroundStyle(.secondary)
+                    if let onManageAccess {
+                        Button("Project access", action: onManageAccess)
+                    }
+                }
             } else {
                 projectPicker
             }
@@ -109,26 +125,34 @@ struct ChatProjectPicker: View {
 
     @MainActor
     private func loadProjects() async {
-        guard !familiarKey.isEmpty else {
-            projects = []
-            selectedRoot = nil
-            isResolved = false
-            errorMessage = nil
-            isLoading = false
-            return
-        }
+        loadGeneration &+= 1
+        let identity = LoadIdentity(key: loadKey, generation: loadGeneration)
 
-        guard app.client != nil else {
-            projects = []
-            isResolved = false
-            errorMessage = "Connect to your Cave to load projects."
+        resolvedLoadKey = nil
+        projects = []
+        errorMessage = nil
+        isResolved = false
+
+        guard !familiarKey.isEmpty else {
             isLoading = false
             return
         }
 
         isLoading = true
-        isResolved = false
-        errorMessage = nil
+        defer {
+            if loadGeneration == identity.generation {
+                isLoading = false
+            }
+        }
+
+        guard app.client != nil else {
+            guard loadGeneration == identity.generation else { return }
+            isLoading = false
+            errorMessage = "Connect to your Cave to load projects."
+            resolvedLoadKey = identity.key
+            return
+        }
+
         do {
             let loaded = try await ChatProjectSelection.loadProjectsWithRecovery(
                 load: {
@@ -143,6 +167,10 @@ struct ChatProjectPicker: View {
                 }
             )
             try Task.checkCancellation()
+            guard loadGeneration == identity.generation, loadKey == identity.key else {
+                return
+            }
+            isLoading = false
             projects = loaded
             selectedRoot = requiresExplicitSelection
                 ? nil
@@ -152,14 +180,19 @@ struct ChatProjectPicker: View {
                     projects: loaded
                 )
             isResolved = selectedRoot != nil
+            resolvedLoadKey = identity.key
             if isResolved { onResolved?() }
         } catch is CancellationError {
             return
         } catch {
+            guard loadGeneration == identity.generation, loadKey == identity.key else {
+                return
+            }
+            isLoading = false
             projects = []
             isResolved = false
             errorMessage = error.localizedDescription
+            resolvedLoadKey = identity.key
         }
-        isLoading = false
     }
 }
