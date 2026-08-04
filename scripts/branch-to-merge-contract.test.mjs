@@ -223,8 +223,10 @@ test("every skill named as an integration point actually exists in this repo", (
 });
 
 test("skill handles a managed-worktree inventory outage without forging metadata", () => {
+  const normalizedAgents = agents.replace(/\s+/g, " ");
   assert.ok(
-    agents.includes("When it will not run, fall back to `git worktree add -b"),
+    normalizedAgents.includes("lifecycle inventory") &&
+      normalizedAgents.includes("git worktree add -b <branch> .worktrees/<branch> origin/main"),
     "AGENTS.md no longer documents the managed-worktree fallback",
   );
   assert.ok(skill.includes("git worktree add -b <branch> .worktrees/<branch> origin/main"));
