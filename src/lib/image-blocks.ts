@@ -186,7 +186,26 @@ function stripMalformedImageMarkerFragments(text: string): string {
     // is only a recovery boundary. Dropping it fail-closed is safer than showing a
     // malformed protocol tag (or its unsafe attributes) in the transcript.
     const end = findUnquotedGt(text, start);
+    // Do not use a closing `>` from an example as this marker's recovery
+    // boundary. A malformed marker before a fenced example must disappear
+    // without consuming that literal example (or any later real marker).
+    const protectedRange = codeRanges.find(
+      ([rangeStart]) => rangeStart > start && (end === -1 || rangeStart < end),
+    );
     out += text.slice(cursor, start);
+    if (protectedRange) {
+      // Keep the line break that makes a fenced block a fenced block; without
+      // it, removing the malformed text would turn the example into ordinary
+      // prose on the next parsing pass.
+      let protectedStart = protectedRange[0];
+      if (text[protectedStart - 1] === "\n") {
+        protectedStart -= 1;
+        if (text[protectedStart - 1] === "\r") protectedStart -= 1;
+      }
+      cursor = protectedStart;
+      start = text.indexOf("<coven:i", protectedRange[1]);
+      continue;
+    }
     if (end === -1) return out;
     cursor = end + 1;
     start = text.indexOf("<coven:i", cursor);

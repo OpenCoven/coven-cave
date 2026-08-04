@@ -153,6 +153,16 @@ test("slice: fenced markers stay literal example text", () => {
   assert.equal(pieces[0].text, text);
 });
 
+test("slice: malformed text before a fenced example cannot consume the fence", () => {
+  const fenced = "```\n<coven:image src=\"" + PNG + "\" />\n```";
+  const pieces = sliceImageBlocks(`Before <coven:im then\n${fenced}\n<coven:image src="${PNG2}" />`);
+  const text = pieces.filter((p) => p.kind === "text").map((p) => p.text).join("");
+  const carousel = pieces.find((p) => p.kind === "carousel")?.carousel;
+  assert.match(text, /```\n<coven:image/);
+  assert.ok(!text.includes("<coven:im then"));
+  assert.deepEqual(carousel?.images.map((image) => image.src), [PNG2]);
+});
+
 test("slice: a caption containing '>' does not terminate the marker early", () => {
   const pieces = sliceImageBlocks(`<coven:image src="${PNG}" caption="before -> after" />`);
   const carousel = pieces.find((p) => p.kind === "carousel")?.carousel;
@@ -206,6 +216,14 @@ test("strip: malformed marker recovery ignores quoted close characters", () => {
 test("strip: fenced markers survive the streaming strip", () => {
   const text = "```\n<coven:image src=\"" + PNG + "\" />\n```";
   assert.equal(stripImageMarkers(text), text);
+});
+
+test("strip: malformed text before a fenced marker preserves the example", () => {
+  const fenced = "```\n<coven:image src=\"" + PNG + "\" />\n```";
+  assert.equal(
+    stripImageMarkers(`Before <coven:im then\n${fenced}\n<coven:image src="${PNG2}" />`),
+    `Before \n${fenced}\n`,
+  );
 });
 
 // ── labels + keys ────────────────────────────────────────────────────────────
