@@ -59,6 +59,18 @@ import {
 const MIN_PANE_WIDTH = `${MIN_TERMINAL_PANE_WIDTH_PX}px`;
 const MIN_PANE_HEIGHT = `${MIN_TERMINAL_PANE_HEIGHT_PX}px`;
 
+type PaneFits = { right: boolean; down: boolean };
+const DEFAULT_PANE_FITS: PaneFits = { right: true, down: true };
+
+function samePaneFits(a: Record<string, PaneFits>, b: Record<string, PaneFits>) {
+  const keys = Object.keys(b);
+  if (Object.keys(a).length !== keys.length) return false;
+  return keys.every((key) => {
+    const prev = a[key];
+    return prev !== undefined && prev.right === b[key].right && prev.down === b[key].down;
+  });
+}
+
 export type CodeTerminalWorkspaceProps = {
   sessionId: string;
   projectRoot: string | null;
@@ -90,36 +102,53 @@ export function CodeTerminalWorkspace({
   const paneCount = panes.length;
   const underPaneCap = canSplitTerminalPane(layout);
 
-  // Measured split capacity. The count cap alone lets a 380px Room offer a
-  // split that produces two unreadable shells, so the affordance also asks the
-  // focused pane whether it can survive being halved.
+  // Measured split capacity, per pane. The count cap alone lets a 380px Room
+  // offer a split that produces two unreadable shells, so the affordance also
+  // asks the pane being split whether it can survive being halved. Measuring
+  // only the focused pane would mis-state every other pane's own header
+  // buttons, which stay live whether or not that pane holds focus.
   const paneElsRef = useRef(new Map<string, HTMLElement>());
-  const [fits, setFits] = useState({ right: true, down: true });
+  const [fitsByPane, setFitsByPane] = useState<Record<string, PaneFits>>({});
+  const fitsByPaneRef = useRef(fitsByPane);
+  fitsByPaneRef.current = fitsByPane;
   useEffect(() => {
-    const el = paneElsRef.current.get(focusedPaneId);
-    if (!el || typeof ResizeObserver === "undefined") {
-      // Unmeasurable is not the same as too small: leaving the control enabled
-      // keeps a server-rendered or test environment from showing a disabled
-      // button that never re-enables.
-      setFits({ right: true, down: true });
+    if (typeof ResizeObserver === "undefined") {
+      setFitsByPane({});
       return;
     }
     const read = () => {
-      const rect = el.getBoundingClientRect();
-      const next = {
-        right: canSplitPaneSize(rect, "horizontal"),
-        down: canSplitPaneSize(rect, "vertical"),
-      };
-      setFits((prev) => (prev.right === next.right && prev.down === next.down ? prev : next));
+      const next: Record<string, PaneFits> = {};
+      for (const pane of panes) {
+        const el = paneElsRef.current.get(pane.id);
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        next[pane.id] = {
+          right: canSplitPaneSize(rect, "horizontal"),
+          down: canSplitPaneSize(rect, "vertical"),
+        };
+      }
+      setFitsByPane((prev) => (samePaneFits(prev, next) ? prev : next));
     };
     read();
     const observer = new ResizeObserver(read);
-    observer.observe(el);
+    for (const pane of panes) {
+      const el = paneElsRef.current.get(pane.id);
+      if (el) observer.observe(el);
+    }
     return () => observer.disconnect();
-  }, [focusedPaneId, layout]);
+  }, [panes]);
 
-  const canSplitRight = underPaneCap && fits.right;
-  const canSplitDown = underPaneCap && fits.down;
+  // Unmeasurable is not the same as too small: an unknown pane stays enabled so
+  // a server-rendered or test environment never shows a control that latches
+  // disabled and never re-enables.
+  const paneFits = useCallback(
+    (paneId: string): PaneFits => fitsByPane[paneId] ?? DEFAULT_PANE_FITS,
+    [fitsByPane],
+  );
+
+  const focusedFits = paneFits(focusedPaneId);
+  const canSplitRight = underPaneCap && focusedFits.right;
+  const canSplitDown = underPaneCap && focusedFits.down;
   const splitBlockedTitle = underPaneCap
     ? "Not enough room to split"
     : "Terminal limit reached";
@@ -154,6 +183,7 @@ export function CodeTerminalWorkspace({
         announce("Terminal limit reached. Close a terminal before splitting again.");
         return;
       }
+      const fits = fitsByPaneRef.current[paneId] ?? DEFAULT_PANE_FITS;
       if (!(direction === "horizontal" ? fits.right : fits.down)) {
         announce("Not enough room to split this terminal.");
         return;
@@ -161,7 +191,7 @@ export function CodeTerminalWorkspace({
       onSplit(paneId, direction);
       announce(direction === "horizontal" ? "Terminal split right." : "Terminal split down.");
     },
-    [announce, fits.down, fits.right, onSplit],
+    [announce, onSplit],
   );
 
   const handleClose = useCallback(
@@ -240,6 +270,11 @@ export function CodeTerminalWorkspace({
     const label = descriptor?.label ?? "Terminal";
     const isFocused = paneId === focusedPaneId;
     const isPrimary = paneId === PRIMARY_TERMINAL_PANE_ID;
+    // This pane's own measurement, not the focused pane's — its header buttons
+    // act on itself regardless of where focus currently sits.
+    const fits = paneFits(paneId);
+    const paneCanSplitRight = underPaneCap && fits.right;
+    const paneCanSplitDown = underPaneCap && fits.down;
     return (
       <section
         aria-label={label}
@@ -266,8 +301,8 @@ export function CodeTerminalWorkspace({
                 type="button"
                 className="focus-ring code-terminal-pane__action"
                 aria-label={`Split ${label} right`}
-                title={canSplitRight ? "Split right" : splitBlockedTitle}
-                disabled={!canSplitRight}
+                title={paneCanSplitRight ? "Split right" : splitBlockedTitle}
+                disabled={!paneCanSplitRight}
                 onClick={() => handleSplit(paneId, "horizontal")}
               >
                 <Icon name="ph:columns" width={12} height={12} />
@@ -276,8 +311,8 @@ export function CodeTerminalWorkspace({
                 type="button"
                 className="focus-ring code-terminal-pane__action"
                 aria-label={`Split ${label} down`}
-                title={canSplitDown ? "Split down" : splitBlockedTitle}
-                disabled={!canSplitDown}
+                title={paneCanSplitDown ? "Split down" : splitBlockedTitle}
+                disabled={!paneCanSplitDown}
                 onClick={() => handleSplit(paneId, "vertical")}
               >
                 <Icon name="ph:rows" width={12} height={12} />

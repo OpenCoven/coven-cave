@@ -130,14 +130,23 @@ export function CodeContextDock({
 
   const selectTab = useCallback(
     (next: CodeDockTab) => {
-      onTabChange(next);
       // Picking a tab out of a collapsed dock has to reopen it, or the click
       // looks broken. Browser and GitHub need the room to render at all.
-      if (codeDockTabWantsExpanded(next)) changeSize("expanded");
-      else if (collapsed) changeSize("normal");
+      const wantedSize: CodeDockSize | null = codeDockTabWantsExpanded(next)
+        ? expanded
+          ? null
+          : "expanded"
+        : collapsed
+          ? "normal"
+          : null;
+      // Re-clicking the active tab when the dock is already sized for it changes
+      // nothing — writing state again would only add live-region noise.
+      if (next === tab && !wantedSize) return;
+      onTabChange(next);
+      if (wantedSize) changeSize(wantedSize);
       announce(`${DOCK_TAB_META[next].label} context shown.`);
     },
-    [announce, changeSize, collapsed, onTabChange],
+    [announce, changeSize, collapsed, expanded, onTabChange, tab],
   );
 
   return (
