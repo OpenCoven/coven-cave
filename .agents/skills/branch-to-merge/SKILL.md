@@ -47,7 +47,9 @@ merge strategy, do not delete anything without the proof each phase names.
 ```bash
 bd show <id>                 # the Bead this branch implements
 git rev-parse --abbrev-ref HEAD
-git -C . rev-parse --show-toplevel   # confirm you are in the worktree, not the primary checkout
+root=$(git rev-parse --show-toplevel) && \
+  primary=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)") && \
+  test "$root" != "$primary" || { printf '%s\n' 'refusing to commit from the primary checkout'; exit 1; }
 ```
 
 - The branch must be claimed: `bd update <id> --claim` if it is not.
@@ -60,10 +62,19 @@ git -C . rev-parse --show-toplevel   # confirm you are in the worktree, not the 
     --owner <you> --purpose "…"
   ```
 
-  If that command refused on budget, the sanctioned rerun adds
+  A budget refusal is not a reason to bypass managed creation: rerun with
   `--exception-owner`, `--exception-reason`, `--exception-expires-at` and
-  `--exception-path`; a bare `git worktree add` produces a unit the patrol can
-  never retire.
+  `--exception-path`. If the command cannot build its complete lifecycle
+  inventory (for example, the GitHub quota is exhausted), use the documented
+  fallback instead:
+
+  ```bash
+  git worktree add -b <branch> .worktrees/<branch> origin/main
+  ```
+
+  That fallback has no lifecycle metadata, so the patrol will keep it
+  `uncertain` and can never retire it automatically. Preserve it and later use
+  the archive-tag route; never hand-write lifecycle metadata onto the Bead.
 
 ## Phase 1: Verify before anything else
 

@@ -156,7 +156,27 @@ test("every skill named as an integration point actually exists in this repo", (
   const present = new Set(fs.readdirSync(".agents/skills"));
   for (const name of named) {
     assert.ok(present.has(name), `integration point \`${name}\` is not a skill in .agents/skills`);
+    const entrypoint = `.agents/skills/${name}/SKILL.md`;
+    assert.ok(
+      fs.existsSync(entrypoint) && fs.lstatSync(entrypoint).isFile(),
+      `integration point \`${name}\` has no regular SKILL.md entrypoint`,
+    );
   }
+});
+
+test("skill handles a managed-worktree inventory outage without forging metadata", () => {
+  assert.ok(
+    agents.includes("When it will not run, fall back to `git worktree add -b"),
+    "AGENTS.md no longer documents the managed-worktree fallback",
+  );
+  assert.ok(skill.includes("git worktree add -b <branch> .worktrees/<branch> origin/main"));
+  assert.ok(skill.includes("can never retire it automatically"));
+  assert.ok(skill.includes("never hand-write lifecycle metadata onto the Bead"));
+});
+
+test("skill refuses commits from the primary checkout", () => {
+  assert.ok(skill.includes("git rev-parse --path-format=absolute --git-common-dir"));
+  assert.ok(skill.includes('test "$root" != "$primary"'));
 });
 
 test("no inline code span is split across a newline", () => {
