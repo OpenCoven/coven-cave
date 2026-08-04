@@ -175,7 +175,7 @@ function ThreadTrendBlock({ trends }: { trends: SignalTrends }) {
     value: bucket.score,
   }));
   const granularityNoun = trends.granularity === "week" ? "weeks" : "days";
-  const windowPhrase = `last ${trends.buckets.length} ${granularityNoun}`;
+  const windowPhrase = trends.scopeLabel;
 
   return (
     <div className="fa-trend" role="group" aria-label="Thread metric changes over time">
@@ -1632,8 +1632,11 @@ export function FamiliarAnalyticsContent({
     [windowReports],
   );
   const windowSignalTrends = useMemo(
-    () => deriveSignalTrends(windowSnapshots, now),
-    [now, windowSnapshots],
+    () => deriveSignalTrends(windowSnapshots, now, undefined, {
+      days: ANALYTICS_WINDOWS.find((entry) => entry.id === windowId)?.days ?? null,
+      label: ANALYTICS_WINDOWS.find((entry) => entry.id === windowId)?.title ?? "Everything on record",
+    }),
+    [now, windowId, windowSnapshots],
   );
   const threadSignalsAggregate = useMemo(
     () => windowReports.length > 0 ? aggregateThreadSignals(windowReports) : null,

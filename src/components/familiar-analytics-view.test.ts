@@ -785,19 +785,24 @@ describe("confidence from thread analysis + metric labeling", () => {
     const reports = [
       report("current", "2026-08-02T12:00:00.000Z", 90, "adequate"),
       report("older", "2026-07-26T12:00:00.000Z", 20, "critical"),
+      report("history", "2026-06-07T12:00:00.000Z", 30, "critical"),
     ];
     const snapshots = reports.map(snapshotFromReport);
     const sessions = [
       { id: "current", updated_at: "2026-08-02T12:00:00.000Z" },
       { id: "older", updated_at: "2026-07-26T12:00:00.000Z" },
+      { id: "history", updated_at: "2026-06-07T12:00:00.000Z" },
     ];
-    const scoped = (windowId: "7d" | "14d") => {
+    const scoped = (windowId: "7d" | "14d" | "8w" | "all") => {
       const visibleReports = reports.filter((entry) => withinWindow(entry.reportedAt, windowId, now));
       const visibleSnapshots = snapshots.filter((entry) => withinWindow(entry.reportedAt, windowId, now));
       const aggregate = aggregateThreadSignals(visibleReports);
       return {
         confidence: deriveThreadConfidence(visibleReports),
-        trends: deriveSignalTrends(visibleSnapshots, now),
+        trends: deriveSignalTrends(visibleSnapshots, now, undefined, {
+          days: { "7d": 7, "14d": 14, "8w": 56, all: null }[windowId],
+          label: windowId,
+        }),
         queue: buildThreadSignalReviewQueue(aggregate),
         evidenceCount: visibleReports.length,
         sessionCount: sessions.filter((entry) => withinWindow(entry.updated_at, windowId, now)).length,
@@ -806,6 +811,8 @@ describe("confidence from thread analysis + metric labeling", () => {
 
     const sevenDays = scoped("7d");
     const fourteenDays = scoped("14d");
+    const eightWeeks = scoped("8w");
+    const all = scoped("all");
 
     assert.equal(sevenDays.confidence.reportCount, 1);
     assert.equal(fourteenDays.confidence.reportCount, 2);
@@ -819,6 +826,14 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.equal(fourteenDays.evidenceCount, 2);
     assert.equal(sevenDays.sessionCount, 1);
     assert.equal(fourteenDays.sessionCount, 2);
+    assert.equal(eightWeeks.confidence.reportCount, 2);
+    assert.equal(eightWeeks.trends.snapshotCount, 2);
+    assert.equal(eightWeeks.evidenceCount, 2);
+    assert.equal(eightWeeks.sessionCount, 2);
+    assert.equal(all.confidence.reportCount, 3);
+    assert.equal(all.trends.snapshotCount, 3);
+    assert.equal(all.evidenceCount, 3);
+    assert.equal(all.sessionCount, 3);
   });
 
   it("applies the selected time window to every thread-report analytic on the stage", () => {
@@ -834,8 +849,8 @@ describe("confidence from thread analysis + metric labeling", () => {
     );
     assert.match(
       contentSource,
-      /deriveSignalTrends\(windowSnapshots, now\)/,
-      "trend buckets are recomputed from the scoped snapshot history",
+      /deriveSignalTrends\(windowSnapshots, now, undefined, \{[\s\S]*days: ANALYTICS_WINDOWS\.find\(\(entry\) => entry\.id === windowId\)\?\.days \?\? null,[\s\S]*label: ANALYTICS_WINDOWS\.find\(\(entry\) => entry\.id === windowId\)\?\.title \?\? "Everything on record",/,
+      "trend buckets retain the selected window's complete persisted history",
     );
     assert.match(
       contentSource,
