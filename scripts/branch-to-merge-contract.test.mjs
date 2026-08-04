@@ -103,10 +103,11 @@ test("skill requires all checks on the exact current PR head", () => {
 test("skill mirrors the protected-main policy that governs its PR lifecycle", () => {
   assert.match(
     claude,
-    /Commit signatures are \*\*required\*\* \(`required_signatures`\)/,
-    "CLAUDE.md no longer documents the required-signature policy",
+    /Commit signatures are \*\*NOT required\*\* \(`required_signatures: false`/,
+    "CLAUDE.md no longer documents the optional-signature policy",
   );
-  assert.match(skill, /Commits must be signed \(`required_signatures` is on/);
+  assert.match(skill, /Sign commits when you can, but `required_signatures: false`/);
+  assert.ok(!skill.includes("Push rejected — unsigned commit"));
 
   assert.match(
     claude,

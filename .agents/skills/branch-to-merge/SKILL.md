@@ -9,7 +9,7 @@ Take a finished branch to a merged commit on `main` without ever writing to
 `main` directly and without destroying another session's work.
 
 `main` in this repository is protected: pull request required, nine required
-status checks, signed commits, no force-push, no deletion. A pull request is
+status checks, no force-push, no deletion. A pull request is
 the **only** path an agent may use. This skill is the Cave-specific replacement
 for generic "finish a branch" workflows that offer a local merge into the base
 branch — that option does not exist here.
@@ -156,9 +156,9 @@ no branch deletion. An unfinished branch is preserved by default.
 
 ## Phase 4: Create or bind the pull request
 
-Commits must be signed (`required_signatures` is on; the server rejects
-unsigned commits). Push after **every** commit — the remote is the only store a
-local actor cannot destroy.
+Sign commits when you can, but `required_signatures: false` means an unsigned
+commit is not a merge blocker. Push after **every** commit — the remote is the
+only store a local actor cannot destroy.
 
 ```bash
 branch=$(git branch --show-current)
@@ -348,7 +348,7 @@ improvise cleanup here.
 | `GH006: Protected branch update failed` | You pushed to `main`. Use a branch and a PR. |
 | PR `BLOCKED`, `MERGEABLE`, nothing failing | Suspect a required context that no longer reports; diff `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the PR's checks. |
 | "the base branch policy prohibits the merge" | Generic. Check required contexts, then whether `required_conversation_resolution` was re-enabled. |
-| Push rejected — unsigned commit | Signatures are required; sign with `-S` and re-push. |
+| PR `BLOCKED`, every required check passes | Check whether `required_signatures` changed; it is currently off, so a missing signature is not the blocker. |
 | Worktree guard exits 2 | Live work. Investigate; bypass only with explicit maintainer authorization. |
 | `worktree-lifecycle-create` budget refusal | Rerun with the printed `--exception-*` flags. Do not fall back to `git worktree add` for a budget refusal. |
 | `unknown option: --` | Drop the `--` before the flags; pnpm forwards it. |
