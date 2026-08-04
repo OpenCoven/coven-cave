@@ -46,6 +46,7 @@ merge strategy, do not delete anything without the proof each phase names.
 
 ```bash
 bd show <id>                 # the Bead this branch implements
+git fetch origin             # refresh origin/main before branching from it
 git rev-parse --abbrev-ref HEAD
 root=$(git rev-parse --show-toplevel) && \
   primary=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)") && \

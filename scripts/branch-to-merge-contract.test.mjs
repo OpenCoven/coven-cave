@@ -182,6 +182,22 @@ test("skill uses the managed worktree command in its documented form", () => {
   assert.ok(skill.includes("--exception-expires-at"));
 });
 
+test("skill refreshes origin before creating a branch from origin/main", () => {
+  const phaseZero = skill.slice(
+    skill.indexOf("## Phase 0:"),
+    skill.indexOf("## Phase 1:"),
+  );
+  const fetch = phaseZero.indexOf("git fetch origin");
+  const managedCreate = phaseZero.indexOf("pnpm beads:worktrees:create");
+  const fallbackCreate = phaseZero.indexOf("git worktree add -b <branch>");
+
+  assert.ok(fetch !== -1, "Phase 0 must refresh origin before branching");
+  assert.ok(
+    fetch < managedCreate && fetch < fallbackCreate,
+    "Phase 0 must refresh origin before either worktree creation path",
+  );
+});
+
 test("skill retires local units through the patrol, never by improvisation", () => {
   assert.ok(/^pnpm beads:worktrees(?:\s|$)/m.test(skill), "skill must run the report-only patrol");
   assert.ok(skill.includes("pnpm beads:worktrees:apply"));
