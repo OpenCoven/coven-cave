@@ -1,12 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "finishing-a-development-branch": {
-      "source": "pixel-process-ug/superkit-agents",
-      "sourceType": "github",
-      "skillPath": "templates/skills/finishing-a-development-branch/SKILL.md",
-      "computedHash": "3082a0354806a36de1915a821829e2b35099d2ec3435331eca5ea1721f483f33"
-    },
     "migrate-radix-to-base": {
       "source": "shadcn/ui",
       "sourceType": "github",
