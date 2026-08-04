@@ -104,7 +104,7 @@ test("worktree refusal docs require a future exception and confine the fallback"
     assert.match(exitTwo, /refused by (?:the )?admission gate/i);
     assert.match(exitTwo, /--exception-reason "why this exception is needed"/);
     assert.match(exitTwo, /--exception-expires-at 'REPLACE-WITH-FUTURE-UTC-ISO-INSTANT'/);
-    assert.match(exitTwo, /Replace `REPLACE-WITH-FUTURE-UTC-ISO-INSTANT`/);
+    assert.match(exitTwo, /replace\s+`REPLACE-WITH-FUTURE-UTC-ISO-INSTANT`/i);
     assert.doesNotMatch(exitTwo, /git worktree add -b/);
     assert.doesNotMatch(exitTwo, /2026-08-10T00:00:00Z/);
     assert.match(exitOne, /lifecycle inventory is incomplete/i);

@@ -1084,7 +1084,7 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
       worktreePath: existingPath,
     });
   });
-  const bead = "cave-o'reilly";
+  const bead = "cave-unit1-special";
   const branch = "feat/cave-unit1-o'reilly";
   const owner = "Kitty O'Neil; touch should-not-run";
   const purpose = "Use $HOME and 'quotes'; no side effects";
