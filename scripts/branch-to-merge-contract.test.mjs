@@ -100,6 +100,43 @@ test("skill requires all checks on the exact current PR head", () => {
   assert.ok(skill.includes("pending, cancelled, stale, missing, or failed context"));
 });
 
+test("skill mirrors the protected-main policy that governs its PR lifecycle", () => {
+  assert.match(
+    claude,
+    /Commit signatures are \*\*required\*\* \(`required_signatures`\)/,
+    "CLAUDE.md no longer documents the required-signature policy",
+  );
+  assert.match(skill, /Commits must be signed \(`required_signatures` is on/);
+
+  assert.match(
+    claude,
+    /Branches do \*\*not\*\* need to be up to date with `main` \(`strict: false`\)/,
+    "CLAUDE.md no longer documents non-strict required checks",
+  );
+  assert.match(skill, /Branch protection sets `strict: false`/);
+
+  assert.match(
+    claude,
+    /Review conversations are \*\*no longer required to be resolved\*\*/,
+    "CLAUDE.md no longer documents the review-conversation policy",
+  );
+  assert.match(skill, /Conversation resolution is \*\*no longer\*\* a merge\ngate/);
+
+  assert.match(
+    claude,
+    /If hasNextPage is true, page with `reviewThreads\(first:100, after:"<endCursor>"\)`/,
+    "CLAUDE.md no longer documents review-thread pagination",
+  );
+  assert.match(skill, /Page with `reviewThreads\(first:100, after:"<endCursor>"\)` until `hasNextPage` is/);
+
+  assert.match(
+    claude,
+    /gate-incomplete, preserve the unit/,
+    "CLAUDE.md no longer documents the lifecycle gate-incomplete behavior",
+  );
+  assert.match(skill, /or the gate as incomplete, \*\*preserve it\*\*/);
+});
+
 test("skill forbids the bypasses branch protection exists to stop", () => {
   assert.ok(skill.includes("`gh pr merge --admin`"));
   assert.ok(skill.includes("Do not use it"));
