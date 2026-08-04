@@ -36,20 +36,12 @@ test("General summary resolves complete source data", () => {
   assert.deepEqual(
     resolveGeneralSummaryState(loading, {
       config: ok({ workspacePath: "/coven" }),
-      voice: ok({
-        tts: [
-          { ready: true, verified: true },
-          { ready: true, verified: false },
-        ],
-      }),
       sync: ok({ config: { enabled: false } }),
     }),
     {
       status: "ready",
       summary: {
         workspacePath: "/coven",
-        readyVoices: 1,
-        totalVoices: 2,
         syncEnabled: false,
       },
     },
@@ -61,8 +53,6 @@ test("General summary exposes partial refreshes while retaining failed-source va
     status: "ready",
     summary: {
       workspacePath: "/old",
-      readyVoices: 2,
-      totalVoices: 4,
       syncEnabled: false,
     },
   };
@@ -70,15 +60,12 @@ test("General summary exposes partial refreshes while retaining failed-source va
   assert.deepEqual(
     resolveGeneralSummaryState(current, {
       config: ok({ workspacePath: "/new" }),
-      voice: failed,
       sync: failed,
     }),
     {
       status: "partial",
       summary: {
         workspacePath: "/new",
-        readyVoices: 2,
-        totalVoices: 4,
         syncEnabled: false,
       },
     },
@@ -89,14 +76,12 @@ test("General summary treats an unusable successful payload as a partial source 
   assert.deepEqual(
     resolveGeneralSummaryState(loading, {
       config: ok({ workspacePath: "/coven" }),
-      voice: ok({ ok: true }),
-      sync: ok({ config: { enabled: false } }),
+      sync: ok({ config: {} }),
     }),
     {
       status: "partial",
       summary: {
         workspacePath: "/coven",
-        syncEnabled: false,
       },
     },
   );
@@ -107,8 +92,6 @@ test("General summary treats all-source failure as an error without discarding k
     status: "ready",
     summary: {
       workspacePath: "/coven",
-      readyVoices: 0,
-      totalVoices: 0,
       syncEnabled: true,
     },
   };
@@ -116,7 +99,6 @@ test("General summary treats all-source failure as an error without discarding k
   assert.deepEqual(
     resolveGeneralSummaryState(current, {
       config: failed,
-      voice: failed,
       sync: failed,
     }),
     {
@@ -130,7 +112,6 @@ test("General summary errors when successful responses contain no usable details
   assert.deepEqual(
     resolveGeneralSummaryState(loading, {
       config: ok({ workspacePath: "" }),
-      voice: ok({}),
       sync: ok({ config: {} }),
     }),
     {
@@ -158,24 +139,23 @@ test("General summary loader aborts superseded refreshes and keeps the newest re
   const loader = createGeneralSummaryLoader({ fetchImpl });
 
   const firstLoad = loader.load();
-  assert.equal(calls.length, 3, "one summary load fans out to the three narrow sources");
-  const firstSignals = calls.slice(0, 3).map((call) => call.signal);
+  assert.equal(calls.length, 2, "one summary load fans out to the two narrow sources");
+  assert.deepEqual(calls.map((call) => call.input), ["/api/config", "/api/backup/sync"]);
+  const firstSignals = calls.slice(0, 2).map((call) => call.signal);
 
   const secondLoad = loader.load();
-  assert.equal(calls.length, 6, "a refresh starts a new three-source batch");
+  assert.equal(calls.length, 4, "a refresh starts a new two-source batch");
   for (const signal of firstSignals) {
     assert.equal(signal?.aborted, true, "superseded summary loads should be aborted");
   }
 
-  calls[3].request.resolve(jsonResponse({ ok: true, workspacePath: "/coven" }));
-  calls[4].request.resolve(jsonResponse({ ok: true, tts: [{ ready: true, verified: true }] }));
-  calls[5].request.resolve(jsonResponse({ ok: true, config: { enabled: true } }));
+  calls[2].request.resolve(jsonResponse({ ok: true, workspacePath: "/coven" }));
+  calls[3].request.resolve(jsonResponse({ ok: true, config: { enabled: true } }));
 
   const [firstResult, secondResult] = await Promise.all([firstLoad, secondLoad]);
   assert.equal(firstResult, null, "a superseded load should not publish stale data");
   assert.deepEqual(secondResult, {
     config: ok({ ok: true, workspacePath: "/coven" }),
-    voice: ok({ ok: true, tts: [{ ready: true, verified: true }] }),
     sync: ok({ ok: true, config: { enabled: true } }),
   });
 });
@@ -199,7 +179,7 @@ test("General summary loader aborts the active request on dispose", async () => 
   const load = loader.load();
   loader.dispose();
 
-  assert.equal(calls.length, 3, "dispose should abort the in-flight three-source batch");
+  assert.equal(calls.length, 2, "dispose should abort the in-flight two-source batch");
   for (const call of calls) {
     assert.equal(call.signal?.aborted, true);
   }

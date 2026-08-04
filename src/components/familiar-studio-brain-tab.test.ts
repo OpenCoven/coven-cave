@@ -8,6 +8,23 @@ const source = readFileSync(
 );
 const css = readFileSync(new URL("../styles/globals/shell-responsive.css", import.meta.url), "utf8");
 
+assert.match(
+  source,
+  /import \{ VOICE_PROVIDER_CATALOG \} from "@\/lib\/voice\/provider-catalog"/,
+  "Familiar Studio imports the shared provider catalog",
+);
+assert.match(
+  source,
+  /VOICE_PROVIDER_CATALOG\.map\(\(provider\) => \(\{[\s\S]{0,180}value: provider\.id,[\s\S]{0,120}label: provider\.label,[\s\S]{0,120}disabled: !provider\.available/,
+  "provider order, labels, and availability are derived from the shared catalog",
+);
+assert.match(source, /options=\{voiceProviderOptions\}/, "the shared mapping feeds the Voice provider select");
+assert.doesNotMatch(
+  source,
+  /\{ value: "elevenlabs", label: "ElevenLabs \(true voice\)" \}|\{ value: "openai", label: "OpenAI Realtime" \}|\{ value: "gemini", label: "Gemini Live/,
+  "Familiar Studio keeps no local cloud-provider label or disabled-Gemini option literals",
+);
+
 assert.match(source, /export function FamiliarStudioBrainTab/);
 assert.match(source, /harness/);
 assert.match(source, /model/);

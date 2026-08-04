@@ -22,7 +22,15 @@ import { expect, test, type Page } from "@playwright/test";
 // navigation — which reads as "the reader is broken" when it is only cold.
 // Serial lets the first test pay the compile and the rest run warm. Same
 // posture as canonical-memory / code-surface / research-desk-tabs.
-test.describe.configure({ mode: "serial", timeout: 180_000 });
+// 240s, not 180s: openReader's own waits already budget 30s (chat surface) +
+// 30s (the answer) + 90s (the reader chunk) = 150s, and the FIRST test also
+// pays cold navigation and compile on top. At 180s the outer timeout fired
+// mid-wait and killed the very allowance the inner 90s exists to provide —
+// observed as `.cave-reader` "element(s) not found" with "Test timeout of
+// 180000ms exceeded" in the call log, on the first test only, passing on retry
+// (cave-n7wm5). Serial mode means only that first test is cold, so this buys
+// headroom for one test rather than lengthening the suite.
+test.describe.configure({ mode: "serial", timeout: 240_000 });
 
 const ISO = "2026-08-03T14:02:00.000Z";
 
@@ -142,6 +150,21 @@ async function openReader(page: Page, turn: TurnSpec) {
   // that passes only on Playwright's retry, and a test that needs a retry to
   // go green is a test that will eventually go red for no reason.
   await expect(page.locator(".cave-reader")).toBeVisible({ timeout: 90_000 });
+  // ...and then for the DOCUMENT, not just the shell that holds it. Every caller
+  // below asserts against `.cave-reader-doc .cave-md`, and those assertions get
+  // expect()'s default 5s window — not the 90s above. On a cold server, where
+  // the dynamic chunk is still settling, the shell turns visible while the prose
+  // and the citation-preview components that mount `a.cave-citation-chip` have
+  // not rendered yet, so the first assertion reads an empty document: the chip
+  // count came back 0 instead of 2, twice in one run, and passed on a clean
+  // re-run of the same commit (cave-n7wm5).
+  //
+  // Waiting on the answer's own text is the same rule the artifact wait above
+  // follows, and it is fixture-agnostic — both CITED_ANSWER and BARE_ANSWER open
+  // with prose, so this settles for every caller rather than only the cited one.
+  await expect(page.locator(".cave-reader-doc .cave-md")).toContainText(marker.slice(0, 24), {
+    timeout: 30_000,
+  });
 }
 
 test("cited sources render as chips, with no footnote plumbing left in the prose", async ({ page }) => {
@@ -268,4 +291,96 @@ test("Edit opens the prompt for editing and Cancel puts it back", async ({ page 
   await ask.getByRole("button", { name: "Cancel" }).click();
   await expect(ask.locator(".cave-reader-ask__input")).toHaveCount(0);
   await expect(ask.locator(".cave-reader-ask__text")).toHaveText(USER_PROMPT);
+});
+
+// ── Rewrite (cave-xailn) ─────────────────────────────────────────────────────
+// The control fires a real model call in production, so every test here mocks
+// /api/chat/rewrite. What is being checked is the READER's behaviour around
+// that call: caching, the failure paths, and that Full is never fetched.
+
+test("Full is the answer as written and never calls the rewrite endpoint", async ({ page }) => {
+  let calls = 0;
+  await page.route("**/api/chat/rewrite", (route) => {
+    calls += 1;
+    return route.fulfill({ json: { ok: true, tone: "brief", text: "Short." } });
+  });
+  await openReader(page, { text: CITED_ANSWER, tools: TOOLS });
+
+  await expect(page.locator(".cave-reader-rewrite")).toBeVisible();
+  await expect(page.locator(".cave-reader-doc")).toContainText("auto-sizes columns");
+  expect(calls).toBe(0);
+});
+
+test("a rewrite replaces the body, says it is a lens, and is cached", async ({ page }) => {
+  let calls = 0;
+  await page.route("**/api/chat/rewrite", (route) => {
+    calls += 1;
+    return route.fulfill({ json: { ok: true, tone: "brief", text: "Two regressions. Request changes." } });
+  });
+  await openReader(page, { text: CITED_ANSWER, tools: TOOLS });
+
+  const rewrite = page.locator(".cave-reader-rewrite");
+  await rewrite.getByRole("button", { name: /^Rewrite: Condense$/ }).click();
+  await expect(page.locator(".cave-reader-lens__text")).toHaveText("Two regressions. Request changes.");
+  // The reader must not pass a rewrite off as the familiar's own words.
+  await expect(page.locator(".cave-reader-lens__note")).toContainText("not a new one");
+  expect(calls).toBe(1);
+
+  // Back to Full, then to Condense again: the second visit is cached.
+  await rewrite.getByRole("button", { name: /^Rewrite: Full$/ }).click();
+  await expect(page.locator(".cave-reader-doc")).toContainText("auto-sizes columns");
+  await rewrite.getByRole("button", { name: /^Rewrite: Condense$/ }).click();
+  await expect(page.locator(".cave-reader-lens__text")).toBeVisible();
+  expect(calls).toBe(1);
+});
+
+test("a failed rewrite keeps the answer readable and says so", async ({ page }) => {
+  await page.route("**/api/chat/rewrite", (route) =>
+    route.fulfill({ status: 502, json: { ok: false, error: "no rewrite produced" } }),
+  );
+  await openReader(page, { text: CITED_ANSWER, tools: TOOLS });
+
+  await page.locator(".cave-reader-rewrite").getByRole("button", { name: /^Rewrite: ELI5$/ }).click();
+  await expect(page.locator(".cave-reader-lens__error")).toContainText("showing the answer as written");
+  // The document is still there — a failed lens must never blank the reader.
+  await expect(page.locator(".cave-reader-doc")).toContainText("auto-sizes columns");
+});
+
+test("a deployment that cannot rewrite retires the control instead of erroring", async ({ page }) => {
+  await page.route("**/api/chat/rewrite", (route) =>
+    route.fulfill({ status: 501, json: { ok: false, error: "rewrite unavailable for this familiar" } }),
+  );
+  await openReader(page, { text: CITED_ANSWER, tools: TOOLS });
+
+  await page.locator(".cave-reader-rewrite").getByRole("button", { name: /^Rewrite: Condense$/ }).click();
+  // Gone, not nagging: a control that fails identically on every press is worse
+  // than no control.
+  await expect(page.locator(".cave-reader-rewrite")).toHaveCount(0);
+  await expect(page.locator(".cave-reader-lens__error")).toHaveCount(0);
+  await expect(page.locator(".cave-reader-doc")).toContainText("auto-sizes columns");
+});
+
+test("the rail describes what is on screen, not the original", async ({ page }) => {
+  // Caught by looking at a screenshot: while a rewrite was shown, the rail still
+  // listed the original's headings and the estimate still counted its words, so
+  // clicking a rail entry scrolled to a heading the body no longer had.
+  await page.route("**/api/chat/rewrite", (route) =>
+    route.fulfill({ json: { ok: true, tone: "brief", text: "Two regressions. Request changes." } }),
+  );
+  await openReader(page, { text: CITED_ANSWER, tools: TOOLS });
+
+  // The original has headings, so the rail is there with its reading estimate.
+  await expect(page.locator(".cave-reader-rail__link")).not.toHaveCount(0);
+  await expect(page.locator(".cave-reader-rail__meta")).toContainText("min read");
+
+  await page.locator(".cave-reader-rewrite").getByRole("button", { name: /^Rewrite: Condense$/ }).click();
+  await expect(page.locator(".cave-reader-lens__text")).toBeVisible();
+
+  // The condensed body has no headings, so the whole rail goes — meta included.
+  // An empty rail beside a rewrite would be a menu pointing at nothing.
+  await expect(page.locator(".cave-reader-rail")).toHaveCount(0);
+
+  // And it comes back with the original.
+  await page.locator(".cave-reader-rewrite").getByRole("button", { name: /^Rewrite: Full$/ }).click();
+  await expect(page.locator(".cave-reader-rail__link")).not.toHaveCount(0);
 });

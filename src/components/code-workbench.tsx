@@ -1,69 +1,68 @@
 "use client";
 
 /**
- * CodeWorkbench — the Code surface's per-session center pane (cave-k0ua):
- * a compact session header (branch / PR / diffstat attribution chips + Open
- * in Chat) over Diff | Files | Terminal tabs.
+ * CodeWorkbench — the Coding Room's per-session workbench (cave-k0ua,
+ * recomposed for cave-98o51).
  *
- * Reuse posture: each tab mounts a proven chat-rail piece scoped to the
- * session's *work root* (its worktree when it has one — never the shared
- * checkout, cave-9q24):
- *   - Diff → SessionChangesInner (status, unified diffs, commit, create-PR,
- *     checkpoints, per-file revert)
- *   - Files → CodeWorkbenchFiles (ProjectTree + editable RailFilePreview),
- *     dynamic() so CodeMirror stays out of the initial chunk
- *   - Terminal → RailTerminalPanel (per-session pty via cave.rail.<id>, so a
- *     shell started from Chat's rail is the SAME shell here), dynamic() for
- *     xterm; stays mounted once opened so scrollback survives tab switches
- *   - PR → CodeSessionPrPanel (stage pipeline, checks, review threads,
- *     approve/merge via /api/github/*), dynamic() alongside its fetch hooks
+ * The approved three-zone shape: a compact session header over a persistent
+ * terminal center beside a resizable context dock, with the follow-up composer
+ * underneath both.
  *
- * Right of the tabs (toggleable, md+ only): the inspector
- * (code-inspector.tsx) — session env, branch switcher, worktree creation.
- * Below the tabs (except Terminal, which owns its input): the follow-up
- * composer (code-composer.tsx) — sends to THIS session's agent.
+ *   header
+ *   CodeTerminalWorkspace | CodeContextDock
+ *   CodeComposer
+ *
+ * What changed and why: terminals used to be one tab among Diff/Files/PR, so
+ * reading a diff meant losing sight of a running shell. Now the shell is the
+ * center and never unmounts, and context docks beside it. The composer sits
+ * below both so a follow-up prompt stays available while reading any tab.
+ *
+ * Reuse posture is unchanged — every context tab still mounts its proven panel
+ * (SessionChangesInner, CodeWorkbenchFiles, CodeSessionPrPanel, CodeInspector),
+ * and the primary terminal still rides `cave.rail.<id>`, so a shell started
+ * from Chat's rail is the SAME shell here.
  */
 
-import { useEffect, useState } from "react";
-import dynamic from "next/dynamic";
+import { useCallback, useEffect, useState } from "react";
+import { Group, Panel, Separator } from "react-resizable-panels";
+import "@/styles/globals/surface-code-room.css";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
+import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { relativeTime } from "@/lib/relative-time";
-import { SessionChangesInner } from "@/components/session-changes-panel";
 import { CodeComposer } from "@/components/code-composer";
+import { CodeContextDock } from "@/components/code-context-dock";
+import { CodeTerminalWorkspace } from "@/components/code-terminal-workspace";
 import {
+  codeDockTabForWorkbenchTab,
   codeSessionActivity,
   codeSessionBranch,
   codeSessionDiffstat,
   codeSessionWorkRoot,
+  type CodeDockSize,
+  type CodeDockTab,
   type CodeWorkbenchTab,
 } from "@/lib/code-surface";
+import {
+  closeTerminalPane,
+  createTerminalLayout,
+  resolveFocusedPane,
+  splitTerminalPane,
+  type TerminalLayoutNode,
+  type TerminalSplitDirection,
+} from "@/lib/code-terminal-tree";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import type { SessionRow } from "@/lib/types";
 
-const LazyFilesTab = dynamic(
-  () => import("@/components/code-workbench-files").then((m) => m.CodeWorkbenchFiles),
-  { ssr: false },
-);
-const LazyTerminalTab = dynamic(
-  () => import("@/components/rail-terminal-panel").then((m) => m.RailTerminalPanel),
-  { ssr: false },
-);
-const LazyPrTab = dynamic(
-  () => import("@/components/code-session-pr-panel").then((m) => m.CodeSessionPrPanel),
-  { ssr: false },
-);
-const LazyInspector = dynamic(
-  () => import("@/components/code-inspector").then((m) => m.CodeInspector),
-  { ssr: false },
-);
-
-const TAB_LABELS: Array<{ id: CodeWorkbenchTab; label: string; icon: Parameters<typeof Icon>[0]["name"] }> = [
-  { id: "diff", label: "Diff", icon: "ph:git-diff" },
-  { id: "files", label: "Files", icon: "ph:folder-open" },
-  { id: "terminal", label: "Terminal", icon: "ph:terminal-window" },
-  { id: "pr", label: "PR", icon: "ph:git-pull-request" },
-];
+/** The terminal keeps this much room whatever the dock does — the center is
+ *  the priority surface, so dragging the divider can starve context but never
+ *  the shell. */
+const MIN_TERMINAL_WIDTH = "320px";
+const DOCK_MIN_WIDTH: Record<CodeDockSize, string> = {
+  collapsed: "44px",
+  normal: "300px",
+  expanded: "460px",
+};
 
 export function CodeWorkbench({
   row,
@@ -73,31 +72,63 @@ export function CodeWorkbench({
   onRefresh,
 }: {
   row: SessionRow;
-  /** Deep-linked workbench tab (?wtab=). */
+  /** Deep-linked context tab (?wtab=), mapped through the dock vocabulary. */
   initialTab?: CodeWorkbenchTab;
-  /** A routed file/diff open (cave-ohcj): lands on the Files or Diff tab with
-   *  that path focused. `nonce` re-triggers the jump for a repeated path. */
+  /** A routed file/diff open (cave-ohcj): lands on the Files or Changes tab
+   *  with that path focused. `nonce` re-triggers the jump for a repeat path. */
   openTarget?: PendingCodeOpen;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   /** Re-poll the enriched session list (branch/worktree chips) after inspector mutations. */
   onRefresh?: () => void;
 }) {
-  const [tab, setTab] = useState<CodeWorkbenchTab>(initialTab ?? "diff");
+  const [dockTab, setDockTab] = useState<CodeDockTab>(
+    () => codeDockTabForWorkbenchTab(initialTab) ?? "changes",
+  );
+  const [dockSize, setDockSize] = useState<CodeDockSize>("normal");
   // A routed open outranks the resting/deep-linked tab — a diff jump shows
-  // the Diff tab, a file open the Files tab (also re-applied per nonce).
+  // Changes, a file open shows Files (re-applied per nonce), and either one
+  // reopens a collapsed dock so the routed target is actually visible.
   useEffect(() => {
     if (!openTarget) return;
-    setTab(openTarget.kind === "changes" ? "diff" : "files");
+    setDockTab(openTarget.kind === "changes" ? "changes" : "files");
+    setDockSize((size) => (size === "collapsed" ? "normal" : size));
   }, [openTarget]);
-  // Inspector (branches/worktrees/env) is an opt-in right column; md+ only —
-  // the narrow-screen treatment lands with the mobile layout pass.
-  const [inspectorOpen, setInspectorOpen] = useState(false);
-  // Terminal keepalive: once visited, keep the pty mounted (hidden) so the
-  // shell and scrollback survive tab switches within the session.
-  const [terminalOpened, setTerminalOpened] = useState(false);
+
+  // Terminal center. The layout is per-session: switching sessions resets to a
+  // single primary pane rather than carrying another session's splits over.
+  const [layout, setLayout] = useState<TerminalLayoutNode>(createTerminalLayout);
+  const [focusedPaneId, setFocusedPaneId] = useState<string>(() =>
+    resolveFocusedPane(createTerminalLayout(), null),
+  );
+  const [broadcast, setBroadcast] = useState(false);
   useEffect(() => {
-    if (tab === "terminal") setTerminalOpened(true);
-  }, [tab]);
+    const fresh = createTerminalLayout();
+    setLayout(fresh);
+    setFocusedPaneId(resolveFocusedPane(fresh, null));
+    setBroadcast(false);
+  }, [row.id]);
+
+  const handleSplit = useCallback((paneId: string, direction: TerminalSplitDirection) => {
+    setLayout((current) => {
+      const { layout: next, createdPaneId } = splitTerminalPane(current, paneId, direction);
+      if (createdPaneId) setFocusedPaneId(createdPaneId);
+      return next;
+    });
+  }, []);
+
+  const handleClosePane = useCallback((paneId: string) => {
+    setLayout((current) => {
+      const { layout: next, nextFocusPaneId, closed } = closeTerminalPane(current, paneId);
+      if (!closed) return current;
+      setFocusedPaneId((focused) =>
+        focused === paneId ? nextFocusPaneId ?? resolveFocusedPane(next, null) : focused,
+      );
+      // One pane left means broadcast has no targets; leaving it on would show
+      // a pressed toggle that does nothing.
+      if (next.kind === "pane") setBroadcast(false);
+      return next;
+    });
+  }, []);
 
   const workRoot = codeSessionWorkRoot(row);
   const branch = codeSessionBranch(row);
@@ -140,84 +171,50 @@ export function CodeWorkbench({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            <button
-              type="button"
-              aria-pressed={inspectorOpen}
-              aria-label="Toggle inspector"
-              title="Inspector — branches, worktrees, session env"
-              onClick={() => setInspectorOpen((v) => !v)}
-              className={`focus-ring hidden items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] md:inline-flex ${
-                inspectorOpen
-                  ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              <Icon name="ph:sliders-bold" width={12} height={12} />
-            </button>
             <Button size="sm" onClick={() => onJumpToSession(row.id, row.familiarId)}>
               Open in Chat
             </Button>
           </div>
         </div>
-        <div role="tablist" aria-label="Session workbench" className="mt-2 flex items-center gap-1">
-          {TAB_LABELS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => setTab(t.id)}
-              className={`focus-ring inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
-                tab === t.id
-                  ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              <Icon name={t.icon} width={12} height={12} />
-              {t.label}
-            </button>
-          ))}
-        </div>
       </div>
       <div className="flex min-h-0 flex-1">
-        <div className="min-w-0 flex-1">
-          {tab === "diff" ? (
-            // Keyed by work root: the panel's file/diff/checkpoint state is
-            // per-repo, and switching sessions must never show stale rows.
-            <SessionChangesInner
-              key={workRoot}
+        <Group className="code-room__group" orientation="horizontal">
+          <Panel id={`code-room-terminal-${row.id}`} className="code-room__panel" minSize={MIN_TERMINAL_WIDTH}>
+            <CodeTerminalWorkspace
+              sessionId={row.id}
               projectRoot={workRoot}
-              running={running}
-              focusPath={openTarget?.kind === "changes" ? openTarget.path : undefined}
-              focusNonce={openTarget?.kind === "changes" ? openTarget.nonce : undefined}
+              layout={layout}
+              focusedPaneId={focusedPaneId}
+              visible
+              broadcast={broadcast}
+              onFocusPane={setFocusedPaneId}
+              onSplit={handleSplit}
+              onClosePane={handleClosePane}
+              onToggleBroadcast={() => setBroadcast((on) => !on)}
             />
-          ) : null}
-          {tab === "files" ? (
-            <LazyFilesTab
-              key={workRoot}
-              projectRoot={workRoot}
-              familiarId={row.familiarId}
-              focusPath={openTarget?.kind === "files" ? openTarget.path : undefined}
-              focusNonce={openTarget?.kind === "files" ? openTarget.nonce : undefined}
-            />
-          ) : null}
-          {terminalOpened ? (
-            <div className={tab === "terminal" ? "h-full min-h-0" : "hidden"}>
-              <LazyTerminalTab sessionId={row.id} projectRoot={workRoot} active={tab === "terminal"} />
-            </div>
-          ) : null}
-          {tab === "pr" ? <LazyPrTab key={row.id} row={row} /> : null}
-        </div>
-        {inspectorOpen ? (
-          <aside
-            aria-label="Session inspector"
-            className="hidden w-72 shrink-0 border-l border-[var(--border-hairline)] md:block"
+          </Panel>
+          <Separator className="shell-separator code-room__sep">
+            <SeparatorHandle orientation="col" />
+          </Separator>
+          <Panel
+            id={`code-room-dock-${row.id}`}
+            className="code-room__panel"
+            minSize={DOCK_MIN_WIDTH[dockSize]}
           >
-            <LazyInspector key={workRoot} row={row} onChanged={onRefresh} />
-          </aside>
-        ) : null}
+            <CodeContextDock
+              row={row}
+              tab={dockTab}
+              size={dockSize}
+              running={running}
+              openTarget={openTarget}
+              onTabChange={setDockTab}
+              onSizeChange={setDockSize}
+              onRefresh={onRefresh}
+            />
+          </Panel>
+        </Group>
       </div>
-      {tab !== "terminal" ? <CodeComposer row={row} onJumpToSession={onJumpToSession} /> : null}
+      <CodeComposer row={row} onJumpToSession={onJumpToSession} />
     </div>
   );
 }

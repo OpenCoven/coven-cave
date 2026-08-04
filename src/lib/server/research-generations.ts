@@ -830,6 +830,16 @@ const SPOKEN_GLYPHS: [RegExp, string][] = [
   [/\s*≥\s*/g, " at least "],
   [/\s*≤\s*/g, " at most "],
   [/\s*≈\s*/g, " about "],
+  // "~5" gets spoken as "five-five" or a stray glyph (cave-8nndo, Charm
+  // re-review); only the numeric-approximation use is rewritten, so paths
+  // like "~/.config" stay untouched.
+  [/~\s*(?=\d)/g, "about "],
+  // "spec+regression" gets ASR-mangled ("specs or aggression"); digits keep
+  // arithmetic sense ("2+2" → "2 plus 2"), words read as a pairing. "C++"
+  // stays intact: its second "+" is not followed by a letter, so neither
+  // pattern matches the token.
+  [/(?<=\d)\s*\+\s*(?=\d)/g, " plus "],
+  [/(?<=[A-Za-z])\+(?=[A-Za-z])/g, " and "],
 ];
 
 function normalizeSpokenGlyphs(text: string): string {

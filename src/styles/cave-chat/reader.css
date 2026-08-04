@@ -180,6 +180,53 @@
   to   { transform: scaleX(1); }
 }
 
+/* Rewrite — the same answer in a different register. Sits left of the export
+   and copy actions, so the reading controls group together. */
+.cave-reader-rewrite {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.cave-reader-rewrite__status {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* A rewritten body is visibly a LENS, not a replacement: the note says so, and
+   the prose sits at the reader's measure like the original. */
+.cave-reader-lens {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.cave-reader-lens__note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--accent-presence);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  background: color-mix(in oklch, var(--accent-presence-soft) 7%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.cave-reader-lens__text {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: var(--text-md);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+}
+.cave-reader-lens__error {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+  background: var(--danger-bg);
+  font-size: var(--text-xs);
+  color: var(--danger-text);
+}
+
 /* Export menu ------------------------------------------------------------ */
 
 .cave-reader-menu-anchor {

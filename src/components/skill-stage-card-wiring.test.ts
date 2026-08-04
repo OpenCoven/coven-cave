@@ -18,10 +18,20 @@ assert.match(
   /const skillSplit = extractSkillMarkers\(ghSafeVisible\);/,
   "skill markers extract on both streaming and settled paths (live stage while the agent works)",
 );
+// Pinned as a flow, not a call site: marker extractors keep being inserted
+// between the skill split and next-paths (auto-mission status was the last),
+// so naming `extractNextPaths(skillSplit.visible)` goes stale every time. What
+// must hold is that the skill-stripped visible feeds the rest of the chain and
+// that next-paths never runs on text still carrying skill markers.
 assert.match(
   chatView,
-  /extractNextPaths\(skillSplit\.visible\)/,
+  /const skillSplit = extractSkillMarkers\(ghSafeVisible\);[\s\S]{0,600}\(skillSplit\.visible\)/,
   "downstream text flows from the skill-stripped visible — raw markers never render",
+);
+assert.doesNotMatch(
+  chatView,
+  /extractNextPaths\((?:ghSafeVisible|turn\.text|reasoningSplit\.visible)\)/,
+  "next-paths never runs on text upstream of the skill split",
 );
 assert.match(chatView, /<SkillStageCard key=\{u\.name\} name=\{u\.name\} stage=\{u\.stage\} note=\{u\.note\} \/>/, "assistant turns render one card per skill name");
 assert.match(

@@ -228,7 +228,8 @@ struct MessageBubble: View {
                 // while streaming, a collapsed summary once finished.
                 if !isUser, !message.activitySteps.isEmpty {
                     AgentActivityView(steps: message.activitySteps,
-                                      streaming: message.streaming)
+                                      streaming: message.streaming,
+                                      messageId: message.id)
                         .padding(.leading, 2)
                 }
                 // Hide the (empty) text bubble for image-only messages.

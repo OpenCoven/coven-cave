@@ -78,7 +78,7 @@ function downloadLabel(job: DownloadJob | undefined): string | null {
   return null;
 }
 
-/** Settings → General controls for the reviewed local speech-model registry. */
+/** Settings → Voice controls for the reviewed local speech-model registry. */
 export function VoiceEngineSettings() {
   const [models, setModels] = useState<VoiceModel[]>([]);
   const [jobs, setJobs] = useState<DownloadJob[]>([]);

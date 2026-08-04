@@ -256,7 +256,7 @@ async function main() {
     assert.match(manifest.payloadSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.treeSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.archiveSha256, /^[a-f0-9]{64}$/);
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_887);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_915);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
@@ -563,6 +563,11 @@ async function main() {
       },
       general: { stopPhrase: "halt", celebrations: false },
       phone: { mobileMode: false },
+      voice: {
+        defaultProvider: "elevenlabs",
+        defaultModel: "eleven_turbo_v2_5",
+        defaultVoice: "21m00Tcm4TlvDq8ikWAM",
+      },
     };
     const savePreferences = await fetch(`${baseUrl}/api/preferences`, {
       method: "PATCH",
@@ -626,6 +631,7 @@ async function main() {
     assert.equal(restored.appearance.backdrop.image.mime, "image/png");
     assert.deepEqual(restored.general, preferencePatch.general);
     assert.deepEqual(restored.phone, preferencePatch.phone);
+    assert.deepEqual(restored.voice, preferencePatch.voice);
 
     const documentResponse = await fetch(baseUrl, {
       headers: authenticatedHeaders(baseUrl),

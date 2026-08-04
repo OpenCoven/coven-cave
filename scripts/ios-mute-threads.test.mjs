@@ -19,7 +19,9 @@ assert.match(
   "AppModel.setThreadMuted should set the flag and persist",
 );
 
-for (const [name, src] of [["ChatsHomeView", home], ["FamiliarThreadsView", familiarThreads]]) {
+// Muting is a thread affordance, so it lives in the session picker; the Chats
+// home lists familiars and has no thread rows.
+for (const [name, src] of [["FamiliarThreadsView", familiarThreads]]) {
   assert.match(src, /app\.setThreadMuted\(thread, !thread\.muted\)/, `${name} should toggle mute state`);
   assert.match(src, /thread\.muted \? "Unmute" : "Mute"/, `${name} should label the mute action by state`);
 }

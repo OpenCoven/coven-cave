@@ -328,6 +328,25 @@
   border-radius: var(--radius-card);
   background: var(--bg-base);
 }
+/* Play mode: the sketch owns its own input, so the aside only explains the
+   handover and offers a way back to frame one. */
+.canvas-editor__play-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding: var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
+}
+.canvas-editor__play-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
 .canvas-editor__sel-label {
   font-size: var(--text-base);
   font-weight: 600;

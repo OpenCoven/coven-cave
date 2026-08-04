@@ -888,6 +888,14 @@
   width: 100%;
   border-radius: var(--radius-control);
 }
+.research-studio-viewer__infographic {
+  display: block;
+  width: 100%;
+  max-height: 52vh;
+  object-fit: contain;
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+}
 .research-studio-review__list {
   display: flex;
   flex-direction: column;
@@ -990,3 +998,128 @@
     transition: none;
   }
 }
+
+/* ── Podcast transcript (Coven Podcast.dc.html — "Transcript · screenplay") ──
+   A dialogue reads by attribution: one voice down the page, not a column of
+   undifferentiated paragraphs. Speakers take a gutter, consecutive lines from
+   one voice share a single attribution, and the cast states which voice each
+   speaker was rendered in. */
+.podcast-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+.podcast-transcript__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.podcast-transcript__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.podcast-transcript__eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.podcast-transcript__cast {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.podcast-transcript__voice {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  --pt-voice: var(--text-muted);
+}
+.podcast-transcript__voice--host { --pt-voice: var(--accent-presence); }
+.podcast-transcript__voice--guest { --pt-voice: var(--color-success); }
+.podcast-transcript__voice b {
+  color: var(--pt-voice);
+  font-weight: 650;
+}
+.podcast-transcript__voice span {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+.podcast-transcript__count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.podcast-transcript__script {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 46vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.podcast-transcript__run {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+  --pt-voice: var(--text-muted);
+}
+.podcast-transcript__run--host { --pt-voice: var(--accent-presence); }
+.podcast-transcript__run--guest { --pt-voice: var(--color-success); }
+/* A narrator script has no speaker to attribute, so it keeps the full width
+   instead of an empty gutter pretending one exists. */
+.podcast-transcript__run:not([class*="--host"]):not([class*="--guest"]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.podcast-transcript__attribution {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--pt-voice);
+  text-align: right;
+}
+.podcast-transcript__lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  border-left: 2px solid color-mix(in oklch, var(--pt-voice) 40%, transparent);
+  padding-left: var(--space-3);
+}
+.podcast-transcript__cue {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-warning);
+}
+.podcast-transcript__line {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  text-wrap: pretty;
+}
+.podcast-transcript--compact .podcast-transcript__script { gap: var(--space-2); }
+.podcast-transcript--compact .podcast-transcript__line { line-height: var(--leading-normal); }

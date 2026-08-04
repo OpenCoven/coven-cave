@@ -17,6 +17,9 @@ struct FamiliarThreadsView: View {
     @State private var pendingDelete: ChatThread?
     /// Reveal archived on-device threads.
     @State private var showArchived = false
+    /// Filters the picker by thread title, a member's name, or message text —
+    /// the search the Chats home used to own before it became a familiar list.
+    @State private var query = ""
     /// Multi-select bulk-delete mode.
     @State private var selectMode = false
     @State private var selectedIds: Set<String> = []
@@ -45,13 +48,30 @@ struct FamiliarThreadsView: View {
     }
 
     /// On-device threads + server-only sessions, newest activity first.
-    /// Archived on-device threads stay hidden until the user opts in.
+    /// Archived on-device threads stay hidden until the user opts in, and the
+    /// search query narrows both kinds of row. An empty query returns everything.
     private var entries: [Entry] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let local = app.directThreads(for: familiar.id)
             .filter { showArchived || !$0.archived }
+            .filter { matches($0, query: q) }
             .map(Entry.local)
-        let server = app.serverOnlySessions(for: familiar.id).map(Entry.server)
+        // A server-only session has no transcript on this device yet, so its
+        // title is the only thing there is to match.
+        let server = app.serverOnlySessions(for: familiar.id)
+            .filter { q.isEmpty || $0.title.lowercased().contains(q) }
+            .map(Entry.server)
         return (local + server).sorted { $0.date > $1.date }
+    }
+
+    /// A thread matches the search when its title, one of its members' names,
+    /// or anything said in it contains the (already lowercased) query.
+    private func matches(_ thread: ChatThread, query q: String) -> Bool {
+        if q.isEmpty { return true }
+        if thread.title.lowercased().contains(q) { return true }
+        if thread.familiarIds.compactMap(app.familiar)
+            .contains(where: { $0.displayName.lowercased().contains(q) }) { return true }
+        return thread.messages.contains { $0.text.lowercased().contains(q) }
     }
 
     /// Number of archived on-device threads (drives the show/hide toggle).
@@ -61,7 +81,9 @@ struct FamiliarThreadsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if entries.isEmpty && archivedLocalCount == 0 {
+            // A query that matches nothing must keep the list (and its search
+            // field) on screen, or there is no way to clear the query.
+            if entries.isEmpty && archivedLocalCount == 0 && query.isEmpty {
                 emptyState
             } else {
                 threadList.readableListWidth(740)
@@ -234,6 +256,10 @@ struct FamiliarThreadsView: View {
         }
         .listStyle(.plain)
         .themedListBackground()
+        .searchable(text: $query, prompt: "Search chats")
+        .overlay {
+            if entries.isEmpty && !query.isEmpty { ContentUnavailableView.search(text: query) }
+        }
         .threadRenameAlert($renamingThread) { thread, name in app.renameThread(thread, to: name) }
         .confirmationDialog("Delete this chat?",
                             isPresented: deleteDialogBinding,
@@ -253,9 +279,23 @@ struct FamiliarThreadsView: View {
     private var localThreads: [ChatThread] {
         app.directThreads(for: familiar.id).filter { showArchived || !$0.archived }
     }
+    /// The local threads actually on screen. `entries` is narrowed by the
+    /// archive toggle AND the search query, so this is derived from it rather
+    /// than re-deriving the filters — it cannot drift from what renders.
+    ///
+    /// Select All uses this, not `localThreads`: selecting rows the user
+    /// cannot see and then deleting them is unrecoverable (cave-2qyqu). The
+    /// bulk actions still operate on `selectedIds`, so a selection made before
+    /// searching survives the search rather than being silently dropped.
+    private var visibleLocalThreads: [ChatThread] {
+        entries.compactMap { entry in
+            if case .local(let thread) = entry { return thread }
+            return nil
+        }
+    }
     private var hasLocalThreads: Bool { !app.directThreads(for: familiar.id).isEmpty }
     private var allLocalSelected: Bool {
-        !localThreads.isEmpty && Set(localThreads.map(\.id)).isSubset(of: selectedIds)
+        !visibleLocalThreads.isEmpty && Set(visibleLocalThreads.map(\.id)).isSubset(of: selectedIds)
     }
 
     private func tapEntry(_ entry: Entry) {
@@ -269,7 +309,7 @@ struct FamiliarThreadsView: View {
         if selectedIds.contains(id) { selectedIds.remove(id) } else { selectedIds.insert(id) }
     }
     private func toggleSelectAll() {
-        if allLocalSelected { selectedIds.removeAll() } else { selectedIds = Set(localThreads.map(\.id)) }
+        if allLocalSelected { selectedIds.removeAll() } else { selectedIds = Set(visibleLocalThreads.map(\.id)) }
     }
     private func exitSelect() {
         withAnimation { selectMode = false; selectedIds.removeAll() }

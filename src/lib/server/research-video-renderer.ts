@@ -22,15 +22,18 @@ const VIDEO_HEIGHT = 720;
 const COMMAND_OUTPUT_MAX_BYTES = 256 * 1024;
 
 /**
- * Concrete server-artifact palette. These values mirror the default Coven
- * declarations in src/styles/globals/foundations.css; SVGs rendered by Sharp
- * cannot inherit browser CSS variables.
+ * Concrete server-artifact palette. These hex values are the sRGB equivalents
+ * of the default Coven oklch declarations in
+ * src/styles/globals/foundations.css. SVGs rendered by Sharp cannot inherit
+ * browser CSS variables, and Sharp's librsvg does not parse oklch() at all —
+ * oklch fills silently render as black (cave-6f88w; same defect fixed for the
+ * infographic renderer in cave-ga0t5) — so the palette must stay in hex here.
  */
 export const COVEN_VIDEO_RENDER_PALETTE = {
-  background: "oklch(0.225 0.004 291)",
+  background: "#1c1b1d",
   accent: "#9386d0",
-  primaryText: "oklch(0.985 0 0)",
-  secondaryText: "oklch(0.66 0.010 291)",
+  primaryText: "#fafafa",
+  secondaryText: "#929198",
 } as const;
 
 export type ResearchVideoRenderPalette = {

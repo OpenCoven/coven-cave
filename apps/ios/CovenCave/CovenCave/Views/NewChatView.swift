@@ -73,8 +73,7 @@ struct NewChatView: View {
                         familiarIds: selectedFamiliarIds,
                         recentRoots: app.recentProjectRoots,
                         selectedRoot: $selectedProjectRoot,
-                        isResolved: $projectResolved,
-                        locked: false
+                        isResolved: $projectResolved
                     )
                 }
             }

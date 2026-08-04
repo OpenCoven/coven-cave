@@ -59,7 +59,13 @@ test("getVoiceProvider returns null for unknown id", () => {
   assert.equal(getVoiceProvider(""), null);
 });
 
-test("listVoiceProviders returns stable order: openai, gemini, local, familiar, elevenlabs", () => {
+test("listVoiceProviders follows the stable catalog order", () => {
   const list = listVoiceProviders();
-  assert.deepEqual(list.map(p => p.id), ["openai", "gemini", "local", "familiar", "elevenlabs"]);
+  assert.deepEqual(list, [
+    { id: "familiar", label: "Familiar brain (true voice)" },
+    { id: "elevenlabs", label: "ElevenLabs (true voice)" },
+    { id: "openai", label: "OpenAI Realtime" },
+    { id: "local", label: "Local (on-device)" },
+    { id: "gemini", label: "Gemini Live" },
+  ]);
 });

@@ -14,11 +14,13 @@ import { Popover, PopoverBody } from "@/components/ui/popover";
 import { createCitationPreviewCoordinator } from "@/lib/citation-preview";
 import {
   citationSourcePresentation,
+  lineRangeLabel,
   type Citation,
   type CitationSourceKind,
 } from "@/lib/citations";
 
 const SOURCE_ICONS: Record<CitationSourceKind, IconName> = {
+  repo: "ph:file-text",
   github: "ph:github-logo",
   arxiv: "ph:graduation-cap",
   doi: "ph:graduation-cap",
@@ -39,6 +41,81 @@ function isPlainPrimaryClick(event: ReactMouseEvent<HTMLAnchorElement>): boolean
   );
 }
 
+/**
+ * A worktree citation: the familiar cited a file it read, not a page it
+ * fetched. There is nothing to open in a browser and no domain to name, so the
+ * card shows what actually identifies the source — the path, the line range,
+ * and the lines themselves, numbered from the range start when one was given.
+ * The quoted text is the citation's own snippet; nothing is read off disk here,
+ * so the card can never show a peek the citation did not carry.
+ */
+function RepoCitationCard({ citation }: { citation: Citation }) {
+  const file = citation.file!;
+  const range = lineRangeLabel(file);
+  const peek = (citation.snippet ?? "").split("\n").slice(0, 4);
+  const firstLine = file.lineStart ?? 1;
+  return (
+    <article
+      data-source-kind="repo"
+      className="flex w-[var(--citation-card-w,320px)] max-w-[calc(100vw-var(--space-8))] flex-col overflow-hidden"
+    >
+      <header className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2">
+        <Icon name="ph:file-text" width={13} height={13} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
+        <span
+          className="min-w-0 flex-1 truncate font-[family-name:var(--font-mono)] text-[length:var(--text-xs)] text-[var(--text-primary)]"
+          title={file.path}
+        >
+          {file.path}
+        </span>
+        {range ? (
+          <span className="shrink-0 rounded-[var(--radius-sm)] bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] px-1.5 py-0.5 font-[family-name:var(--font-mono)] text-[length:var(--text-2xs)] font-semibold text-[var(--accent-presence)]">
+            {range}
+          </span>
+        ) : null}
+      </header>
+
+      {peek.some((line) => line.trim()) ? (
+        <div className="flex flex-col bg-[var(--code-surface)] py-2">
+          {peek.map((line, index) => (
+            <span key={index} className="flex items-baseline gap-2.5 pl-2.5 pr-3">
+              <span className="w-6 shrink-0 text-right font-[family-name:var(--font-mono)] text-[length:var(--text-2xs)] leading-4 text-[var(--text-muted)]">
+                {firstLine + index}
+              </span>
+              <span className="min-w-0 flex-1 truncate whitespace-pre font-[family-name:var(--font-mono)] text-[length:var(--text-2xs)] leading-4 text-[var(--code-foreground)]">
+                {line}
+              </span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <footer className="flex items-center gap-2 border-t border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2">
+        <span className="min-w-0 truncate font-[family-name:var(--font-mono)] text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+          {citation.title}
+        </span>
+        {/* A real action, not a label that looks like one: this is the same
+            `cave:open-project-file` bridge the inline file links dispatch, so
+            the Code rail opens the cited file at the cited line. */}
+        <button
+          type="button"
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent("cave:open-project-file", {
+                detail: { path: file.path, line: file.lineStart },
+              }),
+            )
+          }
+          title={`Open ${file.path}${file.lineStart ? `:${file.lineStart}` : ""} in the Code workspace`}
+          className="focus-ring ml-auto inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-2xs)] font-medium text-[var(--accent-presence)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)]"
+        >
+          Open in Code
+          <Icon name="ph:arrow-square-out" width={10} height={10} aria-hidden />
+        </button>
+      </footer>
+    </article>
+  );
+}
+
 function CitationCard({
   citation,
   onOpenUrl,
@@ -46,6 +123,7 @@ function CitationCard({
   citation: Citation;
   onOpenUrl?: (url: string) => void;
 }) {
+  if (citation.file) return <RepoCitationCard citation={citation} />;
   const presentation = citationSourcePresentation(citation);
   const openSource = (event: ReactMouseEvent<HTMLAnchorElement>) => {
     if (!citation.url || !onOpenUrl || !isPlainPrimaryClick(event)) return;
@@ -73,8 +151,16 @@ function CitationCard({
       </header>
 
       <div className="flex flex-col gap-2 p-3">
-        <h3 className="line-clamp-2 break-words text-[length:var(--text-md)] font-semibold leading-snug text-[var(--text-primary)]">
-          {citation.title}
+        <h3 className="flex items-start gap-2 break-words text-[length:var(--text-md)] font-semibold leading-snug text-[var(--text-primary)]">
+          {/* The marker number, so the card and the inline chip that opened it
+              read as the same source rather than two lookups. */}
+          <span
+            aria-hidden
+            className="mt-0.5 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[var(--radius-sm)] bg-[color-mix(in_oklch,var(--foreground)_12%,transparent)] font-[family-name:var(--font-mono)] text-[length:var(--text-2xs)] font-semibold text-[var(--text-secondary)]"
+          >
+            {citation.n}
+          </span>
+          <span className="line-clamp-2 min-w-0">{citation.title}</span>
         </h3>
         <p className="line-clamp-3 text-[length:var(--text-xs)] leading-normal text-[var(--text-secondary)]">
           {presentation.summary}

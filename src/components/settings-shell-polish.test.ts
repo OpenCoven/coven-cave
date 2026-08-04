@@ -40,6 +40,29 @@ const phoneCss = readFileSync(
   new URL("../styles/settings-phone.css", import.meta.url),
   "utf8",
 );
+const generalSection = shellSource.match(/function GeneralSection\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+const voiceSection = shellSource.match(/function VoiceSection\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+assert.doesNotMatch(
+  generalSection,
+  /<VoiceEngineSettings \/>/,
+  "General no longer renders local speech management",
+);
+assert.match(
+  voiceSection,
+  /className="settings-voice"[\s\S]*<SettingsPage[\s\S]*section="voice"[\s\S]*<VoiceProviderSettings localSpeechSettings=\{<VoiceEngineSettings \/>\} \/>/,
+  "Voice uses the standard Settings page and composes local engines at the provider-owned position",
+);
+assert.doesNotMatch(
+  voiceSection,
+  /variant="control-sheet"/,
+  "Voice retains the default overview treatment",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-voice\s*\{[\s\S]{0,160}container-name:\s*settings-general;[\s\S]{0,100}container-type:\s*inline-size/,
+  "Voice participates in the existing narrow Settings row and ruled-header container queries",
+);
 
 assert.match(
   source,

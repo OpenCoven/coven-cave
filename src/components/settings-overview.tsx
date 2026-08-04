@@ -43,10 +43,8 @@ function useGeneralSummary(active: boolean) {
     }
     void loadSummary(true);
     const refreshSummary = () => { void loadSummary(); };
-    window.addEventListener("cave:voice-engines-refresh", refreshSummary);
     window.addEventListener("cave:backup-sync-refresh", refreshSummary);
     return () => {
-      window.removeEventListener("cave:voice-engines-refresh", refreshSummary);
       window.removeEventListener("cave:backup-sync-refresh", refreshSummary);
       summaryLoaderRef.current?.dispose();
       summaryLoaderRef.current = null;
@@ -95,10 +93,6 @@ export function SettingsOverview({
     ] as const;
     const summaryParts = [
       summary?.workspacePath,
-      typeof summary?.readyVoices === "number" &&
-      typeof summary?.totalVoices === "number"
-        ? `${summary.readyVoices} of ${summary.totalVoices} voices ready`
-        : null,
       typeof summary?.syncEnabled === "boolean"
         ? `sync ${summary.syncEnabled ? "on" : "off"}`
         : null,

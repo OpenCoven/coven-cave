@@ -4,6 +4,7 @@ import { geminiLiveProvider } from "./gemini-live.ts";
 import { localVoiceProvider } from "./local-loop.ts";
 import { familiarBrainProvider } from "./familiar-brain.ts";
 import { elevenLabsProvider } from "./elevenlabs.ts";
+import { VOICE_PROVIDER_CATALOG } from "./provider-catalog.ts";
 
 const PROVIDERS: Record<VoiceProviderId, VoiceProvider> = {
   openai: openaiRealtimeProvider,
@@ -24,11 +25,5 @@ export function getVoiceProvider(id: string): VoiceProvider | null {
 }
 
 export function listVoiceProviders(): Array<{ id: VoiceProviderId; label: string }> {
-  return [
-    { id: "openai", label: PROVIDERS.openai.label },
-    { id: "gemini", label: PROVIDERS.gemini.label },
-    { id: "local", label: PROVIDERS.local.label },
-    { id: "familiar", label: PROVIDERS.familiar.label },
-    { id: "elevenlabs", label: PROVIDERS.elevenlabs.label },
-  ];
+  return VOICE_PROVIDER_CATALOG.map(({ id, label }) => ({ id, label }));
 }

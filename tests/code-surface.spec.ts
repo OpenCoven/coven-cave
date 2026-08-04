@@ -211,10 +211,11 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect(header.getByText("#7 (open)")).toBeVisible();
     await expect(header.getByText("+12 −3")).toBeVisible();
 
-    // Diff tab is the default and shows the mocked changed file (the row
-    // renders basename + dir separately, so target the row button's name).
-    const wb = page.getByRole("tablist", { name: "Session workbench" });
-    await expect(wb.getByRole("tab", { name: "Diff" })).toHaveAttribute("aria-selected", "true");
+    // cave-98o51: the terminal is the Room's permanent center, so Diff is no
+    // longer a workbench tab — it is Changes, the context dock's default.
+    const dock = page.getByRole("tablist", { name: "Session context" });
+    await expect(dock.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tablist", { name: "Session workbench" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "modified flux.ts src" })).toBeVisible({ timeout: 15_000 });
   });
 
@@ -223,7 +224,7 @@ test.describe("code surface (Coding familiar's room)", () => {
     await base(page);
     await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
 
-    const wb = page.getByRole("tablist", { name: "Session workbench" });
+    const wb = page.getByRole("tablist", { name: "Session context" });
     await expect(wb).toBeVisible({ timeout: 30_000 });
 
     // Files: ProjectTree renders, picking a file loads the editable preview.
@@ -232,11 +233,11 @@ test.describe("code surface (Coding familiar's room)", () => {
     await page.getByText("README.md", { exact: false }).first().click();
     await expect(page.getByText("Hello.")).toBeVisible({ timeout: 15_000 });
 
-    // Inspector: toggling the header control reveals branches with the
-    // current-✓ / worktree-⑂ marks from the ?branches=1 contract.
-    await page.getByRole("button", { name: "Toggle inspector" }).click();
-    const inspector = page.getByRole("complementary", { name: "Session inspector" });
-    await expect(inspector).toBeVisible();
+    // Inspector: cave-98o51 moved it out of a header toggle and into the
+    // context dock, alongside Changes and Files, so it is reached by its tab.
+    await wb.getByRole("tab", { name: "Inspector" }).click();
+    const inspector = page.getByRole("region", { name: "Branches" });
+    await expect(inspector).toBeVisible({ timeout: 15_000 });
     await expect(inspector.getByText("main", { exact: true })).toBeVisible({ timeout: 15_000 });
     // The worktree mark on the branch row (the Root env row also contains
     // "feat-flux" inside the worktree path, so match the ⑂-prefixed form).
@@ -251,7 +252,7 @@ test.describe("code surface (Coding familiar's room)", () => {
     // The deep-linked (NOT newest) session is selected…
     await expect(page.getByRole("heading", { name: "Fix login retry" })).toBeVisible({ timeout: 30_000 });
     // …with its Files tab active, and the params stripped from the URL.
-    const wb = page.getByRole("tablist", { name: "Session workbench" });
+    const wb = page.getByRole("tablist", { name: "Session context" });
     await expect(wb.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
     await expect
       .poll(() => page.evaluate(() => window.location.search))

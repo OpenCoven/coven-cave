@@ -28,10 +28,21 @@ assert.match(
   "Enrich route should require the matching JSON intent body and familiar id",
 );
 
+// The spawn (and its abort wiring) moved to the shared one-shot runner
+// (cave-xailn). The guarantee is unchanged, and still checked end to end.
+const oneShot = readFileSync(
+  new URL("../../../../lib/server/coven-oneshot.ts", import.meta.url),
+  "utf8",
+);
 assert.match(
-  source,
+  oneShot,
   /signal\.addEventListener\("abort", onAbort, \{ once: true \}\)/,
   "Coven child process should be killed if the client aborts",
+);
+assert.match(
+  source,
+  /runCovenOneShot\(args, req\.signal, workspace, familiarId\)/,
+  "Enrich route forwards its request signal to the runner, so aborts reach the child",
 );
 
 assert.match(

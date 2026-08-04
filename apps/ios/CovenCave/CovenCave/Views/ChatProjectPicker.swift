@@ -10,7 +10,6 @@ struct ChatProjectPicker: View {
     let recentRoots: [String]
     @Binding var selectedRoot: String?
     @Binding var isResolved: Bool
-    let locked: Bool
     var requiresExplicitSelection = false
     var onResolved: (() -> Void)?
 
@@ -22,7 +21,6 @@ struct ChatProjectPicker: View {
     private struct LoadKey: Hashable {
         var familiarIds: [String]
         var reloadToken: Int
-        var locked: Bool
         var requiresExplicitSelection: Bool
     }
 
@@ -34,16 +32,13 @@ struct ChatProjectPicker: View {
         LoadKey(
             familiarIds: familiarKey,
             reloadToken: reloadToken,
-            locked: locked,
             requiresExplicitSelection: requiresExplicitSelection
         )
     }
 
     var body: some View {
         Group {
-            if locked {
-                lockedProject
-            } else if familiarKey.isEmpty {
+            if familiarKey.isEmpty {
                 Label(
                     "Choose a familiar before selecting a project.",
                     systemImage: "person.crop.circle.badge.questionmark"
@@ -75,22 +70,6 @@ struct ChatProjectPicker: View {
         }
     }
 
-    private var lockedProject: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            LabeledContent {
-                Text(selectedProjectLabel)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            } label: {
-                Label("Project", systemImage: "folder")
-            }
-            Text("Start a new chat to use another project.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
     private var projectPicker: some View {
         Picker(
             "Project",
@@ -114,15 +93,6 @@ struct ChatProjectPicker: View {
         .accessibilityHint("Chooses where this chat can work")
     }
 
-    private var selectedProjectLabel: String {
-        guard let selectedRoot else { return "Server session project" }
-        if let project = projects.first(where: { $0.root == selectedRoot })
-            ?? app.projects.first(where: { $0.root == selectedRoot }) {
-            return project.name
-        }
-        return URL(fileURLWithPath: selectedRoot).lastPathComponent
-    }
-
     private func projectOptionLabel(_ project: ProjectInfo) -> String {
         guard let access = project.access else { return project.name }
         return "\(project.name) · \(projectAccessLabel(access))"
@@ -139,13 +109,6 @@ struct ChatProjectPicker: View {
 
     @MainActor
     private func loadProjects() async {
-        if locked {
-            isLoading = false
-            errorMessage = nil
-            isResolved = selectedRoot != nil
-            return
-        }
-
         guard !familiarKey.isEmpty else {
             projects = []
             selectedRoot = nil

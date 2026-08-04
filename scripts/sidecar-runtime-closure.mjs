@@ -172,7 +172,22 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // needing this headroom are still present, so it must not move DOWN while
   // they exist — and any bump belongs here, beside the measurement that
   // justifies it, or the next reader reverts it again.
-  fileCount: 5_887,
+  // 2026-08-03 (research infographic renderer, cave-ga0t5): the
+  // /api/research/generations/infographic route plus the SVG/PNG renderer
+  // chunk traced at 5,888 on Ubuntu and 5,891 on Windows. Set from the
+  // HIGHER figure plus the same ten-file headroom.
+  // +1 (2026-08-03, cave-xailn): POST /api/chat/rewrite backs the reader's
+  // Rewrite control. One new route handler, one new file in the closure —
+  // measured at 5,902 on Ubuntu CI. Nothing else in that change reaches the
+  // sidecar: the shared one-shot runner it adds replaces code that was already
+  // inside enrich-steps' route.
+  // 2026-08-03 (live call transcript, cave-zr9dx): src/lib/voice/call-transcript.ts
+  // joins the closure through the call overlay. On the tree carrying BOTH that
+  // file and the rewrite route above, CI measured 5,902 on Ubuntu and 5,905 on
+  // Windows — so 5,902 was the Ubuntu figure with no headroom at all, and the
+  // Windows leg was still red at it. Set from the HIGHER figure plus the same
+  // ten-file cross-platform headroom the entries above use.
+  fileCount: 5_915,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

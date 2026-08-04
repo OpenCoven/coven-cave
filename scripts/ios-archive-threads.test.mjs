@@ -6,7 +6,6 @@ const iosRoot = "apps/ios/CovenCave/CovenCave";
 
 const thread = await read(`${iosRoot}/State/ChatThread.swift`);
 const model = await read(`${iosRoot}/State/AppModel.swift`);
-const home = await read(`${iosRoot}/Views/ChatsHomeView.swift`);
 const familiarThreads = await read(`${iosRoot}/Views/FamiliarThreadsView.swift`);
 
 assert.match(thread, /var archived: Bool = false/, "ChatThread should carry an archived flag");
@@ -20,7 +19,9 @@ assert.match(
   "AppModel.setThreadArchived should set the flag and persist",
 );
 
-for (const [name, src] of [["ChatsHomeView", home], ["FamiliarThreadsView", familiarThreads]]) {
+// Archiving is a thread affordance, so it lives in the session picker; the
+// Chats home lists familiars and has no thread rows.
+for (const [name, src] of [["FamiliarThreadsView", familiarThreads]]) {
   assert.match(src, /showArchived/, `${name} should track a showArchived toggle`);
   assert.match(src, /app\.setThreadArchived\(thread, !thread\.archived\)/, `${name} should toggle archive state`);
   assert.match(src, /thread\.archived \? "Unarchive" : "Archive"/, `${name} should label the archive action by state`);

@@ -435,6 +435,45 @@ struct CaveClient {
         return try await patchTask(cardId: cardId, payload: payload)
     }
 
+    /// Server-side flags a session patch can carry.
+    ///
+    /// The contract is that an unset field is ABSENT from the body:
+    /// `/api/sessions/{id}` updates a flag only when its key is present, so
+    /// sending `false` for a flag the caller never touched would silently
+    /// unarchive a chat you only meant to pin. Synthesised `Encodable` already
+    /// omits nil optionals, so this encoder is not correcting it — it is
+    /// stating the requirement at the point it matters, so that adding a
+    /// non-optional field or a `?? false` default reads as the mistake it is.
+    struct SessionFlagsPatch: Encodable {
+        var archived: Bool?
+        var pinned: Bool?
+        enum CodingKeys: String, CodingKey { case archived, pinned }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            if let archived { try c.encode(archived, forKey: .archived) }
+            if let pinned { try c.encode(pinned, forKey: .pinned) }
+        }
+    }
+
+    /// `PATCH /api/sessions/{id}` — archive/summon and pin/unpin. Both flags are
+    /// optional; pass only what changed.
+    func setSessionFlags(sessionId: String, archived: Bool? = nil, pinned: Bool? = nil) async throws {
+        let escaped = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
+        let payload = try JSONEncoder().encode(SessionFlagsPatch(archived: archived, pinned: pinned))
+        let req = try request("api/sessions/\(escaped)", method: "PATCH", body: payload)
+        let (_, resp) = try await data(for: req)
+        try Self.check(resp)
+    }
+
+    /// `DELETE /api/sessions/{id}` — sacrifice a session (tombstoned in cave
+    /// state, so the call is idempotent and safe to retry).
+    func deleteSession(sessionId: String) async throws {
+        let escaped = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
+        let req = try request("api/sessions/\(escaped)", method: "DELETE")
+        let (_, resp) = try await data(for: req)
+        try Self.check(resp)
+    }
+
     /// `DELETE /api/board/{id}` — remove a task.
     func deleteTask(cardId: String) async throws {
         let req = try request("api/board/\(cardId)", method: "DELETE")
