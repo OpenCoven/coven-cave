@@ -55,8 +55,11 @@ struct ChatView: View {
     @State private var showSessionDetails = false
     @State private var showSessionPicker = false
     @State private var showVoiceCall = false
-    /// Navigation path handed to the session picker. It pushes nothing, but
-    /// FamiliarThreadsView requires the binding.
+    /// Inert navigation path handed to the session picker to satisfy its
+    /// binding. The picker runs in `onSelect` mode, so it never pushes — a
+    /// chosen session is switched to via `switchToSession` instead. Pushing
+    /// here would strand the selection: this sheet's `NavigationStack` is not
+    /// bound to it.
     @State private var pickerPath: [ChatRoute] = []
     @Namespace private var pickerZoomNamespace
     @State private var atBottom = true
@@ -369,7 +372,9 @@ struct ChatView: View {
                 NavigationStack {
                     FamiliarThreadsView(familiar: familiar,
                                         path: $pickerPath,
-                                        zoomNamespace: pickerZoomNamespace)
+                                        zoomNamespace: pickerZoomNamespace,
+                                        onSelect: { chosen in switchToSession(chosen) },
+                                        currentThreadId: thread.id)
                 }
             } else {
                 // Group threads and any thread whose familiar no longer
@@ -382,6 +387,22 @@ struct ChatView: View {
                 }
             }
         }
+    }
+
+    /// Switch the chat to a session chosen in the picker: close the picker,
+    /// then hand the thread to the chat list, which makes it the detail
+    /// column's conversation and clears any pushed navigation. The chosen
+    /// session then stays put until something asks for another one.
+    ///
+    /// Re-picking the session already open only closes the sheet — routing it
+    /// through `requestOpen` would rebuild the very chat being looked at.
+    private func switchToSession(_ chosen: ChatThread) {
+        showSessionPicker = false
+        guard chosen.id != thread.id else { return }
+        // Persist the composer draft before the detail column swaps away.
+        flushDraftPersistence()
+        Haptics.tap()
+        app.switchConversation(to: chosen, currentThreadId: thread.id)
     }
 
     private var sessionDetailsCard: some View {
