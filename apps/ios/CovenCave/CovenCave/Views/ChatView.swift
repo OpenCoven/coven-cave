@@ -449,6 +449,9 @@ struct ChatView: View {
                 )
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("Switch session")
+            .accessibilityLabel("Session")
+            .accessibilityValue(thread.title)
             .disabled(thread.isGroup)
             ForEach(presentedModelControlCapabilities) { capability in
                 Divider()
