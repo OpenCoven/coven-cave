@@ -139,3 +139,36 @@ test("skill names verification commands that package.json actually defines", () 
     assert.ok(skill.includes(`pnpm ${command}`), `skill no longer runs pnpm ${command}`);
   }
 });
+
+test("every skill named as an integration point actually exists in this repo", () => {
+  // A repo-tracked skill is loaded by familiars that may have none of the
+  // user-level skill library installed, so pointing at a skill that only
+  // exists in someone's home directory sends them after something they cannot
+  // invoke.
+  const table = /## Integration points\n\n\| Skill \| Integration \|\n\|---\|---\|\n(.*?)(?:\n\n|$)/s.exec(
+    skill,
+  );
+  assert.ok(table, "skill no longer has an integration-points table");
+
+  const named = [...table[1].matchAll(/^\| `([^`]+)` \|/gm)].map((match) => match[1]);
+  assert.ok(named.length > 0, "integration-points table lists no skills");
+
+  const present = new Set(fs.readdirSync(".agents/skills"));
+  for (const name of named) {
+    assert.ok(present.has(name), `integration point \`${name}\` is not a skill in .agents/skills`);
+  }
+});
+
+test("no inline code span is split across a newline", () => {
+  // CommonMark code spans cannot contain newlines, so a wrapped span renders
+  // as literal backticks and breaks copy/paste of the command inside it.
+  const withoutFences = skill.replace(/```[\s\S]*?```/g, "");
+  for (const [index, line] of withoutFences.split("\n").entries()) {
+    const backticks = (line.match(/`/g) ?? []).length;
+    assert.equal(
+      backticks % 2,
+      0,
+      `line ${index + 1} leaves a code span open across a newline: ${line.trim()}`,
+    );
+  }
+});
