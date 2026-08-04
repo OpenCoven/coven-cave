@@ -8,7 +8,7 @@
 import {
   clamp, deriveSeed, fill, makeHalftone, makeRng, sdf, smoothstep,
   variationScale, type HalftoneSpec, type Rng, type VariationLevel,
-} from "./field.ts";
+} from "./field";
 
 const TAU = Math.PI * 2;
 

@@ -11,7 +11,7 @@
  * much hotter than a full-bleed plate.
  */
 
-import { renderPlate, type TemplateName } from "./plate.ts";
+import { renderPlate, type TemplateName } from "./plate";
 
 /** Fraction of the frame foil should occupy. Coverage is TARGETED rather than
  *  thresholded at a fixed luminance: a constant tuned on one image is

@@ -1,0 +1,316 @@
+/* Familiar trading card — live preview for the summoning circle (cave-3rz.2).
+ *
+ * tokens-exempt: the foil spectrum cannot be expressed in the graphite palette.
+ * A holographic sweep is intrinsically hardcoded colour, so the ramp is scoped
+ * to this file and declared as local custom properties; everything structural
+ * still comes from the token contract, and the familiar's own aura arrives as
+ * a token via --aura.
+ */
+
+.famcard-slot {
+  perspective: 1400px;
+  width: 100%;
+  max-width: 20rem;
+}
+
+.famcard {
+  --px: 50%;
+  --py: 50%;
+  --fx: 0;
+  --fy: 0;
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  --glow: 0;
+
+  position: relative;
+  aspect-ratio: 5 / 7;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: none;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+  /* Symmetric easing: with backface culling unused, the face swap must land
+     when the card is edge-on, and an asymmetric curve is already past 90deg at
+     the halfway time — the outgoing face flashes mirrored. */
+  transition: transform 380ms cubic-bezier(0.45, 0, 0.55, 1);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.famcard--live { transition: transform 80ms linear; }
+
+.famcard__face {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  /* NO backface-visibility. The blend layers inside each face flatten the
+     preserve-3d context, and the browser then culls on each face's local
+     transform: uncorrected the back paints over the front mirrored, and once
+     flattened the back culls itself and the whole card vanishes. Which face
+     shows is decided explicitly instead. */
+  visibility: hidden;
+  transition: visibility 0s linear 190ms;
+  background: linear-gradient(165deg, var(--bg-elevated), var(--bg-panel));
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--frame) 55%, transparent),
+    0 20px 44px -16px var(--shadow-color);
+}
+
+.famcard .famcard__face--front { visibility: visible; }
+.famcard--flipped .famcard__face--front { visibility: hidden; }
+.famcard--flipped .famcard__face--back { visibility: visible; }
+.famcard__face--back { transform: rotateY(180deg); }
+
+.famcard__art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: var(--art-pos, 50% 12%);
+}
+
+.famcard__empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-align: center;
+  padding: var(--space-6);
+}
+
+/* The plate is black and white: white catches light, black does not. Colour is
+   multiplied INTO it here rather than added by a separate masked layer, so the
+   plate's blacks stay neutral and the artwork shows through untouched wherever
+   it is empty. The spectrum pans with the pointer while the plate stays pinned
+   — stamped foil has fixed structure and moving colour. */
+.famcard__foil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  mix-blend-mode: screen;
+}
+
+.famcard__foil::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(
+      118deg,
+      hsl(348 92% 58%) 0px,
+      hsl(34 94% 60%) 26px,
+      hsl(58 90% 62%) 50px,
+      hsl(150 82% 58%) 76px,
+      hsl(200 92% 60%) 102px,
+      hsl(280 88% 62%) 128px,
+      hsl(348 92% 58%) 152px
+    ),
+    var(--holo-tex, none);
+  background-size: 240% 240%, cover;
+  background-position:
+    calc(var(--fx) * 1.7px) calc(var(--fy) * 0.6px),
+    var(--art-pos, 50% 12%);
+  background-repeat: repeat, no-repeat;
+  background-blend-mode: multiply;
+  /* Opacity on the CHILD, blend on the parent — never both on one element, or
+     an engine may drop the fade and apply the blend at full force. */
+  opacity: calc(0.42 + var(--glow) * 0.52);
+}
+
+.famcard__glare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  background: radial-gradient(
+    farthest-corner circle at var(--px) var(--py),
+    oklch(1 0 0 / calc(var(--glow) * 0.3)) 4%,
+    oklch(1 0 0 / calc(var(--glow) * 0.07)) 22%,
+    transparent 52%
+  );
+}
+
+.famcard__scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    oklch(0 0 0 / 0.62) 0%,
+    oklch(0 0 0 / 0.1) 14%,
+    transparent 26%,
+    transparent 58%,
+    oklch(0 0 0 / 0.55) 70%,
+    oklch(0 0 0 / 0.9) 82%,
+    oklch(0 0 0 / 0.95) 100%
+  );
+}
+
+.famcard__grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  align-content: start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.famcard__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.famcard__name {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: oklch(0.98 0.002 291);
+  text-shadow: 0 1px 6px oklch(0 0 0 / 0.7);
+}
+
+.famcard__ctx {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.famcard__ctx-label {
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  color: color-mix(in oklch, var(--aura) 76%, white);
+}
+
+.famcard__ctx-value {
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: oklch(0.98 0.002 291);
+}
+
+.famcard__plate {
+  align-self: end;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.famcard__typeline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, oklch(0.98 0 0) 76%, transparent);
+}
+
+.famcard__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.14rem 0.4rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--aura) 30%, oklch(0 0 0 / 0.5));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--aura) 62%, transparent);
+  color: oklch(0.99 0 0);
+}
+
+.famcard__move {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.famcard__move-name {
+  font-size: var(--text-sm);
+  font-weight: 640;
+  color: oklch(0.97 0 0);
+}
+
+.famcard__move-cost {
+  font-size: var(--text-2xs);
+  color: color-mix(in oklch, var(--aura) 78%, white);
+  white-space: nowrap;
+}
+
+.famcard__note {
+  font-size: var(--text-2xs);
+  line-height: 1.45;
+  color: color-mix(in oklch, oklch(0.98 0 0) 76%, transparent);
+  text-shadow: 0 1px 3px oklch(0 0 0 / 0.8);
+}
+
+.famcard__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, oklch(0.98 0 0) 44%, transparent);
+}
+
+.famcard__back {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  place-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in oklch, var(--aura) 22%, transparent), transparent 62%),
+    linear-gradient(165deg, var(--bg-elevated), var(--bg-panel));
+}
+
+.famcard__mark {
+  font-size: var(--text-sm);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.famcard__seal {
+  width: 88%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+}
+
+.famcard__seal canvas {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px -10px var(--shadow-color);
+}
+
+.famcard__back-note {
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .famcard,
+  .famcard--live { transition: none; }
+  .famcard__face { transition: none; }
+  /* Hold a resting sheen rather than leaving the card looking unfinished. */
+  .famcard { --glow: 0.55; }
+}

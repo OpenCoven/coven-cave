@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { renderPlate, selectMarks, tagsForTheme, MARK_NAMES } from "./plate.ts";
-import { deriveSeed, makeRng, FALLOFFS } from "./field.ts";
+import { renderPlate, selectMarks, tagsForTheme, MARK_NAMES } from "./plate";
+import { deriveSeed, makeRng, FALLOFFS } from "./field";
 
 const base = { width: 96, height: 134, theme: "reaper sever blade", seed: 19 } as const;
 
