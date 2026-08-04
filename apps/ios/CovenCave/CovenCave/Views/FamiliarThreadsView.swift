@@ -382,12 +382,14 @@ struct FamiliarThreadsView: View {
         case .local(let thread):
             // Laid out beside the row rather than overlaid on it: ThreadRow's
             // preview runs two lines to the trailing edge, so an overlay mark
-            // would print on top of the text.
+            // would print on top of the text. The zoom stays anchored on the
+            // row itself, not this wrapper, so the transition geometry is
+            // unchanged by the mark.
             HStack(spacing: 8) {
                 ThreadRow(thread: thread)
+                    .matchedTransitionSource(id: thread.id, in: zoomNamespace)
                 currentMark(for: thread.id)
             }
-            .matchedTransitionSource(id: thread.id, in: zoomNamespace)
         case .server(let session):
             ServerSessionRow(session: session)
         }
