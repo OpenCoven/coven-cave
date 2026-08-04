@@ -1,6 +1,7 @@
 type DataHandler = (bytes: Uint8Array) => void;
 type ExitHandler = (code: number) => void;
 type CloseHandler = (code: number, reason: string) => void;
+type ReplayResetHandler = () => void;
 
 // Fail a connect that never reaches OPEN. On iOS a WKWebView WebSocket opened
 // right after the app resumes can hang in CONNECTING forever — no open, no
@@ -30,6 +31,10 @@ export class PtyWsBridge {
   private dataHandlers: DataHandler[] = [];
   private exitHandlers: ExitHandler[] = [];
   private closeHandlers: CloseHandler[] = [];
+  private replayResetHandlers: ReplayResetHandler[] = [];
+  /** Absolute byte position immediately after the last output delivered to
+   * xterm. It lets reconnects request only bytes missed while disconnected. */
+  private replayCursor: number | null = null;
   private lastConnect: {
     threadId: string;
     cols: number;
@@ -54,11 +59,25 @@ export class PtyWsBridge {
     this.closeHandlers.push(cb);
   }
 
+  /** The retained replay window no longer covers this client. Clear the
+   * terminal before the server's bounded full-replay fallback is written. */
+  onReplayReset(cb: ReplayResetHandler): void {
+    this.replayResetHandlers.push(cb);
+  }
+
   get isOpen(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
+  /** False only when talking to an older server that ignored cursor
+   * negotiation. Those servers still replay the whole bounded ring, so the
+   * terminal must reset before reconnecting to avoid duplicate screen state. */
+  get hasReplayCursor(): boolean {
+    return this.replayCursor !== null;
+  }
+
   connect(threadId: string, cols: number, rows: number, projectRoot?: string): Promise<void> {
+    this.replayCursor = null;
     this.lastConnect = { threadId, cols, rows, projectRoot };
     return this.open();
   }
@@ -97,6 +116,10 @@ export class PtyWsBridge {
         threadId: target.threadId,
         cols: String(target.cols),
         rows: String(target.rows),
+        // `-1` opts into the cursor protocol without claiming a position for
+        // this newly-created terminal. Older servers ignore the extra query
+        // key and retain their legacy full-replay behavior.
+        ptyReplayCursor: String(this.replayCursor ?? -1),
       });
       if (target.projectRoot) {
         params.set("projectRoot", target.projectRoot);
@@ -141,11 +164,20 @@ export class PtyWsBridge {
         const tag = buf[0];
         if (tag === 0x01) {
           const payload = buf.slice(1);
+          if (this.replayCursor !== null) this.replayCursor += payload.byteLength;
           for (const cb of this.dataHandlers) cb(payload);
         } else if (tag === 0x02 && buf.length >= 5) {
           const view = new DataView(event.data, 1);
           const code = view.getInt32(0, true);
           for (const cb of this.exitHandlers) cb(code);
+        } else if (tag === 0x06 && buf.byteLength >= 10) {
+          const view = new DataView(event.data, 1, 8);
+          const cursor = view.getFloat64(0, true);
+          if (!Number.isSafeInteger(cursor) || cursor < 0) return;
+          this.replayCursor = cursor;
+          if (buf[9] === 1) {
+            for (const cb of this.replayResetHandlers) cb();
+          }
         }
       });
       ws.addEventListener("close", (event) => {
@@ -219,6 +251,7 @@ export class PtyWsBridge {
     this.dataHandlers = [];
     this.exitHandlers = [];
     this.closeHandlers = [];
+    this.replayResetHandlers = [];
     const ws = this.ws;
     this.ws = null;
     if (ws && ws.readyState !== WebSocket.CLOSED) {

@@ -9,6 +9,7 @@ assert.match(src, /new WebSocket\(url\)/, "bridge opens a WebSocket");
 assert.match(src, /binaryType\s*=\s*"arraybuffer"/, "bridge receives binary frames");
 assert.match(src, /0x01/, "bridge handles output tag 0x01");
 assert.match(src, /0x02/, "bridge handles exit tag 0x02");
+assert.match(src, /0x06/, "bridge handles replay-cursor control frames");
 assert.match(src, /frame\[0\]\s*=\s*0x03/, "bridge sends input tag 0x03");
 assert.match(src, /frame\[0\]\s*=\s*0x04/, "bridge sends resize tag 0x04");
 assert.match(src, /setUint16\(1,\s*cols,\s*true\)/, "resize encodes cols little-endian");
@@ -51,6 +52,15 @@ assert.match(
   "a prior (possibly zombie) socket is torn down before re-dialing",
 );
 console.log("pty-ws-bridge iOS-resume assertions: ok");
+
+// ── Cursor replay ────────────────────────────────────────────────────────────
+assert.match(src, /ptyReplayCursor: String\(this\.replayCursor \?\? -1\)/, "new connections opt into cursor replay");
+assert.match(src, /private replayCursor: number \| null = null/, "bridge tracks the last delivered absolute byte cursor");
+assert.match(src, /get hasReplayCursor\(\): boolean/, "bridge distinguishes older full-replay servers");
+assert.match(src, /this\.replayCursor \+= payload\.byteLength/, "each terminal payload advances the cursor by exact bytes");
+assert.match(src, /onReplayReset\(cb: ReplayResetHandler\)/, "bridge exposes bounded-replay fallback reset handling");
+assert.match(src, /getFloat64\(0, true\)/, "cursor control frame decodes its safe integer position");
+console.log("pty-ws-bridge cursor replay assertions: ok");
 
 // ── Explicit tab-close reaps the shell (cave-wujw) ────────────────────────────
 // Closing a terminal tab on the WS transport used to just drop the socket, which
