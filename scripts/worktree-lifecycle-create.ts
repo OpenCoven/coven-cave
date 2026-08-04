@@ -795,13 +795,56 @@ function existingOwnedPaths(
   ];
 }
 
-function refusalOutcome(reasons: string[]): Outcome {
+const EXCEPTION_SUGGESTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/**
+ * The `--exception-*` rerun that this refusal would admit.
+ *
+ * A gate that does not name its own escape hatch gets routed around: the only
+ * workaround the prose docs used to offer was a bare `git worktree add`, which
+ * produces a unit with no lifecycle metadata that automated retirement can never
+ * remove. That is how a budget meant to cap sprawl came to feed it. Printing the
+ * admissible command makes the sanctioned path the easy one.
+ *
+ * Only pass this for refusals an exception genuinely lifts — see
+ * {@link assessManagedWorktreeCreation}, whose every reason qualifies.
+ */
+function exceptionSuggestion(options: ManagedCreateOptions, worktreePath: string): string[] {
+  const expiresAt = new Date(Date.now() + EXCEPTION_SUGGESTION_WINDOW_MS).toISOString();
+  return [
+    "",
+    "This admission refusal can be lifted with an attributed, expiring exception",
+    "that applies to this worktree path. The same gate admits it and the unit",
+    "stays retirable:",
+    "",
+    "Do not fall back to a bare `git worktree add`: a worktree created that way",
+    "carries no lifecycle metadata, so the patrol reports it `uncertain`",
+    "permanently and `pnpm beads:worktrees:apply` can never retire it.",
+    "",
+    "  pnpm beads:worktrees:create \\",
+    `    --bead ${shellQuote(options.beadId)} \\`,
+    `    --branch ${shellQuote(options.branch)} \\`,
+    `    --owner ${shellQuote(options.owner)} \\`,
+    `    --purpose ${shellQuote(options.purpose)} \\`,
+    `    --exception-owner ${shellQuote(options.owner)} \\`,
+    "    --exception-reason 'why this exception is needed' \\",
+    `    --exception-expires-at ${expiresAt} \\`,
+    `    --exception-path ${shellQuote(worktreePath)}`,
+  ];
+}
+
+function refusalOutcome(reasons: string[], suggestion: string[] = []): Outcome {
   return {
     status: 2,
     stdout: null,
     stderr: [
       ...reasons.map((reason) => `worktree-lifecycle-create: ${reason}`),
       "Suggestion: pnpm beads:worktrees:apply",
+      ...suggestion,
     ],
     createdReport: null,
   };
@@ -1477,9 +1520,6 @@ function execute(
     initialException,
     initialNowMs,
   );
-  if (!localPreflight.assessment.allowed) {
-    return refusalOutcome(localPreflight.assessment.reasons);
-  }
   const initialRecords = [
     ...(initialCoven.primary ? [initialCoven.primary] : []),
     ...initialCoven.additional,
@@ -1493,21 +1533,13 @@ function execute(
   ) {
     throw new CliError("intended worktree duplicates existing metadata");
   }
-  if (initialCoven.primary !== null && initialException === null) {
-    return refusalOutcome([
-      `Bead ${options.beadId} already has structured worktree metadata; a current worktree exception is required to append another record`,
-    ]);
-  }
-  if (
+  const requiresCurrentException =
+    initialCoven.primary !== null && initialException === null;
+  const primaryRegistrationMissing =
     initialCoven.primary !== null &&
     !localPreflight.registeredPaths.has(
       canonicalExistingCandidate(initialCoven.primary.path),
-    )
-  ) {
-    return refusalOutcome([
-      `Bead ${options.beadId} primary structured worktree metadata is not currently registered`,
-    ]);
-  }
+    );
 
   const inventory = collectWorktreeLifecycleInventory({
     repo: REPOSITORY,
@@ -1522,6 +1554,29 @@ function execute(
   const errors = [...inventory.globalErrors, ...inventoryErrors(inventory.items)];
   if (errors.length > 0) {
     throw new CliError(`lifecycle inventory is incomplete: ${errors.join("; ")}`);
+  }
+  // A local admission preflight can identify a refusal cheaply, but it cannot
+  // replace the complete inventory. Check the inventory first so an outage
+  // remains an exit-1 error rather than advertising an exception that cannot
+  // reach admission.
+  if (!localPreflight.assessment.allowed) {
+    return refusalOutcome(
+      localPreflight.assessment.reasons,
+      exceptionSuggestion(options, worktreePath),
+    );
+  }
+  if (requiresCurrentException) {
+    return refusalOutcome(
+      [
+        `Bead ${options.beadId} already has structured worktree metadata; a current worktree exception is required to append another record`,
+      ],
+      exceptionSuggestion(options, worktreePath),
+    );
+  }
+  if (primaryRegistrationMissing) {
+    return refusalOutcome([
+      `Bead ${options.beadId} primary structured worktree metadata is not currently registered`,
+    ]);
   }
   const existingPaths = existingOwnedPaths(inventory.items, options.beadId);
 
@@ -1539,7 +1594,9 @@ function execute(
     budgets: inventory.budgets,
     exception: exceptionForAssessment(admissionException),
   });
-  if (!assessment.allowed) return refusalOutcome(assessment.reasons);
+  if (!assessment.allowed) {
+    return refusalOutcome(assessment.reasons, exceptionSuggestion(options, worktreePath));
+  }
 
   assertRefAndPathAbsent(root, fullRef, worktreePath);
   heartbeatBoth(leases, "before git worktree add");
@@ -1700,6 +1757,7 @@ function execute(
           (reason) => `worktree-lifecycle-create: ${reason}`,
         ),
         "Suggestion: pnpm beads:worktrees:apply",
+        ...exceptionSuggestion(options, worktreePath),
       ],
     );
   }

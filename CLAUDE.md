@@ -225,15 +225,62 @@ worktree lands under `.worktrees/` (the script refuses any path escaping it).
 outright with `unknown option: --`. That broken form was documented here and in
 `AGENTS.md` until 2026-08-03.
 
-⚠️ **The managed command can refuse to run, and the fallback has a cost.** It
-builds a *complete* lifecycle inventory first, which needs live GitHub queries,
-so it fails when the GraphQL quota is exhausted and when any commit's PR
-association returns `malformed fields or a mismatched head OID` — the latter is
-repo state, not a transient, so waiting does not clear it. Both were hit on
-2026-08-03. When it will not run:
+### ⚠️ Two failure modes — only one of them justifies the fallback
+
+Confusing these is how the repo accumulates worktrees that nothing can retire.
+Read the exit code.
+
+**Exit 2 — refused by the admission gate. Use an exception, not the fallback.**
+
+```text
+worktree-lifecycle-create: creating a worktree would exceed the 12-worktree budget
+```
+
+`WORKTREE_WARNING_BUDGET = 12` (`src/lib/worktree-lifecycle.ts`) counts **every
+registered worktree in the checkout**, not yours. With ~20 concurrent sessions
+this is over budget essentially always, so cleaning up your own units will not
+reliably lift it and waiting does not either.
+
+Every refusal from this path is lifted by an attributed, expiring exception, and
+since `cave-no5nr` the refusal prints the exact admissible rerun:
 
 ```bash
-git worktree add -b <branch> .worktrees/<branch> origin/main   # fallback only
+pnpm beads:worktrees:create --bead cave-123 --branch fix/cave-123-example \
+  --owner <you> --purpose "…" \
+  --exception-owner <you> \
+  --exception-reason "why this exception is needed" \
+  --exception-expires-at 'REPLACE-WITH-FUTURE-UTC-ISO-INSTANT' \
+  --exception-path /abs/path/to/.worktrees/cave-123-example
+```
+
+All four `--exception-*` flags are required together; replace
+`REPLACE-WITH-FUTURE-UTC-ISO-INSTANT` with a canonical UTC ISO instant in the
+future (`YYYY-MM-DDTHH:MM:SS(.sss)Z`), and ensure every path is absolute. The
+exception is stored on the bead next to the worktree record, so the unit lands with
+**full lifecycle metadata and stays retirable**. This is the sanctioned path,
+not a bypass — the same gate admits it.
+
+Note the deliberate asymmetry between the two surfaces that read this number:
+the patrol reports `exceeded` as `count > 12`, while creation refuses at
+`count >= 12`, because one more unit is what would take it over. At exactly 12
+the patrol is quiet and creation is refused; that is "*would* exceed", not an
+off-by-one.
+
+**Exit 1 — the command could not run. Fallback is the only option.**
+
+```text
+worktree-lifecycle-create: lifecycle inventory is incomplete: …
+```
+
+It builds a *complete* lifecycle inventory first, which needs live GitHub
+queries, so it fails when the GraphQL quota is exhausted and when any commit's PR
+association returns `malformed fields or a mismatched head OID` — the latter is
+repo state, not a transient, so waiting does not clear it. Both were hit on
+2026-08-03. An exception cannot rescue this: the inventory throws *before*
+admission is assessed, so the exception is never consulted.
+
+```bash
+git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort
 ```
 
 A worktree made this way has **no lifecycle metadata**, so `pnpm beads:worktrees`

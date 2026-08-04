@@ -14,19 +14,50 @@
   (`worktree-lifecycle-create: unknown option: --`). `--bead`, `--branch`,
   `--owner` and `--purpose` are all required; `--start-point` defaults to
   `origin/main` and the worktree is placed under `.worktrees/`.
-- That command refuses to create anything unless it can build a **complete**
-  lifecycle inventory, which means live GitHub queries. It therefore fails when
-  the GraphQL quota is exhausted (`API rate limit already exceeded`) and when any
-  commit's PR association comes back malformed (`pull request node returned
-  malformed fields or a mismatched head OID`) — a repo-state condition no amount
-  of waiting clears. When it will not run, fall back to `git worktree add -b
-  <branch> .worktrees/<branch> origin/main` and know the trade: that worktree
-  carries no lifecycle metadata, so `pnpm beads:worktrees` will class it
-  `uncertain` ("structured lifecycle metadata backfill required") forever and
-  `pnpm beads:worktrees:apply` can never retire it. Retire it by hand through the
-  archive-tag route in [`CLAUDE.md`](CLAUDE.md), and never hand-write the missing
-  metadata onto the Bead — that record is the evidence the retirement gate
-  checks.
+- **The command has two distinct failure modes, and only one of them justifies
+  the fallback.** Telling them apart is the whole game, because the wrong choice
+  creates a worktree nothing can ever retire.
+  - **Exit 2 — refused by the admission gate** (`creating a worktree would
+    exceed the 12-worktree budget`, or `Bead … already owns a registered
+    worktree`). The gate ran fine and declined. **Do not fall back to `git worktree add` here.** Every refusal
+    from this path is lifted by an attributed, expiring exception, and the
+    refusal itself now prints the exact rerun. The budget counts every
+    registered worktree in the checkout, not just yours, so a concurrent session
+    can block you and retiring your own units may not lift it:
+
+    ```bash
+    pnpm beads:worktrees:create --bead cave-123 --branch fix/cave-123-example \
+      --owner kitty --purpose "Repair example" \
+      --exception-owner kitty \
+      --exception-reason "why this exception is needed" \
+      --exception-expires-at 'REPLACE-WITH-FUTURE-UTC-ISO-INSTANT' \
+      --exception-path /abs/path/to/.worktrees/cave-123-example
+    ```
+
+    All four `--exception-*` flags are required together. Replace
+    `REPLACE-WITH-FUTURE-UTC-ISO-INSTANT` with a canonical UTC ISO instant in the
+    future; every `--exception-path` must be absolute. The exception is recorded on the
+    Bead alongside the worktree, so the unit still lands with full lifecycle metadata
+    and stays retirable — this is a sanctioned path, not a bypass.
+  - **Exit 1 — errored because the lifecycle inventory is incomplete.** The command
+    could not build a **complete** inventory, which needs live GitHub queries, so
+    it fails when the GraphQL quota is exhausted (`API rate limit already
+    exceeded`) and when any commit's PR association comes back malformed (`pull
+    request node returned malformed fields or a mismatched head OID`) — a
+    repo-state condition no amount of waiting clears. An exception cannot rescue
+    this: the inventory throws before admission is ever assessed. Only here is
+    the fallback justified:
+
+    ```bash
+    git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort
+    ```
+
+    Know the trade: that worktree carries no lifecycle metadata, so
+    `pnpm beads:worktrees` will class it `uncertain` ("structured lifecycle
+    metadata backfill required") forever and `pnpm beads:worktrees:apply` can
+    never retire it. Retire it by hand through the archive-tag route in
+    [`CLAUDE.md`](CLAUDE.md), and never hand-write the missing metadata onto the
+    Bead — that record is the evidence the retirement gate checks.
 - After a PR merges, run `pnpm beads:worktrees`, record the merged unit's
   disposition, and use `pnpm beads:worktrees:apply` only when it reports a
   complete repository maintenance transaction. Local cleanup is bounded and

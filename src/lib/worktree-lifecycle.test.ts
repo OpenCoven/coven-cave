@@ -557,8 +557,8 @@ function legacyObservation(overrides = {}) {
     allowed: false,
     reasons: [
       "active Bead cave-ox3ky already owns a registered worktree",
-      "creating a worktree would exceed the 12-worktree warning budget",
-      "creating a branch would exceed the 30-local-branch warning budget",
+      "creating a worktree would exceed the 12-worktree budget",
+      "creating a branch would exceed the 30-local-branch budget",
     ],
   });
 }
