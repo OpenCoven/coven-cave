@@ -3,11 +3,15 @@ import assert from "node:assert/strict";
 import {
   MAX_TERMINAL_PANES,
   PRIMARY_TERMINAL_PANE_ID,
+  MIN_TERMINAL_PANE_HEIGHT_PX,
+  MIN_TERMINAL_PANE_WIDTH_PX,
+  canSplitPaneSize,
   canSplitTerminalPane,
   closeTerminalPane,
   countTerminalPanes,
   createTerminalLayout,
   listTerminalPanes,
+  nextTerminalPaneId,
   resolveFocusedPane,
   splitTerminalPane,
   terminalBroadcastTargets,
@@ -147,6 +151,45 @@ assert.notEqual(
   assert.equal(resolveFocusedPane(split, "p1"), "p1");
   assert.equal(resolveFocusedPane(split, "gone"), PRIMARY_TERMINAL_PANE_ID);
   assert.equal(resolveFocusedPane(split, null), PRIMARY_TERMINAL_PANE_ID);
+}
+
+// ── Measured split capacity (cave-uod42) ─────────────────────────────────────
+// The count cap is not enough: a 380px Room is under the floor at TWO panes.
+{
+  const wide = { width: MIN_TERMINAL_PANE_WIDTH_PX * 2, height: MIN_TERMINAL_PANE_HEIGHT_PX * 2 };
+  assert.equal(canSplitPaneSize(wide, "horizontal"), true, "exactly twice the floor still splits");
+  assert.equal(canSplitPaneSize(wide, "vertical"), true);
+
+  const narrow = { width: MIN_TERMINAL_PANE_WIDTH_PX * 2 - 1, height: 1000 };
+  assert.equal(canSplitPaneSize(narrow, "horizontal"), false, "one px under the floor refuses");
+  assert.equal(canSplitPaneSize(narrow, "vertical"), true, "the other axis is untouched by the split");
+
+  const short = { width: 1000, height: MIN_TERMINAL_PANE_HEIGHT_PX * 2 - 1 };
+  assert.equal(canSplitPaneSize(short, "vertical"), false);
+  assert.equal(canSplitPaneSize(short, "horizontal"), true);
+
+  // Unmeasured must not present a control that never re-enables.
+  assert.equal(canSplitPaneSize({ width: 0, height: 0 }, "horizontal"), true);
+  assert.equal(canSplitPaneSize({ width: Number.NaN, height: 0 }, "horizontal"), true);
+}
+
+// ── Focus cycling follows reading order and wraps ────────────────────────────
+{
+  const next = idFactory();
+  const a = splitTerminalPane(fresh, PRIMARY_TERMINAL_PANE_ID, "horizontal", next).layout;
+  const b = splitTerminalPane(a, "p1", "vertical", next).layout;
+  const order = listTerminalPanes(b).map((pane) => pane.id);
+  assert.deepEqual(order, [PRIMARY_TERMINAL_PANE_ID, "p1", "p2"]);
+
+  assert.equal(nextTerminalPaneId(b, PRIMARY_TERMINAL_PANE_ID), "p1");
+  assert.equal(nextTerminalPaneId(b, "p2"), PRIMARY_TERMINAL_PANE_ID, "wraps forward");
+  assert.equal(nextTerminalPaneId(b, PRIMARY_TERMINAL_PANE_ID, -1), "p2", "wraps backward");
+  assert.equal(nextTerminalPaneId(b, "gone"), PRIMARY_TERMINAL_PANE_ID, "a stale id lands somewhere real");
+  assert.equal(
+    nextTerminalPaneId(fresh, PRIMARY_TERMINAL_PANE_ID),
+    PRIMARY_TERMINAL_PANE_ID,
+    "alone, next is a no-op rather than a throw",
+  );
 }
 
 console.log("code-terminal-tree.test.ts ok");

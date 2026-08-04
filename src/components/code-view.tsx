@@ -7,12 +7,14 @@
  *
  * Phase 3+ (this shape): top-level Sessions/Activity/PRs/Issues/Reviews tabs, the session rail
  * (grouped by project, git-attribution badges, + New session) and the
- * per-session workbench (Diff | Files | Terminal | PR) with the follow-up
- * composer (code-composer.tsx). New sessions start via code-new-session.tsx —
- * project + familiar + optional fresh worktree. The inspector and mobile
- * layout land in follow-up PRs. CodeView hosts the whole GitHubView under the
- * Activity/PRs/Issues/Reviews tabs; workspace routing lives outside this
- * component.
+ * per-session Coding Room — a persistent terminal center beside a resizable
+ * context dock (Changes | Files | Pull request | Inspector | GitHub | Browser)
+ * with the follow-up composer (code-composer.tsx) under both. New sessions
+ * start via code-new-session.tsx — project + familiar + optional fresh
+ * worktree. CodeView hosts the whole GitHubView under the
+ * Activity/PRs/Issues/Reviews tabs; the dock's GitHub tab mounts a second,
+ * session-scoped copy so triage never has to displace a running shell.
+ * Workspace routing lives outside this component.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";

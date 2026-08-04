@@ -174,6 +174,10 @@
   min-height: 0;
   border-left: 1px solid var(--border-hairline);
   background: var(--bg-base);
+  /* The Room can sit beside other surfaces, so viewport width says nothing
+     useful about how wide the dock actually is. Query the dock itself. */
+  container-type: inline-size;
+  container-name: code-context-dock;
 }
 .code-context-dock__bar {
   display: flex;
@@ -268,6 +272,22 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* Six tabs do not fit a sidebar-width dock, and the row's overflow scroll has
+   no visible affordance — an off-screen tab reads as a missing feature. Below
+   this width every tab except the selected one compresses to its icon, which
+   keeps the whole row reachable. The label stays in the accessibility tree via
+   the same visually-hidden treatment the collapsed dock uses. */
+@container code-context-dock (max-width: 420px) {
+  .code-context-dock__tab:not([data-selected="true"]) .code-context-dock__tab-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* ── Narrow widths: the room stacks instead of compressing into two unusable

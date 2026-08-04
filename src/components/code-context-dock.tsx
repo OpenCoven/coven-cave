@@ -3,27 +3,44 @@
 /**
  * CodeContextDock — the Coding Room's right zone (cave-98o51).
  *
- * Changes, Files, Pull request, Inspector and Browser, docked
+ * Changes, Files, Pull request, Inspector, GitHub and Browser, docked
  * BESIDE the terminal center rather than replacing it. Every tab reuses its
  * proven implementation; the dock only owns which one is showing and how much
  * room it takes.
  *
- * Two behaviours worth knowing:
+ * Three behaviours worth knowing:
  *
  *  - heavy tabs stay dynamically imported, so opening the Room does not pull
- *    CodeMirror, the PR fetch hooks, or the browser bridge into the first chunk;
- *  - Browser opens the dock `expanded`, because a native webview squeezed into
- *    a sidebar renders a column of wrapped text. It also stays mounted once
- *    opened (hidden, not unmounted) so page state survives a tab switch, and
- *    is only `active` while actually selected — the native bounds follow the
- *    visible pane, never a hidden one.
+ *    CodeMirror, the PR fetch hooks, GitHubView, or the browser bridge into the
+ *    first chunk;
+ *  - Browser and GitHub open the dock `expanded`, because a native webview — or
+ *    a list/detail split — squeezed into a sidebar renders a column of wrapped
+ *    text. Browser also stays mounted once opened (hidden, not unmounted) so
+ *    page state survives a tab switch, and is only `active` while actually
+ *    selected — the native bounds follow the visible pane, never a hidden one;
+ *  - every tab and size change is announced (cave-uod42). The dock is the one
+ *    zone whose content swaps under a stationary cursor, so without a live
+ *    region a screen-reader user gets no signal that anything moved.
+ *
+ * Deliberate divergence from the approved design: it also said "there is no
+ * top-level GitHub page". The top-level Activity/PRs/Issues/Reviews tabs are
+ * shipped and e2e-pinned, and retiring a live surface is an IA call for the
+ * owner, so this tab is additive — it puts GitHub context beside the terminal
+ * without removing the full-width triage view.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { SessionChangesInner } from "@/components/session-changes-panel";
-import { CODE_DOCK_TABS, codeSessionWorkRoot, type CodeDockSize, type CodeDockTab } from "@/lib/code-surface";
+import {
+  CODE_DOCK_TABS,
+  codeDockTabWantsExpanded,
+  codeSessionWorkRoot,
+  type CodeDockSize,
+  type CodeDockTab,
+} from "@/lib/code-surface";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import type { SessionRow } from "@/lib/types";
 
@@ -39,6 +56,10 @@ const LazyInspector = dynamic(
   () => import("@/components/code-inspector").then((m) => m.CodeInspector),
   { ssr: false },
 );
+const LazyGitHub = dynamic(
+  () => import("@/components/github-view").then((m) => m.GitHubView),
+  { ssr: false },
+);
 const LazyBrowser = dynamic(
   () => import("@/components/browser-pane").then((m) => m.BrowserPane),
   { ssr: false },
@@ -52,7 +73,14 @@ const DOCK_TAB_META: Record<
   files: { label: "Files", icon: "ph:folder-open" },
   pr: { label: "Pull request", icon: "ph:git-pull-request" },
   inspector: { label: "Inspector", icon: "ph:sliders-bold" },
+  github: { label: "GitHub", icon: "ph:github-logo" },
   browser: { label: "Browser", icon: "ph:globe" },
+};
+
+const DOCK_SIZE_ANNOUNCEMENT: Record<CodeDockSize, string> = {
+  collapsed: "Session context collapsed.",
+  normal: "Session context restored.",
+  expanded: "Session context expanded.",
 };
 
 export type CodeContextDockProps = {
@@ -65,6 +93,7 @@ export type CodeContextDockProps = {
   onTabChange: (tab: CodeDockTab) => void;
   onSizeChange: (size: CodeDockSize) => void;
   onRefresh?: () => void;
+  onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
 };
 
 export function CodeContextDock({
@@ -76,7 +105,9 @@ export function CodeContextDock({
   onTabChange,
   onSizeChange,
   onRefresh,
+  onJumpToSession,
 }: CodeContextDockProps) {
+  const { announce } = useAnnouncer();
   const workRoot = codeSessionWorkRoot(row);
   // Browser keepalive: once opened, keep the pane mounted (hidden) so tabs and
   // scroll position survive a switch to Changes and back.
@@ -87,6 +118,27 @@ export function CodeContextDock({
 
   const collapsed = size === "collapsed";
   const expanded = size === "expanded";
+
+  const changeSize = useCallback(
+    (next: CodeDockSize) => {
+      if (next === size) return;
+      onSizeChange(next);
+      announce(DOCK_SIZE_ANNOUNCEMENT[next]);
+    },
+    [announce, onSizeChange, size],
+  );
+
+  const selectTab = useCallback(
+    (next: CodeDockTab) => {
+      onTabChange(next);
+      // Picking a tab out of a collapsed dock has to reopen it, or the click
+      // looks broken. Browser and GitHub need the room to render at all.
+      if (codeDockTabWantsExpanded(next)) changeSize("expanded");
+      else if (collapsed) changeSize("normal");
+      announce(`${DOCK_TAB_META[next].label} context shown.`);
+    },
+    [announce, changeSize, collapsed, onTabChange],
+  );
 
   return (
     <aside
@@ -110,13 +162,7 @@ export function CodeContextDock({
               aria-selected={tab === id}
               className="focus-ring code-context-dock__tab"
               data-selected={!collapsed && tab === id ? "true" : undefined}
-              onClick={() => {
-                onTabChange(id);
-                // Picking a tab out of a collapsed dock has to reopen it, or
-                // the click looks broken. Browser needs the room to render.
-                if (id === "browser") onSizeChange("expanded");
-                else if (collapsed) onSizeChange("normal");
-              }}
+              onClick={() => selectTab(id)}
             >
               <Icon name={DOCK_TAB_META[id].icon} width={12} height={12} />
               <span className="code-context-dock__tab-label">{DOCK_TAB_META[id].label}</span>
@@ -130,7 +176,7 @@ export function CodeContextDock({
             aria-label={expanded ? "Restore context width" : "Expand context"}
             aria-pressed={expanded}
             title={expanded ? "Restore context width" : "Expand context"}
-            onClick={() => onSizeChange(expanded ? "normal" : "expanded")}
+            onClick={() => changeSize(expanded ? "normal" : "expanded")}
           >
             <Icon
               name={expanded ? "ph:arrows-in-line-horizontal" : "ph:arrows-out-line-horizontal"}
@@ -148,7 +194,7 @@ export function CodeContextDock({
             aria-expanded={!collapsed}
             aria-controls={`code-context-dock-body-${row.id}`}
             title={collapsed ? "Show context" : "Collapse context"}
-            onClick={() => onSizeChange(collapsed ? "normal" : "collapsed")}
+            onClick={() => changeSize(collapsed ? "normal" : "collapsed")}
           >
             <Icon name={collapsed ? "ph:caret-left" : "ph:caret-right"} width={12} height={12} />
           </button>
@@ -178,6 +224,14 @@ export function CodeContextDock({
           ) : null}
           {tab === "pr" ? <LazyPr key={row.id} row={row} /> : null}
           {tab === "inspector" ? <LazyInspector key={workRoot} row={row} onChanged={onRefresh} /> : null}
+          {tab === "github" ? (
+            // No `initialFilter`: unlike the top-level PRs/Issues/Reviews tabs,
+            // the dock is not driving a slice, so the view keeps its own filter
+            // control and the reader picks what they need beside the shell.
+            <div className="code-context-dock__pane">
+              <LazyGitHub onJumpToSession={onJumpToSession} onTasksRefresh={onRefresh} />
+            </div>
+          ) : null}
           {browserOpened ? (
             <div className={tab === "browser" ? "code-context-dock__pane" : "hidden"}>
               <LazyBrowser label={`code:${row.id}`} active={tab === "browser"} />

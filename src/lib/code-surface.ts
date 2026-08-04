@@ -22,7 +22,14 @@ export function isCodeWorkbenchTab(value: string | null | undefined): value is C
  * whole point of the redesign: diffs and files sit BESIDE a running shell
  * instead of competing with it for one canvas.
  */
-export const CODE_DOCK_TABS = ["changes", "files", "pr", "inspector", "browser"] as const;
+export const CODE_DOCK_TABS = [
+  "changes",
+  "files",
+  "pr",
+  "inspector",
+  "github",
+  "browser",
+] as const;
 export type CodeDockTab = (typeof CODE_DOCK_TABS)[number];
 
 export function isCodeDockTab(value: string | null | undefined): value is CodeDockTab {
@@ -44,11 +51,18 @@ export function codeDockTabForWorkbenchTab(
   return null;
 }
 
-/** How much room the context dock takes beside the terminal center. Browser
- *  opens `expanded` because a native webview squeezed into a sidebar renders a
- *  column of wrapped text nobody can use. */
+/** How much room the context dock takes beside the terminal center. Browser and
+ *  GitHub open `expanded` because a native webview — or a list/detail split —
+ *  squeezed into a sidebar renders a column of wrapped text nobody can use. */
 export const CODE_DOCK_SIZES = ["collapsed", "normal", "expanded"] as const;
 export type CodeDockSize = (typeof CODE_DOCK_SIZES)[number];
+
+/** Dock tabs that need the expanded width to be legible at all. Selecting one
+ *  from a normal or collapsed dock widens it rather than rendering something
+ *  unusable. */
+export function codeDockTabWantsExpanded(tab: CodeDockTab): boolean {
+  return tab === "browser" || tab === "github";
+}
 
 /** Top-level surface tabs: the session workbench plus Activity (the former
  *  all-content GitHub feed) and focused GitHub slices. Legacy `ctab=github`

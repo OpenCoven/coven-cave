@@ -242,6 +242,20 @@ test.describe("code surface (Coding familiar's room)", () => {
     // The worktree mark on the branch row (the Root env row also contains
     // "feat-flux" inside the worktree path, so match the ⑂-prefixed form).
     await expect(inspector.getByText("⑂ feat-flux")).toBeVisible();
+
+    // cave-uod42: GitHub is a dock tab, so triage sits beside the terminal
+    // instead of replacing the whole Room. Selecting it widens the dock,
+    // because a list/detail split at sidebar width is unreadable.
+    const dock = page.getByTestId("code-context-dock");
+    await wb.getByRole("tab", { name: "GitHub" }).click();
+    await expect(dock).toHaveAttribute("data-size", "expanded");
+    await expect(wb.getByRole("tab", { name: "GitHub" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    // The terminal center is the point of the Room — it must survive every
+    // context switch, GitHub included.
+    await expect(page.getByTestId("code-terminal-workspace")).toBeVisible();
   });
 
   test("?mode=code&session=<id>&wtab=files deep link selects the session and tab", async ({ page, isMobile }) => {
