@@ -40,6 +40,15 @@ export type ScryState = {
   startedAt: number | null;
   /** Why nothing came back — shown as a plain line, never a blocking error. */
   error: string | null;
+  /**
+   * The endpoint's machine-readable reason, when it gave one.
+   *
+   * The rite branches on this: `no_local_vision_harness` means no scry is
+   * possible on this machine at all, which is a fall-into-manual-mode, not an
+   * error to show. Everything else is an ordinary failure. See
+   * `src/lib/rite-flow.ts`.
+   */
+  errorCode: string | null;
 };
 
 const IDLE: ScryState = {
@@ -50,6 +59,7 @@ const IDLE: ScryState = {
   murmur: null,
   startedAt: null,
   error: null,
+  errorCode: null,
 };
 
 const FAILED_LINE = "The scry did not come back.";
@@ -98,9 +108,15 @@ export function useScry(file: File | null): ScryState {
     const startedAt = performance.now();
     setState({ ...IDLE, status: "scrying", startedAt });
 
-    const fail = (error: string) => {
+    const fail = (error: string, code: string | null = null) => {
       if (cancelled) return;
-      setState((prev) => ({ ...prev, status: "failed", suggestions: null, error }));
+      setState((prev) => ({
+        ...prev,
+        status: "failed",
+        suggestions: null,
+        error,
+        errorCode: code,
+      }));
     };
 
     void (async () => {
@@ -120,9 +136,9 @@ export function useScry(file: File | null): ScryState {
         const contentType = response.headers.get("content-type") ?? "";
         if (!response.ok || !contentType.includes("text/event-stream")) {
           const payload = (await response.json().catch(() => null)) as
-            | { error?: string }
+            | { error?: string; code?: string }
             | null;
-          fail(payload?.error ?? FAILED_LINE);
+          fail(payload?.error ?? FAILED_LINE, payload?.code ?? null);
           return;
         }
 
@@ -165,10 +181,11 @@ export function useScry(file: File | null): ScryState {
                   ...(event.suggestions as Partial<ScrySuggestions>),
                 },
                 error: null,
+                errorCode: null,
               }));
             } else if (event.kind === "error") {
               settled = true;
-              fail(event.error || FAILED_LINE);
+              fail(event.error || FAILED_LINE, event.code || null);
             }
           }
         }

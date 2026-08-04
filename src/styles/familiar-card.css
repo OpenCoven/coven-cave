@@ -35,6 +35,13 @@
   background: none;
   transform-style: preserve-3d;
   transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+  /* The card's two blend layers (foil screens, glare overlays) must not take
+     anything outside the card as their backdrop. `preserve-3d` above means this
+     is NOT already implied by the transform, and without it the scry glitch
+     canvas drawn over the card forced the whole blended stack to re-composite
+     every frame — measured at half refresh rate on a 2x display. See the note on
+     `.scry-glitch` in familiar-rite.css; the two declarations are a pair. */
+  isolation: isolate;
   /* Symmetric easing: with backface culling unused, the face swap must land
      when the card is edge-on, and an asymmetric curve is already past 90deg at
      the halfway time — the outgoing face flashes mirrored. */
@@ -223,6 +230,36 @@
   color: color-mix(in oklch, oklch(0.98 0 0) 76%, transparent);
 }
 
+/* ── The office badge ─────────────────────────────────────────────────────
+   A familiar can hold several offices, and the badge shows them one at a time.
+   The whole group is laid into a SINGLE grid cell when it cycles: a grid track
+   sizes to its widest item, so the group is permanently as wide as the longest
+   label and nothing beside it — the typeline's own note, and the CTX stat the
+   plate is measured against — moves when the label swaps. Fading is the only
+   thing that changes. */
+.famcard__types {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.famcard__types--stack {
+  display: inline-grid;
+  align-items: center;
+  justify-items: start;
+}
+
+.famcard__type { display: inline-flex; align-items: center; gap: var(--space-1); }
+
+.famcard__types--stack .famcard__type {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transition: opacity 620ms var(--ease-standard, ease-in-out);
+}
+
+.famcard__types--stack .famcard__type--on { opacity: 1; }
+
 .famcard__badge {
   display: inline-flex;
   align-items: center;
@@ -332,6 +369,13 @@
 @media (prefers-reduced-motion: reduce) {
   .famcard,
   .famcard--live { transition: none; }
+
+  /* The component stops cycling and lays every office out at once (the stack
+     class is never applied), so this only covers the single frame before the
+     media query reaches React — the crossfade must not run in it. Opacity is
+     deliberately NOT forced here: forcing it would paint every office on top of
+     the others in that frame. */
+  .famcard__types--stack .famcard__type { transition: none; }
   .famcard__face { transition: none; }
   /* Hold a resting sheen rather than leaving the card looking unfinished. */
   .famcard { --glow: 0.55; }

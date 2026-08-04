@@ -13,11 +13,12 @@
  * lands on whatever in the image would actually reflect. See src/lib/foil.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/lib/icon";
 import { contextWindowForModel } from "@/lib/context-meter";
 import { FAMILIAR_TYPES, type FamiliarTypeId } from "@/lib/familiar-types";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { formatTokens } from "@/lib/usage-format";
 
 import "@/styles/familiar-card.css";
@@ -34,6 +35,16 @@ const HARNESS_FRAME: Record<string, string> = {
   openclaw: "#8d8f99",
 };
 
+/**
+ * How long one office holds the badge before the next crossfades in.
+ *
+ * Slow on purpose: a familiar with three offices is not a ticker, and anything
+ * quick enough to catch out of the corner of your eye reads as a glitch. Paired
+ * with the ~620ms crossfade in familiar-card.css, each office is legible and
+ * still for roughly three seconds.
+ */
+const OFFICE_CYCLE_MS = 3_600;
+
 
 export type FamiliarCardPreviewProps = {
   name: string;
@@ -44,7 +55,7 @@ export type FamiliarCardPreviewProps = {
   vesselLabel?: string;
   /** Namespaced model id, e.g. `anthropic/claude-opus-5`. */
   model?: string | null;
-  /** Selected familiar types; the first drives the badge. */
+  /** Selected familiar types. Several cycle through the badge, one at a time. */
   typeIds?: FamiliarTypeId[];
   /** Object URL or data URL for the dropped portrait. */
   artUrl?: string | null;
@@ -75,6 +86,9 @@ export function FamiliarCardPreview({
   const sealRef = useRef<HTMLCanvasElement | null>(null);
   const [flipped, setFlipped] = useState(false);
   const [qr, setQr] = useState<QrMatrix | null>(null);
+  const [hovering, setHovering] = useState(false);
+  const [officeIndex, setOfficeIndex] = useState(0);
+  const reducedMotion = usePrefersReducedMotion();
 
   // Both fall back to a token in familiar-card.css rather than a literal here,
   // so no colour reaches render from TSX (coven-design/no-render-hex-color).
@@ -83,8 +97,44 @@ export function FamiliarCardPreview({
   const ctx = contextWindowForModel(model ?? undefined);
   const ctxLabel = formatTokens(ctx.tokens) ?? String(ctx.tokens);
 
-  const primaryType = (typeIds ?? []).find((t) => t !== "general");
-  const typeSpec = FAMILIAR_TYPES.find((t) => t.id === (primaryType ?? "general"));
+  /**
+   * Every office the familiar holds, in the order they were chosen. A familiar
+   * with three offices used to show only the first, which quietly discarded two
+   * thirds of a decision the user had just made; the badge cycles them instead.
+   * With none chosen it falls back to the "general" spec, exactly as before.
+   */
+  const offices = useMemo(() => {
+    const chosen = (typeIds ?? [])
+      .filter((id) => id !== "general")
+      .map((id) => FAMILIAR_TYPES.find((t) => t.id === id))
+      .filter((spec): spec is (typeof FAMILIAR_TYPES)[number] => !!spec);
+    if (chosen.length) return chosen;
+    const general = FAMILIAR_TYPES.find((t) => t.id === "general");
+    return general ? [general] : [];
+  }, [typeIds]);
+
+  /**
+   * The badge cycles only when there is something to cycle, the pointer is
+   * elsewhere, and motion is wanted. Under reduced motion every office is shown
+   * at once instead — the information is the point, the swap is not.
+   */
+  const cycling = offices.length > 1 && !reducedMotion && !hovering;
+  const shownOffice = offices.length ? officeIndex % offices.length : 0;
+
+  // Changing the office set restarts at the first one, so the badge never opens
+  // on whichever index the previous set happened to be resting at.
+  useEffect(() => { setOfficeIndex(0); }, [offices]);
+
+  useEffect(() => {
+    if (!cycling) return;
+    const timer = window.setInterval(
+      () => setOfficeIndex((i) => (i + 1) % offices.length),
+      OFFICE_CYCLE_MS,
+    );
+    // Clearing on pause is what makes hover a PAUSE rather than a restart: the
+    // index is state, so the office under the pointer is still there after.
+    return () => window.clearInterval(timer);
+  }, [cycling, offices.length]);
 
   const setVars = useCallback((x: number, y: number, glow: number) => {
     const el = cardRef.current;
@@ -173,9 +223,12 @@ export function FamiliarCardPreview({
         className={`famcard focus-ring${flipped ? " famcard--flipped" : ""}${scrying ? " famcard--scrying" : ""}`}
         style={styleVars}
         onPointerMove={handleMove}
-        onPointerLeave={rest}
+        onPointerEnter={() => setHovering(true)}
+        onPointerLeave={() => { setHovering(false); rest(); }}
         onClick={() => setFlipped((v) => !v)}
-        aria-label={`Familiar card for ${name || "your familiar"}. Activate to turn it over.`}
+        aria-label={`Familiar card for ${name || "your familiar"}.${
+          offices.length ? ` ${offices.length > 1 ? "Offices" : "Office"}: ${offices.map((o) => o.label).join(", ")}.` : ""
+        } Activate to turn it over.`}
       >
         <div className="famcard__face famcard__face--front">
           {artUrl ? (
@@ -200,14 +253,37 @@ export function FamiliarCardPreview({
             </div>
 
             <div className="famcard__plate">
+              {/* The offices. Stacked in one grid cell when they cycle, so the
+                  group is permanently as wide as its longest label and the CTX
+                  stat above never shifts as the badge swaps. Hidden from
+                  assistive tech because the card's own label already names every
+                  office — a badge that changes every few seconds is not
+                  something to re-announce. */}
               <div className="famcard__typeline">
-                {typeSpec ? (
-                  <span className="famcard__badge">
-                    <Icon name={typeSpec.iconName} width={11} height={11} aria-hidden />
-                    {typeSpec.label}
-                  </span>
+                <span
+                  className={`famcard__types${offices.length > 1 && !reducedMotion ? " famcard__types--stack" : ""}`}
+                  aria-hidden
+                >
+                  {offices.map((spec, i) => (
+                    <span
+                      key={spec.id}
+                      className={`famcard__type${
+                        reducedMotion || i === shownOffice ? " famcard__type--on" : ""
+                      }`}
+                    >
+                      <span className="famcard__badge">
+                        <Icon name={spec.iconName} width={11} height={11} aria-hidden />
+                        {spec.label}
+                      </span>
+                    </span>
+                  ))}
+                </span>
+                {/* The office's own line, only when there is one office. With
+                    several it would have to swap too, and a second moving string
+                    beside a moving badge is a ticker. */}
+                {offices.length === 1 && offices[0].roleToken ? (
+                  <span>{offices[0].description.split(" — ")[0]}</span>
                 ) : null}
-                {typeSpec?.roleToken ? <span>{typeSpec.description.split(" — ")[0]}</span> : null}
               </div>
 
               <div className="famcard__move">
