@@ -144,6 +144,7 @@ function ImageLightbox({
 export function ImageCarousel({ images, label }: Props) {
   const [index, setIndex] = useState(0);
   const [zoomed, setZoomed] = useState(false);
+  const slideRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const reducedMotion = usePrefersReducedMotion();
   const trackId = useId();
   const total = images.length;
@@ -165,10 +166,14 @@ export function ImageCarousel({ images, label }: Props) {
       if (total < 2) return;
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        go(safeIndex + 1);
+        const nextIndex = clampIndex(safeIndex + 1, total);
+        go(nextIndex);
+        requestAnimationFrame(() => slideRefs.current[nextIndex]?.focus());
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
-        go(safeIndex - 1);
+        const nextIndex = clampIndex(safeIndex - 1, total);
+        go(nextIndex);
+        requestAnimationFrame(() => slideRefs.current[nextIndex]?.focus());
       }
     },
     [go, safeIndex, total],
@@ -193,6 +198,9 @@ export function ImageCarousel({ images, label }: Props) {
               {images.map((image, i) => (
                 <button
                   key={`${image.src}-${i}`}
+                  ref={(element) => {
+                    slideRefs.current[i] = element;
+                  }}
                   type="button"
                   // Only the visible slide is reachable — Tab must not walk
                   // through pictures nobody can see.

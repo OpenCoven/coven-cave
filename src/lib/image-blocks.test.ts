@@ -125,6 +125,16 @@ test("slice: malformed quote-edge markers cannot leak beside a valid carousel", 
   assert.ok(!text.includes("javascript:"));
 });
 
+test("slice: malformed marker recovery ignores quoted close characters", () => {
+  const malformed = `<coven:image src="javascript:alert(1)" caption="a -> b" broken>`;
+  const pieces = sliceImageBlocks(`${malformed} prose <coven:image src="${PNG}" />`);
+  assert.equal(pieces.filter((p) => p.kind === "carousel").length, 1);
+  const text = pieces.filter((p) => p.kind === "text").map((p) => p.text).join("");
+  assert.ok(!text.includes("<coven:image"));
+  assert.ok(!text.includes("javascript:"));
+  assert.ok(!text.includes("caption="));
+});
+
 test("slice: an unsafe marker is dropped silently and breaks the adjacency run", () => {
   const pieces = sliceImageBlocks(
     `<coven:image src="${PNG}" />\n<coven:image src="javascript:alert(1)" />\n<coven:image src="${PNG2}" />`,
@@ -186,6 +196,11 @@ test("strip: an unterminated tail hides until the stream completes it", () => {
 test("strip: a '>' inside a still-open caption does not read as the tag close", () => {
   const partial = `x <coven:image src="${PNG}" caption="a -> b`;
   assert.equal(stripImageMarkers(partial), "x ");
+});
+
+test("strip: malformed marker recovery ignores quoted close characters", () => {
+  const malformed = `<coven:image src="javascript:alert(1)" caption="a -> b" broken>`;
+  assert.equal(stripImageMarkers(`a ${malformed} b`), "a  b");
 });
 
 test("strip: fenced markers survive the streaming strip", () => {

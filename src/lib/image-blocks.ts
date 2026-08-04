@@ -122,16 +122,27 @@ export function imageCarouselKey(carousel: ImageCarouselDescriptor): string {
   return carousel.group ? `group:${carousel.group}` : carousel.images.map((i) => i.src).join("|");
 }
 
-/** True when an UNQUOTED `>` exists at/after `from` — quote-aware so a `>`
- *  inside a still-open caption doesn't read as the tag close mid-stream. */
-function hasUnquotedGt(s: string, from: number): boolean {
+/** Return the next UNQUOTED `>` at/after `from`, or `-1` — quote-aware so a
+ *  `>` inside a caption does not read as a tag close. */
+function findUnquotedGt(s: string, from: number): number {
   let inQuote = false;
   for (let i = from; i < s.length; i++) {
     const c = s[i];
-    if (c === '"') inQuote = !inQuote;
-    else if (c === ">" && !inQuote) return true;
+    if (c === '"') {
+      if (inQuote) {
+        inQuote = false;
+      } else {
+        let before = i - 1;
+        while (before >= from && /\s/.test(s[before])) before--;
+        // An arbitrary quote in an already-malformed tag is not an attribute
+        // delimiter. Only an `=` can open a value quote; otherwise a bad
+        // `<coven:image" ...>` prefix would hide every later valid marker.
+        inQuote = s[before] === "=";
+      }
+    }
+    else if (c === ">" && !inQuote) return i;
   }
-  return false;
+  return -1;
 }
 
 function inRanges(ranges: Array<[number, number]>, index: number): boolean {
@@ -171,10 +182,10 @@ function stripMalformedImageMarkerFragments(text: string): string {
       continue;
     }
 
-    // This is not a complete, quote-valid marker, so the first close is only
-    // a recovery boundary. Dropping it fail-closed is safer than showing a
+    // This is not a complete, quote-valid marker, so the next unquoted close
+    // is only a recovery boundary. Dropping it fail-closed is safer than showing a
     // malformed protocol tag (or its unsafe attributes) in the transcript.
-    const end = text.indexOf(">", start);
+    const end = findUnquotedGt(text, start);
     out += text.slice(cursor, start);
     if (end === -1) return out;
     cursor = end + 1;
@@ -282,7 +293,7 @@ export function stripImageMarkers(text: string): string {
 export function stripIncompleteImageMarker(text: string): string {
   if (!text || !text.includes("<coven:i")) return text;
   const tail = text.lastIndexOf("<coven:i");
-  if (tail !== -1 && !hasUnquotedGt(text, tail) && !inRanges(markdownCodeRanges(text), tail)) {
+  if (tail !== -1 && findUnquotedGt(text, tail) === -1 && !inRanges(markdownCodeRanges(text), tail)) {
     const frag = text.slice(tail);
     const name = "<coven:image";
     const afterName = frag.slice(name.length, name.length + 1);

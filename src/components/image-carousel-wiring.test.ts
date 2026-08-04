@@ -61,6 +61,11 @@ assert.match(
 );
 assert.match(
   carousel,
+  /slideRefs\.current\[nextIndex\]\?\.focus\(\)/,
+  "arrow navigation moves focus onto the newly visible slide instead of hiding it on the prior slide",
+);
+assert.match(
+  carousel,
   /ArrowRight/,
   "arrow keys move the deck",
 );
