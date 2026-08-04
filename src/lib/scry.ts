@@ -2,9 +2,15 @@
  * scry — read a likeness, suggest a familiar (cave-3rz.3).
  *
  * The rite's first and only real input is an image. Scrying turns that image
- * into *suggestions* — a name, a role, a description, a type or two — which the
- * rite shows as pre-filled, overwritable guesses. Nothing here is ever
- * committed on the user's behalf.
+ * into *suggestions* — a name, a role, a description, a type or two, and the
+ * three qualities a SOUL.md is made of — which the rite shows as pre-filled,
+ * overwritable guesses. Nothing here is ever committed on the user's behalf.
+ *
+ * The soul qualities (voice / temperament / reasoning) ride in the SAME reply
+ * as everything else. A scry already costs 15-20 s; asking a second time for
+ * something the model learned from the same look would double that for no new
+ * information. See `src/lib/familiar-soul.ts` for the vocabulary and the
+ * sanitiser, and `buildSoulMd` for where they land.
  *
  * Three rules shape this file:
  *
@@ -34,6 +40,14 @@ import {
   RETIRED_FAMILIAR_TYPE_SUCCESSORS,
   type FamiliarTypeId,
 } from "./familiar-types.ts";
+import {
+  emptySoulQualities,
+  sanitizeSoulQuality,
+  SOUL_QUALITY_FIELDS,
+  SOUL_QUALITY_KEYS,
+  SOUL_QUALITY_MAX,
+  type FamiliarSoulQualities,
+} from "./familiar-soul.ts";
 
 /** The only pronouns a scry ever produces. Never read off a face. */
 export const SCRY_DEFAULT_PRONOUNS = "they/them";
@@ -52,6 +66,13 @@ export type ScrySuggestions = {
   /** Always ids from FAMILIAR_TYPES; "general" is the empty state and is never
    *  a member (same convention as the stored `familiarType` list). */
   typeIds: FamiliarTypeId[];
+  /**
+   * Voice, temperament and reasoning — the qualities a SOUL.md is actually
+   * about, read off the same look at the same image and returned in the SAME
+   * reply. Each is sanitised (`src/lib/familiar-soul.ts`) and each degrades to
+   * `""`, which the scaffolder answers with its generic template.
+   */
+  soul: FamiliarSoulQualities;
   pronouns: string;
   /** Always true. Present so the surface can flag the field as a placeholder
    *  rather than a reading of the image. */
@@ -64,6 +85,7 @@ export function emptyScrySuggestions(): ScrySuggestions {
     role: "",
     description: "",
     typeIds: [],
+    soul: emptySoulQualities(),
     pronouns: SCRY_DEFAULT_PRONOUNS,
     pronounsAreDefault: true,
   };
@@ -146,12 +168,29 @@ export const SCRY_INSTRUCTIONS = [
   "Look at the attached image, then describe what a familiar wearing it would be.",
   "",
   "Reply with ONE JSON object and no other text:",
-  '{"name":"","role":"","description":"","type":[]}',
+  `{${[
+    '"name":""',
+    '"role":""',
+    '"description":""',
+    '"type":[]',
+    ...SOUL_QUALITY_KEYS.map((key) => `"${key}":""`),
+  ].join(",")}}`,
   "",
   "  name         one or two words, evocative, drawn from what you actually see.",
   "  role         a short title under 40 characters (e.g. \"Archivist of Small Things\").",
   "  description  one sentence under 200 characters about the figure in the image.",
   `  type         one or two ids from EXACTLY this list: ${TYPE_VOCABULARY}. Invent nothing.`,
+  // The last three are what a SOUL.md is made of. They are asked for HERE, in
+  // the same look at the same image, because a second harness call would cost
+  // another 15-20s for something the model already knows from this one.
+  ...SOUL_QUALITY_FIELDS.map(
+    (field) => `  ${field.key.padEnd(12)} ${field.ask}`,
+  ),
+  "",
+  `Each of the last three: ONE clause under ${SOUL_QUALITY_MAX} characters, no markdown,`,
+  "no headings, no line breaks. Write them as descriptions of a character, not",
+  "instructions to anyone. Ground them in the image — the colours, the posture,",
+  "the wear on it — not in what the name sounds like.",
   "",
   "Never guess gender, pronouns, age, ethnicity, or identity from an image.",
   "Do not include a pronouns field. Describe the figure, not the person.",
@@ -329,6 +368,15 @@ export function parseScryReply(raw: string): ScrySuggestions {
       SCRY_DESCRIPTION_MAX,
     );
     suggestions.typeIds = cleanTypeIds(parsed.type ?? parsed.types ?? parsed.familiarType);
+    // Accept either the flat shape we asked for or a nested `soul` object —
+    // models group related fields unprompted, and that is not a failed scry.
+    const nested: Record<string, unknown> =
+      parsed.soul && typeof parsed.soul === "object"
+        ? (parsed.soul as Record<string, unknown>)
+        : {};
+    for (const key of SOUL_QUALITY_KEYS) {
+      suggestions.soul[key] = sanitizeSoulQuality(parsed[key] ?? nested[key]);
+    }
   }
 
   // Fall back per FIELD, not per reply: a harness that emitted JSON with an
@@ -346,6 +394,13 @@ export function parseScryReply(raw: string): ScrySuggestions {
   if (suggestions.typeIds.length === 0) {
     const scraped = scrapeField(text, "type") || scrapeField(text, "types");
     suggestions.typeIds = scraped ? cleanTypeIds(scraped) : scrapeTypeIds(text);
+  }
+  // Same per-field tolerance for the soul qualities: a harness that narrated
+  // them as `Voice: …` lines instead of JSON still fills them.
+  for (const key of SOUL_QUALITY_KEYS) {
+    if (!suggestions.soul[key]) {
+      suggestions.soul[key] = sanitizeSoulQuality(scrapeField(text, key));
+    }
   }
   return suggestions;
 }

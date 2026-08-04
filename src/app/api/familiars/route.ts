@@ -295,6 +295,9 @@ export async function POST(req: Request) {
       role: draft.role,
       description: draft.description,
       glyph: draft.glyph,
+      // Voice / temperament / reasoning, read from the likeness by the scry and
+      // edited in the rite before the seal. Absent → the generic template.
+      soul: draft.soul,
     });
   } catch {
     /* non-fatal — identity files can be authored later via the Contract tab */

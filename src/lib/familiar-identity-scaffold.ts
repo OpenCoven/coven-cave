@@ -12,8 +12,25 @@
  * the real validator over its output — see familiar-identity-scaffold.test.ts.
  *
  * Spec shape mirrors the OpenCoven familiar-contract v0.1.0 minimal example.
+ *
+ * **The manner is the only model-shaped part.** SOUL.md used to be identical
+ * for every familiar but its name and role, which made the file furniture
+ * rather than an identity. The scry now reads three qualities off the likeness
+ * — voice, temperament, reasoning — and this module prints them into a section
+ * it owns. The model fills SLOTS; it never authors the file. Every interpolated
+ * value is re-sanitised here (`src/lib/familiar-soul.ts`) no matter who sent
+ * it, and every slot sits after literal text on a line this file opened, so
+ * nothing arriving from a model can start a line, open a section, or change the
+ * file's shape. A hostile or unusable value falls back to the generic template,
+ * which is a perfectly good soul and always a successful summoning.
  */
 import { FAMILIAR_CONTRACT_SPEC_VERSION } from "./familiar-contract.ts";
+import {
+  hasSoulQualities,
+  sanitizeInlineText,
+  sanitizeSoulQualities,
+  SOUL_QUALITY_FIELDS,
+} from "./familiar-soul.ts";
 
 export type IdentityScaffoldInput = {
   /** Slug id (used for the editable skills path). */
@@ -26,6 +43,16 @@ export type IdentityScaffoldInput = {
   glyph?: string;
   /** Human the familiar belongs to (ward [meta].person). */
   person?: string;
+  /**
+   * Voice / temperament / reasoning, read from the likeness by the scry and
+   * edited by the person before the seal was struck (see `src/lib/scry.ts`).
+   *
+   * SLOTS, not authorship: each surviving quality is printed after a fixed
+   * label on a line this file owns, and is re-sanitised here regardless of who
+   * sent it. Omitted, empty, or hostile → the generic template below, which is
+   * exactly the file this scaffolder produced before qualities existed.
+   */
+  soul?: unknown;
 };
 
 export type ScaffoldedContract = {
@@ -62,10 +89,42 @@ function clean(value: string | undefined, fallback: string): string {
   return v.length > 0 ? v : fallback;
 }
 
-/** TOML/inline-safe: this codebase's hand-rolled ward parser stops a quoted
- *  value at `"` or `#`, so strip those from interpolated names. */
+/** Longest role / description this scaffolder will print into a markdown body.
+ *  Matches the bounds the scry already applies to the same two fields. */
+const ROLE_MAX = 60;
+const DESCRIPTION_MAX = 280;
+
+/**
+ * Markdown-safe role and purpose.
+ *
+ * Both arrive from the scry (a model reading a picture) or from an API caller,
+ * and both land inside SOUL.md / IDENTITY.md — where a newline plus `## I am`
+ * would forge a second declared name and break the cross-file invariant this
+ * module promises to hold. `sanitizeInlineText` collapses each to one
+ * structure-free line, so an unusable value falls back to the default rather
+ * than reshaping the file.
+ */
+function prose(value: string | undefined, max: number, fallback: string): string {
+  return sanitizeInlineText(value, max) || fallback;
+}
+
+/** The description is printed mid-sentence ("My purpose is to …."), and a
+ *  scried one arrives as a full sentence. Drop the terminal stop so the
+ *  template supplies exactly one. */
+function unterminated(value: string): string {
+  return value.replace(/[.!?]+$/, "") || value;
+}
+
+/**
+ * TOML/inline-safe: this codebase's hand-rolled ward parser stops a quoted
+ * value at `"` or `#`, so strip those from interpolated names.
+ *
+ * Control characters go too, not only `\n`: a lone `\r` does not split a line
+ * for `parseSoul` but does split one for anything else that reads these files,
+ * and a name is a single line in every file it appears in.
+ */
 function tomlSafe(value: string): string {
-  return value.replace(/["#\n]/g, "").trim();
+  return value.replace(/["#]/g, "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 export function creatureForGlyph(glyph: string | undefined): string {
@@ -80,12 +139,41 @@ function contractName(input: IdentityScaffoldInput): string {
   return tomlSafe(clean(input.displayName, input.id)) || input.id;
 }
 
+/**
+ * The manner section — the one part of SOUL.md that differs between two
+ * familiars scaffolded from the same role.
+ *
+ * Every quality is printed as `- **Label.** <quality>`: the line is opened by
+ * literal text this file controls, so an interpolated value can never begin a
+ * line, and `sanitizeSoulQuality` has already removed every newline and
+ * structural character from it. A familiar with no usable qualities gets no
+ * section at all, which is byte-for-byte the file this scaffolder wrote before.
+ */
+function mannerSection(input: IdentityScaffoldInput): string {
+  const qualities = sanitizeSoulQualities(input.soul);
+  if (!hasSoulQualities(qualities)) return "";
+  const lines = SOUL_QUALITY_FIELDS.filter((field) => qualities[field.key])
+    .map((field) => `- **${field.soulLabel}.** ${qualities[field.key]}`)
+    .join("\n");
+  return `## My Manner
+
+How I carry the work. This was read from my likeness when I was summoned, and my
+person may rewrite any of it.
+
+${lines}
+
+`;
+}
+
 export function buildSoulMd(input: IdentityScaffoldInput): string {
   const name = contractName(input);
-  const role = clean(input.role, "Familiar");
-  const purpose = clean(
-    input.description,
-    `support my person with ${role.toLowerCase()} work, within my lane`,
+  const role = prose(input.role, ROLE_MAX, "Familiar");
+  const purpose = unterminated(
+    prose(
+      input.description,
+      DESCRIPTION_MAX,
+      `support my person with ${role.toLowerCase()} work, within my lane`,
+    ),
   );
   return `# SOUL.md — Who I Am
 
@@ -98,7 +186,7 @@ I am ${name}, a familiar in this Coven. My purpose is to ${purpose}.
 ${purpose.charAt(0).toUpperCase()}${purpose.slice(1)}. I hold one lane and hold it
 well, rather than trying to be everything at once.
 
-## Core Work
+${mannerSection(input)}## Core Work
 
 - ${role}-focused work within my declared lane.
 - Collaborating with my person and the other familiars of this Coven.
@@ -121,9 +209,13 @@ well, rather than trying to be everything at once.
 
 export function buildIdentityMd(input: IdentityScaffoldInput): string {
   const name = contractName(input);
-  const role = clean(input.role, "Familiar");
+  // Same treatment as SOUL.md: `**Role:**` is a field line, and a role carrying
+  // a newline would put whatever follows it at the start of a line of its own.
+  const role = prose(input.role, ROLE_MAX, "Familiar");
   const creature = creatureForGlyph(input.glyph);
-  const purpose = clean(input.description, `help my person with ${role.toLowerCase()} work`);
+  const purpose = unterminated(
+    prose(input.description, DESCRIPTION_MAX, `help my person with ${role.toLowerCase()} work`),
+  );
   return `# IDENTITY.md - ${name}
 
 - **Name:** ${name}

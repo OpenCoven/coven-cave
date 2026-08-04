@@ -82,6 +82,37 @@ assert.match(
   "the chosen offices must be persisted as the familiar's type(s)",
 );
 
+// ── The manner is shown before it is committed ──────────────────────────────
+// Voice / temperament / reasoning are what the new familiar's SOUL.md is
+// written from. A summoning that stored a personality nobody saw would be the
+// one thing this rite must not do, so they are fields at the seal — filled by
+// the scry only while untouched, exactly like the name and the description.
+assert.match(
+  rite,
+  /SOUL_QUALITY_FIELDS\.map\(\(field\) => \(/,
+  "every soul quality must be rendered as its own editable field",
+);
+assert.match(
+  rite,
+  /value=\{soul\[field\.key\]\}/,
+  "the manner fields must be bound to editable state, not to the scry's reply",
+);
+assert.match(
+  rite,
+  /touchedSoul\.current\[field\.key\] = true;/,
+  "editing a quality must take it over, so a late scry cannot overwrite it",
+);
+assert.match(
+  rite,
+  /if \(value && !touchedSoul\.current\[field\.key\]\) next\[field\.key\] = value;/,
+  "a scried quality fills only a slot the user has not taken over",
+);
+assert.match(
+  rite,
+  /\.\.\.\(hasSoulQualities\(soul\) \? \{ soul \} : \{\}\)/,
+  "an empty manner must be omitted so the scaffolder writes the generic soul",
+);
+
 // ── The seal encodes the id the daemon gave, not a guess ────────────────────
 assert.match(
   rite,

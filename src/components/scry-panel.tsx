@@ -12,9 +12,12 @@
  *     it actually reached that point (see `src/lib/scry-stream.ts`). Nothing
  *     advances on a timer, so a slow harness shows a long stage rather than a
  *     bar that has walked away from it.
- *  2. **The four slots, from the moment the image drops.** Name, role, offices,
- *     description are visible as empty shimmering placeholders before any of
- *     them arrive, so you can see WHAT is being extracted while you wait.
+ *  2. **The slots, from the moment the image drops.** Name, role, offices,
+ *     description, and the three qualities the familiar's SOUL.md is written
+ *     from — voice, temperament, reasoning — are visible as empty shimmering
+ *     placeholders before any of them arrive, so you can see WHAT is being
+ *     extracted while you wait. All seven ride in one reply; there is no second
+ *     harness call behind the last three.
  *  3. **The harness's own words.** When it narrates mid-run — it usually does,
  *     around the six-second mark — that text is forwarded verbatim and shown.
  *     It is the one genuinely live signal that something is thinking.
@@ -37,8 +40,17 @@ import { SCRY_STAGES, scryStageIndex, type ScryStage } from "@/lib/scry-stream";
 import type { ScryState } from "@/lib/use-scry";
 
 /** Landing order. Name first because it is the field the card shows biggest;
- *  description last because it is the one that takes the longest to read. */
-const SLOTS = ["name", "role", "offices", "description"] as const;
+ *  the three manner qualities last because they are the longest to read and
+ *  the least urgent — they are edited at the seal, not acted on here. */
+const SLOTS = [
+  "name",
+  "role",
+  "offices",
+  "description",
+  "voice",
+  "temperament",
+  "reasoning",
+] as const;
 type SlotKey = (typeof SLOTS)[number];
 
 const SLOT_LABEL: Record<SlotKey, string> = {
@@ -46,6 +58,9 @@ const SLOT_LABEL: Record<SlotKey, string> = {
   role: "Office",
   offices: "Sigils",
   description: "In a line",
+  voice: "Voice",
+  temperament: "Temper",
+  reasoning: "Reasons",
 };
 
 /** Placeholder widths, so an empty slot reads as the shape of the thing that is
@@ -55,6 +70,9 @@ const SLOT_WIDTH: Record<SlotKey, string> = {
   role: "scry-slot--medium",
   offices: "scry-slot--medium",
   description: "scry-slot--long",
+  voice: "scry-slot--long",
+  temperament: "scry-slot--medium",
+  reasoning: "scry-slot--long",
 };
 
 const STAGE_LABEL: Record<ScryStage, (harness: string) => string> = {
@@ -124,6 +142,9 @@ export function ScryPanel({ scry }: ScryPanelProps) {
         .map((id) => FAMILIAR_TYPES.find((t) => t.id === id)?.label ?? id)
         .join(" · "),
       description: s?.description ?? "",
+      voice: s?.soul?.voice ?? "",
+      temperament: s?.soul?.temperament ?? "",
+      reasoning: s?.soul?.reasoning ?? "",
     } satisfies Record<SlotKey, string>;
   }, [scry.suggestions]);
 
@@ -150,7 +171,10 @@ export function ScryPanel({ scry }: ScryPanelProps) {
     // reveal of text already received, held to well under a second.
     const text = values.description;
     setTyped("");
-    const start = (SLOTS.length - 1) * LANDING_STEP_MS;
+    // Anchored to the description's OWN slot, not the last one: the manner
+    // qualities land after it, and typing that lags its own reveal reads as a
+    // field that arrived empty.
+    const start = SLOTS.indexOf("description") * LANDING_STEP_MS;
     const steps = Math.max(1, Math.min(text.length, 48));
     for (let i = 1; i <= steps; i += 1) {
       const cut = Math.ceil((text.length * i) / steps);

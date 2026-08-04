@@ -1,3 +1,8 @@
+import {
+  hasSoulQualities,
+  sanitizeSoulQualities,
+  type FamiliarSoulQualities,
+} from "./familiar-soul.ts";
 import { isTrustedOnboardingHarness } from "./harness-adapters.ts";
 import {
   isSshRuntime,
@@ -21,6 +26,13 @@ export type OnboardingFamiliarDraft = {
   /** Optional runtime override. Persisted to cave-config.json (the binding
    *  source chat reads), never to familiars.toml. */
   runtime?: FamiliarRuntime;
+  /**
+   * Voice / temperament / reasoning for the scaffolded SOUL.md, sanitised.
+   * Present only when at least one quality survived. Goes to the identity
+   * scaffolder and NOWHERE else — not familiars.toml, not the config binding:
+   * a familiar's manner lives in its SOUL.md, which its person can edit.
+   */
+  soul?: FamiliarSoulQualities;
 };
 
 export type OnboardingFamiliarInput = {
@@ -39,6 +51,9 @@ export type OnboardingFamiliarInput = {
     cwd?: string | null;
     command?: string | null;
   } | null;
+  /** Untrusted soul qualities from the rite or an API caller; sanitised here
+   *  and re-sanitised by the scaffolder that writes them. */
+  soul?: unknown;
 };
 
 function cleanText(value: string | null | undefined): string {
@@ -128,6 +143,11 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
     runtime = { kind: "local" };
   }
 
+  // Never a reason to reject a draft: a familiar with no readable manner is a
+  // familiar with the generic SOUL.md, which is what every one of them had
+  // before the scry started reading for these.
+  const soul = sanitizeSoulQualities(input.soul);
+
   return {
     id,
     displayName,
@@ -138,6 +158,7 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
     model,
     openclawAgentId: openclawAgentId || undefined,
     ...(hermesProfile ? { hermesProfile } : {}),
+    ...(hasSoulQualities(soul) ? { soul } : {}),
     runtime,
   };
 }

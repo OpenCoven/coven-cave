@@ -69,6 +69,7 @@ export const SUITES = {
     "src/lib/use-role-surfaces-loader.test.ts",
     "src/lib/familiar-types.test.ts",
     "src/lib/scry.test.ts",
+    "src/lib/familiar-soul.test.ts",
     "src/lib/scry-stream.test.ts",
     "src/lib/rite-flow.test.ts",
     "src/lib/glitch-source.test.ts",

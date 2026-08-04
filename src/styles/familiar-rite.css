@@ -519,6 +519,18 @@
 
 .rite__note { margin: 0; font-size: var(--text-2xs); color: var(--text-muted); max-width: 42ch; }
 
+/* The manner group — voice, temperament, reasoning. A heading rather than a
+   fourth unlabelled field, because these three are a different KIND of thing
+   from the name and the office: they are what the familiar's SOUL.md is
+   written from. */
+.rite__manner-head {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
 /* A failed summoning. Never a blocking dialog — the rite is still standing and
    the seal can be struck again once the reason is dealt with. */
 .rite__error {

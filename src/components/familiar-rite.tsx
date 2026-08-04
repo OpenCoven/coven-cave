@@ -23,6 +23,16 @@
  * opens it on done, on failure, in manual mode, and on a ceiling — and the seal
  * stays reachable throughout, so nobody is trapped behind it.
  *
+ * **The manner is disclosed, not picked.** Voice, temperament and reasoning are
+ * what the new familiar's SOUL.md is written from, and the scry reads them off
+ * the likeness in the same reply as the name and the office. They sit at the
+ * seal as three plain fields rather than as a sixth step, because they are not
+ * a choice between objects — they are the last thing shown before something
+ * irreversible is written, and a summoning that stored a personality nobody saw
+ * would be exactly the silent commitment this rite exists to avoid. Clearing
+ * all three is a supported answer: the scaffolder falls back to the generic
+ * soul, which is what every familiar had before the scry read for these.
+ *
  * **Manual mode** is a first-class choice at step I, not a buried link: no scry
  * fires, every step is open at once, and nothing is pre-filled or badged
  * "scried". It is also where the rite lands when the endpoint reports
@@ -62,6 +72,13 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { setFamiliarFoil } from "@/lib/cave-familiar-foil";
 import { setFamiliarOverride } from "@/lib/cave-familiar-overrides";
 import { contextWindowForModel } from "@/lib/context-meter";
+import {
+  emptySoulQualities,
+  hasSoulQualities,
+  SOUL_QUALITY_FIELDS,
+  type FamiliarSoulQualities,
+  type SoulQualityKey,
+} from "@/lib/familiar-soul";
 import { FAMILIAR_TYPES, type FamiliarTypeId } from "@/lib/familiar-types";
 import { slugifyFamiliarId } from "@/lib/onboarding-familiars";
 import {
@@ -171,6 +188,9 @@ export function FamiliarRite({
   // Never inferred from a face. The scry does not ask and does not parse it;
   // this is a default the user is expected to change, and the rite says so.
   const [pronouns, setPronouns] = useState(SCRY_DEFAULT_PRONOUNS);
+  /** Voice / temperament / reasoning — what the scaffolded SOUL.md is made of.
+   *  Suggested by the scry, shown as fields, never committed unedited. */
+  const [soul, setSoul] = useState<FamiliarSoulQualities>(emptySoulQualities());
   const [vessel, setVessel] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
   const [types, setTypes] = useState<FamiliarTypeId[]>([]);
@@ -188,6 +208,11 @@ export function FamiliarRite({
   // it is still untouched — a scry that lands late must never overwrite typing.
   const touched = useRef<Record<"name" | "role" | "description" | "types", boolean>>({
     name: false, role: false, description: false, types: false,
+  });
+  // Tracked per quality, not as one flag: rewriting the voice must not freeze
+  // the temperament the scry was still about to offer.
+  const touchedSoul = useRef<Record<SoulQualityKey, boolean>>({
+    voice: false, temperament: false, reasoning: false,
   });
 
   const theme = useMemo(
@@ -212,6 +237,16 @@ export function FamiliarRite({
     if (scried.role && !touched.current.role) setRole(scried.role);
     if (scried.description && !touched.current.description) setDescription(scried.description);
     if (scried.typeIds.length && !touched.current.types) setTypes(scried.typeIds);
+    // The manner the scry read off the likeness. Same rule as every other
+    // field: it fills a slot the user has not taken over, and nothing else.
+    setSoul((prev) => {
+      const next = { ...prev };
+      for (const field of SOUL_QUALITY_FIELDS) {
+        const value = scried.soul?.[field.key] ?? "";
+        if (value && !touchedSoul.current[field.key]) next[field.key] = value;
+      }
+      return next;
+    });
     announce(
       `The scry suggests ${scried.name || "no name"}. Every field is editable.`,
     );
@@ -387,6 +422,10 @@ export function FamiliarRite({
             ...(role.trim() ? { role: role.trim() } : {}),
             harness,
             ...(model ? { model } : {}),
+            // What the new familiar's SOUL.md is written from. Sent only when
+            // something survived; the route re-sanitises whatever arrives, and
+            // an absent manner is the generic template the rite shipped with.
+            ...(hasSoulQualities(soul) ? { soul } : {}),
             runtime: { kind: "local" },
           },
         }),
@@ -802,6 +841,37 @@ export function FamiliarRite({
                   the scry never guesses them and the default says so out loud. */}
               <p className="rite__note" id="rite-pronouns-note">
                 A default, not a reading — nothing about pronouns is taken from the image.
+              </p>
+            </div>
+
+            {/* The manner. These three are the only part of the new familiar's
+                SOUL.md that is not a template, so they are shown as fields
+                before the seal rather than written on anyone's behalf: a
+                personality committed silently is the one thing a summoning
+                must not do. Clearing them all is a supported answer — the
+                scaffolder falls back to the generic soul. */}
+            <div className="rite__guesses">
+              <p className="rite__manner-head">Its manner</p>
+              {SOUL_QUALITY_FIELDS.map((field) => (
+                <label key={field.key} className="rite__field">
+                  <span className="rite__field-hint">{field.label}</span>
+                  <input
+                    className="rite__field-input"
+                    value={soul[field.key]}
+                    onChange={(e) => {
+                      touchedSoul.current[field.key] = true;
+                      setSoul((prev) => ({ ...prev, [field.key]: e.target.value }));
+                    }}
+                    placeholder={field.hint}
+                    aria-label={`Familiar ${field.label.toLowerCase()}`}
+                    aria-describedby="rite-manner-note"
+                  />
+                </label>
+              ))}
+              <p className="rite__note" id="rite-manner-note">
+                This is what its SOUL.md is written from — how it speaks, how it
+                works, how it thinks. Read from the likeness, and yours to change
+                or clear.
               </p>
             </div>
 
