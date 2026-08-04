@@ -17,9 +17,9 @@
 - **The command has two distinct failure modes, and only one of them justifies
   the fallback.** Telling them apart is the whole game, because the wrong choice
   creates a worktree nothing can ever retire.
-  - **Refused, exit 2** (`creating a worktree would exceed the 12-worktree
-    budget`, or `Bead … already owns a registered worktree`). The gate ran fine
-    and declined. **Do not fall back to `git worktree add` here.** Every refusal
+  - **Exit 2 — refused by the admission gate** (`creating a worktree would
+    exceed the 12-worktree budget`, or `Bead … already owns a registered
+    worktree`). The gate ran fine and declined. **Do not fall back to `git worktree add` here.** Every refusal
     from this path is lifted by an attributed, expiring exception, and the
     refusal itself now prints the exact rerun. The budget counts every
     registered worktree in the checkout, not just yours, so a concurrent session
@@ -29,17 +29,17 @@
     pnpm beads:worktrees:create --bead cave-123 --branch fix/cave-123-example \
       --owner kitty --purpose "Repair example" \
       --exception-owner kitty \
-      --exception-reason "why this is worth exceeding the budget" \
-      --exception-expires-at 2026-08-10T00:00:00Z \
+      --exception-reason "why this exception is needed" \
+      --exception-expires-at 'REPLACE-WITH-FUTURE-UTC-ISO-INSTANT' \
       --exception-path /abs/path/to/.worktrees/cave-123-example
     ```
 
-    All four `--exception-*` flags are required together. The expiry must be a
-    canonical UTC ISO instant in the future, and every `--exception-path` must be
-    absolute. The exception is recorded on the Bead alongside the worktree, so
-    the unit still lands with full lifecycle metadata and stays retirable — this
-    is a sanctioned path, not a bypass.
-  - **Errored, exit 1** (`lifecycle inventory is incomplete: …`). The command
+    All four `--exception-*` flags are required together. Replace
+    `REPLACE-WITH-FUTURE-UTC-ISO-INSTANT` with a canonical UTC ISO instant in the
+    future; every `--exception-path` must be absolute. The exception is recorded on the
+    Bead alongside the worktree, so the unit still lands with full lifecycle metadata
+    and stays retirable — this is a sanctioned path, not a bypass.
+  - **Exit 1 — errored because the lifecycle inventory is incomplete.** The command
     could not build a **complete** inventory, which needs live GitHub queries, so
     it fails when the GraphQL quota is exhausted (`API rate limit already
     exceeded`) and when any commit's PR association comes back malformed (`pull

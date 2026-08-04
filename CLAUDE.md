@@ -230,7 +230,7 @@ outright with `unknown option: --`. That broken form was documented here and in
 Confusing these is how the repo accumulates worktrees that nothing can retire.
 Read the exit code.
 
-**Exit 2 — refused by the budget. Use an exception, not the fallback.**
+**Exit 2 — refused by the admission gate. Use an exception, not the fallback.**
 
 ```text
 worktree-lifecycle-create: creating a worktree would exceed the 12-worktree budget
@@ -248,16 +248,17 @@ since `cave-no5nr` the refusal prints the exact admissible rerun:
 pnpm beads:worktrees:create --bead cave-123 --branch fix/cave-123-example \
   --owner <you> --purpose "…" \
   --exception-owner <you> \
-  --exception-reason "why this is worth exceeding the budget" \
-  --exception-expires-at 2026-08-10T00:00:00Z \
+  --exception-reason "why this exception is needed" \
+  --exception-expires-at 'REPLACE-WITH-FUTURE-UTC-ISO-INSTANT' \
   --exception-path /abs/path/to/.worktrees/cave-123-example
 ```
 
-All four `--exception-*` flags are required together; the expiry must be a
-canonical UTC ISO instant in the future (`YYYY-MM-DDTHH:MM:SS(.sss)Z`) and every
-path must be absolute. The exception is stored on the bead next to the worktree
-record, so the unit lands with **full lifecycle metadata and stays retirable**.
-This is the sanctioned path, not a bypass — the same gate admits it.
+All four `--exception-*` flags are required together; replace
+`REPLACE-WITH-FUTURE-UTC-ISO-INSTANT` with a canonical UTC ISO instant in the
+future (`YYYY-MM-DDTHH:MM:SS(.sss)Z`), and ensure every path is absolute. The
+exception is stored on the bead next to the worktree record, so the unit lands with
+**full lifecycle metadata and stays retirable**. This is the sanctioned path,
+not a bypass — the same gate admits it.
 
 Note the deliberate asymmetry between the two surfaces that read this number:
 the patrol reports `exceeded` as `count > 12`, while creation refuses at

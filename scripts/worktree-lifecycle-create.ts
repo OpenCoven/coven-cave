@@ -817,16 +817,13 @@ function exceptionSuggestion(options: ManagedCreateOptions, worktreePath: string
   const expiresAt = new Date(Date.now() + EXCEPTION_SUGGESTION_WINDOW_MS).toISOString();
   return [
     "",
-    "The worktree budget counts every registered worktree in this checkout, not",
-    "just yours, so a concurrent session can block you and retiring your own units",
-    "may not lift it.",
+    "This admission refusal can be lifted with an attributed, expiring exception",
+    "that applies to this worktree path. The same gate admits it and the unit",
+    "stays retirable:",
     "",
     "Do not fall back to a bare `git worktree add`: a worktree created that way",
     "carries no lifecycle metadata, so the patrol reports it `uncertain`",
     "permanently and `pnpm beads:worktrees:apply` can never retire it.",
-    "",
-    "If this worktree is worth exceeding the budget, rerun with an attributed,",
-    "expiring exception. The same gate admits it and the unit stays retirable:",
     "",
     "  pnpm beads:worktrees:create \\",
     `    --bead ${shellQuote(options.beadId)} \\`,
@@ -834,7 +831,7 @@ function exceptionSuggestion(options: ManagedCreateOptions, worktreePath: string
     `    --owner ${shellQuote(options.owner)} \\`,
     `    --purpose ${shellQuote(options.purpose)} \\`,
     `    --exception-owner ${shellQuote(options.owner)} \\`,
-    "    --exception-reason 'why this is worth exceeding the budget' \\",
+    "    --exception-reason 'why this exception is needed' \\",
     `    --exception-expires-at ${expiresAt} \\`,
     `    --exception-path ${shellQuote(worktreePath)}`,
   ];
