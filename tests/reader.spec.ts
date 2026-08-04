@@ -172,7 +172,11 @@ test("cited sources render as chips, with no footnote plumbing left in the prose
   const body = page.locator(".cave-reader-doc .cave-md");
 
   // #4265: the reader rendered through MarkdownBlock, which does not mount the
-  // citation previews, so these were plain underlined links.
+  // citation previews, so these were plain underlined links. The prose itself
+  // settles before InlineCitationPreviews enhances those anchors, so wait for
+  // the chip class rather than reading the first paint.
+  await expect(body.locator('a[href="https://developer.mozilla.org/docs/Web/CSS/grid-auto-flow"]')).toHaveClass(/cave-citation-chip/);
+  await expect(body.locator('a[href="https://www.w3.org/WAI/WCAG21/Understanding/target-size-enhanced"]')).toHaveClass(/cave-citation-chip/);
   await expect(body.locator("a.cave-citation-chip")).toHaveCount(2);
   await expect(body.locator("a.cave-citation-chip").first()).toHaveText("developer.mozilla.org");
 
