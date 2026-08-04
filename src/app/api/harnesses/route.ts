@@ -73,6 +73,20 @@ type AdapterAvailability = {
 // Same commands, same spawn env shape (no familiar → shared keys only), and
 // bounded filesystem stats only — this endpoint stays probe-cheap.
 async function adapterAvailability(id: string): Promise<AdapterAvailability> {
+  if (id === "copilot") {
+    const stream = copilotStreamSpec();
+    if (stream) {
+      const copilotLaunch = await resolveCopilotRuntimeLaunch(stream.executable, {
+        spawnEnv: (discoveryDeadline) =>
+          harnessSpawnEnv(null, { discoveryDeadline }),
+      });
+      return {
+        availability: summarizeRuntimeAvailability(copilotLaunch.availability),
+        copilotLaunch,
+      };
+    }
+    // No stream manifest → copilot chats fall back to `coven run` below.
+  }
   const env = id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
   if (id === "codex") {
     return {
@@ -81,19 +95,6 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
         env,
       })),
     };
-  }
-  if (id === "copilot") {
-    const stream = copilotStreamSpec();
-    if (stream) {
-      const copilotLaunch = await resolveCopilotRuntimeLaunch(stream.executable, {
-        spawnEnv: () => harnessSpawnEnv(null),
-      });
-      return {
-        availability: summarizeRuntimeAvailability(copilotLaunch.availability),
-        copilotLaunch,
-      };
-    }
-    // No stream manifest → copilot chats fall back to `coven run` below.
   }
   if (id === "opencode") {
     const launch = openCodeLaunch([], process.platform, env);
@@ -290,6 +291,7 @@ async function countOpenClawAgents(): Promise<number> {
 }
 
 export async function GET() {
+  const copilotRuntime = await adapterAvailability("copilot");
   const openclawAgentCount = await countOpenClawAgents();
   const reports: HarnessReport[] = await Promise.all(
     COMPATIBILITY_ADAPTERS.map(async (h) => {
@@ -300,7 +302,9 @@ export async function GET() {
       // Windows PATH in WSL. `which grok` on Linux does not apply PATHEXT, so
       // using only the generic probe would hide a runnable Windows install
       // from the summoning circle even though the chat launcher can execute it.
-      const runtime = await adapterAvailability(h.id);
+      const runtime = h.id === "copilot"
+        ? copilotRuntime
+        : await adapterAvailability(h.id);
       const copilotLaunch = runtime.copilotLaunch;
       const hermesLaunch = runtime.hermesLaunch;
       const resolvedBinary = h.id === "grok" ? grokBin() : h.binary;

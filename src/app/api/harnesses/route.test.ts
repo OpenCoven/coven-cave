@@ -62,12 +62,22 @@ assert.match(
 );
 assert.match(
   source,
-  /async function adapterAvailability[\s\S]*?id === "copilot"[\s\S]*?const copilotLaunch = await resolveCopilotRuntimeLaunch\(stream\.executable,[\s\S]*?spawnEnv: \(\) => harnessSpawnEnv\(null\)[\s\S]*?availability: summarizeRuntimeAvailability\(copilotLaunch\.availability\)[\s\S]*?copilotLaunch/,
+  /async function adapterAvailability[\s\S]*?id === "copilot"[\s\S]*?const copilotLaunch = await resolveCopilotRuntimeLaunch\(stream\.executable,[\s\S]*?spawnEnv: \(discoveryDeadline\) =>[\s\S]*?harnessSpawnEnv\(null, \{ discoveryDeadline \}\)[\s\S]*?availability: summarizeRuntimeAvailability\(copilotLaunch\.availability\)[\s\S]*?copilotLaunch/,
   "Copilot availability retains the shared exact launch plan for internal catalog probes",
 );
 assert.match(
   source,
-  /const runtime = await adapterAvailability\(h\.id\);[\s\S]*?const copilotLaunch = runtime\.copilotLaunch;[\s\S]*?const path =\s*copilotLaunch[\s\S]*?copilotLaunch\.availability\.state === "ready"[\s\S]*?copilotLaunch\.availability\.resolvedPath[\s\S]*?: await which\(h\.binary\)/,
+  /async function adapterAvailability[\s\S]*?if \(id === "copilot"\)[\s\S]*?resolveCopilotRuntimeLaunch[\s\S]*?const env = id === "opencode" \? openCodeSpawnEnv\(null\) : harnessSpawnEnv\(null\)/,
+  "Copilot resolves its deadline-aware environment before any generic environment can populate the PATH cache",
+);
+assert.match(
+  source,
+  /export async function GET\(\) \{[\s\S]*?const copilotRuntime = await adapterAvailability\("copilot"\);[\s\S]*?Promise\.all\([\s\S]*?const runtime = h\.id === "copilot"[\s\S]*?\? copilotRuntime[\s\S]*?: await adapterAvailability\(h\.id\)/,
+  "the harness catalog resolves Copilot before parallel generic adapter discovery can populate the PATH cache",
+);
+assert.match(
+  source,
+  /const runtime = h\.id === "copilot"[\s\S]*?\? copilotRuntime[\s\S]*?: await adapterAvailability\(h\.id\);[\s\S]*?const copilotLaunch = runtime\.copilotLaunch;[\s\S]*?const path =\s*copilotLaunch[\s\S]*?copilotLaunch\.availability\.state === "ready"[\s\S]*?copilotLaunch\.availability\.resolvedPath[\s\S]*?: await which\(h\.binary\)/,
   "the harness catalog reports the resolved Copilot launch target without running an independent which probe",
 );
 assert.match(
@@ -108,7 +118,7 @@ assert.match(
 );
 assert.match(
   source,
-  /resolveCopilotRuntimeLaunch\(stream\.executable,\s*\{\s*spawnEnv: \(\) => harnessSpawnEnv\(null\)/,
+  /resolveCopilotRuntimeLaunch\(stream\.executable,\s*\{\s*spawnEnv: \(discoveryDeadline\) =>[\s\S]*?harnessSpawnEnv\(null, \{ discoveryDeadline \}\)/,
   "Copilot status must resolve the same direct launcher in the shared harness environment as chat send",
 );
 
