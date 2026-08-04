@@ -168,6 +168,16 @@ test("Workspace applies connection polls through the existing classifier-driven 
   );
   assert.match(
     applyPoll,
+    /setDaemonRecovery\(\(current\) => daemonRecoveryPresentation\(current, \{ type: "offline" \}\)\)/,
+    "definitive offline polls should advance the bounded recovery presentation window",
+  );
+  assert.match(
+    applyPoll,
+    /result\.kind === "running"[\s\S]*setDaemonRecovery\(\(current\) => daemonRecoveryPresentation\(current, \{ type: "running" \}\)\)/,
+    "healthy status should clear recovery presentation immediately",
+  );
+  assert.match(
+    applyPoll,
     /setDaemonRunning\(true\)[\s\S]*daemonHealthyStreakRef\.current \+= 1/,
     "running polls should continue to advance the healthy streak",
   );
@@ -180,5 +190,23 @@ test("Workspace applies connection polls through the existing classifier-driven 
     applyPoll,
     /if \(daemonHealthyStreakRef\.current >= 2\) setDaemonOffline\(false\)/,
     "ordinary background recovery should still require two healthy polls before clearing offline",
+  );
+});
+
+test("Workspace keeps automatic recovery quiet but restores truthful banners after exhaustion", () => {
+  assert.match(
+    workspace,
+    /startDaemonRef\.current\(\{ automatic: true \}\)/,
+    "coordinator-owned starts should carry automatic intent",
+  );
+  assert.match(
+    workspace,
+    /setDaemonRecovery\(\(current\) => daemonRecoveryPresentation\(current, \{[\s\S]*type: automatic \? "automatic-start" : "manual-start"[\s\S]*runWorkspaceDaemonStart\(\{[\s\S]*automatic,[\s\S]*setDaemonRecovery\(\(current\) => daemonRecoveryPresentation\(current, \{ type: "start-outcome", outcome \}\)\)/,
+    "automatic start lifecycle should drive the pure recovery presentation state",
+  );
+  assert.match(
+    workspace,
+    /if \(!daemonOffline \|\| authExpired \|\| daemonRecovery\.quiet\)/,
+    "offline and start-error banners should stay dismissed only while bounded recovery is quiet",
   );
 });

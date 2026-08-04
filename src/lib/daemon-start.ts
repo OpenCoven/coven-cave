@@ -1,7 +1,7 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { callDaemonTarget, localDaemonTarget } from "./coven-daemon.ts";
-import { covenBin } from "./coven-bin.ts";
+import { covenBin, covenLaunchCommand } from "./coven-bin.ts";
 import { covenCliMissingError, isMissingExecutableError } from "./coven-spawn-error.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 import { waitForDaemonReadiness } from "./daemon-readiness.ts";
@@ -28,7 +28,13 @@ export type DaemonStartResult =
   }
   | {
     ok: false;
-    code: "spawn_failed" | "runner_exited" | "readiness_timeout" | "runtime_incompatible" | "restart_throttled";
+    code:
+      | "spawn_failed"
+      | "runner_exited"
+      | "readiness_timeout"
+      | "runtime_incompatible"
+      | "restart_throttled"
+      | "owner_unreachable";
     error: string;
     stdout: string;
     stderr: string;
@@ -160,6 +166,8 @@ export async function terminateDaemonLaunchTree(
 
 type StartLocalDaemonOptions = {
   restart?: boolean;
+  /** Automatic recovery fails closed when another lifecycle owner is possible. */
+  automatic?: boolean;
   healthTimeoutMs?: number;
   startTimeoutMs?: number;
   readinessPollMs?: number;
@@ -169,8 +177,37 @@ type StartLocalDaemonOptions = {
   installedVersion?: () => Promise<string | null>;
   spawnImpl?: typeof spawn;
   terminateLaunchTree?: (child: ChildProcess) => Promise<DaemonLaunchCleanup>;
+  inspectLifecycle?: () => Promise<DaemonLifecycleInspection>;
   platform?: NodeJS.Platform;
 };
+
+export type DaemonLifecycleInspection = {
+  status: "running" | "stopped" | "stale" | "unknown";
+};
+
+export function parseDaemonLifecycleInspection(value: unknown): DaemonLifecycleInspection {
+  if (!value || typeof value !== "object" || !("status" in value)) {
+    return { status: "unknown" };
+  }
+  const status = value.status;
+  return status === "running" || status === "stopped" || status === "stale"
+    ? { status }
+    : { status: "unknown" };
+}
+
+async function inspectDaemonLifecycle(): Promise<DaemonLifecycleInspection> {
+  try {
+    const { command, fixedArgs } = covenLaunchCommand();
+    const { stdout } = await execFileAsync(
+      command,
+      [...fixedArgs, "daemon", "status", "--json"],
+      { encoding: "utf8", env: harnessSpawnEnv(), timeout: 2_500, windowsHide: true },
+    );
+    return parseDaemonLifecycleInspection(JSON.parse(stdout));
+  } catch {
+    return { status: "unknown" };
+  }
+}
 
 /**
  * Process output can contain local paths, npm configuration, and credentials.
@@ -223,6 +260,7 @@ export function startLocalDaemon(options: StartLocalDaemonOptions = {}): Promise
 
 async function runLocalDaemonStart({
   restart = false,
+  automatic = false,
   healthTimeoutMs = 1500,
   startTimeoutMs = 8000,
   readinessPollMs = 250,
@@ -230,6 +268,7 @@ async function runLocalDaemonStart({
   installedVersion,
   spawnImpl = spawn,
   terminateLaunchTree = terminateDaemonLaunchTree,
+  inspectLifecycle = inspectDaemonLifecycle,
   platform = process.platform,
 }: StartLocalDaemonOptions = {}): Promise<DaemonStartResult> {
   const compatibilityState: { current: DaemonStartupCompatibility | null } = { current: null };
@@ -267,6 +306,28 @@ async function runLocalDaemonStart({
     }
   }
 
+  if (automatic && !restart) {
+    const lifecycle = await inspectLifecycle();
+    if (lifecycle.status === "running") {
+      return { ok: true, alreadyRunning: true, readinessAttempts: 2, elapsedMs: Date.now() - startedAt, launchMode: "none" };
+    }
+    if (lifecycle.status !== "stopped") {
+      return {
+        ok: false,
+        code: "owner_unreachable",
+        error: lifecycle.status === "stale"
+          ? "daemon owner is still running but health is unavailable; automatic recovery deferred"
+          : "daemon lifecycle could not be confirmed; automatic recovery deferred",
+        stdout: "",
+        stderr: "",
+        status: 409,
+        readinessAttempts: 2,
+        elapsedMs: Date.now() - startedAt,
+        launchMode: "none",
+      };
+    }
+  }
+
   const launchMode = platform === "win32" ? "shell" : "direct";
   const child = spawnImpl(covenBin(), ["daemon", "start"], {
     stdio: ["ignore", "pipe", "pipe"],
@@ -297,6 +358,7 @@ async function runLocalDaemonStart({
     probe,
     timeoutMs: startTimeoutMs,
     pollMs: readinessPollMs,
+    runnerExitGraceMs: Math.min(1_500, startTimeoutMs),
     runnerExited: () => spawnError !== null || exitCode !== undefined,
   });
   if (readiness.ready) {
