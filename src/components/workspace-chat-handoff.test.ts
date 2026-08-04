@@ -10,6 +10,7 @@ const pendingCodeOpenLib = await readFile(new URL("../lib/pending-code-open.ts",
 const codeView = await readFile(new URL("./code-view.tsx", import.meta.url), "utf8");
 const codeWorkbench = await readFile(new URL("./code-workbench.tsx", import.meta.url), "utf8");
 const codeWorkbenchFiles = await readFile(new URL("./code-workbench-files.tsx", import.meta.url), "utf8");
+const codeContextDock = await readFile(new URL("./code-context-dock.tsx", import.meta.url), "utf8");
 const workspaceRail = await readFile(new URL("./workspace-rail.tsx", import.meta.url), "utf8");
 const railFilesPanel = await readFile(new URL("./rail-files-panel.tsx", import.meta.url), "utf8");
 const codeRoom = await readFile(new URL("./role-surfaces/code-room.tsx", import.meta.url), "utf8");
@@ -190,20 +191,30 @@ assert.match(
   /openTarget=\{\s*workbenchTarget && \(workbenchTarget\.sessionId \?\? selected\.id\) === selected\.id\s*\? workbenchTarget\.open\s*: undefined\s*\}/,
   "CodeView should hand the open target only to the session it resolved to",
 );
+// cave-98o51 recomposed the workbench into the three-zone Room: the terminal
+// is the permanent center and Changes/Files moved into the right-hand context
+// dock. The handoff contract is unchanged — a routed open still lands on the
+// right pane with the path focused — but it now spans two components, so these
+// pins follow it rather than relax.
 assert.match(
   codeWorkbench,
-  /if \(!openTarget\) return;[\s\S]*setTab\(openTarget\.kind === "changes" \? "diff" : "files"\)/,
-  "the workbench should land a routed open on the Diff or Files tab",
+  /if \(!openTarget\) return;[\s\S]*setDockTab\(openTarget\.kind === "changes" \? "changes" : "files"\)/,
+  "the workbench should land a routed open on the dock's Changes or Files tab",
 );
 assert.match(
   codeWorkbench,
+  /<CodeContextDock[\s\S]*openTarget=\{openTarget\}/,
+  "the workbench should forward the open target to the dock that renders those panes",
+);
+assert.match(
+  codeContextDock,
   /<SessionChangesInner[\s\S]*focusPath=\{openTarget\?\.kind === "changes" \? openTarget\.path : undefined\}[\s\S]*focusNonce=\{openTarget\?\.kind === "changes" \? openTarget\.nonce : undefined\}/,
-  "the workbench should focus diff targets in its Diff tab",
+  "the dock should focus diff targets in its Changes tab",
 );
 assert.match(
-  codeWorkbench,
-  /<LazyFilesTab[\s\S]*focusPath=\{openTarget\?\.kind === "files" \? openTarget\.path : undefined\}[\s\S]*focusNonce=\{openTarget\?\.kind === "files" \? openTarget\.nonce : undefined\}/,
-  "the workbench should focus file targets in its Files tab",
+  codeContextDock,
+  /<LazyFiles[\s\S]*focusPath=\{openTarget\?\.kind === "files" \? openTarget\.path : undefined\}[\s\S]*focusNonce=\{openTarget\?\.kind === "files" \? openTarget\.nonce : undefined\}/,
+  "the dock should focus file targets in its Files tab",
 );
 assert.match(
   codeWorkbenchFiles,

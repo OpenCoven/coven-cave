@@ -16,6 +16,40 @@ export function isCodeWorkbenchTab(value: string | null | undefined): value is C
   return (CODE_WORKBENCH_TABS as readonly string[]).includes(value ?? "");
 }
 
+/**
+ * Context dock tabs in the three-zone Coding Room (cave-98o51). The terminal is
+ * no longer one of these — it is the Room's persistent center, which is the
+ * whole point of the redesign: diffs and files sit BESIDE a running shell
+ * instead of competing with it for one canvas.
+ */
+export const CODE_DOCK_TABS = ["changes", "files", "pr", "inspector", "browser"] as const;
+export type CodeDockTab = (typeof CODE_DOCK_TABS)[number];
+
+export function isCodeDockTab(value: string | null | undefined): value is CodeDockTab {
+  return (CODE_DOCK_TABS as readonly string[]).includes(value ?? "");
+}
+
+/**
+ * Map a legacy `?wtab=` workbench tab onto the dock. `diff` was renamed
+ * `changes` to match the panel it mounts, and `terminal` resolves to null —
+ * that deep link now lands on the always-present center, so the dock keeps
+ * whatever it was showing rather than being forced somewhere arbitrary.
+ */
+export function codeDockTabForWorkbenchTab(
+  tab: CodeWorkbenchTab | null | undefined,
+): CodeDockTab | null {
+  if (tab === "diff") return "changes";
+  if (tab === "files") return "files";
+  if (tab === "pr") return "pr";
+  return null;
+}
+
+/** How much room the context dock takes beside the terminal center. Browser
+ *  opens `expanded` because a native webview squeezed into a sidebar renders a
+ *  column of wrapped text nobody can use. */
+export const CODE_DOCK_SIZES = ["collapsed", "normal", "expanded"] as const;
+export type CodeDockSize = (typeof CODE_DOCK_SIZES)[number];
+
 /** Top-level surface tabs: the session workbench plus Activity (the former
  *  all-content GitHub feed) and focused GitHub slices. Legacy `ctab=github`
  *  deep links normalize onto Activity. */

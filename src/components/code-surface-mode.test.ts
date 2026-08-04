@@ -216,43 +216,118 @@ assert.match(
   "file/diff navigation supersedes a pending GitHub detail so it cannot replay: the pending-open effect must switch to Sessions, clear the latched GitHub target, then keep the existing session/workbench selection flow",
 );
 
-// ── Workbench (Diff | Files | Terminal) ──────────────────────────────────────
+// ── Workbench: the three-zone Room (terminal center | context dock) ──────────
+//
+// cave-98o51 recomposed this. The retired shape put the terminal in a tab row
+// beside Diff/Files/PR, so reading a diff hid a running shell. These pins now
+// hold the terminal as the persistent CENTER with context docked beside it.
 
 const workbench = await readFile(new URL("./code-workbench.tsx", import.meta.url), "utf8");
 const workbenchFiles = await readFile(new URL("./code-workbench-files.tsx", import.meta.url), "utf8");
+const contextDock = await readFile(new URL("./code-context-dock.tsx", import.meta.url), "utf8");
+const terminalWorkspace = await readFile(new URL("./code-terminal-workspace.tsx", import.meta.url), "utf8");
 
-// Every tab scopes to the session's WORK root (worktree over shared checkout,
-// cave-9q24) — pointing any of them at project_root directly would show a
-// different session's churn on shared checkouts.
+// Every context tab scopes to the session's WORK root (worktree over shared
+// checkout, cave-9q24) — pointing any of them at project_root directly would
+// show a different session's churn on shared checkouts.
 assert.match(
   workbench,
   /const workRoot = codeSessionWorkRoot\(row\);/,
-  "the workbench derives one work root for all tabs",
+  "the workbench derives one work root for the terminal center and the dock",
+);
+assert.match(
+  contextDock,
+  /const workRoot = codeSessionWorkRoot\(row\);/,
+  "the context dock scopes every tab to the same work root",
+);
+
+// The three zones, in order: the terminal center and the dock are siblings of
+// ONE resizable group, which is what keeps the shell mounted while context
+// changes. A layout that nested the dock inside the terminal, or swapped them
+// into the same slot, would reintroduce the tab behaviour this replaced.
+assert.match(
+  workbench,
+  /<CodeTerminalWorkspace[\s\S]*?<Separator[\s\S]*?<CodeContextDock/,
+  "the Room renders terminal center, a separator, then the context dock",
 );
 assert.match(
   workbench,
-  /<SessionChangesInner\s+key=\{workRoot\}\s+projectRoot=\{workRoot\}\s+running=\{running\}/,
-  "Diff tab mounts the proven changes panel keyed+scoped to the work root",
+  /minSize=\{MIN_TERMINAL_WIDTH\}/,
+  "the terminal center holds a width floor so the divider can starve context but never the shell",
+);
+assert.doesNotMatch(
+  workbench,
+  /role="tablist"/,
+  "the workbench no longer owns a tab row — context tabs live in the dock",
 );
 assert.match(
   workbench,
+  /<CodeComposer row=\{row\} onJumpToSession=\{onJumpToSession\} \/>/,
+  "the composer rides under BOTH zones — a follow-up stays available while reading any context tab",
+);
+
+// Session switches reset the split tree; carrying another session's panes over
+// would attach terminals to the wrong work root.
+assert.match(
+  workbench,
+  /useEffect\(\(\) => \{[\s\S]*?createTerminalLayout\(\);[\s\S]*?\}, \[row\.id\]\);/,
+  "the terminal layout resets per session",
+);
+
+// Heavy dock tabs stay code-split; the Room opens far more often than any one
+// of them, and CodeMirror/PR fetches/browser bridge must not ride the first chunk.
+assert.match(
+  contextDock,
   /import\("@\/components\/code-workbench-files"\)/,
-  "Files tab is dynamic() so CodeMirror stays out of the surface's initial chunk",
+  "Files is dynamic() so CodeMirror stays out of the Room's initial chunk",
 );
 assert.match(
-  workbench,
-  /import\("@\/components\/rail-terminal-panel"\)/,
-  "Terminal tab is dynamic() so xterm stays out of the surface's initial chunk",
+  contextDock,
+  /import\("@\/components\/browser-pane"\)/,
+  "Browser is dynamic() so the browser bridge stays out of the Room's initial chunk",
 );
 assert.match(
-  workbench,
-  /\{terminalOpened \? \([\s\S]*?active=\{tab === "terminal"\}/,
-  "the terminal stays mounted once opened (keepalive) with active tracking the tab",
+  contextDock,
+  /<SessionChangesInner\s+key=\{workRoot\}\s+projectRoot=\{workRoot\}\s+running=\{running\}/,
+  "Changes mounts the proven changes panel keyed+scoped to the work root",
+);
+assert.match(
+  contextDock,
+  /\{browserOpened \? \([\s\S]*?active=\{tab === "browser"\}/,
+  "Browser stays mounted once opened (keepalive) and is active only while selected, so native bounds follow the visible pane",
+);
+assert.match(
+  contextDock,
+  /if \(id === "browser"\) onSizeChange\("expanded"\)/,
+  "Browser opens the dock expanded — a native webview in a sidebar renders unusable wrapped text",
+);
+
+// The primary pane must keep the session's shared rail shell, or a shell
+// started in Chat becomes a different process here.
+assert.match(
+  terminalWorkspace,
+  /terminalPaneThreadId\(sessionId, paneId\)/,
+  "each pane derives its PTY thread id from the shared pure model",
+);
+assert.match(
+  terminalWorkspace,
+  /visible=\{visible\}/,
+  "every visible leaf keeps its screen-reader mirror flowing, not just the focused one",
+);
+assert.match(
+  terminalWorkspace,
+  /active=\{visible && isFocused\}/,
+  "only the focused leaf is active — that is what drives refit and refocus",
+);
+assert.match(
+  terminalWorkspace,
+  /aria-current=\{isFocused \? "true" : undefined\}/,
+  "pane focus is exposed to AT, not signalled by colour alone",
 );
 assert.match(
   workbenchFiles,
   /<RailFilePreview[\s\S]*?projectRoot=\{projectRoot\}/,
-  "Files tab reuses RailFilePreview — editing + Cmd/Ctrl+S save come with it",
+  "Files reuses RailFilePreview — editing + Cmd/Ctrl+S save come with it",
 );
 
 // ── PR tab (stage pipeline + checks + review + merge) ────────────────────────
@@ -260,14 +335,14 @@ assert.match(
 const prPanel = await readFile(new URL("./code-session-pr-panel.tsx", import.meta.url), "utf8");
 
 assert.match(
-  workbench,
+  contextDock,
   /import\("@\/components\/code-session-pr-panel"\)/,
-  "PR tab is dynamic() — its fetch stack stays out of the surface's initial chunk",
+  "Pull request is dynamic() — its fetch stack stays out of the Room's initial chunk",
 );
 assert.match(
-  workbench,
-  /\{tab === "pr" \? <LazyPrTab key=\{row\.id\} row=\{row\} \/> : null\}/,
-  "PR tab mounts keyed by session id so switching sessions never shows stale PR state",
+  contextDock,
+  /\{tab === "pr" \? <LazyPr key=\{row\.id\} row=\{row\} \/> : null\}/,
+  "Pull request mounts keyed by session id so switching sessions never shows stale PR state",
 );
 assert.match(
   prPanel,
@@ -362,11 +437,6 @@ assert.match(
   /pendingNewIdRef\.current === selectedId\) return;/,
   "a just-created session's selection survives until /api/sessions/list catches up",
 );
-assert.match(
-  workbench,
-  /\{tab !== "terminal" \? <CodeComposer row=\{row\} onJumpToSession=\{onJumpToSession\} \/> : null\}/,
-  "the composer rides under every tab except Terminal (which owns its input)",
-);
 
 // ── Inspector: branches / worktrees / session env (right column) ─────────────
 
@@ -401,19 +471,14 @@ assert.match(
   "the checked-out branch is not a switch target and switches don't overlap",
 );
 assert.match(
-  workbench,
-  /aria-pressed=\{inspectorOpen\}/,
-  "the header exposes an accessible inspector toggle",
+  contextDock,
+  /\{tab === "inspector" \? <LazyInspector key=\{workRoot\} row=\{row\} onChanged=\{onRefresh\} \/> : null\}/,
+  "the inspector is a dock tab now, and its mutations still re-poll the enriched session list via onRefresh",
 );
 assert.match(
   workbench,
-  /\{inspectorOpen \? \(\s*<aside/,
-  "the inspector column mounts only when toggled open",
-);
-assert.match(
-  workbench,
-  /<LazyInspector key=\{workRoot\} row=\{row\} onChanged=\{onRefresh\} \/>/,
-  "inspector mutations re-poll the enriched session list via onRefresh",
+  /onRefresh=\{onRefresh\}/,
+  "the workbench threads its refresh callback down into the dock",
 );
 assert.match(
   codeView,
