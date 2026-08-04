@@ -11,7 +11,7 @@
  * Behaviour that is deliberate, not incidental:
  * - Pictures load through `AuthedImage` so the packaged sidecar's `/api/` auth
  *   gate is satisfied (see src/lib/authed-image.ts).
- * - The slide track only animates when the user has not asked for reduced
+ * - The picture change only animates when the user has not asked for reduced
  *   motion; under `reduce` the change is instant.
  * - Arrow keys move the deck when focus is inside it, and the same keys work
  *   in the lightbox, which traps focus and returns it on dismiss.
@@ -189,11 +189,7 @@ export function ImageCarousel({ images, label }: Props) {
       >
         <div className="relative">
           <div className="overflow-hidden">
-            <div
-              id={trackId}
-              className={`flex w-full${reducedMotion ? "" : " transition-transform duration-[var(--duration-base)] ease-[var(--ease-standard)]"}`}
-              style={{ transform: `translateX(-${safeIndex * 100}%)` }}
-            >
+            <div id={trackId} className="relative w-full">
               {images.map((image, i) => (
                 <button
                   key={`${image.src}-${i}`}
@@ -202,7 +198,11 @@ export function ImageCarousel({ images, label }: Props) {
                   // through pictures nobody can see.
                   tabIndex={i === safeIndex ? 0 : -1}
                   aria-hidden={i === safeIndex ? undefined : true}
-                  className="focus-ring flex w-full shrink-0 cursor-zoom-in items-center justify-center bg-transparent p-0"
+                  className={`focus-ring flex w-full cursor-zoom-in items-center justify-center bg-transparent p-0 ${
+                    i === safeIndex
+                      ? "relative opacity-100"
+                      : "pointer-events-none absolute inset-0 opacity-0"
+                  }${reducedMotion ? "" : " transition-opacity duration-[var(--duration-base)] ease-[var(--ease-standard)]"}`}
                   title={`View ${imageLabel(image, i, total)}`}
                   onClick={() => {
                     setIndex(i);
