@@ -11,7 +11,7 @@ pub(super) const MAX_UNPACKED_BYTES: u64 = 200 * 1024 * 1024 - 1;
 // src/app/api/x/ route handlers landed in #4235); preserve ten-file headroom.
 // Reverted to 5_841 once by a local merge citing the older 5,831 peak — see
 // #4249. It must not move DOWN while those routes exist.
-pub(super) const MAX_FILE_COUNT: u64 = 5_915;
+pub(super) const MAX_FILE_COUNT: u64 = 5_926;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

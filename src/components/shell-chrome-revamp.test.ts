@@ -120,6 +120,11 @@ assert.match(
   /\.shell-top \{[^}]*overflow: visible;/,
   "shell-top no longer clips (the bell popover hangs below the band)",
 );
+assert.match(
+  desktopChrome,
+  /\.shell-top:has\(\.notification-bell__popover\) \{[^}]*z-index: 140;/,
+  "an open notification dropdown lifts its title-bar stacking context above shell content",
+);
 
 // ── 3. Bottom status bar ─────────────────────────────────────────────────────
 assert.match(
