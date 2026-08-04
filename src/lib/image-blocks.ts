@@ -53,7 +53,7 @@ export const MAX_CAROUSEL_IMAGES = 24;
 // Attribute values must be double-quoted. Besides keeping a `>` in a caption
 // atomic, this makes a quote-edge malformed marker fail the strict match so the
 // recovery path can remove only that marker instead of swallowing later prose.
-const MARKER_RE = /<coven:image\b((?:\s+[a-zA-Z-]+="[^"]*")*)\s*\/?>/g;
+const MARKER_RE = /<coven:image\b((?:\s+[a-zA-Z-]+="[^"]*")*)\s*\/>/g;
 const ATTR_RE = /([a-zA-Z-]+)="([^"]*)"/g;
 
 function parseAttrs(raw: string): Record<string, string> | null {
@@ -215,6 +215,38 @@ function stripMalformedImageMarkerFragments(text: string): string {
 }
 
 /**
+ * The protocol is self-closing, so a closing image marker is always malformed.
+ * Remove it outside fences as well as its malformed opening tag; otherwise a
+ * model can leave `</coven:image>` behind as visible transcript protocol text.
+ */
+function stripImageClosingTags(text: string): string {
+  if (!text || !text.includes("</coven:image")) return text;
+  const codeRanges = markdownCodeRanges(text);
+  let out = "";
+  let cursor = 0;
+  let start = text.indexOf("</coven:image");
+
+  while (start !== -1) {
+    if (inRanges(codeRanges, start)) {
+      start = text.indexOf("</coven:image", start + "</coven:image".length);
+      continue;
+    }
+    const afterName = text[start + "</coven:image".length] ?? "";
+    if (afterName && !/[\s>]/.test(afterName)) {
+      start = text.indexOf("</coven:image", start + "</coven:image".length);
+      continue;
+    }
+    const end = findUnquotedGt(text, start);
+    out += text.slice(cursor, start);
+    if (end === -1) return out;
+    cursor = end + 1;
+    start = text.indexOf("</coven:image", cursor);
+  }
+
+  return out + text.slice(cursor);
+}
+
+/**
  * Split one prose span into ordered text/carousel pieces. Adjacent markers
  * (whitespace-only between them) collapse into one deck; markers sharing a
  * `group` id join that group's deck wherever it was opened. Fenced markers
@@ -228,7 +260,7 @@ export function sliceImageBlocks(text: string): ImageTextPiece[] {
   // A generation can end with an incomplete marker. Treat that tail exactly as
   // the streaming path does so a sibling GitHub/artifact block cannot make the
   // segmented settled renderer expose raw model protocol text.
-  const visibleText = stripMalformedImageMarkerFragments(stripIncompleteImageMarker(text));
+  const visibleText = stripImageClosingTags(stripMalformedImageMarkerFragments(stripIncompleteImageMarker(text)));
   if (!visibleText || !visibleText.includes("<coven:image")) return [{ kind: "text", text: visibleText }];
 
   const codeRanges = markdownCodeRanges(visibleText);
@@ -304,7 +336,7 @@ export function stripImageMarkers(text: string): string {
   const out = text.replace(MARKER_RE, (m, _attrs, index: number) =>
     inRanges(codeRanges, index) ? m : "",
   );
-  return stripMalformedImageMarkerFragments(stripIncompleteImageMarker(out));
+  return stripImageClosingTags(stripMalformedImageMarkerFragments(stripIncompleteImageMarker(out)));
 }
 
 /** Remove only an unterminated marker tail, preserving complete markers for

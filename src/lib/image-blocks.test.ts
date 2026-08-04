@@ -125,6 +125,16 @@ test("slice: malformed quote-edge markers cannot leak beside a valid carousel", 
   assert.ok(!text.includes("javascript:"));
 });
 
+test("slice: non-self-closing markers and their closing tags do not leak", () => {
+  const malformed = `<coven:image src="${PNG}" alt="a">injected</coven:image>`;
+  const pieces = sliceImageBlocks(`Before ${malformed} after`);
+  const text = pieces.filter((p) => p.kind === "text").map((p) => p.text).join("");
+  assert.equal(pieces.filter((p) => p.kind === "carousel").length, 0);
+  assert.equal(text, "Before injected after");
+  assert.ok(!text.includes("<coven:image"));
+  assert.ok(!text.includes("</coven:image>"));
+});
+
 test("slice: malformed marker recovery ignores quoted close characters", () => {
   const malformed = `<coven:image src="javascript:alert(1)" caption="a -> b" broken>`;
   const pieces = sliceImageBlocks(`${malformed} prose <coven:image src="${PNG}" />`);
@@ -196,6 +206,13 @@ test("strip: complete markers vanish from the streamed text", () => {
 
 test("strip: malformed quote-edge markers vanish from the streamed text", () => {
   assert.equal(stripImageMarkers(`a <coven:image" src="javascript:alert(1)"> b`), "a  b");
+});
+
+test("strip: non-self-closing marker pairs vanish without leaving a closing tag", () => {
+  assert.equal(
+    stripImageMarkers(`a <coven:image src="${PNG}"> b </coven:image> c`),
+    "a  b  c",
+  );
 });
 
 test("strip: an unterminated tail hides until the stream completes it", () => {
