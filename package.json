@@ -90,6 +90,8 @@
     "@milkdown/crepe": "7.21.3",
     "@openclaw/gateway-client": "2026.7.2-beta.5",
     "@openclaw/gateway-protocol": "2026.7.2-beta.5",
+    "@opencoven/cli": "0.2.3",
+    "@opencoven/coven-code": "0.6.1",
     "@tailwindcss/browser": "4.3.3",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-notification": "2.3.3",

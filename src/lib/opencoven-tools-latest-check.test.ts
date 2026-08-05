@@ -78,14 +78,14 @@ test("Windows npm.cmd latest checks launch npm-cli.js through Node with fixed ar
         "the npm registry query is a fixed argv array",
       );
       assert.equal(options.timeout, 5000);
-      return { stdout: "\"0.0.54\"" };
+      return { stdout: "\"0.2.3\"" };
     },
   });
 
   assert.deepEqual(result, {
     status: "verified",
     checkedAt: checkedAt.toISOString(),
-    latest: "0.0.54",
+    latest: "0.2.3",
   });
 });
 
@@ -109,7 +109,7 @@ test("registry timeouts return explicit freshness and error state", async () => 
   });
   const status = composeOpenCovenToolStatus(
     OPEN_COVEN_TOOLS[0],
-    verifiedProbe("0.0.53"),
+    verifiedProbe("0.2.3"),
     latestCheck,
   );
   assert.equal(status.latest, null);
@@ -121,16 +121,16 @@ test("a verified newer npm version produces an outdated result", async () => {
   const latestCheck = await checkNpmLatestVersion(OPEN_COVEN_TOOLS[0], {
     now: () => checkedAt,
     resolveNpmPath: async () => process.execPath,
-    execFile: async () => ({ stdout: "\"0.0.54\"" }),
+    execFile: async () => ({ stdout: "\"0.2.3\"" }),
   });
   const status = composeOpenCovenToolStatus(
     OPEN_COVEN_TOOLS[0],
-    verifiedProbe("0.0.53"),
+    verifiedProbe("0.2.2"),
     latestCheck,
   );
 
   assert.equal(status.latestCheck.status, "verified");
-  assert.equal(status.latest, "0.0.54");
+  assert.equal(status.latest, "0.2.3");
   assert.equal(status.outdated, true);
 });
 
@@ -185,7 +185,7 @@ test("npm found only via the refreshed environment runs the query with that envi
     resolveNpmPath: async (env) => (env === refreshedEnv ? "/usr/local/bin/npm" : null),
     execFile: async (_command, _args, options) => {
       seen.push(options.env);
-      return { stdout: "\"0.0.54\"" };
+      return { stdout: "\"0.2.3\"" };
     },
   });
   assert.equal(result.status, "verified", "the refreshed environment recovers the lookup");

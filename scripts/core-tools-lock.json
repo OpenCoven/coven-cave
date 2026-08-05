@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "coven": {
+    "package": "@opencoven/cli",
+    "version": "0.2.3",
+    "licenseBlob": "0cea5dc1a1ce3355c1353b961a8ca7a90367f976",
+    "intelSource": {
+      "repository": "https://github.com/OpenCoven/coven.git",
+      "tag": "v0.2.3",
+      "tagObject": "053dab8491846bbfa2de61b32dac365728832a8e",
+      "commit": "6804780d0fbbba44b27718d6534aec09a5230218"
+    }
+  },
+  "covenCode": {
+    "package": "@opencoven/coven-code",
+    "version": "0.6.1",
+    "licenseBlob": "871ce8e638ad6d763308e44411d2c4a2e658cf55",
+    "attributionBlob": "74c026f0dc83489fdd7d4ff8d66eb5a81039b783"
+  }
+}

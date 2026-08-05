@@ -337,6 +337,11 @@ echo "==> Running pnpm tauri build"
 # mismatches between the generated script and the installed create-dmg.
 # Keep App Store Connect credentials out of this subprocess so Tauri does not
 # take its built-in notarization path before this script assembles the DMG.
+TAURI_BUILD_ARGS=(--bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}')
+if [ -n "${COVEN_CAVE_RECOVERY_TAURI_CONFIG:-}" ]; then
+  require_file "$COVEN_CAVE_RECOVERY_TAURI_CONFIG"
+  TAURI_BUILD_ARGS+=(--config "$COVEN_CAVE_RECOVERY_TAURI_CONFIG")
+fi
 retry 2 30 env \
   -u APPLE_API_KEY \
   -u APPLE_API_KEY_PATH \
@@ -353,7 +358,7 @@ retry 2 30 env \
   -u TAURI_SIGNING_PRIVATE_KEY \
   -u TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
   APPLE_SIGNING_IDENTITY="$SIGNING_IDENTITY" \
-  pnpm tauri build --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
+  pnpm tauri build "${TAURI_BUILD_ARGS[@]}"
 
 APP_PATH=$(find "$BUILD_DIR/macos" -name "${APP_NAME}.app" -type d -maxdepth 2 | head -n1)
 if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
@@ -367,6 +372,11 @@ echo "    found: $APP_PATH"
 # release instead of shipping that.
 require_file "$APP_PATH/Contents/Resources/resources/node/bin/node"
 echo "    bundled Node runtime present"
+TOOLS_DIR="$APP_PATH/Contents/Resources/resources/tools"
+require_file "$TOOLS_DIR/bin/coven"
+require_file "$TOOLS_DIR/bin/coven-code"
+require_file "$TOOLS_DIR/tools-manifest.json"
+echo "    bundled Cave tools runtime present"
 WHISPER_CLI="$APP_PATH/Contents/Resources/resources/whisper/whisper-cli"
 require_file "$WHISPER_CLI"
 "$WHISPER_CLI" --version >/dev/null
@@ -407,6 +417,10 @@ while IFS= read -r f; do
   fi
 done < "$NATIVE_FILES_TMP"
 rm "$NATIVE_FILES_TMP"
+
+# codesign mutates the staged executables. Rebuild the signed artifact manifest
+# before sealing the outer app so launch-time integrity checks remain exact.
+node scripts/stage-core-tools.mjs --refresh-manifest "$TOOLS_DIR"
 
 echo "==> Sealing the .app envelope"
 retry 3 15 codesign --force --options runtime --timestamp \

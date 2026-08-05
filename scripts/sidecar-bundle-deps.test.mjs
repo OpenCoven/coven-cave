@@ -23,6 +23,11 @@ const [
 ]);
 const baseConfig = JSON.parse(baseConfigSource);
 const windowsConfig = JSON.parse(windowsConfigSource);
+const [stagingSrc, gitignore, toolsPlaceholder] = await Promise.all([
+  readFile(new URL("./stage-core-tools.mjs", import.meta.url), "utf8"),
+  readFile(new URL("../.gitignore", import.meta.url), "utf8"),
+  readFile(new URL("../src-tauri/resources/tools/placeholder.txt", import.meta.url), "utf8"),
+]);
 
 function sourceSection(source, startMarker, endMarker, label) {
   const startIndex = source.indexOf(startMarker);
@@ -161,6 +166,7 @@ assert.deepEqual(
     "resources/whisper/**/*",
     "resources/piper/**/*",
     "resources/kokoro/**/*",
+    "resources/tools/**/*",
   ],
   "Windows resources must replace the expanded sidecar with its bounded archive while retaining bundled runtimes",
 );
@@ -263,6 +269,54 @@ assert.doesNotMatch(
   /tar -czf "\$WINDOWS_ARCHIVE/,
   "Windows archive bytes must not depend on the host tar implementation",
 );
+
+assert.match(
+  src,
+  /BUNDLED_TOOLS_DIR="\$ROOT\/src-tauri\/resources\/tools"/,
+  "native tools must stage directly into the tracked Tauri resource path",
+);
+assert.match(
+  src,
+  /node "\$ROOT\/scripts\/stage-core-tools\.mjs" \\\n+\s+--node-modules "\$PNPM_STAGE\/node_modules" \\\n+\s+--dest "\$BUNDLED_TOOLS_DIR"/,
+  "sidecar must stage native tools from the locked production install",
+);
+assert.ok(
+  src.indexOf("pnpm install --prod --frozen-lockfile") < src.indexOf("stage-core-tools.mjs"),
+  "native staging must happen only after the frozen production install",
+);
+for (const packageName of [
+  "@opencoven/cli",
+  "@opencoven/cli-macos",
+  "@opencoven/cli-linux-x64",
+  "@opencoven/cli-windows",
+  "@opencoven/coven-code",
+]) {
+  assert.ok(
+    src.includes(`"$dest/node_modules/${packageName}"`),
+    `sidecar must prune the duplicate ${packageName} package`,
+  );
+}
+for (const legalAsset of [
+  "THIRD_PARTY_NOTICES.md",
+  "coven-cli-MIT.txt",
+  "coven-code-GPL-3.0.txt",
+  "coven-code-ATTRIBUTION.md",
+]) {
+  assert.ok(stagingSrc.includes(legalAsset), `staging must copy ${legalAsset}`);
+}
+assert.match(stagingSrc, /Git blob mismatch/, "staging must enforce pinned legal Git blobs");
+assert.match(stagingSrc, /licensesDir/, "legal assets must be copied under the tools licenses directory");
+assert.ok(
+  baseConfig.bundle.resources.includes("resources/tools/**/*") &&
+    windowsConfig.bundle.resources.includes("resources/tools/**/*"),
+  "every desktop bundle must carry the staged tools tree",
+);
+assert.match(
+  gitignore,
+  /src-tauri\/resources\/tools\/\*[\s\S]*!src-tauri\/resources\/tools\/placeholder\.txt/,
+  "generated tools must stay ignored while the clean-CI placeholder remains tracked",
+);
+assert.match(toolsPlaceholder, /Generated native tools/, "tools placeholder must explain its generated tree");
 assert.match(manifestSource, /rename\(temporaryArchivePath, archivePath\)[\s\S]*rename\(temporaryManifestPath, manifestPath\)/, "archive must publish only after verification and manifest must publish last");
 assert.match(manifestSource, /SIDECAR_ARCHIVE_SCHEMA_VERSION = 3/, "zstd content-addressed manifests must use schema 3");
 assert.match(manifestSource, /entries\.sort\(compareArchivePaths\)/, "archive paths must have deterministic byte ordering");

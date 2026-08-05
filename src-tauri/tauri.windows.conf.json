@@ -6,7 +6,8 @@
       "resources/node/**/*",
       "resources/whisper/**/*",
       "resources/piper/**/*",
-      "resources/kokoro/**/*"
+      "resources/kokoro/**/*",
+      "resources/tools/**/*"
     ],
     "windows": {
       "webviewInstallMode": {

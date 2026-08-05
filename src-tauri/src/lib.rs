@@ -40,9 +40,98 @@ use windows_sys::Win32::{
     },
 };
 
+#[cfg(desktop)]
+pub(crate) fn bundled_tools_dir(resource_dir: &Path) -> PathBuf {
+    resource_dir.join("resources").join("tools")
+}
+
+#[cfg(desktop)]
+pub(crate) fn bundled_tool_path(resource_dir: &Path, stem: &str) -> PathBuf {
+    let name = if cfg!(target_os = "windows") {
+        format!("{stem}.exe")
+    } else {
+        stem.to_string()
+    };
+    bundled_tools_dir(resource_dir).join("bin").join(name)
+}
+
+#[cfg(desktop)]
+pub(crate) struct BundledCoreTools {
+    pub(crate) bin_dir: PathBuf,
+    pub(crate) coven_bin: PathBuf,
+    pub(crate) coven_code_bin: PathBuf,
+    pub(crate) manifest: PathBuf,
+}
+
+#[cfg(desktop)]
+pub(crate) fn bundled_core_tools(resource_dir: &Path) -> Result<BundledCoreTools, String> {
+    let bin_dir = bundled_tools_dir(resource_dir).join("bin");
+    let coven_bin = bundled_tool_path(resource_dir, "coven");
+    let coven_code_bin = bundled_tool_path(resource_dir, "coven-code");
+    let manifest = bundled_tools_dir(resource_dir).join("tools-manifest.json");
+
+    for (name, path) in [
+        ("coven", &coven_bin),
+        ("coven-code", &coven_code_bin),
+        ("tools manifest", &manifest),
+    ] {
+        if !path.is_absolute() || !path.is_file() {
+            return Err(format!(
+                "bundled Cave runtime is incomplete: {name} is missing at {}",
+                path.display()
+            ));
+        }
+    }
+    if !bin_dir.is_dir() {
+        return Err(format!(
+            "bundled Cave runtime is incomplete: tools bin directory is missing at {}",
+            bin_dir.display()
+        ));
+    }
+
+    Ok(BundledCoreTools {
+        bin_dir,
+        coven_bin,
+        coven_code_bin,
+        manifest,
+    })
+}
+
 #[cfg(all(test, desktop))]
 #[path = "app_lifecycle_tests.rs"]
 mod app_lifecycle_tests;
+
+#[cfg(all(test, desktop))]
+mod bundled_tools_tests {
+    use super::*;
+
+    #[test]
+    fn bundled_tools_dir_is_relative_to_the_tauri_resource_root() {
+        let resource_dir = Path::new("/opt/CovenCave/resources");
+        assert_eq!(
+            bundled_tools_dir(resource_dir),
+            resource_dir.join("resources").join("tools")
+        );
+    }
+
+    #[test]
+    fn bundled_tool_path_uses_the_platform_executable_name() {
+        let resource_dir = Path::new("/opt/CovenCave/resources");
+        let executable = if cfg!(target_os = "windows") {
+            "coven.exe"
+        } else {
+            "coven"
+        };
+        assert_eq!(
+            bundled_tool_path(resource_dir, "coven"),
+            resource_dir
+                .join("resources")
+                .join("tools")
+                .join("bin")
+                .join(executable)
+        );
+    }
+}
 #[cfg(desktop)]
 pub mod browser;
 #[cfg(desktop)]

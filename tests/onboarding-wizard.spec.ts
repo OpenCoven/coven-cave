@@ -86,7 +86,7 @@ const DAEMON_DOWN_VETERAN_STATUS = {
   ok: true,
   complete: false,
   steps: {
-    covenCli: { ok: true, detail: "0.0.53" },
+    covenCli: { ok: true, detail: "0.2.3" },
     covenHome: { ok: true, detail: "~/.coven" },
     git: { ok: true, optional: true, detail: "/usr/bin/git" },
     adapters: { ok: true, detail: "Codex" },

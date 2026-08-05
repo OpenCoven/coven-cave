@@ -177,6 +177,8 @@ export const SUITES = {
     "src/lib/workflow-step-progress.test.ts",
     "src/lib/hfr-trace-export.test.ts",
     "scripts/coven-hfr-export.test.mjs",
+    "scripts/core-tools-target.test.mjs",
+    "scripts/stage-core-tools.test.mjs",
     "src/lib/covenwiki-regen.test.ts",
     "scripts/covenwiki-regen-cli.test.mjs",
     "src/lib/covenwiki-generate.test.ts",
@@ -1545,6 +1547,7 @@ export const SUITES = {
   // the matrix is where per-OS behavior is verified.
   conformance: [
     "scripts/cross-environment.test.ts",
+    "scripts/stage-core-tools-windows-conformance.test.mjs",
     "scripts/windows-native-browser-regression.test.mjs",
     "scripts/cave-home-migration-windows.test.ts",
   ],

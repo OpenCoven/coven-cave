@@ -18,8 +18,31 @@ WINDOWS_ARCHIVE_MANIFEST="$WINDOWS_ARCHIVE_DIR/manifest.json"
 WINDOWS_ARCHIVE_TEMP="$WINDOWS_ARCHIVE_DIR/.server.tar.zst.$$.tmp"
 WINDOWS_ARCHIVE_MANIFEST_TEMP="$WINDOWS_ARCHIVE_DIR/.manifest.json.$$.tmp"
 BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
+WHISPER_RUNTIME_DIR="$ROOT/src-tauri/resources/whisper"
 PIPER_RUNTIME_DIR="$ROOT/src-tauri/resources/piper"
 KOKORO_RUNTIME_DIR="$ROOT/src-tauri/resources/kokoro"
+BUNDLED_TOOLS_DIR="$ROOT/src-tauri/resources/tools"
+
+# Tauri supplies TAURI_ENV_PLATFORM to build hooks. Keep the older variable as
+# a fallback for documented direct invocations outside the Tauri CLI.
+TAURI_TARGET_PLATFORM="${TAURI_ENV_PLATFORM:-${TAURI_PLATFORM:-}}"
+case "$TAURI_TARGET_PLATFORM" in
+  ios|android)
+    echo "==> sidecar-bundle.sh: skipping for mobile target ($TAURI_TARGET_PLATFORM)"
+    echo "    mobile-Tauri builds rely on the user's remote Tailscale daemon;"
+    echo "    no bundled desktop runtimes are shipped."
+    rm -rf \
+      "$DEST" \
+      "$WINDOWS_ARCHIVE_DIR" \
+      "$BUNDLED_NODE_DIR" \
+      "$WHISPER_RUNTIME_DIR" \
+      "$PIPER_RUNTIME_DIR" \
+      "$KOKORO_RUNTIME_DIR" \
+      "$BUNDLED_TOOLS_DIR"
+    exit 0
+    ;;
+esac
+
 # Use Node rather than shell-specific environment variables (such as OS) so
 # Git Bash and CI build the same Windows resource layout.
 BUILD_PLATFORM="$(node -p 'process.platform')"
@@ -365,7 +388,12 @@ prune_sidecar_nonruntime_files() {
     "$dest/node_modules/node-pty/deps" \
     "$dest/node_modules/node-pty/scripts" \
     "$dest/node_modules/node-pty/src" \
-    "$dest/node_modules/node-pty/typings"
+    "$dest/node_modules/node-pty/typings" \
+    "$dest/node_modules/@opencoven/cli" \
+    "$dest/node_modules/@opencoven/cli-macos" \
+    "$dest/node_modules/@opencoven/cli-linux-x64" \
+    "$dest/node_modules/@opencoven/cli-windows" \
+    "$dest/node_modules/@opencoven/coven-code"
 
   find "$dest" -type f \( \
     -name '*.map' -o \
@@ -516,6 +544,26 @@ fi
   cd "$PNPM_STAGE" && pnpm install --prod --frozen-lockfile \
     --config.node-linker=hoisted --ignore-scripts
 ) >&2
+
+echo "==> staging Cave-owned native tools"
+case "${COVEN_CAVE_USE_PRESTAGED_CORE_TOOLS:-}" in
+  "")
+    node "$ROOT/scripts/stage-core-tools.mjs" \
+      --node-modules "$PNPM_STAGE/node_modules" \
+      --dest "$BUNDLED_TOOLS_DIR"
+    ;;
+  1)
+    # Release recovery stages this complete, verified tree from the audited
+    # current-tooling checkout, without replacing the release tag's package
+    # identity merely to resolve current core-tool dependencies.
+    node "$ROOT/scripts/stage-core-tools.mjs" --verify "$BUNDLED_TOOLS_DIR"
+    ;;
+  *)
+    echo "ERROR: COVEN_CAVE_USE_PRESTAGED_CORE_TOOLS must be unset or 1" >&2
+    exit 1
+    ;;
+esac
+
 prune_foreign_native_packages "$PNPM_STAGE/node_modules"
 fix_node_pty_spawn_helpers "$PNPM_STAGE/node_modules"
 

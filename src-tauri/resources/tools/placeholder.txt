@@ -1,0 +1,1 @@
+Generated native tools and their manifest are staged here during release builds.

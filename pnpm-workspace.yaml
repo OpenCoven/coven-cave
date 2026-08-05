@@ -1,5 +1,7 @@
 strictDepBuilds: false
 minimumReleaseAge: 4320
+minimumReleaseAgeExclude:
+  - "@opencoven/coven-code"
 saveExact: true
 onlyBuiltDependencies:
   - esbuild

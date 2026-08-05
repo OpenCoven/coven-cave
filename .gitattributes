@@ -20,3 +20,6 @@
 # issues.jsonl is deliberately NOT routed here: its records are mutable, so
 # first-occurrence-wins could keep a stale issue state. A conflict is right.
 .beads/interactions.jsonl merge=beads-jsonl
+licenses/coven-cli-MIT.txt -text
+licenses/coven-code-GPL-3.0.txt -text whitespace=cr-at-eol
+licenses/coven-code-ATTRIBUTION.md -text

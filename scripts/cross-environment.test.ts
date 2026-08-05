@@ -22,6 +22,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { resolveSidecarTarget } from "./sidecar-target.mjs";
+import { resolveCoreToolsTarget } from "./core-tools-target.mjs";
 import { covenLaunchCommandForBinary } from "../src/lib/coven-bin.ts";
 import { tailnetDiscoveryProof } from "../src/lib/mobile-handoff.ts";
 import { openCodeCommand, openCodeLaunch, openCodeNeedsTmpRuntimeDir } from "../src/lib/opencode-bin.ts";
@@ -49,6 +50,27 @@ function skip(reason: string): void {
     researchMediaOpenFlags("win32", simulatedNoFollow) & simulatedNoFollow,
     0,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Contract A2 — bundled Cave tools release target resolution. The staged
+// native tools must have one pinned source target for every desktop release
+// platform; macOS Intel deliberately builds the recorded source revision.
+// ---------------------------------------------------------------------------
+{
+  for (const [platform, arch, target] of [
+    ["darwin", "arm64", "darwin-aarch64"],
+    ["darwin", "x64", "darwin-x86_64"],
+    ["linux", "x64", "linux-x86_64"],
+    ["win32", "x64", "windows-x86_64"],
+  ] as const) {
+    const resolved = resolveCoreToolsTarget({ platform, arch });
+    assert.equal(resolved.supported, true, `${platform}/${arch} must have a tools release target`);
+    assert.equal(resolved.target, target);
+  }
+  const macIntel = resolveCoreToolsTarget({ platform: "darwin", arch: "x64" });
+  assert.equal(macIntel.cli.kind, "source", "macOS Intel uses the pinned CLI source build");
+  assert.equal(macIntel.cli.binary, "target/release/coven");
 }
 
 // ---------------------------------------------------------------------------

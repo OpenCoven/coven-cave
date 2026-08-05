@@ -11,7 +11,7 @@ const checkedAt = "2026-07-12T16:00:00.000Z";
 test("a failed npm lookup never renders an installed tool as up to date", () => {
   const tool = {
     installed: true,
-    current: "0.0.53",
+    current: "0.2.3",
     latest: null,
     outdated: false,
     compatible: true,
@@ -43,11 +43,11 @@ test("a local Node/npm launch failure is not presented as a registry failure", (
 test("a failed refresh marks retained version data stale instead of current", () => {
   const tool = {
     installed: true,
-    current: "0.0.54",
-    latest: "0.0.54",
+    current: "0.2.3",
+    latest: "0.2.3",
     outdated: false,
     compatible: true,
-    latestCheck: { status: "verified" as const, checkedAt, latest: "0.0.54" },
+    latestCheck: { status: "verified" as const, checkedAt, latest: "0.2.3" },
   };
 
   assert.equal(toolStatusText(tool, true), "Couldn't verify latest version");
@@ -61,11 +61,11 @@ test("a failed refresh marks retained version data stale instead of current", ()
 test("a verified comparison is the only path that can render up to date", () => {
   const tool = {
     installed: true,
-    current: "0.0.54",
-    latest: "0.0.54",
+    current: "0.2.3",
+    latest: "0.2.3",
     outdated: false,
     compatible: true,
-    latestCheck: { status: "verified" as const, checkedAt, latest: "0.0.54" },
+    latestCheck: { status: "verified" as const, checkedAt, latest: "0.2.3" },
   };
 
   assert.equal(toolStatusText(tool), "Up to date");
@@ -75,11 +75,11 @@ test("a verified comparison is the only path that can render up to date", () => 
 test("a verified newer version remains an update state", () => {
   const tool = {
     installed: true,
-    current: "0.0.53",
-    latest: "0.0.54",
+    current: "0.2.2",
+    latest: "0.2.3",
     outdated: true,
     compatible: true,
-    latestCheck: { status: "verified" as const, checkedAt, latest: "0.0.54" },
+    latestCheck: { status: "verified" as const, checkedAt, latest: "0.2.3" },
   };
 
   assert.equal(toolStatusText(tool), "Update available");
@@ -88,14 +88,14 @@ test("a verified newer version remains an update state", () => {
 test("a wrong package or unreadable version remains an explicit recovery state", () => {
   const base = {
     installed: true,
-    latest: "0.0.54",
+    latest: "0.2.3",
     outdated: false,
     compatible: false,
-    latestCheck: { status: "verified" as const, checkedAt, latest: "0.0.54" },
+    latestCheck: { status: "verified" as const, checkedAt, latest: "0.2.3" },
   };
 
   assert.equal(
-    toolStatusText({ ...base, current: "0.0.54", packageVerified: false }),
+    toolStatusText({ ...base, current: "0.2.3", packageVerified: false }),
     "Unexpected executable",
   );
   assert.equal(

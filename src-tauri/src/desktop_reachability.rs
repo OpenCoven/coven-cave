@@ -1481,35 +1481,6 @@ fn stop_daemon_children(
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
-fn daemon_augmented_path(node: &Path) -> String {
-    let mut directories = Vec::new();
-    if let Some(directory) = node.parent() {
-        directories.push(directory.to_path_buf());
-    }
-    if let Some(coven) = find_coven() {
-        if let Some(directory) = coven.parent() {
-            directories.push(directory.to_path_buf());
-        }
-    }
-    directories.extend(
-        std::env::var_os("PATH")
-            .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
-            .unwrap_or_else(|| {
-                vec![
-                    PathBuf::from("/usr/bin"),
-                    PathBuf::from("/bin"),
-                    PathBuf::from("/usr/sbin"),
-                    PathBuf::from("/sbin"),
-                ]
-            }),
-    );
-    std::env::join_paths(directories)
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned()
-}
-
-#[cfg(all(desktop, target_os = "macos"))]
 fn run_sidecar_daemon() -> Result<i32, String> {
     install_daemon_shutdown_handler()?;
     let app_data_dir = app_data_path_without_handle()?;
@@ -1545,8 +1516,14 @@ fn run_sidecar_daemon() -> Result<i32, String> {
             server_entry.display()
         ));
     }
-    let node = find_node(&resource_dir)
-        .ok_or_else(|| "packaged Node.js runtime is unavailable".to_string())?;
+    let node = bundled_node_path(&resource_dir);
+    if !node.is_absolute() || !node.is_file() {
+        return Err(format!(
+            "bundled Cave runtime is incomplete: node is missing at {}",
+            node.display()
+        ));
+    }
+    let core_tools = bundled_core_tools(&resource_dir)?;
     let piper = bundled_piper_path(&resource_dir);
     if !piper.is_file() {
         return Err(format!(
@@ -1583,11 +1560,20 @@ fn run_sidecar_daemon() -> Result<i32, String> {
     command
         .arg(&server_entry)
         .current_dir(&server_dir)
-        .env("PATH", daemon_augmented_path(&node))
+        .env(
+            "PATH",
+            format!(
+                "{}:/usr/bin:/bin:/usr/sbin:/sbin",
+                core_tools.bin_dir.display()
+            ),
+        )
         .env("PORT", port.to_string())
         .env("HOSTNAME", "127.0.0.1")
         .env("NODE_ENV", "production")
         .env("COVEN_CAVE_BUNDLE", "1")
+        .env("COVEN_BIN", &core_tools.coven_bin)
+        .env("COVEN_CODE_BIN", &core_tools.coven_code_bin)
+        .env("COVEN_CAVE_TOOLS_MANIFEST", &core_tools.manifest)
         .env("COVEN_PIPER_BIN", &piper)
         .env("COVEN_KOKORO_BIN", &kokoro)
         .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)

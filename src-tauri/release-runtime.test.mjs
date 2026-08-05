@@ -302,6 +302,117 @@ test("macOS reachability daemon uses the managed Piper runtime", async () => {
   );
 });
 
+test("macOS reachability daemon uses only the bundled Cave tools runtime", async () => {
+  const daemon = await readNativeHost("desktop_reachability.rs");
+  const daemonStart = daemon.indexOf("fn run_sidecar_daemon()");
+  const daemonEnd = daemon.indexOf("fn run_sidecar_daemon_if_requested()", daemonStart);
+  assert.ok(daemonStart >= 0, "the macOS recovery daemon must exist");
+  assert.ok(daemonEnd > daemonStart, "the macOS recovery daemon must be statically bounded");
+  const daemonBranch = daemon.slice(daemonStart, daemonEnd);
+
+  assert.match(
+    daemonBranch,
+    /let core_tools = bundled_core_tools\(&resource_dir\)\?;/,
+    "the recovery daemon must validate the bundled tools from its Tauri resource directory",
+  );
+  assert.match(
+    daemonBranch,
+    /let node = bundled_node_path\(&resource_dir\);[\s\S]*?!node\.is_absolute\(\) \|\| !node\.is_file\(\)/,
+    "the recovery daemon must require the bundled Node runtime",
+  );
+  assert.match(
+    daemonBranch,
+    /\.env\("COVEN_BIN", &core_tools\.coven_bin\)/,
+    "the recovery daemon must pin Coven to the bundled binary",
+  );
+  assert.match(
+    daemonBranch,
+    /\.env\("COVEN_CODE_BIN", &core_tools\.coven_code_bin\)/,
+    "the recovery daemon must pin Coven Code to the bundled binary",
+  );
+  assert.match(
+    daemonBranch,
+    /\.env\("COVEN_CAVE_TOOLS_MANIFEST", &core_tools\.manifest\)/,
+    "the recovery daemon must pin the bundled tools manifest",
+  );
+  assert.match(
+    daemonBranch,
+    /format!\(\s*"\{\}:\/usr\/bin:\/bin:\/usr\/sbin:\/sbin",\s*core_tools\.bin_dir\.display\(\)/,
+    "the recovery daemon PATH must lead with bundled tools and not inherit ambient PATH",
+  );
+  assert.doesNotMatch(
+    daemonBranch,
+    /\bfind_(?:node|coven)\s*\(|std::env::var_os\("PATH"\)/,
+    "the recovery daemon must never discover a global runtime or inherit ambient PATH",
+  );
+});
+
+test("packaged sidecar requires the complete bundled Cave runtime without fallback", async () => {
+  const [tauriConfig, windowsConfig, launcher, setup] = await Promise.all([
+    readFile(new URL("./tauri.conf.json", import.meta.url), "utf8"),
+    readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8"),
+    readNativeHost("lib.rs", "sidecar_startup.rs"),
+    readNativeHost("tauri_setup.rs"),
+  ]);
+
+  for (const config of [tauriConfig, windowsConfig]) {
+    assert.match(
+      config,
+      /"resources\/tools\/\*\*\/\*"/,
+      "Tauri resources must include the staged Cave tools runtime",
+    );
+  }
+  assert.match(launcher, /fn bundled_tools_dir\(resource_dir: &Path\) -> PathBuf/);
+  assert.match(launcher, /fn bundled_tool_path\(resource_dir: &Path, stem: &str\) -> PathBuf/);
+  assert.match(
+    launcher,
+    /bundled_tools_dir\(resource_dir\)\.join\("bin"\)\.join\(name\)/,
+    "bundled tools must live under resources/tools/bin",
+  );
+
+  const setupStart = launcher.indexOf("let resource_dir = app.path().resource_dir()");
+  const packagedStart = launcher.indexOf("if cfg!(debug_assertions)", setupStart);
+  const packagedEnd = launcher.indexOf("// Capture sidecar logs", packagedStart);
+  assert.ok(setupStart >= 0, "desktop sidecar setup branch must exist");
+  assert.ok(packagedStart >= 0, "packaged runtime must have an explicit release-only branch");
+  assert.ok(packagedEnd > packagedStart, "packaged runtime branch must be statically bounded");
+  const packagedBranch = launcher.slice(setupStart, packagedEnd);
+
+  assert.match(
+    launcher,
+    /fn bundled_core_tools\(resource_dir: &Path\) -> Result<BundledCoreTools, String>[\s\S]*?!path\.is_absolute\(\) \|\| !path\.is_file\(\)[\s\S]*?path\.display\(\)/,
+    "bundled core tools must be absolute regular files and report their missing paths",
+  );
+  assert.match(
+    launcher,
+    /bundled Cave runtime is incomplete/,
+    "an incomplete packaged runtime must fail with an actionable fatal message",
+  );
+  assert.match(
+    packagedBranch,
+    /format!\("\{\}\{\}\{\}", core_tools\.bin_dir\.display\(\), path_sep, default_path\)/,
+    "packaged PATH must put the bundled tools bin before the preserved PATH",
+  );
+  const debugBranchStart = packagedBranch.indexOf("if cfg!(debug_assertions)");
+  assert.ok(debugBranchStart >= 0, "development runtime must retain its explicit discovery branch");
+  const releaseBranchStart = packagedBranch.indexOf("} else {", debugBranchStart);
+  assert.ok(releaseBranchStart >= 0, "release runtime must be an explicit else branch");
+  const releaseBranch = packagedBranch.slice(releaseBranchStart);
+  assert.doesNotMatch(
+    releaseBranch,
+    /\bfind_(?:node|coven)\s*\(/,
+    "packaged runtime must never call development well-known/global resolvers",
+  );
+  assert.match(
+    setup,
+    /Err\(SidecarStartError::Failed\(error\)\) => fatal_exit\(&error\)/,
+    "a missing bundled runtime reaches fatal_exit rather than a fallback launch",
+  );
+  assert.match(launcher, /\.env\("COVEN_BIN", &coven_bin\)/);
+  assert.match(launcher, /\.env\("COVEN_CODE_BIN", &coven_code_bin\)/);
+  assert.match(launcher, /\.env\("COVEN_CAVE_TOOLS_MANIFEST", &tools_manifest\)/);
+});
+
 test("clean release runners have resource glob placeholders", async () => {
   const gitignore = await readFile(new URL("../.gitignore", import.meta.url), "utf8");
 
@@ -312,6 +423,7 @@ test("clean release runners have resource glob placeholders", async () => {
     access(new URL("./resources/whisper/placeholder.txt", import.meta.url)),
     access(new URL("./resources/piper/placeholder.txt", import.meta.url)),
     access(new URL("./resources/kokoro/placeholder.txt", import.meta.url)),
+    access(new URL("./resources/tools/placeholder.txt", import.meta.url)),
   ]);
 
   assert.match(
@@ -346,6 +458,11 @@ test("clean release runners have resource glob placeholders", async () => {
     gitignore,
     /!src-tauri\/resources\/kokoro\/placeholder\.txt/,
     "Kokoro placeholder must be tracked so resources/kokoro/**/* matches in clean CI",
+  );
+  assert.match(
+    gitignore,
+    /!src-tauri\/resources\/tools\/placeholder\.txt/,
+    "tools placeholder must be tracked so resources/tools/**/* matches in clean CI",
   );
   assert.match(releaseScript, /KOKORO_CLI=.*resources\/kokoro\/sherpa-onnx-offline-tts/, "macOS release must resolve the bundled Kokoro runtime before signing");
   assert.match(releaseScript, /"\$KOKORO_CLI" --help/, "macOS release must smoke-test the copied Kokoro runtime");

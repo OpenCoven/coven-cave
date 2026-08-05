@@ -39,6 +39,17 @@ const bundledKokoro = path.join(
   "kokoro",
   process.platform === "win32" ? "sherpa-onnx-offline-tts.exe" : "sherpa-onnx-offline-tts",
 );
+const bundledToolsDir = path.join(root, "src-tauri", "resources", "tools");
+const bundledToolsBin = path.join(bundledToolsDir, "bin");
+const bundledCoven = path.join(
+  bundledToolsBin,
+  process.platform === "win32" ? "coven.exe" : "coven",
+);
+const bundledCovenCode = path.join(
+  bundledToolsBin,
+  process.platform === "win32" ? "coven-code.exe" : "coven-code",
+);
+const bundledToolsManifest = path.join(bundledToolsDir, "tools-manifest.json");
 const token = "sidecar-runtime-smoke-token";
 
 function reservePort() {
@@ -116,6 +127,7 @@ function attachOutput(child) {
 
 function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port, environment = {} }) {
   const baseUrl = `http://127.0.0.1:${port}`;
+  const toolsPath = `${bundledToolsBin}${path.delimiter}${process.env.PATH ?? ""}`;
   const child = spawn(bundledNode, [sidecarServer], {
     cwd: sidecarRoot,
     stdio: ["ignore", "pipe", "pipe"],
@@ -132,6 +144,10 @@ function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port, environmen
       COVEN_HOME: covenHome,
       NEXT_TELEMETRY_DISABLED: "1",
       ...environment,
+      PATH: environment.PATH ?? toolsPath,
+      COVEN_BIN: environment.COVEN_BIN ?? bundledCoven,
+      COVEN_CODE_BIN: environment.COVEN_CODE_BIN ?? bundledCovenCode,
+      COVEN_CAVE_TOOLS_MANIFEST: environment.COVEN_CAVE_TOOLS_MANIFEST ?? bundledToolsManifest,
     },
   });
   return { baseUrl, child, output: attachOutput(child) };
@@ -303,6 +319,9 @@ async function main() {
   await access(bundledNode);
   await access(bundledWhisper);
   await access(bundledPiper);
+  await access(bundledCoven);
+  await access(bundledCovenCode);
+  await access(bundledToolsManifest);
   if (process.platform === "win32") {
     for (const runtimeDll of ["MSVCP140.dll", "VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "VCOMP140.dll"]) {
       await access(path.join(path.dirname(bundledWhisper), runtimeDll));
@@ -319,6 +338,29 @@ async function main() {
     whisperVersion.status,
     0,
     `packaged Whisper CLI must launch from resources: ${whisperVersion.stderr || whisperVersion.error}`,
+  );
+
+  const covenVersion = spawnSync(bundledCoven, ["--version"], { encoding: "utf8" });
+  assert.equal(
+    covenVersion.status,
+    0,
+    `packaged Coven CLI must launch from resources: ${covenVersion.stderr || covenVersion.error}`,
+  );
+  assert.match(
+    `${covenVersion.stdout}\n${covenVersion.stderr}`,
+    /\b0\.0\.53\b/,
+    "packaged Coven CLI must match the pinned release version",
+  );
+  const covenCodeVersion = spawnSync(bundledCovenCode, ["--version"], { encoding: "utf8" });
+  assert.equal(
+    covenCodeVersion.status,
+    0,
+    `packaged Coven Code must launch from resources: ${covenCodeVersion.stderr || covenCodeVersion.error}`,
+  );
+  assert.match(
+    `${covenCodeVersion.stdout}\n${covenCodeVersion.stderr}`,
+    /\b0\.5\.1\b/,
+    "packaged Coven Code must match the pinned release version",
   );
 
   const piperHelp = spawnSync(bundledPiper, ["--help"], {

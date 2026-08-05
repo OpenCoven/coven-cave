@@ -179,21 +179,29 @@ jobs:
           - platform: macos-15-intel
             family: macos
             label: macOS Intel (DMG, signed + notarized)
-            args: "--bundles dmg"
+            args: >-
+              --bundles dmg
+              ${{ github.event_name == 'workflow_dispatch' && inputs.use_current_release_tooling && '--config .recovery-tauri-config.json' || '' }}
             arch_suffix: x86_64
           - platform: macos-15
             family: macos
             label: macOS Apple Silicon (DMG, signed + notarized)
-            args: "--bundles dmg"
+            args: >-
+              --bundles dmg
+              ${{ github.event_name == 'workflow_dispatch' && inputs.use_current_release_tooling && '--config .recovery-tauri-config.json' || '' }}
             arch_suffix: aarch64
           - platform: ubuntu-22.04
             family: linux
             label: Linux (AppImage)
-            args: '-vv --bundles appimage --config ''{"bundle":{"createUpdaterArtifacts":false}}'''
+            args: >-
+              -vv --bundles appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
+              ${{ github.event_name == 'workflow_dispatch' && inputs.use_current_release_tooling && '--config .recovery-tauri-config.json' || '' }}
           - platform: windows-latest
             family: windows
             label: Windows (MSI)
-            args: '--bundles msi --config ''{"bundle":{"createUpdaterArtifacts":false}}'''
+            args: >-
+              --bundles msi --config '{"bundle":{"createUpdaterArtifacts":false}}'
+              ${{ github.event_name == 'workflow_dispatch' && inputs.use_current_release_tooling && '--config .recovery-tauri-config.json' || '' }}
             arch_suffix: ""
 
     runs-on: ${{ matrix.platform }}
@@ -206,7 +214,17 @@ jobs:
           # signing and publishing assets from an unrelated ref.
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - name: Overlay audited recovery release tooling
+      # Keep the audited current tooling source separate from the release-tag
+      # checkout. Its package manager identity is used only to stage the
+      # verified core tools, never to build the historical application.
+      - name: Checkout audited recovery tooling source
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.use_current_release_tooling }}
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+          path: .recovery-tooling
+
+      - name: Overlay audited recovery runtime tooling
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.use_current_release_tooling }}
         shell: bash
         env:
@@ -214,10 +232,30 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "$RECOVERY_TOOLING_SHA"
-          for tooling_path in scripts/release.sh scripts/sidecar-bundle.sh scripts/windows-msi-budget.ps1; do
+          # This explicit closure is limited to the runtime and signing code
+          # that the older release tag lacks. Package manager and Tauri config
+          # identity remain exclusively from the release tag.
+          readonly -a RECOVERY_TOOLING_PATHS=(
+            scripts/release.sh
+            scripts/sidecar-bundle.sh
+            scripts/windows-msi-budget.ps1
+            scripts/sidecar-target.mjs
+            scripts/sidecar-archive-manifest.mjs
+            scripts/sidecar-runtime-closure.mjs
+            scripts/whisper-runtime-bundle.sh
+            scripts/stage-core-tools.mjs
+            scripts/recovery-tauri-config.mjs
+            scripts/core-tools-target.mjs
+            scripts/core-tools-lock.json
+            scripts/extract-coven-code.ps1
+          )
+          for tooling_path in "${RECOVERY_TOOLING_PATHS[@]}"; do
+            mkdir -p "$(dirname "$tooling_path")"
             git show "${RECOVERY_TOOLING_SHA}:${tooling_path}" > "${tooling_path}.recovery"
             mv "${tooling_path}.recovery" "$tooling_path"
-            chmod +x "$tooling_path"
+            case "$tooling_path" in
+              scripts/*.sh) chmod +x "$tooling_path" ;;
+            esac
             expected_blob="$(git rev-parse "${RECOVERY_TOOLING_SHA}:${tooling_path}")"
             actual_blob="$(git hash-object "$tooling_path")"
             if [ "$actual_blob" != "$expected_blob" ]; then
@@ -227,7 +265,7 @@ jobs:
             echo "$actual_blob  $tooling_path"
           done
           git diff --check
-          echo "Using release tooling from reviewed workflow commit $RECOVERY_TOOLING_SHA against tag source."
+          echo "Using audited runtime tooling from reviewed workflow commit $RECOVERY_TOOLING_SHA against tag source."
 
       - name: Overlay audited X release recovery guard
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
@@ -304,6 +342,48 @@ jobs:
         uses: swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
         with:
           workspaces: "src-tauri -> target"
+
+      - name: Stage verified current core tools into recovery tag resources
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          inputs.use_current_release_tooling &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == matrix.family)
+        shell: bash
+        env:
+          RECOVERY_TOOLING_ROOT: ${{ github.workspace }}/.recovery-tooling
+          RECOVERY_TAURI_PLATFORM: ${{ matrix.family }}
+          RECOVERY_TAURI_CONFIG: .recovery-tauri-config.json
+        run: |
+          set -euo pipefail
+          pnpm --dir "$RECOVERY_TOOLING_ROOT" install --prod --frozen-lockfile \
+            --config.node-linker=hoisted --ignore-scripts
+          node "$RECOVERY_TOOLING_ROOT/scripts/stage-core-tools.mjs" \
+            --node-modules "$RECOVERY_TOOLING_ROOT/node_modules" \
+            --dest "$RECOVERY_TOOLING_ROOT/src-tauri/resources/tools"
+          node "$RECOVERY_TOOLING_ROOT/scripts/stage-core-tools.mjs" \
+            --verify "$RECOVERY_TOOLING_ROOT/src-tauri/resources/tools"
+          node "$RECOVERY_TOOLING_ROOT/scripts/recovery-core-tools.mjs" \
+            --source "$RECOVERY_TOOLING_ROOT/src-tauri/resources/tools" \
+            --dest "src-tauri/resources/tools" \
+            --preserve package.json \
+            --preserve pnpm-lock.yaml \
+            --preserve pnpm-workspace.yaml \
+            --preserve src-tauri/tauri.conf.json \
+            --preserve src-tauri/tauri.windows.conf.json
+          node "$RECOVERY_TOOLING_ROOT/scripts/stage-core-tools.mjs" \
+            --verify "src-tauri/resources/tools"
+          platform_config="src-tauri/tauri.conf.json"
+          if [ "$RECOVERY_TAURI_PLATFORM" = "windows" ]; then
+            platform_config="src-tauri/tauri.windows.conf.json"
+          fi
+          node "$RECOVERY_TOOLING_ROOT/scripts/recovery-tauri-config.mjs" \
+            --base src-tauri/tauri.conf.json \
+            --platform-config "$platform_config" \
+            --platform "$RECOVERY_TAURI_PLATFORM" \
+            --output "$RECOVERY_TAURI_CONFIG"
+          echo "COVEN_CAVE_RECOVERY_TAURI_CONFIG=$RECOVERY_TAURI_CONFIG" >> "$GITHUB_ENV"
+          echo "COVEN_CAVE_USE_PRESTAGED_CORE_TOOLS=1" >> "$GITHUB_ENV"
+          echo "Injected verified current core-tool resources without replacing release-tag package or Tauri config identity."
 
       - run: pnpm install --frozen-lockfile
 

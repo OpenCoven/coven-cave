@@ -46,7 +46,8 @@
       "resources/node/**/*",
       "resources/whisper/**/*",
       "resources/piper/**/*",
-      "resources/kokoro/**/*"
+      "resources/kokoro/**/*",
+      "resources/tools/**/*"
     ],
     "icon": [
       "icons/32x32.png",

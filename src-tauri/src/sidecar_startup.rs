@@ -133,12 +133,61 @@ pub(super) fn start_sidecar_runtime(
     let mobile_access_token = mobile_access_token_for_app(app);
     log::info!("[cave] starting sidecar on port {port}");
 
-    let node = find_node(&resource_dir).ok_or_else(|| {
-        SidecarStartError::Failed(
-            "Could not find a `node` binary. Install Node.js from https://nodejs.org and re-launch CovenCave."
-                .to_string(),
-        )
-    })?;
+    let path_sep = if cfg!(target_os = "windows") {
+        ";"
+    } else {
+        ":"
+    };
+    let default_path = if cfg!(target_os = "windows") {
+        std::env::var("PATH").unwrap_or_else(|_| "C:\\Windows\\system32;C:\\Windows".into())
+    } else {
+        std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin:/usr/sbin:/sbin".into())
+    };
+    let (node, coven_bin, coven_code_bin, tools_manifest, augmented_path) =
+        if cfg!(debug_assertions) {
+            let node = find_node(&resource_dir).ok_or_else(|| {
+                SidecarStartError::Failed(
+                    "Could not find a `node` binary. Install Node.js from https://nodejs.org and re-launch CovenCave."
+                        .to_string(),
+                )
+            })?;
+            let mut augmented_path = default_path;
+            if let Some(directory) = node.parent() {
+                augmented_path = format!("{}{}{}", directory.display(), path_sep, augmented_path);
+            }
+            if let Some(coven) = find_coven() {
+                log::info!("[cave] using coven at {}", coven.display());
+                if let Some(directory) = coven.parent() {
+                    augmented_path = format!("{}{}{}", directory.display(), path_sep, augmented_path);
+                }
+            } else {
+                log::warn!("[cave] `coven` CLI not found on disk - onboarding will prompt install");
+            }
+            (
+                node,
+                PathBuf::new(),
+                PathBuf::new(),
+                PathBuf::new(),
+                augmented_path,
+            )
+        } else {
+            let node = bundled_node_path(&resource_dir);
+            let core_tools =
+                bundled_core_tools(&resource_dir).map_err(SidecarStartError::Failed)?;
+            if !node.is_absolute() || !node.is_file() {
+                return Err(SidecarStartError::Failed(format!(
+                    "bundled Cave runtime is incomplete: node is missing at {}",
+                    node.display()
+                )));
+            }
+            (
+                node,
+                core_tools.coven_bin,
+                core_tools.coven_code_bin,
+                core_tools.manifest,
+                format!("{}{}{}", core_tools.bin_dir.display(), path_sep, default_path),
+            )
+        };
     log::info!("[cave] using node at {}", node.display());
     let piper = bundled_piper_path(&resource_dir);
     if !cfg!(debug_assertions) && !piper.is_file() {
@@ -218,30 +267,6 @@ pub(super) fn start_sidecar_runtime(
     let server_js_arg = node_arg_path(&server_entry);
     let server_dir_arg = node_arg_path(server_dir);
 
-    let path_sep = if cfg!(target_os = "windows") {
-        ";"
-    } else {
-        ":"
-    };
-    let default_path = if cfg!(target_os = "windows") {
-        std::env::var("PATH").unwrap_or_else(|_| "C:\\Windows\\system32;C:\\Windows".into())
-    } else {
-        std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin:/usr/sbin:/sbin".into())
-    };
-    let mut augmented_path = default_path;
-    if let Some(directory) = node.parent() {
-        augmented_path = format!("{}{}{}", directory.display(), path_sep, augmented_path);
-    }
-    match find_coven() {
-        Some(coven) => {
-            log::info!("[cave] using coven at {}", coven.display());
-            if let Some(directory) = coven.parent() {
-                augmented_path = format!("{}{}{}", directory.display(), path_sep, augmented_path);
-            }
-        }
-        None => log::warn!("[cave] `coven` CLI not found on disk - onboarding will prompt install"),
-    }
-
     on_step(SidecarStartupStep::StartingService);
     if should_cancel() {
         return Err(SidecarStartError::Cancelled);
@@ -284,6 +309,10 @@ pub(super) fn start_sidecar_runtime(
         command.env_remove("COVEN_CAVE_BUNDLE");
     } else {
         command.env("COVEN_CAVE_BUNDLE", "1");
+        command
+            .env("COVEN_BIN", &coven_bin)
+            .env("COVEN_CODE_BIN", &coven_code_bin)
+            .env("COVEN_CAVE_TOOLS_MANIFEST", &tools_manifest);
     }
     if piper.is_file() {
         command.env("COVEN_PIPER_BIN", node_arg_path(&piper));
