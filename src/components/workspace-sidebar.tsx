@@ -94,11 +94,6 @@ const CHAT_SIDEBAR_TABS: ReadonlyArray<TabItem<ChatSidebarView>> = [
   },
 ];
 
-function bareTime(iso: string): string {
-  return relativeTime(iso, Date.now(), "bare");
-}
-void bareTime;
-
 function bareTimeAt(iso: string, now: number): string {
   return relativeTime(iso, now, "bare");
 }
@@ -259,7 +254,7 @@ function ThreadRow({
       <button
         type="button"
         aria-current={active ? "page" : undefined}
-        aria-describedby={attentionLabel ? attentionDescriptionId : undefined}
+        aria-describedby={attentionDescription ? attentionDescriptionId : undefined}
         onClick={(e) => {
           // ⌥-click opens beside the current chat instead of replacing it.
           if (e.altKey && onOpenInSplit) {
@@ -310,14 +305,16 @@ function ThreadRow({
             )}
           </span>
           {attentionLabel ? (
-            <span id={attentionDescriptionId} className="cnav__attention">
+            <span className="cnav__attention">
               <span className="cnav__attention-dot" aria-hidden />
               <span>{attentionLabel}</span>
-              <span className="sr-only">{attentionDescription ? `. ${attentionDescription}` : ""}</span>
             </span>
           ) : null}
         </span>
       </button>
+      {attentionDescription ? (
+        <span id={attentionDescriptionId} className="sr-only">{attentionDescription}</span>
+      ) : null}
       {confirming ? (
         <span className="cnav__confirm">
           <button type="button" onClick={onCancelDelete} className="cnav__confirm-cancel focus-ring">

@@ -21,7 +21,10 @@ assert.match(workspaceSidebar, /deriveChatRecencyBuckets\(/, "should derive time
 assert.match(workspaceSidebar, /<Tabs<ChatSidebarView>/, "should expose visible grouping tabs");
 assert.match(workspaceSidebar, /<PopoverLabel>Chat visibility<\/PopoverLabel>/, "should retain chat visibility options");
 assert.match(workspaceSidebar, /readChatSidebarView\(\)/, "organize mode should hydrate from persisted pref");
-assert.match(workspaceSidebar, /relativeTime\(iso, Date\.now\(\), "bare"\)/, 'row times should use bare density');
+assert.doesNotMatch(workspaceSidebar, /function bareTime\(/, "sidebar should remove the dead bareTime compatibility helper");
+assert.match(workspaceSidebar, /const minuteTick = useMinuteTick\(\);/, "sidebar should subscribe to the shared minute tick");
+assert.match(workspaceSidebar, /const recentBuckets = useMemo\([\s\S]*?\[view, recentSessions, minuteTick\],/, "recent buckets should re-derive when the shared minute tick fires");
+assert.match(workspaceSidebar, /bareTimeAt\(session\.updated_at \|\| session\.created_at, now\)/, 'row times should render through bareTimeAt on the current render clock');
 assert.ok((workspaceSidebar.match(/<ThreadRow/g) ?? []).length >= 2, "both view branches should render ThreadRow");
 assert.match(workspaceSidebar, /const sessionProjectById = useMemo\(\(\) => \{[\s\S]*?for \(const group of groups\)/, "recent-row project lookup derives from override-aware groups");
 assert.match(workspaceSidebar, /indent="flat"\s*\n\s*project=\{sessionProjectById\.get\(session\.id\) \?\? null\}/, "recent rows pass project identity");
@@ -30,9 +33,9 @@ assert.match(workspaceSidebar, /<span className="sr-only">\{project\.name\}<\/sp
 assert.doesNotMatch(workspaceSidebar, /cnav__footer|cnav__user-plan/, "should not render user plan footer");
 // Project group headers: two-line label (bold name over activity meta) with the
 // user-set project color on the avatar; the meta line subsumes the count badge.
-assert.match(workspaceSidebar, /function groupMeta\(group: ChatProjectGroup\): string \{[\s\S]*?running > 0[\s\S]*?"chat" : "chats"/, "group meta reports running count or chat count");
+assert.match(workspaceSidebar, /function groupMeta\(group: ChatProjectGroup, now: number\): string \{[\s\S]*?running > 0[\s\S]*?"chat" : "chats"/, "group meta reports running count or chat count");
 assert.match(workspaceSidebar, /<ProjectAvatar name=\{label\} root=\{group\.projectRoot\} color=\{group\.projectColor\} size="sm" className="cnav__folder" \/>/, "group header avatar uses the explicit project color");
-assert.match(workspaceSidebar, /<span className="cnav__group-text">[\s\S]*?cnav__group-name[\s\S]*?<span className="cnav__group-meta">\{groupMeta\(group\)\}<\/span>/, "group header stacks name over the activity meta line");
+assert.match(workspaceSidebar, /<span className="cnav__group-text">[\s\S]*?cnav__group-name[\s\S]*?<span className="cnav__group-meta">\{groupMeta\(group, now\)\}<\/span>/, "group header stacks name over the activity meta line");
 assert.doesNotMatch(workspaceSidebar, /cnav__count/, "the count badge is retired — the meta line carries the count");
 // One-row quick actions: New chat + the Scheduled/Plugins icon chips share a
 // single row (no stacked mini-row), and the header hosts the familiar switcher.

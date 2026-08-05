@@ -458,7 +458,7 @@ test("orders attention rows by urgency and oldest first within a tier", () => {
   ]);
 });
 
-test("renders labels and accessible descriptions with state, reason, and elapsed time", () => {
+test("renders labels and detailed accessible descriptions with reason and elapsed time", () => {
   assert.equal(chatAttentionLabel("none"), null);
   assert.equal(chatAttentionLabel("left-hanging"), "Left hanging");
   assert.equal(chatAttentionLabel("awaiting-human"), "Awaiting you");
@@ -473,7 +473,7 @@ test("renders labels and accessible descriptions with state, reason, and elapsed
       },
       NOW,
     ),
-    "Left hanging since 1 day ago.",
+    "Since 1 day ago.",
   );
 
   assert.equal(
@@ -485,7 +485,7 @@ test("renders labels and accessible descriptions with state, reason, and elapsed
       },
       NOW,
     ),
-    "Awaiting you for approval since 1 hour ago.",
+    "For approval since 1 hour ago.",
   );
 
   assert.equal(
@@ -497,6 +497,6 @@ test("renders labels and accessible descriptions with state, reason, and elapsed
       },
       NOW,
     ),
-    "Still waiting for a decision since 2 days ago.",
+    "For a decision since 2 days ago.",
   );
 });

@@ -285,6 +285,7 @@ export const SUITES = {
     "src/components/chat-list-pr-badge.test.ts",
     "src/components/chat-split-host.test.ts",
     "src/components/chat-sidebar-wiring.test.ts",
+    "src/components/chat-sidebar-wiring.behavior.test.ts",
     "src/components/workspace-sidebar-wiring.test.ts",
     "src/components/workspace-session-delete.test.ts",
     "src/components/workspace-sidebar-attention.test.ts",
@@ -1779,6 +1780,8 @@ const VITEST_TESTS = new Set([
   "src/components/voice-provider-settings.test.tsx",
   "src/components/voice-provider-settings.integration.test.tsx",
   "src/components/use-openai-voice-preview.test.tsx",
+  "src/components/workspace-sidebar-attention.test.ts",
+  "src/components/chat-sidebar-wiring.behavior.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

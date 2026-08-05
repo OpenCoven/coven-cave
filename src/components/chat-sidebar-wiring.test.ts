@@ -420,10 +420,25 @@ assert.match(
   /readChatSidebarView\(\)/,
   "the organize mode should hydrate from the persisted preference",
 );
+assert.doesNotMatch(
+  workspaceSidebar,
+  /function bareTime\(/,
+  "the sidebar should remove the dead bareTime compatibility helper",
+);
 assert.match(
   workspaceSidebar,
-  /relativeTime\(iso, Date\.now\(\), "bare"\)/,
-  'sidebar row times should use the bare density (no "ago")',
+  /const minuteTick = useMinuteTick\(\);/,
+  "the sidebar should subscribe to the shared minute tick",
+);
+assert.match(
+  workspaceSidebar,
+  /const recentBuckets = useMemo\([\s\S]*?\[view, recentSessions, minuteTick\],/,
+  "recent buckets should re-derive when the shared minute tick fires",
+);
+assert.match(
+  workspaceSidebar,
+  /bareTimeAt\(session\.updated_at \|\| session\.created_at, now\)/,
+  'sidebar row times should render through bareTimeAt on the current render clock',
 );
 assert.ok(
   (workspaceSidebar.match(/<ThreadRow/g) ?? []).length >= 2,

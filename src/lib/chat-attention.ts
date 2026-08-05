@@ -130,7 +130,7 @@ export function chatAttentionDescription(
   const elapsed = formatElapsedDuration(nowMs - sinceMs);
   const reason = formatReason(attention.reason);
 
-  return reason ? `${label} for ${reason} since ${elapsed}.` : `${label} since ${elapsed}.`;
+  return reason ? `For ${reason} since ${elapsed}.` : `Since ${elapsed}.`;
 }
 
 function attentionPriority(state: ChatAttentionState): number {
