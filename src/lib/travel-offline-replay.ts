@@ -6,7 +6,6 @@ import {
   offlineTravelItemsNeedingSync,
   recordSessionFamiliar,
   setSessionTitle,
-  setSessionTitleAuto,
   setSessionTitleAutoIfOwned,
   type CaveConfig,
   type CaveTravelQueueItem,
@@ -168,7 +167,11 @@ async function spawnHubSession(args: {
   await Promise.all([
     args.familiarId ? recordSessionFamiliar(res.data.id, args.familiarId) : Promise.resolve(),
     args.titleOwnership === "auto"
-      ? setSessionTitleAuto(res.data.id, args.title)
+      ? setSessionTitleAutoIfOwned(
+          res.data.id,
+          args.title,
+          new Set([args.title, defaultChatTitleForSession(res.data.id)]),
+        )
       : setSessionTitle(res.data.id, args.title),
   ]);
   return res.data.id;

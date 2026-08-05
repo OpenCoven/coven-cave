@@ -114,8 +114,15 @@ const BOILERPLATE_ONLY_RE =
 // its current title. Multiword strings are always cut at the last word boundary,
 // even when that boundary is early in the string — a short first word followed
 // by a long second word must not collapse to null.
+// Matches sentence-ending punctuation (including Unicode ellipsis U+2026) that
+// immediately precedes only closing delimiter characters (straight and curly
+// quotes, apostrophes, parentheses, brackets, angle-quote marks) and/or the
+// end of the string. The closing delimiters are matched by a lookahead so they
+// are NOT consumed — `"Fix parser."` becomes `"Fix parser"`, not `Fix parser`.
+// Placing the delimiters in the lookahead also means a bare trailing punct run
+// (`Fix parser.`) is handled identically: zero closing chars before `$`.
 const TRAILING_TITLE_PUNCTUATION_RE =
-  /[.,:;!?\u2026\u3002\uFF01\uFF1F][\s.,:;!?\u2026\u3002\uFF01\uFF1F]*$/u;
+  /[.,:;!?\u2026\u3002\uFF01\uFF1F][\s.,:;!?\u2026\u3002\uFF01\uFF1F]*(?=['")\]}\u2018\u2019\u201C\u201D\u203A\u00BB]*$)/u;
 const TRAILING_TRUNCATION_PUNCTUATION_RE =
   /[.,:;!?\-–—\u2026\u3002\uFF01\uFF1F][\s.,:;!?\-–—\u2026\u3002\uFF01\uFF1F]*$/u;
 

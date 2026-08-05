@@ -302,6 +302,55 @@ assert.equal(
   "fullwidth question mark \uFF1F stripped from title end",
 );
 
+// ── Task 2 adjacent gap: punctuation before closing delimiters ────────────────
+
+// Sentence punctuation immediately before a closing quote is stripped;
+// the closing quote itself is preserved.
+assert.equal(
+  chatSummaryTitle({ userText: '"Fix parser."' }),
+  '"Fix parser"',
+  'period before straight double-quote stripped; quote preserved',
+);
+assert.equal(
+  chatSummaryTitle({ userText: "'Fix parser.'" }),
+  "'Fix parser'",
+  "period before straight single-quote stripped; quote preserved",
+);
+// Unicode right double quotation mark U+201D.
+assert.equal(
+  chatSummaryTitle({ userText: "\u201CFix parser.\u201D" }),
+  "\u201CFix parser\u201D",
+  "period before Unicode right double quote \u201D stripped; quote preserved",
+);
+
+// Punctuation immediately before a closing paren is stripped.
+assert.equal(
+  chatSummaryTitle({ userText: "(Fix parser.)" }),
+  "(Fix parser)",
+  "period before closing paren stripped; paren preserved",
+);
+
+// Mixed punctuation runs before a closing delimiter are fully stripped.
+assert.equal(
+  chatSummaryTitle({ userText: '"Fix parser!?"' }),
+  '"Fix parser"',
+  "mixed punctuation run before closing double-quote fully stripped",
+);
+
+// Formatter-added truncation ellipsis is NOT affected by the cleanup —
+// it is added AFTER cleanup runs, so it must appear in the output when the
+// source is long enough to trigger truncation.
+{
+  // 8 content words + period before closing quote → period cleaned, then word
+  // cap fires and the formatter appends its own … signal.
+  const truncResult = chatSummaryTitle({
+    userText: '"Implement the new feature for the search component right now."',
+  });
+  assert.ok(truncResult !== null, "truncation test: long source must yield a title");
+  assert.ok(truncResult!.endsWith("…"), `truncation test: formatter must add … for long source, got "${truncResult}"`);
+  assert.ok(!truncResult!.includes("."), `truncation test: source period must be cleaned before truncation, got "${truncResult}"`);
+}
+
 // ── Formatter edge cases (Task 2 spec gaps) ──────────────────────────────────
 
 // Gap 2a: Markdown link syntax → label only, destination discarded.

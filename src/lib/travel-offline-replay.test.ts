@@ -75,7 +75,7 @@ assert.match(
   /setSessionTitleAutoIfOwned/,
   "automatic replay titles should use the shared atomic provenance setter",
 );
-// Chat replay uses auto provenance (setSessionTitleAuto via titleOwnership: "auto");
+// Chat replay uses auto provenance (setSessionTitleAutoIfOwned via titleOwnership: "auto");
 // workflow / flow replay use manual provenance (setSessionTitle, the default).
 // Both must be imported and dispatched correctly.
 assert.match(
@@ -87,6 +87,19 @@ assert.match(
   replay,
   /titleOwnership:\s*["']auto["']/,
   "chat replay must pass titleOwnership: 'auto' to the session spawn helper",
+);
+// Gap 2 fix: spawnHubSession's auto branch must use the atomic setSessionTitleAutoIfOwned
+// so a concurrent manual title written between daemon creation and this write is preserved.
+// The unconditional setSessionTitleAuto is no longer imported.
+assert.doesNotMatch(
+  replay,
+  /\bsetSessionTitleAuto\b(?!IfOwned)/,
+  "spawnHubSession auto branch must not use unconditional setSessionTitleAuto — use setSessionTitleAutoIfOwned",
+);
+assert.match(
+  replay,
+  /titleOwnership === "auto"[\s\S]{0,120}setSessionTitleAutoIfOwned\([\s\S]{0,200}defaultChatTitleForSession\(/,
+  "spawnHubSession auto branch must call setSessionTitleAutoIfOwned with defaultChatTitleForSession as an autoDefault",
 );
 assert.match(
   replay,
