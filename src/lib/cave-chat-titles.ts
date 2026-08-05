@@ -72,7 +72,8 @@ export function chatTitleFromPrompt(prompt: string | null | undefined): string |
 
 // --- Auto-naming: short summary titles -------------------------------------
 
-export const MAX_SUMMARY_TITLE_LENGTH = 48;
+export const MAX_SUMMARY_TITLE_LENGTH = 40;
+export const MAX_SUMMARY_TITLE_WORDS = 7;
 
 // Question/request lead-ins that frame a topic without being part of it.
 // Stripped once from the front of an already filler-cleaned prompt so
@@ -82,6 +83,12 @@ export const MAX_SUMMARY_TITLE_LENGTH = 48;
 const QUESTION_LEAD_IN_RE =
   /^(?:what(?:['’]s| is| are)(?: the)?|how (?:do|can|would|should) (?:i|we|you)|how to|why (?:is|are|does|do|did)|where (?:is|are|can|do)|when (?:is|are|does|do|should)|who (?:is|are)|is there (?:a|any) way to|tell me about|explain(?: to me)?|show me(?: how to)?)\b[\s,:;\-–—]*/i;
 
+// Answer-heading boilerplate: "Here is the ...", "Here are ...", "This is a ..."
+// Stripped once from the front of assistant heading text so the title names the
+// topic, not the meta-framing ("Deployment rollback safety checklist" not
+// "Here is the deployment rollback safety checklist").
+const ANSWER_HEADING_RE = /^(?:here (?:is|are)|this is)(?:\s+(?:a|an|the))?\s+/i;
+
 function clampAtWordBoundary(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
   const slice = text.slice(0, maxLen - 1);
@@ -90,8 +97,40 @@ function clampAtWordBoundary(text: string, maxLen: number): string {
   return `${trimmed.trimEnd().replace(/[,;:\-–—]$/, "")}…`;
 }
 
+/**
+ * Shared formatter for all auto-generated titles (first-exchange naming,
+ * periodic auto-rename, sparkle generation). Deterministic offline contract:
+ * removes markdown and edge emoji, strips answer-heading boilerplate and
+ * question/request lead-ins, removes trailing sentence-ending punctuation,
+ * capitalizes, caps at MAX_SUMMARY_TITLE_WORDS words, and clamps at
+ * MAX_SUMMARY_TITLE_LENGTH chars at a word boundary (ellipsis only when cut).
+ * Returns null when nothing useful remains (< 3 chars after cleanup).
+ */
+function formatGeneratedTitle(text: string): string | null {
+  // Strip markdown syntax and collapse whitespace
+  let s = text.replace(/[*_`#]+/g, " ").replace(/\s+/g, " ").trim();
+  // Remove edge emoji
+  s = stripLeadingTrailingEmoji(s);
+  // Strip answer-heading boilerplate: "Here is the …", "Here are …", "This is a …"
+  s = s.replace(ANSWER_HEADING_RE, "").trim();
+  // Strip question/request lead-ins: "How do I …", "What's the best …", etc.
+  s = s.replace(QUESTION_LEAD_IN_RE, "").trim();
+  // Strip trailing sentence-ending punctuation
+  s = s.replace(/[.!?]+$/, "").trim();
+  if (s.length < 3) return null;
+  // Capitalize
+  s = s.charAt(0).toUpperCase() + s.slice(1);
+  // Cap at word limit (word boundary, no ellipsis for word truncation alone)
+  const words = s.split(/\s+/);
+  if (words.length > MAX_SUMMARY_TITLE_WORDS) {
+    s = words.slice(0, MAX_SUMMARY_TITLE_WORDS).join(" ");
+  }
+  // Clamp at character limit (word boundary, ellipsis only when truncated)
+  return clampAtWordBoundary(s, MAX_SUMMARY_TITLE_LENGTH);
+}
+
 /** First markdown heading (h1–h3) in the opening lines of an assistant reply,
- *  cleaned of markdown syntax and edge emoji. Assistant headings are often a
+ *  normalized through formatGeneratedTitle. Assistant headings are often a
  *  genuine summary of a long ask ("# Retry policy options"). Null when the
  *  reply doesn't open with a usable heading. */
 export function titleFromAssistantReply(assistantText: string | null | undefined): string | null {
@@ -104,19 +143,17 @@ export function titleFromAssistantReply(assistantText: string | null | undefined
   for (const line of lines) {
     const match = /^#{1,3}\s+(.+)$/.exec(line);
     if (!match) continue;
-    const cleaned = stripLeadingTrailingEmoji(match[1].replace(/[*_`#]+/g, "").trim());
-    if (cleaned.length >= 3 && cleaned.length <= 80) {
-      return clampAtWordBoundary(cleaned, MAX_SUMMARY_TITLE_LENGTH);
-    }
+    const formatted = formatGeneratedTitle(match[1]);
+    if (formatted) return formatted;
   }
   return null;
 }
 
 /** Short summary title for a chat thread, derived from its first exchange.
- *  Pure heuristic (no model call, matching the prompt-enhancer convention):
- *  the filler-cleaned user prompt when it already fits; otherwise an opening
- *  assistant heading when one exists; otherwise the cleaned prompt with its
- *  question lead-in stripped, clamped at a word boundary. Null when nothing
+ *  Pure heuristic (no model call): the filler-cleaned user prompt when it fits
+ *  the summary length, formatted through formatGeneratedTitle (strips question
+ *  lead-ins, trailing punct, etc.); otherwise an assistant heading; otherwise
+ *  the formatted cleaned prompt clamped at a word boundary. Null when nothing
  *  meaningful can be derived — callers keep their current title. */
 export function chatSummaryTitle(input: {
   userText?: string | null;
@@ -124,13 +161,19 @@ export function chatSummaryTitle(input: {
 }): string | null {
   const normalized = normalizeChatTitle(input.userText);
   const cleaned = normalized ? cleanPromptForTitle(normalized) : null;
-  if (cleaned && cleaned.length <= MAX_SUMMARY_TITLE_LENGTH) return cleaned;
+  // Short prompts: apply shared formatter and return directly when they fit.
+  if (cleaned && cleaned.length <= MAX_SUMMARY_TITLE_LENGTH) {
+    const formatted = formatGeneratedTitle(cleaned);
+    if (formatted) return formatted;
+  }
+  // Long prompts (or short prompts that collapsed to nothing): prefer an
+  // assistant heading — often a more informative summary than a truncated ask.
   const fromReply = titleFromAssistantReply(input.assistantText);
   if (fromReply) return fromReply;
+  // Final fallback: format the full cleaned prompt (question lead-ins stripped,
+  // capped at word/char limits).
   if (!cleaned) return null;
-  const stripped = cleaned.replace(QUESTION_LEAD_IN_RE, "").trim();
-  const topic = stripped.length >= 3 ? stripped.charAt(0).toUpperCase() + stripped.slice(1) : cleaned;
-  return clampAtWordBoundary(topic, MAX_SUMMARY_TITLE_LENGTH);
+  return formatGeneratedTitle(cleaned);
 }
 
 // Matches the current header ("Coven identity canon:") and legacy variants

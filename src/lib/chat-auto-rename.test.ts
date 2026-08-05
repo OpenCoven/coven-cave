@@ -82,4 +82,13 @@ assert.equal(
   "falls back to an assistant heading when the user turn is empty",
 );
 
+// ── renameTitleFromLatestExchange inherits the ≤40 char / ≤7 word contract ───
+{
+  const title = renameTitleFromLatestExchange({ userText: "help me migrate the auth service to OAuth", assistantText: "" });
+  assert.ok(title !== null, "yields a title");
+  assert.ok(title.length <= 40, `≤40 chars: "${title}" (${title.length})`);
+  const wc = title.replace(/…$/, "").trimEnd().split(/\s+/).length;
+  assert.ok(wc <= 7, `≤7 words: "${title}" (${wc})`);
+}
+
 console.log("chat-auto-rename.test.ts ok");

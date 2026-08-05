@@ -68,7 +68,18 @@ assert.deepEqual(latestExchangeForTitle(blankReply), {
   assistantText: null,
 });
 
+// ── generateChatTitle inherits the ≤40 char / ≤7 word contract ──────────────
+{
+  const title = generateChatTitle(thread);
+  assert.ok(title !== null, "thread yields a title");
+  assert.ok(title.length <= 40, `≤40 chars: "${title}" (${title.length})`);
+  const wc = title.replace(/…$/, "").trimEnd().split(/\s+/).length;
+  assert.ok(wc <= 7, `≤7 words: "${title}" (${wc})`);
+}
+
 // ── Generation is pure: same input, same output, no I/O ──────────────────────
 assert.equal(generateChatTitle(thread), generateChatTitle(thread));
 assert.equal(typeof generateChatTitle(thread), "string");
 assert.ok(generateChatTitle(thread).length > 0);
+
+console.log("chat-title-generation.test.ts ok");
