@@ -2,7 +2,10 @@
 // (`<coven:attention …>`; chat sidebar attention task 1).
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractChatAttentionMarker } from "./chat-attention-marker.ts";
+import {
+  extractChatAttentionMarker,
+  extractIncompleteChatAttentionMarker,
+} from "./chat-attention-marker.ts";
 
 test("extracts one explicit attention request and removes its marker", () => {
   assert.deepEqual(
@@ -193,6 +196,57 @@ test("partial tails inside code ranges stay literal", () => {
   const text = "```\nWaiting <coven:attention rea\n```";
   assert.deepEqual(extractChatAttentionMarker(text, { pending: true }), {
     visible: text,
+    request: null,
+  });
+});
+
+test("pending extraction still strips a complete marker and returns its request", () => {
+  assert.deepEqual(
+    extractChatAttentionMarker(
+      'Visible question.\n<coven:attention reason="decision" />',
+      { pending: true },
+    ),
+    {
+      visible: "Visible question.\n",
+      request: { reason: "decision" },
+    },
+  );
+});
+
+test("pending extraction keeps malformed nonprefix tails visible", () => {
+  assert.deepEqual(
+    extractChatAttentionMarker("Keep malformed <coven:attentionX", { pending: true }),
+    {
+      visible: "Keep malformed <coven:attentionX",
+      request: null,
+    },
+  );
+});
+
+test("incomplete extraction strips only marker-like tails across every fragmented boundary", () => {
+  const markerStart = "<coven:attention";
+  for (let length = 2; length <= markerStart.length; length++) {
+    const prefix = markerStart.slice(0, length);
+    assert.deepEqual(
+      extractIncompleteChatAttentionMarker(`Visible ${prefix}`),
+      { visible: "Visible ", request: null },
+      `strips incomplete marker tail ${JSON.stringify(prefix)}`,
+    );
+  }
+});
+
+test("incomplete extraction preserves fenced partial markup, ordinary trailing lt text, and malformed nonprefix tails", () => {
+  const fenced = "```\nVisible <coven:attent\n```";
+  assert.deepEqual(extractIncompleteChatAttentionMarker(fenced), {
+    visible: fenced,
+    request: null,
+  });
+  assert.deepEqual(extractIncompleteChatAttentionMarker("Math: 2 < 3 <"), {
+    visible: "Math: 2 < 3 <",
+    request: null,
+  });
+  assert.deepEqual(extractIncompleteChatAttentionMarker("Keep malformed <coven:attentionX"), {
+    visible: "Keep malformed <coven:attentionX",
     request: null,
   });
 });

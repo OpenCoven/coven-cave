@@ -72,6 +72,16 @@ export function extractChatAttentionMarker(
   return { visible, request };
 }
 
+export function extractIncompleteChatAttentionMarker(
+  text: string,
+): { visible: string; request: ChatAttentionMarker | null } {
+  const settled = extractChatAttentionMarker(text);
+  return {
+    visible: stripIncompleteMarkerTail(settled.visible),
+    request: settled.request,
+  };
+}
+
 function trailingMarkerPrefixStart(text: string): number {
   const maxLength = Math.min(text.length, ATTENTION_MARKER_START.length);
   for (let length = maxLength; length > 0; length--) {
@@ -80,6 +90,32 @@ function trailingMarkerPrefixStart(text: string): number {
     }
   }
   return -1;
+}
+
+function stripIncompleteMarkerTail(text: string): string {
+  let visible = text;
+  const codeRanges = markdownCodeRanges(visible);
+  const pendingTail = trailingMarkerPrefixStart(visible);
+  if (
+    pendingTail !== -1
+    && visible.length - pendingTail > 1
+    && !codeRanges.some(([start, end]) => pendingTail >= start && pendingTail < end)
+  ) {
+    visible = visible.slice(0, pendingTail);
+  }
+
+  const tail = visible.lastIndexOf("<coven:a");
+  if (
+    tail !== -1
+    && !hasUnquotedGtAfter(visible, tail)
+    && !markdownCodeRanges(visible).some(([start, end]) => tail >= start && tail < end)
+  ) {
+    const frag = visible.slice(tail);
+    if (isPotentialAttentionMarkerFragment(frag)) {
+      visible = visible.slice(0, tail);
+    }
+  }
+  return visible;
 }
 
 function isPotentialAttentionMarkerFragment(fragment: string): boolean {

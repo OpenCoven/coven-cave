@@ -33,7 +33,7 @@ function chatViewAttentionPipeline() {
 test("route imports the attention marker parser", () => {
   assert.match(
     route,
-    /import \{ extractChatAttentionMarker \} from "@\/lib\/chat-attention-marker";/,
+    /import \{[\s\S]*extractChatAttentionMarker[\s\S]*\} from "@\/lib\/chat-attention-marker";/,
     "the send route should parse explicit attention markers through the shared lib",
   );
   assert.match(
@@ -52,13 +52,13 @@ test("exactly one shared prepareAttentionRequest helper is defined", () => {
   );
   assert.match(
     route,
-    /function prepareAttentionRequest\(args: \{\s*text: string;\s*sessionId: string;\s*turnId: string;\s*requestedAt: string;\s*\}\): \{ text: string; request: ChatResponseMetadata\["attentionRequest"\] \| null \} \{/,
-    "the helper accepts text/sessionId/turnId/requestedAt and returns cleaned text plus a nullable stamped request",
+    /function prepareAttentionRequest\(args: \{\s*text: string;\s*sessionId: string;\s*turnId: string;\s*requestedAt: string;\s*incomplete\?: boolean;\s*\}\): \{ text: string; request: ChatResponseMetadata\["attentionRequest"\] \| null \} \{/,
+    "the helper accepts text/sessionId/turnId/requestedAt plus optional incomplete mode and returns cleaned text plus a nullable stamped request",
   );
   assert.match(
     route,
-    /function prepareAttentionRequest\([\s\S]{0,400}splitReasoning\(args\.text\)\.visible;[\s\S]{0,120}extractChatAttentionMarker\(visibleBody\)/,
-    "the helper strips hidden reasoning before it parses a visible-body marker",
+    /function prepareAttentionRequest\([\s\S]{0,400}splitReasoning\(args\.text\)\.visible;[\s\S]{0,220}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(visibleBody\)\s*:\s*extractChatAttentionMarker\(visibleBody\)/,
+    "the helper strips hidden reasoning before it parses the visible body, and incomplete mode must use the shared pending-tail sanitizer",
   );
 });
 
@@ -98,7 +98,7 @@ test("the OpenClaw gateway persistence path prepares and persists the attention 
   // call anywhere upstream of this exact push satisfies the flow contract.
   assert.match(
     route,
-    /const assistantTurnId = crypto\.randomUUID\(\);\s*const assistantCreatedAt = new Date\(\)\.toISOString\(\);[\s\S]{0,400}const gatewayAttention = prepareAttentionRequest\(\{\s*text: gatewayAssistantText,\s*sessionId: conversationId,\s*turnId: assistantTurnId,\s*requestedAt: assistantCreatedAt,\s*\}\);/,
+    /const assistantTurnId = crypto\.randomUUID\(\);\s*const assistantCreatedAt = new Date\(\)\.toISOString\(\);[\s\S]{0,500}const gatewayAttention = prepareAttentionRequest\(\{\s*text: gatewayAssistantText,\s*sessionId: conversationId,\s*turnId: assistantTurnId,\s*requestedAt: assistantCreatedAt,\s*incomplete: cancelledByUser \|\| isError,\s*\}\);/,
     "the gateway path should create the assistant turn id/timestamp once and derive the attention request from them",
   );
   assert.match(
@@ -111,7 +111,7 @@ test("the OpenClaw gateway persistence path prepares and persists the attention 
 test("the native OpenClaw stub/direct persistence path prepares and persists the attention request", () => {
   assert.match(
     route,
-    /const reportedPrUrl = latestPrUrlFromText\(assistantText\);\s*if \(reportedPrUrl\) conv\.prUrl = reportedPrUrl;\s*const assistantCreatedAt = new Date\(\)\.toISOString\(\);\s*const nativeAttention = prepareAttentionRequest\(\{\s*text: assistantText,\s*sessionId,\s*turnId: assistantTurnId,\s*requestedAt: assistantCreatedAt,\s*\}\);/,
+    /const reportedPrUrl = latestPrUrlFromText\(assistantText\);\s*if \(reportedPrUrl\) conv\.prUrl = reportedPrUrl;\s*const assistantCreatedAt = new Date\(\)\.toISOString\(\);\s*const nativeAttention = prepareAttentionRequest\(\{\s*text: assistantText,\s*sessionId,\s*turnId: assistantTurnId,\s*requestedAt: assistantCreatedAt,\s*incomplete: cancelledByUser \|\| isError,\s*\}\);/,
     "the native stub/direct path should derive the attention request from the actual assistant turn id and one stamped createdAt",
   );
   assert.match(
@@ -124,7 +124,7 @@ test("the native OpenClaw stub/direct persistence path prepares and persists the
 test("the general Coven transport persistence path prepares and persists the attention request", () => {
   assert.match(
     route,
-    /const persistedAssistantText = persistCovenProcessFailure && !cleanedAssistantText\s*\?\s*launchFailure!\.message\s*:\s*cleanedAssistantText;\s*const assistantCreatedAt = new Date\(\)\.toISOString\(\);\s*const covenAttention = prepareAttentionRequest\(\{\s*text: persistedAssistantText,\s*sessionId: finalSessionId,\s*turnId: assistantTurnId,\s*requestedAt: assistantCreatedAt,\s*\}\);/,
+    /const persistedAssistantText = persistCovenProcessFailure && !cleanedAssistantText\s*\?\s*launchFailure!\.message\s*:\s*cleanedAssistantText;\s*const assistantCreatedAt = new Date\(\)\.toISOString\(\);\s*const covenAttention = prepareAttentionRequest\(\{\s*text: persistedAssistantText,\s*sessionId: finalSessionId,\s*turnId: assistantTurnId,\s*requestedAt: assistantCreatedAt,\s*incomplete: cancelledByUser \|\| result\.is_error,\s*\}\);/,
     "the general Coven transport path should derive the attention request from the final marker-bearing text after failure-message fallback resolves",
   );
   assert.match(

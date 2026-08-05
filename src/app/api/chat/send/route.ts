@@ -244,7 +244,10 @@ import {
   type TurnUsage,
 } from "@/lib/usage-format";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
-import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
+import {
+  extractChatAttentionMarker,
+  extractIncompleteChatAttentionMarker,
+} from "@/lib/chat-attention-marker";
 import { splitReasoning } from "@/lib/chat-reasoning";
 import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
@@ -449,9 +452,12 @@ function prepareAttentionRequest(args: {
   sessionId: string;
   turnId: string;
   requestedAt: string;
+  incomplete?: boolean;
 }): { text: string; request: ChatResponseMetadata["attentionRequest"] | null } {
   const visibleBody = splitReasoning(args.text).visible;
-  const { visible, request: marker } = extractChatAttentionMarker(visibleBody);
+  const { visible, request: marker } = args.incomplete
+    ? extractIncompleteChatAttentionMarker(visibleBody)
+    : extractChatAttentionMarker(visibleBody);
   return {
     text: visible,
     request: marker
@@ -1060,6 +1066,7 @@ function openClawChatResponse(args: {
           sessionId: conversationId,
           turnId: assistantTurnId,
           requestedAt: assistantCreatedAt,
+          incomplete: cancelledByUser || isError,
         });
         conv.turns.push(
           {
@@ -1299,7 +1306,10 @@ function openClawChatResponse(args: {
         // the fabricated "returned no text" error diagnostic. A bare transport
         // abort is NOT a cancel: the turn ran to completion above and persists
         // as a normal reply the client recovers on resync.
-        if (stdout.trim()) {
+        if (cancelledByUser) {
+          assistantText = "(cancelled)";
+          isError = false;
+        } else if (stdout.trim()) {
           try {
             const parsed = JSON.parse(stdout.trim()) as OpenClawAgentJson;
             if (!hasValidOpenClawPayloadEnvelope(parsed)) throw new Error("invalid OpenClaw payload envelope");
@@ -1330,10 +1340,7 @@ function openClawChatResponse(args: {
           );
         }
 
-        if (cancelledByUser) {
-          if (!assistantText.trim()) assistantText = "(cancelled)";
-          isError = false;
-        } else if (!assistantText.trim()) {
+        if (!cancelledByUser && !assistantText.trim()) {
           const tail = stderr
             .split(/\r?\n/)
             .map((line) => line.trim())
@@ -1410,6 +1417,7 @@ function openClawChatResponse(args: {
               sessionId,
               turnId: assistantTurnId,
               requestedAt: assistantCreatedAt,
+              incomplete: cancelledByUser || isError,
             });
             conv.turns.push(
               {
@@ -5257,6 +5265,7 @@ export async function POST(req: Request) {
             sessionId: finalSessionId,
             turnId: assistantTurnId,
             requestedAt: assistantCreatedAt,
+            incomplete: cancelledByUser || result.is_error,
           });
           const assistantTurn: ChatTurn = {
             id: assistantTurnId,
