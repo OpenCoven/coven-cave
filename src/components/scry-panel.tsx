@@ -12,14 +12,24 @@
  *     it actually reached that point (see `src/lib/scry-stream.ts`). Nothing
  *     advances on a timer, so a slow harness shows a long stage rather than a
  *     bar that has walked away from it.
- *  2. **The slots, from the moment the image drops.** Name, role, offices,
- *     purpose, description, and the three qualities the familiar's SOUL.md is
- *     written from — voice, temperament, reasoning — are visible as shimmering
- *     placeholders before any of them arrive, so you can see WHAT is being
- *     extracted while you wait. All eight ride in one reply; there is no second
- *     harness call behind the last three — nor behind the purpose, which is
- *     what the familiar is FOR and is a different question from the
- *     description, which is what it looks like.
+ *  2. **The slots, from the moment the image drops — and only until it lands.**
+ *     Name, role, offices, purpose, description, and the three qualities the
+ *     familiar's SOUL.md is written from — voice, temperament, reasoning — are
+ *     visible as shimmering placeholders before any of them arrive, so you can
+ *     see WHAT is being extracted while you wait. All eight ride in one reply;
+ *     there is no second harness call behind the last three — nor behind the
+ *     purpose, which is what the familiar is FOR and is a different question
+ *     from the description, which is what it looks like.
+ *
+ *     **The slots are a progress readout, not a second copy of the answer.**
+ *     Once the reveal below has finished playing, the panel folds down to a
+ *     single line of provenance and the eight values live in exactly one place:
+ *     the editable fields at the seal. They used to live in both, so the seal
+ *     step printed every scried value twice — once read-only here, once in the
+ *     field underneath — and ran about 350px longer than a laptop screen for
+ *     the privilege. The fold is deliberately late enough that the landing
+ *     choreography (and the glitch shards that fly into these slots) still
+ *     plays out; it is not a flash of content.
  *  3. **The harness's own words.** When it narrates mid-run — it usually does,
  *     around the six-second mark — that text is forwarded verbatim and shown.
  *     It is the one genuinely live signal that something is thinking.
@@ -94,6 +104,19 @@ const STAGE_LABEL: Record<ScryStage, (harness: string) => string> = {
 const LANDING_STEP_MS = 200;
 const TYPE_DURATION_MS = 700;
 
+/** How long the landed values stay up before the panel folds to one line. Long
+ *  enough to read the last slot that landed, short enough that nobody starts
+ *  editing here — these are read-only echoes of fields that sit below. */
+const SETTLE_HOLD_MS = 900;
+
+/** When the reveal is over: the last slot's landing, or the typed description
+ *  finishing, whichever is later — plus the hold. */
+const SETTLE_AFTER_MS =
+  Math.max(
+    (SLOTS.length - 1) * LANDING_STEP_MS,
+    SLOTS.indexOf("description") * LANDING_STEP_MS + TYPE_DURATION_MS,
+  ) + SETTLE_HOLD_MS;
+
 function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -136,6 +159,10 @@ export function ScryPanel({ scry }: ScryPanelProps) {
   // starts once the values are in hand — it never runs while data is missing.
   const [landed, setLanded] = useState(0);
   const [typed, setTyped] = useState<string | null>(null);
+  /** Set once the reveal has played out. From here the panel is one line and
+   *  the values belong to the fields at the seal, which is the only place they
+   *  are editable — and now the only place they are printed. */
+  const [settled, setSettled] = useState(false);
   const timers = useRef<number[]>([]);
 
   const values = useMemo(() => {
@@ -160,14 +187,20 @@ export function ScryPanel({ scry }: ScryPanelProps) {
     if (scry.status !== "done") {
       setLanded(0);
       setTyped(null);
+      setSettled(false);
       return;
     }
     if (reduced) {
-      // No stagger, no typing: everything is already here, so show it.
+      // No stagger, no typing — and so nothing to wait for. The panel goes
+      // straight to its provenance line; the values are in the fields below,
+      // which is where they were always going to be edited.
       setLanded(SLOTS.length);
       setTyped(values.description);
+      setSettled(true);
       return;
     }
+    setSettled(false);
+    timers.current.push(window.setTimeout(() => setSettled(true), SETTLE_AFTER_MS));
     for (let i = 0; i < SLOTS.length; i += 1) {
       timers.current.push(
         window.setTimeout(() => setLanded(i + 1), i * LANDING_STEP_MS),
@@ -204,6 +237,29 @@ export function ScryPanel({ scry }: ScryPanelProps) {
       ? STAGE_LABEL[scry.stage](harness)
       : "Reaching for a harness";
 
+  // Folded. One line of provenance — who looked, how long it took, and that
+  // nothing here is fixed. Everything it found is in the fields, exactly once.
+  // No `aria-label` on the paragraph below, deliberately: on a plain paragraph
+  // it would REPLACE the sentence rather than name a region, and the sentence is
+  // the whole content. The panel is a landmark only while it is still a panel.
+  if (scry.status === "done" && settled) {
+    return (
+      <p className="scry scry--settled">
+        <Icon name="ph:sparkle" width={13} height={13} aria-hidden />
+        <span className="scry__provenance">{harness} looked</span>
+        <span className="scry__sep" aria-hidden>·</span>
+        <span className="scry__elapsed">{elapsed.toFixed(1)}s</span>
+        <span className="scry__sep" aria-hidden>·</span>
+        <span className="scry__provenance">every value it found is editable</span>
+      </p>
+    );
+  }
+
+  // The slots are the WAIT made visible, so they stand down the moment there is
+  // nothing left to wait for: a failed scry showed eight bars shimmering for
+  // values that were never coming.
+  const showSlots = running || (scry.status === "done" && !settled);
+
   return (
     <section
       className={`scry${running ? " scry--running" : ""}${scry.status === "failed" ? " scry--failed" : ""}`}
@@ -230,31 +286,33 @@ export function ScryPanel({ scry }: ScryPanelProps) {
 
       {scry.murmur ? <p className="scry__murmur">“{scry.murmur}”</p> : null}
 
-      <ul className="scry__slots">
-        {SLOTS.map((key, i) => {
-          const hasValue = landed > i && values[key].length > 0;
-          const shown = key === "description" && typed != null ? typed : values[key];
-          return (
-            <li
-              key={key}
-              className={`scry-slot ${SLOT_WIDTH[key]}${hasValue ? " scry-slot--landed" : ""}`}
-              data-scry-slot={key}
-              data-scry-landed={hasValue ? "true" : "false"}
-            >
-              <span className="scry-slot__label">{SLOT_LABEL[key]}</span>
-              <span className="scry-slot__value">
-                {hasValue ? (
-                  shown
-                ) : landed > i ? (
-                  <span className="scry-slot__none">nothing came back</span>
-                ) : (
-                  <span className="scry-slot__bar" aria-hidden />
-                )}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+      {showSlots ? (
+        <ul className="scry__slots">
+          {SLOTS.map((key, i) => {
+            const hasValue = landed > i && values[key].length > 0;
+            const shown = key === "description" && typed != null ? typed : values[key];
+            return (
+              <li
+                key={key}
+                className={`scry-slot ${SLOT_WIDTH[key]}${hasValue ? " scry-slot--landed" : ""}`}
+                data-scry-slot={key}
+                data-scry-landed={hasValue ? "true" : "false"}
+              >
+                <span className="scry-slot__label">{SLOT_LABEL[key]}</span>
+                <span className="scry-slot__value">
+                  {hasValue ? (
+                    shown
+                  ) : landed > i ? (
+                    <span className="scry-slot__none">nothing came back</span>
+                  ) : (
+                    <span className="scry-slot__bar" aria-hidden />
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
 
       {scry.status === "failed" ? (
         <p className="scry__fallback">

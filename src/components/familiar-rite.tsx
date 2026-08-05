@@ -23,6 +23,17 @@
  * opens it on done, on failure, in manual mode, and on a ceiling — and the seal
  * stays reachable throughout, so nobody is trapped behind it.
  *
+ * **The seal shows each value once.** The scry panel was a live readout of the
+ * eight things being pulled out of the likeness AND, once they arrived, a
+ * read-only list of them — directly above the fields holding the same eight
+ * values. Two copies of every answer put the last step about 350px past a
+ * laptop screen and made it read as a form with a receipt stapled on. The panel
+ * now folds to one line of provenance when it lands (`scry-panel.tsx`), the
+ * fields are the display, and the `scried` mark that distinguishes a guess from
+ * a decision moved onto the fields themselves rather than being lost with the
+ * copy. The card is `position: sticky` so it stays beside the questions instead
+ * of scrolling away from them.
+ *
  * **The manner is disclosed, not picked.** Voice, temperament and reasoning are
  * what the new familiar's SOUL.md is written from, and the scry reads them off
  * the likeness in the same reply as the name and the office. They sit at the
@@ -392,6 +403,30 @@ export function FamiliarRite({
     ? FAMILIAR_TYPES.find((t) => t.id === types[0])?.label ?? ""
     : "";
 
+  /**
+   * Is this field still exactly what the scry offered?
+   *
+   * The seal used to print every scried value twice — once read-only in the
+   * scry panel, once in the field below it — and the read-only copy was the
+   * only thing marking a value as a GUESS. That copy is gone (the panel folds
+   * to a line of provenance once it lands), so the mark moves onto the field
+   * itself. Same rule the sigils have always used, and for the same reason: a
+   * pre-filled answer must never pass for a decision the user made.
+   *
+   * Deliberately three conditions rather than "did the scry return one": the
+   * mark has to come off the moment the value stops being the scry's, whether
+   * that is by typing (`touched`) or by pasting the field back to something
+   * else. In manual mode `scried` is null, so nothing is ever marked.
+   */
+  const stillScried = (
+    key: "name" | "role" | "purpose" | "description",
+    value: string,
+  ) => Boolean(scried?.[key]) && !touched.current[key] && value === scried?.[key];
+  const stillScriedSoul = (key: SoulQualityKey) =>
+    Boolean(scried?.soul?.[key]) &&
+    !touchedSoul.current[key] &&
+    soul[key] === scried?.soul?.[key];
+
   const trimmedName = name.trim();
   const derivedId = slugifyFamiliarId(trimmedName);
   const duplicate = derivedId.length > 0 && existingIds.some((id) => id.toLowerCase() === derivedId);
@@ -523,34 +558,42 @@ export function FamiliarRite({
         quietSelector=".rite .famcard__head, .rite .famcard__plate"
         targetSelector=".rite [data-scry-slot]"
       />
+      {/* The stage is the full-height left column; `.rite__float` is the thing
+          that actually holds the card, and it is `position: sticky` so the card
+          follows the scroll instead of leaving the screen the moment the seal's
+          fields run past the fold. Two elements rather than one because the
+          column must stretch (that stretch is the sticky travel) while the card
+          inside it stays vertically centred when there is room to centre it. */}
       <div className="rite__stage">
-        {/* The card floats. Incompleteness shows HERE — no frame, dead foil —
-            rather than as validation text or a disabled button. */}
-        <FamiliarCardPreview
-          name={name}
-          role={role || roleLabel}
-          description={description}
-          harness={vessel}
-          vesselLabel={VESSELS.find((v) => v.id === vessel)?.label}
-          model={model}
-          typeIds={types}
-          artUrl={conjure.artUrl}
-          plateUrl={conjure.plateUrl}
-          aura={conjure.aura}
-          /* Before the summoning the seal can only encode a guess at the id;
-             the moment the familiar exists it encodes the id the daemon
-             actually gave it, which is the only mark that resolves. */
-          sealUrl={
-            summoned
-              ? `${SEAL_ORIGIN}${summoned.id}`
-              : step === SEAL_STEP && name
-                ? `${SEAL_ORIGIN}${slug(name)}`
-                : null
-          }
-          scrying={scry.status === "scrying"}
-          sealed={summoned !== null}
-        />
-        {conjure.note ? <p className="rite__telemetry">{conjure.note}</p> : null}
+        <div className="rite__float">
+          {/* The card floats. Incompleteness shows HERE — no frame, dead foil —
+              rather than as validation text or a disabled button. */}
+          <FamiliarCardPreview
+            name={name}
+            role={role || roleLabel}
+            description={description}
+            harness={vessel}
+            vesselLabel={VESSELS.find((v) => v.id === vessel)?.label}
+            model={model}
+            typeIds={types}
+            artUrl={conjure.artUrl}
+            plateUrl={conjure.plateUrl}
+            aura={conjure.aura}
+            /* Before the summoning the seal can only encode a guess at the id;
+               the moment the familiar exists it encodes the id the daemon
+               actually gave it, which is the only mark that resolves. */
+            sealUrl={
+              summoned
+                ? `${SEAL_ORIGIN}${summoned.id}`
+                : step === SEAL_STEP && name
+                  ? `${SEAL_ORIGIN}${slug(name)}`
+                  : null
+            }
+            scrying={scry.status === "scrying"}
+            sealed={summoned !== null}
+          />
+          {conjure.note ? <p className="rite__telemetry">{conjure.note}</p> : null}
+        </div>
       </div>
 
       <div className="rite__ask">
@@ -812,7 +855,10 @@ export function FamiliarRite({
         {current.key === "seal" && !summoned ? (
           <div className="rite__seal">
             <label className="rite__name">
-              <span className="rite__name-hint">It answers to</span>
+              <span className="rite__name-hint">
+                It answers to
+                {stillScried("name", name) ? <span className="rite__guess">scried</span> : null}
+              </span>
               <input
                 className="rite__name-input"
                 value={name}
@@ -823,93 +869,93 @@ export function FamiliarRite({
             </label>
 
             {/* Everything the scry offered, as fields — pre-filled, plainly
-                overwritable, and never committed on the user's behalf. */}
+                overwritable, and never committed on the user's behalf. These
+                fields ARE the display: the scry panel above has folded to a
+                line of provenance by the time anyone reads this, so each value
+                is printed exactly once, in the box that edits it. The `scried`
+                mark is what survives of the read-only copy — it is the only
+                thing that copy said which a filled-in field does not, and
+                telling a guess from a decision is worth a word. */}
             <div className="rite__guesses">
-              <label className="rite__field">
-                <span className="rite__field-hint">Office</span>
-                <input
-                  className="rite__field-input"
-                  value={role}
-                  onChange={(e) => { touched.current.role = true; setRole(e.target.value); }}
-                  placeholder={roleLabel || "what it does"}
-                  aria-label="Familiar role"
-                />
-              </label>
+              <SealField
+                label="Office"
+                value={role}
+                onChange={(e) => { touched.current.role = true; setRole(e.target.value); }}
+                placeholder={roleLabel || "what it does"}
+                ariaLabel="Familiar role"
+                scried={stillScried("role", role)}
+              />
               {/* Its job, and the one field here that is written into the
                   Familiar Contract. Kept distinct from the line below because
                   the scry answers two different questions: what it DOES, and
                   what it LOOKS like. Cleared → the generic purpose. */}
-              <label className="rite__field">
-                <span className="rite__field-hint">Its purpose</span>
-                <input
-                  className="rite__field-input"
-                  value={purpose}
-                  onChange={(e) => { touched.current.purpose = true; setPurpose(e.target.value); }}
-                  placeholder="what it is for"
-                  aria-label="Familiar purpose"
-                  aria-describedby="rite-purpose-note"
-                />
-              </label>
+              <SealField
+                label="Purpose"
+                value={purpose}
+                onChange={(e) => { touched.current.purpose = true; setPurpose(e.target.value); }}
+                placeholder="what it is for"
+                ariaLabel="Familiar purpose"
+                describedBy="rite-purpose-note"
+                scried={stillScried("purpose", purpose)}
+              />
               <p className="rite__note" id="rite-purpose-note">
-                Its SOUL.md reads “My purpose is to …” and this finishes the
-                sentence. A job, not a look — the line below is the look.
+                Finishes “My purpose is to …” in its SOUL.md. A job, not a look.
               </p>
-              <label className="rite__field">
-                <span className="rite__field-hint">In a line</span>
-                <input
-                  className="rite__field-input"
-                  value={description}
-                  onChange={(e) => { touched.current.description = true; setDescription(e.target.value); }}
-                  placeholder="what it looks like"
-                  aria-label="Familiar description"
-                />
-              </label>
-              <label className="rite__field">
-                <span className="rite__field-hint">Pronouns</span>
-                <input
-                  className="rite__field-input"
-                  value={pronouns}
-                  onChange={(e) => setPronouns(e.target.value)}
-                  aria-label="Familiar pronouns"
-                  aria-describedby="rite-pronouns-note"
-                />
-              </label>
-              {/* Deliberate: an image is not evidence of anyone's pronouns, so
-                  the scry never guesses them and the default says so out loud. */}
+              <SealField
+                label="In a line"
+                value={description}
+                onChange={(e) => { touched.current.description = true; setDescription(e.target.value); }}
+                placeholder="what it looks like"
+                ariaLabel="Familiar description"
+                scried={stillScried("description", description)}
+              />
+              <SealField
+                label="Pronouns"
+                value={pronouns}
+                onChange={(e) => setPronouns(e.target.value)}
+                placeholder={SCRY_DEFAULT_PRONOUNS}
+                ariaLabel="Familiar pronouns"
+                describedBy="rite-pronouns-note"
+                scried={false}
+              />
+              {/* Deliberate, and the one note here that is not a convenience:
+                  an image is not evidence of anyone's pronouns, so the scry
+                  never guesses them and the default says so out loud. It is
+                  never abbreviated away — the refusal is the point. */}
               <p className="rite__note" id="rite-pronouns-note">
                 A default, not a reading — nothing about pronouns is taken from the image.
               </p>
-            </div>
 
-            {/* The manner. These three are the only part of the new familiar's
-                SOUL.md that is not a template, so they are shown as fields
-                before the seal rather than written on anyone's behalf: a
-                personality committed silently is the one thing a summoning
-                must not do. Clearing them all is a supported answer — the
-                scaffolder falls back to the generic soul. */}
-            <div className="rite__guesses">
-              <p className="rite__manner-head">Its manner</p>
-              {SOUL_QUALITY_FIELDS.map((field) => (
-                <label key={field.key} className="rite__field">
-                  <span className="rite__field-hint">{field.label}</span>
-                  <input
-                    className="rite__field-input"
-                    value={soul[field.key]}
-                    onChange={(e) => {
-                      touchedSoul.current[field.key] = true;
-                      setSoul((prev) => ({ ...prev, [field.key]: e.target.value }));
-                    }}
-                    placeholder={field.hint}
-                    aria-label={`Familiar ${field.label.toLowerCase()}`}
-                    aria-describedby="rite-manner-note"
-                  />
-                </label>
-              ))}
-              <p className="rite__note" id="rite-manner-note">
-                This is what its SOUL.md is written from — how it speaks, how it
-                works, how it thinks. Read from the likeness, and yours to change
-                or clear.
+              {/* The manner. These three are the only part of the new
+                  familiar's SOUL.md that is not a template, so they are shown
+                  before the seal rather than written on anyone's behalf: a
+                  personality committed silently is the one thing a summoning
+                  must not do. They sit in the SAME grid as the fields above,
+                  under one heading, so they read as one block of three lines
+                  rather than three labelled stacks. Clearing them all is a
+                  supported answer — the scaffolder falls back to the generic
+                  soul, which the heading says rather than a paragraph. */}
+              <p className="rite__manner-head" id="rite-manner-note">
+                Its manner
+                <span className="rite__manner-note">
+                  what its SOUL.md is written from — change or clear any of it
+                </span>
               </p>
+              {SOUL_QUALITY_FIELDS.map((field) => (
+                <SealField
+                  key={field.key}
+                  label={field.label}
+                  value={soul[field.key]}
+                  onChange={(e) => {
+                    touchedSoul.current[field.key] = true;
+                    setSoul((prev) => ({ ...prev, [field.key]: e.target.value }));
+                  }}
+                  placeholder={field.hint}
+                  ariaLabel={`Familiar ${field.label.toLowerCase()}`}
+                  describedBy="rite-manner-note"
+                  scried={stillScriedSoul(field.key)}
+                />
+              ))}
             </div>
 
             <Button
@@ -939,6 +985,53 @@ export function FamiliarRite({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * One row of the seal's field table.
+ *
+ * `.rite__field` is `display: contents`, so the three children below are cells
+ * of the ONE grid that `.rite__guesses` owns — label, the box that edits the
+ * value, and the mark that says where the value came from. That is what makes
+ * seven fields read as a single aligned block costing one line each, instead of
+ * seven label-over-input stacks costing two. The `<label>` still wraps its
+ * input, so the association survives `display: contents`; the explicit
+ * `aria-label` means it does not depend on it either way.
+ */
+function SealField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+  describedBy,
+  scried,
+}: {
+  label: string;
+  value: string;
+  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+  ariaLabel: string;
+  describedBy?: string;
+  /** True while the value is still the scry's guess, untouched. */
+  scried: boolean;
+}) {
+  return (
+    <label className="rite__field">
+      <span className="rite__field-hint">{label}</span>
+      <input
+        className="rite__field-input"
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        aria-describedby={describedBy}
+      />
+      {/* Rendered even when empty. The row is three cells of a shared grid, and
+          a missing third cell would pull the next row's label into it. */}
+      <span className="rite__guess">{scried ? "scried" : ""}</span>
+    </label>
   );
 }
 

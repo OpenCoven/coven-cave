@@ -1,5 +1,19 @@
 /* The summoning rite — card left, one question right (cave-3rz.3). */
 
+/* The bare `/rite` route's scroll port.
+ *
+ * `body { overflow: hidden }` is app chrome: every surface in the shell scrolls
+ * inside its own panel and the window never does. The rite's shipped home is
+ * the overlay, whose `.rite-dialog__body` is exactly that panel — but the
+ * chrome-less route had none, so anything past the fold was CLIPPED rather than
+ * scrolled and the seal's Summon button was simply unreachable below ~900px of
+ * viewport. This gives that route the panel it was missing, and it is also the
+ * scrolling ancestor the sticky card sticks to there. */
+.rite-page {
+  height: 100%;
+  overflow-y: auto;
+}
+
 .rite {
   display: grid;
   grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
@@ -15,7 +29,37 @@
   .rite { grid-template-columns: minmax(0, 1fr); justify-items: center; }
 }
 
+/* The stage is the COLUMN, and it stretches to the full height of the row —
+   that stretch is the travel the sticky card slides along. It holds nothing
+   itself; `.rite__float` below is the card. */
 .rite__stage {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  /* Centred while there is room to centre it, which is every step before the
+     seal. The sticky child takes over the moment the column is taller than the
+     scroll port. */
+  justify-content: center;
+}
+
+/* The card follows the scroll instead of leaving with it.
+ *
+ * `top` is a hair of clearance rather than 0: in the overlay the scroll port
+ * starts directly under `.rite-chrome`, and a card flush against that edge
+ * reads as if it is under the header rather than beside the questions. The
+ * header itself can never be overlapped — it is a SIBLING of the scrolling
+ * element (`.rite-dialog__body`), not an ancestor, so the sticky rect stops at
+ * the port's top edge.
+ *
+ * WHEN THE CARD IS TALLER THAN THE PORT the stickiness is switched off
+ * (see the `max-height` query below) and the card scrolls with the page again.
+ * A top-anchored sticky element taller than its port pins its head and puts its
+ * feet permanently out of reach — for this card that is the seal and the stat
+ * plate, i.e. exactly the half worth looking at. Scrolling it away is the
+ * lesser harm, and it is also what the rite did before any of this. */
+.rite__float {
+  position: sticky;
+  top: var(--space-4);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -23,6 +67,27 @@
   /* The card floats rather than sitting in a panel — it should read as the
      object being made, not as a preview pane. */
   animation: rite-float 7s ease-in-out infinite;
+}
+
+/* Short viewport: the card cannot both stick and stay whole, so it scrolls.
+   40rem is measured, not guessed — the card is 20rem wide at 5/7, so 28rem
+   tall, and the overlay spends roughly 5rem of the viewport on the backdrop
+   padding and the chrome above the scroll port. Below 40rem the two do not
+   both fit and pinning would clip the card's foot.
+
+   NOTE both queries below must stay AFTER `.rite__float`'s own declaration:
+   equal specificity, so source order is the whole of the cascade here. */
+@media (max-height: 40rem) {
+  .rite__float { position: static; }
+}
+
+/* One column (matching the stack at the top of this file). The card is no
+   longer BESIDE the questions, it is ABOVE them, so sticking it would park it
+   on top of the fields it is meant to accompany. The stack is the fallback and
+   the card scrolls away with everything else. */
+@media (max-width: 60rem) {
+  .rite__stage { align-self: auto; }
+  .rite__float { position: static; }
 }
 
 @keyframes rite-float {
@@ -258,6 +323,28 @@
   box-shadow: inset 0 0 0 1px var(--border-hairline);
 }
 
+/* Folded. Once the scry has landed the panel stops being a second, read-only
+   copy of the eight values and becomes provenance: who looked, how long it
+   took, and that none of it is fixed. The values themselves live in the fields
+   at the seal, which is the only place they can be changed — printing them
+   twice cost a whole screen of scrolling and made the step read as a form with
+   a receipt stapled to it. */
+.scry--settled {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.scry--settled svg { color: var(--accent-presence); flex: none; }
+
+.scry__provenance { min-width: 0; }
+.scry__sep { color: var(--text-muted); }
+
 .scry__head { display: flex; align-items: center; gap: var(--space-2); }
 
 /* One pip per stage the endpoint can prove it reached. Not a percentage — a
@@ -475,20 +562,31 @@
 .rite__sigil-label { font-size: var(--text-base); font-weight: 600; display: flex; align-items: baseline; gap: var(--space-2); }
 
 /* Marks a value the scry guessed, so a pre-filled choice never passes for one
-   the user made. */
+   the user made. Worn by a sigil at the office step and by every seal field
+   still holding what the scry offered — with the read-only panel gone, this is
+   the only thing left that tells a guess from a decision. */
 .rite__guess {
   font-size: var(--text-2xs);
   font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--accent-presence);
+  white-space: nowrap;
 }
 .rite__sigil-note { font-size: var(--text-2xs); color: var(--text-muted); line-height: 1.4; }
 
 /* ── Seal ─────────────────────────────────────────────────────────────── */
 .rite__seal { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); }
 .rite__name { display: flex; flex-direction: column; gap: var(--space-1); width: 100%; max-width: 22rem; }
-.rite__name-hint { font-size: var(--text-2xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.rite__name-hint {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
 
 .rite__name-input {
   font-size: var(--text-xl);
@@ -501,10 +599,36 @@
 }
 .rite__name-input:focus { outline: none; border-bottom-color: var(--accent-presence); }
 
-/* The scried fields. Same treatment as the name — a line to type on, not a
-   boxed form control, so a suggestion reads as a starting point. */
-.rite__guesses { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; max-width: 26rem; }
-.rite__field { display: flex; flex-direction: column; gap: var(--space-1); }
+/* The scried fields — ONE table, not seven stacks.
+ *
+ * Label, value, provenance across three columns, so a field costs one line
+ * rather than a hint stacked over an input. Every row of the seal lives in this
+ * single grid (the manner qualities included, under their heading) so the
+ * labels align down the whole step and it reads as one object. That, plus the
+ * scry panel folding to a line once it lands, is what took the seal step from
+ * ~350px past a laptop screen to inside one.
+ *
+ * Same treatment as the name — a line to type on, not a boxed form control, so
+ * a suggestion still reads as a starting point rather than a filled-in form. */
+.rite__guesses {
+  display: grid;
+  /* 7rem is the width of the longest label — "How it reasons", which SOUL.md
+     owns the wording of. A label column narrow enough to wrap it would cost the
+     line this layout just saved. */
+  grid-template-columns: 7rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  row-gap: var(--space-2);
+  /* A value long enough to overflow its input is clipped hard at the column
+     edge, so the gutter is doing the work a text ellipsis would: without it the
+     last word runs straight into the `scried` mark. */
+  column-gap: var(--space-4);
+  width: 100%;
+  max-width: 34rem;
+}
+
+/* The row is three cells of the grid above, not a box of its own. */
+.rite__field { display: contents; }
+
 .rite__field-hint { font-size: var(--text-2xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
 
 .rite__field-input {
@@ -514,21 +638,47 @@
   border-bottom: 1px solid var(--border-hairline);
   color: var(--text-primary);
   padding: var(--space-1) 0;
+  min-width: 0;
 }
 .rite__field-input:focus { outline: none; border-bottom-color: var(--accent-presence); }
 
-.rite__note { margin: 0; font-size: var(--text-2xs); color: var(--text-muted); max-width: 42ch; }
+/* Notes sit under the value they explain, never under the label — they belong
+   to the field, and starting them in the label column would read as a row of
+   their own. */
+.rite__note {
+  grid-column: 2 / -1;
+  margin: calc(var(--space-1) * -1) 0 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+  /* No `ch` cap. The grid column is the measure now, and a second cap on top of
+     it was wrapping one-line notes into two — which is the whole thing these
+     were shortened to avoid. */
+}
 
 /* The manner group — voice, temperament, reasoning. A heading rather than a
    fourth unlabelled field, because these three are a different KIND of thing
    from the name and the office: they are what the familiar's SOUL.md is
-   written from. */
+   written from. It spans the table and carries its own gloss inline, so the
+   group costs one line instead of a heading plus a three-line paragraph. */
 .rite__manner-head {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
   margin: var(--space-2) 0 0;
   font-size: var(--text-2xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-secondary);
+}
+
+/* The gloss is prose, not a label — it drops the tracking and the caps. */
+.rite__manner-note {
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-muted);
 }
 
 /* A failed summoning. Never a blocking dialog — the rite is still standing and
@@ -655,7 +805,10 @@
 .rite-leave__acts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
 
 @media (prefers-reduced-motion: reduce) {
-  .rite__stage { animation: none; }
+  /* The float is the animation; `position: sticky` is not motion in this sense
+     — it is where the element IS, the same way a fixed header is, and it moves
+     only in response to the user's own scrolling. It stays. */
+  .rite__float { animation: none; }
 
   /* Datamoshing is a strong vestibular trigger — tearing, channel separation
      and stepped motion are close to the worst case for it — so the whole canvas
