@@ -25,7 +25,8 @@ export function groupConsecutiveTools<T extends { name: string; textOffset?: num
       previous.tools.push(tool);
     } else {
       runs.push({ name: tool.name, tools: [tool] });
-      lastKnownOffset = undefined;
+      // Keep lastKnownOffset across name changes so that offset discontinuities
+      // between different tool types are detected when subsequent same-name tools appear
     }
     if (offset !== undefined) lastKnownOffset = offset;
   }

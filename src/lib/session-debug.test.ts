@@ -383,6 +383,17 @@ import { groupConsecutiveTools } from "./turn-segments.ts";
     [["read-legacy-first", "read-known-before"], ["read-known-after"]],
     "the first known offset becomes the boundary for a legacy-started run",
   );
+
+  const mixedNameWithMissingOffset = groupConsecutiveTools([
+    { id: "read-at-0", name: "Read", textOffset: 0 },
+    { id: "bash-missing", name: "Bash" },
+    { id: "bash-at-24", name: "Bash", textOffset: 24 },
+  ]);
+  assert.deepEqual(
+    mixedNameWithMissingOffset.map((run) => run.tools.map((tool) => tool.id)),
+    [["read-at-0"], ["bash-missing"], ["bash-at-24"]],
+    "name change with missing offset does not reset boundary context for same-name calls",
+  );
 }
 
 // ── Source pins ─────────────────────────────────────────────────────────────
