@@ -57,7 +57,7 @@ pnpm typecheck
 pnpm test:api
 ```
 
-Expected: both commands pass.
+Expected: this change introduces no new failures. Pre-existing failures on the base branch are acceptable until addressed separately.
 
 - [ ] **Step 6: Commit and open the PR**
 
