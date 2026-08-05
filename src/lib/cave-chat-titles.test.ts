@@ -815,4 +815,97 @@ assert.equal(
   "balanced short: leading and closing quotes preserved",
 );
 
+// ── Issue: Direct ATX heading cleanup ────────────────────────────────────────
+// #{1,6} at line start followed by whitespace is an ATX heading prefix in
+// Markdown. Strip it so "# Fix parser" → "Fix parser". Non-heading hashes
+// (C#, Fix #123) are mid-line and are preserved.
+assert.equal(
+  chatSummaryTitle({ userText: "# Fix parser" }),
+  "Fix parser",
+  "h1 ATX heading prefix stripped from user text",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "## Fix parser" }),
+  "Fix parser",
+  "h2 ATX heading prefix stripped from user text",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "###### Fix parser" }),
+  "Fix parser",
+  "h6 ATX heading prefix stripped from user text",
+);
+
+// ── Issue: Escaped parentheses in link destination parser ─────────────────────
+// \) in a destination must not close the paren depth counter — it is part of
+// the URL. \( must not open a new nesting level. Both must be skipped as
+// opaque content so the scanner stays linear and never leaks URL fragments.
+assert.equal(
+  chatSummaryTitle({ userText: "[Docs](https://x.test/a\\)b) safely" }),
+  "Docs safely",
+  "escaped ) in destination not treated as closing paren — no URL fragment leak",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "[Docs](https://x.test/a\\(b)" }),
+  "Docs",
+  "escaped ( in destination not treated as nesting opener",
+);
+{
+  // Long malformed input after an escaped ): consumed as unclosed destination.
+  const malformedEscaped = "[Docs](https://x.test/a\\)" + "b".repeat(5000);
+  assert.equal(
+    chatSummaryTitle({ userText: malformedEscaped }),
+    "Docs",
+    "long malformed destination after escaped ) discarded without leaking content",
+  );
+}
+
+// ── Issue: Nested unmatched leading delimiters after truncation ───────────────
+// When truncation leaves (" or [" or any stack of openers without their
+// corresponding closers in the retained stem, all must be stripped, not just
+// the outermost one. The fix iterates until no unmatched leading opener remains.
+{
+  const nestedLong = '("Implement the new feature for the search component right now")';
+  const r = chatSummaryTitle({ userText: nestedLong });
+  assert.ok(r !== null, "nested delimiters long: yields a title");
+  assert.ok(r!.endsWith("…"), "nested delimiters long: truncation ellipsis appended");
+  assert.ok(!r!.startsWith("("), "nested delimiters long: unmatched ( stripped after truncation");
+  assert.ok(!r!.startsWith('"'), 'nested delimiters long: unmatched " stripped after ( removal');
+}
+// Balanced short: no truncation → delimiter loop never runs → preserved.
+assert.equal(
+  chatSummaryTitle({ userText: '("short")' }),
+  '("short")',
+  "balanced short nested delimiters preserved when no truncation occurs",
+);
+
+// ── Issue: Common user-directed framing ──────────────────────────────────────
+// "I need you to", "I want you to", "I'd like you to", "I would like you to"
+// are added as `you to` extensions of existing patterns in LEADING_FILLER_RE.
+// "I need help" (no "you to") is not matched and is preserved.
+assert.equal(
+  chatSummaryTitle({ userText: "I need you to fix parser errors" }),
+  "Fix parser errors",
+  "I need you to stripped from user text",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "I want you to fix parser errors" }),
+  "Fix parser errors",
+  "I want you to stripped from user text",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "I'd like you to fix parser errors" }),
+  "Fix parser errors",
+  "I'd like you to stripped from user text",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "I would like you to fix parser errors" }),
+  "Fix parser errors",
+  "I would like you to stripped from user text",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "I need help with parsers" }),
+  "I need help with parsers",
+  "I need help preserved — no you to or to form to match",
+);
+
 console.log("cave-chat-titles.test.ts ok");

@@ -62,7 +62,7 @@ const MAX_PROMPT_TITLE_LENGTH = 64;
 // content-initial words like "now"/"just"/"and" are left alone to avoid eating
 // real titles ("Now and Then is a Beatles song …").
 const LEADING_FILLER_RE =
-  /^(?:please|pls|plz|kindly|can you|could you|would you|will you|can we|could we|would we|let'?s|i (?:want|need|wanna) to|i'?d like to|i would like to|help me(?: to)?|go ahead(?: and)?)\b[\s,:;.!?\-–—]*/i;
+  /^(?:please|pls|plz|kindly|can you|could you|would you|will you|can we|could we|would we|let'?s|i (?:want|need|wanna)(?: you)? to|i'?d like(?: you)? to|i would like(?: you)? to|help me(?: to)?|go ahead(?: and)?)\b[\s,:;.!?\-–—]*/i;
 
 // Trailing politeness ("restart it please", "fix this, thanks").
 const TRAILING_FILLER_RE =
@@ -170,7 +170,8 @@ function stripLineMarkdown(text: string): string {
   return text
     .replace(/^(?:\s{0,3}>\s*)+/gm, "")
     .replace(/^[\t ]*(?:[-+*]|\d{1,9}[.)])[\t ]+(?:\[[ xX]\][\t ]+)?/gm, "")
-    .replace(/^\s{0,3}\[[^\]]+\]:\s+\S+.*$/gm, " ");
+    .replace(/^\s{0,3}\[[^\]]+\]:\s+\S+.*$/gm, " ")
+    .replace(/^#{1,6}[ \t]+/gm, "");
 }
 
 function normalizeGeneratedTitleSource(input: unknown): string | null {
@@ -220,10 +221,16 @@ function normalizeMarkdownInlineLinks(s: string): string {
     }
     // Scan the destination exactly once with a depth counter. This handles
     // long URLs and balanced nested parentheses without a backtracking regex.
+    // Backslash-escaped characters are consumed as destination content and
+    // never treated as nesting or closing delimiters.
     const destStart = labelEnd + 2;
     let depth = 1;
     let j = destStart;
     while (j < len && depth > 0) {
+      if (s[j] === "\\") {
+        j += 2; // escaped char is neither opener nor closer
+        continue;
+      }
       if (s[j] === "(") depth++;
       else if (s[j] === ")") depth--;
       j++;
@@ -239,9 +246,11 @@ function normalizeMarkdownInlineLinks(s: string): string {
   return result;
 }
 
-/** Remove an unmatched leading opening delimiter when its corresponding closer
- *  is absent from the truncated stem. Only applied when the title ends with an
- *  ellipsis (i.e. was truncated). Balanced pairs (closer present) are kept. */
+/** Remove unmatched leading opening delimiters when their corresponding closers
+ *  are absent from the truncated stem. Applied repeatedly until no unmatched
+ *  leading opener remains or the stem is balanced. Only runs when the title
+ *  ends with an ellipsis (i.e. was truncated). Balanced pairs (closer present)
+ *  are kept, so short balanced titles pass through unchanged. */
 function stripUnmatchedLeadingDelimiter(text: string): string {
   if (text.length < 2 || !text.endsWith("…")) return text;
   const closers: Record<string, string> = {
@@ -249,10 +258,18 @@ function stripUnmatchedLeadingDelimiter(text: string): string {
     "\u201C": "\u201D", "\u2018": "\u2019",
     "(": ")", "[": "]", "{": "}",
   };
-  const closer = closers[text[0]];
-  if (closer === undefined) return text;
-  // Balanced if the closer appears anywhere after the first char.
-  return text.indexOf(closer, 1) >= 0 ? text : text.slice(1).trimStart();
+  let s = text;
+  let changed = true;
+  while (changed && s.length >= 2 && s.endsWith("…")) {
+    changed = false;
+    const closer = closers[s[0]];
+    if (closer === undefined) break;
+    if (s.indexOf(closer, 1) < 0) {
+      s = s.slice(1).trimStart();
+      changed = true;
+    }
+  }
+  return s;
 }
 
 /**
