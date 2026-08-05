@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
+import { resolveConversationSessionId } from "@/lib/cave-conversations";
 import { isOwnedSession } from "@/lib/cave-config";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
@@ -19,7 +20,23 @@ export async function POST(
   if (forbidden) return forbidden;
 
   const { id } = await params;
-  if (!isValidSessionId(id) || !(await isOwnedSession(id))) {
+  if (!isValidSessionId(id)) {
+    return NextResponse.json({ ok: false, error: "invalid session id" }, { status: 400 });
+  }
+  const resolved = await resolveConversationSessionId(id);
+  if (resolved.sessionId === null) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: resolved.error === "ambiguous-replay-history"
+          ? "replay history is ambiguous for this session id"
+          : "replay history contains a cycle for this session id",
+      },
+      { status: 409 },
+    );
+  }
+  const ownedSessionId = resolved.sessionId ?? id;
+  if (!(await isOwnedSession(ownedSessionId))) {
     return NextResponse.json({ ok: false, error: "invalid session id" }, { status: 400 });
   }
 

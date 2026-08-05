@@ -230,6 +230,41 @@ try {
     });
 
     await saveConversation({
+      sessionId: "route-replay-primary",
+      familiarId: "charm",
+      harness: "codex",
+      runtime: `local:${projectRoot}`,
+      title: "Replay primary",
+      createdAt: "2026-08-04T17:15:00.000Z",
+      updatedAt: "2026-08-04T19:33:00.000Z",
+      harnessSessionId: "codex-thread-route-replay",
+      replaySessions: [
+        {
+          sessionId: "route-replay-old",
+          conversationId: "codex-thread-route-replay",
+          createdAt: "2026-08-04T17:20:00.000Z",
+          updatedAt: "2026-08-04T17:25:00.000Z",
+        },
+        {
+          sessionId: "route-replay-new",
+          conversationId: "codex-thread-route-replay",
+          createdAt: "2026-08-04T19:20:00.000Z",
+          updatedAt: "2026-08-04T19:33:00.000Z",
+        },
+      ],
+      turns: [
+        {
+          id: "route-replay-user",
+          role: "user",
+          text: "Replay this when I'm back online.",
+          createdAt: "2026-08-04T17:15:00.000Z",
+          parentId: null,
+        },
+      ],
+      activeLeafId: "route-replay-user",
+    });
+
+    await saveConversation({
       sessionId: "route-multi-root",
       familiarId: "charm",
       harness: "claude",
@@ -362,6 +397,8 @@ try {
       daemonRow("route-valid", "2026-08-04T19:30:00.000Z"),
       daemonRow("route-malformed", "2026-08-04T19:31:00.000Z"),
       daemonRow("route-multi-root", "2026-08-04T19:32:00.000Z"),
+      { ...daemonRow("route-replay-old", "2026-08-04T17:25:00.000Z"), conversation_id: "codex-thread-route-replay" },
+      { ...daemonRow("route-replay-new", "2026-08-04T19:33:00.000Z"), conversation_id: "codex-thread-route-replay" },
     ]);
     await writeHubConfig(daemonBaseUrl);
 
@@ -409,6 +446,26 @@ try {
         reason: null,
       },
       "an explicit active leaf ignores an inactive root sibling's request; its own request-free branch reports none in the merged route response",
+    );
+    assert.equal(
+      healthy.sessions.filter((row) => row.id === "route-replay-primary").length,
+      1,
+      "the canonical replay conversation stays a single sidebar row",
+    );
+    assert.equal(
+      healthyById.get("route-replay-primary")?.daemonSessionId,
+      "route-replay-new",
+      "the list serializes the newest replay daemon id on the canonical conversation row",
+    );
+    assert.equal(
+      healthyById.get("route-replay-old")?.daemonSessionId,
+      "route-replay-old",
+      "older replay history rows keep their own daemon trace ids",
+    );
+    assert.equal(
+      "daemonSessionId" in (healthyById.get("route-malformed") ?? {}),
+      true,
+      "daemon-backed rows may serialize their explicit daemon id consistently",
     );
 
     const activeHandle = registerChatRun(["route-valid"], () => {});

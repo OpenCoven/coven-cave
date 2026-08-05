@@ -777,7 +777,7 @@ describe("session tracking + tracing (recent sessions, pulse drill, trace overla
       /href=\{`\/#chat-\$\{encodeURIComponent\(session\.id\)\}`\}/,
       "each row opens its thread via the chat hash deep link",
     );
-    assert.match(source, /onTrace\(\{ id: session\.id, title: session\.title \}\)/, "each row can open the trace overlay");
+    assert.match(source, /onTrace\(traceTargetForSession\(session\)\)/, "each row can open the trace overlay with its daemon trace id");
     assert.match(source, /<SessionTraceOverlay target=\{traceTarget\}/, "the overlay is rendered from page state");
     assert.match(source, /className="fa-pager"/, "history is walked with a pager rather than silently truncated");
     assert.match(source, /aria-label="Next page of sessions"/, "the pager exposes an accessible next-page control");

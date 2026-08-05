@@ -438,8 +438,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onClick=\{\(\) => setTraceTarget\(\{ id: s\.id, title: s\.title \}\)\}/,
-  "each session row can open its trace",
+  /onClick=\{\(\) => setTraceTarget\(traceTargetForSession\(s\)\)\}/,
+  "each session row can open its trace with the daemon trace id preserved",
 );
 assert.match(
   source,

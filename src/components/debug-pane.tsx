@@ -283,6 +283,7 @@ const EventRow = memo(function EventRow({ event, dtPrefs }: { event: CovenEvent;
 
 function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: DebugPaneProps }) {
   const { sessionId, session, familiar, turns, streamHealth } = snapshot;
+  const eventsSessionId = session?.daemonSessionId?.trim() || sessionId || "";
   const streamStatusRunId = streamHealth.runId?.trim() ?? "";
   const streamStatusSessionId = sessionId?.trim() ?? "";
   const streamStatusKey = streamStatusRunId || streamStatusSessionId;
@@ -400,13 +401,13 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
   // runaway guard; the in-flight ref keeps interval ticks and Retry clicks
   // from interleaving cursor updates.
   const fetchEvents = useCallback(async () => {
-    if (!sessionId || fetchInFlightRef.current) return;
+    if (!eventsSessionId || fetchInFlightRef.current) return;
     fetchInFlightRef.current = true;
     try {
       let lastPageFull = false;
       for (let page = 0; page < 50; page++) {
         const res = await fetch(
-          `/api/sessions/${encodeURIComponent(sessionId)}/events?afterSeq=${cursorRef.current}&limit=200`,
+          `/api/sessions/${encodeURIComponent(eventsSessionId)}/events?afterSeq=${cursorRef.current}&limit=200`,
           { cache: "no-store" },
         );
         const json = (await res.json()) as { ok?: boolean; events?: CovenEvent[]; error?: string };
@@ -424,7 +425,7 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
     } finally {
       fetchInFlightRef.current = false;
     }
-  }, [sessionId]);
+  }, [eventsSessionId]);
 
   const fetchStreamStatus = useCallback(async () => {
     const requestUrl = streamStatusUrl;
@@ -606,6 +607,14 @@ function DebugPaneInner({ paneKey, snapshot }: { paneKey: string; snapshot: Debu
               <CopyButton getText={() => session?.id ?? sessionId ?? ""} />
             </span>
           </KVRow>
+          {session?.daemonSessionId && session.daemonSessionId !== (session?.id ?? sessionId) ? (
+            <KVRow k="daemon id" title={session.daemonSessionId}>
+              <span className="inline-flex max-w-full items-center gap-1">
+                <span className="min-w-0 truncate">{session.daemonSessionId}</span>
+                <CopyButton getText={() => session.daemonSessionId ?? ""} />
+              </span>
+            </KVRow>
+          ) : null}
           <KVRow k="status">
             <span className="inline-flex items-center gap-1.5">
               <span
@@ -836,6 +845,9 @@ export function DebugPane(snapshot: DebugPaneProps) {
     );
   }
   // New chats key by run until promotion; established chats remain session-keyed.
-  const paneKey = snapshot.sessionId ?? `run:${snapshot.streamHealth.runId!.trim()}`;
+  const paneKey =
+    snapshot.session?.daemonSessionId?.trim()
+    || snapshot.sessionId
+    || `run:${snapshot.streamHealth.runId!.trim()}`;
   return <DebugPaneInner key={paneKey} paneKey={paneKey} snapshot={snapshot} />;
 }

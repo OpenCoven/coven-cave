@@ -624,7 +624,7 @@ const RecentSessionsBody = memo(function RecentSessionsBody({
                   className="fa-trace-btn focus-ring"
                   title="Trace this session's daemon events"
                   aria-label={`Trace ${session.title || session.id}`}
-                  onClick={() => onTrace({ id: session.id, title: session.title })}
+                  onClick={() => onTrace(traceTargetForSession(session))}
                 >
                   <Icon name="ph:tree-structure" width={12} aria-hidden />
                 </button>
@@ -719,7 +719,7 @@ const SessionLog = memo(function SessionLog({
                   className="fa-trace-btn fa-trace-btn--sm focus-ring"
                   title="Trace this session"
                   aria-label={`Trace ${session.title || session.id}`}
-                  onClick={() => onTrace({ id: session.id, title: session.title })}
+                  onClick={() => onTrace(traceTargetForSession(session))}
                 >
                   <Icon name="ph:tree-structure" width={10} aria-hidden />
                 </button>
@@ -2146,4 +2146,7 @@ export function FamiliarAnalyticsContent({
       ) : null}
     </div>
   );
+}
+function traceTargetForSession(session: { id: string; daemonSessionId?: string | null; title?: string | null }): TraceTarget {
+  return { id: session.id, daemonId: session.daemonSessionId ?? session.id, title: session.title };
 }

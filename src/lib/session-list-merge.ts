@@ -301,6 +301,7 @@ export function mergeSessionRows({
               });
         const row: SessionRow = {
           ...recovered,
+          daemonSessionId: session.id,
           status: session.status,
           exit_code: session.exit_code,
           archived_at,
@@ -346,6 +347,7 @@ export function mergeSessionRows({
           });
     const row: SessionRow = {
       ...session,
+      daemonSessionId: session.id,
       ...(local && local.sessionId !== session.id ? { id: local.sessionId } : {}),
       ...(localUpdatedAt ? { updated_at: localUpdatedAt } : {}),
       // Cave conversations record the concrete runtime selected for the chat
@@ -404,6 +406,7 @@ export function mergeSessionRows({
       const row: SessionRow = {
         ...parentRow,
         id: replay.sessionId,
+        daemonSessionId: daemon.id,
         project_root: daemon.project_root,
         harness: daemon.harness,
         title,

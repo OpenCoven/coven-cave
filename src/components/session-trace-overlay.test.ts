@@ -12,8 +12,13 @@ describe("SessionTraceOverlay", () => {
   it("is the UI consumer of the session events route", () => {
     assert.match(
       source,
-      /\/api\/sessions\/\$\{encodeURIComponent\(target\.id\)\}\/events\?afterSeq=/,
-      "overlay fetches the daemon event stream for one session",
+      /const traceSessionId = target\.daemonId\?\.trim\(\) \|\| target\.id;/,
+      "overlay derives an explicit daemon trace id when the row keeps chat and daemon ids separate",
+    );
+    assert.match(
+      source,
+      /\/api\/sessions\/\$\{encodeURIComponent\(traceSessionId\)\}\/events\?afterSeq=/,
+      "overlay fetches the daemon event stream with the resolved daemon trace id",
     );
     assert.match(source, /TRACE_PAGE_SIZE/, "page size rides the shared session-trace constant");
   });

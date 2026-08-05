@@ -1329,6 +1329,11 @@ assert.equal(
   "run-offline-1",
   "replayed daemon sessions preserve the original send operation id on the original conversation row",
 );
+assert.equal(
+  harnessMatchedReplay[0]?.daemonSessionId,
+  "hub-session-offline-1",
+  "the canonical Cave conversation keeps the newest daemon trace session id separate from its stable chat id",
+);
 
 {
   const replayHistoryRows = mergeSessionRows({
@@ -1390,9 +1395,19 @@ assert.equal(
     replayHistoryRows.some((row) => row.id === "offline-chat-2"),
     "the stable Cave conversation remains the primary row",
   );
+  assert.equal(
+    replayHistoryRows.find((row) => row.id === "offline-chat-2")?.daemonSessionId,
+    "hub-session-offline-2",
+    "the newest replay daemon row rides the canonical conversation as an explicit daemon trace id",
+  );
   const linkedReplayRow = replayHistoryRows.find((row) => row.id === "hub-session-offline-1");
   assert.equal(linkedReplayRow?.hasLocalConversation, true);
   assert.match(String(linkedReplayRow?.title), /Replay 1/);
+  assert.equal(
+    linkedReplayRow?.daemonSessionId,
+    "hub-session-offline-1",
+    "historical replay rows keep their own daemon ids so older traces remain reachable",
+  );
   assert.equal(
     filterVisibleChatSessions(replayHistoryRows, null).some((row) => row.id === "hub-session-offline-1"),
     true,

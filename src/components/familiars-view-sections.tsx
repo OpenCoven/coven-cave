@@ -654,7 +654,7 @@ export function FamiliarDetailPanel({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setTraceTarget({ id: s.id, title: s.title })}
+                      onClick={() => setTraceTarget(traceTargetForSession(s))}
                       className="focus-ring-inset flex shrink-0 items-center gap-1 border-l border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                       title="Trace this session's daemon events"
                       aria-label={`Trace ${s.title || s.id}`}
@@ -714,4 +714,7 @@ export function FamiliarAvatarPreviewOverlay({ familiar, onClose }: FamiliarAvat
       </div>
     </Modal>
   );
+}
+function traceTargetForSession(session: { id: string; daemonSessionId?: string | null; title?: string | null }): TraceTarget {
+  return { id: session.id, daemonId: session.daemonSessionId ?? session.id, title: session.title };
 }

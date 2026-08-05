@@ -12,6 +12,16 @@ const primitivesCss = await readFile(
 
 assert.match(
   source,
+  /const eventsSessionId = session\?\.daemonSessionId\?\.trim\(\) \|\| sessionId \|\| "";/,
+  "DebugPane resolves daemon-backed event fetches through an explicit daemon session id while keeping the stable chat id",
+);
+assert.match(
+  source,
+  /\/api\/sessions\/\$\{encodeURIComponent\(eventsSessionId\)\}\/events\?afterSeq=/,
+  "Debug event polling uses the daemon trace session id instead of the canonical chat id",
+);
+assert.match(
+  source,
   /formatEventPayload\(event\.payload_json\)/,
   "Debug event rows should render through the human-readable payload formatter",
 );
@@ -282,8 +292,8 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!snapshot\.sessionId && !snapshot\.streamHealth\.runId\?\.trim\(\)\)[\s\S]*?const paneKey = snapshot\.sessionId \?\? `run:\$\{snapshot\.streamHealth\.runId!\.trim\(\)\}`;[\s\S]*?<DebugPaneInner key=\{paneKey\} paneKey=\{paneKey\}/,
-  "A new-chat pane must render once its run ID exists and remount when promoted to a session",
+  /if \(!snapshot\.sessionId && !snapshot\.streamHealth\.runId\?\.trim\(\)\)[\s\S]*?const paneKey =[\s\S]*?snapshot\.session\?\.daemonSessionId\?\.trim\(\)[\s\S]*?\|\| snapshot\.sessionId[\s\S]*?\|\| `run:\$\{snapshot\.streamHealth\.runId!\.trim\(\)\}`;[\s\S]*?<DebugPaneInner key=\{paneKey\} paneKey=\{paneKey\}/,
+  "A new-chat pane must render once its run ID exists and remount when the daemon trace id or stable session id changes",
 );
 assert.match(
   source,
