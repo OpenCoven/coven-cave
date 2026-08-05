@@ -2491,6 +2491,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // view. Set to a run's id at the start of each sessionless send; cleared on
   // thread switch and on adoption. See ownsDisplayedView for the guard semantics.
   const displayedCreationRunIdRef = useRef<string | null>(null);
+  useEffect(() => () => {
+    displayedCreationRunIdRef.current = null;
+  }, []);
   const onSessionsChangedRef = useRef(onSessionsChanged);
   onSessionsChangedRef.current = onSessionsChanged;
   const streamHealthSessionRef = useRef(sessionId);

@@ -741,6 +741,11 @@ assert.match(
   /const displayedCreationRunIdRef = useRef<string \| null>\(null\)/,
   "displayedCreationRunIdRef is declared to track the sessionless run owning the displayed compose view",
 );
+assert.match(
+  source,
+  /useEffect\(\(\) => \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;\s*\n\s*\}, \[\]\);/,
+  "unmount releases the displayed compose slot so a late event from the stale ChatView cannot promote into a remounted compose",
+);
 // Set to runId at the start of each sessionless send.
 assert.match(
   source,
