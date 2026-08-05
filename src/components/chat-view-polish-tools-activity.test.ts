@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  activityCss,
   attachmentsLib,
   attachStagingHook,
   emptyStateSource,
@@ -311,8 +312,17 @@ assert.match(
   ".cave-tool-run__list must use tight gap: var(--space-1) (4px) between tool blocks",
 );
 
+// Scope to activity.css directly and extract each @media (prefers-reduced-motion: reduce)
+// block using a one-level brace-bounded regex — prevents crossing into later rules or
+// into rules from other concatenated stylesheets.
+const reducedMotionBlockRe =
+  /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
+const reducedMotionBlocks = Array.from(
+  activityCss.matchAll(reducedMotionBlockRe),
+  (m) => m[0],
+).join("\n");
 assert.match(
-  styles,
-  /prefers-reduced-motion[\s\S]*?\.cave-tool-summary::before[\s\S]*?transition:\s*none/,
+  reducedMotionBlocks,
+  /\.cave-tool-summary::before\s*\{[^}]*transition:\s*none/,
   "reduced-motion must disable the .cave-tool-summary::before chevron transition",
 );
