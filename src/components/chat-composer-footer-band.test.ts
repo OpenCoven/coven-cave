@@ -344,13 +344,18 @@ assert.match(
   "shared context controls should remain one horizontally scrollable line",
 );
 assert.match(
+  css,
+  /\.cave-context-controls \{[^}]*padding-block: calc\(var\(--ring-offset\) \+ var\(--ring-width\)\);/,
+  "context controls need padding-block so overflow-y clip preserves the full focus-ring outline",
+);
+assert.match(
   activityCss,
   /\.cave-chat-header-context \{[\s\S]*?min-width: 0;[\s\S]*?overflow: hidden;/,
   "the active header should contain context overflow without widening the pane",
 );
 assert.match(
   transcriptCss,
-  /@media \(max-width: 767px\)[\s\S]*?\.cave-chat-header-context[\s\S]*?\.cave-context-chip \{[\s\S]*?min-height: var\(--touch-target\);/,
+  /@media \(max-width: 767px\)[\s\S]*?\.cave-chat-header-context[\s\S]*?\.cave-context-chip \{[^}]*min-height: var\(--touch-target\);/,
   "mobile header context controls should retain touch targets",
 );
 

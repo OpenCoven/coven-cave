@@ -1091,6 +1091,7 @@
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  padding-block: calc(var(--ring-offset) + var(--ring-width));
   white-space: nowrap;
   scrollbar-width: thin;
   overscroll-behavior-inline: contain;
