@@ -117,12 +117,30 @@ type PatchOperation = {
   moveTo: string | null;
 };
 
-function patchOperations(patch: string | null): PatchOperation[] {
-  if (!patch) return [];
+type ParsedPatchOperations = {
+  complete: boolean;
+  operations: PatchOperation[];
+};
+
+function parsePatchOperations(patch: string | null): ParsedPatchOperations {
+  if (!patch) return { complete: false, operations: [] };
+  const lines = patch.split(/\r?\n/);
+  const firstContent = lines.findIndex((line) => line !== "");
+  const lastContent = lines.findLastIndex((line) => line !== "");
+  if (
+    firstContent < 0 ||
+    lines[firstContent] !== "*** Begin Patch" ||
+    lines[lastContent] !== "*** End Patch"
+  ) {
+    return { complete: false, operations: [] };
+  }
+
   const operations: PatchOperation[] = [];
   let current: PatchOperation | null = null;
-  for (const line of patch.split(/\r?\n/)) {
-    const marker = line.trim().match(/^\*\*\* (Add|Update|Delete) File: (.+)$/);
+  let moveAllowed = false;
+  let invalid = false;
+  for (const line of lines.slice(firstContent + 1, lastContent)) {
+    const marker = line.match(/^\*\*\* (Add|Update|Delete) File: (.+)$/);
     const path = validPath(marker?.[2]);
     if (marker && path) {
       current = {
@@ -131,13 +149,29 @@ function patchOperations(patch: string | null): PatchOperation[] {
         moveTo: null,
       };
       operations.push(current);
+      moveAllowed = current.kind === "Update";
       continue;
     }
-    const move = line.trim().match(/^\*\*\* Move to: (.+)$/);
+    if (/^\*\*\* (?:Add|Update|Delete) File:/.test(line)) invalid = true;
+
+    const move = line.match(/^\*\*\* Move to: (.+)$/);
     const moveTo = validPath(move?.[1]);
-    if (moveTo && current?.kind === "Update") current.moveTo = moveTo;
+    if (move) {
+      if (!moveTo || !moveAllowed || current?.kind !== "Update" || current.moveTo) {
+        invalid = true;
+      } else {
+        current.moveTo = moveTo;
+      }
+      moveAllowed = false;
+      continue;
+    }
+    if (/^\*\*\* Move to:/.test(line)) invalid = true;
+    moveAllowed = false;
   }
-  return operations;
+  return {
+    complete: !invalid && operations.length > 0,
+    operations: invalid ? [] : operations,
+  };
 }
 
 function patchPaths(operations: PatchOperation[]): string[] {
@@ -229,17 +263,18 @@ export function normalizeFileMutation(
     : PATCH_TOOLS.has(normalizedName) && raw && !raw.startsWith("{")
       ? raw
       : null;
-  const operations = patchOperations(patch);
+  const parsedPatch = parsePatchOperations(patch);
+  const operations = parsedPatch.complete ? parsedPatch.operations : [];
   const operationPaths = patchPaths(operations);
   const recordPaths = record ? filePathsOf(record) : [];
   const primaryPath =
     operations[0]?.moveTo ??
     operations[0]?.path ??
-    recordPaths[0] ??
+    (patch ? null : recordPaths[0]) ??
     null;
   const paths = uniquePaths([
     primaryPath,
-    ...(operationPaths.length ? operationPaths : recordPaths),
+    ...(patch ? operationPaths : recordPaths),
   ]);
   const diff = record
     ? mutationDiff(record, primaryPath ?? "file", normalizedName)

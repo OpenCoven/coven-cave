@@ -453,6 +453,51 @@ test("aggregate mutation targets include every contained path exactly once", () 
   );
 });
 
+test("apply_patch path extraction ignores hunk text and fails closed on incomplete envelopes", () => {
+  const patchWithMarkerText = [
+    "*** Begin Patch",
+    "*** Update File: src/actual.ts",
+    "@@",
+    " *** Add File: src/not-an-operation.ts",
+    "-before",
+    "+after",
+    "*** End Patch",
+  ].join("\n");
+  assert.deepEqual(
+    mutationTools.normalizeFileMutation("apply_patch", patchWithMarkerText)?.paths,
+    ["src/actual.ts"],
+    "a context line that looks like a patch header is still ordinary hunk text",
+  );
+
+  const incompletePatch = [
+    "*** Begin Patch",
+    "*** Update File: src/known.ts",
+    "@@",
+    "-before",
+    "+after",
+  ].join("\n");
+  assert.deepEqual(
+    mutationTools.actionReadyMutationTargetFiles("apply_patch", incompletePatch, "ok", "/repo"),
+    [],
+    "a truncated aggregate cannot expose a partial set of review targets",
+  );
+
+  const orphanedMove = [
+    "*** Begin Patch",
+    "*** Move to: ../outside.ts",
+    "*** Update File: src/known.ts",
+    "@@",
+    "-before",
+    "+after",
+    "*** End Patch",
+  ].join("\n");
+  assert.deepEqual(
+    mutationTools.actionReadyMutationTargetFiles("apply_patch", orphanedMove, "ok", "/repo"),
+    [],
+    "an unbound move marker makes the complete aggregate unsafe",
+  );
+});
+
 test("no-op edit pairs do not produce normalized changes", () => {
   const topLevelNoOp = JSON.stringify({
     path: "/repo/src/top-level.ts",
