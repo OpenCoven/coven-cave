@@ -46,6 +46,18 @@ export type TravelOfflineReplayResult = {
 type DaemonSessionResponse = { id?: string; status?: string };
 type WorkflowEngineResponse = { ok?: boolean; runId?: string; status?: string; error?: string };
 
+type HubSessionLaunchArgs = {
+  harness: string;
+  prompt: string;
+  model?: string | null;
+  modelOverrideScope?: "runtime-default";
+  reasoningEffort?: string | null;
+  responseSpeed?: string | null;
+  modelControls?: Record<string, unknown>;
+  projectRoot: string;
+  familiarId?: string | null;
+};
+
 function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
   const hasModelOverride = Object.prototype.hasOwnProperty.call(payload, "modelOverride");
   const metadata = record(payload.responseMetadata);
@@ -119,6 +131,28 @@ function daemonError(res: { status: number; error?: string; data: unknown }): st
     `daemon http ${res.status}`;
 }
 
+export function buildHubSessionLaunchBody(args: HubSessionLaunchArgs): Record<string, unknown> {
+  const harness = canonicalHarnessId(args.harness);
+  // Source contract (verified against the daemon's POST /api/v1/sessions):
+  // request fields are camelCase `projectRoot` / `harness` / `prompt`, and
+  // replayed chat/workflow launches must opt into `launchMode:
+  // "nonInteractive"` so the daemon emits plain session output instead of an
+  // interactive harness TUI. Keep the prompt as one JSON string field — never
+  // split or shell-encode it.
+  return {
+    projectRoot: args.projectRoot,
+    harness,
+    prompt: args.prompt,
+    launchMode: "nonInteractive",
+    ...(args.model ? { model: args.model } : {}),
+    ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
+    ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
+    ...(args.responseSpeed ? { responseSpeed: args.responseSpeed } : {}),
+    ...(Object.keys(args.modelControls ?? {}).length ? { modelControls: args.modelControls } : {}),
+    ...(args.familiarId ? { familiarId: args.familiarId } : {}),
+  };
+}
+
 async function spawnHubSession(args: {
   config: CaveConfig;
   familiarId: string | null;
@@ -142,17 +176,17 @@ async function spawnHubSession(args: {
   const res = await callDaemon<DaemonSessionResponse>({
     method: "POST",
     path: "/api/v1/sessions",
-    body: {
+    body: buildHubSessionLaunchBody({
       projectRoot,
       harness,
       prompt: args.prompt,
-      ...(args.model ? { model: args.model } : {}),
-      ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
-      ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
-      ...(args.responseSpeed ? { responseSpeed: args.responseSpeed } : {}),
-      ...(Object.keys(args.modelControls ?? {}).length ? { modelControls: args.modelControls } : {}),
-      ...(args.familiarId ? { familiarId: args.familiarId } : {}),
-    },
+      model: args.model,
+      modelOverrideScope: args.modelOverrideScope,
+      reasoningEffort: args.reasoningEffort,
+      responseSpeed: args.responseSpeed,
+      modelControls: args.modelControls,
+      familiarId: args.familiarId,
+    }),
     timeoutMs: 8000,
   });
 

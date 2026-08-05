@@ -64,22 +64,72 @@ const responseFor = (frames) => new Response(
 
 try {
   let sentBody = null;
+  let streamed: string[] = [];
   globalThis.fetch = async (_url, init) => {
-    sentBody = JSON.parse(init.body);
-    return responseFor([
-      { kind: "session", sessionId: "canvas-session" },
-      { kind: "assistant_chunk", text: "```html\n<!doctype html><html></html>\n```" },
-      { kind: "done", sessionId: "canvas-session" },
-    ]);
+   sentBody = JSON.parse(init.body);
+   return responseFor([
+     { kind: "session", sessionId: "canvas-session" },
+     { kind: "assistant_chunk", text: "```html\n<!doctype html><html></html>\n```" },
+     { kind: "done", sessionId: "canvas-session" },
+   ]);
   };
-  const valid = await generateArtifactCode({ familiarId: "nova", prompt: "build" });
+  const valid = await generateArtifactCode({
+   familiarId: "nova",
+   prompt: "build",
+   onText: (value) => streamed.push(value),
+  });
   assert.equal(valid.failure, null);
   assert.equal(valid.kind, "html");
   assert.equal(valid.sessionId, "canvas-session");
   assert.equal(sentBody.origin, "canvas");
+  assert.deepEqual(streamed, ["```html\n<!doctype html><html></html>\n```"]);
+
+  streamed = [];
+  globalThis.fetch = async () => responseFor([
+   { kind: "assistant_chunk", text: "Choose layout.\n<cov" },
+   { kind: "assistant_chunk", text: "en:atten" },
+   { kind: "assistant_chunk", text: 'tion reason="approval" />\n```html\n<div>ok</div>\n```' },
+   { kind: "done", sessionId: "canvas-attention" },
+  ]);
+  const hiddenMarker = await generateArtifactCode({
+   familiarId: "nova",
+   prompt: "build",
+   onText: (value) => streamed.push(value),
+  });
+  assert.equal(hiddenMarker.failure, null);
+  assert.equal(hiddenMarker.kind, "html");
+  assert.equal(hiddenMarker.code, "<div>ok</div>");
+  assert.equal(hiddenMarker.text, "Choose layout.\n\n```html\n<div>ok</div>\n```");
+  for (const value of streamed) {
+   assert.doesNotMatch(value, /<cov/, "canvas streaming text never exposes partial attention marker prefixes");
+  }
+
+  globalThis.fetch = async () => responseFor([
+   { kind: "assistant_chunk", text: '```html\n<div data-tip="<coven:attention reason="decision" />"></div>\n```' },
+   { kind: "done", sessionId: "canvas-literal" },
+  ]);
+  const fencedLiteral = await generateArtifactCode({ familiarId: "nova", prompt: "build" });
+  assert.equal(fencedLiteral.failure, null);
+  assert.equal(
+   fencedLiteral.code,
+   '<div data-tip="<coven:attention reason="decision" />"></div>',
+   "canvas keeps fenced literal marker text inside code blocks",
+  );
+
+  globalThis.fetch = async () => responseFor([
+   { kind: "assistant_chunk", text: 'Need repair.\n<coven:attention reason="decision">\n```html\n<div>fixed</div>\n```' },
+   { kind: "done", sessionId: "canvas-malformed" },
+  ]);
+  const malformedAttention = await generateArtifactCode({ familiarId: "nova", prompt: "build" });
+  assert.equal(malformedAttention.failure, null);
+  assert.equal(
+   malformedAttention.text,
+   "Need repair.\n\n```html\n<div>fixed</div>\n```",
+   "canvas strips malformed complete attention markup before storing transcript text",
+  );
 
   globalThis.fetch = async (_url, init) => {
-    sentBody = JSON.parse(init.body);
+   sentBody = JSON.parse(init.body);
     return responseFor([
       { kind: "assistant_chunk", text: "Here is some prose without a complete preview." },
       { kind: "done" },

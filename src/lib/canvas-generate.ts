@@ -4,6 +4,7 @@
 // The SSE frame parser is exported pure so it can be unit-tested.
 
 import { extractArtifact, type ArtifactKind } from "@/lib/canvas-artifacts";
+import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 
 export type SketchStreamEvent = {
@@ -110,6 +111,7 @@ export async function generateArtifactCode(opts: {
   let text = "";
   let sessionId: string | null = opts.sessionId ?? null;
   let error: string | null = null;
+  const visibleText = (pending: boolean) => extractChatAttentionMarker(text, { pending }).visible;
 
   // A mid-stream network drop (or an abort) makes reader.read() REJECT — an
   // unguarded loop turned that into a rejected promise that wedged callers'
@@ -129,11 +131,11 @@ export async function generateArtifactCode(opts: {
         switch (ev.kind) {
           case "assistant_chunk":
             text += ev.text ?? "";
-            opts.onText?.(text);
+            opts.onText?.(visibleText(true));
             break;
           case "assistant_replace":
             text = ev.text ?? "";
-            opts.onText?.(text);
+            opts.onText?.(visibleText(true));
             break;
           case "session":
             sessionId = ev.sessionId ?? sessionId;
@@ -154,12 +156,13 @@ export async function generateArtifactCode(opts: {
       : (err as Error)?.message ?? "the connection dropped mid-generation";
   }
 
-  const extracted = extractArtifact(text);
+  const visible = visibleText(false);
+  const extracted = extractArtifact(visible);
   const failure = error ? "transport" : extracted ? null : "format";
   return {
     code: extracted?.code ?? null,
     kind: extracted?.kind ?? null,
-    text,
+    text: visible,
     sessionId,
     error: error ?? (failure === "format" ? "response format could not be previewed" : null),
     failure,

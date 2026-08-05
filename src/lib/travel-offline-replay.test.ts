@@ -112,6 +112,35 @@ assert.match(
 
 assert.match(
   replay,
+  /export function buildHubSessionLaunchBody\(args: HubSessionLaunchArgs\): Record<string, unknown> \{[\s\S]*projectRoot: args\.projectRoot,[\s\S]*prompt: args\.prompt,[\s\S]*launchMode: "nonInteractive"/,
+  "travel replay keeps the daemon session-create contract on camelCase projectRoot/harness/prompt and forces nonInteractive replay launch mode",
+);
+
+const { buildHubSessionLaunchBody } = await import("./travel-offline-replay.ts");
+for (const [inputHarness, expectedHarness] of [
+  ["codex", "codex"],
+  ["claude-code", "claude"],
+  ["github-copilot", "copilot"],
+  ["opencode-ai", "opencode"],
+] as const) {
+  assert.deepEqual(
+    buildHubSessionLaunchBody({
+      projectRoot: "/repo",
+      harness: inputHarness,
+      prompt: 'Review the "shared prompt" safely.\nKeep it one field.',
+    }),
+    {
+      projectRoot: "/repo",
+      harness: expectedHarness,
+      prompt: 'Review the "shared prompt" safely.\nKeep it one field.',
+      launchMode: "nonInteractive",
+    },
+    `${inputHarness} replay launches as one JSON prompt field with nonInteractive daemon mode`,
+  );
+}
+
+assert.match(
+  replay,
   /export function daemonReplayControlFamilies\([\s\S]*?if \(stringValue\(payload\.reasoningEffort\)\)[\s\S]*?if \(stringValue\(payload\.responseSpeed\)\)/,
   "travel replay identifies legacy and typed control intent before it reaches the daemon",
 );
