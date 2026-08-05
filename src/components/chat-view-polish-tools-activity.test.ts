@@ -334,18 +334,37 @@ assert.match(
   "only the category phrase truncates when the work line is narrow",
 );
 
-// Base standalone framing: ToolRunGroup outside .cave-work-line keeps card framing.
+// ToolRuns (chat-view.tsx) has exactly one call site, and it always renders
+// inside the .cave-work-line compact disclosure — ToolRunGroup's
+// .cave-tool-run class never reaches the page unnested. A standalone card
+// rule "for use outside .cave-work-line" is therefore dead weight: the flat,
+// borderless framing is the only framing a repeated run ever actually shows,
+// so it lives directly on .cave-tool-run with no .cave-work-line scoping
+// needed to override a card rule that never renders.
+assert.doesNotMatch(
+  styles,
+  /\.cave-work-line\s+\.cave-tool-run\s*\{/,
+  "no scoped override remains once .cave-tool-run carries its only live framing directly",
+);
 assert.match(
   styles,
-  /\.cave-tool-run\s*\{[^}]*border:\s*1px solid[^}]*background:/,
-  "base .cave-tool-run must retain standalone card framing (border and background) for use outside .cave-work-line",
+  /\.cave-tool-run\s*\{[^}]*border:\s*0[^}]*border-radius:\s*0[^}]*background:\s*transparent[^}]*padding:\s*var\(--space-1\)\s*0/,
+  ".cave-tool-run must keep the flat, borderless framing a repeated run actually renders with",
+);
+// The card-framing values that .cave-work-line .cave-tool-run used to
+// override (a bordered/backgrounded box) must not resurface as a competing
+// bare .cave-tool-run rule.
+assert.doesNotMatch(
+  activityCss,
+  /\.cave-tool-run\s*\{[^}]*border:\s*1px solid/,
+  "a bordered standalone .cave-tool-run card rule must not come back — ToolRunGroup never renders outside .cave-work-line",
 );
 
-// Scoped flat override: only flatten when nested inside the work-line disclosure
+// The one-off summary hide rule this cleanup must not disturb.
 assert.match(
-  styles,
-  /\.cave-work-line\s+\.cave-tool-run\s*\{[^}]*border:\s*0[^}]*background:\s*transparent/,
-  ".cave-work-line .cave-tool-run must remove nested framing (border: 0, background: transparent) inside the work-line",
+  activityCss,
+  /details\[data-one-off\]\s*>\s*\.cave-tool-summary\s*\{[^}]*display\s*:\s*none/,
+  "the scoped one-off summary hide rule must survive the framing cleanup untouched",
 );
 
 assert.match(

@@ -326,16 +326,11 @@ details[open] > .cave-tool-summary::before {
   border-left: 2px solid color-mix(in oklch, var(--tool-accent) 70%, transparent);
 }
 
+/* ToolRuns (chat-view.tsx) has exactly one call site, and it always nests
+   ToolRunGroup inside the compact .cave-work-line disclosure — .cave-tool-run
+   never renders standalone. So there is no card framing to flatten; this is
+   the only framing a repeated run ever shows. */
 .cave-tool-run {
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: var(--bg-subtle);
-  padding: var(--space-2);
-}
-
-/* Flatten run-group framing when nested inside the compact work-line disclosure.
-   Standalone .cave-tool-run outside .cave-work-line keeps the card framing above. */
-.cave-work-line .cave-tool-run {
   border: 0;
   border-radius: 0;
   background: transparent;

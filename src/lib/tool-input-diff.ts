@@ -12,6 +12,8 @@
 // already minimal context by construction (the harness requires a unique
 // match), so a full-block -/+ diff is faithful.
 
+import { resolvePathWithinProjectRoot } from "./cave-projects-types.ts";
+
 /** Tool names whose input mutates a file (case-insensitive exact match). */
 const MUTATION_TOOLS = new Set([
   "edit",
@@ -92,16 +94,32 @@ function editPair(record: Rec): EditPair | null {
   return oldText !== undefined && newText !== undefined ? { oldText, newText } : null;
 }
 
+function patchTextOf(toolName: string, record: Rec): string | null {
+  if (!PATCH_TOOLS.has(toolName)) return null;
+  return str(record.input) ?? str(record.patch) ?? str(record.diff) ?? null;
+}
+
+function patchPathOf(patch: string | null): string | null {
+  if (!patch) return null;
+  for (const line of patch.split(/\r?\n/)) {
+    const marker = line.trim().match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/);
+    const path = validPath(marker?.[1]);
+    if (path) return path;
+  }
+  return null;
+}
+
 function capLines(lines: string[]): string {
   if (lines.length <= MAX_DIFF_LINES) return lines.join("\n");
   const hidden = lines.length - MAX_DIFF_LINES;
   return [...lines.slice(0, MAX_DIFF_LINES), `… (${hidden} more lines truncated)`].join("\n");
 }
 
-function mutationDiff(record: Rec, file: string): string | null {
+function mutationDiff(record: Rec, file: string, toolName: string): string | null {
   // Edit-like: { old_string, new_string } → -old/+new with a/b headers.
   const pair = editPair(record);
   if (pair) {
+    if (pair.oldText === pair.newText) return null;
     return capLines([
       `--- a/${file}`,
       `+++ b/${file}`,
@@ -114,7 +132,7 @@ function mutationDiff(record: Rec, file: string): string | null {
     const edits = record.edits.flatMap((edit) => {
       if (!edit || typeof edit !== "object" || Array.isArray(edit)) return [];
       const normalized = editPair(edit as Rec);
-      return normalized ? [normalized] : [];
+      return normalized && normalized.oldText !== normalized.newText ? [normalized] : [];
     });
     if (!edits.length) return null;
     const lines = [`--- a/${file}`, `+++ b/${file}`];
@@ -131,7 +149,7 @@ function mutationDiff(record: Rec, file: string): string | null {
     return capLines([`+++ b/${file}`, ...prefixLines(content, "+")]);
   }
 
-  const patch = str(record.patch) ?? str(record.diff);
+  const patch = patchTextOf(toolName, record);
   if (patch?.trim()) return capLines(patch.split("\n"));
 
   return null;
@@ -162,10 +180,11 @@ export function normalizeFileMutation(
   const normalizedName = name.trim().toLowerCase();
   if (!MUTATION_TOOLS.has(normalizedName)) return null;
   const record = parseRecord(input);
-  const path = record ? filePathOf(record) : null;
+  const patch = record ? patchTextOf(normalizedName, record) : null;
+  const path = record ? filePathOf(record) ?? patchPathOf(patch) : null;
   const raw = (input ?? "").trim();
   const diff = record
-    ? mutationDiff(record, path ?? "file")
+    ? mutationDiff(record, path ?? "file", normalizedName)
     : PATCH_TOOLS.has(normalizedName) && raw && !raw.startsWith("{")
       ? capLines(raw.split("\n"))
       : null;
@@ -195,11 +214,11 @@ export function actionReadyMutationTargetFile(
   name: string,
   input: string | null | undefined,
   status: "running" | "ok" | "error",
+  projectRoot: string | null | undefined,
 ): string | null {
   const mutation = normalizeFileMutation(name, input);
-  return mutation && isFileMutationActionReady(mutation, status)
-    ? mutation.targetFile
-    : null;
+  if (!mutation || !isFileMutationActionReady(mutation, status)) return null;
+  return resolvePathWithinProjectRoot(projectRoot, mutation.path)?.absolutePath ?? null;
 }
 
 /** Convert a recognized file mutation into unified-diff-style text. */

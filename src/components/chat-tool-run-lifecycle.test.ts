@@ -335,14 +335,29 @@ test("repository adapter mutation payloads normalize through the public helpers"
     "OpenClaw camelCase edit arrays render every real edit pair",
   );
 
-  const claudePatch = JSON.stringify({
-    path: "/repo/src/patch.ts",
-    patch: ["--- a/src/patch.ts", "+++ b/src/patch.ts", "-before", "+after"].join("\n"),
-  });
+  const openClawPatchText = [
+    "*** Begin Patch",
+    "*** Update File: src/patch.ts",
+    "@@",
+    "-before",
+    "+after",
+    "*** End Patch",
+  ].join("\n");
+  const openClawPatch = JSON.stringify({ input: openClawPatchText });
   assert.equal(
-    toolInputAsDiff("apply_patch", claudePatch),
-    JSON.parse(claudePatch).patch,
-    "patch-style mutation payloads preserve their supplied diff",
+    toolInputAsDiff("apply_patch", openClawPatch),
+    openClawPatchText,
+    "OpenClaw's production { input } apply_patch payload preserves its patch text",
+  );
+  assert.equal(
+    toolTargetPath("apply_patch", openClawPatch),
+    "src/patch.ts",
+    "OpenClaw apply_patch derives the changed path from the patch envelope",
+  );
+  assert.equal(
+    toolInputAsDiff("edit", openClawPatch),
+    null,
+    "the apply_patch input field is not treated as a diff for other mutation tools",
   );
 
   for (const name of ["file_change", "edit", "apply_patch"]) {
@@ -353,6 +368,55 @@ test("repository adapter mutation payloads normalize through the public helpers"
     );
     assert.equal(toolInputAsDiff(name, '{"path":'), null);
   }
+});
+
+test("no-op edit pairs do not produce normalized changes", () => {
+  const topLevelNoOp = JSON.stringify({
+    path: "/repo/src/top-level.ts",
+    oldText: "same",
+    newText: "same",
+  });
+  const topLevelMutation = mutationTools.normalizeFileMutation("edit", topLevelNoOp);
+  assert.ok(topLevelMutation);
+  assert.equal(topLevelMutation.diff, null);
+  assert.equal(mutationTools.isFileMutationActionReady(topLevelMutation, "ok"), false);
+
+  const allNoOp = JSON.stringify({
+    path: "/repo/src/all-no-op.ts",
+    edits: [
+      { oldText: "same", newText: "same" },
+      { old_string: "also same", new_string: "also same" },
+    ],
+  });
+  const allNoOpMutation = mutationTools.normalizeFileMutation("edit", allNoOp);
+  assert.ok(allNoOpMutation);
+  assert.equal(allNoOpMutation.diff, null);
+  assert.equal(mutationTools.isFileMutationActionReady(allNoOpMutation, "ok"), false);
+  assert.equal(
+    mutationTools.actionReadyMutationTargetFile("edit", allNoOp, "ok", "/repo"),
+    null,
+    "an all-no-op edit does not count as a changed file",
+  );
+
+  const mixed = JSON.stringify({
+    path: "/repo/src/mixed.ts",
+    edits: [
+      { oldText: "same", newText: "same" },
+      { oldText: "before", newText: "after" },
+      { old_string: "also same", new_string: "also same" },
+    ],
+  });
+  assert.equal(
+    toolInputAsDiff("edit", mixed),
+    [
+      "--- a//repo/src/mixed.ts",
+      "+++ b//repo/src/mixed.ts",
+      "@@ edit 1/1 @@",
+      "-before",
+      "+after",
+    ].join("\n"),
+    "mixed edits include only real changes and renumber their hunks",
+  );
 });
 
 test("aggregate review includes only successful action-ready mutations", () => {
@@ -378,7 +442,7 @@ test("aggregate review includes only successful action-ready mutations", () => {
     status: "error",
   };
   const notReadyFiles = [pathOnlyCodex, failedOpenClaw]
-    .map((tool) => actionReadyMutationTargetFile(tool.name, tool.input, tool.status))
+    .map((tool) => actionReadyMutationTargetFile(tool.name, tool.input, tool.status, "/repo"))
     .filter(Boolean);
   assert.deepEqual(
     notReadyFiles,
@@ -390,32 +454,52 @@ test("aggregate review includes only successful action-ready mutations", () => {
       "Write",
       JSON.stringify({ file_path: "/repo/src/running.ts", content: "still working" }),
       "running",
+      "/repo",
     ),
     null,
     "a running mutation cannot enter aggregate review before it succeeds",
   );
 
-  const readyFiles = [
-    {
-      name: "edit",
-      input: JSON.stringify({
-        path: "/repo/src/openclaw-ready.ts",
+  const readyEdit = (path) =>
+    actionReadyMutationTargetFile(
+      "edit",
+      JSON.stringify({
+        path,
         edits: [{ oldText: "before", newText: "after" }],
       }),
-      status: "ok",
-    },
-    {
-      name: "Write",
-      input: JSON.stringify({ file_path: "/repo/src/claude-ready.ts", content: "ready" }),
-      status: "ok",
-    },
-  ]
-    .map((tool) => actionReadyMutationTargetFile(tool.name, tool.input, tool.status))
-    .filter(Boolean);
-  assert.deepEqual(
-    readyFiles,
-    ["/repo/src/openclaw-ready.ts", "/repo/src/claude-ready.ts"],
-    "successful supported mutation shapes participate in aggregate review",
+      "ok",
+      "/repo",
+    );
+  assert.equal(readyEdit("/repo/src/in-project.ts"), "/repo/src/in-project.ts");
+  assert.equal(
+    readyEdit("/repo-other/src/prefix-collision.ts"),
+    null,
+    "a path sharing only the project-root string prefix stays external",
+  );
+  assert.equal(
+    readyEdit("src/relative.ts"),
+    "/repo/src/relative.ts",
+    "a relative mutation path resolves inside the active project",
+  );
+  assert.equal(
+    readyEdit("/Users/person/.coven/workspaces/familiars/nova/memory.md"),
+    null,
+    "an external absolute familiar path cannot join aggregate review",
+  );
+  assert.equal(
+    actionReadyMutationTargetFile(
+      "Write",
+      JSON.stringify({ file_path: "/repo/src/claude-ready.ts", content: "ready" }),
+      "ok",
+      "/repo",
+    ),
+    "/repo/src/claude-ready.ts",
+    "successful supported mutation shapes inside the active project participate in aggregate review",
+  );
+  assert.equal(
+    readyEdit("src/../../outside.ts"),
+    null,
+    "relative traversal cannot escape the project boundary",
   );
 });
 

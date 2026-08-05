@@ -144,6 +144,11 @@ test("TurnRow gives tools stable activity and edit-card slots instead of streami
     /<ChatToolActivityLayout[\s\S]*activity=\{otherTools\.length \? <ToolGroup tools=\{otherTools\} \/> : null\}[\s\S]*content=\{[\s\S]*indicatorVisible[\s\S]*<ThinkingIndicator[\s\S]*<MessageBubble[\s\S]*editCards=\{\s*editCards\.length/,
     "the no-text indicator/answer swap happens between stable activity and edit-card slots",
   );
+  assert.match(
+    turnRender,
+    /const toolProjectRoot = useContext\(ToolProjectRootContext\)[\s\S]*actionReadyMutationTargetFile\(tool\.name, tool\.input, tool\.status, toolProjectRoot\)/,
+    "aggregate changed-file review is projected through the active Changes-panel project boundary",
+  );
   assert.doesNotMatch(
     turnRender,
     /segmentTurn\(|bubbleSegments|<ToolRuns/,

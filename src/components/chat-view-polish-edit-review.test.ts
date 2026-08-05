@@ -68,7 +68,7 @@ assert.match(styles, /\.cave-edit-card/, "edit card styling exists");
 // absolute target path exists — so Review is always available.
 assert.match(
   source,
-  /if \(relPath && targetFile\) \{[\s\S]{0,200}cave:open-file-diff[\s\S]{0,200}setReviewOpen\(true\)/,
+  /if \(relPath && resolvedTargetFile\) \{[\s\S]{0,200}cave:open-file-diff[\s\S]{0,200}setReviewOpen\(true\)/,
   "Review falls back to the in-chat diff modal when the Changes panel can't show the file",
 );
 assert.match(
@@ -98,6 +98,11 @@ assert.match(
 // pings the Changes panel to refresh.
 assert.match(source, /cave-edit-card__undo/, "edit card has an Undo action");
 assert.match(source, /ToolProjectRootContext/, "edit card resolves project root via context for revert");
+assert.match(
+  source,
+  /resolvePathWithinProjectRoot\(projectRoot, targetFile \?\? displayPath\)/,
+  "individual review and undo actions use boundary-safe project path resolution",
+);
 assert.match(source, /"\/api\/changes"/, "Undo posts to the changes revert API");
 assert.match(source, /cave:changes-refresh/, "Undo notifies the changes panel to refresh");
 assert.match(styles, /\.cave-edit-card__undo/, "Undo button styling exists");
