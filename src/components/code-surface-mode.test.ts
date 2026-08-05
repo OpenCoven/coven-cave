@@ -490,6 +490,27 @@ const newSession = await readFile(new URL("./code-new-session.tsx", import.meta.
 const rail = await readFile(new URL("./code-session-rail.tsx", import.meta.url), "utf8");
 
 assert.match(
+  codeView,
+  /<SurfaceRail[\s\S]*storageKey="cave:code:sessions-rail"[\s\S]*title="Sessions"[\s\S]*ariaLabel="Coding sessions"/,
+  "Code Workshop sessions use the shared persisted left rail",
+);
+assert.match(
+  codeView,
+  /\{fitsRail \? \(\s*<SurfaceRail[\s\S]*\) : \(\s*<div[\s\S]*<CodeSessionRail/,
+  "the measured layout uses the collapsible rail only when it fits and preserves narrow list-first drill-in",
+);
+assert.match(
+  rail,
+  /aria-label=\{open \? undefined : `Open \$\{title\}, \$\{activity\}`\}/,
+  "collapsed session buttons identify the session and expose activity without relying on color",
+);
+assert.match(
+  rail,
+  /onClick=\{\(\) => \{\s*onExpand\?\.\(\);\s*onSelect\(row\.id\);/,
+  "collapsed session buttons expand before selection",
+);
+
+assert.match(
   composer,
   /streamFamiliarText\(\{\s*familiarId: row\.familiarId,\s*sessionId: row\.id,/,
   "the composer RESUMES the selected session (sessionId rides) — never forks a new thread",
@@ -657,7 +678,17 @@ assert.match(
 );
 assert.match(
   codeView,
-  /fitsRail \? "block w-64 border-r" : selected \? "hidden" : "block w-full"/,
+  /\{fitsRail \? \(\s*<SurfaceRail/,
+  "a Room wide enough for both zones uses the collapsible shared sessions rail",
+);
+assert.match(
+  codeView,
+  /defaultWidth=\{CODE_ROOM_RAIL_WIDTH_PX\}/,
+  "the persisted rail starts at the width used by the measured layout model",
+);
+assert.match(
+  codeView,
+  /\$\{selected \? "hidden" : "block w-full"\}/,
   "picking a session hides the rail only while the Room is too narrow for both",
 );
 assert.match(
