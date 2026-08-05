@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { NO_CHAT_ATTENTION } from "@/lib/chat-attention";
 import {
   buildProfileCardModel,
   buildProfileHeatmap,
@@ -37,6 +38,7 @@ function session(over: Partial<SessionRow> = {}): SessionRow {
     created_at: over.updated_at ?? iso(0),
     updated_at: iso(0),
     ...over,
+    attention: over.attention ?? NO_CHAT_ATTENTION,
   };
 }
 

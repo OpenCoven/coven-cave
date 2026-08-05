@@ -3,11 +3,12 @@ import {
   defaultChatTitleForSession,
   sanitizeSessionTitle,
 } from "./cave-chat-titles.ts";
+import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
 import { initiatorFromSessionKey } from "./session-initiator.ts";
 import { inferOrigin } from "./session-origin.ts";
 import type { SessionInitiator, SessionOrigin, SessionRow } from "./types.ts";
 
-export type DaemonSessionRow = Omit<SessionRow, "familiarId" | "origin">;
+export type DaemonSessionRow = Omit<SessionRow, "attention" | "familiarId" | "origin">;
 
 export type LocalConversationSummary = {
   sessionId: string;
@@ -86,6 +87,7 @@ function localConversationToSession(
     archived_at: state.sessionArchived[conv.sessionId] ?? null,
     created_at: conv.createdAt ?? conv.updatedAt,
     updated_at: conv.updatedAt,
+    attention: NO_CHAT_ATTENTION,
     familiarId,
     origin: conv.origin ?? "chat",
     hasLocalConversation: true,
@@ -194,6 +196,7 @@ export function mergeSessionRows({
         sanitizeSessionTitle(session.title) ??
         defaultChatTitleForSession(session.id),
       archived_at,
+      attention: NO_CHAT_ATTENTION,
       // A Cave conversation records real provenance at send time; harness/
       // title inference is only the fallback for daemon-only sessions.
       origin: local?.origin ?? inferOrigin(session),

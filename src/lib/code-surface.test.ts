@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
 import {
   codeSessionActivity,
   codeSessionBranch,
@@ -35,6 +36,7 @@ function row(overrides: Partial<SessionRow>): SessionRow {
     created_at: "2026-07-01T00:00:00Z",
     updated_at: "2026-07-01T00:00:00Z",
     ...overrides,
+    attention: overrides.attention ?? NO_CHAT_ATTENTION,
   };
 }
 

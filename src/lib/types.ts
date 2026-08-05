@@ -1,3 +1,5 @@
+import type { ChatAttention } from "./chat-attention.ts";
+
 export type Familiar = {
   id: string;
   name?: string;
@@ -86,6 +88,8 @@ export type SessionRow = {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Canonical conversational responsibility; independent of runtime status. */
+  attention: ChatAttention;
   familiarId?: string | null;
   origin?: SessionOrigin;
   /** Cave has a saved local conversation transcript; preserves recoverable interrupted chats without surfacing daemon-only dead runs. */

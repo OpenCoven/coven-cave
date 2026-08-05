@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { ACTIVITY_DAYS, buildFamiliarCardStats } from "./familiars-view-stats.ts";
+import { NO_CHAT_ATTENTION } from "../lib/chat-attention.ts";
 import type { CanonicalMemorySummary } from "../lib/canonical-memory.ts";
 
 const NOW = Date.parse("2026-06-08T12:00:00.000Z");
@@ -13,12 +14,12 @@ const familiars = [
 ];
 
 const sessions = [
-  { id: "s1", familiarId: "f1", updated_at: minutesAgo(2), project_root: "/r", harness: "claude", title: "t", status: "running", exit_code: null, archived_at: null, created_at: minutesAgo(10) },
-  { id: "s2", familiarId: "f1", updated_at: daysAgo(1), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(1) },
-  { id: "s3", familiarId: "f1", updated_at: daysAgo(8), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(8) },
-  { id: "s5", familiarId: "f1", updated_at: minutesAgo(1), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(9) },
-  { id: "s6", familiarId: "f1", updated_at: minutesAgo(1), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: minutesAgo(1), created_at: minutesAgo(1) },
-  { id: "s4", familiarId: "f2", updated_at: daysAgo(3), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(3) },
+  { id: "s1", familiarId: "f1", updated_at: minutesAgo(2), project_root: "/r", harness: "claude", title: "t", status: "running", exit_code: null, archived_at: null, created_at: minutesAgo(10), attention: NO_CHAT_ATTENTION },
+  { id: "s2", familiarId: "f1", updated_at: daysAgo(1), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(1), attention: NO_CHAT_ATTENTION },
+  { id: "s3", familiarId: "f1", updated_at: daysAgo(8), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(8), attention: NO_CHAT_ATTENTION },
+  { id: "s5", familiarId: "f1", updated_at: minutesAgo(1), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(9), attention: NO_CHAT_ATTENTION },
+  { id: "s6", familiarId: "f1", updated_at: minutesAgo(1), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: minutesAgo(1), created_at: minutesAgo(1), attention: NO_CHAT_ATTENTION },
+  { id: "s4", familiarId: "f2", updated_at: daysAgo(3), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(3), attention: NO_CHAT_ATTENTION },
 ];
 
 function memory(
@@ -98,7 +99,7 @@ assert.equal(f3?.streakDays, 0, "zero-session familiar has no streak");
 // 7d window edge: session at exactly 7d should be EXCLUDED (strict less-than)
 const edge7d = buildFamiliarCardStats({
   familiars: [{ id: "x", display_name: "X", role: "" }],
-  sessions: [{ id: "z", familiarId: "x", updated_at: daysAgo(7), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: daysAgo(7) }],
+  sessions: [{ id: "z", familiarId: "x", updated_at: daysAgo(7), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: daysAgo(7), attention: NO_CHAT_ATTENTION }],
   covenEntries: [],
   memoryAvailability: "ready",
   now: NOW,
@@ -108,7 +109,7 @@ assert.equal(edge7d.get("x")?.sessionsLast7d, 0, "session at exactly 7d ago is e
 // 5min window edge: session at exactly 5min should be INACTIVE (strict less-than)
 const edge5m = buildFamiliarCardStats({
   familiars: [{ id: "y", display_name: "Y", role: "" }],
-  sessions: [{ id: "z", familiarId: "y", updated_at: minutesAgo(5), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: minutesAgo(5) }],
+  sessions: [{ id: "z", familiarId: "y", updated_at: minutesAgo(5), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: minutesAgo(5), attention: NO_CHAT_ATTENTION }],
   covenEntries: [],
   memoryAvailability: "ready",
   now: NOW,
@@ -117,7 +118,7 @@ assert.equal(edge5m.get("y")?.hasActiveSession, false, "session at exactly 5min 
 
 const activeCreated = buildFamiliarCardStats({
   familiars: [{ id: "a", display_name: "A", role: "" }],
-  sessions: [{ id: "recent", familiarId: "a", updated_at: minutesAgo(1), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: minutesAgo(1) }],
+  sessions: [{ id: "recent", familiarId: "a", updated_at: minutesAgo(1), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: minutesAgo(1), attention: NO_CHAT_ATTENTION }],
   covenEntries: [],
   memoryAvailability: "ready",
   now: NOW,
