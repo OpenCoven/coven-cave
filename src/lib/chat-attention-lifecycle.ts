@@ -4,15 +4,65 @@ export type ChatAttentionAdoptionTracker = {
   shouldEmit(sessionId: string | null | undefined, runId: string | null | undefined): boolean;
 };
 
+// Bound live sessions and replaced/evicted run tombstones for the tab lifetime.
+const CHAT_ATTENTION_ADOPTION_TRACKER_LIMIT = 512;
+
+function adoptionTombstoneKey(sessionId: string, runId: string): string {
+  return `${sessionId.length}:${sessionId}${runId}`;
+}
+
 export function createChatAttentionAdoptionTracker(): ChatAttentionAdoptionTracker {
   const adoptedRunIdBySessionId = new Map<string, string>();
+  const tombstonedAdoptions = new Map<string, true>();
+
+  function tombstone(sessionId: string, runId: string): void {
+    const key = adoptionTombstoneKey(sessionId, runId);
+    tombstonedAdoptions.delete(key);
+    tombstonedAdoptions.set(key, true);
+    while (tombstonedAdoptions.size > CHAT_ATTENTION_ADOPTION_TRACKER_LIMIT) {
+      const oldestKey = tombstonedAdoptions.keys().next().value;
+      if (oldestKey === undefined) break;
+      tombstonedAdoptions.delete(oldestKey);
+    }
+  }
+
+  function isTombstoned(sessionId: string, runId: string): boolean {
+    const key = adoptionTombstoneKey(sessionId, runId);
+    if (!tombstonedAdoptions.has(key)) return false;
+    tombstonedAdoptions.delete(key);
+    tombstonedAdoptions.set(key, true);
+    return true;
+  }
+
+  function evictOldest(): void {
+    while (adoptedRunIdBySessionId.size > CHAT_ATTENTION_ADOPTION_TRACKER_LIMIT) {
+      const oldestEntry = adoptedRunIdBySessionId.entries().next().value;
+      if (!oldestEntry) break;
+      const [oldestSessionId, oldestRunId] = oldestEntry;
+      adoptedRunIdBySessionId.delete(oldestSessionId);
+      tombstone(oldestSessionId, oldestRunId);
+    }
+  }
+
   return {
     shouldEmit(sessionId, runId) {
       const normalizedSessionId = typeof sessionId === "string" ? sessionId.trim() : "";
       const normalizedRunId = typeof runId === "string" ? runId.trim() : "";
       if (!normalizedSessionId || !normalizedRunId) return false;
-      if (adoptedRunIdBySessionId.get(normalizedSessionId) === normalizedRunId) return false;
+      const adoptedRunId = adoptedRunIdBySessionId.get(normalizedSessionId);
+      if (adoptedRunId === normalizedRunId) {
+        // Touch recency even on a no-op replay: a session hit only by
+        // duplicate calls for its already-adopted run is proven live and
+        // must not age out ahead of genuinely idle sessions.
+        adoptedRunIdBySessionId.delete(normalizedSessionId);
+        adoptedRunIdBySessionId.set(normalizedSessionId, normalizedRunId);
+        return false;
+      }
+      if (isTombstoned(normalizedSessionId, normalizedRunId)) return false;
+      if (adoptedRunId) tombstone(normalizedSessionId, adoptedRunId);
+      adoptedRunIdBySessionId.delete(normalizedSessionId);
       adoptedRunIdBySessionId.set(normalizedSessionId, normalizedRunId);
+      evictOldest();
       return true;
     },
   };

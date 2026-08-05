@@ -1535,6 +1535,62 @@ test("a duplicate clear for an overlapping operation keeps its already-captured 
   assert.equal(state.get("session-1")?.get("operation-2")?.status, "pending");
 });
 
+test("per-session operation bound evicts to exactly 64, tombstones the oldest for replay safety, and leaves live projection intact", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+
+  // Fill the session to the 64-operation limit; no eviction should occur yet.
+  for (let i = 1; i <= 64; i++) {
+    const result = recordChatAttentionClear(state, "session-1", `op-${i}`, scopeKey, NEEDS_ATTENTION);
+    assert.equal(result.reason, "recorded");
+  }
+  assert.equal(state.get("session-1")?.size, 64, "64 ops must fit without eviction");
+
+  // Recording op-65 exceeds the limit; the oldest (op-1, all others pending) is evicted and tombstoned.
+  recordChatAttentionClear(state, "session-1", "op-65", scopeKey, NEEDS_ATTENTION);
+  assert.equal(state.get("session-1")?.size, 64, "session must remain at 64 after op-65");
+  assert.equal(state.get("session-1")?.has("op-1"), false, "op-1 must be evicted from live operations");
+  assert.equal(state.get("session-1")?.has("op-65"), true, "op-65 (newest) must survive");
+
+  // A late replay of the evicted op is rejected as tombstoned — replay-safe.
+  const replay = recordChatAttentionClear(state, "session-1", "op-1", scopeKey, NEEDS_ATTENTION);
+  assert.equal(replay.recorded, false);
+  assert.equal(replay.reason, "tombstoned");
+  assert.equal(state.get("session-1")?.size, 64, "replay must not grow the session beyond the bound");
+
+  // Live projection is correct: the 64 surviving pending ops still mask attention to none.
+  const projected = applyChatAttentionProjections(state, [row()], 99, scopeKey);
+  assert.equal(projected[0]?.attention.state, "none");
+
+  for (let i = 2; i <= 65; i++) {
+    settleChatAttentionClear(state, "session-1", `op-${i}`, "persisted", 100);
+  }
+  const newerAttention = [row({
+    attention: { state: "awaiting-human", since: "2026-08-05T01:00:00.000Z", reason: "decision" },
+  })];
+  assert.equal(applyChatAttentionProjections(state, newerAttention, 100, scopeKey), newerAttention);
+  assert.equal(state.has("session-1"), false, "fresh canonical evidence releases the bounded live state");
+});
+
+test("per-session operation eviction prefers oldest settled operation over oldest pending", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+
+  // Fill to the 64-op limit — all pending.
+  for (let i = 1; i <= 64; i++) {
+    recordChatAttentionClear(state, "session-1", `op-${i}`, scopeKey, NEEDS_ATTENTION);
+  }
+  // Settle op-5 (not the oldest); it becomes the oldest non-pending in insertion order.
+  settleChatAttentionClear(state, "session-1", "op-5", "persisted", 1);
+  assert.equal(state.get("session-1")?.get("op-5")?.status, "persisted");
+
+  // Recording op-65 should evict op-5 (oldest settled), not op-1 (oldest pending).
+  recordChatAttentionClear(state, "session-1", "op-65", scopeKey, NEEDS_ATTENTION);
+  assert.equal(state.get("session-1")?.size, 64);
+  assert.equal(state.get("session-1")?.has("op-5"), false, "settled op-5 must be evicted first");
+  assert.equal(state.get("session-1")?.has("op-1"), true, "pending op-1 must survive when a settled op was available");
+});
+
 test("releasing the last operation forgets the tracked canonical baseline for that session", () => {
   const state = createChatAttentionProjectionState();
   const canonicalB = {

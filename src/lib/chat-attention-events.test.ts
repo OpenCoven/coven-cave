@@ -247,7 +247,7 @@ test("rejects non-string and blank/whitespace-only detail fields", () => {
 await test("emits dispatchable clear and settlement events with trimmed ids", async () => {
   await withMockWindow((dispatched) => {
     emitChatAttentionClear(" session-5 ", " run-5 ", {
-      clearWatermark: " 2026-08-05T00:00:01.000Z ",
+      clearWatermark: "2026-08-05T00:00:01.000Z",
       scopeKey: " familiar:sage ",
       baselineAttention: {
         state: "left-hanging",
@@ -274,13 +274,38 @@ await test("emits dispatchable clear and settlement events with trimmed ids", as
       outcome: "persisted",
     });
   });
+});
 
-  test("operation-aware events stay backward compatible when the watermark is genuinely absent", () => {
-    assert.deepEqual(attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
-      detail: { sessionId: "session-10", operationId: "run-10" },
-    })), {
-      sessionId: "session-10",
-      operationId: "run-10",
+test("operation-aware events stay backward compatible when the watermark is genuinely absent", () => {
+  assert.deepEqual(attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: { sessionId: "session-10", operationId: "run-10" },
+  })), {
+    sessionId: "session-10",
+    operationId: "run-10",
+  });
+});
+
+await test("emit omits a malformed clear watermark instead of dispatching invalid detail", async () => {
+  await withMockWindow((dispatched) => {
+    emitChatAttentionClear(" session-11 ", " run-11 ", {
+      clearWatermark: " 2026-08-05T00:00:02.000Z ",
+      scopeKey: " familiar:nova ",
+      baselineAttention: {
+        state: "left-hanging",
+        since: "2026-08-05T00:00:00.000Z",
+        reason: null,
+      },
+    });
+    assert.equal(dispatched.length, 1);
+    assert.deepEqual(attentionClearFromEvent(dispatched[0]), {
+      sessionId: "session-11",
+      operationId: "run-11",
+      scopeKey: "familiar:nova",
+      baselineAttention: {
+        state: "left-hanging",
+        since: "2026-08-05T00:00:00.000Z",
+        reason: null,
+      },
     });
   });
 });
@@ -315,6 +340,59 @@ await test("a remounted adopter can clear the same pending run once for its own 
     if (secondLifecycle.shouldEmit("session-2", "run-9")) emitChatAttentionClear("session-2", "run-9");
     assert.equal(dispatched.length, 2);
   });
+});
+
+test("replacing a session run tombstones the prior run while a genuinely new run still emits once", () => {
+  const tracker = createChatAttentionAdoptionTracker();
+
+  assert.equal(tracker.shouldEmit("session-1", "run-a"), true);
+  assert.equal(tracker.shouldEmit("session-1", "run-b"), true);
+  assert.equal(
+    tracker.shouldEmit("session-1", "run-a"),
+    false,
+    "a late replay of the replaced run must not re-emit a clear",
+  );
+  assert.equal(tracker.shouldEmit("session-1", "run-b"), false);
+  assert.equal(tracker.shouldEmit("session-1", "run-c"), true);
+  assert.equal(tracker.shouldEmit("session-1", "run-c"), false);
+});
+
+test("the adoption tracker bounds live sessions and tombstones an evicted session's current run", () => {
+  const tracker = createChatAttentionAdoptionTracker();
+  const TRACKER_LIMIT = 512;
+
+  for (let i = 0; i < TRACKER_LIMIT; i += 1) {
+    assert.equal(tracker.shouldEmit(`session-${i}`, "run-1"), true);
+  }
+  assert.equal(tracker.shouldEmit("session-0", "run-1"), false, "a replay refreshes live-session recency");
+  assert.equal(tracker.shouldEmit(`session-${TRACKER_LIMIT}`, "run-1"), true);
+
+  assert.equal(tracker.shouldEmit("session-0", "run-1"), false, "the refreshed session remains live");
+  assert.equal(
+    tracker.shouldEmit("session-1", "run-1"),
+    false,
+    "the evicted session's current run remains replay-safe through its tombstone",
+  );
+  assert.equal(tracker.shouldEmit("session-1", "run-2"), true, "a genuinely new run still emits");
+});
+
+test("adoption tombstones use a bounded LRU", () => {
+  const tracker = createChatAttentionAdoptionTracker();
+  const TOMBSTONE_LIMIT = 512;
+
+  assert.equal(tracker.shouldEmit("session-1", "run-0"), true);
+  for (let i = 1; i <= TOMBSTONE_LIMIT; i += 1) {
+    assert.equal(tracker.shouldEmit("session-1", `run-${i}`), true);
+  }
+
+  assert.equal(tracker.shouldEmit("session-1", "run-0"), false, "a tombstone replay refreshes its recency");
+  assert.equal(tracker.shouldEmit("session-1", `run-${TOMBSTONE_LIMIT + 1}`), true);
+  assert.equal(tracker.shouldEmit("session-1", "run-0"), false, "the refreshed tombstone survives eviction");
+  assert.equal(
+    tracker.shouldEmit("session-1", "run-1"),
+    true,
+    "the least-recently-used tombstone is evicted when the bound is exceeded",
+  );
 });
 
 test("external stale-settlement suppression is keyed by controller + session + run and consumes once", () => {

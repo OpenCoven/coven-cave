@@ -5,15 +5,18 @@ import type { ChatAttentionSettlementOutcome } from "./chat-attention-projection
 export const CHAT_ATTENTION_CLEAR_EVENT = "cave:chat-attention-clear";
 export const CHAT_ATTENTION_SETTLE_EVENT = "cave:chat-attention-settle";
 
-export type ChatAttentionClearDetail = {
+type ChatAttentionOperationDetail = {
   sessionId: string;
   operationId: string;
+};
+
+export type ChatAttentionClearDetail = ChatAttentionOperationDetail & {
   clearWatermark?: string;
   scopeKey?: string;
   baselineAttention?: ChatAttention;
 };
 
-export type ChatAttentionSettlementDetail = ChatAttentionClearDetail & {
+export type ChatAttentionSettlementDetail = ChatAttentionOperationDetail & {
   outcome: ChatAttentionSettlementOutcome;
 };
 
@@ -26,6 +29,27 @@ const MODERN_CLEAR_DETAIL_KEYS = [
   "clearWatermark",
   "baselineAttention",
 ] as const;
+
+// Exact allow-lists for the two modern event shapes. A clear payload must
+// contain ONLY its own keys — never a settlement-only field like `outcome`,
+// and never anything unrecognized — and a settlement payload must contain
+// ONLY sessionId/operationId/outcome, rejecting any clear-only field
+// (`clearWatermark`, `scopeKey`, `baselineAttention`) as well as anything
+// unrecognized. Without this, extra/foreign keys were silently dropped
+// instead of rejecting the whole event, letting the two shapes quietly widen
+// into each other. The legacy session-only clear fallback
+// (`attentionClearedSessionId`) is validated separately and is intentionally
+// the only supported broadening of the modern clear shape.
+const CLEAR_DETAIL_KEYS = new Set<string>(["sessionId", ...MODERN_CLEAR_DETAIL_KEYS]);
+const SETTLE_DETAIL_KEYS = new Set<string>(["sessionId", "operationId", "outcome"]);
+
+function hasOnlyAllowedDetailKeys(
+  detail: Record<string, unknown> | null | undefined,
+  allowedKeys: ReadonlySet<string>,
+): boolean {
+  if (!detail || typeof detail !== "object") return false;
+  return Reflect.ownKeys(detail).every((key) => typeof key === "string" && allowedKeys.has(key));
+}
 
 function normalizeString(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -91,24 +115,29 @@ function normalizeAttentionDetail(value: unknown): ChatAttention | null {
 }
 
 function normalizeClearWatermark(value: unknown): string | null {
-  const normalized = normalizeString(value);
-  return normalized && isCanonicalIsoInstant(normalized) ? normalized : null;
+  return typeof value === "string" && isCanonicalIsoInstant(value) ? value : null;
 }
 
 function hasOwnDetailField(detail: Record<string, unknown> | null | undefined, key: string): boolean {
   return !!detail && Object.prototype.hasOwnProperty.call(detail, key);
 }
 
-function attentionEventDetail(event: Event, type: string): ChatAttentionClearDetail | null {
+function attentionEventDetail(
+  event: Event,
+  type: string,
+  allowedKeys: ReadonlySet<string>,
+): ChatAttentionClearDetail | null {
   if (event.type !== type) return null;
   const detail = (event as CustomEvent<Record<string, unknown> | null>).detail;
+  if (!hasOnlyAllowedDetailKeys(detail, allowedKeys)) return null;
+  if (!hasOwnDetailField(detail, "sessionId") || !hasOwnDetailField(detail, "operationId")) return null;
   const sessionId = normalizeString(detail?.sessionId);
   const operationId = normalizeString(detail?.operationId);
   const hasClearWatermark = hasOwnDetailField(detail, "clearWatermark");
   const clearWatermark = hasClearWatermark && isCanonicalIsoInstant(detail?.clearWatermark)
     ? detail.clearWatermark
     : null;
-  const scopeKey = normalizeString(detail?.scopeKey);
+  const scopeKey = hasOwnDetailField(detail, "scopeKey") ? normalizeString(detail?.scopeKey) : null;
   const hasBaselineAttention = hasOwnDetailField(detail, "baselineAttention");
   const baselineAttention = hasBaselineAttention
     ? normalizeAttentionDetail(detail?.baselineAttention)
@@ -172,7 +201,7 @@ export function emitChatAttentionSettlement(
 }
 
 export function attentionClearFromEvent(event: Event): ChatAttentionClearDetail | null {
-  return attentionEventDetail(event, CHAT_ATTENTION_CLEAR_EVENT);
+  return attentionEventDetail(event, CHAT_ATTENTION_CLEAR_EVENT, CLEAR_DETAIL_KEYS);
 }
 
 export function attentionClearedSessionId(event: Event): string | null {
@@ -180,15 +209,18 @@ export function attentionClearedSessionId(event: Event): string | null {
   const detail = (event as CustomEvent<Record<string, unknown> | null>).detail;
   const sessionId = normalizeString(detail?.sessionId);
   if (!sessionId || !detail || typeof detail !== "object") return null;
-  if (Object.keys(detail).length !== 1 || !hasOwnDetailField(detail, "sessionId")) return null;
+  const detailKeys = Reflect.ownKeys(detail);
+  if (detailKeys.length !== 1 || detailKeys[0] !== "sessionId") return null;
   if (MODERN_CLEAR_DETAIL_KEYS.some((key) => hasOwnDetailField(detail, key))) return null;
   return sessionId;
 }
 
 export function attentionSettlementFromEvent(event: Event): ChatAttentionSettlementDetail | null {
-  const detail = attentionEventDetail(event, CHAT_ATTENTION_SETTLE_EVENT);
+  const detail = attentionEventDetail(event, CHAT_ATTENTION_SETTLE_EVENT, SETTLE_DETAIL_KEYS);
   if (!detail) return null;
-  const outcome = (event as CustomEvent<Record<string, unknown> | null>).detail?.outcome;
+  const eventDetail = (event as CustomEvent<Record<string, unknown> | null>).detail;
+  if (!hasOwnDetailField(eventDetail, "outcome")) return null;
+  const outcome = eventDetail?.outcome;
   return outcome === "persisted" || outcome === "failed"
     ? { ...detail, outcome }
     : null;

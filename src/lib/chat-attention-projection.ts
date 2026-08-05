@@ -312,6 +312,7 @@ export function recordChatAttentionClear(
     ...(normalizedClearWatermark ? { clearWatermark: normalizedClearWatermark } : {}),
   });
   touchSessionProjectionBucket(state, sessionId);
+  evictOldestSessionOperations(state, sessionId, nextOperations);
   evictOldestSessionProjectionBuckets(state);
   return { recorded: true, reason: "recorded" };
 }
