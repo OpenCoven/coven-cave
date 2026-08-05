@@ -43,6 +43,15 @@ globalThis.window = {
   dispatchEvent: () => {},
 };
 
+let projectImagesChannel = null;
+globalThis.BroadcastChannel = class {
+  constructor(name) {
+    if (name === "cave:project-images") projectImagesChannel = this;
+  }
+  postMessage() {}
+  unref() {}
+};
+
 const idb = { projectAvatars: new Map(), familiarImages: new Map() };
 const LITERAL_DRIVE_IMAGE = {
   dataUrl: "data:image/png;base64,LITERAL-C-DRIVE",
@@ -58,6 +67,8 @@ idb.projectAvatars.set("C:", LITERAL_DRIVE_IMAGE);
 idb.projectAvatars.set("C:/", CANONICAL_DRIVE_IMAGE);
 let denyWrites = false;
 let denyAvatarReads = false;
+let pausedStrictAvatarRead = null;
+let emptyTolerantAvatarRead = null;
 let writeTail = Promise.resolve();
 const withWriteLock = async (fn) => {
   const run = writeTail.then(fn, fn);
@@ -80,13 +91,24 @@ const migrationDestinationWins = (source, destination) => {
 };
 const fakeDriver = {
   async getAll(s) {
+    if (s === "projectAvatars" && emptyTolerantAvatarRead) {
+      const entered = emptyTolerantAvatarRead;
+      emptyTolerantAvatarRead = null;
+      entered.resolve();
+      return {};
+    }
     return Object.fromEntries(idb[s]);
   },
   async getAllStrict(s) {
     if (denyAvatarReads) {
       throw new DOMException("Avatar storage is temporarily unreadable.", "UnknownError");
     }
-    return Object.fromEntries(idb[s]);
+    const snapshot = Object.fromEntries(idb[s]);
+    if (s === "projectAvatars" && pausedStrictAvatarRead) {
+      pausedStrictAvatarRead.entered.resolve();
+      await pausedStrictAvatarRead.release.promise;
+    }
+    return snapshot;
   },
   async put(s, key, value) {
     if (denyWrites) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
@@ -447,6 +469,52 @@ const PROJECTS = [
     acknowledgements,
     [[{ projectId: "p1", legacyRoots: [LEGACY] }]],
     "only the successful retry acknowledges the migrated alias",
+  );
+}
+
+{
+  const source = "/broadcast-race/legacy";
+  const destination = "/broadcast-race/canonical";
+  const legacyImage = {
+    dataUrl: "data:image/png;base64,BROADCAST-RACE",
+    mime: "image/png",
+    updatedAt: "2026-08-05T20:00:00.000Z",
+  };
+  idb.projectAvatars.set(source, legacyImage);
+  idb.projectAvatars.delete(destination);
+  const strictEntered = deferred();
+  const strictRelease = deferred();
+  pausedStrictAvatarRead = { entered: strictEntered, release: strictRelease };
+  const acknowledgements = [];
+
+  const migrating = migrateAndAcknowledgeProjectRoots(
+    [{ id: "broadcast-race", root: destination, legacyRoot: source }],
+    {
+      acknowledge: async (payload) => {
+        acknowledgements.push(payload);
+      },
+    },
+  );
+  await strictEntered.promise;
+
+  const broadcastReadEntered = deferred();
+  emptyTolerantAvatarRead = broadcastReadEntered;
+  projectImagesChannel.onmessage({ data: "changed" });
+  await broadcastReadEntered.promise;
+  strictRelease.resolve();
+
+  assert.equal(await migrating, 1);
+  pausedStrictAvatarRead = null;
+  assert.equal(
+    idb.projectAvatars.has(source),
+    false,
+    "a broadcast refresh cannot make migration acknowledge an existing legacy avatar without moving it",
+  );
+  assert.deepEqual(idb.projectAvatars.get(destination), legacyImage);
+  assert.deepEqual(images.readProjectImagesSnapshot()[destination], legacyImage);
+  assert.deepEqual(
+    acknowledgements,
+    [[{ projectId: "broadcast-race", legacyRoots: [source] }]],
   );
 }
 
