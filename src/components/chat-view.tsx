@@ -44,12 +44,10 @@ import { ChatRunRail } from "@/components/chat-run-rail";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
-import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
+import { groupConsecutiveTools } from "@/lib/turn-segments";
 import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
-import {
-  useFocusSafeToolRelocation,
-  useToolRunDisclosure,
-} from "@/lib/use-tool-run-disclosure";
+import { useToolRunDisclosure } from "@/lib/use-tool-run-disclosure";
+import { ChatToolActivityLayout } from "@/components/chat-tool-activity-layout";
 import {
   CHAT_OPEN_COVEN_EVENT,
   CHAT_OPEN_PROJECTS_EVENT,
@@ -8660,16 +8658,13 @@ function TurnRowImpl({
 }) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
-  // Tool activity renders inline while a turn streams (watching tools run IS the
-  // live feedback). Once the turn settles, the prose is shown uninterrupted and
-  // every tool call is collected into one designated, collapsed "Tool activity"
-  // section below it (the ToolGroup) — so a familiar's response reads cleanly and
-  // its tool usage is clearly separated rather than woven through the text.
+  // Tool UI keeps the same render slots for the turn's lifetime: non-edit calls
+  // stay in one compact ToolGroup above the answer, while edit cards stay below
+  // it. Settlement updates those instances instead of relocating them.
   // Chat timestamp format (12h/24h clock + MM.DD/DD.MM/Off date) — a user
   // preference; the model/cwd/duration that used to sit here now live only in
   // the debug pane's per-turn JSON.
   const dtPrefs = useDateTimePrefs();
-  const toolRelocation = useFocusSafeToolRelocation(!!turn.pending);
 
   // Click-away dismissal for the inline familiar card. Hooks are placed here
   // (before any early return) so React's rules-of-hooks are never violated.
@@ -8806,58 +8801,19 @@ function TurnRowImpl({
   // chip that anchors the Retry pill (#416/#420) always renders.
   const indicatorVisible = Boolean(turn.pending) && !visible && !reasoning;
 
-  // CHAT-D4-01: when every tool event carries a textOffset (live turns from
-  // this session), render the turn as ordered segments — prose spans with
-  // each tool call inline at its chronological position — instead of the
-  // legacy "all text, then a trailing Tool activity rollup" stack that
-  // inverted causality. Offsets were captured against the raw streamed text;
-  // segmentTurn snaps them forward to fence-safe paragraph boundaries (and
-  // clamps past-end offsets, e.g. when splitReasoning stripped thinking
-  // markup), so a drifted offset degrades toward trailing — never a split
-  // inside a code fence. Stored transcripts without offsets return null and
-  // keep today's trailing ToolGroup.
-  const segments = segmentTurn(visible, turn.tools);
-  const bubbleSegments: MessageBubbleSegment[] | undefined = segments?.map((seg, i) =>
-    seg.kind === "text"
-      ? { kind: "text" as const, text: seg.text }
-      : {
-          kind: "block" as const,
-          key: `tools-${seg.tools[0]?.id ?? i}`,
-          // Each chronology-preserving segment only rolls consecutive calls
-          // with the same name; prose and a new offset stay hard boundaries.
-          node: <InlineToolRuns tools={seg.tools} />,
-        },
-  );
-
-  // Auto-detect renderable artifacts and inject the tabbed viewer. Applies to
-  // SETTLED turns only (streaming shows plain code until the fence closes).
+  // Auto-detect renderable artifacts and inject the tabbed viewer.
   const artifactCtx = { familiarId: familiar.id };
-
-  let renderSegments: MessageBubbleSegment[] | undefined;
-  if (toolRelocation.keepToolsInline) {
-    // Streaming: interleave tool blocks inline at their chronological offset so
-    // you can watch them run as live feedback. If a tool owns focus when the
-    // turn settles, retain this exact subtree until focus leaves.
-    renderSegments = bubbleSegments;
-  } else {
-    // Settled: prose only (+ artifact viewers + GitHub cards + image
-    // carousels). Tools are NOT woven into the text — they render in the
-    // designated ToolGroup section below. Image splitting runs first, while
-    // every marker is still in one prose span, so `group` decks can cross an
-    // artifact or GitHub card. The later splitters refine only the remaining
-    // prose; the `visible` fallback/content path is marker-free either way.
-    const split = splitSegmentsForGitHub(
-      splitSegmentsForArtifacts(
-        splitSegmentsForImages(
-          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
-        ),
-        artifactCtx,
+  const split = splitSegmentsForGitHub(
+    splitSegmentsForArtifacts(
+      splitSegmentsForImages(
+        splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
       ),
-      onOpenUrl,
-      ghFamiliar,
-    );
-    renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
-  }
+      artifactCtx,
+    ),
+    onOpenUrl,
+    ghFamiliar,
+  );
+  const renderSegments = split.some((segment) => segment.kind === "block") ? split : undefined;
 
   // Per-turn provenance peek (see turnMetaPeekTitle): the model/cwd/duration
   // that used to sit inline here now live only in the debug pane, so a quiet
@@ -8868,15 +8824,14 @@ function TurnRowImpl({
   const recency = showTimestamp && turn.createdAt ? formatChatRecency(turn.createdAt, dtPrefs) : "";
   const exactTime = turn.createdAt ? formatTimestamp(turn.createdAt, dtPrefs) : "";
 
-  // Chat-revamp 1b: settled tool activity splits once, up front. Codex
+  // Chat-revamp 1b: tool activity splits once, up front. Codex
   // file-edit cards (Edit/Write/etc. with a target file) stay VISIBLE inline
   // below the prose — they're the actionable output (Review/Undo), so they
   // must not be buried in a collapsed rollup. All OTHER tool activity (reads,
   // greps, bash, …) collapses into the ONE work line ABOVE the answer
-  // ("<N> calls · <categories>"). Streaming turns weave tools inline
-  // instead — see renderSegments.
+  // ("<N> calls · <categories>").
   const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
-  const settledTools = !toolRelocation.keepToolsInline && turn.tools?.length ? turn.tools : [];
+  const settledTools = turn.tools?.length ? turn.tools : [];
   const editCards = settledTools.filter(isEditCard);
   const otherTools = settledTools.filter((t) => !isEditCard(t));
 
@@ -8964,17 +8919,17 @@ function TurnRowImpl({
             </span>
           </div>
 
-          <div
-            className="cave-linear-turn-body"
-            onFocusCapture={toolRelocation.onFocusCapture}
-            onBlurCapture={toolRelocation.onBlurCapture}
-          >
-            {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} pending={!!turn.pending} /> : null}
-            {/* Chat-revamp 1b: the collapsed agent-work line sits ABOVE the
-                answer, so the reader sees "N calls · categories" first and
-                the prose below reads uninterrupted. */}
-            {otherTools.length ? <ToolGroup tools={otherTools} /> : null}
-            {indicatorVisible ? (
+          <div className="cave-linear-turn-body">
+            <ChatToolActivityLayout
+              leading={
+                reasoning
+                  ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} pending={!!turn.pending} />
+                  : null
+              }
+              activity={otherTools.length ? <ToolGroup tools={otherTools} /> : null}
+              content={
+                <>
+                  {indicatorVisible ? (
               <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
             ) : (
               // `cave-artifact-content` scopes the comment-on-artifact text
@@ -9011,20 +8966,8 @@ function TurnRowImpl({
                 <ResponseModelStatus metadata={turn.responseMetadata} />
                 <ResponseControlStatus metadata={turn.responseMetadata} />
               </div>
-            )}
-            {/* CHAT-D4-01: tools often run BEFORE the first prose chunk
-                (research-style turns) — show them inline immediately so
-                they don't teleport out of a rollup once text arrives. */}
-            {indicatorVisible && segments?.length ? (
-              <div className="mt-3 space-y-2">
-                {segments.map((seg, index) =>
-                  seg.kind === "tools"
-                    ? <InlineToolRuns key={`tools-${seg.tools[0]?.id ?? index}`} tools={seg.tools} />
-                    : null,
-                )}
-              </div>
-            ) : null}
-            {/* Agent-produced inline attachments: images render full-bleed
+                  )}
+                  {/* Agent-produced inline attachments: images render full-bleed
                 (e.g. /image generations), audio/video mount as players, and
                 everything else stays a file chip that opens the lightbox. */}
             {turn.attachments?.length ? (
@@ -9054,11 +8997,12 @@ function TurnRowImpl({
                 <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
               </div>
             ) : null}
-            {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
-            {/* Edit cards on settled turns (the work line above the answer
-                already collapsed everything else). */}
-            {!turn.pending && turn.tools?.length && editCards.length
-              ? (() => {
+                  {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
+                </>
+              }
+              editCards={
+                editCards.length
+                  ? (() => {
                   // Golden path 4 (cave-qva4): a multi-file turn gets ONE
                   // aggregate entry into the working-tree review — the
                   // per-card Review buttons remain, but "which of these five
@@ -9075,7 +9019,7 @@ function TurnRowImpl({
                   );
                   return (
                     <div className="cave-edit-cards mt-3 space-y-2">
-                      {editedFiles.length > 1 ? (
+                      {!turn.pending && turn.tools?.length && editedFiles.length > 1 ? (
                         <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
                           <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
                             {editedFiles.length} files changed
@@ -9097,8 +9041,10 @@ function TurnRowImpl({
                       {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
                     </div>
                   );
-                })()
-              : null}
+                    })()
+                  : null
+              }
+            />
             {/* Comment on the markdown artifact this turn produced: select any
                 passage above to leave a comment, then request a revision that
                 sends every comment back to the agent. Settled, substantial
@@ -9333,14 +9279,6 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
         </div>
       </details>
     </>
-  );
-}
-
-function InlineToolRuns({ tools }: { tools: ToolEvent[] }) {
-  return (
-    <div data-inline-tool-runs>
-      <ToolRuns tools={tools} />
-    </div>
   );
 }
 
