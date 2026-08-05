@@ -170,7 +170,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /case "done":[\s\S]{0,6000}startNewConversation && ev\.sessionId\) onSessionsChanged\?\.\(\)/,
+  /case "done":[\s\S]{0,6000}startNewConversation && ev\.sessionId\) onSessionsChangedRef\.current\?\.\(\)/,
   "A completed Board bridge refreshes sessions so the cockpit leaves its one-shot handoff mode",
 );
 assert.match(
