@@ -304,6 +304,7 @@ function stripUnmatchedLeadingDelimiter(text: string): string {
   const closers: Record<string, string> = {
     '"': '"', "'": "'",
     "\u201C": "\u201D", "\u2018": "\u2019",
+    "\u00AB": "\u00BB", "\u2039": "\u203A",
     "(": ")", "[": "]", "{": "}",
   };
   let s = text;

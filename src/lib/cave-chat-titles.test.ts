@@ -961,6 +961,50 @@ assert.equal(
   "balanced short nested delimiters preserved when no truncation occurs",
 );
 
+// ── Issue: Angle-quote leading delimiter stripping after truncation ───────────
+// «…» (U+00AB/U+00BB) and ‹…› (U+2039/U+203A) were missing from the closers
+// map in stripUnmatchedLeadingDelimiter. After word-limit or char-limit
+// truncation the closing angle quote falls outside the retained stem, leaving
+// an unmatched leading opener that must be stripped.
+{
+  // Word-limit path: 10-word «-quoted input is truncated at 7 words;
+  // the leading « has no matching » in the retained stem → strip it.
+  const doubleAngleLong =
+    "\u00ABImplement the new feature for the search component right now\u00BB";
+  const r = chatSummaryTitle({ userText: doubleAngleLong });
+  assert.ok(r !== null, "\u00AB angle-quote long: yields a title");
+  assert.ok(r!.endsWith("\u2026"), "\u00AB angle-quote long: truncation ellipsis appended");
+  assert.ok(
+    !r!.startsWith("\u00AB"),
+    "\u00AB angle-quote long: unmatched leading \u00AB removed after truncation",
+  );
+}
+{
+  // Char-limit path: 4-word ‹-quoted input (48 chars) is clamped at a word
+  // boundary within 40 chars; the leading ‹ has no matching › in the retained
+  // stem → strip it.
+  const singleAngleLong =
+    "\u2039Reconfigure the authentication synchronization\u203A";
+  const r = chatSummaryTitle({ userText: singleAngleLong });
+  assert.ok(r !== null, "\u2039 angle-quote long: yields a title");
+  assert.ok(r!.endsWith("\u2026"), "\u2039 angle-quote long: truncation ellipsis appended");
+  assert.ok(
+    !r!.startsWith("\u2039"),
+    "\u2039 angle-quote long: unmatched leading \u2039 removed after char-limit truncation",
+  );
+}
+// Balanced short titles: both angle quotes present → kept intact (no truncation).
+assert.equal(
+  chatSummaryTitle({ userText: "\u00ABFix parser\u00BB" }),
+  "\u00ABFix parser\u00BB",
+  "balanced \u00AB\u00BB short: leading and closing angle quotes preserved",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "\u2039Fix parser\u203A" }),
+  "\u2039Fix parser\u203A",
+  "balanced \u2039\u203A short: leading and closing single angle quotes preserved",
+);
+
 // ── Issue: Common user-directed framing ──────────────────────────────────────
 // "I need you to", "I want you to", "I'd like you to", "I would like you to"
 // are added as `you to` extensions of existing patterns in LEADING_FILLER_RE.
