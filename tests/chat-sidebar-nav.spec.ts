@@ -28,6 +28,21 @@ const SESSIONS = [
     updated_at: iso(2),
     attention: { state: "awaiting-human", since: iso(2), reason: "approval" },
   },
+  {
+    id: "s6",
+    title: "Review active pull request",
+    status: "failed",
+    origin: "chat",
+    project_root: "/repo/alpha",
+    updated_at: iso(0),
+    attention: { state: "awaiting-human", since: iso(0), reason: "review" },
+    pullRequest: {
+      repo: "OpenCoven/coven-cave",
+      number: 42,
+      url: "https://github.com/OpenCoven/coven-cave/pull/42",
+      state: "open",
+    },
+  },
 ].map((s) => ({
   ...s,
   harness: "codex",
@@ -70,6 +85,41 @@ async function narrowChatSidebar(page: Page) {
     });
   });
   await expect.poll(async () => (await cnav.boundingBox())?.width ?? Number.POSITIVE_INFINITY).toBeLessThan(212);
+}
+
+async function activeCueBoxes(row: Locator) {
+  return row.evaluate((element) => {
+    const rowRect = element.getBoundingClientRect();
+    const boxFor = (selector: string) => {
+      const rect = element.querySelector(selector)?.getBoundingClientRect();
+      if (!rect) throw new Error(`Missing ${selector}`);
+      return { left: rect.left, right: rect.right };
+    };
+    const selection = window.getComputedStyle(element, "::before");
+    const selectionLeft = rowRect.left + Number.parseFloat(selection.left);
+    return {
+      selection: {
+        left: selectionLeft,
+        right: selectionLeft + Number.parseFloat(selection.width),
+      },
+      attention: boxFor(".cnav__attention-tick"),
+      runtime: boxFor(".cnav__tick"),
+      pullRequest: boxFor(".cnav__pr-badge"),
+    };
+  });
+}
+
+function expectHorizontalSeparation(
+  boxes: Awaited<ReturnType<typeof activeCueBoxes>>,
+  viewport: "normal" | "narrow",
+) {
+  const ordered = [boxes.selection, boxes.attention, boxes.runtime, boxes.pullRequest];
+  for (let index = 1; index < ordered.length; index += 1) {
+    expect(
+      ordered[index - 1].right,
+      `${viewport} cue ${index - 1} must end before cue ${index} begins`,
+    ).toBeLessThanOrEqual(ordered[index].left);
+  }
 }
 
 async function ensureChatSurface(page: Page) {
@@ -232,6 +282,28 @@ test.describe("chat sidebar (session navigator)", () => {
     await expect(attentionButton).toHaveAccessibleName(
       new RegExp(`^Project alpha\\s+Approve release checklist\\s+${timestamp}\\s+Awaiting you$`),
     );
+  });
+
+  test("active PR attention row keeps selection, attention, runtime, and PR cues in separate gutters", async ({ page }) => {
+    await gotoChat(page);
+    const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
+    const row = sidebar.locator(".cnav__thread", { hasText: "Review active pull request" }).first();
+    const rowButton = row.locator("button.cnav__thread-main");
+
+    await rowButton.click();
+    await expect(rowButton).toHaveAttribute("aria-current", "page");
+    await expect(row.locator(".cnav__attention-tick")).toBeVisible();
+    await expect(row.locator(".cnav__tick")).toBeVisible();
+    await expect(row.locator(".cnav__pr-badge")).toBeVisible();
+
+    const normalBoxes = await activeCueBoxes(row);
+    expectHorizontalSeparation(normalBoxes, "normal");
+
+    await narrowChatSidebar(page);
+
+    await expect(rowButton).toHaveAttribute("aria-current", "page");
+    const narrowBoxes = await activeCueBoxes(row);
+    expectHorizontalSeparation(narrowBoxes, "narrow");
   });
 });
 

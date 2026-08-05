@@ -78,8 +78,8 @@ assert.match(
 );
 assert.match(
   pinnedRail,
-  /className=\{`cnav__thread cnav__thread--flat\$\{active \? " is-active" : ""\}\$\{archived \? " is-archived" : ""\}`\}/,
-  "an archived pinned row applies is-archived so it reads muted like its ThreadRow twin",
+  /className=\{`cnav__thread cnav__thread--flat\$\{prStatus \? " cnav__thread--pr" : ""\}\$\{active \? " is-active" : ""\}\$\{archived \? " is-archived" : ""\}`\}/,
+  "a pinned row exposes PR gutter semantics while archived rows still apply is-archived like their ThreadRow twin",
 );
 
 console.log("workspace-sidebar-pinned: ok");

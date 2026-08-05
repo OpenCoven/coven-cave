@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
 import {
+  applyChatAttentionSettlementToRows,
   applyChatAttentionProjections,
   chatAttentionProjectionScopeKey,
+  clearSessionAttentionRows,
   createChatAttentionProjectionState,
   forgetChatAttentionProjections,
   isCurrentSessionListRequest,
@@ -74,6 +76,230 @@ test("a failed send restores canonical attention on its reconciliation response"
   assert.equal(
     applyChatAttentionProjections(state, canonical, 5, chatAttentionProjectionScopeKey("nova")),
     canonical,
+  );
+});
+
+test("a single failed clear immediately restores its stored baseline without a list fetch", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  const canonical = [row({ title: "Approve release" })];
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    scopeKey,
+    canonical[0]?.attention,
+  );
+  const optimisticallyCleared = clearSessionAttentionRows(canonical, "session-1");
+  assert.deepEqual(optimisticallyCleared[0]?.attention, NO_CHAT_ATTENTION);
+
+  const settlement = settleChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    "failed",
+    5,
+  );
+  const restored = applyChatAttentionSettlementToRows(
+    optimisticallyCleared,
+    settlement,
+    scopeKey,
+  );
+
+  assert.deepEqual(restored[0]?.attention, NEEDS_ATTENTION);
+  assert.equal(restored[0]?.title, "Approve release");
+  assert.equal(state.has("session-1"), false);
+});
+
+test("a failed overlapping clear remains projected to none while another operation is live", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  const overlappingScopeKey = chatAttentionProjectionScopeKey("sage");
+  const canonical = [row()];
+  recordChatAttentionClear(state, "session-1", "operation-1", scopeKey, NEEDS_ATTENTION);
+  recordChatAttentionClear(state, "session-1", "operation-2", overlappingScopeKey, NO_CHAT_ATTENTION);
+  const optimisticallyCleared = clearSessionAttentionRows(canonical, "session-1");
+
+  const settlement = settleChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    "failed",
+    5,
+  );
+  const stillCleared = applyChatAttentionSettlementToRows(
+    optimisticallyCleared,
+    settlement,
+    scopeKey,
+  );
+
+  assert.equal(stillCleared, optimisticallyCleared);
+  assert.deepEqual(stillCleared[0]?.attention, NO_CHAT_ATTENTION);
+  assert.equal(state.get("session-1")?.has("operation-2"), true);
+});
+
+test("a failed clear restores newer accepted canonical attention instead of its older baseline", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(state, "session-1", "operation-1", scopeKey, NEEDS_ATTENTION);
+  const newerAttention = {
+    state: "awaiting-human" as const,
+    since: "2026-08-05T00:05:00.000Z",
+    reason: "approval" as const,
+  };
+  const projectedNewerRows = applyChatAttentionProjections(
+    state,
+    [row({ attention: newerAttention })],
+    5,
+    scopeKey,
+  );
+  assert.deepEqual(projectedNewerRows[0]?.attention, NO_CHAT_ATTENTION);
+
+  const settlement = settleChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    "failed",
+    6,
+  );
+  const restored = applyChatAttentionSettlementToRows(
+    projectedNewerRows,
+    settlement,
+    scopeKey,
+  );
+
+  assert.deepEqual(restored[0]?.attention, newerAttention);
+});
+
+test("a failed clear restores newer canonical evidence accepted after a scope switch", () => {
+  const state = createChatAttentionProjectionState();
+  const originalScopeKey = chatAttentionProjectionScopeKey("nova");
+  const restoreScopeKey = chatAttentionProjectionScopeKey(null);
+  recordChatAttentionClear(state, "session-1", "operation-1", originalScopeKey, NEEDS_ATTENTION);
+  const newerAttention = {
+    state: "awaiting-human" as const,
+    since: "2026-08-05T00:05:00.000Z",
+    reason: "approval" as const,
+  };
+  const projectedNewerRows = applyChatAttentionProjections(
+    state,
+    [row({ attention: newerAttention })],
+    5,
+    restoreScopeKey,
+  );
+
+  const settlement = settleChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    "failed",
+    6,
+  );
+  assert.equal(settlement.settled, true);
+  if (!settlement.settled || settlement.outcome !== "failed") {
+    assert.fail("failed settlement must carry restore evidence");
+  }
+  assert.deepEqual(settlement.restoreAttention, newerAttention);
+  assert.equal(settlement.restoreScopeKey, restoreScopeKey);
+  const restored = applyChatAttentionSettlementToRows(
+    projectedNewerRows,
+    settlement,
+    restoreScopeKey,
+  );
+
+  assert.deepEqual(restored[0]?.attention, newerAttention);
+});
+
+test("a failed clear never restores newer canonical evidence into a different current scope", () => {
+  const state = createChatAttentionProjectionState();
+  const originalScopeKey = chatAttentionProjectionScopeKey("nova");
+  const restoreScopeKey = chatAttentionProjectionScopeKey(null);
+  recordChatAttentionClear(state, "session-1", "operation-1", originalScopeKey, NEEDS_ATTENTION);
+  const newerAttention = {
+    state: "awaiting-human" as const,
+    since: "2026-08-05T00:05:00.000Z",
+    reason: "approval" as const,
+  };
+  applyChatAttentionProjections(
+    state,
+    [row({ attention: newerAttention })],
+    5,
+    restoreScopeKey,
+  );
+  const settlement = settleChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    "failed",
+    6,
+  );
+  const originalScopeRows = [row({ attention: NO_CHAT_ATTENTION })];
+
+  assert.equal(
+    applyChatAttentionSettlementToRows(originalScopeRows, settlement, originalScopeKey),
+    originalScopeRows,
+    "new all-familiars evidence must not restore into the original familiar scope",
+  );
+});
+
+test("stale and unknown settlements cannot mutate another session, scope, or operation", () => {
+  const state = createChatAttentionProjectionState();
+  const novaScope = chatAttentionProjectionScopeKey("nova");
+  const sageScope = chatAttentionProjectionScopeKey("sage");
+  recordChatAttentionClear(state, "session-1", "operation-1", novaScope, NEEDS_ATTENTION);
+  const rows = [
+    row({ id: "session-1", attention: NO_CHAT_ATTENTION }),
+    row({ id: "session-2" }),
+  ];
+
+  const unknownOperation = settleChatAttentionClear(
+    state,
+    "session-1",
+    "operation-unknown",
+    "failed",
+    5,
+  );
+  assert.equal(
+    applyChatAttentionSettlementToRows(rows, unknownOperation, novaScope),
+    rows,
+  );
+  assert.equal(state.get("session-1")?.has("operation-1"), true);
+
+  const failed = settleChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    "failed",
+    5,
+  );
+  assert.equal(
+    applyChatAttentionSettlementToRows(rows, failed, sageScope),
+    rows,
+    "a valid settlement from another scope must not restore this scope's row",
+  );
+
+  const newerCanonicalRows = [
+    row({
+      id: "session-1",
+      attention: {
+        state: "awaiting-human",
+        since: "2026-08-05T00:05:00.000Z",
+        reason: "approval",
+      },
+    }),
+    rows[1]!,
+  ];
+  const staleReplay = settleChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    "failed",
+    6,
+  );
+  assert.equal(
+    applyChatAttentionSettlementToRows(newerCanonicalRows, staleReplay, novaScope),
+    newerCanonicalRows,
+    "a stale replay must not overwrite newer canonical attention",
   );
 });
 

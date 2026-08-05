@@ -20,10 +20,13 @@ export type ChatAttention = {
   reason: ChatAttentionReason | null;
 };
 
+export type ChatAttentionRequest = NonNullable<ChatResponseMetadata["attentionRequest"]>;
+export type InvalidChatAttentionRequestEvidence = { state: "invalid" };
+
 export type ChatAttentionEvidence = {
   latestCompletedTurn: { role: "user" | "assistant"; at: string } | null;
   latestUserTurnAt: string | null;
-  request: ChatResponseMetadata["attentionRequest"] | null;
+  request: ChatAttentionRequest | InvalidChatAttentionRequestEvidence | null;
 };
 
 export const NO_CHAT_ATTENTION: ChatAttention = {
@@ -169,6 +172,7 @@ function normalizeAttentionRequest(
 } | null {
   if (!value) return null;
   if (
+    "state" in value ||
     typeof value.sessionId !== "string" ||
     !value.sessionId ||
     typeof value.turnId !== "string" ||

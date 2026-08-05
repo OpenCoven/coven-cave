@@ -10,6 +10,7 @@ type PendingProjection = {
   scopeKey: string;
   baseline: ChatAttention | null;
   clearWatermark?: string;
+  latestCanonical?: CanonicalAttentionTrackerEntry;
 };
 
 type PersistedProjection = {
@@ -18,6 +19,7 @@ type PersistedProjection = {
   scopeKey: string;
   baseline: ChatAttention | null;
   clearWatermark?: string;
+  latestCanonical?: CanonicalAttentionTrackerEntry;
 };
 
 type ProjectionOperation = PendingProjection | PersistedProjection;
@@ -29,6 +31,27 @@ export type ChatAttentionClearRecordResult = {
   recorded: boolean;
   reason: "recorded" | "duplicate" | "tombstoned" | "no-baseline";
 };
+export type ChatAttentionSettlementResult =
+  | {
+    settled: false;
+    reason: "unknown-operation";
+  }
+  | {
+    settled: true;
+    sessionId: string;
+    operationId: string;
+    outcome: "persisted";
+  }
+  | {
+    settled: true;
+    sessionId: string;
+    operationId: string;
+    outcome: "failed";
+    scopeKey: string;
+    restoreAttention: ChatAttention | null;
+    restoreScopeKey: string;
+    hasActiveProjection: boolean;
+  };
 
 export function createChatAttentionProjectionState(): ChatAttentionProjectionState {
   return new Map();
@@ -323,18 +346,31 @@ export function settleChatAttentionClear(
   operationId: string,
   outcome: ChatAttentionSettlementOutcome,
   canonicalAfterRequestId: number,
-): void {
+): ChatAttentionSettlementResult {
   const operations = state.get(sessionId);
   const operation = operations?.get(operationId);
-  if (!operations || !operation) return;
+  if (!operations || !operation) {
+    return { settled: false, reason: "unknown-operation" };
+  }
   touchSessionProjectionBucket(state, sessionId);
   if (outcome === "failed") {
     operations.delete(operationId);
+    const restoreAttention = operation.latestCanonical?.attention ?? operation.baseline;
+    const restoreScopeKey = operation.latestCanonical?.scopeKey ?? operation.scopeKey;
     // Keep the canonical tracker until either an immediate retry inherits it or
     // an accepted list response refreshes the caller's canonical session rows.
     if (operations.size === 0) dropSessionProjectionBucket(state, sessionId);
     tombstoneChatAttentionOperation(state, sessionId, operationId);
-    return;
+    return {
+      settled: true,
+      sessionId,
+      operationId,
+      outcome,
+      scopeKey: operation.scopeKey,
+      restoreAttention,
+      restoreScopeKey,
+      hasActiveProjection: operations.size > 0,
+    };
   }
   operations.set(operationId, {
     status: "persisted",
@@ -342,7 +378,9 @@ export function settleChatAttentionClear(
     scopeKey: operation.scopeKey,
     baseline: operation.baseline,
     clearWatermark: operation.clearWatermark,
+    latestCanonical: operation.latestCanonical,
   });
+  return { settled: true, sessionId, operationId, outcome };
 }
 
 export function forgetChatAttentionProjections(
@@ -369,6 +407,31 @@ export function clearSessionAttentionRows(rows: readonly SessionRow[], sessionId
     const projected = clearSessionAttention(row);
     changed = changed || projected !== row;
     return projected;
+  });
+  return changed ? projectedRows : rows as SessionRow[];
+}
+
+export function applyChatAttentionSettlementToRows(
+  rows: readonly SessionRow[],
+  settlement: ChatAttentionSettlementResult,
+  currentRowScopeKey: string,
+): SessionRow[] {
+  if (!settlement.settled || settlement.outcome !== "failed") return rows as SessionRow[];
+  if (!settlement.hasActiveProjection && settlement.restoreScopeKey !== currentRowScopeKey) {
+    return rows as SessionRow[];
+  }
+
+  let changed = false;
+  const projectedRows = rows.map((row) => {
+    if (row.id !== settlement.sessionId) return row;
+    if (settlement.hasActiveProjection) {
+      const projected = clearSessionAttention(row);
+      changed = changed || projected !== row;
+      return projected;
+    }
+    if (!settlement.restoreAttention || row.attention.state !== "none") return row;
+    changed = true;
+    return { ...row, attention: settlement.restoreAttention };
   });
   return changed ? projectedRows : rows as SessionRow[];
 }
@@ -443,6 +506,10 @@ export function applyChatAttentionProjections(
     }
 
     for (const [operationId, operation] of operations) {
+      operation.latestCanonical = {
+        attention: normalizeAttentionSnapshot(row.attention),
+        scopeKey: currentScopeKey ?? operation.scopeKey,
+      };
       if (operation.status !== "persisted" || responseRequestId < operation.canonicalAfterRequestId) continue;
       if (operation.baseline) {
         if (!attentionMatchesBaseline(row.attention, operation.baseline)) {

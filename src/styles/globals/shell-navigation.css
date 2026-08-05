@@ -808,6 +808,9 @@
   background: var(--accent-presence);
   z-index: 0;
 }
+.cnav__thread.is-active.cnav__thread--pr::before {
+  left: 0;
+}
 /* Archived rows (visible via the sidebar's "Show archived" option) read muted
    so they can't pass for live threads; hover restores full contrast for the
    revealed actions (unarchive/delete). */
@@ -842,6 +845,12 @@
 .cnav__thread.is-active .cnav__tick {
   left: var(--space-3);
   opacity: 1;
+}
+.cnav__thread.is-active.cnav__thread--pr .cnav__tick {
+  left: var(--space-1);
+}
+.cnav__thread.is-active.cnav__thread--pr:not([data-attention="none"]) .cnav__tick {
+  left: var(--space-2);
 }
 /* Attention channel (cave-zs85n Task 6): a SEPARATE structural tick from the
    runtime .cnav__tick above, so a row's session status (running/failed/
@@ -943,6 +952,9 @@
 }
 .cnav__thread--flat .cnav__pr-badge {
   margin-left: var(--space-2);
+}
+.cnav__thread--flat.is-active.cnav__thread--pr:not([data-attention="none"]) .cnav__pr-badge {
+  margin-left: var(--space-3);
 }
 .cnav__pr-badge + .cnav__thread-main,
 .cnav__thread--flat .cnav__pr-badge + .cnav__thread-main {

@@ -282,7 +282,7 @@ function ThreadRow({
   const leadGlyph = archived ? ("ph:archive" as IconName) : glyph;
   return (
     <div
-      className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
+      className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${prStatus ? " cnav__thread--pr" : ""}${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
       data-attention={attentionState}
     >
       {/* Chat.dc.html 2a: every row carries a 2px colour tick on its left
@@ -435,7 +435,7 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin 
   const leadGlyph = archived ? ("ph:archive" as IconName) : null;
   return (
     <div
-      className={`cnav__thread cnav__thread--flat${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
+      className={`cnav__thread cnav__thread--flat${prStatus ? " cnav__thread--pr" : ""}${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
       data-attention={attentionState}
     >
       {/* Chat.dc.html 2a: every row carries a 2px colour tick on its left

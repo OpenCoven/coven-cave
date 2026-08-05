@@ -143,6 +143,32 @@ assert.match(
   /\.cnav__thread\.is-active\s+\.cnav__tick\s*\{[\s\S]*?left:\s*var\(--space-3\);[\s\S]*?opacity:\s*1;/,
   "active rows should keep the runtime tick visible by shifting it inboard of the active accent",
 );
+const prRowClassSites = sidebar.match(/\$\{prStatus \? " cnav__thread--pr" : ""\}/g) ?? [];
+assert.equal(
+  prRowClassSites.length,
+  2,
+  "full and pinned rows should expose the semantic PR modifier used by the active-row gutter",
+);
+assert.match(
+  css,
+  /\.cnav__thread\.is-active\.cnav__thread--pr::before\s*\{[\s\S]*?left:\s*0;/,
+  "an active PR row should move selection to the outer gutter without changing non-PR rows",
+);
+assert.match(
+  css,
+  /\.cnav__thread\.is-active\.cnav__thread--pr\s+\.cnav__tick\s*\{[\s\S]*?left:\s*var\(--space-1\);/,
+  "an active PR row should keep runtime in a token-aligned gutter before its badge",
+);
+assert.match(
+  css,
+  /\.cnav__thread\.is-active\.cnav__thread--pr:not\(\[data-attention="none"\]\)\s+\.cnav__tick\s*\{[\s\S]*?left:\s*var\(--space-2\);/,
+  "an active PR attention row should move runtime one grid step past attention",
+);
+assert.match(
+  css,
+  /\.cnav__thread--flat\.is-active\.cnav__thread--pr:not\(\[data-attention="none"\]\)\s+\.cnav__pr-badge\s*\{[\s\S]*?margin-left:\s*var\(--space-3\);/,
+  "an active flat PR attention row should reserve three token-aligned cue gutters before its badge",
+);
 assert.match(
   css,
   /\.cnav__thread\.is-active::before\s*\{[\s\S]*?background:\s*var\(--accent-presence\);/,

@@ -88,6 +88,7 @@ import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
 import {
   CHAT_ATTENTION_UNPROVEN_SCOPE,
+  applyChatAttentionSettlementToRows,
   applyChatAttentionProjections,
   chatAttentionProjectionScopeKey,
   clearSessionAttentionRows,
@@ -639,13 +640,25 @@ export function Workspace() {
     const onChatAttentionSettle = (event: Event) => {
       const detail = attentionSettlementFromEvent(event);
       if (!detail) return;
-      settleChatAttentionClear(
+      const settlement = settleChatAttentionClear(
         chatAttentionProjectionRef.current,
         detail.sessionId,
         detail.operationId,
         detail.outcome,
         loadSessionsReqRef.current + 1,
       );
+      const currentRowScopeKey = baseSessionScopeKeyByIdRef.current.get(detail.sessionId) ??
+        CHAT_ATTENTION_UNPROVEN_SCOPE;
+      baseSessionsRef.current = applyChatAttentionSettlementToRows(
+        baseSessionsRef.current,
+        settlement,
+        currentRowScopeKey,
+      );
+      setSessions((currentSessions) => applyChatAttentionSettlementToRows(
+        currentSessions,
+        settlement,
+        currentRowScopeKey,
+      ));
     };
     window.addEventListener(CHAT_ATTENTION_CLEAR_EVENT, onChatAttentionClear);
     window.addEventListener(CHAT_ATTENTION_SETTLE_EVENT, onChatAttentionSettle);

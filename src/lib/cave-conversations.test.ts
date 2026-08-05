@@ -931,6 +931,7 @@ console.log("cave-conversations pending-marker test OK");
     "attention-stale-request-left-hanging",
     "attention-user-leaf-resolution",
     "attention-malformed-request",
+    "attention-malformed-newer-request",
     "attention-noncanonical-request",
     "attention-cancelled-request-turn",
     "attention-error-request-turn",
@@ -1050,21 +1051,21 @@ console.log("cave-conversations pending-marker test OK");
     familiarId: "charm",
     harness: "claude",
     title: "Malformed request",
-    createdAt: "2026-08-04T16:00:00.000Z",
-    updatedAt: "2026-08-04T18:30:00.000Z",
+    createdAt: "2026-08-03T16:00:00.000Z",
+    updatedAt: "2026-08-03T18:30:00.000Z",
     turns: [
       {
         id: "bad-request-user",
         role: "user",
         text: "Do you need anything?",
-        createdAt: "2026-08-04T16:00:00.000Z",
+        createdAt: "2026-08-03T16:00:00.000Z",
         parentId: null,
       },
       {
         id: "bad-request-assistant",
         role: "assistant",
         text: "I need approval, but the stamp is corrupt.",
-        createdAt: "2026-08-04T18:30:00.000Z",
+        createdAt: "2026-08-03T18:30:00.000Z",
         parentId: "bad-request-user",
         responseMetadata: {
           familiarId: "charm",
@@ -1081,6 +1082,70 @@ console.log("cave-conversations pending-marker test OK");
       },
     ],
     activeLeafId: "bad-request-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-malformed-newer-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Malformed newer request suppresses older request",
+    createdAt: "2026-08-01T16:00:00.000Z",
+    updatedAt: "2026-08-04T19:00:00.000Z",
+    turns: [
+      {
+        id: "malformed-newer-user",
+        role: "user",
+        text: "Do you need anything?",
+        createdAt: "2026-08-01T16:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "malformed-newer-old-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-01T17:00:00.000Z",
+        parentId: "malformed-newer-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-malformed-newer-request",
+            turnId: "malformed-newer-old-request",
+            requestedAt: "2026-08-01T17:00:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        id: "malformed-newer-system",
+        role: "system",
+        text: "The runtime resumed the assistant.",
+        createdAt: "2026-08-04T18:59:00.000Z",
+        parentId: "malformed-newer-old-request",
+      },
+      {
+        id: "malformed-newer-assistant",
+        role: "assistant",
+        text: "This newer request has corrupt evidence.",
+        createdAt: "2026-08-04T19:00:00.000Z",
+        parentId: "malformed-newer-system",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-malformed-newer-request",
+            turnId: "malformed-newer-assistant",
+            requestedAt: "not-a-date",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+    activeLeafId: "malformed-newer-assistant",
   });
 
   await saveConversation({
@@ -2137,15 +2202,41 @@ console.log("cave-conversations pending-marker test OK");
   );
 
   assert.deepEqual(byId.get("attention-malformed-request")?.attentionEvidence, {
-    latestCompletedTurn: { role: "assistant", at: "2026-08-04T18:30:00.000Z" },
-    latestUserTurnAt: "2026-08-04T16:00:00.000Z",
-    request: null,
+    latestCompletedTurn: { role: "assistant", at: "2026-08-03T18:30:00.000Z" },
+    latestUserTurnAt: "2026-08-03T16:00:00.000Z",
+    request: { state: "invalid" },
   });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-malformed-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+    "a malformed request on the latest assistant must fail quiet instead of fabricating left-hanging",
+  );
+
+  assert.deepEqual(byId.get("attention-malformed-newer-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T19:00:00.000Z" },
+    latestUserTurnAt: "2026-08-01T16:00:00.000Z",
+    request: { state: "invalid" },
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-malformed-newer-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+    "newer malformed request evidence must fail quiet instead of resurrecting an older valid request",
+  );
 
   assert.deepEqual(byId.get("attention-noncanonical-request")?.attentionEvidence, {
     latestCompletedTurn: null,
     latestUserTurnAt: "2026-08-04T16:45:00.000Z",
-    request: null,
+    request: { state: "invalid" },
   });
   assert.deepEqual(
     deriveChatAttention({
@@ -2213,7 +2304,7 @@ console.log("cave-conversations pending-marker test OK");
   assert.deepEqual(byId.get("attention-mismatched-turnid-request")?.attentionEvidence, {
     latestCompletedTurn: { role: "assistant", at: "2026-08-04T13:30:00.000Z" },
     latestUserTurnAt: "2026-08-04T13:00:00.000Z",
-    request: null,
+    request: { state: "invalid" },
   });
 
   assert.deepEqual(byId.get("attention-off-path-request")?.attentionEvidence, {
@@ -2460,7 +2551,7 @@ console.log("cave-conversations pending-marker test OK");
   assert.deepEqual(byId.get("attention-requested-at-mismatch")?.attentionEvidence, {
     latestCompletedTurn: { role: "assistant", at: "2026-08-04T10:05:00.000Z" },
     latestUserTurnAt: "2026-08-04T10:00:00.000Z",
-    request: null,
+    request: { state: "invalid" },
   });
   assert.deepEqual(
     deriveChatAttention({
@@ -2482,7 +2573,7 @@ console.log("cave-conversations pending-marker test OK");
     {
       latestCompletedTurn: { role: "assistant", at: "2026-08-04T10:05:00.000Z" },
       latestUserTurnAt: "2026-08-04T10:00:00.000Z",
-      request: null,
+      request: { state: "invalid" },
     },
   );
   assert.deepEqual(

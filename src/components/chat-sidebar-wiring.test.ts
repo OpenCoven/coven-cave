@@ -357,6 +357,11 @@ assert.match(
   "the projection helper should expose a targeted, non-retiring clear for a single session",
 );
 assert.match(
+  chatAttentionProjection,
+  /export function applyChatAttentionSettlementToRows\([\s\S]*settlement: ChatAttentionSettlementResult,[\s\S]*currentRowScopeKey: string,[\s\S]*\): SessionRow\[\]/,
+  "the projection helper should expose typed, scope-aware failed-settlement row restoration",
+);
+assert.match(
   workspace,
   /import \{[\s\S]*applyChatAttentionProjections,[\s\S]*clearSessionAttentionRows,[\s\S]*\} from "@\/lib\/chat-attention-projection";/,
   "workspace should import the targeted clear alongside the retirement-capable apply",
@@ -416,6 +421,15 @@ assert.doesNotMatch(
   onChatAttentionClearBlock,
   /applyChatAttentionProjections\(/,
   "the chat-attention clear handler must not call canonical-response retirement logic against cached arrays with a synthetic request id — only clearSessionAttentionRows",
+);
+const onChatAttentionSettleBlock = workspace.match(
+  /const onChatAttentionSettle = \(event: Event\) => \{[\s\S]*?\n    \};/,
+)?.[0] ?? "";
+assert.ok(onChatAttentionSettleBlock, "workspace should define the chat-attention settlement handler");
+assert.match(
+  onChatAttentionSettleBlock,
+  /const settlement = settleChatAttentionClear\([\s\S]*?const currentRowScopeKey = baseSessionScopeKeyByIdRef\.current\.get\(detail\.sessionId\) \?\?\s*CHAT_ATTENTION_UNPROVEN_SCOPE;[\s\S]*?baseSessionsRef\.current = applyChatAttentionSettlementToRows\(\s*baseSessionsRef\.current,\s*settlement,\s*currentRowScopeKey,\s*\);[\s\S]*?setSessions\(\(currentSessions\) => applyChatAttentionSettlementToRows\(\s*currentSessions,\s*settlement,\s*currentRowScopeKey,\s*\)\);/,
+  "workspace should pass each row's current accepted scope when applying failed-settlement restore evidence",
 );
 assert.match(
   workspace,

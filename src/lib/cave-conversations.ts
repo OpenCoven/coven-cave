@@ -14,6 +14,7 @@ import { CHAT_ATTENTION_REASONS } from "./chat-attention-marker.ts";
 import {
   isCanonicalIsoInstant,
   type ChatAttentionEvidence,
+  type ChatAttentionRequest,
 } from "./chat-attention.ts";
 
 const CONV_DIR = path.join(caveHome(), "conversations");
@@ -260,6 +261,7 @@ function deriveConversationSignals(conv: ConversationFile): {
   let sawLatestUserTurn = false;
   let latestUserTurnAt: string | null = null;
   let request: ChatAttentionEvidence["request"] = null;
+  let sawRequestEvidence = false;
   let sawUserAfterAssistant = false;
 
   for (let i = turns.length - 1; i >= 0; i -= 1) {
@@ -284,16 +286,28 @@ function deriveConversationSignals(conv: ConversationFile): {
 
     if (turn.role === "user") sawUserAfterAssistant = true;
 
-    if (!request && turn.role === "assistant" && !turn.isError && !turn.cancelled) {
-      const candidate = normalizeStableAttentionRequest(
-        typeof turn.responseMetadata === "object" && turn.responseMetadata
-          ? turn.responseMetadata.attentionRequest
-          : undefined,
-        conv.sessionId,
-        turn.id,
-        turn.createdAt,
-      );
-      if (candidate && !sawUserAfterAssistant) request = candidate;
+    if (
+      !sawRequestEvidence &&
+      turn.role === "assistant" &&
+      !turn.isError &&
+      !turn.cancelled
+    ) {
+      if (sawUserAfterAssistant) {
+        sawRequestEvidence = true;
+      } else if (
+        typeof turn.responseMetadata === "object" &&
+        turn.responseMetadata &&
+        Object.hasOwn(turn.responseMetadata, "attentionRequest")
+      ) {
+        sawRequestEvidence = true;
+        request =
+          normalizeStableAttentionRequest(
+            turn.responseMetadata.attentionRequest,
+            conv.sessionId,
+            turn.id,
+            turn.createdAt,
+          ) ?? { state: "invalid" };
+      }
     }
   }
 
@@ -328,39 +342,40 @@ function parseFiniteTimestamp(value: unknown): number | null {
 }
 
 function normalizeStableAttentionRequest(
-  value: ChatAttentionEvidence["request"] | undefined,
+  value: unknown,
   sessionId: string,
   assistantTurnId: string,
   assistantCreatedAt: unknown,
-): ChatAttentionEvidence["request"] | null {
-  if (!value) return null;
+): ChatAttentionRequest | null {
+  if (!value || typeof value !== "object") return null;
   const normalizedAssistantCreatedAt = normalizeStableIsoTimestamp(assistantCreatedAt);
   const assistantCreatedAtMs = parseFiniteTimestamp(assistantCreatedAt);
-  const requestedAtMs = parseFiniteTimestamp(value.requestedAt);
+  const candidate = value as Partial<ChatAttentionRequest>;
+  const requestedAtMs = parseFiniteTimestamp(candidate.requestedAt);
   if (
-    typeof value.sessionId !== "string" ||
-    value.sessionId !== sessionId ||
-    typeof value.turnId !== "string" ||
-    value.turnId !== assistantTurnId ||
+    typeof candidate.sessionId !== "string" ||
+    candidate.sessionId !== sessionId ||
+    typeof candidate.turnId !== "string" ||
+    candidate.turnId !== assistantTurnId ||
     !normalizedAssistantCreatedAt ||
     // requestedAt must itself be canonical UTC ISO — instant equality alone
     // (checked next) would otherwise accept a noncanonical requestedAt that
     // merely parses to the same instant as the assistant's canonical
     // createdAt, silently canonicalizing it below instead of discarding it.
-    !isCanonicalIsoInstant(value.requestedAt) ||
+    !isCanonicalIsoInstant(candidate.requestedAt) ||
     requestedAtMs === null ||
     assistantCreatedAtMs === null ||
     requestedAtMs !== assistantCreatedAtMs ||
-    typeof value.reason !== "string" ||
-    !VALID_ATTENTION_REASON_SET.has(value.reason)
+    typeof candidate.reason !== "string" ||
+    !VALID_ATTENTION_REASON_SET.has(candidate.reason)
   ) {
     return null;
   }
   return {
-    sessionId: value.sessionId,
-    turnId: value.turnId,
+    sessionId: candidate.sessionId,
+    turnId: candidate.turnId,
     requestedAt: normalizedAssistantCreatedAt,
-    reason: value.reason,
+    reason: candidate.reason,
   };
 }
 
