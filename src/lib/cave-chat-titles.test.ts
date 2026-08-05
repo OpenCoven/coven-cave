@@ -757,14 +757,68 @@ assert.equal(
   "nested brackets in a link label are flattened to plain text",
 );
 assert.equal(
+  chatSummaryTitle({ userText: "[a [b [c]]](x)" }),
+  "A b c",
+  "deeply nested link labels are flattened without leaking bracket artifacts",
+);
+assert.equal(
   chatSummaryTitle({ userText: "[outer \\[inner\\]](https://example.test)" }),
   "Outer inner",
   "escaped brackets do not terminate the label scan or leak Markdown escapes",
 );
 assert.equal(
+  chatSummaryTitle({ userText: "[\\*literal\\*](x)" }),
+  "Literal",
+  "CommonMark-escaped emphasis punctuation does not leak backslashes",
+);
+assert.equal(
+  chatSummaryTitle({
+    userText: "[\\#hash \\+plus \\@at \\{brace\\}](x)",
+  }),
+  "#hash +plus @at {brace}",
+  "CommonMark-escapable punctuation is unescaped",
+);
+assert.equal(
+  chatSummaryTitle({
+    userText: "[escaped \\[brackets\\] \\\\backslash](x)",
+  }),
+  "Escaped brackets \\backslash",
+  "escaped brackets and backslashes do not leak Markdown escapes",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "[\\#hash]" }),
+  "#hash",
+  "shortcut labels unescape CommonMark punctuation consistently",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "[\\+plus][reference]" }),
+  "+plus",
+  "full reference labels unescape CommonMark punctuation consistently",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Fix \\#hash but keep \\alpha" }),
+  "Fix #hash but keep \\alpha",
+  "CommonMark punctuation escapes are removed without consuming non-punctuation escapes",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Keep ordinary [bracket prose intact" }),
+  "Keep ordinary bracket prose intact",
+  "an unmatched prose bracket is sanitized without discarding its content",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Keep ordinary [bracket] prose intact" }),
+  "Keep ordinary bracket prose intact",
+  "ordinary balanced bracket prose keeps all visible words",
+);
+assert.equal(
   chatSummaryTitle({ userText: "[outer [inner]](https://example.test/unclosed" }),
   "Outer inner",
   "an unclosed destination after a nested label keeps only the safe visible label",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "[a [b [c]]](unclosed" }),
+  "A b c",
+  "malformed destinations still emit a flattened safe label",
 );
 {
   const longNestedLink = `[outer [inner]](https://example.test/${"x".repeat(5_000)})`;
@@ -772,6 +826,20 @@ assert.equal(
     chatSummaryTitle({ userText: longNestedLink }),
     "Outer inner",
     "long nested links are reduced without leaking destination text",
+  );
+}
+{
+  const depth = 5_000;
+  const deeplyNestedLabel = `${"[".repeat(depth)}deep${"]".repeat(depth)}(x)`;
+  const startedAt = performance.now();
+  assert.equal(
+    chatSummaryTitle({ userText: deeplyNestedLabel }),
+    "Deep",
+    "arbitrarily deep labels flatten without a depth-specific parser limit",
+  );
+  assert.ok(
+    performance.now() - startedAt < 1_000,
+    "deep balanced labels are processed linearly",
   );
 }
 

@@ -183,15 +183,44 @@ function normalizeGeneratedTitleSource(input: unknown): string | null {
   return source;
 }
 
-function unescapeMarkdownLabel(label: string): string {
+function isCommonMarkEscapablePunctuation(char: string): boolean {
+  const code = char.charCodeAt(0);
+  return (
+    (code >= 0x21 && code <= 0x2f) ||
+    (code >= 0x3a && code <= 0x40) ||
+    (code >= 0x5b && code <= 0x60) ||
+    (code >= 0x7b && code <= 0x7e)
+  );
+}
+
+function unescapeCommonMarkPunctuation(text: string): string {
   let result = "";
-  for (let i = 0; i < label.length; i++) {
+  for (let i = 0; i < text.length; i++) {
+    if (
+      text[i] === "\\" &&
+      i + 1 < text.length &&
+      isCommonMarkEscapablePunctuation(text[i + 1])
+    ) {
+      result += text[++i];
+    } else {
+      result += text[i];
+    }
+  }
+  return result;
+}
+
+function flattenMarkdownLabel(label: string): string {
+  let result = "";
+  for (let i = 0; i < label.length && result.length < MAX_CHAT_TITLE_LENGTH; i++) {
     if (
       label[i] === "\\" &&
       i + 1 < label.length &&
-      (label[i + 1] === "[" || label[i + 1] === "]" || label[i + 1] === "\\")
+      isCommonMarkEscapablePunctuation(label[i + 1])
     ) {
-      result += label[++i];
+      const escaped = label[++i];
+      result += result.length + 2 <= MAX_CHAT_TITLE_LENGTH ? `\\${escaped}` : escaped;
+    } else if (label[i] === "[" || label[i] === "]") {
+      if (result && !/\s/u.test(result[result.length - 1])) result += " ";
     } else {
       result += label[i];
     }
@@ -216,6 +245,16 @@ function normalizeMarkdownInlineLinks(s: string): string {
   };
   let i = 0;
   while (i < len) {
+    if (
+      s[i] === "\\" &&
+      i + 1 < len &&
+      isCommonMarkEscapablePunctuation(s[i + 1])
+    ) {
+      append(s.slice(i, i + 2));
+      i += 2;
+      if (result.length >= MAX_CHAT_TITLE_LENGTH) break;
+      continue;
+    }
     const isImage = s[i] === "!" && i + 1 < len && s[i + 1] === "[";
     const bracketPos = isImage ? i + 1 : i;
     if (s[bracketPos] !== "[") {
@@ -223,15 +262,15 @@ function normalizeMarkdownInlineLinks(s: string): string {
       if (result.length >= MAX_CHAT_TITLE_LENGTH) break;
       continue;
     }
-    // A label longer than the visible-output bound cannot improve the title.
-    // Bounding this lookahead also prevents repeated `[` characters in
-    // malformed input from turning the scan quadratic.
     const labelStart = bracketPos + 1;
     let labelEnd = -1;
-    const labelCap = Math.min(labelStart + MAX_CHAT_TITLE_LENGTH + 1, len);
     let labelDepth = 1;
-    for (let k = labelStart; k < labelCap; k++) {
-      if (s[k] === "\\") {
+    for (let k = labelStart; k < len; k++) {
+      if (
+        s[k] === "\\" &&
+        k + 1 < len &&
+        isCommonMarkEscapablePunctuation(s[k + 1])
+      ) {
         k++;
         continue;
       }
@@ -245,8 +284,14 @@ function normalizeMarkdownInlineLinks(s: string): string {
         }
       }
     }
-    if (labelEnd < 0 || labelEnd + 1 >= len || s[labelEnd + 1] !== "(") {
-      append(s[i++]);
+    if (labelEnd < 0) {
+      append(flattenMarkdownLabel(s.slice(labelStart)));
+      i = len;
+      continue;
+    }
+    if (labelEnd + 1 >= len || s[labelEnd + 1] !== "(") {
+      append(s.slice(i, labelEnd + 1));
+      i = labelEnd + 1;
       if (result.length >= MAX_CHAT_TITLE_LENGTH) break;
       continue;
     }
@@ -285,7 +330,7 @@ function normalizeMarkdownInlineLinks(s: string): string {
     const rawLabel = isImage
       ? s.slice(labelStart, labelEnd).trim()
       : s.slice(labelStart, labelEnd);
-    const label = unescapeMarkdownLabel(rawLabel);
+    const label = flattenMarkdownLabel(rawLabel);
     append(label);
     // A malformed destination consumes the remainder rather than exposing URL
     // text. A balanced destination resumes immediately after its closing `)`.
@@ -346,6 +391,7 @@ function formatGeneratedTitle(text: string): string | null {
   // only the angle brackets so the address remains legible in the title.
   // RFC 5321 local-part: printable ASCII except <>@,;:\"/[]{}
   s = s.replace(/<([a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9.-]+)>/g, "$1");
+  s = unescapeCommonMarkPunctuation(s);
   // Normalize full/collapsed reference links and shortcut reference links.
   // These simple patterns are safe (no nested quantifiers).
   s = s
