@@ -161,7 +161,25 @@ assert.match(
   "The composeInstance effect must skip its first run (first mount is not a compose switch)",
 );
 
-// ── 12. viewRef kept in sync ──────────────────────────────────────────────────
+// ── 12. Primary ChatView is keyed by composeInstance ──────────────────────────
+
+const primaryChatViewRendering =
+  routerSource.match(/<ChatView[\s\S]*?key=\{[^}]*composeInstance[^}]*\}[\s\S]*?\/>/)?.[0] ?? "";
+
+assert.ok(
+  primaryChatViewRendering.length > 0,
+  "Primary ChatView must have a key prop that includes composeInstance so it remounts on nonce change",
+);
+
+// ── 13. Session promotion does NOT cause a remount (key uses composeInstance, not sessionId) ──
+
+assert.doesNotMatch(
+  primaryChatViewRendering,
+  /key=\{[^}]*sessionId[^}]*\}/,
+  "ChatView key must not include sessionId — session promotion (null→assigned) must not remount",
+);
+
+// ── 14. viewRef kept in sync ──────────────────────────────────────────────────
 
 assert.match(
   routerSource,

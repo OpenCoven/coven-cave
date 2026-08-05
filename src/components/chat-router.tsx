@@ -796,6 +796,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     <FamiliarChatoutCodexSurface />
   ) : (
     <ChatView
+      key={composeInstance}
       ref={viewHandle}
       familiar={chatFamiliar}
       familiars={familiars}
