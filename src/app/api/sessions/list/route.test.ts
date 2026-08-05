@@ -388,7 +388,7 @@ try {
         since: null,
         reason: null,
       },
-      "an explicit active leaf in a multi-root transcript fails quiet in the merged route response",
+      "an explicit active leaf ignores an inactive root sibling's request; its own request-free branch reports none in the merged route response",
     );
     await stopDaemon();
     stopDaemon = async () => {};

@@ -938,6 +938,8 @@ console.log("cave-conversations pending-marker test OK");
     "attention-off-path-request",
     "attention-root-sibling-active-request",
     "attention-root-sibling-inactive-request",
+    "attention-root-sibling-active-completes",
+    "attention-root-sibling-active-fails",
     "attention-malformed-turns",
     "attention-corrupt-leaf",
     "attention-duplicate-leaf-id",
@@ -1412,6 +1414,98 @@ console.log("cave-conversations pending-marker test OK");
         : turn,
     ),
     activeLeafId: "root-sibling-b-assistant",
+  });
+
+  // Root-level terminal/status regression: a root-sibling generation whose
+  // *inactive* branch ended in error must never leak that failure into the
+  // conversation summary's terminal `status`/`exitCode` — those fields are
+  // derived from the same active-path resolution as attentionEvidence, so
+  // they must honor whichever root-level sibling activeLeafId selects.
+  await saveConversation({
+    sessionId: "attention-root-sibling-active-completes",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Active root sibling completes while the inactive one failed",
+    createdAt: "2026-08-04T12:20:00.000Z",
+    updatedAt: "2026-08-04T12:22:00.000Z",
+    turns: [
+      {
+        id: "terminal-sibling-failed-user",
+        role: "user",
+        text: "Do this first.",
+        createdAt: "2026-08-04T12:20:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "terminal-sibling-failed-assistant",
+        role: "assistant",
+        text: "That failed.",
+        createdAt: "2026-08-04T12:21:00.000Z",
+        parentId: "terminal-sibling-failed-user",
+        isError: true,
+      },
+      {
+        id: "terminal-sibling-active-user",
+        role: "user",
+        text: "Never mind, do this instead.",
+        createdAt: "2026-08-04T12:21:30.000Z",
+        parentId: null,
+      },
+      {
+        id: "terminal-sibling-active-assistant",
+        role: "assistant",
+        text: "Done.",
+        createdAt: "2026-08-04T12:22:00.000Z",
+        parentId: "terminal-sibling-active-user",
+      },
+    ],
+    activeLeafId: "terminal-sibling-active-assistant",
+  });
+
+  // Same shape, terminal outcomes swapped: the active branch is the one that
+  // failed. Together with the fixture above, this pins that `status`/
+  // `exitCode` always track the selected branch in either direction, rather
+  // than e.g. defaulting to "completed" or picking up whichever root sibling
+  // happens to sort first.
+  await saveConversation({
+    sessionId: "attention-root-sibling-active-fails",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Active root sibling fails while the inactive one completed",
+    createdAt: "2026-08-04T12:23:00.000Z",
+    updatedAt: "2026-08-04T12:25:00.000Z",
+    turns: [
+      {
+        id: "terminal-sibling-completed-user",
+        role: "user",
+        text: "Do this first.",
+        createdAt: "2026-08-04T12:23:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "terminal-sibling-completed-assistant",
+        role: "assistant",
+        text: "Done.",
+        createdAt: "2026-08-04T12:24:00.000Z",
+        parentId: "terminal-sibling-completed-user",
+      },
+      {
+        id: "terminal-sibling-failing-active-user",
+        role: "user",
+        text: "Never mind, do this instead.",
+        createdAt: "2026-08-04T12:24:30.000Z",
+        parentId: null,
+      },
+      {
+        id: "terminal-sibling-failing-active-assistant",
+        role: "assistant",
+        text: "That failed.",
+        createdAt: "2026-08-04T12:25:00.000Z",
+        parentId: "terminal-sibling-failing-active-user",
+        isError: true,
+      },
+    ],
+    activeLeafId: "terminal-sibling-failing-active-assistant",
   });
 
   await saveConversation({
@@ -2191,6 +2285,31 @@ console.log("cave-conversations pending-marker test OK");
       reason: null,
     },
     "an inactive root sibling's request must never leak into the selected branch's evidence",
+  );
+
+  // Root-level terminal/status regression: `status`/`exitCode` are derived
+  // from the same active-path resolution (deriveConversationSignals reuses
+  // activeConversationTurns), so an inactive root sibling's terminal outcome
+  // must never leak into the summary either — in both directions.
+  assert.equal(
+    byId.get("attention-root-sibling-active-completes")?.status,
+    "completed",
+    "the active root sibling's success must be reported even though the inactive sibling ended in error",
+  );
+  assert.equal(
+    byId.get("attention-root-sibling-active-completes")?.exitCode,
+    0,
+    "the active root sibling's exit code must reflect its own success, not the inactive sibling's failure",
+  );
+  assert.equal(
+    byId.get("attention-root-sibling-active-fails")?.status,
+    "failed",
+    "the active root sibling's failure must be reported even though the inactive sibling completed",
+  );
+  assert.equal(
+    byId.get("attention-root-sibling-active-fails")?.exitCode,
+    1,
+    "the active root sibling's exit code must reflect its own failure, not the inactive sibling's success",
   );
 
   assert.deepEqual(byId.get("attention-malformed-turns")?.attentionEvidence, {
