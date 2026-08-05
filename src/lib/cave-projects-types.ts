@@ -47,8 +47,11 @@ export type CaveProject = {
 /** Normalise a project root path to a canonical forward-slash, no-trailing-slash form. */
 export function normalizeProjectRoot(root: string | null | undefined): string {
   const normalized = root?.trim().replace(/\\/g, "/");
-  if (/^[A-Za-z]:\/+$/.test(normalized ?? "")) return `${normalized!.slice(0, 2)}/`;
-  return normalized?.replace(/\/+$/, "") || "/";
+  if (!normalized) return "/";
+  if (/^[A-Za-z]:\/*$/.test(normalized)) return `${normalized.slice(0, 2)}/`;
+  let endIndex = normalized.length;
+  while (endIndex > 0 && normalized[endIndex - 1] === "/") endIndex--;
+  return normalized.slice(0, endIndex) || "/";
 }
 
 export type ProjectRelativePath = {

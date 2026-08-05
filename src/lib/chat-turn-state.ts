@@ -105,56 +105,31 @@ export type ConversationHistoryPayload = {
 
 /**
  * Resolve the immutable local execution root recorded for one assistant turn.
- * Any non-local or malformed recorded runtime fails closed instead of borrowing
- * a local session root. Only legacy turns with no response metadata may use the
- * caller's evidence-based session fallback.
+ * Any missing, non-local, or malformed recorded runtime fails closed. Session
+ * metadata is mutable and cannot safely authorize historical review or undo.
  */
 export function turnToolProjectRoot(
   turn: Pick<Turn, "responseMetadata" | "pending" | "lifecycle">,
-  legacySessionRoot: string | null | undefined,
+  _legacySessionRoot?: string | null,
 ): string | null {
-  if (turn.responseMetadata) {
-    const runtime = parseConversationRuntime(turn.responseMetadata.runtime);
-    return runtime?.kind === "local" ? runtime.cwd?.trim() || null : null;
-  }
-  if (turn.pending || turn.lifecycle !== undefined) return null;
-  return legacySessionRoot?.trim() || null;
+  if (!turn.responseMetadata) return null;
+  const runtime = parseConversationRuntime(turn.responseMetadata.runtime);
+  return runtime?.kind === "local" ? runtime.cwd?.trim() || null : null;
 }
 
 /**
- * Stable per-session fallback for transcripts predating per-turn response
- * metadata. The recorded runtime outranks project metadata and an SSH runtime
- * deliberately has no local mutation root.
+ * Resolve session display metadata without letting a malformed runtime borrow a
+ * project root. Destructive turn actions do not consume this helper.
  */
 export function sessionToolProjectRoot(
   runtime: string | null | undefined,
   projectRoot: string | null | undefined,
 ): string | null {
-  const parsedRuntime = parseConversationRuntime(runtime);
-  if (parsedRuntime) {
-    return parsedRuntime.kind === "local" ? parsedRuntime.cwd?.trim() || null : null;
+  if (runtime?.trim()) {
+    const parsedRuntime = parseConversationRuntime(runtime);
+    return parsedRuntime?.kind === "local" ? parsedRuntime.cwd?.trim() || null : null;
   }
   return projectRoot?.trim() || null;
-}
-
-/**
- * Capture a legacy fallback once per Cave session identity. This cache accepts
- * only daemon/session metadata; mutable picker state is not part of its API.
- * Missing metadata is not cached so an asynchronously loaded session can still
- * contribute evidence on a later render.
- */
-export function sessionToolProjectRootForIdentity(
-  roots: Map<string, string | null>,
-  sessionId: string | null | undefined,
-  runtime: string | null | undefined,
-  projectRoot: string | null | undefined,
-): string | null {
-  if (!sessionId) return null;
-  if (roots.has(sessionId)) return roots.get(sessionId) ?? null;
-  if (!runtime?.trim() && !projectRoot?.trim()) return null;
-  const root = sessionToolProjectRoot(runtime, projectRoot);
-  roots.set(sessionId, root);
-  return root;
 }
 
 /** Normalize the API's permissive persisted turn shape for ChatView. */

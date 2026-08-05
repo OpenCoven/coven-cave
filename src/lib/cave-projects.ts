@@ -10,7 +10,10 @@ export {
   sortProjectsAlphabetically,
 } from "./cave-projects-types.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
-import { dedupeProjectsByRoot as dedupeByRoot } from "./cave-projects-types.ts";
+import {
+  dedupeProjectsByRoot as dedupeByRoot,
+  normalizeProjectRoot as normalizeSharedProjectRoot,
+} from "./cave-projects-types.ts";
 import { caveHome } from "./coven-paths.ts";
 import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 
@@ -49,10 +52,7 @@ function normalizeRootExpandingHome(root: string): string {
   else if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
     trimmed = path.join(homedir(), trimmed.slice(2));
   }
-  const normalized = trimmed.replace(/\\/g, "/");
-  let endIndex = normalized.length;
-  while (endIndex > 0 && normalized[endIndex - 1] === "/") endIndex--;
-  return normalized.slice(0, endIndex) || "/";
+  return normalizeSharedProjectRoot(trimmed);
 }
 
 function nanoid(len = 10): string {

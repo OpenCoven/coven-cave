@@ -129,8 +129,8 @@ assert.match(
 // right session's workbench.
 assert.match(
   pendingCodeOpenLib,
-  /export type PendingCodeOpen =[\s\S]*kind: "files"[\s\S]*sessionId\?: string[\s\S]*kind: "changes"[\s\S]*path: string[\s\S]*sessionId\?: string[\s\S]*nonce: number/,
-  "PendingCodeOpen should be defined once in the shared lib and carry the raising session",
+  /export type PendingCodeOpen =[\s\S]*kind: "files"[\s\S]*root\?: string[\s\S]*sessionId\?: string[\s\S]*kind: "changes"[\s\S]*path: string[\s\S]*root\?: string[\s\S]*sessionId\?: string[\s\S]*nonce: number/,
+  "PendingCodeOpen should carry a captured root for file and historical diff routing",
 );
 // Pins the SOURCE, not the exact symbol list: the store may grow types (it
 // gained PendingCodeOrigin for the chat→workshop source card, cave-f6mu9) and
@@ -158,8 +158,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const sessionId = activeChatSessionIdRef\.current \?\? undefined;[\s\S]*enqueuePendingCodeOpen\([\s\S]*kind === "files"[\s\S]*path: detail\.path[\s\S]*line: detail\.line[\s\S]*sessionId[\s\S]*path: detail\.path[\s\S]*sessionId[\s\S]*nonce: Date\.now\(\)[\s\S]*\);[\s\S]*setMode\("code"\)/,
-  "Workspace should attach the raising chat session and switch into code mode",
+  /CustomEvent<\{[\s\S]{0,180}path\?: string;[\s\S]{0,120}projectRoot\?: string;[\s\S]{0,120}origin\?: PendingCodeOrigin;/,
+  "Workspace accepts immutable project provenance on file/diff events",
+);
+assert.match(
+  workspace,
+  /const root = detail\.projectRoot \?\? undefined;[\s\S]{0,350}kind === "files"[\s\S]{0,250}root,[\s\S]{0,120}sessionId[\s\S]{0,300}setMode\("code"\)/,
+  "Workspace should preserve captured project provenance while switching into code mode",
 );
 assert.match(
   codeRoom,
@@ -183,8 +188,8 @@ assert.match(
 );
 assert.match(
   codeView,
-  /if \(!pendingOpen\) return;[\s\S]*pendingOpen\.sessionId[\s\S]*\.find\(\(row\) => row\.id === pendingOpen\.sessionId\)[\s\S]*setTopTab\("sessions"\);[\s\S]*if \(target\) setSelectedId\(target\.id\);[\s\S]*onPendingOpenHandled\?\.\(\)/,
-  "CodeView should consume pending opens by selecting the raising session's workbench",
+  /if \(!pendingOpen\) return;[\s\S]*codeSessionForPendingOpen\([\s\S]*groups\.flatMap\(\(group\) => group\.sessions\),[\s\S]*pendingOpen,[\s\S]*\)[\s\S]*setTopTab\("sessions"\);[\s\S]*if \(target\) setSelectedId\(target\.id\);[\s\S]*onPendingOpenHandled\?\.\(\)/,
+  "CodeView should resolve historical opens through the captured-root session matcher",
 );
 assert.match(
   codeView,
@@ -243,13 +248,13 @@ assert.match(
 );
 assert.match(
   codeView,
-  /const byRoot =[\s\S]*trim\(codeSessionWorkRoot\(row\)\) === trim\(root\)/,
-  "CodeView resolves a browse root to the newest session working in it",
+  /codeSessionForPendingOpen\([\s\S]*groups\.flatMap\(\(group\) => group\.sessions\),[\s\S]*pendingOpen/,
+  "CodeView resolves browse and historical roots through the shared normalized matcher",
 );
 assert.match(
   codeView,
-  /setWorkbenchTarget\(root && !target \? null : \{ open: pendingOpen, sessionId: target\?\.id \?\? null \}\)/,
-  "a browse root with no matching session degrades to the surface without a stale focus",
+  /setWorkbenchTarget\(\s*pendingOpen\.root && !target\s*\? null\s*: \{ open: pendingOpen, sessionId: target\?\.id \?\? null \},?\s*\)/,
+  "a captured root with no matching session degrades without a stale focus",
 );
 assert.match(
   chatSurface,

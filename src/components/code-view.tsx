@@ -22,7 +22,7 @@ import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import {
   CODE_GITHUB_TABS,
-  codeSessionWorkRoot,
+  codeSessionForPendingOpen,
   groupCodeRailSessions,
   isCodeGithubTab,
   parseCodeDeepLink,
@@ -163,9 +163,8 @@ export function CodeView({
 
   const groups = useMemo(() => groupCodeRailSessions(sessions), [sessions]);
 
-  // Consume a routed file/diff open (cave-ohcj): select the raising chat
-  // session's workbench — or, for a Projects-hub root browse, the newest
-  // session working in that root — and hand the target down for tab focus.
+  // Consume a routed file/diff open (cave-ohcj): captured roots select the
+  // matching historical workbench; rootless opens use the raising chat session.
   // Held with the session it resolved to so a later manual session switch
   // doesn't replay a stale file focus into an unrelated workbench.
   const [workbenchTarget, setWorkbenchTarget] = useState<{
@@ -174,22 +173,20 @@ export function CodeView({
   } | null>(null);
   useEffect(() => {
     if (!pendingOpen) return;
-    const byId = pendingOpen.sessionId
-      ? groups.flatMap((g) => g.sessions).find((row) => row.id === pendingOpen.sessionId)
-      : undefined;
-    const root = pendingOpen.kind === "files" ? pendingOpen.root : undefined;
-    const trim = (p: string) => p.replace(/\/+$/, "");
-    const byRoot =
-      !byId && root
-        ? groups.flatMap((g) => g.sessions).find((row) => trim(codeSessionWorkRoot(row)) === trim(root))
-        : undefined;
-    const target = byId ?? byRoot;
+    const target = codeSessionForPendingOpen(
+      groups.flatMap((group) => group.sessions),
+      pendingOpen,
+    );
     setTopTab("sessions");
     setInitialGithubTarget(null);
     if (target) setSelectedId(target.id);
     // Root browse with no matching session: there is no workbench to focus —
     // land on the surface and leave the rail/selection as-is.
-    setWorkbenchTarget(root && !target ? null : { open: pendingOpen, sessionId: target?.id ?? null });
+    setWorkbenchTarget(
+      pendingOpen.root && !target
+        ? null
+        : { open: pendingOpen, sessionId: target?.id ?? null },
+    );
     // A new arrival re-shows the source card even if the reader dismissed the
     // last one — dismissing is "I've read this", not "never show me these".
     setOriginDismissed(false);

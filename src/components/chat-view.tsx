@@ -77,7 +77,6 @@ import {
   readLiveChatGeneration,
   recordLiveChatGeneration,
   retryTurnModelRequest,
-  sessionToolProjectRootForIdentity,
   stageLiveChatGenerationMetadata,
   subscribeLiveChatGeneration,
   turnToolProjectRoot,
@@ -2385,7 +2384,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     session?.project_root ??
     projectRoot ??
     "";
-  const sessionToolProjectRootsRef = useRef(new Map<string, string | null>());
   // ── Code reading (cave-f6mu9) ─────────────────────────────────────────────
   // A code block in the transcript is a claim about a file; the inspector is
   // where the reader checks it against the working tree and carries lines back
@@ -3672,15 +3670,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!activeLeafId) return turns;
     return resolveActivePath(turns, activeLeafId) as Turn[];
   }, [turns, activeLeafId]);
-  const sessionProjectRoot = sessionToolProjectRootForIdentity(
-    sessionToolProjectRootsRef.current,
-    sessionId,
-    session?.runtime,
-    session?.project_root,
-  );
   const turnProjectRoots = useMemo(
-    () => new Map(turns.map((turn) => [turn.id, turnToolProjectRoot(turn, sessionProjectRoot)])),
-    [sessionProjectRoot, turns],
+    () => new Map(turns.map((turn) => [turn.id, turnToolProjectRoot(turn)])),
+    [turns],
   );
 
   // The last settled assistant turn's first reply next-path. Typed task/action
@@ -8562,8 +8554,8 @@ function TurnRowImpl({
                       // per-card Review buttons remain, but "which of these five
                       // cards do I click" shouldn't be the first question. The
                       // chip rides the cards' existing cave:open-file-diff
-                      // contract (the Changes panel suffix-matches the path and
-                      // shows every changed file once open).
+                      // contract and carries the immutable execution root so
+                      // Changes opens the matching historical workbench.
                       const editedFiles = dedupeAbsoluteProjectPaths(
                         editCards.flatMap((tool) =>
                           actionReadyMutationTargetFiles(
@@ -8589,7 +8581,9 @@ function TurnRowImpl({
                                     aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
                                     onClick={() =>
                                       window.dispatchEvent(
-                                        new CustomEvent("cave:open-file-diff", { detail: { path: editedFiles[0] } }),
+                                        new CustomEvent("cave:open-file-diff", {
+                                          detail: { path: editedFiles[0], projectRoot: toolProjectRoot },
+                                        }),
                                       )
                                     }
                                   >
@@ -8936,8 +8930,8 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
   );
 }
 
-// Each assistant turn provides its recorded execution root. A session root is
-// used only for legacy turns with no per-turn response metadata.
+// Each assistant turn provides its immutable recorded execution root. Legacy
+// turns deliberately receive no filesystem authority.
 const ToolProjectRootContext = createContext<string | null>(null);
 
 // Review + Undo actions for a normalized inline mutation card. Review adapts to
@@ -8953,13 +8947,11 @@ const ToolProjectRootContext = createContext<string | null>(null);
 // a repo-relative path under the project root.
 function EditCardActions({
   projectRoot,
-  mutationPath,
   mutationPaths,
   diff,
   displayPath,
 }: {
   projectRoot: string | null;
-  mutationPath: string | null;
   mutationPaths: string[];
   diff: string;
   displayPath: string;
@@ -8969,11 +8961,10 @@ function EditCardActions({
     .filter((path): path is NonNullable<typeof path> => path !== null);
   const allMutationPathsResolved =
     mutationPaths.length > 0 && resolvedMutationPaths.length === mutationPaths.length;
-  const projectPath = allMutationPathsResolved && mutationPath === mutationPaths[0]
+  const singleProjectPath = allMutationPathsResolved && resolvedMutationPaths.length === 1
     ? resolvedMutationPaths[0] ?? null
     : null;
-  const relPath = projectPath?.relativePath ?? null;
-  const resolvedTargetFile = projectPath?.absolutePath ?? null;
+  const relPath = singleProjectPath?.relativePath ?? null;
   const canUndo = allMutationPathsResolved && resolvedMutationPaths.length === 1 && relPath !== null;
   const [state, setState] = useState<"idle" | "armed" | "reverting" | "reverted" | "error">("idle");
   const [err, setErr] = useState<string | null>(null);
@@ -8981,8 +8972,12 @@ function EditCardActions({
   const base = displayPath.split("/").pop() || displayPath;
 
   const review = () => {
-    if (relPath && resolvedTargetFile) {
-      window.dispatchEvent(new CustomEvent("cave:open-file-diff", { detail: { path: resolvedTargetFile } }));
+    if (singleProjectPath && projectRoot) {
+      window.dispatchEvent(
+        new CustomEvent("cave:open-file-diff", {
+          detail: { path: singleProjectPath.absolutePath, projectRoot },
+        }),
+      );
     } else {
       setReviewOpen(true);
     }
@@ -9016,9 +9011,9 @@ function EditCardActions({
         className="cave-edit-card__review focus-ring"
         onClick={review}
         title={
-          relPath
+          singleProjectPath
             ? "Review this file's pending diff in the Changes panel"
-            : "Review this edit's diff"
+            : "Review this edit's full diff"
         }
       >
         Review
@@ -9136,7 +9131,6 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             <EditCardActions
               key={actionIdentity}
               projectRoot={railRoot}
-              mutationPath={mutation.path}
               mutationPaths={mutation.paths}
               diff={inputDiff ?? ""}
               displayPath={displayPath}
