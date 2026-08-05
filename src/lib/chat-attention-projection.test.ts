@@ -176,6 +176,25 @@ test("eligible new awaiting-human attention with the same since but a changed re
   assert.equal(state.has("session-1"), false);
 });
 
+test("left-hanging attention identity is anchored by since when reason is null", () => {
+  const state = createChatAttentionProjectionState();
+  const baseline = { state: "left-hanging" as const, since: "2026-08-04T00:00:00.000Z", reason: null };
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    baseline,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  assert.equal(
+    applyChatAttentionProjections(state, [row({ attention: baseline })], 6, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    "none",
+  );
+  assert.equal(state.has("session-1"), true);
+});
+
 test("the first failed operation cannot undo a second live clear for the same session", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(

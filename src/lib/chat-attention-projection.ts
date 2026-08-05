@@ -127,16 +127,17 @@ function normalizeAttentionSnapshot(attention: ChatAttention | null | undefined)
   };
 }
 
-function attentionMatchesBaseline(attention: ChatAttention, baseline: ChatAttention): boolean {
+function attentionIdentity(attention: ChatAttention): string {
   const normalized = normalizeAttentionSnapshot(attention);
+  if (normalized.state === "none") return "none";
+  return `${normalized.since ?? ""}\u0000${normalized.reason ?? ""}`;
+}
+
+function attentionMatchesBaseline(attention: ChatAttention, baseline: ChatAttention): boolean {
   // Attention state can age from awaiting-human -> overdue-human without any
   // underlying request change. Treat the stable evidence identity (since +
   // reason) as authoritative, while canonical none still counts as a release.
-  if (normalized.state === "none" || baseline.state === "none") {
-    return normalized.state === baseline.state;
-  }
-  return normalized.since === baseline.since &&
-    normalized.reason === baseline.reason;
+  return attentionIdentity(attention) === attentionIdentity(baseline);
 }
 
 export function applyChatAttentionProjections(
