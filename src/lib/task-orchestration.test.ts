@@ -204,6 +204,11 @@ function codes(errors) {
     assert.ok(onCycle.has(id), `${id} is on the cycle`);
     assert.equal(deriveReadiness(cards.find((x) => x.id === id), cards), "cyclic");
   }
+  assert.deepEqual(
+    dependencyDepth(cards),
+    { a: 0, b: 0, c: 0 },
+    "cycle members stay out of dependency-depth layout",
+  );
   assert.deepEqual(codes(validateOrchestration(a, { cards })), ["dependency_cycle"]);
   assert.deepEqual(repairRecommendations(a, cards).map((r) => r.code), ["dependency_cycle"]);
 }
@@ -270,46 +275,22 @@ function codes(errors) {
 }
 
 {
-  // Guard exhaustion: a cycle larger than TRAVERSAL_GUARD must mark every
-  // member cyclic, not just the prefix the DFS visited before the guard fired.
-  // Without the post-guard BFS sweep, nodes beyond index TRAVERSAL_GUARD
-  // would return no dependency_cycle error even though they're on the loop.
-  const cycleSize = TRAVERSAL_GUARD + 2;
-  const bigCycle = [];
-  for (let i = 0; i < cycleSize; i += 1) {
-    bigCycle.push(
-      card(`n${i}`, {
-        dependencies: [dep(`d${i}`, { taskId: `n${(i + 1) % cycleSize}` })],
-      }),
-    );
+  const size = TRAVERSAL_GUARD + 2;
+  const oversizedCycle = Array.from({ length: size }, (_, index) =>
+    card(`n${index}`, {
+      dependencies: [dep(`d${index}`, { taskId: `n${(index + 1) % size}` })],
+    }),
+  );
+  const onCycle = cyclicIds(oversizedCycle);
+  assert.equal(onCycle.size, size, "guard exhaustion rejects the whole oversized component");
+  for (const member of oversizedCycle) {
+    assert.ok(onCycle.has(member.id), `${member.id} is included in the guard fault`);
   }
-  const onCycle = cyclicIds(bigCycle);
-  for (let i = 0; i < cycleSize; i += 1) {
-    assert.ok(onCycle.has(`n${i}`), `n${i} is a cycle member and must be marked cyclic`);
-  }
-  // validateOrchestration uses cyclicIds via the projected-graph path, so
-  // every member should also fail validation with dependency_cycle.
-  for (const member of bigCycle) {
-    const errs = validateOrchestration(member, { cards: bigCycle });
-    assert.ok(
-      errs.some((e) => e.code === "dependency_cycle"),
-      `n${member.id} must produce dependency_cycle`,
-    );
-  }
-}
-
-{
-  // Cycle members must always have depth 0, never a nonzero value that would
-  // place them on a misleading Gantt bar. A three-node cycle a->b->c->a
-  // previously produced depths 3, 2, 1 because the back-edge returned 0 and
-  // each caller added 1 before memoizing.
-  const a = card("a", { dependencies: [dep("da", { taskId: "b" })] });
-  const b = card("b", { dependencies: [dep("db", { taskId: "c" })] });
-  const c = card("c", { dependencies: [dep("dc", { taskId: "a" })] });
-  const depth = dependencyDepth([a, b, c]);
-  assert.equal(depth.a, 0, "cycle member a must have depth 0");
-  assert.equal(depth.b, 0, "cycle member b must have depth 0");
-  assert.equal(depth.c, 0, "cycle member c must have depth 0");
+  assert.deepEqual(
+    codes(validateOrchestration(oversizedCycle.at(-1), { cards: oversizedCycle })),
+    ["dependency_cycle"],
+    "the member beyond the traversal boundary cannot pass validation",
+  );
 }
 
 // ── I5: resolution requires evidence ─────────────────────────────────────────
@@ -358,12 +339,43 @@ function codes(errors) {
     previous,
     automated: true,
   });
-  assert.deepEqual(codes(errors), ["next_step_authorship", "next_step_authorship"]);
+  assert.deepEqual(codes(errors), ["dependency_authorship", "next_step_authorship"]);
 
   assert.deepEqual(
     validateOrchestration(rewritten, { cards: [rewritten], previous, automated: false }),
     [],
     "a human may edit their own records",
+  );
+}
+
+{
+  const previous = card("a", {
+    dependencies: [
+      dep("d1", { kind: "human", taskId: null, label: "Approve the pricing copy" }),
+      dep("d2", { kind: "github", taskId: null, ref: "OpenCoven/coven-cave#4201" }),
+    ],
+  });
+  const rewritten = card("a", {
+    dependencies: [
+      dep("d2", {
+        kind: "github",
+        taskId: null,
+        ref: "OpenCoven/coven-cave#4201",
+        state: "resolved",
+        evidence: "Enhance guessed this was merged",
+      }),
+    ],
+  });
+
+  const errors = validateOrchestration(rewritten, {
+    cards: [rewritten],
+    previous,
+    automated: true,
+  }).filter((error) => error.code === "dependency_authorship");
+  assert.deepEqual(
+    errors.map((error) => error.dependencyId).sort(),
+    ["d1", "d2"],
+    "automation cannot remove or partially rewrite human dependencies",
   );
 }
 
@@ -398,8 +410,8 @@ function codes(errors) {
     automated: true,
   });
   assert.ok(
-    errors.some((e) => e.code === "next_step_authorship" && e.field === "dependencies"),
-    "deleting a human dependency must produce next_step_authorship",
+    errors.some((e) => e.code === "dependency_authorship" && e.field === "dependencies"),
+    "deleting a human dependency must produce dependency_authorship",
   );
 }
 
@@ -421,8 +433,8 @@ function codes(errors) {
     automated: true,
   });
   assert.ok(
-    errors.some((e) => e.code === "next_step_authorship" && e.dependencyId === "d1"),
-    "rewriting a non-label field on a human dep must produce next_step_authorship",
+    errors.some((e) => e.code === "dependency_authorship" && e.dependencyId === "d1"),
+    "rewriting a non-label field on a human dep must produce dependency_authorship",
   );
 }
 

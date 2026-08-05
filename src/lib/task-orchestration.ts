@@ -44,6 +44,48 @@ export function isValidNextStep(step: TaskNextStep | null | undefined): step is 
   return step != null && isNonEmpty(step.summary);
 }
 
+function sameOptionalString(left: string | null | undefined, right: string | null | undefined): boolean {
+  return (left ?? null) === (right ?? null);
+}
+
+function sameStringArray(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+}
+
+function sameDependency(left: TaskDependency | undefined, right: TaskDependency): boolean {
+  return (
+    left != null &&
+    left.id === right.id &&
+    left.kind === right.kind &&
+    left.label === right.label &&
+    sameOptionalString(left.taskId, right.taskId) &&
+    sameOptionalString(left.ref, right.ref) &&
+    sameOptionalString(left.url, right.url) &&
+    left.state === right.state &&
+    left.origin === right.origin &&
+    left.createdAt === right.createdAt &&
+    sameOptionalString(left.resolvedAt, right.resolvedAt) &&
+    sameOptionalString(left.resolvedBy, right.resolvedBy) &&
+    sameOptionalString(left.evidence, right.evidence)
+  );
+}
+
+function sameNextStep(left: TaskNextStep | null | undefined, right: TaskNextStep): boolean {
+  return (
+    left != null &&
+    left.summary === right.summary &&
+    sameOptionalString(left.actorFamiliarId, right.actorFamiliarId) &&
+    sameOptionalString(left.capability, right.capability) &&
+    sameOptionalString(left.target, right.target) &&
+    sameStringArray(left.inputs, right.inputs) &&
+    left.requiresApproval === right.requiresApproval &&
+    left.origin === right.origin &&
+    left.updatedAt === right.updatedAt
+  );
+}
+
 // ── Graph ────────────────────────────────────────────────────────────────────
 
 /** Adjacency over task edges only, dropping references to cards that don't exist. */
@@ -60,6 +102,37 @@ function buildEdges(cards: readonly Card[]): Map<string, string[]> {
   return edges;
 }
 
+function oversizedComponents(edges: ReadonlyMap<string, readonly string[]>): string[][] {
+  const adjacent = new Map<string, Set<string>>();
+  for (const id of edges.keys()) adjacent.set(id, new Set());
+  for (const [id, parents] of edges) {
+    for (const parent of parents) {
+      adjacent.get(id)?.add(parent);
+      adjacent.get(parent)?.add(id);
+    }
+  }
+
+  const visited = new Set<string>();
+  const oversized: string[][] = [];
+  for (const id of edges.keys()) {
+    if (visited.has(id)) continue;
+    const component: string[] = [];
+    const pending = [id];
+    visited.add(id);
+    while (pending.length > 0) {
+      const next = pending.pop() as string;
+      component.push(next);
+      for (const neighbor of adjacent.get(next) ?? []) {
+        if (visited.has(neighbor)) continue;
+        visited.add(neighbor);
+        pending.push(neighbor);
+      }
+    }
+    if (component.length > TRAVERSAL_GUARD) oversized.push(component);
+  }
+  return oversized;
+}
+
 /**
  * Every cycle in the task graph, each as the ids on the loop in walk order.
  * A full multi-parent DFS: the single-upstream walk this replaces could not see
@@ -67,7 +140,8 @@ function buildEdges(cards: readonly Card[]): Map<string, string[]> {
  */
 export function detectCycles(cards: readonly Card[]): string[][] {
   const edges = buildEdges(cards);
-  const cycles: string[][] = [];
+  const cycles = oversizedComponents(edges);
+  const guardFaultIds = new Set(cycles.flat());
   const seen = new Set<string>();
   const settled = new Set<string>();
   const stack: string[] = [];
@@ -103,7 +177,7 @@ export function detectCycles(cards: readonly Card[]): string[][] {
   };
 
   for (const card of cards) {
-    if (!seen.has(card.id)) walk(card.id, 0);
+    if (!guardFaultIds.has(card.id) && !seen.has(card.id)) walk(card.id, 0);
   }
 
   // Ensure every node reachable from a guarded root is included in a cycle
@@ -151,6 +225,10 @@ export function dependencyDepth(cards: readonly Card[]): Record<string, number> 
     }
     const cached = memo[id];
     if (cached !== undefined) return cached;
+    if (cyclic.has(id)) {
+      memo[id] = 0;
+      return 0;
+    }
     if (seen.has(id) || seen.size >= TRAVERSAL_GUARD) return 0;
     seen.add(id);
     let depth = 0;
@@ -300,7 +378,7 @@ export function validateOrchestration(
     const prevStep = ctx.previous.nextStep;
     if (
       prevStep?.origin === "human" &&
-      JSON.stringify(card.nextStep ?? null) !== JSON.stringify(prevStep)
+      !sameNextStep(card.nextStep, prevStep)
     ) {
       errors.push({
         code: "next_step_authorship",
@@ -308,19 +386,12 @@ export function validateOrchestration(
         message: "This next step was written by a human. Propose a change instead of overwriting it.",
       });
     }
-    // Iterate the *previous* human-authored dependencies, not the new ones.
-    // This catches deletions and field-level rewrites beyond label/kind/taskId.
-    // Use key-sorted serialisation so insertion-order differences don't produce
-    // false positives when the same record is round-tripped through two paths.
-    const sortedJSON = (v: unknown): string =>
-      v == null ? JSON.stringify(v) : JSON.stringify(v, Object.keys(v as object).sort());
-    const newById = new Map(deps.map((dep) => [dep.id, dep]));
+    const currentById = new Map(deps.map((dep) => [dep.id, dep]));
     for (const before of dependenciesOf(ctx.previous)) {
       if (before.origin !== "human") continue;
-      const after = newById.get(before.id);
-      if (sortedJSON(after ?? null) !== sortedJSON(before)) {
+      if (!sameDependency(currentById.get(before.id), before)) {
         errors.push({
-          code: "next_step_authorship",
+          code: "dependency_authorship",
           field: "dependencies",
           dependencyId: before.id,
           message: `Dependency "${before.label}" was written by a human. Propose a change instead of overwriting it.`,
@@ -338,8 +409,12 @@ export function validateOrchestration(
  * Readiness is computed on read from the fields above and never persisted, so
  * it cannot drift out of step with the dependencies it describes.
  */
-export function deriveReadiness(card: Card, cards: readonly Card[]): TaskReadiness {
-  if (cyclicIds(cards).has(card.id)) return "cyclic";
+export function deriveReadiness(
+  card: Card,
+  cards: readonly Card[],
+  cyclic: ReadonlySet<string> = cyclicIds(cards),
+): TaskReadiness {
+  if (cyclic.has(card.id)) return "cyclic";
 
   const unresolved = unresolvedOf(card);
   if (card.status === "blocked") {
@@ -364,12 +439,16 @@ export type RepairRecommendation = {
  * before this contract existed stay readable (I8) — they surface here as a
  * cleanup queue instead of failing a read.
  */
-export function repairRecommendations(card: Card, cards: readonly Card[]): RepairRecommendation[] {
+export function repairRecommendations(
+  card: Card,
+  cards: readonly Card[],
+  cyclic: ReadonlySet<string> = cyclicIds(cards),
+): RepairRecommendation[] {
   const out: RepairRecommendation[] = [];
   const deps = dependenciesOf(card);
   const unresolved = unresolvedOf(card);
 
-  if (cyclicIds(cards).has(card.id)) {
+  if (cyclic.has(card.id)) {
     out.push({
       code: "dependency_cycle",
       field: "dependencies",
