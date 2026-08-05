@@ -125,6 +125,7 @@ assert.equal(
         },
         latestUserTurnAt: "2026-08-04T17:00:00.000Z",
         attentionAfterOperationId: "run-attention-local",
+        attentionOperationLineage: ["run-attention-prior", "run-attention-local"],
         request: {
           sessionId: "attention-local",
           turnId: "assistant-turn",
@@ -148,6 +149,11 @@ assert.equal(
       localOnlyRow?.attentionAfterOperationId,
       "run-attention-local",
       "local-only rows project the active path's stable human send identity",
+    );
+    assert.deepEqual(
+      localOnlyRow?.attentionOperationLineage,
+      ["run-attention-prior", "run-attention-local"],
+      "local-only rows preserve bounded server-authored ancestry",
     );
 
     const mergedAttention = mergeSessionRows({
@@ -177,6 +183,11 @@ assert.equal(
       mergedAttention[0]?.attentionAfterOperationId,
       "run-attention-local",
       "healthy daemon-backed rows retain Cave's causal send evidence",
+    );
+    assert.deepEqual(
+      mergedAttention[0]?.attentionOperationLineage,
+      ["run-attention-prior", "run-attention-local"],
+      "healthy daemon-backed rows retain Cave's causal ancestry",
     );
 
     const reopenedAttention = mergeSessionRows({
@@ -1318,6 +1329,128 @@ assert.equal(
   "run-offline-1",
   "replayed daemon sessions preserve the original send operation id on the original conversation row",
 );
+
+{
+  const caveId = "mapped-cave-duplicate";
+  const harnessId = "mapped-harness-duplicate";
+  const duplicateMappedRows = mergeSessionRows({
+    daemonSessions: [
+      {
+        id: caveId,
+        project_root: "/repo",
+        harness: "codex",
+        title: "Original Cave-id daemon row",
+        status: "completed",
+        exit_code: 0,
+        archived_at: null,
+        created_at: "2026-06-25T04:20:00.000Z",
+        updated_at: "2026-06-25T04:21:00.000Z",
+      },
+      {
+        id: harnessId,
+        project_root: "/repo",
+        harness: "codex",
+        title: "Mapped current harness row",
+        status: "running",
+        exit_code: null,
+        archived_at: null,
+        created_at: "2026-06-25T04:20:00.000Z",
+        updated_at: "2026-06-25T04:22:00.000Z",
+      },
+    ],
+    localConversations: [{
+      sessionId: caveId,
+      harnessSessionId: harnessId,
+      familiarId: "charm",
+      harness: "codex",
+      title: "Cave conversation",
+      updatedAt: "2026-06-25T04:23:00.000Z",
+    }],
+    state: {
+      sessionFamiliar: { [caveId]: "charm" },
+      sessionTitles: { [caveId]: "Canonical Cave title" },
+      sessionArchived: {},
+      sessionSacrificed: {},
+    },
+    includeArchived: false,
+  });
+
+  assert.equal(duplicateMappedRows.length, 1, "original and mapped daemon ids collapse before output");
+  assert.equal(duplicateMappedRows[0]?.id, caveId);
+  assert.equal(
+    duplicateMappedRows[0]?.status,
+    "running",
+    "the harness-id match is the authoritative daemon row when both ids are present",
+  );
+  assert.equal(duplicateMappedRows[0]?.title, "Canonical Cave title");
+}
+
+{
+  const caveId = "mapped-cave-archived";
+  const harnessId = "mapped-harness-killed";
+  const daemonSessions = [{
+    id: harnessId,
+    project_root: "/invalid",
+    harness: "codex",
+    title: "Killed mapped run",
+    status: "killed",
+    exit_code: 137,
+    archived_at: null,
+    created_at: "2026-06-25T04:20:00.000Z",
+    updated_at: "2026-06-25T04:22:00.000Z",
+  }];
+  const localConversations = [{
+    sessionId: caveId,
+    harnessSessionId: harnessId,
+    familiarId: "charm",
+    harness: "codex",
+    runtime: "local:/repo",
+    title: "Archived Cave conversation",
+    status: "completed",
+    exitCode: 0,
+    updatedAt: "2026-06-25T04:23:00.000Z",
+    attentionEvidence: {
+      latestCompletedTurn: { role: "assistant", at: "2026-06-25T04:22:00.000Z" },
+      latestUserTurnAt: "2026-06-25T04:21:00.000Z",
+      request: {
+        sessionId: caveId,
+        turnId: "assistant-attention",
+        requestedAt: "2026-06-25T04:22:00.000Z",
+        reason: "approval",
+      },
+    },
+  }];
+  const archivedAt = "2026-06-25T04:24:00.000Z";
+  const mappedState = {
+    sessionFamiliar: {},
+    sessionTitles: {},
+    sessionArchived: { [caveId]: archivedAt },
+    sessionSacrificed: {},
+  };
+  const merge = (includeArchived: boolean) => mergeSessionRows({
+    daemonSessions,
+    localConversations,
+    state: mappedState,
+    includeArchived,
+    isValidDaemonProjectRoot: (root) => root === "/repo",
+    projectRootForCwd: (cwd) => (cwd === "/repo" ? "/repo" : null),
+  });
+
+  assert.equal(
+    merge(false).length,
+    0,
+    "canonical Cave archive state keeps an invalid-root mapped kill out of the active list",
+  );
+  const archivedRows = merge(true);
+  assert.equal(archivedRows.length, 1);
+  assert.equal(archivedRows[0]?.id, caveId);
+  assert.equal(archivedRows[0]?.archived_at, archivedAt);
+  assert.deepEqual(
+    archivedRows[0]?.attention,
+    NO_CHAT_ATTENTION,
+    "a killed mapped row cannot resurrect attention for its archived Cave conversation",
+  );
+}
 
 // Analytics-spawned discussions carry regular chat provenance through to the session row.
 const analyticsRows = localConversationSessionRows(

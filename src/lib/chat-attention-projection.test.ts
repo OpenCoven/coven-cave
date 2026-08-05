@@ -906,6 +906,100 @@ test("non-none canonical requests with a different or absent operation stay mask
   }
 });
 
+test("server-authored lineage releases an unknown-baseline clear before an untracked newer cross-tab operation", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-local-a",
+    scopeKey,
+    undefined,
+    "2026-08-05T00:02:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-local-a", "persisted", 6);
+
+  const canonicalAfterCrossTabB = [row({
+    attention: {
+      state: "awaiting-human",
+      since: "2026-08-04T23:59:00.000Z",
+      reason: "decision",
+    },
+    attentionAfterOperationId: "operation-cross-tab-b",
+    attentionOperationLineage: ["operation-local-a", "operation-cross-tab-b"],
+  })];
+
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalAfterCrossTabB, 6, scopeKey),
+    canonicalAfterCrossTabB,
+    "the selected-path lineage proves A persisted before untracked B without comparing clocks",
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("older server lineage cannot release an unknown-baseline clear early", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-local-a",
+    scopeKey,
+    undefined,
+    "2026-08-05T00:02:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-local-a", "persisted", 6);
+
+  const olderCanonical = [row({
+    attentionAfterOperationId: "operation-older",
+    attentionOperationLineage: ["operation-older"],
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, olderCanonical, 6, scopeKey)[0]?.attention.state,
+    "none",
+  );
+  assert.equal(state.get("session-1")?.has("operation-local-a"), true);
+
+  const causallyNewButBelowBoundary = [row({
+    attentionAfterOperationId: "operation-cross-tab-b",
+    attentionOperationLineage: ["operation-local-a", "operation-cross-tab-b"],
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, causallyNewButBelowBoundary, 5, scopeKey)[0]?.attention.state,
+    "none",
+    "even valid newer lineage waits for the persisted request boundary",
+  );
+  assert.equal(state.get("session-1")?.has("operation-local-a"), true);
+});
+
+test("cross-tab lineage retires only proven overlapping local operations", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  for (const operationId of ["operation-local-a", "operation-local-c"]) {
+    recordChatAttentionClear(
+      state,
+      "session-1",
+      operationId,
+      scopeKey,
+      undefined,
+      "2026-08-05T00:02:00.000Z",
+    );
+    settleChatAttentionClear(state, "session-1", operationId, "persisted", 6);
+  }
+
+  const canonicalAfterCrossTabB = [row({
+    attentionAfterOperationId: "operation-cross-tab-b",
+    attentionOperationLineage: ["operation-local-a", "operation-cross-tab-b"],
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalAfterCrossTabB, 6, scopeKey)[0]?.attention.state,
+    "none",
+    "unproven later local C must continue masking the row",
+  );
+  assert.equal(state.get("session-1")?.has("operation-local-a"), false);
+  assert.equal(state.get("session-1")?.get("operation-local-c")?.status, "persisted");
+});
+
 test("matching operation identity does not bypass known-baseline identity when the attention payload repeats", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(

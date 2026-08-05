@@ -971,12 +971,27 @@ console.log("cave-conversations pending-marker test OK");
     updatedAt: "2026-08-04T18:00:00.000Z",
     turns: [
       {
+        id: "leaf-prior-user",
+        role: "user",
+        text: "Start the release review.",
+        attentionClearOperationId: "run-prior",
+        createdAt: "2026-08-04T16:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "leaf-prior-assistant",
+        role: "assistant",
+        text: "The release is ready for a final decision.",
+        createdAt: "2026-08-04T16:30:00.000Z",
+        parentId: "leaf-prior-user",
+      },
+      {
         id: "leaf-user",
         role: "user",
         text: "Should I deploy this?",
         attentionClearOperationId: " run-leaf ",
         createdAt: "2026-08-04T17:00:00.000Z",
-        parentId: null,
+        parentId: "leaf-prior-assistant",
       },
       {
         id: "leaf-assistant",
@@ -2185,6 +2200,7 @@ console.log("cave-conversations pending-marker test OK");
     latestCompletedTurn: { role: "assistant", at: "2026-08-04T18:00:00.000Z" },
     latestUserTurnAt: "2026-08-04T17:00:00.000Z",
     attentionAfterOperationId: "run-leaf",
+    attentionOperationLineage: ["run-prior", "run-leaf"],
     request: {
       sessionId: "attention-leaf-request",
       turnId: "leaf-assistant",
@@ -2346,6 +2362,7 @@ console.log("cave-conversations pending-marker test OK");
     latestCompletedTurn: { role: "assistant", at: "2026-08-04T12:11:00.000Z" },
     latestUserTurnAt: "2026-08-04T12:10:00.000Z",
     attentionAfterOperationId: "run-root-a",
+    attentionOperationLineage: ["run-root-a"],
     request: {
       sessionId: "attention-root-sibling-active-request",
       turnId: "root-sibling-a-assistant",
@@ -2375,6 +2392,7 @@ console.log("cave-conversations pending-marker test OK");
     latestCompletedTurn: { role: "assistant", at: "2026-08-04T12:13:00.000Z" },
     latestUserTurnAt: "2026-08-04T12:12:00.000Z",
     attentionAfterOperationId: "run-root-b",
+    attentionOperationLineage: ["run-root-b"],
     request: null,
   });
   assert.deepEqual(

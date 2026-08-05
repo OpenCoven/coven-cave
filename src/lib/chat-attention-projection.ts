@@ -2,6 +2,7 @@ import {
   isCanonicalIsoInstant,
   NO_CHAT_ATTENTION,
   normalizeChatAttentionOperationId,
+  normalizeChatAttentionOperationLineage,
   type ChatAttention,
 } from "./chat-attention.ts";
 import type { SessionRow } from "./types.ts";
@@ -587,6 +588,23 @@ export function applyChatAttentionProjections(
     const causalOperationId = row.attention.state === "none"
       ? null
       : normalizeChatAttentionOperationId(row.attentionAfterOperationId);
+    const operationLineage = normalizeChatAttentionOperationLineage(row.attentionOperationLineage);
+    const validOperationLineage = causalOperationId &&
+      operationLineage.at(-1) === causalOperationId
+      ? new Set(operationLineage)
+      : null;
+    if (validOperationLineage) {
+      for (const [operationId, operation] of operations) {
+        if (
+          operation.status === "persisted" &&
+          !operation.baseline &&
+          responseRequestId >= operation.canonicalAfterRequestId &&
+          validOperationLineage.has(operationId)
+        ) {
+          causallySupersededUnknownOperationIds.add(operationId);
+        }
+      }
+    }
     if (causalOperationId) {
       const liveCausalOperation = operations.get(causalOperationId);
       // The causal anchor is often an operation that a PRIOR call already

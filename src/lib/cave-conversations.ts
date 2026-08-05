@@ -14,6 +14,7 @@ import { CHAT_ATTENTION_REASONS } from "./chat-attention-marker.ts";
 import {
   isCanonicalIsoInstant,
   normalizeChatAttentionOperationId,
+  normalizeChatAttentionOperationLineage,
   type ChatAttentionEvidence,
   type ChatAttentionRequest,
 } from "./chat-attention.ts";
@@ -265,6 +266,11 @@ function deriveConversationSignals(conv: ConversationFile): {
   let sawLatestUserTurn = false;
   let latestUserTurnAt: string | null = null;
   let attentionAfterOperationId: string | null = null;
+  const attentionOperationLineage = normalizeChatAttentionOperationLineage(
+    turns
+      .filter((turn) => turn.role === "user")
+      .map((turn) => turn.attentionClearOperationId),
+  );
   let request: ChatAttentionEvidence["request"] = null;
   let sawRequestEvidence = false;
   let sawUserAfterAssistant = false;
@@ -333,6 +339,7 @@ function deriveConversationSignals(conv: ConversationFile): {
             latestCompletedTurn,
             latestUserTurnAt,
             ...(attentionAfterOperationId ? { attentionAfterOperationId } : {}),
+            ...(attentionOperationLineage.length > 0 ? { attentionOperationLineage } : {}),
             request,
           },
         }

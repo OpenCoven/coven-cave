@@ -7,8 +7,10 @@ import {
   chatAttentionLabel,
   compareChatAttention,
   deriveChatAttention,
+  CHAT_ATTENTION_OPERATION_LINEAGE_LIMIT,
   NO_CHAT_ATTENTION,
   normalizeChatAttentionOperationId,
+  normalizeChatAttentionOperationLineage,
 } from "./chat-attention.ts";
 
 const NOW = Date.parse("2026-08-04T20:00:00.000Z");
@@ -22,6 +24,20 @@ test("normalizes only nonempty string attention operation ids", () => {
       `${JSON.stringify(value)} must not become causal attention evidence`,
     );
   }
+});
+
+test("normalizes and bounds server-authored attention operation lineage", () => {
+  const operations = Array.from(
+    { length: CHAT_ATTENTION_OPERATION_LINEAGE_LIMIT + 2 },
+    (_, index) => ` operation-${index} `,
+  );
+  operations.push("operation-2");
+
+  const lineage = normalizeChatAttentionOperationLineage(operations);
+  assert.equal(lineage.length, CHAT_ATTENTION_OPERATION_LINEAGE_LIMIT);
+  assert.equal(lineage.at(-1), "operation-2", "a repeated operation moves to the newest causal position");
+  assert.equal(lineage.includes("operation-0"), false, "the oldest ancestry is discarded");
+  assert.deepEqual(normalizeChatAttentionOperationLineage("operation-1"), []);
 });
 
 test("derives all four attention states with inclusive boundaries", () => {

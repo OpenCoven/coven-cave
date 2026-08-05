@@ -92,6 +92,8 @@ export type SessionRow = {
   attention: ChatAttention;
   /** Latest selected-path human send causally preceding canonical attention. */
   attentionAfterOperationId?: string | null;
+  /** Bounded server-authored operation ancestry ending at attentionAfterOperationId. */
+  attentionOperationLineage?: string[];
   familiarId?: string | null;
   origin?: SessionOrigin;
   /** Cave has a saved local conversation transcript; preserves recoverable interrupted chats without surfacing daemon-only dead runs. */

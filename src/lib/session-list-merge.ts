@@ -7,6 +7,7 @@ import {
   deriveChatAttention,
   NO_CHAT_ATTENTION,
   normalizeChatAttentionOperationId,
+  normalizeChatAttentionOperationLineage,
   type ChatAttentionEvidence,
 } from "./chat-attention.ts";
 import { ACTIVE_SESSION_STATUSES } from "./chat-auto-archive.ts";
@@ -16,7 +17,7 @@ import type { SessionInitiator, SessionOrigin, SessionRow } from "./types.ts";
 
 export type DaemonSessionRow = Omit<
   SessionRow,
-  "attention" | "attentionAfterOperationId" | "familiarId" | "origin"
+  "attention" | "attentionAfterOperationId" | "attentionOperationLineage" | "familiarId" | "origin"
 >;
 
 export type LocalConversationSummary = {
@@ -90,6 +91,13 @@ function attentionAfterOperationId(
   return normalizeChatAttentionOperationId(evidence?.attentionAfterOperationId);
 }
 
+function attentionOperationLineageFields(
+  evidence: ChatAttentionEvidence | null | undefined,
+): { attentionOperationLineage: string[] } | Record<string, never> {
+  const lineage = normalizeChatAttentionOperationLineage(evidence?.attentionOperationLineage);
+  return lineage.length > 0 ? { attentionOperationLineage: lineage } : {};
+}
+
 function isDaemonAuthoritativeActiveStatus(status: string): boolean {
   return ACTIVE_SESSION_STATUSES.has(status);
 }
@@ -139,6 +147,7 @@ function localConversationToSession(
       now,
     }),
     attentionAfterOperationId: attentionAfterOperationId(conv.attentionEvidence),
+    ...attentionOperationLineageFields(conv.attentionEvidence),
     familiarId,
     origin: conv.origin ?? "chat",
     hasLocalConversation: true,
@@ -200,14 +209,36 @@ export function mergeSessionRows({
     }
   }
 
+  type MappedDaemonSession = {
+    session: DaemonSessionRow;
+    local: LocalConversationSummary | undefined;
+    stateSessionId: string;
+    harnessMatched: boolean;
+  };
+  const daemonByMappedId = new Map<string, MappedDaemonSession>();
   for (const session of daemonSessions) {
-    const local = localById.get(session.id) ?? localByHarnessSessionId.get(session.id);
+    const directLocal = localById.get(session.id);
+    const harnessLocal = directLocal ? undefined : localByHarnessSessionId.get(session.id);
+    const local = directLocal ?? harnessLocal;
+    const stateSessionId = local?.sessionId ?? session.id;
+    const candidate = {
+      session,
+      local,
+      stateSessionId,
+      harnessMatched: Boolean(harnessLocal),
+    };
+    const existing = daemonByMappedId.get(stateSessionId);
+    if (!existing || (candidate.harnessMatched && !existing.harnessMatched)) {
+      daemonByMappedId.set(stateSessionId, candidate);
+    }
+  }
+
+  for (const { session, local, stateSessionId } of daemonByMappedId.values()) {
     if (isValidDaemonProjectRoot && !isValidDaemonProjectRoot(session.project_root)) {
       if (local && isDaemonRecoverableStatus(session.status)) {
-        seen.add(session.id);
-        seen.add(local.sessionId);
+        seen.add(stateSessionId);
         const recovered = localConversationToSession(local, state, projectRootForCwd, now);
-        const archived_at = state.sessionArchived[session.id] ?? session.archived_at;
+        const archived_at = state.sessionArchived[stateSessionId] ?? session.archived_at;
         const attention =
           isArchivedStatus(session.status)
             ? NO_CHAT_ATTENTION
@@ -234,9 +265,7 @@ export function mergeSessionRows({
       }
       continue;
     }
-    seen.add(session.id);
-    if (local) seen.add(local.sessionId);
-    const stateSessionId = local?.sessionId ?? session.id;
+    seen.add(stateSessionId);
     const titleOverride = state.sessionTitles[stateSessionId];
     const archivedLocal = state.sessionArchived[stateSessionId] ?? null;
     const keep = Boolean(state.sessionKeep?.[stateSessionId]);
@@ -288,6 +317,7 @@ export function mergeSessionRows({
       archived_at,
       attention,
       attentionAfterOperationId: attentionAfterOperationId(local?.attentionEvidence),
+      ...attentionOperationLineageFields(local?.attentionEvidence),
       // A Cave conversation records real provenance at send time; harness/
       // title inference is only the fallback for daemon-only sessions.
       origin: local?.origin ?? inferOrigin(session),

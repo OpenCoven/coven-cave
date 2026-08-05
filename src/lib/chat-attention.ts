@@ -27,6 +27,8 @@ export type ChatAttentionEvidence = {
   latestCompletedTurn: { role: "user" | "assistant"; at: string } | null;
   latestUserTurnAt: string | null;
   attentionAfterOperationId?: string | null;
+  /** Bounded, server-authored clear-operation ancestry on the selected path. */
+  attentionOperationLineage?: string[];
   request: ChatAttentionRequest | InvalidChatAttentionRequestEvidence | null;
 };
 
@@ -40,6 +42,21 @@ export function normalizeChatAttentionOperationId(value: unknown): string | null
   if (typeof value !== "string") return null;
   const normalized = value.trim();
   return normalized || null;
+}
+
+export const CHAT_ATTENTION_OPERATION_LINEAGE_LIMIT = 64;
+
+export function normalizeChatAttentionOperationLineage(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const normalized: string[] = [];
+  for (const candidate of value) {
+    const operationId = normalizeChatAttentionOperationId(candidate);
+    if (!operationId) continue;
+    const existingIndex = normalized.indexOf(operationId);
+    if (existingIndex >= 0) normalized.splice(existingIndex, 1);
+    normalized.push(operationId);
+  }
+  return normalized.slice(-CHAT_ATTENTION_OPERATION_LINEAGE_LIMIT);
 }
 
 export function isCanonicalIsoInstant(value: unknown): value is string {
