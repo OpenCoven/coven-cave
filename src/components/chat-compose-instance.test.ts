@@ -95,7 +95,7 @@ assert.match(
 // ── 6. Session promotion does NOT increment the nonce ────────────────────────
 
 const sessionStartedHandler =
-  routerSource.match(/onSessionStarted=\{\(sid\) => \{[\s\S]*?\}\}/)?.[0] ?? "";
+  routerSource.match(/onSessionStarted=\{\(sid,\s*originSessionId\) => \{[\s\S]*?\}\}/)?.[0] ?? "";
 
 assert.ok(sessionStartedHandler.length > 0, "onSessionStarted handler must be present in router");
 
