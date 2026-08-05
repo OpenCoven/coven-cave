@@ -76,6 +76,15 @@ async function base(
       },
     }),
   );
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({
+      json: {
+        running: true,
+        availability: "online",
+        target: { mode: "local" },
+      },
+    }),
+  );
   await page.route("**/api/onboarding/status**", (route) =>
     route.fulfill({ json: { ok: true, complete: true, steps: {}, tools: [] } }),
   );
@@ -301,7 +310,6 @@ test.describe("code surface (Coding familiar's room)", () => {
     isMobile,
   }) => {
     test.skip(!!isMobile, "desktop project supplies the narrow viewport explicitly");
-    await page.setViewportSize({ width: 320, height: 700 });
     await base(page);
     let releaseMemberships = () => {};
     const membershipsReady = new Promise<void>((resolve) => {
@@ -321,11 +329,30 @@ test.describe("code surface (Coding familiar's room)", () => {
     });
     await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
 
-    const sessionsTab = page.getByRole("tab", { name: "Sessions" });
+    const sessionsTab = page
+      .getByRole("tablist", { name: "Code surface" })
+      .getByRole("tab", { name: "Sessions" });
+    // Establish keyboard modality before programmatically selecting the exact
+    // tab under test so Chromium applies the :focus-visible inset ring.
+    await page.keyboard.press("Tab");
     await sessionsTab.focus();
     await expect(sessionsTab).toBeFocused();
-    await expect(sessionsTab).toHaveClass(/focus-ring-inset/);
+    await expect
+      .poll(() =>
+        sessionsTab.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            focusVisible: element.matches(":focus-visible"),
+            outlineOffset: style.outlineOffset,
+            outlineWidth: style.outlineWidth,
+          };
+        }),
+      )
+      .toEqual({ focusVisible: true, outlineOffset: "-2px", outlineWidth: "2px" });
 
+    // Resize only after the desktop Code surface has mounted. Starting at a
+    // phone width intentionally routes to the mobile workshop fallback.
+    await page.setViewportSize({ width: 320, height: 700 });
     await page.getByRole("button", { name: "GitHub organization settings" }).click();
     const popover = page.getByRole("dialog", { name: "GitHub organization settings" });
     await expect(popover).toBeVisible({ timeout: 30_000 });
