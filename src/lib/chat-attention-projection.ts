@@ -1,15 +1,17 @@
-import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
+import { NO_CHAT_ATTENTION, type ChatAttention } from "./chat-attention.ts";
 import type { SessionRow } from "./types.ts";
 
 type PendingProjection = {
   status: "pending";
   scopeKey: string;
+  baseline: ChatAttention;
 };
 
 type PersistedProjection = {
   status: "persisted";
   canonicalAfterRequestId: number;
   scopeKey: string;
+  baseline: ChatAttention;
 };
 
 type ProjectionOperation = PendingProjection | PersistedProjection;
@@ -41,14 +43,21 @@ export function recordChatAttentionClear(
   sessionId: string,
   operationId: string,
   scopeKey: string,
+  canonicalAttention: ChatAttention | null | undefined,
 ): void {
-  let operations = state.get(sessionId);
-  if (!operations) {
-    operations = new Map();
-    state.set(sessionId, operations);
-  }
-  const retainedScopeKey = operations.get(operationId)?.scopeKey ?? scopeKey;
-  operations.set(operationId, { status: "pending", scopeKey: retainedScopeKey });
+  const operations = state.get(sessionId);
+  const existingOperation = operations?.get(operationId);
+  const inheritedBaseline = existingOperation?.baseline ?? operations?.values().next().value?.baseline;
+  const baseline = inheritedBaseline ?? normalizeAttentionSnapshot(canonicalAttention);
+  if (!operations && baseline.state === "none") return;
+
+  const nextOperations = operations ?? new Map<string, ProjectionOperation>();
+  if (!operations) state.set(sessionId, nextOperations);
+  nextOperations.set(operationId, {
+    status: "pending",
+    scopeKey: existingOperation?.scopeKey ?? scopeKey,
+    baseline,
+  });
 }
 
 export function settleChatAttentionClear(
@@ -59,7 +68,8 @@ export function settleChatAttentionClear(
   canonicalAfterRequestId: number,
 ): void {
   const operations = state.get(sessionId);
-  if (!operations?.has(operationId)) return;
+  const operation = operations?.get(operationId);
+  if (!operations || !operation) return;
   if (outcome === "failed") {
     operations.delete(operationId);
     if (operations.size === 0) state.delete(sessionId);
@@ -68,7 +78,8 @@ export function settleChatAttentionClear(
   operations.set(operationId, {
     status: "persisted",
     canonicalAfterRequestId,
-    scopeKey: operations.get(operationId)?.scopeKey ?? "all-familiars",
+    scopeKey: operation.scopeKey,
+    baseline: operation.baseline,
   });
 }
 
@@ -100,6 +111,21 @@ function scopeProvesAbsence(retainedScopeKey: string, currentScopeKey: string): 
   return currentScopeKey === "all-familiars" || retainedScopeKey === currentScopeKey;
 }
 
+function normalizeAttentionSnapshot(attention: ChatAttention | null | undefined): ChatAttention {
+  return {
+    state: attention?.state ?? "none",
+    since: attention?.since ?? null,
+    reason: attention?.reason ?? null,
+  };
+}
+
+function attentionMatchesBaseline(attention: ChatAttention, baseline: ChatAttention): boolean {
+  const normalized = normalizeAttentionSnapshot(attention);
+  return normalized.state === baseline.state &&
+    normalized.since === baseline.since &&
+    normalized.reason === baseline.reason;
+}
+
 export function applyChatAttentionProjections(
   state: ChatAttentionProjectionState,
   rows: readonly SessionRow[],
@@ -115,7 +141,8 @@ export function applyChatAttentionProjections(
     for (const [operationId, operation] of operations) {
       if (
         operation.status === "persisted" &&
-        responseRequestId >= operation.canonicalAfterRequestId
+        responseRequestId >= operation.canonicalAfterRequestId &&
+        !attentionMatchesBaseline(row.attention, operation.baseline)
       ) {
         operations.delete(operationId);
       }

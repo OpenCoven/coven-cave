@@ -95,6 +95,7 @@ import {
   recordChatAttentionClear,
   settleChatAttentionClear,
 } from "@/lib/chat-attention-projection";
+import { NO_CHAT_ATTENTION } from "@/lib/chat-attention";
 import {
   CHAT_ATTENTION_CLEAR_EVENT,
   CHAT_ATTENTION_SETTLE_EVENT,
@@ -584,11 +585,14 @@ export function Workspace() {
       // call (e.g. the failure-path reconciliation below) still gets its own
       // newer reqId and is unaffected.
       loadSessionsReqRef.current += 1;
+      const baselineAttention = baseSessionsRef.current
+        .find((session) => session.id === detail.sessionId)?.attention ?? NO_CHAT_ATTENTION;
       recordChatAttentionClear(
         chatAttentionProjectionRef.current,
         detail.sessionId,
         detail.operationId,
         chatAttentionProjectionScopeKey(activeIdRef.current),
+        baselineAttention,
       );
       baseSessionsRef.current = applyChatAttentionProjections(
         chatAttentionProjectionRef.current,

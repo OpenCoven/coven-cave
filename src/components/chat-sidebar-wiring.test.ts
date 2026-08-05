@@ -276,6 +276,11 @@ assert.match(
   "workspace should invalidate any in-flight loadSessions request and retain a projection before patching attention state, so stale polls cannot resurrect the cleared attention (cave-zs85n Task 5 race)",
 );
 assert.match(
+  onChatAttentionClearBlock,
+  /const baselineAttention = baseSessionsRef\.current\s*\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention \?\? NO_CHAT_ATTENTION;[\s\S]*?recordChatAttentionClear\([\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = applyChatAttentionProjections/,
+  "workspace should capture canonical attention before either session array is projected to none",
+);
+assert.match(
   workspace,
   /const baseSessions = applyChatAttentionProjections\([\s\S]*filterDeletedSessions\([\s\S]*capturedScopeKey/,
   "loadSessions should reapply retained attention clears before assigning canonical and rendered rows",
