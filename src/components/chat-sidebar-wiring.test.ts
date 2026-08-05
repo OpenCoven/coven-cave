@@ -173,6 +173,16 @@ assert.match(
 );
 assert.match(
   chatView,
+  /reconcileCanonicalSessions: \(\) => \{\s*attentionSettlement\.reconcileNow\(\);\s*\}/,
+  "chat-view should expose the tracker-owned canonical-session refresh through the live generation helper",
+);
+assert.match(
+  chatView,
+  /if \(startNewConversation && ev\.sessionId\) liveGeneration\.reconcileCanonicalSessions\(\);/,
+  "chat-view should route startNewConversation refreshes through the settlement tracker so failed terminals only reconcile once",
+);
+assert.match(
+  chatView,
   /finally \{[\s\S]*?attentionSettlement\.reconcileIfNeeded\(\);[\s\S]*?clearLiveChatGeneration\(liveGeneration\.sessionId, runId\)/,
   "chat-view should reconcile canonical sessions exactly once at settlement before retiring the live snapshot",
 );

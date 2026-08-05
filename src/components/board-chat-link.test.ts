@@ -170,8 +170,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /case "done":[\s\S]{0,6000}startNewConversation && ev\.sessionId\) onSessionsChanged\?\.\(\)/,
-  "A completed Board bridge refreshes sessions so the cockpit leaves its one-shot handoff mode",
+  /case "done":[\s\S]{0,6000}startNewConversation && ev\.sessionId\) liveGeneration\.reconcileCanonicalSessions\(\);/,
+  "A completed Board bridge refreshes sessions through the settlement tracker so failed terminals do not double-refresh",
 );
 assert.match(
   taskWorkCockpit,

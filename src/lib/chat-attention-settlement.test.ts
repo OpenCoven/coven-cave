@@ -15,13 +15,14 @@ test("clean terminal failure reconciles exactly once without a thrown catch", ()
   assert.equal(reconciles, 1);
 });
 
-test("an early session id followed by failure still reconciles canonical sessions", () => {
+test("a failed startNewConversation terminal settlement reconciles canonical sessions exactly once", () => {
   let reconciles = 0;
   const tracker = createChatAttentionSettlementTracker(() => {
     reconciles += 1;
   });
 
   tracker.markAttentionCleared();
+  tracker.reconcileNow();
   tracker.reconcileIfNeeded();
 
   assert.equal(reconciles, 1);
@@ -38,4 +39,18 @@ test("a successful terminal done settlement suppresses reconciliation", () => {
   tracker.reconcileIfNeeded();
 
   assert.equal(reconciles, 0);
+});
+
+test("a successful startNewConversation settlement refreshes canonical sessions exactly once", () => {
+  let reconciles = 0;
+  const tracker = createChatAttentionSettlementTracker(() => {
+    reconciles += 1;
+  });
+
+  tracker.markAttentionCleared();
+  tracker.markPersistenceConfirmed();
+  tracker.reconcileNow();
+  tracker.reconcileIfNeeded();
+
+  assert.equal(reconciles, 1);
 });

@@ -442,6 +442,7 @@ type LiveStreamGeneration = {
   streamHealth: () => ChatStreamClientHealth;
   markAttentionCleared: () => void;
   markPersistenceConfirmed: () => void;
+  reconcileCanonicalSessions: () => void;
 };
 function liveStreamMetadata(liveGeneration: LiveStreamGeneration): LiveChatGenerationMetadata {
   return {
@@ -4917,6 +4918,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       markPersistenceConfirmed: () => {
         attentionSettlement.markPersistenceConfirmed();
       },
+      reconcileCanonicalSessions: () => {
+        attentionSettlement.reconcileNow();
+      },
     };
     const publishStreamHealth = (
       action: Exclude<
@@ -6159,7 +6163,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // cannot refresh the task's session list. Refresh after the server has
         // saved the first transcript; otherwise the cockpit stays in its
         // one-shot bridge mode and never restores the normal work/rail view.
-        if (startNewConversation && ev.sessionId) onSessionsChanged?.();
+        if (startNewConversation && ev.sessionId) liveGeneration.reconcileCanonicalSessions();
         persistLiveTurns(
           turnsRef.current,
           assistantId,
