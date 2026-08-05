@@ -9,6 +9,8 @@ import {
 } from "./chat-attention-events.ts";
 import {
   applyChatAttentionProjections,
+  authoritativeChatAttentionScopeKey,
+  CHAT_ATTENTION_UNPROVEN_SCOPE,
   chatAttentionProjectionScopeKey,
   clearSessionAttentionRows,
   createChatAttentionProjectionState,
@@ -191,6 +193,82 @@ test("an accepted canonical row wins over a stale event-carried baseline (clear-
     { state: "awaiting-human", since: "2026-08-05T01:00:00.000Z", reason: "approval" },
     "a genuinely new request must surface once it diverges from the correctly-recorded B baseline",
   );
+});
+
+test("a cached old-scope row keeps its proven Nova scope even after the sidebar switches to Sage", () => {
+  const projectionState = createChatAttentionProjectionState();
+  const novaAttention: ChatAttention = {
+    state: "awaiting-human",
+    since: "2026-08-05T00:00:00.000Z",
+    reason: "approval",
+  };
+  const acceptedNovaRow = row("session-nova-1", {
+    familiarId: "nova",
+    attention: novaAttention,
+  });
+  const acceptedScopeKeyBySessionId = new Map<string, string>([
+    ["session-nova-1", authoritativeChatAttentionScopeKey(acceptedNovaRow, chatAttentionProjectionScopeKey("nova"))],
+  ]);
+  const sageScopeKey = chatAttentionProjectionScopeKey("sage");
+  const novaScopeKey = chatAttentionProjectionScopeKey("nova");
+
+  const acceptedCanonical = acceptedNovaRow.attention.state !== "none" ? acceptedNovaRow.attention : null;
+  const recordedScopeKey = acceptedScopeKeyBySessionId.get("session-nova-1") ?? CHAT_ATTENTION_UNPROVEN_SCOPE;
+  assert.equal(recordedScopeKey, novaScopeKey, "the cached row's authoritative familiar identity must beat the newly active sidebar scope");
+
+  const recordResult = recordChatAttentionClear(
+    projectionState,
+    "session-nova-1",
+    "run-2",
+    recordedScopeKey,
+    acceptedCanonical,
+  );
+  assert.deepEqual(recordResult, { recorded: true, reason: "recorded" });
+  settleChatAttentionClear(projectionState, "session-nova-1", "run-2", "persisted", 1);
+
+  applyChatAttentionProjections(projectionState, [], 2, sageScopeKey);
+  assert.equal(
+    projectionState.has("session-nova-1"),
+    true,
+    "an empty response from the newly active Sage scope must not retire a Nova-owned clear",
+  );
+
+  const staleNovaResponse = applyChatAttentionProjections(
+    projectionState,
+    [row("session-nova-1", { familiarId: "nova", attention: novaAttention })],
+    3,
+    novaScopeKey,
+  );
+  assert.deepEqual(
+    staleNovaResponse[0]?.attention,
+    NO_CHAT_ATTENTION,
+    "the correctly scoped Nova response should still mask the unchanged canonical baseline",
+  );
+  assert.equal(projectionState.has("session-nova-1"), true);
+
+  const releasedNovaResponse = applyChatAttentionProjections(
+    projectionState,
+    [row("session-nova-1", {
+      familiarId: "nova",
+      attention: {
+        state: "awaiting-human",
+        since: "2026-08-05T01:00:00.000Z",
+        reason: "approval",
+      },
+    })],
+    4,
+    novaScopeKey,
+  );
+  assert.deepEqual(
+    releasedNovaResponse[0]?.attention,
+    {
+      state: "awaiting-human",
+      since: "2026-08-05T01:00:00.000Z",
+      reason: "approval",
+    },
+    "a correctly scoped Nova response carrying newer canonical evidence must release the projection",
+  );
+  assert.equal(projectionState.has("session-nova-1"), false);
 });
 
 console.log("workspace-chat-attention-compat.test.ts: ok");

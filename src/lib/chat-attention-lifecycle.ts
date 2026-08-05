@@ -19,18 +19,28 @@ export function createChatAttentionAdoptionTracker(): ChatAttentionAdoptionTrack
 }
 
 export type ExternallySettledGenerationRegistry = {
-  mark(controller: AbortController): void;
-  consume(controller: AbortController): boolean;
+  mark(controller: AbortController, sessionId: string, operationId: string): void;
+  consume(controller: AbortController, sessionId: string, operationId: string): boolean;
 };
 
 export function createExternallySettledGenerationRegistry(): ExternallySettledGenerationRegistry {
-  const externallySettledControllers = new WeakSet<AbortController>();
+  const externallySettledControllers = new WeakMap<AbortController, Set<string>>();
+  const keyFor = (sessionId: string, operationId: string) => `${sessionId.length}:${sessionId}${operationId}`;
   return {
-    mark(controller) {
-      externallySettledControllers.add(controller);
+    mark(controller, sessionId, operationId) {
+      let settlements = externallySettledControllers.get(controller);
+      if (!settlements) {
+        settlements = new Set<string>();
+        externallySettledControllers.set(controller, settlements);
+      }
+      settlements.add(keyFor(sessionId, operationId));
     },
-    consume(controller) {
-      return externallySettledControllers.delete(controller);
+    consume(controller, sessionId, operationId) {
+      const settlements = externallySettledControllers.get(controller);
+      if (!settlements) return false;
+      const consumed = settlements.delete(keyFor(sessionId, operationId));
+      if (settlements.size === 0) externallySettledControllers.delete(controller);
+      return consumed;
     },
   };
 }
@@ -59,14 +69,16 @@ export function createChatAttentionSettlementTracker(args: {
 
   const reconcileNow = () => {
     if (reconciled) return;
-    if (args.externalSettlements?.consume(args.operationController)) {
-      reconciled = true;
-      return;
-    }
     if (clearedSessionIds.size === 0) return;
     reconciled = true;
     const outcome = persistenceConfirmed ? "persisted" : "failed";
-    for (const sessionId of clearedSessionIds) {
+    const unsettledSessionIds = [...clearedSessionIds].filter((sessionId) => !args.externalSettlements?.consume(
+      args.operationController,
+      sessionId,
+      args.operationId,
+    ));
+    if (unsettledSessionIds.length === 0) return;
+    for (const sessionId of unsettledSessionIds) {
       args.settleProjection(sessionId, args.operationId, outcome);
     }
     args.reconcileCanonicalSessions();

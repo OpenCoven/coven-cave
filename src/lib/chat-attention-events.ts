@@ -38,6 +38,10 @@ function isChatAttentionReason(value: unknown): value is ChatAttentionReason {
   return typeof value === "string" && VALID_CHAT_ATTENTION_REASONS.has(value);
 }
 
+function isExactlyNull(value: unknown): value is null {
+  return value === null;
+}
+
 // Enforces the canonical BaselineAttention combos so a malformed or spoofed
 // event can never fabricate an impossible attention snapshot:
 //   - "none"            -> since AND reason must both be null.
@@ -45,6 +49,14 @@ function isChatAttentionReason(value: unknown): value is ChatAttentionReason {
 //   - "awaiting-human" /
 //     "overdue-human"    -> a canonical UTC ISO `since` AND a recognized,
 //                           non-null reason.
+// Evidence fields (`since`, `reason`) are validated against their EXACT
+// original value — never trimmed or otherwise coerced, unlike sessionId /
+// operationId / scopeKey below. A same-document CustomEvent's `detail` is a
+// live object reference, not a serialized payload: a genuine ChatAttention
+// always carries a literal `null`, a canonical UTC ISO string, or a
+// recognized reason string, so a whitespace-padded string, a number, a
+// plain object, or `undefined` is real evidence of a malformed or spoofed
+// payload rather than a formatting accident worth normalizing away.
 // A non-canonical timestamp or any other since/reason combo is rejected
 // outright (returns null) rather than silently coerced.
 function normalizeAttentionDetail(value: unknown): ChatAttention | null {
@@ -52,19 +64,21 @@ function normalizeAttentionDetail(value: unknown): ChatAttention | null {
   const candidate = value as Record<string, unknown>;
   if (!isChatAttentionState(candidate.state)) return null;
   const state = candidate.state;
-  const since = normalizeString(candidate.since);
-  const reason = normalizeString(candidate.reason);
+  const since = candidate.since;
+  const reason = candidate.reason;
 
   switch (state) {
   case "none":
-    return since === null && reason === null ? { state, since: null, reason: null } : null;
+    return isExactlyNull(since) && isExactlyNull(reason)
+      ? { state, since: null, reason: null }
+      : null;
   case "left-hanging":
-    return since !== null && isCanonicalIsoInstant(since) && reason === null
+    return isCanonicalIsoInstant(since) && isExactlyNull(reason)
       ? { state, since, reason: null }
       : null;
   case "awaiting-human":
   case "overdue-human":
-    return since !== null && isCanonicalIsoInstant(since) && isChatAttentionReason(reason)
+    return isCanonicalIsoInstant(since) && isChatAttentionReason(reason)
       ? { state, since, reason }
       : null;
   }

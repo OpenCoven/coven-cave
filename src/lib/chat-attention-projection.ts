@@ -193,6 +193,21 @@ export function chatAttentionProjectionScopeKey(familiarId: string | null): stri
   return familiarId ? `familiar:${familiarId}` : "all-familiars";
 }
 
+export function authoritativeChatAttentionScopeKey(
+  session: Pick<SessionRow, "familiarId">,
+  fallbackScopeKey = "all-familiars",
+): string {
+  return session.familiarId !== undefined
+    ? chatAttentionProjectionScopeKey(session.familiarId ?? null)
+    : fallbackScopeKey;
+}
+
+// Off-list baseline evidence can prove a session's attention, but not which
+// familiar-scoped list is authoritative for absence. This sentinel matches no
+// real `chatAttentionProjectionScopeKey(...)` output, so only the
+// "all-familiars" wildcard can retire it by absence.
+export const CHAT_ATTENTION_UNPROVEN_SCOPE = "scope:unproven";
+
 export function isCurrentSessionListRequest(args: {
   requestId: number;
   currentRequestId: number;
@@ -230,11 +245,13 @@ export function recordChatAttentionClear(
   const normalizedCanonical = hasCanonicalAttention ? normalizeAttentionSnapshot(canonicalAttention) : null;
   const canonicalTracker = canonicalAttentionTrackerFor(state);
   // The caller may already be looking at a projected "none", so overlap cases
-  // fall back to the last accepted canonical attention for this session.
-  const trackedCanonical = canonicalTracker.get(sessionId)?.attention ?? null;
-  const baseline = normalizedCanonical?.state !== "none"
-    ? normalizedCanonical
-    : trackedCanonical;
+  // must prefer the last accepted canonical row over event-carried fallback
+  // evidence. The event baseline is only for cases where no accepted evidence
+  // exists yet (off-list / adopted clears, etc).
+  const trackedCanonical = canonicalTracker.get(sessionId)?.attention;
+  const trackedNonNoneCanonical = trackedCanonical?.state !== "none" ? trackedCanonical : null;
+  const baseline = trackedNonNoneCanonical ??
+    (normalizedCanonical?.state !== "none" ? normalizedCanonical : null);
   const normalizedClearWatermark = normalizeIsoInstant(clearWatermark);
   if (!operations && !baseline && hasCanonicalAttention) return { recorded: false, reason: "no-baseline" };
 
@@ -361,16 +378,12 @@ export function applyChatAttentionProjections(
     if (!operations) {
       const retainedCanonical = canonicalTracker.get(row.id);
       if (retainedCanonical) {
-        if (attentionMatchesBaseline(row.attention, retainedCanonical.attention)) {
-          trackCanonicalAttention(
-            state,
-            row.id,
-            row.attention,
-            currentScopeKey ?? retainedCanonical.scopeKey,
-          );
-        } else {
-          forgetLastKnownCanonicalAttention(state, row.id);
-        }
+        trackCanonicalAttention(
+          state,
+          row.id,
+          row.attention,
+          authoritativeChatAttentionScopeKey(row, currentScopeKey ?? retainedCanonical.scopeKey),
+        );
       }
       return row;
     }
@@ -381,7 +394,10 @@ export function applyChatAttentionProjections(
       state,
       row.id,
       row.attention,
-      currentScopeKey ?? operations.values().next().value?.scopeKey ?? "all-familiars",
+      authoritativeChatAttentionScopeKey(
+        row,
+        currentScopeKey ?? operations.values().next().value?.scopeKey ?? "all-familiars",
+      ),
     );
 
     for (const [operationId, operation] of operations) {

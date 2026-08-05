@@ -87,6 +87,8 @@ import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
 import {
+  authoritativeChatAttentionScopeKey,
+  CHAT_ATTENTION_UNPROVEN_SCOPE,
   applyChatAttentionProjections,
   chatAttentionProjectionScopeKey,
   clearSessionAttentionRows,
@@ -369,6 +371,7 @@ export function Workspace() {
   const loadGitHubTasksForceEpochRef = useRef(0);
   const loadGitHubTasksForceInFlightRef = useRef(0);
   const baseSessionsRef = useRef<SessionRow[]>([]);
+  const baseSessionScopeKeyByIdRef = useRef(new Map<string, string>());
   const chatAttentionProjectionRef = useRef(createChatAttentionProjectionState());
   const locallyDeletedSessionIdsRef = useRef<Set<string>>(new Set());
   const githubTasksRef = useRef<GitHubTask[] | null>(null);
@@ -605,14 +608,19 @@ export function Workspace() {
         // ChatView's session/familiar props can diverge from the sidebar's
         // current filter (split panes, a stale render, a legacy caller that
         // never learned the active scope at all), and a wrong scope corrupts
-        // scopeProvesAbsence's tombstoning. Workspace always overrides with
-        // its own current scope rather than trusting whatever scope the event
-        // carries.
+        // scopeProvesAbsence's tombstoning. Workspace never trusts the event's
+        // carried scope. Instead, a cached accepted row must keep the scope in
+        // which WORKSPACE proved it (or its authoritative familiar identity);
+        // off-list fallback evidence is recorded as unproven so an unrelated
+        // familiar's empty response cannot retire it.
         const recordResult = recordChatAttentionClear(
           chatAttentionProjectionRef.current,
           detail.sessionId,
           detail.operationId,
-          chatAttentionProjectionScopeKey(activeIdRef.current),
+          acceptedRow
+            ? (baseSessionScopeKeyByIdRef.current.get(detail.sessionId) ??
+              authoritativeChatAttentionScopeKey(acceptedRow, chatAttentionProjectionScopeKey(activeIdRef.current)))
+            : CHAT_ATTENTION_UNPROVEN_SCOPE,
           baselineAttention,
           detail.clearWatermark,
         );
@@ -1393,6 +1401,12 @@ export function Workspace() {
           capturedScopeKey,
         );
         baseSessionsRef.current = baseSessions;
+        baseSessionScopeKeyByIdRef.current = new Map(
+          baseSessions.map((session) => [
+            session.id,
+            authoritativeChatAttentionScopeKey(session, capturedScopeKey),
+          ]),
+        );
         const visibleSessions = githubTasksRef.current
           ? attachGitHubTaskContext(baseSessions, githubTasksRef.current)
           : baseSessions;
@@ -1419,6 +1433,9 @@ export function Workspace() {
       baseSessionsRef.current,
       locallyDeletedSessionIdsRef.current,
     );
+    for (const sessionId of confirmedIds) {
+      baseSessionScopeKeyByIdRef.current.delete(sessionId);
+    }
     setSessions((currentSessions) => {
       const nextSessions = filterDeletedSessions(
         currentSessions,

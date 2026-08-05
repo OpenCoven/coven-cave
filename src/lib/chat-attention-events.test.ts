@@ -146,6 +146,21 @@ test("rejects impossible BaselineAttention combos and non-canonical timestamps",
   rejectsBaseline({ state: "waiting-forever", since: null, reason: null });
 });
 
+test("drops malformed optional baseline evidence without losing the valid event payload", () => {
+  function rejectsBaseline(baselineAttention: unknown) {
+    assert.deepEqual(clearWithBaseline(baselineAttention), { sessionId: "session-3", operationId: "run-3" });
+  }
+
+  rejectsBaseline({ state: "none", since: undefined, reason: null });
+  rejectsBaseline({ state: "none", since: null, reason: 0 });
+  rejectsBaseline({ state: "left-hanging", since: 1_754_352_000_000, reason: null });
+  rejectsBaseline({ state: "left-hanging", since: "2026-08-05T00:00:00.000Z", reason: "approval" });
+  rejectsBaseline({ state: "awaiting-human", since: "2026-08-05T00:00:00.000Z", reason: undefined });
+  rejectsBaseline({ state: "awaiting-human", since: {}, reason: "approval" });
+  rejectsBaseline({ state: "overdue-human", since: "2026-08-05T00:00:00.000Z", reason: {} });
+  rejectsBaseline({ state: "overdue-human", since: "2026-08-05T00:00:00.000Z", reason: " approval " });
+});
+
 test("rejects wrong event types and invalid detail payloads", () => {
   assert.equal(attentionClearedSessionId(new Event(CHAT_ATTENTION_CLEAR_EVENT)), null);
   assert.equal(attentionClearFromEvent(new Event(CHAT_ATTENTION_CLEAR_EVENT)), null);
@@ -261,28 +276,69 @@ await test("a remounted adopter can clear the same pending run once for its own 
   });
 });
 
-test("external stale-settlement suppression is keyed by controller identity and consumes once", () => {
+test("external stale-settlement suppression is keyed by controller + session + run and consumes once", () => {
   const registry = createExternallySettledGenerationRegistry();
   const orphanedController = new AbortController();
   const unrelatedController = new AbortController();
 
-  registry.mark(orphanedController);
+  registry.mark(orphanedController, "session-1", "run-11");
 
   assert.equal(
-    registry.consume(unrelatedController),
+    registry.consume(unrelatedController, "session-1", "run-11"),
     false,
     "an unrelated generation must not suppress settlement for this orphan",
   );
   assert.equal(
-    registry.consume(orphanedController),
-    true,
-    "the late owner settlement for the same controller should be suppressed once",
+    registry.consume(orphanedController, "session-2", "run-11"),
+    false,
+    "a replacement session on the same controller must not be suppressed by an orphaned predecessor's settlement",
   );
   assert.equal(
-    registry.consume(orphanedController),
+    registry.consume(orphanedController, "session-1", "run-12"),
+    false,
+    "a different run on the same controller must not consume an earlier suppression marker",
+  );
+  assert.equal(
+    registry.consume(orphanedController, "session-1", "run-11"),
+    true,
+    "the late owner settlement for the exact controller + session + run should be suppressed once",
+  );
+  assert.equal(
+    registry.consume(orphanedController, "session-1", "run-11"),
     false,
     "once consumed, the suppression marker should not affect later generations",
   );
+});
+
+test("a replacement session on the same controller still settles when only the orphaned predecessor was externally settled", () => {
+  const externalSettlements = createExternallySettledGenerationRegistry();
+  const controller = new AbortController();
+  const settled: Array<{ sessionId: string; operationId: string; outcome: string }> = [];
+  let reconciles = 0;
+  const tracker = createChatAttentionSettlementTracker({
+    operationId: "run-24",
+    operationController: controller,
+    externalSettlements,
+    settleProjection: (sessionId, operationId, outcome) => {
+      settled.push({ sessionId, operationId, outcome });
+    },
+    reconcileCanonicalSessions: () => {
+      reconciles += 1;
+    },
+  });
+
+  tracker.markAttentionCleared("session-temp");
+  tracker.markAttentionCleared("session-real");
+  tracker.markPersistenceConfirmed();
+  externalSettlements.mark(controller, "session-temp", "run-24");
+  tracker.reconcileIfNeeded();
+
+  assert.deepEqual(settled, [{
+    sessionId: "session-real",
+    operationId: "run-24",
+    outcome: "persisted",
+  }]);
+  assert.equal(reconciles, 1);
 });
 
 function row(attention: ChatAttention) {

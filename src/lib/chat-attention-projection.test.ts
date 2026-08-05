@@ -105,6 +105,49 @@ test("a matching canonical poll after a failed clear keeps the retry baseline al
   assert.deepEqual(state.get("session-1")?.get("operation-2")?.baseline, NEEDS_ATTENTION);
 });
 
+test("an accepted canonical baseline outranks stale overlapping event evidence", () => {
+  const state = createChatAttentionProjectionState();
+  const staleEventBaseline = {
+    state: "awaiting-human" as const,
+    since: "2026-08-05T00:00:00.000Z",
+    reason: "input" as const,
+  };
+  const acceptedCanonical = {
+    state: "awaiting-human" as const,
+    since: "2026-08-05T00:05:00.000Z",
+    reason: "approval" as const,
+  };
+
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    staleEventBaseline,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 5);
+
+  const acceptedRows = [row({ attention: acceptedCanonical })];
+  assert.equal(
+    applyChatAttentionProjections(state, acceptedRows, 6, chatAttentionProjectionScopeKey("nova")),
+    acceptedRows,
+  );
+
+  const overlapped = recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-2",
+    chatAttentionProjectionScopeKey("nova"),
+    staleEventBaseline,
+  );
+  assert.deepEqual(overlapped, { recorded: true, reason: "recorded" });
+  assert.deepEqual(
+    state.get("session-1")?.get("operation-2")?.baseline,
+    acceptedCanonical,
+    "the last accepted canonical row must beat stale event-carried fallback evidence",
+  );
+});
+
 test("a response below the persisted threshold still projects none", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(

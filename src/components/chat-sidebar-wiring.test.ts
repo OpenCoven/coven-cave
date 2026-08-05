@@ -183,8 +183,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /chatAttentionProjectionScopeKey\(activeIdRef\.current\),\s*\n\s*baselineAttention,/,
-  "workspace's onChatAttentionClear must always record under its own current scope, never a scope read from the event",
+  /acceptedRow\s*\?\s*\(baseSessionScopeKeyByIdRef\.current\.get\(detail\.sessionId\)\s*\?\?[\s\S]*authoritativeChatAttentionScopeKey\(acceptedRow,\s*chatAttentionProjectionScopeKey\(activeIdRef\.current\)\)\)\s*:\s*CHAT_ATTENTION_UNPROVEN_SCOPE,\s*\n\s*baselineAttention,/,
+  "workspace's onChatAttentionClear must record with proven row scope (or the unproven sentinel), never a scope read from the event",
 );
 assert.doesNotMatch(
   workspace,
@@ -326,7 +326,7 @@ const staleEvictionBlock = chatView.match(
 assert.ok(staleEvictionBlock, "chat-view should define the stale/orphan live-snapshot eviction branch");
 assert.match(
   staleEvictionBlock,
-  /skipSettleNotifyRef\.current \+= 1;\s*clearLiveChatGeneration\(sessionId\);[\s\S]*?if \(isLiveGenerationPending\(live\) && live\.runId\) \{\s*externallySettledChatAttentionControllers\.mark\(live\.controller\);\s*emitChatAttentionSettlement\(sessionId, live\.runId, "failed"\);\s*onSessionsChangedRef\.current\?\.\(\);\s*\}/,
+  /skipSettleNotifyRef\.current \+= 1;\s*clearLiveChatGeneration\(sessionId\);[\s\S]*?if \(isLiveGenerationPending\(live\) && live\.runId\) \{\s*externallySettledChatAttentionControllers\.mark\(live\.controller,\s*sessionId,\s*live\.runId\);\s*emitChatAttentionSettlement\(sessionId, live\.runId, "failed"\);\s*onSessionsChangedRef\.current\?\.\(\);\s*\}/,
   "evicting a stale/orphan pending snapshot should settle its attention operation as \"failed\", reconcile canonical sessions once, and mark the controller so the original owner's later finally path cannot duplicate that cleanup",
 );
 assert.doesNotMatch(
@@ -369,8 +369,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /recordChatAttentionClear\([\s\S]*chatAttentionProjectionScopeKey\(activeIdRef\.current\)[\s\S]*baseSessionsRef\.current = clearSessionAttentionRows\(baseSessionsRef\.current, sessionId\);[\s\S]*setSessions\(\(currentSessions\) => clearSessionAttentionRows\(currentSessions, sessionId\)\);/,
-  "workspace should record clears under its own current sidebar scope — never the event's — then patch both the canonical base rows and the rendered enriched rows for the matching session only",
+  /recordChatAttentionClear\([\s\S]*acceptedRow[\s\S]*CHAT_ATTENTION_UNPROVEN_SCOPE[\s\S]*baseSessionsRef\.current = clearSessionAttentionRows\(baseSessionsRef\.current, sessionId\);[\s\S]*setSessions\(\(currentSessions\) => clearSessionAttentionRows\(currentSessions, sessionId\)\);/,
+  "workspace should record clears with proven scope (or the unproven sentinel) and then patch both the canonical base rows and the rendered enriched rows for the matching session only",
 );
 assert.match(
   workspace,
@@ -394,8 +394,8 @@ assert.match(
 );
 assert.match(
   onChatAttentionClearBlock,
-  /const acceptedRow = baseSessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\);[\s\S]*?const acceptedCanonical = acceptedRow && acceptedRow\.attention\.state !== "none"[\s\S]*?\? acceptedRow\.attention[\s\S]*?: null;[\s\S]*?const baselineAttention = acceptedCanonical \?\?[\s\S]*?detail\.baselineAttention \?\?[\s\S]*?acceptedRow\?\.attention \?\?[\s\S]*?sessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention;[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?chatAttentionProjectionScopeKey\(activeIdRef\.current\),[\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
-  "workspace should prefer its own current accepted (non-none) canonical row over a possibly stale event-carried baseline, only deferring to the event's baseline when the session is absent or the accepted row cannot represent pre-clear canonical state",
+  /const acceptedRow = baseSessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\);[\s\S]*?const acceptedCanonical = acceptedRow && acceptedRow\.attention\.state !== "none"[\s\S]*?\? acceptedRow\.attention[\s\S]*?: null;[\s\S]*?const baselineAttention = acceptedCanonical \?\?[\s\S]*?detail\.baselineAttention \?\?[\s\S]*?acceptedRow\?\.attention \?\?[\s\S]*?sessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention;[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?acceptedRow[\s\S]*?baseSessionScopeKeyByIdRef\.current\.get\(detail\.sessionId\)[\s\S]*?authoritativeChatAttentionScopeKey\(acceptedRow,\s*chatAttentionProjectionScopeKey\(activeIdRef\.current\)\)[\s\S]*?: CHAT_ATTENTION_UNPROVEN_SCOPE,[\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
+  "workspace should prefer its own accepted canonical row over stale event fallback evidence and preserve the accepted row's proven scope instead of stamping the newly active sidebar scope onto cached old-scope rows",
 );
 assert.match(
   onChatAttentionClearBlock,

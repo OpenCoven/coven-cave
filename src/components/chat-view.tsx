@@ -3935,7 +3935,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // later settle must be a no-op against both the already-cleared
       // operation and this one reload).
       if (isLiveGenerationPending(live) && live.runId) {
-        externallySettledChatAttentionControllers.mark(live.controller);
+        externallySettledChatAttentionControllers.mark(live.controller, sessionId, live.runId);
         emitChatAttentionSettlement(sessionId, live.runId, "failed");
         onSessionsChangedRef.current?.();
       }
