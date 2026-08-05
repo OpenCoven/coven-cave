@@ -107,8 +107,8 @@ assert.match(
 );
 assert.match(
   replay,
-  /const harness = canonicalHarnessId\(args\.harness\)[\s\S]*path: "\/api\/v1\/sessions"[\s\S]*body:[\s\S]*harness,[\s\S]*\.\.\.\(harness === "copilot" \? \{\} : \{ launchMode: "nonInteractive" \}\)/,
-  "travel replay canonicalizes runtime aliases and keeps Copilot on its supported daemon launch contract",
+  /const harness = canonicalHarnessId\(args\.harness\)[\s\S]*path: "\/api\/v1\/sessions"[\s\S]*body:[\s\S]*harness,[\s\S]*launchMode: "nonInteractive"/,
+  "travel replay canonicalizes runtime aliases and uses the daemon's finite one-shot launch contract",
 );
 
 assert.match(
@@ -428,7 +428,7 @@ test("replay filters Codex PTY transcript inside stream-json across arbitrary da
 
 test("replay preserves Codex assistant text order across transcript and structured envelopes", async () => {
   const jsonl = [
-    JSON.stringify({ type: "output", text: "codex\nFiltered first.\n" }),
+    JSON.stringify({ type: "output", text: "codex\nFiltered first." }),
     JSON.stringify({
       type: "assistant",
       message: { content: [{ type: "text", text: "Structured second." }] },
@@ -610,6 +610,59 @@ test("replay never treats unverified raw daemon output as an assistant reply", a
     replayAssistantMirrorOutcome(status),
     "missing",
     "a terminal session with no verified assistant boundary must be reported missing, not complete",
+  );
+});
+
+test("replay rejects a truncated daemon output log instead of persisting a partial reply", async () => {
+  const assistantFrame = JSON.stringify({
+    type: "assistant",
+    message: { content: [{ type: "text", text: "Partial answer must not persist." }] },
+  }) + "\n";
+  const probe = replayDaemon(new Map([
+    [0, {
+      events: [
+        daemonEvent(1, "output", { data: assistantFrame }),
+        daemonEvent(2, "output_truncated", { droppedEvents: 1, droppedBytes: 512 }),
+      ],
+      nextCursor: { afterSeq: 2 },
+      hasMore: false,
+    }],
+  ]));
+
+  await assert.rejects(
+    replayAssistantStatus({
+      harnessSessionId: "hub-session",
+      harness: "claude",
+      daemonCall: probe.daemonCall,
+    }),
+    /daemon output log was truncated/,
+  );
+});
+
+test("replay rejects a malformed daemon output envelope instead of decoding around a missing chunk", async () => {
+  const probe = replayDaemon(new Map([
+    [0, {
+      events: [
+        daemonEvent(1, "output", {
+          data: `${JSON.stringify({
+            type: "assistant",
+            message: { content: [{ type: "text", text: "Partial answer." }] },
+          })}\n`,
+        }),
+        daemonEvent(2, "output", { data: 42 }),
+      ],
+      nextCursor: { afterSeq: 2 },
+      hasMore: false,
+    }],
+  ]));
+
+  await assert.rejects(
+    replayAssistantStatus({
+      harnessSessionId: "hub-session",
+      harness: "claude",
+      daemonCall: probe.daemonCall,
+    }),
+    /malformed daemon output event/,
   );
 });
 

@@ -76,13 +76,20 @@ function canonicalAssistantText(events: ReplayDaemonEvent[]): string | null {
 function outputChunks(events: ReplayDaemonEvent[]): string[] {
   const chunks: string[] = [];
   for (const event of events) {
-    if (event.kind !== "output" || typeof event.payload_json !== "string") continue;
-    try {
-      const payload = record(JSON.parse(event.payload_json));
-      if (typeof payload?.data === "string") chunks.push(payload.data);
-    } catch {
-      // The daemon transport envelope must be valid JSON with a string `data`.
+    if (event.kind !== "output") continue;
+    if (typeof event.payload_json !== "string") {
+      throw new Error("offline replay received a malformed daemon output event");
     }
+    let payload: Record<string, unknown> | null;
+    try {
+      payload = record(JSON.parse(event.payload_json));
+    } catch {
+      throw new Error("offline replay received a malformed daemon output event");
+    }
+    if (typeof payload?.data !== "string") {
+      throw new Error("offline replay received a malformed daemon output event");
+    }
+    chunks.push(payload.data);
   }
   return chunks;
 }
@@ -118,7 +125,12 @@ function decodeCodex(chunks: string[]): string {
         if (envelope.type === "output" && typeof envelope.text === "string") {
           pushFiltered(resolveBackspaces(stripAnsi(envelope.text)));
         } else {
-          text.push(...parseClaudeTextOnlyEnvelope(envelope));
+          const structuredText = parseClaudeTextOnlyEnvelope(envelope);
+          if (structuredText.length) {
+            const pendingText = filter.flush();
+            if (pendingText) text.push(pendingText);
+            text.push(...structuredText);
+          }
         }
         return;
       } catch {
@@ -251,6 +263,9 @@ export function decodeReplayAssistantOutput(
   harness: string,
   events: ReplayDaemonEvent[],
 ): string | null {
+  if (events.some((event) => event.kind === "output_truncated")) {
+    throw new Error("offline replay daemon output log was truncated; refusing to mirror a partial assistant reply");
+  }
   const canonical = canonicalAssistantText(events);
   const id = canonicalHarnessId(harness).trim().toLowerCase();
   const decoder = DECODERS[id];
