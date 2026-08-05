@@ -188,10 +188,6 @@ export function CanvasEditor(props: {
   const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
   const [viewportId, setViewportId] = useState<CanvasViewportPresetId>("fill");
   const [viewportScale, setViewportScale] = useState(1);
-  // Bumped to remount the sketch from scratch ("Restart"). A game that has been
-  // played to a game-over has no other way back to its first frame, and
-  // re-rendering identical srcDoc would not reload the iframe.
-  const [runNonce, setRunNonce] = useState(0);
   // Whether the current selection rides along with the next design-chat
   // message. Picking a component attaches it (that's why you picked it); the
   // chip's detach lets you ask a general question without losing the pick.
@@ -227,7 +223,7 @@ export function CanvasEditor(props: {
   attachedRef.current = attached;
   onArtifactUpdatedRef.current = onArtifactUpdated;
 
-  const inspectorGeneration = useMemo(() => crypto.randomUUID(), [kind, code, runNonce]);
+  const inspectorGeneration = useMemo(() => crypto.randomUUID(), [kind, code]);
   const srcDoc = useMemo(
     () => (
       kind === "react"
@@ -886,7 +882,6 @@ export function CanvasEditor(props: {
           {modeButton("select", "Select", "Select components")}
           {modeButton("comment", "Comment", "Pin comments to components")}
           {modeButton("edit", "Edit", "Edit fonts, borders, padding")}
-          {modeButton("play", "Play", "Run the sketch for real — clicks and keys reach it")}
         </span>
         <button type="button" className="canvas-editor__done focus-ring" onClick={onClose}>
           Done
@@ -985,35 +980,6 @@ export function CanvasEditor(props: {
                     </span>
                   </div>
                 ) : null}
-              </>
-            ) : null}
-
-            {mode === "play" ? (
-              <>
-                <p className="canvas-editor__hint">
-                  The sketch is live — clicks, typing, and key presses go straight to it
-                  instead of selecting components. Use this to actually play a generated
-                  game or drive a real form.
-                </p>
-                <div className="canvas-editor__play-card">
-                  <span className="canvas-editor__play-row">
-                    <Icon name="ph:cursor-click" width={13} aria-hidden />
-                    Click the sketch once if keys aren&rsquo;t registering — it needs focus.
-                  </span>
-                  <span className="canvas-editor__play-row">
-                    <Icon name="ph:play" width={13} aria-hidden />
-                    Switch back to Select to inspect, comment, or restyle.
-                  </span>
-                  <button
-                    type="button"
-                    className="canvas-editor__sel-action focus-ring"
-                    title="Reload the sketch from its first frame"
-                    onClick={restartSketch}
-                  >
-                    <Icon name="ph:arrow-counter-clockwise" width={11} aria-hidden />
-                    Restart sketch
-                  </button>
-                </div>
               </>
             ) : null}
 

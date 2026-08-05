@@ -25,29 +25,29 @@ import { VISIBLE_WORKSPACE_NAV_ITEMS, type WorkspaceNavItem } from "./workspace-
 export type NavSection = "home" | "code";
 
 export type NavSectionDescriptor = {
-  id: NavSection;
-  label: string;
-  iconName: IconName;
-  description: string;
-  kbd: string;
+    id: NavSection;
+    label: string;
+    iconName: IconName;
+    description: string;
+    kbd: string;
 };
 
 /** Tab order, left to right. Home leads — it is the default landing room. */
 export const NAV_SECTIONS: readonly NavSectionDescriptor[] = [
-  {
-    id: "home",
-    label: "Home",
-    iconName: "ph:house-bold",
-    description: "Overview, tasks, rituals, memories, and marketplace",
-    kbd: "⌃1",
-  },
-  {
-    id: "code",
-    label: "Code",
-    iconName: "ph:code-bold",
-    description: "Chat, coding sessions, and the code workshop",
-    kbd: "⌃2",
-  },
+    {
+        id: "home",
+        label: "Home",
+        iconName: "ph:house-bold",
+        description: "Overview, tasks, rituals, memories, and marketplace",
+        kbd: "⌃1",
+    },
+    {
+        id: "code",
+        label: "Code",
+        iconName: "ph:code-bold",
+        description: "Chat, coding sessions, and the code workshop",
+        kbd: "⌃2",
+    },
 ];
 
 export const DEFAULT_NAV_SECTION: NavSection = "home";
@@ -62,25 +62,25 @@ const CODE_SECTION_MODES: ReadonlySet<string> = new Set(["chat", "browser"]);
 const CODE_SECTION_SURFACE_IDS: ReadonlySet<string> = new Set(["code"]);
 
 export function isNavSection(value: string): value is NavSection {
-  return value === "home" || value === "code";
+    return value === "home" || value === "code";
 }
 
 /** Which room a mode belongs to. Unknown strings fall back to Home so a stale
  *  persisted mode can never strand the rail in an empty section. */
 export function navSectionForMode(mode: string): NavSection {
-  const resolved = isWorkspaceMode(mode) ? resolveWorkspaceModeAlias(mode as WorkspaceMode) : mode;
-  if (isRoleSurfaceMode(resolved)) {
-    return CODE_SECTION_SURFACE_IDS.has(resolved.slice("surface:".length)) ? "code" : "home";
-  }
-  return CODE_SECTION_MODES.has(resolved) ? "code" : "home";
+    const resolved = isWorkspaceMode(mode) ? resolveWorkspaceModeAlias(mode as WorkspaceMode) : mode;
+    if (isRoleSurfaceMode(resolved)) {
+        return CODE_SECTION_SURFACE_IDS.has(resolved.slice("surface:".length)) ? "code" : "home";
+    }
+    return CODE_SECTION_MODES.has(resolved) ? "code" : "home";
 }
 
 /** The visible nav rows for a section, in registry order. */
 export function navItemsForSection(section: NavSection): readonly WorkspaceNavItem[] {
-  return VISIBLE_WORKSPACE_NAV_ITEMS.filter((item) => navSectionForMode(item.id) === section);
+    return VISIBLE_WORKSPACE_NAV_ITEMS.filter((item) => navSectionForMode(item.id) === section);
 }
 
 /** Does a Role Surface room (`surface:<id>`) belong in this section? */
 export function roomBelongsToSection(roomMode: string, section: NavSection): boolean {
-  return navSectionForMode(roomMode) === section;
+    return navSectionForMode(roomMode) === section;
 }

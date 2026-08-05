@@ -1716,8 +1716,8 @@ exit 0
   );
   assert.equal(
     trailingSlashExceptionItem.lane,
-    "active",
-    "a trailing-slash metadata path keeps its valid exception active",
+    "retire-after-gate",
+    "a valid creation exception no longer holds landed work out of retirement",
   );
   assert.match(
     exceptionBudgetReport.items
