@@ -28,11 +28,14 @@ assert.doesNotMatch(src, /void refreshRef\.current\(\)/, "no focus refresh promi
   const unhandled: unknown[] = [];
   const onUnhandled = (reason: unknown) => unhandled.push(reason);
   process.on("unhandledRejection", onUnhandled);
-  runRefreshSafely(async () => { throw new TypeError("Failed to fetch"); });
-  assert.doesNotThrow(() => runRefreshSafely(() => { throw new TypeError("sync poll failure"); }));
-  await new Promise((resolve) => setImmediate(resolve));
-  process.off("unhandledRejection", onUnhandled);
-  assert.deepEqual(unhandled, [], "contains rejected async background refreshes");
+  try {
+    runRefreshSafely(async () => { throw new TypeError("Failed to fetch"); });
+    assert.doesNotThrow(() => runRefreshSafely(() => { throw new TypeError("sync poll failure"); }));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(unhandled, [], "does not emit rejected async background refreshes");
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
 }
 
 // ── safeUnlisten: never throws into React cleanup ──
