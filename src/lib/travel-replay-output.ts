@@ -208,6 +208,27 @@ function commonSuffixLength(left: string, right: string, prefixLength: number): 
   return length;
 }
 
+function trailingLineEndingLength(value: string): number {
+  return value.match(/(?:\r?\n)+$/)?.[0].length ?? 0;
+}
+
+function coalesceReplayInsertions(insertions: ReplayStructuredInsertion[]): void {
+  insertions.sort((left, right) =>
+    left.outputOffset - right.outputOffset || left.sequence - right.sequence
+  );
+  let writeIndex = 0;
+  for (const insertion of insertions) {
+    const previous = insertions[writeIndex - 1];
+    if (previous && previous.outputOffset === insertion.outputOffset) {
+      previous.text += insertion.text;
+      continue;
+    }
+    insertions[writeIndex] = insertion;
+    writeIndex += 1;
+  }
+  insertions.length = writeIndex;
+}
+
 function trimInsertionAgainstOutput(
   insertion: ReplayStructuredInsertion,
   output: string,
@@ -248,17 +269,26 @@ function reconcileReplayOutput(
     const suffixLength = commonSuffixLength(previous, next, prefixLength);
     const previousChangedEnd = previous.length - suffixLength;
     const nextChangedEnd = next.length - suffixLength;
+    const addedTrailingLineEndingLength = Math.max(
+      0,
+      trailingLineEndingLength(next) - trailingLineEndingLength(previous),
+    );
+    const nextInsertionEnd = Math.max(
+      prefixLength,
+      nextChangedEnd - addedTrailingLineEndingLength,
+    );
     for (const insertion of insertions) {
       if (insertion.outputOffset <= prefixLength) continue;
       if (insertion.outputOffset >= previousChangedEnd) {
         insertion.outputOffset =
-          nextChangedEnd + (insertion.outputOffset - previousChangedEnd);
+          nextInsertionEnd + (insertion.outputOffset - previousChangedEnd);
       } else {
-        insertion.outputOffset = nextChangedEnd;
+        insertion.outputOffset = nextInsertionEnd;
       }
     }
   }
 
+  coalesceReplayInsertions(insertions);
   for (const insertion of insertions) {
     trimInsertionAgainstOutput(insertion, next);
   }

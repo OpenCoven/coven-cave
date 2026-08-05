@@ -211,6 +211,40 @@ test("plain replay rebases structured suffixes across terminal revisions", () =>
   );
 });
 
+test("plain replay keeps rebased structured suffixes before terminal newlines", () => {
+  assert.equal(
+    decodeReplayAssistantOutput({
+      harness: "claude",
+      ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+      events: [
+        daemonEvent("output", JSON.stringify({ data: "wrong" })),
+        daemonEvent(
+          "assistant.message",
+          JSON.stringify({ content: "wrong answer" }),
+        ),
+        daemonEvent("output", JSON.stringify({ data: "\b\b\b\bright\n" })),
+      ],
+    }),
+    "wright answer",
+  );
+});
+
+test("plain replay reconciles consecutive structured suffixes as one span", () => {
+  assert.equal(
+    decodeReplayAssistantOutput({
+      harness: "claude",
+      ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+      events: [
+        daemonEvent("output", JSON.stringify({ data: "A" })),
+        daemonEvent("assistant.message", JSON.stringify({ content: "AB" })),
+        daemonEvent("assistant.message", JSON.stringify({ content: "ABC" })),
+        daemonEvent("output", JSON.stringify({ data: "BC" })),
+      ],
+    }),
+    "ABC",
+  );
+});
+
 test("replay rejects truncated output after partial chunks with a typed error", () => {
   assert.throws(
     () =>
