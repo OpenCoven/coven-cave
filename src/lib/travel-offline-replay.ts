@@ -49,8 +49,6 @@ import {
   OFFLINE_REPLAY_LAUNCH_CONTRACT,
   replayOutputContractBlockReason,
 } from "@/lib/travel-replay-output";
-import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
-import { AssistantFilter } from "@/lib/chat-assistant-filter";
 
 export type TravelOfflineReplayResult = {
   attempted: number;
@@ -217,79 +215,6 @@ function replayEventPage(
   };
 }
 
-function replayOutputChunk(event: DaemonEventRow): string | null {
-  if (event.kind !== "output") return null;
-  if (typeof event.payload_json !== "string") {
-    throw new Error("offline replay received a malformed daemon output event");
-  }
-  let payload: Record<string, unknown> | null;
-  try {
-    payload = record(JSON.parse(event.payload_json));
-  } catch {
-    throw new Error("offline replay received a malformed daemon output event");
-  }
-  if (typeof payload?.data !== "string") {
-    throw new Error("offline replay received a malformed daemon output event");
-  }
-  return payload.data;
-}
-
-function replayAssistantMessageContent(event: DaemonEventRow): string | null {
-  if (event.kind !== "assistant.message") return null;
-  if (typeof event.payload_json !== "string") {
-    throw new Error("offline replay received a malformed assistant data event");
-  }
-  let payload: Record<string, unknown> | null;
-  try {
-    payload = record(JSON.parse(event.payload_json));
-  } catch {
-    throw new Error("offline replay received a malformed assistant data event");
-  }
-  if (typeof payload?.content === "string") return payload.content;
-  const nestedData = record(payload?.data);
-  if (typeof nestedData?.content === "string") return nestedData.content;
-  throw new Error("offline replay received a malformed assistant data event");
-}
-
-function appendReplayAssistantText(current: string, next: string): string {
-  if (!next) return current;
-  if (!current) return next;
-  if (next.startsWith(current)) return next;
-  if (current.endsWith(next)) return current;
-  return current + next;
-}
-
-function decodeCodexReplayAssistantOutput(events: DaemonEventRow[]): string | null {
-  if (events.some((event) => event.kind === "output_truncated")) {
-    throw new Error("offline replay daemon output log was truncated; refusing to mirror a partial assistant reply");
-  }
-  const filter = new AssistantFilter();
-  const pendingChunks: string[] = [];
-  const flushOutput = () => {
-    if (pendingChunks.length === 0) return "";
-    const cleaned = resolveBackspaces(stripAnsi(pendingChunks.join("")));
-    pendingChunks.length = 0;
-    let text = filter.push(cleaned) + filter.flush();
-    if (!cleaned.endsWith("\n") && text.endsWith("\n")) text = text.slice(0, -1);
-    return text;
-  };
-
-  let merged = "";
-  for (const event of events) {
-    const outputChunk = replayOutputChunk(event);
-    if (outputChunk !== null) {
-      pendingChunks.push(outputChunk);
-      continue;
-    }
-    const assistantContent = replayAssistantMessageContent(event);
-    if (assistantContent === null) continue;
-    merged = appendReplayAssistantText(merged, flushOutput());
-    merged = appendReplayAssistantText(merged, assistantContent);
-  }
-  merged = appendReplayAssistantText(merged, flushOutput()).trim();
-  return merged || null;
-}
-
 export async function collectReplayEventPages(args: {
   harnessSessionId: string;
   daemonCall?: typeof callDaemon;
@@ -367,13 +292,11 @@ export async function replayAssistantStatus(args: {
       eventsComplete: false,
     };
   }
-  const assistant = canonicalHarnessId(args.harness) === "codex"
-    ? decodeCodexReplayAssistantOutput(events)
-    : decodeReplayAssistantOutput({
-        harness: args.harness,
-        ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
-        events,
-      });
+  const assistant = decodeReplayAssistantOutput({
+    harness: args.harness,
+    ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+    events,
+  });
   return {
     status,
     assistantText: assistant,

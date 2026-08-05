@@ -663,6 +663,10 @@ export async function persistQueuedOfflineConversation(
       updatedAt: seed.createdAt,
       turns: [],
     };
+
+    const existingTurn = conv.turns.find((turn) => turn.id === seed.userTurn.id);
+    if (existingTurn) return;
+
     conv.familiarId = seed.familiarId;
     conv.harness = seed.harness;
     if (seed.model !== undefined) conv.model = seed.model;
@@ -672,31 +676,28 @@ export async function persistQueuedOfflineConversation(
     if (!conv.modelIntent && seed.modelIntent) conv.modelIntent = seed.modelIntent;
     if (seed.harnessSessionId) conv.harnessSessionId = seed.harnessSessionId;
 
-    const existingTurn = conv.turns.find((turn) => turn.id === seed.userTurn.id);
-    if (!existingTurn) {
-      const parentId = seed.userTurn.parentId !== undefined
-        ? seed.userTurn.parentId
-        : existing?.activeLeafId ?? null;
-      conv.turns.push({
-        id: seed.userTurn.id,
-        role: "user",
-        text: seed.userTurn.text,
-        ...(seed.userTurn.attachments?.length ? { attachments: seed.userTurn.attachments } : {}),
-        ...(seed.userTurn.reasoningEffort ? { reasoningEffort: seed.userTurn.reasoningEffort } : {}),
-        ...(seed.userTurn.responseSpeed ? { responseSpeed: seed.userTurn.responseSpeed } : {}),
-        ...(seed.userTurn.modelControls && Object.keys(seed.userTurn.modelControls).length > 0
-          ? { modelControls: seed.userTurn.modelControls }
-          : {}),
-        ...(seed.userTurn.modelOverride ? { modelOverride: seed.userTurn.modelOverride } : {}),
-        ...(seed.userTurn.modelOverrideScope === "runtime-default"
-          ? { modelOverrideScope: "runtime-default" as const }
-          : {}),
-        ...(attentionClearOperationId ? { attentionClearOperationId } : {}),
-        createdAt: seed.createdAt,
-        ...(parentId != null ? { parentId } : { parentId: null }),
-      });
-      conv.activeLeafId = seed.userTurn.id;
-    }
+    const parentId = seed.userTurn.parentId !== undefined
+      ? seed.userTurn.parentId
+      : existing?.activeLeafId ?? null;
+    conv.turns.push({
+      id: seed.userTurn.id,
+      role: "user",
+      text: seed.userTurn.text,
+      ...(seed.userTurn.attachments?.length ? { attachments: seed.userTurn.attachments } : {}),
+      ...(seed.userTurn.reasoningEffort ? { reasoningEffort: seed.userTurn.reasoningEffort } : {}),
+      ...(seed.userTurn.responseSpeed ? { responseSpeed: seed.userTurn.responseSpeed } : {}),
+      ...(seed.userTurn.modelControls && Object.keys(seed.userTurn.modelControls).length > 0
+        ? { modelControls: seed.userTurn.modelControls }
+        : {}),
+      ...(seed.userTurn.modelOverride ? { modelOverride: seed.userTurn.modelOverride } : {}),
+      ...(seed.userTurn.modelOverrideScope === "runtime-default"
+        ? { modelOverrideScope: "runtime-default" as const }
+        : {}),
+      ...(attentionClearOperationId ? { attentionClearOperationId } : {}),
+      createdAt: seed.createdAt,
+      ...(parentId != null ? { parentId } : { parentId: null }),
+    });
+    conv.activeLeafId = seed.userTurn.id;
     delete conv.pendingUserTurnId;
     if (!existing) {
       conv.updatedAt = seed.createdAt;

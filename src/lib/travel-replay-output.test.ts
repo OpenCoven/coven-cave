@@ -115,6 +115,21 @@ test("plain replay retains strictly validated structured compatibility events", 
   );
 });
 
+test("plain replay merges structured compatibility events in daemon order", () => {
+  assert.equal(
+    decodeReplayAssistantOutput({
+      harness: "claude",
+      ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+      events: [
+        daemonEvent("output", JSON.stringify({ data: "Hello" })),
+        daemonEvent("assistant.message", JSON.stringify({ content: "Hello" })),
+        daemonEvent("output", JSON.stringify({ data: " world" })),
+      ],
+    }),
+    "Hello world",
+  );
+});
+
 test("replay rejects truncated output after partial chunks with a typed error", () => {
   assert.throws(
     () =>

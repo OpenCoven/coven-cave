@@ -79,69 +79,116 @@ function record(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function outputChunk(event: ReplayDaemonEvent): string | null {
+  if (event.kind !== "output") return null;
+  if (typeof event.payload_json !== "string") {
+    throw replayOutputDecodeError(
+      "malformed_output_event",
+      "offline replay received a malformed daemon output event",
+    );
+  }
+  let payload: Record<string, unknown> | null;
+  try {
+    payload = record(JSON.parse(event.payload_json));
+  } catch {
+    throw replayOutputDecodeError(
+      "malformed_output_event",
+      "offline replay received a malformed daemon output event",
+    );
+  }
+  if (typeof payload?.data !== "string") {
+    throw replayOutputDecodeError(
+      "malformed_output_event",
+      "offline replay received a malformed daemon output event",
+    );
+  }
+  return payload.data;
+}
+
 function outputChunks(events: ReplayDaemonEvent[]): string[] {
   const chunks: string[] = [];
   for (const event of events) {
-    if (event.kind !== "output") continue;
-    if (typeof event.payload_json !== "string") {
-      throw replayOutputDecodeError(
-        "malformed_output_event",
-        "offline replay received a malformed daemon output event",
-      );
-    }
-    let payload: Record<string, unknown> | null;
-    try {
-      payload = record(JSON.parse(event.payload_json));
-    } catch {
-      throw replayOutputDecodeError(
-        "malformed_output_event",
-        "offline replay received a malformed daemon output event",
-      );
-    }
-    if (typeof payload?.data !== "string") {
-      throw replayOutputDecodeError(
-        "malformed_output_event",
-        "offline replay received a malformed daemon output event",
-      );
-    }
-    chunks.push(payload.data);
+    const chunk = outputChunk(event);
+    if (chunk !== null) chunks.push(chunk);
   }
   return chunks;
 }
 
-function structuredAssistantText(events: ReplayDaemonEvent[]): string | null {
-  let latest: string | null = null;
-  for (const event of events) {
-    if (event.kind !== "assistant.message" && event.kind !== "assistant_message") continue;
-    if (typeof event.payload_json !== "string") {
-      throw replayOutputDecodeError(
-        "malformed_assistant_event",
-        "offline replay received a malformed assistant data event",
-      );
-    }
-    let payload: Record<string, unknown> | null;
-    try {
-      payload = record(JSON.parse(event.payload_json));
-    } catch {
-      throw replayOutputDecodeError(
-        "malformed_assistant_event",
-        "offline replay received a malformed assistant data event",
-      );
-    }
-    const text = typeof payload?.content === "string"
-      ? payload.content
-      : typeof payload?.text === "string"
-        ? payload.text
-        : null;
-    if (text === null) {
-      throw replayOutputDecodeError(
-        "malformed_assistant_event",
-        "offline replay received a malformed assistant data event",
-      );
-    }
-    latest = text;
+function structuredAssistantEventText(event: ReplayDaemonEvent): string | null {
+  if (event.kind !== "assistant.message" && event.kind !== "assistant_message") return null;
+  if (typeof event.payload_json !== "string") {
+    throw replayOutputDecodeError(
+      "malformed_assistant_event",
+      "offline replay received a malformed assistant data event",
+    );
   }
-  return latest;
+  let payload: Record<string, unknown> | null;
+  try {
+    payload = record(JSON.parse(event.payload_json));
+  } catch {
+    throw replayOutputDecodeError(
+      "malformed_assistant_event",
+      "offline replay received a malformed assistant data event",
+    );
+  }
+  const text = typeof payload?.content === "string"
+    ? payload.content
+    : typeof payload?.text === "string"
+      ? payload.text
+      : null;
+  if (text === null) {
+    throw replayOutputDecodeError(
+      "malformed_assistant_event",
+      "offline replay received a malformed assistant data event",
+    );
+  }
+  return text;
+}
+
+function appendReplayAssistantText(current: string, next: string): string {
+  if (!next) return current;
+  if (!current) return next;
+  if (next.startsWith(current)) return next;
+  if (current.startsWith(next) || current.endsWith(next)) return current;
+  const maxOverlap = Math.min(current.length, next.length);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    if (current.endsWith(next.slice(0, overlap))) {
+      return current + next.slice(overlap);
+    }
+  }
+  return current + next;
+}
+
+function decodePlainTimeline(
+  events: ReplayDaemonEvent[],
+  decoder: (chunks: string[]) => string,
+): string | null {
+  const chunks: string[] = [];
+  let decodedPrefix = "";
+  let merged = "";
+
+  const mergeDecodedPrefix = () => {
+    const decoded = decoder(chunks).trim();
+    const next = decoded.startsWith(decodedPrefix)
+      ? decoded.slice(decodedPrefix.length)
+      : decoded;
+    merged = appendReplayAssistantText(merged, next);
+    decodedPrefix = decoded;
+  };
+
+  for (const event of events) {
+    const chunk = outputChunk(event);
+    if (chunk !== null) {
+      chunks.push(chunk);
+      continue;
+    }
+    const structured = structuredAssistantEventText(event);
+    if (structured === null) continue;
+    mergeDecodedPrefix();
+    merged = appendReplayAssistantText(merged, structured.trim());
+  }
+  mergeDecodedPrefix();
+  return merged.trim() || null;
 }
 
 function cleanTerminalOutput(chunks: string[]): string {
@@ -255,9 +302,17 @@ export function decodeReplayAssistantOutput(
     );
   }
 
+  if (request.launchMode === "nonInteractive" && request.outputFormat === "plain") {
+    return decodePlainTimeline(request.events, decoder);
+  }
+
   const decoded = decoder(outputChunks(request.events)).trim();
-  const structured = structuredAssistantText(request.events)?.trim() ?? "";
-  if (!structured) return decoded || null;
-  if (!decoded || structured.startsWith(decoded)) return structured;
-  return `${decoded}${structured}`;
+  let merged = decoded;
+  for (const event of request.events) {
+    const structured = structuredAssistantEventText(event);
+    if (structured !== null) {
+      merged = appendReplayAssistantText(merged, structured.trim());
+    }
+  }
+  return merged || null;
 }

@@ -15,6 +15,7 @@ const {
   isSafeConversationSessionId,
   listConversations,
   loadConversation,
+  persistQueuedOfflineConversation,
   saveConversation,
 } = await import("./cave-conversations.ts");
 const {
@@ -2818,6 +2819,81 @@ console.log("cave-conversations attention summary test OK");
   await deleteConversation(sessionId);
 }
 console.log("cave-conversations model-lock test OK");
+
+// ── Offline replay does not rewind active runtime metadata ───────────────────
+{
+  const sessionId = "offline-replay-stale-runtime";
+  await saveConversation({
+    sessionId,
+    familiarId: "nova",
+    harness: "claude",
+    model: "anthropic/claude-opus-4-7",
+    runtime: "local:/current-project",
+    harnessSessionId: "current-harness-session",
+    title: "Current active branch",
+    createdAt: "2026-08-05T12:00:00.000Z",
+    updatedAt: "2026-08-05T12:03:00.000Z",
+    turns: [
+      {
+        id: "root-user",
+        role: "user",
+        text: "Root",
+        createdAt: "2026-08-05T12:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "queued-user",
+        role: "user",
+        text: "Queued branch",
+        createdAt: "2026-08-05T12:01:00.000Z",
+        parentId: "root-user",
+      },
+      {
+        id: "active-user",
+        role: "user",
+        text: "New active branch",
+        createdAt: "2026-08-05T12:02:00.000Z",
+        parentId: "root-user",
+      },
+      {
+        id: "active-assistant",
+        role: "assistant",
+        text: "Current reply",
+        createdAt: "2026-08-05T12:03:00.000Z",
+        parentId: "active-user",
+      },
+    ],
+    activeLeafId: "active-assistant",
+  });
+
+  await persistQueuedOfflineConversation({
+    sessionId,
+    familiarId: "stale-familiar",
+    harness: "codex",
+    model: "stale-model",
+    runtime: "local:/stale-project",
+    harnessSessionId: "stale-harness-session",
+    title: "Stale queued title",
+    createdAt: "2026-08-05T12:01:00.000Z",
+    userTurn: {
+      id: "queued-user",
+      text: "Queued branch",
+      parentId: "root-user",
+    },
+  });
+
+  const replayed = await loadConversation(sessionId);
+  assert.equal(replayed?.familiarId, "nova");
+  assert.equal(replayed?.harness, "claude");
+  assert.equal(replayed?.model, "anthropic/claude-opus-4-7");
+  assert.equal(replayed?.runtime, "local:/current-project");
+  assert.equal(replayed?.harnessSessionId, "current-harness-session");
+  assert.equal(replayed?.title, "Current active branch");
+  assert.equal(replayed?.activeLeafId, "active-assistant");
+  assert.equal(replayed?.turns.length, 4);
+  await deleteConversation(sessionId);
+}
+console.log("cave-conversations offline replay metadata test OK");
 
 // ── Selected-chain validation stays O(chain length) on long/branched trees ──
 // Regression for the retired `hasSingleStructuralRoot`: that check re-walked
