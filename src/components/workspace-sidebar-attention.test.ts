@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { CHAT_SIDEBAR_VIEW_KEY } from "@/lib/chat-session-prefs";
 
 const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/globals/shell-navigation.css", import.meta.url), "utf8");
@@ -23,20 +24,28 @@ assert.match(
   /const recentSessions = useMemo\(\(\) => \{[\s\S]*?const rows = hasSearch \? visibleSessions : visibleSessions\.filter\(\(session\) => !attentionIds\.has\(session\.id\)\);[\s\S]*?return rows\.filter\(\(s\) => sessionRailTitle\(s\)\.toLowerCase\(\)\.includes\(q\)\);[\s\S]*?\}, \[visibleSessions, query, hasSearch, attentionIds\]\);/,
   "ordinary recent rows should drop promoted attention ids unless search is active",
 );
+// Attention derivation is centralized in one helper (resolveThreadAttention)
+// and one cue component (ThreadAttentionCue) so ThreadRow's full row and the
+// compact Pinned rail can never drift into divergent state/label/description
+// or markup for the same session — see cave-zs85n Task 6 gap-fix notes.
 assert.match(
   sidebar,
-  /const attentionState = archived \? "none" : session\.attention\.state;[\s\S]*?chatAttentionLabel\(attentionState\)/,
-  "ThreadRow should derive the visible attention label from the shared helper",
+  /function resolveThreadAttention\([\s\S]*?const state: ChatAttentionState = archived \? "none" : session\.attention\.state;[\s\S]*?label: chatAttentionLabel\(state\),[\s\S]*?description: archived \? null : chatAttentionDescription\(session\.attention, now\),/,
+  "resolveThreadAttention should centralize the archived-suppression rule and derive label/description from the shared chat-attention helpers",
 );
-assert.match(
-  sidebar,
-  /archived \? null : chatAttentionDescription\(session\.attention, now\)/,
-  "ThreadRow should derive the detailed attention description from the shared helper",
+const resolveThreadAttentionCallSites = sidebar.match(
+  /const \{ state: attentionState, label: attentionLabel, description: attentionDescription \} = resolveThreadAttention\(\s*session,\s*archived,\s*now,\s*\);/g,
+) ?? [];
+assert.equal(
+  resolveThreadAttentionCallSites.length,
+  2,
+  "both ThreadRow and PinnedThreadRow should derive attention through the shared resolveThreadAttention helper (not a re-derived copy)",
 );
-assert.match(
-  sidebar,
-  /const attentionState = archived \? "none" : session\.attention\.state;[\s\S]*?data-attention=\{attentionState\}/,
-  "ThreadRow rows should expose their attention state to CSS",
+const dataAttentionSites = sidebar.match(/data-attention=\{attentionState\}/g) ?? [];
+assert.equal(
+  dataAttentionSites.length,
+  2,
+  "both ThreadRow's row and the Pinned rail's row should expose their resolved attention state to CSS",
 );
 assert.match(
   sidebar,
@@ -45,18 +54,27 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /\{attentionLabel \? \([\s\S]*?<span className="cnav__attention">[\s\S]*?<span className="cnav__attention-dot" aria-hidden \/>[\s\S]*?<span>\{attentionLabel\}<\/span>[\s\S]*?<\/span>[\s\S]*?\) : null\}/,
-  "attention rows should keep the visible attention state inside the row button",
+  /function ThreadAttentionCue\(\{ label \}: \{ label: string \| null \}\) \{\s*if \(!label\) return null;\s*return \(\s*<span className="cnav__attention">\s*<span className="cnav__attention-dot" aria-hidden \/>\s*<span>\{label\}<\/span>\s*<\/span>\s*\);\s*\}/,
+  "the shared ThreadAttentionCue component should render the dot + label exactly once",
+);
+const threadAttentionCueCallSites = sidebar.match(/<ThreadAttentionCue label=\{attentionLabel\} \/>/g) ?? [];
+assert.equal(
+  threadAttentionCueCallSites.length,
+  2,
+  "both ThreadRow and PinnedThreadRow should render the visible attention cue through the shared ThreadAttentionCue component",
 );
 assert.doesNotMatch(
   sidebar,
   /<span id=\{attentionDescriptionId\} className="cnav__attention">[\s\S]*?<span className="sr-only">/,
   "the described target must no longer be nested in the visible attention label inside the button",
 );
-assert.match(
-  sidebar,
-  /<\/button>\s*\{attentionDescription \? \(\s*<span id=\{attentionDescriptionId\} className="sr-only">\{attentionDescription\}<\/span>\s*\) : null\}/,
-  "the detailed attention description should render as a sibling after the row button",
+const descriptionSiblingSites = sidebar.match(
+  /<\/button>\s*\{attentionDescription \? \(\s*<span id=\{attentionDescriptionId\} className="sr-only">\{attentionDescription\}<\/span>\s*\) : null\}/g,
+) ?? [];
+assert.equal(
+  descriptionSiblingSites.length,
+  2,
+  "the detailed attention description should render as a sibling after the row button in both row shapes",
 );
 assert.match(
   sidebar,
@@ -121,11 +139,20 @@ const mockProjects = vi.hoisted(() => ({
   },
 }));
 
+// Controllable per-test prefs: which sessions are pinned, and which organize
+// view ("recent" | "projects") the sidebar should hydrate on mount — mirrors
+// the real localStorage-backed hooks (chat-session-prefs.ts) without touching
+// jsdom's localStorage.
+const sidebarPrefs = vi.hoisted(() => ({
+  pinnedIds: [] as string[],
+  view: null as string | null,
+}));
+
 vi.mock("@/lib/use-focus-trap", () => ({ useFocusTrap: () => undefined }));
 vi.mock("@/lib/use-minute-tick", () => ({ useMinuteTick: () => 0 }));
 vi.mock("@/lib/use-projects", () => ({ useProjects: () => mockProjects.state }));
 vi.mock("@/lib/use-project-overrides", () => ({ useProjectOverrides: () => ({}) }));
-vi.mock("@/lib/use-pinned-sessions", () => ({ usePinnedSessions: () => [] }));
+vi.mock("@/lib/use-pinned-sessions", () => ({ usePinnedSessions: () => sidebarPrefs.pinnedIds }));
 vi.mock("@/components/familiar-switcher", async () => {
   const { createElement } = await import("react");
   return { FamiliarSwitcher: () => createElement("div", { "data-testid": "familiar-switcher" }) };
@@ -209,6 +236,12 @@ function sectionByLabel(renderer: ReactTestRenderer, label: string) {
   );
 }
 
+/** Non-throwing sibling of `sectionByLabel` — lets a test assert a section is
+ *  ABSENT (e.g. "Awaiting you" during search) without `.find` throwing first. */
+function sectionsByLabel(renderer: ReactTestRenderer) {
+  return renderer.root.findAll((node) => node.type === "section" && typeof node.props["aria-label"] === "string");
+}
+
 function sectionCount(section: ReturnType<typeof sectionByLabel>) {
   return section.find(
     (node) => typeof node.type === "string" && node.props.className === "cnav__label-count",
@@ -219,6 +252,29 @@ function sectionThreadTitles(section: ReturnType<typeof sectionByLabel>) {
   return section
     .findAll((node) => typeof node.type === "string" && node.props.className === "cnav__thread-title")
     .map((node) => textContent(node.children));
+}
+
+function attentionCueLabels(section: ReturnType<typeof sectionByLabel>) {
+  return section
+    .findAll((node) => typeof node.type === "string" && node.props.className === "cnav__attention")
+    .map((node) => textContent(node.children));
+}
+
+function groupNameNodes(renderer: ReactTestRenderer) {
+  return renderer.root.findAll((node) => typeof node.type === "string" && node.props.className === "cnav__group-name");
+}
+
+function groupMetaText(renderer: ReactTestRenderer, index: number) {
+  const nodes = renderer.root.findAll(
+    (node) => typeof node.type === "string" && node.props.className === "cnav__group-meta",
+  );
+  return textContent(nodes[index]?.children);
+}
+
+function searchInput(renderer: ReactTestRenderer) {
+  return renderer.root.find(
+    (node) => node.type === "input" && node.props["aria-label"] === "Search projects and threads",
+  );
 }
 
 /** Extracts a single balanced-brace CSS block starting at `marker` — lets a
@@ -245,7 +301,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-08-05T20:00:00.000Z"));
   vi.stubGlobal("window", {
     localStorage: {
-      getItem: () => null,
+      getItem: (key: string) => (key === CHAT_SIDEBAR_VIEW_KEY ? sidebarPrefs.view : null),
       setItem: () => undefined,
       removeItem: () => undefined,
     },
@@ -260,6 +316,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   mockProjects.state.projects = [];
+  sidebarPrefs.pinnedIds = [];
+  sidebarPrefs.view = null;
 });
 
 test("attention rows keep the visible state in the button name and move the detailed description outside the button subtree", async () => {
@@ -461,6 +519,222 @@ test("attention show-more keeps the flat modifier, focus ring, and click handler
   expect(sectionThreadTitles(sectionByLabel(renderer, "Awaiting you"))).toHaveLength(7);
 
   await act(async () => renderer.unmount());
+});
+
+/** Walks up from a `cnav__thread-title` text match to its containing row
+ *  (`.cnav__thread`) so a test can assert on the row's data-attention, active,
+ *  and PR/runtime cues regardless of which row shape (ThreadRow vs the
+ *  compact Pinned rail) rendered it. Scoped to `scope` (a section or the
+ *  renderer root) so duplicate titles across sections resolve unambiguously. */
+function rowContainerFor(scope: ReturnType<typeof sectionByLabel> | ReactTestRenderer["root"], title: string) {
+  const titleNode = scope.find(
+    (node) => typeof node.type === "string" && node.props.className === "cnav__thread-title" && textContent(node.children) === title,
+  );
+  let node = titleNode;
+  while (
+    node &&
+    !(typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__thread"))
+  ) {
+    node = node.parent;
+  }
+  return node;
+}
+
+test("Projects view preserves latest-activity folder order and surfaces awaiting counts and row cues", async () => {
+  let renderer!: ReactTestRenderer;
+  sidebarPrefs.view = "projects";
+
+  const zetaAwaiting = makeSession({
+    id: "zeta-awaiting",
+    project_root: "/repo/zeta",
+    title: "Zeta needs a decision",
+    updated_at: "2026-08-05T19:59:00.000Z",
+    attention: { state: "awaiting-human", since: "2026-08-05T19:00:00.000Z", reason: "approval" },
+  });
+  const zetaCalm = makeSession({
+    id: "zeta-calm",
+    project_root: "/repo/zeta",
+    title: "Zeta housekeeping",
+    updated_at: "2026-08-05T19:50:00.000Z",
+    attention: { state: "none", since: null, reason: null },
+  });
+  const alphaCalm = makeSession({
+    id: "alpha-calm",
+    project_root: "/repo/alpha",
+    title: "Alpha routine chat",
+    updated_at: "2026-08-05T10:00:00.000Z",
+    attention: { state: "none", since: null, reason: null },
+  });
+
+  await act(async () => {
+    renderer = create(
+      createElement(WorkspaceSidebar, {
+        sessions: [alphaCalm, zetaCalm, zetaAwaiting],
+        familiars: [],
+        responseNeeded: new Set(),
+        onSelectFamiliar: () => undefined,
+        onOpenSession: () => undefined,
+        onNavigate: () => undefined,
+        onNewChat: () => undefined,
+        onDeleteSession: async () => undefined,
+        onOpenSettings: () => undefined,
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  // The project with the most recent activity (zeta) sorts first — folder
+  // order is untouched by attention, only by recency (deriveChatProjectGroups).
+  const names = groupNameNodes(renderer).map((node) => textContent(node.children));
+  expect(names).toEqual(["zeta", "alpha"]);
+
+  expect(groupMetaText(renderer, 0)).toMatch(/^1 awaiting · /);
+  expect(groupMetaText(renderer, 1)).not.toMatch(/awaiting/);
+
+  const awaitingRow = rowContainerFor(renderer.root, "Zeta needs a decision");
+  expect(awaitingRow.props["data-attention"]).toBe("awaiting-human");
+  expect(attentionCueLabels(awaitingRow)).toEqual(["Awaiting you"]);
+
+  const calmRow = rowContainerFor(renderer.root, "Zeta housekeeping");
+  expect(calmRow.props["data-attention"]).toBe("none");
+  expect(attentionCueLabels(calmRow)).toEqual([]);
+
+  await act(async () => renderer.unmount());
+});
+
+test("search drops the Awaiting you section but rows keep their visible label and accessible description", async () => {
+  let renderer!: ReactTestRenderer;
+  const overdue = makeSession({
+    id: "session-overdue",
+    title: "Overdue search target",
+    updated_at: "2026-08-05T19:59:00.000Z",
+    attention: { state: "overdue-human", since: "2026-08-03T20:00:00.000Z", reason: "approval" },
+  });
+  const ordinary = makeSession({
+    id: "session-none",
+    title: "Unrelated calm chat",
+    updated_at: "2026-08-05T19:56:00.000Z",
+    attention: { state: "none", since: null, reason: null },
+  });
+
+  await act(async () => {
+    renderer = create(
+      createElement(WorkspaceSidebar, {
+        sessions: [ordinary, overdue],
+        familiars: [],
+        responseNeeded: new Set(),
+        onSelectFamiliar: () => undefined,
+        onOpenSession: () => undefined,
+        onNavigate: () => undefined,
+        onNewChat: () => undefined,
+        onDeleteSession: async () => undefined,
+        onOpenSettings: () => undefined,
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  await act(async () => {
+    searchInput(renderer).props.onChange({ target: { value: "search target" } });
+    await Promise.resolve();
+  });
+
+  const labels = sectionsByLabel(renderer).map((node) => node.props["aria-label"]);
+  expect(labels).not.toContain("Awaiting you");
+
+  const row = rowContainerFor(renderer.root, "Overdue search target");
+  expect(row.props["data-attention"]).toBe("overdue-human");
+  expect(attentionCueLabels(row)).toEqual(["Still waiting"]);
+
+  const descriptionId = row.find(
+    (node) => node.type === "button" && node.props.className === "cnav__thread-main focus-ring",
+  ).props["aria-describedby"];
+  expect(typeof descriptionId).toBe("string");
+  const described = renderer.root.findAll((node) => typeof node.type === "string" && node.props.id === descriptionId);
+  expect(described).toHaveLength(1);
+  expect(textContent(described[0].children)).toContain("approval");
+
+  await act(async () => renderer.unmount());
+});
+
+test("a pinned attention session appears in both Pinned and Awaiting you, keeping active state, PR badge, and runtime cues", async () => {
+  let renderer!: ReactTestRenderer;
+  const session = makeSession({
+    id: "session-pinned-attention",
+    title: "Pinned and awaiting",
+    status: "running",
+    pullRequest: { repo: "o/r", number: 7, state: "open" },
+    updated_at: "2026-08-05T19:59:00.000Z",
+    attention: { state: "left-hanging", since: "2026-08-04T19:00:00.000Z", reason: "decision" },
+  });
+  sidebarPrefs.pinnedIds = [session.id];
+
+  const railTitle = "Pinned and awaiting - PR #7 open";
+  await act(async () => {
+    renderer = create(
+      createElement(WorkspaceSidebar, {
+        sessions: [session],
+        familiars: [],
+        responseNeeded: new Set(),
+        activeSessionId: session.id,
+        onSelectFamiliar: () => undefined,
+        onOpenSession: () => undefined,
+        onNavigate: () => undefined,
+        onNewChat: () => undefined,
+        onDeleteSession: async () => undefined,
+        onOpenSettings: () => undefined,
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  const pinnedSection = sectionByLabel(renderer, "Pinned threads");
+  const awaitingSection = sectionByLabel(renderer, "Awaiting you");
+  expect(sectionThreadTitles(pinnedSection)).toEqual([railTitle]);
+  expect(sectionThreadTitles(awaitingSection)).toEqual([railTitle]);
+
+  // The Pinned rail's compact row: active, attention-tinted, PR-badged, AND
+  // still carries its distinct one-click unpin control (not ThreadRow's
+  // row-actions overlay).
+  const pinnedRow = rowContainerFor(pinnedSection, railTitle);
+  expect(pinnedRow.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__thread", "cnav__thread--flat", "is-active"]));
+  expect(pinnedRow.props["data-attention"]).toBe("left-hanging");
+  expect(attentionCueLabels(pinnedRow)).toEqual(["Left hanging"]);
+  expect(
+    pinnedRow.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__pr-badge") && node.props["data-pr-state"] === "open"),
+  ).toHaveLength(1);
+  const unpinButton = pinnedRow.find((node) => node.type === "button" && node.props["aria-label"] === `Unpin ${railTitle}`);
+  expect(unpinButton.props["aria-pressed"]).toBe(true);
+
+  // The full ThreadRow in Awaiting you keeps its own runtime tick and PR badge
+  // alongside the same attention cue — the two row shapes render the same
+  // attention state without diverging.
+  const awaitingRow = rowContainerFor(awaitingSection, railTitle);
+  expect(awaitingRow.props["data-attention"]).toBe("left-hanging");
+  expect(attentionCueLabels(awaitingRow)).toEqual(["Left hanging"]);
+  expect(
+    awaitingRow.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.includes("cnav__tick") && node.props.className.includes("animate-pulse")),
+  ).toHaveLength(1);
+  expect(
+    awaitingRow.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__pr-badge")),
+  ).toHaveLength(1);
+
+  await act(async () => renderer.unmount());
+});
+
+test("narrow sidebar width never hides the attention label (only the project tile collapses)", () => {
+  const narrowBlock = extractBraceBlock(css, "@container cnav (max-width: 212px)");
+  assert.match(
+    narrowBlock,
+    /\.cnav__thread-proj\s*\{[\s\S]*?display:\s*none;/,
+    "narrow width still collapses the project tile",
+  );
+  assert.match(narrowBlock, /\.cnav__attention\s*\{/, "narrow width rule still touches .cnav__attention");
+  assert.doesNotMatch(
+    narrowBlock,
+    /\.cnav__attention\s*\{[^}]*display:\s*none/,
+    "the attention label must stay visible (never display:none) at narrow widths",
+  );
 });
 
 const flatThreadBlock = extractBraceBlock(css, ".cnav__thread--flat .cnav__thread-main");

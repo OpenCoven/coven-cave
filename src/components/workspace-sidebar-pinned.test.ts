@@ -9,23 +9,36 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 
-// Isolate the pinned-rail section (from the section header to the recent view).
+// Isolate the pinned-rail: the render site wires onTogglePin/onOpen callbacks
+// through the shared PinnedThreadRow component, but the row's actual markup
+// (unpin button, its aria attributes, is-on styling) lives in that
+// component's own function body — pin against both scopes, not just the JSX
+// call site. See cave-zs85n Task 6 gap-fix notes.
 const start = source.indexOf('aria-label="Pinned threads"');
 // Anchor the section end on the recent view *after* the pinned rail (an earlier
 // `view === "recent"` guard exists higher in the file, so scan forward from start).
 const end = source.indexOf('view === "recent"', start);
 assert.ok(start !== -1 && end > start, "pinned rail section exists before the recent view");
-const pinnedRail = source.slice(start, end);
+const pinnedRenderSite = source.slice(start, end);
 
+const pinnedRowFnStart = source.indexOf("function PinnedThreadRow(");
+assert.ok(pinnedRowFnStart > 0, "the PinnedThreadRow component exists");
+const pinnedRail = source.slice(pinnedRowFnStart, source.indexOf("\n}\n", pinnedRowFnStart));
+
+assert.match(
+  pinnedRenderSite,
+  /<PinnedThreadRow\b/,
+  "the Pinned section renders rows through the shared PinnedThreadRow component",
+);
+assert.match(
+  pinnedRenderSite,
+  /onTogglePin=\{\(\) => togglePin\(session\.id\)\}/,
+  "the pinned-rail unpin button toggles through the shared pin state",
+);
 assert.match(
   pinnedRail,
   /aria-label=\{`Unpin \$\{title\}`\}/,
   "each pinned-rail row has an unpin button labelled for the thread",
-);
-assert.match(
-  pinnedRail,
-  /onClick=\{\(\) => togglePin\(session\.id\)\}/,
-  "the pinned-rail unpin button toggles through the shared pin state",
 );
 assert.match(
   pinnedRail,
