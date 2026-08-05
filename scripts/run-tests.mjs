@@ -1348,9 +1348,6 @@ export const SUITES = {
     "src/lib/voice/speech-loop.test.ts",
     "src/lib/voice/call-transcript.test.ts",
 
-    // Landed unwired with /auto mission mode (3bde7b0); main's
-    // check:tests-wired fails until the existing test is listed.
-    "src/lib/auto-status-blocks.test.ts",
     "src/lib/voice/microphone-access.test.ts",
     "src/lib/voice/native-stt.test.ts",
     "src/lib/voice/familiar-brain.test.ts",
