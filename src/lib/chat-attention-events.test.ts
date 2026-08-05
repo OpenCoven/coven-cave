@@ -118,29 +118,32 @@ test("accepts every canonical BaselineAttention combo", () => {
 });
 
 test("rejects impossible BaselineAttention combos and non-canonical timestamps", () => {
+  // Malformed baseline evidence must not invalidate the whole clear event —
+  // it is dropped like a malformed clearWatermark/scopeKey, leaving a valid
+  // event with no baselineAttention field, never a fabricated snapshot.
+  function rejectsBaseline(baselineAttention: unknown) {
+    assert.deepEqual(clearWithBaseline(baselineAttention), { sessionId: "session-3", operationId: "run-3" });
+  }
   // "none" must carry neither a timestamp nor a reason.
-  assert.equal(clearWithBaseline({ state: "none", since: "2026-08-05T00:00:00.000Z", reason: null }), null);
-  assert.equal(clearWithBaseline({ state: "none", since: null, reason: "approval" }), null);
+  rejectsBaseline({ state: "none", since: "2026-08-05T00:00:00.000Z", reason: null });
+  rejectsBaseline({ state: "none", since: null, reason: "approval" });
   // "left-hanging" requires a canonical since and forbids a reason.
-  assert.equal(clearWithBaseline({ state: "left-hanging", since: null, reason: null }), null);
-  assert.equal(clearWithBaseline({ state: "left-hanging", since: "not-a-date", reason: null }), null);
-  assert.equal(
-    clearWithBaseline({ state: "left-hanging", since: "2026-08-05T00:00:00.000Z", reason: "approval" }),
-    null,
-  );
+  rejectsBaseline({ state: "left-hanging", since: null, reason: null });
+  rejectsBaseline({ state: "left-hanging", since: "not-a-date", reason: null });
+  rejectsBaseline({ state: "left-hanging", since: "2026-08-05T00:00:00.000Z", reason: "approval" });
   // "awaiting-human"/"overdue-human" require both a canonical since and a
   // recognized reason — missing, unrecognized, or non-canonical is rejected.
   for (const state of ["awaiting-human", "overdue-human"] as const) {
-    assert.equal(clearWithBaseline({ state, since: "2026-08-05T00:00:00.000Z", reason: null }), null);
-    assert.equal(clearWithBaseline({ state, since: "2026-08-05T00:00:00.000Z", reason: "not-a-reason" }), null);
-    assert.equal(clearWithBaseline({ state, since: null, reason: "approval" }), null);
-    assert.equal(clearWithBaseline({ state, since: "not-a-date", reason: "approval" }), null);
+    rejectsBaseline({ state, since: "2026-08-05T00:00:00.000Z", reason: null });
+    rejectsBaseline({ state, since: "2026-08-05T00:00:00.000Z", reason: "not-a-reason" });
+    rejectsBaseline({ state, since: null, reason: "approval" });
+    rejectsBaseline({ state, since: "not-a-date", reason: "approval" });
     // A non-canonical (non-round-tripping) timestamp string must be rejected
     // even though it parses — canonical-instant reuse, not raw Date.parse.
-    assert.equal(clearWithBaseline({ state, since: "2026-08-05T00:00:00Z", reason: "approval" }), null);
+    rejectsBaseline({ state, since: "2026-08-05T00:00:00Z", reason: "approval" });
   }
   // An unrecognized state is rejected outright.
-  assert.equal(clearWithBaseline({ state: "waiting-forever", since: null, reason: null }), null);
+  rejectsBaseline({ state: "waiting-forever", since: null, reason: null });
 });
 
 test("rejects wrong event types and invalid detail payloads", () => {

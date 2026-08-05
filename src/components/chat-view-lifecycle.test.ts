@@ -83,6 +83,12 @@ assert.match(
 
 assert.match(
   source,
+  /case "session": \{[\s\S]*const isBrandNewSession = liveGeneration\.sessionId == null;[\s\S]*if \(!isBrandNewSession\) \{[\s\S]*emitAttentionClear\(ev\.sessionId, liveGeneration\.runId, liveGeneration\.clearWatermark\);[\s\S]*liveGeneration\.markAttentionCleared\(ev\.sessionId\);[\s\S]*\}\n\s*liveGeneration\.sessionId = ev\.sessionId;/,
+  "A brand-new chat's first session event must not emit an attention clear — no canonical row exists yet, so the assistant's first genuine request must surface instead of being masked by an unknown-baseline projection",
+);
+
+assert.match(
+  source,
   /function ProgressGroup[\s\S]*<details[\s\S]*open=\{pending \|\| undefined\}[\s\S]*Progress[\s\S]*progress\.map/,
   "Progress events should render as a collapsible activity timeline that stays open while running",
 );

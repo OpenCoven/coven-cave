@@ -1,4 +1,4 @@
-import { isCanonicalIsoInstant, type ChatAttention } from "./chat-attention.ts";
+import { isCanonicalIsoInstant, type ChatAttention, type ChatAttentionState } from "./chat-attention.ts";
 import { CHAT_ATTENTION_REASONS, type ChatAttentionReason } from "./chat-attention-marker.ts";
 import type { ChatAttentionSettlementOutcome } from "./chat-attention-projection.ts";
 
@@ -17,31 +17,57 @@ export type ChatAttentionSettlementDetail = ChatAttentionClearDetail & {
   outcome: ChatAttentionSettlementOutcome;
 };
 
+// Set<string> avoids widening `readonly ChatAttentionReason[]` with a cast at
+// every call site (`Set<string>.has` accepts any narrowed string directly).
+const VALID_CHAT_ATTENTION_REASONS = new Set<string>(CHAT_ATTENTION_REASONS);
+
 function normalizeString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed || null;
 }
 
+function isChatAttentionState(value: unknown): value is ChatAttentionState {
+  return value === "none" ||
+    value === "left-hanging" ||
+    value === "awaiting-human" ||
+    value === "overdue-human";
+}
+
+function isChatAttentionReason(value: unknown): value is ChatAttentionReason {
+  return typeof value === "string" && VALID_CHAT_ATTENTION_REASONS.has(value);
+}
+
+// Enforces the canonical BaselineAttention combos so a malformed or spoofed
+// event can never fabricate an impossible attention snapshot:
+//   - "none"            -> since AND reason must both be null.
+//   - "left-hanging"     -> a canonical UTC ISO `since`, reason must be null.
+//   - "awaiting-human" /
+//     "overdue-human"    -> a canonical UTC ISO `since` AND a recognized,
+//                           non-null reason.
+// A non-canonical timestamp or any other since/reason combo is rejected
+// outright (returns null) rather than silently coerced.
 function normalizeAttentionDetail(value: unknown): ChatAttention | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Record<string, unknown>;
+  if (!isChatAttentionState(candidate.state)) return null;
   const state = candidate.state;
+  const since = normalizeString(candidate.since);
   const reason = normalizeString(candidate.reason);
-  if (
-    state !== "none" &&
-    state !== "left-hanging" &&
-    state !== "awaiting-human" &&
-    state !== "overdue-human"
-  ) {
-    return null;
+
+  switch (state) {
+  case "none":
+    return since === null && reason === null ? { state, since: null, reason: null } : null;
+  case "left-hanging":
+    return since !== null && isCanonicalIsoInstant(since) && reason === null
+      ? { state, since, reason: null }
+      : null;
+  case "awaiting-human":
+  case "overdue-human":
+    return since !== null && isCanonicalIsoInstant(since) && isChatAttentionReason(reason)
+      ? { state, since, reason }
+      : null;
   }
-  if (reason && !CHAT_ATTENTION_REASONS.includes(reason as ChatAttentionReason)) return null;
-  return {
-    state,
-    since: normalizeString(candidate.since) ?? null,
-    reason: reason as ChatAttentionReason | null,
-  };
 }
 
 function normalizeClearWatermark(value: unknown): string | null {

@@ -470,6 +470,7 @@ export function ChatSurface({
                   familiars={familiars}
                   sessions={sessions}
                   daemonRunning={daemonRunning}
+                  activeFamiliarId={activeFamiliarId}
                   sessionsLoaded={sessionsLoaded}
                   sessionsError={sessionsError}
                   familiarsLoaded={familiarsLoaded}

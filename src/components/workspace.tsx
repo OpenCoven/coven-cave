@@ -579,14 +579,40 @@ export function Workspace() {
       const sessionId = detail?.sessionId ?? attentionClearedSessionId(event);
       if (!sessionId) return;
       if (detail) {
-        const baselineAttention = detail.baselineAttention ??
-          baseSessionsRef.current.find((session) => session.id === detail.sessionId)?.attention ??
+        // Workspace's own accepted canonical row (from the latest /api/sessions/list
+        // poll it has patched into baseSessionsRef) is fresher authority than a
+        // baseline carried on the clear event: that event was built from ChatView's
+        // local snapshot at emit time, which can predate a poll that already
+        // resolved a real, non-none attention row (the race this guards against —
+        // an accepted poll lands, then a stale "none" event arrives after it). Only
+        // fall back to the event's baseline when Workspace has no row for this
+        // session (absent — e.g. a different familiar's off-list session) or its
+        // own row is "none" and so cannot represent pre-clear canonical state
+        // (either truly no attention ever existed, or it was already patched to
+        // none by an earlier optimistic clear and tells us nothing new).
+        const acceptedRow = baseSessionsRef.current.find((session) => session.id === detail.sessionId);
+        const acceptedCanonical = acceptedRow && acceptedRow.attention.state !== "none"
+          ? acceptedRow.attention
+          : null;
+        const baselineAttention = acceptedCanonical ??
+          detail.baselineAttention ??
+          acceptedRow?.attention ??
           sessionsRef.current.find((session) => session.id === detail.sessionId)?.attention;
+        // The list scope that can prove a session's absence is whichever
+        // familiar filter Workspace's own /api/sessions/list request was
+        // actually scoped to (see loadSessions' capturedScopeKey above) — not
+        // whatever scope the emitting ChatView instance believes it owns.
+        // ChatView's session/familiar props can diverge from the sidebar's
+        // current filter (split panes, a stale render, a legacy caller that
+        // never learned the active scope at all), and a wrong scope corrupts
+        // scopeProvesAbsence's tombstoning. Workspace always overrides with
+        // its own current scope rather than trusting whatever scope the event
+        // carries.
         const recordResult = recordChatAttentionClear(
           chatAttentionProjectionRef.current,
           detail.sessionId,
           detail.operationId,
-          detail.scopeKey ?? chatAttentionProjectionScopeKey(activeIdRef.current),
+          chatAttentionProjectionScopeKey(activeIdRef.current),
           baselineAttention,
           detail.clearWatermark,
         );
