@@ -210,7 +210,7 @@ assert.match(
 assert.match(familiars, /struct FamiliarDetailView: View/, "familiar rows open a real detail surface");
 assert.match(
   home,
-  /FamiliarsListView \{ familiar in[\s\S]*initialNewChatFamiliarIds = \[familiar\.id\][\s\S]*showNewChat = true/,
+  /FamiliarsListView \{ familiar in[\s\S]*fixedNewChatFamiliarId = familiar\.id[\s\S]*showNewChat = true/,
   "the familiar detail chat action opens project-aware New Chat",
 );
 assert.match(

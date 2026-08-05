@@ -359,9 +359,19 @@ pub fn run() {
                     let sidecar_url = match start_sidecar_runtime(app.handle(), |_| {}, || false) {
                         Ok(url) => url,
                         Err(SidecarStartError::Cancelled) => {
-                            fatal_exit("sidecar startup was cancelled")
+                            let error = app
+                                .state::<SidecarState>()
+                                .stop_after_startup_error(
+                                    "sidecar startup was cancelled".to_string(),
+                                );
+                            fatal_exit(&error)
                         }
-                        Err(SidecarStartError::Failed(error)) => fatal_exit(&error),
+                        Err(SidecarStartError::Failed(error)) => {
+                            let error = app
+                                .state::<SidecarState>()
+                                .stop_after_startup_error(error);
+                            fatal_exit(&error)
+                        }
                     };
                     Some(sidecar_url)
                 }

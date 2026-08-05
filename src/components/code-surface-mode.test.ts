@@ -596,7 +596,7 @@ assert.doesNotMatch(
 );
 assert.match(chatSurface, /const compactRail = hideThreadRail/, "ChatSurface compact mode is driven only by hideThreadRail");
 assert.match(chatSurface, /\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/, "Chat keeps Projects as its second primary tab");
-assert.match(workspace, /const contextualNav = mode === "chat" \? chatSidebar : sidebar;/, "chat mode replaces the global nav with the contextual Chats sidebar");
+assert.match(workspace, /const contextualNav = navSection === "code" \? chatSidebar : sidebar;/, "the Code section replaces the global nav with the contextual Chats sidebar");
 assert.match(workspace, /nav=\{contextualNav\}\s*list=\{undefined\}/, "workspace mounts the contextual Chat nav without an independent list pane");
 assert.doesNotMatch(chatRouter, /surface\?:|surface=\{surface\}/, "ChatRouter must not forward a surface prop");
 assert.doesNotMatch(chatView, /surface\?:|surface === "code"|Ask for follow-up changes/, "ChatView must not carry Code-specific composer copy this phase");

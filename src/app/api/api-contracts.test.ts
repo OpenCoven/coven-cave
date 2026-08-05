@@ -58,6 +58,7 @@ const contracts: RouteContract[] = [
   { route: "/codex-automations/[id]/runs/[runId]/log", methods: ["GET"], kind: "json" },
   { route: "/codex-automations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/config", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/config/workspace-path", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/coven-memory", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
   { route: "/coven-memory/[id]", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
   { route: "/coven-memory/overview", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
