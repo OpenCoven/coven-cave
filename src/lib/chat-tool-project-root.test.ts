@@ -28,12 +28,12 @@ function assistantTurn(runtime?: string): Turn {
 }
 
 test("historical tool actions use the turn runtime after the active project switches", () => {
-  const historical = assistantTurn("local:/projects/original");
+  const historical = assistantTurn("local:/repo-a");
 
-  assert.equal(turnToolProjectRoot(historical, "/projects/original"), "/projects/original");
+  assert.equal(turnToolProjectRoot(historical, "/repo-a"), "/repo-a");
   assert.equal(
-    turnToolProjectRoot(historical, "/projects/newly-selected"),
-    "/projects/original",
+    turnToolProjectRoot(historical, "/repo-b"),
+    "/repo-a",
     "a later session or picker root cannot retarget a turn with execution metadata",
   );
 });
@@ -70,6 +70,17 @@ test("legacy turns never inherit a session root, including after transcript relo
 test("a malformed non-empty session runtime cannot fall back to mutable project metadata", () => {
   assert.equal(sessionToolProjectRoot("not-a-runtime", "/projects/latest"), null);
   assert.equal(sessionToolProjectRoot("local:", "/projects/latest"), null);
+  assert.equal(
+    turnToolProjectRoot(assistantTurn("local:relative/repo"), "/repo-b"),
+    null,
+    "a relative runtime cwd is not a trustworthy historical root snapshot",
+  );
+  assert.equal(sessionToolProjectRoot("local:relative/repo", "/repo-b"), null);
+  assert.equal(
+    turnToolProjectRoot(assistantTurn("local:../repo-a"), "/repo-b"),
+    null,
+    "a traversing runtime cwd cannot authorize historical mutation actions",
+  );
 });
 
 test("an in-flight turn without execution metadata fails closed", () => {

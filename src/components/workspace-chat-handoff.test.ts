@@ -202,12 +202,12 @@ assert.match(
 // actually shows it. The handoff contract is unchanged; these pins follow it.
 assert.match(
   codeWorkbench,
-  /if \(!openTarget\) return;[\s\S]*openPath\(openTarget\.path\);[\s\S]*setFocusLine\(openTarget\.line \?\? null\);/,
+  /if \(!focusTarget\) return;[\s\S]*openPath\(focusTarget\.path\);[\s\S]*setFocusLine\(focusTarget\.line \?\? null\);/,
   "a routed file open selects the path and its line in the viewer",
 );
 assert.match(
   codeWorkbench,
-  /setRangeLabel\(openTarget\.origin\?\.selectionLabel \?\? null\);/,
+  /setRangeLabel\(focusTarget\.origin\?\.selectionLabel \?\? null\);/,
   "the handoff's selected range is shown as provenance, not silently dropped",
 );
 assert.match(
@@ -217,8 +217,13 @@ assert.match(
 );
 assert.match(
   codeWorkbench,
-  /<CodeReviewRail[\s\S]*focusPath=\{openTarget\?\.kind === "changes" \? openTarget\.path : undefined\}[\s\S]*focusNonce=\{openTarget\?\.kind === "changes" \? openTarget\.nonce : undefined\}/,
+  /const capturedRoot = codePendingOpenProjectRoot\(openTarget\);[\s\S]*const contextRoot = capturedRoot \?\? workRoot;[\s\S]*<CodeReviewRail[\s\S]*projectRoot=\{contextRoot\}[\s\S]*focusPath=\{focusTarget\?\.kind === "changes" \? focusTarget\.path : undefined\}[\s\S]*focusNonce=\{focusTarget\?\.kind === "changes" \? focusTarget\.nonce : undefined\}/,
   "the workbench forwards the diff target to the rail that renders it",
+);
+assert.match(
+  codeWorkbench,
+  /const invalidCapturedRoot = openTarget\?\.root !== undefined && !capturedRoot;[\s\S]*const focusTarget = invalidCapturedRoot \? undefined : openTarget;/,
+  "the workbench drops malformed rooted focus payloads instead of falling back to its active project",
 );
 assert.match(
   codeReviewRail,
@@ -252,8 +257,8 @@ assert.match(
 );
 assert.match(
   codeView,
-  /setWorkbenchTarget\(\s*pendingOpen\.root && !target\s*\? null\s*: \{ open: pendingOpen, sessionId: target\?\.id \?\? null \},?\s*\)/,
-  "a captured root with no matching session degrades without a stale focus",
+  /setWorkbenchTarget\(\s*pendingOpen\.root !== undefined && \(!capturedRoot \|\| !target\)\s*\? null\s*: \{ open: pendingOpen, sessionId: target\?\.id \?\? null \},?\s*\)/,
+  "malformed or unhosted captured roots degrade without a stale focus",
 );
 assert.match(
   chatSurface,

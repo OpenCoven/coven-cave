@@ -9554,7 +9554,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   const isEditTool = inputDiff != null;
   const actionReady = mutation && isFileMutationActionReady(mutation, tool.status);
   const actionIdentity = mutation
-    ? [tool.id, ...mutation.paths].join("\0")
+    ? [tool.id, railRoot ?? "", ...mutation.paths].join("\0")
     : tool.id;
   const openTargetFile = (e: ReactMouseEvent) => {
     if (!targetFile) return;

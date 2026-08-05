@@ -212,7 +212,7 @@ assert.match(
 );
 assert.match(
   codeView,
-  /if \(!pendingOpen\) return;[\s\S]*setTopTab\("sessions"\);\s*setInitialGithubTarget\(null\);\s*if \(target\) setSelectedId\(target\.id\);[\s\S]*setWorkbenchTarget\(root && !target \? null : \{ open: pendingOpen, sessionId: target\?\.id \?\? null \}\);/,
+  /if \(!pendingOpen\) return;[\s\S]*codeSessionForPendingOpen\([\s\S]*setTopTab\("sessions"\);\s*setInitialGithubTarget\(null\);\s*if \(target\) setSelectedId\(target\.id\);[\s\S]*pendingOpen\.root !== undefined && \(!capturedRoot \|\| !target\)[\s\S]*\{ open: pendingOpen, sessionId: target\?\.id \?\? null \}/,
   "file/diff navigation supersedes a pending GitHub detail so it cannot replay: the pending-open effect must switch to Sessions, clear the latched GitHub target, then keep the existing session/workbench selection flow",
 );
 
@@ -230,13 +230,18 @@ const terminalDrawer = await readFile(new URL("./code-terminal-drawer.tsx", impo
 const workbenchTree = await readFile(new URL("./code-workbench-tree.tsx", import.meta.url), "utf8");
 const terminalWorkspace = await readFile(new URL("./code-terminal-workspace.tsx", import.meta.url), "utf8");
 
-// Every column scopes to the session's WORK root (worktree over shared
-// checkout, cave-9q24) — pointing any of them at project_root directly would
-// show a different session's churn on shared checkouts.
+// The terminal scopes to the session's WORK root (worktree over shared
+// checkout, cave-9q24). Routed historical reading context keeps its captured
+// root, even when the raising session has since switched projects.
 assert.match(
   workbench,
   /const workRoot = codeSessionWorkRoot\(row\);/,
-  "the workbench derives one work root for the tree, the viewer and the rail",
+  "the workbench derives the live session root used by its terminal",
+);
+assert.match(
+  workbench,
+  /const capturedRoot = codePendingOpenProjectRoot\(openTarget\);[\s\S]*const contextRoot = capturedRoot \?\? workRoot;[\s\S]*<CodeWorkbenchTree[\s\S]*projectRoot=\{contextRoot\}[\s\S]*<RailFilePreview[\s\S]*projectRoot=\{contextRoot\}[\s\S]*<CodeReviewRail[\s\S]*projectRoot=\{contextRoot\}[\s\S]*<CodeTerminalDrawer[\s\S]*projectRoot=\{workRoot\}/,
+  "the workbench keeps captured files and review rooted historically while the terminal stays live",
 );
 
 // The three columns, in order.
@@ -297,7 +302,7 @@ assert.match(
 assert.match(
   reviewRail,
   /<SessionChangesInner\s+key=\{projectRoot\}\s+projectRoot=\{projectRoot\}\s+running=\{running\}/,
-  "Changes mounts the proven changes panel keyed+scoped to the work root",
+  "Changes mounts the proven panel keyed and scoped to the workbench context root",
 );
 
 // A CLOSED rail still has to answer "is there anything to review?" — a panel

@@ -120,6 +120,11 @@ assert.match(
   /resolvedMutationPaths\.length === mutationPaths\.length[\s\S]*resolvedMutationPaths\.length === 1/,
   "multi-file mutations never offer a partial one-file undo",
 );
+assert.ok(
+  source.includes('? [tool.id, railRoot ?? "", ...mutation.paths].join("\\0")') &&
+    /<EditCardActions\s+key=\{actionIdentity\}/.test(source),
+  "mutation identity includes the captured root so an armed Undo remounts closed on identity or root changes",
+);
 assert.match(source, /"\/api\/changes"/, "Undo posts to the changes revert API");
 assert.match(source, /cave:changes-refresh/, "Undo notifies the changes panel to refresh");
 assert.match(styles, /\.cave-edit-card__undo/, "Undo button styling exists");

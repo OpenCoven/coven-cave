@@ -5,6 +5,7 @@ import {
   codeSessionActivity,
   codeSessionBranch,
   codeSessionDiffstat,
+  codePendingOpenProjectRoot,
   codeSessionForPendingOpen,
   codeSessionWorkRoot,
   groupCodeRailSessions,
@@ -27,6 +28,12 @@ import {
   codeRoomFitsRail,
   codeWorkbenchFitsSplit,
 } from "./code-surface.ts";
+import {
+  clearPendingCodeOpen,
+  enqueuePendingCodeOpen,
+  getPendingCodeOpen,
+  type PendingCodeOpen,
+} from "./pending-code-open.ts";
 import type { SessionRow } from "./types.ts";
 
 // Behavioral tests for the Code surface's pure model (cave-k0ua): session rail
@@ -135,33 +142,81 @@ test("work root prefers the session's worktree over the shared project root", ()
 });
 
 test("historical review selects the captured root when projects share a relative filename", () => {
-  const current = row({ id: "current", project_root: "/projects/current" });
-  const historical = row({ id: "historical", project_root: "/projects/original" });
-  const target = codeSessionForPendingOpen(
-    [current, historical],
-    {
-      kind: "changes",
-      path: "/projects/original/src/shared.ts",
-      root: "/projects/original",
-      sessionId: "current",
-      nonce: 1,
-    },
-  );
+  const current = row({ id: "current", project_root: "/repo-b" });
+  const historical = row({ id: "historical", project_root: "/repo-a" });
+  const review = {
+    kind: "changes" as const,
+    path: "/repo-a/src/shared.ts",
+    root: "/repo-a",
+    sessionId: "current",
+    nonce: 1,
+  };
+  const target = codeSessionForPendingOpen([current, historical], review);
   assert.equal(target?.id, "historical", "captured root outranks the currently active chat session");
+  assert.equal(codePendingOpenProjectRoot(review), "/repo-a");
+  assert.equal(review.path, "/repo-a/src/shared.ts", "the review path stays under the captured root");
+
+  assert.equal(
+    codeSessionForPendingOpen([current], review)?.id,
+    "current",
+    "the raising session can host a captured-root review after that session switches projects",
+  );
   assert.equal(
     codeSessionForPendingOpen(
-      [current, historical],
+      [current],
       {
         kind: "changes",
-        path: "/projects/missing/src/shared.ts",
-        root: "/projects/missing",
+        path: "/repo-b/src/shared.ts",
+        root: "/repo-a",
         sessionId: "current",
         nonce: 2,
       },
     ),
     null,
-    "a captured root with no workbench fails closed instead of using the current session",
+    "a path outside the captured root fails closed instead of using the current project",
   );
+  assert.equal(
+    codePendingOpenProjectRoot({
+      kind: "changes",
+      path: "/repo-a/src/shared.ts",
+      root: "relative/repo-a",
+      sessionId: "current",
+      nonce: 3,
+    }),
+    null,
+    "a malformed captured root cannot retarget the current project",
+  );
+  assert.equal(
+    codePendingOpenProjectRoot({
+      kind: "changes",
+      path: "/repo-a/src/shared.ts",
+      root: "/repo/../repo-a",
+      sessionId: "current",
+      nonce: 4,
+    }),
+    null,
+    "a traversing captured root is not canonical immutable provenance",
+  );
+});
+
+test("pending historical review retains its captured root and path after a project switch", () => {
+  let activeProjectRoot = "/repo-a";
+  const review: PendingCodeOpen = {
+    kind: "changes",
+    path: "/repo-a/src/shared.ts",
+    root: "/repo-a",
+    sessionId: "current",
+    nonce: 5,
+  };
+  enqueuePendingCodeOpen(review);
+  try {
+    activeProjectRoot = "/repo-b";
+    assert.equal(activeProjectRoot, "/repo-b");
+    assert.equal(getPendingCodeOpen()?.root, "/repo-a");
+    assert.equal(getPendingCodeOpen()?.path, "/repo-a/src/shared.ts");
+  } finally {
+    clearPendingCodeOpen();
+  }
 });
 
 test("deep-link parsing falls back to defaults on unknown values", () => {

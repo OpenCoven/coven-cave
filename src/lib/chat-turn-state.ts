@@ -4,6 +4,10 @@ import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import type { ModelControlValues } from "@/lib/model-control-capabilities";
 import type { ChatStreamClientHealth } from "@/lib/chat-stream-health";
 import { parseConversationRuntime } from "@/lib/chat-hosts";
+import {
+  isAbsoluteProjectPath,
+  normalizeProjectRoot,
+} from "@/lib/cave-projects-types";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
 import type { TurnUsage } from "@/lib/usage-format";
@@ -103,6 +107,15 @@ export type ConversationHistoryPayload = {
   };
 };
 
+function recordedLocalProjectRoot(runtime: string | null | undefined): string | null {
+  const parsed = parseConversationRuntime(runtime);
+  const cwd = parsed?.kind === "local" ? parsed.cwd?.trim() : null;
+  if (!cwd || /[\0\r\n]/.test(cwd) || !isAbsoluteProjectPath(cwd)) return null;
+  const normalized = cwd.replace(/\\/g, "/");
+  if (normalized.split("/").some((segment) => segment === "." || segment === "..")) return null;
+  return normalizeProjectRoot(cwd);
+}
+
 /**
  * Resolve the immutable local execution root recorded for one assistant turn.
  * Any missing, non-local, or malformed recorded runtime fails closed. Session
@@ -113,8 +126,7 @@ export function turnToolProjectRoot(
   _legacySessionRoot?: string | null,
 ): string | null {
   if (!turn.responseMetadata) return null;
-  const runtime = parseConversationRuntime(turn.responseMetadata.runtime);
-  return runtime?.kind === "local" ? runtime.cwd?.trim() || null : null;
+  return recordedLocalProjectRoot(turn.responseMetadata.runtime);
 }
 
 /**
@@ -126,8 +138,7 @@ export function sessionToolProjectRoot(
   projectRoot: string | null | undefined,
 ): string | null {
   if (runtime?.trim()) {
-    const parsedRuntime = parseConversationRuntime(runtime);
-    return parsedRuntime?.kind === "local" ? parsedRuntime.cwd?.trim() || null : null;
+    return recordedLocalProjectRoot(runtime);
   }
   return projectRoot?.trim() || null;
 }

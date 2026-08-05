@@ -49,6 +49,7 @@ import {
   CODE_STEP_ANNOUNCEMENT,
   CODE_WORKBENCH_STEPS,
   codeRailTabForWorkbenchTab,
+  codePendingOpenProjectRoot,
   codeSessionActivity,
   codeSessionBranch,
   codeSessionDiffstat,
@@ -114,6 +115,10 @@ export function CodeWorkbench({
   onRefresh?: () => void;
 }) {
   const workRoot = codeSessionWorkRoot(row);
+  const capturedRoot = codePendingOpenProjectRoot(openTarget);
+  const invalidCapturedRoot = openTarget?.root !== undefined && !capturedRoot;
+  const contextRoot = capturedRoot ?? workRoot;
+  const focusTarget = invalidCapturedRoot ? undefined : openTarget;
   const branch = codeSessionBranch(row);
   const diffstat = codeSessionDiffstat(row);
   const pr = row.pullRequest;
@@ -181,15 +186,15 @@ export function CodeWorkbench({
     setRangeLabel(null);
     setTreeChangedOnly(false);
     setPrFull(false);
-  }, [row.id]);
+  }, [contextRoot, row.id]);
 
   const openPath = useCallback(
     (path: string) => {
       setSelectedPath(
-        path.startsWith("/") ? path : `${workRoot.replace(/\/$/, "")}/${path.replace(/^\.?\//, "")}`,
+        path.startsWith("/") ? path : `${contextRoot.replace(/\/$/, "")}/${path.replace(/^\.?\//, "")}`,
       );
     },
-    [workRoot],
+    [contextRoot],
   );
 
   // A routed open outranks whatever the room was showing: a diff jump selects
@@ -197,20 +202,20 @@ export function CodeWorkbench({
   // closed rail (and drills the narrow room to the right step) so the routed
   // target is actually visible rather than silently correct behind something.
   useEffect(() => {
-    if (!openTarget) return;
-    setRangeLabel(openTarget.origin?.selectionLabel ?? null);
-    if (openTarget.kind === "changes") {
+    if (!focusTarget) return;
+    setRangeLabel(focusTarget.origin?.selectionLabel ?? null);
+    if (focusTarget.kind === "changes") {
       setRailTab("changes");
       setRailOpen(true);
       setStep("review");
-    } else if (openTarget.path) {
-      openPath(openTarget.path);
-      setFocusLine(openTarget.line ?? null);
+    } else if (focusTarget.path) {
+      openPath(focusTarget.path);
+      setFocusLine(focusTarget.line ?? null);
       setStep("source");
     }
-  }, [openPath, openTarget]);
+  }, [focusTarget, openPath]);
 
-  const changes = useWorktreeChanges(workRoot, running);
+  const changes = useWorktreeChanges(contextRoot, running);
 
   // ── Shortcuts ──────────────────────────────────────────────────────────────
   const [keymap, setKeymap] = useState<Record<CodeShortcutId, string>>(defaultCodeKeymap);
@@ -369,7 +374,7 @@ export function CodeWorkbench({
         {prFull ? null : fitsSplit || step === "files" ? (
           <div className="code-room__tree">
             <CodeWorkbenchTree
-              projectRoot={workRoot}
+              projectRoot={contextRoot}
               familiarId={row.familiarId}
               selectedPath={selectedPath}
               onSelect={(path) => {
@@ -389,7 +394,7 @@ export function CodeWorkbench({
           <div className="code-room__viewer">
             <RailFilePreview
               path={selectedPath}
-              projectRoot={workRoot}
+              projectRoot={contextRoot}
               familiarId={row.familiarId}
               onOpenPath={openPath}
               variant="workbench"
@@ -401,7 +406,7 @@ export function CodeWorkbench({
         {prFull ? null : fitsSplit || step === "review" ? (
           <CodeReviewRail
             row={row}
-            projectRoot={workRoot}
+            projectRoot={contextRoot}
             running={running}
             tab={railTab}
             onTabChange={setRailTab}
@@ -414,8 +419,8 @@ export function CodeWorkbench({
             widthPx={fitsSplit ? railWidth : roomWidth}
             onWidthChange={setRailWidth}
             roomWidthPx={roomWidth}
-            focusPath={openTarget?.kind === "changes" ? openTarget.path : undefined}
-            focusNonce={openTarget?.kind === "changes" ? openTarget.nonce : undefined}
+            focusPath={focusTarget?.kind === "changes" ? focusTarget.path : undefined}
+            focusNonce={focusTarget?.kind === "changes" ? focusTarget.nonce : undefined}
             onOpenFullPr={prRepo && prNumber != null ? () => setPrFull(true) : undefined}
           />
         ) : null}
