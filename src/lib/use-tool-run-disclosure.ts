@@ -66,6 +66,11 @@ export function useToolRunDisclosure(statuses: readonly RunStatus[]): ToolRunDis
       }
       return;
     }
+    // Ignore redundant/programmatic events: native <details> emits toggle
+    // events for programmatic `open` attribute writes, so a delayed forced-open
+    // echo can arrive after settlement carrying the same value that is already
+    // controlled.  Only a real state change clears pendingCollapse.
+    if (nextOpen === open) return;
     // A settled manual toggle resolves any deferred collapse: the user has
     // explicitly stated where they want the group, so pending blur-collapse
     // must not override that later.

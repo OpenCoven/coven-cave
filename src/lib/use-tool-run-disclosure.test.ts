@@ -197,4 +197,64 @@ test("settled manual close+reopen clears pending collapse so blur does not colla
   }
 });
 
+// ── 6. Delayed programmatic onToggle(true) after deferred settlement does not clear pendingCollapse ─
+test("delayed programmatic onToggle(true) after focus-deferred settlement preserves pendingCollapse; blur still collapses", async () => {
+  const snapshots = [];
+  const originalDocument = globalThis.document;
+
+  const innerElement = {};
+  const fakeDetails = {
+    open: true,
+    contains: (node) => node === innerElement,
+  };
+
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: { activeElement: innerElement },
+  });
+
+  let renderer;
+  try {
+    // Mount running with focus inside.
+    await act(async () => {
+      renderer = create(createElement(Probe, { statuses: ["running"], snapshots }));
+    });
+    snapshots.at(-1).detailsRef.current = fakeDetails;
+
+    // Settle — focus still inside, so collapse is deferred (open stays true).
+    await act(async () => {
+      renderer.update(createElement(Probe, { statuses: ["ok"], snapshots }));
+    });
+    assert.equal(snapshots.at(-1).open, true, "stays open: pending collapse deferred");
+
+    // A delayed programmatic onToggle(true) arrives — simulating the native
+    // <details> toggle event emitted by the forced-open DOM write that happened
+    // while the group was still running.  Because nextOpen === open (both true),
+    // this must be treated as a redundant/programmatic event and must NOT clear
+    // pendingCollapse.
+    await act(async () => { snapshots.at(-1).onToggle(true); });
+    assert.equal(snapshots.at(-1).open, true, "still open after spurious programmatic toggle");
+
+    // Blur out — pendingCollapse must still be set, so the group collapses.
+    await act(async () => {
+      snapshots.at(-1).onBlurCapture({ relatedTarget: null });
+    });
+    assert.equal(
+      snapshots.at(-1).open,
+      false,
+      "collapses on blur: pendingCollapse was preserved despite spurious toggle",
+    );
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    if (originalDocument === undefined) {
+      delete globalThis.document;
+    } else {
+      Object.defineProperty(globalThis, "document", {
+        configurable: true,
+        value: originalDocument,
+      });
+    }
+  }
+});
+
 console.log("use-tool-run-disclosure.test.ts: ok");
