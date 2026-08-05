@@ -8832,9 +8832,9 @@ function TurnRowImpl({
   // ("<N> calls · <categories>"). These partitions do not depend on pending,
   // so React updates the same instances when the turn settles.
   const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
-  const settledTools = turn.tools ?? [];
-  const editCards = settledTools.filter(isEditCard);
-  const otherTools = settledTools.filter((t) => !isEditCard(t));
+  const turnTools = turn.tools ?? [];
+  const editCards = turnTools.filter(isEditCard);
+  const otherTools = turnTools.filter((t) => !isEditCard(t));
 
   return (
     <div
@@ -8956,7 +8956,7 @@ function TurnRowImpl({
                   // The reader's "How this was made" footer reads the same
                   // settled tool events the stream already renders, so the
                   // provenance it shows can never disagree with the transcript.
-                  readerTools={settledTools}
+                  readerTools={turnTools}
                   readerDurationMs={turn.durationMs}
                   onAskAbout={onAskAbout}
                   readerPrompt={readerPrompt}
