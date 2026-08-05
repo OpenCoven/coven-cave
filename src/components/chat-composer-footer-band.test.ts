@@ -337,4 +337,21 @@ assert.match(
   "grouped choice panels wrap inside the popover rather than the composer footer",
 );
 
+// ── Adaptive context overflow + header containment + mobile touch targets ────
+assert.match(
+  css,
+  /\.cave-context-controls \{[\s\S]*?display: flex;[\s\S]*?overflow-x: auto;[\s\S]*?white-space: nowrap;/,
+  "shared context controls should remain one horizontally scrollable line",
+);
+assert.match(
+  activityCss,
+  /\.cave-chat-header-context \{[\s\S]*?min-width: 0;[\s\S]*?overflow: hidden;/,
+  "the active header should contain context overflow without widening the pane",
+);
+assert.match(
+  transcriptCss,
+  /@media \(max-width: 767px\)[\s\S]*?\.cave-chat-header-context[\s\S]*?\.cave-context-chip \{[\s\S]*?min-height: var\(--touch-target\);/,
+  "mobile header context controls should retain touch targets",
+);
+
 console.log("chat-composer-footer-band.test.ts: ok");

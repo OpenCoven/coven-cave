@@ -1081,6 +1081,25 @@
   opacity: 0.7;
 }
 
+/* Shared adaptive context controls: a single horizontally scrollable row for
+   project · worktree · branch · model chips in both footer-band and header. */
+.cave-context-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+}
+
+.cave-context-controls > .cave-context-chip {
+  flex: 0 0 auto;
+}
+
 /* Circular 32px send: accent outline on transparent at rest; ~18% accent tint
    once the draft is non-empty; the busy variant keeps cancel's red ✕ in the
    same circle. */
