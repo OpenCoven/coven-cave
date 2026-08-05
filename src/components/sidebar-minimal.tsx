@@ -21,17 +21,22 @@ import {
 } from "@/lib/page-drag";
 import { sidebarRowState, type SidebarRowState } from "@/lib/sidebar-nav-state";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
+import { NavSectionTabs } from "@/components/nav-section-tabs";
 import { SidebarFooter } from "@/components/sidebar-footer";
+import {
+  DEFAULT_NAV_SECTION,
+  navItemsForSection,
+  roomBelongsToSection,
+  type NavSection,
+} from "@/lib/nav-section";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import {
-  VISIBLE_WORKSPACE_NAV_ITEMS,
   type WorkspaceNavItem,
   type WorkspaceNavMode,
 } from "@/lib/workspace-navigation";
-
 export type SidebarRoleSurfaceRow = {
   /** Generic workspace mode string (`surface:<id>`) — the sidebar never
    *  interprets it, only round-trips it through navigation callbacks. */
@@ -46,6 +51,10 @@ export type SidebarRoleSurfaceRow = {
 
 export type SidebarMinimalProps = {
   mode: string;
+  /** Active global section (Home | Code). The shell owns it so deep links and
+   *  the ⌘K palette can move rooms; omitted falls back to Home. */
+  section?: NavSection;
+  onSectionChange?: (section: NavSection) => void;
   /** Page modes currently open as secondary split tiles (drag-to-split).
    *  Their rows get a lighter "open in split" wash instead of the active fill,
    *  so the highlight stays honest when a page renders beside the primary. */
@@ -222,6 +231,8 @@ function SidebarSection({
 export function SidebarMinimal(props: SidebarMinimalProps) {
   const {
     mode,
+    section = DEFAULT_NAV_SECTION,
+    onSectionChange,
     onNewChat,
     onOpenSettings,
     onModeChange,
@@ -256,6 +267,12 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   };
   const workItems = VISIBLE_WORKSPACE_NAV_ITEMS.filter((item) => item.group === "work");
   const exploreItems = VISIBLE_WORKSPACE_NAV_ITEMS.filter((item) => item.group === "explore");
+
+  // Rooms are registry-driven; each one shows in the section its mode maps to.
+  const sectionRooms = React.useMemo(
+    () => (props.roleSurfaces ?? []).filter((room) => roomBelongsToSection(room.mode, section)),
+    [props.roleSurfaces, section],
+  );
 
   return (
     <nav className="sidebar-minimal" aria-label="Primary">
@@ -299,6 +316,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         </button>
       </div>
 
+<<<<<<< HEAD
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
         <SidebarSection label="Work" onCollapsedChange={handleSectionCollapsedChange}>
           {workItems.map((fm: WorkspaceNavItem) => (
@@ -336,15 +354,56 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             />
           ))}
         </SidebarSection>
+=======
+      {onSectionChange ? <NavSectionTabs section={section} onSectionChange={onSectionChange} /> : null}
+
+      <div
+        className="sidebar-nav-scroll"
+        ref={navScrollRef}
+        role="tabpanel"
+        id={`nav-section-panel-${section}`}
+        aria-labelledby={`nav-section-tab-${section}`}
+      >
+        {navItemsForSection(section).map((fm: WorkspaceNavItem, i, rows) => (
+          <FolderRow
+            key={fm.id}
+            id={fm.id}
+            label={fm.label}
+            iconName={fm.iconName}
+            // Active follows the primary mode (Roles/Capabilities keep the
+            // Marketplace hub lit); pages open as split tiles get a lighter
+            // "open in split" state instead. Derivation in lib/sidebar-nav-state.
+            state={sidebarRowState(fm.id, mode, props.splitPageModes)}
+            badge={MODE_BADGES[fm.id]?.(props)}
+            kbd={fm.kbd}
+            description={fm.description}
+            quiet={fm.quiet}
+            // Index the RENDERED list — a navHidden entry between quiet rows
+            // must not throw off the "first quiet row" gap.
+            quietLead={Boolean(fm.quiet) && !rows[i - 1]?.quiet}
+            onClick={() => handleModeSelect(fm.id)}
+          />
+        ))}
+>>>>>>> feat/global-home-code-sections
 
         {/* Role Surface rooms — the active familiar's or selected scope's
-            vocation workspaces.
+            vocation workspaces, filtered to the open section (the coding
+            workbench belongs to Code; every other room to Home).
             Registry-driven: the sidebar renders whatever it's handed and never
             names a role. The cluster label keeps them reading as chambers of
             the Cave rather than more app tabs. */}
+<<<<<<< HEAD
         {(props.roleSurfaces?.length ?? 0) > 0 && (
           <SidebarSection label="Rooms" onCollapsedChange={handleSectionCollapsedChange}>
             {props.roleSurfaces!.map((room) => (
+=======
+        {sectionRooms.length > 0 && (
+          <>
+            <div className="sidebar-rooms-label" aria-hidden>
+              Rooms
+            </div>
+            {sectionRooms.map((room) => (
+>>>>>>> feat/global-home-code-sections
               <FolderRow
                 key={room.mode}
                 id={room.mode}
@@ -363,13 +422,16 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           </SidebarSection>
         )}
 
-        <RecentActivityRollup
-          sessions={sessions}
-          selectedFamiliarIds={selectedFamiliarIds}
-          activeSessionId={activeSessionId}
-          onOpenSession={onOpenSession}
-        />
-      </div>
+        {/* The session list belongs to the Code room (cave-24d2r) — Home is
+            destinations, Code is live work. */}
+        {section === "code" ? (
+          <RecentActivityRollup
+            sessions={sessions}
+            selectedFamiliarIds={selectedFamiliarIds}
+            activeSessionId={activeSessionId}
+            onOpenSession={onOpenSession}
+          />
+        ) : null}      </div>
 
       {/* Bottom: Dashboard + Settings, then the version line — shared with the
           WorkspaceSidebar that replaces this host during Chat. */}
