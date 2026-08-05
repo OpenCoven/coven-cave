@@ -9,7 +9,7 @@
 .sidebar-section__content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: inherit;
 }
 
 .sidebar-section--collapsed .sidebar-section__content {
