@@ -537,3 +537,39 @@ test("coven Details drawer offers per-participant Debug (A5: no debug affordance
     "chat-surface hands the handler to GroupChatView",
   );
 });
+
+test("coven bubbles strip attention markers before next-paths/delegations/MessageBubble (holistic-review fix)", () => {
+  // The human-attention directive (chat sidebar attention task) applies to
+  // every chat send, so the coven render pipeline must never let a complete
+  // or partial `<coven:attention …>` tag leak into the group bubble. Import
+  // present, and the extraction must run on the raw reply text BEFORE
+  // next-paths/delegations are extracted and before the result reaches
+  // MessageBubble — same order the single-chat surface (chat-view.tsx) uses.
+  assert.match(
+    view,
+    /import \{ extractChatAttentionMarker \} from "@\/lib\/chat-attention-marker";/,
+    "imports the shared attention-marker extractor",
+  );
+  assert.match(
+    view,
+    /const withoutAttention = extractChatAttentionMarker\(r\.text, \{\s*\n\s*pending: r\.status === "queued" \|\| r\.status === "streaming",\s*\n\s*\}\)\.visible;/,
+    "strips attention markers from the raw reply text, hiding partial tails while the reply is still streaming",
+  );
+  // Ordering: attention extraction feeds next-paths, which feeds delegation
+  // extraction, which feeds MessageBubble's `content` — never the raw r.text.
+  assert.match(
+    view,
+    /const withoutAttention = extractChatAttentionMarker\(r\.text[\s\S]*?extractNextPaths\(withoutAttention\)/,
+    "next-paths extraction reads the attention-stripped text, not the raw reply",
+  );
+  assert.match(
+    view,
+    /extractNextPaths\(withoutAttention\)[\s\S]*?extractCovenDelegations\(withoutNextPaths\)/,
+    "delegation extraction runs after next-paths, preserving the existing marker-protocol order",
+  );
+  assert.match(
+    view,
+    /extractCovenDelegations\(withoutNextPaths\)[\s\S]{0,2000}<MessageBubble/,
+    "MessageBubble renders only after attention/next-paths/delegations have all been stripped",
+  );
+});

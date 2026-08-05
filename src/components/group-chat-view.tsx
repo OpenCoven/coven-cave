@@ -25,6 +25,7 @@ import {
 } from "react";
 import { Icon } from "@/lib/icon";
 import { extractNextPaths } from "@/lib/next-paths";
+import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
 import { Button } from "@/components/ui/button";
 import { ProjectPicker } from "@/components/project-picker";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
@@ -1521,12 +1522,24 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                       <div className="flex flex-col gap-3 pl-1">
                         {replies.map((r) => {
                           const f = byId.get(r.familiarId);
+                          // Explicit human-attention marker (chat sidebar
+                          // attention task, holistic-review fix): strip BEFORE
+                          // next-paths/delegations/MessageBubble, same order as
+                          // the single-chat surface, so a complete or partial
+                          // `<coven:attention …>` tag never flashes as raw text
+                          // in the coven bubble. No inline card renders here —
+                          // attention surfaces in the sidebar, derived from the
+                          // persisted `attentionRequest` metadata the server
+                          // route owns.
+                          const withoutAttention = extractChatAttentionMarker(r.text, {
+                            pending: r.status === "queued" || r.status === "streaming",
+                          }).visible;
                           // Strip the piggybacked `<coven:next-paths>` suggestions
                           // block (and its streaming partial) from the visible
                           // reply, mirroring the single-chat surface; otherwise
                           // the raw control markup leaks into the coven bubble.
                           // The parsed lines render as click-to-send chips below.
-                          const { visible: withoutNextPaths, suggestions: typedSuggestions } = extractNextPaths(r.text);
+                          const { visible: withoutNextPaths, suggestions: typedSuggestions } = extractNextPaths(withoutAttention);
                           // Group chat has no task-review or action router.
                           // Never offer task/action suggestions here: a click
                           // sends an ordinary group message, not a side effect.

@@ -13,6 +13,7 @@ import type { SessionOrigin } from "./types";
 // user's saved conversations — useful for meta tasks like thread reflection.
 
 import { parseSseFrame } from "@/lib/canvas-generate";
+import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
 
 export async function streamFamiliarText(opts: {
   familiarId: string;
@@ -40,7 +41,15 @@ export async function streamFamiliarText(opts: {
   origin?: SessionOrigin;
   signal?: AbortSignal;
   /** Called with the accumulated assistant text after each streamed chunk,
-   *  so callers can render the reply incrementally as it arrives. */
+   *  so callers can render the reply incrementally as it arrives. The
+   *  human-attention directive (chat sidebar attention task) applies to every
+   *  chat send, so this is the one place every direct caller — quick chat,
+   *  prompt enhance, reply recommendation, the review-draft generator, and
+   *  true-voice (familiar-brain) — gets `<coven:attention …>` stripped for
+   *  free, complete or partial-tail-hidden mid-stream, without each consumer
+   *  re-implementing the marker protocol. This is display stripping only:
+   *  the server route (`/api/chat/send`) owns parsing and persisting the
+   *  actual `attentionRequest` metadata; nothing here fabricates it. */
   onText?: (text: string) => void;
   /** Called the moment the bridge announces the backing session id — before
    *  the stream completes — so callers can keep the thread resumable even if
@@ -88,6 +97,8 @@ export async function streamFamiliarText(opts: {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  // Raw accumulated text (markers intact) — kept separate from what callers
+  // see so `assistant_replace` can still replace the true accumulator.
   let text = "";
   let error: string | null = null;
   let sessionId: string | undefined;
@@ -98,15 +109,20 @@ export async function streamFamiliarText(opts: {
     sessionId = id;
     opts.onSession?.(id);
   };
+  // Strip `<coven:attention …>` before handing text to the caller (mid-stream:
+  // partial tails hidden too, since more chunks may still complete a marker).
+  const emitText = () => {
+    opts.onText?.(extractChatAttentionMarker(text, { pending: true }).visible);
+  };
   const handleFrame = (frame: string) => {
     const ev = parseSseFrame(frame);
     if (!ev) return;
     if (ev.kind === "assistant_chunk") {
       text += ev.text ?? "";
-      opts.onText?.(text);
+      emitText();
     } else if (ev.kind === "assistant_replace") {
       text = ev.text ?? "";
-      opts.onText?.(text);
+      emitText();
     } else if (ev.kind === "session") noteSession(ev.sessionId);
     else if (ev.kind === "done") {
       noteSession(ev.sessionId);
@@ -132,5 +148,10 @@ export async function streamFamiliarText(opts: {
   // and process a last frame that arrived without its trailing blank line.
   buffer += decoder.decode();
   if (buffer.trim()) handleFrame(buffer);
-  return { text, error, sessionId, responseMetadata };
+  // The stream is settled — no more chunks can arrive to complete a marker,
+  // so this reads as chat-view.tsx's non-pending (settled) pass: any
+  // complete `<coven:attention …>` marker is stripped, but a genuine trailing
+  // "<coven:a…" prose fragment (never actually a marker) is left visible
+  // rather than silently dropped.
+  return { text: extractChatAttentionMarker(text, { pending: false }).visible, error, sessionId, responseMetadata };
 }
