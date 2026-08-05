@@ -279,6 +279,11 @@ import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { AttachmentList, AttachmentThumb, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
 import { preloadMarkdownPreview } from "@/lib/markdown-preview";
+import {
+  type CreationRefreshState,
+  onSendStart,
+  onDoneCreationRefresh,
+} from "@/lib/chat-creation-refresh";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
 // lightweight browser-only serializer while that request is in flight so
@@ -2477,6 +2482,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [activeProjectRoot, onProjectRootChange]);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
+  const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingCreationRefresh: false });
   const streamHealthSessionRef = useRef(sessionId);
   const currentStreamHealthRunIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -4848,6 +4854,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setProjectRootRequired(false);
     const initialLiveSessionId = currentSessionRef.current;
     liveSessionIdRef.current = initialLiveSessionId;
+    creationRefreshStateRef.current = onSendStart(creationRefreshStateRef.current, initialLiveSessionId);
     setHistoryState("loaded");
 
     // Explicit parentTurnId (including null = root) wins; only fall back to the
@@ -6139,9 +6146,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // one-shot bridge mode and never restores the normal work/rail view.
         if (startNewConversation && ev.sessionId) onSessionsChanged?.();
         const completedSessionId = ev.sessionId ?? liveGeneration.sessionId;
-        if (!ev.isError && liveGeneration.originSessionId === null && completedSessionId) {
-          onSessionsChanged?.();
-        }
+        const { shouldRefresh: shouldCreationRefresh, nextState: nextCreationRefreshState } =
+          onDoneCreationRefresh(creationRefreshStateRef.current, ev.isError, completedSessionId);
+        creationRefreshStateRef.current = nextCreationRefreshState;
+        if (shouldCreationRefresh) onSessionsChanged?.();
         persistLiveTurns(
           turnsRef.current,
           assistantId,

@@ -742,8 +742,13 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!ev\.isError && liveGeneration\.originSessionId === null && completedSessionId\) \{\s*onSessionsChanged\?\.\(\);\s*\}/,
-  "a successful first send refreshes the authoritative session list after persistence",
+  /onDoneCreationRefresh\([\s\S]*?creationRefreshStateRef\.current,[\s\S]*?ev\.isError,[\s\S]*?completedSessionId[\s\S]*?\)/,
+  "a successful first send refreshes the authoritative session list after persistence via the creation-refresh helper",
+);
+assert.match(
+  source,
+  /if \(shouldCreationRefresh\) onSessionsChanged\?\.\(\)/,
+  "creation refresh gate fires onSessionsChanged only when the helper approves",
 );
 assert.doesNotMatch(
   source,

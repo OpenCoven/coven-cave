@@ -31,6 +31,7 @@ export const SUITES = {
     "src/lib/tool-edit-stat.test.ts",
     "src/lib/split-snap.test.ts",
     "src/lib/chat-split.test.ts",
+    "src/lib/chat-creation-refresh.test.ts",
     "src/lib/code-rail.test.ts",
     "src/lib/use-code-rail.test.ts",
     "src/lib/workspace-tiles.test.ts",

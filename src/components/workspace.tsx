@@ -3146,7 +3146,6 @@ export function Workspace() {
         onFamiliarScopeChange={selectFamiliarScope}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
         onActiveSessionChange={setActiveChatSessionId}
-        onSessionStarted={loadSessions}
         onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}
         onSessionsChanged={loadSessions}
