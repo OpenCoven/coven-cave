@@ -460,6 +460,35 @@ test("adoption tombstones use a bounded LRU", () => {
   );
 });
 
+test("the adoption tracker stays bounded under a flood of 2000 unique and overlapping sessions", () => {
+  const tracker = createChatAttentionAdoptionTracker();
+  const TRACKER_LIMIT = 512;
+  const FLOOD_COUNT = 2000;
+
+  for (let i = 0; i < FLOOD_COUNT; i += 1) {
+    assert.equal(tracker.shouldEmit(`session-${i}`, "run-1"), true);
+    // An overlapping/duplicate call for the run just adopted must be a no-op
+    // and must never grow the tracker beyond its bound.
+    assert.equal(tracker.shouldEmit(`session-${i}`, "run-1"), false);
+  }
+
+  // The most recently evicted session's run is guaranteed to still be
+  // tombstoned: its eviction is the very last one recorded, so no later
+  // churn could have aged it out of the separately-bounded tombstone store.
+  const lastEvictedSessionId = `session-${FLOOD_COUNT - TRACKER_LIMIT - 1}`;
+  assert.equal(
+    tracker.shouldEmit(lastEvictedSessionId, "run-1"),
+    false,
+    "a replay of the most recently evicted session's run must stay tombstoned",
+  );
+  // A genuinely new run for that same evicted session is still a fresh adoption.
+  assert.equal(
+    tracker.shouldEmit(lastEvictedSessionId, "run-2"),
+    true,
+    "a genuinely new run for an evicted session must still emit once",
+  );
+});
+
 test("external stale-settlement suppression is keyed by controller + session + run and consumes once", () => {
   const registry = createExternallySettledGenerationRegistry();
   const orphanedController = new AbortController();
