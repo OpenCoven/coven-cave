@@ -58,7 +58,11 @@ assert.match(
   "the checkbox zone and ⌘/Ctrl-click both mean multi",
 );
 assert.match(source, /if \(!multi\) setOpen\(false\);/, "multi picks keep the menu open for more toggles");
-assert.match(source, /aria-multiselectable="true"/, "the listbox announces multiselect");
+assert.match(
+  source,
+  /aria-multiselectable=\{singleRequired \? undefined : true\}/,
+  "the listbox announces multiselect except on single-familiar surfaces",
+);
 assert.match(
   source,
   /className=\{`familiar-switcher__checkbox\$\{isActive \? " is-checked" : ""\}`\}/,
@@ -124,7 +128,7 @@ assert.match(source, /setFamiliarOrder\(arrayMove\(/, "reorder persists the new 
 // fades in on hover/focus, when checked, or while a multiselect scope is live.
 assert.match(
   source,
-  /data-multi=\{multiScope \? "true" : undefined\}/,
+  /data-multi=\{!singleRequired && multiScope \? "true" : undefined\}/,
   "the list flags a live multiselect scope so CSS can keep all checkboxes visible",
 );
 assert.match(
