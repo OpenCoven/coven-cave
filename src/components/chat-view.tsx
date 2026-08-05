@@ -2483,7 +2483,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [activeProjectRoot, onProjectRootChange]);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
-  const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingCreationRefresh: false, creationSessionId: null });
+  const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingRuns: {} });
   const streamHealthSessionRef = useRef(sessionId);
   const currentStreamHealthRunIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -4855,7 +4855,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setProjectRootRequired(false);
     const initialLiveSessionId = currentSessionRef.current;
     liveSessionIdRef.current = initialLiveSessionId;
-    creationRefreshStateRef.current = onSendStart(creationRefreshStateRef.current, initialLiveSessionId);
+    const runId = crypto.randomUUID();
+    creationRefreshStateRef.current = onSendStart(creationRefreshStateRef.current, runId, initialLiveSessionId);
     setHistoryState("loaded");
 
     // Explicit parentTurnId (including null = root) wins; only fall back to the
@@ -4894,7 +4895,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ],
     };
     const controller = new AbortController();
-    const runId = crypto.randomUUID();
     currentStreamHealthRunIdRef.current = runId;
     let generationStreamHealth = applyStreamHealthAction({
       type: "connect",
@@ -5956,7 +5956,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // (originSessionId === null) may bind an unbound pending creation state;
         // an existing-session generation is rejected internally.
         creationRefreshStateRef.current = onCreationSessionIdentified(
-          creationRefreshStateRef.current, ev.sessionId, liveGeneration.originSessionId,
+          creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, ev.sessionId,
         );
         if (ev.sessionId !== currentSessionRef.current) {
           // Only adopt the new session id into THIS view's refs when the view is
@@ -6164,11 +6164,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // unrelated existing-session generation is rejected internally.
         if (completedSessionId) {
           creationRefreshStateRef.current = onCreationSessionIdentified(
-            creationRefreshStateRef.current, completedSessionId, liveGeneration.originSessionId,
+            creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, completedSessionId,
           );
         }
         const { shouldRefresh: shouldCreationRefresh, nextState: nextCreationRefreshState } =
-          onDoneCreationRefresh(creationRefreshStateRef.current, ev.isError, completedSessionId, liveGeneration.originSessionId);
+          onDoneCreationRefresh(creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, completedSessionId, ev.isError);
         creationRefreshStateRef.current = nextCreationRefreshState;
         if (shouldCreationRefresh) onSessionsChanged?.();
         persistLiveTurns(
