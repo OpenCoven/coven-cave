@@ -2,9 +2,18 @@
  * scry — read a likeness, suggest a familiar (cave-3rz.3).
  *
  * The rite's first and only real input is an image. Scrying turns that image
- * into *suggestions* — a name, a role, a description, a type or two, and the
- * three qualities a SOUL.md is made of — which the rite shows as pre-filled,
- * overwritable guesses. Nothing here is ever committed on the user's behalf.
+ * into *suggestions* — a name, a role, a purpose, a description, a type or two,
+ * and the three qualities a SOUL.md is made of — which the rite shows as
+ * pre-filled, overwritable guesses. Nothing here is ever committed on the
+ * user's behalf.
+ *
+ * **Purpose and description are two questions, not one.** The description is a
+ * caption: one sentence about the figure in the picture. For a while the
+ * scaffolder printed that caption into SOUL.md's "My purpose is to …" slot, so
+ * familiars were summoned stating a job that was a description of their own
+ * portrait. Inferring what a familiar is FOR is the same kind of read as
+ * inferring its office, so it is asked for in the same reply and kept in its
+ * own field.
  *
  * The soul qualities (voice / temperament / reasoning) ride in the SAME reply
  * as everything else. A scry already costs 15-20 s; asking a second time for
@@ -42,6 +51,8 @@ import {
 } from "./familiar-types.ts";
 import {
   emptySoulQualities,
+  FAMILIAR_PURPOSE_MAX,
+  sanitizeFamiliarPurpose,
   sanitizeSoulQuality,
   SOUL_QUALITY_FIELDS,
   SOUL_QUALITY_KEYS,
@@ -55,6 +66,9 @@ export const SCRY_DEFAULT_PRONOUNS = "they/them";
 export const SCRY_NAME_MAX = 40;
 export const SCRY_ROLE_MAX = 60;
 export const SCRY_DESCRIPTION_MAX = 280;
+/** The purpose lands in SOUL.md, so its bound is the contract's, not a second
+ *  one this file invented (`src/lib/familiar-soul.ts`). */
+export const SCRY_PURPOSE_MAX = FAMILIAR_PURPOSE_MAX;
 /** At most two offices — a scry guesses, it does not assign a whole career. */
 export const SCRY_MAX_TYPES = 2;
 
@@ -62,6 +76,20 @@ export type ScrySuggestions = {
   /** Empty when the reply carried nothing usable — the field stays editable. */
   name: string;
   role: string;
+  /**
+   * What the familiar is FOR — the clause that completes "My purpose is to …"
+   * in SOUL.md and IDENTITY.md.
+   *
+   * It exists because `description` is a caption: the prompt asks for one
+   * sentence about the FIGURE IN THE IMAGE, and the scaffolder used to print
+   * that caption into the purpose slot, so a scried familiar's stated job was a
+   * description of its own portrait ("My purpose is to A faceless, mirror-black
+   * figure draped in luminous white folds…"). Two different questions, two
+   * fields; both are read off the same look in the same reply.
+   */
+  purpose: string;
+  /** Prose about the likeness — what it looks like. Feeds the card and the
+   *  familiar record, and is never a purpose. */
   description: string;
   /** Always ids from FAMILIAR_TYPES; "general" is the empty state and is never
    *  a member (same convention as the stored `familiarType` list). */
@@ -83,6 +111,7 @@ export function emptyScrySuggestions(): ScrySuggestions {
   return {
     name: "",
     role: "",
+    purpose: "",
     description: "",
     typeIds: [],
     soul: emptySoulQualities(),
@@ -171,6 +200,7 @@ export const SCRY_INSTRUCTIONS = [
   `{${[
     '"name":""',
     '"role":""',
+    '"purpose":""',
     '"description":""',
     '"type":[]',
     ...SOUL_QUALITY_KEYS.map((key) => `"${key}":""`),
@@ -178,7 +208,16 @@ export const SCRY_INSTRUCTIONS = [
   "",
   "  name         one or two words, evocative, drawn from what you actually see.",
   "  role         a short title under 40 characters (e.g. \"Archivist of Small Things\").",
-  "  description  one sentence under 200 characters about the figure in the image.",
+  // purpose and description are the two questions that get confused, so they
+  // are asked next to each other and each says what the other is not. The
+  // purpose is printed verbatim into the familiar's SOUL.md after the words
+  // "My purpose is to", which is why the shape is specified so exactly.
+  `  purpose      what this familiar is FOR: one clause under ${FAMILIAR_PURPOSE_MAX} characters that finishes`,
+  '               the sentence "My purpose is to ___" — a job, starting with a verb, e.g.',
+  '               "keep the reading list current and answer questions out of it".',
+  "               A JOB, never a look. Do not describe the picture here.",
+  "  description  one sentence under 200 characters about the FIGURE IN THE IMAGE — what it",
+  "               looks like. Never reuse it as the purpose; they are different questions.",
   `  type         one or two ids from EXACTLY this list: ${TYPE_VOCABULARY}. Invent nothing.`,
   // The last three are what a SOUL.md is made of. They are asked for HERE, in
   // the same look at the same image, because a second harness call would cost
@@ -363,6 +402,10 @@ export function parseScryReply(raw: string): ScrySuggestions {
   if (parsed) {
     suggestions.name = cleanName(parsed.name ?? parsed.familiarName);
     suggestions.role = cleanText(parsed.role ?? parsed.title, SCRY_ROLE_MAX);
+    // Sanitised at the parse, with the SAME guard the scaffolder will apply
+    // again when it writes the file — a purpose is markdown-bound text, not a
+    // label. `job` because that is the word a model reaches for unprompted.
+    suggestions.purpose = sanitizeFamiliarPurpose(parsed.purpose ?? parsed.job);
     suggestions.description = cleanText(
       parsed.description ?? parsed.summary,
       SCRY_DESCRIPTION_MAX,
@@ -384,6 +427,9 @@ export function parseScryReply(raw: string): ScrySuggestions {
   if (!suggestions.name) suggestions.name = cleanName(scrapeField(text, "name"));
   if (!suggestions.role) {
     suggestions.role = cleanText(scrapeField(text, "role") || scrapeField(text, "title"), SCRY_ROLE_MAX);
+  }
+  if (!suggestions.purpose) {
+    suggestions.purpose = sanitizeFamiliarPurpose(scrapeField(text, "purpose"));
   }
   if (!suggestions.description) {
     suggestions.description = cleanText(

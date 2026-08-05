@@ -1,5 +1,6 @@
 import {
   hasSoulQualities,
+  sanitizeFamiliarPurpose,
   sanitizeSoulQualities,
   type FamiliarSoulQualities,
 } from "./familiar-soul.ts";
@@ -18,6 +19,14 @@ export type OnboardingFamiliarDraft = {
   displayName: string;
   role: string;
   description: string;
+  /**
+   * What the familiar is FOR — the clause SOUL.md and IDENTITY.md print after
+   * "My purpose is to". Sanitised, and present only when something usable
+   * arrived. Like `soul`, it goes to the identity scaffolder and NOWHERE else:
+   * `description` is the card's line about the likeness, and printing it as a
+   * purpose is the bug this field exists to end.
+   */
+  purpose?: string;
   glyph: string;
   harness: string;
   model: string;
@@ -40,6 +49,9 @@ export type OnboardingFamiliarInput = {
   displayName?: string | null;
   role?: string | null;
   description?: string | null;
+  /** Untrusted purpose from the rite or an API caller; sanitised here and
+   *  re-sanitised by the scaffolder that writes it into a markdown file. */
+  purpose?: unknown;
   glyph?: string | null;
   harness?: string | null;
   model?: string | null;
@@ -147,12 +159,17 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
   // familiar with the generic SOUL.md, which is what every one of them had
   // before the scry started reading for these.
   const soul = sanitizeSoulQualities(input.soul);
+  // Same rule, and for the same reason: a familiar whose purpose could not be
+  // read is a familiar with the scaffolder's generic purpose — never one whose
+  // stated job is the sentence describing its portrait.
+  const purpose = sanitizeFamiliarPurpose(input.purpose);
 
   return {
     id,
     displayName,
     role: cleanText(input.role) || "Familiar",
     description,
+    ...(purpose ? { purpose } : {}),
     glyph: cleanText(input.glyph) || "ph:sparkle-fill",
     harness,
     model,

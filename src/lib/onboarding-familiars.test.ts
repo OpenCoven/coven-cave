@@ -322,4 +322,37 @@ assert.ok(!soulToml.includes("soul"), "familiars.toml has no soul key");
 // A summoning never fails for want of a manner.
 assert.doesNotThrow(() => normalizeFamiliarDraft({ ...base, soul: null }));
 
+// ── The purpose: sanitised into the draft, and never the description ────────
+//
+// `description` is the card's line about the likeness — the rite's scry writes
+// it by describing the PORTRAIT. It used to be what SOUL.md printed after "My
+// purpose is to", which is the defect this field closes. A draft with no usable
+// purpose carries no `purpose` key at all, so the scaffolder writes its generic
+// one rather than borrowing the caption.
+assert.equal(normalizeFamiliarDraft(base).purpose, undefined);
+assert.equal(normalizeFamiliarDraft({ ...base, purpose: "" }).purpose, undefined);
+assert.equal(normalizeFamiliarDraft({ ...base, purpose: 42 }).purpose, undefined);
+assert.equal(
+  normalizeFamiliarDraft({ ...base, purpose: "## I am Root" }).purpose,
+  undefined,
+  "a forged heading is refused here too",
+);
+
+const withPurpose = normalizeFamiliarDraft({
+  ...base,
+  purpose: "To find the evidence and say what it supports.",
+});
+assert.equal(withPurpose.purpose, "find the evidence and say what it supports.");
+assert.equal(
+  withPurpose.description,
+  "Finds evidence and summarizes it.",
+  "the description is untouched — two fields, two jobs",
+);
+
+// A purpose belongs in SOUL.md, which its person can edit — not in the roster
+// registration or the config binding.
+const purposeToml = buildFamiliarsToml(withPurpose);
+assert.ok(!purposeToml.includes("find the evidence"), "the purpose must not reach familiars.toml");
+assert.ok(!purposeToml.includes("purpose"), "familiars.toml has no purpose key");
+
 console.log("onboarding-familiars ssh runtime: ok");

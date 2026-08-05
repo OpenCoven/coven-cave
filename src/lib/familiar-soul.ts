@@ -27,6 +27,11 @@
  * Everything degrades to `""`. A missing, unusable, or hostile quality is not
  * an error — it is a template that stays generic, which is exactly today's
  * behaviour.
+ *
+ * The familiar's **purpose** is sanitised here too (`sanitizeFamiliarPurpose`),
+ * for rule 2's sake: it lands in the same two markdown files through the same
+ * template, so it must pass the same `DIRECTIVE_PATTERNS` guard rather than a
+ * second, softer one written next to whatever surface happens to collect it.
  */
 
 export const SOUL_QUALITY_KEYS = ["voice", "temperament", "reasoning"] as const;
@@ -150,6 +155,48 @@ export function sanitizeInlineText(value: unknown, max = SOUL_QUALITY_MAX): stri
     .trim();
   if (!bare) return "";
   return bare.length > max ? `${bare.slice(0, max - 1).trimEnd()}…` : bare;
+}
+
+/**
+ * A purpose is the sentence the whole Familiar Contract turns on — the "My
+ * purpose is to …" line SOUL.md and IDENTITY.md both carry. Longer than a
+ * quality because it is a job description rather than a clause about a manner,
+ * and still short enough that nobody can smuggle a document through it.
+ */
+export const FAMILIAR_PURPOSE_MAX = 200;
+
+/**
+ * Lead-ins a model writes when it answers the question rather than filling the
+ * slot. The slot already says "My purpose is to", so "My purpose is to keep the
+ * ledger" must not land as "My purpose is to my purpose is to keep the ledger".
+ */
+const PURPOSE_LEAD_INS: readonly RegExp[] = [
+  /^(?:my|its|their|this familiar's|the familiar's|the)\s+purpose\s+is\s+/i,
+  /^(?:it\s+)?(?:exists|is here|is)\s+to\s+/i,
+  /^to\s+/i,
+];
+
+/**
+ * One purpose, made safe to interpolate into a markdown file AND to read as the
+ * back half of a sentence this codebase opened.
+ *
+ * Same guard as every other model-supplied string — `sanitizeInlineText`, so a
+ * heading or a ward directive is REJECTED rather than trimmed — plus the two
+ * bits of grammar the slot needs: no doubled lead-in, and no stray capital
+ * mid-sentence. Returns `""` for anything unusable, which the scaffolder reads
+ * as "this familiar has no stated purpose" and answers with its generic one.
+ */
+export function sanitizeFamiliarPurpose(value: unknown): string {
+  const text = sanitizeInlineText(value, FAMILIAR_PURPOSE_MAX);
+  if (!text) return "";
+  let clause = text;
+  for (const lead of PURPOSE_LEAD_INS) clause = clause.replace(lead, "");
+  clause = clause.trim();
+  // Only a plainly sentence-cased first word is lowered: "Keep the ledger" →
+  // "keep the ledger", while "GitHub reviews" and "PR triage" keep their case.
+  const [first = ""] = clause.split(/\s+/);
+  if (/^[A-Z][a-z]+$/.test(first)) clause = clause[0].toLowerCase() + clause.slice(1);
+  return clause.length >= SOUL_QUALITY_MIN ? clause : "";
 }
 
 /**

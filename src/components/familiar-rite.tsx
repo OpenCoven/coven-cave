@@ -33,6 +33,14 @@
  * all three is a supported answer: the scaffolder falls back to the generic
  * soul, which is what every familiar had before the scry read for these.
  *
+ * **Its purpose is a field, not the description.** The scry answers two
+ * different questions off the same look — what the familiar is FOR, and what
+ * the likeness LOOKS like — and only the first belongs in SOUL.md's "My purpose
+ * is to …". For a while the second one filled that slot, so familiars were
+ * summoned declaring a caption of their own portrait as their job. Both sit at
+ * the seal as their own editable fields; clearing the purpose is supported, and
+ * gives the scaffolder's generic one.
+ *
  * **Manual mode** is a first-class choice at step I, not a buried link: no scry
  * fires, every step is open at once, and nothing is pre-filled or badged
  * "scried". It is also where the rite lands when the endpoint reports
@@ -184,6 +192,10 @@ export function FamiliarRite({
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
+  /** What it is FOR. Separate from the description on purpose: the description
+   *  is the scry's line about the LIKENESS, and it used to be printed into
+   *  SOUL.md as the familiar's stated job. */
+  const [purpose, setPurpose] = useState("");
   const [description, setDescription] = useState("");
   // Never inferred from a face. The scry does not ask and does not parse it;
   // this is a default the user is expected to change, and the rite says so.
@@ -206,8 +218,8 @@ export function FamiliarRite({
   const inputRef = useRef<HTMLInputElement | null>(null);
   // Which fields the user has taken over. A suggestion fills a field only while
   // it is still untouched — a scry that lands late must never overwrite typing.
-  const touched = useRef<Record<"name" | "role" | "description" | "types", boolean>>({
-    name: false, role: false, description: false, types: false,
+  const touched = useRef<Record<"name" | "role" | "purpose" | "description" | "types", boolean>>({
+    name: false, role: false, purpose: false, description: false, types: false,
   });
   // Tracked per quality, not as one flag: rewriting the voice must not freeze
   // the temperament the scry was still about to offer.
@@ -235,6 +247,7 @@ export function FamiliarRite({
     if (!scried) return;
     if (scried.name && !touched.current.name) setName(scried.name);
     if (scried.role && !touched.current.role) setRole(scried.role);
+    if (scried.purpose && !touched.current.purpose) setPurpose(scried.purpose);
     if (scried.description && !touched.current.description) setDescription(scried.description);
     if (scried.typeIds.length && !touched.current.types) setTypes(scried.typeIds);
     // The manner the scry read off the likeness. Same rule as every other
@@ -420,6 +433,11 @@ export function FamiliarRite({
             glyph: officeGlyph ?? "ph:sparkle-fill",
             description: description.trim() || DEFAULT_DESCRIPTION,
             ...(role.trim() ? { role: role.trim() } : {}),
+            // The familiar's stated job, written into SOUL.md and IDENTITY.md.
+            // Sent only when there is one: the route re-sanitises whatever
+            // arrives, and an absent purpose is the scaffolder's generic one —
+            // never the description, which is prose about the likeness.
+            ...(purpose.trim() ? { purpose: purpose.trim() } : {}),
             harness,
             ...(model ? { model } : {}),
             // What the new familiar's SOUL.md is written from. Sent only when
@@ -817,13 +835,32 @@ export function FamiliarRite({
                   aria-label="Familiar role"
                 />
               </label>
+              {/* Its job, and the one field here that is written into the
+                  Familiar Contract. Kept distinct from the line below because
+                  the scry answers two different questions: what it DOES, and
+                  what it LOOKS like. Cleared → the generic purpose. */}
+              <label className="rite__field">
+                <span className="rite__field-hint">Its purpose</span>
+                <input
+                  className="rite__field-input"
+                  value={purpose}
+                  onChange={(e) => { touched.current.purpose = true; setPurpose(e.target.value); }}
+                  placeholder="what it is for"
+                  aria-label="Familiar purpose"
+                  aria-describedby="rite-purpose-note"
+                />
+              </label>
+              <p className="rite__note" id="rite-purpose-note">
+                Its SOUL.md reads “My purpose is to …” and this finishes the
+                sentence. A job, not a look — the line below is the look.
+              </p>
               <label className="rite__field">
                 <span className="rite__field-hint">In a line</span>
                 <input
                   className="rite__field-input"
                   value={description}
                   onChange={(e) => { touched.current.description = true; setDescription(e.target.value); }}
-                  placeholder="what it is"
+                  placeholder="what it looks like"
                   aria-label="Familiar description"
                 />
               </label>

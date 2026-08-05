@@ -482,6 +482,13 @@ function SummoningRite({
             displayName: name.trim(),
             glyph,
             description: description.trim(),
+            // The circle's one prose field asks "What it does" — a purpose, not
+            // a likeness — so it is also what SOUL.md should print after "My
+            // purpose is to". The RITE sends the two separately, because its
+            // description is written by the scry looking at the portrait and a
+            // caption in that slot is the bug this split exists to end
+            // (`src/lib/familiar-identity-scaffold.ts`).
+            purpose: description.trim(),
             ...(role.trim() ? { role: role.trim() } : {}),
             ...(vessel === "openclaw" && selectedAgent
               ? { openclawAgentId: selectedAgent.id }

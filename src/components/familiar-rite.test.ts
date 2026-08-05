@@ -113,6 +113,37 @@ assert.match(
   "an empty manner must be omitted so the scaffolder writes the generic soul",
 );
 
+// ── The purpose is its own field, and it is not the description ────────────
+// SOUL.md prints "My purpose is to <this>". It used to print the DESCRIPTION,
+// which the scry writes by describing the portrait — so the rite must collect
+// the two separately, and the purpose must be as editable as everything else
+// the scry guesses.
+assert.match(
+  rite,
+  /value=\{purpose\}/,
+  "the purpose must be an editable field, not a value taken straight from the scry",
+);
+assert.match(
+  rite,
+  /touched\.current\.purpose = true; setPurpose\(e\.target\.value\)/,
+  "typing a purpose must take the field over, so a late scry cannot clobber it",
+);
+assert.match(
+  rite,
+  /if \(scried\.purpose && !touched\.current\.purpose\) setPurpose\(scried\.purpose\);/,
+  "a scried purpose fills only a field the user has not taken over",
+);
+assert.match(
+  rite,
+  /\.\.\.\(purpose\.trim\(\) \? \{ purpose: purpose\.trim\(\) \} : \{\}\)/,
+  "an empty purpose must be omitted so the scaffolder writes the generic one",
+);
+assert.doesNotMatch(
+  rite,
+  /purpose: description/,
+  "the description must never be sent as the purpose — that is the whole defect",
+);
+
 // ── The seal encodes the id the daemon gave, not a guess ────────────────────
 assert.match(
   rite,

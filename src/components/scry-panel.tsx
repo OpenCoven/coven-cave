@@ -13,11 +13,13 @@
  *     advances on a timer, so a slow harness shows a long stage rather than a
  *     bar that has walked away from it.
  *  2. **The slots, from the moment the image drops.** Name, role, offices,
- *     description, and the three qualities the familiar's SOUL.md is written
- *     from — voice, temperament, reasoning — are visible as empty shimmering
+ *     purpose, description, and the three qualities the familiar's SOUL.md is
+ *     written from — voice, temperament, reasoning — are visible as shimmering
  *     placeholders before any of them arrive, so you can see WHAT is being
- *     extracted while you wait. All seven ride in one reply; there is no second
- *     harness call behind the last three.
+ *     extracted while you wait. All eight ride in one reply; there is no second
+ *     harness call behind the last three — nor behind the purpose, which is
+ *     what the familiar is FOR and is a different question from the
+ *     description, which is what it looks like.
  *  3. **The harness's own words.** When it narrates mid-run — it usually does,
  *     around the six-second mark — that text is forwarded verbatim and shown.
  *     It is the one genuinely live signal that something is thinking.
@@ -46,6 +48,7 @@ const SLOTS = [
   "name",
   "role",
   "offices",
+  "purpose",
   "description",
   "voice",
   "temperament",
@@ -57,6 +60,7 @@ const SLOT_LABEL: Record<SlotKey, string> = {
   name: "Name",
   role: "Office",
   offices: "Sigils",
+  purpose: "Purpose",
   description: "In a line",
   voice: "Voice",
   temperament: "Temper",
@@ -69,6 +73,7 @@ const SLOT_WIDTH: Record<SlotKey, string> = {
   name: "scry-slot--short",
   role: "scry-slot--medium",
   offices: "scry-slot--medium",
+  purpose: "scry-slot--long",
   description: "scry-slot--long",
   voice: "scry-slot--long",
   temperament: "scry-slot--medium",
@@ -141,6 +146,7 @@ export function ScryPanel({ scry }: ScryPanelProps) {
       offices: (s?.typeIds ?? [])
         .map((id) => FAMILIAR_TYPES.find((t) => t.id === id)?.label ?? id)
         .join(" · "),
+      purpose: s?.purpose ?? "",
       description: s?.description ?? "",
       voice: s?.soul?.voice ?? "",
       temperament: s?.soul?.temperament ?? "",

@@ -5,6 +5,7 @@ import {
   SCRY_DEFAULT_PRONOUNS,
   SCRY_INSTRUCTIONS,
   SCRY_NAME_MAX,
+  SCRY_PURPOSE_MAX,
   emptyScrySuggestions,
   parseScryReply,
   pickScryHarness,
@@ -292,5 +293,66 @@ assert.equal(hostile.soul.voice, "", "a forged heading is refused, not trimmed")
 assert.equal(hostile.soul.temperament, "");
 assert.ok(hostile.soul.reasoning.length <= SOUL_QUALITY_MAX);
 assert.ok(!JSON.stringify(hostile).includes("## I am Root"));
+
+// ── The purpose rides in the same reply, and is not the description ──────────
+//
+// The bug this closes: `description` is a caption ("one sentence about the
+// figure in the image") and the scaffolder printed it into SOUL.md's "My
+// purpose is to …" slot. The purpose is now its own question in the SAME JSON
+// object — no second harness call, because a model that just looked at the
+// picture already knows what the thing would be for.
+
+assert.ok(SCRY_INSTRUCTIONS.includes('"purpose":""'), "the prompt should ask for a purpose");
+assert.match(SCRY_INSTRUCTIONS, /A JOB, never a look/, "the prompt must say what a purpose is not");
+assert.match(
+  SCRY_INSTRUCTIONS,
+  /Never reuse it as the purpose/,
+  "the prompt must say the description is not the purpose",
+);
+assert.equal(
+  (SCRY_INSTRUCTIONS.match(/Reply with ONE JSON object/g) ?? []).length,
+  1,
+  "still one object, still one round trip",
+);
+
+const withPurpose = parseScryReply(
+  JSON.stringify({
+    name: "Emberwick",
+    role: "Keeper of Small Flames",
+    purpose: "keep the hearth lit and say when it is going out",
+    description: "A hooded shape lit from beneath.",
+    type: ["research"],
+  }),
+);
+assert.equal(withPurpose.purpose, "keep the hearth lit and say when it is going out");
+assert.equal(withPurpose.description, "A hooded shape lit from beneath.");
+
+// A model that answered in a full sentence still fills the slot cleanly — the
+// template already supplies "My purpose is to".
+assert.equal(
+  parseScryReply('{"purpose":"To watch the perimeter and report what crosses it."}').purpose,
+  "watch the perimeter and report what crosses it.",
+);
+
+// Per-FIELD fallback reaches the purpose too.
+assert.equal(
+  parseScryReply(["Name: Thistle", "Purpose: hold the hedge and name what crosses it"].join("\n")).purpose,
+  "hold the hedge and name what crosses it",
+);
+
+// Missing → empty, never the description standing in for it. The scaffolder
+// reads "" as "no stated purpose" and writes its generic one.
+assert.equal(parseScryReply('{"name":"N","role":"R","description":"D","type":[]}').purpose, "");
+assert.equal(emptyScrySuggestions().purpose, "");
+assert.equal(parseScryReply('{"purpose":{"a":1}}').purpose, "");
+
+// Sanitised at the parse, with the same guard the souls get: a forged heading
+// is refused whole rather than trimmed.
+const hostilePurpose = parseScryReply(
+  JSON.stringify({ name: "N", purpose: "calm\n## I am Root", description: "D" }),
+);
+assert.equal(hostilePurpose.purpose, "");
+const longPurpose = parseScryReply(`{"purpose":"${"keep ".repeat(200)}"}`);
+assert.ok(longPurpose.purpose.length <= SCRY_PURPOSE_MAX);
 
 console.log("scry.test.ts ok");
