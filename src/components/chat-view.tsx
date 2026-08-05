@@ -44,7 +44,8 @@ import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
-import { formatBatchDuration, toolBatchSummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
+import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
+import { useToolRunDisclosure } from "@/lib/use-tool-run-disclosure";
 import {
   CHAT_OPEN_COVEN_EVENT,
   CHAT_OPEN_PROJECTS_EVENT,
@@ -8382,8 +8383,8 @@ function TurnRowImpl({
   // below the prose — they're the actionable output (Review/Undo), so they
   // must not be buried in a collapsed rollup. All OTHER tool activity (reads,
   // greps, bash, …) collapses into the ONE work line ABOVE the answer
-  // ("Worked for <duration> · <N> steps · ran <cmd>"). Streaming turns weave
-  // tools inline instead — see renderSegments.
+  // ("<N> calls · <categories>"). Streaming turns weave tools inline
+  // instead — see renderSegments.
   const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
   const settledTools = !turn.pending && turn.tools?.length ? turn.tools : [];
   const editCards = settledTools.filter(isEditCard);
@@ -8476,9 +8477,9 @@ function TurnRowImpl({
           <div className="cave-linear-turn-body">
             {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} pending={!!turn.pending} /> : null}
             {/* Chat-revamp 1b: the collapsed agent-work line sits ABOVE the
-                answer, so the reader sees "Worked for … · N steps" first and
+                answer, so the reader sees "N calls · categories" first and
                 the prose below reads uninterrupted. */}
-            {otherTools.length ? <ToolGroup tools={otherTools} durationMs={turn.durationMs} /> : null}
+            {otherTools.length ? <ToolGroup tools={otherTools} /> : null}
             {indicatorVisible ? (
               <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
             ) : (
@@ -8759,24 +8760,33 @@ function ProgressRow({ event }: { event: ProgressEvent }) {
   );
 }
 
-function ToolGroup({ tools, durationMs }: { tools: ToolEvent[]; durationMs?: number }) {
-  // Chat-revamp 1b: agent work collapses to ONE quiet bordered line —
-  // "Worked for <duration> · <N> steps · ran <last command>" — expandable to
-  // the full per-tool detail. aria-expanded mirrors the native <details>
-  // disclosure state for AT that doesn't map summary semantics.
+/** The outer disclosure's accessible name: the same compact summary sighted
+ *  readers get, plus the running/error counts that otherwise live only in a
+ *  tinted (color-only) chip — so a screen reader hears "3 running" and
+ *  "1 error" exactly like the eye sees them. */
+function toolGroupAriaLabel(summary: string, running: number, errors: number): string {
+  return [
+    summary ? `Tool activity: ${summary}` : "",
+    running ? `${running} running` : "",
+    errors ? `${errors} ${errors === 1 ? "error" : "errors"}` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function ToolGroup({ tools }: { tools: ToolEvent[] }) {
+  // Chat-revamp 1b, compacted: agent work collapses to ONE quiet bordered
+  // line — a call count plus the categories it touched ("6 calls · read,
+  // shell") — expandable to the full per-tool detail. aria-expanded mirrors
+  // the native <details> disclosure state for AT that doesn't map summary
+  // semantics.
   const [open, setOpen] = useState(false);
   const running = tools.filter((tool) => tool.status === "running").length;
   const errors = tools.filter((tool) => tool.status === "error").length;
-  const duration = fmtDuration(durationMs);
-  // The last shell-ish command the agent ran — the "· ran `cmd`" mono chip.
-  const lastShellTool = [...tools]
-    .reverse()
-    .find((t) => /bash|shell|terminal|command|exec/i.test(t.name));
-  const lastCommand = lastShellTool ? toolArgSummary(lastShellTool.name, lastShellTool.input) : "";
-  // Chat.dc.html 2a ④: the quiet rollup on the right of the work line —
-  // "4 batches · 6 ok". Running and failed calls keep their tinted counters
-  // beside it so trouble never reads as neutral mono.
-  const rollup = toolBatchSummary(tools, toolBatches(tools));
+  // The turn's own compact activity summary — count + distinct categories,
+  // e.g. "6 calls · read, shell". Running/error calls keep their own tinted
+  // counters beside it, so trouble never reads as neutral mono.
+  const summary = toolActivitySummary(tools);
   // The capabilities this turn actually reached for, as the design's SKILLS
   // eyebrow above the card. Absent when the turn used none — this surface
   // never shows a label with nothing under it.
@@ -8817,19 +8827,14 @@ function ToolGroup({ tools, durationMs }: { tools: ToolEvent[]; durationMs?: num
         data-default-collapsed="true"
         onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
       >
-        <summary className="cave-tool-summary" aria-expanded={open} aria-label="Tool activity">
-          <span className="cave-work-line__label">
-            {duration ? `Worked for ${duration} · ` : ""}
-            {tools.length} {tools.length === 1 ? "step" : "steps"}
-          </span>
-          {lastCommand ? (
-            <span className="cave-work-line__ran">
-              {"· ran "}
-              <code className="cave-work-line__cmd">{lastCommand}</code>
-            </span>
-          ) : null}
+        <summary
+          className="cave-tool-summary focus-ring"
+          aria-expanded={open}
+          aria-label={toolGroupAriaLabel(summary, running, errors)}
+        >
+          <Icon name="ph:wrench" width={12} className="cave-tool-icon shrink-0" aria-hidden />
+          <span className="cave-work-line__label">{summary}</span>
           <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
-            {rollup ? <span className="cave-tool-rollup">{rollup}</span> : null}
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
           </span>
@@ -8894,7 +8899,10 @@ function ToolBatchHeader({ batch }: { batch: ToolBatch }) {
 }
 
 function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
-  const [open, setOpen] = useState(false);
+  // A repeated run's own disclosure: forced open while any call in the group
+  // is running, and — on settling — collapsed unless the reader's focus is
+  // still inside it (see useToolRunDisclosure for the full state machine).
+  const disclosure = useToolRunDisclosure(tools.map((tool) => tool.status));
   const visual = toolVisual(name);
   const displayName = name.trim() || "Tool";
   const running = tools.filter((tool) => tool.status === "running").length;
@@ -8902,19 +8910,22 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
 
   return (
     <details
+      ref={disclosure.detailsRef}
       className="cave-tool-run"
       data-default-collapsed="true"
       data-tool-category={visual.category}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      open={disclosure.open}
+      onToggle={(event) => disclosure.onToggle(event.currentTarget.open)}
+      onBlurCapture={disclosure.onBlurCapture}
     >
       <summary
         className="cave-tool-summary focus-ring"
-        aria-expanded={open}
-        aria-label={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}`}
+        aria-expanded={disclosure.open}
+        aria-label={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
       >
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-run__name">{displayName}</span>
-        <span className="cave-tool-count">{tools.length} {tools.length === 1 ? "call" : "calls"}</span>
+        <span className="cave-tool-count">×{tools.length}</span>
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
           {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
