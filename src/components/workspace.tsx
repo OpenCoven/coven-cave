@@ -86,8 +86,21 @@ import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
 import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
-import { NO_CHAT_ATTENTION } from "@/lib/chat-attention";
-import { CHAT_ATTENTION_CLEAR_EVENT, attentionClearedSessionId } from "@/lib/chat-attention-events";
+import {
+  applyChatAttentionProjections,
+  chatAttentionProjectionScopeKey,
+  createChatAttentionProjectionState,
+  forgetChatAttentionProjections,
+  isCurrentSessionListRequest,
+  recordChatAttentionClear,
+  settleChatAttentionClear,
+} from "@/lib/chat-attention-projection";
+import {
+  CHAT_ATTENTION_CLEAR_EVENT,
+  CHAT_ATTENTION_SETTLE_EVENT,
+  attentionClearFromEvent,
+  attentionSettlementFromEvent,
+} from "@/lib/chat-attention-events";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
 // their chunks (and deps like @uiw/react-codemirror) load on
 // first open instead of shipping in the main bundle. See lazy-surfaces.tsx.
@@ -268,22 +281,6 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 // hidden windows and while the user is composing input.
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
 
-const clearSessionAttention = (row: SessionRow): SessionRow =>
-  row.attention.state === "none"
-    ? row
-    : { ...row, attention: NO_CHAT_ATTENTION };
-
-function clearSessionAttentionRows(rows: SessionRow[], sessionId: string): SessionRow[] {
-  let changed = false;
-  const nextRows = rows.map((row) => {
-    if (row.id !== sessionId) return row;
-    const nextRow = clearSessionAttention(row);
-    changed = changed || nextRow !== row;
-    return nextRow;
-  });
-  return changed ? nextRows : rows;
-}
-
 export function Workspace() {
   const [acceptedLocalDaemonHealthy, setAcceptedLocalDaemonHealthy] = useState(false);
   const nextRouter = useRouter();
@@ -331,6 +328,8 @@ export function Workspace() {
     familiarsLoaded,
     familiarRosterLoadedSuccessfully,
   );
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const {
     projects: registeredProjects,
@@ -368,6 +367,7 @@ export function Workspace() {
   const loadGitHubTasksForceEpochRef = useRef(0);
   const loadGitHubTasksForceInFlightRef = useRef(0);
   const baseSessionsRef = useRef<SessionRow[]>([]);
+  const chatAttentionProjectionRef = useRef(createChatAttentionProjectionState());
   const locallyDeletedSessionIdsRef = useRef<Set<string>>(new Set());
   const githubTasksRef = useRef<GitHubTask[] | null>(null);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
@@ -573,8 +573,8 @@ export function Workspace() {
   }, []);
   useEffect(() => {
     const onChatAttentionClear = (event: Event) => {
-      const sessionId = attentionClearedSessionId(event);
-      if (!sessionId) return;
+      const detail = attentionClearFromEvent(event);
+      if (!detail) return;
       // Invalidate any in-flight loadSessions before patching state: a load
       // started before this clear (mount, the 4s poll, a scope change) can
       // still be in flight and resolve *after* it with a stale, pre-clear
@@ -584,12 +584,41 @@ export function Workspace() {
       // call (e.g. the failure-path reconciliation below) still gets its own
       // newer reqId and is unaffected.
       loadSessionsReqRef.current += 1;
-      baseSessionsRef.current = clearSessionAttentionRows(baseSessionsRef.current, sessionId);
-      setSessions((currentSessions) => clearSessionAttentionRows(currentSessions, sessionId));
+      recordChatAttentionClear(
+        chatAttentionProjectionRef.current,
+        detail.sessionId,
+        detail.operationId,
+        chatAttentionProjectionScopeKey(activeIdRef.current),
+      );
+      baseSessionsRef.current = applyChatAttentionProjections(
+        chatAttentionProjectionRef.current,
+        baseSessionsRef.current,
+        loadSessionsReqRef.current,
+        chatAttentionProjectionScopeKey(activeIdRef.current),
+      );
+      setSessions((currentSessions) => applyChatAttentionProjections(
+        chatAttentionProjectionRef.current,
+        currentSessions,
+        loadSessionsReqRef.current,
+        chatAttentionProjectionScopeKey(activeIdRef.current),
+      ));
+    };
+    const onChatAttentionSettle = (event: Event) => {
+      const detail = attentionSettlementFromEvent(event);
+      if (!detail) return;
+      settleChatAttentionClear(
+        chatAttentionProjectionRef.current,
+        detail.sessionId,
+        detail.operationId,
+        detail.outcome,
+        loadSessionsReqRef.current + 1,
+      );
     };
     window.addEventListener(CHAT_ATTENTION_CLEAR_EVENT, onChatAttentionClear);
+    window.addEventListener(CHAT_ATTENTION_SETTLE_EVENT, onChatAttentionSettle);
     return () => {
       window.removeEventListener(CHAT_ATTENTION_CLEAR_EVENT, onChatAttentionClear);
+      window.removeEventListener(CHAT_ATTENTION_SETTLE_EVENT, onChatAttentionSettle);
     };
   }, []);
   // Chat mode replaces the global nav with the project-grouped Chats sidebar.
@@ -750,8 +779,6 @@ export function Workspace() {
   const sessionsLoadedRef = useRef(sessionsLoaded);
   sessionsLoadedRef.current = sessionsLoaded;
   modeRef.current = mode;
-  const activeIdRef = useRef(activeId);
-  activeIdRef.current = activeId;
   // Keep an already-open role room from undoing an explicit switch to the All
   // or multi-familiar scope. The room can stay honestly unavailable until the
   // user selects a unique owner row; deep links and mode changes still narrow.
@@ -1277,16 +1304,24 @@ export function Workspace() {
 
   const loadSessions = useCallback(() => {
     // Sequence guard. loadSessions runs from mount, the 4s poll, the
-    // familiars-refresh event, and — because `activeId` is a dep — re-fires
-    // whenever the active-familiar SCOPE changes. It scopes the fetch to that
-    // familiar's granted projects, so a load started under scope A that resolves
+    // familiars-refresh event, and the active-scope effect. The callback stays
+    // stable so background send settlements always read the latest activeId ref.
+    // It scopes the fetch to that familiar's granted projects, so a load started
+    // under scope A that resolves
     // *after* the user switches to scope B would paint A's sessions under B
     // until the next poll healed it. A monotonic reqId (replacing the old
     // in-flight-promise dedup, which additionally *skipped* the new-scope load
     // while A was still in flight) drops every superseded load's writes, so only
     // the newest scope ever reaches state.
+    const capturedActiveId = activeIdRef.current;
+    const capturedScopeKey = chatAttentionProjectionScopeKey(capturedActiveId);
     const reqId = ++loadSessionsReqRef.current;
-    const isCurrent = () => reqId === loadSessionsReqRef.current;
+    const isCurrent = () => isCurrentSessionListRequest({
+      requestId: reqId,
+      currentRequestId: loadSessionsReqRef.current,
+      capturedScopeKey,
+      currentScopeKey: chatAttentionProjectionScopeKey(activeIdRef.current),
+    });
 
     return (async () => {
       let baseSessionsApplied = false;
@@ -1299,8 +1334,8 @@ export function Workspace() {
         // contradictory versus the clean project-scoped familiar homes. Scoped
         // views already drop them via project-grant scoping, so collapse is only
         // applied to the unscoped view.
-        const scope = activeId
-          ? `?familiarId=${encodeURIComponent(activeId)}`
+        const scope = capturedActiveId
+          ? `?familiarId=${encodeURIComponent(capturedActiveId)}`
           : "?collapseFamiliarWorkspace=1";
         const sessionsResult = await fetch(`/api/sessions/list${scope}`, { cache: "no-store" });
         const json = await sessionsResult.json();
@@ -1314,7 +1349,12 @@ export function Workspace() {
         }
 
         setSessionsError(false);
-        const baseSessions = filterDeletedSessions((json.sessions ?? []) as SessionRow[], locallyDeletedSessionIdsRef.current);
+        const baseSessions = applyChatAttentionProjections(
+          chatAttentionProjectionRef.current,
+          filterDeletedSessions((json.sessions ?? []) as SessionRow[], locallyDeletedSessionIdsRef.current),
+          reqId,
+          capturedScopeKey,
+        );
         baseSessionsRef.current = baseSessions;
         const visibleSessions = githubTasksRef.current
           ? attachGitHubTaskContext(baseSessions, githubTasksRef.current)
@@ -1331,11 +1371,12 @@ export function Workspace() {
         if (!baseSessionsApplied && isCurrent()) setSessionsLoaded(true);
       }
     })();
-  }, [activeId]);
+  }, []);
 
   const handleSessionsDeleted = useCallback((sessionIds: readonly string[]) => {
     const confirmedIds = recordDeletedSessionIds(locallyDeletedSessionIdsRef.current, sessionIds);
     if (confirmedIds.length === 0) return;
+    forgetChatAttentionProjections(chatAttentionProjectionRef.current, confirmedIds);
 
     baseSessionsRef.current = filterDeletedSessions(
       baseSessionsRef.current,
@@ -1357,9 +1398,11 @@ export function Workspace() {
 
   useEffect(() => {
     loadFamiliars();
-    loadSessions();
     void loadGitHubTasks();
-  }, [loadFamiliars, loadSessions, loadGitHubTasks]);
+  }, [loadFamiliars, loadGitHubTasks]);
+  useEffect(() => {
+    void loadSessions();
+  }, [activeId, loadSessions]);
   // Composers rebind a familiar's runtime through /api/config (the runtime
   // chip). Surfaces reading the roster's familiar.harness (e.g. the chat
   // empty-state identity line) shouldn't wait for the next natural reload —

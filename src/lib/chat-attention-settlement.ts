@@ -1,34 +1,44 @@
+import type { ChatAttentionSettlementOutcome } from "./chat-attention-projection.ts";
+
 export type ChatAttentionSettlementTracker = {
-  markAttentionCleared: () => void;
+  markAttentionCleared: (sessionId: string) => void;
   markPersistenceConfirmed: () => void;
   reconcileNow: () => void;
   reconcileIfNeeded: () => void;
 };
 
-export function createChatAttentionSettlementTracker(
-  reconcileCanonicalSessions: () => void,
-): ChatAttentionSettlementTracker {
-  let attentionNeedsReconcile = false;
+export function createChatAttentionSettlementTracker(args: {
+  operationId: string;
+  settleProjection: (
+    sessionId: string,
+    operationId: string,
+    outcome: ChatAttentionSettlementOutcome,
+  ) => void;
+  reconcileCanonicalSessions: () => void;
+}): ChatAttentionSettlementTracker {
+  const clearedSessionIds = new Set<string>();
   let persistenceConfirmed = false;
   let reconciled = false;
+
   const reconcileNow = () => {
-    if (reconciled) return;
+    if (reconciled || clearedSessionIds.size === 0) return;
     reconciled = true;
-    attentionNeedsReconcile = false;
-    reconcileCanonicalSessions();
+    const outcome = persistenceConfirmed ? "persisted" : "failed";
+    for (const sessionId of clearedSessionIds) {
+      args.settleProjection(sessionId, args.operationId, outcome);
+    }
+    args.reconcileCanonicalSessions();
   };
 
   return {
-    markAttentionCleared() {
-      attentionNeedsReconcile = true;
+    markAttentionCleared(sessionId) {
+      clearedSessionIds.add(sessionId);
     },
     markPersistenceConfirmed() {
       persistenceConfirmed = true;
-      attentionNeedsReconcile = false;
     },
     reconcileNow,
     reconcileIfNeeded() {
-      if (reconciled || !attentionNeedsReconcile || persistenceConfirmed) return;
       reconcileNow();
     },
   };

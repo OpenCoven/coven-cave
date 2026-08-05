@@ -2,55 +2,78 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createChatAttentionSettlementTracker } from "./chat-attention-settlement.ts";
 
-test("clean terminal failure reconciles exactly once without a thrown catch", () => {
-  let reconciles = 0;
-  const tracker = createChatAttentionSettlementTracker(() => {
-    reconciles += 1;
+function trackerFixture() {
+  const steps: string[] = [];
+  const tracker = createChatAttentionSettlementTracker({
+    operationId: "operation-1",
+    settleProjection: (sessionId, operationId, outcome) => {
+      steps.push(`${outcome}:${sessionId}:${operationId}`);
+    },
+    reconcileCanonicalSessions: () => {
+      steps.push("reconcile");
+    },
   });
+  return { steps, tracker };
+}
 
-  tracker.markAttentionCleared();
+test("failed settlement releases its operation before one canonical reconciliation", () => {
+  const { steps, tracker } = trackerFixture();
+  tracker.markAttentionCleared("session-1");
   tracker.reconcileIfNeeded();
   tracker.reconcileIfNeeded();
 
-  assert.equal(reconciles, 1);
+  assert.deepEqual(steps, ["failed:session-1:operation-1", "reconcile"]);
 });
 
-test("a failed startNewConversation terminal settlement reconciles canonical sessions exactly once", () => {
-  let reconciles = 0;
-  const tracker = createChatAttentionSettlementTracker(() => {
-    reconciles += 1;
-  });
-
-  tracker.markAttentionCleared();
-  tracker.reconcileNow();
-  tracker.reconcileIfNeeded();
-
-  assert.equal(reconciles, 1);
-});
-
-test("a successful terminal done settlement suppresses reconciliation", () => {
-  let reconciles = 0;
-  const tracker = createChatAttentionSettlementTracker(() => {
-    reconciles += 1;
-  });
-
-  tracker.markAttentionCleared();
+test("successful persistence settles persisted once before one canonical reconciliation", () => {
+  const { steps, tracker } = trackerFixture();
+  tracker.markAttentionCleared("session-1");
   tracker.markPersistenceConfirmed();
   tracker.reconcileIfNeeded();
+  tracker.reconcileIfNeeded();
 
-  assert.equal(reconciles, 0);
+  assert.deepEqual(steps, ["persisted:session-1:operation-1", "reconcile"]);
 });
 
-test("a successful startNewConversation settlement refreshes canonical sessions exactly once", () => {
-  let reconciles = 0;
-  const tracker = createChatAttentionSettlementTracker(() => {
-    reconciles += 1;
-  });
-
-  tracker.markAttentionCleared();
+test("direct reconciliation and finally share one settlement guard", () => {
+  const { steps, tracker } = trackerFixture();
+  tracker.markAttentionCleared("session-1");
   tracker.markPersistenceConfirmed();
   tracker.reconcileNow();
   tracker.reconcileIfNeeded();
 
-  assert.equal(reconciles, 1);
+  assert.deepEqual(steps, ["persisted:session-1:operation-1", "reconcile"]);
+});
+
+test("repeated clears for one operation settle once", () => {
+  const { steps, tracker } = trackerFixture();
+  tracker.markAttentionCleared("session-1");
+  tracker.markAttentionCleared("session-1");
+  tracker.reconcileIfNeeded();
+
+  assert.deepEqual(steps, ["failed:session-1:operation-1", "reconcile"]);
+});
+
+test("settlement can read the latest callback through a mutable ref wrapper", () => {
+  const seen: string[] = [];
+  const callbackRef: { current: () => void } = {
+    current: () => {
+      seen.push("stale");
+    },
+  };
+  const tracker = createChatAttentionSettlementTracker({
+    operationId: "operation-2",
+    settleProjection: () => {},
+    reconcileCanonicalSessions: () => {
+      callbackRef.current();
+    },
+  });
+
+  tracker.markAttentionCleared("session-2");
+  callbackRef.current = () => {
+    seen.push("latest");
+  };
+  tracker.reconcileIfNeeded();
+
+  assert.deepEqual(seen, ["latest"]);
 });

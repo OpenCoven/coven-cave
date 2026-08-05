@@ -203,6 +203,7 @@ export const SUITES = {
     "src/lib/image-blocks.test.ts",
     "src/lib/chat-attention-marker.test.ts",
     "src/lib/chat-attention-events.test.ts",
+    "src/lib/chat-attention-projection.test.ts",
     "src/lib/chat-attention-settlement.test.ts",
     "src/lib/chat-attention.test.ts",
     "src/lib/coven-marker-directive.test.ts",
@@ -1569,6 +1570,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/project-setup-validation.test.ts",
   "src/lib/use-role-surfaces-loader.test.ts",
   "src/lib/workspace-url-state.test.ts",
+  "src/lib/chat-attention-projection.test.ts",
   "src/components/home/use-home-model-state.test.ts",
   "src/components/role-surfaces/researcher-status.test.ts",
   // review-readiness resolves "@/lib/github-checks" for its check rollups.

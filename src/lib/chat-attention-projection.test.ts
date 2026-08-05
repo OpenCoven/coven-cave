@@ -1,0 +1,110 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
+import {
+  applyChatAttentionProjections,
+  chatAttentionProjectionScopeKey,
+  createChatAttentionProjectionState,
+  isCurrentSessionListRequest,
+  recordChatAttentionClear,
+  settleChatAttentionClear,
+} from "./chat-attention-projection.ts";
+import type { SessionRow } from "./types.ts";
+
+const NEEDS_ATTENTION = {
+  state: "awaiting-human" as const,
+  since: "2026-08-05T00:00:00.000Z",
+  reason: "input" as const,
+};
+
+function row(overrides: Partial<SessionRow> = {}): SessionRow {
+  return {
+    id: "session-1",
+    project_root: "/repo",
+    harness: "claude",
+    title: "Chat",
+    status: "running",
+    exit_code: null,
+    archived_at: null,
+    created_at: "2026-08-05T00:00:00.000Z",
+    updated_at: "2026-08-05T00:00:00.000Z",
+    attention: NEEDS_ATTENTION,
+    ...overrides,
+  };
+}
+
+test("scope switch rejects an old-scope response even when its request id is latest", () => {
+  assert.equal(isCurrentSessionListRequest({
+    requestId: 3,
+    currentRequestId: 3,
+    capturedScopeKey: "familiar:nova",
+    currentScopeKey: "familiar:sage",
+  }), false);
+});
+
+test("a stale list response after a clear remains projected to none", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
+
+  assert.equal(
+    applyChatAttentionProjections(state, [row()], 4, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    "none",
+  );
+});
+
+test("a failed send restores canonical attention on its reconciliation response", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 5);
+
+  const canonical = [row()];
+  assert.equal(
+    applyChatAttentionProjections(state, canonical, 5, chatAttentionProjectionScopeKey("nova")),
+    canonical,
+  );
+});
+
+test("successful persistence keeps projecting until canonical none proves catch-up", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  assert.equal(
+    applyChatAttentionProjections(state, [row()], 6, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    "none",
+  );
+  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalNone, 6, chatAttentionProjectionScopeKey("nova")),
+    canonicalNone,
+  );
+});
+
+test("the first failed operation cannot undo a second live clear for the same session", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
+  recordChatAttentionClear(state, "session-1", "operation-2", chatAttentionProjectionScopeKey("nova"));
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 8);
+
+  assert.equal(
+    applyChatAttentionProjections(state, [row()], 8, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    "none",
+  );
+
+  settleChatAttentionClear(state, "session-1", "operation-2", "failed", 9);
+  assert.equal(
+    applyChatAttentionProjections(state, [row()], 9, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    "awaiting-human",
+  );
+});
+
+test("successful absence cleanup only releases when the current scope proves the session is gone", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
+
+  applyChatAttentionProjections(state, [], 9, chatAttentionProjectionScopeKey("sage"));
+  assert.equal(state.has("session-1"), true);
+
+  applyChatAttentionProjections(state, [], 9, chatAttentionProjectionScopeKey("nova"));
+  assert.equal(state.has("session-1"), false);
+});

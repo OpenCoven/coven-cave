@@ -211,8 +211,11 @@ import {
   type AutoMissionRecord,
 } from "@/lib/auto-mission-state";
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
-import { createChatAttentionSettlementTracker } from "@/lib/chat-attention-settlement";
-import { emitChatAttentionClear } from "@/lib/chat-attention-events";
+import {
+  emitChatAttentionClear,
+  emitChatAttentionSettlement,
+} from "@/lib/chat-attention-events";
+import type { ChatAttentionSettlementOutcome } from "@/lib/chat-attention-projection";
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
 import { GitHubActionCard } from "@/components/github-action-card";
@@ -301,6 +304,19 @@ const replyableTurnCache = new WeakMap<Turn, boolean>();
 // (the guard that stops a remounted view from inheriting a zombie "Streaming…"
 // state) can be unit-tested without React. The full LiveChatGenerationSnapshot
 // is structurally assignable to the helper's minimal SnapshotLiveness shape.
+
+// `isLiveSnapshotActive` only proves the registry entry hasn't gone stale
+// (unaborted + recently touched) — a generation that finished seconds ago
+// still reads as "active" until its owning send's `finally` retires the
+// entry. Adopting a snapshot like that (opening/refreshing a thread whose
+// reply already landed) must repaint the transcript, but it must NOT clear
+// sidebar attention: that reply already went through its own settlement, and
+// re-clearing here would suppress a genuinely new human request that arrived
+// in the same TTL window. Only a snapshot whose active leaf is still
+// `pending` represents a generation actually awaiting a reply.
+function isLiveGenerationPending(live: Pick<LiveChatGenerationSnapshot, "turns" | "activeLeafId">): boolean {
+  return Boolean(live.turns.find((t) => t.id === live.activeLeafId)?.pending);
+}
 
 type Props = {
   familiar: Familiar;
@@ -434,13 +450,67 @@ type QueuedChatMessage = {
   options?: ChatSendOptions;
   controls: ChatSendControls;
 };
+// Settles exactly one sidebar-attention reconciliation per generation. An
+// optimistic pre-persist `emitChatAttentionClear` can leave the sidebar
+// showing "no attention" for a session whose human request never actually
+// got a saved reply; `markAttentionCleared` records that debt so the
+// `finally` settlement path (`reconcileIfNeeded`) can restore it, but only
+// once. `reconcileNow` is the same settlement, invoked directly by a
+// mid-stream success path (e.g. startNewConversation's canonical-session
+// refresh) — the shared `reconciled` guard means whichever call reaches the
+// tracker first wins and every later call (including the `finally` block's)
+// is a no-op, so a failed startNewConversation never double-fires
+// onSessionsChanged.
+type ChatAttentionSettlementTracker = {
+  markAttentionCleared: (sessionId: string) => void;
+  markPersistenceConfirmed: () => void;
+  reconcileNow: () => void;
+  reconcileIfNeeded: () => void;
+};
+
+function createChatAttentionSettlementTracker(args: {
+  operationId: string;
+  settleProjection: (
+    sessionId: string,
+    operationId: string,
+    outcome: ChatAttentionSettlementOutcome,
+  ) => void;
+  reconcileCanonicalSessions: () => void;
+}): ChatAttentionSettlementTracker {
+  const clearedSessionIds = new Set<string>();
+  let persistenceConfirmed = false;
+  let reconciled = false;
+
+  const reconcileNow = () => {
+    if (reconciled || clearedSessionIds.size === 0) return;
+    reconciled = true;
+    const outcome = persistenceConfirmed ? "persisted" : "failed";
+    for (const sessionId of clearedSessionIds) {
+      args.settleProjection(sessionId, args.operationId, outcome);
+    }
+    args.reconcileCanonicalSessions();
+  };
+
+  return {
+    markAttentionCleared(sessionId) {
+      clearedSessionIds.add(sessionId);
+    },
+    markPersistenceConfirmed() {
+      persistenceConfirmed = true;
+    },
+    reconcileNow,
+    reconcileIfNeeded() {
+      reconcileNow();
+    },
+  };
+}
 type LiveStreamGeneration = {
   sessionId: string | null;
   originSessionId: string | null;
   controller: AbortController;
   runId: string;
   streamHealth: () => ChatStreamClientHealth;
-  markAttentionCleared: () => void;
+  markAttentionCleared: (sessionId: string) => void;
   markPersistenceConfirmed: () => void;
   reconcileCanonicalSessions: () => void;
 };
@@ -1820,6 +1890,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
+  const onSessionsChangedRef = useRef(onSessionsChanged);
+  onSessionsChangedRef.current = onSessionsChanged;
   const [streamHealth, dispatchStreamHealth] = useReducer(
     chatStreamHealthReducer,
     EMPTY_CHAT_STREAM_CLIENT_HEALTH,
@@ -3107,7 +3179,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       if (live && isLiveSnapshotActive(live, Date.now())) {
         adoptLiveGenerationMetadata(live, sessionId);
-        emitChatAttentionClear(sessionId);
+        // Only a still-pending generation represents an unanswered human
+        // request; a recent-but-settled snapshot must repaint without
+        // fabricating an attention clear (see isLiveGenerationPending).
+        if (isLiveGenerationPending(live) && live.runId) {
+          emitChatAttentionClear(sessionId, live.runId);
+        }
         setTurns(live.turns);
         turnsRef.current = live.turns;
         setActiveLeafId(live.activeLeafId);
@@ -3809,7 +3886,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const live = readLiveChatGeneration(sessionId);
     if (live && isLiveSnapshotActive(live, Date.now())) {
       adoptLiveGenerationMetadata(live, sessionId);
-      emitChatAttentionClear(sessionId);
+      // Only a still-pending generation represents an unanswered human
+      // request; a recent-but-settled snapshot must repaint without
+      // fabricating an attention clear (see isLiveGenerationPending).
+      if (isLiveGenerationPending(live) && live.runId) {
+        emitChatAttentionClear(sessionId, live.runId);
+      }
       setTurns(live.turns);
       turnsRef.current = live.turns;
       setActiveLeafId(live.activeLeafId);
@@ -4901,7 +4983,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       runId,
       at: new Date().toISOString(),
     });
-    const attentionSettlement = createChatAttentionSettlementTracker(() => onSessionsChanged?.());
+    const attentionSettlement = createChatAttentionSettlementTracker({
+      operationId: runId,
+      settleProjection: (sessionId, operationId, outcome) => {
+        emitChatAttentionSettlement(sessionId, operationId, outcome);
+      },
+      reconcileCanonicalSessions: () => onSessionsChangedRef.current?.(),
+    });
     // `sessionId` mutates to the server-assigned id as events arrive;
     // `originSessionId` stays the thread this generation started on, so a
     // background generation (user switched threads mid-stream) can tell it no
@@ -4912,8 +5000,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       controller,
       runId,
       streamHealth: () => generationStreamHealth,
-      markAttentionCleared: () => {
-        attentionSettlement.markAttentionCleared();
+      markAttentionCleared: (sessionId) => {
+        attentionSettlement.markAttentionCleared(sessionId);
       },
       markPersistenceConfirmed: () => {
         attentionSettlement.markPersistenceConfirmed();
@@ -5012,8 +5100,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // must not be painted on a later revisit of this thread.
       if (liveGeneration.sessionId) invalidateConversation(liveGeneration.sessionId);
       if (liveGeneration.sessionId) {
-        emitChatAttentionClear(liveGeneration.sessionId);
-        attentionSettlement.markAttentionCleared();
+        emitChatAttentionClear(liveGeneration.sessionId, runId);
+        attentionSettlement.markAttentionCleared(liveGeneration.sessionId);
       }
       const res = await fetch("/api/chat/send", {
         method: "POST",
@@ -5965,8 +6053,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) => {
     switch (ev.kind) {
     case "session": {
-      emitChatAttentionClear(ev.sessionId);
-      liveGeneration.markAttentionCleared();
+      emitChatAttentionClear(ev.sessionId, liveGeneration.runId);
+      liveGeneration.markAttentionCleared(ev.sessionId);
       liveGeneration.sessionId = ev.sessionId;
       if (ev.sessionId !== currentSessionRef.current) {
         // Only adopt the new session id into THIS view's refs when the view is
