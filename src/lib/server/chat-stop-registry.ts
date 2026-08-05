@@ -6,6 +6,7 @@
 //
 // Per-process state, matching the single-server posture of the rest of the
 // chat stack (same exposure as withInboxLock).
+import { invalidateSessionsListCache } from "./sessions-list-cache.ts";
 
 type ChatRunEntry = {
   handle: ChatRunHandle;
@@ -35,17 +36,23 @@ export function registerChatRun(
     active.set(key, entry);
     handle.keys.push(key);
   }
+  if (handle.keys.length > 0) invalidateSessionsListCache();
   return handle;
 }
 
 /** Drop a run from the registry (child exited or request settled). */
 export function unregisterChatRun(handle: ChatRunHandle): void {
+  let changed = false;
   for (const key of handle.keys) {
     // Another run may have re-registered the same conversation key (e.g. a
     // follow-up turn) — only delete entries that still point at this handle.
-    if (active.get(key)?.handle === handle) active.delete(key);
+    if (active.get(key)?.handle === handle) {
+      active.delete(key);
+      changed = true;
+    }
   }
   handle.keys.length = 0;
+  if (changed) invalidateSessionsListCache();
 }
 
 /**
@@ -63,11 +70,14 @@ export function addChatRunKeys(
     .map((key) => active.get(key))
     .find((candidate) => candidate?.handle === handle);
   if (!entry) return;
+  let changed = false;
   for (const key of keys) {
     if (!key || handle.keys.includes(key)) continue;
     active.set(key, entry);
     handle.keys.push(key);
+    changed = true;
   }
+  if (changed) invalidateSessionsListCache();
 }
 
 /**

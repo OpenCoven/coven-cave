@@ -139,7 +139,7 @@ test("ChatView extracts attention after skill/auto-status and before next-path/G
     "const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);",
   );
   const attentionIndex = pipeline.indexOf(
-    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible);",
+    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible, { pending: Boolean(turn.pending) });",
   );
   const nextPathsIndex = pipeline.indexOf(
     "const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(attentionSplit.visible);",
@@ -172,7 +172,7 @@ test("ChatView never strips GitHub/image markers before skill/auto-status/attent
     "skill markers must extract directly from reasoningSplit.visible — nothing may strip GitHub/image markers out of the marker-bearing text before skill/auto-status/attention/next-path all see it",
   );
   const attentionIndex = pipeline.indexOf(
-    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible);",
+    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible, { pending: Boolean(turn.pending) });",
   );
   const stripGitHubIndex = pipeline.indexOf("stripGitHubMarkers(");
   const stripImageIndex = pipeline.indexOf("stripImageMarkers(");

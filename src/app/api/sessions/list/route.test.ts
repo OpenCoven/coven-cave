@@ -39,13 +39,18 @@ assert.equal(
 
 assert.match(
   source,
-  /if \(!conv\.pending\) return conv;\s*\n\s*return hasActiveChatRun\(conv\.sessionId\)\s*\n?\s*\? \{ \.\.\.conv, status: "running", exitCode: 0 \}\s*\n?\s*: \{ \.\.\.conv, status: "failed", exitCode: 1 \};/,
-  "pending conversations resolve running/failed via the live-run registry",
+  /if \(hasActiveChatRun\(conv\.sessionId\)\) return \{ \.\.\.conv, status: "running", exitCode: 0 \};\s*\n\s*if \(conv\.pending\) return \{ \.\.\.conv, status: "failed", exitCode: 1 \};\s*\n\s*return conv;/,
+  "all active conversations resolve running via the live-run registry while inactive pending stubs fail",
 );
 assert.match(
   source,
   /import \{ hasActiveChatRun \} from "@\/lib\/server\/chat-stop-registry"/,
   "the liveness probe comes from the in-process chat run registry",
+);
+assert.match(
+  source,
+  /mergeSessionRows\(\{[\s\S]*?\}\)\.map\(\(session\) =>\s*\n?\s*hasActiveChatRun\(session\.id\)\s*\n?\s*\? \{ \.\.\.session, status: "running", exit_code: 0, attention: NO_CHAT_ATTENTION \}\s*\n?\s*: session\s*\)/,
+  "registry liveness overrides merged daemon status and stale attention",
 );
 
 const previousEnv = {
@@ -53,7 +58,7 @@ const previousEnv = {
   COVEN_SOCKET: process.env.COVEN_SOCKET,
   CAVE_PROJECTS_PATH_OVERRIDE: process.env.CAVE_PROJECTS_PATH_OVERRIDE,
 };
-const scratchRoot = path.join(process.cwd(), ".slrt");
+const scratchRoot = path.join(process.cwd(), `.slrt-${process.pid}`);
 const covenHome = path.join(scratchRoot, "h");
 const projectRoot = path.join(scratchRoot, "p");
 const configPath = path.join(covenHome, "cave", "config.json");
@@ -90,6 +95,10 @@ try {
     getConversationListMetrics,
     saveConversation,
   } = await import("../../../../lib/cave-conversations.ts");
+  const {
+    registerChatRun,
+    unregisterChatRun,
+  } = await import("../../../../lib/server/chat-stop-registry.ts");
   const { sessionsListCache } = await import("../../../../lib/server/sessions-list-cache.ts");
 
   async function resetFixtures() {
@@ -390,6 +399,28 @@ try {
       },
       "an explicit active leaf ignores an inactive root sibling's request; its own request-free branch reports none in the merged route response",
     );
+
+    const activeHandle = registerChatRun(["route-valid"], () => {});
+    const active = await fetchSessions();
+    const activeRow = new Map(active.sessions.map((row) => [row.id, row])).get("route-valid");
+    assert.equal(activeRow?.status, "running", "an in-flight follow-up marks an existing chat running");
+    assert.deepEqual(
+      activeRow?.attention,
+      { state: "none", since: null, reason: null },
+      "an in-flight follow-up suppresses the prior assistant request",
+    );
+    unregisterChatRun(activeHandle);
+    const settled = await fetchSessions();
+    assert.deepEqual(
+      new Map(settled.sessions.map((row) => [row.id, row])).get("route-valid")?.attention,
+      {
+        state: "awaiting-human",
+        since: "2026-08-04T18:00:00.000Z",
+        reason: "approval",
+      },
+      "settling the run invalidates the cached running row and restores canonical attention",
+    );
+
     await stopDaemon();
     stopDaemon = async () => {};
     clearConversationListMetadataCache();

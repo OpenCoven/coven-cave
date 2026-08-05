@@ -8441,7 +8441,7 @@ function TurnRowImpl({
   // before next-path/GitHub/image stripping (those must never see a marker
   // still in the text). No inline card renders here — attention surfaces in
   // the sidebar, derived from persisted `attentionRequest` metadata.
-  const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible);
+  const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible, { pending: Boolean(turn.pending) });
   const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(attentionSplit.visible);
   // GitHub/image markers: strip complete + partial `<coven:github…>` /
   // `<coven:image…>` tags out of the PROSE fallback so they never flash as

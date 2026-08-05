@@ -9,7 +9,7 @@ import {
   watchSessions,
   watchtowerStatus,
 } from "./sentinel-watch.ts";
-import { NO_CHAT_ATTENTION } from "@/lib/chat-attention";
+import { NO_CHAT_ATTENTION } from "../../lib/chat-attention.ts";
 import type { Escalation } from "@/lib/escalations-types";
 import type { SessionRow } from "@/lib/types";
 

@@ -100,15 +100,61 @@ test("fenced markers stay literal example text", () => {
 });
 
 test("partial streaming tails stay hidden outside code ranges", () => {
-  assert.deepEqual(extractChatAttentionMarker("Waiting <coven:attention rea"), {
+  assert.deepEqual(extractChatAttentionMarker("Waiting <coven:attention rea", { pending: true }), {
     visible: "Waiting ",
     request: null,
   });
 });
 
+test("every initial streaming marker prefix stays hidden outside code ranges", () => {
+  const markerStart = "<coven:attention";
+  for (let length = 1; length <= markerStart.length; length++) {
+    const prefix = markerStart.slice(0, length);
+    assert.deepEqual(
+      extractChatAttentionMarker(`Waiting ${prefix}`, { pending: true }),
+      { visible: "Waiting ", request: null },
+      `hides ${JSON.stringify(prefix)} until it becomes a marker or settles as ordinary text`,
+    );
+  }
+});
+
+test("initial marker-like prefixes remain ordinary text after settlement", () => {
+  for (const suffix of ["<", "<c", "<coven:a", "<coven:attention rea"]) {
+    assert.deepEqual(
+      extractChatAttentionMarker(`Comparison: value ${suffix}`),
+      {
+        visible: `Comparison: value ${suffix}`,
+        request: null,
+      },
+      `preserves settled ordinary text ending in ${JSON.stringify(suffix)}`,
+    );
+  }
+});
+
+test("a disambiguated malformed marker name becomes visible while still streaming", () => {
+  const text = "Comparison: <coven:attentionX";
+  assert.deepEqual(extractChatAttentionMarker(text, { pending: true }), {
+    visible: text,
+    request: null,
+  });
+});
+
+test("a repeated marker's initial streaming prefix stays hidden", () => {
+  assert.deepEqual(
+    extractChatAttentionMarker(
+      'First <coven:attention reason="input" /> later <coven:',
+      { pending: true },
+    ),
+    {
+      visible: "First  later ",
+      request: { reason: "input" },
+    },
+  );
+});
+
 test("partial tails inside code ranges stay literal", () => {
   const text = "```\nWaiting <coven:attention rea\n```";
-  assert.deepEqual(extractChatAttentionMarker(text), {
+  assert.deepEqual(extractChatAttentionMarker(text, { pending: true }), {
     visible: text,
     request: null,
   });
