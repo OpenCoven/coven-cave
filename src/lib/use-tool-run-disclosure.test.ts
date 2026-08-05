@@ -16,6 +16,19 @@ function Probe({ statuses, snapshots }) {
   return createElement("span");
 }
 
+// ── 0. Accepts readonly arrays ──────────────────────────────────────────────
+test("accepts readonly array types", async () => {
+  const snapshots = [];
+  let renderer;
+  const readonlyStatuses: readonly string[] = ["ok", "ok"];
+  await act(async () => {
+    renderer = create(createElement(Probe, { statuses: readonlyStatuses, snapshots }));
+  });
+  assert.equal(snapshots.at(-1).open, false, "opens correctly with readonly input");
+
+  await act(async () => { renderer.unmount(); });
+});
+
 // ── 1. Opens while running; collapses when all settle ────────────────────────
 test("opens while any status is running and collapses when all settle", async () => {
   const snapshots = [];
