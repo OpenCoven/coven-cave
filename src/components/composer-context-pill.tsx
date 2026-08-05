@@ -77,6 +77,7 @@ export type ComposerContextProps = {
    *  prefer opening below. Docked composers keep each picker's existing side. */
   popoverPlacement?: "bottom-start" | "top-start";
   disabled?: boolean;
+  ariaLabel?: string;
 };
 
 export type ComposerContextController = ReturnType<typeof useComposerContextActions>;
@@ -241,7 +242,7 @@ export function ComposerContextChips(props: ComposerContextProps) {
   const modelLabel = context.modelLabel ?? context.runtimeName;
 
   return (
-    <>
+    <div className="cave-context-controls" role="group" aria-label={props.ariaLabel ?? "Chat context"}>
       <button
         ref={projectRef}
         type="button"
@@ -387,6 +388,6 @@ export function ComposerContextChips(props: ComposerContextProps) {
         </span>
       ) : null}
       {context.canAddProject ? context.addFlow.addProjectModal : null}
-    </>
+    </div>
   );
 }

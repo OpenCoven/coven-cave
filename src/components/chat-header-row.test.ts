@@ -59,12 +59,28 @@ assert.doesNotMatch(
   "ChatView does not mount linked-work actions directly",
 );
 
-// The 2026-07-21 "both" reconciliation: the footer band came back (context
-// pill + linked-work chip strip) alongside the grouped composer menu.
+// Context controls are constructed once as chatContextControls and placed
+// adaptively — new-chat footer (inlineComposer) or active-chat header (!inlineComposer).
+// The linkedContextRow always rides the footer band regardless of placement.
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips[\s\S]*?\{linkedContextRow\}/,
-  "the footer band carries the context chips and the linked-context strip",
+  /const chatContextControls = \([\s\S]{0,50}\n\s*<ComposerContextChips/,
+  "ComposerContextChips is constructed once as chatContextControls",
+);
+assert.match(
+  source,
+  /inlineComposer[\s\S]{0,200}cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
+  "the footer band cluster carries chatContextControls only when inlineComposer",
+);
+assert.match(
+  source,
+  /!inlineComposer[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
+  "the active-chat header carries chatContextControls after MetaLine",
+);
+assert.match(
+  source,
+  /className="cave-composer-footer-band"[\s\S]*?\{linkedContextRow\}/,
+  "the footer band always carries the linked-context strip",
 );
 
 assert.match(
