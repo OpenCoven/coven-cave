@@ -174,18 +174,18 @@ assert.match(
 );
 assert.match(
   source,
-  /const allowedRoot = await isAllowed\(projectRoot\);[\s\S]*?git\(real, \["rev-parse", "--show-toplevel"\]\)[\s\S]*?projectPathspecForGitRoot\(real, repoRoot\)/,
-  "root resolution authorizes the captured project before discovering and proving its Git-root relationship",
+  /const allowedRoot = await isAllowed\(projectRoot\);[\s\S]*?git\(real, \["rev-parse", "--show-toplevel"\]\)[\s\S]*?projectPathspecForGitRoot\(real, repoRoot\)[\s\S]*?if \(!\(await isAllowed\(repoRoot\)\)\)/,
+  "root resolution authorizes both the captured project and its enclosing Git repository",
 );
 assert.match(
   source,
-  /if \(!projectPathspec\) \{[\s\S]{0,120}?status: 403[\s\S]{0,120}?authorization === "standard" && !\(await isAllowed\(repoRoot\)\)/,
-  "an unproven Git-root relationship fails closed while standard operations retain repo-root authorization",
+  /if \(!projectPathspec\) \{[\s\S]{0,120}?status: 403[\s\S]{0,120}?if \(!\(await isAllowed\(repoRoot\)\)\)/,
+  "an unproven or unauthorized enclosing Git root fails closed",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /action === "revert" \|\| action === "restore-checkpoint"[\s\S]{0,80}\? "scoped-revert"[\s\S]{0,40}: "standard"/,
-  "revert and metadata-bounded restore receive scoped enclosing-Git-root authority",
+  /scoped-revert/,
+  "scoped Undo cannot bypass the existing enclosing-repository authorization policy",
 );
 assert.match(
   source,

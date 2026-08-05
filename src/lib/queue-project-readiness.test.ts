@@ -85,6 +85,81 @@ try {
     JSON.stringify({
       version: 1,
       projects: [
+        {
+          id: "queue-project",
+          legacyProjectIds: ["queue-project-old"],
+          name: "Queue project",
+          root: projectRoot,
+          createdAt: "2026-07-23T00:00:00.000Z",
+          updatedAt: "2026-07-23T00:00:00.000Z",
+        },
+        {
+          id: "non-git-project",
+          name: "Not a Git project",
+          root: nonGitRoot,
+          createdAt: "2026-07-23T00:00:00.000Z",
+          updatedAt: "2026-07-23T00:00:00.000Z",
+        },
+      ],
+    }),
+  );
+  await writeFile(
+    queueProjectPath,
+    JSON.stringify({ version: 1, projectId: "queue-project-old" }),
+  );
+  let releaseProjects!: () => void;
+  let projectsLoaded!: () => void;
+  const projectsEntered = new Promise<void>((resolve) => { projectsLoaded = resolve; });
+  const projectsRelease = new Promise<void>((resolve) => { releaseProjects = resolve; });
+  const migratingSelection = queueProjectReadiness({
+    beadsProbe: async () => ({ ok: true, stdout: "bd 0.1.0", stderr: "" }),
+    projectsLoader: async () => {
+      projectsLoaded();
+      await projectsRelease;
+      return [
+        {
+          id: "queue-project",
+          legacyProjectIds: ["queue-project-old"],
+          name: "Queue project",
+          root: projectRoot,
+          createdAt: "2026-07-23T00:00:00.000Z",
+          updatedAt: "2026-07-23T00:00:00.000Z",
+        },
+        {
+          id: "non-git-project",
+          name: "Not a Git project",
+          root: nonGitRoot,
+          createdAt: "2026-07-23T00:00:00.000Z",
+          updatedAt: "2026-07-23T00:00:00.000Z",
+        },
+      ];
+    },
+  });
+  await Promise.race([
+    projectsEntered,
+    migratingSelection.then(() => {
+      throw new Error("legacy migration did not pause after its selection read");
+    }),
+  ]);
+  await selectQueueProject("non-git-project");
+  releaseProjects();
+  const concurrentResult = await migratingSelection;
+  assert.equal(
+    JSON.parse(await readFile(queueProjectPath, "utf8")).projectId,
+    "non-git-project",
+    "a concurrent explicit selection wins over a stale legacy-id rewrite",
+  );
+  assert.equal(
+    concurrentResult.project?.id,
+    "non-git-project",
+    "the stale readiness response also converges on the winning selection",
+  );
+
+  await writeFile(
+    projectsPath,
+    JSON.stringify({
+      version: 1,
+      projects: [
         { id: "queue-project", name: "Queue project", root: projectRoot, createdAt: "2026-07-23T00:00:00.000Z", updatedAt: "2026-07-23T00:00:00.000Z" },
         { id: "non-git-project", name: "Not a Git project", root: nonGitRoot, createdAt: "2026-07-23T00:00:00.000Z", updatedAt: "2026-07-23T00:00:00.000Z" },
       ],

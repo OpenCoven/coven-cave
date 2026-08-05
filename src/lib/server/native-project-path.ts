@@ -12,6 +12,20 @@ function foldNativePath(value: string, platform: NativeProjectPathPlatform): str
   return platform === "win32" ? value.toLocaleLowerCase("en-US") : value;
 }
 
+function nativePathInput(
+  value: string | null | undefined,
+  platform: NativeProjectPathPlatform,
+): string | null {
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    /[\0-\x1f\x7f]/.test(value)
+  ) {
+    return null;
+  }
+  return platform === "win32" ? value.trim() : value;
+}
+
 /**
  * Normalize an absolute path with the host platform's own syntax.
  *
@@ -23,10 +37,11 @@ export function normalizeNativeProjectPath(
   value: string | null | undefined,
   platform: NativeProjectPathPlatform = process.platform,
 ): string | null {
-  if (typeof value !== "string" || !value || value.includes("\0")) return null;
+  const input = nativePathInput(value, platform);
+  if (input === null) return null;
   const api = pathApi(platform);
-  if (!api.isAbsolute(value)) return null;
-  return api.resolve(value);
+  if (!api.isAbsolute(input)) return null;
+  return api.resolve(input);
 }
 
 export function nativeProjectPathIdentityKey(
@@ -57,18 +72,17 @@ export function resolveNativePathWithinRoot(
   candidateValue: string | null | undefined,
   platform: NativeProjectPathPlatform = process.platform,
 ): NativeProjectRelativePath | null {
-  if (typeof candidateValue !== "string" || !candidateValue || candidateValue.includes("\0")) {
-    return null;
-  }
-  if (platform === "win32" && /^[A-Za-z]:(?![\\/])/.test(candidateValue)) {
+  const candidateInput = nativePathInput(candidateValue, platform);
+  if (candidateInput === null) return null;
+  if (platform === "win32" && /^[A-Za-z]:(?![\\/])/.test(candidateInput)) {
     return null;
   }
   const api = pathApi(platform);
   const root = normalizeNativeProjectPath(rootValue, platform);
   if (root === null) return null;
-  const candidate = api.isAbsolute(candidateValue)
-    ? api.normalize(candidateValue)
-    : api.resolve(root, candidateValue);
+  const candidate = api.isAbsolute(candidateInput)
+    ? api.normalize(candidateInput)
+    : api.resolve(root, candidateInput);
   const relativePath = api.relative(root, candidate);
   if (
     !relativePath ||

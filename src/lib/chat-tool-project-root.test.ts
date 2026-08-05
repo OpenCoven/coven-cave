@@ -83,6 +83,37 @@ test("a malformed non-empty session runtime cannot fall back to mutable project 
   );
 });
 
+test("local execution provenance preserves significant POSIX trailing spaces", () => {
+  if (process.platform !== "win32") {
+    assert.equal(
+      turnToolProjectRoot(assistantTurn("local:/projects/repo "), "/projects/repo"),
+      "/projects/repo ",
+      "a trailing space is part of the recorded POSIX repository name",
+    );
+    assert.equal(
+      sessionToolProjectRoot(undefined, "/projects/repo "),
+      "/projects/repo ",
+      "session display metadata preserves the same POSIX root bytes",
+    );
+  }
+
+  assert.equal(
+    turnToolProjectRoot(assistantTurn("local:   "), "/projects/repo"),
+    null,
+    "a whitespace-only execution root is not authority",
+  );
+  assert.equal(
+    turnToolProjectRoot(assistantTurn("local:/projects/repo\tchild"), "/projects/repo"),
+    null,
+    "control characters are rejected rather than normalized into another path",
+  );
+  assert.equal(
+    turnToolProjectRoot(assistantTurn("local:C:\\Projects\\Repo\\ "), "/projects/repo"),
+    "C:/Projects/Repo",
+    "Windows roots retain their portable trimming and separator normalization",
+  );
+});
+
 test("an in-flight turn without execution metadata fails closed", () => {
   assert.equal(
     turnToolProjectRoot({ ...assistantTurn(), pending: true }, "/projects/previous-turn"),

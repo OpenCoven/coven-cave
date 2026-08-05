@@ -103,17 +103,16 @@ export async function migrateProjectRootKeys(
     const fromKeys = [...new Set([from, normalizeProjectRoot(from)])];
     for (const fromKey of fromKeys) {
       const hadImage = Object.hasOwn(migrationImages, fromKey);
-      if (!hadImage) continue;
       // Probe the literal persisted key first: old drive roots could be stored
       // as `C:` before normalization canonicalized them to `C:/`.
       const result = await moveProjectImageFromStorageKey(fromKey, to);
       if (!result) continue;
       if (result.source) migrationImages[fromKey] = result.source;
       else delete migrationImages[fromKey];
-      const toKey = normalizeProjectRoot(to);
+      const toKey = result.destinationKey || normalizeProjectRoot(to);
       if (result.destination) migrationImages[toKey] = result.destination;
       else delete migrationImages[toKey];
-      if (!Object.hasOwn(migrationImages, fromKey)) followed.add(from);
+      if (hadImage && !Object.hasOwn(migrationImages, fromKey)) followed.add(from);
     }
   }
 

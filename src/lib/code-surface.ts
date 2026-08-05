@@ -203,11 +203,16 @@ export function resolveCodeWorkbenchFilePath(projectRoot: string, candidatePath:
 export function codePendingOpenProjectRoot(
   open: PendingCodeOpen | null | undefined,
 ): string | null {
-  const root = open?.root?.trim();
-  if (!root || /[\0\r\n]/.test(root) || !isAbsoluteProjectPath(root)) return null;
-  const slashRoot = root.replace(/\\/g, "/");
-  if (slashRoot.split("/").some((segment) => segment === "." || segment === "..")) return null;
-  const normalized = normalizeProjectRoot(slashRoot);
+  const root = open?.root;
+  if (
+    !root?.trim() ||
+    /[\0-\x1f\x7f]/.test(root) ||
+    !isAbsoluteProjectPath(root)
+  ) {
+    return null;
+  }
+  const normalized = normalizeProjectRoot(root);
+  if (normalized.split("/").some((segment) => segment === "." || segment === "..")) return null;
   const candidatePath = open?.path;
   if (candidatePath && !resolvePathWithinProjectRoot(normalized, candidatePath)) return null;
   return normalized;

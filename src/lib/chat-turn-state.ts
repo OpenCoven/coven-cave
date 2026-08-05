@@ -109,11 +109,17 @@ export type ConversationHistoryPayload = {
 
 function recordedLocalProjectRoot(runtime: string | null | undefined): string | null {
   const parsed = parseConversationRuntime(runtime);
-  const cwd = parsed?.kind === "local" ? parsed.cwd?.trim() : null;
-  if (!cwd || /[\0\r\n]/.test(cwd) || !isAbsoluteProjectPath(cwd)) return null;
-  const normalized = cwd.replace(/\\/g, "/");
+  const cwd = parsed?.kind === "local" ? parsed.cwd : null;
+  if (
+    !cwd?.trim() ||
+    /[\0-\x1f\x7f]/.test(cwd) ||
+    !isAbsoluteProjectPath(cwd)
+  ) {
+    return null;
+  }
+  const normalized = normalizeProjectRoot(cwd);
   if (normalized.split("/").some((segment) => segment === "." || segment === "..")) return null;
-  return normalizeProjectRoot(cwd);
+  return normalized;
 }
 
 /**
@@ -140,7 +146,14 @@ export function sessionToolProjectRoot(
   if (runtime?.trim()) {
     return recordedLocalProjectRoot(runtime);
   }
-  return projectRoot?.trim() || null;
+  if (
+    !projectRoot?.trim() ||
+    /[\0-\x1f\x7f]/.test(projectRoot) ||
+    !isAbsoluteProjectPath(projectRoot)
+  ) {
+    return null;
+  }
+  return normalizeProjectRoot(projectRoot);
 }
 
 /** Normalize the API's permissive persisted turn shape for ChatView. */
