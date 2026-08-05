@@ -34,8 +34,23 @@ assert.match(
 );
 assert.match(
   sessionHeader,
-  /promotableFamiliars\.map\(\(candidate\) => \([\s\S]{0,700}?<PopoverItem[\s\S]{0,500}?onSelect=\{\(\) => onPromoteToCoven\(candidate\.id\)\}[\s\S]{0,300}?\{candidate\.display_name\}/,
-  "each eligible familiar must be a keyboard-activatable promotion menu item",
+  /const menuRef = useRef<HTMLDivElement \| null>\(null\);[\s\S]{0,200}?const keyboardOpenRequested = useRef\(false\);[\s\S]{0,1800}?if \(!open \|\| !keyboardOpenRequested\.current\) return;[\s\S]{0,300}?requestAnimationFrame\(focusFirstEnabledItem\)/,
+  "keyboard-opening Session options must transfer focus to its first enabled menu item",
+);
+assert.match(
+  sessionHeader,
+  /const onTriggerKeyDown = useCallback\([\s\S]{0,500}?e\.key === "Enter" \|\| e\.key === " " \|\| e\.key === "ArrowDown"[\s\S]{0,300}?keyboardOpenRequested\.current = true[\s\S]{0,3000}?onKeyDown=\{onTriggerKeyDown\}/,
+  "the Session options trigger must support Enter, Space, and ArrowDown keyboard opening",
+);
+assert.match(
+  sessionHeader,
+  /const onBodyKeyDown = useCallback\([\s\S]{0,300}?\["ArrowDown", "ArrowUp", "Home", "End"\][\s\S]{0,900}?items\[nextIndex\]\?\.focus\(\)[\s\S]{0,3000}?<div ref=\{menuRef\} onKeyDown=\{onBodyKeyDown\}>/,
+  "Session options must move focus across enabled menu items with Arrow keys, Home, and End",
+);
+assert.match(
+  sessionHeader,
+  /promotableFamiliars\.map\(\(candidate\) => \([\s\S]{0,700}?<PopoverItem[\s\S]{0,500}?onSelect=\{\(\) => \{\s*close\(\);\s*onPromoteToCoven\(candidate\.id\);\s*\}\}[\s\S]{0,300}?\{candidate\.display_name\}/,
+  "each eligible familiar must close Session options before its keyboard-activatable promotion mutation",
 );
 assert.match(
   chatView,
