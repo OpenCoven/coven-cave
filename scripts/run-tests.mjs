@@ -287,6 +287,7 @@ export const SUITES = {
     "src/components/chat-sidebar-wiring.test.ts",
     "src/components/workspace-sidebar-wiring.test.ts",
     "src/components/workspace-session-delete.test.ts",
+    "src/components/workspace-sidebar-attention.test.ts",
     "src/components/workspace-sidebar-pinned.test.ts",
     "src/components/workspace-sidebar-pr-badge.test.ts",
     "src/components/workspace-rail.test.ts",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
@@ -28,6 +28,11 @@ import {
 } from "@/lib/chat-session-prefs";
 import { usePinnedSessions } from "@/lib/use-pinned-sessions";
 import { deriveChatRecencyBuckets } from "@/lib/chat-recency";
+import {
+  chatAttentionDescription,
+  chatAttentionLabel,
+  compareChatAttention,
+} from "@/lib/chat-attention";
 import {
   CHAT_SESSION_DRAG_MIME,
   emitChatSessionDragEnd,
@@ -92,6 +97,11 @@ const CHAT_SIDEBAR_TABS: ReadonlyArray<TabItem<ChatSidebarView>> = [
 function bareTime(iso: string): string {
   return relativeTime(iso, Date.now(), "bare");
 }
+void bareTime;
+
+function bareTimeAt(iso: string, now: number): string {
+  return relativeTime(iso, now, "bare");
+}
 
 function statusDotClass(status: string): string {
   if (status === "running") return "animate-pulse bg-[var(--color-success)]";
@@ -124,14 +134,16 @@ function folderIcon(group: ChatProjectGroup, expanded: boolean): IconName {
 // Activity meta line under the folder name: "2 running · 12m" while sessions
 // run, else "6 chats · 3h". Subsumes the old count badge, so the header keeps
 // a single right-aligned slot for the hover actions.
-function groupMeta(group: ChatProjectGroup): string {
+function groupMeta(group: ChatProjectGroup, now: number): string {
+  const awaiting = group.sessions.filter((session) => session.attention.state !== "none" && !session.archived_at).length;
   const running = group.sessions.filter((s) => s.status === "running").length;
   const count =
     running > 0
       ? `${running} running`
       : `${group.sessions.length} ${group.sessions.length === 1 ? "chat" : "chats"}`;
-  const age = group.updatedAt ? bareTime(group.updatedAt) : null;
-  return age ? `${count} · ${age}` : count;
+  const age = group.updatedAt ? bareTimeAt(group.updatedAt, now) : null;
+  const meta = age ? `${count} · ${age}` : count;
+  return awaiting > 0 ? `${awaiting} awaiting · ${meta}` : meta;
 }
 
 // Returns a context-aware leading icon for threads whose title suggests a PR
@@ -198,6 +210,7 @@ type ThreadRowProps = {
   onRequestDelete: () => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
+  now: number;
 };
 
 function ThreadRow({
@@ -218,7 +231,9 @@ function ThreadRow({
   onRequestDelete,
   onCancelDelete,
   onConfirmDelete,
+  now,
 }: ThreadRowProps) {
+  const attentionDescriptionId = useId();
   const title = sessionRailTitle(session);
   // Real PR context beats the title-heuristic glyph — when the thread's work
   // reached an actual pull request, the leading slot shows the clickable
@@ -227,10 +242,14 @@ function ThreadRow({
   // Archived rows (visible via the "Show archived" option) read muted, and the
   // leading slot shows the archive glyph so they can't pass for live threads.
   const archived = Boolean(session.archived_at);
+  const attentionState = archived ? "none" : session.attention.state;
+  const attentionLabel = chatAttentionLabel(attentionState);
+  const attentionDescription = archived ? null : chatAttentionDescription(session.attention, now);
   const leadGlyph = archived ? ("ph:archive" as IconName) : glyph;
   return (
     <div
       className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
+      data-attention={attentionState}
     >
       {/* Chat.dc.html 2a: every row carries a 2px colour tick on its left
           edge — the session's state, readable down the whole rail without
@@ -240,6 +259,7 @@ function ThreadRow({
       <button
         type="button"
         aria-current={active ? "page" : undefined}
+        aria-describedby={attentionLabel ? attentionDescriptionId : undefined}
         onClick={(e) => {
           // ⌥-click opens beside the current chat instead of replacing it.
           if (e.altKey && onOpenInSplit) {
@@ -282,10 +302,21 @@ function ThreadRow({
             <span className="sr-only">{project.name}</span>
           </span>
         ) : null}
-        <span className="cnav__thread-title" title={title}>{title}</span>
-        {confirming ? null : (
-          <span className="cnav__time">{bareTime(session.updated_at || session.created_at)}</span>
-        )}
+        <span className="cnav__thread-copy">
+          <span className="cnav__thread-line">
+            <span className="cnav__thread-title" title={title}>{title}</span>
+            {confirming ? null : (
+              <span className="cnav__time">{bareTimeAt(session.updated_at || session.created_at, now)}</span>
+            )}
+          </span>
+          {attentionLabel ? (
+            <span id={attentionDescriptionId} className="cnav__attention">
+              <span className="cnav__attention-dot" aria-hidden />
+              <span>{attentionLabel}</span>
+              <span className="sr-only">{attentionDescription ? `. ${attentionDescription}` : ""}</span>
+            </span>
+          ) : null}
+        </span>
       </button>
       {confirming ? (
         <span className="cnav__confirm">
@@ -377,6 +408,7 @@ export function WorkspaceSidebar({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchorRef = useRef<HTMLButtonElement>(null);
   const menuBodyRef = useRef<HTMLDivElement>(null);
+  const now = Date.now();
 
   // Trap focus inside the Organize menu while it is open (same convention as
   // the GitHub action popover, #2288). Also hydrates the organize-view preference.
@@ -453,6 +485,14 @@ export function WorkspaceSidebar({
   );
 
   const hasSearch = query.trim().length > 0;
+  const attentionSessions = useMemo(
+    () =>
+      visibleSessions
+        .filter((session) => session.attention.state !== "none" && !session.archived_at)
+        .sort(compareChatAttention),
+    [visibleSessions],
+  );
+  const attentionIds = useMemo(() => new Set(attentionSessions.map((session) => session.id)), [attentionSessions]);
   const visibleGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return groups;
@@ -471,16 +511,17 @@ export function WorkspaceSidebar({
   // Recent view: search filters rows (empty buckets drop out via derive).
   const recentSessions = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return visibleSessions;
-    return visibleSessions.filter((s) => sessionRailTitle(s).toLowerCase().includes(q));
-  }, [visibleSessions, query]);
+    const rows = hasSearch ? visibleSessions : visibleSessions.filter((session) => !attentionIds.has(session.id));
+    if (!q) return rows;
+    return rows.filter((s) => sessionRailTitle(s).toLowerCase().includes(q));
+  }, [visibleSessions, query, hasSearch, attentionIds]);
 
   // Buckets depend on wall-clock day boundaries, and the sessions poll bails
   // out identity-unchanged when content is identical — so a data refresh alone
   // will NOT re-derive after midnight. The minute tick keeps the day buckets
   // (and the bare row times rendered each pass) on the same clock.
   const recentBuckets = useMemo(
-    () => (view === "recent" ? deriveChatRecencyBuckets(recentSessions, Date.now()) : []),
+    () => (view === "recent" ? deriveChatRecencyBuckets(recentSessions, now) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- minuteTick is the clock dependency
     [view, recentSessions, minuteTick],
   );
@@ -773,10 +814,61 @@ export function WorkspaceSidebar({
           ) : null}
 
           {view === "recent" ? (
-            recentBuckets.length === 0 ? (
+            <>
+              {!hasSearch && attentionSessions.length > 0 ? (
+                <section aria-label="Awaiting you">
+                  <div className="cnav__label">
+                    <span className="cnav__label-text">Awaiting you</span>
+                    <span className="cnav__label-count">{attentionSessions.length}</span>
+                    <span className="cnav__label-rule" aria-hidden />
+                  </div>
+                  <ul>
+                    {(showAllByKey.has("attention") ? attentionSessions : attentionSessions.slice(0, THREADS_PREVIEW)).map((session) => (
+                      <li key={`attention:${session.id}`}>
+                        <ThreadRow
+                          session={session}
+                          active={activeSessionId === session.id}
+                          pinned={isSessionPinned(pinnedIds, session.id)}
+                          confirming={confirmingSessionId === session.id}
+                          deleting={deletingSessionId === session.id}
+                          indent="flat"
+                          project={sessionProjectById.get(session.id) ?? null}
+                          glyph={threadLeadingIcon(sessionRailTitle(session))}
+                          onOpenUrl={onOpenUrl}
+                          onOpen={() => onOpenSession(session)}
+                          onOpenInSplit={
+                            onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
+                          }
+                          onTogglePin={() => togglePin(session.id)}
+                          onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
+                          archiving={archivingId !== null}
+                          onRequestDelete={() => setConfirmingSessionId(session.id)}
+                          onCancelDelete={() => setConfirmingSessionId(null)}
+                          onConfirmDelete={() => void handleDeleteSession(session)}
+                          now={now}
+                        />
+                      </li>
+                    ))}
+                    {attentionSessions.length > THREADS_PREVIEW && !showAllByKey.has("attention") ? (
+                      <li>
+                        <button
+                          type="button"
+                          onClick={() => setShowAllByKey((cur) => new Set(cur).add("attention"))}
+                          className="cnav__more focus-ring [padding-left:13px]!"
+                        >
+                          Show {attentionSessions.length - THREADS_PREVIEW} more
+                        </button>
+                      </li>
+                    ) : null}
+                  </ul>
+                </section>
+              ) : null}
+            {recentBuckets.length === 0 ? (
+              attentionSessions.length > 0 && !hasSearch ? null : (
               <p className="cnav__empty">
                 {hasSearch ? "No threads match your search." : "No conversations yet."}
               </p>
+              )
             ) : (
               recentBuckets.map((bucket) => {
                 const key = `bucket:${bucket.key}`;
@@ -814,6 +906,7 @@ export function WorkspaceSidebar({
                             onRequestDelete={() => setConfirmingSessionId(session.id)}
                             onCancelDelete={() => setConfirmingSessionId(null)}
                             onConfirmDelete={() => void handleDeleteSession(session)}
+                            now={now}
                           />
                         </li>
                       ))}
@@ -832,7 +925,8 @@ export function WorkspaceSidebar({
                   </section>
                 );
               })
-            )
+            )}
+            </>
           ) : visibleGroups.length === 0 ? (
             <p className="cnav__empty">
               {hasSearch ? "No threads match your search." : "No conversations yet."}
@@ -868,7 +962,7 @@ export function WorkspaceSidebar({
                           <span className="cnav__group-name" title={group.projectRoot ?? "Threads with no project"}>
                             {label}
                           </span>
-                          <span className="cnav__group-meta">{groupMeta(group)}</span>
+                          <span className="cnav__group-meta">{groupMeta(group, now)}</span>
                         </span>
                       </button>
                       {unregistered ? (
@@ -927,6 +1021,7 @@ export function WorkspaceSidebar({
                                   onRequestDelete={() => setConfirmingSessionId(session.id)}
                                   onCancelDelete={() => setConfirmingSessionId(null)}
                                   onConfirmDelete={() => void handleDeleteSession(session)}
+                                  now={now}
                                 />
                               </li>
                             );
