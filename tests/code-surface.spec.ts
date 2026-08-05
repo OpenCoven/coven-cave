@@ -81,7 +81,8 @@ async function base(
       json: {
         running: true,
         availability: "online",
-        target: { mode: "local" },
+        checkedAt: new Date().toISOString(),
+        target: { mode: "local", label: "Local daemon", socket: "/tmp/coven.sock" },
       },
     }),
   );
@@ -341,14 +342,17 @@ test.describe("code surface (Coding familiar's room)", () => {
       .poll(() =>
         sessionsTab.evaluate((element) => {
           const style = getComputedStyle(element);
+          const root = getComputedStyle(document.documentElement);
+          const ringWidth = root.getPropertyValue("--ring-width").trim();
+          const ringOffsetInset = root.getPropertyValue("--ring-offset-inset").trim();
           return {
             focusVisible: element.matches(":focus-visible"),
-            outlineOffset: style.outlineOffset,
-            outlineWidth: style.outlineWidth,
+            outlineMatchesToken:
+              style.outlineWidth === ringWidth && style.outlineOffset === ringOffsetInset,
           };
         }),
       )
-      .toEqual({ focusVisible: true, outlineOffset: "-2px", outlineWidth: "2px" });
+      .toEqual({ focusVisible: true, outlineMatchesToken: true });
 
     // Resize only after the desktop Code surface has mounted. Starting at a
     // phone width intentionally routes to the mobile workshop fallback.
