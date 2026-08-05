@@ -6418,6 +6418,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // transcript survives, reachable via the chat list's "Show archived" toggle
   // where the same menu item unarchives it back onto the rail.
   // Rail drag-to-promote retains this callback for turning a solo chat into a coven.
+  const promotableFamiliars = useMemo(
+    () => addableFamiliars(familiars, familiar.id),
+    [familiar.id, familiars],
+  );
+  const promotableFamiliarIds = useMemo(
+    () => promotableFamiliars.map((candidate) => candidate.id),
+    [promotableFamiliars],
+  );
+
   const promoteToCoven = useCallback(
     (addedId: string) => {
       const added = familiars.find((f) => f.id === addedId);
@@ -6455,8 +6464,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const onStart = (e: Event) => {
       const detail = (e as CustomEvent<FamiliarDragDetail>).detail;
       if (!detail?.id) return;
-      const addable = addableFamiliars(familiars, familiar.id).map((f) => f.id);
-      if (!canDropFamiliar({ draggedId: detail.id, hostId: familiar.id, addableIds: addable })) return;
+      if (!canDropFamiliar({ draggedId: detail.id, hostId: familiar.id, addableIds: promotableFamiliarIds })) return;
       setFamiliarDrag(detail);
     };
     const onEnd = () => {
@@ -6469,7 +6477,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       window.removeEventListener(FAMILIAR_DRAG_START, onStart);
       window.removeEventListener(FAMILIAR_DRAG_END, onEnd);
     };
-  }, [familiar.id, familiars]);
+  }, [familiar.id, promotableFamiliarIds]);
 
   const handleFamiliarDrop = useCallback(
     (e: React.DragEvent) => {
@@ -6478,11 +6486,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setFamiliarDrag(null);
       setDropHover(false);
       if (!dropped) return;
-      const addable = addableFamiliars(familiars, familiar.id).map((f) => f.id);
-      if (!canDropFamiliar({ draggedId: dropped, hostId: familiar.id, addableIds: addable })) return;
+      if (!canDropFamiliar({ draggedId: dropped, hostId: familiar.id, addableIds: promotableFamiliarIds })) return;
       promoteToCoven(dropped);
     },
-    [familiar.id, familiarDrag, familiars, promoteToCoven],
+    [familiar.id, familiarDrag, promoteToCoven, promotableFamiliarIds],
   );
 
   const setChatArchived = async (archived: boolean) => {
@@ -7270,6 +7277,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 sessionId={sessionId}
                 hasTurns={turns.length > 0}
                 onOpenDebug={openDebug}
+                promotableFamiliars={promotableFamiliars}
+                onPromoteToCoven={promoteToCoven}
                 reflecting={reflecting}
                 onReflect={familiar.id ? () => void reflectOnThread() : undefined}
                 registerCurrentRoot={setupCandidateRoot ?? undefined}

@@ -8,6 +8,7 @@ import { Icon } from "@/lib/icon";
 import { useShowThinking } from "@/lib/reasoning-visibility";
 import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { FamiliarIcon } from "@/components/familiar-icon";
 import { ProjectPickerPopover } from "@/components/project-picker";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 
@@ -26,6 +27,8 @@ export function SessionOverflowMenu({
   sessionId,
   hasTurns,
   onOpenDebug,
+  promotableFamiliars,
+  onPromoteToCoven,
   reflecting,
   onReflect,
 }: {
@@ -43,6 +46,8 @@ export function SessionOverflowMenu({
   /** Gates the Show-thinking toggle — pointless on an empty transcript. */
   hasTurns: boolean;
   onOpenDebug: () => void;
+  promotableFamiliars: Familiar[];
+  onPromoteToCoven: (familiarId: string) => void;
   /** Reflect-on-thread (absent when the familiar has no id). */
   reflecting: boolean;
   onReflect?: () => void;
@@ -130,7 +135,7 @@ export function SessionOverflowMenu({
         minWidth={216}
         ariaLabel="Chat options"
       >
-        <PopoverBody>
+        <PopoverBody role="menu" ariaLabel="Chat options">
           {sections.map((section, si) => (
             <Fragment key={si}>
               {si > 0 ? <PopoverSeparator /> : null}
@@ -148,6 +153,22 @@ export function SessionOverflowMenu({
               ))}
             </Fragment>
           ))}
+          {promotableFamiliars.length > 0 ? (
+            <>
+              <PopoverSeparator />
+              <PopoverLabel>Start a coven with</PopoverLabel>
+              {promotableFamiliars.map((candidate) => (
+                <PopoverItem
+                  key={candidate.id}
+                  leading={<FamiliarIcon familiar={candidate} size="sm" />}
+                  title={`Continue this chat in a coven with ${candidate.display_name}`}
+                  onSelect={() => onPromoteToCoven(candidate.id)}
+                >
+                  {candidate.display_name}
+                </PopoverItem>
+              ))}
+            </>
+          ) : null}
         </PopoverBody>
       </Popover>
       <ProjectPickerPopover

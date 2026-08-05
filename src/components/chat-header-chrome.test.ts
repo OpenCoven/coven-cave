@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const groupChatView = readFileSync(new URL("./group-chat-view.tsx", import.meta.url), "utf8");
+const sessionHeader = readFileSync(new URL("./chat-session-header.tsx", import.meta.url), "utf8");
 const activityCss = readFileSync(new URL("../styles/cave-chat/activity.css", import.meta.url), "utf8");
 
 assert.doesNotMatch(
@@ -15,6 +16,26 @@ assert.doesNotMatch(
   activityCss,
   /\.cave-chat-participants(?:__[\w-]+)?\b/,
   "the removed participant cluster must not leave dead CSS behind",
+);
+assert.match(
+  chatView,
+  /const promotableFamiliars = useMemo\([\s\S]{0,300}?addableFamiliars\(familiars, familiar\.id\)[\s\S]{0,200}?\[familiar\.id, familiars\]/,
+  "solo Chat must derive one stable eligible-familiar set for every promotion affordance",
+);
+assert.match(
+  chatView,
+  /<SessionOverflowMenu[\s\S]{0,900}?promotableFamiliars=\{promotableFamiliars\}[\s\S]{0,300}?onPromoteToCoven=\{promoteToCoven\}/,
+  "Session options must receive the accessible promotion candidates and existing mutation",
+);
+assert.match(
+  sessionHeader,
+  /<PopoverBody role="menu" ariaLabel="Chat options">[\s\S]*promotableFamiliars\.length > 0[\s\S]*<PopoverLabel>Start a coven with<\/PopoverLabel>/,
+  "Session options must expose coven promotion inside a named menu section",
+);
+assert.match(
+  sessionHeader,
+  /promotableFamiliars\.map\(\(candidate\) => \([\s\S]{0,700}?<PopoverItem[\s\S]{0,500}?onSelect=\{\(\) => onPromoteToCoven\(candidate\.id\)\}[\s\S]{0,300}?\{candidate\.display_name\}/,
+  "each eligible familiar must be a keyboard-activatable promotion menu item",
 );
 assert.match(
   chatView,
