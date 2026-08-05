@@ -860,6 +860,20 @@ details[open] > .cave-tool-summary::before {
   cursor: default;
 }
 
+/* Active-chat header context strip: sits beneath MetaLine and contains the
+   adaptive context controls without widening the pane or nesting in the
+   live region. */
+.cave-chat-header-context {
+  min-width: 0;
+  overflow: hidden;
+  padding-inline-start: calc(var(--space-6) + var(--space-2));
+}
+
+.cave-chat-header-context .cave-context-chip {
+  height: var(--space-6);
+  font-size: var(--text-xs);
+}
+
 .cave-chat-session-actions {
   display: inline-flex;
   min-width: 0;
