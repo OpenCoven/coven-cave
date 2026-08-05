@@ -182,6 +182,7 @@ const RenownCard = memo(function RenownCard({
  */
 export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
   model,
+  confidence,
   healRequestCount,
   actions,
   contractReport,
@@ -201,6 +202,7 @@ export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
   contractExpanded,
 }: {
   model: FamiliarAnalyticsModel;
+  confidence: ThreadConfidence;
   healRequestCount: number;
   actions: DockAction[];
   contractReport: ContractReport | null;
@@ -222,13 +224,15 @@ export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
 }) {
   const familiarName = model.familiar?.display_name ?? model.familiarId;
   const familiarRole = model.familiar?.role || model.familiar?.harness || "Familiar";
-  const confidence = model.confidence;
   const sessionsTotal = model.recentSessions.length;
   const streakDays = model.progression?.streakDays ?? 0;
   const lastActive = model.growthReport?.lastActiveAt ?? model.recentSessions[0]?.updated_at ?? null;
   // The dock's one plain-language sentence about this familiar — the same
   // synthesis the roster insight uses, so both surfaces read the same way.
-  const insight = deriveAnalyticsInsight(model, healRequestCount);
+  const insight = deriveAnalyticsInsight(model, healRequestCount, {
+    confidence,
+    threadReportCount: confidence.reportCount,
+  });
   const passCount = contractReport
     ? contractReport.properties.filter((property) => property.pass).length
     : 0;
