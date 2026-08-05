@@ -123,6 +123,16 @@ test("accepts every canonical BaselineAttention combo", () => {
     operationId: "run-3",
     baselineAttention: { state: "none", since: null, reason: null },
   });
+  const nullPrototypeBaseline = Object.assign(Object.create(null) as Record<string, unknown>, {
+    state: "none",
+    since: null,
+    reason: null,
+  });
+  assert.deepEqual(clearWithBaseline(nullPrototypeBaseline), {
+    sessionId: "session-3",
+    operationId: "run-3",
+    baselineAttention: { state: "none", since: null, reason: null },
+  });
   assert.deepEqual(clearWithBaseline({
     state: "left-hanging",
     since: "2026-08-05T00:00:00.000Z",
@@ -182,6 +192,34 @@ test("drops malformed optional baseline evidence without losing the valid event 
   rejectsBaseline({ state: "awaiting-human", since: {}, reason: "approval" });
   rejectsBaseline({ state: "overdue-human", since: "2026-08-05T00:00:00.000Z", reason: {} });
   rejectsBaseline({ state: "overdue-human", since: "2026-08-05T00:00:00.000Z", reason: " approval " });
+  rejectsBaseline({ state: "none", since: null, reason: null, extra: true });
+});
+
+test("baseline attention evidence must use exact own data properties", () => {
+  const reviewerInheritedBaseline = Object.create({
+    state: "awaiting-human",
+    since: "2026-08-05T00:00:00.000Z",
+    reason: "approval",
+  });
+  assert.equal(clearWithBaseline(reviewerInheritedBaseline), null);
+
+  for (const key of ["state", "since", "reason"] as const) {
+    let getterCalls = 0;
+    const accessorBaseline = {
+      state: "none",
+      since: null,
+      reason: null,
+    } as Record<string, unknown>;
+    Object.defineProperty(accessorBaseline, key, {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return key === "state" ? "none" : null;
+      },
+    });
+    assert.equal(clearWithBaseline(accessorBaseline), null, `${key} accessor must reject the event payload`);
+    assert.equal(getterCalls, 0, `${key} getter must not be invoked while rejecting the payload`);
+  }
 });
 
 test("legacy session-only compatibility is exact and never revives malformed modern payloads", () => {
@@ -364,14 +402,15 @@ test("rejects non-string and blank/whitespace-only detail fields", () => {
 
 await test("emits dispatchable clear and settlement events with trimmed ids", async () => {
   await withMockWindow((dispatched) => {
+    const trustedBaseline: ChatAttention = {
+      state: "left-hanging",
+      since: "2026-08-04T00:00:00.000Z",
+      reason: null,
+    };
     emitChatAttentionClear(" session-5 ", " run-5 ", {
       clearWatermark: "2026-08-05T00:00:01.000Z",
       scopeKey: " familiar:sage ",
-      baselineAttention: {
-        state: "left-hanging",
-        since: "2026-08-04T00:00:00.000Z",
-        reason: null,
-      },
+      baselineAttention: trustedBaseline,
     });
     emitChatAttentionSettlement(" session-6 ", " run-6 ", "persisted");
     assert.equal(dispatched.length, 2);

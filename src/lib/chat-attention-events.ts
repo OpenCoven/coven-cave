@@ -44,6 +44,8 @@ const LEGACY_CLEAR_DETAIL_KEYS = new Set<string>(["sessionId"]);
 const CLEAR_DETAIL_KEYS = new Set<string>(["sessionId", ...MODERN_CLEAR_DETAIL_KEYS]);
 const SETTLE_DETAIL_KEYS = new Set<string>(["sessionId", "operationId", "outcome"]);
 const RECOGNIZED_DETAIL_KEYS = new Set<string>([...CLEAR_DETAIL_KEYS, ...SETTLE_DETAIL_KEYS]);
+const ATTENTION_DETAIL_KEYS = ["state", "since", "reason"] as const;
+const ATTENTION_DETAIL_KEY_SET = new Set<string>(ATTENTION_DETAIL_KEYS);
 
 function isPlainDetailObject(detail: unknown): detail is Record<string, unknown> {
   if (!detail || typeof detail !== "object" || Array.isArray(detail)) return false;
@@ -101,10 +103,29 @@ function isExactlyNull(value: unknown): value is null {
 // payload rather than a formatting accident worth normalizing away.
 // A non-canonical timestamp or any other since/reason combo is rejected
 // outright (returns null) rather than silently coerced.
+function attentionDetailValues(
+  value: unknown,
+): { state: unknown; since: unknown; reason: unknown } | null {
+  if (!isPlainDetailObject(value)) return null;
+  const ownKeys = Reflect.ownKeys(value);
+  if (ownKeys.length !== ATTENTION_DETAIL_KEYS.length) return null;
+  if (!ownKeys.every((key) => typeof key === "string" && ATTENTION_DETAIL_KEY_SET.has(key))) return null;
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const state = descriptors.state;
+  const since = descriptors.since;
+  const reason = descriptors.reason;
+  if (!state || !since || !reason) return null;
+  if (!("value" in state) || !("value" in since) || !("value" in reason)) return null;
+  return {
+    state: state.value,
+    since: since.value,
+    reason: reason.value,
+  };
+}
+
 function normalizeAttentionDetail(value: unknown): ChatAttention | null {
-  if (!value || typeof value !== "object") return null;
-  const candidate = value as Record<string, unknown>;
-  if (!isChatAttentionState(candidate.state)) return null;
+  const candidate = attentionDetailValues(value);
+  if (!candidate || !isChatAttentionState(candidate.state)) return null;
   const state = candidate.state;
   const since = candidate.since;
   const reason = candidate.reason;
