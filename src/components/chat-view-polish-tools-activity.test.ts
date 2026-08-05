@@ -188,6 +188,19 @@ assert.match(
   "ToolBlock should color-code by tool category (data-tool-category + per-category icon)",
 );
 
+// Both ToolBlock <summary> variants must carry focus-ring so keyboard nav
+// can reach the disclosure without custom :focus-visible overrides.
+assert.match(
+  source,
+  /cave-edit-card__summary focus-ring/,
+  "edit-card summary (isEditTool path) must carry focus-ring",
+);
+assert.match(
+  source,
+  /className="cave-tool-block"[\s\S]{0,200}<summary[^>]*focus-ring/,
+  "generic ToolBlock summary (non-edit path) must carry focus-ring",
+);
+
 // Tool-use disclosures must never default open (the transcript stays clean).
 // ReasoningBlock and ToolRunGroup are the two exceptions — each `open` is a
 // controlled binding (Show-thinking preference / useToolRunDisclosure,
@@ -293,6 +306,15 @@ assert.match(
 );
 
 // ── Task 4: CSS density contract ────────────────────────────────────────────
+
+// The per-turn "N tools" show/hide toggle (CHAT-D13-01) was removed when tools
+// got a designated always-present activity slot; its CSS is dead and must be
+// pruned to prevent ghost selector confusion.
+assert.doesNotMatch(
+  activityCss,
+  /\.cave-turn-tools-toggle/,
+  "cave-turn-tools-toggle CSS is removed — the per-turn toggle is gone",
+);
 
 assert.match(
   styles,
