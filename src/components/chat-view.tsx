@@ -8269,16 +8269,14 @@ function TurnRowImpl({
   // `attachment` events; this keeps the in-flight turn clean before reload.
   const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(turn.text).text);
   const inlineReasoning = reasoningSplit.reasoning;
-  // GitHub markers: while streaming, strip complete + partial `<coven:github…>`
-  // tags so they never flash as raw text (cards mount on settle); settled
-  // turns keep them for splitSegmentsForGitHub below to replace with cards.
-  const ghSafeVisible = turn.pending
-    ? stripImageMarkers(stripGitHubMarkers(reasoningSplit.visible))
-    : reasoningSplit.visible;
   // Skill markers extract on BOTH paths — the whole point is live "which
   // skill, what stage" visibility while the agent works (design §5). The
-  // extraction also strips partial tails so raw tags never flash.
-  const skillSplit = extractSkillMarkers(ghSafeVisible);
+  // extraction also strips partial tails so raw tags never flash. This reads
+  // reasoningSplit.visible DIRECTLY: skill/auto-status/attention/next-path
+  // extraction must all see the full marker-bearing text before anything
+  // strips GitHub/image markers out from under them (see the GitHub/image
+  // cleanup below, which is the only place that happens now).
+  const skillSplit = extractSkillMarkers(reasoningSplit.visible);
   // Auto-mission status card (design mirrors skill markers): extracted the
   // same way, on both the streaming and settled path, so the phase chip
   // (clarifying/working/blocked/done) updates live.
@@ -8292,7 +8290,14 @@ function TurnRowImpl({
   // the sidebar, derived from persisted `attentionRequest` metadata.
   const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible);
   const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(attentionSplit.visible);
-  const visible = turn.pending ? visibleWithGh : stripImageMarkers(stripGitHubMarkers(visibleWithGh));
+  // GitHub/image markers: strip complete + partial `<coven:github…>` /
+  // `<coven:image…>` tags out of the PROSE fallback so they never flash as
+  // raw text on either path (cards mount on settle via visibleWithGh below,
+  // which still carries the markers for splitSegmentsForGitHub/Images to
+  // replace with cards). Runs unconditionally, LAST, after next-path
+  // extraction — never before skill/auto-status/attention/next-path have all
+  // seen the marker-bearing text.
+  const visible = stripImageMarkers(stripGitHubMarkers(visibleWithGh));
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no

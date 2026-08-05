@@ -20,6 +20,16 @@ const chatView = await readFile(
   "utf8",
 );
 
+function chatViewAttentionPipeline() {
+  const start = chatView.indexOf(
+    "const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(turn.text).text);",
+  );
+  const end = chatView.indexOf("const reasoning = turn.reasoning?.trim() || inlineReasoning;");
+  assert.notEqual(start, -1, "expected the chat-view marker pipeline to start at reasoningSplit");
+  assert.notEqual(end, -1, "expected the chat-view marker pipeline to end before reasoning fallback");
+  return chatView.slice(start, end);
+}
+
 test("route imports the attention marker parser", () => {
   assert.match(
     route,
@@ -124,15 +134,69 @@ test("ChatView extracts attention after skill/auto-status and before next-path/G
   // attention extractor, and the attention-stripped visible feeds
   // extractNextPaths — never the reverse and never skipped, so a complete OR
   // partial `<coven:attention>` tag can't flash mid-stream.
-  assert.match(
-    chatView,
-    /const autoStatusSplit = extractAutoStatusMarkers\(skillSplit\.visible\);[\s\S]{0,700}const attentionSplit = extractChatAttentionMarker\(autoStatusSplit\.visible\);[\s\S]{0,200}extractNextPaths\(attentionSplit\.visible\)/,
+  const pipeline = chatViewAttentionPipeline();
+  const autoStatusIndex = pipeline.indexOf(
+    "const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);",
+  );
+  const attentionIndex = pipeline.indexOf(
+    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible);",
+  );
+  const nextPathsIndex = pipeline.indexOf(
+    "const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(attentionSplit.visible);",
+  );
+  assert.notEqual(autoStatusIndex, -1, "auto-status extraction should read skillSplit.visible");
+  assert.notEqual(attentionIndex, -1, "attention extraction should read autoStatusSplit.visible");
+  assert.notEqual(nextPathsIndex, -1, "next-path extraction should read attentionSplit.visible");
+  assert.ok(
+    autoStatusIndex < attentionIndex && attentionIndex < nextPathsIndex,
     "attention extraction must run strictly between auto-status extraction and next-path extraction",
   );
   assert.doesNotMatch(
     chatView,
     /extractNextPaths\((?:ghSafeVisible|turn\.text|reasoningSplit\.visible|skillSplit\.visible|autoStatusSplit\.visible)\)/,
     "next-paths must never run on text upstream of the attention split — a raw or partial marker would flash",
+  );
+});
+
+test("ChatView never strips GitHub/image markers before skill/auto-status/attention extraction sees the marker-bearing text", () => {
+  // The order test above only pins that attention sits between auto-status and
+  // next-path textually — it says nothing about whether an EARLIER step (e.g.
+  // a pending-turn GitHub/image pre-clean feeding extractSkillMarkers) already
+  // stripped markers out of the text before skill/auto-status/attention ever
+  // ran. Pin the actual head of the pipeline: extractSkillMarkers must consume
+  // reasoningSplit.visible directly, with no intermediate stripped variable.
+  const pipeline = chatViewAttentionPipeline();
+  assert.match(
+    pipeline,
+    /const inlineReasoning = reasoningSplit\.reasoning;[\s\S]{0,700}const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);/,
+    "skill markers must extract directly from reasoningSplit.visible — nothing may strip GitHub/image markers out of the marker-bearing text before skill/auto-status/attention/next-path all see it",
+  );
+  const attentionIndex = pipeline.indexOf(
+    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible);",
+  );
+  const stripGitHubIndex = pipeline.indexOf("stripGitHubMarkers(");
+  const stripImageIndex = pipeline.indexOf("stripImageMarkers(");
+  assert.notEqual(attentionIndex, -1, "attention extraction should remain present in the pipeline");
+  assert.notEqual(stripGitHubIndex, -1, "GitHub-marker stripping should still happen later in the pipeline");
+  assert.notEqual(stripImageIndex, -1, "image-marker stripping should still happen later in the pipeline");
+  assert.ok(
+    attentionIndex < stripGitHubIndex && attentionIndex < stripImageIndex,
+    "stripGitHubMarkers/stripImageMarkers must not appear anywhere in the pipeline before extractChatAttentionMarker",
+  );
+});
+
+test("ChatView strips GitHub/image markers only after next-path extraction, unconditionally on both pending and settled turns", () => {
+  // Complements the two tests above: this pins the TAIL of the pipeline.
+  // GitHub/image cleanup must consume `visibleWithGh` (next-path extraction's
+  // output) unconditionally — not gated behind `turn.pending ? visibleWithGh :
+  // strip(...)`, which would mean the settled path cleans up post-next-paths
+  // while the pending path (streaming) never gets this late cleanup at all
+  // because it was already (wrongly) pre-cleaned upstream of skill/auto-status.
+  const pipeline = chatViewAttentionPipeline();
+  assert.match(
+    pipeline,
+    /const \{ visible: visibleWithGh, suggestions: nextPaths \} = extractNextPaths\(attentionSplit\.visible\);[\s\S]*const visible = stripImageMarkers\(stripGitHubMarkers\(visibleWithGh\)\);/,
+    "GitHub/image cleanup must run unconditionally, immediately after next-path extraction resolves visibleWithGh, on both pending and settled turns",
   );
 });
 
