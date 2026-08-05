@@ -82,7 +82,7 @@ function buttonsWithLabelBlocks() {
   return found;
 }
 
-test("no Button ships an EmptyView label without hiding it from assistive tech", () => {
+test("no Button { } label: { EmptyView() } ships without hiding it from assistive tech", () => {
   const offenders = buttonsWithLabelBlocks()
     .filter((b) => /^\{\s*EmptyView\(\)\s*\}$/.test(b.label.replace(/\s+/g, " ").trim()))
     .filter((b) => !/accessibilityHidden\(\s*true\s*\)/.test(b.modifiers))
@@ -91,7 +91,7 @@ test("no Button ships an EmptyView label without hiding it from assistive tech",
   assert.deepEqual(
     offenders,
     [],
-    `A Button whose label is EmptyView() has no accessible name — VoiceOver ` +
+    `A Button { } label: { EmptyView() } has no accessible name — VoiceOver ` +
       `announces a bare "button". Either give it a real label, or, if it exists ` +
       `only to host a keyboard shortcut that duplicates a reachable control, ` +
       `mark it .accessibilityHidden(true). Offenders:\n  ${offenders.join("\n  ")}`,
@@ -100,7 +100,13 @@ test("no Button ships an EmptyView label without hiding it from assistive tech",
 
 test("the ⌘1–4 destination shortcuts stay out of the accessibility tree", () => {
   const rootView = readFileSync(join(appRoot, "Views/RootView.swift"), "utf8");
-  const shortcuts = rootView.slice(rootView.indexOf("AppTab.shortcutOrder"));
+  const anchorIndex = rootView.indexOf("AppTab.shortcutOrder");
+  assert.notEqual(
+    anchorIndex,
+    -1,
+    "AppTab.shortcutOrder anchor not found in RootView.swift — has the shortcut block been renamed or removed?",
+  );
+  const shortcuts = rootView.slice(anchorIndex);
   assert.match(
     shortcuts.slice(0, 900),
     /label:\s*\{\s*EmptyView\(\)\s*\}[\s\S]{0,200}?keyboardShortcut[\s\S]{0,600}?accessibilityHidden\(true\)/,
