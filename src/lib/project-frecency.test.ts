@@ -7,6 +7,7 @@ import {
   MAX_TRACKED_PROJECTS,
   frecencyScore,
   loadFrecencyStore,
+  migrateStoredProjectFrecencyRoots,
   pruneStore,
   rankProjectsByFrecency,
   recordProjectPick,
@@ -203,6 +204,47 @@ test("a pick round-trips through storage", () => {
     assert.equal(store["/w/alpha"].picks, 2);
     assert.equal(store["/w/alpha"].lastPickedAt, NOW + DAY);
   });
+});
+
+test("root migration preserves and combines persisted frecency", () => {
+  const backing = new Map<string, string>([
+    [
+      "cave:project-frecency:v1",
+      JSON.stringify({
+        "~/code/app": { picks: 2, lastPickedAt: NOW },
+        "/home/dev/code/app": { picks: 3, lastPickedAt: NOW + DAY },
+        "/untouched": { picks: 1, lastPickedAt: NOW },
+      }),
+    ],
+  ]);
+  const storage = {
+    getItem: (key: string) => backing.get(key) ?? null,
+    setItem: (key: string, value: string) => void backing.set(key, value),
+  };
+  assert.deepEqual(
+    migrateStoredProjectFrecencyRoots(storage, [
+      { from: "~/code/app", to: "/home/dev/code/app" },
+    ]),
+    ["~/code/app"],
+  );
+  assert.deepEqual(JSON.parse(backing.get("cave:project-frecency:v1") ?? "{}"), {
+    "/home/dev/code/app": { picks: 5, lastPickedAt: NOW + DAY },
+    "/untouched": { picks: 1, lastPickedAt: NOW },
+  });
+  assert.throws(
+    () =>
+      migrateStoredProjectFrecencyRoots(
+        {
+          getItem: storage.getItem,
+          setItem: () => {
+            throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+          },
+        },
+        [{ from: "/home/dev/code/app", to: "/new/root" }],
+      ),
+    /frecency migration storage write failed/i,
+    "migration writes surface storage denial so root aliases remain retryable",
+  );
 });
 
 // A broken picker is far worse than an unranked one, so every malformed shape

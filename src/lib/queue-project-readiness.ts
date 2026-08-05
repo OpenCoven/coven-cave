@@ -289,6 +289,19 @@ export async function queueProjectReadiness(options: QueueProjectReadinessOption
       canGenerate: false,
     };
   }
+  if (project.id !== projectId) {
+    try {
+      await writeSelectedProjectId(queueProjectFilePath(), project.id);
+    } catch {
+      return {
+        ok: false,
+        code: "project-storage-error",
+        message: "Cave could not migrate the saved Queue project selection. Check Cave home permissions and try again.",
+        project: null,
+        canGenerate: false,
+      };
+    }
+  }
   const selected = projectShape(project);
 
   // A project created on another OS can be syntactically non-absolute on this

@@ -159,7 +159,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const projectTarget = resolveProjectPathForGitRoot\(root\.projectRoot, root\.repoRoot, body\.path\);[\s\S]{0,200}?resolveContainedFile\(root\.projectRoot, projectTarget\.projectRelativePath\)/,
+  /const projectTarget = resolveNativeProjectPathForGitRoot\([\s\S]{0,160}?root\.projectRoot,[\s\S]{0,80}?root\.repoRoot,[\s\S]{0,80}?body\.path,[\s\S]{0,160}?resolveContainedFile\(root\.projectRoot, projectTarget\.projectRelativePath\)/,
   "revert resolves the requested target under the captured project before using the enclosing git root",
 );
 assert.match(
@@ -184,18 +184,23 @@ assert.match(
 );
 assert.match(
   source,
-  /resolveRepoRoot\(\s*body\.projectRoot,\s*action === "revert" \? "scoped-revert" : "standard",\s*\)/,
-  "only the explicit revert action receives scoped enclosing-Git-root authority",
+  /action === "revert" \|\| action === "restore-checkpoint"[\s\S]{0,80}\? "scoped-revert"[\s\S]{0,40}: "standard"/,
+  "revert and metadata-bounded restore receive scoped enclosing-Git-root authority",
 );
 assert.match(
   source,
-  /checkpointChanges\(root\.repoRoot, \{\s*projectRoot: root\.projectRoot,\s*projectPathspec: root\.projectPathspec,/,
-  "the revert safety checkpoint is constrained to the captured project scope",
+  /checkpointChanges\(root\.repoRoot, \{\s*projectRoot: root\.projectRoot,\s*targetProjectRelativePath: projectTarget\.projectRelativePath,\s*targetGitPath: projectTarget\.gitRelativePath,/,
+  "the revert safety checkpoint is constrained to the exact destructive target",
 );
 assert.match(
   source,
-  /args\.push\("--no-renames", "--", literalGitPathspec\(projectPathspec\)\)[\s\S]*?scopedPathspec[\s\S]*?\["--binary", "--no-renames", "HEAD", "--", scopedPathspec\]/,
-  "scoped status and checkpoint diffs use literal pathspecs with cross-boundary rename detection disabled",
+  /scope \? literalGitPathspec\(scope\.targetGitPath\) : null[\s\S]*?\["--binary", "--no-renames", "HEAD", "--", scopedPathspec\]/,
+  "automatic checkpoint diffs use one literal target pathspec with rename detection disabled",
+);
+assert.match(
+  source,
+  /nativeProjectPathsEqual\(metadata\.projectRoot, root\.projectRoot\)[\s\S]{0,180}?target\.gitRelativePath !== metadata\.targetGitPath/,
+  "scoped restore requires checkpoint metadata for the exact captured project and target",
 );
 
 // remote=1 — read-only origin probe powering the project-setup modal's GitHub

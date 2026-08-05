@@ -25,7 +25,7 @@
 // and a reader that accepts only recognized values so stale or hand-edited
 // storage cannot wedge the composer.
 
-const NEW_SESSION_DEFAULTS_KEY = "cave:chat:new-session-defaults:v1";
+export const NEW_SESSION_DEFAULTS_KEY = "cave:chat:new-session-defaults:v1";
 
 export type ChatNewSessionDefaults = {
   /** Project id, or null to keep inferring from the most recent chat. */
@@ -80,6 +80,45 @@ export function clearNewSessionDefaults(storage: Pick<Storage, "removeItem"> | n
   } catch {
     /* nothing actionable */
   }
+}
+
+/** Rewrite the durable default after duplicate project ids collapse. */
+export function migrateStoredNewSessionProjectId(
+  storage: Pick<Storage, "getItem" | "setItem">,
+  migrations: ReadonlyMap<string, string>,
+): boolean {
+  if (migrations.size === 0) return false;
+  let raw: string | null;
+  try {
+    raw = storage.getItem(NEW_SESSION_DEFAULTS_KEY);
+  } catch (error) {
+    throw new Error("new-session project-id migration storage read failed", {
+      cause: error,
+    });
+  }
+  if (!raw) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  const projectId = (parsed as { projectId?: unknown }).projectId;
+  if (typeof projectId !== "string") return false;
+  const survivor = migrations.get(projectId);
+  if (!survivor) return false;
+  try {
+    storage.setItem(
+      NEW_SESSION_DEFAULTS_KEY,
+      JSON.stringify({ ...parsed, projectId: survivor }),
+    );
+  } catch (error) {
+    throw new Error("new-session project-id migration storage failed", {
+      cause: error,
+    });
+  }
+  return true;
 }
 
 /** True when the saved default already matches what is selected — the button

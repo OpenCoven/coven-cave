@@ -134,6 +134,71 @@ export function rankProjectsByFrecency(
 
 const STORAGE_KEY = "cave:project-frecency:v1";
 
+function validFrecencyEntry(value: unknown): FrecencyEntry | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const { picks, lastPickedAt } = value as Partial<FrecencyEntry>;
+  if (typeof picks !== "number" || !Number.isFinite(picks) || picks <= 0) return null;
+  if (typeof lastPickedAt !== "number" || !Number.isFinite(lastPickedAt)) return null;
+  return { picks, lastPickedAt };
+}
+
+/** Re-key durable picker history before the server retires legacy root aliases. */
+export function migrateStoredProjectFrecencyRoots(
+  storage: Pick<Storage, "getItem" | "setItem">,
+  moves: readonly { from: string; to: string }[],
+): string[] {
+  if (moves.length === 0) return [];
+  let raw: string | null;
+  try {
+    raw = storage.getItem(STORAGE_KEY);
+  } catch (error) {
+    throw new Error("project frecency migration storage read failed", {
+      cause: error,
+    });
+  }
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+
+  const next = { ...(parsed as Record<string, unknown>) };
+  const migrated: string[] = [];
+  for (const { from, to } of moves) {
+    const toKey = rootKey(to);
+    let destination = validFrecencyEntry(next[toKey]);
+    let moved = false;
+    for (const fromKey of new Set([from, rootKey(from)])) {
+      if (fromKey === toKey) continue;
+      const source = validFrecencyEntry(next[fromKey]);
+      if (!source) continue;
+      destination = destination
+        ? {
+            picks: destination.picks + source.picks,
+            lastPickedAt: Math.max(destination.lastPickedAt, source.lastPickedAt),
+          }
+        : source;
+      delete next[fromKey];
+      moved = true;
+    }
+    if (!moved || !destination) continue;
+    next[toKey] = destination;
+    migrated.push(from);
+  }
+  if (migrated.length === 0) return [];
+  try {
+    storage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch (error) {
+    throw new Error("project frecency migration storage write failed", {
+      cause: error,
+    });
+  }
+  return migrated;
+}
+
 /**
  * Read the store. Never throws: a corrupt or foreign value degrades to "no
  * history", because a broken picker is far worse than an unranked one.

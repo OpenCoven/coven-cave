@@ -39,7 +39,7 @@ try {
     GRANT_ACCEPT_UNDO_WINDOW_MS,
     ProjectAccessDeniedError,
   } = await import("./project-permissions.ts");
-  const { withProjectRegistryLock } = await import("./cave-projects.ts");
+  const { loadProjects, withProjectRegistryLock } = await import("./cave-projects.ts");
 
   const projects = [
     { id: "cave", name: "Cave", root: "/tmp/cave", createdAt: "now", updatedAt: "now" },
@@ -503,6 +503,160 @@ try {
     ),
     "a concurrent registry restore cannot lose its existing permission record",
   );
+
+  // Duplicate project rows can carry different random ids for the same root.
+  // The newest row survives, and every durable permission reference that still
+  // names a losing id must resolve through the survivor rather than becoming an
+  // orphan (or silently dropping access).
+  await writeFile(
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+    JSON.stringify({
+      version: 1,
+      projects: [
+        {
+          id: "duplicate-old",
+          name: "Old duplicate",
+          root: "/tmp/duplicate",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "duplicate-survivor",
+          name: "Duplicate",
+          root: "/tmp/duplicate/",
+          createdAt: "2026-01-02T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+  await writeFile(
+    process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE,
+    JSON.stringify({
+      version: 2,
+      projectGrants: [
+        {
+          familiarId: "legacy-grantee",
+          projectId: "duplicate-old",
+          access: "read",
+          source: "human",
+          grantedAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          familiarId: "legacy-grantee",
+          projectId: "duplicate-survivor",
+          access: "write",
+          source: "human",
+          grantedAt: "2026-01-02T00:00:00.000Z",
+        },
+      ],
+      accessGroups: [{
+        id: "legacy-group",
+        name: "Legacy group",
+        memberFamiliarIds: ["group-grantee"],
+        projectGrants: [{
+          projectId: "duplicate-old",
+          access: "read",
+          grantedAt: "2026-01-01T00:00:00.000Z",
+        }, {
+          projectId: "duplicate-survivor",
+          access: "write",
+          grantedAt: "2026-01-02T00:00:00.000Z",
+        }],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }],
+      grantProposals: [{
+        id: "legacy-proposal",
+        proposedBy: "supreme",
+        targetFamiliarId: "proposal-target",
+        projectId: "duplicate-old",
+        status: "pending",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }],
+      permissionAudit: [{
+        id: "legacy-check",
+        at: "2026-01-01T00:00:00.000Z",
+        familiarId: "legacy-grantee",
+        projectId: "duplicate-old",
+        surface: "chat",
+        decision: "allow",
+        reason: "grant",
+      }],
+      grantAudit: [{
+        id: "legacy-change",
+        at: "2026-01-01T00:00:00.000Z",
+        familiarId: "legacy-grantee",
+        projectId: "duplicate-old",
+        from: null,
+        to: "read",
+        actor: "system",
+        kind: "direct",
+      }],
+      repairAudit: [{
+        at: "2026-01-01T00:00:00.000Z",
+        kind: "orphan-project-repair",
+        directGrants: 1,
+        groupGrants: 0,
+        proposals: 0,
+        orphanProjectIds: ["duplicate-old"],
+      }],
+    }),
+    "utf8",
+  );
+
+  const [duplicateSurvivor] = await loadProjects();
+  assert.equal(duplicateSurvivor?.id, "duplicate-survivor");
+  assert.deepEqual(duplicateSurvivor?.legacyProjectIds, ["duplicate-old"]);
+  assert.deepEqual(
+    (await filterProjectsForFamiliar([duplicateSurvivor], "legacy-grantee")).map((project) => project.id),
+    ["duplicate-survivor"],
+    "a direct grant under the losing id grants access to the survivor",
+  );
+  assert.deepEqual(
+    (await filterProjectsForFamiliar([duplicateSurvivor], "group-grantee")).map((project) => project.id),
+    ["duplicate-survivor"],
+    "group grants follow the same losing-id migration map",
+  );
+  await assertProjectAccess({ familiarId: "legacy-grantee" }, "duplicate-survivor", "chat");
+  await assertProjectAccess(
+    { familiarId: "legacy-grantee" },
+    "duplicate-survivor",
+    "file-write",
+  );
+  await assertProjectAccess(
+    { familiarId: "group-grantee" },
+    "duplicate-survivor",
+    "file-write",
+  );
+
+  const remappedPermissions = await loadProjectPermissions();
+  assert.equal(remappedPermissions.projectGrants[0]?.projectId, "duplicate-survivor");
+  assert.equal(remappedPermissions.accessGroups[0]?.projectGrants[0]?.projectId, "duplicate-survivor");
+  assert.equal(remappedPermissions.grantProposals[0]?.projectId, "duplicate-survivor");
+  assert.equal(remappedPermissions.permissionAudit[0]?.projectId, "duplicate-survivor");
+  assert.equal(remappedPermissions.grantAudit[0]?.projectId, "duplicate-survivor");
+  assert.deepEqual(remappedPermissions.repairAudit[0]?.orphanProjectIds, ["duplicate-survivor"]);
+
+  await grantProjectToFamiliar({
+    familiarId: "new-grantee",
+    projectId: "duplicate-survivor",
+    source: "human",
+    access: "read",
+  });
+  const migratedPermissionDisk = JSON.parse(
+    await readFile(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, "utf8"),
+  );
+  assert.equal(
+    migratedPermissionDisk.projectGrants.some((grant) => grant.projectId === "duplicate-old"),
+    false,
+    "the next permission mutation atomically persists every remapped reference",
+  );
+  assert.equal(migratedPermissionDisk.accessGroups[0]?.projectGrants[0]?.projectId, "duplicate-survivor");
+  assert.equal(migratedPermissionDisk.grantProposals[0]?.projectId, "duplicate-survivor");
+  assert.equal(migratedPermissionDisk.permissionAudit[0]?.projectId, "duplicate-survivor");
+  assert.equal(migratedPermissionDisk.grantAudit[0]?.projectId, "duplicate-survivor");
 
   console.log("project-permissions.test.ts: ok");
 } finally {

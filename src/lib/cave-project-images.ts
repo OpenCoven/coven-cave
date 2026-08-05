@@ -113,13 +113,22 @@ export async function clearProjectImage(root: string): Promise<void> {
   broadcast();
 }
 
-async function moveProjectImageKey(from: string, to: string): Promise<void> {
+async function moveProjectImageKey(
+  from: string,
+  to: string,
+  surfaceFailure = false,
+): Promise<void> {
   await ensureHydrated();
   if (from === to) return;
   let result;
   try {
     result = await avatarStorage().move("projectAvatars", from, to);
-  } catch {
+  } catch (error) {
+    if (surfaceFailure) {
+      throw new Error("project avatar migration storage failed", {
+        cause: error,
+      });
+    }
     return;
   }
   const next = { ...cached };
@@ -142,7 +151,7 @@ export async function moveProjectImageFromStorageKey(
   fromKey: string,
   toRoot: string,
 ): Promise<void> {
-  await moveProjectImageKey(fromKey, normalizeProjectRoot(toRoot));
+  await moveProjectImageKey(fromKey, normalizeProjectRoot(toRoot), true);
 }
 
 function subscribe(fn: () => void): () => void {

@@ -12,6 +12,7 @@ const siblingRoot = path.join(repoRoot, "packages", "sibling");
 const runnerCwd = path.join(artifactRoot, "runner");
 const projectsPath = path.join(artifactRoot, "projects.json");
 const appFile = path.join(projectRoot, "src", "a.ts");
+const unrelatedUntrackedFile = path.join(projectRoot, "notes", "keep.txt");
 const parentFile = path.join(repoRoot, "src", "a.ts");
 const siblingFile = path.join(siblingRoot, "src", "a.ts");
 const envKeys = [
@@ -34,11 +35,28 @@ function restoreEnv() {
   }
 }
 
-function revertRequest(targetPath: string): Request {
+function revertRequest(targetPath: string, confirmUntracked = false): Request {
   return new Request("http://127.0.0.1/api/changes", {
     method: "POST",
     headers: { "content-type": "application/json", host: "127.0.0.1" },
-    body: JSON.stringify({ action: "revert", projectRoot, path: targetPath }),
+    body: JSON.stringify({
+      action: "revert",
+      projectRoot,
+      path: targetPath,
+      confirmUntracked,
+    }),
+  });
+}
+
+function checkpointRequest(
+  action: "restore-checkpoint" | "delete-checkpoint",
+  root: string,
+  checkpoint: string,
+): Request {
+  return new Request("http://127.0.0.1/api/changes", {
+    method: "POST",
+    headers: { "content-type": "application/json", host: "127.0.0.1" },
+    body: JSON.stringify({ action, projectRoot: root, checkpoint }),
   });
 }
 
@@ -76,6 +94,9 @@ try {
     writeFile(appFile, "app edited\n"),
     writeFile(parentFile, "parent edited\n"),
     writeFile(siblingFile, "sibling edited\n"),
+    mkdir(path.dirname(unrelatedUntrackedFile), { recursive: true }).then(() =>
+      writeFile(unrelatedUntrackedFile, "keep me\n")
+    ),
   ]);
 
   await writeFile(
@@ -122,6 +143,60 @@ try {
     checkpoint,
     /diff --git a\/packages\/sibling\//,
     "the safety checkpoint excludes sibling projects",
+  );
+  assert.doesNotMatch(
+    checkpoint,
+    /packages\/app\/notes\/keep\.txt/,
+    "an automatic safety checkpoint contains only the reverted target",
+  );
+
+  const checkpointName = path.basename(revertedBody.checkpointPath);
+  const restored = await POST(checkpointRequest("restore-checkpoint", projectRoot, checkpointName));
+  assert.equal(restored.status, 200, await restored.clone().text());
+  assert.equal(await readFile(appFile, "utf8"), "app edited\n", "the nested-project edit round-trips");
+  assert.equal(
+    await readFile(unrelatedUntrackedFile, "utf8"),
+    "keep me\n",
+    "an unrelated untracked file neither blocks nor changes during restore",
+  );
+
+  const binaryFile = path.join(projectRoot, "src", "blob.bin");
+  const binaryContents = Buffer.from([0, 1, 2, 3, 255, 0, 128]);
+  await writeFile(binaryFile, binaryContents);
+  const binaryReverted = await POST(revertRequest(binaryFile, true));
+  assert.equal(binaryReverted.status, 200, await binaryReverted.clone().text());
+  await assert.rejects(() => readFile(binaryFile), "reverting the untracked binary deletes it");
+  const binaryCheckpointName = path.basename(
+    (await binaryReverted.json()).checkpointPath,
+  );
+  const binaryRestored = await POST(
+    checkpointRequest("restore-checkpoint", projectRoot, binaryCheckpointName),
+  );
+  assert.equal(binaryRestored.status, 200, await binaryRestored.clone().text());
+  assert.deepEqual(
+    await readFile(binaryFile),
+    binaryContents,
+    "an untracked binary target round-trips through its automatic checkpoint",
+  );
+
+  await writeFile(
+    projectsPath,
+    JSON.stringify({
+      version: 1,
+      projects: [
+        { id: "nested-app", name: "Nested App", root: projectRoot },
+        { id: "nested-sibling", name: "Nested Sibling", root: siblingRoot },
+      ],
+    }),
+  );
+  const wrongProjectRestore = await POST(
+    checkpointRequest("restore-checkpoint", siblingRoot, checkpointName),
+  );
+  assert.equal(wrongProjectRestore.status, 403);
+  assert.equal(
+    (await wrongProjectRestore.json()).error,
+    "checkpoint not authorized for project",
+    "a scoped checkpoint cannot authorize restoration under another captured project",
   );
 
   const broadCheckpoint = await POST(new Request("http://127.0.0.1/api/changes", {

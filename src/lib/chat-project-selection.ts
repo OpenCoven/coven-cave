@@ -11,6 +11,58 @@ export const PROJECT_SIDEBAR_KEYS = {
   selected: "cave:chat:project-selected",
 } as const;
 
+/** Rewrite durable sidebar selections after duplicate project IDs collapse. */
+export function migrateStoredProjectSelectionIds(
+  storage: Pick<Storage, "getItem" | "setItem">,
+  migrations: ReadonlyMap<string, string>,
+): number {
+  let changed = 0;
+  const read = (key: string): unknown => {
+    let raw: string | null;
+    try {
+      raw = storage.getItem(key);
+    } catch (error) {
+      throw new Error("project selection migration storage read failed", {
+        cause: error,
+      });
+    }
+    if (raw === null) return undefined;
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return undefined;
+    }
+  };
+  const write = (key: string, value: unknown): void => {
+    try {
+      storage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      throw new Error("project selection migration storage write failed", {
+        cause: error,
+      });
+    }
+  };
+
+  const selected = read(PROJECT_SIDEBAR_KEYS.selected);
+  if (typeof selected === "string") {
+    const next = migrations.get(selected);
+    if (next && next !== selected) {
+      write(PROJECT_SIDEBAR_KEYS.selected, next);
+      changed += 1;
+    }
+  }
+
+  const expanded = read(PROJECT_SIDEBAR_KEYS.expanded);
+  if (Array.isArray(expanded) && expanded.every((value) => typeof value === "string")) {
+    const mapped = expanded.map((value) => migrations.get(value) ?? value);
+    if (mapped.some((value, index) => value !== expanded[index])) {
+      write(PROJECT_SIDEBAR_KEYS.expanded, [...new Set(mapped)]);
+      changed += 1;
+    }
+  }
+  return changed;
+}
+
 export function selectionKey(projectId: string | null, projectRoot?: string | null): string {
   if (projectId) return projectId;
   if (projectRoot) return `root:${projectRoot}`;
