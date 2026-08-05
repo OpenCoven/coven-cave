@@ -1,22 +1,29 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-// realpath: readiness canonicalizes the Git toplevel, so a symlinked tmpdir
-// (macOS /var → /private/var) must not skew root-equality assertions.
-const tempDir = await realpath(await mkdtemp(path.join(os.tmpdir(), "cave-queue-project-")));
+const artifactRoot = path.join(
+  process.cwd(),
+  ".test-artifacts",
+  `queue-project-readiness-${process.pid}`,
+);
+await rm(artifactRoot, { recursive: true, force: true });
+await mkdir(artifactRoot, { recursive: true });
+const tempDir = await realpath(artifactRoot);
 const projectRoot = path.join(tempDir, "project");
+const spacedProjectRoot = path.join(tempDir, "project ");
 const nonGitRoot = path.join(tempDir, "not-a-git-project");
 const projectsPath = path.join(tempDir, "projects.json");
 const queueProjectPath = path.join(tempDir, "queue-project.json");
 const previousProjectsPath = process.env.CAVE_PROJECTS_PATH_OVERRIDE;
 const previousQueuePath = process.env.CAVE_QUEUE_PROJECT_PATH_OVERRIDE;
+const previousGitCeiling = process.env.GIT_CEILING_DIRECTORIES;
 
 process.env.CAVE_PROJECTS_PATH_OVERRIDE = projectsPath;
 process.env.CAVE_QUEUE_PROJECT_PATH_OVERRIDE = queueProjectPath;
+process.env.GIT_CEILING_DIRECTORIES = tempDir;
 
 try {
   await mkdir(projectRoot);
@@ -41,7 +48,24 @@ try {
     invalidateQueueProjectReadinessCache,
     queueProjectReadiness,
     selectQueueProject,
+    stripGitTerminatingLineEnding,
   } = await import("./queue-project-readiness.ts");
+
+  assert.equal(
+    stripGitTerminatingLineEnding("C:\\work\\queue\r\n", "win32"),
+    "C:\\work\\queue",
+    "Queue strips Git for Windows CRLF output",
+  );
+  assert.equal(
+    stripGitTerminatingLineEnding("/work/queue \n"),
+    "/work/queue ",
+    "Queue preserves valid POSIX trailing spaces",
+  );
+  assert.equal(
+    stripGitTerminatingLineEnding("/work/queue\r\n", "linux"),
+    "/work/queue\r",
+    "Queue strips only Git's LF on POSIX and preserves a carriage return in the path",
+  );
 
   assert.equal((await queueProjectReadiness()).code, "no-project", "Queue never falls back to the app cwd");
   assert.equal((await selectQueueProject("queue-project"))?.root, projectRoot, "selection persists a registered project");
@@ -183,6 +207,48 @@ try {
   assert.equal(needsBeads.code, "needs-beads");
   assert.equal(needsBeads.canGenerate, true, "only a selected Git repository can offer Generate");
   assert.equal(needsBeads.project?.root, projectRoot, "the selected repository remains the command root");
+
+  if (process.platform !== "win32") {
+    await mkdir(spacedProjectRoot);
+    execFileSync("git", ["init", "-q"], { cwd: spacedProjectRoot });
+    await writeFile(
+      projectsPath,
+      JSON.stringify({
+        version: 1,
+        projects: [{
+          id: "spaced-queue-project",
+          name: "Spaced Queue project",
+          root: spacedProjectRoot,
+          createdAt: "2026-08-05T00:00:00.000Z",
+          updatedAt: "2026-08-05T00:00:00.000Z",
+        }],
+      }),
+    );
+    await selectQueueProject("spaced-queue-project");
+    const spacedReadiness = await queueProjectReadiness({
+      beadsProbe: async () => ({ ok: true, stdout: "bd 0.1.0", stderr: "" }),
+    });
+    assert.equal(
+      spacedReadiness.code,
+      "needs-beads",
+      "a real Git repository whose POSIX path ends in a space remains selectable",
+    );
+    assert.equal(spacedReadiness.project?.root, spacedProjectRoot);
+    await writeFile(
+      projectsPath,
+      JSON.stringify({
+        version: 1,
+        projects: [{
+          id: "queue-project",
+          name: "Queue project",
+          root: projectRoot,
+          createdAt: "2026-07-23T00:00:00.000Z",
+          updatedAt: "2026-07-23T00:00:00.000Z",
+        }],
+      }),
+    );
+    await selectQueueProject("queue-project");
+  }
 
   await mkdir(path.join(projectRoot, ".beads"));
   const unavailable = await queueProjectReadiness({
@@ -341,6 +407,8 @@ try {
   else process.env.CAVE_PROJECTS_PATH_OVERRIDE = previousProjectsPath;
   if (previousQueuePath === undefined) delete process.env.CAVE_QUEUE_PROJECT_PATH_OVERRIDE;
   else process.env.CAVE_QUEUE_PROJECT_PATH_OVERRIDE = previousQueuePath;
+  if (previousGitCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES;
+  else process.env.GIT_CEILING_DIRECTORIES = previousGitCeiling;
   await rm(tempDir, { recursive: true, force: true });
 }
 

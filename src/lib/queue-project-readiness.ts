@@ -154,6 +154,15 @@ type GitTopLevel =
   | { ok: true; root: string }
   | { ok: false; code: "not-git-repository" | "git-unavailable" | "git-error"; message: string };
 
+export function stripGitTerminatingLineEnding(
+  stdout: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform === "win32" && stdout.endsWith("\r\n")) return stdout.slice(0, -2);
+  if (stdout.endsWith("\n")) return stdout.slice(0, -1);
+  return stdout;
+}
+
 async function gitTopLevel(root: string): Promise<GitTopLevel> {
   try {
     const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
@@ -161,7 +170,7 @@ async function gitTopLevel(root: string): Promise<GitTopLevel> {
       env: caveToolSpawnEnv(),
       timeout: GIT_TIMEOUT_MS,
     });
-    const top = stdout.trim();
+    const top = stripGitTerminatingLineEnding(stdout);
     if (!top) return { ok: false, code: "not-git-repository", message: "The selected Queue project is not a Git repository." };
     return { ok: true, root: await realpath(/* turbopackIgnore: true */ top) };
   } catch (cause) {
