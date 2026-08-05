@@ -910,10 +910,8 @@ assert.deepEqual(
   "a running invalid-root daemon session must suppress attention regardless of local transcript evidence",
 );
 
-// Regression (cave-zs85n Task 4 spec gap): the same invalid-root recovery
-// bug for "waiting" — an active status distinct from "running" — must be
-// covered independently, since ACTIVE_SESSION_STATUSES has to recognize it
-// too, not just the specific status the first regression happened to name.
+// Regression (cave-zs85n Task 4 gap): waiting is a distinct active status,
+// so this invalid-root recovery must suppress attention too.
 const invalidRootWaiting = mergeSessionRows({
   daemonSessions: [
     {
@@ -940,9 +938,7 @@ const invalidRootWaiting = mergeSessionRows({
       status: "completed",
       exitCode: 0,
       origin: "chat",
-      // Matching local attention evidence that would resolve to an
-      // overdue-human request if derived from the local row's own
-      // ("completed") status instead of the daemon's "waiting" truth.
+      // Local evidence would surface overdue-human if the daemon status leaked.
       attentionEvidence: {
         latestCompletedTurn: { role: "assistant", at: "2026-06-08T18:10:00.000Z" },
         latestUserTurnAt: null,
