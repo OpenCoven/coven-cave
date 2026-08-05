@@ -57,6 +57,11 @@ assert.match(
   /function ThreadAttentionCue\(\{ label \}: \{ label: string \| null \}\) \{\s*if \(!label\) return null;\s*return \(\s*<span className="cnav__attention">\s*<span className="cnav__attention-dot" aria-hidden \/>\s*<span>\{label\}<\/span>\s*<\/span>\s*\);\s*\}/,
   "the shared ThreadAttentionCue component should render the dot + label exactly once",
 );
+assert.match(
+  sidebar,
+  /\{project \? \(\s*<span className="cnav__thread-proj" title=\{project\.name\}>\s*<ProjectAvatar name=\{project\.name\} root=\{project\.root\} color=\{project\.color\} size="sm" \/>\s*<\/span>\s*\) : null\}\s*\{project \? <span className="sr-only">\{`Project \$\{project\.name\} `\}<\/span> : null\}/,
+  "flat ThreadRow rows should keep one persistent sr-only project context outside the collapsible project tile",
+);
 const threadAttentionCueCallSites = sidebar.match(/<ThreadAttentionCue label=\{attentionLabel\} \/>/g) ?? [];
 assert.equal(
   threadAttentionCueCallSites.length,
@@ -210,7 +215,7 @@ vi.mock("@/components/project-avatar", async () => {
 vi.mock("@/lib/icon", async () => {
   const { createElement } = await import("react");
   return {
-    Icon: () => createElement("span", { "aria-hidden": "true" }),
+    Icon: ({ name, className }) => createElement("span", { "aria-hidden": "true", "data-icon-name": name, className }),
   };
 });
 vi.mock("@/components/ui/popover", async () => {
@@ -1006,6 +1011,81 @@ test("a pinned archived session mutes to is-archived in the Pinned rail and drop
       (node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.includes("cnav__tick"),
     ),
   ).toHaveLength(1);
+
+  await act(async () => renderer.unmount());
+});
+
+test("an archived PR session shows archive semantics instead of a live PR badge in both pinned and full rows", async () => {
+  let renderer!: ReactTestRenderer;
+  const session = makeSession({
+    id: "session-archived-pr",
+    title: "Archived PR thread",
+    status: "idle",
+    project_root: "/repo/alpha",
+    archived_at: "2026-08-05T18:00:00.000Z",
+    updated_at: "2026-08-05T18:00:00.000Z",
+    pullRequest: { repo: "o/r", number: 42, state: "open" },
+    attention: { state: "awaiting-human", since: "2026-08-05T17:00:00.000Z", reason: "approval" },
+  });
+  sidebarPrefs.pinnedIds = [session.id];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, sessions: [session] }) })),
+  );
+
+  await act(async () => {
+    renderer = create(
+      createElement(WorkspaceSidebar, {
+        sessions: [],
+        familiars: [],
+        responseNeeded: new Set(),
+        onSelectFamiliar: () => undefined,
+        onOpenSession: () => undefined,
+        onNavigate: () => undefined,
+        onNewChat: () => undefined,
+        onDeleteSession: async () => undefined,
+        onOpenSettings: () => undefined,
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  const showArchivedItem = renderer.root.find(
+    (node) => typeof node.type === "string" && node.props.onSelect && textContent(node.children) === "Show archived",
+  );
+  await act(async () => {
+    showArchivedItem.props.onSelect();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  const pinnedSection = sectionByLabel(renderer, "Pinned threads");
+  const todaySection = sectionByLabel(renderer, "Today");
+  expect(sectionThreadTitles(pinnedSection)).toEqual(["Archived PR thread"]);
+  expect(sectionThreadTitles(todaySection)).toEqual(["Archived PR thread"]);
+
+  for (const row of [
+    rowContainerFor(pinnedSection, "Archived PR thread"),
+    rowContainerFor(todaySection, "Archived PR thread"),
+  ]) {
+    expect(row.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__thread", "is-archived"]));
+    expect(row.props["data-attention"]).toBe("none");
+    expect(attentionCueLabels(row)).toEqual([]);
+    expect(
+      row.findAll(
+        (node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__pr-badge"),
+      ),
+    ).toHaveLength(0);
+    expect(
+      row.findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          typeof node.props.className === "string" &&
+          node.props.className.split(" ").includes("cnav__lead") &&
+          node.props["data-icon-name"] === "ph:archive",
+      ),
+    ).toHaveLength(1);
+  }
 
   await act(async () => renderer.unmount());
 });

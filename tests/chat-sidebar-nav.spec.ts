@@ -204,7 +204,7 @@ test.describe("chat sidebar (session navigator)", () => {
     await expect(projectTile).toBeVisible();
     await expect(attentionCue).toBeVisible();
     await expect(attentionLabel).toHaveText("Awaiting you");
-    await expect(attentionButton).toHaveAccessibleName(/Approve release checklist[\s\S]*Awaiting you/);
+    await expect(attentionButton).toHaveAccessibleName(/^Project alpha\s+Approve release checklist\s+Awaiting you$/);
 
     await narrowChatSidebar(page);
 
@@ -225,7 +225,7 @@ test.describe("chat sidebar (session navigator)", () => {
     expect(labelState.visibility).not.toBe("hidden");
     expect(labelState.width).toBeGreaterThan(0);
     expect(labelState.height).toBeGreaterThan(0);
-    await expect(attentionButton).toHaveAccessibleName(/Approve release checklist[\s\S]*Awaiting you/);
+    await expect(attentionButton).toHaveAccessibleName(/^Project alpha\s+Approve release checklist\s+Awaiting you$/);
   });
 });
 

@@ -556,8 +556,8 @@ assert.match(
 );
 assert.match(
   workspaceSidebar,
-  /<span className="sr-only">\{project\.name\}<\/span>/,
-  "the project name is announced, not just painted",
+  /<span className="sr-only">\{`Project \$\{project\.name\} `\}<\/span>/,
+  "the project name is announced even after the visual project tile collapses",
 );
 assert.doesNotMatch(workspaceSidebar, /cnav__footer|cnav__user-plan/, "ChatSidebar should not render the user plan footer");
 

@@ -63,6 +63,11 @@ assert.match(
 );
 assert.match(
   pinnedRail,
+  /const prStatus = archived \? null : sessionPrStatus\(session\.pullRequest\);/,
+  "archived pinned rows suppress live PR status before choosing their leading slot",
+);
+assert.match(
+  pinnedRail,
   /const leadGlyph = archived \? \("ph:archive" as IconName\) : null;/,
   "pinned rows swap in the same archive glyph ThreadRow uses when a pinned session is archived",
 );

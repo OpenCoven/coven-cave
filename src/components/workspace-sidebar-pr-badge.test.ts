@@ -22,8 +22,8 @@ const css = [
 // ── ThreadRow: real PR context wins the leading slot ─────────────────────────
 assert.match(
   sidebar,
-  /const prStatus = sessionPrStatus\(session\.pullRequest\);/,
-  "rows derive PR status from the session's pullRequest context (shared lib)",
+  /const prStatus = archived \? null : sessionPrStatus\(session\.pullRequest\);/,
+  "rows derive PR status from the session's pullRequest context unless archived styling has taken precedence",
 );
 assert.match(
   sidebar,
@@ -46,8 +46,8 @@ assert.ok(pinnedRowFnStart > 0, "the PinnedThreadRow component exists");
 const pinnedRowFnBody = sidebar.slice(pinnedRowFnStart, sidebar.indexOf("\n}\n", pinnedRowFnStart));
 assert.match(
   pinnedRowFnBody,
-  /<ThreadPrBadge prStatus=\{prStatus\} onOpenUrl=\{onOpenUrl\} \/>/,
-  "pinned rail rows show the PR badge as well",
+  /const prStatus = archived \? null : sessionPrStatus\(session\.pullRequest\);[\s\S]*?<ThreadPrBadge prStatus=\{prStatus\} onOpenUrl=\{onOpenUrl\} \/>/,
+  "pinned rail rows show the PR badge only when the row is not archived",
 );
 assert.match(
   sidebar,

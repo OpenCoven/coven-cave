@@ -181,6 +181,11 @@ function threadLeadingIcon(title: string): IconName | null {
   return null;
 }
 
+function sidebarThreadTitle(session: SessionRow, archived: boolean): string {
+  if (!archived || !session.pullRequest) return sessionRailTitle(session);
+  return sessionRailTitle({ ...session, pullRequest: undefined });
+}
+
 // PR-status badge in a thread row's leading slot — the workspace-sidebar twin
 // of the chat list's badge (#2983): GitHub state colors, click opens the PR
 // (in-app browser when wired) without opening the chat. Rendered as a sibling
@@ -261,14 +266,14 @@ function ThreadRow({
   now,
 }: ThreadRowProps) {
   const attentionDescriptionId = useId();
-  const title = sessionRailTitle(session);
+  const archived = Boolean(session.archived_at);
+  const title = sidebarThreadTitle(session, archived);
   // Real PR context beats the title-heuristic glyph — when the thread's work
   // reached an actual pull request, the leading slot shows the clickable
   // state-colored badge instead of the dot or heuristic icon.
-  const prStatus = sessionPrStatus(session.pullRequest);
+  const prStatus = archived ? null : sessionPrStatus(session.pullRequest);
   // Archived rows (visible via the "Show archived" option) read muted, and the
   // leading slot shows the archive glyph so they can't pass for live threads.
-  const archived = Boolean(session.archived_at);
   const { state: attentionState, label: attentionLabel, description: attentionDescription } = resolveThreadAttention(
     session,
     archived,
@@ -334,9 +339,9 @@ function ThreadRow({
         {project ? (
           <span className="cnav__thread-proj" title={project.name}>
             <ProjectAvatar name={project.name} root={project.root} color={project.color} size="sm" />
-            <span className="sr-only">{project.name}</span>
           </span>
         ) : null}
+        {project ? <span className="sr-only">{`Project ${project.name} `}</span> : null}
         <span className="cnav__thread-copy">
           <span className="cnav__thread-line">
             <span className="cnav__thread-title" title={title}>{title}</span>
@@ -418,9 +423,9 @@ type PinnedThreadRowProps = {
 // re-deriving them — see cave-zs85n Task 6 gap-fix notes.
 function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin }: PinnedThreadRowProps) {
   const attentionDescriptionId = useId();
-  const title = sessionRailTitle(session);
-  const prStatus = sessionPrStatus(session.pullRequest);
   const archived = Boolean(session.archived_at);
+  const title = sidebarThreadTitle(session, archived);
+  const prStatus = archived ? null : sessionPrStatus(session.pullRequest);
   const { state: attentionState, label: attentionLabel, description: attentionDescription } = resolveThreadAttention(
     session,
     archived,
