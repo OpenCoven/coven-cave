@@ -29,6 +29,9 @@ const fakeDriver = {
   async getAll(store) {
     return Object.fromEntries(idb[store]);
   },
+  async getAllStrict(store) {
+    return Object.fromEntries(idb[store]);
+  },
   async put(store, key, value) {
     idb[store].set(key, value);
   },

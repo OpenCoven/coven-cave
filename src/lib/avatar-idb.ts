@@ -24,6 +24,7 @@ export type AvatarMoveResult = {
 
 export type AvatarStorageDriver = {
   getAll(store: AvatarStore): Promise<Record<string, AvatarRecord>>;
+  getAllStrict(store: AvatarStore): Promise<Record<string, AvatarRecord>>;
   put(store: AvatarStore, key: string, value: AvatarRecord): Promise<void>;
   delete(store: AvatarStore, key: string): Promise<void>;
   move(store: AvatarStore, from: string, to: string): Promise<AvatarMoveResult>;
@@ -39,7 +40,7 @@ let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
-  dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+  const opening = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -60,11 +61,12 @@ function openDb(): Promise<IDBDatabase> {
     req.onerror = () => reject(req.error ?? new Error("IndexedDB open failed"));
     req.onblocked = () => reject(new Error("IndexedDB open blocked"));
   });
+  dbPromise = opening;
   // A failed open must not poison every later call (e.g. a transient lock).
-  dbPromise.catch(() => {
-    dbPromise = null;
+  opening.catch(() => {
+    if (dbPromise === opening) dbPromise = null;
   });
-  return dbPromise;
+  return opening;
 }
 
 function requestToPromise<T>(req: IDBRequest<T>): Promise<T> {
@@ -99,28 +101,44 @@ export function avatarMigrationDestinationWins(
 
 const hasIdb = () => typeof indexedDB !== "undefined";
 
+async function readAllStrict(store: AvatarStore): Promise<Record<string, AvatarRecord>> {
+  if (!hasIdb()) throw new Error("IndexedDB unavailable");
+  const db = await openDb();
+  const tx = db.transaction(store, "readonly");
+  const done = transactionToPromise(tx);
+  try {
+    const os = tx.objectStore(store);
+    const [keys, values] = await Promise.all([
+      requestToPromise(os.getAllKeys()),
+      requestToPromise(os.getAll()),
+    ]);
+    await done;
+    const map: Record<string, AvatarRecord> = {};
+    keys.forEach((key, i) => {
+      const value = values[i] as AvatarRecord | undefined;
+      if (typeof key === "string" && value && typeof value.dataUrl === "string") {
+        map[key] = value;
+      }
+    });
+    return map;
+  } catch (error) {
+    await done.catch(() => undefined);
+    throw error;
+  }
+}
+
 const idbDriver: AvatarStorageDriver = {
   async getAll(store) {
     if (!hasIdb()) return {};
     try {
-      const db = await openDb();
-      const tx = db.transaction(store, "readonly");
-      const os = tx.objectStore(store);
-      const [keys, values] = await Promise.all([
-        requestToPromise(os.getAllKeys()),
-        requestToPromise(os.getAll()),
-      ]);
-      const map: Record<string, AvatarRecord> = {};
-      keys.forEach((key, i) => {
-        const value = values[i] as AvatarRecord | undefined;
-        if (typeof key === "string" && value && typeof value.dataUrl === "string") {
-          map[key] = value;
-        }
-      });
-      return map;
+      return await readAllStrict(store);
     } catch {
       return {}; // unreadable DB reads as empty; writes will surface real errors
     }
+  },
+
+  getAllStrict(store) {
+    return readAllStrict(store);
   },
 
   async put(store, key, value) {

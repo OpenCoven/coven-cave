@@ -57,6 +57,7 @@ const CANONICAL_DRIVE_IMAGE = {
 idb.projectAvatars.set("C:", LITERAL_DRIVE_IMAGE);
 idb.projectAvatars.set("C:/", CANONICAL_DRIVE_IMAGE);
 let denyWrites = false;
+let denyAvatarReads = false;
 let writeTail = Promise.resolve();
 const withWriteLock = async (fn) => {
   const run = writeTail.then(fn, fn);
@@ -79,6 +80,12 @@ const migrationDestinationWins = (source, destination) => {
 };
 const fakeDriver = {
   async getAll(s) {
+    return Object.fromEntries(idb[s]);
+  },
+  async getAllStrict(s) {
+    if (denyAvatarReads) {
+      throw new DOMException("Avatar storage is temporarily unreadable.", "UnknownError");
+    }
     return Object.fromEntries(idb[s]);
   },
   async put(s, key, value) {
@@ -397,6 +404,53 @@ const PROJECTS = [
 }
 
 {
+  await seed();
+  const acknowledgements = [];
+  denyAvatarReads = true;
+  try {
+    await assert.rejects(
+      () =>
+        migrateAndAcknowledgeProjectRoots(PROJECTS, {
+          acknowledge: async (payload) => {
+            acknowledgements.push(payload);
+          },
+        }),
+      /avatar/i,
+      "an unreadable avatar store rejects the migration instead of looking empty",
+    );
+  } finally {
+    denyAvatarReads = false;
+  }
+  assert.deepEqual(
+    acknowledgements,
+    [],
+    "unreadable avatar storage never acknowledges away the server's retry aliases",
+  );
+  assert.equal(
+    idb.projectAvatars.has(LEGACY),
+    true,
+    "the legacy avatar remains available for a later retry",
+  );
+
+  assert.equal(
+    await migrateAndAcknowledgeProjectRoots(PROJECTS, {
+      acknowledge: async (payload) => {
+        acknowledgements.push(payload);
+      },
+    }),
+    1,
+    "the next readable attempt completes the migration",
+  );
+  assert.equal(idb.projectAvatars.has(LEGACY), false);
+  assert.equal(idb.projectAvatars.has(EXPANDED), true);
+  assert.deepEqual(
+    acknowledgements,
+    [[{ projectId: "p1", legacyRoots: [LEGACY] }]],
+    "only the successful retry acknowledges the migrated alias",
+  );
+}
+
+{
   // The override map can legitimately be absent or corrupt; a migration that
   // throws on first run is worse than one that does nothing.
   store.delete(CHAT_PROJECT_OVERRIDES_KEY);
@@ -472,8 +526,8 @@ assert.deepEqual(
   );
   assert.match(
     src,
-    /await whenProjectImagesHydrated\(\)/,
-    "hydration is awaited before the snapshot is read",
+    /await hydrateProjectImagesForMigration\(\)/,
+    "strict hydration is awaited before the migration snapshot is read",
   );
   assert.doesNotMatch(
     src,

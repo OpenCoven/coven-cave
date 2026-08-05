@@ -35,9 +35,9 @@ import {
   type CaveProject,
 } from "./cave-projects-types.ts";
 import {
+  hydrateProjectImagesForMigration,
   moveProjectImageFromStorageKey,
   readProjectImagesSnapshot,
-  whenProjectImagesHydrated,
 } from "./cave-project-images.ts";
 import {
   readProjectOverridesForMigration,
@@ -93,11 +93,9 @@ export async function migrateProjectRootKeys(
   // which is what a caller logs and what makes a second pass observably 0.
   const followed = new Set<string>();
 
-  // Wait for the image store before reading its snapshot. It hydrates
-  // asynchronously on import, so an early read returns {} and every avatar
-  // looks absent — the migration would skip a real one and report 0, which is
-  // indistinguishable from "nothing to do".
-  await whenProjectImagesHydrated();
+  // Migration cannot use the UI's tolerant hydration: unreadable IndexedDB
+  // must reject so the caller retains server aliases for a later retry.
+  await hydrateProjectImagesForMigration();
 
   for (const { from, to } of moves) {
     // Probe the literal persisted key before the canonical store key. Most

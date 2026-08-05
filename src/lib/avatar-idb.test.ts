@@ -10,6 +10,9 @@ test("move resolves both avatar conflicts atomically and observes failed transac
   const unhandled: unknown[] = [];
   let transactionId = 0;
   let failNextGet: Error | null = null;
+  let failNextOpen: Error | null = null;
+  let failNextRead: Error | null = null;
+  let failNextTransaction: Error | null = null;
   let aborts = 0;
 
   const db = {
@@ -55,7 +58,15 @@ test("move resolves both avatar conflicts atomically and observes failed transac
               }
               queueMicrotask(() => {
                 if (!aborted && pending === 0 && revision === currentRevision) {
-                  tx.oncomplete?.();
+                  if (failNextTransaction) {
+                    const error = failNextTransaction;
+                    failNextTransaction = null;
+                    aborted = true;
+                    tx.error = error;
+                    tx.onerror?.();
+                  } else {
+                    tx.oncomplete?.();
+                  }
                 }
               });
             });
@@ -71,6 +82,19 @@ test("move resolves both avatar conflicts atomically and observes failed transac
                 }
                 return records.get(key);
               });
+            },
+            getAllKeys() {
+              return request(() => {
+                if (failNextRead) {
+                  const error = failNextRead;
+                  failNextRead = null;
+                  throw error;
+                }
+                return [...records.keys()];
+              });
+            },
+            getAll() {
+              return request(() => [...records.values()]);
             },
             put(value: StoredAvatar, key: string) {
               return request(() => {
@@ -101,7 +125,15 @@ test("move resolves both avatar conflicts atomically and observes failed transac
         onerror: null as (() => void) | null,
         onblocked: null as (() => void) | null,
       };
-      queueMicrotask(() => request.onsuccess?.());
+      queueMicrotask(() => {
+        if (failNextOpen) {
+          request.error = failNextOpen;
+          failNextOpen = null;
+          request.onerror?.();
+        } else {
+          request.onsuccess?.();
+        }
+      });
       return request;
     },
   };
@@ -115,6 +147,14 @@ test("move resolves both avatar conflicts atomically and observes failed transac
 
   try {
     const { avatarStorage } = await import("./avatar-idb.ts");
+    const openError = new Error("transient IndexedDB open failure");
+    failNextOpen = openError;
+    await assert.rejects(
+      () => avatarStorage().getAllStrict("projectAvatars"),
+      (error) => error === openError,
+      "strict hydration surfaces open errors",
+    );
+
     const older: StoredAvatar = {
       dataUrl: "data:image/png;base64,older",
       mime: "image/png",
@@ -128,6 +168,40 @@ test("move resolves both avatar conflicts atomically and observes failed transac
 
     records.set("legacy", older);
     records.set("canonical", newer);
+    assert.deepEqual(
+      await avatarStorage().getAllStrict("projectAvatars"),
+      { legacy: older, canonical: newer },
+      "a failed open does not poison the next strict hydration",
+    );
+
+    const readError = new Error("transient IndexedDB read failure");
+    failNextRead = readError;
+    await assert.rejects(
+      () => avatarStorage().getAllStrict("projectAvatars"),
+      (error) => error === readError,
+      "strict hydration surfaces request errors",
+    );
+    failNextRead = readError;
+    assert.deepEqual(
+      await avatarStorage().getAll("projectAvatars"),
+      {},
+      "ordinary non-critical hydration remains tolerant",
+    );
+
+    const transactionError = new Error("transient IndexedDB transaction failure");
+    failNextTransaction = transactionError;
+    await assert.rejects(
+      () => avatarStorage().getAllStrict("projectAvatars"),
+      (error) => error === transactionError,
+      "strict hydration waits for and surfaces transaction failure",
+    );
+    failNextTransaction = transactionError;
+    assert.deepEqual(
+      await avatarStorage().getAll("projectAvatars"),
+      {},
+      "ordinary hydration also tolerates transaction completion failure",
+    );
+
     mutations.length = 0;
     assert.deepEqual(
       await avatarStorage().move("projectAvatars", "legacy", "canonical"),
@@ -163,6 +237,7 @@ test("move resolves both avatar conflicts atomically and observes failed transac
       "the overwrite and source deletion share one transaction",
     );
 
+    aborts = 0;
     const requestError = new Error("deterministic source get failure");
     failNextGet = requestError;
     await assert.rejects(
