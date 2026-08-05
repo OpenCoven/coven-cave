@@ -143,6 +143,15 @@ try {
   assert.equal(conversation?.harness, "openclaw", "resume never rewrites the stored harness");
   assert.equal(conversation?.turns.at(-1)?.responseMetadata?.harness, "openclaw");
 
+  // A resumed send to an existing Cave-persisted OpenClaw session must not
+  // claim or reset auto title ownership — it is a follow-up, not a first turn.
+  const followUpState = await loadState();
+  assert.equal(
+    followUpState.sessionTitleAuto[sessionId],
+    undefined,
+    "OpenClaw follow-up to a Cave session does not claim auto title ownership",
+  );
+
   // A daemon-originated session has no Cave conversation file yet. The body
   // session id and daemon row still make this a follow-up, not a first turn.
   await saveConfig({ familiars: { wren: { harness: "openclaw", model: "" } } });

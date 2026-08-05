@@ -67,6 +67,16 @@ assert.match(
   /setSessionTitleAutoIfOwned\([\s\S]*body\.observedTitleRevision[\s\S]*body\.observedTitle/,
   "explicit takeover passes the client observation into the atomic ownership mutation",
 );
+assert.match(
+  route,
+  /typeof body\.replaceManualTitle !== "boolean"/,
+  "defined replaceManualTitle is validated as boolean or rejected with 400",
+);
+assert.match(
+  route,
+  /body\.replaceManualTitle === true[\s\S]*?body\.observedTitleRevision[\s\S]*?body\.replaceManualTitle === true[\s\S]*?body\.observedTitle/,
+  "all replaceManualTitle branches use strict equality so non-boolean values cannot bypass protection",
+);
 
 const previousHome = process.env.HOME;
 const testHome = await mkdtemp(path.join(process.cwd(), ".session-title-route-test-"));
@@ -158,6 +168,35 @@ try {
   assert.equal(unsafeLegacyTakeover.status, 400);
   state = await config.loadState();
   assert.equal(state.sessionTitles[id], "Ordinary manual rename");
+
+  // A non-boolean replaceManualTitle must be rejected before any mutation.
+  // String "false" is truthy, so without strict validation a current
+  // observation authorizes the same manual-title takeover as boolean true.
+  const manualRevision = config.sessionTitleRevision(state, id);
+  const stringFalseRejection = await patch({
+    title: "Injected title",
+    titleOwnership: "auto",
+    replaceManualTitle: "false",
+    observedTitle: "Ordinary manual rename",
+    observedTitleRevision: manualRevision,
+    archived: true,
+  });
+  assert.equal(stringFalseRejection.status, 400, "string replaceManualTitle is rejected");
+  state = await config.loadState();
+  assert.equal(state.sessionTitles[id], "Ordinary manual rename", "title not overwritten by string replaceManualTitle");
+  assert.equal(state.sessionTitleManual[id], true, "manual ownership not cleared by string replaceManualTitle");
+  assert.equal(state.sessionArchived[id], undefined, "unrelated mutations do not run before validation");
+
+  const numericOneRejection = await patch({
+    title: "Injected title",
+    titleOwnership: "auto",
+    replaceManualTitle: 1,
+    observedTitle: "Ordinary manual rename",
+    observedTitleRevision: manualRevision,
+  });
+  assert.equal(numericOneRejection.status, 400, "numeric replaceManualTitle is rejected");
+  state = await config.loadState();
+  assert.equal(state.sessionTitles[id], "Ordinary manual rename", "title not overwritten by numeric replaceManualTitle");
 } finally {
   process.env.HOME = previousHome;
   await rm(testHome, { recursive: true, force: true });

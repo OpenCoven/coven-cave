@@ -83,6 +83,15 @@ export async function PATCH(
     );
   }
   if (
+    body.replaceManualTitle !== undefined &&
+    typeof body.replaceManualTitle !== "boolean"
+  ) {
+    return NextResponse.json(
+      { ok: false, error: "replaceManualTitle must be a boolean" },
+      { status: 400 },
+    );
+  }
+  if (
     body.replaceManualTitle === true &&
     (
       body.titleOwnership !== "auto" ||
@@ -153,11 +162,11 @@ export async function PATCH(
         id,
         body.title,
         safeDefaults,
-        !body.replaceManualTitle,
-        body.replaceManualTitle ? body.observedTitleRevision : undefined,
-        body.replaceManualTitle ? body.observedTitle?.trim() : undefined,
+        body.replaceManualTitle !== true,
+        body.replaceManualTitle === true ? body.observedTitleRevision : undefined,
+        body.replaceManualTitle === true ? body.observedTitle?.trim() : undefined,
       );
-      if (body.replaceManualTitle && next === null) {
+      if (body.replaceManualTitle === true && next === null) {
         const latest = await loadState();
         return NextResponse.json(
           {
