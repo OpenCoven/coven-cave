@@ -1062,7 +1062,11 @@ for (const [mode, branch] of [
 
 await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fixture) => {
   const existingPath = addWorktree(fixture, "feat/cave-unit1-existing", "cave-unit1-existing");
-  for (let index = 0; index < 10; index += 1) {
+  // Drive the registration count to exactly WORKTREE_WARNING_BUDGET so admission
+  // refuses at `count >= budget`. The count includes the primary checkout, so the
+  // arithmetic is: 18 detached + 1 existing (above) + 1 primary = 20. If the
+  // budget moves again, this loop moves with it (budget - 2).
+  for (let index = 0; index < 18; index += 1) {
     git(
       [
         "worktree",
@@ -1107,7 +1111,7 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   const refused = runCreate(fixture, createArgs({ bead, branch, owner, purpose }));
   assert.equal(refused.status, 2, refused.stderr);
   assert.match(refused.stderr, /already owns a registered worktree/);
-  assert.match(refused.stderr, /12-worktree budget/);
+  assert.match(refused.stderr, /20-worktree budget/);
   assert.match(refused.stderr, /30-local-branch budget/);
   assert.match(refused.stderr, /Suggestion: pnpm beads:worktrees:apply/);
   assert.match(refused.stderr, /This admission refusal can be lifted/i);

@@ -79,13 +79,12 @@ assert.match(
   "The familiar context should check whether activeFamiliarId points at an archived familiar",
 );
 
-// 5. The familiar picker itself is gone from home (selection lives in the side
-//    panel), so no dropdown may render familiars — visibleFamiliars only feeds
-//    the default-selection fallback above.
-assert.doesNotMatch(
+// 5. Home exposes the resolved, non-archived familiar list in the explicit
+//    launch-context picker.
+assert.match(
   source,
-  /HomeSelect|Choose chat agent/,
-  "HomeComposer should not render a familiar picker (side panel owns selection)",
+  /<FamiliarQuickSwitch[\s\S]*familiars=\{familiars\}/,
+  "HomeComposer should render the familiar picker from its resolved roster",
 );
 
 console.log("home-composer-hide-archived.test.ts: ok");

@@ -623,6 +623,7 @@ export const SUITES = {
     "src/lib/use-composer-draft.test.ts",
     "src/lib/use-composer-history.test.ts",
     "src/lib/use-attachment-staging.test.ts",
+    "src/lib/slash-command-inline.test.ts",
     "src/lib/use-inline-slash-menus.test.ts",
     "src/lib/prompt-enhancer.test.ts",
     "src/lib/prompt-placeholders.test.ts",
@@ -695,6 +696,7 @@ export const SUITES = {
     "src/lib/familiar-growth-route-wiring.test.ts",
     "src/lib/familiar-renown.test.ts",
     "src/lib/milestone-defs.test.ts",
+    "src/lib/mission-defs.test.ts",
     "src/lib/session-pulse.test.ts",
     "src/lib/session-trace.test.ts",
     "src/lib/first-run-stamps.test.ts",
@@ -1318,6 +1320,7 @@ export const SUITES = {
     "src/lib/server/session-security.test.ts",
     "src/lib/server/memory-file-sources.test.ts",
     "src/lib/server/familiar-startup-context.test.ts",
+    "src/lib/server/familiar-contract-context.test.ts",
     "src/lib/server/operator-profile-context.test.ts",
     "src/lib/server/knowledge-vault.test.ts",
     "src/lib/server/knowledge-vault-collections.test.ts",
@@ -1347,9 +1350,6 @@ export const SUITES = {
     "src/lib/voice/speech-loop.test.ts",
     "src/lib/voice/call-transcript.test.ts",
 
-    // Landed unwired with /auto mission mode (3bde7b0); main's
-    // check:tests-wired fails until the existing test is listed.
-    "src/lib/auto-status-blocks.test.ts",
     "src/lib/voice/microphone-access.test.ts",
     "src/lib/voice/native-stt.test.ts",
     "src/lib/voice/familiar-brain.test.ts",
@@ -1455,6 +1455,7 @@ export const SUITES = {
     "scripts/ios-app-store-assets.test.mjs",
     "scripts/ios-chat-project-contract.test.mjs",
     "scripts/ios-chat-familiars-home.test.mjs",
+    "scripts/ios-project-generation.test.mjs",
     "scripts/ios-chat-restyle.test.mjs",
     "scripts/ios-claude-design-fidelity.test.mjs",
     "scripts/ios-modern-polish.test.mjs",
@@ -1711,6 +1712,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/familiar-growth-route-wiring.test.ts",
   "src/lib/familiar-renown.test.ts",
   "src/lib/milestone-defs.test.ts",
+  "src/lib/mission-defs.test.ts",
   // familiars-view-stats now imports ritualStreak from "@/lib/familiar-renown".
   "src/components/familiars-view-stats.test.ts",
   "src/lib/session-pulse.test.ts",
@@ -1736,6 +1738,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/travel-network-drop-proof.test.ts",
   "src/lib/chat-task-autofill.test.ts",
   "src/lib/voice/hydrate-instructions.test.ts",
+  // the shared contract builder resolves "@/lib/server/familiar-contract-files".
+  "src/lib/server/familiar-contract-context.test.ts",
   "src/app/api/voice/session/route.test.ts",
   "src/app/api/hermes-profiles/route.test.ts",
   "src/app/api/chat/conversation/[id]/route.test.ts",

@@ -7,7 +7,7 @@ const src = readFileSync(new URL("./use-inline-slash-menus.ts", import.meta.url)
 // ── Signature: pick semantics stay per-composer via callbacks ────────────────
 assert.match(
   src,
-  /export function useInlineSlashMenus\(opts: \{\s*text: string;\s*setText: \(t: string\) => void;\s*modelHarness: string;\s*modelOptionsOverride\?: RuntimeModelOption\[\];\s*onPickModel:[\s\S]*?onPickSkill:[\s\S]*?onInsertPrompt:[\s\S]*?onRunCommand:[\s\S]*?onNoMatchEnter\?:/,
+  /export function useInlineSlashMenus\(opts: \{\s*text: string;\s*setText: \(t: string\) => void;\s*caret: number;\s*onCompleteText\?:[\s\S]*?modelHarness: string;\s*modelOptionsOverride\?: RuntimeModelOption\[\];\s*onPickModel:[\s\S]*?onPickSkill:[\s\S]*?onInsertPrompt:[\s\S]*?onRunCommand:[\s\S]*?onNoMatchEnter\?:/,
   "useInlineSlashMenus takes the text pair + pick callbacks — what a pick DOES stays per-composer",
 );
 assert.match(
@@ -33,11 +33,21 @@ assert.match(
   "unconsumed keys report false so history recall and Enter-send still run",
 );
 
-// ── First-token-only matching (menus never open mid-sentence) ────────────────
+// ── Caret-scoped matching (menus open after prose and on later lines) ─────────
 assert.match(
   src,
-  /const firstWord = text\.trimStart\(\)\.split\(\/\\s\/\)\[0\] \?\? "";\s*\n\s*if \(!firstWord\.startsWith\("\/"\) \|\| text\.trimStart\(\)\.includes\(" "\)\) return \[\];/,
-  "slash suggestions surface only while the user is still typing the command token",
+  /inlineSlashInvocation\(text, caret\)/,
+  "slash suggestions derive from the invocation that owns the caret",
+);
+assert.match(
+  src,
+  /replaceInlineSlashRange\(text, start, end, replacement\)/,
+  "completion preserves surrounding draft text instead of replacing the whole composer",
+);
+assert.match(
+  src,
+  /let replacementEnd = activeInvocation\.caret;[\s\S]*?while \(replacementEnd < text\.length && !\/\\s\/\.test\(text\[replacementEnd\] \?\? ""\)\)[\s\S]*?completeRange\(activeInvocation\.start, replacementEnd, replacement\)/,
+  "argument completion replaces the rest of the token after a mid-token caret",
 );
 
 // ── Esc-dismiss: one flag, all four pickers, typing re-opens ─────────────────
@@ -48,7 +58,7 @@ assert.match(
 );
 assert.match(
   src,
-  /slashDismissed \? null : modelSlashOptions\(text, modelHarness, modelOptionsOverride\)/,
+  /slashDismissed \? null : modelSlashOptions\(activeInvocation\?\.input \?\? "", modelHarness, modelOptionsOverride\)/,
   "dismissal nulls the /model options",
 );
 assert.match(
@@ -72,7 +82,7 @@ assert.match(
 // ── Enter on a command: autocomplete-then-run ────────────────────────────────
 assert.match(
   src,
-  /if \(cmd && cmd\.argPlaceholder && canonicalize\(text\.trim\(\)\) !== cmd\.name\) \{\s*\n\s*setText\(cmd\.name \+ " "\);\s*\n\s*\} else if \(cmd\) \{\s*\n\s*cbRef\.current\.onRunCommand\(cmd\);\s*\n\s*\} else if \(s\) \{\s*\n\s*cbRef\.current\.onPickSkill\(s\);\s*\n\s*\} else \{\s*\n\s*cbRef\.current\.onNoMatchEnter\?\.\(\);\s*\n\s*\}/,
+  /canonicalize\(activeInvocation\?\.commandToken \?\? ""\) !== cmd\.name[\s\S]*?completeCommand\(cmd\.name, true\);[\s\S]*?\} else if \(cmd\) \{[\s\S]*?cbRef\.current\.onRunCommand\(cmd\);/,
   "Enter autocompletes argument-taking commands, runs exact ones, picks skills, and defers no-match to the caller (home submits; chat consumes)",
 );
 
