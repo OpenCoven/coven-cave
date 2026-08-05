@@ -4,6 +4,7 @@ import {
   CHAT_ATTENTION_CLEAR_EVENT,
   CHAT_ATTENTION_SETTLE_EVENT,
   attentionClearFromEvent,
+  attentionClearedSessionId,
   attentionSettlementFromEvent,
   emitChatAttentionClear,
   emitChatAttentionSettlement,
@@ -33,6 +34,9 @@ async function withMockWindow(run: (dispatched: Event[]) => void | Promise<void>
 test("validates session-scoped clear and settlement events", () => {
   assert.equal(CHAT_ATTENTION_CLEAR_EVENT, "cave:chat-attention-clear");
   assert.equal(CHAT_ATTENTION_SETTLE_EVENT, "cave:chat-attention-settle");
+  assert.equal(attentionClearedSessionId(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: { sessionId: " session-0 " },
+  })), "session-0");
   assert.deepEqual(attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
     detail: { sessionId: "session-1", operationId: "run-1" },
   })), { sessionId: "session-1", operationId: "run-1" });
@@ -42,10 +46,20 @@ test("validates session-scoped clear and settlement events", () => {
 });
 
 test("rejects wrong event types and invalid detail payloads", () => {
+  assert.equal(attentionClearedSessionId(new Event(CHAT_ATTENTION_CLEAR_EVENT)), null);
   assert.equal(attentionClearFromEvent(new Event(CHAT_ATTENTION_CLEAR_EVENT)), null);
   assert.equal(attentionSettlementFromEvent(new Event(CHAT_ATTENTION_SETTLE_EVENT)), null);
+  assert.equal(attentionClearedSessionId(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: { sessionId: "   " },
+  })), null);
+  assert.equal(attentionClearedSessionId(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: { sessionId: 42 },
+  })), null);
   assert.equal(attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
     detail: { sessionId: "session-3" },
+  })), null);
+  assert.equal(attentionClearedSessionId(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: null,
   })), null);
   assert.equal(attentionSettlementFromEvent(new CustomEvent(CHAT_ATTENTION_SETTLE_EVENT, {
     detail: { sessionId: "session-4", operationId: "run-4", outcome: "weird" },

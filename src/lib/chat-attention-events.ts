@@ -62,7 +62,9 @@ export function attentionClearFromEvent(event: Event): ChatAttentionClearDetail 
 }
 
 export function attentionClearedSessionId(event: Event): string | null {
-  return attentionClearFromEvent(event)?.sessionId ?? null;
+  if (event.type !== CHAT_ATTENTION_CLEAR_EVENT) return null;
+  const detail = (event as CustomEvent<Record<string, unknown> | null>).detail;
+  return normalizeString(detail?.sessionId);
 }
 
 export function attentionSettlementFromEvent(event: Event): ChatAttentionSettlementDetail | null {
