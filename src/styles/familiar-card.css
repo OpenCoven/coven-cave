@@ -21,6 +21,11 @@
   --tilt-x: 0deg;
   --tilt-y: 0deg;
   --glow: 0;
+  /* How far the foil spectrum overhangs the card on every side. Larger than
+     any pan the pointer or the hunting sweep can ask for, so the panned layer
+     never runs out of card and never has to tile — see `.famcard__foil::before`
+     for why tiling is what breaks it. */
+  --foil-bleed: 260px;
   /* Defaults live here, not in TSX: the design gate forbids colour literals
      reaching render. The component only sets these when it has a real harness
      frame or a sampled aura. */
@@ -157,11 +162,35 @@
       hsl(348 92% 58%) 152px
     ),
     var(--holo-tex, none);
-  background-size: 240% 240%, cover;
+  /* ── Why the spectrum is oversized and NEVER tiled ────────────────────────
+     WebKit drops `background-blend-mode` for a layer the moment that layer has
+     to be TILED — as soon as a second tile instance is painted, the multiply
+     against the plate below is lost and the raw spectrum screens over the
+     artwork at full strength: an edge-to-edge rainbow with the tile boundary
+     showing as a hard seam. Reproduced in the desktop shell (WKWebView) and
+     invisible in Chromium, which is why it survived.
+
+     What made it tile was the pan itself. The layer used to be `240%` at
+     `background-position: <pan>`, and a POSITIVE pan moves the tile's origin
+     inside the card, so the strip before it has to be filled by a second tile.
+     A negative pan never does — which is exactly why only the top-left
+     quadrant, the one where both `--fx` and `--fy` are negative, looked right.
+
+     So the layer is sized to the card plus `--foil-bleed` on EVERY side and
+     positioned back by that same bleed. One tile, always larger than the card
+     in both directions, with `no-repeat` to make tiling unrepresentable rather
+     than merely unlikely. The bleed must stay larger than the widest pan
+     (`130 * 1.7 = 221px` horizontally, `130 * 0.6 = 78px` vertically, and the
+     hunting sweep's own ±190px/±46px), or the card's edge outruns the layer
+     and shows a dead strip instead. The plate keeps its own position: it is a
+     separate layer and it is still pinned. */
+  background-size:
+    calc(100% + var(--foil-bleed) * 2) calc(100% + var(--foil-bleed) * 2),
+    cover;
   background-position:
-    calc(var(--fx) * 1.7px) calc(var(--fy) * 0.6px),
+    calc(var(--fx) * 1.7px - var(--foil-bleed)) calc(var(--fy) * 0.6px - var(--foil-bleed)),
     var(--art-pos, 50% 12%);
-  background-repeat: repeat, no-repeat;
+  background-repeat: no-repeat, no-repeat;
   background-blend-mode: multiply;
   /* Opacity on the CHILD, blend on the parent — never both on one element, or
      an engine may drop the fade and apply the blend at full force. */
@@ -390,10 +419,22 @@
   animation: famcard-hunt 2.6s var(--ease-standard, ease-in-out) infinite;
 }
 
+/* Offsets carry the same `- var(--foil-bleed)` bias as the pointer pan above:
+   the sweep drives the very same background-position, so it has to land in the
+   same coordinate space or it would pan the layer clean off the card. */
 @keyframes famcard-hunt {
-  0%   { background-position: -190px -46px, var(--art-pos, 50% 12%); opacity: 0.34; }
-  50%  { background-position:  190px  46px, var(--art-pos, 50% 12%); opacity: 0.86; }
-  100% { background-position: -190px -46px, var(--art-pos, 50% 12%); opacity: 0.34; }
+  0% {
+    background-position: calc(-190px - var(--foil-bleed)) calc(-46px - var(--foil-bleed)), var(--art-pos, 50% 12%);
+    opacity: 0.34;
+  }
+  50% {
+    background-position: calc(190px - var(--foil-bleed)) calc(46px - var(--foil-bleed)), var(--art-pos, 50% 12%);
+    opacity: 0.86;
+  }
+  100% {
+    background-position: calc(-190px - var(--foil-bleed)) calc(-46px - var(--foil-bleed)), var(--art-pos, 50% 12%);
+    opacity: 0.34;
+  }
 }
 
 /* ── Fullscreen ───────────────────────────────────────────────────────────
