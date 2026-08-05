@@ -483,7 +483,13 @@ export function classifyLifecycleUnit(
   observation: WorktreeLifecycleObservation,
   nowMs = Date.now(),
 ): WorktreeLifecycleItem {
-  return classifyLifecycleUnitInternal(observation, nowMs);
+  return classifyLifecycleUnitInternal(
+    {
+      ...observation,
+      taskRefs: observation.taskRefs ?? [],
+    },
+    nowMs,
+  );
 }
 
 function normalizeLegacyRef(branch: string | null, ref: string | null | undefined): string | null {

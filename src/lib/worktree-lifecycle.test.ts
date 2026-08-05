@@ -384,6 +384,31 @@ function legacyObservation(overrides = {}) {
 }
 
 {
+  const legacyDirect = observation({
+    metadata: metadata({ disposition: "pr" }),
+    taskIds: ["cave-legacy"],
+    mergedPr: { number: 60, headOid: "a".repeat(40), url: "https://example.test/60" },
+    updatedAtMs: NOW - 2 * DAY,
+  });
+  delete legacyDirect.taskRefs;
+  const item = classifyLifecycleUnit(legacyDirect, NOW);
+  const normalized = classifyLifecycleUnit(
+    observation({
+      metadata: metadata({ disposition: "pr" }),
+      taskIds: ["cave-legacy"],
+      mergedPr: { number: 60, headOid: "a".repeat(40), url: "https://example.test/60" },
+      updatedAtMs: NOW - 2 * DAY,
+    }),
+    NOW,
+  );
+  assert.deepEqual(
+    item,
+    normalized,
+    "direct classifier callers without taskRefs behave like legacy taskRefs: [] observations",
+  );
+}
+
+{
   const item = classifyLifecycleUnit(
     observation({
       metadata: metadata({ disposition: "archive" }),
