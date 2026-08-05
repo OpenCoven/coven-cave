@@ -10,7 +10,7 @@ import type { SessionOrigin, SessionRow } from "./types.ts";
  *    default behavior; enabling this flips the nudge into an automatic archive.
  *  - `archiveOnReflection`: archive a chat as soon as a thread reflection
  *    (self-report) lands for it — a reflection marks the thread as wrapped up.
- *    On by default; can be disabled per-chat from the chat page's Settings tab.
+ *    On by default; can be disabled from the chat page's Settings tab.
  *    Periodic (mid-flight) reports never archive; `manual` reflections archive
  *    immediately; `auto` reflections only archive threads already idle (see
  *    REFLECTION_AUTO_ARCHIVE_MIN_IDLE_MS).

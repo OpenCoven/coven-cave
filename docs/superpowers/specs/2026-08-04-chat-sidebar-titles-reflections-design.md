@@ -1,7 +1,7 @@
 # Faster Chat Discovery, Concise Titles, and Reflected-Thread Archiving
 
-**Bead:** `cave-e59cz`  
-**Status:** Approved for implementation  
+**Bead:** `cave-e59cz`
+**Status:** Approved for implementation
 **Scope:** Chat session discovery, generated chat titles, and reflection-driven archiving
 
 ## Problem
