@@ -21,6 +21,7 @@ const {
   mapConversationHistoryTurns,
   retryTurnModelRequest,
 } = await import("./chat-turn-state.ts");
+const { deriveChatAttention } = await import("./chat-attention.ts");
 const { persistedTurnControls } = await import(
   "../app/api/chat/send/chat-send-models.ts"
 );
@@ -881,6 +882,302 @@ console.log("cave-conversations cache test OK");
   await deleteConversation("stub-crashed");
 }
 console.log("cave-conversations pending-marker test OK");
+
+// ── Active-path attention evidence summaries (cave-zs85n task 4) ─────────────
+{
+  const NOW = Date.parse("2026-08-04T20:00:00.000Z");
+  const ids = [
+    "attention-leaf-request",
+    "attention-stale-request-left-hanging",
+    "attention-malformed-request",
+    "attention-off-path-request",
+    "attention-malformed-turns",
+  ];
+
+  await saveConversation({
+    sessionId: "attention-leaf-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Leaf request",
+    createdAt: "2026-08-04T17:00:00.000Z",
+    updatedAt: "2026-08-04T18:00:00.000Z",
+    turns: [
+      {
+        id: "leaf-user",
+        role: "user",
+        text: "Should I deploy this?",
+        createdAt: "2026-08-04T17:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "leaf-assistant",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T18:00:00.000Z",
+        parentId: "leaf-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-leaf-request",
+            turnId: "leaf-assistant",
+            requestedAt: "2026-08-04T18:00:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+    activeLeafId: "leaf-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-stale-request-left-hanging",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Historical request on active path",
+    createdAt: "2026-08-03T15:00:00.000Z",
+    updatedAt: "2026-08-03T18:00:00.000Z",
+    turns: [
+      {
+        id: "stale-user-1",
+        role: "user",
+        text: "Should we rotate the key?",
+        createdAt: "2026-08-03T15:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "stale-assistant-request",
+        role: "assistant",
+        text: "I need credentials from you.",
+        createdAt: "2026-08-03T16:00:00.000Z",
+        parentId: "stale-user-1",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-stale-request-left-hanging",
+            turnId: "stale-assistant-request",
+            requestedAt: "2026-08-03T16:00:00.000Z",
+            reason: "credentials",
+          },
+        },
+      },
+      {
+        id: "stale-user-2",
+        role: "user",
+        text: "Here they are.",
+        createdAt: "2026-08-03T17:00:00.000Z",
+        parentId: "stale-assistant-request",
+      },
+      {
+        id: "stale-assistant-leaf",
+        role: "assistant",
+        text: "Thanks — I'll take it from here.",
+        createdAt: "2026-08-03T18:00:00.000Z",
+        parentId: "stale-user-2",
+      },
+    ],
+    activeLeafId: "stale-assistant-leaf",
+  });
+
+  await saveConversation({
+    sessionId: "attention-malformed-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Malformed request",
+    createdAt: "2026-08-04T16:00:00.000Z",
+    updatedAt: "2026-08-04T18:30:00.000Z",
+    turns: [
+      {
+        id: "bad-request-user",
+        role: "user",
+        text: "Do you need anything?",
+        createdAt: "2026-08-04T16:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "bad-request-assistant",
+        role: "assistant",
+        text: "I need approval, but the stamp is corrupt.",
+        createdAt: "2026-08-04T18:30:00.000Z",
+        parentId: "bad-request-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-malformed-request",
+            turnId: "bad-request-assistant",
+            requestedAt: "not-a-date",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+    activeLeafId: "bad-request-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-off-path-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Ignore inactive branch request",
+    createdAt: "2026-08-04T12:00:00.000Z",
+    updatedAt: "2026-08-04T12:02:00.000Z",
+    turns: [
+      {
+        id: "branch-root",
+        role: "user",
+        text: "Summarize the plan.",
+        createdAt: "2026-08-04T12:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "branch-request",
+        role: "assistant",
+        text: "I need your input.",
+        createdAt: "2026-08-04T12:01:00.000Z",
+        parentId: "branch-root",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-off-path-request",
+            turnId: "branch-request",
+            requestedAt: "2026-08-04T12:01:00.000Z",
+            reason: "input",
+          },
+        },
+      },
+      {
+        id: "branch-active",
+        role: "assistant",
+        text: "Here is the answer.",
+        createdAt: "2026-08-04T12:02:00.000Z",
+        parentId: "branch-root",
+      },
+    ],
+    activeLeafId: "branch-active",
+  });
+
+  await saveConversation({
+    sessionId: "attention-malformed-turns",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Malformed timestamps stay isolated",
+    createdAt: "2026-08-04T17:00:00.000Z",
+    updatedAt: "2026-08-04T20:00:00.000Z",
+    turns: [
+      {
+        id: "malformed-valid-user",
+        role: "user",
+        text: "Keep going.",
+        createdAt: "2026-08-04T17:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "malformed-valid-assistant",
+        role: "assistant",
+        text: "On it.",
+        createdAt: "2026-08-04T18:00:00.000Z",
+        parentId: "malformed-valid-user",
+      },
+      {
+        id: "malformed-bad-user",
+        role: "user",
+        text: "One more thing.",
+        createdAt: "not-a-date",
+        parentId: "malformed-valid-assistant",
+      },
+      {
+        id: "malformed-cancelled-assistant",
+        role: "assistant",
+        text: "partial",
+        createdAt: "2026-08-04T19:00:00.000Z",
+        parentId: "malformed-bad-user",
+        cancelled: true,
+      },
+      {
+        id: "malformed-error-assistant",
+        role: "assistant",
+        text: "boom",
+        createdAt: "2026-08-04T20:00:00.000Z",
+        parentId: "malformed-cancelled-assistant",
+        isError: true,
+      },
+    ],
+    activeLeafId: "malformed-error-assistant",
+  });
+
+  const summaries = await listConversations();
+  const byId = new Map(summaries.map((summary) => [summary.sessionId, summary]));
+
+  assert.deepEqual(byId.get("attention-leaf-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T18:00:00.000Z" },
+    latestUserTurnAt: "2026-08-04T17:00:00.000Z",
+    request: {
+      sessionId: "attention-leaf-request",
+      turnId: "leaf-assistant",
+      requestedAt: "2026-08-04T18:00:00.000Z",
+      reason: "approval",
+    },
+  });
+
+  assert.deepEqual(byId.get("attention-stale-request-left-hanging")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-03T18:00:00.000Z" },
+    latestUserTurnAt: "2026-08-03T17:00:00.000Z",
+    request: {
+      sessionId: "attention-stale-request-left-hanging",
+      turnId: "stale-assistant-request",
+      requestedAt: "2026-08-03T16:00:00.000Z",
+      reason: "credentials",
+    },
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-stale-request-left-hanging")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "left-hanging",
+      since: "2026-08-03T18:00:00.000Z",
+      reason: null,
+    },
+    "newer human turns resolve historical requests canonically without erasing later left-hanging fallback",
+  );
+
+  assert.deepEqual(byId.get("attention-malformed-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T18:30:00.000Z" },
+    latestUserTurnAt: "2026-08-04T16:00:00.000Z",
+    request: null,
+  });
+
+  assert.deepEqual(byId.get("attention-off-path-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T12:02:00.000Z" },
+    latestUserTurnAt: "2026-08-04T12:00:00.000Z",
+    request: null,
+  });
+
+  assert.deepEqual(byId.get("attention-malformed-turns")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T18:00:00.000Z" },
+    latestUserTurnAt: "2026-08-04T17:00:00.000Z",
+    request: null,
+  });
+
+  for (const id of ids) {
+    await deleteConversation(id);
+  }
+}
+console.log("cave-conversations attention summary test OK");
 
 // ── First-turn stub / mid-stream model PATCH serialization ──────────────────
 // The client receives a session id immediately and can PATCH its model while

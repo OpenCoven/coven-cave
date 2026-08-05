@@ -1575,6 +1575,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/github/diff/route.test.ts",
   // imports the route module, which resolves "@/lib/server/..." aliases.
   "src/app/api/daemon/travel/reconcile/route.test.ts",
+  "src/app/api/sessions/list/route.test.ts",
   "src/app/api/familiars/route.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-models.test.ts",

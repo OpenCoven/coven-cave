@@ -3,7 +3,10 @@ import {
   defaultChatTitleForSession,
   sanitizeSessionTitle,
 } from "./cave-chat-titles.ts";
-import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
+import {
+  deriveChatAttention,
+  type ChatAttentionEvidence,
+} from "./chat-attention.ts";
 import { initiatorFromSessionKey } from "./session-initiator.ts";
 import { inferOrigin } from "./session-origin.ts";
 import type { SessionInitiator, SessionOrigin, SessionRow } from "./types.ts";
@@ -27,6 +30,7 @@ export type LocalConversationSummary = {
   branch?: string;
   /** PR URL the chat reported in an assistant reply (transcript snapshot). */
   prUrl?: string;
+  attentionEvidence?: ChatAttentionEvidence;
 };
 
 type MergeOptions = {
@@ -59,6 +63,7 @@ function localConversationToSession(
   conv: LocalConversationSummary,
   state: CaveState,
   projectRootForCwd?: (cwd: string) => string | null,
+  now = Date.now(),
 ): SessionRow {
   const keep = Boolean(state.sessionKeep?.[conv.sessionId]);
   const pinned = Boolean(state.sessionPinned?.[conv.sessionId]);
@@ -67,6 +72,7 @@ function localConversationToSession(
     state.sessionTitles[conv.sessionId] ?? sanitizeSessionTitle(conv.title) ?? "Chat";
   const familiarId = state.sessionFamiliar[conv.sessionId] ?? conv.familiarId ?? null;
   const status = conv.status ?? "completed";
+  const archivedAt = state.sessionArchived[conv.sessionId] ?? null;
   // Sidebar/rail project groups key on project_root. A UI chat only exists as
   // a local conversation (the daemon never sees it), so without this backfill
   // every new chat lands in the "No project" bucket instead of its project's
@@ -84,10 +90,15 @@ function localConversationToSession(
     title,
     status,
     exit_code: conv.exitCode ?? (status === "failed" || status === "error" ? 1 : 0),
-    archived_at: state.sessionArchived[conv.sessionId] ?? null,
+    archived_at: archivedAt,
     created_at: conv.createdAt ?? conv.updatedAt,
     updated_at: conv.updatedAt,
-    attention: NO_CHAT_ATTENTION,
+    attention: deriveChatAttention({
+      evidence: conv.attentionEvidence,
+      status,
+      archivedAt,
+      now,
+    }),
     familiarId,
     origin: conv.origin ?? "chat",
     hasLocalConversation: true,
@@ -111,8 +122,9 @@ export function localConversationSessionRows(
   includeArchived: boolean,
   projectRootForCwd?: (cwd: string) => string | null,
 ): SessionRow[] {
+  const now = Date.now();
   return localConversations
-    .map((conv) => localConversationToSession(conv, state, projectRootForCwd))
+    .map((conv) => localConversationToSession(conv, state, projectRootForCwd, now))
     .filter((row) => visibleSession(row, state, includeArchived))
     .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
 }
@@ -125,6 +137,7 @@ export function mergeSessionRows({
   isValidDaemonProjectRoot,
   projectRootForCwd,
 }: MergeOptions): SessionRow[] {
+  const now = Date.now();
   const seen = new Set<string>();
   const rows: SessionRow[] = [];
 
@@ -148,12 +161,19 @@ export function mergeSessionRows({
     if (isValidDaemonProjectRoot && !isValidDaemonProjectRoot(session.project_root)) {
       if (local && isDaemonAuthoritativeTerminalStatus(session.status)) {
         seen.add(session.id);
-        const recovered = localConversationToSession(local, state, projectRootForCwd);
+        const recovered = localConversationToSession(local, state, projectRootForCwd, now);
+        const archived_at = state.sessionArchived[session.id] ?? session.archived_at;
         const row: SessionRow = {
           ...recovered,
           status: session.status,
           exit_code: session.exit_code,
-          archived_at: state.sessionArchived[session.id] ?? session.archived_at,
+          archived_at,
+          attention: deriveChatAttention({
+            evidence: local.attentionEvidence,
+            status: session.status,
+            archivedAt: archived_at,
+            now,
+          }),
           initiator: session.initiator ?? recovered.initiator,
         };
         if (visibleSession(row, state, includeArchived)) rows.push(row);
@@ -175,6 +195,10 @@ export function mergeSessionRows({
       Number.isFinite(Date.parse(session.updated_at)) &&
       Date.parse(localUpdatedAt) > Date.parse(session.updated_at);
     const daemonStatusIsAuthoritative = isDaemonAuthoritativeTerminalStatus(session.status);
+    const mergedStatus =
+      localIsNewer && !daemonStatusIsAuthoritative && local?.status
+        ? local.status
+        : session.status;
     const row: SessionRow = {
       ...session,
       ...(localUpdatedAt ? { updated_at: localUpdatedAt } : {}),
@@ -196,7 +220,12 @@ export function mergeSessionRows({
         sanitizeSessionTitle(session.title) ??
         defaultChatTitleForSession(session.id),
       archived_at,
-      attention: NO_CHAT_ATTENTION,
+      attention: deriveChatAttention({
+        evidence: local?.attentionEvidence,
+        status: mergedStatus,
+        archivedAt: archived_at,
+        now,
+      }),
       // A Cave conversation records real provenance at send time; harness/
       // title inference is only the fallback for daemon-only sessions.
       origin: local?.origin ?? inferOrigin(session),
@@ -220,7 +249,10 @@ export function mergeSessionRows({
     if (visibleSession(row, state, includeArchived)) rows.push(row);
   }
 
-  for (const row of localConversationSessionRows(localConversations, state, includeArchived, projectRootForCwd)) {
+  for (const row of localConversations
+    .map((conv) => localConversationToSession(conv, state, projectRootForCwd, now))
+    .filter((session) => visibleSession(session, state, includeArchived))
+    .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))) {
     if (seen.has(row.id)) continue;
     rows.push(row);
   }

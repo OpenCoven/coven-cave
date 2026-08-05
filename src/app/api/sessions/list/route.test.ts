@@ -1,6 +1,9 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
@@ -28,20 +31,12 @@ assert.match(
   "the collapse helper is a no-op (and skips the FS read) when the flag is off",
 );
 
-// Regression guard for the Copilot review finding: the degraded (daemon-down,
-// local-only) branch must apply the same collapse as the happy path, or a
-// local chat under a familiar-workspace root leaks into the unscoped view when
-// the daemon is unavailable. One helper definition + two call sites = 3 hits.
 assert.equal(
   (source.match(/applyFamiliarWorkspaceCollapse\(/g) || []).length,
   3,
   "applyFamiliarWorkspaceCollapse is defined once and called in BOTH the happy and degraded paths",
 );
 
-// cave-0g2x crash truth: first-turn stubs are statusless; the list resolves
-// them against the in-process run registry — live run ⇒ running, no run ⇒
-// failed (server died mid-first-turn) — instead of the "completed" default a
-// conversation-only row would otherwise get.
 assert.match(
   source,
   /if \(!conv\.pending\) return conv;\s*\n\s*return hasActiveChatRun\(conv\.sessionId\)\s*\n?\s*\? \{ \.\.\.conv, status: "running", exitCode: 0 \}\s*\n?\s*: \{ \.\.\.conv, status: "failed", exitCode: 1 \};/,
@@ -52,5 +47,270 @@ assert.match(
   /import \{ hasActiveChatRun \} from "@\/lib\/server\/chat-stop-registry"/,
   "the liveness probe comes from the in-process chat run registry",
 );
+
+const previousEnv = {
+  COVEN_HOME: process.env.COVEN_HOME,
+  COVEN_SOCKET: process.env.COVEN_SOCKET,
+  CAVE_PROJECTS_PATH_OVERRIDE: process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+};
+const scratchRoot = path.join(process.cwd(), ".slrt");
+const covenHome = path.join(scratchRoot, "h");
+const projectRoot = path.join(scratchRoot, "p");
+const configPath = path.join(covenHome, "cave", "config.json");
+
+let stopDaemon = async () => {};
+let daemonBaseUrl = "http://127.0.0.1:9";
+
+function request(url = "http://127.0.0.1/api/sessions/list") {
+  return new Request(url, { headers: { host: "127.0.0.1" } });
+}
+
+function daemonRow(id: string, updatedAt: string) {
+  return {
+    id,
+    project_root: projectRoot,
+    harness: "claude",
+    title: id,
+    status: "completed",
+    exit_code: 0,
+    archived_at: null,
+    created_at: "2026-08-04T17:00:00.000Z",
+    updated_at: updatedAt,
+  };
+}
+
+try {
+  process.env.COVEN_HOME = covenHome;
+  delete process.env.COVEN_SOCKET;
+  delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
+
+  const route = await import("./route.ts");
+  const {
+    clearConversationListMetadataCache,
+    getConversationListMetrics,
+    saveConversation,
+  } = await import("../../../../lib/cave-conversations.ts");
+  const { sessionsListCache } = await import("../../../../lib/server/sessions-list-cache.ts");
+
+  async function resetFixtures() {
+    await stopDaemon();
+    stopDaemon = async () => {};
+    await rm(scratchRoot, { recursive: true, force: true });
+    await mkdir(covenHome, { recursive: true });
+    await mkdir(projectRoot, { recursive: true });
+    clearConversationListMetadataCache();
+    sessionsListCache.clear();
+  }
+
+  async function writeHubConfig(url: string) {
+    await mkdir(path.dirname(configPath), { recursive: true });
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
+        familiars: {},
+        roles: [],
+        addons: { github: false, code: false, browser: false, flow: false, journal: false, docs: false },
+        marketplace: { installed: {} },
+        multiHost: { mode: "hub", hubUrl: url, executorUrls: [] },
+        omnigent: {
+          enabled: false,
+          baseUrl: "",
+          defaultAgentId: "",
+          defaultHostId: "",
+          defaultWorkspace: "",
+          hostMap: {},
+          hostWorkspaceMap: {},
+          exposeHostsInComposer: true,
+        },
+        remoteHosts: [],
+      }),
+    );
+  }
+
+  async function seedConversations() {
+    await saveConversation({
+      sessionId: "route-valid",
+      familiarId: "charm",
+      harness: "claude",
+      runtime: `local:${projectRoot}`,
+      title: "Route valid",
+      createdAt: "2026-08-04T17:00:00.000Z",
+      updatedAt: "2026-08-04T18:00:00.000Z",
+      turns: [
+        {
+          id: "valid-user",
+          role: "user",
+          text: "Should I ship it?",
+          createdAt: "2026-08-04T17:00:00.000Z",
+          parentId: null,
+        },
+        {
+          id: "valid-assistant",
+          role: "assistant",
+          text: "I need your approval.",
+          createdAt: "2026-08-04T18:00:00.000Z",
+          parentId: "valid-user",
+          responseMetadata: {
+            familiarId: "charm",
+            harness: "claude",
+            model: "anthropic/claude-sonnet-4.6",
+            runtime: `local:${projectRoot}`,
+            attentionRequest: {
+              sessionId: "route-valid",
+              turnId: "valid-assistant",
+              requestedAt: "2026-08-04T18:00:00.000Z",
+              reason: "approval",
+            },
+          },
+        },
+      ],
+      activeLeafId: "valid-assistant",
+    });
+
+    await saveConversation({
+      sessionId: "route-malformed",
+      familiarId: "charm",
+      harness: "claude",
+      runtime: `local:${projectRoot}`,
+      title: "Route malformed",
+      createdAt: "2026-08-04T17:05:00.000Z",
+      updatedAt: "2026-08-04T18:05:00.000Z",
+      turns: [
+        {
+          id: "malformed-user",
+          role: "user",
+          text: "Need anything else?",
+          createdAt: "2026-08-04T17:05:00.000Z",
+          parentId: null,
+        },
+        {
+          id: "malformed-assistant",
+          role: "assistant",
+          text: "The marker is corrupt.",
+          createdAt: "2026-08-04T18:05:00.000Z",
+          parentId: "malformed-user",
+          responseMetadata: {
+            familiarId: "charm",
+            harness: "claude",
+            model: "anthropic/claude-sonnet-4.6",
+            runtime: `local:${projectRoot}`,
+            attentionRequest: {
+              sessionId: "route-malformed",
+              turnId: "malformed-assistant",
+              requestedAt: "not-a-date",
+              reason: "approval",
+            },
+          },
+        },
+      ],
+      activeLeafId: "malformed-assistant",
+    });
+  }
+
+  async function startDaemon(rows: unknown[]) {
+    const server = createServer((req, res) => {
+      if (req.url === "/api/v1/sessions") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(rows));
+        return;
+      }
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "not found" }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address === "object" && typeof address.port === "number");
+    daemonBaseUrl = `http://127.0.0.1:${address.port}`;
+    stopDaemon = async () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+  }
+
+  async function fetchSessions() {
+    const response = await route.GET(request());
+    assert.equal(response.status, 200, await response.clone().text());
+    return response.json();
+  }
+
+  const realNow = Date.now;
+  Date.now = () => Date.parse("2026-08-04T20:00:00.000Z");
+  try {
+    await resetFixtures();
+    await seedConversations();
+    await startDaemon([
+      daemonRow("route-valid", "2026-08-04T19:30:00.000Z"),
+      daemonRow("route-malformed", "2026-08-04T19:31:00.000Z"),
+    ]);
+    await writeHubConfig(daemonBaseUrl);
+
+    clearConversationListMetadataCache();
+    sessionsListCache.clear();
+    const healthyBefore = getConversationListMetrics().scanCount;
+    const healthy = await fetchSessions();
+    assert.equal(healthy.ok, true);
+    assert.equal(healthy.degraded, undefined);
+    assert.equal(
+      getConversationListMetrics().scanCount,
+      healthyBefore + 1,
+      "healthy path scans the transcript cache once before mergeSessionRows reuses the summaries",
+    );
+    const healthyById = new Map(healthy.sessions.map((row) => [row.id, row]));
+    assert.deepEqual(healthyById.get("route-valid")?.attention, {
+      state: "awaiting-human",
+      since: "2026-08-04T18:00:00.000Z",
+      reason: "approval",
+    });
+    assert.deepEqual(
+      healthyById.get("route-malformed")?.attention,
+      {
+        state: "none",
+        since: null,
+        reason: null,
+      },
+      "malformed attention evidence fails quiet without dropping the daemon-backed row",
+    );
+    await stopDaemon();
+    stopDaemon = async () => {};
+    clearConversationListMetadataCache();
+    sessionsListCache.clear();
+    const degradedBefore = getConversationListMetrics().scanCount;
+    const degraded = await fetchSessions();
+    assert.equal(degraded.ok, true);
+    assert.equal(degraded.degraded, true);
+    assert.equal(
+      getConversationListMetrics().scanCount,
+      degradedBefore + 1,
+      "degraded path still scans local transcripts once and threads those summaries into the local fallback rows",
+    );
+    const degradedById = new Map(degraded.sessions.map((row) => [row.id, row]));
+    assert.deepEqual(degradedById.get("route-valid")?.attention, {
+      state: "awaiting-human",
+      since: "2026-08-04T18:00:00.000Z",
+      reason: "approval",
+    });
+    assert.deepEqual(degradedById.get("route-malformed")?.attention, {
+      state: "none",
+      since: null,
+      reason: null,
+    });
+  } finally {
+    Date.now = realNow;
+  }
+} finally {
+  await stopDaemon();
+  if (previousEnv.COVEN_HOME === undefined) delete process.env.COVEN_HOME;
+  else process.env.COVEN_HOME = previousEnv.COVEN_HOME;
+  if (previousEnv.COVEN_SOCKET === undefined) delete process.env.COVEN_SOCKET;
+  else process.env.COVEN_SOCKET = previousEnv.COVEN_SOCKET;
+  if (previousEnv.CAVE_PROJECTS_PATH_OVERRIDE === undefined) {
+    delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
+  } else {
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE = previousEnv.CAVE_PROJECTS_PATH_OVERRIDE;
+  }
+  await rm(scratchRoot, { recursive: true, force: true });
+}
 
 console.log("sessions list route.test.ts: ok");

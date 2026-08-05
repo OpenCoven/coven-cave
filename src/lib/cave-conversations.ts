@@ -10,9 +10,12 @@ import type { ModelControlValues } from "./model-control-capabilities.ts";
 import type { GrokSandboxProfile } from "./grok-build.ts";
 import type { SessionOrigin } from "./types.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
+import { CHAT_ATTENTION_REASONS } from "./chat-attention-marker.ts";
+import type { ChatAttentionEvidence } from "./chat-attention.ts";
 
 const CONV_DIR = path.join(caveHome(), "conversations");
 const conversationLockTails = new Map<string, Promise<void>>();
+const VALID_ATTENTION_REASON_SET = new Set<string>(CHAT_ATTENTION_REASONS);
 
 export type ChatTurn = {
   id: string;
@@ -135,21 +138,6 @@ export type ConversationFile = {
   pendingUserTurnId?: string;
 };
 
-function conversationTerminalStatus(conv: ConversationFile): { status: string; exitCode: number } | null {
-  const turns = conv.activeLeafId
-    ? resolveActivePath(conv.turns, conv.activeLeafId)
-    : conv.turns;
-  const latestAssistant = [...turns].reverse().find((turn) => turn.role === "assistant");
-  // No reply on the active path yet — a first-turn stub whose assistant reply
-  // is still streaming (or never arrived; see createConversationStub). There
-  // is no terminal status to report: callers fall back to their own default,
-  // and the session-list merge must never override a live daemon status with
-  // one inferred from a pending stub.
-  if (!latestAssistant) return null;
-  if (latestAssistant.isError) return { status: "failed", exitCode: 1 };
-  return { status: "completed", exitCode: 0 };
-}
-
 export type ConversationSummary = {
   sessionId: string;
   familiarId: string;
@@ -169,6 +157,7 @@ export type ConversationSummary = {
   pending?: boolean;
   createdAt?: string;
   updatedAt: string;
+  attentionEvidence?: ChatAttentionEvidence;
 };
 
 export type ConversationListMetrics = {
@@ -213,6 +202,95 @@ export function getConversationListMetrics(): ConversationListMetrics {
 
 export function clearConversationListMetadataCache(): void {
   conversationSummaryCache.clear();
+}
+
+function activeConversationTurns(conv: Pick<ConversationFile, "turns" | "activeLeafId">): ChatTurn[] {
+  return conv.activeLeafId ? resolveActivePath(conv.turns, conv.activeLeafId) : conv.turns;
+}
+
+function deriveConversationSignals(conv: ConversationFile): {
+  terminal: { status: string; exitCode: number } | null;
+  attentionEvidence?: ChatAttentionEvidence;
+} {
+  const turns = activeConversationTurns(conv);
+  let latestAssistant: ChatTurn | null = null;
+  let latestCompletedTurn: ChatAttentionEvidence["latestCompletedTurn"] = null;
+  let latestUserTurnAt: string | null = null;
+  let request: ChatAttentionEvidence["request"] = null;
+
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const turn = turns[i];
+    if (!latestAssistant && turn.role === "assistant") latestAssistant = turn;
+
+    if (!latestCompletedTurn && (turn.role === "user" || turn.role === "assistant")) {
+      const createdAt = normalizeStableIsoTimestamp(turn.createdAt);
+      if (createdAt && !turn.isError && !turn.cancelled) {
+        latestCompletedTurn = { role: turn.role, at: createdAt };
+      }
+    }
+
+    if (!latestUserTurnAt && turn.role === "user") {
+      latestUserTurnAt = normalizeStableIsoTimestamp(turn.createdAt);
+    }
+
+    if (!request && turn.role === "assistant") {
+      request = normalizeStableAttentionRequest(
+        typeof turn.responseMetadata === "object" && turn.responseMetadata
+          ? turn.responseMetadata.attentionRequest
+          : undefined,
+        conv.sessionId,
+      );
+    }
+  }
+
+  const terminal = !latestAssistant
+    ? null
+    : latestAssistant.isError
+      ? { status: "failed", exitCode: 1 }
+      : { status: "completed", exitCode: 0 };
+
+  return {
+    terminal,
+    ...(latestCompletedTurn || latestUserTurnAt || request
+      ? {
+          attentionEvidence: {
+            latestCompletedTurn,
+            latestUserTurnAt,
+            request,
+          },
+        }
+      : {}),
+  };
+}
+
+function normalizeStableIsoTimestamp(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+function normalizeStableAttentionRequest(
+  value: ChatAttentionEvidence["request"] | undefined,
+  sessionId: string,
+): ChatAttentionEvidence["request"] | null {
+  if (!value) return null;
+  if (
+    typeof value.sessionId !== "string" ||
+    value.sessionId !== sessionId ||
+    typeof value.turnId !== "string" ||
+    !value.turnId ||
+    typeof value.requestedAt !== "string" ||
+    !normalizeStableIsoTimestamp(value.requestedAt) ||
+    typeof value.reason !== "string" ||
+    !VALID_ATTENTION_REASON_SET.has(value.reason)
+  ) {
+    return null;
+  }
+  return {
+    sessionId: value.sessionId,
+    turnId: value.turnId,
+    requestedAt: value.requestedAt,
+    reason: value.reason,
+  };
 }
 
 async function ensureDir() {
@@ -476,7 +554,7 @@ async function readConversationSummary(
       conv.turns = linearized.turns;
       conv.activeLeafId = linearized.activeLeafId;
     }
-    const terminal = conversationTerminalStatus(conv);
+    const signals = deriveConversationSignals(conv);
     return {
       summary: {
         sessionId: conv.sessionId,
@@ -488,8 +566,11 @@ async function readConversationSummary(
         origin: conv.origin,
         ...(conv.branch ? { branch: conv.branch } : {}),
         ...(conv.prUrl ? { prUrl: conv.prUrl } : {}),
-        ...(terminal ? { status: terminal.status, exitCode: terminal.exitCode } : {}),
+        ...(signals.terminal
+          ? { status: signals.terminal.status, exitCode: signals.terminal.exitCode }
+          : {}),
         ...(conv.pendingUserTurnId ? { pending: true } : {}),
+        ...(signals.attentionEvidence ? { attentionEvidence: signals.attentionEvidence } : {}),
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
       },

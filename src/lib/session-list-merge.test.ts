@@ -90,6 +90,305 @@ assert.equal(
   "daemon-only sessions without a matching local transcript should not gain local provenance",
 );
 
+// Attention derivation (cave-zs85n task 4): local transcript evidence is
+// stable summary data; mergeSessionRows projects the time-sensitive attention
+// state once per list compute, independent of daemon updated_at churn.
+{
+  const realNow = Date.now;
+  Date.now = () => Date.parse("2026-08-04T20:00:00.000Z");
+  try {
+    const bareState = {
+      sessionFamiliar: {},
+      sessionTitles: {},
+      sessionArchived: {},
+      sessionSacrificed: {},
+    };
+    const localAttention = {
+      sessionId: "attention-local",
+      familiarId: "nova",
+      harness: "claude",
+      title: "Attention local",
+      runtime: "local:/repo",
+      status: "completed",
+      exitCode: 0,
+      updatedAt: "2026-08-04T19:59:00.000Z",
+      attentionEvidence: {
+        latestCompletedTurn: {
+          role: "assistant",
+          at: "2026-08-04T18:00:00.000Z",
+        },
+        latestUserTurnAt: "2026-08-04T17:00:00.000Z",
+        request: {
+          sessionId: "attention-local",
+          turnId: "assistant-turn",
+          requestedAt: "2026-08-04T18:00:00.000Z",
+          reason: "approval",
+        },
+      },
+    };
+
+    const [localOnlyRow] = localConversationSessionRows([localAttention], bareState, false);
+    assert.deepEqual(
+      localOnlyRow?.attention,
+      {
+        state: "awaiting-human",
+        since: "2026-08-04T18:00:00.000Z",
+        reason: "approval",
+      },
+      "local-only rows derive attention from cached transcript evidence",
+    );
+
+    const mergedAttention = mergeSessionRows({
+      daemonSessions: [
+        {
+          id: "attention-local",
+          project_root: "/repo",
+          harness: "claude",
+          title: "Attention local",
+          status: "completed",
+          exit_code: 0,
+          archived_at: null,
+          created_at: "2026-08-04T17:00:00.000Z",
+          updated_at: "2026-08-04T18:30:00.000Z",
+        },
+      ],
+      localConversations: [localAttention],
+      state: bareState,
+      includeArchived: false,
+    });
+    assert.deepEqual(
+      mergedAttention[0]?.attention,
+      localOnlyRow?.attention,
+      "daemon-backed rows reuse the same local evidence projection",
+    );
+
+    const reopenedAttention = mergeSessionRows({
+      daemonSessions: [
+        {
+          id: "attention-local",
+          project_root: "/repo",
+          harness: "claude",
+          title: "Attention local",
+          status: "completed",
+          exit_code: 0,
+          archived_at: null,
+          created_at: "2026-08-04T17:00:00.000Z",
+          updated_at: "2026-08-05T03:00:00.000Z",
+        },
+      ],
+      localConversations: [localAttention],
+      state: bareState,
+      includeArchived: false,
+    });
+    assert.equal(
+      reopenedAttention[0]?.attention.since,
+      "2026-08-04T18:00:00.000Z",
+      "daemon updated_at churn does not rewrite attention provenance",
+    );
+
+    const runningRow = mergeSessionRows({
+      daemonSessions: [
+        {
+          id: "attention-running",
+          project_root: "/repo",
+          harness: "claude",
+          title: "Attention running",
+          status: "running",
+          exit_code: null,
+          archived_at: null,
+          created_at: "2026-08-04T17:00:00.000Z",
+          updated_at: "2026-08-04T19:00:00.000Z",
+        },
+      ],
+      localConversations: [
+        {
+          ...localAttention,
+          sessionId: "attention-running",
+          updatedAt: "2026-08-04T18:00:00.000Z",
+          attentionEvidence: localAttention.attentionEvidence,
+        },
+      ],
+      state: bareState,
+      includeArchived: false,
+    });
+    assert.deepEqual(
+      runningRow[0]?.attention,
+      NO_CHAT_ATTENTION,
+      "canonical active sessions never surface chat attention",
+    );
+
+    const waitingRow = mergeSessionRows({
+      daemonSessions: [
+        {
+          id: "attention-waiting",
+          project_root: "/repo",
+          harness: "claude",
+          title: "Attention waiting",
+          status: "waiting",
+          exit_code: null,
+          archived_at: null,
+          created_at: "2026-08-04T17:00:00.000Z",
+          updated_at: "2026-08-04T19:00:00.000Z",
+        },
+      ],
+      localConversations: [
+        {
+          ...localAttention,
+          sessionId: "attention-waiting",
+          updatedAt: "2026-08-04T18:00:00.000Z",
+          attentionEvidence: localAttention.attentionEvidence,
+        },
+      ],
+      state: bareState,
+      includeArchived: false,
+    });
+    assert.deepEqual(
+      waitingRow[0]?.attention,
+      NO_CHAT_ATTENTION,
+      "waiting sessions stay attention-free even with explicit evidence",
+    );
+
+    const [archivedRow] = localConversationSessionRows(
+      [
+        {
+          ...localAttention,
+          sessionId: "attention-archived",
+        },
+      ],
+      {
+        ...bareState,
+        sessionArchived: { "attention-archived": "2026-08-04T19:30:00.000Z" },
+      },
+      true,
+    );
+    assert.deepEqual(
+      archivedRow?.attention,
+      NO_CHAT_ATTENTION,
+      "archived rows discard attention state at projection time",
+    );
+
+    const daemonOnly = mergeSessionRows({
+      daemonSessions: [
+        {
+          id: "daemon-only-attention",
+          project_root: "/repo",
+          harness: "claude",
+          title: "Daemon only",
+          status: "completed",
+          exit_code: 0,
+          archived_at: null,
+          created_at: "2026-08-04T17:00:00.000Z",
+          updated_at: "2026-08-04T19:00:00.000Z",
+        },
+      ],
+      localConversations: [],
+      state: bareState,
+      includeArchived: false,
+    });
+    assert.deepEqual(
+      daemonOnly[0]?.attention,
+      NO_CHAT_ATTENTION,
+      "daemon-only rows have no local evidence to project",
+    );
+
+    const [staleRequestRow] = mergeSessionRows({
+      daemonSessions: [],
+      localConversations: [
+        {
+          sessionId: "stale-request",
+          familiarId: "nova",
+          harness: "claude",
+          title: "Stale request fallback",
+          status: "completed",
+          exitCode: 0,
+          updatedAt: "2026-08-03T18:00:00.000Z",
+          attentionEvidence: {
+            latestCompletedTurn: {
+              role: "assistant",
+              at: "2026-08-03T18:00:00.000Z",
+            },
+            latestUserTurnAt: "2026-08-03T17:00:00.000Z",
+            request: {
+              sessionId: "stale-request",
+              turnId: "assistant-request",
+              requestedAt: "2026-08-03T16:00:00.000Z",
+              reason: "input",
+            },
+          },
+        },
+      ],
+      state: bareState,
+      includeArchived: false,
+    });
+    assert.deepEqual(
+      staleRequestRow?.attention,
+      {
+        state: "left-hanging",
+        since: "2026-08-03T18:00:00.000Z",
+        reason: null,
+      },
+      "a newer human reply resolves the old request and allows aged assistant fallback",
+    );
+
+    const malformedRows = mergeSessionRows({
+      daemonSessions: [],
+      localConversations: [
+        {
+          sessionId: "attention-valid",
+          familiarId: "nova",
+          harness: "claude",
+          title: "Valid attention",
+          status: "completed",
+          exitCode: 0,
+          updatedAt: "2026-08-04T18:00:00.000Z",
+          attentionEvidence: localAttention.attentionEvidence,
+        },
+        {
+          sessionId: "attention-malformed",
+          familiarId: "nova",
+          harness: "claude",
+          title: "Malformed attention",
+          status: "completed",
+          exitCode: 0,
+          updatedAt: "2026-08-04T18:01:00.000Z",
+          attentionEvidence: {
+            latestCompletedTurn: {
+              role: "assistant",
+              at: "not-a-date",
+            },
+            latestUserTurnAt: null,
+            request: {
+              sessionId: "attention-malformed",
+              turnId: "assistant-turn",
+              requestedAt: "2026-08-04T18:00:00.000Z",
+              reason: "approval",
+            },
+          },
+        },
+      ],
+      state: bareState,
+      includeArchived: false,
+    });
+    const malformedById = new Map(malformedRows.map((row) => [row.id, row]));
+    assert.deepEqual(
+      malformedById.get("attention-valid")?.attention,
+      {
+        state: "awaiting-human",
+        since: "2026-08-04T18:00:00.000Z",
+        reason: "approval",
+      },
+      "valid rows keep their derived attention when malformed siblings are present",
+    );
+    assert.deepEqual(
+      malformedById.get("attention-malformed")?.attention,
+      NO_CHAT_ATTENTION,
+      "malformed evidence fails quiet without dropping the row",
+    );
+  } finally {
+    Date.now = realNow;
+  }
+}
+
 const matchedMerged = mergeSessionRows({
   daemonSessions: [
     {
