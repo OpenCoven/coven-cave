@@ -4,7 +4,7 @@
  * SidebarMinimal -- the redesigned Cave sidebar.
  *
  * Layout (top to bottom):
- *   1. Familiar scope selector + New chat CTA
+ *   1. Home/Build switcher, familiar scope selector, New chat CTA
  *   2. Grouped app destinations and role-surface rooms
  *   3. Footer: Dashboard, Settings
  */
@@ -51,7 +51,7 @@ export type SidebarRoleSurfaceRow = {
 
 export type SidebarMinimalProps = {
   mode: string;
-  /** Active global section (Home | Code). The shell owns it so deep links and
+  /** Active global section (Home | Build). The shell owns it so deep links and
    *  the ⌘K palette can move rooms; omitted falls back to Home. */
   section?: NavSection;
   onSectionChange?: (section: NavSection) => void;
@@ -206,10 +206,12 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   return (
     <nav className="sidebar-minimal" aria-label="Primary">
+      {onSectionChange ? <NavSectionTabs section={section} onSectionChange={onSectionChange} /> : null}
       {/* App brand mark — rail-only chrome (chat-revamp phase D): a 28px
-          accent-tinted rounded square with the star glyph, shown by CSS only
-          when the nav is collapsed to the 56px icon rail. The expanded panel
-          keeps leading with the familiar switcher. Decorative — hidden from AT. */}
+          accent-tinted rounded square with the star glyph. It follows the
+          global section switcher in collapsed rails so the fixed control keeps
+          the top slot without dropping the existing branding. Decorative —
+          hidden from AT and non-interactive. */}
       <div className="sidebar-brand-mark" aria-hidden="true">
         <Icon name="ph:sparkle" width={CAVE_ICON_SIZE.shellNav} height={CAVE_ICON_SIZE.shellNav} />
       </div>
@@ -246,8 +248,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         </button>
       </div>
 
-      {onSectionChange ? <NavSectionTabs section={section} onSectionChange={onSectionChange} /> : null}
-
       <div
         className="sidebar-nav-scroll"
         ref={navScrollRef}
@@ -277,7 +277,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           ))}
           {/* Role Surface rooms — the active familiar's or selected scope's
             vocation workspaces, filtered to the open section (the coding
-            workbench belongs to Code; every other room to Home).
+            workbench belongs to Build; every other room to Home).
             Registry-driven: the sidebar renders whatever it's handed and never
             names a role. The cluster label keeps them reading as chambers of
             the Cave rather than more app tabs. */}
@@ -305,8 +305,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             </>
           )}
 
-          {/* The session list belongs to the Code room (cave-24d2r) — Home is
-            destinations, Code is live work. */}
+          {/* The session list belongs to the Build room (cave-24d2r) — Home is
+            destinations, Build is live work. */}
           {section === "code" ? (
             <RecentActivityRollup
               sessions={sessions}

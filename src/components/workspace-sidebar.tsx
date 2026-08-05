@@ -60,8 +60,9 @@ type Props = {
   /** Home / Scheduled / Plugins shortcuts route through Workspace so it can
    *  coordinate mode changes with mobile drawer dismissal. */
   onNavigate: (mode: WorkspaceSidebarMode) => void;
-  /** Global section switcher (Home | Code). This sidebar hosts the Code room,
-   *  so the tabs ride at its top too — leaving Code returns to the Home rail. */
+  /** Global section switcher (Home | Build). This sidebar hosts the Build
+   *  room, so the tabs ride at its top too — leaving Build returns to the
+   *  Home rail. */
   onSectionChange?: (section: NavSection) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
@@ -569,8 +570,8 @@ export function WorkspaceSidebar({
   return (
     <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
-        {/* Global section switcher — Home | Code (cave-24d2r). This sidebar IS
-            the Code room, so switching to Home hands the rail back to the
+        {/* Global section switcher — Home | Build (cave-24d2r). This sidebar IS
+            the Build room, so switching to Home hands the rail back to the
             standard destination list. */}
         {onSectionChange ? <NavSectionTabs section="code" onSectionChange={onSectionChange} /> : null}
         {/* Header — the labeled familiar switcher (#2747). WorkspaceSidebar owns

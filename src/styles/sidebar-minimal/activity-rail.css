@@ -43,7 +43,7 @@
  * `title` so hovering names the surface. Mobile is unaffected — it slides the
  * full drawer in and out (the rail class is only applied on desktop). */
 .shell-nav--rail .sidebar-minimal {
-  padding: 10px 0;
+  padding: 0;
   gap: 6px;
   align-items: center;
 }
@@ -80,6 +80,7 @@
   border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
   color: var(--accent-presence);
+  pointer-events: none;
 }
 
 .shell-nav--rail .sidebar-user-avatar {

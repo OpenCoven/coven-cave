@@ -9,10 +9,13 @@ import {
   roomBelongsToSection,
 } from "./nav-section.ts";
 
-test("the rail offers exactly two sections, Home first", () => {
+test("the rail offers Home and Build in stable section order", () => {
   assert.deepEqual(
-    NAV_SECTIONS.map((s) => s.id),
-    ["home", "code"],
+    NAV_SECTIONS.map(({ id, label }) => ({ id, label })),
+    [
+      { id: "home", label: "Home" },
+      { id: "code", label: "Build" },
+    ],
   );
   assert.equal(DEFAULT_NAV_SECTION, "home");
 });

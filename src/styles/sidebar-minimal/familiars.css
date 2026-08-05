@@ -240,7 +240,6 @@
 @media (max-height: 760px) {
   .sidebar-minimal {
     gap: 7px;
-    padding-top: var(--space-2);
   }
 
   .sidebar-nav-scroll {

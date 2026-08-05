@@ -3,7 +3,7 @@
  *
  * The Cave's destinations divide into two rooms rather than one flat list:
  *
- *   - "code" — the working room: Chat, the Code Workshop, the browser, and the
+ *   - "code" — the Build room: Chat, the Code Workshop, the browser, and the
  *     session list. Everything that is a live conversation with a familiar or a
  *     view of the repository it is working in.
  *   - "home" — everything else: the overview, Tasks, Rituals, Memories, and
@@ -43,7 +43,7 @@ export const NAV_SECTIONS: readonly NavSectionDescriptor[] = [
   },
   {
     id: "code",
-    label: "Code",
+    label: "Build",
     iconName: "ph:code-bold",
     description: "Chat, coding sessions, and the code workshop",
     kbd: "⌃2",
@@ -52,11 +52,11 @@ export const NAV_SECTIONS: readonly NavSectionDescriptor[] = [
 
 export const DEFAULT_NAV_SECTION: NavSection = "home";
 
-/** Canonical modes that belong to the Code room. Aliases resolve first, so
+/** Canonical modes that belong to the Build room. Aliases resolve first, so
  *  `groupchat`, `code` and `github` arrive here as `chat` / `surface:code`. */
 const CODE_SECTION_MODES: ReadonlySet<string> = new Set(["chat", "browser"]);
 
-/** The Role Surface room ids that live in Code rather than Home. Rooms are
+/** The Role Surface room ids that live in Build rather than Home. Rooms are
  *  registry-driven, so this names the coding workbench only — every other
  *  vocation room stays in Home. */
 const CODE_SECTION_SURFACE_IDS: ReadonlySet<string> = new Set(["code"]);
