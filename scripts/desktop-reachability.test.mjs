@@ -58,8 +58,13 @@ assert.match(
 );
 assert.match(
   reachability,
-  /create_fresh_log_file[\s\S]*\.truncate\(true\)/,
-  "each daemon launch must discard stale readiness output before repairing Serve",
+  /let sidecar_output = Arc::new\(Mutex::new\(SidecarOutputTail::default\(\)\)\)[\s\S]*stdout\(Stdio::piped\(\)\)[\s\S]*stderr\(Stdio::piped\(\)\)[\s\S]*capture_sidecar_output/,
+  "background sidecars must drain readiness output into a bounded in-memory tail",
+);
+assert.doesNotMatch(
+  reachability,
+  /sidecar-daemon-server\.log|create_fresh_log_file/,
+  "background sidecars must not accumulate persistent launch logs",
 );
 assert.match(
   reachability,

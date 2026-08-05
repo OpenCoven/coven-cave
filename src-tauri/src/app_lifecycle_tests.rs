@@ -206,17 +206,36 @@ fn notch_url_carries_the_presentation_state_to_the_page() {
 }
 
 #[test]
-fn sidecar_log_paths_are_isolated_by_process_and_port() {
-    let log_dir = std::env::temp_dir().join("covencave-sidecar-log-path-test");
-    let first = sidecar_log_path(&log_dir, 41001);
-    let second = sidecar_log_path(&log_dir, 41002);
+fn sidecar_output_tail_retains_only_the_newest_256_kibibytes() {
+    let mut output = SidecarOutputTail::default();
+    output.push(&vec![b'a'; SIDECAR_OUTPUT_TAIL_BYTES]);
+    output.push(b"newest");
 
-    assert_ne!(first, second);
-    let expected = format!("sidecar-{}-41001.log", std::process::id());
-    assert_eq!(
-        first.file_name().and_then(|name| name.to_str()),
-        Some(expected.as_str())
+    let captured = output.snapshot();
+    assert_eq!(captured.len(), SIDECAR_OUTPUT_TAIL_BYTES);
+    assert!(captured.ends_with(b"newest"));
+
+    output.push(&vec![b'b'; SIDECAR_OUTPUT_TAIL_BYTES + 32]);
+    assert_eq!(output.snapshot(), vec![b'b'; SIDECAR_OUTPUT_TAIL_BYTES]);
+}
+
+#[test]
+fn stdout_and_stderr_feed_one_shared_bounded_sidecar_tail() {
+    let output = Arc::new(Mutex::new(SidecarOutputTail::default()));
+    let stdout = capture_sidecar_output(
+        std::io::Cursor::new(b"stdout line\n".to_vec()),
+        Arc::clone(&output),
     );
+    let stderr = capture_sidecar_output(
+        std::io::Cursor::new(b"stderr line\n".to_vec()),
+        Arc::clone(&output),
+    );
+
+    stdout.join().expect("join stdout capture");
+    stderr.join().expect("join stderr capture");
+    let text = output.lock().expect("output tail").text();
+    assert!(text.contains("stdout line"));
+    assert!(text.contains("stderr line"));
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -229,39 +248,41 @@ fn packaged_sidecar_start_timeout_allows_slow_cold_start() {
 fn sidecar_port_wait_is_cancellable_and_detects_readiness() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind readiness fixture");
     let port = listener.local_addr().expect("fixture address").port();
-    let log_dir = std::env::temp_dir().join(format!(
-        "covencave-sidecar-ready-test-{}-{}",
-        std::process::id(),
-        port
-    ));
-    std::fs::create_dir_all(&log_dir).expect("create log fixture dir");
-    let log_path = log_dir.join("sidecar.log");
+    let output = Arc::new(Mutex::new(SidecarOutputTail::default()));
 
     // A listening port without the sidecar's own ready log line must NOT
     // be trusted — that's the port-squatting scenario this guards against.
-    std::fs::write(&log_path, "starting up\n").expect("write log fixture");
+    output.lock().expect("output tail").push(b"starting up\n");
     assert!(matches!(
-        wait_for_sidecar_ready(port, &log_path, Duration::from_millis(600), || false),
+        wait_for_sidecar_ready(
+            port,
+            &output,
+            Duration::from_millis(600),
+            || false,
+            || false
+        ),
         PortWaitResult::TimedOut
     ));
 
-    std::fs::write(
-        &log_path,
-        format!("starting up\n> Ready on http://127.0.0.1:{}\n", port),
-    )
-    .expect("write ready log fixture");
     assert!(matches!(
-        wait_for_sidecar_ready(port, &log_path, Duration::from_secs(1), || false),
+        wait_for_sidecar_ready(port, &output, Duration::from_secs(1), || false, || true),
+        PortWaitResult::Exited
+    ));
+
+    output
+        .lock()
+        .expect("output tail")
+        .push(format!("> Ready on http://127.0.0.1:{}\n", port).as_bytes());
+    assert!(matches!(
+        wait_for_sidecar_ready(port, &output, Duration::from_secs(1), || false, || false),
         PortWaitResult::Ready
     ));
     drop(listener);
 
     assert!(matches!(
-        wait_for_sidecar_ready(port, &log_path, Duration::from_secs(1), || true),
+        wait_for_sidecar_ready(port, &output, Duration::from_secs(1), || true, || false),
         PortWaitResult::Cancelled
     ));
-
-    let _ = std::fs::remove_dir_all(&log_dir);
 }
 
 #[cfg(target_os = "windows")]
