@@ -350,6 +350,39 @@ import { groupConsecutiveTools } from "./turn-segments.ts";
     [["read-before"], ["read-after"]],
     "same-name calls captured on opposite sides of prose never roll up",
   );
+
+  const unknownBetweenKnownBoundaries = groupConsecutiveTools([
+    { id: "read-at-start", name: "Read", textOffset: 0 },
+    { id: "read-without-offset", name: "Read" },
+    { id: "read-after-prose", name: "Read", textOffset: 24 },
+  ]);
+  assert.deepEqual(
+    unknownBetweenKnownBoundaries.map((run) => run.tools.map((tool) => tool.id)),
+    [["read-at-start", "read-without-offset"], ["read-after-prose"]],
+    "an unknown offset does not erase the last known prose boundary",
+  );
+
+  const unknownBetweenConsecutiveCalls = groupConsecutiveTools([
+    { id: "read-known-1", name: "Read", textOffset: 8 },
+    { id: "read-legacy", name: "Read" },
+    { id: "read-known-2", name: "Read", textOffset: 8 },
+  ]);
+  assert.deepEqual(
+    unknownBetweenConsecutiveCalls.map((run) => run.tools.map((tool) => tool.id)),
+    [["read-known-1", "read-legacy", "read-known-2"]],
+    "an unknown offset still joins truly consecutive calls at the same known boundary",
+  );
+
+  const leadingUnknownOffset = groupConsecutiveTools([
+    { id: "read-legacy-first", name: "Read" },
+    { id: "read-known-before", name: "Read", textOffset: 0 },
+    { id: "read-known-after", name: "Read", textOffset: 12 },
+  ]);
+  assert.deepEqual(
+    leadingUnknownOffset.map((run) => run.tools.map((tool) => tool.id)),
+    [["read-legacy-first", "read-known-before"], ["read-known-after"]],
+    "the first known offset becomes the boundary for a legacy-started run",
+  );
 }
 
 // ── Source pins ─────────────────────────────────────────────────────────────
@@ -393,7 +426,7 @@ assert.match(
 );
 assert.match(
   chatViewSource,
-  /const turnTools = turn\.tools \?\? \[\];[\s\S]*const editToolIds = new Set\([\s\S]*isFileMutationTool\(tool\.name\)[\s\S]*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);[\s\S]*const otherTools = turnTools\.filter/,
+  /const turnTools = turn\.tools \?\? \[\];[\s\S]*const editToolIds = new Set\([\s\S]*normalizeFileMutation\(tool\.name, tool\.input\)[\s\S]*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);[\s\S]*const otherTools = turnTools\.filter/,
   "pending and settled turns share one id-keyed edit/non-edit partition",
 );
 assert.doesNotMatch(

@@ -6,11 +6,14 @@ import { act, create } from "react-test-renderer";
 
 import { ChatToolRunDisclosure } from "./chat-tool-run-disclosure.ts";
 import { groupConsecutiveTools } from "../lib/turn-segments.ts";
-import {
+import * as mutationTools from "../lib/tool-input-diff.ts";
+
+const {
   isFileMutationTool,
   toolInputAsDiff,
   toolTargetFile,
-} from "../lib/tool-input-diff.ts";
+  toolTargetPath,
+} = mutationTools;
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -262,10 +265,10 @@ test("a mutation tool stays in its id-keyed slot as partial input becomes parsea
 });
 
 test("mutation-slot classification is exact and independent of payload shape", () => {
-  for (const name of ["Edit", "write", " MultiEdit ", "NotebookEdit"]) {
+  for (const name of ["Edit", "write", " MultiEdit ", "NotebookEdit", "file_change", "apply_patch", "Patch"]) {
     assert.equal(isFileMutationTool(name), true, `${name} is a known mutation tool`);
   }
-  for (const name of ["Read", "Bash", "EditDistance", "write_memory", "apply_patch"]) {
+  for (const name of ["Read", "Bash", "EditDistance", "write_memory"]) {
     assert.equal(isFileMutationTool(name), false, `${name} must stay generic`);
   }
   assert.equal(
@@ -276,6 +279,143 @@ test("mutation-slot classification is exact and independent of payload shape", (
     })),
     null,
     "an edit-shaped payload does not reclassify an unrelated tool",
+  );
+});
+
+test("repository adapter mutation payloads normalize through the public helpers", () => {
+  const codexFileChange = JSON.stringify({
+    changes: [{ path: "src/app.ts", kind: "update" }],
+  });
+  assert.deepEqual(
+    mutationTools.normalizeFileMutation("file_change", codexFileChange),
+    {
+      name: "file_change",
+      path: "src/app.ts",
+      targetFile: null,
+      diff: null,
+    },
+    "the Codex parser's observed changes[] payload has one normalized descriptor",
+  );
+  assert.equal(
+    toolTargetPath("file_change", codexFileChange),
+    "src/app.ts",
+    "Codex file_change uses the first observed changes[].path",
+  );
+  assert.equal(
+    toolInputAsDiff("file_change", codexFileChange),
+    null,
+    "Codex path/kind metadata alone does not invent a reviewable code diff",
+  );
+
+  const openClawEdit = JSON.stringify({
+    path: "/repo/src/openclaw.ts",
+    edits: [
+      { oldText: "const before = true;", newText: "const after = true;" },
+      { oldText: "export { before };", newText: "export { after };" },
+    ],
+  });
+  const openClawMutation = mutationTools.normalizeFileMutation("edit", openClawEdit);
+  assert.ok(openClawMutation);
+  assert.equal(mutationTools.isFileMutationActionReady(openClawMutation, "running"), false);
+  assert.equal(mutationTools.isFileMutationActionReady(openClawMutation, "error"), false);
+  assert.equal(mutationTools.isFileMutationActionReady(openClawMutation, "ok"), true);
+  assert.equal(toolTargetFile("edit", openClawEdit), "/repo/src/openclaw.ts");
+  assert.equal(
+    toolInputAsDiff("edit", openClawEdit),
+    [
+      "--- a//repo/src/openclaw.ts",
+      "+++ b//repo/src/openclaw.ts",
+      "@@ edit 1/2 @@",
+      "-const before = true;",
+      "+const after = true;",
+      "@@ edit 2/2 @@",
+      "-export { before };",
+      "+export { after };",
+    ].join("\n"),
+    "OpenClaw camelCase edit arrays render every real edit pair",
+  );
+
+  const claudePatch = JSON.stringify({
+    path: "/repo/src/patch.ts",
+    patch: ["--- a/src/patch.ts", "+++ b/src/patch.ts", "-before", "+after"].join("\n"),
+  });
+  assert.equal(
+    toolInputAsDiff("apply_patch", claudePatch),
+    JSON.parse(claudePatch).patch,
+    "patch-style mutation payloads preserve their supplied diff",
+  );
+
+  for (const name of ["file_change", "edit", "apply_patch"]) {
+    assert.equal(
+      isFileMutationTool(name),
+      true,
+      `${name} keeps its edit-card slot while streamed input is partial`,
+    );
+    assert.equal(toolInputAsDiff(name, '{"path":'), null);
+  }
+});
+
+test("aggregate review includes only successful action-ready mutations", () => {
+  const actionReadyMutationTargetFile = mutationTools.actionReadyMutationTargetFile;
+  assert.equal(
+    typeof actionReadyMutationTargetFile,
+    "function",
+    "aggregate review has one shared action-readiness projection",
+  );
+  if (typeof actionReadyMutationTargetFile !== "function") return;
+
+  const pathOnlyCodex = {
+    name: "file_change",
+    input: JSON.stringify({ changes: [{ path: "src/path-only.ts", kind: "update" }] }),
+    status: "ok",
+  };
+  const failedOpenClaw = {
+    name: "edit",
+    input: JSON.stringify({
+      path: "/repo/src/failed.ts",
+      edits: [{ oldText: "before", newText: "after" }],
+    }),
+    status: "error",
+  };
+  const notReadyFiles = [pathOnlyCodex, failedOpenClaw]
+    .map((tool) => actionReadyMutationTargetFile(tool.name, tool.input, tool.status))
+    .filter(Boolean);
+  assert.deepEqual(
+    notReadyFiles,
+    [],
+    "path-only and failed mutations cannot produce an aggregate Review all action",
+  );
+  assert.equal(
+    actionReadyMutationTargetFile(
+      "Write",
+      JSON.stringify({ file_path: "/repo/src/running.ts", content: "still working" }),
+      "running",
+    ),
+    null,
+    "a running mutation cannot enter aggregate review before it succeeds",
+  );
+
+  const readyFiles = [
+    {
+      name: "edit",
+      input: JSON.stringify({
+        path: "/repo/src/openclaw-ready.ts",
+        edits: [{ oldText: "before", newText: "after" }],
+      }),
+      status: "ok",
+    },
+    {
+      name: "Write",
+      input: JSON.stringify({ file_path: "/repo/src/claude-ready.ts", content: "ready" }),
+      status: "ok",
+    },
+  ]
+    .map((tool) => actionReadyMutationTargetFile(tool.name, tool.input, tool.status))
+    .filter(Boolean);
+  assert.deepEqual(
+    readyFiles,
+    ["/repo/src/openclaw-ready.ts", "/repo/src/claude-ready.ts"],
+    "successful supported mutation shapes participate in aggregate review",
   );
 });
 

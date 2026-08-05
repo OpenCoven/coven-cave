@@ -9016,7 +9016,7 @@ function TurnRowImpl({
                   const editedFiles = Array.from(
                     new Set(
                       editCards
-                        .map((t) => toolTargetFile(t.name, t.input))
+                        .map((tool) => actionReadyMutationTargetFile(tool.name, tool.input, tool.status))
                         .filter((p): p is string => Boolean(p)),
                     ),
                   );

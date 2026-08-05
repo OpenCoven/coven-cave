@@ -136,7 +136,7 @@ test("TurnRow gives tools stable activity and edit-card slots instead of streami
   const turnRender = turnRow.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "";
   assert.match(
     turnRender,
-    /const turnTools = turn\.tools \?\? \[\];\s*const editToolIds = new Set\([\s\S]*isFileMutationTool\(tool\.name\)[\s\S]*tool\.id[\s\S]*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);\s*const otherTools = turnTools\.filter\(\(tool\) => !editToolIds\.has\(tool\.id\)\);/,
+    /const turnTools = turn\.tools \?\? \[\];\s*const editToolIds = new Set\([\s\S]*normalizeFileMutation\(tool\.name, tool\.input\)[\s\S]*tool\.id[\s\S]*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);\s*const otherTools = turnTools\.filter\(\(tool\) => !editToolIds\.has\(tool\.id\)\);/,
     "edit and non-edit tools use a pending-independent id partition",
   );
   assert.match(

@@ -592,7 +592,7 @@ assert.match(
 );
 assert.match(
   source,
-  /\{indicatorVisible \? \(\s*\n\s*<ThinkingIndicator label="Thinking" startedAt=\{turn\.createdAt \? new Date\(turn\.createdAt\)\.getTime\(\) : undefined\} \/>/,
+  /\{indicatorVisible \? \(\s*<ThinkingIndicator\s+label="Thinking"\s+startedAt=\{turn\.createdAt \? new Date\(turn\.createdAt\)\.getTime\(\) : undefined\}\s*\/>/,
   "ThinkingIndicator renders off the same flag that suppresses the chip (CHAT-D12-01)",
 );
 // Settled chips stay load-bearing: the suppression must key off pending, so a
