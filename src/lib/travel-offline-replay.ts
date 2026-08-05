@@ -26,6 +26,7 @@ import {
   persistQueuedOfflineConversation,
   saveConversation,
   withConversationLock,
+  type ConversationFile,
 } from "@/lib/cave-conversations";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
@@ -43,6 +44,8 @@ import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
 import { loadLocalWorkflowList } from "@/lib/workflow-source";
 import type { WorkflowSummary } from "@/lib/workflows";
+import { buildPromptWithResponseControls } from "@/app/api/chat/send/chat-send-models";
+import { decodeReplayAssistantOutput } from "@/lib/travel-replay-output";
 
 export type TravelOfflineReplayResult = {
   attempted: number;
@@ -147,6 +150,33 @@ function stableReplayAssistantTurnId(userTurnId: string): string {
   return `${userTurnId}:offline-replay-assistant`;
 }
 
+function replayChatConversationId(item: CaveTravelQueueItem): string | null {
+  if (item.kind !== "chat") return null;
+  return stringValue(record(item.payload).sessionId) ?? item.id;
+}
+
+function replayTurnIsOnActivePath(
+  conversation: Pick<ConversationFile, "turns" | "activeLeafId">,
+  turnId: string,
+): boolean {
+  if (!conversation.activeLeafId) return false;
+  const turnsById = new Map(conversation.turns.map((turn) => [turn.id, turn]));
+  if (turnsById.size !== conversation.turns.length) return false;
+
+  const seen = new Set<string>();
+  let currentId: string | null | undefined = conversation.activeLeafId;
+  let foundTarget = false;
+  while (currentId) {
+    if (seen.has(currentId)) return false;
+    seen.add(currentId);
+    const turn = turnsById.get(currentId);
+    if (!turn) return false;
+    if (turn.id === turnId) foundTarget = true;
+    currentId = turn.parentId;
+  }
+  return foundTarget;
+}
+
 function prepareReplayAttentionRequest(args: {
   text: string;
   sessionId: string;
@@ -165,53 +195,6 @@ function prepareReplayAttentionRequest(args: {
         }
       : null,
   };
-}
-
-/**
- * Text payload for a *canonical* assistant message event only. `content`/
- * `text` are the documented fields for `assistant.message`/`assistant_message`
- * frames (see copilot-stream.ts's protocol schema); `data` is deliberately
- * excluded here — that's the raw PTY/tool transport field (see `output`
- * events below), never validated assistant prose.
- */
-function assistantMessageEventText(payload: Record<string, unknown>): string | null {
-  if (typeof payload.content === "string") return payload.content;
-  if (typeof payload.text === "string") return payload.text;
-  return null;
-}
-
-/**
- * Assistant reply text for a finished replayed session — canonical
- * structured `assistant.message`/`assistant_message` events ONLY. Tool,
- * protocol, and raw PTY `output` frames must never be treated as assistant
- * prose: they can carry control characters, tool call chatter, or partial
- * streaming fragments, none of which is a validated reply. A session with no
- * qualifying event returns null rather than falling back to unsafe transport
- * output — callers must treat that as a failure to mirror, not silently
- * persist raw daemon transcript as if a model wrote it.
- */
-function assistantTextFromReplayEvents(
-  events: DaemonEventRow[],
-): string | null {
-  const assistantMessages: string[] = [];
-  for (const event of events) {
-    if (event.kind !== "assistant.message" && event.kind !== "assistant_message") continue;
-    if (typeof event.payload_json !== "string" || !event.payload_json.trim()) continue;
-    let payload: Record<string, unknown>;
-    try {
-      const parsed = JSON.parse(event.payload_json) as unknown;
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
-      payload = parsed as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-    const text = assistantMessageEventText(payload);
-    if (!text) continue;
-    assistantMessages.push(text);
-  }
-  const transcript = assistantMessages.at(-1) ?? null;
-  const trimmed = transcript?.trim();
-  return trimmed || null;
 }
 
 function replayEventPage(
@@ -285,6 +268,7 @@ export function replayAssistantMirrorOutcome(
 
 export async function replayAssistantStatus(args: {
   harnessSessionId: string;
+  harness: string;
   daemonCall?: typeof callDaemon;
 }): Promise<ReplayAssistantStatus> {
   const daemonCall = args.daemonCall ?? callDaemon;
@@ -322,12 +306,27 @@ export async function replayAssistantStatus(args: {
       eventsComplete: false,
     };
   }
-  const assistant = assistantTextFromReplayEvents(events);
+  const assistant = decodeReplayAssistantOutput(args.harness, events);
   return {
     status,
     assistantText: assistant,
     eventsComplete: true,
   };
+}
+
+async function persistReplayHarnessSessionBoundary(args: {
+  sessionId: string;
+  harnessSessionId: string;
+  userTurnId: string;
+}): Promise<void> {
+  await withConversationLock(args.sessionId, async () => {
+    const conv = await loadConversation(args.sessionId);
+    const userTurn = conv?.turns.find((turn) => turn.id === args.userTurnId);
+    if (!conv || userTurn?.role !== "user" || conv.activeLeafId !== args.userTurnId) return;
+    if (conv.harnessSessionId === args.harnessSessionId) return;
+    conv.harnessSessionId = args.harnessSessionId;
+    await saveConversation(conv);
+  });
 }
 
 async function persistReplayAssistantTurn(args: {
@@ -342,13 +341,13 @@ async function persistReplayAssistantTurn(args: {
   await withConversationLock(args.sessionId, async () => {
     const conv = await loadConversation(args.sessionId);
     if (!conv) return;
-    conv.harnessSessionId = args.harnessSessionId;
     const assistantTurnId = stableReplayAssistantTurnId(args.userTurnId);
+    if (conv.turns.some((turn) => turn.id === assistantTurnId)) return;
+    const userTurn = conv.turns.find((turn) => turn.id === args.userTurnId);
+    if (userTurn?.role !== "user" || !replayTurnIsOnActivePath(conv, args.userTurnId)) return;
+
+    const advancesActiveBoundary = conv.activeLeafId === args.userTurnId;
     const persistedAssistantCreatedAt = new Date().toISOString();
-    if (conv.turns.some((turn) => turn.id === assistantTurnId)) {
-      await saveConversation(conv);
-      return;
-    }
     const queuedMetadata = record(args.payload.responseMetadata);
     const baseResponseMetadata: ChatResponseMetadata = {
       familiarId: stringValue(queuedMetadata.familiarId) ?? args.familiarId,
@@ -368,12 +367,16 @@ async function persistReplayAssistantTurn(args: {
       text: attention.text.trim(),
       createdAt: persistedAssistantCreatedAt,
       parentId: args.userTurnId,
+      harnessSessionId: args.harnessSessionId,
       ...(args.isError ? { isError: true } : {}),
       responseMetadata: attention.request
         ? { ...baseResponseMetadata, attentionRequest: attention.request }
         : baseResponseMetadata,
     });
-    conv.activeLeafId = assistantTurnId;
+    if (advancesActiveBoundary) {
+      conv.activeLeafId = assistantTurnId;
+      conv.harnessSessionId = args.harnessSessionId;
+    }
     await saveConversation(conv);
   });
 }
@@ -471,8 +474,12 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const attachments = objectArray<ChatAttachment>(payload.attachments);
   const queuedPayloadModelOverride = stringValue(payload.modelOverride);
   const queuedRunId = stringValue(payload.runId);
-  const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
+  const replayPrompt = buildPromptWithResponseControls(
+    buildPromptWithAttachments(prompt, attachments, { imagesSupported: false }),
+    {},
+  );
   let harnessSessionId = stringValue(payload.harnessSessionId);
+  let spawnedHarnessSession = false;
   if (!harnessSessionId) {
     harnessSessionId = await spawnHubSession({
       config,
@@ -493,6 +500,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       projectRoot,
       title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id),
     });
+    spawnedHarnessSession = true;
     await updateOfflineTravelItemPayload(item.id, { ...payload, harnessSessionId });
   }
   const sessionId = stringValue(payload.sessionId) ?? item.id;
@@ -514,7 +522,6 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       : {}),
     title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(sessionId),
     createdAt: item.createdAt,
-    harnessSessionId,
     userTurn: {
       id: userTurnId,
       text: prompt,
@@ -538,17 +545,27 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
         : {}),
     },
   });
+  if (spawnedHarnessSession) {
+    await persistReplayHarnessSessionBoundary({
+      sessionId,
+      harnessSessionId,
+      userTurnId,
+    });
+  }
   if (sessionId !== harnessSessionId) {
     await setSessionTitle(harnessSessionId, chatTitleFromPrompt(prompt) ?? `Travel replay: ${item.summary}`);
   }
-  const mirrored = await replayAssistantStatus({ harnessSessionId });
+  const mirrored = await replayAssistantStatus({
+    harnessSessionId,
+    harness: binding.harness,
+  });
   const mirrorOutcome = replayAssistantMirrorOutcome(mirrored);
   if (mirrorOutcome === "pending") {
     return "pending";
   }
   if (mirrorOutcome === "missing" || !mirrored.assistantText) {
     // The daemon session is done but never produced a validated assistant
-    // message to mirror (crashed before replying, produced only tool/PTY
+    // reply to mirror (crashed before replying, produced only tool/protocol
     // output, etc). Returning "pending" here would poll forever — a
     // terminal session never becomes non-terminal again. Throw so the
     // caller marks this item failed/retryable with an actionable reason
@@ -775,13 +792,20 @@ async function syncOfflineTravelQueueInner(
   const result: TravelOfflineReplayResult = { attempted: 0, synced: 0, failed: 0, errors: [] };
   if (config.multiHost.mode !== "hub") return result;
 
-  const candidates = (await offlineTravelItemsNeedingSync()).slice(0, maxItems);
+  const candidates = await offlineTravelItemsNeedingSync();
+  const blockedChatConversations = new Set<string>();
   for (const candidate of candidates) {
+    if (result.attempted >= maxItems) break;
+    const chatConversationId = replayChatConversationId(candidate);
+    if (chatConversationId && blockedChatConversations.has(chatConversationId)) continue;
     const item = await markOfflineTravelItemSyncing(candidate.id);
     if (!item) continue;
     result.attempted += 1;
     try {
       const outcome = await replayTravelQueueItem(item, config);
+      if (outcome === "pending" && chatConversationId) {
+        blockedChatConversations.add(chatConversationId);
+      }
       if (outcome === "complete") {
         await completeOfflineTravelItem(item.id);
       }
@@ -789,6 +813,7 @@ async function syncOfflineTravelQueueInner(
     } catch (err) {
       const error = replayError(err);
       await failOfflineTravelItem(item.id, error);
+      if (chatConversationId) blockedChatConversations.add(chatConversationId);
       result.failed += 1;
       result.errors.push({ id: item.id, error });
     }

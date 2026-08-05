@@ -107,8 +107,8 @@ assert.match(
 );
 assert.match(
   replay,
-  /const harness = canonicalHarnessId\(args\.harness\)[\s\S]*path: "\/api\/v1\/sessions"[\s\S]*body:[\s\S]*harness,[\s\S]*launchMode: "nonInteractive"/,
-  "travel replay canonicalizes runtime aliases and forces non-interactive daemon launch before the hub boundary",
+  /const harness = canonicalHarnessId\(args\.harness\)[\s\S]*path: "\/api\/v1\/sessions"[\s\S]*body:[\s\S]*harness,[\s\S]*\.\.\.\(harness === "copilot" \? \{\} : \{ launchMode: "nonInteractive" \}\)/,
+  "travel replay canonicalizes runtime aliases and keeps Copilot on its supported daemon launch contract",
 );
 
 assert.match(
@@ -237,6 +237,7 @@ test("replay drains more than 500 ordered events before extracting the terminal 
   const statusProbe = replayDaemon(pages);
   const status = await replayAssistantStatus({
     harnessSessionId: "hub-session",
+    harness: "codex",
     daemonCall: statusProbe.daemonCall,
   });
   assert.deepEqual(statusProbe.eventCursors, [0, 500]);
@@ -291,6 +292,7 @@ test("replay stays pending when a later event page fails", async () => {
   ]));
   const status = await replayAssistantStatus({
     harnessSessionId: "hub-session",
+    harness: "codex",
     daemonCall: probe.daemonCall,
   });
   assert.deepEqual(probe.eventCursors, [0, 1]);
@@ -307,6 +309,7 @@ test("replay safety cap returns pending instead of truncating an endless event l
   }));
   const status = await replayAssistantStatus({
     harnessSessionId: "hub-session",
+    harness: "codex",
     daemonCall: probe.daemonCall,
   });
   assert.equal(probe.eventCursors.length, REPLAY_EVENT_PAGE_SAFETY_CAP);
@@ -315,7 +318,276 @@ test("replay safety cap returns pending instead of truncating an endless event l
   assert.equal(replayAssistantMirrorOutcome(status), "pending");
 });
 
-test("replay never treats raw daemon output as an assistant reply", async () => {
+function arbitrarilyChunk(value, widths = [1, 7, 3, 19, 5, 31]) {
+  const chunks = [];
+  let cursor = 0;
+  let widthIndex = 0;
+  while (cursor < value.length) {
+    const width = widths[widthIndex % widths.length];
+    chunks.push(value.slice(cursor, cursor + width));
+    cursor += width;
+    widthIndex += 1;
+  }
+  return chunks;
+}
+
+function outputEventPage(data) {
+  const events = data.map((chunk, index) => daemonEvent(index + 1, "output", { data: chunk }));
+  return new Map([
+    [0, {
+      events,
+      nextCursor: { afterSeq: events.length },
+      hasMore: false,
+    }],
+  ]);
+}
+
+test("replay decodes Claude assistant envelopes across arbitrary daemon output chunks", async () => {
+  const jsonl = [
+    JSON.stringify({ type: "system", subtype: "init", prompt: "PROMPT ECHO MUST STAY PRIVATE" }),
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "tool-1", name: "Read", input: { path: "private.txt" } },
+          { type: "text", text: "Verified " },
+        ],
+      },
+    }),
+    JSON.stringify({
+      type: "user",
+      message: {
+        content: [{ type: "tool_result", tool_use_id: "tool-1", content: "TOOL OUTPUT MUST STAY PRIVATE" }],
+      },
+    }),
+    JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Claude answer." }] },
+    }),
+    JSON.stringify({ type: "result", result: "PROTOCOL RESULT MUST STAY PRIVATE" }),
+  ].join("\n") + "\n";
+  const probe = replayDaemon(outputEventPage(arbitrarilyChunk(jsonl)));
+
+  const status = await replayAssistantStatus({
+    harnessSessionId: "hub-session",
+    harness: "claude",
+    daemonCall: probe.daemonCall,
+  });
+
+  assert.equal(status.eventsComplete, true);
+  assert.equal(status.assistantText, "Verified Claude answer.");
+});
+
+test("replay filters Codex PTY transcript inside stream-json across arbitrary daemon output chunks", async () => {
+  const jsonl = [
+    JSON.stringify({ type: "system", prompt: "PROTOCOL PROMPT ECHO MUST STAY PRIVATE" }),
+    JSON.stringify({
+      type: "output",
+      text: [
+        "OpenAI Codex",
+        "--------",
+        "workdir: /repo",
+        "model: gpt-test",
+        "user",
+        "ORIGINAL PROMPT MUST STAY PRIVATE",
+        "co",
+      ].join("\n"),
+    }),
+    JSON.stringify({
+      type: "tool",
+      output: "STRUCTURED TOOL OUTPUT MUST STAY PRIVATE",
+    }),
+    JSON.stringify({
+      type: "output",
+      text: [
+        "dex",
+        "Verified Codex answer.",
+        "exec",
+        "/bin/zsh -lc 'cat private.txt' in /repo",
+        "succeeded in 5ms:",
+        "RAW TOOL OUTPUT MUST STAY PRIVATE",
+        "",
+        "Final line.",
+      ].join("\n") + "\n",
+    }),
+    JSON.stringify(["ARRAY PROTOCOL PAYLOAD MUST STAY PRIVATE"]),
+    JSON.stringify("PRIMITIVE PROTOCOL PAYLOAD MUST STAY PRIVATE"),
+    JSON.stringify({ type: "result", is_error: false }),
+  ].join("\n") + "\n";
+  const probe = replayDaemon(outputEventPage(arbitrarilyChunk(jsonl)));
+
+  const status = await replayAssistantStatus({
+    harnessSessionId: "hub-session",
+    harness: "codex",
+    daemonCall: probe.daemonCall,
+  });
+
+  assert.equal(status.eventsComplete, true);
+  assert.equal(status.assistantText, "Verified Codex answer.\nFinal line.");
+});
+
+test("replay preserves Codex assistant text order across transcript and structured envelopes", async () => {
+  const jsonl = [
+    JSON.stringify({ type: "output", text: "codex\nFiltered first.\n" }),
+    JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Structured second." }] },
+    }),
+  ].join("\n") + "\n";
+  const probe = replayDaemon(outputEventPage(arbitrarilyChunk(jsonl)));
+
+  const status = await replayAssistantStatus({
+    harnessSessionId: "hub-session",
+    harness: "codex",
+    daemonCall: probe.daemonCall,
+  });
+
+  assert.equal(status.assistantText, "Filtered first.\nStructured second.");
+});
+
+test("replay assembles only Copilot assistant events from daemon JSONL chunks", async () => {
+  const jsonl = [
+    JSON.stringify({ type: "user.message", data: { content: "PROMPT ECHO MUST STAY PRIVATE" } }),
+    JSON.stringify({
+      id: "frame-1",
+      type: "assistant.message_delta",
+      data: { messageId: "message-1", deltaContent: "Verified Copilot " },
+    }),
+    JSON.stringify({
+      type: "tool.execution_complete",
+      data: {
+        toolCallId: "tool-1",
+        success: true,
+        result: { content: "TOOL OUTPUT MUST STAY PRIVATE" },
+      },
+    }),
+    JSON.stringify({
+      type: "assistant.message",
+      data: {
+        messageId: "message-1",
+        content: "Verified Copilot answer.",
+        toolRequests: [],
+      },
+    }),
+    JSON.stringify({ type: "result", sessionId: "copilot-session", exitCode: 0 }),
+  ].join("\n") + "\n";
+  const probe = replayDaemon(outputEventPage(arbitrarilyChunk(jsonl)));
+
+  const status = await replayAssistantStatus({
+    harnessSessionId: "hub-session",
+    harness: "copilot",
+    daemonCall: probe.daemonCall,
+  });
+
+  assert.equal(status.assistantText, "Verified Copilot answer.");
+});
+
+test("replay accepts only signed OpenCode text envelopes from daemon JSONL chunks", async () => {
+  const jsonl = [
+    JSON.stringify({
+      type: "reasoning",
+      sessionID: "opencode-session",
+      part: { type: "reasoning", text: "PRIVATE REASONING" },
+    }),
+    JSON.stringify({
+      type: "tool_use",
+      sessionID: "opencode-session",
+      part: {
+        type: "tool",
+        id: "tool-1",
+        tool: "Read",
+        state: { status: "completed", output: "TOOL OUTPUT MUST STAY PRIVATE" },
+      },
+    }),
+    JSON.stringify({
+      type: "text",
+      sessionID: "opencode-session",
+      part: { type: "text", text: "Verified OpenCode answer." },
+    }),
+  ].join("\n") + "\n";
+  const probe = replayDaemon(outputEventPage(arbitrarilyChunk(jsonl)));
+
+  const status = await replayAssistantStatus({
+    harnessSessionId: "hub-session",
+    harness: "opencode",
+    daemonCall: probe.daemonCall,
+  });
+
+  assert.equal(status.assistantText, "Verified OpenCode answer.");
+});
+
+test("replay accepts only Grok text events from daemon JSONL chunks", async () => {
+  const jsonl = [
+    JSON.stringify({ type: "thought", data: "PRIVATE REASONING" }),
+    JSON.stringify({ type: "text", data: "Verified Grok answer." }),
+    JSON.stringify({ type: "error", message: "PROTOCOL ERROR MUST STAY PRIVATE" }),
+  ].join("\n") + "\n";
+  const probe = replayDaemon(outputEventPage(arbitrarilyChunk(jsonl)));
+
+  const status = await replayAssistantStatus({
+    harnessSessionId: "hub-session",
+    harness: "grok",
+    daemonCall: probe.daemonCall,
+  });
+
+  assert.equal(status.assistantText, "Verified Grok answer.");
+});
+
+test("replay preserves Grok's verified plain one-shot response contract", async () => {
+  const probe = replayDaemon(outputEventPage(arbitrarilyChunk("Verified plain Grok answer.\n")));
+
+  const status = await replayAssistantStatus({
+    harnessSessionId: "hub-session",
+    harness: "grok",
+    daemonCall: probe.daemonCall,
+  });
+
+  assert.equal(status.assistantText, "Verified plain Grok answer.");
+});
+
+test("replay accepts only Hermes response text events from daemon SSE chunks", async () => {
+  const sse = [
+    "event: response.output_item.added",
+    `data: ${JSON.stringify({ item: { type: "function_call", call_id: "tool-1", name: "shell" } })}`,
+    "",
+    "event: response.output_text.delta",
+    `data: ${JSON.stringify({ delta: "Verified Hermes " })}`,
+    "",
+    "event: response.function_call_output",
+    `data: ${JSON.stringify({ call_id: "tool-1", output: "TOOL OUTPUT MUST STAY PRIVATE" })}`,
+    "",
+    "event: response.output_text.delta",
+    `data: ${JSON.stringify({ delta: "answer." })}`,
+    "",
+  ].join("\n") + "\n";
+  const probe = replayDaemon(outputEventPage(arbitrarilyChunk(sse)));
+
+  const status = await replayAssistantStatus({
+    harnessSessionId: "hub-session",
+    harness: "hermes",
+    daemonCall: probe.daemonCall,
+  });
+
+  assert.equal(status.assistantText, "Verified Hermes answer.");
+});
+
+test("replay filters Hermes's verified quiet-mode response contract", async () => {
+  const transcript = [
+    "Normalized model 'openai/gpt-test' to 'gpt-test' for openai-codex.",
+    "Verified plain Hermes answer.",
+  ].join("\n") + "\n";
+  const probe = replayDaemon(outputEventPage(arbitrarilyChunk(transcript)));
+
+  const status = await replayAssistantStatus({
+    harnessSessionId: "hub-session",
+    harness: "hermes",
+    daemonCall: probe.daemonCall,
+  });
+
+  assert.equal(status.assistantText, "Verified plain Hermes answer.");
+});
+
+test("replay never treats unverified raw daemon output as an assistant reply", async () => {
   const probe = replayDaemon(new Map([
     [0, {
       events: [
@@ -329,6 +601,7 @@ test("replay never treats raw daemon output as an assistant reply", async () => 
   ]));
   const status = await replayAssistantStatus({
     harnessSessionId: "hub-session",
+    harness: "codex",
     daemonCall: probe.daemonCall,
   });
   assert.equal(status.eventsComplete, true, "a terminal session with only output events still finishes draining events");
@@ -336,6 +609,19 @@ test("replay never treats raw daemon output as an assistant reply", async () => 
   assert.equal(
     replayAssistantMirrorOutcome(status),
     "missing",
-    "a terminal session with no canonical assistant.message must be reported missing, not complete",
+    "a terminal session with no verified assistant boundary must be reported missing, not complete",
+  );
+});
+
+test("replay fails explicitly when the harness has no safe output decoder", async () => {
+  const probe = replayDaemon(outputEventPage(["plain text from an unsupported harness"]));
+
+  await assert.rejects(
+    replayAssistantStatus({
+      harnessSessionId: "hub-session",
+      harness: "openclaw",
+      daemonCall: probe.daemonCall,
+    }),
+    /offline replay output decoding is not supported for harness 'openclaw'/,
   );
 });

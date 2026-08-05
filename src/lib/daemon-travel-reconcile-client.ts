@@ -61,13 +61,17 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
     cancelSchedule(handle);
   }
 
-  function clearReachablePollTimer(options: { resetBackoff: boolean }): void {
+  function clearReachablePollTimer(options: {
+    resetBackoff: boolean;
+    preservePending?: boolean;
+  }): void {
+    const pending = reachablePollNeeded || reachablePollTimer !== null;
     if (reachablePollTimer !== null) {
       const handle = reachablePollTimer;
       reachablePollTimer = null;
       cancelSchedule(handle);
     }
-    reachablePollNeeded = false;
+    reachablePollNeeded = options.preservePending ? pending : false;
     if (options.resetBackoff) reachablePollBackoffMs = REACHABLE_RETRY_BASE_MS;
   }
 
@@ -224,7 +228,7 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
       requesterActive = nextActive;
       if (!requesterActive) {
         clearOutageTimer();
-        clearReachablePollTimer({ resetBackoff: true });
+        clearReachablePollTimer({ resetBackoff: true, preservePending: true });
         trailing = false;
         abortActiveRequest({ preserveReachableRetry: true });
         return;
@@ -234,7 +238,10 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
         armHubOutageTimer();
         return;
       }
-      if (observedHubState === "reachable" && reachableRetryNeeded) {
+      if (
+        observedHubState === "reachable" &&
+        (reachableRetryNeeded || reachablePollNeeded)
+      ) {
         trigger();
       }
     },

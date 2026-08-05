@@ -49,7 +49,7 @@ function createHubServer(): http.Server {
         id,
         status: "completed",
         updated_at: "2026-06-30T12:02:05.000Z",
-        reply: noReply ? "" : `Replayed: ${body.prompt}`,
+        reply: noReply ? "" : "Replayed queued work.",
       });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ id, status: "running" }));
@@ -204,7 +204,17 @@ try {
   assert.equal(sessionRequests.length, 1);
   assert.equal(sessionRequests[0].harness, "codex");
   assert.equal(sessionRequests[0].familiarId, "sage");
-  assert.equal(sessionRequests[0].prompt, "queued during private network drop");
+  const replayPrompt = String(sessionRequests[0].prompt ?? "");
+  assert.equal(
+    replayPrompt.split("queued during private network drop").length - 1,
+    1,
+    "reconnect replay preserves the original prompt exactly once",
+  );
+  assert.equal(
+    replayPrompt.split('<coven:attention reason="input|approval|credentials|decision" />').length - 1,
+    1,
+    "reconnect replay carries the shared attention protocol exactly once",
+  );
 
   state = await config.loadState();
   assert.equal(state.travel.offlineQueue[0].status, "synced");

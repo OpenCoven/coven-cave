@@ -444,6 +444,38 @@ test("reachable replay pending keeps polling on one timer lane until completion"
   assert.equal(rig.requests.length, 3);
 });
 
+test("reachable pending poll survives hide and retries immediately when active again", async () => {
+  const rig = createRig();
+
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+  await rig.resolve(0, { retryAfterMs: 1_000 });
+
+  const hiddenTimer = rig.latestPendingTimer();
+  rig.requester.setActive(false);
+  assert.equal(hiddenTimer.cancelled, true);
+  assert.equal(rig.pendingTimers().length, 0);
+
+  hiddenTimer.callback();
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 1, "a stale hidden timer must not issue a request");
+
+  rig.requester.setActive(true);
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 2, "activation retries pending reachable work immediately");
+
+  await rig.resolve(1, { retryAfterMs: 1_000 });
+  const stoppedTimer = rig.latestPendingTimer();
+  rig.requester.stop();
+  assert.equal(stoppedTimer.cancelled, true);
+
+  stoppedTimer.callback();
+  rig.requester.setActive(true);
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 2, "stop permanently clears pending polling work");
+  assert.equal(rig.pendingTimers().length, 0);
+});
+
 test("reachable replay pending timer is cancelled on disconnect, hide, and stop", async () => {
   const rig = createRig();
 
@@ -470,8 +502,6 @@ test("reachable replay pending timer is cancelled on disconnect, hide, and stop"
   assert.equal(rig.pendingTimers().length, 0);
 
   rig.requester.setActive(true);
-  rig.requester.observeHubState("inactive");
-  rig.requester.observeHubState("reachable");
   await flushMicrotasks();
   await rig.resolve(3, { retryAfterMs: 1_000 });
 
