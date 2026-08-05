@@ -18,7 +18,6 @@ type PersistedProjection = {
   scopeKey: string;
   baseline: ChatAttention | null;
   clearWatermark?: string;
-  firstAcceptedAttention?: ChatAttention;
 };
 
 type ProjectionOperation = PendingProjection | PersistedProjection;
@@ -121,6 +120,21 @@ function forgetLastKnownCanonicalAttention(state: ChatAttentionProjectionState, 
   lastKnownCanonicalAttention.get(state)?.delete(sessionId);
 }
 
+// With no live operation, canonical "none" retires stale retry evidence so a
+// later, genuinely new attention baseline can occupy the slot.
+function trackOrForgetCanonicalAttention(
+  state: ChatAttentionProjectionState,
+  sessionId: string,
+  attention: ChatAttention,
+  scopeKey: string,
+): void {
+  if (attention.state === "none") {
+    forgetLastKnownCanonicalAttention(state, sessionId);
+    return;
+  }
+  trackCanonicalAttention(state, sessionId, attention, scopeKey);
+}
+
 const sessionBucketAccessOrder = new WeakMap<ChatAttentionProjectionState, Map<string, true>>();
 
 function sessionBucketAccessOrderFor(state: ChatAttentionProjectionState): Map<string, true> {
@@ -193,19 +207,7 @@ export function chatAttentionProjectionScopeKey(familiarId: string | null): stri
   return familiarId ? `familiar:${familiarId}` : "all-familiars";
 }
 
-export function authoritativeChatAttentionScopeKey(
-  session: Pick<SessionRow, "familiarId">,
-  fallbackScopeKey = "all-familiars",
-): string {
-  return session.familiarId !== undefined
-    ? chatAttentionProjectionScopeKey(session.familiarId ?? null)
-    : fallbackScopeKey;
-}
-
-// Off-list baseline evidence can prove a session's attention, but not which
-// familiar-scoped list is authoritative for absence. This sentinel matches no
-// real `chatAttentionProjectionScopeKey(...)` output, so only the
-// "all-familiars" wildcard can retire it by absence.
+// Off-list baseline evidence has no accepted list-request provenance.
 export const CHAT_ATTENTION_UNPROVEN_SCOPE = "scope:unproven";
 
 export function isCurrentSessionListRequest(args: {
@@ -253,7 +255,10 @@ export function recordChatAttentionClear(
   const baseline = trackedNonNoneCanonical ??
     (normalizedCanonical?.state !== "none" ? normalizedCanonical : null);
   const normalizedClearWatermark = normalizeIsoInstant(clearWatermark);
-  if (!operations && !baseline && hasCanonicalAttention) return { recorded: false, reason: "no-baseline" };
+  if (!operations && !baseline && hasCanonicalAttention) {
+    tombstoneChatAttentionOperation(state, sessionId, operationId);
+    return { recorded: false, reason: "no-baseline" };
+  }
 
   const nextOperations = operations ?? new Map<string, ProjectionOperation>();
   if (!operations) state.set(sessionId, nextOperations);
@@ -327,10 +332,6 @@ export function clearSessionAttentionRows(rows: readonly SessionRow[], sessionId
   return changed ? projectedRows : rows as SessionRow[];
 }
 
-function scopeProvesAbsence(retainedScopeKey: string, currentScopeKey: string): boolean {
-  return currentScopeKey === "all-familiars" || retainedScopeKey === currentScopeKey;
-}
-
 function normalizeAttentionSnapshot(attention: ChatAttention | null | undefined): ChatAttention {
   return {
     state: attention?.state ?? "none",
@@ -370,7 +371,6 @@ export function applyChatAttentionProjections(
   responseRequestId: number,
   currentScopeKey?: string,
 ): SessionRow[] {
-  const presentSessionIds = new Set(rows.map((row) => row.id));
   const canonicalTracker = canonicalAttentionTrackerFor(state);
   let changed = false;
   const projectedRows = rows.map((row) => {
@@ -378,27 +378,28 @@ export function applyChatAttentionProjections(
     if (!operations) {
       const retainedCanonical = canonicalTracker.get(row.id);
       if (retainedCanonical) {
-        trackCanonicalAttention(
+        trackOrForgetCanonicalAttention(
           state,
           row.id,
           row.attention,
-          authoritativeChatAttentionScopeKey(row, currentScopeKey ?? retainedCanonical.scopeKey),
+          currentScopeKey ?? retainedCanonical.scopeKey,
         );
       }
       return row;
     }
 
     touchSessionProjectionBucket(state, row.id);
-    // Refresh from the accepted row before masking it again for active clears.
-    trackCanonicalAttention(
-      state,
-      row.id,
-      row.attention,
-      authoritativeChatAttentionScopeKey(
-        row,
+    // Refresh real canonical attention before masking it again. Canonical none
+    // can settle a persisted operation below, but while any operation is live
+    // it must not erase the non-none baseline a failed clear will retry from.
+    if (row.attention.state !== "none") {
+      trackCanonicalAttention(
+        state,
+        row.id,
+        row.attention,
         currentScopeKey ?? operations.values().next().value?.scopeKey ?? "all-familiars",
-      ),
-    );
+      );
+    }
 
     for (const [operationId, operation] of operations) {
       if (operation.status !== "persisted" || responseRequestId < operation.canonicalAfterRequestId) continue;
@@ -423,17 +424,8 @@ export function applyChatAttentionProjections(
         }
         continue;
       }
-      if (!operation.firstAcceptedAttention) {
-        operations.set(operationId, {
-          ...operation,
-          firstAcceptedAttention: normalizeAttentionSnapshot(row.attention),
-        });
-        continue;
-      }
-      if (!attentionMatchesBaseline(row.attention, operation.firstAcceptedAttention)) {
-        operations.delete(operationId);
-        tombstoneChatAttentionOperation(state, row.id, operationId);
-      }
+      operations.delete(operationId);
+      tombstoneChatAttentionOperation(state, row.id, operationId);
     }
     if (operations.size === 0) {
       clearSessionProjectionState(state, row.id);
@@ -445,29 +437,8 @@ export function applyChatAttentionProjections(
     return projected;
   });
 
-  if (currentScopeKey) {
-    for (const [sessionId, operations] of state) {
-      if (presentSessionIds.has(sessionId)) continue;
-      for (const [operationId, operation] of operations) {
-        const canTrustAbsence = operation.status === "persisted" &&
-          responseRequestId >= operation.canonicalAfterRequestId;
-        if (canTrustAbsence && operation.baseline && scopeProvesAbsence(operation.scopeKey, currentScopeKey)) {
-          operations.delete(operationId);
-          tombstoneChatAttentionOperation(state, sessionId, operationId);
-        }
-      }
-      if (operations.size === 0) {
-        clearSessionProjectionState(state, sessionId);
-      }
-    }
-
-    for (const [sessionId, retainedCanonical] of canonicalTracker) {
-      if (state.has(sessionId) || presentSessionIds.has(sessionId)) continue;
-      if (scopeProvesAbsence(retainedCanonical.scopeKey, currentScopeKey)) {
-        canonicalTracker.delete(sessionId);
-      }
-    }
-  }
-
+  // Session lists are filtered by familiar/project and the all-familiars view
+  // collapses rows, so absence is never release evidence. Explicit rows above
+  // or forgetChatAttentionProjections retire state; existing bounds cap churn.
   return changed ? projectedRows : rows as SessionRow[];
 }

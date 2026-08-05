@@ -133,8 +133,8 @@ assert.match(
 );
 assert.match(
   chatAttentionEvents,
-  /const clearWatermark = normalizeClearWatermark\(detail\?\.clearWatermark\);[\s\S]*const scopeKey = normalizeString\(detail\?\.scopeKey\);[\s\S]*const baselineAttention = normalizeAttentionDetail\(detail\?\.baselineAttention\);[\s\S]*return sessionId && operationId[\s\S]*sessionId,[\s\S]*operationId,[\s\S]*\.\.\.\(clearWatermark \? \{ clearWatermark \} : \{\}\),[\s\S]*\.\.\.\(scopeKey \? \{ scopeKey \} : \{\}\),[\s\S]*\.\.\.\(baselineAttention \? \{ baselineAttention \} : \{\}\),[\s\S]*: null;/,
-  "clear-event parsing should preserve optional watermark, scope, and baseline evidence while remaining compatible with two-field events",
+  /const clearWatermark = normalizeClearWatermark\(detail\?\.clearWatermark\);[\s\S]*const scopeKey = normalizeString\(detail\?\.scopeKey\);[\s\S]*const hasBaselineAttention = hasOwnDetailField\(detail, "baselineAttention"\);[\s\S]*const baselineAttention = hasBaselineAttention[\s\S]*normalizeAttentionDetail\(detail\?\.baselineAttention\)[\s\S]*if \(hasBaselineAttention && !baselineAttention\) return null;[\s\S]*return sessionId && operationId[\s\S]*sessionId,[\s\S]*operationId,[\s\S]*\.\.\.\(clearWatermark \? \{ clearWatermark \} : \{\}\),[\s\S]*\.\.\.\(scopeKey \? \{ scopeKey \} : \{\}\),[\s\S]*\.\.\.\(baselineAttention \? \{ baselineAttention \} : \{\}\),[\s\S]*: null;/,
+  "clear-event parsing should preserve valid optional evidence, reject explicitly malformed baselines, and remain compatible with two-field events",
 );
 assert.match(
   chatView,
@@ -142,10 +142,9 @@ assert.match(
   "chat-view should emit attention clears with the stable watermark, actual scope, and any known baseline evidence",
 );
 
-// ── Projection scope provenance (defect #3): the scope that can prove a
-//    session's absence is Workspace's own current sidebar filter, not the
-//    chat's owning familiar — split panes and off-list sessions must not
-//    corrupt scopeProvesAbsence with the wrong scope. ─────────────────────────
+// ── Projection scope provenance (defect #3): rows inherit the actual accepted
+//    request scope, not a scope inferred from their familiar identity. List
+//    absence is never canonical deletion evidence. ───────────────────────────
 assert.match(
   chatView,
   /activeFamiliarId\?: string \| null;/,
@@ -174,7 +173,7 @@ assert.match(
 assert.match(
   chatRouter,
   /<ChatView\s*\n\s*familiar=\{paneFamiliar\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}/,
-  "split-pane ChatView mounts must use the same active list scope as the primary pane — a split pane's own familiar cannot prove absence against a list it never loaded",
+  "split-pane ChatView mounts must receive the same active request scope as the primary pane rather than infer request provenance from their own familiar",
 );
 assert.match(
   chatSurface,
@@ -183,13 +182,18 @@ assert.match(
 );
 assert.match(
   workspace,
-  /acceptedRow\s*\?\s*\(baseSessionScopeKeyByIdRef\.current\.get\(detail\.sessionId\)\s*\?\?[\s\S]*authoritativeChatAttentionScopeKey\(acceptedRow,\s*chatAttentionProjectionScopeKey\(activeIdRef\.current\)\)\)\s*:\s*CHAT_ATTENTION_UNPROVEN_SCOPE,\s*\n\s*baselineAttention,/,
-  "workspace's onChatAttentionClear must record with proven row scope (or the unproven sentinel), never a scope read from the event",
+  /baseSessionScopeKeyByIdRef\.current\.get\(detail\.sessionId\)\s*\?\?\s*CHAT_ATTENTION_UNPROVEN_SCOPE,\s*\n\s*baselineAttention,/,
+  "workspace's onChatAttentionClear must record the accepted request scope (or the unproven sentinel), never infer scope from row identity",
 );
 assert.doesNotMatch(
   workspace,
   /detail\.scopeKey/,
-  "workspace must not trust the event's scopeKey at all — a wrong scope from a mis-wired or legacy ChatView would corrupt absence-proving",
+  "workspace must not trust the event's scopeKey at all",
+);
+assert.match(
+  workspace,
+  /baseSessions\.map\(\(session\) => \[\s*session\.id,\s*capturedScopeKey,\s*\]\)/,
+  "workspace must associate every accepted row with the actual captured request scope",
 );
 assert.match(
   chatView,
@@ -369,8 +373,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /recordChatAttentionClear\([\s\S]*acceptedRow[\s\S]*CHAT_ATTENTION_UNPROVEN_SCOPE[\s\S]*baseSessionsRef\.current = clearSessionAttentionRows\(baseSessionsRef\.current, sessionId\);[\s\S]*setSessions\(\(currentSessions\) => clearSessionAttentionRows\(currentSessions, sessionId\)\);/,
-  "workspace should record clears with proven scope (or the unproven sentinel) and then patch both the canonical base rows and the rendered enriched rows for the matching session only",
+  /recordChatAttentionClear\([\s\S]*baseSessionScopeKeyByIdRef\.current\.get\(detail\.sessionId\)[\s\S]*CHAT_ATTENTION_UNPROVEN_SCOPE[\s\S]*baseSessionsRef\.current = clearSessionAttentionRows\(baseSessionsRef\.current, sessionId\);[\s\S]*setSessions\(\(currentSessions\) => clearSessionAttentionRows\(currentSessions, sessionId\)\);/,
+  "workspace should record clears with the accepted request scope (or the unproven sentinel) and then patch both the canonical base rows and the rendered enriched rows for the matching session only",
 );
 assert.match(
   workspace,
@@ -394,8 +398,8 @@ assert.match(
 );
 assert.match(
   onChatAttentionClearBlock,
-  /const acceptedRow = baseSessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\);[\s\S]*?const acceptedCanonical = acceptedRow && acceptedRow\.attention\.state !== "none"[\s\S]*?\? acceptedRow\.attention[\s\S]*?: null;[\s\S]*?const baselineAttention = acceptedCanonical \?\?[\s\S]*?detail\.baselineAttention \?\?[\s\S]*?acceptedRow\?\.attention \?\?[\s\S]*?sessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention;[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?acceptedRow[\s\S]*?baseSessionScopeKeyByIdRef\.current\.get\(detail\.sessionId\)[\s\S]*?authoritativeChatAttentionScopeKey\(acceptedRow,\s*chatAttentionProjectionScopeKey\(activeIdRef\.current\)\)[\s\S]*?: CHAT_ATTENTION_UNPROVEN_SCOPE,[\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
-  "workspace should prefer its own accepted canonical row over stale event fallback evidence and preserve the accepted row's proven scope instead of stamping the newly active sidebar scope onto cached old-scope rows",
+  /const acceptedRow = baseSessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\);[\s\S]*?const acceptedCanonical = acceptedRow && acceptedRow\.attention\.state !== "none"[\s\S]*?\? acceptedRow\.attention[\s\S]*?: null;[\s\S]*?const baselineAttention = acceptedCanonical \?\?[\s\S]*?detail\.baselineAttention \?\?[\s\S]*?acceptedRow\?\.attention \?\?[\s\S]*?sessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention;[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?baseSessionScopeKeyByIdRef\.current\.get\(detail\.sessionId\)\s*\?\?\s*CHAT_ATTENTION_UNPROVEN_SCOPE,[\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
+  "workspace should prefer its own accepted canonical row over stale event fallback evidence and preserve the actual accepted request scope",
 );
 assert.match(
   onChatAttentionClearBlock,
@@ -507,10 +511,19 @@ assert.match(
   /const minuteTick = useMinuteTick\(\);/,
   "the sidebar should subscribe to the shared minute tick",
 );
+// One memoized clock per minute tick (cave-zs85n Task 6 gap-fix) — a bare
+// Date.now() here would advance on every unrelated re-render, splitting the
+// instant recentBuckets derives from away from the one row times/attention
+// descriptions render with.
 assert.match(
   workspaceSidebar,
-  /const recentBuckets = useMemo\([\s\S]*?\[view, recentSessions, minuteTick\],/,
-  "recent buckets should re-derive when the shared minute tick fires",
+  /const now = useMemo\(\(\) => Date\.now\(\), \[minuteTick\]\);/,
+  "now should be a single clock snapshot memoized off the shared minute tick, not a per-render Date.now()",
+);
+assert.match(
+  workspaceSidebar,
+  /const recentBuckets = useMemo\([\s\S]*?\[view, recentSessions, now\],/,
+  "recent buckets should re-derive from the same memoized now, not a separately-tracked minuteTick",
 );
 assert.match(
   workspaceSidebar,

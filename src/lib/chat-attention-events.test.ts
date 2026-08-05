@@ -118,11 +118,8 @@ test("accepts every canonical BaselineAttention combo", () => {
 });
 
 test("rejects impossible BaselineAttention combos and non-canonical timestamps", () => {
-  // Malformed baseline evidence must not invalidate the whole clear event —
-  // it is dropped like a malformed clearWatermark/scopeKey, leaving a valid
-  // event with no baselineAttention field, never a fabricated snapshot.
   function rejectsBaseline(baselineAttention: unknown) {
-    assert.deepEqual(clearWithBaseline(baselineAttention), { sessionId: "session-3", operationId: "run-3" });
+    assert.equal(clearWithBaseline(baselineAttention), null);
   }
   // "none" must carry neither a timestamp nor a reason.
   rejectsBaseline({ state: "none", since: "2026-08-05T00:00:00.000Z", reason: null });
@@ -148,7 +145,7 @@ test("rejects impossible BaselineAttention combos and non-canonical timestamps",
 
 test("drops malformed optional baseline evidence without losing the valid event payload", () => {
   function rejectsBaseline(baselineAttention: unknown) {
-    assert.deepEqual(clearWithBaseline(baselineAttention), { sessionId: "session-3", operationId: "run-3" });
+    assert.equal(clearWithBaseline(baselineAttention), null);
   }
 
   rejectsBaseline({ state: "none", since: undefined, reason: null });
@@ -159,6 +156,30 @@ test("drops malformed optional baseline evidence without losing the valid event 
   rejectsBaseline({ state: "awaiting-human", since: {}, reason: "approval" });
   rejectsBaseline({ state: "overdue-human", since: "2026-08-05T00:00:00.000Z", reason: {} });
   rejectsBaseline({ state: "overdue-human", since: "2026-08-05T00:00:00.000Z", reason: " approval " });
+});
+
+test("legacy session-only compatibility is exact and never revives malformed modern payloads", () => {
+  const exactLegacy = new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: { sessionId: " session-legacy " },
+  });
+  assert.equal(attentionClearFromEvent(exactLegacy), null);
+  assert.equal(attentionClearedSessionId(exactLegacy), "session-legacy");
+
+  const malformedModernPayloads = [
+    { sessionId: "session-legacy", operationId: "   " },
+    { sessionId: "session-legacy", clearWatermark: "later maybe" },
+    { sessionId: "session-legacy", scopeKey: "   " },
+    { sessionId: "session-legacy", baselineAttention: { state: "none", since: undefined, reason: null } },
+  ];
+  for (const detail of malformedModernPayloads) {
+    const event = new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, { detail });
+    assert.equal(attentionClearFromEvent(event), null);
+    assert.equal(
+      attentionClearedSessionId(event),
+      null,
+      "session-only fallback must reject payloads that mention modern clear fields at all",
+    );
+  }
 });
 
 test("rejects wrong event types and invalid detail payloads", () => {

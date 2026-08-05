@@ -87,7 +87,6 @@ import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
 import {
-  authoritativeChatAttentionScopeKey,
   CHAT_ATTENTION_UNPROVEN_SCOPE,
   applyChatAttentionProjections,
   chatAttentionProjectionScopeKey,
@@ -601,26 +600,15 @@ export function Workspace() {
           detail.baselineAttention ??
           acceptedRow?.attention ??
           sessionsRef.current.find((session) => session.id === detail.sessionId)?.attention;
-        // The list scope that can prove a session's absence is whichever
-        // familiar filter Workspace's own /api/sessions/list request was
-        // actually scoped to (see loadSessions' capturedScopeKey above) — not
-        // whatever scope the emitting ChatView instance believes it owns.
-        // ChatView's session/familiar props can diverge from the sidebar's
-        // current filter (split panes, a stale render, a legacy caller that
-        // never learned the active scope at all), and a wrong scope corrupts
-        // scopeProvesAbsence's tombstoning. Workspace never trusts the event's
-        // carried scope. Instead, a cached accepted row must keep the scope in
-        // which WORKSPACE proved it (or its authoritative familiar identity);
-        // off-list fallback evidence is recorded as unproven so an unrelated
-        // familiar's empty response cannot retire it.
+        // Preserve the scope of the request that actually supplied this row.
+        // A row's familiar identity is not request provenance: all-familiars
+        // responses contain familiar-owned rows and collapse some rows.
         const recordResult = recordChatAttentionClear(
           chatAttentionProjectionRef.current,
           detail.sessionId,
           detail.operationId,
-          acceptedRow
-            ? (baseSessionScopeKeyByIdRef.current.get(detail.sessionId) ??
-              authoritativeChatAttentionScopeKey(acceptedRow, chatAttentionProjectionScopeKey(activeIdRef.current)))
-            : CHAT_ATTENTION_UNPROVEN_SCOPE,
+          baseSessionScopeKeyByIdRef.current.get(detail.sessionId) ??
+            CHAT_ATTENTION_UNPROVEN_SCOPE,
           baselineAttention,
           detail.clearWatermark,
         );
@@ -1404,7 +1392,7 @@ export function Workspace() {
         baseSessionScopeKeyByIdRef.current = new Map(
           baseSessions.map((session) => [
             session.id,
-            authoritativeChatAttentionScopeKey(session, capturedScopeKey),
+            capturedScopeKey,
           ]),
         );
         const visibleSessions = githubTasksRef.current

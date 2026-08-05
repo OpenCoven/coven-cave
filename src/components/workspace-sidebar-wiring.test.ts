@@ -23,7 +23,12 @@ assert.match(workspaceSidebar, /<PopoverLabel>Chat visibility<\/PopoverLabel>/, 
 assert.match(workspaceSidebar, /readChatSidebarView\(\)/, "organize mode should hydrate from persisted pref");
 assert.doesNotMatch(workspaceSidebar, /function bareTime\(/, "sidebar should remove the dead bareTime compatibility helper");
 assert.match(workspaceSidebar, /const minuteTick = useMinuteTick\(\);/, "sidebar should subscribe to the shared minute tick");
-assert.match(workspaceSidebar, /const recentBuckets = useMemo\([\s\S]*?\[view, recentSessions, minuteTick\],/, "recent buckets should re-derive when the shared minute tick fires");
+assert.match(
+  workspaceSidebar,
+  /const now = useMemo\(\(\) => Date\.now\(\), \[minuteTick\]\);/,
+  "now should be one memoized clock snapshot derived from minuteTick, not a bare per-render Date.now()",
+);
+assert.match(workspaceSidebar, /const recentBuckets = useMemo\([\s\S]*?\[view, recentSessions, now\],/, "recent buckets should re-derive from the same memoized now used for row times and attention descriptions");
 assert.match(workspaceSidebar, /bareTimeAt\(session\.updated_at \|\| session\.created_at, now\)/, 'row times should render through bareTimeAt on the current render clock');
 assert.ok((workspaceSidebar.match(/<ThreadRow/g) ?? []).length >= 2, "both view branches should render ThreadRow");
 assert.match(workspaceSidebar, /const sessionProjectById = useMemo\(\(\) => \{[\s\S]*?for \(const group of groups\)/, "recent-row project lookup derives from override-aware groups");

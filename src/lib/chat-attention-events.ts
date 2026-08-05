@@ -20,6 +20,12 @@ export type ChatAttentionSettlementDetail = ChatAttentionClearDetail & {
 // Set<string> avoids widening `readonly ChatAttentionReason[]` with a cast at
 // every call site (`Set<string>.has` accepts any narrowed string directly).
 const VALID_CHAT_ATTENTION_REASONS = new Set<string>(CHAT_ATTENTION_REASONS);
+const MODERN_CLEAR_DETAIL_KEYS = [
+  "operationId",
+  "scopeKey",
+  "clearWatermark",
+  "baselineAttention",
+] as const;
 
 function normalizeString(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -89,6 +95,10 @@ function normalizeClearWatermark(value: unknown): string | null {
   return normalized && isCanonicalIsoInstant(normalized) ? normalized : null;
 }
 
+function hasOwnDetailField(detail: Record<string, unknown> | null | undefined, key: string): boolean {
+  return !!detail && Object.prototype.hasOwnProperty.call(detail, key);
+}
+
 function attentionEventDetail(event: Event, type: string): ChatAttentionClearDetail | null {
   if (event.type !== type) return null;
   const detail = (event as CustomEvent<Record<string, unknown> | null>).detail;
@@ -96,7 +106,11 @@ function attentionEventDetail(event: Event, type: string): ChatAttentionClearDet
   const operationId = normalizeString(detail?.operationId);
   const clearWatermark = normalizeClearWatermark(detail?.clearWatermark);
   const scopeKey = normalizeString(detail?.scopeKey);
-  const baselineAttention = normalizeAttentionDetail(detail?.baselineAttention);
+  const hasBaselineAttention = hasOwnDetailField(detail, "baselineAttention");
+  const baselineAttention = hasBaselineAttention
+    ? normalizeAttentionDetail(detail?.baselineAttention)
+    : null;
+  if (hasBaselineAttention && !baselineAttention) return null;
   return sessionId && operationId
     ? {
       sessionId,
@@ -160,7 +174,11 @@ export function attentionClearFromEvent(event: Event): ChatAttentionClearDetail 
 export function attentionClearedSessionId(event: Event): string | null {
   if (event.type !== CHAT_ATTENTION_CLEAR_EVENT) return null;
   const detail = (event as CustomEvent<Record<string, unknown> | null>).detail;
-  return normalizeString(detail?.sessionId);
+  const sessionId = normalizeString(detail?.sessionId);
+  if (!sessionId || !detail || typeof detail !== "object") return null;
+  if (Object.keys(detail).length !== 1 || !hasOwnDetailField(detail, "sessionId")) return null;
+  if (MODERN_CLEAR_DETAIL_KEYS.some((key) => hasOwnDetailField(detail, key))) return null;
+  return sessionId;
 }
 
 export function attentionSettlementFromEvent(event: Event): ChatAttentionSettlementDetail | null {

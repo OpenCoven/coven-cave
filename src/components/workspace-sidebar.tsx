@@ -284,6 +284,12 @@ function ThreadRow({
           edge — the session's state, readable down the whole rail without
           hunting for the dot. The active row's tick goes accent (CSS). */}
       <span className={`cnav__tick ${statusDotClass(session.status)}`} aria-hidden />
+      {/* A structurally separate channel from the runtime tick above — see
+          .cnav__attention-tick in shell-navigation.css (cave-zs85n Task 6).
+          Keeps attention visible without letting it repaint the runtime
+          status colour, including on PR-badge and branch-glyph rows where
+          .cnav__dot never renders at all. */}
+      {attentionState !== "none" ? <span className="cnav__attention-tick" aria-hidden /> : null}
       {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
       <button
         type="button"
@@ -431,6 +437,9 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin 
           without hunting for the dot. Shared with ThreadRow so a pinned row's
           tick can never diverge from its full-row twin. */}
       <span className={`cnav__tick ${statusDotClass(session.status)}`} aria-hidden />
+      {/* Same separate attention channel as ThreadRow (cave-zs85n Task 6) —
+          shared markup so the compact rail can't drift into a divergent cue. */}
+      {attentionState !== "none" ? <span className="cnav__attention-tick" aria-hidden /> : null}
       {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
       <button
         type="button"
@@ -513,7 +522,14 @@ export function WorkspaceSidebar({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchorRef = useRef<HTMLButtonElement>(null);
   const menuBodyRef = useRef<HTMLDivElement>(null);
-  const now = Date.now();
+  // One clock snapshot per minute tick, not one per render: recency buckets,
+  // row bare times, and attention descriptions all read this SAME `now` so
+  // they can never split into two different instants inside one render pass
+  // (cave-zs85n Task 6 gap-fix — a bare Date.now() here previously advanced
+  // on every unrelated re-render while recentBuckets stayed memoized against
+  // the older minuteTick-only dependency, so an in-between render could show
+  // stale buckets alongside a fresher bare time for the same session).
+  const now = useMemo(() => Date.now(), [minuteTick]);
 
   // Trap focus inside the Organize menu while it is open (same convention as
   // the GitHub action popover, #2288). Also hydrates the organize-view preference.
@@ -623,12 +639,13 @@ export function WorkspaceSidebar({
 
   // Buckets depend on wall-clock day boundaries, and the sessions poll bails
   // out identity-unchanged when content is identical — so a data refresh alone
-  // will NOT re-derive after midnight. The minute tick keeps the day buckets
-  // (and the bare row times rendered each pass) on the same clock.
+  // will NOT re-derive after midnight. Depending on `now` (memoized above off
+  // minuteTick) rather than minuteTick directly keeps this honest for
+  // exhaustive-deps AND guarantees buckets are derived from the exact same
+  // instant as the bare row times and attention descriptions rendered below.
   const recentBuckets = useMemo(
     () => (view === "recent" ? deriveChatRecencyBuckets(recentSessions, now) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- minuteTick is the clock dependency
-    [view, recentSessions, minuteTick],
+    [view, recentSessions, now],
   );
 
   const toggleCollapse = (key: string) => {

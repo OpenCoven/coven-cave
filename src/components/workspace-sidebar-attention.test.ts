@@ -109,6 +109,46 @@ assert.match(css, /data-attention="awaiting-human"[\s\S]*color-mix\(in oklch, va
 assert.match(css, /data-attention="overdue-human"[\s\S]*background:\s*var\(--danger-bg\);/, "overdue-human should use the existing danger background token");
 assert.match(css, /data-attention="overdue-human"[\s\S]*border-color:\s*var\(--danger-border\);/, "overdue-human should use the existing danger border token");
 assert.match(css, /data-attention="overdue-human"[\s\S]*\.cnav__attention[\s\S]*color:\s*var\(--danger-text\);/, "overdue-human attention copy should use the danger text token");
+// cave-zs85n Task 6 gap-fix: attention must never repaint the RUNTIME tick.
+// Previously `.cnav__thread[data-attention="…"] .cnav__tick` selectors won
+// the cascade over the tick's own status colour (failed/paused/running/
+// queued), silently erasing runtime state on any attention-bearing row —
+// including PR-badge/branch-glyph rows where .cnav__dot never renders at
+// all, so the tick was the only runtime signal left. Attention gets its own
+// structural channel (.cnav__attention-tick) instead of recolouring the
+// shared one.
+assert.doesNotMatch(
+  css,
+  /\.cnav__thread\[data-attention="[^"]+"\]\s*\.cnav__tick/,
+  "attention selectors must not recolor the runtime .cnav__tick — use .cnav__attention-tick instead",
+);
+assert.match(
+  css,
+  /\.cnav__attention-tick\s*\{[\s\S]*?background:\s*var\(--color-warning\);/,
+  "the attention tick should default to warning (left-hanging/awaiting-human)",
+);
+assert.match(
+  css,
+  /data-attention="overdue-human"[\s\S]*\.cnav__attention-tick[\s\S]*background:\s*var\(--danger-text\);/,
+  "overdue-human should escalate the attention tick to danger",
+);
+const attentionTickBlock = extractBraceBlock(css, ".cnav__attention-tick {");
+assert.doesNotMatch(attentionTickBlock, /animation|@keyframes|pulse/i, "the attention tick must never animate");
+assert.match(attentionTickBlock, /left:\s*var\(--space-1\);/, "the attention tick should position off a spacing token, not a hardcoded off-grid pixel value");
+assert.match(attentionTickBlock, /top:\s*var\(--space-2\);/, "the attention tick's vertical inset should use a spacing token");
+assert.match(attentionTickBlock, /bottom:\s*var\(--space-2\);/, "the attention tick's vertical inset should use a spacing token");
+assert.match(
+  sidebar,
+  /\{attentionState !== "none" \? <span className="cnav__attention-tick" aria-hidden \/> : null\}/,
+  "the attention tick should render as its own conditional element, absent (not just hidden) for none/archived rows",
+);
+const attentionTickCallSites = sidebar.match(/<span className="cnav__attention-tick" aria-hidden \/>/g) ?? [];
+assert.equal(
+  attentionTickCallSites.length,
+  2,
+  "both ThreadRow and PinnedThreadRow should render the shared attention-tick channel",
+);
+
 assert.match(
   sidebar,
   /className="cnav__more cnav__more--flat focus-ring"/,
@@ -724,6 +764,122 @@ test("a pinned attention session appears in both Pinned and Awaiting you, keepin
   expect(
     awaitingRow.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__pr-badge")),
   ).toHaveLength(1);
+
+  await act(async () => renderer.unmount());
+});
+
+// cave-zs85n Task 6 gap-fix: the runtime tick (failed/paused/running/queued)
+// and the attention cue must remain SEPARATE, simultaneously-readable signals
+// even on rows where .cnav__dot never renders (PR badge / branch glyph rows
+// swap it out for the badge or the leading icon) — recoloring .cnav__tick
+// from attention state used to erase the runtime signal entirely on exactly
+// these rows.
+test("a failed run with a PR badge keeps its danger runtime tick alongside a separate warning attention tick", async () => {
+  let renderer!: ReactTestRenderer;
+  const session = makeSession({
+    id: "session-failed-pr",
+    title: "Resolve PR #42",
+    status: "failed",
+    pullRequest: { repo: "o/r", number: 42, state: "open" },
+    attention: { state: "left-hanging", since: "2026-08-04T19:00:00.000Z", reason: "decision" },
+  });
+
+  await act(async () => {
+    renderer = create(
+      createElement(WorkspaceSidebar, {
+        sessions: [session],
+        familiars: [],
+        responseNeeded: new Set(),
+        onSelectFamiliar: () => undefined,
+        onOpenSession: () => undefined,
+        onNavigate: () => undefined,
+        onNewChat: () => undefined,
+        onDeleteSession: async () => undefined,
+        onOpenSettings: () => undefined,
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  const awaitingRow = sectionByLabel(renderer, "Awaiting you");
+  const row = rowContainerFor(awaitingRow, "Resolve PR #42 - PR #42 open");
+  expect(row.props["data-attention"]).toBe("left-hanging");
+
+  // The PR badge occupies .cnav__dot's slot — confirm it is actually present,
+  // so the runtime tick assertion below is exercising the "dot absent" case
+  // the bug report called out, not accidentally falling back to the dot.
+  expect(
+    row.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__dot")),
+  ).toHaveLength(0);
+  expect(
+    row.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__pr-badge")),
+  ).toHaveLength(1);
+
+  // Runtime tick: still carries the failed/danger class, untouched by attention.
+  const runtimeTick = row.find(
+    (node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ")[0] === "cnav__tick",
+  );
+  expect(runtimeTick.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__tick", "bg-[var(--color-danger)]"]));
+
+  // Attention tick: a distinct element/class, never merged onto the runtime tick.
+  const attentionTicks = row.findAll(
+    (node) => typeof node.type === "string" && node.props.className === "cnav__attention-tick",
+  );
+  expect(attentionTicks).toHaveLength(1);
+  expect(attentionCueLabels(row)).toEqual(["Left hanging"]);
+
+  await act(async () => renderer.unmount());
+});
+
+test("a paused run with a branch glyph keeps its runtime tick alongside a separate danger attention tick when overdue", async () => {
+  let renderer!: ReactTestRenderer;
+  const session = makeSession({
+    id: "session-paused-branch",
+    title: "Rebase feature branch",
+    status: "paused",
+    attention: { state: "overdue-human", since: "2026-08-03T19:00:00.000Z", reason: "approval" },
+  });
+
+  await act(async () => {
+    renderer = create(
+      createElement(WorkspaceSidebar, {
+        sessions: [session],
+        familiars: [],
+        responseNeeded: new Set(),
+        onSelectFamiliar: () => undefined,
+        onOpenSession: () => undefined,
+        onNavigate: () => undefined,
+        onNewChat: () => undefined,
+        onDeleteSession: async () => undefined,
+        onOpenSettings: () => undefined,
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  const awaitingRow = sectionByLabel(renderer, "Awaiting you");
+  const row = rowContainerFor(awaitingRow, "Rebase feature branch");
+  expect(row.props["data-attention"]).toBe("overdue-human");
+
+  // The title-heuristic branch glyph occupies .cnav__dot's slot too — same
+  // "dot absent" shape as the PR-badge row above, via a different leading
+  // element (threadLeadingIcon's icon rather than ThreadPrBadge). With no PR
+  // badge on this session, `prStatus ? null : leadGlyph ? <Icon/> : <dot/>`
+  // only has one path left to explain a missing dot: the branch glyph fired.
+  expect(
+    row.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__dot")),
+  ).toHaveLength(0);
+
+  const runtimeTick = row.find(
+    (node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ")[0] === "cnav__tick",
+  );
+  expect(runtimeTick.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__tick", "bg-[var(--accent-presence-soft)]"]));
+
+  const attentionTicks = row.findAll(
+    (node) => typeof node.type === "string" && node.props.className === "cnav__attention-tick",
+  );
+  expect(attentionTicks).toHaveLength(1);
+  expect(attentionCueLabels(row)).toEqual(["Still waiting"]);
 
   await act(async () => renderer.unmount());
 });

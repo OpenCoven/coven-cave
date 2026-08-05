@@ -774,15 +774,6 @@
   padding-top: var(--space-1);
   padding-bottom: var(--space-1);
 }
-.cnav__thread[data-attention="left-hanging"] .cnav__tick,
-.cnav__thread[data-attention="awaiting-human"] .cnav__tick {
-  background: var(--color-warning);
-  opacity: 1;
-}
-.cnav__thread[data-attention="overdue-human"] .cnav__tick {
-  background: var(--danger-text);
-  opacity: 1;
-}
 .cnav__thread[data-attention="overdue-human"] .cnav__attention {
   color: var(--danger-text);
 }
@@ -848,6 +839,30 @@
    the state tick steps aside rather than doubling it. */
 .cnav__thread.is-active .cnav__tick {
   opacity: 0;
+}
+/* Attention channel (cave-zs85n Task 6): a SEPARATE structural tick from the
+   runtime .cnav__tick above, so a row's session status (running/failed/
+   paused/queued) and its human-attention state can never fight over the same
+   colour. Sits inboard of the runtime tick and the active-selection accent
+   (::before) at left var(--space-2)) so all three cues stay simultaneously
+   readable rather than one silently overwriting another. Warning by default
+   (left-hanging/awaiting-human); overdue-human escalates to danger. Never
+   animated — only .cnav__dot--running pulses, and that pulse is intentionally
+   scoped to runtime status, not attention. Rendered only for non-none,
+   non-archived attention (see resolveThreadAttention), so there is nothing to
+   hide here for those states. */
+.cnav__attention-tick {
+  position: absolute;
+  left: var(--space-1);
+  top: var(--space-2);
+  bottom: var(--space-2);
+  width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--color-warning);
+  pointer-events: none;
+}
+.cnav__thread[data-attention="overdue-human"] .cnav__attention-tick {
+  background: var(--danger-text);
 }
 .cnav__dot {
   width: 6px;

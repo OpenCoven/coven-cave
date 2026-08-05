@@ -333,7 +333,7 @@ test("an overlapping pending clear still projects none when an older persisted c
   assert.equal(state.get("session-1")?.get("operation-2")?.status, "pending");
 });
 
-test("absence cannot release a pending clear but can retire a persisted clear after a fresh response", () => {
+test("filtered list absence cannot release pending or persisted clears", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
     state,
@@ -351,10 +351,17 @@ test("absence cannot release a pending clear but can retire a persisted clear af
 
   settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 10);
   applyChatAttentionProjections(state, [], 10, chatAttentionProjectionScopeKey("nova"));
+  assert.equal(state.has("session-1"), true);
+
+  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalNone, 11, chatAttentionProjectionScopeKey("nova")),
+    canonicalNone,
+  );
   assert.equal(state.has("session-1"), false);
 });
 
-test("repeated clears keep the original scope until that scope catches up", () => {
+test("repeated clears survive absent rows until explicit canonical evidence arrives", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
     state,
@@ -507,7 +514,48 @@ test("an unknown-baseline clear survives an empty same-scope poll and releases o
   assert.equal(state.has("session-1"), false);
 });
 
-test("an unknown-baseline persisted clear keeps masking the first stale attention row and retires on canonical none", () => {
+test("a no-baseline rejection tombstones the operation id so a late replay cannot recreate an un-settleable projection", () => {
+  const state = createChatAttentionProjectionState();
+  assert.deepEqual(
+    recordChatAttentionClear(
+      state,
+      "session-1",
+      "operation-1",
+      chatAttentionProjectionScopeKey("nova"),
+      NO_CHAT_ATTENTION,
+    ),
+    { recorded: false, reason: "no-baseline" },
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+  const replay = recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    undefined,
+    "2026-08-05T00:01:00.000Z",
+  );
+  assert.deepEqual(replay, { recorded: false, reason: "tombstoned" });
+  assert.equal(state.has("session-1"), false);
+});
+
+test("an unknown settlement does not poison a later legitimate first clear for the same session", () => {
+  const state = createChatAttentionProjectionState();
+  settleChatAttentionClear(state, "session-1", "operation-unknown", "persisted", 6);
+  assert.deepEqual(
+    recordChatAttentionClear(
+      state,
+      "session-1",
+      "operation-1",
+      chatAttentionProjectionScopeKey("nova"),
+      NEEDS_ATTENTION,
+    ),
+    { recorded: true, reason: "recorded" },
+  );
+  assert.deepEqual(state.get("session-1")?.get("operation-1")?.baseline, NEEDS_ATTENTION);
+});
+
+test("an evidence-free persisted compatibility clear retires on the first eligible canonical row even when attention repeats", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
     state,
@@ -518,25 +566,23 @@ test("an unknown-baseline persisted clear keeps masking the first stale attentio
   );
   settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
 
-  applyChatAttentionProjections(state, [], 6, chatAttentionProjectionScopeKey("nova"));
-  assert.equal(state.has("session-1"), true);
-
   const staleCanonical = [row({ attention: { ...NEEDS_ATTENTION } })];
   assert.equal(
-    applyChatAttentionProjections(state, staleCanonical, 7, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    applyChatAttentionProjections(state, staleCanonical, 5, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
     "none",
+    "responses older than the settlement boundary must keep the projection active",
   );
   assert.equal(state.has("session-1"), true);
 
-  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
   assert.equal(
-    applyChatAttentionProjections(state, canonicalNone, 8, chatAttentionProjectionScopeKey("nova")),
-    canonicalNone,
+    applyChatAttentionProjections(state, staleCanonical, 6, chatAttentionProjectionScopeKey("nova")),
+    staleCanonical,
+    "the first eligible canonical row should win immediately instead of being masked indefinitely",
   );
   assert.equal(state.has("session-1"), false);
 });
 
-test("an unknown-baseline persisted clear yields once canonical attention proves a genuinely newer request", () => {
+test("an evidence-free persisted compatibility clear also retires on the first eligible canonical none", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
     state,
@@ -547,20 +593,10 @@ test("an unknown-baseline persisted clear yields once canonical attention proves
   );
   settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
 
-  applyChatAttentionProjections(
-    state,
-    [row({ attention: { ...NEEDS_ATTENTION } })],
-    7,
-    chatAttentionProjectionScopeKey("nova"),
-  );
-  assert.equal(state.has("session-1"), true);
-
-  const newerRequest = [row({
-    attention: { state: "awaiting-human", since: "2026-08-05T00:05:00.000Z", reason: "approval" },
-  })];
+  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
   assert.equal(
-    applyChatAttentionProjections(state, newerRequest, 8, chatAttentionProjectionScopeKey("nova")),
-    newerRequest,
+    applyChatAttentionProjections(state, canonicalNone, 6, chatAttentionProjectionScopeKey("nova")),
+    canonicalNone,
   );
   assert.equal(state.has("session-1"), false);
 });
@@ -670,7 +706,7 @@ test("an unknown-baseline persisted clear with a watermark stays conservative on
   assert.equal(state.has("session-1"), false);
 });
 
-test("an unknown-baseline off-list clear recorded under its true scope survives an empty unrelated scope", () => {
+test("an unknown-baseline off-list clear survives filtered list absence", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
     state,
@@ -806,6 +842,26 @@ test("an immediate retry after a failed final clear inherits its canonical basel
   }
 });
 
+test("canonical none during a pending clear preserves the real baseline for an immediate retry after failure", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(state, "session-1", "operation-1", scopeKey, NEEDS_ATTENTION);
+
+  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalNone, 6, scopeKey),
+    canonicalNone,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 7);
+
+  recordChatAttentionClear(state, "session-1", "operation-2", scopeKey, undefined);
+  assert.deepEqual(state.get("session-1")?.get("operation-2")?.baseline, NEEDS_ATTENTION);
+  assert.equal(
+    applyChatAttentionProjections(state, [row()], 8, scopeKey)[0]?.attention.state,
+    "none",
+  );
+});
+
 test("canonical reconciliation after a failed final clear consumes its retained baseline before a later clear", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
@@ -837,7 +893,44 @@ test("canonical reconciliation after a failed final clear consumes its retained 
   );
 });
 
-test("scope absence only consumes a failed clear baseline when that response can prove absence", () => {
+test("a canonical none retires the tracked baseline instead of occupying it, so a later clear's real baseline is still tracked", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  const NEEDS_ATTENTION_B = {
+    state: "awaiting-human" as const,
+    since: "2026-08-05T00:20:00.000Z",
+    reason: "approval" as const,
+  };
+
+  // Prime the tracker with a real baseline, then exhaust it with a failed
+  // clear so only the tracked fallback survives.
+  recordChatAttentionClear(state, "session-1", "operation-1", scopeKey, NEEDS_ATTENTION);
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 5);
+
+  // Canonical attention genuinely resolves to "none" through some other
+  // path (not this failed clear). That must retire the tracked baseline
+  // outright rather than retaining "none" itself as if it were still
+  // usable retry evidence.
+  applyChatAttentionProjections(state, [row({ attention: NO_CHAT_ATTENTION })], 6, scopeKey);
+
+  // Fresh, genuinely new attention now needs a clear; the caller supplies
+  // its own known-good canonical snapshot directly, so this clear must
+  // record correctly and — critically — must be free to persist that new
+  // baseline into the tracker, not find the slot still occupied by the
+  // retired "none".
+  recordChatAttentionClear(state, "session-1", "operation-2", scopeKey, NEEDS_ATTENTION_B);
+  assert.deepEqual(state.get("session-1")?.get("operation-2")?.baseline, NEEDS_ATTENTION_B);
+  settleChatAttentionClear(state, "session-1", "operation-2", "failed", 7);
+
+  // An immediate retry with no fresh canonical evidence of its own must now
+  // inherit that real tracked baseline, not fall back to an unknown
+  // baseline because a stale "none" entry blocked it from ever being
+  // recorded.
+  recordChatAttentionClear(state, "session-1", "operation-3", scopeKey, undefined);
+  assert.deepEqual(state.get("session-1")?.get("operation-3")?.baseline, NEEDS_ATTENTION_B);
+});
+
+test("filtered list absence never consumes a failed clear retry baseline", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
     state,
@@ -867,7 +960,7 @@ test("scope absence only consumes a failed clear baseline when that response can
     chatAttentionProjectionScopeKey("nova"),
     NO_CHAT_ATTENTION,
   );
-  assert.equal(state.has("session-1"), false);
+  assert.deepEqual(state.get("session-1")?.get("operation-3")?.baseline, NEEDS_ATTENTION);
 });
 
 test("a clear followed by persisted settlement and canonical release, then a duplicate clear for the same op is ignored", () => {
