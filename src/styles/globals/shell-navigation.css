@@ -806,6 +806,7 @@
   width: 2.5px;
   border-radius: 2px;
   background: var(--accent-presence);
+  z-index: 0;
 }
 /* Archived rows (visible via the sidebar's "Show archived" option) read muted
    so they can't pass for live threads; hover restores full contrast for the
@@ -831,14 +832,16 @@
   background: color-mix(in oklch, var(--foreground) 16%, transparent);
   opacity: 0.7;
   pointer-events: none;
+  z-index: 1;
 }
 .cnav__thread:hover .cnav__tick {
   opacity: 1;
 }
-/* The active row draws its own accent tick in the same slot (::before), so
-   the state tick steps aside rather than doubling it. */
+/* The active row keeps its runtime tick; it simply shifts inboard so the
+   selection accent (::before) and any attention tick remain distinct cues. */
 .cnav__thread.is-active .cnav__tick {
-  opacity: 0;
+  left: var(--space-3);
+  opacity: 1;
 }
 /* Attention channel (cave-zs85n Task 6): a SEPARATE structural tick from the
    runtime .cnav__tick above, so a row's session status (running/failed/
@@ -860,6 +863,7 @@
   border-radius: var(--radius-sm);
   background: var(--color-warning);
   pointer-events: none;
+  z-index: 2;
 }
 .cnav__thread[data-attention="overdue-human"] .cnav__attention-tick {
   background: var(--danger-text);

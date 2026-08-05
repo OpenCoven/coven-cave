@@ -204,7 +204,11 @@ test.describe("chat sidebar (session navigator)", () => {
     await expect(projectTile).toBeVisible();
     await expect(attentionCue).toBeVisible();
     await expect(attentionLabel).toHaveText("Awaiting you");
-    await expect(attentionButton).toHaveAccessibleName(/^Project alpha\s+Approve release checklist\s+Awaiting you$/);
+    const timestamp = (await attentionRow.locator(".cnav__time").textContent())?.trim();
+    expect(timestamp).toBeTruthy();
+    await expect(attentionButton).toHaveAccessibleName(
+      new RegExp(`^Project alpha\\s+Approve release checklist\\s+${timestamp}\\s+Awaiting you$`),
+    );
 
     await narrowChatSidebar(page);
 
@@ -225,7 +229,9 @@ test.describe("chat sidebar (session navigator)", () => {
     expect(labelState.visibility).not.toBe("hidden");
     expect(labelState.width).toBeGreaterThan(0);
     expect(labelState.height).toBeGreaterThan(0);
-    await expect(attentionButton).toHaveAccessibleName(/^Project alpha\s+Approve release checklist\s+Awaiting you$/);
+    await expect(attentionButton).toHaveAccessibleName(
+      new RegExp(`^Project alpha\\s+Approve release checklist\\s+${timestamp}\\s+Awaiting you$`),
+    );
   });
 });
 

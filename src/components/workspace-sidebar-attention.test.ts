@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { CHAT_SIDEBAR_VIEW_KEY } from "@/lib/chat-session-prefs";
+import { relativeTime } from "@/lib/relative-time";
 
 const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/globals/shell-navigation.css", import.meta.url), "utf8");
@@ -28,6 +29,11 @@ assert.match(
 // and one cue component (ThreadAttentionCue) so ThreadRow's full row and the
 // compact Pinned rail can never drift into divergent state/label/description
 // or markup for the same session — see cave-zs85n Task 6 gap-fix notes.
+assert.match(
+  sidebar,
+  /function statusDotClass\(status: string\): string \{\s*if \(status === "running"\) return "cnav__dot--running";\s*if \(status === "failed"\) return "cnav__dot--failed";\s*if \(status === "queued"\) return "cnav__dot--queued";\s*if \(status === "paused"\) return "cnav__dot--paused";\s*return "";\s*\}/,
+  "statusDotClass should emit the shared semantic runtime modifier classes instead of raw utility colours",
+);
 assert.match(
   sidebar,
   /function resolveThreadAttention\([\s\S]*?const state: ChatAttentionState = archived \? "none" : session\.attention\.state;[\s\S]*?label: chatAttentionLabel\(state\),[\s\S]*?description: archived \? null : chatAttentionDescription\(session\.attention, now\),/,
@@ -131,6 +137,16 @@ assert.match(
   css,
   /\.cnav__attention-tick\s*\{[\s\S]*?background:\s*var\(--color-warning\);/,
   "the attention tick should default to warning (left-hanging/awaiting-human)",
+);
+assert.match(
+  css,
+  /\.cnav__thread\.is-active\s+\.cnav__tick\s*\{[\s\S]*?left:\s*var\(--space-3\);[\s\S]*?opacity:\s*1;/,
+  "active rows should keep the runtime tick visible by shifting it inboard of the active accent",
+);
+assert.match(
+  css,
+  /\.cnav__thread\.is-active::before\s*\{[\s\S]*?background:\s*var\(--accent-presence\);/,
+  "active rows should retain their separate accent marker",
 );
 assert.match(
   css,
@@ -398,6 +414,7 @@ test("attention rows keep the visible state in the button name and move the deta
 
   const buttonText = textContent(button.children);
   expect(buttonText).toContain("Approve release");
+  expect(buttonText).toContain(relativeTime(session.updated_at, new Date("2026-08-05T20:00:00.000Z"), "bare"));
   expect(buttonText).toContain("Awaiting you");
   expect(buttonText).not.toContain("approval");
   expect(buttonText).not.toContain("1 hour ago");
@@ -443,16 +460,19 @@ test("pinned and full attention rows keep the same accessible description while 
     await Promise.resolve();
   });
 
-  for (const scope of [
-    sectionByLabel(renderer, "Pinned threads"),
-    sectionByLabel(renderer, "Awaiting you"),
-  ]) {
+  for (const [label, scope] of [
+    ["Pinned threads", sectionByLabel(renderer, "Pinned threads")],
+    ["Awaiting you", sectionByLabel(renderer, "Awaiting you")],
+  ] as const) {
     const row = rowContainerFor(scope, railTitle);
     const button = row.find(
       (node) => node.type === "button" && node.props.className === "cnav__thread-main focus-ring",
     );
     const descriptionId = button.props["aria-describedby"];
     expect(typeof descriptionId).toBe("string");
+    if (label === "Awaiting you") {
+      expect(textContent(button.children)).toContain(relativeTime(session.updated_at, new Date("2026-08-05T20:00:00.000Z"), "bare"));
+    }
     expect(textContent(button.children)).toContain("Awaiting you");
     expect(textContent(button.children)).not.toContain("for approval");
     expect(textContent(button.children)).not.toContain("1 hour ago");
@@ -805,11 +825,18 @@ test("a pinned attention session appears in both Pinned and Awaiting you, keepin
   expect(pinnedRow.props["data-attention"]).toBe("left-hanging");
   expect(attentionCueLabels(pinnedRow)).toEqual(["Left hanging"]);
   expect(
-    pinnedRow.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.includes("cnav__tick") && node.props.className.includes("animate-pulse")),
+    pinnedRow.findAll(
+      (node) =>
+        typeof node.type === "string"
+        && typeof node.props.className === "string"
+        && node.props.className.split(" ").includes("cnav__tick")
+        && node.props.className.split(" ").includes("cnav__dot--running"),
+    ),
   ).toHaveLength(1);
   expect(
     pinnedRow.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__pr-badge") && node.props["data-pr-state"] === "open"),
   ).toHaveLength(1);
+  expect(pinnedRow.findAll((node) => typeof node.type === "string" && node.props.className === "cnav__attention-tick")).toHaveLength(1);
   const unpinButton = pinnedRow.find((node) => node.type === "button" && node.props["aria-label"] === `Unpin ${railTitle}`);
   expect(unpinButton.props["aria-pressed"]).toBe(true);
 
@@ -817,14 +844,22 @@ test("a pinned attention session appears in both Pinned and Awaiting you, keepin
   // alongside the same attention cue — the two row shapes render the same
   // attention state without diverging.
   const awaitingRow = rowContainerFor(awaitingSection, railTitle);
+  expect(awaitingRow.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__thread", "cnav__thread--flat", "is-active"]));
   expect(awaitingRow.props["data-attention"]).toBe("left-hanging");
   expect(attentionCueLabels(awaitingRow)).toEqual(["Left hanging"]);
   expect(
-    awaitingRow.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.includes("cnav__tick") && node.props.className.includes("animate-pulse")),
+    awaitingRow.findAll(
+      (node) =>
+        typeof node.type === "string"
+        && typeof node.props.className === "string"
+        && node.props.className.split(" ").includes("cnav__tick")
+        && node.props.className.split(" ").includes("cnav__dot--running"),
+    ),
   ).toHaveLength(1);
   expect(
     awaitingRow.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__pr-badge")),
   ).toHaveLength(1);
+  expect(awaitingRow.findAll((node) => typeof node.type === "string" && node.props.className === "cnav__attention-tick")).toHaveLength(1);
 
   await act(async () => renderer.unmount());
 });
@@ -851,6 +886,7 @@ test("a failed run with a PR badge keeps its danger runtime tick alongside a sep
         sessions: [session],
         familiars: [],
         responseNeeded: new Set(),
+        activeSessionId: session.id,
         onSelectFamiliar: () => undefined,
         onOpenSession: () => undefined,
         onNavigate: () => undefined,
@@ -864,6 +900,7 @@ test("a failed run with a PR badge keeps its danger runtime tick alongside a sep
 
   const awaitingRow = sectionByLabel(renderer, "Awaiting you");
   const row = rowContainerFor(awaitingRow, "Resolve PR #42 - PR #42 open");
+  expect(row.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__thread", "cnav__thread--flat", "is-active"]));
   expect(row.props["data-attention"]).toBe("left-hanging");
 
   // The PR badge occupies .cnav__dot's slot — confirm it is actually present,
@@ -880,7 +917,7 @@ test("a failed run with a PR badge keeps its danger runtime tick alongside a sep
   const runtimeTick = row.find(
     (node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ")[0] === "cnav__tick",
   );
-  expect(runtimeTick.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__tick", "bg-[var(--color-danger)]"]));
+  expect(runtimeTick.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__tick", "cnav__dot--failed"]));
 
   // Attention tick: a distinct element/class, never merged onto the runtime tick.
   const attentionTicks = row.findAll(
@@ -907,6 +944,7 @@ test("a paused run with a branch glyph keeps its runtime tick alongside a separa
         sessions: [session],
         familiars: [],
         responseNeeded: new Set(),
+        activeSessionId: session.id,
         onSelectFamiliar: () => undefined,
         onOpenSession: () => undefined,
         onNavigate: () => undefined,
@@ -920,6 +958,7 @@ test("a paused run with a branch glyph keeps its runtime tick alongside a separa
 
   const awaitingRow = sectionByLabel(renderer, "Awaiting you");
   const row = rowContainerFor(awaitingRow, "Rebase feature branch");
+  expect(row.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__thread", "cnav__thread--flat", "is-active"]));
   expect(row.props["data-attention"]).toBe("overdue-human");
 
   // The title-heuristic branch glyph occupies .cnav__dot's slot too — same
@@ -934,7 +973,7 @@ test("a paused run with a branch glyph keeps its runtime tick alongside a separa
   const runtimeTick = row.find(
     (node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ")[0] === "cnav__tick",
   );
-  expect(runtimeTick.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__tick", "bg-[var(--accent-presence-soft)]"]));
+  expect(runtimeTick.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__tick", "cnav__dot--paused"]));
 
   const attentionTicks = row.findAll(
     (node) => typeof node.type === "string" && node.props.className === "cnav__attention-tick",

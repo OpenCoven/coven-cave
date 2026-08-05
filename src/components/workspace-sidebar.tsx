@@ -100,11 +100,11 @@ function bareTimeAt(iso: string, now: number): string {
 }
 
 function statusDotClass(status: string): string {
-  if (status === "running") return "animate-pulse bg-[var(--color-success)]";
-  if (status === "failed") return "bg-[var(--color-danger)]";
-  if (status === "queued") return "bg-[var(--color-warning)]";
-  if (status === "paused") return "bg-[var(--accent-presence-soft)]";
-  return "bg-[var(--text-muted)]";
+  if (status === "running") return "cnav__dot--running";
+  if (status === "failed") return "cnav__dot--failed";
+  if (status === "queued") return "cnav__dot--queued";
+  if (status === "paused") return "cnav__dot--paused";
+  return "";
 }
 
 // A stable key per group for expand/collapse state. The ungrouped ("No project")
@@ -287,7 +287,8 @@ function ThreadRow({
     >
       {/* Chat.dc.html 2a: every row carries a 2px colour tick on its left
           edge — the session's state, readable down the whole rail without
-          hunting for the dot. The active row's tick goes accent (CSS). */}
+          hunting for the dot. Active selection keeps its own separate accent
+          marker; the runtime tick stays runtime-coloured (CSS). */}
       <span className={`cnav__tick ${statusDotClass(session.status)}`} aria-hidden />
       {/* A structurally separate channel from the runtime tick above — see
           .cnav__attention-tick in shell-navigation.css (cave-zs85n Task 6).
