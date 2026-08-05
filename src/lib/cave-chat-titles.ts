@@ -172,7 +172,8 @@ function stripLineMarkdown(text: string): string {
     .replace(/^(?:\s{0,3}>\s*)+/gm, "")
     .replace(/^[\t ]*(?:[-+*]|\d{1,9}[.)])[\t ]+(?:\[[ xX]\][\t ]+)?/gm, "")
     .replace(/^\s{0,3}\[[^\]]+\]:\s+\S+.*$/gm, " ")
-    .replace(/^#{1,6}[ \t]+/gm, "");
+    .replace(/^#{1,6}[ \t]+/gm, "")
+    .replace(/[ \t]+#{1,6}[ \t]*$/gm, "");
 }
 
 function normalizeGeneratedTitleSource(input: unknown): string | null {

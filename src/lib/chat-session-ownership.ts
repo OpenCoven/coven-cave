@@ -17,15 +17,22 @@
  *   generation started from.
  * - Null origin additionally requires the view to remain sessionless.
  */
-export function ownsDisplayedView(params: {
+export type DisplayedViewOwnership = {
   currentSessionId: string | null;
   originSessionId: string | null;
   runId: string;
   displayedCreationRunId: string | null;
-}): boolean {
+};
+
+export function ownsDisplayedView(params: DisplayedViewOwnership): boolean {
   if (params.runId !== params.displayedCreationRunId) return false;
   if (params.originSessionId !== null) {
     return params.currentSessionId === params.originSessionId;
   }
   return params.currentSessionId === null;
+}
+
+/** Only a fresh, sessionless creation run may promote ChatRouter. */
+export function canPromoteDisplayedSession(params: DisplayedViewOwnership): boolean {
+  return params.originSessionId === null && ownsDisplayedView(params);
 }

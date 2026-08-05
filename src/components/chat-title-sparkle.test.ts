@@ -132,12 +132,12 @@ test("manual edits and sparkle titles use distinct ownership contracts", () => {
   );
   assert.match(
     header,
-    /const patchTitle = async \(title: string, ownership: "manual" \| "auto" = "manual"\)/,
+    /const patchTitle = async \(title: string, ownership: "manual" \| "auto" = "manual"/,
     "ordinary pencil edits default to manual ownership",
   );
   assert.match(
     header,
-    /await patchTitle\(next, "auto"\)/,
+    /await patchTitle\(next, "auto", true\)/,
     "only sparkle generation opts into the automatic path",
   );
   assert.match(
@@ -149,5 +149,35 @@ test("manual edits and sparkle titles use distinct ownership contracts", () => {
     header,
     /if \(!res\.ok \|\| json\?\.ok === false\) return;\s*\n\s*onSessionsChanged\?\.\(\);/,
     "a preserved automatic write still refreshes the UI to show the concurrent manual title",
+  );
+});
+
+test("the sparkle sends replaceManualTitle: true to take over any current title", () => {
+  // User-triggered sparkle is an explicit takeover: it must be able to replace
+  // a manually owned title atomically. The flag travels as a PATCH body field
+  // and is only included in the sparkle path, never in the manual pencil path.
+  assert.match(
+    header,
+    /replaceManualTitle: true/,
+    "sparkle PATCH body includes the takeover flag",
+  );
+  // The flag is included conditionally via the spread, so it never leaks into
+  // the manual path (where replaceManual is its default false).
+  assert.match(
+    header,
+    /replaceManual && \{ replaceManualTitle: true \}/,
+    "replaceManualTitle is only spread when the takeover parameter is active",
+  );
+  // The sparkle generate call explicitly opts in to the takeover.
+  assert.match(
+    header,
+    /await patchTitle\(next, "auto", true\)/,
+    "sparkle passes the takeover flag as the third argument",
+  );
+  // Manual pencil submit uses the plain two-argument form — no takeover.
+  assert.match(
+    header,
+    /await patchTitle\(trimmed\);/,
+    "manual submit keeps the ordinary manual PATCH without the takeover flag",
   );
 });

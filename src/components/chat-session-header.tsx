@@ -332,13 +332,14 @@ export function ChatTitleEditable({
   // and a rejected patch answers { ok: false }. Refreshing on those would paint
   // the rename as applied when the server refused it, so the refresh is gated
   // on a genuine success and anything else falls through to the sessions poll.
-  const patchTitle = async (title: string, ownership: "manual" | "auto" = "manual") => {
+  const patchTitle = async (title: string, ownership: "manual" | "auto" = "manual", replaceManual = false) => {
     try {
       const body = ownership === "auto"
         ? {
             title,
             titleOwnership: "auto" as const,
             autoDefaults: session.title ? [session.title] : [],
+            ...(replaceManual && { replaceManualTitle: true }),
           }
         : { title };
       const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
@@ -374,7 +375,7 @@ export function ChatTitleEditable({
     if (!next) return;
     setGenerating(true);
     try {
-      if (next !== (session.title ?? "").trim()) await patchTitle(next, "auto");
+      if (next !== (session.title ?? "").trim()) await patchTitle(next, "auto", true);
     } finally {
       setGenerating(false);
     }

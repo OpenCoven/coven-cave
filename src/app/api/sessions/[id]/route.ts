@@ -28,6 +28,9 @@ type PatchBody = {
   titleOwnership?: "auto";
   /** Titles the automatic caller observed as defaults before generating. */
   autoDefaults?: string[];
+  /** When true with titleOwnership "auto", the automatic title replaces any
+   *  current title including a manually owned one. Omit for background callers. */
+  replaceManualTitle?: boolean;
   /** true → archive, false → summon (unarchive). */
   archived?: boolean;
   /** true → mark keep (never auto-archived), false → clear the mark. */
@@ -72,6 +75,15 @@ export async function PATCH(
   ) {
     return NextResponse.json(
       { ok: false, error: 'titleOwnership must be "auto" and include a title' },
+      { status: 400 },
+    );
+  }
+  if (
+    body.replaceManualTitle === true &&
+    (body.titleOwnership !== "auto" || typeof body.title !== "string")
+  ) {
+    return NextResponse.json(
+      { ok: false, error: 'replaceManualTitle requires titleOwnership "auto" and a title' },
       { status: 400 },
     );
   }
@@ -121,7 +133,7 @@ export async function PATCH(
       const safeDefaults = new Set([defaultChatTitleForSession(id)]);
       if (current && observedDefaults.has(current)) safeDefaults.add(current);
 
-      const next = await setSessionTitleAutoIfOwned(id, body.title, safeDefaults);
+      const next = await setSessionTitleAutoIfOwned(id, body.title, safeDefaults, !body.replaceManualTitle);
       result.titleUpdated = next !== null;
       result.title = next ?? (await loadState()).sessionTitles[id] ?? null;
     } else {

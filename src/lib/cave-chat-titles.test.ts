@@ -858,6 +858,43 @@ assert.equal(
   "h6 ATX heading prefix stripped from user text",
 );
 
+// ── Issue: ATX closing markers ────────────────────────────────────────────────
+// "# Fix parser ###" and "## Fix parser ##" must become "Fix parser".
+// Strip optional ATX closing sequence: whitespace + 1-6 hashes at end.
+// Internal hashes (C#, #123) are not affected.
+assert.equal(
+  titleFromAssistantReply("# Fix parser ###"),
+  "Fix parser",
+  "ATX closing markers stripped from assistant heading (h1 opening, ### closing)",
+);
+assert.equal(
+  titleFromAssistantReply("## Fix parser ##"),
+  "Fix parser",
+  "ATX closing markers stripped from assistant heading (h2 opening, ## closing)",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "# Fix parser ###" }),
+  "Fix parser",
+  "ATX closing markers stripped from direct user h1 heading",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "## Fix parser ##" }),
+  "Fix parser",
+  "ATX closing markers stripped from direct user h2 heading",
+);
+// Internal hashes must not be stripped — no leading whitespace before the hash.
+assert.equal(
+  chatSummaryTitle({ userText: "Programming in C#" }),
+  "Programming in C#",
+  "internal C# hash not stripped — no leading whitespace before it",
+);
+// Issue reference hash must not be stripped — digits follow the hash.
+assert.equal(
+  chatSummaryTitle({ userText: "Fix issue #123" }),
+  "Fix issue #123",
+  "issue ref #123 not stripped — non-hash characters follow it",
+);
+
 // ── Issue: Escaped parentheses in link destination parser ─────────────────────
 // \) in a destination must not close the paren depth counter — it is part of
 // the URL. \( must not open a new nesting level. Both must be skipped as

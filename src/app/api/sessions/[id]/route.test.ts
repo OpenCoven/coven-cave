@@ -6,7 +6,7 @@ const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   route,
-  /if \(body\.titleOwnership === "auto"\)[\s\S]*setSessionTitleAutoIfOwned\(id, body\.title, safeDefaults\)/,
+  /if \(body\.titleOwnership === "auto"\)[\s\S]*setSessionTitleAutoIfOwned\(id, body\.title, safeDefaults, !body\.replaceManualTitle\)/,
   "automatic title PATCHes use the atomic ownership gate",
 );
 assert.match(
@@ -38,6 +38,22 @@ assert.match(
   route,
   /\} else \{\s*const next = await setSessionTitle\(id, body\.title\)/,
   "ordinary title PATCHes remain explicitly manual",
+);
+
+assert.match(
+  route,
+  /replaceManualTitle\?:\s*boolean/,
+  "replaceManualTitle is an optional boolean field in PatchBody",
+);
+assert.match(
+  route,
+  /body\.replaceManualTitle === true[\s\S]*?titleOwnership[\s\S]*?!== "auto"/,
+  "standalone replaceManualTitle: true without auto ownership is rejected",
+);
+assert.match(
+  route,
+  /setSessionTitleAutoIfOwned\(id, body\.title, safeDefaults, !body\.replaceManualTitle\)/,
+  "preserveManualTitles is the inverse of replaceManualTitle — absent flag preserves, true flag takes over",
 );
 
 console.log("sessions [id] route.test.ts: ok");

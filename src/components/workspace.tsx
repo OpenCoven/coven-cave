@@ -1333,11 +1333,6 @@ export function Workspace() {
     window.addEventListener("cave:familiars-refresh", onFamiliarsRefresh);
     return () => window.removeEventListener("cave:familiars-refresh", onFamiliarsRefresh);
   }, [loadFamiliars]);
-  useEffect(() => {
-    const onSessionsRefresh = () => void loadSessions();
-    window.addEventListener("cave:sessions-refresh", onSessionsRefresh);
-    return () => window.removeEventListener("cave:sessions-refresh", onSessionsRefresh);
-  }, [loadSessions]);
   usePausablePoll(() => void loadSessions(), 4000, {
     pauseWhileInputActive: true,
   });

@@ -2495,9 +2495,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useLayoutEffect(() => {
     return () => {
       displayedCreationRunIdRef.current = null;
-      onSessionsChangedRef.current = () => {
-        window.dispatchEvent(new CustomEvent("cave:sessions-refresh"));
-      };
     };
   }, []);
   const streamHealthSessionRef = useRef(sessionId);
@@ -6243,8 +6240,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // its "session" event does not promote the router; refreshing here after
         // persistence restores the normal work/rail view from the one-shot bridge mode.
         const shouldRefreshSessions = shouldCreationRefresh || shouldReplacementRefresh || (startNewConversation && !!ev.sessionId);
-        // While mounted this calls the latest prop. Unmount cleanup redirects
-        // the ref through Workspace's current familiar-scoped listener.
+        // Use the latest callback while mounted; stale runs may not refresh a
+        // replacement compose after layout cleanup revokes display ownership.
         if (shouldRefreshSessions) onSessionsChangedRef.current?.();
         persistLiveTurns(
           turnsRef.current,

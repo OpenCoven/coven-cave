@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ownsDisplayedView } from "./chat-session-ownership.ts";
+import { canPromoteDisplayedSession, ownsDisplayedView } from "./chat-session-ownership.ts";
 
 // ─── Non-null origin (existing-session generation) ───────────────────────────
 
@@ -143,6 +143,43 @@ test("null origin: does not own when currentSessionId is non-null (thread switch
       originSessionId: null,
       runId: "run-a",
       displayedCreationRunId: "run-a", // same runId, but current is non-null
+    }),
+    false,
+  );
+});
+
+test("resumed replacement cannot promote even while it owns the displayed session", () => {
+  assert.equal(
+    canPromoteDisplayedSession({
+      currentSessionId: "sess-original",
+      originSessionId: "sess-original",
+      runId: "run-resumed",
+      displayedCreationRunId: "run-resumed",
+    }),
+    false,
+    "a replacement from a resumed session refreshes the sidebar but cannot promote the router",
+  );
+});
+
+test("current sessionless creation run can promote its newly assigned session", () => {
+  assert.equal(
+    canPromoteDisplayedSession({
+      currentSessionId: null,
+      originSessionId: null,
+      runId: "run-fresh",
+      displayedCreationRunId: "run-fresh",
+    }),
+    true,
+  );
+});
+
+test("stale sessionless creation run cannot promote a replacement compose", () => {
+  assert.equal(
+    canPromoteDisplayedSession({
+      currentSessionId: null,
+      originSessionId: null,
+      runId: "run-old",
+      displayedCreationRunId: "run-current",
     }),
     false,
   );
