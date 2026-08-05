@@ -8827,7 +8827,9 @@ function ToolRuns({ tools }: { tools: ToolEvent[] }) {
     batches.length > 1 && batches.some((batch) => batch.toolIds.length > 1) ? batches : [];
   const headerByToolId = new Map(bandedBatches.map((batch) => [batch.headToolId, batch]));
   return groupConsecutiveTools(tools).map((run) => {
-    const key = run.tools.map((tool) => tool.id).join(":");
+    // Stable for the run's lifetime: the first tool ID is unique and does not
+    // change as adjacent repeats append further calls to the same run.
+    const key = run.tools[0]!.id;
     const header = headerByToolId.get(run.tools[0]!.id);
     // File-mutation cards carry review/undo affordances. Keeping each one
     // standalone means a repeated edit never hides an actionable change.
