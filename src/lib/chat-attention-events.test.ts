@@ -8,6 +8,10 @@ import {
   emitChatAttentionClear,
   emitChatAttentionSettlement,
 } from "./chat-attention-events.ts";
+import {
+  createChatAttentionAdoptionTracker,
+  createExternallySettledGenerationRegistry,
+} from "./chat-attention-lifecycle.ts";
 
 async function withMockWindow(run: (dispatched: Event[]) => void | Promise<void>) {
   const dispatched: Event[] = [];
@@ -78,6 +82,62 @@ await test("emits dispatchable clear and settlement events with trimmed ids", as
       outcome: "persisted",
     });
   });
+});
+
+await test("adopted pending generations clear attention once per session/run and again for a new run", async () => {
+  const tracker = createChatAttentionAdoptionTracker();
+  await withMockWindow((dispatched) => {
+    for (let index = 0; index < 3; index += 1) {
+      if (tracker.shouldEmit("session-1", "run-1")) emitChatAttentionClear("session-1", "run-1");
+    }
+    if (tracker.shouldEmit("session-1", "run-2")) emitChatAttentionClear("session-1", "run-2");
+    if (tracker.shouldEmit("session-1", "run-2")) emitChatAttentionClear("session-1", "run-2");
+    assert.equal(tracker.shouldEmit("session-1", ""), false, "opening without a live run must not clear attention");
+    assert.equal(dispatched.length, 2);
+    assert.deepEqual(attentionClearFromEvent(dispatched[0]), {
+      sessionId: "session-1",
+      operationId: "run-1",
+    });
+    assert.deepEqual(attentionClearFromEvent(dispatched[1]), {
+      sessionId: "session-1",
+      operationId: "run-2",
+    });
+  });
+});
+
+await test("a remounted adopter can clear the same pending run once for its own lifecycle", async () => {
+  const firstLifecycle = createChatAttentionAdoptionTracker();
+  const secondLifecycle = createChatAttentionAdoptionTracker();
+  await withMockWindow((dispatched) => {
+    if (firstLifecycle.shouldEmit("session-2", "run-9")) emitChatAttentionClear("session-2", "run-9");
+    if (firstLifecycle.shouldEmit("session-2", "run-9")) emitChatAttentionClear("session-2", "run-9");
+    if (secondLifecycle.shouldEmit("session-2", "run-9")) emitChatAttentionClear("session-2", "run-9");
+    assert.equal(dispatched.length, 2);
+  });
+});
+
+test("external stale-settlement suppression is keyed by controller identity and consumes once", () => {
+  const registry = createExternallySettledGenerationRegistry();
+  const orphanedController = new AbortController();
+  const unrelatedController = new AbortController();
+
+  registry.mark(orphanedController);
+
+  assert.equal(
+    registry.consume(unrelatedController),
+    false,
+    "an unrelated generation must not suppress settlement for this orphan",
+  );
+  assert.equal(
+    registry.consume(orphanedController),
+    true,
+    "the late owner settlement for the same controller should be suppressed once",
+  );
+  assert.equal(
+    registry.consume(orphanedController),
+    false,
+    "once consumed, the suppression marker should not affect later generations",
+  );
 });
 
 await test("does not dispatch invalid attention events", async () => {

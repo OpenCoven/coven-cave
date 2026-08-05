@@ -215,6 +215,10 @@ import {
   emitChatAttentionClear,
   emitChatAttentionSettlement,
 } from "@/lib/chat-attention-events";
+import {
+  createChatAttentionAdoptionTracker,
+  createExternallySettledGenerationRegistry,
+} from "@/lib/chat-attention-lifecycle";
 import type { ChatAttentionSettlementOutcome } from "@/lib/chat-attention-projection";
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
@@ -319,19 +323,11 @@ function isLiveGenerationPending(live: Pick<LiveChatGenerationSnapshot, "turns" 
 }
 
 // A remounted view can evict and externally settle a stale/orphaned live
-// snapshot before the original send owner's `finally` runs. Share those run ids
-// across instances so the surviving owner suppresses its duplicate settle +
-// canonical-session reload when it eventually reaches the same generation's
-// normal cleanup path.
-const externallySettledChatAttentionRuns = new Set<string>();
-
-function markExternallySettledChatAttentionRun(runId: string): void {
-  externallySettledChatAttentionRuns.add(runId);
-}
-
-function consumeExternallySettledChatAttentionRun(runId: string): boolean {
-  return externallySettledChatAttentionRuns.delete(runId);
-}
+// snapshot before the original send owner's `finally` runs. Share that
+// suppression by the generation controller: it is unique per run, survives
+// remount adoption through the live registry, and does not leak if an orphaned
+// owner never comes back to consume it.
+const externallySettledChatAttentionControllers = createExternallySettledGenerationRegistry();
 
 type Props = {
   familiar: Familiar;
@@ -485,6 +481,7 @@ type ChatAttentionSettlementTracker = {
 
 function createChatAttentionSettlementTracker(args: {
   operationId: string;
+  operationController: AbortController;
   settleProjection: (
     sessionId: string,
     operationId: string,
@@ -498,7 +495,7 @@ function createChatAttentionSettlementTracker(args: {
 
   const reconcileNow = () => {
     if (reconciled) return;
-    if (consumeExternallySettledChatAttentionRun(args.operationId)) {
+    if (externallySettledChatAttentionControllers.consume(args.operationController)) {
       reconciled = true;
       return;
     }
@@ -3087,6 +3084,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
    *  settle-refetch below; an instance that merely ADOPTED a live snapshot
    *  (remounted mid-generation) does. */
   const streamOwnerRef = useRef(false);
+  const adoptedPendingAttentionClearRef = useRef(createChatAttentionAdoptionTracker());
   /** Session whose settle (registry clear) should trigger a disk refetch:
    *  set when this non-owner view adopts a live snapshot, or when it evicts
    *  a stale one while the orphaned stream may still be running (cave-0er). */
@@ -3108,6 +3106,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       runId: currentStreamHealthRunIdRef.current,
       sessionId: targetSessionId,
     };
+  }
+
+  function maybeEmitAdoptedPendingAttentionClear(
+    targetSessionId: string,
+    live: LiveChatGenerationSnapshot,
+  ) {
+    if (!isLiveGenerationPending(live) || !live.runId) return;
+    if (!adoptedPendingAttentionClearRef.current.shouldEmit(targetSessionId, live.runId)) return;
+    emitChatAttentionClear(targetSessionId, live.runId);
   }
 
   function persistLiveTurns(
@@ -3199,12 +3206,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       if (live && isLiveSnapshotActive(live, Date.now())) {
         adoptLiveGenerationMetadata(live, sessionId);
-        // Only a still-pending generation represents an unanswered human
-        // request; a recent-but-settled snapshot must repaint without
-        // fabricating an attention clear (see isLiveGenerationPending).
-        if (isLiveGenerationPending(live) && live.runId) {
-          emitChatAttentionClear(sessionId, live.runId);
-        }
+        maybeEmitAdoptedPendingAttentionClear(sessionId, live);
         setTurns(live.turns);
         turnsRef.current = live.turns;
         setActiveLeafId(live.activeLeafId);
@@ -3906,12 +3908,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const live = readLiveChatGeneration(sessionId);
     if (live && isLiveSnapshotActive(live, Date.now())) {
       adoptLiveGenerationMetadata(live, sessionId);
-      // Only a still-pending generation represents an unanswered human
-      // request; a recent-but-settled snapshot must repaint without
-      // fabricating an attention clear (see isLiveGenerationPending).
-      if (isLiveGenerationPending(live) && live.runId) {
-        emitChatAttentionClear(sessionId, live.runId);
-      }
+      maybeEmitAdoptedPendingAttentionClear(sessionId, live);
       setTurns(live.turns);
       turnsRef.current = live.turns;
       setActiveLeafId(live.activeLeafId);
@@ -3949,7 +3946,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // later settle must be a no-op against both the already-cleared
       // operation and this one reload).
       if (isLiveGenerationPending(live) && live.runId) {
-        markExternallySettledChatAttentionRun(live.runId);
+        externallySettledChatAttentionControllers.mark(live.controller);
         emitChatAttentionSettlement(sessionId, live.runId, "failed");
         onSessionsChangedRef.current?.();
       }
@@ -5022,6 +5019,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     });
     const attentionSettlement = createChatAttentionSettlementTracker({
       operationId: runId,
+      operationController: controller,
       settleProjection: (sessionId, operationId, outcome) => {
         emitChatAttentionSettlement(sessionId, operationId, outcome);
       },

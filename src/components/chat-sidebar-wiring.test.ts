@@ -137,13 +137,13 @@ assert.match(
 );
 assert.match(
   chatView,
-  /return subscribeLiveChatGeneration\(sessionId, \(live\) => \{[\s\S]*?if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\) \{[\s\S]*?emitChatAttentionClear\(sessionId, live\.runId\);/,
-  "chat-view should clear attention when it adopts an existing live generation from the registry subscription",
+  /return subscribeLiveChatGeneration\(sessionId, \(live\) => \{[\s\S]*?if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\) \{[\s\S]*?maybeEmitAdoptedPendingAttentionClear\(sessionId, live\);/,
+  "chat-view should route registry-subscription adoption clears through the shared helper",
 );
 assert.match(
   chatView,
-  /const live = readLiveChatGeneration\(sessionId\);[\s\S]*?if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\) \{[\s\S]*?emitChatAttentionClear\(sessionId, live\.runId\);/,
-  "chat-view should clear attention when the initial load adopts an existing live generation",
+  /const live = readLiveChatGeneration\(sessionId\);\s*if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\) \{[\s\S]*?maybeEmitAdoptedPendingAttentionClear\(sessionId, live\);/,
+  "chat-view should route initial adoption clears through the shared helper",
 );
 const applyConversationPayloadBlock = chatView.match(/const applyConversationPayload = \(json: ConversationHistoryPayload\) => \{[\s\S]*?\n    \};/)?.[0] ?? "";
 assert.ok(applyConversationPayloadBlock, "chat-view should define the conversation payload apply helper");
@@ -159,8 +159,18 @@ assert.doesNotMatch(
 );
 assert.match(
   chatView,
-  /const externallySettledChatAttentionRuns = new Set<string>\(\);[\s\S]*?function markExternallySettledChatAttentionRun\(runId: string\): void \{[\s\S]*?function consumeExternallySettledChatAttentionRun\(runId: string\): boolean \{/,
-  "chat-view should share externally settled run ids across remounts so a stale-eviction settle suppresses the original owner's duplicate cleanup",
+  /import \{\s*createChatAttentionAdoptionTracker,\s*createExternallySettledGenerationRegistry,\s*\} from "@\/lib\/chat-attention-lifecycle";/,
+  "chat-view should import the shared chat-attention lifecycle helpers",
+);
+assert.match(
+  chatView,
+  /const externallySettledChatAttentionControllers = createExternallySettledGenerationRegistry\(\);/,
+  "chat-view should share externally settled controller identities across remounts so a stale-eviction settle suppresses the original owner's duplicate cleanup without leaking orphaned run ids",
+);
+assert.doesNotMatch(
+  chatView,
+  /const externallySettledChatAttentionRuns = new Set<string>\(\);/,
+  "chat-view should not retain a module-level run-id string set after orphan stale-eviction suppression moved to controller identity",
 );
 assert.match(
   chatView,
@@ -173,8 +183,8 @@ const inlinedSettlementTracker = chatView.match(
 assert.ok(inlinedSettlementTracker, "chat-view should define the inlined settlement tracker factory");
 assert.match(
   inlinedSettlementTracker,
-  /const reconcileNow = \(\) => \{\s*if \(reconciled\) return;\s*if \(consumeExternallySettledChatAttentionRun\(args\.operationId\)\) \{\s*reconciled = true;\s*return;\s*\}\s*if \(clearedSessionIds\.size === 0\) return;\s*reconciled = true;/,
-  "reconcileNow should suppress duplicate cleanup for a run a remounted view already settled externally, and otherwise still no-op when nothing was ever cleared",
+  /const reconcileNow = \(\) => \{\s*if \(reconciled\) return;\s*if \(externallySettledChatAttentionControllers\.consume\(args\.operationController\)\) \{\s*reconciled = true;\s*return;\s*\}\s*if \(clearedSessionIds\.size === 0\) return;\s*reconciled = true;/,
+  "reconcileNow should suppress duplicate cleanup for a controller a remounted view already settled externally, and otherwise still no-op when nothing was ever cleared",
 );
 assert.match(
   inlinedSettlementTracker,
@@ -188,7 +198,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const attentionSettlement = createChatAttentionSettlementTracker\(\{\s*operationId: runId,\s*settleProjection: \(sessionId, operationId, outcome\) => \{\s*emitChatAttentionSettlement\(sessionId, operationId, outcome\);\s*\},\s*reconcileCanonicalSessions: \(\) => onSessionsChangedRef\.current\?\.\(\),\s*\}\);/,
+  /const attentionSettlement = createChatAttentionSettlementTracker\(\{\s*operationId: runId,\s*operationController: controller,\s*settleProjection: \(sessionId, operationId, outcome\) => \{\s*emitChatAttentionSettlement\(sessionId, operationId, outcome\);\s*\},\s*reconcileCanonicalSessions: \(\) => onSessionsChangedRef\.current\?\.\(\),\s*\}\);/,
   "chat-view should settle against the latest callback and emit one projection outcome before reloading canonical sessions",
 );
 assert.match(
@@ -232,13 +242,23 @@ assert.match(
 );
 assert.match(
   chatView,
-  /return subscribeLiveChatGeneration\(sessionId, \(live\) => \{[\s\S]*?if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\) \{[\s\S]*?if \(isLiveGenerationPending\(live\) && live\.runId\) \{\s*emitChatAttentionClear\(sessionId, live\.runId\);/,
-  "the registry-subscription adoption site should gate its attention clear on the snapshot still being pending",
+  /const adoptedPendingAttentionClearRef = useRef\(createChatAttentionAdoptionTracker\(\)\);/,
+  "chat-view should keep per-lifecycle adoption clear state so repeated live snapshot updates do not re-clear the same run",
 );
 assert.match(
   chatView,
-  /const live = readLiveChatGeneration\(sessionId\);\s*if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\) \{[\s\S]*?if \(isLiveGenerationPending\(live\) && live\.runId\) \{\s*emitChatAttentionClear\(sessionId, live\.runId\);/,
-  "the initial-load adoption site should gate its attention clear on the snapshot still being pending",
+  /function maybeEmitAdoptedPendingAttentionClear\([\s\S]*?targetSessionId: string,[\s\S]*?live: LiveChatGenerationSnapshot,[\s\S]*?\) \{[\s\S]*?if \(!isLiveGenerationPending\(live\) \|\| !live\.runId\) return;[\s\S]*?if \(!adoptedPendingAttentionClearRef\.current\.shouldEmit\(targetSessionId, live\.runId\)\) return;[\s\S]*?emitChatAttentionClear\(targetSessionId, live\.runId\);/,
+  "chat-view should centralize adopted pending-generation clears behind a one-per-lifecycle helper",
+);
+assert.match(
+  chatView,
+  /return subscribeLiveChatGeneration\(sessionId, \(live\) => \{[\s\S]*?if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\) \{[\s\S]*?maybeEmitAdoptedPendingAttentionClear\(sessionId, live\);/,
+  "the registry-subscription adoption site should clear attention through the per-lifecycle adoption helper",
+);
+assert.match(
+  chatView,
+  /const live = readLiveChatGeneration\(sessionId\);\s*if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\) \{[\s\S]*?maybeEmitAdoptedPendingAttentionClear\(sessionId, live\);/,
+  "the initial-load adoption site should clear attention through the same per-lifecycle adoption helper",
 );
 
 // ── Stale/orphan live-snapshot eviction must settle (not strand) its
@@ -254,8 +274,8 @@ const staleEvictionBlock = chatView.match(
 assert.ok(staleEvictionBlock, "chat-view should define the stale/orphan live-snapshot eviction branch");
 assert.match(
   staleEvictionBlock,
-  /skipSettleNotifyRef\.current \+= 1;\s*clearLiveChatGeneration\(sessionId\);[\s\S]*?if \(isLiveGenerationPending\(live\) && live\.runId\) \{\s*markExternallySettledChatAttentionRun\(live\.runId\);\s*emitChatAttentionSettlement\(sessionId, live\.runId, "failed"\);\s*onSessionsChangedRef\.current\?\.\(\);\s*\}/,
-  "evicting a stale/orphan pending snapshot should settle its attention operation as \"failed\", reconcile canonical sessions once, and mark the run so the original owner's later finally path cannot duplicate that cleanup",
+  /skipSettleNotifyRef\.current \+= 1;\s*clearLiveChatGeneration\(sessionId\);[\s\S]*?if \(isLiveGenerationPending\(live\) && live\.runId\) \{\s*externallySettledChatAttentionControllers\.mark\(live\.controller\);\s*emitChatAttentionSettlement\(sessionId, live\.runId, "failed"\);\s*onSessionsChangedRef\.current\?\.\(\);\s*\}/,
+  "evicting a stale/orphan pending snapshot should settle its attention operation as \"failed\", reconcile canonical sessions once, and mark the controller so the original owner's later finally path cannot duplicate that cleanup",
 );
 assert.doesNotMatch(
   staleEvictionBlock,
