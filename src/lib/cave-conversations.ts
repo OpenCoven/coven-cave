@@ -338,6 +338,11 @@ function normalizeStableAttentionRequest(
     typeof value.turnId !== "string" ||
     value.turnId !== assistantTurnId ||
     !normalizedAssistantCreatedAt ||
+    // requestedAt must itself be canonical UTC ISO — instant equality alone
+    // (checked next) would otherwise accept a noncanonical requestedAt that
+    // merely parses to the same instant as the assistant's canonical
+    // createdAt, silently canonicalizing it below instead of discarding it.
+    !isCanonicalIsoInstant(value.requestedAt) ||
     requestedAtMs === null ||
     assistantCreatedAtMs === null ||
     requestedAtMs !== assistantCreatedAtMs ||

@@ -945,6 +945,7 @@ console.log("cave-conversations pending-marker test OK");
     "attention-legacy-missing-parent-links",
     "attention-request-resolved-by-malformed-user",
     "attention-requested-at-mismatch",
+    "attention-canonical-assistant-noncanonical-request",
     "attention-request-cleared-by-equal-timestamp",
     "attention-detached-leaf",
     "attention-broken-parent-chain",
@@ -1732,6 +1733,51 @@ console.log("cave-conversations pending-marker test OK");
     activeLeafId: "requested-at-mismatch-assistant",
   });
 
+  // Regression (cave-zs85n Task 4 spec gap): a noncanonical requestedAt that
+  // carries an offset but still parses to the same instant as a canonical
+  // assistant createdAt must be rejected. `normalizeStableAttentionRequest`
+  // compared parsed instants only, so an offset-equivalent requestedAt was
+  // silently canonicalized to the assistant's own createdAt instead of being
+  // discarded — accepting a request whose recorded timestamp was never
+  // actually canonical.
+  await saveConversation({
+    sessionId: "attention-canonical-assistant-noncanonical-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Canonical assistant, noncanonical request",
+    createdAt: "2026-08-04T10:00:00.000Z",
+    updatedAt: "2026-08-04T10:05:00.000Z",
+    turns: [
+      {
+        id: "canonical-noncanonical-request-user",
+        role: "user",
+        text: "Anything blocking you?",
+        createdAt: "2026-08-04T10:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "canonical-noncanonical-request-assistant",
+        role: "assistant",
+        text: "The request timestamp is offset-equivalent but noncanonical.",
+        createdAt: "2026-08-04T10:05:00.000Z",
+        parentId: "canonical-noncanonical-request-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-canonical-assistant-noncanonical-request",
+            turnId: "canonical-noncanonical-request-assistant",
+            requestedAt: "2026-08-04T05:05:00.000-05:00",
+            reason: "input",
+          },
+        },
+      },
+    ],
+    activeLeafId: "canonical-noncanonical-request-assistant",
+  });
+
   // Regression (task 4 follow-up): a structurally later user turn clears a
   // prior explicit request purely by active-path *order*, never by comparing
   // timestamps — so an equal (or malformed, see above) createdAt must not
@@ -2241,6 +2287,29 @@ console.log("cave-conversations pending-marker test OK");
       reason: null,
     },
     "requestedAt must match the containing assistant turn's instant or the request is discarded",
+  );
+
+  assert.deepEqual(
+    byId.get("attention-canonical-assistant-noncanonical-request")?.attentionEvidence,
+    {
+      latestCompletedTurn: { role: "assistant", at: "2026-08-04T10:05:00.000Z" },
+      latestUserTurnAt: "2026-08-04T10:00:00.000Z",
+      request: null,
+    },
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-canonical-assistant-noncanonical-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a noncanonical requestedAt must be rejected even when it is only offset-equivalent to a canonical assistant createdAt",
   );
 
   assert.deepEqual(byId.get("attention-request-cleared-by-equal-timestamp")?.attentionEvidence, {
