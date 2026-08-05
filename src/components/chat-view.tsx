@@ -216,12 +216,13 @@ import {
   emitChatAttentionSettlement,
 } from "@/lib/chat-attention-events";
 import {
+  createAdoptedAttentionSettlementRegistry,
   createChatAttentionAdoptionTracker,
+  createChatAttentionSettlementTracker,
   createExternallySettledGenerationRegistry,
 } from "@/lib/chat-attention-lifecycle";
 import {
   chatAttentionProjectionScopeKey,
-  type ChatAttentionSettlementOutcome,
 } from "@/lib/chat-attention-projection";
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
@@ -331,6 +332,7 @@ function isLiveGenerationPending(live: Pick<LiveChatGenerationSnapshot, "turns" 
 // remount adoption through the live registry, and does not leak if an orphaned
 // owner never comes back to consume it.
 const externallySettledChatAttentionControllers = createExternallySettledGenerationRegistry();
+const adoptedPendingAttentionSettlementOwners = createAdoptedAttentionSettlementRegistry();
 
 type Props = {
   familiar: Familiar;
@@ -369,6 +371,17 @@ type Props = {
    *  switched this view to a different session. */
   openVoiceSessionId?: string;
   daemonRunning?: boolean;
+  /** Workspace's current sidebar familiar filter — the scope its
+   *  `/api/sessions/list` request is actually loaded under (null means "all
+   *  familiars"). This is the list scope that can prove a session's absence,
+   *  which can differ from this chat's own `familiar`/`session.familiarId`
+   *  (a split pane showing a different familiar, or a caller that mounts
+   *  ChatView outside Workspace's sidebar entirely). Left undefined by
+   *  callers that don't track a list scope; Workspace's own attention-clear
+   *  handler always re-derives and overrides the authoritative scope itself,
+   *  so this is best-effort provenance on the emitted event, not the sole
+   *  source of truth. */
+  activeFamiliarId?: string | null;
   /** Roster used to promote this chat into a coven from the familiar rail. */
   familiars?: Familiar[];
   /** Workspace-owned session list; the starting page's "Continue" row reads it
@@ -465,65 +478,6 @@ type QueuedChatMessage = {
   controls: ChatSendControls;
 };
 // Settles exactly one sidebar-attention reconciliation per generation. An
-// optimistic pre-persist `emitChatAttentionClear` can leave the sidebar
-// showing "no attention" for a session whose human request never actually
-// got a saved reply; `markAttentionCleared` records that debt so the
-// `finally` settlement path (`reconcileIfNeeded`) can restore it, but only
-// once. `reconcileNow` is the same settlement, invoked directly by a
-// mid-stream success path (e.g. startNewConversation's canonical-session
-// refresh) — the shared `reconciled` guard means whichever call reaches the
-// tracker first wins and every later call (including the `finally` block's)
-// is a no-op, so a failed startNewConversation never double-fires
-// onSessionsChanged.
-type ChatAttentionSettlementTracker = {
-  markAttentionCleared: (sessionId: string) => void;
-  markPersistenceConfirmed: () => void;
-  reconcileNow: () => void;
-  reconcileIfNeeded: () => void;
-};
-
-function createChatAttentionSettlementTracker(args: {
-  operationId: string;
-  operationController: AbortController;
-  settleProjection: (
-    sessionId: string,
-    operationId: string,
-    outcome: ChatAttentionSettlementOutcome,
-  ) => void;
-  reconcileCanonicalSessions: () => void;
-}): ChatAttentionSettlementTracker {
-  const clearedSessionIds = new Set<string>();
-  let persistenceConfirmed = false;
-  let reconciled = false;
-
-  const reconcileNow = () => {
-    if (reconciled) return;
-    if (externallySettledChatAttentionControllers.consume(args.operationController)) {
-      reconciled = true;
-      return;
-    }
-    if (clearedSessionIds.size === 0) return;
-    reconciled = true;
-    const outcome = persistenceConfirmed ? "persisted" : "failed";
-    for (const sessionId of clearedSessionIds) {
-      args.settleProjection(sessionId, args.operationId, outcome);
-    }
-    args.reconcileCanonicalSessions();
-  };
-
-  return {
-    markAttentionCleared(sessionId) {
-      clearedSessionIds.add(sessionId);
-    },
-    markPersistenceConfirmed() {
-      persistenceConfirmed = true;
-    },
-    reconcileNow,
-    reconcileIfNeeded() {
-      reconcileNow();
-    },
-  };
-}
 type LiveStreamGeneration = {
   sessionId: string | null;
   originSessionId: string | null;
@@ -1908,7 +1862,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, familiars = [], sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -3120,6 +3074,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!isLiveGenerationPending(live) || !live.runId) return;
     if (!adoptedPendingAttentionClearRef.current.shouldEmit(targetSessionId, live.runId)) return;
     emitAttentionClear(targetSessionId, live.runId, attentionClearWatermarkForLiveGeneration(live));
+    adoptedPendingAttentionSettlementOwners.markAttentionCleared(live.controller, targetSessionId);
   }
 
   function emitAttentionClear(
@@ -3130,9 +3085,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const knownSession = session?.id === targetSessionId
       ? session
       : sessions?.find((entry) => entry.id === targetSessionId) ?? null;
+    // The scope that can prove absence is Workspace's own current sidebar
+    // filter (the scope its session list is actually loaded under), not this
+    // chat's owning familiar — a split pane, or any session whose familiar
+    // differs from the active filter, would otherwise carry a scope that can
+    // never prove anything relative to the list actually being polled. Fall
+    // back to the session's own familiar only when the caller never learned
+    // the active scope at all (activeFamiliarId is undefined, not null).
+    const scopeFamiliarId = activeFamiliarId !== undefined
+      ? activeFamiliarId
+      : knownSession?.familiarId ?? familiar.id;
     emitChatAttentionClear(targetSessionId, operationId, {
       clearWatermark,
-      scopeKey: chatAttentionProjectionScopeKey(knownSession?.familiarId ?? familiar.id),
+      scopeKey: chatAttentionProjectionScopeKey(scopeFamiliarId),
       baselineAttention: knownSession?.attention ?? null,
     });
   }
@@ -5044,11 +5009,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const attentionSettlement = createChatAttentionSettlementTracker({
       operationId: runId,
       operationController: controller,
+      externalSettlements: externallySettledChatAttentionControllers,
       settleProjection: (sessionId, operationId, outcome) => {
         emitChatAttentionSettlement(sessionId, operationId, outcome);
       },
       reconcileCanonicalSessions: () => onSessionsChangedRef.current?.(),
     });
+    adoptedPendingAttentionSettlementOwners.register(controller, attentionSettlement);
     // `sessionId` mutates to the server-assigned id as events arrive;
     // `originSessionId` stays the thread this generation started on, so a
     // background generation (user switched threads mid-stream) can tell it no
@@ -6114,8 +6081,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) => {
     switch (ev.kind) {
     case "session": {
-      emitAttentionClear(ev.sessionId, liveGeneration.runId, liveGeneration.clearWatermark);
-      liveGeneration.markAttentionCleared(ev.sessionId);
+      // A generation that started with no session id at all is a brand-new
+      // chat: this event mints ev.sessionId for the very first time, so no
+      // canonical row can exist anywhere yet. Emitting a clear here would
+      // still create an unknown-baseline projection with no stale attention
+      // to prove — masking the assistant's own first genuine request until
+      // some later poll happens to look newer. A resumed conversation already
+      // carries its session id at generation start, so this only skips the
+      // genuinely-new case; the off-list adoption path (which cannot know
+      // whether real history exists) keeps clearing conservatively.
+      const isBrandNewSession = liveGeneration.sessionId == null;
+      if (!isBrandNewSession) {
+        emitAttentionClear(ev.sessionId, liveGeneration.runId, liveGeneration.clearWatermark);
+        liveGeneration.markAttentionCleared(ev.sessionId);
+      }
       liveGeneration.sessionId = ev.sessionId;
       if (ev.sessionId !== currentSessionRef.current) {
         // Only adopt the new session id into THIS view's refs when the view is

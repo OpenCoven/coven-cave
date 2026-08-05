@@ -10,6 +10,18 @@ import {
   emitChatAttentionSettlement,
 } from "./chat-attention-events.ts";
 import {
+  type ChatAttention,
+} from "./chat-attention.ts";
+import {
+  applyChatAttentionProjections,
+  chatAttentionProjectionScopeKey,
+  createChatAttentionProjectionState,
+  recordChatAttentionClear,
+  settleChatAttentionClear,
+} from "./chat-attention-projection.ts";
+import {
+  createAdoptedAttentionSettlementRegistry,
+  createChatAttentionSettlementTracker,
   createChatAttentionAdoptionTracker,
   createExternallySettledGenerationRegistry,
 } from "./chat-attention-lifecycle.ts";
@@ -71,6 +83,64 @@ test("preserves optional scope and baseline attention evidence on clear events",
       reason: "approval",
     },
   });
+});
+
+function clearWithBaseline(baselineAttention: unknown) {
+  return attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: { sessionId: "session-3", operationId: "run-3", baselineAttention },
+  }));
+}
+
+test("accepts every canonical BaselineAttention combo", () => {
+  assert.deepEqual(clearWithBaseline({ state: "none", since: null, reason: null }), {
+    sessionId: "session-3",
+    operationId: "run-3",
+    baselineAttention: { state: "none", since: null, reason: null },
+  });
+  assert.deepEqual(clearWithBaseline({
+    state: "left-hanging",
+    since: "2026-08-05T00:00:00.000Z",
+    reason: null,
+  }), {
+    sessionId: "session-3",
+    operationId: "run-3",
+    baselineAttention: { state: "left-hanging", since: "2026-08-05T00:00:00.000Z", reason: null },
+  });
+  for (const state of ["awaiting-human", "overdue-human"] as const) {
+    for (const reason of ["input", "approval", "credentials", "decision"] as const) {
+      assert.deepEqual(clearWithBaseline({ state, since: "2026-08-05T00:00:00.000Z", reason }), {
+        sessionId: "session-3",
+        operationId: "run-3",
+        baselineAttention: { state, since: "2026-08-05T00:00:00.000Z", reason },
+      });
+    }
+  }
+});
+
+test("rejects impossible BaselineAttention combos and non-canonical timestamps", () => {
+  // "none" must carry neither a timestamp nor a reason.
+  assert.equal(clearWithBaseline({ state: "none", since: "2026-08-05T00:00:00.000Z", reason: null }), null);
+  assert.equal(clearWithBaseline({ state: "none", since: null, reason: "approval" }), null);
+  // "left-hanging" requires a canonical since and forbids a reason.
+  assert.equal(clearWithBaseline({ state: "left-hanging", since: null, reason: null }), null);
+  assert.equal(clearWithBaseline({ state: "left-hanging", since: "not-a-date", reason: null }), null);
+  assert.equal(
+    clearWithBaseline({ state: "left-hanging", since: "2026-08-05T00:00:00.000Z", reason: "approval" }),
+    null,
+  );
+  // "awaiting-human"/"overdue-human" require both a canonical since and a
+  // recognized reason — missing, unrecognized, or non-canonical is rejected.
+  for (const state of ["awaiting-human", "overdue-human"] as const) {
+    assert.equal(clearWithBaseline({ state, since: "2026-08-05T00:00:00.000Z", reason: null }), null);
+    assert.equal(clearWithBaseline({ state, since: "2026-08-05T00:00:00.000Z", reason: "not-a-reason" }), null);
+    assert.equal(clearWithBaseline({ state, since: null, reason: "approval" }), null);
+    assert.equal(clearWithBaseline({ state, since: "not-a-date", reason: "approval" }), null);
+    // A non-canonical (non-round-tripping) timestamp string must be rejected
+    // even though it parses — canonical-instant reuse, not raw Date.parse.
+    assert.equal(clearWithBaseline({ state, since: "2026-08-05T00:00:00Z", reason: "approval" }), null);
+  }
+  // An unrecognized state is rejected outright.
+  assert.equal(clearWithBaseline({ state: "waiting-forever", since: null, reason: null }), null);
 });
 
 test("rejects wrong event types and invalid detail payloads", () => {
@@ -210,6 +280,187 @@ test("external stale-settlement suppression is keyed by controller identity and 
     false,
     "once consumed, the suppression marker should not affect later generations",
   );
+});
+
+function row(attention: ChatAttention) {
+  return {
+    id: "session-1",
+    title: "Session 1",
+    harness: "claude",
+    status: "idle",
+    created_at: "2026-08-05T00:00:00.000Z",
+    updated_at: "2026-08-05T00:00:00.000Z",
+    archived_at: null,
+    exit_code: null,
+    project_root: "/repo",
+    attention,
+  };
+}
+
+await test("brand-new adopted clears settle persisted once and reveal the first genuinely newer attention", async () => {
+  const projection = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  const adoptedSettlements = createAdoptedAttentionSettlementRegistry();
+  const externalSettlements = createExternallySettledGenerationRegistry();
+  const controller = new AbortController();
+  let canonicalReconciles = 0;
+  const tracker = createChatAttentionSettlementTracker({
+    operationId: "run-20",
+    operationController: controller,
+    externalSettlements,
+    settleProjection: (sessionId, operationId, outcome) => {
+      settleChatAttentionClear(projection, sessionId, operationId, outcome, 6);
+      emitChatAttentionSettlement(sessionId, operationId, outcome);
+    },
+    reconcileCanonicalSessions: () => {
+      canonicalReconciles += 1;
+    },
+  });
+  adoptedSettlements.register(controller, tracker);
+
+  await withMockWindow((dispatched) => {
+    emitChatAttentionClear("session-1", "run-20", {
+      clearWatermark: "2026-08-05T00:01:00.000Z",
+      scopeKey,
+      baselineAttention: null,
+    });
+    assert.deepEqual(
+      recordChatAttentionClear(
+        projection,
+        "session-1",
+        "run-20",
+        scopeKey,
+        undefined,
+        "2026-08-05T00:01:00.000Z",
+      ),
+      { recorded: true, reason: "recorded" },
+    );
+    adoptedSettlements.markAttentionCleared(controller, "session-1");
+    tracker.markPersistenceConfirmed();
+    tracker.reconcileIfNeeded();
+    tracker.reconcileIfNeeded();
+
+    assert.equal(dispatched.filter((event) => event.type === CHAT_ATTENTION_CLEAR_EVENT).length, 1);
+    assert.equal(dispatched.filter((event) => event.type === CHAT_ATTENTION_SETTLE_EVENT).length, 1);
+    assert.deepEqual(attentionSettlementFromEvent(dispatched[1]), {
+      sessionId: "session-1",
+      operationId: "run-20",
+      outcome: "persisted",
+    });
+  });
+
+  assert.equal(canonicalReconciles, 1);
+  assert.equal(
+    applyChatAttentionProjections(projection, [], 6, scopeKey).length,
+    0,
+    "the adopted clear stays active across the first empty poll until canonical evidence arrives",
+  );
+  const firstRealAttention = [row({
+    state: "awaiting-human",
+    since: "2026-08-05T00:01:00.000Z",
+    reason: "approval",
+  })];
+  assert.equal(
+    applyChatAttentionProjections(projection, firstRealAttention, 7, scopeKey),
+    firstRealAttention,
+    "the first canonical attention at-or-after the clear watermark must surface",
+  );
+  assert.equal(projection.has("session-1"), false);
+});
+
+await test("failed adopted clears release their projection and never fabricate persistence", async () => {
+  const projection = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  const adoptedSettlements = createAdoptedAttentionSettlementRegistry();
+  const controller = new AbortController();
+  const tracker = createChatAttentionSettlementTracker({
+    operationId: "run-21",
+    operationController: controller,
+    settleProjection: (sessionId, operationId, outcome) => {
+      settleChatAttentionClear(projection, sessionId, operationId, outcome, 6);
+      emitChatAttentionSettlement(sessionId, operationId, outcome);
+    },
+    reconcileCanonicalSessions: () => undefined,
+  });
+  adoptedSettlements.register(controller, tracker);
+
+  await withMockWindow((dispatched) => {
+    emitChatAttentionClear("session-1", "run-21", { scopeKey });
+    recordChatAttentionClear(projection, "session-1", "run-21", scopeKey, undefined);
+    adoptedSettlements.markAttentionCleared(controller, "session-1");
+    tracker.reconcileIfNeeded();
+
+    assert.equal(dispatched.filter((event) => event.type === CHAT_ATTENTION_CLEAR_EVENT).length, 1);
+    assert.deepEqual(attentionSettlementFromEvent(dispatched[1]), {
+      sessionId: "session-1",
+      operationId: "run-21",
+      outcome: "failed",
+    });
+  });
+
+  assert.equal(projection.has("session-1"), false);
+  const canonicalAttention = [row({
+    state: "awaiting-human",
+    since: "2026-08-05T00:10:00.000Z",
+    reason: "decision",
+  })];
+  assert.equal(applyChatAttentionProjections(projection, canonicalAttention, 7, scopeKey), canonicalAttention);
+});
+
+await test("repeated adoption updates stay deduped while the original owner can safely settle the same clear", async () => {
+  const adoption = createChatAttentionAdoptionTracker();
+  const adoptedSettlements = createAdoptedAttentionSettlementRegistry();
+  const controller = new AbortController();
+  const tracker = createChatAttentionSettlementTracker({
+    operationId: "run-22",
+    operationController: controller,
+    settleProjection: (sessionId, operationId, outcome) => {
+      emitChatAttentionSettlement(sessionId, operationId, outcome);
+    },
+    reconcileCanonicalSessions: () => undefined,
+  });
+  adoptedSettlements.register(controller, tracker);
+
+  await withMockWindow((dispatched) => {
+    for (let index = 0; index < 3; index += 1) {
+      if (!adoption.shouldEmit("session-1", "run-22")) continue;
+      emitChatAttentionClear("session-1", "run-22");
+      adoptedSettlements.markAttentionCleared(controller, "session-1");
+    }
+    tracker.markPersistenceConfirmed();
+    tracker.reconcileIfNeeded();
+    tracker.reconcileIfNeeded();
+
+    assert.equal(dispatched.filter((event) => event.type === CHAT_ATTENTION_CLEAR_EVENT).length, 1);
+    assert.equal(dispatched.filter((event) => event.type === CHAT_ATTENTION_SETTLE_EVENT).length, 1);
+  });
+});
+
+await test("a lifecycle with no emitted clear does not fabricate settlement", async () => {
+  const controller = new AbortController();
+  const externalSettlements = createExternallySettledGenerationRegistry();
+  let settles = 0;
+  let reconciles = 0;
+  const tracker = createChatAttentionSettlementTracker({
+    operationId: "run-23",
+    operationController: controller,
+    externalSettlements,
+    settleProjection: () => {
+      settles += 1;
+    },
+    reconcileCanonicalSessions: () => {
+      reconciles += 1;
+    },
+  });
+
+  await withMockWindow((dispatched) => {
+    tracker.markPersistenceConfirmed();
+    tracker.reconcileIfNeeded();
+    assert.equal(dispatched.length, 0);
+  });
+
+  assert.equal(settles, 0);
+  assert.equal(reconciles, 0);
 });
 
 await test("does not dispatch invalid attention events", async () => {

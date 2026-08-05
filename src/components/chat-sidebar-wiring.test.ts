@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const workspaceSidebar = await readFile(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const chatAttentionEvents = await readFile(new URL("../lib/chat-attention-events.ts", import.meta.url), "utf8");
 const chatAttentionProjection = await readFile(new URL("../lib/chat-attention-projection.ts", import.meta.url), "utf8");
@@ -140,6 +141,56 @@ assert.match(
   /function emitAttentionClear\(\s*targetSessionId: string,\s*operationId: string,\s*clearWatermark\?: string \| null,\s*\) \{[\s\S]*emitChatAttentionClear\(targetSessionId, operationId, \{[\s\S]*clearWatermark,[\s\S]*scopeKey:[\s\S]*baselineAttention:[\s\S]*\}\);[\s\S]*\}/,
   "chat-view should emit attention clears with the stable watermark, actual scope, and any known baseline evidence",
 );
+
+// ── Projection scope provenance (defect #3): the scope that can prove a
+//    session's absence is Workspace's own current sidebar filter, not the
+//    chat's owning familiar — split panes and off-list sessions must not
+//    corrupt scopeProvesAbsence with the wrong scope. ─────────────────────────
+assert.match(
+  chatView,
+  /activeFamiliarId\?: string \| null;/,
+  "ChatView should accept Workspace's current list scope as an explicit prop instead of inferring it from the session",
+);
+assert.match(
+  chatView,
+  /const scopeFamiliarId = activeFamiliarId !== undefined\s*\?\s*activeFamiliarId\s*:\s*knownSession\?\.familiarId \?\? familiar\.id;/,
+  "emitAttentionClear should prefer Workspace's active list scope over the session's own owning familiar, falling back only when the caller never learned it",
+);
+assert.doesNotMatch(
+  chatView,
+  /scopeKey: chatAttentionProjectionScopeKey\(knownSession\?\.familiarId \?\? familiar\.id\)/,
+  "emitAttentionClear must not compute scope solely from the session's/chat's owning familiar (wrong for split panes and off-list sessions)",
+);
+assert.match(
+  chatRouter,
+  /activeFamiliarId\?: string \| null;\s*\n\};/,
+  "ChatRouter should accept and forward Workspace's active list scope",
+);
+assert.match(
+  chatRouter,
+  /<ChatView\s*\n\s*ref=\{viewHandle\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}/,
+  "the primary ChatView mount should receive Workspace's active list scope",
+);
+assert.match(
+  chatRouter,
+  /<ChatView\s*\n\s*familiar=\{paneFamiliar\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}/,
+  "split-pane ChatView mounts must use the same active list scope as the primary pane — a split pane's own familiar cannot prove absence against a list it never loaded",
+);
+assert.match(
+  chatSurface,
+  /<ChatRouter[\s\S]*?activeFamiliarId=\{activeFamiliarId\}/,
+  "ChatSurface should forward its own activeFamiliarId prop down into ChatRouter",
+);
+assert.match(
+  workspace,
+  /chatAttentionProjectionScopeKey\(activeIdRef\.current\),\s*\n\s*baselineAttention,/,
+  "workspace's onChatAttentionClear must always record under its own current scope, never a scope read from the event",
+);
+assert.doesNotMatch(
+  workspace,
+  /detail\.scopeKey/,
+  "workspace must not trust the event's scopeKey at all — a wrong scope from a mis-wired or legacy ChatView would corrupt absence-proving",
+);
 assert.match(
   chatView,
   /if \(liveGeneration\.sessionId\) \{\s*emitAttentionClear\(liveGeneration\.sessionId, runId, liveGeneration\.clearWatermark\);[\s\S]{0,240}const res = await fetch\("\/api\/chat\/send"/,
@@ -174,13 +225,18 @@ assert.doesNotMatch(
 );
 assert.match(
   chatView,
-  /import \{\s*createChatAttentionAdoptionTracker,\s*createExternallySettledGenerationRegistry,\s*\} from "@\/lib\/chat-attention-lifecycle";/,
-  "chat-view should import the shared chat-attention lifecycle helpers",
+  /import \{[\s\S]*createAdoptedAttentionSettlementRegistry,[\s\S]*createChatAttentionAdoptionTracker,[\s\S]*createChatAttentionSettlementTracker,[\s\S]*createExternallySettledGenerationRegistry,[\s\S]*\} from "@\/lib\/chat-attention-lifecycle";/,
+  "chat-view should import the shared chat-attention lifecycle helpers, including adopted-clear settlement ownership",
 );
 assert.match(
   chatView,
   /const externallySettledChatAttentionControllers = createExternallySettledGenerationRegistry\(\);/,
   "chat-view should share externally settled controller identities across remounts so a stale-eviction settle suppresses the original owner's duplicate cleanup without leaking orphaned run ids",
+);
+assert.match(
+  chatView,
+  /const adoptedPendingAttentionSettlementOwners = createAdoptedAttentionSettlementRegistry\(\);/,
+  "chat-view should share adopted-clear settlement ownership by controller so remounts can attach their emitted clear to the original lifecycle",
 );
 assert.doesNotMatch(
   chatView,
@@ -189,32 +245,13 @@ assert.doesNotMatch(
 );
 assert.match(
   chatView,
-  /function createChatAttentionSettlementTracker\(args: \{[\s\S]*?const clearedSessionIds = new Set<string>\(\);[\s\S]*?let persistenceConfirmed = false;[\s\S]*?let reconciled = false;/,
-  "chat-view should inline the settlement tracker's per-generation state",
-);
-const inlinedSettlementTracker = chatView.match(
-  /function createChatAttentionSettlementTracker\(args: \{[\s\S]*?\n\}\n/,
-)?.[0] ?? "";
-assert.ok(inlinedSettlementTracker, "chat-view should define the inlined settlement tracker factory");
-assert.match(
-  inlinedSettlementTracker,
-  /const reconcileNow = \(\) => \{\s*if \(reconciled\) return;\s*if \(externallySettledChatAttentionControllers\.consume\(args\.operationController\)\) \{\s*reconciled = true;\s*return;\s*\}\s*if \(clearedSessionIds\.size === 0\) return;\s*reconciled = true;/,
-  "reconcileNow should suppress duplicate cleanup for a controller a remounted view already settled externally, and otherwise still no-op when nothing was ever cleared",
-);
-assert.match(
-  inlinedSettlementTracker,
-  /reconcileIfNeeded\(\) \{\s*reconcileNow\(\);\s*\},/,
-  "reconcileIfNeeded should delegate to the same reconcileNow guard reconcileNow itself uses, so the finally-block path and a direct success-path call can never both fire",
-);
-assert.match(
-  chatView,
   /const onSessionsChangedRef = useRef\(onSessionsChanged\);\s*\n\s*onSessionsChangedRef\.current = onSessionsChanged;/,
   "chat-view should keep the latest onSessionsChanged callback in a ref for background settlements",
 );
 assert.match(
   chatView,
-  /const attentionSettlement = createChatAttentionSettlementTracker\(\{\s*operationId: runId,\s*operationController: controller,\s*settleProjection: \(sessionId, operationId, outcome\) => \{\s*emitChatAttentionSettlement\(sessionId, operationId, outcome\);\s*\},\s*reconcileCanonicalSessions: \(\) => onSessionsChangedRef\.current\?\.\(\),\s*\}\);/,
-  "chat-view should settle against the latest callback and emit one projection outcome before reloading canonical sessions",
+  /const attentionSettlement = createChatAttentionSettlementTracker\(\{\s*operationId: runId,\s*operationController: controller,\s*externalSettlements: externallySettledChatAttentionControllers,\s*settleProjection: \(sessionId, operationId, outcome\) => \{\s*emitChatAttentionSettlement\(sessionId, operationId, outcome\);\s*\},\s*reconcileCanonicalSessions: \(\) => onSessionsChangedRef\.current\?\.\(\),\s*\}\);\s*adoptedPendingAttentionSettlementOwners\.register\(controller, attentionSettlement\);/s,
+  "chat-view should settle against the latest callback, share external-settlement suppression, and register adopted-clear ownership for the live controller",
 );
 assert.match(
   chatView,
@@ -262,8 +299,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /function maybeEmitAdoptedPendingAttentionClear\([\s\S]*?targetSessionId: string,[\s\S]*?live: LiveChatGenerationSnapshot,[\s\S]*?\) \{[\s\S]*?if \(!isLiveGenerationPending\(live\) \|\| !live\.runId\) return;[\s\S]*?if \(!adoptedPendingAttentionClearRef\.current\.shouldEmit\(targetSessionId, live\.runId\)\) return;[\s\S]*?emitAttentionClear\(targetSessionId, live\.runId, attentionClearWatermarkForLiveGeneration\(live\)\);/,
-  "chat-view should centralize adopted pending-generation clears behind a one-per-lifecycle helper that reuses the snapshot watermark",
+  /function maybeEmitAdoptedPendingAttentionClear\([\s\S]*?targetSessionId: string,[\s\S]*?live: LiveChatGenerationSnapshot,[\s\S]*?\) \{[\s\S]*?if \(!isLiveGenerationPending\(live\) \|\| !live\.runId\) return;[\s\S]*?if \(!adoptedPendingAttentionClearRef\.current\.shouldEmit\(targetSessionId, live\.runId\)\) return;[\s\S]*?emitAttentionClear\(targetSessionId, live\.runId, attentionClearWatermarkForLiveGeneration\(live\)\);[\s\S]*?adoptedPendingAttentionSettlementOwners\.markAttentionCleared\(live\.controller, targetSessionId\);/,
+  "chat-view should centralize adopted pending-generation clears behind a one-per-lifecycle helper that reuses the snapshot watermark and attaches the emitted clear to the owning settlement lifecycle",
 );
 assert.match(
   chatView,
@@ -332,8 +369,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /recordChatAttentionClear\([\s\S]*detail\.scopeKey \?\? chatAttentionProjectionScopeKey\(activeIdRef\.current\)[\s\S]*baseSessionsRef\.current = clearSessionAttentionRows\(baseSessionsRef\.current, sessionId\);[\s\S]*setSessions\(\(currentSessions\) => clearSessionAttentionRows\(currentSessions, sessionId\)\);/,
-  "workspace should record clears under the event's actual scope when known, then patch both the canonical base rows and the rendered enriched rows for the matching session only",
+  /recordChatAttentionClear\([\s\S]*chatAttentionProjectionScopeKey\(activeIdRef\.current\)[\s\S]*baseSessionsRef\.current = clearSessionAttentionRows\(baseSessionsRef\.current, sessionId\);[\s\S]*setSessions\(\(currentSessions\) => clearSessionAttentionRows\(currentSessions, sessionId\)\);/,
+  "workspace should record clears under its own current sidebar scope — never the event's — then patch both the canonical base rows and the rendered enriched rows for the matching session only",
 );
 assert.match(
   workspace,
@@ -357,8 +394,8 @@ assert.match(
 );
 assert.match(
   onChatAttentionClearBlock,
-  /const baselineAttention = detail\.baselineAttention \?\?[\s\S]*?baseSessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention \?\?[\s\S]*?sessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention;[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?detail\.scopeKey \?\? chatAttentionProjectionScopeKey\(activeIdRef\.current\),[\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
-  "workspace should prefer event-carried baseline/scope evidence, then fall back to known canonical or rendered session metadata before clearing rows",
+  /const acceptedRow = baseSessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\);[\s\S]*?const acceptedCanonical = acceptedRow && acceptedRow\.attention\.state !== "none"[\s\S]*?\? acceptedRow\.attention[\s\S]*?: null;[\s\S]*?const baselineAttention = acceptedCanonical \?\?[\s\S]*?detail\.baselineAttention \?\?[\s\S]*?acceptedRow\?\.attention \?\?[\s\S]*?sessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention;[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?chatAttentionProjectionScopeKey\(activeIdRef\.current\),[\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
+  "workspace should prefer its own current accepted (non-none) canonical row over a possibly stale event-carried baseline, only deferring to the event's baseline when the session is absent or the accepted row cannot represent pre-clear canonical state",
 );
 assert.match(
   onChatAttentionClearBlock,
