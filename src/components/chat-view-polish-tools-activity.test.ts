@@ -104,7 +104,7 @@ assert.match(
   /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*aria-label=\{toolGroupAriaLabel\(summary, running, errors\)\}[\s\S]*<ToolRuns tools=\{tools\}/,
   "ToolGroup wraps ONE collapsed disclosure — named by toolGroupAriaLabel — around ToolRuns per assistant turn",
 );
-const toolGroup = source.match(/function ToolGroup[\s\S]*?function ToolRuns/)?.[0] ?? "";
+const toolGroup = source.match(/function ToolGroup[\s\S]*?function InlineToolRuns/)?.[0] ?? "";
 assert.equal(
   toolGroup.match(/<ToolRuns tools=\{tools\} \/>/g)?.length,
   1,
