@@ -389,13 +389,75 @@ function hasResolvableAncestorChain(turns: ChatTurn[], leafId: string): boolean 
   return resolvableAncestorChainSize(turns, leafId) !== null;
 }
 
+// Test-only step counter: incremented once per parent hop the resolver below
+// actually walks. A single-root check that re-walks every ancestor chain per
+// turn (the previous implementation) costs O(n) steps per turn, O(n^2) total
+// on a long history. The memoized walk below visits each turn's *unresolved*
+// ancestors at most once ever, so this count stays <= turns.length across the
+// whole call — see cave-conversations.test.ts for the regression that pins it.
+let structuralRootResolutionSteps = 0;
+
+export function getStructuralRootResolutionStepsForTests(): number {
+  return structuralRootResolutionSteps;
+}
+
+export function resetStructuralRootResolutionStepsForTests(): void {
+  structuralRootResolutionSteps = 0;
+}
+
+/**
+ * Resolves every turn's ultimate structural root (the id at the top of its
+ * parentId chain) in a single left-to-right pass with path compression: once
+ * a turn's root is known it is memoized in `rootOf`, so any later chain that
+ * reaches it stops immediately instead of re-walking it. Each turn is pushed
+ * onto a chain-in-progress at most once for the lifetime of the call, which
+ * bounds total work at O(n) regardless of traversal order (a reversed leaf
+ * walks its whole ancestor chain once and memoizes every ancestor along the
+ * way; later turns in that chain then resolve in O(1)).
+ *
+ * Returns null the instant any turn's chain fails to resolve — an unknown
+ * parent id or a cycle back to a node still being walked — matching the
+ * fail-quiet contract the caller relies on: one broken chain invalidates the
+ * whole transcript, not just the turn that owns it.
+ */
+function resolveStructuralRoots(
+  turns: ChatTurn[],
+  byId: ReadonlyMap<string, ChatTurn>,
+): Map<string, string> | null {
+  const rootOf = new Map<string, string>();
+  const visiting = new Set<string>();
+  for (const turn of turns) {
+    if (rootOf.has(turn.id)) continue;
+    const chain: string[] = [];
+    let currentId: string | null = turn.id;
+    while (currentId !== null && !rootOf.has(currentId)) {
+      structuralRootResolutionSteps += 1;
+      if (visiting.has(currentId)) return null; // cycle back into the in-progress walk
+      const node = byId.get(currentId);
+      if (!node) return null; // dangling reference to an id no longer in the walk set
+      visiting.add(currentId);
+      chain.push(currentId);
+      const parentId = node.parentId ?? null;
+      if (parentId !== null && !byId.has(parentId)) return null; // unresolvable parent
+      currentId = parentId;
+    }
+    const rootId = currentId === null ? chain[chain.length - 1] : rootOf.get(currentId)!;
+    for (const id of chain) {
+      rootOf.set(id, rootId);
+      visiting.delete(id);
+    }
+  }
+  return rootOf;
+}
+
 function hasSingleStructuralRoot(turns: ChatTurn[], activeLeafId: string): boolean {
   const byId = new Map(turns.map((turn) => [turn.id, turn]));
-  const activeChain = resolveAncestorChainFromMap(byId, activeLeafId);
-  if (!activeChain) return false;
+  const roots = resolveStructuralRoots(turns, byId);
+  if (!roots) return false;
+  const activeRoot = roots.get(activeLeafId);
+  if (!activeRoot) return false;
   for (const turn of turns) {
-    const candidate = resolveAncestorChainFromMap(byId, turn.id);
-    if (!candidate || candidate.rootId !== activeChain.rootId) return false;
+    if (roots.get(turn.id) !== activeRoot) return false;
   }
   return true;
 }

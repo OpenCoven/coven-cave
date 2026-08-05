@@ -2456,3 +2456,167 @@ console.log("cave-conversations attention summary test OK");
   await deleteConversation(sessionId);
 }
 console.log("cave-conversations model-lock test OK");
+
+// ── Structural-root validation stays linear on long/malformed histories ────
+// Regression for the O(n^2) `hasSingleStructuralRoot`: the previous
+// implementation re-walked a turn's full ancestor chain for every single turn
+// in the transcript, which benchmarked ~2.28s for a 10k-turn conversation on
+// this exact session-list summary path. A wall-clock assertion here would be
+// fragile (slow CI runners, noisy neighbors), so instead the resolver below
+// is instrumented with a step counter — one increment per parent hop it
+// actually walks. A linear/memoized resolver visits each turn's *unresolved*
+// ancestors at most once for the whole call, so the count is bounded by the
+// turn count regardless of traversal order; a quadratic re-walk would blow
+// past that bound by orders of magnitude (millions of hops at this length),
+// so this fails loudly and deterministically instead of merely running slow.
+{
+  const {
+    getStructuralRootResolutionStepsForTests,
+    resetStructuralRootResolutionStepsForTests,
+  } = await import("./cave-conversations.ts");
+
+  function buildLinearChain(prefix, length, baseMs) {
+    const turns = [];
+    for (let i = 0; i < length; i += 1) {
+      const role = i % 2 === 0 ? "user" : "assistant";
+      turns.push({
+        id: `${prefix}-${i}`,
+        role,
+        text: role === "user" ? `Message ${i}` : `Reply ${i}`,
+        createdAt: new Date(baseMs + i * 1000).toISOString(),
+        parentId: i === 0 ? null : `${prefix}-${i - 1}`,
+      });
+    }
+    return turns;
+  }
+
+  // A long, entirely valid linear history: this is the case that must stay
+  // fast. The active path must still resolve and surface the true latest
+  // turns — the perf fix must not have traded correctness for speed.
+  const LONG_CHAIN_LENGTH = 6000;
+  const longChainBaseMs = Date.UTC(2026, 7, 4, 0, 0, 0);
+  const longChainTurns = buildLinearChain("long-chain-turn", LONG_CHAIN_LENGTH, longChainBaseMs);
+  const longChainLeafId = longChainTurns[LONG_CHAIN_LENGTH - 1].id;
+
+  await saveConversation({
+    sessionId: "structural-root-long-chain",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Long linear history",
+    createdAt: longChainTurns[0].createdAt,
+    updatedAt: longChainTurns[LONG_CHAIN_LENGTH - 1].createdAt,
+    turns: longChainTurns,
+    activeLeafId: longChainLeafId,
+  });
+
+  resetStructuralRootResolutionStepsForTests();
+  const longChainSummaries = await listConversations();
+  const longChainSteps = getStructuralRootResolutionStepsForTests();
+  const longChainSummary = longChainSummaries.find(
+    (summary) => summary.sessionId === "structural-root-long-chain",
+  );
+
+  assert.ok(
+    longChainSteps <= LONG_CHAIN_LENGTH,
+    `structural root resolution must visit each turn's unresolved ancestors at most once: saw ${longChainSteps} steps for ${LONG_CHAIN_LENGTH} turns (an O(n^2) re-walk would need millions)`,
+  );
+  assert.ok(
+    longChainSummary?.attentionEvidence,
+    "a long, entirely valid linear history must still resolve its active path and surface attention evidence",
+  );
+  assert.equal(
+    longChainSummary?.attentionEvidence?.latestUserTurnAt,
+    longChainTurns[LONG_CHAIN_LENGTH - 2].createdAt,
+    "the active-path result over a long chain must still reflect the true latest user turn",
+  );
+  assert.deepEqual(
+    longChainSummary?.attentionEvidence?.latestCompletedTurn,
+    { role: "assistant", at: longChainTurns[LONG_CHAIN_LENGTH - 1].createdAt },
+    "the active-path result over a long chain must still reflect the true latest completed turn",
+  );
+
+  await deleteConversation("structural-root-long-chain");
+
+  // A long history whose parent links form one big cycle (no turn's chain
+  // ever reaches a null parentId). Must fail quiet — not hang, not stack
+  // overflow via recursion, and not blow past a linear step budget while
+  // detecting it.
+  const CYCLE_LENGTH = 4000;
+  const cycleBaseMs = Date.UTC(2026, 7, 5, 0, 0, 0);
+  const cycleTurns = buildLinearChain("cycle-turn", CYCLE_LENGTH, cycleBaseMs);
+  // Break the root: instead of null, point turn 0 at the last turn, closing
+  // the whole chain into a single cycle of length CYCLE_LENGTH.
+  cycleTurns[0].parentId = cycleTurns[CYCLE_LENGTH - 1].id;
+
+  await saveConversation({
+    sessionId: "structural-root-long-cycle",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Long parent cycle must fail quiet",
+    createdAt: cycleTurns[0].createdAt,
+    updatedAt: cycleTurns[CYCLE_LENGTH - 1].createdAt,
+    turns: cycleTurns,
+    activeLeafId: cycleTurns[CYCLE_LENGTH - 1].id,
+  });
+
+  resetStructuralRootResolutionStepsForTests();
+  const cycleSummaries = await listConversations();
+  const cycleSteps = getStructuralRootResolutionStepsForTests();
+  const cycleSummary = cycleSummaries.find(
+    (summary) => summary.sessionId === "structural-root-long-cycle",
+  );
+
+  assert.equal(
+    cycleSummary?.attentionEvidence,
+    undefined,
+    "a long parent cycle must fail quiet instead of resolving a looping chain",
+  );
+  assert.ok(
+    cycleSteps <= CYCLE_LENGTH,
+    `cycle detection over a long ring must stay bounded: saw ${cycleSteps} steps for ${CYCLE_LENGTH} turns`,
+  );
+
+  await deleteConversation("structural-root-long-cycle");
+
+  // Two long, individually valid chains that never connect (a disconnected
+  // second root). The active leaf lives on chain A; chain B's turns must
+  // never be treated as sharing its root, and validation must still stay
+  // linear across the combined turn count.
+  const MULTI_ROOT_HALF_LENGTH = 3000;
+  const chainABaseMs = Date.UTC(2026, 7, 6, 0, 0, 0);
+  const chainBBaseMs = Date.UTC(2026, 7, 6, 1, 0, 0);
+  const chainATurns = buildLinearChain("multi-root-a", MULTI_ROOT_HALF_LENGTH, chainABaseMs);
+  const chainBTurns = buildLinearChain("multi-root-b", MULTI_ROOT_HALF_LENGTH, chainBBaseMs);
+  const multiRootActiveLeafId = chainATurns[MULTI_ROOT_HALF_LENGTH - 1].id;
+
+  await saveConversation({
+    sessionId: "structural-root-long-multi-root",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Long disconnected roots must fail quiet",
+    createdAt: chainATurns[0].createdAt,
+    updatedAt: chainBTurns[MULTI_ROOT_HALF_LENGTH - 1].createdAt,
+    turns: [...chainATurns, ...chainBTurns],
+    activeLeafId: multiRootActiveLeafId,
+  });
+
+  resetStructuralRootResolutionStepsForTests();
+  const multiRootSummaries = await listConversations();
+  const multiRootSteps = getStructuralRootResolutionStepsForTests();
+  const multiRootSummary = multiRootSummaries.find(
+    (summary) => summary.sessionId === "structural-root-long-multi-root",
+  );
+
+  assert.equal(
+    multiRootSummary?.attentionEvidence,
+    undefined,
+    "a long disconnected second root must fail quiet even with a valid, resolvable active leaf",
+  );
+  assert.ok(
+    multiRootSteps <= MULTI_ROOT_HALF_LENGTH * 2,
+    `multi-root detection must stay linear in the combined turn count: saw ${multiRootSteps} steps for ${MULTI_ROOT_HALF_LENGTH * 2} turns`,
+  );
+
+  await deleteConversation("structural-root-long-multi-root");
+}
+console.log("cave-conversations structural-root perf/regression test OK");
