@@ -15,7 +15,7 @@ export type ChatAttentionMarker = {
 
 const ATTENTION_REASON_SET = new Set<string>(CHAT_ATTENTION_REASONS);
 const MARKER_RE = /<coven:attention\b((?:[^">]|"[^"]*")*?)\/?>/g;
-const REASON_RE = /\breason="([^"]*)"/;
+const EXACT_REASON_ATTR_RE = /^\s*reason\s*=\s*"([^"]*)"\s*$/;
 
 export function extractChatAttentionMarker(
   text: string,
@@ -27,7 +27,7 @@ export function extractChatAttentionMarker(
 
   let visible = text.replace(MARKER_RE, (marker, rawAttrs: string, index: number) => {
     if (codeRanges.some(([start, end]) => index >= start && index < end)) return marker;
-    const reason = REASON_RE.exec(rawAttrs ?? "")?.[1]?.trim();
+    const reason = parseAttentionReason(marker, rawAttrs ?? "");
     if (reason && ATTENTION_REASON_SET.has(reason)) {
       request = { reason: reason as ChatAttentionReason };
     }
@@ -47,6 +47,11 @@ export function extractChatAttentionMarker(
   }
 
   return { visible, request };
+}
+
+function parseAttentionReason(marker: string, rawAttrs: string): string | null {
+  if (!marker.endsWith("/>")) return null;
+  return EXACT_REASON_ATTR_RE.exec(rawAttrs)?.[1] ?? null;
 }
 
 function hasUnquotedGtAfter(text: string, from: number): boolean {

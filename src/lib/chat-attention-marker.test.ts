@@ -35,6 +35,62 @@ test("invalid reasons are stripped without fabricating a request", () => {
   );
 });
 
+test("valid markers still allow ordinary whitespace variation", () => {
+  assert.deepEqual(
+    extractChatAttentionMarker(
+      'Choose a release channel.\n<coven:attention   reason = "decision"\n/>',
+    ),
+    {
+      visible: "Choose a release channel.\n",
+      request: { reason: "decision" },
+    },
+  );
+});
+
+test("non-self-closing markers are stripped without fabricating a request", () => {
+  assert.deepEqual(
+    extractChatAttentionMarker('Need something <coven:attention reason="decision">'),
+    {
+      visible: "Need something ",
+      request: null,
+    },
+  );
+});
+
+test("prefixed reason attributes are stripped without fabricating a request", () => {
+  assert.deepEqual(
+    extractChatAttentionMarker('Need something <coven:attention data-reason="decision" />'),
+    {
+      visible: "Need something ",
+      request: null,
+    },
+  );
+});
+
+test("duplicate reason attributes are stripped without fabricating a request", () => {
+  assert.deepEqual(
+    extractChatAttentionMarker(
+      'Need something <coven:attention reason="input" reason="decision" />',
+    ),
+    {
+      visible: "Need something ",
+      request: null,
+    },
+  );
+});
+
+test("extra attributes are stripped without fabricating a request", () => {
+  assert.deepEqual(
+    extractChatAttentionMarker(
+      'Need something <coven:attention reason="decision" actor="sage" />',
+    ),
+    {
+      visible: "Need something ",
+      request: null,
+    },
+  );
+});
+
 test("fenced markers stay literal example text", () => {
   const text = '```\n<coven:attention reason="credentials" />\n```';
   assert.deepEqual(extractChatAttentionMarker(text), {
