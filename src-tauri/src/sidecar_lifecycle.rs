@@ -1,5 +1,18 @@
 use super::*;
 
+#[cfg(all(desktop, unix))]
+pub(super) fn configure_unix_sidecar_parent_watchdog(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+
+    // The parent retains the write end inside `Child`; an abrupt GUI exit
+    // closes it in the kernel even when Rust destructors never run. A fresh
+    // process group lets the watched Node root terminate its owned tree.
+    command
+        .stdin(Stdio::piped())
+        .env("COVEN_CAVE_PARENT_WATCHDOG", "stdin-eof");
+    command.process_group(0);
+}
+
 #[cfg(desktop)]
 pub(super) struct SidecarProcess {
     child: Child,
@@ -293,6 +306,28 @@ pub(super) fn stop_sidecar_child(mut process: SidecarProcess) -> Result<(), Stri
 
     #[cfg(not(target_os = "windows"))]
     {
+        #[cfg(unix)]
+        if process.child.stdin.take().is_some() {
+            // Normal shutdown uses the same exact-parent lease as crash
+            // shutdown so Node can reap PTYs and its isolated process group.
+            // Fall back to the existing direct kill if a broken child ignores
+            // EOF; application teardown remains strictly bounded.
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                if process
+                    .child
+                    .try_wait()
+                    .map_err(|error| format!("could not inspect watched sidecar: {error}"))?
+                    .is_some()
+                {
+                    return Ok(());
+                }
+                if Instant::now() >= deadline {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
         if process
             .child
             .try_wait()

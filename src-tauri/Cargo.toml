@@ -88,3 +88,8 @@ objc2-foundation = "0.3"
 objc2-speech = "0.3"
 objc2-avf-audio = "0.3"
 block2 = "0.6"
+
+# Unix lifecycle tests hard-kill exact owned process groups. Keep libc
+# test-only on Linux while reusing the macOS runtime dependency above.
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"

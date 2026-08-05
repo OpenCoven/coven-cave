@@ -120,6 +120,37 @@ type PtySession = {
 
 const sessions = new Map<string, PtySession>();
 
+// Packaged Unix sidecars receive stdin as a private pipe whose write end is
+// owned only by the Tauri GUI. EOF therefore identifies the exact parent
+// lifetime without polling a reusable PID. The sidecar is also launched as
+// its own process-group leader, so one signal removes the root and ordinary
+// descendants; node-pty sessions are asked to stop explicitly because a PTY
+// may create a separate session/process group.
+function terminatePackagedUnixSidecarTree(): void {
+  for (const session of sessions.values()) {
+    try {
+      session.pty.kill();
+    } catch {
+      // The PTY may already have exited.
+    }
+  }
+  sessions.clear();
+  try {
+    process.kill(-process.pid, "SIGKILL");
+  } catch {
+    process.exit(1);
+  }
+}
+
+if (
+  process.platform !== "win32" &&
+  process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof"
+) {
+  process.stdin.once("end", terminatePackagedUnixSidecarTree);
+  process.stdin.once("error", terminatePackagedUnixSidecarTree);
+  process.stdin.resume();
+}
+
 // Recent-output ring replayed to a (re)attaching client so it repaints the
 // screen instead of staring at a blank pane. Matches the Rust desktop PTY's
 // 256KB ring (src-tauri/src/pty.rs).
