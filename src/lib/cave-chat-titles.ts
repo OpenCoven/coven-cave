@@ -28,7 +28,11 @@ const EMOJI_SEQUENCE = String.raw`(?:[#*0-9]\uFE0F?\u20E3|${EMOJI_COMPONENT}(?:\
 // consumed at edges without touching tag chars inside a meaningful middle emoji.
 const LONE_TAG_CHAR = String.raw`[\u{E0020}-\u{E007F}]`;
 const LEADING_EMOJI_RE = new RegExp(String.raw`^(?:\s|${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})+`, "gu");
-const TRAILING_EMOJI_RE = new RegExp(String.raw`(?:\s|${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})+$`, "gu");
+const TITLE_CLOSING_DELIMITER = String.raw`['")\]}\u2018\u2019\u201C\u201D\u203A\u00BB]`;
+const TRAILING_EMOJI_RE = new RegExp(
+  String.raw`(?:\s|${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})+(?=(?:${TITLE_CLOSING_DELIMITER})*$)`,
+  "gu",
+);
 export function stripLeadingTrailingEmoji(title: string): string {
   return title.replace(LEADING_EMOJI_RE, "").replace(TRAILING_EMOJI_RE, "").trim();
 }
@@ -192,12 +196,18 @@ function formatGeneratedTitle(text: string): string | null {
   // Normalize markdown links: [label](url) → label; destination discarded.
   // Supports one level of nested parentheses so [Docs](https://x.test/a_(b)) → Docs.
   s = s.replace(/\[([^\]]+)\]\((?:[^()]*|\([^()]*\))*(?:\s+"[^"]*")?\)/g, "$1");
+  // Markdown autolinks have no human-readable label, so discard the entire
+  // construct rather than leaking either the URL or its angle brackets.
+  s = s.replace(/<(?:https?:\/\/|mailto:)[^>\s]+>/gi, " ");
   // Normalize full/collapsed reference links and shortcut reference links.
   s = s
     .replace(/\[([^\]]+)\]\s*\[[^\]]*\]/g, "$1")
     .replace(/\[([^\]]+)\](?!\s*\()/g, "$1");
   // Strip strikethrough: ~~text~~ → text.
   s = s.replace(/~~([^~]+)~~/g, "$1");
+  // Source ellipses are prose punctuation, not a truncation signal. Remove them
+  // before measuring; appendTruncationEllipsis is the only path that adds one.
+  s = s.replace(/(?:\u2026|\.{3,})+/g, " ");
   // Strip remaining markdown syntax without removing the base of *️⃣ / #️⃣
   // keycap emoji before the edge-emoji pass can consume the full sequence.
   s = s

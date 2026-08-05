@@ -646,6 +646,31 @@ assert.equal(
   "spaced source sentence punctuation and ellipsis do not survive normalization",
 );
 assert.equal(
+  chatSummaryTitle({ userText: "Plan… then execute" }),
+  "Plan then execute",
+  "an intra-text Unicode ellipsis is removed when no truncation occurs",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Plan... then execute" }),
+  "Plan then execute",
+  "an intra-text ASCII ellipsis is removed when no truncation occurs",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "\u201CFix parser 🎉\u201D" }),
+  "\u201CFix parser\u201D",
+  "edge emoji immediately before a closing quote is stripped",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "<https://example.com>" }),
+  null,
+  "a Markdown URL autolink is stripped without leaking angle-bracket syntax",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Read <https://example.com> docs" }),
+  "Read docs",
+  "an inline Markdown URL autolink is removed without disturbing surrounding text",
+);
+assert.equal(
   chatSummaryTitle({ userText: "one two three four five six seven. eight" }),
   "One two three four five six seven…",
   "word-limit truncation replaces retained sentence punctuation with exactly one ellipsis",
