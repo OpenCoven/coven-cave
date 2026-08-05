@@ -141,10 +141,12 @@ function defaultState(): CaveState {
 }
 
 function normalizeSessionTitleManual(value: unknown): Record<string, true> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return Object.fromEntries(
-    Object.entries(value).filter(([sessionId, isManual]) => Boolean(sessionId) && isManual === true),
-  ) as Record<string, true>;
+  const normalized: Record<string, true> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return normalized;
+  for (const [sessionId, isManual] of Object.entries(value)) {
+    if (sessionId && isManual === true) normalized[sessionId] = true;
+  }
+  return normalized;
 }
 
 /** Per-familiar overrides for Omnigent session create. */

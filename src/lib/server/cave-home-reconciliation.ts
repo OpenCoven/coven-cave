@@ -935,6 +935,8 @@ function mergeInbox(legacy: unknown, canonical: unknown): MergeOutcome {
 const STATE_MAPS = [
   "sessionFamiliar",
   "sessionTitles",
+  "sessionTitleAuto",
+  "sessionTitleManual",
   "sessionArchived",
   "sessionSacrificed",
   "sessionKeep",
@@ -955,6 +957,8 @@ const TIMESTAMP_STATE_MAPS = new Set<string>([
 
 const DELETABLE_STATE_MAPS = new Set<string>([
   "sessionTitles",
+  "sessionTitleAuto",
+  "sessionTitleManual",
   "sessionArchived",
   "sessionKeep",
   "sessionPinned",

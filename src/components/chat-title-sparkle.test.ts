@@ -123,3 +123,26 @@ test("a refused PATCH does not paint the rename as applied", () => {
     "the refresh happens only after a genuine success",
   );
 });
+
+test("manual edits and sparkle titles use distinct ownership contracts", () => {
+  assert.match(
+    header,
+    /ownership === "auto"[\s\S]*?titleOwnership: "auto"[\s\S]*?autoDefaults: session\.title \? \[session\.title\] : \[\]/,
+    "sparkle PATCHes identify automatic ownership and the title it observed",
+  );
+  assert.match(
+    header,
+    /const patchTitle = async \(title: string, ownership: "manual" \| "auto" = "manual"\)/,
+    "ordinary pencil edits default to manual ownership",
+  );
+  assert.match(
+    header,
+    /await patchTitle\(next, "auto"\)/,
+    "only sparkle generation opts into the automatic path",
+  );
+  assert.match(
+    header,
+    /await patchTitle\(trimmed\);/,
+    "manual submit keeps the ordinary manual PATCH",
+  );
+});

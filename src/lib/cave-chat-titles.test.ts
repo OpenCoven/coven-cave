@@ -661,6 +661,16 @@ assert.equal(
   "edge emoji immediately before a closing quote is stripped",
 );
 assert.equal(
+  chatSummaryTitle({ userText: "\u201CFix 🎉 parser\u201D" }),
+  "\u201CFix 🎉 parser\u201D",
+  "meaningful emoji inside quoted title text is preserved",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "(Fix parser 🎉)" }),
+  "(Fix parser)",
+  "edge emoji is removed without consuming a closing delimiter",
+);
+assert.equal(
   chatSummaryTitle({ userText: "<https://example.com>" }),
   null,
   "a Markdown URL autolink is stripped without leaking angle-bracket syntax",
