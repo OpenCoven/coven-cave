@@ -204,8 +204,18 @@ export function clearConversationListMetadataCache(): void {
   conversationSummaryCache.clear();
 }
 
+function hasDuplicateTurnIds(turns: Pick<ChatTurn, "id">[]): boolean {
+  const seen = new Set<string>();
+  for (const turn of turns) {
+    if (seen.has(turn.id)) return true;
+    seen.add(turn.id);
+  }
+  return false;
+}
+
 function activeConversationTurns(conv: Pick<ConversationFile, "turns" | "activeLeafId">): ChatTurn[] {
   if (conv.turns.length === 0) return [];
+  if (hasDuplicateTurnIds(conv.turns)) return [];
   const structuralTurns = conv.turns.filter((turn) => !(turn.role === "system" && turn.parentId == null));
 
   if (structuralTurns.length === 0) return conv.turns;

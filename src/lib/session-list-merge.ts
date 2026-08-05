@@ -51,6 +51,10 @@ function isDaemonAuthoritativeTerminalStatus(status: string): boolean {
   return DAEMON_AUTHORITATIVE_TERMINAL_STATUSES.has(status);
 }
 
+function isArchivedStatus(status: string | null | undefined): boolean {
+  return (status ?? "").trim().toLowerCase() === "archived";
+}
+
 /** Extract the local cwd from a conversation runtime ("local:<cwd>").
  *  Kept dependency-free here (rather than importing the server work-branch
  *  helper) so this module stays pure and unit-testable. */
@@ -164,20 +168,26 @@ export function mergeSessionRows({
         seen.add(session.id);
         const recovered = localConversationToSession(local, state, projectRootForCwd, now);
         const archived_at = state.sessionArchived[session.id] ?? session.archived_at;
+        const attention =
+          isArchivedStatus(session.status)
+            ? NO_CHAT_ATTENTION
+            : deriveChatAttention({
+                evidence: local.attentionEvidence,
+                status: session.status,
+                archivedAt: archived_at,
+                now,
+              });
         const row: SessionRow = {
           ...recovered,
           status: session.status,
           exit_code: session.exit_code,
           archived_at,
           // A project-root mismatch means the daemon can no longer vouch for
-          // this session's cwd/branch identity — the recovered row is a
-          // best-effort reconstruction from the local transcript alone, and
-          // the daemon status here is always terminal (see
-          // isDaemonAuthoritativeTerminalStatus). Deriving attention from
-          // `local.attentionEvidence` in that state would let a stale or
-          // orphaned transcript's evidence resurface as if it were still
-          // live; recovered rows always present as `none`.
-          attention: NO_CHAT_ATTENTION,
+          // this session's cwd/branch identity, but the local transcript still
+          // captures the session's terminal state well enough to normalize
+          // attention — except for daemon `archived`, which is an archive
+          // boundary even before archived_at is stamped.
+          attention,
           initiator: session.initiator ?? recovered.initiator,
         };
         if (visibleSession(row, state, includeArchived)) rows.push(row);
@@ -203,6 +213,15 @@ export function mergeSessionRows({
       localIsNewer && !daemonStatusIsAuthoritative && local?.status
         ? local.status
         : session.status;
+    const attention =
+      isArchivedStatus(mergedStatus)
+        ? NO_CHAT_ATTENTION
+        : deriveChatAttention({
+            evidence: local?.attentionEvidence,
+            status: mergedStatus,
+            archivedAt: archived_at,
+            now,
+          });
     const row: SessionRow = {
       ...session,
       ...(localUpdatedAt ? { updated_at: localUpdatedAt } : {}),
@@ -224,12 +243,7 @@ export function mergeSessionRows({
         sanitizeSessionTitle(session.title) ??
         defaultChatTitleForSession(session.id),
       archived_at,
-      attention: deriveChatAttention({
-        evidence: local?.attentionEvidence,
-        status: mergedStatus,
-        archivedAt: archived_at,
-        now,
-      }),
+      attention,
       // A Cave conversation records real provenance at send time; harness/
       // title inference is only the fallback for daemon-only sessions.
       origin: local?.origin ?? inferOrigin(session),

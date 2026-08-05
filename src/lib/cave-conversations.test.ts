@@ -895,9 +895,14 @@ console.log("cave-conversations pending-marker test OK");
     "attention-off-path-request",
     "attention-malformed-turns",
     "attention-corrupt-leaf",
+    "attention-duplicate-leaf-id",
     "attention-ambiguous-missing-leaf",
     "attention-request-resolved-by-malformed-user",
     "attention-requested-at-mismatch",
+    "attention-request-cleared-by-equal-timestamp",
+    "attention-detached-leaf",
+    "attention-broken-parent-chain",
+    "attention-parent-cycle",
   ];
 
   await saveConversation({
@@ -1256,6 +1261,51 @@ console.log("cave-conversations pending-marker test OK");
   });
 
   await saveConversation({
+    sessionId: "attention-duplicate-leaf-id",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Duplicate active leaf id",
+    createdAt: "2026-08-04T09:10:00.000Z",
+    updatedAt: "2026-08-04T09:15:00.000Z",
+    turns: [
+      {
+        id: "duplicate-root",
+        role: "user",
+        text: "Do you still need approval?",
+        createdAt: "2026-08-04T09:10:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "duplicate-leaf",
+        role: "assistant",
+        text: "Yes, I need your approval.",
+        createdAt: "2026-08-04T09:12:00.000Z",
+        parentId: "duplicate-root",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-duplicate-leaf-id",
+            turnId: "duplicate-leaf",
+            requestedAt: "2026-08-04T09:12:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        id: "duplicate-leaf",
+        role: "assistant",
+        text: "No branch disambiguation is possible here.",
+        createdAt: "2026-08-04T09:15:00.000Z",
+        parentId: "duplicate-root",
+      },
+    ],
+    activeLeafId: "duplicate-leaf",
+  });
+
+  await saveConversation({
     sessionId: "attention-ambiguous-missing-leaf",
     familiarId: "charm",
     harness: "claude",
@@ -1389,6 +1439,198 @@ console.log("cave-conversations pending-marker test OK");
     activeLeafId: "requested-at-mismatch-assistant",
   });
 
+  // Regression (task 4 follow-up): a structurally later user turn clears a
+  // prior explicit request purely by active-path *order*, never by comparing
+  // timestamps — so an equal (or malformed, see above) createdAt must not
+  // let the request survive.
+  await saveConversation({
+    sessionId: "attention-request-cleared-by-equal-timestamp",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Equal timestamp still clears by path order",
+    createdAt: "2026-08-04T08:00:00.000Z",
+    updatedAt: "2026-08-04T08:05:00.000Z",
+    turns: [
+      {
+        id: "equal-ts-user-1",
+        role: "user",
+        text: "Need anything?",
+        createdAt: "2026-08-04T08:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "equal-ts-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T08:05:00.000Z",
+        parentId: "equal-ts-user-1",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-request-cleared-by-equal-timestamp",
+            turnId: "equal-ts-request",
+            requestedAt: "2026-08-04T08:05:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        // Same instant as the request it structurally follows — the clear
+        // must not depend on this being chronologically after it.
+        id: "equal-ts-user-2",
+        role: "user",
+        text: "Go ahead.",
+        createdAt: "2026-08-04T08:05:00.000Z",
+        parentId: "equal-ts-request",
+      },
+    ],
+    activeLeafId: "equal-ts-user-2",
+  });
+
+  // Regression (active-path trust): activeLeafId pointing at a detached,
+  // parent-less system echo (excluded from the structural chain entirely)
+  // must fail quiet rather than exposing the abandoned assistant request
+  // still sitting on the real, unreachable branch.
+  await saveConversation({
+    sessionId: "attention-detached-leaf",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Detached leaf must fail quiet",
+    createdAt: "2026-08-04T09:10:00.000Z",
+    updatedAt: "2026-08-04T09:12:00.000Z",
+    turns: [
+      {
+        id: "detached-root",
+        role: "user",
+        text: "Summarize the plan.",
+        createdAt: "2026-08-04T09:10:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "detached-abandoned-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T09:11:00.000Z",
+        parentId: "detached-root",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-detached-leaf",
+            turnId: "detached-abandoned-request",
+            requestedAt: "2026-08-04T09:11:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      // Chain-less system echo: role "system" with no parentId, excluded
+      // from structuralTurns entirely. activeLeafId below points at it.
+      {
+        id: "detached-system-echo",
+        role: "system",
+        text: "/help output",
+        createdAt: "2026-08-04T09:12:00.000Z",
+        parentId: null,
+      },
+    ],
+    activeLeafId: "detached-system-echo",
+  });
+
+  // Regression (active-path trust): activeLeafId resolvable, but an ancestor
+  // in its parent chain names a turn id absent from the file entirely. Must
+  // fail quiet rather than truncating the walk and exposing the abandoned
+  // request on the real branch.
+  await saveConversation({
+    sessionId: "attention-broken-parent-chain",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Broken parent chain must fail quiet",
+    createdAt: "2026-08-04T09:20:00.000Z",
+    updatedAt: "2026-08-04T09:22:00.000Z",
+    turns: [
+      {
+        id: "broken-chain-root",
+        role: "user",
+        text: "Summarize the plan.",
+        createdAt: "2026-08-04T09:20:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "broken-chain-abandoned-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T09:21:00.000Z",
+        parentId: "broken-chain-root",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-broken-parent-chain",
+            turnId: "broken-chain-abandoned-request",
+            requestedAt: "2026-08-04T09:21:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        // parentId names a turn that does not exist anywhere in the file.
+        id: "broken-chain-leaf",
+        role: "assistant",
+        text: "Here is the answer.",
+        createdAt: "2026-08-04T09:22:00.000Z",
+        parentId: "phantom-ancestor-that-does-not-exist",
+      },
+    ],
+    activeLeafId: "broken-chain-leaf",
+  });
+
+  // Regression (active-path trust): a corrupt parent ring (cycle) must fail
+  // quiet rather than resolving to any partial/looping chain.
+  await saveConversation({
+    sessionId: "attention-parent-cycle",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Parent cycle must fail quiet",
+    createdAt: "2026-08-04T09:30:00.000Z",
+    updatedAt: "2026-08-04T09:31:00.000Z",
+    turns: [
+      {
+        id: "cycle-a",
+        role: "user",
+        text: "Do you need anything?",
+        createdAt: "2026-08-04T09:30:00.000Z",
+        parentId: "cycle-b",
+      },
+      {
+        id: "cycle-b",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T09:31:00.000Z",
+        parentId: "cycle-a",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-parent-cycle",
+            turnId: "cycle-b",
+            requestedAt: "2026-08-04T09:31:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+    activeLeafId: "cycle-a",
+  });
+
   const summaries = await listConversations();
   const byId = new Map(summaries.map((summary) => [summary.sessionId, summary]));
 
@@ -1502,6 +1744,26 @@ console.log("cave-conversations pending-marker test OK");
   );
 
   assert.equal(
+    byId.get("attention-duplicate-leaf-id")?.attentionEvidence,
+    undefined,
+    "duplicate turn ids must fail quiet instead of letting activeLeafId resolve by last-wins map order",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-duplicate-leaf-id")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "an ambiguous duplicate active leaf must not surface any attention state",
+  );
+
+  assert.equal(
     byId.get("attention-ambiguous-missing-leaf")?.attentionEvidence,
     undefined,
     "branched conversations without an activeLeafId must fail quiet instead of choosing a branch implicitly",
@@ -1559,6 +1821,86 @@ console.log("cave-conversations pending-marker test OK");
       reason: null,
     },
     "requestedAt must match the containing assistant turn's instant or the request is discarded",
+  );
+
+  assert.deepEqual(byId.get("attention-request-cleared-by-equal-timestamp")?.attentionEvidence, {
+    latestCompletedTurn: { role: "user", at: "2026-08-04T08:05:00.000Z" },
+    latestUserTurnAt: "2026-08-04T08:05:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-request-cleared-by-equal-timestamp")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a structurally later user turn clears a prior request by active-path order even at an equal timestamp",
+  );
+
+  assert.equal(
+    byId.get("attention-detached-leaf")?.attentionEvidence,
+    undefined,
+    "an activeLeafId pointing at a detached, parent-less system echo must fail quiet",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-detached-leaf")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a detached leaf must never surface the real branch's abandoned attention request",
+  );
+
+  assert.equal(
+    byId.get("attention-broken-parent-chain")?.attentionEvidence,
+    undefined,
+    "a parent chain naming a nonexistent ancestor id must fail quiet",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-broken-parent-chain")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a broken parent chain must never surface the real branch's abandoned attention request",
+  );
+
+  assert.equal(
+    byId.get("attention-parent-cycle")?.attentionEvidence,
+    undefined,
+    "a corrupt parent ring (cycle) must fail quiet rather than resolve a looping chain",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-parent-cycle")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a parent cycle must never surface its request",
   );
 
   for (const id of ids) {
