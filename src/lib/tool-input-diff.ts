@@ -42,8 +42,8 @@ function str(value: unknown): string | undefined {
 
 function validPath(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const path = value.trim();
-  return path && !/[\0\r\n]/.test(path) ? path : null;
+  if (!value.trim() || /[\0-\x1f\x7f]/.test(value)) return null;
+  return value;
 }
 
 function parseRecord(input?: string | null): Rec | null {

@@ -302,7 +302,7 @@ export function SessionChangesInner({
           ok?: boolean;
           error?: string;
           checkpointPath?: string;
-        }>(fetch, repoRoot ?? projectRoot, "revert", {
+        }>(fetch, projectRoot, "revert", {
           path: file.path,
           // New files (untracked or staged-new) are deleted on revert; the
           // confirm step the user just clicked through is the explicit
@@ -328,7 +328,7 @@ export function SessionChangesInner({
         setRevertingPath(null);
       }
     },
-    [load, loadCheckpoints, projectRoot, repoRoot],
+    [load, loadCheckpoints, projectRoot],
   );
 
   const commitChanges = useCallback(async () => {

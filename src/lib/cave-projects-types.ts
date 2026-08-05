@@ -65,6 +65,23 @@ export function normalizeProjectRoot(root: string | null | undefined): string {
   return normalized.slice(0, endIndex) || "/";
 }
 
+/**
+ * The canonical key emitted by the pre-POSIX-safe normalizer. Existing browser
+ * stores can still be keyed by this spelling after project roots start
+ * preserving backslashes and edge whitespace.
+ */
+export function legacyProjectRootKey(
+  root: string | null | undefined,
+): string | null {
+  if (root === null || root === undefined || !root.trim()) return null;
+  if (/[\0-\x1f\x7f]/.test(root)) return null;
+  const normalized = root.trim().replace(/\\/g, "/");
+  if (/^[A-Za-z]:\/*$/.test(normalized)) return `${normalized.slice(0, 2)}/`;
+  let endIndex = normalized.length;
+  while (endIndex > 0 && normalized[endIndex - 1] === "/") endIndex--;
+  return normalized.slice(0, endIndex) || "/";
+}
+
 export type ProjectRelativePath = {
   absolutePath: string;
   relativePath: string;
@@ -371,6 +388,60 @@ export function projectIdMigrationMap(
         migrations.set(legacyId, project.id);
       }
     }
+  }
+  return migrations;
+}
+
+/**
+ * Deterministic legacy-root → current-root moves.
+ *
+ * The old POSIX normalizer could map distinct current roots onto one persisted
+ * key (`app\name` and `app/name`, or `app ` and `app`). Such a key is unsafe
+ * when another current project owns it or multiple projects claim it, so it is
+ * omitted rather than moving another project's local state.
+ */
+export function projectRootMigrationMap(
+  projects: readonly CaveProject[],
+): ReadonlyMap<string, string> {
+  const currentDestinations = new Map<string, Set<string>>();
+  for (const project of projects) {
+    const key = legacyProjectRootKey(project.root);
+    if (!key) continue;
+    const destinations = currentDestinations.get(key) ?? new Set<string>();
+    destinations.add(project.root);
+    currentDestinations.set(key, destinations);
+  }
+
+  type RootClaim = { from: string; to: string; sourceKey: string };
+  const claims: RootClaim[] = [];
+  const destinationsBySource = new Map<string, Set<string>>();
+  for (const project of projects) {
+    const aliases = new Set([
+      ...(project.legacyRoots ?? []),
+      ...(project.legacyRoot ? [project.legacyRoot] : []),
+    ]);
+    for (const from of aliases) {
+      if (!from || from === project.root) continue;
+      const sourceKey = legacyProjectRootKey(from);
+      if (!sourceKey) continue;
+      claims.push({ from, to: project.root, sourceKey });
+      const destinations = destinationsBySource.get(sourceKey) ?? new Set<string>();
+      destinations.add(project.root);
+      destinationsBySource.set(sourceKey, destinations);
+    }
+  }
+
+  const migrations = new Map<string, string>();
+  for (const claim of claims) {
+    if ((destinationsBySource.get(claim.sourceKey)?.size ?? 0) !== 1) continue;
+    const current = currentDestinations.get(claim.sourceKey);
+    if (current && [...current].some((destination) => destination !== claim.to)) continue;
+    const existing = migrations.get(claim.from);
+    if (existing && existing !== claim.to) {
+      migrations.delete(claim.from);
+      continue;
+    }
+    migrations.set(claim.from, claim.to);
   }
   return migrations;
 }

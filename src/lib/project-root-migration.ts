@@ -32,6 +32,7 @@
 import {
   normalizeProjectRoot,
   projectIdMigrationMap,
+  projectRootMigrationMap,
   type CaveProject,
 } from "./cave-projects-types.ts";
 import {
@@ -66,20 +67,10 @@ export async function migrateProjectRootKeys(
     migrateStoredNewSessionProjectId(window.localStorage, idMigrations);
     migrateStoredProjectSelectionIds(window.localStorage, idMigrations);
   }
-  const seenMoves = new Set<string>();
-  const moves = projects.flatMap((project) => {
-    const aliases = new Set([
-      ...(project.legacyRoots ?? []),
-      ...(project.legacyRoot ? [project.legacyRoot] : []),
-    ]);
-    return [...aliases].flatMap((from) => {
-      if (!from || from === project.root) return [];
-      const identity = JSON.stringify([from, project.root]);
-      if (seenMoves.has(identity)) return [];
-      seenMoves.add(identity);
-      return [{ from, to: project.root }];
-    });
-  });
+  const moves = [...projectRootMigrationMap(projects)].map(([from, to]) => ({
+    from,
+    to,
+  }));
   if (moves.length === 0) return 0;
 
   // Count what was actually FOLLOWED, not what was offered. The server keeps

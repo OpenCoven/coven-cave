@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const { toolTargetFile, toolTargetPath } = await import("./tool-input-diff.ts");
+const { normalizeFileMutation, toolTargetFile, toolTargetPath } = await import("./tool-input-diff.ts");
 
 // ── toolTargetFile: openable absolute path for file tools, else null ─────────
 {
@@ -36,6 +36,40 @@ const { toolTargetFile, toolTargetPath } = await import("./tool-input-diff.ts");
   assert.equal(toolTargetFile("Edit", "not json"), null);
   assert.equal(toolTargetFile("Edit", ""), null);
   assert.equal(toolTargetFile("Edit", null), null);
+
+  const spacedNames = normalizeFileMutation(
+    "apply_patch",
+    [
+      "*** Begin Patch",
+      "*** Add File: name ",
+      "+spaced",
+      "*** Add File: name",
+      "+plain",
+      "*** End Patch",
+    ].join("\n"),
+  );
+  assert.deepEqual(
+    spacedNames?.paths,
+    ["name ", "name"],
+    "POSIX names preserve significant edge spaces instead of collapsing onto a sibling",
+  );
+  assert.equal(
+    toolTargetPath("Edit", JSON.stringify({ file_path: " leading-and-trailing " })),
+    " leading-and-trailing ",
+    "relative POSIX filename bytes survive mutation normalization",
+  );
+  assert.equal(
+    toolTargetFile("Edit", JSON.stringify({ file_path: String.raw`C:\repo\file.ts` })),
+    String.raw`C:\repo\file.ts`,
+    "Windows absolute paths remain recognized",
+  );
+  for (const invalid of ["", "   ", "bad\tname", "bad\u0000name", "bad\u007fname"]) {
+    assert.equal(
+      toolTargetPath("Edit", JSON.stringify({ file_path: invalid })),
+      null,
+      `empty/control path ${JSON.stringify(invalid)} is rejected`,
+    );
+  }
 }
 
 // ── wiring: chat dispatches, code rail handles, workspace bridges ────────────

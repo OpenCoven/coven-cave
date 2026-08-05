@@ -16,8 +16,8 @@ const runnerCwd = path.join(artifactRoot, "runner");
 const projectsPath = path.join(artifactRoot, "projects.json");
 const appFile = path.join(projectRoot, "src", "a.ts");
 const unrelatedUntrackedFile = path.join(projectRoot, "notes", "keep.txt");
-const spacedFile = path.join(projectRoot, "src", "space.ts ");
-const trimmedSiblingFile = path.join(projectRoot, "src", "space.ts");
+const spacedFile = path.join(projectRoot, "src", "name ");
+const trimmedSiblingFile = path.join(projectRoot, "src", "name");
 const parentFile = path.join(repoRoot, "src", "a.ts");
 const siblingFile = path.join(siblingRoot, "src", "a.ts");
 const hookMarker = path.join(artifactRoot, "post-checkout-ran");
@@ -314,6 +314,19 @@ try {
   );
 
   const checkpointName = path.basename(revertedBody.checkpointPath);
+  const projectCheckpointList = await GET({
+    nextUrl: new URL(
+      `http://127.0.0.1/api/changes?projectRoot=${encodeURIComponent(projectRoot)}&checkpoints=1`,
+    ),
+  });
+  assert.equal(projectCheckpointList.status, 200);
+  assert.equal(
+    (await projectCheckpointList.json()).checkpoints.some(
+      (entry: { name: string }) => entry.name === checkpointName,
+    ),
+    true,
+    "a nested-project revert is immediately listed under the same project identity",
+  );
   const restored = await POST(checkpointRequest("restore-checkpoint", projectRoot, checkpointName));
   assert.equal(restored.status, 200, await restored.clone().text());
   assert.equal(await readFile(appFile, "utf8"), "app edited\n", "the nested-project edit round-trips");
@@ -625,6 +638,19 @@ try {
     repeatedDelete.status,
     200,
     "repeating an already completed checkpoint deletion is idempotent",
+  );
+  const deletedCheckpointList = await GET({
+    nextUrl: new URL(
+      `http://127.0.0.1/api/changes?projectRoot=${encodeURIComponent(projectRoot)}&checkpoints=1`,
+    ),
+  });
+  assert.equal(deletedCheckpointList.status, 200);
+  assert.equal(
+    (await deletedCheckpointList.json()).checkpoints.some(
+      (entry: { name: string }) => entry.name === checkpointName,
+    ),
+    false,
+    "the same nested project no longer lists its deleted checkpoint",
   );
 
   for (const targetPath of [
