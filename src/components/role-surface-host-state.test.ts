@@ -102,7 +102,7 @@ test("a child state patch refreshes host status without a context-owner rerender
     activeFamiliar: { id: familiarId, display_name: "Reactive", role: "Researcher" },
     activePerson: null,
     currentThread: null,
-    runtimeState: { daemonRunning: true, sessions: [], activeSessionId: null },
+    runtimeState: { daemonRunning: true, sessions: [], sessionsLoaded: true, activeSessionId: null },
     memory: { listEntries: async () => [], readFile: async () => null },
     tools: { listTools: async () => [] },
     plugins: { listPlugins: async () => [] },

@@ -119,8 +119,27 @@ function pathPartEquals(flavor: AbsolutePathParts["flavor"], a: string, b: strin
   return flavor === "posix" ? a === b : a.toLocaleLowerCase("en-US") === b.toLocaleLowerCase("en-US");
 }
 
-function rootsEqual(a: AbsolutePathParts, b: AbsolutePathParts): boolean {
+function pathPrefixesEqual(a: AbsolutePathParts, b: AbsolutePathParts): boolean {
   return a.flavor === b.flavor && pathPartEquals(a.flavor, a.prefix, b.prefix);
+}
+
+/** Compare absolute project roots using the case rules of their path flavor. */
+export function projectRootsEqual(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  if (!a?.trim() || !b?.trim()) return false;
+  const left = absolutePathParts(a);
+  const right = absolutePathParts(b);
+  return Boolean(
+    left &&
+    right &&
+    pathPrefixesEqual(left, right) &&
+    left.segments.length === right.segments.length &&
+    left.segments.every(
+      (segment, index) => pathPartEquals(left.flavor, segment, right.segments[index] ?? ""),
+    ),
+  );
 }
 
 function joinedAbsolutePath(root: AbsolutePathParts, relativeSegments: string[]): string {
@@ -164,7 +183,7 @@ export function resolvePathWithinProjectRoot(
   }
 
   if (
-    !rootsEqual(candidate, root) ||
+    !pathPrefixesEqual(candidate, root) ||
     candidate.segments.length <= root.segments.length ||
     root.segments.some(
       (segment, index) => !pathPartEquals(root.flavor, candidate.segments[index] ?? "", segment),

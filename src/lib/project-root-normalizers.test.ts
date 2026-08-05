@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
-import { normalizeProjectRoot } from "./cave-projects-types.ts";
+import { normalizeProjectRoot, projectRootsEqual } from "./cave-projects-types.ts";
 import { normalizeChatProjectRoot } from "./chat-projects.ts";
 import { deriveComuxProjects } from "./comux-projects.ts";
 import type { SessionRow } from "./types.ts";
@@ -131,6 +131,13 @@ test("a root arriving with whitespace still buckets with its clean twin", () => 
 test("the shared normalizer still does not expand ~", () => {
   assert.equal(normalizeProjectRoot("~/code/app"), "~/code/app");
   assert.equal(normalizeProjectRoot("~"), "~");
+});
+
+test("shared root equality follows each platform's case semantics", () => {
+  assert.equal(projectRootsEqual("c:\\Repos\\App\\", "C:/repos/app"), true);
+  assert.equal(projectRootsEqual("\\\\Server\\Share\\Repo", "//server/share/repo/"), true);
+  assert.equal(projectRootsEqual("/Users/Val/Repo", "/users/val/repo"), false);
+  assert.equal(projectRootsEqual("C:/repo", "//server/share/repo"), false, "path flavors never alias");
 });
 
 test("the server normalizer is named for what it does, not left anonymous", () => {

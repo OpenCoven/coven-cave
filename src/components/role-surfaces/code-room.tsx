@@ -50,6 +50,7 @@ export function CodeRoom({ context }: { context: RoleSurfaceContext }) {
   return (
     <CodeView
       sessions={context.runtimeState.sessions}
+      sessionsLoaded={context.runtimeState.sessionsLoaded}
       onJumpToSession={(sessionId, familiarId) => context.openSession(sessionId, familiarId ?? undefined)}
       onFocusCard={context.focusCard}
       navigationRequest={pendingNavigation}

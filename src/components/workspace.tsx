@@ -3090,6 +3090,7 @@ export function Workspace() {
     familiar: active,
     familiars: roleSurfaceFamiliars,
     sessions,
+    sessionsLoaded: sessionsLoaded && !sessionsError,
     activeSessionId: activeChatSessionId,
     daemonRunning,
     openUrl: openUrlInAppBrowser,

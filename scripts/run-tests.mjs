@@ -540,6 +540,7 @@ export const SUITES = {
     "src/components/message-bubble-file-links.test.ts",
     "src/components/chat-view-polish-tools-activity.test.ts",
     "src/components/chat-tool-activity-lifecycle.test.ts",
+    "src/components/chat-edit-card-actions-lifecycle.test.tsx",
     "src/components/chat-tool-run-lifecycle.test.ts",
     "src/lib/cave-projects-types.test.ts",
     "src/lib/chat-tool-project-root.test.ts",
@@ -1981,6 +1982,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 const VITEST_TESTS = new Set([
   "src/components/document-reader-view.test.ts",
   "src/components/document-reader-text-size.test.ts",
+  "src/components/chat-edit-card-actions-lifecycle.test.tsx",
   "src/components/role-surfaces/familiar-room-interactions.test.tsx",
   "src/components/familiars-memory-recovery.test.tsx",
   "src/components/familiars-view-memory-ownership.test.tsx",

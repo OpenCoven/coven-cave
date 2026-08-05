@@ -24,11 +24,10 @@ import {
   CODE_GITHUB_TABS,
   CODE_ROOM_RAIL_WIDTH_PX,
   codeRoomFitsRail,
-  codePendingOpenProjectRoot,
-  codeSessionForPendingOpen,
   groupCodeRailSessions,
   isCodeGithubTab,
   parseCodeDeepLink,
+  resolveCodePendingOpen,
   type CodeGithubTab,
   type CodeTopTab,
 } from "@/lib/code-surface";
@@ -79,6 +78,7 @@ function topTabForNavigation(request: PendingCodeNavigation): CodeTopTab {
 
 export type CodeViewProps = {
   sessions: SessionRow[];
+  sessionsLoaded: boolean;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard: (cardId: string) => void;
   navigationRequest?: PendingCodeNavigation | null;
@@ -93,6 +93,7 @@ export type CodeViewProps = {
 
 export function CodeView({
   sessions,
+  sessionsLoaded,
   onJumpToSession,
   onFocusCard,
   navigationRequest,
@@ -199,18 +200,20 @@ export function CodeView({
   } | null>(null);
   useEffect(() => {
     if (!pendingOpen) return;
-    const capturedRoot = codePendingOpenProjectRoot(pendingOpen);
-    const target = codeSessionForPendingOpen(
+    const resolution = resolveCodePendingOpen(
       groups.flatMap((group) => group.sessions),
       pendingOpen,
+      sessionsLoaded,
     );
+    if (resolution.status === "waiting") return;
+    const target = resolution.target;
     setTopTab("sessions");
     setInitialGithubTarget(null);
     if (target) setSelectedId(target.id);
     // Root browse with no matching session: there is no workbench to focus —
     // land on the surface and leave the rail/selection as-is.
     setWorkbenchTarget(
-      pendingOpen.root !== undefined && (!capturedRoot || !target)
+      pendingOpen.root !== undefined && resolution.status !== "ready"
         ? null
         : { open: pendingOpen, sessionId: target?.id ?? null },
     );
@@ -218,7 +221,7 @@ export function CodeView({
     // last one — dismissing is "I've read this", not "never show me these".
     setOriginDismissed(false);
     onPendingOpenHandled?.();
-  }, [groups, onPendingOpenHandled, pendingOpen]);
+  }, [groups, onPendingOpenHandled, pendingOpen, sessionsLoaded]);
 
   // Only opens raised from a conversation carry an origin; a file picked from
   // the tree shows nothing, because there is no conversation to point back to.

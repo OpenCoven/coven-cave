@@ -167,8 +167,13 @@ assert.match(
 );
 assert.match(
   codeRoom,
-  /pendingOpen=\{pendingOpen\}[\s\S]*onPendingOpenHandled=\{clearPendingCodeOpen\}/,
-  "the Code room should pass pending file/diff opens into CodeView and clear them after consumption",
+  /sessionsLoaded=\{context\.runtimeState\.sessionsLoaded\}[\s\S]*pendingOpen=\{pendingOpen\}[\s\S]*onPendingOpenHandled=\{clearPendingCodeOpen\}/,
+  "the Code room should pass session readiness and pending opens into CodeView",
+);
+assert.match(
+  workspace,
+  /useRoleSurfaceSession\(\{[\s\S]*sessionsLoaded: sessionsLoaded && !sessionsError,/,
+  "only a successfully loaded session inventory can make a rooted open definitively absent",
 );
 assert.match(
   railController,
@@ -187,8 +192,8 @@ assert.match(
 );
 assert.match(
   codeView,
-  /if \(!pendingOpen\) return;[\s\S]*codeSessionForPendingOpen\([\s\S]*groups\.flatMap\(\(group\) => group\.sessions\),[\s\S]*pendingOpen,[\s\S]*\)[\s\S]*setTopTab\("sessions"\);[\s\S]*if \(target\) setSelectedId\(target\.id\);[\s\S]*onPendingOpenHandled\?\.\(\)/,
-  "CodeView should resolve historical opens through the captured-root session matcher",
+  /if \(!pendingOpen\) return;[\s\S]*resolveCodePendingOpen\([\s\S]*groups\.flatMap\(\(group\) => group\.sessions\),[\s\S]*pendingOpen,[\s\S]*sessionsLoaded,[\s\S]*\)[\s\S]*if \(resolution\.status === "waiting"\) return;[\s\S]*onPendingOpenHandled\?\.\(\)/,
+  "CodeView should retain rooted opens until session loading settles, then acknowledge once",
 );
 assert.match(
   codeView,
@@ -252,12 +257,12 @@ assert.match(
 );
 assert.match(
   codeView,
-  /codeSessionForPendingOpen\([\s\S]*groups\.flatMap\(\(group\) => group\.sessions\),[\s\S]*pendingOpen/,
-  "CodeView resolves browse and historical roots through the shared normalized matcher",
+  /resolveCodePendingOpen\([\s\S]*groups\.flatMap\(\(group\) => group\.sessions\),[\s\S]*pendingOpen,[\s\S]*sessionsLoaded/,
+  "CodeView resolves browse and historical roots only after the session inventory is ready",
 );
 assert.match(
   codeView,
-  /setWorkbenchTarget\(\s*pendingOpen\.root !== undefined && \(!capturedRoot \|\| !target\)\s*\? null\s*: \{ open: pendingOpen, sessionId: target\?\.id \?\? null \},?\s*\)/,
+  /setWorkbenchTarget\(\s*pendingOpen\.root !== undefined && resolution\.status !== "ready"\s*\? null\s*: \{ open: pendingOpen, sessionId: target\?\.id \?\? null \},?\s*\)/,
   "malformed or unhosted captured roots degrade without a stale focus",
 );
 assert.match(
