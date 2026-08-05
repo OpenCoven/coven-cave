@@ -1519,6 +1519,7 @@ export const SUITES = {
     "scripts/ios-swipe-reply.test.mjs",
     "scripts/ios-unread-badges.test.mjs",
     "scripts/ios-familiar-row-actions.test.mjs",
+    "scripts/ios-accessible-controls.test.mjs",
     "scripts/ios-group-mentions.test.mjs",
     "scripts/ios-reply-feedback.test.mjs",
     "scripts/ios-link-previews.test.mjs",
