@@ -35,6 +35,11 @@ assert.match(
   /attachments: args\.persistedAttachments/,
   "Queued offline chat payloads should keep transcript-safe attachment metadata, not preview payloads",
 );
+assert.match(
+  chatRoute,
+  /runId: args\.body\.runId,/,
+  "Queued offline chat payloads should preserve the normalized client run id for causal replay",
+);
 
 assert.match(
   chatRoute,

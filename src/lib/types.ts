@@ -90,6 +90,8 @@ export type SessionRow = {
   updated_at: string;
   /** Canonical conversational responsibility; independent of runtime status. */
   attention: ChatAttention;
+  /** Latest selected-path human send causally preceding canonical attention. */
+  attentionAfterOperationId?: string | null;
   familiarId?: string | null;
   origin?: SessionOrigin;
   /** Cave has a saved local conversation transcript; preserves recoverable interrupted chats without surfacing daemon-only dead runs. */

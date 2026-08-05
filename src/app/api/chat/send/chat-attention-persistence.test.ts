@@ -65,6 +65,28 @@ test("the shared responseMetadata object is never mutated with an attentionReque
   );
 });
 
+test("every send transport persists the normalized client run id on its human turn and pending stub", () => {
+  assert.match(
+    route,
+    /function attentionClearOperationForTurn\(\s*value: unknown,\s*\): Pick<ChatTurn, "attentionClearOperationId"> \{[\s\S]{0,300}normalizeChatAttentionOperationId\(value\)[\s\S]{0,200}\{ attentionClearOperationId: operationId \}/,
+    "one shared helper should validate causal operation ids before they enter a transcript",
+  );
+  assert.match(
+    route,
+    /body\.runId = normalizeChatAttentionOperationId\(\s*\(body as \{ runId\?: unknown \}\)\.runId,\s*\) \?\? undefined;/,
+    "the untyped request body should normalize runId once before routing or persistence",
+  );
+  assert.equal(
+    (
+      route.match(
+        /\.\.\.attentionClearOperationForTurn\((?:args\.body|body)\.runId\),\s*\.\.\.persistedTurnControls\((?:args\.body|body), responseMetadata\.retryModel\)/g,
+      ) ?? []
+    ).length,
+    6,
+    "Gateway, native OpenClaw, and general Coven transports must stamp both their pending stub and authoritative human turn",
+  );
+});
+
 test("the OpenClaw gateway persistence path prepares and persists the attention request", () => {
   // Anchor to the actual gateway turns.push call site (assistantTurnId +
   // gatewayAttention), not to a renamed/rearranged intermediate — a helper

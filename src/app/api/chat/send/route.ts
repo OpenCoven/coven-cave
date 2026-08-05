@@ -28,6 +28,7 @@ import {
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import type { SessionOrigin } from "@/lib/types";
+import { normalizeChatAttentionOperationId } from "@/lib/chat-attention";
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
 import {
   flattenToolResultContent,
@@ -187,6 +188,7 @@ import {
   type ChatTurn,
   createConversationStub,
   loadConversation,
+  persistQueuedOfflineConversation,
   saveConversation,
   stripConversationStubTurn,
   withConversationLock,
@@ -402,6 +404,7 @@ type OfflineChatQueuePayload = Pick<
   SendBody,
   | "familiarId"
   | "projectRoot"
+  | "runId"
   | "modelOverride"
   | "modelOverrideScope"
   | "reasoningEffort"
@@ -414,6 +417,7 @@ type OfflineChatQueuePayload = Pick<
 > & {
   prompt: string;
   sessionId: string;
+  userTurnId: string;
   attachments: ChatAttachment[];
   responseMetadata: ChatResponseMetadata;
 };
@@ -457,6 +461,13 @@ function prepareAttentionRequest(args: {
         }
       : null,
   };
+}
+
+function attentionClearOperationForTurn(
+  value: unknown,
+): Pick<ChatTurn, "attentionClearOperationId"> {
+  const operationId = normalizeChatAttentionOperationId(value);
+  return operationId ? { attentionClearOperationId: operationId } : {};
 }
 
 async function setDefaultSessionTitleIfMissing(sessionId: string, title: string) {
@@ -561,6 +572,7 @@ async function maybeQueueOfflineChat(args: {
   if (travelStatus.authority !== "travel-local") return null;
 
   const sessionId = args.body.sessionId ?? crypto.randomUUID();
+  const queuedUserTurnId = crypto.randomUUID();
   const queuedModelIntent = offlineQueuedModelIntent({
     body: args.body,
     responseMetadata: args.responseMetadata,
@@ -569,7 +581,9 @@ async function maybeQueueOfflineChat(args: {
     familiarId: args.body.familiarId,
     prompt: args.promptText,
     sessionId,
+    userTurnId: queuedUserTurnId,
     projectRoot: args.body.projectRoot,
+    runId: args.body.runId,
     modelOverride: queuedModelIntent.modelOverride,
     modelOverrideScope: queuedModelIntent.modelOverrideScope,
     reasoningEffort: args.body.reasoningEffort,
@@ -586,6 +600,28 @@ async function maybeQueueOfflineChat(args: {
     kind: "chat",
     summary: chatTitleFromPrompt(args.promptText) ?? `Offline chat with ${args.body.familiarId}`,
     payload,
+  });
+  await persistQueuedOfflineConversation({
+    sessionId,
+    familiarId: args.body.familiarId,
+    harness: args.responseMetadata.harness ?? bindingFor(args.config, args.body.familiarId).harness,
+    ...(Object.prototype.hasOwnProperty.call(args.responseMetadata, "model")
+      ? { model: args.responseMetadata.model ?? undefined }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(args.responseMetadata, "runtime")
+      ? { runtime: args.responseMetadata.runtime ?? undefined }
+      : {}),
+    title: chatTitleFromPrompt(args.promptText) ?? defaultChatTitleForSession(sessionId),
+    ...(args.body.origin ? { origin: args.body.origin } : {}),
+    createdAt: queued.createdAt,
+    userTurn: {
+      id: queuedUserTurnId,
+      text: args.promptText,
+      ...(args.persistedAttachments.length ? { attachments: args.persistedAttachments } : {}),
+      ...attentionClearOperationForTurn(args.body.runId),
+      ...persistedTurnControls(args.body, args.responseMetadata.retryModel),
+      ...(args.body.parentTurnId !== undefined ? { parentId: args.body.parentTurnId } : {}),
+    },
   });
 
   const stream = new ReadableStream<Uint8Array>({
@@ -920,6 +956,7 @@ function openClawChatResponse(args: {
             id: pendingUserTurnId,
             text: args.promptText,
             ...(args.attachments.length ? { attachments: args.attachments } : {}),
+            ...attentionClearOperationForTurn(args.body.runId),
             ...persistedTurnControls(args.body, responseMetadata.retryModel),
           },
         }).catch(() => undefined);
@@ -1028,6 +1065,7 @@ function openClawChatResponse(args: {
             role: "user",
             text: args.promptText,
             ...(args.attachments.length ? { attachments: args.attachments } : {}),
+            ...attentionClearOperationForTurn(args.body.runId),
             ...persistedTurnControls(args.body, responseMetadata.retryModel),
             createdAt: now,
             ...(branchParentId != null ? { parentId: branchParentId } : {}),
@@ -1168,6 +1206,7 @@ function openClawChatResponse(args: {
           id: pendingUserTurnId,
           text: args.promptText,
           ...(args.attachments.length ? { attachments: args.attachments } : {}),
+          ...attentionClearOperationForTurn(args.body.runId),
           ...persistedTurnControls(args.body, responseMetadata.retryModel),
         },
       }).catch(() => undefined);
@@ -1376,6 +1415,7 @@ function openClawChatResponse(args: {
                 role: "user",
                 text: args.promptText,
                 ...(args.attachments.length ? { attachments: args.attachments } : {}),
+                ...attentionClearOperationForTurn(args.body.runId),
                 ...persistedTurnControls(args.body, responseMetadata.retryModel),
                 createdAt: now,
                 ...(branchParentId != null ? { parentId: branchParentId } : {}),
@@ -1448,6 +1488,23 @@ export async function POST(req: Request) {
       },
     );
   }
+  // `req.json()` happily returns a top-level string/number/boolean/null/array
+  // for valid-but-non-object JSON. `SendBody` assumes an object, so the very
+  // next line used to mutate it (`body.runId = ...`) — which throws a
+  // TypeError on a primitive (strict-mode property assignment) instead of the
+  // normal 400 below. Reject any non-object root before any mutation.
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "invalid json body" }),
+      {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      },
+    );
+  }
+  body.runId = normalizeChatAttentionOperationId(
+    (body as { runId?: unknown }).runId,
+  ) ?? undefined;
   const attachments = normalizeChatAttachments(body.attachments);
   const promptText = body.prompt?.trim() ?? "";
   if (!body.familiarId || (!promptText && attachments.length === 0)) {
@@ -3048,6 +3105,7 @@ export async function POST(req: Request) {
             id: pendingUserTurnId,
             text: promptText,
             ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
+            ...attentionClearOperationForTurn(body.runId),
             ...persistedTurnControls(body, responseMetadata.retryModel),
           },
         }).catch(() => undefined);
@@ -5176,6 +5234,7 @@ export async function POST(req: Request) {
             role: "user",
             text: promptText,
             ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
+            ...attentionClearOperationForTurn(body.runId),
             ...persistedTurnControls(body, responseMetadata.retryModel),
             createdAt: now,
             ...(branchParentId != null ? { parentId: branchParentId } : {}),

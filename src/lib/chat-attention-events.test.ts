@@ -661,7 +661,7 @@ function row(attention: ChatAttention) {
   };
 }
 
-await test("brand-new adopted clears settle persisted once and reveal the first genuinely newer attention", async () => {
+await test("brand-new adopted clears settle persisted once and reveal attention causally after that run", async () => {
   const projection = createChatAttentionProjectionState();
   const scopeKey = chatAttentionProjectionScopeKey("nova");
   const adoptedSettlements = createAdoptedAttentionSettlementRegistry();
@@ -719,15 +719,18 @@ await test("brand-new adopted clears settle persisted once and reveal the first 
     0,
     "the adopted clear stays active across the first empty poll until canonical evidence arrives",
   );
-  const firstRealAttention = [row({
-    state: "awaiting-human",
-    since: "2026-08-05T00:01:00.000Z",
-    reason: "approval",
-  })];
+  const firstRealAttention = [{
+    ...row({
+      state: "awaiting-human",
+      since: "2026-08-04T23:55:00.000Z",
+      reason: "approval",
+    }),
+    attentionAfterOperationId: "run-20",
+  }];
   assert.equal(
     applyChatAttentionProjections(projection, firstRealAttention, 7, scopeKey),
     firstRealAttention,
-    "the first canonical attention at-or-after the clear watermark must surface",
+    "the canonical row carrying this run identity must surface without comparing clocks",
   );
   assert.equal(projection.has("session-1"), false);
 });

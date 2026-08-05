@@ -26,6 +26,7 @@ export type InvalidChatAttentionRequestEvidence = { state: "invalid" };
 export type ChatAttentionEvidence = {
   latestCompletedTurn: { role: "user" | "assistant"; at: string } | null;
   latestUserTurnAt: string | null;
+  attentionAfterOperationId?: string | null;
   request: ChatAttentionRequest | InvalidChatAttentionRequestEvidence | null;
 };
 
@@ -34,6 +35,12 @@ export const NO_CHAT_ATTENTION: ChatAttention = {
   since: null,
   reason: null,
 };
+
+export function normalizeChatAttentionOperationId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized || null;
+}
 
 export function isCanonicalIsoInstant(value: unknown): value is string {
   if (typeof value !== "string" || !value.trim()) return false;

@@ -163,6 +163,7 @@ try {
           id: "valid-user",
           role: "user",
           text: "Should I ship it?",
+          attentionClearOperationId: "run-route-valid",
           createdAt: "2026-08-04T17:00:00.000Z",
           parentId: null,
         },
@@ -381,6 +382,16 @@ try {
       since: "2026-08-04T18:00:00.000Z",
       reason: "approval",
     });
+    assert.equal(
+      healthyById.get("route-valid")?.attentionAfterOperationId,
+      "run-route-valid",
+      "healthy rows project the active human send's causal identity",
+    );
+    assert.equal(
+      healthyById.get("route-malformed")?.attentionAfterOperationId,
+      null,
+      "legacy rows without causal evidence remain explicitly unknown",
+    );
     assert.deepEqual(
       healthyById.get("route-malformed")?.attention,
       {
@@ -440,6 +451,11 @@ try {
       since: "2026-08-04T18:00:00.000Z",
       reason: "approval",
     });
+    assert.equal(
+      degradedById.get("route-valid")?.attentionAfterOperationId,
+      "run-route-valid",
+      "daemon-degraded rows preserve the same stable transcript evidence",
+    );
     assert.deepEqual(degradedById.get("route-malformed")?.attention, {
       state: "none",
       since: null,

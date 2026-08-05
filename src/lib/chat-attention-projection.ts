@@ -1,6 +1,7 @@
 import {
   isCanonicalIsoInstant,
   NO_CHAT_ATTENTION,
+  normalizeChatAttentionOperationId,
   type ChatAttention,
 } from "./chat-attention.ts";
 import type { SessionRow } from "./types.ts";
@@ -9,7 +10,6 @@ type PendingProjection = {
   status: "pending";
   scopeKey: string;
   baseline: ChatAttention | null;
-  clearWatermark?: string;
   latestCanonical?: CanonicalAttentionTrackerEntry;
 };
 
@@ -18,7 +18,6 @@ type PersistedProjection = {
   canonicalAfterRequestId: number;
   scopeKey: string;
   baseline: ChatAttention | null;
-  clearWatermark?: string;
   latestCanonical?: CanonicalAttentionTrackerEntry;
 };
 
@@ -314,10 +313,10 @@ export function recordChatAttentionClear(
   const baseline = trackedNonNoneCanonical ??
     (normalizedCanonical?.state !== "none" ? normalizedCanonical : null);
   const normalizedClearWatermark = normalizeIsoInstant(clearWatermark);
-  // A valid watermark is durable evidence that a clear belongs to a real human
-  // reply boundary even when every available cached/event baseline is already
-  // "none". Preserve that as an unknown-baseline projection so stale older
-  // attention stays masked until canonical evidence catches up.
+  // A valid watermark proves this is a modern real-send clear even when every
+  // available cached/event baseline is already "none". It is admission
+  // evidence only: clocks differ across devices, so reconciliation below must
+  // never order this client timestamp against server-authored attention.
   if (!operations && !baseline && hasCanonicalAttention && !normalizedClearWatermark) {
     tombstoneChatAttentionOperation(state, sessionId, operationId);
     return { recorded: false, reason: "no-baseline" };
@@ -332,7 +331,6 @@ export function recordChatAttentionClear(
     status: "pending",
     scopeKey,
     baseline,
-    ...(normalizedClearWatermark ? { clearWatermark: normalizedClearWatermark } : {}),
   });
   touchSessionProjectionBucket(state, sessionId);
   evictOldestSessionOperations(state, sessionId, nextOperations);
@@ -377,7 +375,6 @@ export function settleChatAttentionClear(
     canonicalAfterRequestId,
     scopeKey: operation.scopeKey,
     baseline: operation.baseline,
-    clearWatermark: operation.clearWatermark,
     latestCanonical: operation.latestCanonical,
   });
   return { settled: true, sessionId, operationId, outcome };
@@ -462,13 +459,6 @@ function normalizeIsoInstant(value: string | null | undefined): string | null {
   return isCanonicalIsoInstant(value) ? value : null;
 }
 
-function isoInstantMs(value: string | null | undefined): number | null {
-  const normalized = normalizeIsoInstant(value);
-  if (!normalized) return null;
-  const parsed = Date.parse(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 export function applyChatAttentionProjections(
   state: ChatAttentionProjectionState,
   rows: readonly SessionRow[],
@@ -523,17 +513,13 @@ export function applyChatAttentionProjections(
         tombstoneChatAttentionOperation(state, row.id, operationId);
         continue;
       }
-      const clearWatermarkMs = isoInstantMs(operation.clearWatermark);
-      if (clearWatermarkMs !== null) {
-        const acceptedSinceMs = isoInstantMs(row.attention.since);
-        if (acceptedSinceMs !== null && acceptedSinceMs >= clearWatermarkMs) {
-          operations.delete(operationId);
-          tombstoneChatAttentionOperation(state, row.id, operationId);
-        }
-        continue;
+      if (
+        normalizeChatAttentionOperationId(row.attentionAfterOperationId) ===
+        operationId
+      ) {
+        operations.delete(operationId);
+        tombstoneChatAttentionOperation(state, row.id, operationId);
       }
-      operations.delete(operationId);
-      tombstoneChatAttentionOperation(state, row.id, operationId);
     }
     if (operations.size === 0) {
       clearSessionProjectionState(state, row.id);

@@ -6,6 +6,7 @@ import {
 import {
   deriveChatAttention,
   NO_CHAT_ATTENTION,
+  normalizeChatAttentionOperationId,
   type ChatAttentionEvidence,
 } from "./chat-attention.ts";
 import { ACTIVE_SESSION_STATUSES } from "./chat-auto-archive.ts";
@@ -13,10 +14,14 @@ import { initiatorFromSessionKey } from "./session-initiator.ts";
 import { inferOrigin } from "./session-origin.ts";
 import type { SessionInitiator, SessionOrigin, SessionRow } from "./types.ts";
 
-export type DaemonSessionRow = Omit<SessionRow, "attention" | "familiarId" | "origin">;
+export type DaemonSessionRow = Omit<
+  SessionRow,
+  "attention" | "attentionAfterOperationId" | "familiarId" | "origin"
+>;
 
 export type LocalConversationSummary = {
   sessionId: string;
+  harnessSessionId?: string;
   familiarId: string;
   harness?: string;
   model?: string;
@@ -79,6 +84,20 @@ function conversationLocalCwd(runtime: string | undefined): string | null {
   return cwd || null;
 }
 
+function attentionAfterOperationId(
+  evidence: ChatAttentionEvidence | null | undefined,
+): string | null {
+  return normalizeChatAttentionOperationId(evidence?.attentionAfterOperationId);
+}
+
+function isDaemonAuthoritativeActiveStatus(status: string): boolean {
+  return ACTIVE_SESSION_STATUSES.has(status);
+}
+
+function isDaemonAuthoritativeStatus(status: string): boolean {
+  return isDaemonAuthoritativeTerminalStatus(status) || isDaemonAuthoritativeActiveStatus(status);
+}
+
 function localConversationToSession(
   conv: LocalConversationSummary,
   state: CaveState,
@@ -119,6 +138,7 @@ function localConversationToSession(
       archivedAt,
       now,
     }),
+    attentionAfterOperationId: attentionAfterOperationId(conv.attentionEvidence),
     familiarId,
     origin: conv.origin ?? "chat",
     hasLocalConversation: true,
@@ -169,18 +189,23 @@ export function mergeSessionRows({
   // the list orders by real activity, not by what you last looked at.
   const localUpdatedById = new Map<string, string>();
   const localById = new Map<string, LocalConversationSummary>();
+  const localByHarnessSessionId = new Map<string, LocalConversationSummary>();
   for (const conv of localConversations) {
     if (conv.updatedAt) {
       localUpdatedById.set(conv.sessionId, conv.updatedAt);
       localById.set(conv.sessionId, conv);
     }
+    if (conv.harnessSessionId) {
+      localByHarnessSessionId.set(conv.harnessSessionId, conv);
+    }
   }
 
   for (const session of daemonSessions) {
-    const local = localById.get(session.id);
+    const local = localById.get(session.id) ?? localByHarnessSessionId.get(session.id);
     if (isValidDaemonProjectRoot && !isValidDaemonProjectRoot(session.project_root)) {
       if (local && isDaemonRecoverableStatus(session.status)) {
         seen.add(session.id);
+        seen.add(local.sessionId);
         const recovered = localConversationToSession(local, state, projectRootForCwd, now);
         const archived_at = state.sessionArchived[session.id] ?? session.archived_at;
         const attention =
@@ -210,20 +235,22 @@ export function mergeSessionRows({
       continue;
     }
     seen.add(session.id);
-    const titleOverride = state.sessionTitles[session.id];
-    const archivedLocal = state.sessionArchived[session.id] ?? null;
-    const keep = Boolean(state.sessionKeep?.[session.id]);
-    const pinned = Boolean(state.sessionPinned?.[session.id]);
-    const extendedUntil = state.sessionArchiveExtendedUntil?.[session.id] ?? null;
+    if (local) seen.add(local.sessionId);
+    const stateSessionId = local?.sessionId ?? session.id;
+    const titleOverride = state.sessionTitles[stateSessionId];
+    const archivedLocal = state.sessionArchived[stateSessionId] ?? null;
+    const keep = Boolean(state.sessionKeep?.[stateSessionId]);
+    const pinned = Boolean(state.sessionPinned?.[stateSessionId]);
+    const extendedUntil = state.sessionArchiveExtendedUntil?.[stateSessionId] ?? null;
     const archived_at = archivedLocal ?? session.archived_at;
-    const localUpdatedAt = localUpdatedById.get(session.id);
-    const familiarId = state.sessionFamiliar[session.id] ?? local?.familiarId ?? null;
+    const localUpdatedAt = local?.updatedAt ?? localUpdatedById.get(session.id);
+    const familiarId = state.sessionFamiliar[stateSessionId] ?? local?.familiarId ?? null;
     const localIsNewer =
       localUpdatedAt != null &&
       Number.isFinite(Date.parse(localUpdatedAt)) &&
       Number.isFinite(Date.parse(session.updated_at)) &&
       Date.parse(localUpdatedAt) > Date.parse(session.updated_at);
-    const daemonStatusIsAuthoritative = isDaemonAuthoritativeTerminalStatus(session.status);
+    const daemonStatusIsAuthoritative = isDaemonAuthoritativeStatus(session.status);
     const mergedStatus =
       localIsNewer && !daemonStatusIsAuthoritative && local?.status
         ? local.status
@@ -239,6 +266,7 @@ export function mergeSessionRows({
           });
     const row: SessionRow = {
       ...session,
+      ...(local && local.sessionId !== session.id ? { id: local.sessionId } : {}),
       ...(localUpdatedAt ? { updated_at: localUpdatedAt } : {}),
       // Cave conversations record the concrete runtime selected for the chat
       // (`local:<cwd>` or `ssh:<host>:<cwd>`). That send-time provenance is
@@ -259,6 +287,7 @@ export function mergeSessionRows({
         defaultChatTitleForSession(session.id),
       archived_at,
       attention,
+      attentionAfterOperationId: attentionAfterOperationId(local?.attentionEvidence),
       // A Cave conversation records real provenance at send time; harness/
       // title inference is only the fallback for daemon-only sessions.
       origin: local?.origin ?? inferOrigin(session),

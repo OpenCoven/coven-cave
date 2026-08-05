@@ -258,7 +258,7 @@ test("an accepted canonical row wins over a stale event-carried baseline (clear-
   );
 });
 
-test("a cached canonical none plus a valid watermark still records and masks stale workspace attention until a newer row wins", () => {
+test("a cached canonical none records a modern clear and workspace reconciliation follows causal identity", () => {
   const projectionState = createChatAttentionProjectionState();
   const scopeKey = chatAttentionProjectionScopeKey("nova");
   const baseSessions = [row("session-1", { attention: NO_CHAT_ATTENTION })];
@@ -295,7 +295,8 @@ test("a cached canonical none plus a valid watermark still records and masks sta
   const staleCanonical = applyChatAttentionProjections(
     projectionState,
     [row("session-1", {
-      attention: { state: "awaiting-human", since: "2026-08-05T00:00:59.999Z", reason: "approval" },
+      attention: { state: "awaiting-human", since: "2026-08-05T00:30:00.000Z", reason: "approval" },
+      attentionAfterOperationId: "another-run",
     })],
     2,
     scopeKey,
@@ -303,21 +304,22 @@ test("a cached canonical none plus a valid watermark still records and masks sta
   assert.deepEqual(
     staleCanonical[0]?.attention,
     NO_CHAT_ATTENTION,
-    "a stale in-flight workspace response older than the watermark must stay masked",
+    "a non-none row from another operation must stay masked even when its server timestamp is later",
   );
 
   const released = applyChatAttentionProjections(
     projectionState,
     [row("session-1", {
-      attention: { state: "awaiting-human", since: "2026-08-05T00:01:00.000Z", reason: "approval" },
+      attention: { state: "awaiting-human", since: "2026-08-04T23:55:00.000Z", reason: "approval" },
+      attentionAfterOperationId: "run-3",
     })],
     3,
     scopeKey,
   );
   assert.deepEqual(
     released[0]?.attention,
-    { state: "awaiting-human", since: "2026-08-05T00:01:00.000Z", reason: "approval" },
-    "the first eligible canonical row at-or-after the watermark must retire the workspace projection",
+    { state: "awaiting-human", since: "2026-08-04T23:55:00.000Z", reason: "approval" },
+    "the matching persisted operation must retire the workspace projection regardless of clock order",
   );
   assert.equal(projectionState.has("session-1"), false);
 });

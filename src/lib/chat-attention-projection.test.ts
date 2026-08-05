@@ -811,7 +811,7 @@ test("an unknown settlement does not poison a later legitimate first clear for t
   assert.deepEqual(state.get("session-1")?.get("operation-1")?.baseline, NEEDS_ATTENTION);
 });
 
-test("an evidence-free persisted compatibility clear retires on the first eligible canonical row even when attention repeats", () => {
+test("a legacy persisted clear without causal evidence stays conservative for non-none attention", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
     state,
@@ -831,11 +831,11 @@ test("an evidence-free persisted compatibility clear retires on the first eligib
   assert.equal(state.has("session-1"), true);
 
   assert.equal(
-    applyChatAttentionProjections(state, staleCanonical, 6, chatAttentionProjectionScopeKey("nova")),
-    staleCanonical,
-    "the first eligible canonical row should win immediately instead of being masked indefinitely",
+    applyChatAttentionProjections(state, staleCanonical, 6, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    "none",
+    "legacy non-none rows cannot prove that this human send reached canonical storage",
   );
-  assert.equal(state.has("session-1"), false);
+  assert.equal(state.has("session-1"), true);
 });
 
 test("an evidence-free persisted compatibility clear also retires on the first eligible canonical none", () => {
@@ -857,7 +857,7 @@ test("an evidence-free persisted compatibility clear also retires on the first e
   assert.equal(state.has("session-1"), false);
 });
 
-test("an unknown-baseline persisted clear with a watermark releases when the first canonical row is already newer attention", () => {
+test("a client clock five minutes ahead cannot hide a server request descending from the same operation", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
     state,
@@ -865,12 +865,13 @@ test("an unknown-baseline persisted clear with a watermark releases when the fir
     "operation-1",
     chatAttentionProjectionScopeKey("nova"),
     undefined,
-    "2026-08-05T00:01:00.000Z",
+    "2026-08-05T00:10:00.000Z",
   );
   settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
 
   const newerRequest = [row({
-    attention: { state: "awaiting-human", since: "2026-08-05T00:01:00.000Z", reason: "approval" },
+    attention: { state: "awaiting-human", since: "2026-08-05T00:05:00.000Z", reason: "approval" },
+    attentionAfterOperationId: "operation-1",
   })];
   assert.equal(
     applyChatAttentionProjections(state, newerRequest, 6, chatAttentionProjectionScopeKey("nova")),
@@ -879,38 +880,61 @@ test("an unknown-baseline persisted clear with a watermark releases when the fir
   assert.equal(state.has("session-1"), false);
 });
 
-test("an unknown-baseline persisted clear with a watermark keeps the first stale row masked until newer attention appears", () => {
+test("non-none canonical requests with a different or absent operation stay masked", () => {
+  for (const attentionAfterOperationId of ["operation-other", undefined]) {
+    const state = createChatAttentionProjectionState();
+    recordChatAttentionClear(
+      state,
+      "session-1",
+      "operation-1",
+      chatAttentionProjectionScopeKey("nova"),
+      undefined,
+      "2026-08-05T00:02:00.000Z",
+    );
+    settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+    const staleCanonical = [row({
+      attention: { state: "awaiting-human", since: "2026-08-05T00:20:00.000Z", reason: "approval" },
+      ...(attentionAfterOperationId ? { attentionAfterOperationId } : {}),
+    })];
+    assert.equal(
+      applyChatAttentionProjections(state, staleCanonical, 6, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+      "none",
+      `${attentionAfterOperationId ?? "missing"} cannot prove operation-1 persisted`,
+    );
+    assert.equal(state.has("session-1"), true);
+  }
+});
+
+test("matching operation identity does not bypass known-baseline identity when the attention payload repeats", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
     state,
     "session-1",
     "operation-1",
     chatAttentionProjectionScopeKey("nova"),
-    undefined,
-    "2026-08-05T00:02:00.000Z",
+    NEEDS_ATTENTION,
   );
   settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
 
-  const staleCanonical = [row({
-    attention: { state: "awaiting-human", since: "2026-08-05T00:01:59.999Z", reason: "approval" },
+  const causallyNewButPayloadEqual = [row({
+    attention: { ...NEEDS_ATTENTION },
+    attentionAfterOperationId: "operation-1",
   })];
   assert.equal(
-    applyChatAttentionProjections(state, staleCanonical, 6, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    applyChatAttentionProjections(
+      state,
+      causallyNewButPayloadEqual,
+      6,
+      chatAttentionProjectionScopeKey("nova"),
+    )[0]?.attention.state,
     "none",
+    "known baselines continue to release only when their stable attention identity changes",
   );
   assert.equal(state.has("session-1"), true);
-
-  const newerRequest = [row({
-    attention: { state: "awaiting-human", since: "2026-08-05T00:02:00.001Z", reason: "approval" },
-  })];
-  assert.equal(
-    applyChatAttentionProjections(state, newerRequest, 7, chatAttentionProjectionScopeKey("nova")),
-    newerRequest,
-  );
-  assert.equal(state.has("session-1"), false);
 });
 
-test("a cached canonical none plus a valid watermark keeps stale canonical attention masked until newer evidence arrives", () => {
+test("a cached canonical none uses the watermark only to admit a clear, then releases by operation identity", () => {
   const state = createChatAttentionProjectionState();
   const scopeKey = chatAttentionProjectionScopeKey("nova");
   recordChatAttentionClear(
@@ -924,20 +948,12 @@ test("a cached canonical none plus a valid watermark keeps stale canonical atten
   settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
 
   const staleCanonical = [row({
-    attention: { state: "awaiting-human", since: "2026-08-05T00:01:59.999Z", reason: "approval" },
+    attention: { state: "awaiting-human", since: "2026-08-05T00:01:00.000Z", reason: "approval" },
+    attentionAfterOperationId: "operation-1",
   })];
   assert.equal(
-    applyChatAttentionProjections(state, staleCanonical, 6, scopeKey)[0]?.attention.state,
-    "none",
-  );
-  assert.equal(state.has("session-1"), true);
-
-  const newerCanonical = [row({
-    attention: { state: "awaiting-human", since: "2026-08-05T00:02:00.001Z", reason: "approval" },
-  })];
-  assert.equal(
-    applyChatAttentionProjections(state, newerCanonical, 7, scopeKey),
-    newerCanonical,
+    applyChatAttentionProjections(state, staleCanonical, 6, scopeKey),
+    staleCanonical,
   );
   assert.equal(state.has("session-1"), false);
 });
@@ -955,7 +971,10 @@ test("a cached canonical none plus a valid watermark retires on the first eligib
   );
   settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
 
-  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
+  const canonicalNone = [row({
+    attention: NO_CHAT_ATTENTION,
+    attentionAfterOperationId: "operation-1",
+  })];
   assert.equal(
     applyChatAttentionProjections(state, canonicalNone, 6, scopeKey),
     canonicalNone,
@@ -963,7 +982,7 @@ test("a cached canonical none plus a valid watermark retires on the first eligib
   assert.equal(state.has("session-1"), false);
 });
 
-test("an unknown-baseline persisted clear with a watermark treats equal timestamps as newer evidence", () => {
+test("matching operation identity releases non-none attention without timestamp ordering", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
     state,
@@ -976,7 +995,8 @@ test("an unknown-baseline persisted clear with a watermark treats equal timestam
   settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
 
   const boundaryRequest = [row({
-    attention: { state: "awaiting-human", since: "2026-08-05T00:03:00.000Z", reason: "decision" },
+    attention: { state: "awaiting-human", since: "2026-08-04T23:03:00.000Z", reason: "decision" },
+    attentionAfterOperationId: "operation-1",
   })];
   assert.equal(
     applyChatAttentionProjections(state, boundaryRequest, 6, chatAttentionProjectionScopeKey("nova")),
@@ -985,7 +1005,7 @@ test("an unknown-baseline persisted clear with a watermark treats equal timestam
   assert.equal(state.has("session-1"), false);
 });
 
-test("an unknown-baseline persisted clear with a watermark stays conservative on malformed first evidence but later valid evidence releases it", () => {
+test("an unknown-baseline persisted clear rejects malformed causal evidence until a valid identity arrives", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
     state,
@@ -999,14 +1019,16 @@ test("an unknown-baseline persisted clear with a watermark stays conservative on
 
   assert.equal(
     applyChatAttentionProjections(state, [row({
-      attention: { state: "awaiting-human", since: "not-an-iso", reason: "approval" },
+      attention: { state: "awaiting-human", since: "2026-08-05T00:40:00.000Z", reason: "approval" },
+      attentionAfterOperationId: "   ",
     })], 6, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
     "none",
   );
   assert.equal(state.has("session-1"), true);
 
   const validNewerRequest = [row({
-    attention: { state: "awaiting-human", since: "2026-08-05T00:04:30.000Z", reason: "approval" },
+    attention: { state: "awaiting-human", since: "2026-08-04T23:04:30.000Z", reason: "approval" },
+    attentionAfterOperationId: "operation-1",
   })];
   assert.equal(
     applyChatAttentionProjections(state, validNewerRequest, 7, chatAttentionProjectionScopeKey("nova")),
@@ -1028,6 +1050,30 @@ test("an unknown-baseline off-list clear survives filtered list absence", () => 
 
   applyChatAttentionProjections(state, [], 7, chatAttentionProjectionScopeKey("sage"));
   assert.equal(state.has("session-1"), true);
+});
+
+test("an off-list persisted clear releases when another accepted scope carries the matching operation identity", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    undefined,
+    "2026-08-05T00:02:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  applyChatAttentionProjections(state, [], 7, chatAttentionProjectionScopeKey("sage"));
+  const released = [row({
+    attention: { state: "awaiting-human", since: "2026-08-04T23:58:00.000Z", reason: "approval" },
+    attentionAfterOperationId: "operation-1",
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, released, 8, chatAttentionProjectionScopeKey(null)),
+    released,
+  );
+  assert.equal(state.has("session-1"), false);
 });
 
 // Offline-queued sends settle "persisted" before canonical attention changes.
@@ -1069,6 +1115,32 @@ test("a later durably-synced canonical response releases the offline-queued proj
   assert.equal(state.has("session-1"), true);
 
   const syncedCanonical = [row({ attention: NO_CHAT_ATTENTION })];
+  assert.equal(
+    applyChatAttentionProjections(state, syncedCanonical, 8, chatAttentionProjectionScopeKey("nova")),
+    syncedCanonical,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("a queued offline clear reveals the first durably-synced post-reply request by operation identity even under negative client skew", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    undefined,
+    "2026-08-01T00:00:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  applyChatAttentionProjections(state, [row({ attention: { ...NEEDS_ATTENTION } })], 7, chatAttentionProjectionScopeKey("nova"));
+  assert.equal(state.has("session-1"), true);
+
+  const syncedCanonical = [row({
+    attention: { ...NEEDS_ATTENTION },
+    attentionAfterOperationId: "operation-1",
+  })];
   assert.equal(
     applyChatAttentionProjections(state, syncedCanonical, 8, chatAttentionProjectionScopeKey("nova")),
     syncedCanonical,

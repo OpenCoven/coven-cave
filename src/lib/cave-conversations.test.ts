@@ -728,6 +728,7 @@ console.log("cave-conversations.test.ts: ok");
     userTurn: {
       id: "pending-user-turn",
       text: "fix the flaky test please",
+      attentionClearOperationId: " run-stub ",
       reasoningEffort: "medium",
       responseSpeed: "careful",
       modelControls: { reasoning: "medium" },
@@ -741,6 +742,11 @@ console.log("cave-conversations.test.ts: ok");
   assert.equal(stub?.turns[0]?.id, "pending-user-turn");
   assert.equal(stub?.turns[0]?.role, "user");
   assert.equal(stub?.turns[0]?.text, "fix the flaky test please");
+  assert.equal(
+    stub?.turns[0]?.attentionClearOperationId,
+    "run-stub",
+    "pending stubs normalize and retain the send's causal operation id",
+  );
   assert.equal(stub?.turns[0]?.reasoningEffort, "medium");
   assert.equal(stub?.turns[0]?.responseSpeed, "careful");
   assert.deepEqual(stub?.turns[0]?.modelControls, { reasoning: "medium" });
@@ -968,6 +974,7 @@ console.log("cave-conversations pending-marker test OK");
         id: "leaf-user",
         role: "user",
         text: "Should I deploy this?",
+        attentionClearOperationId: " run-leaf ",
         createdAt: "2026-08-04T17:00:00.000Z",
         parentId: null,
       },
@@ -1032,6 +1039,7 @@ console.log("cave-conversations pending-marker test OK");
         id: "stale-user-2",
         role: "user",
         text: "Here they are.",
+        attentionClearOperationId: "   ",
         createdAt: "2026-08-03T17:00:00.000Z",
         parentId: "stale-assistant-request",
       },
@@ -1403,6 +1411,7 @@ console.log("cave-conversations pending-marker test OK");
       id: "root-sibling-a-user",
       role: "user",
       text: "Do you need approval?",
+      attentionClearOperationId: "run-root-a",
       createdAt: "2026-08-04T12:10:00.000Z",
       parentId: null,
     },
@@ -1429,6 +1438,7 @@ console.log("cave-conversations pending-marker test OK");
       id: "root-sibling-b-user",
       role: "user",
       text: "Never mind, summarize it instead.",
+      attentionClearOperationId: "run-root-b",
       createdAt: "2026-08-04T12:12:00.000Z",
       parentId: null,
     },
@@ -1638,6 +1648,7 @@ console.log("cave-conversations pending-marker test OK");
         id: "corrupt-root",
         role: "user",
         text: "Summarize the plan.",
+        attentionClearOperationId: "run-corrupt-must-not-leak",
         createdAt: "2026-08-04T09:00:00.000Z",
         parentId: null,
       },
@@ -2173,6 +2184,7 @@ console.log("cave-conversations pending-marker test OK");
   assert.deepEqual(byId.get("attention-leaf-request")?.attentionEvidence, {
     latestCompletedTurn: { role: "assistant", at: "2026-08-04T18:00:00.000Z" },
     latestUserTurnAt: "2026-08-04T17:00:00.000Z",
+    attentionAfterOperationId: "run-leaf",
     request: {
       sessionId: "attention-leaf-request",
       turnId: "leaf-assistant",
@@ -2333,6 +2345,7 @@ console.log("cave-conversations pending-marker test OK");
   assert.deepEqual(byId.get("attention-root-sibling-active-request")?.attentionEvidence, {
     latestCompletedTurn: { role: "assistant", at: "2026-08-04T12:11:00.000Z" },
     latestUserTurnAt: "2026-08-04T12:10:00.000Z",
+    attentionAfterOperationId: "run-root-a",
     request: {
       sessionId: "attention-root-sibling-active-request",
       turnId: "root-sibling-a-assistant",
@@ -2361,6 +2374,7 @@ console.log("cave-conversations pending-marker test OK");
   assert.deepEqual(byId.get("attention-root-sibling-inactive-request")?.attentionEvidence, {
     latestCompletedTurn: { role: "assistant", at: "2026-08-04T12:13:00.000Z" },
     latestUserTurnAt: "2026-08-04T12:12:00.000Z",
+    attentionAfterOperationId: "run-root-b",
     request: null,
   });
   assert.deepEqual(

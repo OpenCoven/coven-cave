@@ -40,6 +40,7 @@ assert.deepEqual(
     created_at: "2026-06-08T20:00:00.000Z",
     updated_at: "2026-06-08T20:05:00.000Z",
     attention: NO_CHAT_ATTENTION,
+    attentionAfterOperationId: null,
     familiarId: "charm",
     origin: "chat",
     hasLocalConversation: true,
@@ -89,6 +90,11 @@ assert.equal(
   undefined,
   "daemon-only sessions without a matching local transcript should not gain local provenance",
 );
+assert.equal(
+  merged.find((s) => s.id === "daemon-1")?.attentionAfterOperationId,
+  null,
+  "daemon-only rows cannot fabricate a Cave send operation",
+);
 
 // Attention derivation (cave-zs85n task 4): local transcript evidence is
 // stable summary data; mergeSessionRows projects the time-sensitive attention
@@ -118,6 +124,7 @@ assert.equal(
           at: "2026-08-04T18:00:00.000Z",
         },
         latestUserTurnAt: "2026-08-04T17:00:00.000Z",
+        attentionAfterOperationId: "run-attention-local",
         request: {
           sessionId: "attention-local",
           turnId: "assistant-turn",
@@ -136,6 +143,11 @@ assert.equal(
         reason: "approval",
       },
       "local-only rows derive attention from cached transcript evidence",
+    );
+    assert.equal(
+      localOnlyRow?.attentionAfterOperationId,
+      "run-attention-local",
+      "local-only rows project the active path's stable human send identity",
     );
 
     const mergedAttention = mergeSessionRows({
@@ -160,6 +172,11 @@ assert.equal(
       mergedAttention[0]?.attention,
       localOnlyRow?.attention,
       "daemon-backed rows reuse the same local evidence projection",
+    );
+    assert.equal(
+      mergedAttention[0]?.attentionAfterOperationId,
+      "run-attention-local",
+      "healthy daemon-backed rows retain Cave's causal send evidence",
     );
 
     const reopenedAttention = mergeSessionRows({
@@ -1153,6 +1170,67 @@ assert.deepEqual(
   "the genuinely-recent chat outranks the just-reopened older chat",
 );
 
+for (const activeStatus of ["running", "waiting"] as const) {
+  const activeDaemon = {
+    id: `chat-active-${activeStatus}`,
+    project_root: "/repo",
+    harness: "codex",
+    title: `Active ${activeStatus} chat`,
+    status: activeStatus,
+    exit_code: null,
+    archived_at: null,
+    created_at: "2026-06-25T04:23:34.393Z",
+    updated_at: "2026-06-25T04:26:13.470Z",
+  };
+  const newerCompletedLocal = {
+    sessionId: `chat-active-${activeStatus}`,
+    familiarId: "charm",
+    harness: "codex",
+    title: "Recovered locally",
+    updatedAt: "2026-06-25T04:27:31.202Z",
+    status: "completed",
+    exitCode: 0,
+    attentionEvidence: {
+      latestCompletedTurn: { role: "assistant", at: "2026-06-25T04:25:00.000Z" },
+      latestUserTurnAt: "2026-06-25T04:24:00.000Z",
+      request: {
+        sessionId: `chat-active-${activeStatus}`,
+        turnId: `assistant-${activeStatus}`,
+        requestedAt: "2026-06-25T04:25:00.000Z",
+        reason: "approval",
+      },
+    },
+  };
+
+  const merged = mergeSessionRows({
+    daemonSessions: [activeDaemon],
+    localConversations: [newerCompletedLocal],
+    state: { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} },
+    includeArchived: false,
+  });
+
+  assert.equal(
+    merged[0]?.status,
+    activeStatus,
+    `a newer local completion must not overwrite daemon ${activeStatus}`,
+  );
+  assert.equal(
+    merged[0]?.exit_code,
+    null,
+    `a newer local completion must not fabricate a terminal exit code while daemon is ${activeStatus}`,
+  );
+  assert.equal(
+    merged[0]?.updated_at,
+    "2026-06-25T04:27:31.202Z",
+    `daemon ${activeStatus} still orders by the local transcript's last message time`,
+  );
+  assert.deepEqual(
+    merged[0]?.attention,
+    NO_CHAT_ATTENTION,
+    `daemon ${activeStatus} suppresses local stale attention evidence`,
+  );
+}
+
 // A stale daemon row can outlive a Cave-local chat transcript for the same id.
 // When the local transcript has newer message activity, it should own the row's
 // terminal status so a successful chat is not stuck with an old failed badge.
@@ -1190,6 +1268,56 @@ assert.equal(
   "newer Cave-local transcript status should override stale daemon failure",
 );
 assert.equal(recoveredStatus[0].exit_code, 0, "newer Cave-local transcript exit code should win");
+
+const harnessMatchedReplay = mergeSessionRows({
+  daemonSessions: [
+    {
+      id: "hub-session-offline-1",
+      project_root: "/repo",
+      harness: "codex",
+      title: "Replayed offline chat",
+      status: "completed",
+      exit_code: 0,
+      archived_at: null,
+      created_at: "2026-06-25T04:23:34.393Z",
+      updated_at: "2026-06-25T04:29:00.000Z",
+    },
+  ],
+  localConversations: [
+    {
+      sessionId: "offline-chat-1",
+      harnessSessionId: "hub-session-offline-1",
+      familiarId: "charm",
+      harness: "codex",
+      title: "Offline chat",
+      updatedAt: "2026-06-25T04:27:31.202Z",
+      attentionEvidence: {
+        latestCompletedTurn: { role: "user", at: "2026-06-25T04:27:31.202Z" },
+        latestUserTurnAt: "2026-06-25T04:27:31.202Z",
+        attentionAfterOperationId: "run-offline-1",
+        request: null,
+      },
+    },
+  ],
+  state: { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} },
+  includeArchived: false,
+});
+
+assert.equal(
+  harnessMatchedReplay[0]?.id,
+  "offline-chat-1",
+  "a replayed daemon session should merge back onto the original Cave conversation id",
+);
+assert.equal(
+  harnessMatchedReplay[0]?.hasLocalConversation,
+  true,
+  "replayed daemon sessions matched by harnessSessionId keep the local transcript provenance",
+);
+assert.equal(
+  harnessMatchedReplay[0]?.attentionAfterOperationId,
+  "run-offline-1",
+  "replayed daemon sessions preserve the original send operation id on the original conversation row",
+);
 
 // Analytics-spawned discussions carry regular chat provenance through to the session row.
 const analyticsRows = localConversationSessionRows(

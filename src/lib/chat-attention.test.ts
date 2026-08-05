@@ -8,9 +8,21 @@ import {
   compareChatAttention,
   deriveChatAttention,
   NO_CHAT_ATTENTION,
+  normalizeChatAttentionOperationId,
 } from "./chat-attention.ts";
 
 const NOW = Date.parse("2026-08-04T20:00:00.000Z");
+
+test("normalizes only nonempty string attention operation ids", () => {
+  assert.equal(normalizeChatAttentionOperationId(" run-1 "), "run-1");
+  for (const value of [undefined, null, "", "   ", 42, {}, []]) {
+    assert.equal(
+      normalizeChatAttentionOperationId(value),
+      null,
+      `${JSON.stringify(value)} must not become causal attention evidence`,
+    );
+  }
+});
 
 test("derives all four attention states with inclusive boundaries", () => {
   assert.deepEqual(
