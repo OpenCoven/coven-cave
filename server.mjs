@@ -56,17 +56,47 @@ const ACCESS_QUERY_PARAM = "coven_access_token";
 const SIDECAR_QUERY_PARAM = "covenCaveToken";
 const sessions = /* @__PURE__ */ new Map();
 const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
+const PTY_FRAME_COALESCE_MS = 8;
+const PTY_FRAME_MAX_BYTES = 16 * 1024;
+const PTY_WS_BUFFERED_AMOUNT_LIMIT = 512 * 1024;
+const PTY_SLOW_CONSUMER_CLOSE_CODE = 1013;
+const PTY_SLOW_CONSUMER_CLOSE_REASON = "slow terminal consumer; reconnect";
 const DETACH_GRACE_MS = (() => {
   const env = Number.parseInt(process.env.COVEN_CAVE_PTY_DETACH_GRACE_MS ?? "", 10);
   return Number.isFinite(env) && env > 0 ? env : 3e5;
 })();
 function appendScrollback(session, data) {
+  const nextEnd = session.streamEnd + data.length;
+  if (data.length >= SCROLLBACK_LIMIT_BYTES) {
+    session.scrollback = [Buffer.from(data.subarray(data.length - SCROLLBACK_LIMIT_BYTES))];
+    session.scrollbackBytes = SCROLLBACK_LIMIT_BYTES;
+    session.scrollbackStart = nextEnd - SCROLLBACK_LIMIT_BYTES;
+    session.streamEnd = nextEnd;
+    return;
+  }
   session.scrollback.push(data);
   session.scrollbackBytes += data.length;
+  session.streamEnd = nextEnd;
   while (session.scrollbackBytes > SCROLLBACK_LIMIT_BYTES && session.scrollback.length > 1) {
     const dropped = session.scrollback.shift();
-    if (dropped) session.scrollbackBytes -= dropped.length;
+    if (dropped) {
+      session.scrollbackBytes -= dropped.length;
+      session.scrollbackStart += dropped.length;
+    }
   }
+}
+function scrollbackFrom(session, cursor) {
+  const output = [];
+  let remaining = cursor - session.scrollbackStart;
+  for (const chunk of session.scrollback) {
+    if (remaining >= chunk.length) {
+      remaining -= chunk.length;
+      continue;
+    }
+    output.push(remaining > 0 ? chunk.subarray(remaining) : chunk);
+    remaining = 0;
+  }
+  return output;
 }
 function getTokensFromCookie(header) {
   if (!header) return [];
@@ -156,6 +186,14 @@ function isAllowedUpgradeSource(req, tokenAuthenticated = false) {
 }
 function firstQueryValue(value) {
   return Array.isArray(value) ? value[0] : value;
+}
+function parsePtyReplayCursor(value) {
+  const raw = firstQueryValue(value);
+  if (raw === void 0) return void 0;
+  if (raw === "-1") return -1;
+  if (!/^(?:0|[1-9]\d*)$/.test(raw)) return null;
+  const cursor = Number(raw);
+  return Number.isSafeInteger(cursor) ? cursor : null;
 }
 const UPGRADE_URL_BASE = "http://localhost";
 const MAX_UPGRADE_QUERY_SEGMENTS = 1e3;
@@ -265,12 +303,131 @@ function sanitizedEnv() {
   return env;
 }
 function sendPtyData(ws, data) {
-  if (ws.readyState !== WebSocket.OPEN) return;
-  const encoded = Buffer.from(data, "utf8");
-  const frame = Buffer.allocUnsafe(1 + encoded.length);
+  if (ws.readyState !== WebSocket.OPEN) return false;
+  const frame = Buffer.allocUnsafe(1 + data.length);
   frame[0] = 1;
-  encoded.copy(frame, 1);
-  ws.send(frame);
+  data.copy(frame, 1);
+  try {
+    ws.send(frame);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function sendPtyReplayCursor(ws, cursor, reset) {
+  if (ws.readyState !== WebSocket.OPEN) return false;
+  const frame = Buffer.allocUnsafe(10);
+  frame[0] = 6;
+  frame.writeDoubleLE(cursor, 1);
+  frame[9] = reset ? 1 : 0;
+  try {
+    ws.send(frame);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function clearPendingPtyOutput(session) {
+  if (session.flushTimer) {
+    clearTimeout(session.flushTimer);
+    session.flushTimer = null;
+  }
+  session.pendingOutput = [];
+  session.pendingOutputBytes = 0;
+}
+function armPtyDetach(threadId, session) {
+  if (session.detachTimer) clearTimeout(session.detachTimer);
+  session.detachTimer = setTimeout(() => {
+    const current = sessions.get(threadId);
+    if (current !== session || current.ws) return;
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+    }
+  }, DETACH_GRACE_MS);
+}
+function detachPtyConsumer(threadId, session, ws) {
+  if (session.ws !== ws) return;
+  session.ws = null;
+  clearPendingPtyOutput(session);
+  armPtyDetach(threadId, session);
+}
+function evictSlowPtyConsumer(threadId, session, ws) {
+  if (session.ws !== ws) return;
+  detachPtyConsumer(threadId, session, ws);
+  try {
+    ws.close(PTY_SLOW_CONSUMER_CLOSE_CODE, PTY_SLOW_CONSUMER_CLOSE_REASON);
+  } catch {
+  }
+}
+function flushPtyOutput(threadId, session) {
+  session.flushTimer = null;
+  const ws = session.ws;
+  if (!ws || session.pendingOutputBytes === 0) return;
+  const chunks = session.pendingOutput;
+  clearPendingPtyOutput(session);
+  const payload = Buffer.concat(chunks);
+  if (ws.readyState !== WebSocket.OPEN || session.ws !== ws) return;
+  if (ws.bufferedAmount + payload.length + 1 > PTY_WS_BUFFERED_AMOUNT_LIMIT) {
+    evictSlowPtyConsumer(threadId, session, ws);
+    return;
+  }
+  if (!sendPtyData(ws, payload)) {
+    detachPtyConsumer(threadId, session, ws);
+  }
+}
+function queuePtyOutput(threadId, session, data) {
+  if (!session.ws || data.length === 0) return;
+  let offset = 0;
+  while (offset < data.length && session.ws) {
+    const room = PTY_FRAME_MAX_BYTES - session.pendingOutputBytes;
+    const take = Math.min(room, data.length - offset);
+    const chunk = data.subarray(offset, offset + take);
+    if (session.pendingOutputBytes + take === PTY_FRAME_MAX_BYTES) {
+      session.pendingOutput.push(chunk);
+    } else {
+      const boundedChunk = Buffer.allocUnsafeSlow(chunk.length);
+      chunk.copy(boundedChunk);
+      session.pendingOutput.push(boundedChunk);
+    }
+    session.pendingOutputBytes += take;
+    offset += take;
+    if (session.pendingOutputBytes === PTY_FRAME_MAX_BYTES) {
+      flushPtyOutput(threadId, session);
+    }
+  }
+  if (session.ws && session.pendingOutputBytes > 0 && !session.flushTimer) {
+    session.flushTimer = setTimeout(
+      () => flushPtyOutput(threadId, session),
+      PTY_FRAME_COALESCE_MS
+    );
+  }
+}
+function replayPtyOutput(threadId, session, replayCursor) {
+  if (!session.ws || session.scrollbackBytes === 0) {
+    if (session.ws && replayCursor !== void 0) {
+      sendPtyReplayCursor(
+        session.ws,
+        session.streamEnd,
+        replayCursor !== -1 && replayCursor !== session.streamEnd
+      );
+    }
+    return;
+  }
+  if (replayCursor === void 0) {
+    for (const chunk of session.scrollback) queuePtyOutput(threadId, session, chunk);
+    return;
+  }
+  const validCursor = replayCursor >= session.scrollbackStart && replayCursor <= session.streamEnd;
+  const start = validCursor && replayCursor !== -1 ? replayCursor : session.scrollbackStart;
+  const reset = replayCursor !== -1 && !validCursor;
+  const ws = session.ws;
+  if (!ws || ws.bufferedAmount + 10 > PTY_WS_BUFFERED_AMOUNT_LIMIT || !sendPtyReplayCursor(ws, start, reset)) {
+    if (ws) evictSlowPtyConsumer(threadId, session, ws);
+    return;
+  }
+  for (const chunk of scrollbackFrom(session, start)) queuePtyOutput(threadId, session, chunk);
 }
 function sendPtyExit(ws, exitCode) {
   if (ws.readyState !== WebSocket.OPEN) return;
@@ -279,7 +436,7 @@ function sendPtyExit(ws, exitCode) {
   frame.writeInt32LE(exitCode, 1);
   ws.send(frame);
 }
-function spawnPty(threadId, ws, cols, rows, cwd) {
+function spawnPty(threadId, ws, cols, rows, cwd, replayCursor) {
   const shell = pty.spawn(defaultShell(), defaultShellArgs(), {
     name: "xterm-256color",
     cols: cols > 0 ? cols : 120,
@@ -297,20 +454,28 @@ function spawnPty(threadId, ws, cols, rows, cwd) {
   });
   const session = {
     pty: shell,
-    ws,
+    ws: null,
     scrollback: [],
     scrollbackBytes: 0,
+    scrollbackStart: 0,
+    streamEnd: 0,
+    pendingOutput: [],
+    pendingOutputBytes: 0,
+    flushTimer: null,
     detachTimer: null
   };
   sessions.set(threadId, session);
   shell.onData((data) => {
-    appendScrollback(session, Buffer.from(data, "utf8"));
-    if (session.ws) sendPtyData(session.ws, data);
+    const bytes = Buffer.from(data, "utf8");
+    appendScrollback(session, bytes);
+    queuePtyOutput(threadId, session, bytes);
   });
   shell.onExit(({ exitCode }) => {
     const current = sessions.get(threadId);
+    if (session.ws) flushPtyOutput(threadId, session);
     if (current?.pty === shell) {
       if (current.detachTimer) clearTimeout(current.detachTimer);
+      clearPendingPtyOutput(current);
       sessions.delete(threadId);
     }
     if (session.ws) {
@@ -318,6 +483,7 @@ function spawnPty(threadId, ws, cols, rows, cwd) {
       session.ws.close(1e3, "pty exit");
     }
   });
+  adoptSession(threadId, session, ws, cols, rows, replayCursor);
 }
 function rawDataToBuffer(data) {
   if (Buffer.isBuffer(data)) return data;
@@ -339,6 +505,7 @@ function onWsMessage(threadId, data) {
     }
   } else if (tag === 5) {
     if (session.detachTimer) clearTimeout(session.detachTimer);
+    clearPendingPtyOutput(session);
     sessions.delete(threadId);
     try {
       session.pty.kill();
@@ -346,12 +513,13 @@ function onWsMessage(threadId, data) {
     }
   }
 }
-function adoptSession(session, ws, cols, rows) {
+function adoptSession(threadId, session, ws, cols, rows, replayCursor) {
   if (session.detachTimer) {
     clearTimeout(session.detachTimer);
     session.detachTimer = null;
   }
   const previous = session.ws;
+  clearPendingPtyOutput(session);
   session.ws = ws;
   if (previous && previous !== ws) {
     try {
@@ -365,32 +533,20 @@ function adoptSession(session, ws, cols, rows) {
     } catch {
     }
   }
-  if (session.scrollbackBytes > 0) {
-    sendPtyData(ws, Buffer.concat(session.scrollback).toString("utf8"));
-  }
+  replayPtyOutput(threadId, session, replayCursor);
 }
-function handlePtyConnection(ws, threadId, cols, rows, cwd) {
+function handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor) {
   const existing = sessions.get(threadId);
   if (existing) {
-    adoptSession(existing, ws, cols, rows);
+    adoptSession(threadId, existing, ws, cols, rows, replayCursor);
   } else {
-    spawnPty(threadId, ws, cols, rows, cwd);
+    spawnPty(threadId, ws, cols, rows, cwd, replayCursor);
   }
   ws.on("message", (data) => onWsMessage(threadId, data));
   ws.on("close", () => {
     const session = sessions.get(threadId);
     if (!session || session.ws !== ws) return;
-    session.ws = null;
-    if (session.detachTimer) clearTimeout(session.detachTimer);
-    session.detachTimer = setTimeout(() => {
-      const current = sessions.get(threadId);
-      if (current !== session || current.ws) return;
-      sessions.delete(threadId);
-      try {
-        session.pty.kill();
-      } catch {
-      }
-    }, DETACH_GRACE_MS);
+    detachPtyConsumer(threadId, session, ws);
   });
 }
 const dev = process.env.NODE_ENV !== "production";
@@ -442,6 +598,12 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
+  const replayCursor = parsePtyReplayCursor(query.ptyReplayCursor);
+  if (replayCursor === null) {
+    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.destroy();
+    return;
+  }
   let cwd;
   try {
     cwd = validateCwd(query.projectRoot ? String(query.projectRoot) : void 0);
@@ -453,7 +615,7 @@ server.on("upgrade", (req, socket, head) => {
   const cols = Number.parseInt(String(query.cols ?? "120"), 10);
   const rows = Number.parseInt(String(query.rows ?? "40"), 10);
   wss.handleUpgrade(req, socket, head, (ws) => {
-    handlePtyConnection(ws, threadId, cols, rows, cwd);
+    handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor);
   });
 });
 server.keepAliveTimeout = 75e3;
