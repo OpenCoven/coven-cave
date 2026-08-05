@@ -50,6 +50,12 @@ assert.match(
   "ChatRouter should render an opened session with its own familiar before the parent active familiar catches up",
 );
 
+assert.match(
+  source,
+  /<ChatView[\s\S]*?onSessionsChanged=\{onSessionsChanged\}/,
+  "ChatRouter forwards Workspace's stable session refresh callback to ChatView unchanged",
+);
+
 // ── Chat-first IA (cave-hsa6): boot into a compose view, not the list ───────
 const bootComposeEffect =
   source.match(/const bootComposeRef = useRef\(false\);[\s\S]*?\}, \[familiar\?\.id, visibleFamiliars\.length\]\);/)?.[0] ?? "";

@@ -2511,18 +2511,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const onSessionsChangedRef = useRef(onSessionsChanged);
   onSessionsChangedRef.current = onSessionsChanged;
   useEffect(() => {
-    // Restore the current callback after React's development effect replay.
-    onSessionsChangedRef.current = onSessionsChanged;
     return () => {
       displayedCreationRunIdRef.current = null;
-      // A generation may complete after this ChatView unmounts. Redirect its
-      // eventual refresh through Workspace instead of retaining this view's
-      // familiar-scoped callback.
-      onSessionsChangedRef.current = () => {
-        window.dispatchEvent(new CustomEvent("cave:sessions-refresh"));
-      };
     };
-  }, [onSessionsChanged]);
+  }, []);
   const streamHealthSessionRef = useRef(sessionId);
   const currentStreamHealthRunIdRef = useRef<string | null>(null);
   useEffect(() => {

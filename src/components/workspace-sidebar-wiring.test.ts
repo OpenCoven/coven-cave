@@ -105,12 +105,27 @@ assert.doesNotMatch(workspace, /lastNonChatMode/, "workspace should not track an
 assert.match(chatView, /setProjectAccessRoot/, "chat-view should capture failing project root on 403");
 assert.match(chatView, /async function handleAddProject/, "chat-view should implement add-project recovery");
 
-// Issue 3: Workspace registers cave:sessions-refresh listener so long-running
-// completions from an unmounted ChatView still reach the current familiar scope.
+// Workspace owns one stable refresh callback. ChatView retains that callback
+// after unmount, and its ref-backed scope lookup keeps late completions current.
+assert.doesNotMatch(
+  `${workspace}\n${chatView}`,
+  new RegExp(["cave", "sessions-refresh"].join(":")),
+  "the direct ChatView → ChatRouter → Workspace callback is the only session refresh path",
+);
 assert.match(
   workspace,
-  /useEffect\(\(\) => \{[\s\S]*?const onSessionsRefresh = \(\) => void loadSessions\(\);[\s\S]*?window\.addEventListener\("cave:sessions-refresh", onSessionsRefresh\);[\s\S]*?window\.removeEventListener\("cave:sessions-refresh", onSessionsRefresh\);[\s\S]*?\}, \[loadSessions\]\);/,
-  "workspace registers and cleans up cave:sessions-refresh against the current familiar-scoped loadSessions callback",
+  /const currentActiveId = activeIdRef\.current;\s*\n\s*const scope = currentActiveId/,
+  "loadSessions reads the current familiar scope from activeIdRef",
+);
+assert.match(
+  workspace,
+  /const loadSessions = useCallback\(\(\) => \{[\s\S]*?\n\s*\}, \[\]\);/,
+  "loadSessions has stable empty callback dependencies",
+);
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*\n\s*void loadSessions\(\);\s*\n\s*\}, \[activeId, loadSessions\]\);/,
+  "mount and each active familiar scope change explicitly reload sessions once",
 );
 
 console.log("workspace-sidebar-wiring.test.ts passed");

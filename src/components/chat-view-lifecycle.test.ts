@@ -743,8 +743,8 @@ assert.match(
 );
 assert.match(
   source,
-  /useEffect\(\(\) => \{[\s\S]*?onSessionsChangedRef\.current = onSessionsChanged;[\s\S]*?return \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;[\s\S]*?onSessionsChangedRef\.current = \(\) => \{\s*\n\s*window\.dispatchEvent\(new CustomEvent\("cave:sessions-refresh"\)\);[\s\S]*?\};\s*\n\s*\}, \[onSessionsChanged\]\);/,
-  "the current callback survives effect replay, while cleanup releases display ownership and redirects late refreshes through Workspace",
+  /const onSessionsChangedRef = useRef\(onSessionsChanged\);\s*\n\s*onSessionsChangedRef\.current = onSessionsChanged;\s*\n\s*useEffect\(\(\) => \{\s*\n\s*return \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;\s*\n\s*\};\s*\n\s*\}, \[\]\);/,
+  "the callback ref stays render-synchronized while unmount cleanup only releases compose ownership",
 );
 // Set to runId at the start of every send so resumed replacements also lose
 // promotion authority when unmount/thread-switch cleanup clears the slot.
@@ -885,12 +885,12 @@ assert.doesNotMatch(
 assert.match(
   source,
   /const onSessionsChangedRef = useRef\(onSessionsChanged\);\s*\n\s*onSessionsChangedRef\.current = onSessionsChanged;/,
-  "while mounted, the refresh ref stays synchronized to the latest callback",
+  "the retained refresh ref always points to the latest callback",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /onSessionsChangedRef\.current = \(\) => \{\s*\n\s*window\.dispatchEvent\(new CustomEvent\("cave:sessions-refresh"\)\);/,
-  "unmount replaces the familiar-scoped callback with a Workspace refresh event",
+  new RegExp(["cave", "sessions-refresh"].join(":")),
+  "ChatView uses the callback chain directly and has no session-refresh event fallback",
 );
 assert.match(
   source,

@@ -1238,8 +1238,8 @@ export function Workspace() {
 
   const loadSessions = useCallback(() => {
     // Sequence guard. loadSessions runs from mount, the 4s poll, the
-    // familiars-refresh event, and — because `activeId` is a dep — re-fires
-    // whenever the active-familiar SCOPE changes. It scopes the fetch to that
+    // active-scope effect, and child callbacks. Scope is read from
+    // activeIdRef.current so this callback stays stable while always using the
     // familiar's granted projects, so a load started under scope A that resolves
     // *after* the user switches to scope B would paint A's sessions under B
     // until the next poll healed it. A monotonic reqId (replacing the old
@@ -1260,8 +1260,9 @@ export function Workspace() {
         // contradictory versus the clean project-scoped familiar homes. Scoped
         // views already drop them via project-grant scoping, so collapse is only
         // applied to the unscoped view.
-        const scope = activeId
-          ? `?familiarId=${encodeURIComponent(activeId)}`
+        const currentActiveId = activeIdRef.current;
+        const scope = currentActiveId
+          ? `?familiarId=${encodeURIComponent(currentActiveId)}`
           : "?collapseFamiliarWorkspace=1";
         const sessionsResult = await fetch(`/api/sessions/list${scope}`, { cache: "no-store" });
         const json = await sessionsResult.json();
@@ -1292,7 +1293,7 @@ export function Workspace() {
         if (!baseSessionsApplied && isCurrent()) setSessionsLoaded(true);
       }
     })();
-  }, [activeId]);
+  }, []);
 
   const handleSessionsDeleted = useCallback((sessionIds: readonly string[]) => {
     const confirmedIds = recordDeletedSessionIds(locallyDeletedSessionIdsRef.current, sessionIds);
@@ -1318,9 +1319,11 @@ export function Workspace() {
 
   useEffect(() => {
     loadFamiliars();
-    loadSessions();
     void loadGitHubTasks();
-  }, [loadFamiliars, loadSessions, loadGitHubTasks]);
+  }, [loadFamiliars, loadGitHubTasks]);
+  useEffect(() => {
+    void loadSessions();
+  }, [activeId, loadSessions]);
   // Composers rebind a familiar's runtime through /api/config (the runtime
   // chip). Surfaces reading the roster's familiar.harness (e.g. the chat
   // empty-state identity line) shouldn't wait for the next natural reload —
@@ -1330,14 +1333,6 @@ export function Workspace() {
     window.addEventListener("cave:familiars-refresh", onFamiliarsRefresh);
     return () => window.removeEventListener("cave:familiars-refresh", onFamiliarsRefresh);
   }, [loadFamiliars]);
-  useEffect(() => {
-    // Long-running chat completions dispatch this event rather than calling a
-    // child-held callback so the current familiar-scope loadSessions is always
-    // the one that fires, even when ChatView unmounts between send and done.
-    const onSessionsRefresh = () => void loadSessions();
-    window.addEventListener("cave:sessions-refresh", onSessionsRefresh);
-    return () => window.removeEventListener("cave:sessions-refresh", onSessionsRefresh);
-  }, [loadSessions]);
   usePausablePoll(() => void loadSessions(), 4000, {
     pauseWhileInputActive: true,
   });
