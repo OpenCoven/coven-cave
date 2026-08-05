@@ -105,8 +105,8 @@ assert.doesNotMatch(workspace, /lastNonChatMode/, "workspace should not track an
 assert.match(chatView, /setProjectAccessRoot/, "chat-view should capture failing project root on 403");
 assert.match(chatView, /async function handleAddProject/, "chat-view should implement add-project recovery");
 
-// ChatView uses the stable Workspace callback directly, including for a
-// completion retained past keyed unmount.
+// ChatView uses the stable Workspace callback directly without introducing a
+// second global refresh mechanism.
 assert.doesNotMatch(
   chatView,
   /cave:sessions-refresh/,
