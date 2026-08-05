@@ -172,8 +172,18 @@ assert.doesNotMatch(
 // All user-visible constructors route through selection and preserve the root.
 assert.match(
   newChat,
-  /Section\("Project"\) \{[\s\S]*ChatProjectPicker\([\s\S]*familiarIds: selectedFamiliarIds[\s\S]*selectedRoot: \$selectedProjectRoot[\s\S]*isResolved: \$projectResolved[\s\S]*\.disabled\([\s\S]*!projectResolved[\s\S]*selectedProjectRoot == nil/,
-  "New Chat must retain project selection and remain blocked until it resolves",
+  /private var canLaunchChat: Bool \{[\s\S]*!isMissingFixedFamiliar[\s\S]*!selected\.isEmpty[\s\S]*projectResolved[\s\S]*selectedProjectRoot != nil[\s\S]*\}/,
+  "launch gating must require a live fixed familiar, selected familiars, and a resolved project",
+);
+assert.match(
+  newChat,
+  /Label\("Import from Markdown…", systemImage: "square\.and\.arrow\.down"\)[\s\S]*\.disabled\(!canLaunchChat\)[\s\S]*Button\(isGroup \? "Create" : "Start"\)\s*\{[\s\S]*\.disabled\(!canLaunchChat\)/,
+  "Import and Start controls must stay disabled until launch is allowed",
+);
+assert.match(
+  newChat,
+  /Section\("Project"\) \{[\s\S]*ChatProjectPicker\([\s\S]*familiarIds: selectedFamiliarIds[\s\S]*selectedRoot: \$selectedProjectRoot[\s\S]*isResolved: \$projectResolved[\s\S]*\)/,
+  "New Chat must retain project selection and its bindings",
 );
 assert.match(
   newChat,
@@ -187,7 +197,7 @@ assert.match(
 );
 assert.match(
   newChat,
-  /private var canLaunchChat: Bool \{[\s\S]*!isMissingFixedFamiliar[\s\S]*projectResolved[\s\S]*selectedProjectRoot != nil[\s\S]*\}/,
+  /private var canLaunchChat: Bool \{[\s\S]*!isMissingFixedFamiliar[\s\S]*!selected\.isEmpty[\s\S]*projectResolved[\s\S]*selectedProjectRoot != nil[\s\S]*\}/,
   "launch controls must stay blocked when the fixed familiar is stale",
 );
 assert.match(
@@ -212,13 +222,8 @@ assert.match(
 );
 assert.match(
   newChat,
-  /if isMissingFixedFamiliar \{[\s\S]*Section \{[\s\S]*Label\(\s*"This familiar is no longer available\."\s*,\s*systemImage:\s*"person\.crop\.circle\.badge\.exclamationmark"\)[\s\S]*Text\("Refresh Chats and try again\."\)[\s\S]*\}\s*\}\s*else \{\s*Section\("Project"\)/,
+  /if isMissingFixedFamiliar \{\s*Section \{\s*Label\(\s*"This familiar is no longer available\."\s*,\s*systemImage:\s*"person\.crop\.circle\.badge\.exclamationmark"\s*\)[\s\S]*?Text\(\s*"Refresh Chats and try again\."\s*\)[\s\S]*?\}\s*\}\s*else \{\s*Section\("Project"\) \{\s*ChatProjectPicker\([\s\S]*?selectedRoot: \$selectedProjectRoot[\s\S]*?isResolved: \$projectResolved[\s\S]*?\)\s*\}\s*\}/,
   "stale fixed familiars must show a utility message before the project section",
-);
-assert.doesNotMatch(
-  newChat,
-  /if isMissingFixedFamiliar \{[\s\S]*ChatProjectPicker\(/,
-  "missing fixed familiars must not fall back to the project chooser",
 );
 assert.match(
   newChat,
