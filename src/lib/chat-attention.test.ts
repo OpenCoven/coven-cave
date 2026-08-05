@@ -20,6 +20,7 @@ test("derives all four attention states with inclusive boundaries", () => {
           role: "assistant",
           at: "2026-08-03T20:00:00.000Z",
         },
+        latestUserTurnAt: null,
         request: null,
       },
       status: "completed",
@@ -40,6 +41,7 @@ test("derives all four attention states with inclusive boundaries", () => {
           role: "assistant",
           at: "2026-08-03T20:00:00.001Z",
         },
+        latestUserTurnAt: null,
         request: null,
       },
       status: "completed",
@@ -56,6 +58,7 @@ test("derives all four attention states with inclusive boundaries", () => {
           role: "assistant",
           at: "2026-08-04T19:59:00.000Z",
         },
+        latestUserTurnAt: null,
         request: {
           sessionId: "s1",
           turnId: "a1",
@@ -81,6 +84,7 @@ test("derives all four attention states with inclusive boundaries", () => {
           role: "assistant",
           at: "2026-08-04T19:59:00.000Z",
         },
+        latestUserTurnAt: null,
         request: {
           sessionId: "s1",
           turnId: "a1",
@@ -106,6 +110,7 @@ test("derives all four attention states with inclusive boundaries", () => {
           role: "assistant",
           at: "2026-08-04T19:59:00.000Z",
         },
+        latestUserTurnAt: null,
         request: {
           sessionId: "s1",
           turnId: "a1",
@@ -127,7 +132,7 @@ test("derives all four attention states with inclusive boundaries", () => {
   });
 });
 
-test("clears stale requests for newer user turns and active or archived sessions", () => {
+test("clears stale requests for newer user turns, even after a later assistant reply, and for active or archived sessions", () => {
   const staleRequest = {
     sessionId: "s1",
     turnId: "a1",
@@ -142,6 +147,7 @@ test("clears stale requests for newer user turns and active or archived sessions
           role: "user",
           at: "2026-08-04T18:00:00.001Z",
         },
+        latestUserTurnAt: "2026-08-04T18:00:00.001Z",
         request: staleRequest,
       },
       status: "completed",
@@ -156,8 +162,26 @@ test("clears stale requests for newer user turns and active or archived sessions
       evidence: {
         latestCompletedTurn: {
           role: "assistant",
+          at: "2026-08-04T19:30:00.000Z",
+        },
+        latestUserTurnAt: "2026-08-04T19:00:00.000Z",
+        request: staleRequest,
+      },
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+  );
+
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: {
+        latestCompletedTurn: {
+          role: "assistant",
           at: "2026-08-03T18:00:00.000Z",
         },
+        latestUserTurnAt: null,
         request: staleRequest,
       },
       status: "running",
@@ -174,6 +198,7 @@ test("clears stale requests for newer user turns and active or archived sessions
           role: "assistant",
           at: "2026-08-03T18:00:00.000Z",
         },
+        latestUserTurnAt: null,
         request: staleRequest,
       },
       status: "completed",
@@ -199,6 +224,7 @@ test("retains valid explicit attention for paused and failed sessions without in
           role: "assistant",
           at: "2026-08-04T18:00:00.000Z",
         },
+        latestUserTurnAt: null,
         request: explicit,
       },
       status: "paused",
@@ -215,6 +241,7 @@ test("retains valid explicit attention for paused and failed sessions without in
           role: "assistant",
           at: "2026-08-04T18:00:00.000Z",
         },
+        latestUserTurnAt: null,
         request: explicit,
       },
       status: "failed",
@@ -231,6 +258,7 @@ test("retains valid explicit attention for paused and failed sessions without in
           role: "assistant",
           at: "2026-08-04T18:00:00.000Z",
         },
+        latestUserTurnAt: null,
         request: null,
       },
       status: "paused",
@@ -249,6 +277,7 @@ test("fails quiet for malformed evidence", () => {
           role: "assistant",
           at: "not-a-date",
         },
+        latestUserTurnAt: null,
         request: null,
       },
       status: "completed",
@@ -262,6 +291,7 @@ test("fails quiet for malformed evidence", () => {
     deriveChatAttention({
       evidence: {
         latestCompletedTurn: null,
+        latestUserTurnAt: null,
         request: {
           sessionId: "s1",
           turnId: "a1",
@@ -280,6 +310,21 @@ test("fails quiet for malformed evidence", () => {
     deriveChatAttention({
       evidence: {
         latestCompletedTurn: null,
+        latestUserTurnAt: "not-a-date",
+        request: null,
+      },
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+  );
+
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: {
+        latestCompletedTurn: null,
+        latestUserTurnAt: null,
         request: {
           sessionId: "s1",
           turnId: "a1",
@@ -288,6 +333,30 @@ test("fails quiet for malformed evidence", () => {
         },
       },
       status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+  );
+});
+
+test("treats canonical active waiting status as no attention", () => {
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: {
+        latestCompletedTurn: {
+          role: "assistant",
+          at: "2026-08-03T18:00:00.000Z",
+        },
+        latestUserTurnAt: null,
+        request: {
+          sessionId: "s1",
+          turnId: "a1",
+          requestedAt: "2026-08-02T20:00:00.000Z",
+          reason: "approval",
+        },
+      },
+      status: "waiting",
       archivedAt: null,
       now: NOW,
     }),

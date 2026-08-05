@@ -5,6 +5,7 @@ import {
   localConversationSessionRows,
   mergeSessionRows,
 } from "./session-list-merge.ts";
+import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
 
 const state = {
   sessionFamiliar: { "local-1": "charm", "daemon-1": "cody" },
@@ -38,6 +39,7 @@ assert.deepEqual(
     archived_at: null,
     created_at: "2026-06-08T20:00:00.000Z",
     updated_at: "2026-06-08T20:05:00.000Z",
+    attention: NO_CHAT_ATTENTION,
     familiarId: "charm",
     origin: "chat",
     hasLocalConversation: true,

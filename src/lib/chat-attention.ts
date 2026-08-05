@@ -1,17 +1,11 @@
 import { CHAT_ATTENTION_REASONS } from "./chat-attention-marker.ts";
 import type { ChatAttentionReason } from "./chat-attention-marker.ts";
+import { ACTIVE_SESSION_STATUSES } from "./chat-auto-archive.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { SessionRow } from "./types.ts";
 
 const LEFT_HANGING_MS = 24 * 60 * 60 * 1000;
 const OVERDUE_HUMAN_MS = 48 * 60 * 60 * 1000;
-const ACTIVE_SESSION_STATUSES = new Set([
-  "queued",
-  "running",
-  "starting",
-  "streaming",
-  "working",
-]);
 const VALID_REASON_SET = new Set<string>(CHAT_ATTENTION_REASONS);
 
 export type ChatAttentionState =
@@ -28,6 +22,7 @@ export type ChatAttention = {
 
 export type ChatAttentionEvidence = {
   latestCompletedTurn: { role: "user" | "assistant"; at: string } | null;
+  latestUserTurnAt: string | null;
   request: ChatResponseMetadata["attentionRequest"] | null;
 };
 
@@ -55,9 +50,15 @@ export function deriveChatAttention(args: {
 
   const latest = normalizeLatestCompletedTurn(evidence.latestCompletedTurn, nowMs);
   if (evidence.latestCompletedTurn && latest === null) return NO_CHAT_ATTENTION;
+  const latestUserTurnAtMs = normalizeLatestUserTurnAt(evidence.latestUserTurnAt, nowMs);
+  if (evidence.latestUserTurnAt && latestUserTurnAtMs === null) return NO_CHAT_ATTENTION;
 
   const request = normalizeAttentionRequest(evidence.request, nowMs);
   if (evidence.request && request === null) return NO_CHAT_ATTENTION;
+
+  if (request && latestUserTurnAtMs !== null && latestUserTurnAtMs > request.requestedAtMs) {
+    return NO_CHAT_ATTENTION;
+  }
 
   if (latest?.role === "user" && request && latest.atMs > request.requestedAtMs) {
     return NO_CHAT_ATTENTION;
@@ -180,6 +181,13 @@ function normalizeAttentionRequest(
     requestedAtMs,
     reason: value.reason as ChatAttentionReason,
   };
+}
+
+function normalizeLatestUserTurnAt(value: ChatAttentionEvidence["latestUserTurnAt"], nowMs: number): number | null {
+  if (value == null) return null;
+  const atMs = parseFiniteIso(value);
+  if (atMs === null || atMs > nowMs) return null;
+  return atMs;
 }
 
 function parseFiniteIso(value: string | null | undefined): number | null {
