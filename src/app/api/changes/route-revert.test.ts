@@ -1,7 +1,8 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { access, chmod, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import fs from "node:fs";
+import { access, chmod, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const originalCwd = process.cwd();
@@ -79,6 +80,25 @@ function checkpointRequest(
     headers: { "content-type": "application/json", host: "127.0.0.1" },
     body: JSON.stringify({ action, projectRoot: root, checkpoint }),
   });
+}
+
+async function withRenameSyncHook(
+  hook: (
+    source: string,
+    destination: string,
+    rename: typeof fs.renameSync,
+  ) => void,
+  action: () => Promise<Response>,
+): Promise<Response> {
+  const renameSync = fs.renameSync;
+  fs.renameSync = ((source, destination) => {
+    hook(String(source), String(destination), renameSync);
+  }) as typeof fs.renameSync;
+  try {
+    return await action();
+  } finally {
+    fs.renameSync = renameSync;
+  }
 }
 
 await rm(artifactRoot, { recursive: true, force: true });
@@ -400,6 +420,192 @@ try {
   await access(revertedBody.checkpointPath);
   await access(`${revertedBody.checkpointPath}.scope.json`);
 
+  const checkpointDir = path.dirname(revertedBody.checkpointPath);
+  const checkpointContents = await readFile(revertedBody.checkpointPath);
+  const metadataContents = await readFile(`${revertedBody.checkpointPath}.scope.json`);
+  const cloneCheckpoint = async (name: string, includeMetadata = true) => {
+    const checkpointPath = path.join(checkpointDir, name);
+    const metadataPath = `${checkpointPath}.scope.json`;
+    await writeFile(checkpointPath, checkpointContents);
+    if (includeMetadata) await writeFile(metadataPath, metadataContents);
+    return { checkpointPath, metadataPath };
+  };
+
+  const checkpointRaceName = "2026-08-05T17-20-00-001Z.patch";
+  const checkpointRace = await cloneCheckpoint(checkpointRaceName);
+  const heldCheckpoint = `${checkpointRace.checkpointPath}.attacker-held`;
+  let checkpointReplacementInjected = false;
+  const checkpointRaceDelete = await withRenameSyncHook(
+    (source, destination, rename) => {
+      if (!checkpointReplacementInjected && source === checkpointRace.checkpointPath) {
+        checkpointReplacementInjected = true;
+        rename(source, heldCheckpoint);
+        fs.writeFileSync(source, "replacement checkpoint\n");
+      }
+      rename(source, destination);
+    },
+    () => POST(checkpointRequest("delete-checkpoint", projectRoot, checkpointRaceName)),
+  );
+  assert.equal(
+    checkpointRaceDelete.status,
+    500,
+    "a checkpoint replacement between inspection and quarantine aborts deletion",
+  );
+  assert.equal(
+    await readFile(checkpointRace.checkpointPath, "utf8"),
+    "replacement checkpoint\n",
+    "the unverified checkpoint replacement is restored rather than deleted",
+  );
+  assert.deepEqual(
+    await readFile(heldCheckpoint),
+    checkpointContents,
+    "the inspected checkpoint displaced by the race remains untouched",
+  );
+  assert.deepEqual(
+    await readFile(checkpointRace.metadataPath),
+    metadataContents,
+    "checkpoint replacement rollback leaves paired metadata untouched",
+  );
+
+  const metadataRaceName = "2026-08-05T17-20-00-002Z.patch";
+  const metadataRace = await cloneCheckpoint(metadataRaceName);
+  const heldMetadata = `${metadataRace.metadataPath}.attacker-held`;
+  let metadataReplacementInjected = false;
+  const metadataRaceDelete = await withRenameSyncHook(
+    (source, destination, rename) => {
+      if (!metadataReplacementInjected && source === metadataRace.metadataPath) {
+        metadataReplacementInjected = true;
+        rename(source, heldMetadata);
+        fs.writeFileSync(source, '{"version":1,"kind":"revert-target","projectRoot":"/replacement","targetProjectRelativePath":"outside","targetGitPath":"outside"}');
+      }
+      rename(source, destination);
+    },
+    () => POST(checkpointRequest("delete-checkpoint", projectRoot, metadataRaceName)),
+  );
+  assert.equal(
+    metadataRaceDelete.status,
+    500,
+    "a metadata replacement between authorization and quarantine aborts deletion",
+  );
+  assert.deepEqual(
+    await readFile(metadataRace.checkpointPath),
+    checkpointContents,
+    "metadata replacement rollback restores the verified checkpoint",
+  );
+  assert.match(
+    await readFile(metadataRace.metadataPath, "utf8"),
+    /"projectRoot":"\/replacement"/,
+    "the unverified metadata replacement is restored rather than deleted",
+  );
+  assert.deepEqual(
+    await readFile(heldMetadata),
+    metadataContents,
+    "the authorized metadata displaced by the race remains untouched",
+  );
+
+  const partialRenameName = "2026-08-05T17-20-00-003Z.patch";
+  const partialRename = await cloneCheckpoint(partialRenameName);
+  const partialRenameDelete = await withRenameSyncHook(
+    (source, destination, rename) => {
+      if (source === partialRename.metadataPath) {
+        const error = new Error("injected metadata rename failure") as NodeJS.ErrnoException;
+        error.code = "EIO";
+        throw error;
+      }
+      rename(source, destination);
+    },
+    () => POST(checkpointRequest("delete-checkpoint", projectRoot, partialRenameName)),
+  );
+  assert.equal(
+    partialRenameDelete.status,
+    500,
+    "a paired metadata rename failure aborts deletion",
+  );
+  assert.deepEqual(
+    await readFile(partialRename.checkpointPath),
+    checkpointContents,
+    "a partial paired rename restores the checkpoint",
+  );
+  assert.deepEqual(
+    await readFile(partialRename.metadataPath),
+    metadataContents,
+    "a partial paired rename preserves metadata",
+  );
+
+  const rollbackConflictName = "2026-08-05T17-20-00-006Z.patch";
+  const rollbackConflict = await cloneCheckpoint(rollbackConflictName);
+  const rollbackConflictDelete = await withRenameSyncHook(
+    (source, destination, rename) => {
+      if (source === rollbackConflict.metadataPath) {
+        fs.writeFileSync(rollbackConflict.checkpointPath, "rollback replacement\n");
+        const error = new Error("injected paired rename failure") as NodeJS.ErrnoException;
+        error.code = "EIO";
+        throw error;
+      }
+      rename(source, destination);
+    },
+    () => POST(checkpointRequest("delete-checkpoint", projectRoot, rollbackConflictName)),
+  );
+  assert.equal(
+    rollbackConflictDelete.status,
+    500,
+    "a replacement arriving before rollback keeps the partial rename failed",
+  );
+  assert.equal(
+    await readFile(rollbackConflict.checkpointPath, "utf8"),
+    "rollback replacement\n",
+    "rollback never overwrites an unverified replacement at the public path",
+  );
+  const retainedQuarantines = (await readdir(checkpointDir, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(".delete-"))
+    .map((entry) => path.join(checkpointDir, entry.name, "checkpoint.patch"));
+  assert.equal(retainedQuarantines.length, 1);
+  assert.deepEqual(
+    await readFile(retainedQuarantines[0]),
+    checkpointContents,
+    "a verified checkpoint that cannot be restored remains safely quarantined",
+  );
+
+  const legacyName = "2026-08-05T17-20-00-004Z.patch";
+  const legacyCheckpoint = await cloneCheckpoint(legacyName, false);
+  const legacyDelete = await POST(
+    checkpointRequest("delete-checkpoint", projectRoot, legacyName),
+  );
+  assert.equal(legacyDelete.status, 200, await legacyDelete.clone().text());
+  await assert.rejects(
+    () => access(legacyCheckpoint.checkpointPath),
+    "authorized legacy checkpoints without metadata remain deletable",
+  );
+
+  const legacyRaceName = "2026-08-05T17-20-00-005Z.patch";
+  const legacyRace = await cloneCheckpoint(legacyRaceName, false);
+  let legacyMetadataInjected = false;
+  const legacyRaceDelete = await withRenameSyncHook(
+    (source, destination, rename) => {
+      if (!legacyMetadataInjected && source === legacyRace.checkpointPath) {
+        legacyMetadataInjected = true;
+        fs.writeFileSync(legacyRace.metadataPath, '{"replacement":true}');
+      }
+      rename(source, destination);
+    },
+    () => POST(checkpointRequest("delete-checkpoint", projectRoot, legacyRaceName)),
+  );
+  assert.equal(
+    legacyRaceDelete.status,
+    500,
+    "metadata appearing after a legacy checkpoint inspection aborts deletion",
+  );
+  assert.deepEqual(
+    await readFile(legacyRace.checkpointPath),
+    checkpointContents,
+    "legacy metadata races restore the verified checkpoint",
+  );
+  assert.equal(
+    await readFile(legacyRace.metadataPath, "utf8"),
+    '{"replacement":true}',
+    "metadata that appeared during legacy deletion is preserved",
+  );
+
   const authorizedDelete = await POST(
     checkpointRequest("delete-checkpoint", projectRoot, checkpointName),
   );
@@ -411,6 +617,14 @@ try {
   await assert.rejects(
     () => access(`${revertedBody.checkpointPath}.scope.json`),
     "an authorized delete removes its scope metadata",
+  );
+  const repeatedDelete = await POST(
+    checkpointRequest("delete-checkpoint", projectRoot, checkpointName),
+  );
+  assert.equal(
+    repeatedDelete.status,
+    200,
+    "repeating an already completed checkpoint deletion is idempotent",
   );
 
   for (const targetPath of [
