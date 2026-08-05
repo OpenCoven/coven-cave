@@ -35,11 +35,17 @@ try {
   delete process.env.NEXT_PUBLIC_WORKSPACE_ROOT;
   const canonical = path.join(process.env.COVEN_HOME, "workspaces", "familiars", "sage");
   const savedProjectRoot = path.join(tmp, "Documents", "GitHub", "OpenCoven", "coven-docs");
+  const backslashProjectRoot = path.join(tmp, "repo", "packages", "app\\name");
+  const slashCollisionRoot = path.join(tmp, "repo", "packages", "app", "name");
+  const whitespaceProjectRoot = path.join(tmp, "repo", "packages", "space ");
   const openclawWorkspaceRoot = path.join(tmp, ".openclaw", "workspace");
   process.env.OPENCLAW_WORKSPACE_ROOT = openclawWorkspaceRoot;
   await mkdir(canonical, { recursive: true });
   const sensitiveFileRoot = path.join(tmp, "sensitive-config");
   await mkdir(path.join(savedProjectRoot, "docs"), { recursive: true });
+  await mkdir(backslashProjectRoot, { recursive: true });
+  await mkdir(slashCollisionRoot, { recursive: true });
+  await mkdir(whitespaceProjectRoot, { recursive: true });
   await writeFile(sensitiveFileRoot, "SECRET\n");
   await mkdir(path.join(openclawWorkspaceRoot, "agent-other", "private"), { recursive: true });
   await writeFile(
@@ -49,6 +55,8 @@ try {
       projects: [
         { id: "docs", name: "Coven Docs", root: savedProjectRoot },
         { id: "sensitive", name: "Sensitive", root: sensitiveFileRoot },
+        { id: "backslash", name: "Backslash", root: backslashProjectRoot },
+        { id: "space", name: "Space", root: whitespaceProjectRoot },
       ],
     }),
   );
@@ -67,6 +75,23 @@ try {
     await realpath(path.join(savedProjectRoot, "docs")),
     "saved Cave project roots are allowed for file tree browsing",
   );
+  if (process.platform !== "win32") {
+    assert.equal(
+      resolveAllowedProjectPath(backslashProjectRoot),
+      await realpath(backslashProjectRoot),
+      "a POSIX backslash remains part of the authorized filename",
+    );
+    assert.equal(
+      resolveAllowedProjectPath(slashCollisionRoot),
+      null,
+      "the slash spelling cannot collide with a backslash-named POSIX project",
+    );
+    assert.equal(
+      resolveAllowedProjectPath(whitespaceProjectRoot),
+      await realpath(whitespaceProjectRoot),
+      "significant trailing whitespace remains part of a POSIX project root",
+    );
+  }
   assert.equal(
     isAllowedNewProjectRoot(savedProjectRoot),
     true,

@@ -62,6 +62,16 @@ assert.match(
   /const\s+name\s*=\s*String\(body\.name\s*\?\?\s*""\)\.trim\(\);/,
   "POST /api/projects should store the display name with only its ends trimmed",
 );
+assert.match(
+  listRoute,
+  /const\s+root\s*=\s*typeof body\.root === "string" \? body\.root : "";/,
+  "POST /api/projects should preserve filesystem-significant root whitespace",
+);
+assert.doesNotMatch(
+  listRoute,
+  /const\s+root\s*=[^;]*\.trim\(\)/,
+  "POST /api/projects must not trim a filesystem authorization value",
+);
 assert.match(listRoute, /isAllowedNewProjectRoot\(root\)/, "POST /api/projects should validate roots before persisting them");
 assert.equal(
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
@@ -116,6 +126,16 @@ assert.match(
   /export async function POST\(req: Request\)\s*\{\s*const denied = rejectNonLocalRequest\(req\);/,
   "POST /api/projects must enforce loopback before registering \$HOME-scoped roots",
 );
+assert.match(
+  listRoute,
+  /export async function PATCH\(req: Request\)\s*\{\s*const denied = rejectNonLocalRequest\(req\);/,
+  "root-migration acknowledgments must be local-only",
+);
+assert.match(
+  listRoute,
+  /acknowledgeProjectRootMigrations\(migrations\)/,
+  "PATCH /api/projects should clean aliases only through the bounded acknowledgment API",
+);
 assert.doesNotMatch(
   listRoute,
   /export async function GET\(req: Request\)\s*\{\s*const denied = rejectNonLocalRequest/,
@@ -124,7 +144,12 @@ assert.doesNotMatch(
 
 assert.match(itemRoute, /export async function PUT/, "project item route should expose PUT");
 assert.match(itemRoute, /export async function DELETE/, "project item route should expose DELETE");
-assert.match(itemRoute, /isAllowedNewProjectRoot\(trimmed\)/, "PUT /api/projects/[id] should validate root patches before persisting them");
+assert.match(itemRoute, /isAllowedNewProjectRoot\(body\.root\)/, "PUT /api/projects/[id] should validate exact root patches before persisting them");
+assert.doesNotMatch(
+  itemRoute,
+  /const\s+trimmed\s*=\s*body\.root\.trim\(\)/,
+  "PUT /api/projects/[id] must not trim a filesystem authorization value",
+);
 assert.match(
   itemRoute,
   /from "@\/lib\/project-root-guidance"/,

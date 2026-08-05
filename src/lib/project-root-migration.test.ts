@@ -12,6 +12,9 @@
  * SCOPE, corrected against the code rather than the bead:
  *   - IDB projectAvatars    keyed BY root      -> re-key
  *   - cave:chat:project-overrides  root is the VALUE -> rewrite values
+ *   - cave:project-frecency root is the KEY -> re-key and merge history
+ *   - group chats, new-session default, and chat project filters keyed by
+ *     project id -> rewrite values
  *   - comux pins + order    DOES NOT EXIST — the comux surface was deleted
  *     (cave-c3yt), so there is nothing to migrate and no test for it here.
  *     A migration for a store that has not existed for months would pass
@@ -21,10 +24,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const store = new Map();
+let denyLocalStorageWrites = false;
+let denyLocalStorageReads = false;
 globalThis.window = {
   localStorage: {
-    getItem: (k) => (store.has(k) ? store.get(k) : null),
-    setItem: (k, v) => store.set(k, String(v)),
+    getItem: (k) => {
+      if (denyLocalStorageReads) throw new DOMException("Storage is disabled.", "SecurityError");
+      return store.has(k) ? store.get(k) : null;
+    },
+    setItem: (k, v) => {
+      if (denyLocalStorageWrites) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+      store.set(k, String(v));
+    },
     removeItem: (k) => store.delete(k),
   },
   addEventListener: () => {},
@@ -121,7 +132,11 @@ await images.whenProjectImagesHydrated();
 const { CHAT_PROJECT_OVERRIDES_KEY, readProjectOverrides } = await import(
   "./chat-project-overrides.ts"
 );
-const { migrateProjectRootKeys } = await import("./project-root-migration.ts");
+const {
+  migrateAndAcknowledgeProjectRoots,
+  migrateProjectRootKeys,
+  projectRootMigrationAcknowledgements,
+} = await import("./project-root-migration.ts");
 
 const LEGACY = "~/code/app";
 const EXPANDED = "/home/dev/code/app";
@@ -193,8 +208,12 @@ const PROJECTS = [
 
 {
   // The acceptance criterion, demonstrated rather than assumed: an existing
-  // profile keeps its avatar and its override across the upgrade.
+  // profile keeps its avatar, override, and picker history across the upgrade.
   await seed();
+  store.set(
+    "cave:project-frecency:v1",
+    JSON.stringify({ [LEGACY]: { picks: 4, lastPickedAt: 100 } }),
+  );
   const moved = await migrateProjectRootKeys(PROJECTS);
 
   assert.equal(idb.projectAvatars.has(EXPANDED), true, "avatar follows the root");
@@ -211,6 +230,11 @@ const PROJECTS = [
     overrides["session-b"],
     "/untouched/root",
     "an unrelated override is left exactly alone",
+  );
+  assert.deepEqual(
+    JSON.parse(store.get("cave:project-frecency:v1")),
+    { [EXPANDED]: { picks: 4, lastPickedAt: 100 } },
+    "project picker history follows the canonical root before acknowledgment",
   );
   assert.equal(moved, 1, "reports how many roots it followed");
 }
@@ -278,18 +302,98 @@ const PROJECTS = [
 }
 
 {
+  store.set(
+    "cave:group-chat:groups:v1",
+    JSON.stringify([{ id: "g1", projectId: "duplicate-old" }]),
+  );
+  store.set(
+    "cave:chat:new-session-defaults:v1",
+    JSON.stringify({ projectId: "duplicate-old" }),
+  );
+  store.set("cave:chat:project-selected", JSON.stringify("duplicate-old"));
+  store.set(
+    "cave:chat:project-sidebar-expanded",
+    JSON.stringify(["duplicate-old", "duplicate-survivor", "root:/untouched"]),
+  );
+  await migrateProjectRootKeys([
+    {
+      id: "duplicate-survivor",
+      root: "/canonical/project",
+      legacyProjectIds: ["duplicate-old"],
+    },
+  ]);
+  assert.equal(
+    JSON.parse(store.get("cave:group-chat:groups:v1"))[0]?.projectId,
+    "duplicate-survivor",
+    "persisted group chats follow a deduped project's losing id",
+  );
+  assert.equal(
+    JSON.parse(store.get("cave:chat:new-session-defaults:v1"))?.projectId,
+    "duplicate-survivor",
+    "the persisted new-session default follows the same id migration",
+  );
+  assert.equal(
+    JSON.parse(store.get("cave:chat:project-selected")),
+    "duplicate-survivor",
+    "the persisted chat project selection follows the same id migration",
+  );
+  assert.deepEqual(
+    JSON.parse(store.get("cave:chat:project-sidebar-expanded")),
+    ["duplicate-survivor", "root:/untouched"],
+    "expanded project ids migrate without introducing duplicate sidebar keys",
+  );
+}
+
+{
   // A write failure must not destroy the old record. moveProjectImage writes
   // the new key first and deletes the old only on success; the migration has
-  // to preserve that ordering rather than delete-then-write.
+  // to preserve that ordering rather than delete-then-write. It must also
+  // reject so the caller cannot acknowledge away the server's retry metadata.
   await seed();
   denyWrites = true;
-  await migrateProjectRootKeys(PROJECTS);
+  await assert.rejects(
+    () => migrateProjectRootKeys(PROJECTS),
+    /avatar/i,
+    "storage failure is surfaced to the asynchronous migration caller",
+  );
   denyWrites = false;
   assert.equal(
     idb.projectAvatars.has(LEGACY),
     true,
     "a failed write leaves the avatar under its old key rather than losing it",
   );
+  assert.equal(
+    await migrateProjectRootKeys(PROJECTS),
+    1,
+    "the retained alias makes a later retry complete normally",
+  );
+}
+
+{
+  await seed();
+  denyLocalStorageWrites = true;
+  await assert.rejects(
+    () => migrateProjectRootKeys(PROJECTS),
+    /override/i,
+    "a quota failure in the override store is surfaced rather than acknowledged",
+  );
+  denyLocalStorageWrites = false;
+  assert.equal(readProjectOverrides()["session-a"], LEGACY, "the failed override remains retryable");
+  assert.equal(await migrateProjectRootKeys(PROJECTS), 1);
+  assert.equal(readProjectOverrides()["session-a"], EXPANDED);
+}
+
+{
+  await seed();
+  denyLocalStorageReads = true;
+  await assert.rejects(
+    () => migrateProjectRootKeys(PROJECTS),
+    /override/i,
+    "an unreadable override store is surfaced instead of mistaken for an empty store",
+  );
+  denyLocalStorageReads = false;
+  assert.equal(await migrateProjectRootKeys(PROJECTS), 1);
+  assert.equal(readProjectOverrides()["session-a"], EXPANDED);
 }
 
 {
@@ -303,26 +407,56 @@ const PROJECTS = [
 }
 
 
-// ── legacyRoot must never reach disk (review on #4185) ─────────────────────
-// loadProjectsUnlocked attaches legacyRoot in memory, and every mutation path
-// persists the array it returned — so a marker documented as "response-only"
-// was being written to projects.json on the first create/patch/delete after an
-// upgrade, and then re-attached forever. Documenting the intent is not the
-// same as enforcing it; saveProjects strips the field, and this asserts the
-// strip rather than the comment.
+// Pending root aliases are durable retry metadata. Removing them in
+// saveProjects lets any unrelated mutation race the asynchronous browser move
+// and make a failed avatar/override migration unrecoverable.
 {
   const src = readFileSync(new URL("./cave-projects.ts", import.meta.url), "utf8");
   const save = src.match(/async function saveProjects\([\s\S]*?\n\}/)?.[0] ?? "";
   assert.ok(save, "saveProjects is findable");
-  assert.match(
-    save,
-    /legacyRoot: _legacyRoot,\s*legacyRoots: _legacyRoots,\s*\.\.\.project/,
-    "saveProjects strips every legacy-root marker before writing",
-  );
   assert.doesNotMatch(
     save,
-    /projects: projects,?\n/,
-    "the raw array is never handed to the writer",
+    /legacyRoot: _legacyRoot,\s*legacyRoots: _legacyRoots,\s*\.\.\.project/,
+    "saveProjects never strips retry metadata before client acknowledgment",
+  );
+}
+
+assert.deepEqual(
+  projectRootMigrationAcknowledgements(PROJECTS),
+  [{ projectId: "p1", legacyRoots: [LEGACY] }],
+  "successful migrations produce the exact bounded acknowledgment payload",
+);
+
+{
+  const acknowledgements = [];
+  await migrateAndAcknowledgeProjectRoots(PROJECTS, {
+    migrate: async () => 0,
+    acknowledge: async (payload) => {
+      acknowledgements.push(payload);
+    },
+  });
+  assert.deepEqual(
+    acknowledgements,
+    [[{ projectId: "p1", legacyRoots: [LEGACY] }]],
+    "the client acknowledges aliases even when no legacy value remained to move",
+  );
+
+  let failedAcknowledgements = 0;
+  await assert.rejects(
+    () => migrateAndAcknowledgeProjectRoots(PROJECTS, {
+      migrate: async () => {
+        throw new Error("storage unavailable");
+      },
+      acknowledge: async () => {
+        failedAcknowledgements += 1;
+      },
+    }),
+    /storage unavailable/,
+  );
+  assert.equal(
+    failedAcknowledgements,
+    0,
+    "a failed local migration never asks the server to clean up retry aliases",
   );
 }
 

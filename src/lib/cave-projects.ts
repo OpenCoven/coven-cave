@@ -31,30 +31,44 @@ function projectsFilePath(): string {
   );
 }
 
+function isPortableWindowsRoot(root: string): boolean {
+  const trimmed = root.trim();
+  return (
+    /^[A-Za-z]:(?:[\\/]|$)/.test(trimmed) ||
+    /^(?:\\\\|\/\/)[^\\/]+[\\/][^\\/]+/.test(trimmed)
+  );
+}
+
 /**
- * Server-side project root: {@link normalizeProjectRoot} PLUS `~` expansion.
- *
- * Deliberately NOT merged into the display normalizer (cave-zz12). Expanding
- * `~` changes what a root normalizes to, and roots are the keys of persisted
- * stores — IDB projectAvatars, cave:chat:project-overrides, comux pins and
- * order — so folding this into the shared normalizer silently re-keys them and
- * avatars and pins vanish for existing users. Unifying the two needs a
- * migration pass, tracked separately; until then the divergence is explicit
- * and named rather than an anonymous private duplicate.
- *
- * Not a security boundary either: resolveAllowedProjectPath / trustedProjectCwd
- * do their own validation and must not be routed through any display path.
+ * Normalize persisted server roots without applying cross-platform display
+ * parsing to a native POSIX path. On POSIX, `\` and edge whitespace are valid
+ * filename characters; Windows-looking roots retain the portable registry
+ * behavior used when displaying projects from another platform.
  */
 function normalizeRootExpandingHome(root: string): string {
-  let trimmed = root.trim();
-  // Expand a leading ~ — a manually-typed ~/code/app was stored literally and
-  // never matched the daemon's absolute project_root, so Sessions/Git/Tasks
-  // stayed empty and the project looked dead (cave-psp8).
-  if (trimmed === "~") trimmed = homedir();
-  else if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
-    trimmed = path.join(homedir(), trimmed.slice(2));
+  if (process.platform === "win32" || isPortableWindowsRoot(root)) {
+    let portable = root.trim();
+    if (portable === "~") portable = homedir();
+    else if (portable.startsWith("~/") || portable.startsWith("~\\")) {
+      portable = path.join(homedir(), portable.slice(2));
+    }
+    return normalizeSharedProjectRoot(portable);
   }
-  return normalizeSharedProjectRoot(trimmed);
+
+  let native = root;
+  if (native === "~") native = homedir();
+  else if (native.startsWith("~/")) native = path.posix.join(homedir(), native.slice(2));
+  native = path.posix.normalize(native);
+  while (native.length > 1 && native.endsWith("/")) native = native.slice(0, -1);
+  return native;
+}
+
+function serverProjectRootIdentity(root: string): string {
+  const normalized = normalizeRootExpandingHome(root);
+  if (process.platform !== "win32" && !isPortableWindowsRoot(normalized)) {
+    return `posix:${normalized}`;
+  }
+  return projectPathIdentityKey(normalized) ?? normalized;
 }
 
 function nanoid(len = 10): string {
@@ -109,13 +123,14 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
     // expanded root since cave-psp8, but records written before that still
     // hold a literal `~/...`, so the same folder reaches clients as two
     // different strings depending on when it was added — and roots are the
-    // keys of the client's avatar, chat-override and comux stores.
+    // keys of the client's avatar and chat-override stores.
     //
     // The display normalizer deliberately does NOT expand `~`: it runs in the
     // browser, which has no home directory. So the split is closed here, on
     // the side that knows the homedir, rather than by shipping one to the
     // client. `legacyRoots` carries every collapsed old key so the client can
-    // re-key what it already stored; the markers are response-only.
+    // re-key what it already stored. Aliases stay durable until the client
+    // explicitly acknowledges that every local migration succeeded.
     const normalizedProjects = parsed.projects.map((project) => {
       const expanded = normalizeRootExpandingHome(project.root);
       const aliases = new Set([
@@ -135,7 +150,11 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
       }
       return normalized;
     });
-    return dedupeByRoot(normalizedProjects, normalizeRootExpandingHome);
+    return dedupeByRoot(
+      normalizedProjects,
+      normalizeRootExpandingHome,
+      serverProjectRootIdentity,
+    );
   } catch {
     return [];
   }
@@ -161,23 +180,60 @@ export function withProjectRegistryLock<T>(
 }
 
 async function saveProjects(projects: CaveProject[]): Promise<void> {
-  // Strip legacy-root markers before they reach disk. loadProjectsUnlocked
-  // attaches them in memory so the client can follow every moved root, and
-  // every mutation path (create/patch/delete) writes back the array that load
-  // returned. Without this strip the transitional marker would persist and be
-  // re-attached on
-  // the next read of a record that no longer needs it. A response-only field
-  // has to be stripped at the boundary that writes, not merely documented as
-  // response-only.
   const file: ProjectsFile = {
     version: 1,
-    projects: projects.map(({
-      legacyRoot: _legacyRoot,
-      legacyRoots: _legacyRoots,
-      ...project
-    }) => project),
+    projects,
   };
   await writeProjectsFile(projectsFilePath(), JSON.stringify(file, null, 2));
+}
+
+export type ProjectRootMigrationAcknowledgement = {
+  projectId: string;
+  legacyRoots: string[];
+};
+
+/** Remove only aliases the client confirms it migrated successfully. */
+export function acknowledgeProjectRootMigrations(
+  acknowledgements: readonly ProjectRootMigrationAcknowledgement[],
+): Promise<void> {
+  return withProjectsStore(() => withWriteMutex(async () => {
+    if (!acknowledgements.length) return;
+    const projects = await loadProjectsUnlocked();
+    let changed = false;
+    for (const acknowledgement of acknowledgements) {
+      if (
+        !acknowledgement ||
+        typeof acknowledgement.projectId !== "string" ||
+        !Array.isArray(acknowledgement.legacyRoots)
+      ) {
+        continue;
+      }
+      const project = projects.find((entry) => entry.id === acknowledgement.projectId);
+      if (!project) continue;
+      const completed = new Set(
+        acknowledgement.legacyRoots.filter(
+          (root): root is string => typeof root === "string",
+        ),
+      );
+      const current = [
+        ...new Set([
+          ...(project.legacyRoots ?? []),
+          ...(project.legacyRoot ? [project.legacyRoot] : []),
+        ]),
+      ];
+      const pending = current.filter((root) => !completed.has(root));
+      if (pending.length === current.length) continue;
+      changed = true;
+      if (pending.length) {
+        project.legacyRoot = pending[0];
+        project.legacyRoots = pending;
+      } else {
+        delete project.legacyRoot;
+        delete project.legacyRoots;
+      }
+    }
+    if (changed) await saveProjects(projects);
+  }));
 }
 
 export function createProject(input: {
@@ -190,7 +246,7 @@ export function createProject(input: {
   return withProjectsStore(() => withWriteMutex(async () => {
     const projects = await loadProjectsUnlocked();
     const root = normalizeRootExpandingHome(input.root);
-    const rootIdentity = projectPathIdentityKey(root) ?? root;
+    const rootIdentity = serverProjectRootIdentity(root);
     // One project per root. Creating at an already-registered root would persist
     // a duplicate on disk that the UI hides via dedupeProjectsByRoot but the
     // server (projectById / trustedProjectCwd) can still resolve to — a
@@ -198,8 +254,7 @@ export function createProject(input: {
     // ("this folder is already a project → here it is").
     const existing = projects.find(
       (entry) =>
-        (projectPathIdentityKey(normalizeRootExpandingHome(entry.root)) ??
-          normalizeRootExpandingHome(entry.root)) === rootIdentity,
+        serverProjectRootIdentity(entry.root) === rootIdentity,
     );
     if (existing) return existing;
     const now = new Date().toISOString();
@@ -236,12 +291,11 @@ export function patchProject(
     let nextRoot = current.root;
     if (patch.root !== undefined) {
       const candidate = normalizeRootExpandingHome(patch.root);
-      const candidateIdentity = projectPathIdentityKey(candidate) ?? candidate;
+      const candidateIdentity = serverProjectRootIdentity(candidate);
       const collides = projects.some(
         (entry) =>
           entry.id !== id &&
-          (projectPathIdentityKey(normalizeRootExpandingHome(entry.root)) ??
-            normalizeRootExpandingHome(entry.root)) === candidateIdentity,
+          serverProjectRootIdentity(entry.root) === candidateIdentity,
       );
       if (!collides) nextRoot = candidate;
     }
@@ -287,10 +341,9 @@ export function projectForRoot(
 ): CaveProject | null {
   if (!root?.trim()) return null;
   const normalized = normalizeRootExpandingHome(root);
-  const identity = projectPathIdentityKey(normalized) ?? normalized;
+  const identity = serverProjectRootIdentity(normalized);
   return projects.find((project) => {
-    const projectRoot = normalizeRootExpandingHome(project.root);
-    return (projectPathIdentityKey(projectRoot) ?? projectRoot) === identity;
+    return serverProjectRootIdentity(project.root) === identity;
   }) ?? null;
 }
 
@@ -299,7 +352,11 @@ export function projectById(
   projects: CaveProject[],
 ): CaveProject | null {
   if (!id) return null;
-  return projects.find((project) => project.id === id) ?? null;
+  return (
+    projects.find((project) => project.id === id) ??
+    projects.find((project) => project.legacyProjectIds?.includes(id) === true) ??
+    null
+  );
 }
 
 /**

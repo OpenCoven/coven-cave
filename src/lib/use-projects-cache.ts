@@ -72,10 +72,21 @@ let rootMoveMigration: Promise<unknown> | null = null;
 function followRootMoves(projects: readonly CaveProject[]): void {
   if (typeof window === "undefined") return;
   if (rootMoveMigration) return; // one at a time; a concurrent fetch is not a second migration
-  if (!projects.some((project) => project.legacyRoot)) return;
+  if (
+    !projects.some(
+      (project) =>
+        project.legacyRoot ||
+        project.legacyRoots?.length ||
+        project.legacyProjectIds?.length,
+    )
+  ) {
+    return;
+  }
   rootMoveMigration = import("./project-root-migration.ts")
-    .then((mod) => mod.migrateProjectRootKeys(projects))
-    .catch(() => 0)
+    .then((mod) => mod.migrateAndAcknowledgeProjectRoots(projects))
+    .catch((error) => {
+      console.error("project migration failed; pending aliases will retry", error);
+    })
     .finally(() => {
       rootMoveMigration = null;
     });

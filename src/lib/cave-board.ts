@@ -24,7 +24,7 @@ import {
   normalizeTaskAsanaLinks,
   taskAsanaLinkFromUrl,
 } from "@/lib/task-asana";
-import { loadProjects, projectForRoot } from "@/lib/cave-projects";
+import { loadProjects, projectById, projectForRoot } from "@/lib/cave-projects";
 import {
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
@@ -188,7 +188,13 @@ function backfillCard(c: Card | LegacyCard): Card {
 }
 
 function migrateProjectId(card: Card, projects: Awaited<ReturnType<typeof loadProjects>>): Card {
-  if (card.projectId || !card.cwd) return card;
+  if (card.projectId) {
+    const project = projectById(card.projectId, projects);
+    return project && project.id !== card.projectId
+      ? { ...card, projectId: project.id }
+      : card;
+  }
+  if (!card.cwd) return card;
   const project = projectForRoot(card.cwd, projects);
   return project ? { ...card, projectId: project.id } : card;
 }

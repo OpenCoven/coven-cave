@@ -6,9 +6,14 @@ import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 
 import { loadProjects, projectForRoot, withProjectRegistryLock } from "./cave-projects.ts";
-import type { CaveProject } from "./cave-projects-types.ts";
+import {
+  projectIdMigrationMap,
+  remapProjectId,
+  type CaveProject,
+} from "./cave-projects-types.ts";
 import {
   accessLevelSatisfies,
+  maxAccessLevel,
   normalizeAccessLevel,
   requiredAccessLevel,
   resolveEffectiveAccess,
@@ -243,6 +248,13 @@ function withProjectPermissionsStore<T>(operation: () => Promise<T>): Promise<T>
   return withCaveHomeReconciledStore("cave-project-permissions.json", operation);
 }
 
+async function withProjectIdMigrations<T>(
+  operation: (migrations: ReadonlyMap<string, string>) => Promise<T>,
+): Promise<T> {
+  const migrations = projectIdMigrationMap(await loadProjects());
+  return withProjectPermissionsStore(() => operation(migrations));
+}
+
 async function loadHumanPermissionConfigUnlocked(): Promise<HumanPermissionConfigFile> {
   const parsed = await readJsonFile<Partial<HumanPermissionConfigFile>>(humanPermissionConfigPath());
   const supremeFamiliarId = parsed?.supremeFamiliarId?.trim() || DEFAULT_SUPREME_FAMILIAR_ID;
@@ -345,7 +357,71 @@ function normalizeAccessGroup(group: Partial<FamiliarAccessGroup>): FamiliarAcce
   };
 }
 
-async function loadProjectPermissionsUnlocked(): Promise<ProjectPermissionsFile> {
+function remapPermissionProjectIds(
+  file: ProjectPermissionsFile,
+  migrations: ReadonlyMap<string, string>,
+): void {
+  for (const grant of file.projectGrants) {
+    grant.projectId = remapProjectId(grant.projectId, migrations);
+  }
+  for (const group of file.accessGroups) {
+    for (const grant of group.projectGrants) {
+      grant.projectId = remapProjectId(grant.projectId, migrations);
+    }
+  }
+  for (const proposal of file.grantProposals) {
+    proposal.projectId = remapProjectId(proposal.projectId, migrations);
+  }
+  for (const entry of file.permissionAudit) {
+    entry.projectId = remapProjectId(entry.projectId, migrations);
+  }
+  for (const entry of file.grantAudit) {
+    entry.projectId = remapProjectId(entry.projectId, migrations);
+  }
+  for (const entry of file.repairAudit) {
+    entry.orphanProjectIds = entry.orphanProjectIds.map((projectId) =>
+      remapProjectId(projectId, migrations),
+    );
+  }
+
+  const directByKey = new Map<string, ProjectGrant>();
+  for (const grant of file.projectGrants) {
+    const key = `${grant.familiarId}\0${grant.projectId}`;
+    const existing = directByKey.get(key);
+    if (!existing) {
+      directByKey.set(key, grant);
+      continue;
+    }
+    const access = maxAccessLevel(existing.access, grant.access);
+    if (access !== existing.access) {
+      existing.access = access ?? "read";
+      existing.source = grant.source;
+      existing.grantedAt = grant.grantedAt;
+    }
+  }
+  file.projectGrants = [...directByKey.values()];
+
+  for (const group of file.accessGroups) {
+    const grantsByProject = new Map<string, GroupProjectGrant>();
+    for (const grant of group.projectGrants) {
+      const existing = grantsByProject.get(grant.projectId);
+      if (!existing) {
+        grantsByProject.set(grant.projectId, grant);
+        continue;
+      }
+      const access = maxAccessLevel(existing.access, grant.access);
+      if (access !== existing.access) {
+        existing.access = access ?? "read";
+        existing.grantedAt = grant.grantedAt;
+      }
+    }
+    group.projectGrants = [...grantsByProject.values()];
+  }
+}
+
+async function loadProjectPermissionsUnlocked(
+  migrations: ReadonlyMap<string, string> = new Map(),
+): Promise<ProjectPermissionsFile> {
   const parsed = await readJsonFile<
     Partial<ProjectPermissionsFile> & { version?: number }
   >(permissionsFilePath());
@@ -370,11 +446,12 @@ async function loadProjectPermissionsUnlocked(): Promise<ProjectPermissionsFile>
     repairAudit: Array.isArray(parsed.repairAudit) ? parsed.repairAudit : [],
   };
   materializeDueGrantProposals(file, new Date());
+  remapPermissionProjectIds(file, migrations);
   return file;
 }
 
 export async function loadProjectPermissions(): Promise<ProjectPermissionsFile> {
-  return withProjectPermissionsStore(loadProjectPermissionsUnlocked);
+  return withProjectIdMigrations(loadProjectPermissionsUnlocked);
 }
 
 /**
@@ -705,8 +782,8 @@ export async function listRecentGrantChanges(limit = 200): Promise<GrantChangeEn
 }
 
 async function appendAudit(entry: Omit<PermissionAuditEntry, "id" | "at">): Promise<void> {
-  await withProjectPermissionsStore(() => withWriteMutex(async () => {
-    const file = await loadProjectPermissionsUnlocked();
+  await withProjectIdMigrations((migrations) => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked(migrations);
     file.permissionAudit.push({ id: randomUUID(), at: new Date().toISOString(), ...entry });
     await saveProjectPermissions(file);
   }));
@@ -720,8 +797,8 @@ export async function grantProjectToFamiliar(input: {
   /** Who is making the change; defaults to the app itself. */
   actor?: GrantChangeActor;
 }): Promise<void> {
-  await withProjectPermissionsStore(() => withWriteMutex(async () => {
-    const file = await loadProjectPermissionsUnlocked();
+  await withProjectIdMigrations((migrations) => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked(migrations);
     // Read the prior level first — ensureProjectGrant mutates in place, so
     // after it runs the "from" side of the change is gone.
     const before =
@@ -749,8 +826,8 @@ export async function revokeProjectFromFamiliar(input: {
   /** Who is making the change; defaults to the app itself. */
   actor?: GrantChangeActor;
 }): Promise<boolean> {
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
-    const file = await loadProjectPermissionsUnlocked();
+  return withProjectIdMigrations((migrations) => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked(migrations);
     const removed = file.projectGrants.find(
       (grant) => grant.familiarId === input.familiarId && grant.projectId === input.projectId,
     );
@@ -782,8 +859,8 @@ export async function revokeProjectFromFamiliar(input: {
 export async function revokeAllGrantsForProject(
   projectId: string,
 ): Promise<{ grants: number; groupGrants: number; proposals: number }> {
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
-    const file = await loadProjectPermissionsUnlocked();
+  return withProjectIdMigrations((migrations) => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked(migrations);
 
     const removedGrants = file.projectGrants.filter((grant) => grant.projectId === projectId);
     const nextGrants = file.projectGrants.filter((grant) => grant.projectId !== projectId);
@@ -875,7 +952,7 @@ export async function repairOrphanProjectPermissions(): Promise<ProjectPermissio
   return withProjectRegistryLock((projects) => {
     const knownProjectIds = new Set(projects.map((project) => project.id));
     return withProjectPermissionsStore(() => withWriteMutex(async () => {
-      const file = await loadProjectPermissionsUnlocked();
+      const file = await loadProjectPermissionsUnlocked(projectIdMigrationMap(projects));
       const report = orphanProjectIntegrity(file, knownProjectIds);
       if (report.directGrants + report.groupGrants + report.proposals === 0) return report;
       file.projectGrants = file.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
@@ -919,8 +996,8 @@ export async function createGrantProposal(input: {
     throw new ProjectAccessDeniedError("relayed human approval is not accepted");
   }
 
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
-    const file = await loadProjectPermissionsUnlocked();
+  return withProjectIdMigrations((migrations) => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked(migrations);
     const proposal: GrantProposal = {
       id: randomUUID(),
       proposedBy: input.proposedBy,
@@ -940,8 +1017,8 @@ export async function resolveGrantProposal(input: {
   proposalId: string;
   decision: "accepted" | "rejected";
 }): Promise<GrantProposal> {
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
-    const file = await loadProjectPermissionsUnlocked();
+  return withProjectIdMigrations((migrations) => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked(migrations);
     const grantProposal = file.grantProposals.find((proposal) => proposal.id === input.proposalId);
     if (!grantProposal) {
       throw new ProjectAccessDeniedError("grant proposal not found");
@@ -973,8 +1050,8 @@ export async function resolveGrantProposal(input: {
  * already materialized the grant and the proposal reads as `accepted`.
  */
 export async function undoGrantProposal(input: { proposalId: string }): Promise<GrantProposal> {
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
-    const file = await loadProjectPermissionsUnlocked();
+  return withProjectIdMigrations((migrations) => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked(migrations);
     const grantProposal = file.grantProposals.find((proposal) => proposal.id === input.proposalId);
     if (!grantProposal) {
       throw new ProjectAccessDeniedError("grant proposal not found");
@@ -1063,8 +1140,8 @@ export async function createAccessGroup(input: {
 }): Promise<FamiliarAccessGroup> {
   const name = input.name.trim();
   if (!name) throw new Error("access group name is required");
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
-    const file = await loadProjectPermissionsUnlocked();
+  return withProjectIdMigrations((migrations) => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked(migrations);
     const now = new Date().toISOString();
     const group: FamiliarAccessGroup = {
       id: randomUUID(),
@@ -1095,8 +1172,8 @@ export async function updateAccessGroup(input: {
   /** Who is making the change; defaults to the app itself. */
   actor?: GrantChangeActor;
 }): Promise<FamiliarAccessGroup> {
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
-    const file = await loadProjectPermissionsUnlocked();
+  return withProjectIdMigrations((migrations) => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked(migrations);
     const group = file.accessGroups.find((candidate) => candidate.id === input.groupId);
     if (!group) throw new AccessGroupNotFoundError();
     // Snapshot BEFORE the in-place edit — members and grants are rewritten
@@ -1141,8 +1218,8 @@ export async function deleteAccessGroup(
   groupId: string,
   options: { actor?: GrantChangeActor } = {},
 ): Promise<boolean> {
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
-    const file = await loadProjectPermissionsUnlocked();
+  return withProjectIdMigrations((migrations) => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked(migrations);
     const removed = file.accessGroups.find((group) => group.id === groupId) ?? null;
     const next = file.accessGroups.filter((group) => group.id !== groupId);
     if (next.length === file.accessGroups.length) return false;

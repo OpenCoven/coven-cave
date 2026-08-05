@@ -21,9 +21,9 @@ export type CaveProject = {
    * The root string as it was persisted, present whenever the server had to
    * re-normalize it to return {@link CaveProject.root} (cave-2x1em).
    *
-   * Usually that is a leading `~` being expanded, but the server normalizer
-   * also trims, converts backslashes and drops trailing slashes — any of which
-   * moves the key. The field is attached for all of them, not just `~`.
+   * Usually that is a leading `~` being expanded, but native/cross-platform
+   * canonicalization can also move a key (for example a trailing separator or
+   * a Windows separator spelling). The field is attached for every move.
    *
    * Roots are the KEYS of client-side stores — IDB projectAvatars,
    * cave:chat:project-overrides, comux pins and order — so a record written
@@ -33,22 +33,31 @@ export type CaveProject = {
    * was already stored. This field carries the old key so the client can
    * re-key its stores.
    *
-   * Response-only: `saveProjects` strips it before writing, so it never reaches
-   * projects.json. That strip is the enforcement — every mutation path persists
-   * the array `loadProjectsUnlocked` returned, so documenting the intent here
-   * without stripping there would have written the marker to disk on the first
-   * create/patch/delete after an upgrade.
+   * Persisted retry metadata: the server removes it only after the client
+   * acknowledges that every root-keyed store migrated successfully.
    */
   legacyRoot?: string;
   /** Every pre-canonical key collapsed into this project, retained for migration. */
   legacyRoots?: string[];
+  /** Project ids of duplicate rows collapsed into this surviving project. */
+  legacyProjectIds?: string[];
   createdAt: string;
   updatedAt: string;
 };
 
-/** Normalise a project root path to a canonical forward-slash, no-trailing-slash form. */
+function hasWindowsPathSyntax(value: string): boolean {
+  const trimmed = value.trim();
+  return /^[A-Za-z]:/.test(trimmed) || /^(?:\\\\|\/\/)/.test(trimmed);
+}
+
+/** Normalize display paths without rewriting POSIX filename characters. */
 export function normalizeProjectRoot(root: string | null | undefined): string {
-  const normalized = root?.trim().replace(/\\/g, "/");
+  if (root === null || root === undefined) return "/";
+  const normalized = hasWindowsPathSyntax(root)
+    ? root.trim().replace(/\\/g, "/")
+    : root.startsWith("/")
+      ? root
+      : root.trim().replace(/\\/g, "/");
   if (!normalized) return "/";
   if (/^[A-Za-z]:\/*$/.test(normalized)) return `${normalized.slice(0, 2)}/`;
   let endIndex = normalized.length;
@@ -82,8 +91,8 @@ function normalizedPathSegments(value: string): string[] | null {
 }
 
 function absolutePathParts(value: string): AbsolutePathParts | null {
-  const normalized = value.trim().replace(/\\/g, "/");
-  const unc = normalized.match(/^\/\/([^/]+)\/([^/]+)(?:\/(.*))?$/);
+  const portable = value.trim().replace(/\\/g, "/");
+  const unc = portable.match(/^\/\/([^/]+)\/([^/]+)(?:\/(.*))?$/);
   if (unc) {
     const [, server, share, rest = ""] = unc;
     if (
@@ -101,19 +110,19 @@ function absolutePathParts(value: string): AbsolutePathParts | null {
       ? { flavor: "unc", prefix: `//${server}/${share}`, segments }
       : null;
   }
-  if (normalized.startsWith("//")) return null;
+  if (portable.startsWith("//")) return null;
 
-  const drive = normalized.match(/^([A-Za-z]:)\/(.*)$/);
+  const drive = portable.match(/^([A-Za-z]:)\/(.*)$/);
   if (drive) {
     const segments = normalizedPathSegments(drive[2] ?? "");
     return segments
       ? { flavor: "drive", prefix: drive[1]!.toUpperCase(), segments }
       : null;
   }
-  if (/^[A-Za-z]:/.test(normalized)) return null;
+  if (/^[A-Za-z]:/.test(portable)) return null;
 
-  if (!normalized.startsWith("/")) return null;
-  const segments = normalizedPathSegments(normalized.slice(1));
+  if (!value.startsWith("/")) return null;
+  const segments = normalizedPathSegments(value.slice(1));
   return segments ? { flavor: "posix", prefix: "/", segments } : null;
 }
 
@@ -169,12 +178,14 @@ export function resolvePathWithinProjectRoot(
   projectRoot: string | null | undefined,
   candidatePath: string | null | undefined,
 ): ProjectRelativePath | null {
-  if (!projectRoot?.trim() || !candidatePath?.trim() || /[\0\r\n]/.test(candidatePath)) return null;
+  if (!projectRoot || !candidatePath || /[\0\r\n]/.test(candidatePath)) return null;
   const root = absolutePathParts(projectRoot);
   if (!root) return null;
 
-  const normalizedCandidate = candidatePath.trim().replace(/\\/g, "/");
-  const absoluteCandidate = absolutePathParts(normalizedCandidate);
+  const normalizedCandidate = root.flavor === "posix"
+    ? candidatePath
+    : candidatePath.trim().replace(/\\/g, "/");
+  const absoluteCandidate = absolutePathParts(candidatePath);
   let candidate: AbsolutePathParts;
   if (absoluteCandidate) {
     candidate = absoluteCandidate;
@@ -279,11 +290,13 @@ function projectTimestamp(project: CaveProject): number {
 export function dedupeProjectsByRoot(
   projects: CaveProject[],
   normalizeRoot: (root: string) => string = normalizeProjectRoot,
+  identityKey: (root: string) => string = (root) =>
+    projectPathIdentityKey(root) ?? root,
 ): CaveProject[] {
   const byRoot = new Map<string, CaveProject>();
   for (const project of projects) {
     const root = normalizeRoot(project.root);
-    const identity = projectPathIdentityKey(root) ?? root;
+    const identity = identityKey(root);
     const existing = byRoot.get(identity);
     if (!existing) {
       byRoot.set(identity, project);
@@ -303,6 +316,16 @@ export function dedupeProjectsByRoot(
     aliases.delete(winner.root);
     const legacyRoots = [...aliases];
     const merged = { ...winner };
+    const loser = winner === existing ? project : existing;
+    const legacyProjectIds = [
+      ...new Set([
+        ...(winner.legacyProjectIds ?? []),
+        ...(loser.legacyProjectIds ?? []),
+        loser.id,
+      ]),
+    ].filter((id) => id !== winner.id);
+    if (legacyProjectIds.length) merged.legacyProjectIds = legacyProjectIds;
+    else delete merged.legacyProjectIds;
     if (legacyRoots.length) {
       merged.legacyRoot = legacyRoots[0];
       merged.legacyRoots = legacyRoots;
@@ -313,6 +336,41 @@ export function dedupeProjectsByRoot(
     byRoot.set(identity, merged);
   }
   return [...byRoot.values()];
+}
+
+/** Deterministic losing-id → survivor map carried by deduplicated projects. */
+export function projectIdMigrationMap(
+  projects: readonly CaveProject[],
+): ReadonlyMap<string, string> {
+  const migrations = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  const currentIds = new Set(projects.map((project) => project.id));
+  for (const project of projects) {
+    for (const legacyId of project.legacyProjectIds ?? []) {
+      if (
+        !legacyId ||
+        currentIds.has(legacyId) ||
+        ambiguous.has(legacyId)
+      ) {
+        continue;
+      }
+      const existing = migrations.get(legacyId);
+      if (existing && existing !== project.id) {
+        migrations.delete(legacyId);
+        ambiguous.add(legacyId);
+      } else {
+        migrations.set(legacyId, project.id);
+      }
+    }
+  }
+  return migrations;
+}
+
+export function remapProjectId(
+  projectId: string,
+  migrations: ReadonlyMap<string, string>,
+): string {
+  return migrations.get(projectId) ?? projectId;
 }
 
 export function sortProjectsAlphabetically(projects: CaveProject[]): CaveProject[] {

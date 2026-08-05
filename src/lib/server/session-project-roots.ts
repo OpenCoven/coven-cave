@@ -1,6 +1,11 @@
 import path from "node:path";
 import { callDaemon } from "@/lib/coven-daemon";
 import { realpathOrResolve } from "@/lib/server/canonical-path";
+import {
+  nativeProjectPathIdentityKey,
+  nativeProjectPathsEqual,
+  resolveNativePathWithinRoot,
+} from "@/lib/server/native-project-path";
 
 /**
  * Trusted project roots for the working-tree Changes panel (/api/changes).
@@ -22,7 +27,10 @@ import { realpathOrResolve } from "@/lib/server/canonical-path";
 type DaemonSession = { project_root?: string };
 
 function isWithinRoot(candidate: string, root: string): boolean {
-  return candidate === root || candidate.startsWith(root + path.sep);
+  return (
+    nativeProjectPathsEqual(candidate, root) ||
+    resolveNativePathWithinRoot(root, candidate) !== null
+  );
 }
 
 /**
@@ -34,14 +42,16 @@ function isWithinRoot(candidate: string, root: string): boolean {
 export async function daemonSessionRoots(): Promise<string[]> {
   const res = await callDaemon<DaemonSession[]>({ path: "/api/v1/sessions" });
   if (!res.ok || !res.data) return [];
-  const roots = new Set<string>();
+  const roots = new Map<string, string>();
   for (const session of res.data) {
-    const root = session.project_root?.trim();
+    const root = session.project_root;
     if (root && path.isAbsolute(root)) {
-      roots.add(realpathOrResolve(root));
+      const canonical = realpathOrResolve(root);
+      const key = nativeProjectPathIdentityKey(canonical);
+      if (key && !roots.has(key)) roots.set(key, canonical);
     }
   }
-  return [...roots];
+  return [...roots.values()];
 }
 
 /**

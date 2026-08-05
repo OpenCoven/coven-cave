@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -17,6 +17,7 @@ import path from "node:path";
 const tmpHome = await mkdtemp(path.join(tmpdir(), "cave-board-home-"));
 process.env.HOME = tmpHome;
 process.env.COVEN_HOME = path.join(tmpHome, ".coven");
+process.env.CAVE_PROJECTS_PATH_OVERRIDE = path.join(tmpHome, "projects.json");
 
 const board = await import("./cave-board.ts");
 
@@ -60,7 +61,41 @@ await Promise.all([
 ]);
 assert.equal(tornReads, 0, "no torn reads (empty board) during concurrent writes");
 
+// 5. A durable card written under a duplicate project's losing id follows the
+// survivor instead of becoming detached when the project registry dedupes.
+await writeFile(
+  process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+  JSON.stringify({
+    version: 1,
+    projects: [
+      {
+        id: "project-old",
+        name: "Old",
+        root: "/work/project",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "project-survivor",
+        name: "Survivor",
+        root: "/work/project/",
+        createdAt: "2026-01-02T00:00:00.000Z",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+  }),
+);
+const boardDisk = JSON.parse(await readFile(board.BOARD_PATH, "utf8"));
+boardDisk.cards[0].projectId = "project-old";
+await writeFile(board.BOARD_PATH, JSON.stringify(boardDisk));
+assert.equal(
+  (await board.loadBoard()).cards[0]?.projectId,
+  "project-survivor",
+  "board project references follow the durable losing-id map",
+);
+
 // cleanup
+delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
 await rm(tmpHome, { recursive: true, force: true });
 
 console.log("ok - cave-board atomic write + write lock: no lost updates, no torn reads");

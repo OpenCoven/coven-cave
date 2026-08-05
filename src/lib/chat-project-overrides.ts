@@ -27,6 +27,32 @@ export function readProjectOverrides(): ProjectOverrides {
     for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
       if (typeof v === "string") out[k] = v;
     }
+
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** Migration-only read: storage denial is retryable; malformed data is empty. */
+export function readProjectOverridesForMigration(): ProjectOverrides {
+  if (typeof window === "undefined") return {};
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(CHAT_PROJECT_OVERRIDES_KEY);
+  } catch (error) {
+    throw new Error("project override migration storage read failed", {
+      cause: error,
+    });
+  }
+  if (raw === null) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: ProjectOverrides = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === "string") out[key] = value;
+    }
     return out;
   } catch {
     return {};
@@ -40,6 +66,19 @@ export function writeProjectOverrides(map: ProjectOverrides): void {
     window.dispatchEvent(new CustomEvent(CHAT_PROJECT_OVERRIDES_EVENT));
   } catch {
     // storage full / disabled — overrides are a soft preference, drop silently
+  }
+}
+
+/** Migration-only write: failures must stay visible so aliases remain retryable. */
+export function writeProjectOverridesForMigration(map: ProjectOverrides): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CHAT_PROJECT_OVERRIDES_KEY, JSON.stringify(map));
+    window.dispatchEvent(new CustomEvent(CHAT_PROJECT_OVERRIDES_EVENT));
+  } catch (error) {
+    throw new Error("project override migration storage failed", {
+      cause: error,
+    });
   }
 }
 

@@ -3,13 +3,20 @@ import path from "node:path";
 import { homedir } from "node:os";
 import { covenHome, caveHome, covenWorkspaceRoot } from "@/lib/coven-paths";
 import { realpathOrResolve } from "@/lib/server/canonical-path";
+import {
+  nativeProjectPathIdentityKey,
+  nativeProjectPathsEqual,
+  resolveNativePathWithinRoot,
+} from "@/lib/server/native-project-path";
 import { researchMissionsRoot } from "@/lib/server/research-mission-store";
 
 function expandHomeShortcut(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed === "~") return homedir();
-  if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
-    return path.join(homedir(), trimmed.slice(2));
+  if (value === "~") return homedir();
+  if (
+    value.startsWith("~/") ||
+    (process.platform === "win32" && value.startsWith("~\\"))
+  ) {
+    return path.join(homedir(), value.slice(2));
   }
   return value;
 }
@@ -38,7 +45,7 @@ function caveProjectsFilePath(): string {
 export function validateCaveProjectRoot(value: string): { ok: true; root: string } | { ok: false; error: string } {
   // Expand ~ first (matching isAllowedNewProjectRoot and cave-projects'
   // normalizeRoot) so manually-typed ~/code/app roots stay accepted.
-  const root = expandHomeShortcut(value).trim();
+  const root = expandHomeShortcut(value);
   if (!root) return { ok: false, error: "root is required" };
   if (!path.isAbsolute(root)) return { ok: false, error: "root must be an absolute path" };
 
@@ -89,7 +96,13 @@ function builtInProjectRoots(): string[] {
 }
 
 function uniqueRoots(roots: string[]): string[] {
-  return Array.from(new Set(roots));
+  const seen = new Set<string>();
+  return roots.filter((root) => {
+    const key = nativeProjectPathIdentityKey(root);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function allowedProjectRoots(): string[] {
@@ -97,19 +110,15 @@ function allowedProjectRoots(): string[] {
 }
 
 function isWithinRoot(candidate: string, root: string): boolean {
-  return candidate === root || candidate.startsWith(root + path.sep);
+  return (
+    nativeProjectPathsEqual(candidate, root) ||
+    resolveNativePathWithinRoot(root, candidate) !== null
+  );
 }
 
 function relativeWithinRoot(candidate: string, root: string): string | null {
-  const relativePath = path.relative(/* turbopackIgnore: true */ root, candidate);
-  if (
-    relativePath.startsWith("..") ||
-    path.isAbsolute(relativePath) ||
-    relativePath.split(path.sep).includes("..")
-  ) {
-    return null;
-  }
-  return relativePath;
+  if (nativeProjectPathsEqual(candidate, root)) return "";
+  return resolveNativePathWithinRoot(root, candidate)?.relativePath ?? null;
 }
 
 export function resolveAllowedProjectSubpath(value: string): { root: string; relativePath: string } | null {

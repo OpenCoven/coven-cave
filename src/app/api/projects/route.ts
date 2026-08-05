@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { createProject, loadProjects, seedDefaultProjectsIfEmpty } from "@/lib/cave-projects";
+import {
+  acknowledgeProjectRootMigrations,
+  createProject,
+  loadProjects,
+  seedDefaultProjectsIfEmpty,
+} from "@/lib/cave-projects";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import {
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
@@ -42,7 +47,7 @@ export async function POST(req: Request) {
   }
 
   const name = String(body.name ?? "").trim();
-  const root = String(body.root ?? "").trim();
+  const root = typeof body.root === "string" ? body.root : "";
   if (!name || !root) {
     return NextResponse.json({ ok: false, error: "name and root are required" }, { status: 400 });
   }
@@ -85,4 +90,54 @@ export async function POST(req: Request) {
     repoUrl,
   });
   return NextResponse.json({ ok: true, project }, { status: 201 });
+}
+
+export async function PATCH(req: Request) {
+  const denied = rejectNonLocalRequest(req);
+  if (denied) return denied;
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
+  }
+  if (
+    body.action !== "acknowledge-root-migrations" ||
+    !Array.isArray(body.migrations) ||
+    body.migrations.length > 500
+  ) {
+    return NextResponse.json(
+      { ok: false, error: "invalid root migration acknowledgment" },
+      { status: 400 },
+    );
+  }
+  const migrations = body.migrations.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const { projectId, legacyRoots } = entry as Record<string, unknown>;
+    if (
+      typeof projectId !== "string" ||
+      !projectId ||
+      projectId.length > 256 ||
+      !Array.isArray(legacyRoots) ||
+      legacyRoots.length > 100 ||
+      legacyRoots.some(
+        (root) =>
+          typeof root !== "string" ||
+          !root ||
+          root.length > 32_768 ||
+          root.includes("\0"),
+      )
+    ) {
+      return [];
+    }
+    return [{ projectId, legacyRoots: legacyRoots as string[] }];
+  });
+  if (migrations.length !== body.migrations.length) {
+    return NextResponse.json(
+      { ok: false, error: "invalid root migration acknowledgment" },
+      { status: 400 },
+    );
+  }
+  await acknowledgeProjectRootMigrations(migrations);
+  return NextResponse.json({ ok: true });
 }

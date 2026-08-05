@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   dedupeAbsoluteProjectPaths,
   normalizeProjectRoot,
+  projectIdMigrationMap,
   projectPathIdentityKey,
   resolveProjectPathForGitRoot,
   resolvePathWithinProjectRoot,
@@ -65,6 +66,20 @@ test("POSIX containment remains case-sensitive and segment-bound", () => {
   assert.equal(resolvePathWithinProjectRoot("/repo/app", "../../outside.ts"), null);
 });
 
+test("POSIX parsing preserves backslashes and significant whitespace", () => {
+  const backslashRoot = String.raw`/repo/packages/app\name`;
+  const separatorRoot = "/repo/packages/app/name";
+  assert.equal(normalizeProjectRoot(backslashRoot), backslashRoot);
+  assert.notEqual(
+    projectPathIdentityKey(backslashRoot),
+    projectPathIdentityKey(separatorRoot),
+  );
+  assert.deepEqual(resolvePathWithinProjectRoot(backslashRoot, "src/file.ts "), {
+    absolutePath: String.raw`/repo/packages/app\name/src/file.ts `,
+    relativePath: "src/file.ts ",
+  });
+});
+
 test("absolute project path dedupe follows each platform's case semantics", () => {
   assert.deepEqual(
     dedupeAbsoluteProjectPaths([
@@ -88,6 +103,31 @@ test("project path identity follows Windows and POSIX case semantics", () => {
     projectPathIdentityKey("\\\\server\\share\\REPO\\"),
   );
   assert.notEqual(projectPathIdentityKey("/Repo/App"), projectPathIdentityKey("/repo/app"));
+});
+
+test("a legacy project id that is currently exact is never remapped", () => {
+  const projects = [
+    {
+      id: "survivor",
+      legacyProjectIds: ["reused-id"],
+      name: "Survivor",
+      root: "/repo/survivor",
+      createdAt: "",
+      updatedAt: "",
+    },
+    {
+      id: "reused-id",
+      name: "Current",
+      root: "/repo/current",
+      createdAt: "",
+      updatedAt: "",
+    },
+  ];
+  assert.equal(
+    projectIdMigrationMap(projects).has("reused-id"),
+    false,
+    "an exact current project identity wins over stale alias metadata",
+  );
 });
 
 test("nested project targets become git-root-relative only after project containment", () => {

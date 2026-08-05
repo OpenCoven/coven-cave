@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -45,6 +45,40 @@ try {
 
   assert.equal((await queueProjectReadiness()).code, "no-project", "Queue never falls back to the app cwd");
   assert.equal((await selectQueueProject("queue-project"))?.root, projectRoot, "selection persists a registered project");
+
+  await writeFile(
+    projectsPath,
+    JSON.stringify({
+      version: 1,
+      projects: [{
+        id: "queue-project",
+        legacyProjectIds: ["queue-project-old"],
+        name: "Queue project",
+        root: projectRoot,
+        createdAt: "2026-07-23T00:00:00.000Z",
+        updatedAt: "2026-07-23T00:00:00.000Z",
+      }],
+    }),
+  );
+  await writeFile(
+    queueProjectPath,
+    JSON.stringify({ version: 1, projectId: "queue-project-old" }),
+  );
+  invalidateQueueProjectReadinessCache();
+  assert.equal(
+    (
+      await queueProjectReadiness({
+        beadsProbe: async () => ({ ok: true, stdout: "bd 0.1.0", stderr: "" }),
+      })
+    ).project?.id,
+    "queue-project",
+    "a durable Queue selection resolves through the losing-id map",
+  );
+  assert.equal(
+    JSON.parse(await readFile(queueProjectPath, "utf8")).projectId,
+    "queue-project",
+    "Queue rewrites the losing id atomically after resolving the survivor",
+  );
 
   await writeFile(
     projectsPath,

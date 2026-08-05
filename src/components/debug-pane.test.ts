@@ -587,8 +587,8 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /function resolveContainedFile[\s\S]*?path\.isAbsolute\(relPath\)[\s\S]*?includes\("\.\."\)[\s\S]*?startsWith\(repoRoot \+ path\.sep\)[\s\S]*?fs\.realpathSync\(resolved\)[\s\S]*?startsWith\(repoRoot \+ path\.sep\)/,
-  "File paths must pass a resolve + prefix containment check (no absolute paths, no ..)",
+  /function resolveContainedFile[\s\S]*?path\.isAbsolute\(relPath\)[\s\S]*?resolveNativePathWithinRoot\(repoRoot, relPath\)[\s\S]*?fs\.realpathSync\(target\.absolutePath\)[\s\S]*?resolveNativePathWithinRoot\(repoRoot, real\)/,
+  "File paths must pass host-native lexical and canonical containment checks",
 );
 assert.match(
   changesRoute,

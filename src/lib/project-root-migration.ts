@@ -20,18 +20,33 @@
  * original issue text:
  *   - IDB projectAvatars           keyed BY root      -> re-keyed
  *   - cave:chat:project-overrides  root is the VALUE  -> values rewritten
+ *   - cave:project-frecency:v1     root is the KEY    -> re-keyed and merged
+ *   - cave:group-chat:groups       project id value    -> losing ids rewritten
+ *   - cave:chat:new-session-defaults project id value  -> losing id rewritten
+ *   - cave:chat project selection  project id values   -> losing ids rewritten
  *   - comux pins + order           does not exist. The comux surface was
  *     deleted (cave-c3yt); `deriveComuxProjects` survives but nothing persists
  *     pins or order, so there is no store to move.
  */
 
-import { normalizeProjectRoot, type CaveProject } from "./cave-projects-types.ts";
+import {
+  normalizeProjectRoot,
+  projectIdMigrationMap,
+  type CaveProject,
+} from "./cave-projects-types.ts";
 import {
   moveProjectImageFromStorageKey,
   readProjectImagesSnapshot,
   whenProjectImagesHydrated,
 } from "./cave-project-images.ts";
-import { readProjectOverrides, writeProjectOverrides } from "./chat-project-overrides.ts";
+import {
+  readProjectOverridesForMigration,
+  writeProjectOverridesForMigration,
+} from "./chat-project-overrides.ts";
+import { migrateStoredGroupProjectIds } from "./group-chat.ts";
+import { migrateStoredNewSessionProjectId } from "./chat-new-session-defaults.ts";
+import { migrateStoredProjectSelectionIds } from "./chat-project-selection.ts";
+import { migrateStoredProjectFrecencyRoots } from "./project-frecency.ts";
 
 /**
  * Re-key what the server moved. Returns how many roots were followed, which is
@@ -46,6 +61,12 @@ import { readProjectOverrides, writeProjectOverrides } from "./chat-project-over
 export async function migrateProjectRootKeys(
   projects: readonly CaveProject[],
 ): Promise<number> {
+  const idMigrations = projectIdMigrationMap(projects);
+  if (typeof window !== "undefined" && idMigrations.size > 0) {
+    migrateStoredGroupProjectIds(window.localStorage, idMigrations);
+    migrateStoredNewSessionProjectId(window.localStorage, idMigrations);
+    migrateStoredProjectSelectionIds(window.localStorage, idMigrations);
+  }
   const seenMoves = new Set<string>();
   const moves = projects.flatMap((project) => {
     const aliases = new Set([
@@ -94,9 +115,9 @@ export async function migrateProjectRootKeys(
   }
 
   // One read-modify-write for every move, so a corrupt or absent map costs one
-  // recovery rather than one per project. readProjectOverrides already returns
-  // {} for both cases, so this cannot throw on a first run.
-  const overrides = readProjectOverrides();
+  // recovery rather than one per project. Corrupt data is treated as empty;
+  // storage denial throws so the server keeps the aliases for a later retry.
+  const overrides = readProjectOverridesForMigration();
   let rewrote = false;
   const next = { ...overrides };
   for (const { from, to } of moves) {
@@ -107,7 +128,68 @@ export async function migrateProjectRootKeys(
       followed.add(from);
     }
   }
-  if (rewrote) writeProjectOverrides(next);
+  if (rewrote) writeProjectOverridesForMigration(next);
+  if (typeof window !== "undefined") {
+    for (const from of migrateStoredProjectFrecencyRoots(window.localStorage, moves)) {
+      followed.add(from);
+    }
+  }
 
   return followed.size;
+}
+
+export type ProjectRootMigrationAcknowledgement = {
+  projectId: string;
+  legacyRoots: string[];
+};
+
+export function projectRootMigrationAcknowledgements(
+  projects: readonly CaveProject[],
+): ProjectRootMigrationAcknowledgement[] {
+  return projects.flatMap((project) => {
+    const legacyRoots = [
+      ...new Set([
+        ...(project.legacyRoots ?? []),
+        ...(project.legacyRoot ? [project.legacyRoot] : []),
+      ]),
+    ].filter((root) => root && root !== project.root);
+    return legacyRoots.length
+      ? [{ projectId: project.id, legacyRoots }]
+      : [];
+  });
+}
+
+async function acknowledgeProjectRootMigrations(
+  acknowledgements: readonly ProjectRootMigrationAcknowledgement[],
+): Promise<void> {
+  const response = await fetch("/api/projects", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      action: "acknowledge-root-migrations",
+      migrations: acknowledgements,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`project root migration acknowledgment failed: HTTP ${response.status}`);
+  }
+}
+
+export async function migrateAndAcknowledgeProjectRoots(
+  projects: readonly CaveProject[],
+  dependencies: {
+    migrate?: (projects: readonly CaveProject[]) => Promise<number>;
+    acknowledge?: (
+      acknowledgements: readonly ProjectRootMigrationAcknowledgement[],
+    ) => Promise<void>;
+  } = {},
+): Promise<number> {
+  const acknowledgements = projectRootMigrationAcknowledgements(projects);
+  const migrated = await (dependencies.migrate ?? migrateProjectRootKeys)(projects);
+  if (acknowledgements.length) {
+    await (dependencies.acknowledge ?? acknowledgeProjectRootMigrations)(
+      acknowledgements,
+    );
+  }
+  return migrated;
 }

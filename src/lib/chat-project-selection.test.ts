@@ -5,6 +5,7 @@ import {
   projectSelectionKeys,
   applyProjectScope,
   autoExpandKeysForNewSessions,
+  migrateStoredProjectSelectionIds,
   normalizeSelection,
   readPersisted,
   PROJECT_SIDEBAR_KEYS,
@@ -64,6 +65,45 @@ assert.deepEqual(readPersisted("cave:test:key", []), []);
 assert.equal(PROJECT_SIDEBAR_KEYS.open, "cave:chat:project-sidebar-open");
 assert.equal(PROJECT_SIDEBAR_KEYS.expanded, "cave:chat:project-sidebar-expanded");
 assert.equal(PROJECT_SIDEBAR_KEYS.selected, "cave:chat:project-selected");
+
+{
+  const stored = new Map([
+    [PROJECT_SIDEBAR_KEYS.selected, JSON.stringify("old-project")],
+    [
+      PROJECT_SIDEBAR_KEYS.expanded,
+      JSON.stringify(["old-project", "survivor", "root:/untouched"]),
+    ],
+  ]);
+  migrateStoredProjectSelectionIds(
+    {
+      getItem: (key) => stored.get(key) ?? null,
+      setItem: (key, value) => stored.set(key, value),
+    },
+    new Map([["old-project", "survivor"]]),
+  );
+  assert.equal(JSON.parse(stored.get(PROJECT_SIDEBAR_KEYS.selected)), "survivor");
+  assert.deepEqual(
+    JSON.parse(stored.get(PROJECT_SIDEBAR_KEYS.expanded)),
+    ["survivor", "root:/untouched"],
+  );
+  assert.throws(
+    () =>
+      migrateStoredProjectSelectionIds(
+        {
+          getItem: (key) =>
+            key === PROJECT_SIDEBAR_KEYS.selected
+              ? JSON.stringify("old-project")
+              : null,
+          setItem: () => {
+            throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+          },
+        },
+        new Map([["old-project", "survivor"]]),
+      ),
+    /project selection.*storage/i,
+    "a denied migration write is surfaced so losing-id metadata remains retryable",
+  );
+}
 
 // ── autoExpandKeysForNewSessions (cave-mllp, recency guard cave-a9w9) ────────
 

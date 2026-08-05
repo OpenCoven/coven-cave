@@ -12,6 +12,7 @@ try {
     createProject,
     deleteProject,
     dedupeProjectsByRoot,
+    acknowledgeProjectRootMigrations,
     loadProjects,
     patchProject,
     projectById,
@@ -138,6 +139,24 @@ try {
   const posixUpper = await createProject({ name: "POSIX upper", root: "/Work/Case-App" });
   const posixLower = await createProject({ name: "POSIX lower", root: "/work/case-app" });
   assert.notEqual(posixUpper.id, posixLower.id, "POSIX project identity stays case-sensitive");
+  let posixBackslash;
+  let posixSeparator;
+  if (process.platform !== "win32") {
+    posixBackslash = await createProject({
+      name: "POSIX backslash",
+      root: String.raw`/repo/packages/app\name`,
+    });
+    posixSeparator = await createProject({
+      name: "POSIX separator",
+      root: "/repo/packages/app/name",
+    });
+    assert.notEqual(
+      posixBackslash.id,
+      posixSeparator.id,
+      "POSIX project storage cannot collapse a filename backslash into a separator",
+    );
+    assert.equal(posixBackslash.root, String.raw`/repo/packages/app\name`);
+  }
 
   // (cave-psp8) A manually-typed ~/path expands to the absolute home path —
   // stored literally it never matched the daemon's absolute project_root, so
@@ -182,6 +201,27 @@ try {
   assert.equal(projectForRoot("/other", projects), null);
   assert.equal(projectById(created.id, projects)?.name, "New");
   assert.equal(projectById("missing", projects), null);
+  assert.equal(
+    projectById("reused-id", [
+      {
+        id: "survivor",
+        name: "Survivor",
+        root: "/survivor",
+        legacyProjectIds: ["reused-id"],
+        createdAt: "",
+        updatedAt: "",
+      },
+      {
+        id: "reused-id",
+        name: "Current",
+        root: "/current",
+        createdAt: "",
+        updatedAt: "",
+      },
+    ])?.name,
+    "Current",
+    "an exact current project id wins over a stale legacy alias",
+  );
 
   assert.equal(await deleteProject(created.id), true);
   assert.equal(await deleteProject(created.id), false);
@@ -193,6 +233,10 @@ try {
   assert.equal(await deleteProject(collisionSource.id), true);
   assert.equal(await deleteProject(posixUpper.id), true);
   assert.equal(await deleteProject(posixLower.id), true);
+  if (posixBackslash && posixSeparator) {
+    assert.equal(await deleteProject(posixBackslash.id), true);
+    assert.equal(await deleteProject(posixSeparator.id), true);
+  }
   assert.equal(await deleteProject(allSlashProject.id), true);
   assert.deepEqual(await loadProjects(), []);
 
@@ -267,12 +311,50 @@ try {
     ["~/dupe-home", `${homeAbs}/`],
     "canonical dedupe retains every original root alias for client migrations",
   );
+  assert.deepEqual(
+    dedupedLoad.find((entry) => entry.id === "abs-row")?.legacyProjectIds,
+    ["tilde-row", "slash-row"],
+    "canonical dedupe retains every losing project id for durable reference migration",
+  );
   assert.equal(
     projectForRoot("/tmp/dupe/", dedupedLoad)?.id,
     "disk-new",
     "path lookups resolve to the surviving (newest) duplicate",
   );
-  // The next mutation persists the deduped list — the file self-heals.
+  // An unrelated mutation persists the deduped list but MUST retain migration
+  // metadata until the client confirms every root-keyed store succeeded.
+  assert.equal((await patchProject("disk-new", { name: "Newest" }))?.name, "Newest");
+  const pendingMigration = JSON.parse(
+    await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"),
+  );
+  assert.deepEqual(
+    pendingMigration.projects.find((entry) => entry.id === "abs-row")?.legacyRoots,
+    ["~/dupe-home", `${homeAbs}/`],
+    "an unrelated project mutation cannot erase pending root aliases",
+  );
+  assert.deepEqual(
+    pendingMigration.projects.find((entry) => entry.id === "abs-row")?.legacyProjectIds,
+    ["tilde-row", "slash-row"],
+    "losing-id aliases remain durable while references still use them",
+  );
+
+  await acknowledgeProjectRootMigrations([
+    { projectId: "abs-row", legacyRoots: ["~/dupe-home", `${homeAbs}/`] },
+    { projectId: "disk-new", legacyRoots: ["/tmp/dupe/"] },
+  ]);
+  const acknowledged = JSON.parse(
+    await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"),
+  );
+  for (const entry of acknowledged.projects) {
+    assert.equal("legacyRoot" in entry, false, "acknowledgment removes the singular root alias");
+    assert.equal("legacyRoots" in entry, false, "acknowledgment removes completed root retries");
+  }
+  assert.deepEqual(
+    acknowledged.projects.find((entry) => entry.id === "abs-row")?.legacyProjectIds,
+    ["tilde-row", "slash-row"],
+    "root migration acknowledgment never drops the independent project-id map",
+  );
+
   assert.equal(await deleteProject("abs-row"), true);
   const healed = JSON.parse(
     await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"),
@@ -311,8 +393,19 @@ try {
     await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"),
   );
   assert.equal(migratedDisk.projects[0]?.root, "C:/", "the next mutation self-heals legacy C:");
-  assert.equal("legacyRoot" in migratedDisk.projects[0], false);
-  assert.equal("legacyRoots" in migratedDisk.projects[0], false);
+  assert.deepEqual(
+    migratedDisk.projects[0]?.legacyRoots,
+    ["C:"],
+    "self-healing the root retains its pending client migration",
+  );
+  await acknowledgeProjectRootMigrations([
+    { projectId: "legacy-drive-root", legacyRoots: ["C:"] },
+  ]);
+  const acknowledgedDrive = JSON.parse(
+    await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"),
+  );
+  assert.equal("legacyRoot" in acknowledgedDrive.projects[0], false);
+  assert.equal("legacyRoots" in acknowledgedDrive.projects[0], false);
   assert.equal(await deleteProject("legacy-drive-root"), true);
 
   assert.deepEqual(
@@ -346,6 +439,11 @@ try {
     dedupeProjectsByRoot(duplicateRootProjects).map((project) => project.id),
     ["new", "solo"],
     "project dedupe keeps one row per normalized root and prefers the newest record",
+  );
+  assert.deepEqual(
+    dedupeProjectsByRoot(duplicateRootProjects)[0]?.legacyProjectIds,
+    ["old"],
+    "the survivor carries a deterministic map from every losing project id",
   );
   assert.deepEqual(
     sortProjectsAlphabetically([

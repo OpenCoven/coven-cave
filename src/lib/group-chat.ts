@@ -12,7 +12,7 @@
  * group bookkeeping are unit-testable without a DOM.
  */
 
-const GROUPS_KEY = "cave:group-chat:groups:v1";
+export const GROUPS_KEY = "cave:group-chat:groups:v1";
 const TRANSCRIPTS_KEY_PREFIX = "cave:group-chat:transcript:";
 /** Max turns kept in a persisted transcript. The roundtable prompt already
  *  windows history far tighter than this, so capping the stored tail loses
@@ -905,6 +905,47 @@ export function saveGroups(groups: CovenGroup[]): void {
   } catch {
     /* storage full / private mode — keep the in-memory copy */
   }
+}
+
+/** Rewrite durable group project references after project-registry dedupe. */
+export function migrateStoredGroupProjectIds(
+  storage: Pick<Storage, "getItem" | "setItem">,
+  migrations: ReadonlyMap<string, string>,
+): boolean {
+  if (migrations.size === 0) return false;
+  let raw: string | null;
+  try {
+    raw = storage.getItem(GROUPS_KEY);
+  } catch (error) {
+    throw new Error("group project-id migration storage read failed", {
+      cause: error,
+    });
+  }
+  if (!raw) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(parsed)) return false;
+  let changed = false;
+  const groups = parsed.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+    const projectId = (entry as { projectId?: unknown }).projectId;
+    if (typeof projectId !== "string") return entry;
+    const survivor = migrations.get(projectId);
+    if (!survivor) return entry;
+    changed = true;
+    return { ...entry, projectId: survivor };
+  });
+  if (!changed) return false;
+  try {
+    storage.setItem(GROUPS_KEY, JSON.stringify(groups));
+  } catch (error) {
+    throw new Error("group project-id migration storage failed", { cause: error });
+  }
+  return true;
 }
 
 export function loadTranscript(groupId: string): GroupTurn[] {

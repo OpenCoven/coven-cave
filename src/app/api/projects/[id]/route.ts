@@ -32,11 +32,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     patch.name = trimmed;
   }
   if (typeof body.root === "string") {
-    const trimmed = body.root.trim();
-    if (trimmed.length === 0) {
+    if (body.root.length === 0) {
       return NextResponse.json({ ok: false, error: "root cannot be empty" }, { status: 400 });
     }
-    if (!isAllowedNewProjectRoot(trimmed)) {
+    if (!isAllowedNewProjectRoot(body.root)) {
       // Containment first: out-of-workspace paths get a uniform 403 so the
       // existence checks below cannot be used to probe arbitrary filesystem paths.
       return NextResponse.json(
@@ -48,7 +47,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         { status: 403 },
       );
     }
-    const validatedRoot = validateCaveProjectRoot(trimmed);
+    const validatedRoot = validateCaveProjectRoot(body.root);
     if (!validatedRoot.ok) {
       return NextResponse.json({ ok: false, error: validatedRoot.error }, { status: 400 });
     }

@@ -11,10 +11,10 @@ import { isSafeBranchName } from "@/lib/issue-worktree";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 import {
-  projectRootsEqual,
-  resolvePathWithinProjectRoot,
-  resolveProjectPathForGitRoot,
-} from "@/lib/cave-projects-types";
+  nativeProjectPathsEqual,
+  resolveNativePathWithinRoot,
+  resolveNativeProjectPathForGitRoot,
+} from "@/lib/server/native-project-path";
 
 export const dynamic = "force-dynamic";
 
@@ -206,6 +206,14 @@ function stderrOf(err: unknown): string {
   return String(e?.stderr || e?.stdout || e?.message || err).trim();
 }
 
+function stripGitLineEnding(value: string): string {
+  if (process.platform === "win32" && value.endsWith("\r\n")) {
+    return value.slice(0, -2);
+  }
+  if (value.endsWith("\n")) return value.slice(0, -1);
+  return value;
+}
+
 type RootResolution =
   | { ok: true; projectRoot: string; repoRoot: string; projectPathspec: string }
   | { ok: false; status: number; error: string; notARepo?: boolean };
@@ -213,8 +221,12 @@ type RootResolution =
 type RootAuthorization = "standard" | "scoped-revert";
 
 function projectPathspecForGitRoot(projectRoot: string, repoRoot: string): string | null {
-  if (projectRootsEqual(projectRoot, repoRoot)) return ".";
-  return resolvePathWithinProjectRoot(repoRoot, projectRoot)?.relativePath ?? null;
+  if (nativeProjectPathsEqual(projectRoot, repoRoot)) return ".";
+  const target = resolveNativePathWithinRoot(repoRoot, projectRoot);
+  if (!target) return null;
+  return process.platform === "win32"
+    ? target.relativePath.replace(/\\/g, "/")
+    : target.relativePath;
 }
 
 /** Validate projectRoot: absolute, exists, is a directory, is a git work tree.
@@ -256,7 +268,7 @@ async function resolveRepoRoot(
   }
   try {
     const { stdout } = await git(real, ["rev-parse", "--show-toplevel"]);
-    const top = stdout.trim();
+    const top = stripGitLineEnding(stdout);
     if (!top) return { ok: false, status: 422, error: "not a git repository", notARepo: true };
     const repoRoot = fs.realpathSync(top);
     const projectPathspec = projectPathspecForGitRoot(real, repoRoot);
@@ -279,21 +291,18 @@ async function resolveRepoRoot(
 /** Containment check: repo-relative path only — reject absolute paths, NUL,
  *  `..` traversal, and anything that resolves outside repoRoot. */
 function resolveContainedFile(repoRoot: string, relPath: string): string | null {
-  if (!relPath || relPath.includes("\0") || path.isAbsolute(relPath)) return null;
-  if (relPath.split(/[\\/]+/).includes("..")) return null;
-  const resolved = path.resolve(repoRoot, relPath);
-  if (resolved === repoRoot) return null;
-  if (!resolved.startsWith(repoRoot + path.sep)) return null;
+  if (path.isAbsolute(relPath)) return null;
+  const target = resolveNativePathWithinRoot(repoRoot, relPath);
+  if (!target) return null;
   try {
-    if (fs.existsSync(resolved)) {
-      const real = fs.realpathSync(resolved);
-      if (real === repoRoot) return null;
-      if (!real.startsWith(repoRoot + path.sep)) return null;
+    if (fs.existsSync(target.absolutePath)) {
+      const real = fs.realpathSync(target.absolutePath);
+      if (!resolveNativePathWithinRoot(repoRoot, real)) return null;
     }
   } catch {
     return null;
   }
-  return resolved;
+  return target.absolutePath;
 }
 
 function pathNotAllowed(): NextResponse {
@@ -527,7 +536,7 @@ async function originRemoteUrl(repoRoot: string): Promise<NextResponse> {
  *  never themselves show up as worktree changes). */
 async function checkpointDirOf(repoRoot: string): Promise<string> {
   const { stdout: gitDirOut } = await git(repoRoot, ["rev-parse", "--git-dir"]);
-  const gitDirRaw = gitDirOut.trim();
+  const gitDirRaw = stripGitLineEnding(gitDirOut);
   const gitDir = path.isAbsolute(gitDirRaw) ? gitDirRaw : path.resolve(/* turbopackIgnore: true */ repoRoot, gitDirRaw);
   return path.join(/* turbopackIgnore: true */ gitDir, "coven-cave", "checkpoints");
 }
@@ -547,12 +556,52 @@ async function resolveCheckpointPath(repoRoot: string, name: string): Promise<st
   return abs;
 }
 
-type CheckpointScope = { projectRoot: string; projectPathspec: string };
+type RevertCheckpointScope = {
+  projectRoot: string;
+  targetProjectRelativePath: string;
+  targetGitPath: string;
+};
 
-async function checkpointChanges(repoRoot: string, scope?: CheckpointScope): Promise<string> {
+type RevertCheckpointMetadata = RevertCheckpointScope & {
+  version: 1;
+  kind: "revert-target";
+};
+
+function checkpointMetadataPath(checkpointPath: string): string {
+  return `${checkpointPath}.scope.json`;
+}
+
+function readRevertCheckpointMetadata(
+  checkpointPath: string,
+): RevertCheckpointMetadata | null | "invalid" {
+  const metadataPath = checkpointMetadataPath(checkpointPath);
+  if (!fs.existsSync(/* turbopackIgnore: true */ metadataPath)) return null;
+  try {
+    const parsed = JSON.parse(
+      fs.readFileSync(/* turbopackIgnore: true */ metadataPath, "utf8"),
+    ) as Partial<RevertCheckpointMetadata>;
+    if (
+      parsed.version !== 1 ||
+      parsed.kind !== "revert-target" ||
+      typeof parsed.projectRoot !== "string" ||
+      typeof parsed.targetProjectRelativePath !== "string" ||
+      typeof parsed.targetGitPath !== "string"
+    ) {
+      return "invalid";
+    }
+    return parsed as RevertCheckpointMetadata;
+  } catch {
+    return "invalid";
+  }
+}
+
+async function checkpointChanges(
+  repoRoot: string,
+  scope?: RevertCheckpointScope,
+): Promise<string> {
   // Store snapshots under .git/coven-cave/checkpoints so the checkpoint never
   // creates new worktree changes.
-  const scopedPathspec = scope ? literalGitPathspec(scope.projectPathspec) : null;
+  const scopedPathspec = scope ? literalGitPathspec(scope.targetGitPath) : null;
   let patch = "";
   try {
     ({ stdout: patch } = await gitDiff(
@@ -581,8 +630,15 @@ async function checkpointChanges(repoRoot: string, scope?: CheckpointScope): Pro
         continue;
       }
       if (scope) {
-        const projectTarget = resolveProjectPathForGitRoot(scope.projectRoot, repoRoot, abs);
-        if (!projectTarget || !resolveContainedFile(scope.projectRoot, projectTarget.projectRelativePath)) {
+        const projectTarget = resolveNativeProjectPathForGitRoot(
+          scope.projectRoot,
+          repoRoot,
+          abs,
+        );
+        if (
+          !projectTarget ||
+          !resolveContainedFile(scope.projectRoot, projectTarget.projectRelativePath)
+        ) {
           throw new Error("checkpoint path escaped project scope");
         }
       }
@@ -591,7 +647,13 @@ async function checkpointChanges(repoRoot: string, scope?: CheckpointScope): Pro
         // add-file diff carries `b/<relpath>` headers that `git apply` can
         // place back — absolute paths here would make the checkpoint
         // un-restorable for untracked files.
-        const { stdout } = await gitDiff(repoRoot, ["--no-index", "--", DEV_NULL, file.path]);
+        const { stdout } = await gitDiff(repoRoot, [
+          "--binary",
+          "--no-index",
+          "--",
+          DEV_NULL,
+          file.path,
+        ]);
         patch += stdout;
       } catch (err) {
         const e = err as { code?: number; stdout?: string };
@@ -606,6 +668,22 @@ async function checkpointChanges(repoRoot: string, scope?: CheckpointScope): Pro
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const checkpointPath = path.join(/* turbopackIgnore: true */ checkpointDir, `${stamp}.patch`);
   writeFileSync(checkpointPath, patch, { mode: 0o600 });
+  if (scope) {
+    try {
+      writeFileSync(
+        checkpointMetadataPath(checkpointPath),
+        JSON.stringify({
+          version: 1,
+          kind: "revert-target",
+          ...scope,
+        } satisfies RevertCheckpointMetadata),
+        { mode: 0o600 },
+      );
+    } catch (error) {
+      fs.rmSync(/* turbopackIgnore: true */ checkpointPath, { force: true });
+      throw error;
+    }
+  }
   return checkpointPath;
 }
 
@@ -636,9 +714,30 @@ async function listCheckpoints(repoRoot: string): Promise<CheckpointMeta[]> {
 
 /** Apply a saved checkpoint patch onto the current worktree (3-way so it can
  *  reconstruct the snapshot even if the tree has moved since). */
-async function restoreCheckpoint(repoRoot: string, abs: string): Promise<void> {
+async function restoreCheckpoint(
+  repoRoot: string,
+  abs: string,
+  targetGitPath?: string,
+): Promise<void> {
   const patch = fs.readFileSync(/* turbopackIgnore: true */ abs, "utf8");
   if (!patch.trim()) return; // empty snapshot — nothing to apply
+  if (targetGitPath) {
+    const { stdout } = await git(repoRoot, ["apply", "--numstat", "-z", abs]);
+    const paths = stdout
+      .split("\0")
+      .filter(Boolean)
+      .map((record) => {
+        const firstTab = record.indexOf("\t");
+        const secondTab = record.indexOf("\t", firstTab + 1);
+        return secondTab < 0 ? null : record.slice(secondTab + 1);
+      });
+    if (
+      paths.length === 0 ||
+      paths.some((candidate) => candidate !== targetGitPath)
+    ) {
+      throw new Error("checkpoint target does not match authorized path");
+    }
+  }
   await git(repoRoot, ["apply", "--3way", "--whitespace=nowarn", abs]);
 }
 
@@ -672,7 +771,9 @@ export async function POST(req: NextRequest) {
 
   const root = await resolveRepoRoot(
     body.projectRoot,
-    action === "revert" ? "scoped-revert" : "standard",
+    action === "revert" || action === "restore-checkpoint"
+      ? "scoped-revert"
+      : "standard",
   );
   if (!root.ok) {
     return NextResponse.json({ ok: false, error: root.error }, { status: root.status });
@@ -837,9 +938,48 @@ export async function POST(req: NextRequest) {
     try {
       if (action === "delete-checkpoint") {
         fs.unlinkSync(/* turbopackIgnore: true */ abs);
+        fs.rmSync(/* turbopackIgnore: true */ checkpointMetadataPath(abs), {
+          force: true,
+        });
         return NextResponse.json({ ok: true, deleted: body.checkpoint });
       }
-      await restoreCheckpoint(root.repoRoot, abs);
+      const metadata = readRevertCheckpointMetadata(abs);
+      if (metadata === "invalid") {
+        return NextResponse.json(
+          { ok: false, error: "checkpoint not authorized for project" },
+          { status: 403 },
+        );
+      }
+      if (metadata) {
+        const target = resolveNativeProjectPathForGitRoot(
+          root.projectRoot,
+          root.repoRoot,
+          metadata.targetProjectRelativePath,
+        );
+        if (
+          !nativeProjectPathsEqual(metadata.projectRoot, root.projectRoot) ||
+          !target ||
+          target.gitRelativePath !== metadata.targetGitPath
+        ) {
+          return NextResponse.json(
+            { ok: false, error: "checkpoint not authorized for project" },
+            { status: 403 },
+          );
+        }
+        await restoreCheckpoint(root.repoRoot, abs, metadata.targetGitPath);
+      } else {
+        // Legacy/manual checkpoints can span the repository. A captured nested
+        // project may restore only target-scoped checkpoints; broad snapshots
+        // still require the enclosing repository to pass standard authorization.
+        const standardRoot = await resolveRepoRoot(body.projectRoot, "standard");
+        if (!standardRoot.ok) {
+          return NextResponse.json(
+            { ok: false, error: standardRoot.error },
+            { status: standardRoot.status },
+          );
+        }
+        await restoreCheckpoint(standardRoot.repoRoot, abs);
+      }
       return NextResponse.json({ ok: true, restored: body.checkpoint });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -852,7 +992,11 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  const projectTarget = resolveProjectPathForGitRoot(root.projectRoot, root.repoRoot, body.path);
+  const projectTarget = resolveNativeProjectPathForGitRoot(
+    root.projectRoot,
+    root.repoRoot,
+    body.path,
+  );
   if (!projectTarget) return pathNotAllowed();
   const abs = resolveContainedFile(root.projectRoot, projectTarget.projectRelativePath);
   if (!abs) return pathNotAllowed();
@@ -882,14 +1026,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Reverts are destructive (discard edits / delete files). Snapshot only the
-    // captured project first so the action is recoverable without reading or
-    // authorizing sibling/parent changes. Abort if that scoped snapshot fails.
+    // Reverts are destructive (discard edits / delete files). Snapshot exactly
+    // the target first so unrelated files cannot block its later restoration.
     let checkpointPath: string;
     try {
       checkpointPath = await checkpointChanges(root.repoRoot, {
         projectRoot: root.projectRoot,
-        projectPathspec: root.projectPathspec,
+        targetProjectRelativePath: projectTarget.projectRelativePath,
+        targetGitPath: projectTarget.gitRelativePath,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
