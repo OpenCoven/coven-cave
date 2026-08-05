@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { groupConsecutiveTools } from "../lib/turn-segments.ts";
 import {
   activityCss,
   attachmentsLib,
@@ -15,6 +16,16 @@ import {
   toolRunDisclosureSource,
   turnRow,
 } from "./chat-view-polish-fixtures.ts";
+
+const runsAcrossExtractedEdit = groupConsecutiveTools([
+  { id: "read-before", name: "Read", originalIndex: 0 },
+  { id: "read-after", name: "Read", originalIndex: 2 },
+]);
+assert.deepEqual(
+  runsAcrossExtractedEdit.map((run) => run.tools.map((tool) => tool.id)),
+  [["read-before"], ["read-after"]],
+  "Read → Edit → Read keeps two Read runs after the edit card is extracted",
+);
 
 assert.match(
   splitReasoning,
@@ -116,8 +127,8 @@ assert.match(
 );
 assert.match(
   source,
-  /function ToolRuns[\s\S]*?containsEdit = run\.tools\.some\(\(tool\) => normalizeFileMutation\(tool\.name, tool\.input\)\)[\s\S]*?const body = containsEdit\s*\? run\.tools\.map\(\(tool\) => <ToolBlock[\s\S]*: <ToolRunGroup/,
-  "ToolRuns classifies edits through the normalized descriptor and gives every non-edit run the same shell",
+  /function ToolRuns[\s\S]*?containsEdit = run\.tools\.some\(\(tool\) => isFileMutationTool\(tool\.name\)\)[\s\S]*?const body = containsEdit\s*\? run\.tools\.map\(\(tool\) => <ToolBlock[\s\S]*: <ToolRunGroup/,
+  "ToolRuns reserves edit slots by mutation name and gives every non-edit run the same shell",
 );
 assert.match(
   source,
@@ -249,14 +260,14 @@ assert.match(
 
 assert.match(
   turnRow,
-  /renderSegments = split\.some\(\(s\) => s\.kind === "block"\) \? split : undefined/,
+  /renderSegments = split\.some\(\(segment\) => segment\.kind === "block"\) \? split : undefined/,
   "settled turns render prose (+ artifacts) only — tool blocks are not woven into the text",
 );
 
 assert.match(
   turnRow,
-  /const turnTools = turn\.tools \?\? \[\];\s*const editToolIds = new Set\(\s*turnTools\.filter\(\(tool\) => normalizeFileMutation\(tool\.name, tool\.input\)\)\.map\(\(tool\) => tool\.id\),?\s*\);\s*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);\s*const otherTools = turnTools\.filter\(\(tool\) => !editToolIds\.has\(tool\.id\)\);/,
-  "tool placement is keyed by id and cannot change when a streamed input becomes parseable",
+  /const indexedTurnTools = turnTools\.map\(\(tool, originalIndex\) => \(\{ tool, originalIndex \}\)\)[\s\S]{0,500}?const otherTools = indexedTurnTools[\s\S]{0,300}?originalIndex/,
+  "non-edit extraction retains each tool's original transcript index for adjacency",
 );
 assert.match(
   turnRow,
@@ -270,8 +281,8 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /normalizeFileMutation\(tool\.name, tool\.input\)/,
-  "recognized mutation names return descriptors and occupy the edit-card slot before streamed input is complete",
+  /isFileMutationTool\(tool\.name\)/,
+  "recognized mutation names occupy the edit-card slot before streamed input is complete",
 );
 // Golden path 4 (cave-qva4): a multi-file turn gets ONE aggregate entry into
 // the working-tree review, riding the per-card cave:open-file-diff contract.
@@ -292,13 +303,13 @@ assert.doesNotMatch(
 );
 assert.match(
   turnRow,
-  /\{editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
+  /\{!turn\.pending && turn\.tools\?\.length && editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
   "turns that edited more than one distinct file render the 'N files changed' chip (single-file turns keep just the card's own Review)",
 );
 assert.match(
   turnRow,
-  /aria-label=\{`Review all \$\{editedFiles\.length\} changed files in the Changes tab`\}[\s\S]{0,350}?cave:open-file-diff[\s\S]{0,180}?detail: \{ path: editedFiles\[0\], projectRoot: toolProjectRoot \}/,
-  "Review all opens Changes with the turn's captured execution root",
+  /aria-label=\{`Review all \$\{editedFiles\.length\} changed files in the Changes tab`\}[\s\S]{0,350}?cave:open-file-diff[\s\S]{0,320}?detail: \{[\s\S]{0,200}?path: editedFiles\[0\],[\s\S]{0,100}?projectRoot: toolProjectRoot,[\s\S]{0,100}?sourceSessionId,[\s\S]{0,100}?turnId: turn\.id/,
+  "Review all opens Changes with complete immutable transcript provenance",
 );
 assert.match(
   turnRow,

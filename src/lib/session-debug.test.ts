@@ -437,8 +437,8 @@ assert.match(
 );
 assert.match(
   chatViewSource,
-  /const turnTools = turn\.tools \?\? \[\];[\s\S]*const editToolIds = new Set\([\s\S]*isFileMutationTool\(tool\.name\)[\s\S]*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);[\s\S]*const otherTools = turnTools\.filter/,
-  "pending and settled turns share one id-keyed edit/non-edit partition",
+  /const turnTools = turn\.tools \?\? \[\];[\s\S]*const indexedTurnTools = turnTools\.map\(\(tool, originalIndex\)[\s\S]*const editToolIds = new Set\([\s\S]*isFileMutationTool\(tool\.name\)[\s\S]*const editCards = indexedTurnTools[\s\S]*const otherTools = indexedTurnTools[\s\S]*originalIndex/,
+  "pending and settled turns share one id-keyed partition that retains original adjacency",
 );
 assert.doesNotMatch(
   chatViewSource.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "",

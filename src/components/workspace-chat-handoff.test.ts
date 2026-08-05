@@ -13,6 +13,8 @@ const codeReviewRail = await readFile(new URL("./code-review-rail.tsx", import.m
 const workspaceRail = await readFile(new URL("./workspace-rail.tsx", import.meta.url), "utf8");
 const railFilesPanel = await readFile(new URL("./rail-files-panel.tsx", import.meta.url), "utf8");
 const codeRoom = await readFile(new URL("./role-surfaces/code-room.tsx", import.meta.url), "utf8");
+const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
+const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
 assert.match(
   pendingChatActionLib,
@@ -169,6 +171,16 @@ assert.doesNotMatch(
   workspace,
   /activeChatSessionIdRef/,
   "split and secondary chat panes never inherit the primary pane's active session during Code handoff",
+);
+assert.match(
+  chatRouter,
+  /<ChatView[\s\S]{0,260}?sessionId=\{paneId\}/,
+  "each split pane gives its ChatView the pane's own source session",
+);
+assert.match(
+  chatView,
+  /<TranscriptRows[\s\S]{0,700}?sourceSessionId=\{sessionId\}/,
+  "split-pane provenance reaches every conversation-originated tool emitter",
 );
 assert.match(
   codeRoom,

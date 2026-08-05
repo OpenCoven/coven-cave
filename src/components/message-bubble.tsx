@@ -960,6 +960,8 @@ function MarkdownContent({
         containerRef={containerRef}
         onOpenUrl={onOpenUrl}
         projectRoot={projectRoot}
+        sourceSessionId={reading?.sourceSessionId ?? null}
+        turnId={messageId}
         renderedHtml={html}
       />
     </>

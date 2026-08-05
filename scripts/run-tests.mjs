@@ -42,6 +42,7 @@ export const SUITES = {
     "src/lib/chat-router-promotion.test.ts",
     "src/lib/code-rail.test.ts",
     "src/lib/code-reading-target.test.ts",
+    "src/lib/avatar-idb.test.ts",
     "src/lib/transcript-file-index.test.ts",
     "src/lib/use-code-rail.test.ts",
     "src/lib/initial-prompt-handoff.test.ts",

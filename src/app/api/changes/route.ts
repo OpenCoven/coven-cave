@@ -10,6 +10,7 @@ import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/
 import { isSafeBranchName } from "@/lib/issue-worktree";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
+import { resolveProjectPathForGitRoot } from "@/lib/cave-projects-types";
 
 export const dynamic = "force-dynamic";
 
@@ -35,11 +36,10 @@ const DEV_NULL = os.devNull;
  * argument array — no shell, so paths are never string-interpolated into a
  * command. Diff commands additionally disable Git external diff helpers and
  * textconv filters so repository-controlled config cannot spawn commands.
- * File paths from the client are repo-relative and must pass a
- * resolve + prefix containment check (absolute paths and `..` segments are
- * rejected). Reverting an untracked file deletes it, so that path is gated
- * behind an explicit confirmUntracked flag; the blast radius of POST is one
- * file per call.
+ * Revert paths resolve under the captured project first (absolute or
+ * project-relative), then become Git-root-relative only after that containment
+ * succeeds. Reverting an untracked file deletes it, so that path is gated behind
+ * an explicit confirmUntracked flag; the blast radius of POST is one file.
  */
 
 const execFileAsync = promisify(execFile);
@@ -204,7 +204,7 @@ function stderrOf(err: unknown): string {
 }
 
 type RootResolution =
-  | { ok: true; repoRoot: string }
+  | { ok: true; projectRoot: string; repoRoot: string }
   | { ok: false; status: number; error: string; notARepo?: boolean };
 
 /** Validate projectRoot: absolute, exists, is a directory, is a git work tree.
@@ -248,7 +248,7 @@ async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
     if (!(await isAllowed(repoRoot))) {
       return { ok: false, status: 403, error: "path not allowed" };
     }
-    return { ok: true, repoRoot };
+    return { ok: true, projectRoot: real, repoRoot };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
@@ -794,9 +794,11 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  const abs = resolveContainedFile(root.repoRoot, body.path);
+  const projectTarget = resolveProjectPathForGitRoot(root.projectRoot, root.repoRoot, body.path);
+  if (!projectTarget) return pathNotAllowed();
+  const abs = resolveContainedFile(root.projectRoot, projectTarget.projectRelativePath);
   if (!abs) return pathNotAllowed();
-  if (!(await isChangedFile(root.repoRoot, body.path))) return pathNotAllowed();
+  if (!(await isChangedFile(root.repoRoot, projectTarget.gitRelativePath))) return pathNotAllowed();
 
   try {
     // Decide how to revert based on whether the file exists at HEAD. Reverting
@@ -804,8 +806,8 @@ export async function POST(req: NextRequest) {
     // deletions); files NOT in HEAD are new, so reverting deletes them and is
     // gated behind an explicit confirmation.
     const [inHead, tracked] = await Promise.all([
-      existsInHead(root.repoRoot, body.path),
-      isTracked(root.repoRoot, body.path),
+      existsInHead(root.repoRoot, projectTarget.gitRelativePath),
+      isTracked(root.repoRoot, projectTarget.gitRelativePath),
     ]);
     const plan = planRevert({ inHead, tracked, confirmDelete: body.confirmUntracked === true });
 
@@ -839,16 +841,16 @@ export async function POST(req: NextRequest) {
         // `checkout HEAD --` updates index AND worktree, so staged edits and
         // staged/unstaged deletions all revert to the committed version —
         // matching the HEAD-relative diff the panel renders.
-        await git(root.repoRoot, ["checkout", "HEAD", "--", body.path]);
-        return NextResponse.json({ ok: true, reverted: "checkout", path: body.path, checkpointPath });
+        await git(root.repoRoot, ["checkout", "HEAD", "--", projectTarget.gitRelativePath]);
+        return NextResponse.json({ ok: true, reverted: "checkout", path: projectTarget.gitRelativePath, checkpointPath });
       case "rm":
         // Staged new file: it never existed at HEAD, so reverting removes it
         // from both index and worktree.
-        await git(root.repoRoot, ["rm", "-f", "--", body.path]);
-        return NextResponse.json({ ok: true, reverted: "rm", path: body.path, checkpointPath });
+        await git(root.repoRoot, ["rm", "-f", "--", projectTarget.gitRelativePath]);
+        return NextResponse.json({ ok: true, reverted: "rm", path: projectTarget.gitRelativePath, checkpointPath });
       case "clean":
-        await git(root.repoRoot, ["clean", "-f", "--", body.path]);
-        return NextResponse.json({ ok: true, reverted: "clean", path: body.path, checkpointPath });
+        await git(root.repoRoot, ["clean", "-f", "--", projectTarget.gitRelativePath]);
+        return NextResponse.json({ ok: true, reverted: "clean", path: projectTarget.gitRelativePath, checkpointPath });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

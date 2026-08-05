@@ -8,6 +8,8 @@ import { resolvePathWithinProjectRoot } from "@/lib/cave-projects-types";
 
 type EditCardActionsProps = {
   projectRoot: string | null;
+  sourceSessionId: string | null;
+  turnId: string | null;
   mutationPaths: string[];
   diff: string;
   displayPath: string;
@@ -31,6 +33,8 @@ function idleUndoState(targetIdentity: string): UndoState {
 // one target resolves under the immutable execution root.
 export function EditCardActions({
   projectRoot,
+  sourceSessionId,
+  turnId,
   mutationPaths,
   diff,
   displayPath,
@@ -43,8 +47,7 @@ export function EditCardActions({
   const singleProjectPath = allMutationPathsResolved && resolvedMutationPaths.length === 1
     ? resolvedMutationPaths[0] ?? null
     : null;
-  const relPath = singleProjectPath?.relativePath ?? null;
-  const canUndo = allMutationPathsResolved && resolvedMutationPaths.length === 1 && relPath !== null;
+  const canUndo = allMutationPathsResolved && resolvedMutationPaths.length === 1;
   const undoTargetIdentity = JSON.stringify([projectRoot, ...mutationPaths]);
   const [undo, setUndo] = useState<UndoState>(() => idleUndoState(undoTargetIdentity));
   const undoTargetIsCurrent = undo.targetIdentity === undoTargetIdentity;
@@ -65,7 +68,7 @@ export function EditCardActions({
     if (singleProjectPath && projectRoot) {
       window.dispatchEvent(
         new CustomEvent("cave:open-file-diff", {
-          detail: { path: singleProjectPath.absolutePath, projectRoot },
+          detail: { path: singleProjectPath.absolutePath, projectRoot, sourceSessionId, turnId },
         }),
       );
     } else {
@@ -79,7 +82,7 @@ export function EditCardActions({
       undo.targetIdentity !== undoTargetIdentity ||
       !projectRoot ||
       !canUndo ||
-      !relPath
+      !singleProjectPath
     ) {
       setUndo(idleUndoState(undoTargetIdentity));
       return;
@@ -90,7 +93,7 @@ export function EditCardActions({
       const res = await fetch("/api/changes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectRoot, path: relPath, confirmUntracked: true }),
+        body: JSON.stringify({ projectRoot, path: singleProjectPath.absolutePath, confirmUntracked: true }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error || `revert failed (${res.status})`);

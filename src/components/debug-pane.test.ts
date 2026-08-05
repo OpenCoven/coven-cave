@@ -612,18 +612,18 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /\["clean", "-f", "--", body\.path\]/,
-  "Untracked revert is scoped to git clean -f -- <one file>",
+  /\["clean", "-f", "--", projectTarget\.gitRelativePath\]/,
+  "Untracked revert uses the project-validated Git-relative path",
 );
 assert.match(
   changesRoute,
-  /\["rm", "-f", "--", body\.path\]/,
-  "Reverting a staged-new file removes it via git rm -f -- <one file>",
+  /\["rm", "-f", "--", projectTarget\.gitRelativePath\]/,
+  "Reverting a staged-new file uses the project-validated Git-relative path",
 );
 assert.match(
   changesRoute,
-  /\["checkout", "HEAD", "--", body\.path\]/,
-  "Tracked revert restores against HEAD (git checkout HEAD -- <one file>) so staged edits also revert",
+  /\["checkout", "HEAD", "--", projectTarget\.gitRelativePath\]/,
+  "Tracked revert restores the project-validated Git-relative path against HEAD",
 );
 assert.match(
   changesRoute,

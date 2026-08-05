@@ -99,6 +99,23 @@ assert.match(
 // The staleness check must read the WORKING TREE, and must not claim anything
 // before it has an answer.
 assert.match(wiring, /\/api\/project-file\?path=/, "staleness reads the real file");
+assert.match(
+  wiring,
+  /resolveCodeReadingTargetPath\(root, relPath\)/,
+  "transcript staleness reads resolve through the canonical captured-root helper",
+);
+assert.match(
+  inspector,
+  /const absolutePath =\s*resolveCodeReadingTargetPath\(projectRoot, path\)\?\.absolutePath \?\? null/,
+  "inspector working-tree reads resolve through the same captured-root helper",
+);
+for (const [source, name] of [[wiring, "transcript wiring"], [inspector, "the inspector"]]) {
+  assert.doesNotMatch(
+    source,
+    /projectRoot\.replace\([^;]+path\.replace/,
+    `${name} never grants working-tree authority by string concatenation`,
+  );
+}
 assert.match(wiring, /if \(!marker\.isConnected\) return;/, "a re-render mid-flight is not a crash");
 assert.match(
   wiring,
@@ -127,7 +144,7 @@ assert.match(
 );
 assert.match(
   wiring,
-  /flagged\._caveReadingOnRead\?\.\(\{[\s\S]{0,80}?\.\.\.identity/,
+  /flagged\._caveReadingOnRead\?\.\(\{\s*\n\s*\.\.\.identity,/,
   "the click handler emits the current identity through the current callback",
 );
 assert.match(
@@ -139,6 +156,11 @@ assert.match(
   chatView,
   /setReadingTarget\(\(current\) =>[\s\S]{0,180}?reconcileCodeReadingTargetRoot\([\s\S]{0,160}?sessionId,[\s\S]{0,160}?turnProjectRoots/,
   "a pending reader reconciles its existing target when turn metadata supplies the immutable root",
+);
+assert.match(
+  chatView,
+  /reconcileCodeReadingTargetRoot\([\s\S]{0,160}?sessionId/,
+  "the mounted reader also observes null-to-assigned source-session promotion",
 );
 assert.doesNotMatch(
   chatView,
@@ -152,8 +174,8 @@ assert.match(
 );
 assert.match(
   inspector,
-  /disabled=\{entry\.id !== "snippet" && !projectRoot\}/,
-  "working-tree tabs stay disabled until immutable root provenance arrives",
+  /disabled=\{entry\.id !== "snippet" && !resolvedTargetPath\}/,
+  "working-tree tabs stay disabled until the captured root safely resolves the fence path",
 );
 assert.match(
   inspector,
@@ -196,6 +218,16 @@ assert.doesNotMatch(
   workspace,
   /activeChatSessionIdRef/,
   "Code handoffs never borrow the mutable primary chat session (including split-pane origins)",
+);
+assert.match(
+  codeView,
+  /const originSessionId = workbenchTarget\?\.open\.sessionId \?\? null;/,
+  "the Code surface retains the promoted source session from the reader handoff",
+);
+assert.match(
+  codeView,
+  /onBack=\{originSessionId \? \(\) => onJumpToSession\(originSessionId\) : undefined\}/,
+  "Back to chat routes through that promoted source session",
 );
 assert.match(codeView, /<CodeSourceContext/, "the Code surface renders the source-context card");
 assert.match(

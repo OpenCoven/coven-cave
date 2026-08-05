@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { reconcileCodeReadingTargetRoot } from "./code-reading-target.ts";
+import {
+  reconcileCodeReadingTargetRoot,
+  resolveCodeReadingTargetPath,
+} from "./code-reading-target.ts";
 
 const pending = {
   turnId: "turn-a",
@@ -37,4 +40,36 @@ test("active session switch cannot reconcile a reader from another pane", () => 
   assert.equal(unchanged, pending);
   assert.equal(unchanged?.projectRoot, null);
   assert.equal(unchanged?.sourceSessionId, "session-a");
+});
+
+test("an open pre-session reader is promoted in place when the chat gets its session id", () => {
+  const preSession = {
+    ...pending,
+    sourceSessionId: null,
+    projectRoot: null,
+  };
+
+  const promoted = reconcileCodeReadingTargetRoot(
+    preSession,
+    "session-assigned",
+    new Map([["turn-a", "/repo/a"]]),
+  );
+
+  assert.equal(promoted?.sourceSessionId, "session-assigned");
+  assert.equal(promoted?.projectRoot, "/repo/a");
+  assert.equal(promoted?.turnId, preSession.turnId);
+  assert.equal(promoted?.code, preSession.code);
+});
+
+test("code-fence working-tree targets resolve only within their captured project", () => {
+  assert.deepEqual(resolveCodeReadingTargetPath("/repo/packages/app", "src/a.ts"), {
+    absolutePath: "/repo/packages/app/src/a.ts",
+    relativePath: "src/a.ts",
+  });
+  assert.equal(resolveCodeReadingTargetPath("/repo/packages/app", "../src/a.ts"), null);
+  assert.equal(resolveCodeReadingTargetPath("/repo/packages/app", "/repo/src/a.ts"), null);
+  assert.equal(
+    resolveCodeReadingTargetPath("C:/Repo/App", "c:/repo/other/a.ts"),
+    null,
+  );
 });

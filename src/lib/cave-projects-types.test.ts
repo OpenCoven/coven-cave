@@ -4,6 +4,8 @@ import { test } from "node:test";
 import {
   dedupeAbsoluteProjectPaths,
   normalizeProjectRoot,
+  projectPathIdentityKey,
+  resolveProjectPathForGitRoot,
   resolvePathWithinProjectRoot,
 } from "./cave-projects-types.ts";
 
@@ -76,5 +78,34 @@ test("absolute project path dedupe follows each platform's case semantics", () =
   assert.deepEqual(
     dedupeAbsoluteProjectPaths(["/Repo/App/File.ts", "/repo/app/file.ts"]),
     ["/Repo/App/File.ts", "/repo/app/file.ts"],
+  );
+});
+
+test("project path identity follows Windows and POSIX case semantics", () => {
+  assert.equal(projectPathIdentityKey("C:/Repo/App"), projectPathIdentityKey("c:\\repo\\APP\\"));
+  assert.equal(
+    projectPathIdentityKey("//Server/Share/Repo"),
+    projectPathIdentityKey("\\\\server\\share\\REPO\\"),
+  );
+  assert.notEqual(projectPathIdentityKey("/Repo/App"), projectPathIdentityKey("/repo/app"));
+});
+
+test("nested project targets become git-root-relative only after project containment", () => {
+  assert.deepEqual(
+    resolveProjectPathForGitRoot(
+      "/repo/packages/app",
+      "/repo",
+      "/repo/packages/app/src/a.ts",
+    ),
+    {
+      absolutePath: "/repo/packages/app/src/a.ts",
+      projectRelativePath: "src/a.ts",
+      gitRelativePath: "packages/app/src/a.ts",
+    },
+  );
+  assert.equal(
+    resolveProjectPathForGitRoot("/repo/packages/app", "/repo", "/repo/src/a.ts"),
+    null,
+    "/repo/packages/app/src/a.ts must never collapse onto /repo/src/a.ts",
   );
 });

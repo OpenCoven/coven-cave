@@ -7983,6 +7983,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onOpenUrl={onOpenUrl}
             handlersRef={transcriptHandlersRef}
             turnProjectRoots={turnProjectRoots}
+            sourceSessionId={sessionId}
           />
           {shouldShowChatArchiveNudge({
             taskLifecycle: linkedContext?.task?.lifecycle ?? null,
@@ -8478,6 +8479,7 @@ const TranscriptRows = memo(function TranscriptRows({
   onOpenUrl,
   handlersRef,
   turnProjectRoots,
+  sourceSessionId,
 }: {
   groupedTurns: TranscriptGroup[];
   turnIndexMap: Map<string, number>;
@@ -8496,6 +8498,7 @@ const TranscriptRows = memo(function TranscriptRows({
   onOpenUrl?: (url: string) => void;
   handlersRef: React.RefObject<TranscriptHandlers>;
   turnProjectRoots: ReadonlyMap<string, string | null>;
+  sourceSessionId: string | null;
 }) {
   const handlers = () => handlersRef.current;
   // Earlier-turns fold ("Chat Session - Prototype.dc.html", cave-u5lq7). The
@@ -8568,6 +8571,7 @@ const TranscriptRows = memo(function TranscriptRows({
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
           branchNav={singleBranchNav}
           toolProjectRoot={turnProjectRoots.get(t.id) ?? null}
+          sourceSessionId={sourceSessionId}
         />
       );
       if (!gapLabel) return row;
@@ -8634,6 +8638,7 @@ const TranscriptRows = memo(function TranscriptRows({
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
               branchNav={groupBranchNav}
               toolProjectRoot={turnProjectRoots.get(t.id) ?? null}
+              sourceSessionId={sourceSessionId}
             />
           );
         })}
@@ -8688,6 +8693,7 @@ function TurnRowImpl({
   feedbackContext,
   branchNav,
   toolProjectRoot,
+  sourceSessionId,
 }: {
   turn: Turn;
   /** User-authored artifact feedback remains a normal chat send. */
@@ -8721,6 +8727,8 @@ function TurnRowImpl({
   branchNav?: { index: number; total: number; onPrev: () => void; onNext: () => void };
   /** Immutable local execution root recorded for this turn, when available. */
   toolProjectRoot: string | null;
+  /** Chat session that owns this turn, including secondary split panes. */
+  sourceSessionId: string | null;
 }) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
@@ -8810,6 +8818,7 @@ function TurnRowImpl({
                 onReply={onReply}
                 onOpenUrl={onOpenUrl}
                 projectRoot={toolProjectRoot}
+                messageId={turn.id}
                 branchNav={branchNav}
               />
               {/* An image or playable clip you attached renders as itself,
@@ -8899,11 +8908,16 @@ function TurnRowImpl({
   // not depend on pending or input parseability, so React updates the same
   // instances when the turn settles.
   const turnTools = turn.tools ?? [];
+  const indexedTurnTools = turnTools.map((tool, originalIndex) => ({ tool, originalIndex }));
   const editToolIds = new Set(
     turnTools.filter((tool) => isFileMutationTool(tool.name)).map((tool) => tool.id),
   );
-  const editCards = turnTools.filter((tool) => editToolIds.has(tool.id));
-  const otherTools = turnTools.filter((tool) => !editToolIds.has(tool.id));
+  const editCards = indexedTurnTools
+    .filter(({ tool }) => editToolIds.has(tool.id))
+    .map(({ tool }) => tool);
+  const otherTools = indexedTurnTools
+    .filter(({ tool }) => !editToolIds.has(tool.id))
+    .map(({ tool, originalIndex }) => ({ ...tool, originalIndex }));
 
   return (
     <div
@@ -8991,6 +9005,8 @@ function TurnRowImpl({
 
           <div className="cave-linear-turn-body">
             <ToolProjectRootContext.Provider value={toolProjectRoot}>
+            <ToolSourceSessionContext.Provider value={sourceSessionId}>
+            <ToolTurnContext.Provider value={turn.id}>
             <ChatToolActivityLayout
               leading={
                 reasoning
@@ -9104,7 +9120,12 @@ function TurnRowImpl({
                               onClick={() =>
                                 window.dispatchEvent(
                                   new CustomEvent("cave:open-file-diff", {
-                                    detail: { path: editedFiles[0], projectRoot: toolProjectRoot },
+                                    detail: {
+                                      path: editedFiles[0],
+                                      projectRoot: toolProjectRoot,
+                                      sourceSessionId,
+                                      turnId: turn.id,
+                                    },
                                   }),
                                 )
                               }
@@ -9120,6 +9141,8 @@ function TurnRowImpl({
                   : null
               }
             />
+            </ToolTurnContext.Provider>
+            </ToolSourceSessionContext.Provider>
             </ToolProjectRootContext.Provider>
             {/* Comment on the markdown artifact this turn produced: select any
                 passage above to leave a comment, then request a revision that
@@ -9447,6 +9470,8 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
 // Each assistant turn provides its immutable recorded execution root. Legacy
 // turns deliberately receive no filesystem authority.
 const ToolProjectRootContext = createContext<string | null>(null);
+const ToolSourceSessionContext = createContext<string | null>(null);
+const ToolTurnContext = createContext<string | null>(null);
 
 function ToolBlock({ tool }: { tool: ToolEvent }) {
   // The file chip's click opens the code rail, which needs a project root —
@@ -9454,6 +9479,8 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   // instead of a dead button (the edit card's Review has its own modal
   // fallback and stays clickable regardless).
   const railRoot = useContext(ToolProjectRootContext);
+  const sourceSessionId = useContext(ToolSourceSessionContext);
+  const turnId = useContext(ToolTurnContext);
   const argSummary = toolArgSummary(tool.name, tool.input);
   // Supported Claude, Codex, and OpenClaw mutations share one descriptor for
   // placement, path, diff rendering, and action readiness.
@@ -9478,7 +9505,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     e.stopPropagation();
     window.dispatchEvent(
       new CustomEvent(isEditTool ? "cave:open-file-diff" : "cave:open-project-file", {
-        detail: { path: targetFile, projectRoot: railRoot },
+        detail: { path: targetFile, projectRoot: railRoot, sourceSessionId, turnId },
       }),
     );
   };
@@ -9517,6 +9544,8 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             <EditCardActions
               key={actionIdentity}
               projectRoot={railRoot}
+              sourceSessionId={sourceSessionId}
+              turnId={turnId}
               mutationPaths={mutation.paths}
               diff={inputDiff ?? ""}
               displayPath={displayPath}
@@ -9657,6 +9686,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.found === next.found &&
     prev.expanded === next.expanded &&
     prev.toolProjectRoot === next.toolProjectRoot &&
+    prev.sourceSessionId === next.sourceSessionId &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&

@@ -59,6 +59,8 @@ function actions(projectRoot: string | null, mutationPath: string) {
     <EditCardActions
       key="tool-call-1"
       projectRoot={projectRoot}
+      sourceSessionId="source-chat"
+      turnId="turn-1"
       mutationPaths={[mutationPath]}
       diff={"--- a/src/file.ts\n+++ b/src/file.ts"}
       displayPath={mutationPath}
@@ -141,7 +143,12 @@ describe("EditCardActions lifecycle", () => {
       expect(dispatched).toHaveLength(1);
       expect(dispatched[0]).toMatchObject({
         type: "cave:open-file-diff",
-        detail: { path: "/repo-a/src/file.ts", projectRoot: "/repo-a" },
+        detail: {
+          path: "/repo-a/src/file.ts",
+          projectRoot: "/repo-a",
+          sourceSessionId: "source-chat",
+          turnId: "turn-1",
+        },
       });
 
       await act(async () => {
@@ -173,6 +180,59 @@ describe("EditCardActions lifecycle", () => {
       else Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
       if (originalDocument === undefined) delete globalThis.document;
       else Object.defineProperty(globalThis, "document", { configurable: true, value: originalDocument });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("nested project Undo posts the captured absolute target and rejects a repo-sibling path", async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    }));
+    let renderer: ReactTestRenderer | undefined;
+
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { dispatchEvent: vi.fn() },
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    try {
+      await act(async () => {
+        renderer = create(actions("/repo/packages/app", "/repo/packages/app/src/a.ts"));
+      });
+      await act(async () => {
+        button(renderer, "Undo").props.onClick();
+      });
+      await act(async () => {
+        await button(renderer, "Confirm undo").props.onClick();
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)).toEqual({
+        projectRoot: "/repo/packages/app",
+        path: "/repo/packages/app/src/a.ts",
+        confirmUntracked: true,
+      });
+
+      await act(async () => {
+        renderer.update(actions("/repo/packages/app", "/repo/src/a.ts"));
+      });
+      expect(
+        renderer.root.findAll(
+          (node) => node.type === "button" && node.children.join("") === "Undo",
+        ),
+      ).toHaveLength(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => {
+        renderer?.unmount();
+      });
+      if (originalWindow === undefined) delete globalThis.window;
+      else Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
       globalThis.fetch = originalFetch;
     }
   });

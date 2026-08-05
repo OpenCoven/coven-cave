@@ -80,7 +80,7 @@ assert.match(
 );
 assert.match(
   editCardActions,
-  /if \(singleProjectPath && projectRoot\) \{[\s\S]{0,250}detail: \{ path: singleProjectPath\.absolutePath, projectRoot \}[\s\S]{0,160}setReviewOpen\(true\)/,
+  /if \(singleProjectPath && projectRoot\) \{[\s\S]{0,280}detail: \{ path: singleProjectPath\.absolutePath, projectRoot, sourceSessionId, turnId \}[\s\S]{0,160}setReviewOpen\(true\)/,
   "Review routes one file by captured root and falls back to the full inline diff otherwise",
 );
 assert.match(
@@ -122,8 +122,18 @@ assert.match(
 assert.match(source, /ToolProjectRootContext/, "edit card resolves project root via context for revert");
 assert.match(
   source,
-  /new CustomEvent\(isEditTool \? "cave:open-file-diff" : "cave:open-project-file", \{\s*detail: \{ path: targetFile, projectRoot: railRoot \},\s*\}\)/,
-  "historical non-edit file tools route through the turn's captured root after the active project switches",
+  /new CustomEvent\(isEditTool \? "cave:open-file-diff" : "cave:open-project-file", \{\s*detail: \{ path: targetFile, projectRoot: railRoot, sourceSessionId, turnId \},\s*\}\)/,
+  "historical tool files carry their captured root, source chat, and turn",
+);
+assert.match(
+  editCardActions,
+  /detail: \{ path: singleProjectPath\.absolutePath, projectRoot, sourceSessionId, turnId \}/,
+  "individual diff review carries complete transcript provenance",
+);
+assert.match(
+  editCardActions,
+  /body: JSON\.stringify\(\{ projectRoot, path: singleProjectPath\.absolutePath, confirmUntracked: true \}\)/,
+  "Undo sends the project-validated absolute target for server-side git-relative derivation",
 );
 assert.match(
   source,

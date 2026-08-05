@@ -155,7 +155,7 @@ test("a worktree citation renders the repo source card, not a web card (SourceCa
   assert.match(card, /function RepoCitationCard/, "the repo variant is its own card");
   assert.match(
     card,
-    /if \(citation\.file\) \{\s*return <RepoCitationCard citation=\{citation\} projectRoot=\{projectRoot\} \/>;\s*\}/,
+    /if \(citation\.file\) \{[\s\S]{0,220}?<RepoCitationCard[\s\S]{0,160}?projectRoot=\{projectRoot\}[\s\S]{0,120}?sourceSessionId=\{sourceSessionId\}/,
     "a citation carrying a file ref takes the repo variant",
   );
   // The three things that identify a worktree source: path, range, lines.
@@ -172,8 +172,8 @@ test("a worktree citation renders the repo source card, not a web card (SourceCa
   assert.match(card, /Open in Code/, "the repo card offers the code destination, not an external link");
   assert.match(
     card,
-    /detail: \{\s*path: file\.path,\s*line: file\.lineStart,\s*projectRoot,/,
-    "repo citation opens carry the historical turn's immutable root",
+    /detail: \{\s*path: file\.path,\s*line: file\.lineStart,\s*projectRoot,\s*sourceSessionId,\s*turnId,/,
+    "repo citation opens carry complete immutable transcript provenance",
   );
   assert.match(
     card,
@@ -182,8 +182,8 @@ test("a worktree citation renders the repo source card, not a web card (SourceCa
   );
   assert.match(
     bubble,
-    /<InlineCitationPreviews[\s\S]{0,220}?projectRoot=\{projectRoot\}/,
-    "message rendering threads turn provenance into citation previews",
+    /<InlineCitationPreviews[\s\S]{0,260}?projectRoot=\{projectRoot\}[\s\S]{0,120}?sourceSessionId=\{reading\?\.sourceSessionId \?\? null\}[\s\S]{0,100}?turnId=\{messageId\}/,
+    "message rendering threads root, chat, and turn provenance into citation previews",
   );
   assert.doesNotMatch(
     card.slice(card.indexOf("function RepoCitationCard"), card.indexOf("function CitationCard")),
