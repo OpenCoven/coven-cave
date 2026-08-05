@@ -12,7 +12,9 @@ export const MAX_CHAT_TITLE_LENGTH = 120;
 // digits, #, or * as emoji. This covers variation selectors, modifiers, ZWJ
 // compounds, and keycaps such as 1️⃣.
 const PICTOGRAPHIC = String.raw`(?:\p{Emoji_Presentation}|\p{Extended_Pictographic})`;
-const EMOJI_SEQUENCE = String.raw`(?:[#*0-9]\uFE0F?\u20E3|${PICTOGRAPHIC}(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D${PICTOGRAPHIC}(?:\uFE0F|\p{Emoji_Modifier})?)*)`;
+const EMOJI_TAG_SEQUENCE = String.raw`(?:[\u{E0020}-\u{E007E}]+\u{E007F})`;
+const EMOJI_COMPONENT = String.raw`${PICTOGRAPHIC}(?:\uFE0F|\p{Emoji_Modifier})?(?:${EMOJI_TAG_SEQUENCE})?`;
+const EMOJI_SEQUENCE = String.raw`(?:[#*0-9]\uFE0F?\u20E3|${EMOJI_COMPONENT}(?:\u200D${EMOJI_COMPONENT})*)`;
 const LEADING_EMOJI_RE = new RegExp(String.raw`^(?:\s|${EMOJI_SEQUENCE})+`, "gu");
 const TRAILING_EMOJI_RE = new RegExp(String.raw`(?:\s|${EMOJI_SEQUENCE})+$`, "gu");
 export function stripLeadingTrailingEmoji(title: string): string {
@@ -113,6 +115,19 @@ function clampAtWordBoundary(text: string, maxLen: number): string | null {
   return `${slice.slice(0, lastSpace).trimEnd().replace(/[,;:\-–—]$/, "")}…`;
 }
 
+function stripLineMarkdown(text: string): string {
+  return text
+    .replace(/^(?:\s{0,3}>\s*)+/gm, "")
+    .replace(/^\s{0,3}\[[^\]]+\]:\s+\S+.*$/gm, " ");
+}
+
+function normalizeGeneratedTitleSource(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const source = input.trim();
+  if (!source) return null;
+  return source.slice(0, MAX_CHAT_TITLE_LENGTH);
+}
+
 /**
  * Shared formatter for all auto-generated titles (first-exchange naming,
  * periodic auto-rename, sparkle generation). Deterministic offline contract:
@@ -127,9 +142,7 @@ function clampAtWordBoundary(text: string, maxLen: number): string | null {
 function formatGeneratedTitle(text: string): string | null {
   // Remove reference definitions and blockquote prefixes before line structure
   // is collapsed. Nested blockquotes are consumed as one prefix.
-  let s = text
-    .replace(/^\s{0,3}\[[^\]]+\]:\s+\S+.*$/gm, " ")
-    .replace(/^(?:\s{0,3}>\s*)+/gm, "");
+  let s = stripLineMarkdown(text);
   // Normalize markdown images: ![alt](url) → alt text if non-empty, else stripped.
   // Must run before link normalization to avoid the leading ! leaking into the output.
   // Supports one level of nested parentheses in the destination (e.g. url_(anchor)).
@@ -182,10 +195,14 @@ function formatGeneratedTitle(text: string): string | null {
   if (s.length < 2) return null;
   // Capitalize.
   s = s.charAt(0).toUpperCase() + s.slice(1);
-  // Cap at word limit (word boundary, no ellipsis for word truncation alone).
+  // Cap at the word limit and make the omission visible. The ellipsis remains
+  // attached to the final retained word, so it does not increase word count.
   const words = s.split(/\s+/);
   if (words.length > MAX_SUMMARY_TITLE_WORDS) {
-    s = words.slice(0, MAX_SUMMARY_TITLE_WORDS).join(" ");
+    s = `${words
+      .slice(0, MAX_SUMMARY_TITLE_WORDS)
+      .join(" ")
+      .replace(/[,;:\-–—]$/, "")}…`;
   }
   // Clamp at character limit; null when no word boundary exists (prevents
   // mid-word fragments from single over-length tokens).
@@ -222,8 +239,8 @@ export function chatSummaryTitle(input: {
   userText?: string | null;
   assistantText?: string | null;
 }): string | null {
-  const normalized = normalizeChatTitle(input.userText);
-  const cleaned = normalized ? cleanPromptForTitle(normalized) : null;
+  const normalized = normalizeGeneratedTitleSource(input.userText);
+  const cleaned = normalized ? cleanPromptForTitle(stripLineMarkdown(normalized)) : null;
   // Short prompts: apply shared formatter and return directly when they fit.
   if (cleaned && cleaned.length <= MAX_SUMMARY_TITLE_LENGTH) {
     const formatted = formatGeneratedTitle(cleaned);

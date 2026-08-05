@@ -424,4 +424,42 @@ assert.equal(
   assert.equal(r, "Fix…", "prefixed giant: cut at word boundary even when space is before 60% threshold");
 }
 
+// Important follow-up: preserve newlines until line-oriented Markdown cleanup.
+assert.equal(
+  chatSummaryTitle({
+    userText: "Fix parser\n> quoted context\n[details]: https://example.com/parser",
+  }),
+  "Fix parser quoted context",
+  "multiline blockquote markers and reference definitions are cleaned before whitespace collapses",
+);
+
+// Unicode subdivision flags are emoji tag sequences: a pictograph followed by
+// tag characters U+E0020–U+E007E and cancel tag U+E007F.
+{
+  const englandFlag = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}";
+  assert.equal(
+    chatSummaryTitle({ userText: `${englandFlag} Fix parser ${englandFlag}` }),
+    "Fix parser",
+    "Unicode emoji tag sequences are removed at title edges",
+  );
+}
+
+// Word-limit truncation is visible, word-safe, and remains within both caps.
+assert.equal(
+  chatSummaryTitle({ userText: "one two three four five six seven eight" }),
+  "One two three four five six seven…",
+  "word-limit truncation appends an ellipsis to the final retained word",
+);
+{
+  const title = chatSummaryTitle({
+    userText: "alpha bravo charlie delta echo foxtrot golf hotel",
+  });
+  assert.equal(title, "Alpha bravo charlie delta echo foxtrot…");
+  assert.ok(title.length <= MAX_SUMMARY_TITLE_LENGTH, "word-truncated title remains within the character cap");
+  assert.ok(
+    title.replace(/…$/, "").split(/\s+/).length <= MAX_SUMMARY_TITLE_WORDS,
+    "attached ellipsis does not add a word",
+  );
+}
+
 console.log("cave-chat-titles.test.ts ok");
