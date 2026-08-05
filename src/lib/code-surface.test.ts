@@ -203,6 +203,19 @@ test("historical review selects the captured root when projects share a relative
   );
 });
 
+test("pending code opens preserve significant POSIX root and target spaces", () => {
+  if (process.platform === "win32") return;
+  assert.equal(
+    codePendingOpenProjectRoot({
+      kind: "files",
+      path: "/repo /src/file.ts ",
+      root: "/repo ",
+      nonce: 99,
+    }),
+    "/repo ",
+  );
+});
+
 test("pending historical review retains its captured root and path after a project switch", () => {
   let activeProjectRoot = "/repo-a";
   const review: PendingCodeOpen = {

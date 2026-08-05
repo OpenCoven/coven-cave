@@ -52,7 +52,11 @@ globalThis.BroadcastChannel = class {
   unref() {}
 };
 
-const idb = { projectAvatars: new Map(), familiarImages: new Map() };
+const idb = {
+  projectAvatars: new Map(),
+  familiarImages: new Map(),
+  projectAvatarAliases: new Map(),
+};
 const LITERAL_DRIVE_IMAGE = {
   dataUrl: "data:image/png;base64,LITERAL-C-DRIVE",
   mime: "image/png",
@@ -112,16 +116,21 @@ const fakeDriver = {
   },
   async put(s, key, value) {
     if (denyWrites) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+    const destinationKey =
+      s === "projectAvatars"
+        ? idb.projectAvatarAliases.get(key) ?? key
+        : key;
     if (
       pausedMigration &&
       s === "projectAvatars" &&
-      key === pausedMigration.to &&
+      destinationKey === pausedMigration.to &&
       value.dataUrl === pausedMigration.sourceDataUrl
     ) {
       pausedMigration.entered.resolve();
       await pausedMigration.release.promise;
     }
-    await withWriteLock(() => idb[s].set(key, value));
+    await withWriteLock(() => idb[s].set(destinationKey, value));
+    return destinationKey;
   },
   async delete(s, key) {
     await withWriteLock(() => idb[s].delete(key));
@@ -129,25 +138,32 @@ const fakeDriver = {
   async move(s, from, to) {
     if (denyWrites) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
     return withWriteLock(async () => {
+      const destinationKey =
+        s === "projectAvatars"
+          ? idb.projectAvatarAliases.get(to) ?? to
+          : to;
       if (pausedMigration && s === "projectAvatars" && from === pausedMigration.from && to === pausedMigration.to) {
         pausedMigration.entered.resolve();
         await pausedMigration.release.promise;
       }
       const source = idb[s].get(from) ?? null;
-      const destination = idb[s].get(to) ?? null;
-      if (!source) return { source: null, destination };
+      const destination = idb[s].get(destinationKey) ?? null;
+      if (s === "projectAvatars" && from !== destinationKey) {
+        idb.projectAvatarAliases.set(from, destinationKey);
+      }
+      if (!source) return { source: null, destination, destinationKey };
       if (destination) {
         if (migrationDestinationWins(source, destination)) {
           idb[s].delete(from);
-          return { source: null, destination };
+          return { source: null, destination, destinationKey };
         }
-        idb[s].set(to, source);
+        idb[s].set(destinationKey, source);
         idb[s].delete(from);
-        return { source: null, destination: source };
+        return { source: null, destination: source, destinationKey };
       }
-      idb[s].set(to, source);
+      idb[s].set(destinationKey, source);
       idb[s].delete(from);
-      return { source: null, destination: source };
+      return { source: null, destination: source, destinationKey };
     });
   },
 };
@@ -177,6 +193,7 @@ const IMAGE = { dataUrl: "data:image/png;base64,AAAA", mime: "image/png" };
 // and the test would fail for a reason that has nothing to do with the
 // migration. Going through setProjectImage is also how the app gets here.
 async function seed() {
+  idb.projectAvatarAliases.delete(LEGACY);
   for (const key of [...idb.projectAvatars.keys()]) await images.clearProjectImage(key);
   await images.setProjectImage(LEGACY, IMAGE);
   store.set(
@@ -277,6 +294,53 @@ const PROJECTS = [
   assert.equal(moved, 0, "a second pass finds nothing to move");
   assert.equal(JSON.stringify([...idb.projectAvatars], null, 0), after, "avatars unchanged");
   assert.equal(store.get(CHAT_PROJECT_OVERRIDES_KEY), overridesAfter, "overrides unchanged");
+}
+
+{
+  const source = "/late-write/legacy";
+  const destination = "/late-write/canonical";
+  idb.projectAvatars.delete(source);
+  idb.projectAvatars.delete(destination);
+  idb.projectAvatarAliases.delete(source);
+  const acknowledgements = [];
+  assert.equal(
+    await migrateAndAcknowledgeProjectRoots(
+      [{ id: "late-write", root: destination, legacyRoot: source }],
+      {
+        acknowledge: async (payload) => {
+          acknowledgements.push(payload);
+        },
+      },
+    ),
+    0,
+    "an empty alias migration remains observably idempotent",
+  );
+  const lateImage = {
+    dataUrl: "data:image/png;base64,LATE-WINDOW",
+    mime: "image/png",
+  };
+  assert.deepEqual(await images.setProjectImage(source, lateImage), { ok: true });
+  assert.equal(
+    idb.projectAvatars.has(source),
+    false,
+    "a stale window cannot recreate an acknowledged legacy avatar key",
+  );
+  assert.equal(
+    idb.projectAvatars.get(destination)?.dataUrl,
+    lateImage.dataUrl,
+    "the late write lands at the durable canonical destination",
+  );
+  assert.equal(
+    await migrateProjectRootKeys([
+      { id: "late-write", root: destination, legacyRoot: source },
+    ]),
+    0,
+    "a subsequent stale-window migration is still idempotent",
+  );
+  assert.deepEqual(
+    acknowledgements,
+    [[{ projectId: "late-write", legacyRoots: [source] }]],
+  );
 }
 
 {
@@ -609,8 +673,8 @@ assert.deepEqual(
   const projectImages = readFileSync(new URL("./cave-project-images.ts", import.meta.url), "utf8");
   assert.match(
     driver,
-    /async move\(store, from, to\) \{[\s\S]*?db\.transaction\(store, "readwrite"\)[\s\S]*?os\.get\(from\)[\s\S]*?os\.get\(to\)[\s\S]*?os\.put\(source, to\)[\s\S]*?os\.delete\(from\)[\s\S]*?await done;/,
-    "destination compare, conditional write, and source deletion share one readwrite transaction",
+    /async move\(store, from, to\) \{[\s\S]*?db\.transaction\(stores, "readwrite"\)[\s\S]*?resolveProjectAvatarAlias\(aliases, to\)[\s\S]*?os\.get\(from\)[\s\S]*?os\.get\(destinationKey\)[\s\S]*?os\.put\(source, destinationKey\)[\s\S]*?os\.delete\(from\)[\s\S]*?aliases\.put\(destinationKey, from\)[\s\S]*?await done;/,
+    "alias install, destination compare, conditional write, and source deletion share one readwrite transaction",
   );
   assert.match(
     projectImages,

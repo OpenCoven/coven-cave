@@ -41,6 +41,30 @@ test("POSIX authorization preserves backslashes and surrounding whitespace exact
     null,
     "/repo/packages/app\\name must not authorize /repo/packages/app/name",
   );
+  assert.deepEqual(
+    resolveNativeProjectPathForGitRoot(
+      "/repo/packages/app ",
+      "/repo",
+      "/repo/packages/app /src/file.ts ",
+      "linux",
+    ),
+    {
+      absolutePath: "/repo/packages/app /src/file.ts ",
+      projectRelativePath: "src/file.ts ",
+      gitRelativePath: "packages/app /src/file.ts ",
+    },
+    "non-whitespace POSIX roots and targets retain trailing spaces",
+  );
+  assert.equal(
+    resolveNativePathWithinRoot("/repo/packages/app ", "   ", "linux"),
+    null,
+    "whitespace-only targets are rejected without trimming valid path bytes",
+  );
+  assert.equal(
+    resolveNativePathWithinRoot("/repo/packages/app ", "src/\tfile.ts", "linux"),
+    null,
+    "control-bearing targets fail closed",
+  );
 });
 
 test("Windows authorization normalizes separators and case with segment boundaries", () => {

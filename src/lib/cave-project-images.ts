@@ -93,12 +93,17 @@ export async function setProjectImage(root: string, image: { dataUrl: string; mi
   const entry: ProjectImage = { dataUrl: image.dataUrl, mime: image.mime, updatedAt: new Date().toISOString() };
   // Persist first, then commit to memory — a refused write must not leave the
   // cache claiming an image that storage never accepted.
+  let destinationKey = key;
   try {
-    await avatarStorage().put("projectAvatars", key, entry);
+    destinationKey =
+      (await avatarStorage().put("projectAvatars", key, entry)) || key;
   } catch {
     return { ok: false, reason: STORAGE_FULL_REASON };
   }
-  cached = { ...cached, [key]: entry };
+  const next = { ...cached };
+  if (destinationKey !== key) delete next[key];
+  next[destinationKey] = entry;
+  cached = next;
   notify();
   broadcast();
   return { ok: true };
@@ -107,14 +112,16 @@ export async function setProjectImage(root: string, image: { dataUrl: string; mi
 export async function clearProjectImage(root: string): Promise<void> {
   await ensureHydrated();
   const key = normalizeProjectRoot(root);
-  if (!(key in cached)) return;
+  let destinationKey = key;
   try {
-    await avatarStorage().delete("projectAvatars", key);
+    destinationKey =
+      (await avatarStorage().delete("projectAvatars", key)) || key;
   } catch {
     return; // keep memory and storage consistent — the image simply stays
   }
   const next = { ...cached };
   delete next[key];
+  delete next[destinationKey];
   cached = Object.keys(next).length > 0 ? next : EMPTY;
   notify();
   broadcast();
@@ -138,11 +145,12 @@ async function moveProjectImageKey(
     }
     return null;
   }
+  const destinationKey = result.destinationKey || to;
   const next = { ...cached };
   if (result.source) next[from] = result.source;
   else delete next[from];
-  if (result.destination) next[to] = result.destination;
-  else delete next[to];
+  if (result.destination) next[destinationKey] = result.destination;
+  else delete next[destinationKey];
   cached = Object.keys(next).length > 0 ? next : EMPTY;
   notify();
   broadcast();

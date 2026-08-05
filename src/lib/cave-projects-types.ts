@@ -91,7 +91,9 @@ function normalizedPathSegments(value: string): string[] | null {
 }
 
 function absolutePathParts(value: string): AbsolutePathParts | null {
-  const portable = value.trim().replace(/\\/g, "/");
+  if (!value.trim() || /[\0-\x1f\x7f]/.test(value)) return null;
+  const windowsSyntax = hasWindowsPathSyntax(value);
+  const portable = (windowsSyntax ? value.trim() : value).replace(/\\/g, "/");
   const unc = portable.match(/^\/\/([^/]+)\/([^/]+)(?:\/(.*))?$/);
   if (unc) {
     const [, server, share, rest = ""] = unc;
@@ -178,7 +180,14 @@ export function resolvePathWithinProjectRoot(
   projectRoot: string | null | undefined,
   candidatePath: string | null | undefined,
 ): ProjectRelativePath | null {
-  if (!projectRoot || !candidatePath || /[\0\r\n]/.test(candidatePath)) return null;
+  if (
+    !projectRoot?.trim() ||
+    !candidatePath?.trim() ||
+    /[\0-\x1f\x7f]/.test(projectRoot) ||
+    /[\0-\x1f\x7f]/.test(candidatePath)
+  ) {
+    return null;
+  }
   const root = absolutePathParts(projectRoot);
   if (!root) return null;
 

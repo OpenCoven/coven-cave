@@ -26,6 +26,7 @@ try {
     revokeAllGrantsForProject,
     inspectProjectPermissionIntegrity,
     repairOrphanProjectPermissions,
+    revokeProjectFromFamiliar,
     listProjectGrants,
     listAccessibleProjects,
     loadHumanPermissionConfig,
@@ -42,7 +43,7 @@ try {
   const { loadProjects, withProjectRegistryLock } = await import("./cave-projects.ts");
 
   const projects = [
-    { id: "cave", name: "Cave", root: "/tmp/cave", createdAt: "now", updatedAt: "now" },
+    { id: "cave", legacyProjectIds: ["cave-legacy"], name: "Cave", root: "/tmp/cave", createdAt: "now", updatedAt: "now" },
     { id: "docs", name: "Docs", root: "/tmp/docs", createdAt: "now", updatedAt: "now" },
   ];
   await writeFile(
@@ -400,6 +401,36 @@ try {
   const junk = await loadMobileWriteAccess();
   assert.equal(junk.allowMobileFileWrites, false, "non-boolean flag values fail closed");
   assert.equal(junk.allowMobileCanvasWrites, false, "non-boolean canvas flag fails closed");
+
+  await grantProjectToFamiliar({
+    familiarId: "legacy-revoke",
+    projectId: "cave",
+    source: "human",
+  });
+  assert.equal(
+    await revokeProjectFromFamiliar({
+      familiarId: "legacy-revoke",
+      projectId: "cave-legacy",
+    }),
+    true,
+    "a supported stale project id revokes the canonical stored grant",
+  );
+  assert.equal(
+    await revokeProjectFromFamiliar({
+      familiarId: "legacy-revoke",
+      projectId: "cave-legacy",
+    }),
+    false,
+    "legacy-id revocation is idempotent",
+  );
+  assert.equal(
+    await revokeProjectFromFamiliar({
+      familiarId: "legacy-revoke",
+      projectId: "unsupported-legacy-id",
+    }),
+    false,
+    "an unsupported legacy id cannot revoke another project's grant",
+  );
 
   // ── revokeAllGrantsForProject: removing a project leaves no orphaned access ──
   await grantProjectToFamiliar({ familiarId: "cascade-a", projectId: "cave", source: "human" });

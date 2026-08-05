@@ -20,21 +20,22 @@ export type AvatarStore = "familiarImages" | "projectAvatars";
 export type AvatarMoveResult = {
   source: AvatarRecord | null;
   destination: AvatarRecord | null;
+  destinationKey: string;
 };
 
 export type AvatarStorageDriver = {
   getAll(store: AvatarStore): Promise<Record<string, AvatarRecord>>;
   getAllStrict(store: AvatarStore): Promise<Record<string, AvatarRecord>>;
-  put(store: AvatarStore, key: string, value: AvatarRecord): Promise<void>;
-  delete(store: AvatarStore, key: string): Promise<void>;
+  put(store: AvatarStore, key: string, value: AvatarRecord): Promise<string>;
+  delete(store: AvatarStore, key: string): Promise<string>;
   move(store: AvatarStore, from: string, to: string): Promise<AvatarMoveResult>;
 };
 
 const DB_NAME = "cave-avatars";
-// Schema versions are monotonic. v3 previously added familiarFoil; keep the
-// version even though that retired store is no longer used by this driver.
-const DB_VERSION = 3;
+// v3 added the retired familiarFoil store; v4 adds durable project-root aliases.
+const DB_VERSION = 4;
 const STORES: readonly AvatarStore[] = ["familiarImages", "projectAvatars"];
+const PROJECT_AVATAR_ALIASES = "projectAvatarAliases";
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -46,6 +47,9 @@ function openDb(): Promise<IDBDatabase> {
       const db = req.result;
       for (const store of STORES) {
         if (!db.objectStoreNames.contains(store)) db.createObjectStore(store);
+      }
+      if (!db.objectStoreNames.contains(PROJECT_AVATAR_ALIASES)) {
+        db.createObjectStore(PROJECT_AVATAR_ALIASES);
       }
     };
     req.onsuccess = () => {
@@ -101,6 +105,21 @@ export function avatarMigrationDestinationWins(
 
 const hasIdb = () => typeof indexedDB !== "undefined";
 
+async function resolveProjectAvatarAlias(
+  aliases: IDBObjectStore,
+  key: string,
+): Promise<string> {
+  const seen = new Set<string>();
+  let current = key;
+  while (!seen.has(current)) {
+    seen.add(current);
+    const next = await requestToPromise(aliases.get(current));
+    if (typeof next !== "string" || !next || next === current) return current;
+    current = next;
+  }
+  throw new Error("project avatar alias cycle");
+}
+
 async function readAllStrict(store: AvatarStore): Promise<Record<string, AvatarRecord>> {
   if (!hasIdb()) throw new Error("IndexedDB unavailable");
   const db = await openDb();
@@ -144,46 +163,102 @@ const idbDriver: AvatarStorageDriver = {
   async put(store, key, value) {
     if (!hasIdb()) throw new Error("IndexedDB unavailable");
     const db = await openDb();
-    const tx = db.transaction(store, "readwrite");
-    await requestToPromise(tx.objectStore(store).put(value, key));
+    const stores = store === "projectAvatars"
+      ? [store, PROJECT_AVATAR_ALIASES]
+      : [store];
+    const tx = db.transaction(stores, "readwrite");
+    const done = transactionToPromise(tx);
+    try {
+      const destinationKey = store === "projectAvatars"
+        ? await resolveProjectAvatarAlias(
+            tx.objectStore(PROJECT_AVATAR_ALIASES),
+            key,
+          )
+        : key;
+      await requestToPromise(tx.objectStore(store).put(value, destinationKey));
+      await done;
+      return destinationKey;
+    } catch (error) {
+      await done.catch(() => undefined);
+      throw error;
+    }
   },
 
   async delete(store, key) {
     if (!hasIdb()) throw new Error("IndexedDB unavailable");
     const db = await openDb();
-    const tx = db.transaction(store, "readwrite");
-    await requestToPromise(tx.objectStore(store).delete(key));
+    const stores = store === "projectAvatars"
+      ? [store, PROJECT_AVATAR_ALIASES]
+      : [store];
+    const tx = db.transaction(stores, "readwrite");
+    const done = transactionToPromise(tx);
+    try {
+      const destinationKey = store === "projectAvatars"
+        ? await resolveProjectAvatarAlias(
+            tx.objectStore(PROJECT_AVATAR_ALIASES),
+            key,
+          )
+        : key;
+      await requestToPromise(tx.objectStore(store).delete(destinationKey));
+      await done;
+      return destinationKey;
+    } catch (error) {
+      await done.catch(() => undefined);
+      throw error;
+    }
   },
 
   async move(store, from, to) {
     if (!hasIdb()) throw new Error("IndexedDB unavailable");
     const db = await openDb();
-    const tx = db.transaction(store, "readwrite");
+    const stores = store === "projectAvatars"
+      ? [store, PROJECT_AVATAR_ALIASES]
+      : [store];
+    const tx = db.transaction(stores, "readwrite");
     const done = transactionToPromise(tx).then(
       () => ({ ok: true as const }),
       (error: unknown) => ({ ok: false as const, error }),
     );
     const os = tx.objectStore(store);
     try {
+      const aliases = store === "projectAvatars"
+        ? tx.objectStore(PROJECT_AVATAR_ALIASES)
+        : null;
+      const destinationKey = aliases
+        ? await resolveProjectAvatarAlias(aliases, to)
+        : to;
       const source = (await requestToPromise(os.get(from))) as AvatarRecord | undefined;
-      const destination = (await requestToPromise(os.get(to))) as AvatarRecord | undefined;
+      const destination = (await requestToPromise(os.get(destinationKey))) as AvatarRecord | undefined;
       let result: AvatarMoveResult;
 
-      if (!source) {
-        result = { source: null, destination: destination ?? null };
+      if (from === destinationKey) {
+        result = {
+          source: null,
+          destination: source ?? destination ?? null,
+          destinationKey,
+        };
+      } else if (!source) {
+        result = {
+          source: null,
+          destination: destination ?? null,
+          destinationKey,
+        };
       } else if (destination) {
         if (avatarMigrationDestinationWins(source, destination)) {
           os.delete(from);
-          result = { source: null, destination };
+          result = { source: null, destination, destinationKey };
         } else {
-          os.put(source, to);
+          os.put(source, destinationKey);
           os.delete(from);
-          result = { source: null, destination: source };
+          result = { source: null, destination: source, destinationKey };
         }
       } else {
-        os.put(source, to);
+        os.put(source, destinationKey);
         os.delete(from);
-        result = { source: null, destination: source };
+        result = { source: null, destination: source, destinationKey };
+      }
+      if (aliases && from !== destinationKey) {
+        aliases.put(destinationKey, from);
       }
 
       const completion = await done;

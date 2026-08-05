@@ -219,8 +219,6 @@ type RootResolution =
   | { ok: true; projectRoot: string; repoRoot: string; projectPathspec: string }
   | { ok: false; status: number; error: string; notARepo?: boolean };
 
-type RootAuthorization = "standard" | "scoped-revert";
-
 function projectPathspecForGitRoot(projectRoot: string, repoRoot: string): string | null {
   if (nativeProjectPathsEqual(projectRoot, repoRoot)) return ".";
   const target = resolveNativePathWithinRoot(repoRoot, projectRoot);
@@ -234,16 +232,20 @@ function projectPathspecForGitRoot(projectRoot: string, repoRoot: string): strin
  *  Resolves to the repo toplevel so status paths line up with diff/revert. */
 async function resolveRepoRoot(
   projectRoot: string,
-  authorization: RootAuthorization = "standard",
 ): Promise<RootResolution> {
-  if (!path.isAbsolute(projectRoot)) {
+  if (
+    !projectRoot.trim() ||
+    /[\0-\x1f\x7f]/.test(projectRoot) ||
+    !path.isAbsolute(projectRoot)
+  ) {
     return { ok: false, status: 400, error: "projectRoot must be an absolute path" };
   }
   // A path is allowed if it's under the static workspace allow-list OR under a
   // directory the daemon has an active session for (the daemon already spawned
   // a harness there, so it's user-sanctioned). The session-root list is fetched
-  // once and reused for the standard post-`rev-parse` repo-toplevel re-check.
-  // Scoped reverts instead require a proven project-within-repo relationship.
+  // once and reused for the post-`rev-parse` repo-toplevel re-check. A nested
+  // project authorizes only itself: every operation that runs from the enclosing
+  // repository must independently authorize that repository boundary first.
   let sessionRoots: string[] | null = null;
   const isAllowed = async (candidate: string): Promise<string | null> => {
     const staticAllowed = resolveAllowedProjectPath(candidate);
@@ -276,7 +278,7 @@ async function resolveRepoRoot(
     if (!projectPathspec) {
       return { ok: false, status: 403, error: "path not allowed" };
     }
-    if (authorization === "standard" && !(await isAllowed(repoRoot))) {
+    if (!(await isAllowed(repoRoot))) {
       return { ok: false, status: 403, error: "path not allowed" };
     }
     return { ok: true, projectRoot: real, repoRoot, projectPathspec };
@@ -770,12 +772,7 @@ export async function POST(req: NextRequest) {
   }
   const action = body.action ?? "revert";
 
-  const root = await resolveRepoRoot(
-    body.projectRoot,
-    action === "revert" || action === "restore-checkpoint"
-      ? "scoped-revert"
-      : "standard",
-  );
+  const root = await resolveRepoRoot(body.projectRoot);
   if (!root.ok) {
     return NextResponse.json({ ok: false, error: root.error }, { status: root.status });
   }
@@ -972,7 +969,7 @@ export async function POST(req: NextRequest) {
         // Legacy/manual checkpoints can span the repository. A captured nested
         // project may restore only target-scoped checkpoints; broad snapshots
         // still require the enclosing repository to pass standard authorization.
-        const standardRoot = await resolveRepoRoot(body.projectRoot, "standard");
+        const standardRoot = await resolveRepoRoot(body.projectRoot);
         if (!standardRoot.ok) {
           return NextResponse.json(
             { ok: false, error: standardRoot.error },

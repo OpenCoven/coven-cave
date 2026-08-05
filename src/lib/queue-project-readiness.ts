@@ -44,7 +44,10 @@ export type QueueProjectReadiness = {
 };
 
 type BeadsProbe = (repoRoot: string, beadsDir: string, args: string[]) => Promise<BdResult>;
-type QueueProjectReadinessOptions = { beadsProbe?: BeadsProbe };
+type QueueProjectReadinessOptions = {
+  beadsProbe?: BeadsProbe;
+  projectsLoader?: typeof loadProjects;
+};
 const READY_PROBE_TTL_MS = 2_000;
 const readyProbeCache = new Map<string, { expiresAt: number; result: BdResult }>();
 const ONBOARDING_READINESS_TTL_MS = 5_000;
@@ -68,30 +71,41 @@ function queueProjectFilePath(): string {
 
 let selectionWriteTail: Promise<void> = Promise.resolve();
 
-async function writeSelectedProjectId(file: string, projectId: string): Promise<void> {
+async function withSelectionWriteLock<T>(operation: () => Promise<T>): Promise<T> {
   let release!: () => void;
   const next = new Promise<void>((resolve) => { release = resolve; });
   const previous = selectionWriteTail;
   selectionWriteTail = next;
   await previous;
-  const temporary = `${file}.${randomUUID()}.tmp`;
   try {
-    await writeFile(
-      /* turbopackIgnore: true */ temporary,
-      JSON.stringify({ version: 1, projectId } satisfies QueueProjectFile, null, 2),
-      "utf8",
-    );
-    // Rename is atomic within the Cave home directory: concurrent readers see
-    // either the old valid selection or the complete new selection.
-    await rename(/* turbopackIgnore: true */ temporary, file);
+    return await operation();
   } finally {
     release();
   }
 }
 
-async function readSelectedProjectId(): Promise<string | null> {
+async function writeSelectedProjectIdUnlocked(
+  file: string,
+  projectId: string,
+): Promise<void> {
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  await writeFile(
+    /* turbopackIgnore: true */ temporary,
+    JSON.stringify({ version: 1, projectId } satisfies QueueProjectFile, null, 2),
+    "utf8",
+  );
+  // Rename is atomic within the Cave home directory: concurrent readers see
+  // either the old valid selection or the complete new selection.
+  await rename(/* turbopackIgnore: true */ temporary, file);
+}
+
+async function writeSelectedProjectId(file: string, projectId: string): Promise<void> {
+  await withSelectionWriteLock(() => writeSelectedProjectIdUnlocked(file, projectId));
+}
+
+async function readSelectedProjectId(file = queueProjectFilePath()): Promise<string | null> {
   try {
-    const raw = await readFile(/* turbopackIgnore: true */ queueProjectFilePath(), "utf8");
+    const raw = await readFile(/* turbopackIgnore: true */ file, "utf8");
     const value = JSON.parse(raw) as Partial<QueueProjectFile>;
     if (value.version !== 1 || typeof value.projectId !== "string" || !value.projectId.trim()) {
       throw new QueueProjectStorageError("The saved Queue project selection is invalid. Choose the project again.");
@@ -103,6 +117,19 @@ async function readSelectedProjectId(): Promise<string | null> {
     if (cause instanceof QueueProjectStorageError) throw cause;
     throw new QueueProjectStorageError("Cave could not read the saved Queue project selection. Check Cave home permissions and try again.");
   }
+}
+
+async function compareAndSwapSelectedProjectId(
+  file: string,
+  expectedProjectId: string,
+  nextProjectId: string,
+): Promise<boolean> {
+  return withSelectionWriteLock(async () => {
+    const currentProjectId = await readSelectedProjectId(file);
+    if (currentProjectId !== expectedProjectId) return false;
+    await writeSelectedProjectIdUnlocked(file, nextProjectId);
+    return true;
+  });
 }
 
 export async function selectQueueProject(projectId: string): Promise<CaveProject | null> {
@@ -261,7 +288,10 @@ function projectShape(project: CaveProject): Pick<CaveProject, "id" | "name" | "
  * cwd is application data, never a user workspace; callers must use this
  * readiness result instead of falling back to process.cwd().
  */
-export async function queueProjectReadiness(options: QueueProjectReadinessOptions = {}): Promise<QueueProjectReadiness> {
+async function queueProjectReadinessAttempt(
+  options: QueueProjectReadinessOptions,
+  retries: number,
+): Promise<QueueProjectReadiness> {
   let projectId: string | null;
   try {
     projectId = await readSelectedProjectId();
@@ -279,7 +309,10 @@ export async function queueProjectReadiness(options: QueueProjectReadinessOption
     };
   }
 
-  const project = projectById(projectId, await loadProjects());
+  const project = projectById(
+    projectId,
+    await (options.projectsLoader ?? loadProjects)(),
+  );
   if (!project) {
     return {
       ok: false,
@@ -291,7 +324,14 @@ export async function queueProjectReadiness(options: QueueProjectReadinessOption
   }
   if (project.id !== projectId) {
     try {
-      await writeSelectedProjectId(queueProjectFilePath(), project.id);
+      const rewritten = await compareAndSwapSelectedProjectId(
+        queueProjectFilePath(),
+        projectId,
+        project.id,
+      );
+      if (!rewritten && retries > 0) {
+        return queueProjectReadinessAttempt(options, retries - 1);
+      }
     } catch {
       return {
         ok: false,
@@ -388,4 +428,10 @@ export async function queueProjectReadiness(options: QueueProjectReadinessOption
     project: { ...selected, root: gitRoot.root },
     canGenerate: false,
   };
+}
+
+export function queueProjectReadiness(
+  options: QueueProjectReadinessOptions = {},
+): Promise<QueueProjectReadiness> {
+  return queueProjectReadinessAttempt(options, 1);
 }

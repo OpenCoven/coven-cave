@@ -828,17 +828,18 @@ export async function revokeProjectFromFamiliar(input: {
 }): Promise<boolean> {
   return withProjectIdMigrations((migrations) => withWriteMutex(async () => {
     const file = await loadProjectPermissionsUnlocked(migrations);
+    const projectId = remapProjectId(input.projectId, migrations);
     const removed = file.projectGrants.find(
-      (grant) => grant.familiarId === input.familiarId && grant.projectId === input.projectId,
+      (grant) => grant.familiarId === input.familiarId && grant.projectId === projectId,
     );
     const next = file.projectGrants.filter(
-      (grant) => !(grant.familiarId === input.familiarId && grant.projectId === input.projectId),
+      (grant) => !(grant.familiarId === input.familiarId && grant.projectId === projectId),
     );
     if (next.length === file.projectGrants.length) return false;
     file.projectGrants = next;
     recordGrantChange(file, {
       familiarId: input.familiarId,
-      projectId: input.projectId,
+      projectId,
       from: removed?.access ?? null,
       to: null,
       actor: input.actor ?? "system",

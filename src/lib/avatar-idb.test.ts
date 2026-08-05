@@ -6,6 +6,7 @@ type StoredAvatar = { dataUrl: string; mime: string; updatedAt: string };
 test("move resolves both avatar conflicts atomically and observes failed transactions", async () => {
   const originalIndexedDb = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
   const records = new Map<string, StoredAvatar>();
+  const aliases = new Map<string, string>();
   const mutations: Array<{ tx: number; operation: "put" | "delete"; key: string }> = [];
   const unhandled: unknown[] = [];
   let transactionId = 0;
@@ -28,7 +29,7 @@ test("move resolves both avatar conflicts atomically and observes failed transac
         oncomplete: null as (() => void) | null,
         onerror: null as (() => void) | null,
         onabort: null as (() => void) | null,
-        objectStore() {
+        objectStore(name = "projectAvatars") {
           const request = <T>(work: () => T) => {
             const currentRevision = ++revision;
             pending += 1;
@@ -72,6 +73,22 @@ test("move resolves both avatar conflicts atomically and observes failed transac
             });
             return result;
           };
+          if (name === "projectAvatarAliases") {
+            return {
+              get(key: string) {
+                return request(() => aliases.get(key));
+              },
+              put(value: string, key: string) {
+                return request(() => {
+                  aliases.set(key, value);
+                  return key;
+                });
+              },
+              delete(key: string) {
+                return request(() => aliases.delete(key));
+              },
+            };
+          }
           return {
             get(key: string) {
               return request(() => {
@@ -205,7 +222,7 @@ test("move resolves both avatar conflicts atomically and observes failed transac
     mutations.length = 0;
     assert.deepEqual(
       await avatarStorage().move("projectAvatars", "legacy", "canonical"),
-      { source: null, destination: newer },
+      { source: null, destination: newer, destinationKey: "canonical" },
     );
     assert.equal(records.has("legacy"), false, "newer canonical data consumes the legacy source");
     assert.deepEqual(records.get("canonical"), newer);
@@ -220,7 +237,7 @@ test("move resolves both avatar conflicts atomically and observes failed transac
     mutations.length = 0;
     assert.deepEqual(
       await avatarStorage().move("projectAvatars", "legacy", "canonical"),
-      { source: null, destination: newer },
+      { source: null, destination: newer, destinationKey: "canonical" },
     );
     assert.equal(records.has("legacy"), false, "newer legacy data is consumed after promotion");
     assert.deepEqual(records.get("canonical"), newer, "newer legacy data overwrites canonical data");
@@ -247,6 +264,30 @@ test("move resolves both avatar conflicts atomically and observes failed transac
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.equal(aborts, 1, "the failed request aborts its transaction");
     assert.deepEqual(unhandled, [], "the transaction rejection is always observed");
+
+    records.clear();
+    aliases.clear();
+    assert.deepEqual(
+      await avatarStorage().move("projectAvatars", "late-legacy", "late-canonical"),
+      {
+        source: null,
+        destination: null,
+        destinationKey: "late-canonical",
+      },
+      "migration persists a redirect even when no avatar exists yet",
+    );
+    const late: StoredAvatar = {
+      dataUrl: "data:image/png;base64,late",
+      mime: "image/png",
+      updatedAt: "2026-08-05T21:00:00.000Z",
+    };
+    assert.equal(
+      await avatarStorage().put("projectAvatars", "late-legacy", late),
+      "late-canonical",
+      "a stale cross-window writer resolves the durable redirect transactionally",
+    );
+    assert.equal(records.has("late-legacy"), false);
+    assert.deepEqual(records.get("late-canonical"), late);
   } finally {
     process.off("unhandledRejection", onUnhandled);
     if (originalIndexedDb) {

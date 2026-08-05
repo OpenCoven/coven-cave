@@ -84,16 +84,16 @@ export function parseConversationRuntime(
 ): { kind: "local"; cwd?: string } | { kind: "ssh"; host: string; cwd?: string } | null {
   if (typeof runtime !== "string" || !runtime) return null;
   if (runtime.startsWith("local:")) {
-    const cwd = runtime.slice("local:".length).trim();
-    return { kind: "local", ...(cwd ? { cwd } : {}) };
+    const cwd = runtime.slice("local:".length);
+    return { kind: "local", ...(cwd.trim() ? { cwd } : {}) };
   }
   if (runtime.startsWith("ssh:")) {
     const rest = runtime.slice("ssh:".length);
     const sep = rest.indexOf(":");
     const host = (sep === -1 ? rest : rest.slice(0, sep)).trim();
-    const cwd = sep === -1 ? "" : rest.slice(sep + 1).trim();
+    const cwd = sep === -1 ? "" : rest.slice(sep + 1);
     if (!host) return null;
-    return { kind: "ssh", host, ...(cwd ? { cwd } : {}) };
+    return { kind: "ssh", host, ...(cwd.trim() ? { cwd } : {}) };
   }
   return null;
 }
