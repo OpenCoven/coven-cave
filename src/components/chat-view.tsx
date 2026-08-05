@@ -8241,6 +8241,209 @@ function TurnRowImpl({
               {turn.attachments?.length ? <span className="cave-linear-turn-recency">{turn.attachments.length} file{turn.attachments.length === 1 ? "" : "s"}</span> : null}
             </div>
             <div className="cave-linear-turn-body">
+              <MessageBubble
+                role={turn.role}
+                content={turn.text || (turn.attachments?.length ? "Attached files" : "")}
+                timestamp={turn.createdAt}
+                showTimestamp={false}
+                pending={turn.pending}
+                onEdit={onEdit}
+                onReply={onReply}
+                onOpenUrl={onOpenUrl}
+                branchNav={branchNav}
+              />
+              {/* An image you attached renders as the image, matching the
+                  assistant path — the chip list only carries what has no
+                  pixels to show (text files, oversize/undelivered images). */}
+              {turn.attachments?.length ? (
+                <>
+                  <InlineImageAttachments attachments={turn.attachments} />
+                  {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
+                    <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                  ) : null}
+                </>
+              ) : null}
+              {/* Bare-line GitHub URLs in a user message unfurl into cards
+                  beneath the bubble (attachment idiom) — the headline "paste a
+                  PR link" gesture (design §1). User turns only, never system. */}
+              {(() => {
+                const ghRefs = turn.role === "user" ? unfurlUserMessage(turn.text) : [];
+                const skillInvocation = turn.role === "user" ? parseSkillInvocation(turn.text) : null;
+                return ghRefs.length || skillInvocation ? (
+                  <div className="mt-2 space-y-2">
+                    {skillInvocation ? (
+                      // Deterministic /skill card (design §5): the app built
+                      // this prompt itself, so no marker is needed to know a
+                      // skill was invoked. Live stage arrives via the
+                      // assistant turn's own <coven:skill> cards.
+                      <SkillStageCard name={skillInvocation.name} stage="invoked" note={skillInvocation.args} />
+                    ) : null}
+                    {ghRefs.map((d) => (
+                      <GitHubCard key={descriptorUrl(d)} descriptor={d} onOpenUrl={onOpenUrl} familiar={ghFamiliar} />
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Hide raw `coven:attachment` marker blocks from the live-streamed text. The
+  // server strips them from the persisted text and streams the parsed files as
+  // `attachment` events; this keeps the in-flight turn clean before reload.
+  const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(turn.text).text);
+  const inlineReasoning = reasoningSplit.reasoning;
+  // GitHub markers: while streaming, strip complete + partial `<coven:github…>`
+  // tags so they never flash as raw text (cards mount on settle); settled
+  // turns keep them for splitSegmentsForGitHub below to replace with cards.
+  const ghSafeVisible = turn.pending
+    ? stripImageMarkers(stripGitHubMarkers(reasoningSplit.visible))
+    : reasoningSplit.visible;
+  // Skill markers extract on BOTH paths — the whole point is live "which
+  // skill, what stage" visibility while the agent works (design §5). The
+  // extraction also strips partial tails so raw tags never flash.
+  const skillSplit = extractSkillMarkers(ghSafeVisible);
+  // Auto-mission status card (design mirrors skill markers): extracted the
+  // same way, on both the streaming and settled path, so the phase chip
+  // (clarifying/working/blocked/done) updates live.
+  const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
+  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(autoStatusSplit.visible);
+  const visible = turn.pending ? visibleWithGh : stripImageMarkers(stripGitHubMarkers(visibleWithGh));
+  const reasoning = turn.reasoning?.trim() || inlineReasoning;
+  const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
+  // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
+  // visible text yet), a Queued/Connecting/Writing chip in the same meta row
+  // duplicates it — suppress the chip until text flows or the turn settles.
+  // Settled chips never hit this (pending is false by then), so the Failed
+  // chip that anchors the Retry pill (#416/#420) always renders.
+  const indicatorVisible = Boolean(turn.pending) && !visible && !reasoning;
+
+  // Auto-detect renderable artifacts and inject the tabbed viewer. Applies to
+  // SETTLED turns only (streaming shows plain code until the fence closes).
+  const artifactCtx = { familiarId: familiar.id };
+
+  let renderSegments: MessageBubbleSegment[] | undefined;
+  if (!turn.pending) {
+    // Settled prose gains artifact viewers, GitHub cards, and image carousels.
+    // Tool UI never enters these segments: its fixed activity/edit-card slots
+    // remain mounted while this content changes shape at settlement.
+    const split = splitSegmentsForGitHub(
+      splitSegmentsForArtifacts(splitSegmentsForImages([{ kind: "text", text: visibleWithGh }]), artifactCtx),
+      onOpenUrl,
+      ghFamiliar,
+    );
+    renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
+  }
+
+  // Per-turn provenance peek (see turnMetaPeekTitle): the model/cwd/duration
+  // that used to sit inline here now live only in the debug pane, so a quiet
+  // hover affordance brings them back for THIS turn on demand. Skipped while
+  // streaming (the header MetaLine already narrates the live turn).
+  const metaPeek = turn.pending ? null : turnMetaPeekTitle(turn);
+
+  const recency = showTimestamp && turn.createdAt ? formatChatRecency(turn.createdAt, dtPrefs) : "";
+  const exactTime = turn.createdAt ? formatTimestamp(turn.createdAt, dtPrefs) : "";
+
+  // Chat-revamp 1b: tool activity splits once, up front. Codex
+  // file-edit cards (Edit/Write/etc. with a target file) stay VISIBLE inline
+  // below the prose — they're the actionable output (Review/Undo), so they
+  // must not be buried in a collapsed rollup. All OTHER tool activity (reads,
+  // greps, bash, …) collapses into the ONE work line ABOVE the answer
+  // ("<N> calls · <categories>"). These partitions do not depend on pending,
+  // so React updates the same instances when the turn settles.
+  const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
+  const settledTools = turn.tools ?? [];
+  const editCards = settledTools.filter(isEditCard);
+  const otherTools = settledTools.filter((t) => !isEditCard(t));
+
+  return (
+    <div
+      data-turn-id={turn.id}
+      className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}`}
+    >
+      <div className="cave-linear-turn-content text-[length:var(--text-md)] leading-relaxed text-[var(--text-primary)] group/turn reveal-scope">
+        {/* Avatar (interactive) + right column */}
+        <div className={`cave-linear-turn-avatar${expanded ? " is-selected" : ""}`} ref={avatarWrapRef}>
+          <button
+            ref={avatarBtnRef}
+            type="button"
+            className="cave-linear-turn-avatar-btn"
+            aria-expanded={expanded}
+            aria-controls={`familiar-card-${turn.id}`}
+            aria-label={`Show ${familiar.display_name}'s details`}
+            onClick={onToggleAvatar}
+          >
+            <FamiliarIcon familiar={familiar} size={expanded ? "xl" : "md"} />
+          </button>
+          {expanded ? (
+            <FamiliarInlineCard
+              familiar={familiar}
+              cardId={`familiar-card-${turn.id}`}
+              onClose={() => onToggleAvatar?.()}
+            />
+          ) : null}
+        </div>
+        <div className="cave-linear-turn-right">
+          {/* Lean meta (cave-xsq.2): name + time (and transient live status /
+              error retry) stay visible; the static identity/usage extras —
+              crest, role, token usage, and the details peek — collapse into a
+              trailing cluster that reveals on turn hover / keyboard focus
+              (reveal-scope on the turn content above). Nothing is removed; the
+              default view just reads "Name · 2h ago" like ChatGPT. */}
+          <div className="cave-linear-turn-meta">
+            <span className="cave-linear-turn-name">{familiar.display_name}</span>
+            {turnStatus !== "complete" && !indicatorVisible && (
+              <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
+                {lifecycleLabel(turnStatus)}
+              </span>
+            )}
+            {/* CHAT-D12-03: a failed turn must offer retry WITHOUT hover — the
+                bubble action row is hover-revealed (and absent entirely when
+                the turn died with no text), and the lastFailedSend banner only
+                covers transport errors. Same gated callback as Regenerate. */}
+            {turn.error && onRegenerate ? (
+              <button
+                type="button"
+                aria-label="Retry failed turn"
+                title="Retry"
+                onClick={onRegenerate}
+                className="cave-turn-retry"
+              >
+                <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
+                Retry
+              </button>
+            ) : null}
+            {recency ? (
+              <time className="cave-linear-turn-recency" dateTime={turn.createdAt} title={exactTime}>
+                {recency}
+              </time>
+            ) : null}
+            <span className="cave-linear-turn-meta-extra reveal-on-hover">
+              <span className="cave-linear-turn-crest" aria-hidden="true">
+                <Icon name="ph:sparkle" width={13} height={13} />
+              </span>
+              {familiar.role ? (
+                <span className="cave-linear-turn-badge">{familiar.role}</span>
+              ) : null}
+              <UsageText usage={turn.usage} costUsd={turn.costUsd} />
+              {metaPeek ? (
+                <span
+                  className="cave-turn-peek focus-ring"
+                  title={metaPeek}
+                  tabIndex={0}
+                  role="note"
+                  aria-label={`Turn details — ${metaPeek}`}
+                >
+                  <Icon name="ph:info" width={11} aria-hidden />
+                </span>
+              ) : null}
+            </span>
+          </div>
+
+          <div className="cave-linear-turn-body">
             <ChatToolActivityLayout
               leading={
                 reasoning
