@@ -187,6 +187,7 @@ function probeHelp(
       if (input !== undefined) child.stdin.end(input, "utf8");
       child.stdout.on("data", (chunk) => (output += chunk.toString()));
       child.stderr.on("data", (chunk) => (output += chunk.toString()));
+      const probeTimeoutMs = openCodeCapabilityProbeTimeoutMs();
       const timeout = setTimeout(() => {
         try {
           child.kill("SIGTERM");
@@ -194,10 +195,15 @@ function probeHelp(
           // The capability is unsupported when the probe cannot complete.
         }
         done(false);
-      }, openCodeCapabilityProbeTimeoutMs());
+      }, probeTimeoutMs);
       child.on("close", (code) => {
         clearTimeout(timeout);
-        done((acceptNonZeroExit || code === 0) && matches(output));
+        if (code === null) { done(false); return; }
+        try {
+          done((acceptNonZeroExit || code === 0) && matches(output));
+        } catch {
+          done(false);
+        }
       });
       child.on("error", () => {
         clearTimeout(timeout);
