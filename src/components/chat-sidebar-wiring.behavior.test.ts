@@ -2,6 +2,13 @@
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { PINNED_SESSIONS_KEY } from "@/lib/chat-session-prefs";
+import { sessionRailTitle } from "@/lib/session-rail-title";
+
+const dragSignals = vi.hoisted(() => ({
+  start: vi.fn(),
+  end: vi.fn(),
+}));
 
 const mockProjects = vi.hoisted(() => ({
   state: {
@@ -61,6 +68,11 @@ vi.mock("@/components/ui/tabs", async () => {
     Tabs: () => createElement("div", { "data-testid": "tabs" }),
   };
 });
+vi.mock("@/lib/chat-split", () => ({
+  CHAT_SESSION_DRAG_MIME: "application/x-cave-chat-session",
+  emitChatSessionDragStart: dragSignals.start,
+  emitChatSessionDragEnd: dragSignals.end,
+}));
 
 import { WorkspaceSidebar } from "./workspace-sidebar";
 
@@ -85,6 +97,35 @@ function makeSession() {
   };
 }
 
+function textContent(node: unknown): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textContent).join("");
+  if (node && typeof node === "object" && "children" in node) {
+    return textContent((node as { children: unknown }).children);
+  }
+  return "";
+}
+
+function sectionByLabel(renderer: ReactTestRenderer, label: string) {
+  return renderer.root.find(
+    (node) => node.type === "section" && node.props["aria-label"] === label,
+  );
+}
+
+function rowContainerFor(scope: ReturnType<typeof sectionByLabel>, title: string) {
+  const titleNode = scope.find(
+    (node) => typeof node.type === "string" && node.props.className === "cnav__thread-title" && textContent(node.children) === title,
+  );
+  let node = titleNode;
+  while (
+    node &&
+    !(typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__thread"))
+  ) {
+    node = node.parent;
+  }
+  return node;
+}
+
 function timeNode(renderer: ReactTestRenderer) {
   return renderer.root.find(
     (node) => typeof node.type === "string" && node.props.className === "cnav__time",
@@ -100,22 +141,32 @@ function bucketLabels(renderer: ReactTestRenderer) {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-05T20:00:00.000Z"));
+  const storage = new Map<string, string>();
+  const localStorage = {
+    getItem: vi.fn((key: string) => storage.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      storage.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      storage.delete(key);
+    }),
+  };
   vi.stubGlobal("window", {
-    localStorage: {
-      getItem: () => null,
-      setItem: () => undefined,
-      removeItem: () => undefined,
-    },
+    localStorage,
     addEventListener: () => undefined,
     removeEventListener: () => undefined,
+    dispatchEvent: vi.fn(() => true),
     open: () => undefined,
   });
+  vi.stubGlobal("fetch", vi.fn());
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  dragSignals.start.mockReset();
+  dragSignals.end.mockReset();
 });
 
 test("workspace sidebar row timestamps update when the shared minute tick fires", async () => {
@@ -226,6 +277,145 @@ test("recency bucket and row bare time share one clock: an unrelated re-render n
   expect(bucketLabels(renderer)).toContain("Yesterday");
   expect(bucketLabels(renderer)).not.toContain("Today");
   expect(timeNode(renderer).children.join("")).toBe("1m");
+
+  await act(async () => renderer.unmount());
+});
+
+test("promoted Awaiting you rows keep open, split, row actions, PR badge, active state, and drag behavior", async () => {
+  let renderer!: ReactTestRenderer;
+  const session = {
+    ...makeSession(),
+    id: "session-awaiting-actions",
+    title: "Approve release checklist",
+    attention: {
+      state: "awaiting-human",
+      since: "2026-08-05T13:00:00.000Z",
+      reason: "approval",
+    },
+    pullRequest: { repo: "o/r", number: 7, state: "open" },
+  };
+  const railTitle = sessionRailTitle(session);
+  const onOpenSession = vi.fn();
+  const onOpenSessionInSplit = vi.fn();
+  const onDeleteSession = vi.fn(async () => undefined);
+  const onSessionsChanged = vi.fn();
+  vi.mocked(fetch).mockResolvedValue({
+    ok: true,
+    json: async () => ({ ok: true }),
+  } as Response);
+
+  await act(async () => {
+    renderer = create(
+      createElement(WorkspaceSidebar, {
+        sessions: [session],
+        familiars: [],
+        responseNeeded: new Set(),
+        activeSessionId: session.id,
+        onSelectFamiliar: () => undefined,
+        onOpenSession,
+        onOpenSessionInSplit,
+        onNavigate: () => undefined,
+        onNewChat: () => undefined,
+        onDeleteSession,
+        onSessionsChanged,
+        onOpenUrl: () => undefined,
+        onOpenSettings: () => undefined,
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  const row = rowContainerFor(sectionByLabel(renderer, "Awaiting you"), railTitle);
+  expect(row.props.className).toContain("is-active");
+  expect(row.props["data-attention"]).toBe("awaiting-human");
+
+  const mainButton = row.find(
+    (node) => node.type === "button" && node.props.className === "cnav__thread-main focus-ring",
+  );
+  expect(mainButton.props.type).toBe("button");
+  expect(mainButton.props["aria-current"]).toBe("page");
+  expect(mainButton.props.draggable).toBe(true);
+
+  await act(async () => {
+    mainButton.props.onClick({ altKey: false });
+    await Promise.resolve();
+  });
+  expect(onOpenSession).toHaveBeenCalledWith(session);
+  expect(onOpenSessionInSplit).not.toHaveBeenCalled();
+
+  await act(async () => {
+    mainButton.props.onClick({ altKey: true });
+    await Promise.resolve();
+  });
+  expect(onOpenSessionInSplit).toHaveBeenCalledWith(session);
+
+  const preventDefault = vi.fn();
+  await act(async () => {
+    mainButton.props.onKeyDown({ key: "Enter", altKey: true, preventDefault });
+    await Promise.resolve();
+  });
+  expect(preventDefault).toHaveBeenCalledTimes(1);
+  expect(onOpenSessionInSplit).toHaveBeenCalledTimes(2);
+
+  const pinButton = row.find(
+    (node) => node.type === "button" && node.props["aria-label"] === `Pin ${railTitle}`,
+  );
+  await act(async () => {
+    pinButton.props.onClick();
+    await Promise.resolve();
+  });
+  expect(window.localStorage.setItem).toHaveBeenCalledWith(PINNED_SESSIONS_KEY, JSON.stringify([session.id]));
+
+  const archiveButton = row.find(
+    (node) => node.type === "button" && node.props["aria-label"] === `Archive chat ${railTitle}`,
+  );
+  await act(async () => {
+    archiveButton.props.onClick();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(fetch).toHaveBeenCalledWith(`/api/sessions/${encodeURIComponent(session.id)}`, expect.objectContaining({
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archived: true }),
+  }));
+  expect(onSessionsChanged).toHaveBeenCalledTimes(1);
+
+  const deleteButton = row.find(
+    (node) => node.type === "button" && node.props["aria-label"] === `Delete thread ${railTitle}`,
+  );
+  await act(async () => {
+    deleteButton.props.onClick();
+    await Promise.resolve();
+  });
+  const confirmDelete = row.find(
+    (node) => node.type === "button" && textContent(node.children) === "Delete",
+  );
+  await act(async () => {
+    confirmDelete.props.onClick();
+    await Promise.resolve();
+  });
+  expect(onDeleteSession).toHaveBeenCalledWith(session);
+
+  const prBadge = row.find(
+    (node) => node.type === "button" && node.props["aria-label"] === "Open pull request (PR #7 · open)",
+  );
+  expect(prBadge.props["data-pr-state"]).toBe("open");
+
+  const dataTransfer = {
+    setData: vi.fn(),
+    effectAllowed: "",
+  };
+  await act(async () => {
+    mainButton.props.onDragStart({ dataTransfer });
+    mainButton.props.onDragEnd();
+    await Promise.resolve();
+  });
+  expect(dataTransfer.setData).toHaveBeenNthCalledWith(1, "application/x-cave-chat-session", session.id);
+  expect(dataTransfer.setData).toHaveBeenNthCalledWith(2, "text/plain", railTitle);
+  expect(dataTransfer.effectAllowed).toBe("copyMove");
+  expect(dragSignals.start).toHaveBeenCalledWith({ sessionId: session.id, title: railTitle });
+  expect(dragSignals.end).toHaveBeenCalledTimes(1);
 
   await act(async () => renderer.unmount());
 });

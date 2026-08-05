@@ -401,7 +401,63 @@ test("attention rows keep the visible state in the button name and move the deta
 
   const describedNodes = renderer.root.findAll((node) => typeof node.type === "string" && node.props.id === descriptionId);
   expect(describedNodes).toHaveLength(1);
-  expect(textContent(describedNodes[0].children)).toBe("For approval since 1 hour ago.");
+  expect(textContent(describedNodes[0].children)).toBe("Awaiting you for approval since 1 hour ago.");
+
+  await act(async () => renderer.unmount());
+});
+
+test("pinned and full attention rows keep the same accessible description while the visible label stays separate", async () => {
+  let renderer!: ReactTestRenderer;
+  const session = makeSession({
+    id: "session-pinned-description",
+    title: "Pinned request",
+    attention: {
+      state: "awaiting-human",
+      since: "2026-08-05T19:00:00.000Z",
+      reason: "approval",
+    },
+  });
+  const railTitle = "Pinned request";
+  sidebarPrefs.pinnedIds = [session.id];
+
+  await act(async () => {
+    renderer = create(
+      createElement(WorkspaceSidebar, {
+        sessions: [session],
+        familiars: [],
+        responseNeeded: new Set(),
+        activeSessionId: session.id,
+        onSelectFamiliar: () => undefined,
+        onOpenSession: () => undefined,
+        onNavigate: () => undefined,
+        onNewChat: () => undefined,
+        onDeleteSession: async () => undefined,
+        onOpenSettings: () => undefined,
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  for (const scope of [
+    sectionByLabel(renderer, "Pinned threads"),
+    sectionByLabel(renderer, "Awaiting you"),
+  ]) {
+    const row = rowContainerFor(scope, railTitle);
+    const button = row.find(
+      (node) => node.type === "button" && node.props.className === "cnav__thread-main focus-ring",
+    );
+    const descriptionId = button.props["aria-describedby"];
+    expect(typeof descriptionId).toBe("string");
+    expect(textContent(button.children)).toContain("Awaiting you");
+    expect(textContent(button.children)).not.toContain("for approval");
+    expect(textContent(button.children)).not.toContain("1 hour ago");
+
+    const described = renderer.root.findAll(
+      (node) => typeof node.type === "string" && node.props.id === descriptionId,
+    );
+    expect(described).toHaveLength(1);
+    expect(textContent(described[0].children)).toBe("Awaiting you for approval since 1 hour ago.");
+  }
 
   await act(async () => renderer.unmount());
 });

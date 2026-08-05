@@ -458,45 +458,88 @@ test("orders attention rows by urgency and oldest first within a tier", () => {
   ]);
 });
 
-test("renders labels and detailed accessible descriptions with reason and elapsed time", () => {
+test("renders labels and detailed accessible descriptions with state label, reason, and elapsed time", () => {
   assert.equal(chatAttentionLabel("none"), null);
   assert.equal(chatAttentionLabel("left-hanging"), "Left hanging");
   assert.equal(chatAttentionLabel("awaiting-human"), "Awaiting you");
   assert.equal(chatAttentionLabel("overdue-human"), "Still waiting");
 
-  assert.equal(
-    chatAttentionDescription(
-      {
+  const cases = [
+    {
+      attention: {
         state: "left-hanging",
         since: "2026-08-03T20:00:00.000Z",
         reason: null,
-      },
-      NOW,
-    ),
-    "Since 1 day ago.",
-  );
-
-  assert.equal(
-    chatAttentionDescription(
-      {
+      } as const,
+      expected: "Left hanging since 1 day ago.",
+    },
+    {
+      attention: {
+        state: "awaiting-human",
+        since: "2026-08-04T19:00:00.000Z",
+        reason: "input",
+      } as const,
+      expected: "Awaiting you for input since 1 hour ago.",
+    },
+    {
+      attention: {
         state: "awaiting-human",
         since: "2026-08-04T19:00:00.000Z",
         reason: "approval",
-      },
-      NOW,
-    ),
-    "For approval since 1 hour ago.",
-  );
-
-  assert.equal(
-    chatAttentionDescription(
-      {
+      } as const,
+      expected: "Awaiting you for approval since 1 hour ago.",
+    },
+    {
+      attention: {
+        state: "awaiting-human",
+        since: "2026-08-04T19:00:00.000Z",
+        reason: "credentials",
+      } as const,
+      expected: "Awaiting you for credentials since 1 hour ago.",
+    },
+    {
+      attention: {
+        state: "awaiting-human",
+        since: "2026-08-04T19:00:00.000Z",
+        reason: "decision",
+      } as const,
+      expected: "Awaiting you for a decision since 1 hour ago.",
+    },
+    {
+      attention: {
+        state: "overdue-human",
+        since: "2026-08-02T20:00:00.000Z",
+        reason: "input",
+      } as const,
+      expected: "Still waiting for input since 2 days ago.",
+    },
+    {
+      attention: {
+        state: "overdue-human",
+        since: "2026-08-02T20:00:00.000Z",
+        reason: "approval",
+      } as const,
+      expected: "Still waiting for approval since 2 days ago.",
+    },
+    {
+      attention: {
+        state: "overdue-human",
+        since: "2026-08-02T20:00:00.000Z",
+        reason: "credentials",
+      } as const,
+      expected: "Still waiting for credentials since 2 days ago.",
+    },
+    {
+      attention: {
         state: "overdue-human",
         since: "2026-08-02T20:00:00.000Z",
         reason: "decision",
-      },
-      NOW,
-    ),
-    "For a decision since 2 days ago.",
-  );
+      } as const,
+      expected: "Still waiting for a decision since 2 days ago.",
+    },
+  ];
+
+  for (const { attention, expected } of cases) {
+    assert.equal(chatAttentionDescription(attention, NOW), expected);
+  }
 });
