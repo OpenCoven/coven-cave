@@ -201,7 +201,6 @@ assert.match(
   /mode === "interact"[\s\S]{0,300}?Use the sketch normally/,
   "Interact mode explains that the artifact is live",
 );
-);
 
 // Escape routes through the shared resolver: field → selection → expand.
 assert.match(

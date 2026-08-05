@@ -226,6 +226,15 @@ impl Drop for SidecarCleanupGuard {
 
 #[cfg(desktop)]
 impl SidecarState {
+    pub(super) fn stop_after_startup_error(&self, error: String) -> String {
+        match self.stop() {
+            Ok(()) => error,
+            Err(cleanup_error) => {
+                format!("{error}\n\nSidecar cleanup also failed: {cleanup_error}")
+            }
+        }
+    }
+
     pub(super) fn stop(&self) -> Result<(), String> {
         #[cfg(target_os = "windows")]
         let mut guard = match self.0.try_lock() {

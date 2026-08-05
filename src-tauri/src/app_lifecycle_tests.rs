@@ -206,6 +206,26 @@ fn notch_url_carries_the_presentation_state_to_the_page() {
 }
 
 #[test]
+fn sidecar_log_paths_are_isolated_by_process_and_port() {
+    let log_dir = std::env::temp_dir().join("covencave-sidecar-log-path-test");
+    let first = sidecar_log_path(&log_dir, 41001);
+    let second = sidecar_log_path(&log_dir, 41002);
+
+    assert_ne!(first, second);
+    let expected = format!("sidecar-{}-41001.log", std::process::id());
+    assert_eq!(
+        first.file_name().and_then(|name| name.to_str()),
+        Some(expected.as_str())
+    );
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn packaged_sidecar_start_timeout_allows_slow_cold_start() {
+    assert_eq!(sidecar_start_timeout(), Duration::from_secs(60));
+}
+
+#[test]
 fn sidecar_port_wait_is_cancellable_and_detects_readiness() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind readiness fixture");
     let port = listener.local_addr().expect("fixture address").port();
@@ -407,6 +427,36 @@ fn sidecar_cleanup_is_idempotent_when_no_child_is_running() {
 
     state.stop().expect("first empty cleanup");
     state.stop().expect("second empty cleanup");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn startup_failure_stops_and_reaps_owned_sidecar() {
+    let child = Command::new("sleep")
+        .arg("30")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn startup failure fixture");
+    let child_pid = child.id();
+    let slot = Arc::new(Mutex::new(Some(SidecarProcess::new(child))));
+    let state = SidecarState(Arc::clone(&slot));
+
+    let message = state.stop_after_startup_error("startup timed out".to_string());
+
+    assert_eq!(message, "startup timed out");
+    assert!(slot.lock().expect("sidecar slot").is_none());
+    let probe = Command::new("kill")
+        .arg("-0")
+        .arg(child_pid.to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("probe reaped startup failure fixture");
+    assert!(
+        !probe.success(),
+        "startup failure fixture should no longer exist"
+    );
 }
 
 #[cfg(not(target_os = "windows"))]

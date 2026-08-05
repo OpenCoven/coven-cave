@@ -12,7 +12,7 @@ assert.match(src, /function splitTextForArtifacts/, "has the text→segments spl
 assert.match(src, /<ChatArtifactViewer\b/, "renders the viewer as a block segment");
 assert.match(
   src,
-  /splitSegmentsForArtifacts\(splitSegmentsForImages\(\[\{ kind: "text", text: visibleWithGh \}\]\), artifactCtx\)/,
+  /splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\]\)/,
   "splits remaining prose after image decks, without crossing an inline carousel",
 );
 assert.match(
