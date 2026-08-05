@@ -446,10 +446,16 @@ fn startup_failure_stops_and_reaps_owned_sidecar() {
 
     assert_eq!(message, "startup timed out");
     assert!(slot.lock().expect("sidecar slot").is_none());
-    assert_eq!(unsafe { libc::kill(child_pid as i32, 0) }, -1);
-    assert_eq!(
-        std::io::Error::last_os_error().raw_os_error(),
-        Some(libc::ESRCH)
+    let probe = Command::new("kill")
+        .arg("-0")
+        .arg(child_pid.to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("probe reaped startup failure fixture");
+    assert!(
+        !probe.success(),
+        "startup failure fixture should no longer exist"
     );
 }
 
