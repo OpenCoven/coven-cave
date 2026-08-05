@@ -67,6 +67,11 @@ assert.match(
   /const chatContextControls = \([\s\S]{0,50}\n\s*<ComposerContextChips/,
   "ComposerContextChips is constructed once as chatContextControls",
 );
+assert.doesNotMatch(
+  source,
+  /<MetaLine[\s>][\s\S]*?<ComposerContextChips/,
+  "the shared node should prevent duplicate picker state in the header",
+);
 assert.match(
   source,
   /inlineComposer[\s\S]{0,200}cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
