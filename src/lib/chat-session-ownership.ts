@@ -32,7 +32,7 @@ export function ownsDisplayedView(params: DisplayedViewOwnership): boolean {
   return params.currentSessionId === null;
 }
 
-/** Only a fresh, sessionless creation run may promote ChatRouter. */
+/** Any generation that owns the displayed view may promote ChatRouter. */
 export function canPromoteDisplayedSession(params: DisplayedViewOwnership): boolean {
-  return params.originSessionId === null && ownsDisplayedView(params);
+  return ownsDisplayedView(params);
 }

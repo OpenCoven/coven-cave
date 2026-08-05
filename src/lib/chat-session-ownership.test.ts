@@ -148,7 +148,7 @@ test("null origin: does not own when currentSessionId is non-null (thread switch
   );
 });
 
-test("resumed replacement cannot promote even while it owns the displayed session", () => {
+test("resumed replacement can promote if it owns the displayed session", () => {
   assert.equal(
     canPromoteDisplayedSession({
       currentSessionId: "sess-original",
@@ -156,8 +156,8 @@ test("resumed replacement cannot promote even while it owns the displayed sessio
       runId: "run-resumed",
       displayedCreationRunId: "run-resumed",
     }),
-    false,
-    "a replacement from a resumed session refreshes the sidebar but cannot promote the router",
+    true,
+    "a matching non-null-origin replacement can promote the router",
   );
 });
 
