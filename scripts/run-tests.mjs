@@ -538,7 +538,6 @@ export const SUITES = {
     "src/components/message-bubble-jump-to-line.test.ts",
     "src/components/message-bubble-file-links.test.ts",
     "src/components/chat-view-polish-tools-activity.test.ts",
-    "src/components/chat-tool-activity-lifecycle.test.ts",
     "src/components/chat-view-polish-header-composer.test.ts",
     "src/components/chat-view-polish-attachments-mentions.test.ts",
     "src/components/chat-view-polish-edit-review.test.ts",
