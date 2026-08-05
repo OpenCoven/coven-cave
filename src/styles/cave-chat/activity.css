@@ -333,13 +333,16 @@ details[open] > .cave-tool-summary::before {
   .cave-progress-row--running svg {
     animation: none;
   }
+  .cave-tool-summary::before {
+    transition: none;
+  }
 }
 
 .cave-tool-block {
   border: 1px solid var(--border-hairline);
   border-radius: 7px;
   background: color-mix(in oklch, var(--bg-base) 58%, transparent);
-  padding: 9px;
+  padding: var(--space-2);
   /* Color-coded by tool category (data-tool-category) for quick visual
      inspection — each category drives --tool-accent below. */
   --tool-accent: var(--text-muted);
@@ -347,10 +350,10 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-tool-run {
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: var(--bg-subtle);
-  padding: var(--space-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-1) 0;
 }
 
 .cave-tool-run > .cave-tool-summary {
@@ -369,14 +372,24 @@ details[open] > .cave-tool-summary::before {
 
 .cave-tool-run__list {
   display: grid;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  border-top: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
-  padding-top: var(--space-2);
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  border-top: 1px solid var(--border-hairline);
+  padding: var(--space-1) 0 0 var(--space-4);
 }
 
 .cave-tool-icon { color: var(--tool-accent); }
 .cave-tool-name { color: color-mix(in oklch, var(--tool-accent) 80%, var(--text-secondary)); }
+
+/* Shared status chip row for work-line and repeated-run summaries. */
+.cave-work-line__status,
+.cave-tool-run__status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
 
 /* One tint set for every category-coded surface in the card — the row, the
    run, the batch band above them, and the reader's provenance footer
