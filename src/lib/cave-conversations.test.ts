@@ -1204,6 +1204,58 @@ console.log("cave-conversations pending-marker test OK");
   });
 
   await saveConversation({
+    sessionId: "attention-multi-root-active-leaf",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Explicit active leaf with disconnected roots",
+    createdAt: "2026-08-04T12:10:00.000Z",
+    updatedAt: "2026-08-04T12:13:00.000Z",
+    turns: [
+      {
+        id: "multi-root-request-user",
+        role: "user",
+        text: "Do you need approval?",
+        createdAt: "2026-08-04T12:10:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "multi-root-request-assistant",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T12:11:00.000Z",
+        parentId: "multi-root-request-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-multi-root-active-leaf",
+            turnId: "multi-root-request-assistant",
+            requestedAt: "2026-08-04T12:11:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        id: "multi-root-active-user",
+        role: "user",
+        text: "Never mind, summarize it instead.",
+        createdAt: "2026-08-04T12:12:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "multi-root-active-leaf",
+        role: "assistant",
+        text: "Here is the summary.",
+        createdAt: "2026-08-04T12:13:00.000Z",
+        parentId: "multi-root-active-user",
+      },
+    ],
+    activeLeafId: "multi-root-active-leaf",
+  });
+
+  await saveConversation({
     sessionId: "attention-malformed-turns",
     familiarId: "charm",
     harness: "claude",
@@ -1823,6 +1875,40 @@ console.log("cave-conversations pending-marker test OK");
     latestUserTurnAt: "2026-08-04T12:00:00.000Z",
     request: null,
   });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-off-path-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a one-root branched transcript remains valid when activeLeafId selects a sibling leaf",
+  );
+
+  assert.equal(
+    byId.get("attention-multi-root-active-leaf")?.attentionEvidence,
+    undefined,
+    "an explicit active leaf must fail quiet when the transcript contains disconnected root components",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-multi-root-active-leaf")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a multi-root transcript must not surface attention from a different disconnected root even with an explicit active leaf",
+  );
 
   assert.deepEqual(byId.get("attention-malformed-turns")?.attentionEvidence, {
     latestCompletedTurn: null,

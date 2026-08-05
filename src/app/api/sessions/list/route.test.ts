@@ -219,6 +219,59 @@ try {
       activeLeafId: "malformed-assistant",
     });
 
+    await saveConversation({
+      sessionId: "route-multi-root",
+      familiarId: "charm",
+      harness: "claude",
+      runtime: `local:${projectRoot}`,
+      title: "Route multi-root",
+      createdAt: "2026-08-04T17:10:00.000Z",
+      updatedAt: "2026-08-04T18:10:00.000Z",
+      turns: [
+        {
+          id: "route-multi-root-request-user",
+          role: "user",
+          text: "Do you need approval?",
+          createdAt: "2026-08-04T17:10:00.000Z",
+          parentId: null,
+        },
+        {
+          id: "route-multi-root-request-assistant",
+          role: "assistant",
+          text: "I need your approval.",
+          createdAt: "2026-08-04T17:11:00.000Z",
+          parentId: "route-multi-root-request-user",
+          responseMetadata: {
+            familiarId: "charm",
+            harness: "claude",
+            model: "anthropic/claude-sonnet-4.6",
+            runtime: `local:${projectRoot}`,
+            attentionRequest: {
+              sessionId: "route-multi-root",
+              turnId: "route-multi-root-request-assistant",
+              requestedAt: "2026-08-04T17:11:00.000Z",
+              reason: "approval",
+            },
+          },
+        },
+        {
+          id: "route-multi-root-active-user",
+          role: "user",
+          text: "Actually, just summarize it.",
+          createdAt: "2026-08-04T17:12:00.000Z",
+          parentId: null,
+        },
+        {
+          id: "route-multi-root-active-assistant",
+          role: "assistant",
+          text: "Here is the summary.",
+          createdAt: "2026-08-04T18:10:00.000Z",
+          parentId: "route-multi-root-active-user",
+        },
+      ],
+      activeLeafId: "route-multi-root-active-assistant",
+    });
+
     const sweptConversation = {
       sessionId: "route-swept",
       familiarId: "charm",
@@ -298,6 +351,7 @@ try {
     await startDaemon([
       daemonRow("route-valid", "2026-08-04T19:30:00.000Z"),
       daemonRow("route-malformed", "2026-08-04T19:31:00.000Z"),
+      daemonRow("route-multi-root", "2026-08-04T19:32:00.000Z"),
     ]);
     await writeHubConfig(daemonBaseUrl);
 
@@ -327,6 +381,15 @@ try {
       },
       "malformed attention evidence fails quiet without dropping the daemon-backed row",
     );
+    assert.deepEqual(
+      healthyById.get("route-multi-root")?.attention,
+      {
+        state: "none",
+        since: null,
+        reason: null,
+      },
+      "an explicit active leaf in a multi-root transcript fails quiet in the merged route response",
+    );
     await stopDaemon();
     stopDaemon = async () => {};
     clearConversationListMetadataCache();
@@ -347,6 +410,11 @@ try {
       reason: "approval",
     });
     assert.deepEqual(degradedById.get("route-malformed")?.attention, {
+      state: "none",
+      since: null,
+      reason: null,
+    });
+    assert.deepEqual(degradedById.get("route-multi-root")?.attention, {
       state: "none",
       since: null,
       reason: null,

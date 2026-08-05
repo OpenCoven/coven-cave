@@ -235,7 +235,8 @@ function activeConversationTurns(conv: Pick<ConversationFile, "turns" | "activeL
     return onlyLeafId ? resolveActivePath(conv.turns, onlyLeafId) : [];
   }
 
-  return hasResolvableAncestorChain(structuralTurns, conv.activeLeafId)
+  return hasResolvableAncestorChain(structuralTurns, conv.activeLeafId) &&
+    hasSingleStructuralRoot(structuralTurns, conv.activeLeafId)
     ? resolveActivePath(conv.turns, conv.activeLeafId)
     : [];
 }
@@ -351,8 +352,10 @@ function normalizeStableAttentionRequest(
   };
 }
 
-function resolvableAncestorChainSize(turns: ChatTurn[], leafId: string): number | null {
-  const byId = new Map(turns.map((turn) => [turn.id, turn]));
+function resolveAncestorChainFromMap(
+  byId: ReadonlyMap<string, ChatTurn>,
+  leafId: string,
+): { size: number; rootId: string } | null {
   let current = byId.get(leafId);
   if (!current) return null;
   const seen = new Set<string>();
@@ -360,15 +363,34 @@ function resolvableAncestorChainSize(turns: ChatTurn[], leafId: string): number 
     if (seen.has(current.id)) return null;
     seen.add(current.id);
     const parentId = current.parentId ?? null;
-    if (parentId === null) return seen.size;
+    if (parentId === null) return { size: seen.size, rootId: current.id };
     current = byId.get(parentId);
     if (!current) return null;
   }
   return null;
 }
 
+function resolveAncestorChain(turns: ChatTurn[], leafId: string): { size: number; rootId: string } | null {
+  return resolveAncestorChainFromMap(new Map(turns.map((turn) => [turn.id, turn])), leafId);
+}
+
+function resolvableAncestorChainSize(turns: ChatTurn[], leafId: string): number | null {
+  return resolveAncestorChain(turns, leafId)?.size ?? null;
+}
+
 function hasResolvableAncestorChain(turns: ChatTurn[], leafId: string): boolean {
   return resolvableAncestorChainSize(turns, leafId) !== null;
+}
+
+function hasSingleStructuralRoot(turns: ChatTurn[], activeLeafId: string): boolean {
+  const byId = new Map(turns.map((turn) => [turn.id, turn]));
+  const activeChain = resolveAncestorChainFromMap(byId, activeLeafId);
+  if (!activeChain) return false;
+  for (const turn of turns) {
+    const candidate = resolveAncestorChainFromMap(byId, turn.id);
+    if (!candidate || candidate.rootId !== activeChain.rootId) return false;
+  }
+  return true;
 }
 
 function soleResolvableLeafId(turns: ChatTurn[]): string | null {
