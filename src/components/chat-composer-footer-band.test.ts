@@ -60,10 +60,22 @@ assert.match(
   /className="cave-composer-control-row"[\s\S]*?className="cave-composer-footer-band"/,
   "the footer band renders after the composer controls, inside the panel",
 );
+// chatContextControls is constructed once with all runtime/model picker props preserved
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips[\s\S]*?<\/div>\s*\n\s*\{linkedContextRow\}[\s\S]*?<div className="cave-chat-followups">[\s\S]*?<FollowUpCards/,
-  "the band leads with context and linked work, then carries the latest assistant options",
+  /const chatContextControls = \([\s\S]*?<ComposerContextChips[\s\S]*?runtime=\{modelHarness\}[\s\S]*?modelValue=\{composerModelValue\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
+  "chatContextControls is constructed once as ComposerContextChips with preserved runtime/model picker props",
+);
+// New chats (inlineComposer): cluster mounts in footer band; active chats: session header
+assert.match(
+  source,
+  /className="cave-composer-footer-band">[\s\S]*?\{inlineComposer \? \([\s\S]*?<div className="cave-composer-footer-band__cluster">[\s\S]*?\{chatContextControls\}[\s\S]*?<\/div>[\s\S]*?\) : null\}[\s\S]*?\{linkedContextRow\}[\s\S]*?<FollowUpCards/,
+  "the band conditionally mounts the context cluster (inlineComposer only); linked work and follow-ups always follow",
+);
+assert.match(
+  source,
+  /cave-chat-header-context">\{chatContextControls\}/,
+  "active chat mounts the context controls in the session header (.cave-chat-header-context)",
 );
 assert.doesNotMatch(
   source.match(/<footer[\s\S]*?className="cave-composer-shell"/)?.[0] ?? "",
