@@ -11,7 +11,9 @@ function depsFor(overrides: Partial<VoiceChatCreateDeps> = {}) {
     loadFamiliarBinding: async () => ({ harness: "claude" }),
     saveConversation: async (conv) => { saved.push(conv); },
     recordSessionFamiliar: async (sessionId, familiarId) => { recorded.push({ sessionId, familiarId }); },
-    setSessionTitleAuto: async (sessionId, title) => { titles.push({ sessionId, title }); },
+    initializeSessionTitleOwnership: async (sessionId, title) => {
+      titles.push({ sessionId, title });
+    },
     defaultTitle: () => "New chat",
     mintSessionId: () => "test-session-id",
     ...overrides,
@@ -54,6 +56,27 @@ test("save failure -> save_failed", async () => {
   const { deps } = depsFor({ saveConversation: async () => { throw new Error("disk full"); } });
   const result = await createVoiceChatSession(deps, { familiarId: "fam-1", projectRoot: null });
   assert.deepEqual(result, { ok: false, error: "save_failed" });
+});
+
+test("a manual rename after save wins atomic title initialization", async () => {
+  let manualTitle = "";
+  const { deps, titles } = depsFor({
+    saveConversation: async () => {
+      manualTitle = "Call notes";
+    },
+    initializeSessionTitleOwnership: async (sessionId, title) => {
+      if (!manualTitle) titles.push({ sessionId, title });
+    },
+  });
+
+  const result = await createVoiceChatSession(deps, {
+    familiarId: "fam-1",
+    projectRoot: null,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(manualTitle, "Call notes");
+  assert.deepEqual(titles, [], "the generated default does not overwrite the manual rename");
 });
 
 test("minted session ids default to UUIDs (safe conversation ids)", async () => {

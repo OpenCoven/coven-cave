@@ -6,8 +6,8 @@ const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   route,
-  /recordSessionFamiliar,\s*setSessionTitleAuto/,
-  "voice-created New chat titles must be recorded as automatic provenance",
+  /initializeSessionTitleOwnership/,
+  "voice-created defaults must use the atomic ownership initializer",
 );
 assert.doesNotMatch(
   route,
@@ -48,8 +48,13 @@ assert.ok(authorizeIndex >= 0, "voice route should await project authorization")
 assert.ok(createIndex > authorizeIndex, "voice route must authorize before minting a conversation");
 assert.match(
   route,
-  /setSessionTitleAuto:\s*async[\s\S]*await setSessionTitleAuto\(/,
-  "voice-created New chat defaults should record automatic title provenance",
+  /initializeSessionTitleOwnership:\s*async[\s\S]*await initializeSessionTitleOwnership\(/,
+  "voice-created defaults should initialize automatic provenance atomically",
+);
+assert.doesNotMatch(
+  route,
+  /\bsetSessionTitleAuto\(/,
+  "voice creation must not use the unconditional automatic title setter",
 );
 assert.doesNotMatch(
   route,

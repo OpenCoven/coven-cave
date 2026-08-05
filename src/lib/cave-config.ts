@@ -973,6 +973,19 @@ export async function setSessionTitleAutoIfOwned(
   return result;
 }
 
+/**
+ * Initialize an automatically generated title for a newly exposed session.
+ * Existing titles are never treated as defaults: the ownership check and
+ * provenance write happen in one state mutation, so a concurrent manual rename
+ * wins rather than being cleared by initialization.
+ */
+export async function initializeSessionTitleOwnership(
+  sessionId: string,
+  title: string,
+): Promise<string | null> {
+  return setSessionTitleAutoIfOwned(sessionId, title, new Set());
+}
+
 /** Mark a session as archived in the Cave (does not touch the daemon row). */
 export async function archiveSessionLocal(sessionId: string): Promise<string> {
   const now = new Date().toISOString();

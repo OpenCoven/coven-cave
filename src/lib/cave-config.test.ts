@@ -268,6 +268,39 @@ try {
   state = await config.loadState();
   assert.equal(state.sessionTitles["session-owned2"], undefined, "blank input leaves title unset");
 
+  // Voice-chat creation exposes the conversation before initializing its
+  // generated default. A manual rename that lands in that window must win,
+  // while an uncontested initialization records automatic provenance.
+  assert.equal(
+    await config.initializeSessionTitleOwnership("voice-initialized", "New chat"),
+    "New chat",
+  );
+  state = await config.loadState();
+  assert.equal(state.sessionTitles["voice-initialized"], "New chat");
+  assert.equal(state.sessionTitleAuto["voice-initialized"], "New chat");
+  assert.equal(state.sessionTitleManual["voice-initialized"], undefined);
+
+  await config.setSessionTitle("voice-concurrent-manual", "Call notes");
+  assert.equal(
+    await config.initializeSessionTitleOwnership("voice-concurrent-manual", "New chat"),
+    null,
+    "initialization observes and preserves a manual rename from the exposure window",
+  );
+  state = await config.loadState();
+  assert.equal(
+    state.sessionTitles["voice-concurrent-manual"],
+    "Call notes",
+    "a concurrent manual rename wins title initialization",
+  );
+  assert.equal(state.sessionTitleManual["voice-concurrent-manual"], true);
+  assert.equal(
+    state.sessionTitleAuto["voice-concurrent-manual"],
+    undefined,
+    "preserved manual titles never gain automatic provenance",
+  );
+  await config.setSessionTitle("voice-initialized", "");
+  await config.setSessionTitle("voice-concurrent-manual", "");
+
   // ── Issue 4: Atomic auto ownership defaults ───────────────────────────────
   // Identical current title WITHOUT provenance must be preserved and must NOT
   // gain provenance. This guards against the caller including the proposed

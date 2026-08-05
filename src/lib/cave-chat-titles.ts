@@ -28,13 +28,22 @@ const EMOJI_SEQUENCE = String.raw`(?:[#*0-9]\uFE0F?\u20E3|${EMOJI_COMPONENT}(?:\
 // consumed at edges without touching tag chars inside a meaningful middle emoji.
 const LONE_TAG_CHAR = String.raw`[\u{E0020}-\u{E007F}]`;
 const LEADING_EMOJI_RE = new RegExp(String.raw`^(?:\s|${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})+`, "gu");
+const TITLE_OPENING_DELIMITER = String.raw`['"(\[{\u2018\u2019\u201C\u201D\u2039\u00AB]`;
+const LEADING_DELIMITED_EMOJI_RE = new RegExp(
+  String.raw`^((?:${TITLE_OPENING_DELIMITER})+)\s*(?:${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})(?:\s|${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})*`,
+  "u",
+);
 const TITLE_CLOSING_DELIMITER = String.raw`['")\]}\u2018\u2019\u201C\u201D\u203A\u00BB]`;
 const TRAILING_EMOJI_RE = new RegExp(
   String.raw`(?:\s|${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})+(?=(?:${TITLE_CLOSING_DELIMITER})*$)`,
   "gu",
 );
 export function stripLeadingTrailingEmoji(title: string): string {
-  return title.replace(LEADING_EMOJI_RE, "").replace(TRAILING_EMOJI_RE, "").trim();
+  return title
+    .replace(LEADING_EMOJI_RE, "")
+    .replace(LEADING_DELIMITED_EMOJI_RE, "$1")
+    .replace(TRAILING_EMOJI_RE, "")
+    .trim();
 }
 
 export function normalizeChatTitle(input: unknown): string | null {
@@ -168,48 +177,53 @@ function normalizeGeneratedTitleSource(input: unknown): string | null {
   if (typeof input !== "string") return null;
   const source = input.trim();
   if (!source) return null;
-  return source.slice(0, MAX_CHAT_TITLE_LENGTH);
+  return source;
 }
 
 /**
- * Linear O(n) normalizer for inline Markdown image and link syntax.
+ * Linear normalizer for inline Markdown image and link syntax.
  * Walks the input once: `![alt](dest)` → alt text, `[label](dest)` → label.
  * For malformed / unclosed constructs emits the safe human label text without
- * backtracking or looping. Destination content (URLs) is always discarded so
- * it never leaks into the title. Bounded label (≤200 chars) and destination
- * (≤500 chars) scans make the whole function O(n).
+ * backtracking. Destination content is always discarded, while visible output
+ * is bounded to the pre-existing generated-title source limit.
  */
 function normalizeMarkdownInlineLinks(s: string): string {
   const len = s.length;
   if (len === 0) return s;
   let result = "";
+  const append = (value: string) => {
+    const remaining = MAX_CHAT_TITLE_LENGTH - result.length;
+    if (remaining > 0) result += value.slice(0, remaining);
+  };
   let i = 0;
   while (i < len) {
     const isImage = s[i] === "!" && i + 1 < len && s[i + 1] === "[";
     const bracketPos = isImage ? i + 1 : i;
     if (s[bracketPos] !== "[") {
-      result += s[i++];
+      append(s[i++]);
+      if (result.length >= MAX_CHAT_TITLE_LENGTH) break;
       continue;
     }
-    // Bounded label scan: search at most 200 chars for the closing `]`.
+    // A label longer than the visible-output bound cannot improve the title.
+    // Bounding this lookahead also prevents repeated `[` characters in
+    // malformed input from turning the scan quadratic.
     const labelStart = bracketPos + 1;
     let labelEnd = -1;
-    const labelCap = Math.min(labelStart + 200, len);
+    const labelCap = Math.min(labelStart + MAX_CHAT_TITLE_LENGTH + 1, len);
     for (let k = labelStart; k < labelCap; k++) {
       if (s[k] === "]") { labelEnd = k; break; }
     }
     if (labelEnd < 0 || labelEnd + 1 >= len || s[labelEnd + 1] !== "(") {
-      result += s[i++];
+      append(s[i++]);
+      if (result.length >= MAX_CHAT_TITLE_LENGTH) break;
       continue;
     }
-    // Destination scan with parenthesis depth counter — O(n), no backtracking.
-    // Handles naturally balanced nested parens (e.g. url_(anchor)). Bounded at
-    // 500 chars to guard against malformed / adversarial long destinations.
+    // Scan the destination exactly once with a depth counter. This handles
+    // long URLs and balanced nested parentheses without a backtracking regex.
     const destStart = labelEnd + 2;
     let depth = 1;
     let j = destStart;
-    const destCap = Math.min(destStart + 500, len);
-    while (j < destCap && depth > 0) {
+    while (j < len && depth > 0) {
       if (s[j] === "(") depth++;
       else if (s[j] === ")") depth--;
       j++;
@@ -217,16 +231,10 @@ function normalizeMarkdownInlineLinks(s: string): string {
     const label = isImage
       ? s.slice(labelStart, labelEnd).trim()
       : s.slice(labelStart, labelEnd);
-    if (depth === 0) {
-      // Well-formed: emit label/alt text, skip destination entirely.
-      result += label;
-      i = j;
-    } else {
-      // Malformed (unclosed dest): emit label/alt text and skip the unclosed
-      // construct. No URL content leaks. Resume from destCap.
-      result += label;
-      i = destCap;
-    }
+    append(label);
+    // A malformed destination consumes the remainder rather than exposing URL
+    // text. A balanced destination resumes immediately after its closing `)`.
+    i = depth === 0 ? j : len;
   }
   return result;
 }
@@ -375,7 +383,10 @@ export function chatSummaryTitle(input: {
   assistantText?: string | null;
 }): string | null {
   const normalized = normalizeGeneratedTitleSource(input.userText);
-  const cleaned = normalized ? cleanPromptForTitle(stripLineMarkdown(normalized)) : null;
+  const prepared = normalized
+    ? normalizeMarkdownInlineLinks(stripLineMarkdown(normalized))
+    : null;
+  const cleaned = prepared ? cleanPromptForTitle(prepared) : null;
   // Short prompts: apply shared formatter and return directly when they fit.
   if (cleaned && cleaned.length <= MAX_SUMMARY_TITLE_LENGTH) {
     const formatted = formatGeneratedTitle(cleaned);

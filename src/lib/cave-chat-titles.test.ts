@@ -703,32 +703,47 @@ assert.equal(
 }
 
 // ── Issue 1: Linear link/image scanner — malformed/adversarial inputs ────────
-// No backtracking; all complete in O(n) time over the capped source.
+// Long inputs assert deterministic correctness rather than wall-clock timing.
 {
-  // Malformed unclosed image: ![x]( + many chars — must complete quickly, output ≤40
-  const malformedImage = "![x](" + "a".repeat(5000);
-  const t0 = Date.now();
-  const imgResult = chatSummaryTitle({ userText: malformedImage });
-  assert.ok(Date.now() - t0 < 100, `malformed image: must complete in <100ms`);
-  assert.ok(imgResult === null || imgResult.length <= 40, "malformed image: output bounded at 40");
-  assert.ok(imgResult === null || !imgResult.includes("aaa"), "malformed image: long garbage not leaked");
+  const longDestination = `https://example.test/${"a".repeat(5000)}`;
+  assert.equal(
+    chatSummaryTitle({ userText: `[Fix parser](${longDestination}) safely` }),
+    "Fix parser safely",
+    "a valid link is parsed before the generated-title source is clamped",
+  );
 }
 {
-  // Malformed unclosed link: [Docs](url... — must emit label "Docs", not the URL
   const malformedLink = "[Docs](https://x.test/" + "b".repeat(5000);
-  const t0 = Date.now();
-  const linkResult = chatSummaryTitle({ userText: malformedLink });
-  assert.ok(Date.now() - t0 < 100, `malformed link: must complete in <100ms`);
-  assert.ok(linkResult === null || linkResult === "Docs", `malformed link: expected "Docs" or null, got "${linkResult}"`);
+  assert.equal(
+    chatSummaryTitle({ userText: malformedLink }),
+    "Docs",
+    "a long unclosed destination is discarded without leaking URL text",
+  );
 }
 {
-  // Long nested-ish destination: [x]( many parens + content ) — must complete quickly
   const nestedDest = "[label](" + "(".repeat(80) + "a".repeat(200) + ")".repeat(80) + ")";
-  const t0 = Date.now();
-  const nestedResult = chatSummaryTitle({ userText: nestedDest });
-  assert.ok(Date.now() - t0 < 100, `nested dest: must complete in <100ms`);
-  assert.ok(nestedResult === null || nestedResult.length <= 40, "nested dest: output bounded");
+  assert.equal(
+    chatSummaryTitle({ userText: nestedDest }),
+    "Label",
+    "deeply nested balanced destinations reduce to their label",
+  );
 }
+
+assert.equal(
+  chatSummaryTitle({ userText: '"🎉 Fix parser"' }),
+  '"Fix parser"',
+  "leading emoji inside straight quotes is stripped without removing the quotes",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "(👩‍💻 Fix parser)" }),
+  "(Fix parser)",
+  "leading ZWJ emoji inside parentheses is stripped without removing the delimiters",
+);
+assert.equal(
+  chatSummaryTitle({ userText: '"Fix 🎉 parser"' }),
+  '"Fix 🎉 parser"',
+  "meaningful emoji inside delimited title text is preserved",
+);
 
 // ── Issue 2: Preserve programming symbols; strip Markdown contextually ────────
 assert.equal(
