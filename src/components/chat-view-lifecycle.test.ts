@@ -747,8 +747,8 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(shouldCreationRefresh\) onSessionsChanged\?\.\(\)/,
-  "creation refresh gate fires onSessionsChanged only when the helper approves",
+  /if \(shouldCreationRefresh\) onSessionsChangedRef\.current\?\.\(\)/,
+  "creation refresh gate fires onSessionsChangedRef.current only when the helper approves",
 );
 assert.doesNotMatch(
   source,
@@ -823,6 +823,31 @@ assert.match(
   source,
   /onSendStart\(\s*creationRefreshStateRef\.current,\s*runId,\s*initialLiveSessionId\s*\)/,
   "sendRaw passes runId and initialLiveSessionId to onSendStart for per-generation creation-refresh tracking",
+);
+
+// Issue 1: missing body return path has no scattered onCreationRunTerminated — relies on finally
+assert.doesNotMatch(
+  source,
+  /"Chat bridge response did not include a stream"[\s\S]{0,400}?onCreationRunTerminated/,
+  "missing body path has no scattered onCreationRunTerminated — relies on finally",
+);
+
+// Issue 3: render-synced ref keeps onSessionsChanged current across re-renders so that
+// long-lived stream completions call the latest familiar-scope callback, not a stale closure.
+assert.match(
+  source,
+  /const onSessionsChangedRef = useRef\(onSessionsChanged\);\s*\n\s*onSessionsChangedRef\.current = onSessionsChanged;/,
+  "onSessionsChangedRef is created and kept in sync with the latest onSessionsChanged prop on every render",
+);
+assert.match(
+  source,
+  /if \(shouldCreationRefresh\) onSessionsChangedRef\.current\?\.\(\)/,
+  "creation refresh callback uses the render-synced ref to avoid stale familiar-scope captures",
+);
+assert.match(
+  source,
+  /startNewConversation && ev\.sessionId[\s\S]{0,50}?onSessionsChangedRef\.current\?\.\(\)/,
+  "Board/startNewConversation session refresh uses the render-synced ref",
 );
 
 // cave-b63 (1): model-state / usage-plan refreshes gate their setState on a

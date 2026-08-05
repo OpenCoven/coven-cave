@@ -2485,6 +2485,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
   const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingRuns: {} });
+  const onSessionsChangedRef = useRef(onSessionsChanged);
+  onSessionsChangedRef.current = onSessionsChanged;
   const streamHealthSessionRef = useRef(sessionId);
   const currentStreamHealthRunIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -6158,7 +6160,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // cannot refresh the task's session list. Refresh after the server has
         // saved the first transcript; otherwise the cockpit stays in its
         // one-shot bridge mode and never restores the normal work/rail view.
-        if (startNewConversation && ev.sessionId) onSessionsChanged?.();
+        if (startNewConversation && ev.sessionId) onSessionsChangedRef.current?.();
         const completedSessionId = ev.sessionId ?? liveGeneration.sessionId;
         // Bind creation-refresh to this generation's session ID before the done
         // decision. Covers: (a) the race where done arrives before the "session"
@@ -6176,7 +6178,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         const { shouldRefresh: shouldCreationRefresh, nextState: nextCreationRefreshState } =
           onDoneCreationRefresh(creationRefreshStateRef.current, liveGeneration.runId, completedSessionId, ev.isError);
         creationRefreshStateRef.current = nextCreationRefreshState;
-        if (shouldCreationRefresh) onSessionsChanged?.();
+        if (shouldCreationRefresh) onSessionsChangedRef.current?.();
         persistLiveTurns(
           turnsRef.current,
           assistantId,

@@ -34,7 +34,7 @@ const FRESH = { pendingRuns: {} };
   const bound = { pendingRuns: { "run-a": { sessionId: "sess-abc" } } };
   const next = onSendStart(bound, "run-b", "sess-abc");
   assert.deepEqual(next, {
-    pendingRuns: { "run-a": { sessionId: "sess-abc" }, "run-b": { sessionId: "sess-abc" } },
+    pendingRuns: { "run-a": { sessionId: "sess-abc" }, "run-b": { sessionId: "sess-abc", isAlias: true } },
   }, "retry with promoted sessionId adds an alias entry for the retry runId");
 }
 
@@ -398,6 +398,47 @@ const FRESH = { pendingRuns: {} };
   const { shouldRefresh, nextState } = onDoneCreationRefresh(terminated, "run-b", "sess-B", false);
   assert.equal(shouldRefresh, true, "run-b completion still refreshes after run-a was terminated");
   assert.deepEqual(nextState, FRESH, "all entries cleared after run-b completes");
+}
+
+// Repeated failed retries leave exactly one alias; other session unaffected
+{
+  let state = FRESH;
+
+  // Original new chat + bind
+  state = onSendStart(state, "run-a", null);
+  state = onCreationSessionIdentified(state, "run-a", null, "sess-abc");
+
+  // Independent session running alongside
+  state = onSendStart(state, "run-x", null);
+  state = onCreationSessionIdentified(state, "run-x", null, "sess-xyz");
+
+  // First retry
+  state = onSendStart(state, "run-b", "sess-abc");
+  assert.ok(state.pendingRuns["run-b"]?.isAlias, "first retry is marked isAlias");
+  assert.ok(state.pendingRuns["run-a"], "original run-a entry is preserved after first retry");
+
+  // run-b fails without firing done (e.g. onCreationRunTerminated preserves bound entries)
+  const afterTerminated = onCreationRunTerminated(state, "run-b");
+  assert.deepEqual(afterTerminated, state, "bound alias preserved after run-b terminal");
+
+  // Second retry: must prune run-b alias, leaving only run-a + new alias run-c
+  state = onSendStart(afterTerminated, "run-c", "sess-abc");
+  assert.equal(state.pendingRuns["run-b"], undefined, "prior alias run-b pruned when run-c retries");
+  assert.ok(state.pendingRuns["run-a"], "original creation entry run-a preserved after run-c retry");
+  assert.ok(state.pendingRuns["run-c"]?.isAlias, "run-c is marked isAlias");
+  assert.ok(state.pendingRuns["run-x"], "independent session run-x unaffected by alias pruning");
+  assert.equal(state.pendingRuns["run-x"].sessionId, "sess-xyz", "run-x session ID unchanged");
+
+  // Exactly two entries for sess-abc: original + new alias
+  const sessAbcEntries = Object.values(state.pendingRuns).filter((r) => r.sessionId === "sess-abc");
+  assert.equal(sessAbcEntries.length, 2, "exactly two entries for sess-abc after second retry");
+
+  // Successful completion clears both sess-abc entries but not sess-xyz
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-c", "sess-abc", false);
+  assert.equal(shouldRefresh, true, "run-c success fires creation refresh");
+  assert.equal(nextState.pendingRuns["run-a"], undefined, "run-a cleared on run-c success");
+  assert.equal(nextState.pendingRuns["run-c"], undefined, "run-c cleared on success");
+  assert.ok(nextState.pendingRuns["run-x"], "independent run-x unaffected by run-c success");
 }
 
 console.log("chat-creation-refresh.test.ts ok");

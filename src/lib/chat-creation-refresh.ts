@@ -28,7 +28,7 @@
  */
 
 export interface CreationRefreshState {
-  readonly pendingRuns: Readonly<Record<string, { readonly sessionId: string | null }>>;
+  readonly pendingRuns: Readonly<Record<string, { readonly sessionId: string | null; readonly isAlias?: true }>>;
 }
 
 /**
@@ -37,8 +37,11 @@ export interface CreationRefreshState {
  * - Sessionless send (`initialSessionId === null`): adds a pending entry for
  *   `runId` with an unbound session ID.
  * - Retry (`initialSessionId !== null` and that session has a pending entry):
- *   adds `runId` as an alias so the retry can participate in the same creation
- *   refresh.
+ *   prunes any prior retry aliases for that session, then adds `runId` as the
+ *   sole alias so the retry participates in the same creation refresh. Repeated
+ *   failed retries therefore leave exactly one alias entry rather than
+ *   accumulating stale ones. The original creation entry (no `isAlias` flag) is
+ *   always preserved.
  * - Ordinary follow-up (non-null `initialSessionId` with no matching pending
  *   entry): no-op.
  */
@@ -56,7 +59,17 @@ export function onSendStart(
     (run) => run.sessionId === initialSessionId,
   );
   if (hasPendingSession) {
-    return { pendingRuns: { ...state.pendingRuns, [runId]: { sessionId: initialSessionId } } };
+    // Prune prior retry aliases for this session before adding the new one so
+    // repeated failed retries do not accumulate stale alias entries. The
+    // original creation entry (where isAlias is absent) is preserved; only
+    // entries explicitly marked isAlias are removed.
+    const prunedRuns: Record<string, { readonly sessionId: string | null; readonly isAlias?: true }> = {};
+    for (const [id, run] of Object.entries(state.pendingRuns)) {
+      if (!(run.sessionId === initialSessionId && run.isAlias)) {
+        prunedRuns[id] = run;
+      }
+    }
+    return { pendingRuns: { ...prunedRuns, [runId]: { sessionId: initialSessionId, isAlias: true } } };
   }
   return state;
 }
