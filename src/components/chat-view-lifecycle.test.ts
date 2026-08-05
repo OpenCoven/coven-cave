@@ -758,7 +758,23 @@ assert.doesNotMatch(
 assert.match(
   source,
   /onCreationSessionIdentified\(creationRefreshStateRef\.current,\s*ev\.sessionId\)/,
-  "ChatView binds the creation-refresh state to the server-assigned session ID when the view adopts it, so mismatch guard prevents existing-session completions from consuming a pending creation refresh",
+  "ChatView binds creation-refresh to the server-assigned session ID from the session event, enabling the mismatch guard to reject unrelated completions",
+);
+
+// Session event binds OUTSIDE the ownership guard: the generation owns its
+// session ID regardless of which thread the view is currently displaying.
+assert.match(
+  source,
+  /case "session": \{[\s\S]*?creationRefreshStateRef\.current = onCreationSessionIdentified\(creationRefreshStateRef\.current,\s*ev\.sessionId\)[\s\S]*?if \(currentSessionRef\.current === liveGeneration\.originSessionId\)/,
+  "session event binds creation-refresh before the ownership guard, so background generations still bind even when the user has switched threads",
+);
+
+// Done event binds with completedSessionId (covers the done-before-session race
+// and the background-generation path) before invoking onDoneCreationRefresh.
+assert.match(
+  source,
+  /onCreationSessionIdentified\(\s*creationRefreshStateRef\.current,\s*completedSessionId\s*\)[\s\S]*?onDoneCreationRefresh\(/,
+  "done event binds creation-refresh using completedSessionId before invoking onDoneCreationRefresh — no auto-accept of unbound state",
 );
 
 // cave-b63 (1): model-state / usage-plan refreshes gate their setState on a

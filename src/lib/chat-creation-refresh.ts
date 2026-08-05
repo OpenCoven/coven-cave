@@ -69,9 +69,16 @@ export function onCreationSessionIdentified(
  *
  * Returns `shouldRefresh` (whether to call `onSessionsChanged`) and the next
  * state. The refresh fires exactly once: on the first successful completion of
- * the creation session. A failed done leaves the state and bound ID unchanged
- * for retry. A completion for a different existing session (ID mismatch when
- * bound) does not refresh or consume the pending state.
+ * the bound creation session. A failed done leaves the state and bound ID
+ * unchanged for retry. A completion for a different existing session (ID
+ * mismatch, or state not yet bound) does not refresh or consume the pending
+ * state.
+ *
+ * **Caller contract:** ChatView must call `onCreationSessionIdentified` with
+ * the generation's session ID (from the "session" SSE event or the done-event
+ * fallback) BEFORE invoking this function. An unbound pending state here is
+ * treated as a mismatch — no auto-accept — so missing the binding does not
+ * silently consume eligibility.
  */
 export function onDoneCreationRefresh(
   state: CreationRefreshState,
@@ -79,11 +86,13 @@ export function onDoneCreationRefresh(
   sessionId: string | null | undefined,
 ): { shouldRefresh: boolean; nextState: CreationRefreshState } {
   if (!isError && state.pendingCreationRefresh && sessionId) {
-    // If bound to a specific creation session, only refresh on a matching ID.
-    if (state.creationSessionId !== null && sessionId !== state.creationSessionId) {
+    // Must be bound to a specific creation session ID that matches the incoming
+    // completion. Unbound (null) is treated identically to a mismatch: the
+    // caller is expected to have bound via onCreationSessionIdentified first.
+    if (state.creationSessionId === null || sessionId !== state.creationSessionId) {
       return { shouldRefresh: false, nextState: state };
     }
-    // Either unbound (null) — accept the first success — or matching bound ID.
+    // Matching bound ID: fire the refresh and clear eligibility.
     return { shouldRefresh: true, nextState: { pendingCreationRefresh: false, creationSessionId: null } };
   }
   return { shouldRefresh: false, nextState: state };

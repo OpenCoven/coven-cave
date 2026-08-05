@@ -58,11 +58,12 @@ const ELIGIBLE = { pendingCreationRefresh: true, creationSessionId: null };
 
 // onDoneCreationRefresh — unbound (creationSessionId: null) ------------------
 
-// Successful first completion while unbound: accept any ID, refresh, clear
+// Unbound pending: ChatView must call onCreationSessionIdentified first.
+// Without binding, the helper does NOT auto-refresh on any completion.
 {
   const { shouldRefresh, nextState } = onDoneCreationRefresh(ELIGIBLE, false, "sess-abc");
-  assert.equal(shouldRefresh, true, "successful first completion (unbound) should refresh");
-  assert.deepEqual(nextState, FRESH, "eligibility cleared after first successful completion");
+  assert.equal(shouldRefresh, false, "unbound pending done does not auto-refresh — binding required before done");
+  assert.deepEqual(nextState, ELIGIBLE, "unbound pending done leaves state unchanged");
 }
 
 // Failed completion while unbound: refresh does NOT fire, eligibility preserved
@@ -89,11 +90,12 @@ const ELIGIBLE = { pendingCreationRefresh: true, creationSessionId: null };
   assert.equal(shouldRefresh, false, "eligible done with undefined sessionId does not refresh");
 }
 
-// No double-refresh: once eligible → done success, next done should not fire again
+// No double-refresh: once bound → done success, the next done must not fire again
 {
-  const first = onDoneCreationRefresh(ELIGIBLE, false, "sess-abc");
+  const bound = { pendingCreationRefresh: true, creationSessionId: "sess-abc" };
+  const first = onDoneCreationRefresh(bound, false, "sess-abc");
   const second = onDoneCreationRefresh(first.nextState, false, "sess-abc");
-  assert.equal(first.shouldRefresh, true, "first successful done refreshes");
+  assert.equal(first.shouldRefresh, true, "first successful bound done refreshes");
   assert.equal(second.shouldRefresh, false, "second done does not refresh (eligibility consumed)");
 }
 
@@ -173,6 +175,46 @@ const ELIGIBLE = { pendingCreationRefresh: true, creationSessionId: null };
   // Follow-up completion does not refresh
   const followupResult = onDoneCreationRefresh(state, false, "sess-abc");
   assert.equal(followupResult.shouldRefresh, false, "follow-up completion after clear does not refresh");
+}
+
+// Cross-thread binding scenario (Task 1 compliance gap):
+// The user starts a new chat, then switches threads before the session ID
+// arrives. The "session" SSE event fires for the background generation outside
+// the view's ownership guard. ChatView binds via onCreationSessionIdentified
+// (now outside the guard). Then:
+// - A completion for the currently-displayed (unrelated) session must NOT refresh.
+// - A completion for the original creation session must refresh exactly once.
+{
+  let state = FRESH;
+
+  // Step 1: new-chat send (no initial session id)
+  state = onSendStart(state, null);
+  assert.ok(state.pendingCreationRefresh, "new-chat send makes state eligible");
+  assert.equal(state.creationSessionId, null, "starts unbound");
+
+  // Step 2: user switches away; session id arrives for the background generation.
+  // ChatView binds OUTSIDE the ownership guard.
+  state = onCreationSessionIdentified(state, "creation-sess");
+  assert.equal(state.creationSessionId, "creation-sess", "binding outside ownership guard attaches the session ID");
+
+  // Step 3: the currently-displayed existing session completes — must NOT refresh.
+  const unrelated = onDoneCreationRefresh(state, false, "other-existing-sess");
+  assert.equal(unrelated.shouldRefresh, false,
+    "unrelated session done does not consume the pending creation refresh");
+  assert.deepEqual(unrelated.nextState, state,
+    "unrelated session done leaves state untouched");
+
+  // Step 4: the original background creation session completes — must refresh once.
+  const creation = onDoneCreationRefresh(state, false, "creation-sess");
+  assert.equal(creation.shouldRefresh, true,
+    "background creation session done refreshes the sidebar");
+  assert.deepEqual(creation.nextState, FRESH,
+    "eligibility consumed after creation refresh");
+
+  // Step 5: subsequent completion for the same ID must not refresh again.
+  const again = onDoneCreationRefresh(creation.nextState, false, "creation-sess");
+  assert.equal(again.shouldRefresh, false,
+    "second completion does not re-refresh after eligibility is consumed");
 }
 
 console.log("chat-creation-refresh.test.ts ok");

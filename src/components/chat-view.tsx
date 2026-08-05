@@ -5951,6 +5951,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     switch (ev.kind) {
       case "session": {
         liveGeneration.sessionId = ev.sessionId;
+        // Bind creation-refresh OUTSIDE the ownership guard: the session ID
+        // belongs to this generation even if the user switched away before it
+        // arrived. Without this, an unbound pending state would be auto-accepted
+        // by any subsequent done completion, consuming the refresh incorrectly.
+        creationRefreshStateRef.current = onCreationSessionIdentified(creationRefreshStateRef.current, ev.sessionId);
         if (ev.sessionId !== currentSessionRef.current) {
           // Only adopt the new session id into THIS view's refs when the view is
           // still on the thread this generation started from. If the user
@@ -5964,9 +5969,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
-            // Bind the pending creation-refresh to this specific session ID so
-            // completions for other existing sessions don't consume it.
-            creationRefreshStateRef.current = onCreationSessionIdentified(creationRefreshStateRef.current, ev.sessionId);
           }
           onSessionStarted?.(ev.sessionId);
         }
@@ -6140,9 +6142,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
-            // Done-fallback: session event may not have fired (race). Bind the
-            // creation-refresh state here so the mismatch guard works correctly.
-            creationRefreshStateRef.current = onCreationSessionIdentified(creationRefreshStateRef.current, ev.sessionId);
           }
           onSessionStarted?.(ev.sessionId);
         }
@@ -6153,6 +6152,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // one-shot bridge mode and never restores the normal work/rail view.
         if (startNewConversation && ev.sessionId) onSessionsChanged?.();
         const completedSessionId = ev.sessionId ?? liveGeneration.sessionId;
+        // Bind creation-refresh to this generation's session ID before the done
+        // decision. Covers: (a) the race where done arrives before the "session"
+        // event (no prior binding), and (b) background generations where the user
+        // switched away — session event bound the state, this is idempotent.
+        // onDoneCreationRefresh no longer auto-accepts an unbound state, so the
+        // binding must always happen here before the check.
+        if (completedSessionId) {
+          creationRefreshStateRef.current = onCreationSessionIdentified(
+            creationRefreshStateRef.current, completedSessionId
+          );
+        }
         const { shouldRefresh: shouldCreationRefresh, nextState: nextCreationRefreshState } =
           onDoneCreationRefresh(creationRefreshStateRef.current, ev.isError, completedSessionId);
         creationRefreshStateRef.current = nextCreationRefreshState;
