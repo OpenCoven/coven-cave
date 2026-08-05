@@ -48,7 +48,8 @@ function hasOnlyAllowedDetailKeys(
   allowedKeys: ReadonlySet<string>,
 ): boolean {
   if (!detail || typeof detail !== "object") return false;
-  return Reflect.ownKeys(detail).every((key) => typeof key === "string" && allowedKeys.has(key));
+  return Reflect.ownKeys(detail).every((key) => typeof key === "string" && allowedKeys.has(key)) &&
+    [...allowedKeys].every((key) => !(key in detail) || hasOwnDetailField(detail, key));
 }
 
 function normalizeString(value: unknown): string | null {
@@ -137,7 +138,7 @@ function attentionEventDetail(
   const clearWatermark = hasClearWatermark && isCanonicalIsoInstant(detail?.clearWatermark)
     ? detail.clearWatermark
     : null;
-  const scopeKey = hasOwnDetailField(detail, "scopeKey") ? normalizeString(detail?.scopeKey) : null;
+  const scopeKey = normalizeString(detail?.scopeKey);
   const hasBaselineAttention = hasOwnDetailField(detail, "baselineAttention");
   const baselineAttention = hasBaselineAttention
     ? normalizeAttentionDetail(detail?.baselineAttention)

@@ -208,6 +208,71 @@ test("legacy session-only compatibility is exact and never revives malformed mod
   }
 });
 
+test("clear events accept only their own keys and reject settlement-only or unknown fields", () => {
+  assert.deepEqual(attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: { sessionId: "session-8", operationId: "run-8" },
+  })), { sessionId: "session-8", operationId: "run-8" }, "a payload with only its own keys must still pass");
+
+  assert.equal(attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: { sessionId: "session-8", operationId: "run-8", outcome: "persisted" },
+  })), null, "a settlement-only field must reject the clear event outright");
+
+  assert.equal(attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: { sessionId: "session-8", operationId: "run-8", spoofed: "x" },
+  })), null, "an unrecognized field must reject the clear event outright, not be silently dropped");
+});
+
+test("settlement events accept only their own keys and reject clear-only or unknown fields", () => {
+  assert.deepEqual(attentionSettlementFromEvent(new CustomEvent(CHAT_ATTENTION_SETTLE_EVENT, {
+    detail: { sessionId: "session-9", operationId: "run-9", outcome: "persisted" },
+  })), { sessionId: "session-9", operationId: "run-9", outcome: "persisted" }, "a payload with only its own keys must still pass");
+
+  for (const clearOnlyDetail of [
+    { sessionId: "session-9", operationId: "run-9", outcome: "persisted", clearWatermark: "2026-08-05T00:00:00.000Z" },
+    { sessionId: "session-9", operationId: "run-9", outcome: "persisted", scopeKey: "familiar:nova" },
+    {
+      sessionId: "session-9",
+      operationId: "run-9",
+      outcome: "persisted",
+      baselineAttention: { state: "none", since: null, reason: null },
+    },
+  ]) {
+    assert.equal(
+      attentionSettlementFromEvent(new CustomEvent(CHAT_ATTENTION_SETTLE_EVENT, { detail: clearOnlyDetail })),
+      null,
+      "a clear-only field must reject the settlement event outright",
+    );
+  }
+
+  assert.equal(attentionSettlementFromEvent(new CustomEvent(CHAT_ATTENTION_SETTLE_EVENT, {
+    detail: { sessionId: "session-9", operationId: "run-9", outcome: "persisted", spoofed: "x" },
+  })), null, "an unrecognized field must reject the settlement event outright, not be silently dropped");
+});
+
+test("event shape validation requires own keys and rejects hidden unknown fields", () => {
+  const inheritedOutcome = Object.create({ outcome: "persisted" });
+  inheritedOutcome.sessionId = "session-9";
+  inheritedOutcome.operationId = "run-9";
+  assert.equal(
+    attentionSettlementFromEvent(new CustomEvent(CHAT_ATTENTION_SETTLE_EVENT, { detail: inheritedOutcome })),
+    null,
+  );
+
+  const hiddenUnknown = { sessionId: "session-8", operationId: "run-8" };
+  Object.defineProperty(hiddenUnknown, "futureField", { value: true });
+  assert.equal(
+    attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, { detail: hiddenUnknown })),
+    null,
+  );
+
+  const hiddenLegacyUnknown = { sessionId: "session-legacy" };
+  Object.defineProperty(hiddenLegacyUnknown, "operationId", { value: "run-legacy" });
+  assert.equal(
+    attentionClearedSessionId(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, { detail: hiddenLegacyUnknown })),
+    null,
+  );
+});
+
 test("rejects wrong event types and invalid detail payloads", () => {
   assert.equal(attentionClearedSessionId(new Event(CHAT_ATTENTION_CLEAR_EVENT)), null);
   assert.equal(attentionClearFromEvent(new Event(CHAT_ATTENTION_CLEAR_EVENT)), null);
