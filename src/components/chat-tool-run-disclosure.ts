@@ -5,13 +5,14 @@ import {
   type ReactNode,
 } from "react";
 
-import { useToolRunDisclosure } from "../lib/use-tool-run-disclosure.ts";
-
-type RunStatus = "running" | "ok" | "error";
+import {
+  useToolRunDisclosure,
+  type ToolRunStatus,
+} from "../lib/use-tool-run-disclosure.ts";
 
 type ChatToolRunDisclosureProps = {
   repeated: boolean;
-  statuses: readonly RunStatus[];
+  statuses: readonly ToolRunStatus[];
   category: string;
   ariaLabel: string;
   summary: ReactNode;
@@ -33,8 +34,9 @@ export function ChatToolRunDisclosure({
     {
       ref: disclosure.detailsRef,
       className: repeated ? "cave-tool-run" : undefined,
+      "data-one-off": !repeated ? "true" : undefined,
       "data-default-collapsed": repeated ? "true" : undefined,
-      "data-tool-category": category,
+      "data-tool-category": repeated ? category : undefined,
       open: disclosure.open,
       onToggle: (event) => disclosure.onToggle(event.currentTarget.open),
       onBlurCapture: disclosure.onBlurCapture,
