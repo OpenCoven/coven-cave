@@ -37,7 +37,6 @@ import {
 import {
   hydrateProjectImagesForMigration,
   moveProjectImageFromStorageKey,
-  readProjectImagesSnapshot,
 } from "./cave-project-images.ts";
 import {
   readProjectOverridesForMigration,
@@ -95,7 +94,7 @@ export async function migrateProjectRootKeys(
 
   // Migration cannot use the UI's tolerant hydration: unreadable IndexedDB
   // must reject so the caller retains server aliases for a later retry.
-  await hydrateProjectImagesForMigration();
+  const migrationImages = await hydrateProjectImagesForMigration();
 
   for (const { from, to } of moves) {
     // Probe the literal persisted key before the canonical store key. Most
@@ -103,12 +102,18 @@ export async function migrateProjectRootKeys(
     // already exist under literal `C:`.
     const fromKeys = [...new Set([from, normalizeProjectRoot(from)])];
     for (const fromKey of fromKeys) {
-      const hadImage = Object.hasOwn(readProjectImagesSnapshot(), fromKey);
+      const hadImage = Object.hasOwn(migrationImages, fromKey);
       if (!hadImage) continue;
       // Probe the literal persisted key first: old drive roots could be stored
       // as `C:` before normalization canonicalized them to `C:/`.
-      await moveProjectImageFromStorageKey(fromKey, to);
-      if (!Object.hasOwn(readProjectImagesSnapshot(), fromKey)) followed.add(from);
+      const result = await moveProjectImageFromStorageKey(fromKey, to);
+      if (!result) continue;
+      if (result.source) migrationImages[fromKey] = result.source;
+      else delete migrationImages[fromKey];
+      const toKey = normalizeProjectRoot(to);
+      if (result.destination) migrationImages[toKey] = result.destination;
+      else delete migrationImages[toKey];
+      if (!Object.hasOwn(migrationImages, fromKey)) followed.add(from);
     }
   }
 

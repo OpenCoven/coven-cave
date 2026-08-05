@@ -11,7 +11,7 @@
  */
 
 import { useSyncExternalStore } from "react";
-import { avatarStorage } from "@/lib/avatar-idb";
+import { avatarStorage, type AvatarMoveResult } from "@/lib/avatar-idb";
 import { MAX_FAMILIAR_IMAGE_DATAURL_BYTES } from "./cave-familiar-images.ts";
 import { normalizeProjectRoot } from "./cave-projects-types.ts";
 
@@ -124,9 +124,9 @@ async function moveProjectImageKey(
   from: string,
   to: string,
   surfaceFailure = false,
-): Promise<void> {
+): Promise<AvatarMoveResult | null> {
   await ensureHydrated();
-  if (from === to) return;
+  if (from === to) return null;
   let result;
   try {
     result = await avatarStorage().move("projectAvatars", from, to);
@@ -136,7 +136,7 @@ async function moveProjectImageKey(
         cause: error,
       });
     }
-    return;
+    return null;
   }
   const next = { ...cached };
   if (result.source) next[from] = result.source;
@@ -146,6 +146,7 @@ async function moveProjectImageKey(
   cached = Object.keys(next).length > 0 ? next : EMPTY;
   notify();
   broadcast();
+  return result;
 }
 
 /** Follow a root edit: re-key the stored image so the avatar survives. */
@@ -157,8 +158,8 @@ export async function moveProjectImage(fromRoot: string, toRoot: string): Promis
 export async function moveProjectImageFromStorageKey(
   fromKey: string,
   toRoot: string,
-): Promise<void> {
-  await moveProjectImageKey(fromKey, normalizeProjectRoot(toRoot), true);
+): Promise<AvatarMoveResult | null> {
+  return moveProjectImageKey(fromKey, normalizeProjectRoot(toRoot), true);
 }
 
 function subscribe(fn: () => void): () => void {
@@ -178,16 +179,19 @@ export function readProjectImagesSnapshot(): ImageMap {
   return cached;
 }
 
-/** Refresh from strict storage before acknowledging a root-key migration. */
-export async function hydrateProjectImagesForMigration(): Promise<void> {
-  const strictHydration = hydrate(() =>
-    avatarStorage().getAllStrict("projectAvatars")
-  ).catch((cause: unknown) => {
+/** Read a strict migration snapshot and refresh the render cache when current. */
+export async function hydrateProjectImagesForMigration(): Promise<ImageMap> {
+  let strictSnapshot: ImageMap | null = null;
+  const strictHydration = hydrate(async () => {
+    strictSnapshot = await avatarStorage().getAllStrict("projectAvatars");
+    return strictSnapshot;
+  }).catch((cause: unknown) => {
     throw new Error("project avatar migration storage read failed", { cause });
   });
   hydration = strictHydration;
   try {
     await strictHydration;
+    return strictSnapshot ?? EMPTY;
   } catch (error) {
     if (hydration === strictHydration) hydration = null;
     throw error;
