@@ -216,10 +216,10 @@ assert.doesNotMatch(
   "ReasoningBlock must not hardcode the disclosure open",
 );
 
-// --- Tool activity renders in a designated section on settled turns ---
+// --- Tool activity keeps designated slots throughout the turn lifecycle ---
 
-// No per-turn show/hide toggle: the designated section is always present
-// (collapsed) instead, so prose and tool usage are cleanly separated.
+// No per-turn show/hide toggle: the designated section is present whenever
+// non-edit activity exists, including while the assistant turn is running.
 assert.doesNotMatch(
   turnRow,
   /showTools|showToolsOverride|cave-turn-tools-toggle/,
@@ -240,18 +240,18 @@ assert.match(
 
 assert.match(
   turnRow,
-  /!turn\.pending && turn\.tools\?\.length/,
-  "settled turns that used tools render a designated tool section",
+  /const turnTools = turn\.tools \?\? \[\];\s*const editCards = turnTools\.filter\(isEditCard\);\s*const otherTools = turnTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
+  "running and settled turns share one pending-independent tool partition",
 );
 assert.match(
   turnRow,
-  /const editCards = settledTools\.filter\(isEditCard\);\s*const otherTools = settledTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
-  "edit cards are split before the remaining tool activity",
+  /activity=\{otherTools\.length \? <ToolGroup tools=\{otherTools\} \/> : null\}/,
+  "non-edit activity always occupies the compact ToolGroup slot",
 );
 assert.match(
   turnRow,
   /cave-edit-cards[\s\S]*editCards\.map\(\(tool\) => <ToolBlock/,
-  "edit-tool cards stay visible inline on settled turns (not buried in the collapsed rollup)",
+  "edit-tool cards stay visible inline throughout the turn (not buried in the collapsed rollup)",
 );
 assert.match(
   turnRow,
@@ -282,7 +282,7 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /otherTools\.length \? <ToolGroup[\s\S]*?<MessageBubble[\s\S]*?!turn\.pending && turn\.tools\?\.length && editCards\.length/,
+  /<ChatToolActivityLayout[\s\S]*activity=\{otherTools\.length \? <ToolGroup[\s\S]*?<MessageBubble[\s\S]*editCards=\{\s*editCards\.length/,
   "TurnRowImpl source order: otherTools ToolGroup precedes MessageBubble; editCards section follows MessageBubble — the two sections are separate and in their current intended positions",
 );
 
