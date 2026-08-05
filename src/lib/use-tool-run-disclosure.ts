@@ -30,7 +30,7 @@ export type ToolRunDisclosure = {
  *    the subtree (detected via onBlurCapture).
  *  • While settled, manual open/close via onToggle works normally.
  */
-export function useToolRunDisclosure(statuses: RunStatus[]): ToolRunDisclosure {
+export function useToolRunDisclosure(statuses: readonly RunStatus[]): ToolRunDisclosure {
   const isRunning = statuses.some((s) => s === "running");
   const [open, setOpen] = useState(isRunning);
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
