@@ -14,6 +14,21 @@
  * - Eligibility is cleared only after the first successful `done` event for the
  *   bound creation session fires the refresh.
  * - Follow-up sends on an already-established session are never eligible.
+ *
+ * ## Provenance gate
+ *
+ * Every generation carries an `originSessionId`: null when the generation
+ * started sessionless (brand-new chat), or the session ID that existed when
+ * `sendRaw` was called (follow-up or retry after session was assigned).
+ *
+ * Both `onCreationSessionIdentified` and `onDoneCreationRefresh` require this
+ * value so they can enforce per-generation provenance:
+ * - Only a sessionless generation (origin null) may bind an unbound pending
+ *   creation state to a newly received ID.
+ * - A retry (non-null origin) may participate only when its origin equals the
+ *   state's already-bound `creationSessionId`.
+ * - An unrelated existing-session generation must never bind, refresh, or
+ *   consume pending creation state.
  */
 
 export interface CreationRefreshState {
@@ -52,13 +67,25 @@ export function onSendStart(
  * event, or the done-event fallback). Binds the pending refresh to that ID so
  * completions for unrelated existing sessions don't consume it.
  *
+ * **Provenance gate:** only a generation that started sessionless
+ * (`generationOriginSessionId === null`) may bind an unbound pending state.
+ * A retry (non-null origin) or an unrelated existing-session generation must
+ * not overwrite an unbound state — pass the generation's `originSessionId` so
+ * the helper can enforce this.
+ *
  * Idempotent: once bound, further calls with any ID are no-ops.
  */
 export function onCreationSessionIdentified(
   state: CreationRefreshState,
   sessionId: string,
+  generationOriginSessionId: string | null,
 ): CreationRefreshState {
-  if (state.pendingCreationRefresh && state.creationSessionId === null) {
+  // Only a sessionless generation may bind an unbound pending creation state.
+  if (
+    state.pendingCreationRefresh &&
+    state.creationSessionId === null &&
+    generationOriginSessionId === null
+  ) {
     return { ...state, creationSessionId: sessionId };
   }
   return state;
@@ -74,6 +101,15 @@ export function onCreationSessionIdentified(
  * mismatch, or state not yet bound) does not refresh or consume the pending
  * state.
  *
+ * **Provenance gate:** pass the generation's `originSessionId` so the helper
+ * can enforce per-generation participation rules:
+ * - A sessionless generation (`generationOriginSessionId === null`) may bind
+ *   and refresh.
+ * - A retry (`generationOriginSessionId` equals `state.creationSessionId`) may
+ *   refresh but not rebind (already bound).
+ * - Any other non-null origin (unrelated existing-session generation) returns
+ *   immediately with no side effects.
+ *
  * **Caller contract:** ChatView must call `onCreationSessionIdentified` with
  * the generation's session ID (from the "session" SSE event or the done-event
  * fallback) BEFORE invoking this function. An unbound pending state here is
@@ -84,7 +120,17 @@ export function onDoneCreationRefresh(
   state: CreationRefreshState,
   isError: boolean | undefined,
   sessionId: string | null | undefined,
+  generationOriginSessionId: string | null,
 ): { shouldRefresh: boolean; nextState: CreationRefreshState } {
+  // Provenance gate: an unrelated existing-session generation (non-null origin
+  // that does not match the bound creation session) must not participate at all.
+  if (
+    generationOriginSessionId !== null &&
+    generationOriginSessionId !== state.creationSessionId
+  ) {
+    return { shouldRefresh: false, nextState: state };
+  }
+
   if (!isError && state.pendingCreationRefresh && sessionId) {
     // Must be bound to a specific creation session ID that matches the incoming
     // completion. Unbound (null) is treated identically to a mismatch: the
