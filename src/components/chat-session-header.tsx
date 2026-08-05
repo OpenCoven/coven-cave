@@ -342,7 +342,7 @@ export function ChatTitleEditable({
             ...(replaceManual && {
               replaceManualTitle: true,
               observedTitle: session.title,
-              observedTitleRevision: session.titleRevision,
+              observedTitleRevision: session.titleRevision ?? 0,
             }),
           }
         : { title };

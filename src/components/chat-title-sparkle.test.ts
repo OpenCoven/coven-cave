@@ -175,8 +175,8 @@ test("the sparkle sends replaceManualTitle: true to take over any current title"
   );
   assert.match(
     header,
-    /observedTitleRevision:\s*session\.titleRevision/,
-    "the sparkle sends the ownership revision observed alongside the title",
+    /observedTitleRevision:\s*session\.titleRevision \?\? 0/,
+    "the sparkle sends the ownership revision observed alongside the title, with a safe legacy default",
   );
   // The sparkle generate call explicitly opts in to the takeover.
   assert.match(

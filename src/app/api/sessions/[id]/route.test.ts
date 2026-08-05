@@ -99,7 +99,18 @@ try {
   let state = await config.loadState();
   const observedRevision = config.sessionTitleRevision(state, id);
 
-  await config.setSessionTitle(id, "Auto title A");
+  const sameTextManual = await patch({ title: "Auto title A" });
+  assert.equal(sameTextManual.status, 200);
+  assert.equal(sameTextManual.body.titleUpdated, true);
+  state = await config.loadState();
+  assert.equal(state.sessionTitles[id], "Auto title A");
+  assert.equal(state.sessionTitleManual[id], true);
+  assert.equal(
+    config.sessionTitleRevision(state, id),
+    observedRevision + 1,
+    "a same-text manual rename advances ownership revision",
+  );
+
   const sameTextConflict = await patch({
     title: "Generated title B",
     titleOwnership: "auto",
@@ -107,8 +118,11 @@ try {
     observedTitle: "Auto title A",
     observedTitleRevision: observedRevision,
   });
-  assert.equal(sameTextConflict.status, 200);
-  assert.equal(sameTextConflict.body.titleUpdated, false);
+  assert.equal(sameTextConflict.status, 409);
+  assert.equal(sameTextConflict.body.ok, false);
+  assert.equal(sameTextConflict.body.conflict, true);
+  assert.equal(sameTextConflict.body.title, "Auto title A");
+  assert.equal(sameTextConflict.body.titleRevision, observedRevision + 1);
   state = await config.loadState();
   assert.equal(state.sessionTitles[id], "Auto title A");
   assert.equal(state.sessionTitleManual[id], true);
@@ -121,34 +135,29 @@ try {
     observedTitle: "Auto title A",
     observedTitleRevision: currentRevision,
   });
+  assert.equal(success.status, 200);
   assert.equal(success.body.titleUpdated, true);
   state = await config.loadState();
   assert.equal(state.sessionTitles[id], "Generated title B");
   assert.equal(state.sessionTitleAuto[id], "Generated title B");
 
-  const staleRevision = config.sessionTitleRevision(state, id);
-  await config.setSessionTitle(id, "Newer manual title");
-  const staleConflict = await patch({
-    title: "Stale generated title",
-    titleOwnership: "auto",
-    replaceManualTitle: true,
-    observedTitle: "Generated title B",
-    observedTitleRevision: staleRevision,
-  });
-  assert.equal(staleConflict.body.titleUpdated, false);
+  const manualRename = await patch({ title: "Ordinary manual rename" });
+  assert.equal(manualRename.status, 200);
+  assert.equal(manualRename.body.titleUpdated, true);
   state = await config.loadState();
-  assert.equal(state.sessionTitles[id], "Newer manual title");
+  assert.equal(state.sessionTitles[id], "Ordinary manual rename");
   assert.equal(state.sessionTitleManual[id], true);
+  assert.equal(state.sessionTitleAuto[id], undefined);
 
   const unsafeLegacyTakeover = await patch({
     title: "Legacy takeover",
     titleOwnership: "auto",
     replaceManualTitle: true,
-    autoDefaults: ["Newer manual title"],
+    autoDefaults: ["Ordinary manual rename"],
   });
   assert.equal(unsafeLegacyTakeover.status, 400);
   state = await config.loadState();
-  assert.equal(state.sessionTitles[id], "Newer manual title");
+  assert.equal(state.sessionTitles[id], "Ordinary manual rename");
 } finally {
   process.env.HOME = previousHome;
   await rm(testHome, { recursive: true, force: true });

@@ -157,6 +157,19 @@ export async function PATCH(
         body.replaceManualTitle ? body.observedTitleRevision : undefined,
         body.replaceManualTitle ? body.observedTitle?.trim() : undefined,
       );
+      if (body.replaceManualTitle && next === null) {
+        const latest = await loadState();
+        return NextResponse.json(
+          {
+            ok: false,
+            conflict: true,
+            error: "session title changed since it was observed",
+            title: latest.sessionTitles[id] ?? null,
+            titleRevision: latest.sessionTitleRevision[id] ?? 0,
+          },
+          { status: 409 },
+        );
+      }
       result.titleUpdated = next !== null;
       result.title = next ?? (await loadState()).sessionTitles[id] ?? null;
     } else {

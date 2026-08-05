@@ -331,6 +331,21 @@ try {
   assert.equal(state.sessionTitleAuto["session-owned"], "Fresh sparkle title");
   assert.equal(state.sessionTitleManual["session-owned"], undefined);
 
+  const exhaustedState = JSON.parse(await readFile(statePath, "utf8"));
+  exhaustedState.sessionTitleRevision["revision-exhausted"] = Number.MAX_SAFE_INTEGER;
+  await writeFile(statePath, JSON.stringify(exhaustedState));
+  await assert.rejects(
+    config.setSessionTitle("revision-exhausted", "Must not wrap"),
+    /session title revision exhausted/,
+    "ownership revisions fail closed instead of wrapping to a prior value",
+  );
+  state = await config.loadState();
+  assert.equal(state.sessionTitles["revision-exhausted"], undefined);
+  assert.equal(
+    state.sessionTitleRevision["revision-exhausted"],
+    Number.MAX_SAFE_INTEGER,
+  );
+
   // Trim/empty input is a no-op (returns null).
   assert.equal(
     await config.setSessionTitleAutoIfOwned("session-owned2", "   ", new Set(["New chat"])),
