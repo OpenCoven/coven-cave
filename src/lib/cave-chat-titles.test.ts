@@ -243,6 +243,36 @@ assert.equal(
   "Fix parser",
   "leading ZWJ emoji sequence fully stripped",
 );
+// Multi-member ZWJ family: 👨‍👩‍👧‍👦 = U+1F468 ZWJ U+1F469 ZWJ U+1F467 ZWJ U+1F466.
+// Four emojis joined by three ZWJ codes — must be consumed as a single sequence.
+assert.equal(
+  chatSummaryTitle({ userText: "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466} Fix" }),
+  "Fix",
+  "leading multi-member ZWJ family sequence fully stripped",
+);
+assert.equal(
+  titleFromAssistantReply("# \u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466} Fix parser"),
+  "Fix parser",
+  "leading ZWJ family sequence in heading fully stripped",
+);
+// VS15 (U+FE0E) requests text presentation; the base character is still
+// Extended_Pictographic and its VS15 suffix must be consumed as part of the
+// cluster so it does not leak as an invisible residue in the stripped output.
+// "❤︎ Fix" = U+2764 + U+FE0E (VS15) + space + Fix.
+assert.equal(
+  chatSummaryTitle({ userText: "\u2764\uFE0E Fix" }),
+  "Fix",
+  "leading emoji with VS15 (text variation selector) fully stripped",
+);
+assert.equal(
+  titleFromAssistantReply("# \u2764\uFE0E Fix parser"),
+  "Fix parser",
+  "leading VS15 emoji in heading fully stripped",
+);
+{
+  const r = chatSummaryTitle({ userText: "trailing \u2764\uFE0E" });
+  assert.equal(r, "Trailing", "trailing VS15 emoji fully stripped — no U+FE0E residue");
+}
 assert.equal(
   chatSummaryTitle({ userText: "1\uFE0F\u20E3 Fix parser" }),
   "Fix parser",

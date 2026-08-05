@@ -5,6 +5,8 @@ import {
   markOfflineTravelItemSyncing,
   offlineTravelItemsNeedingSync,
   recordSessionFamiliar,
+  setSessionTitle,
+  setSessionTitleAuto,
   setSessionTitleAutoIfOwned,
   type CaveConfig,
   type CaveTravelQueueItem,
@@ -129,6 +131,11 @@ async function spawnHubSession(args: {
   modelControls?: Record<string, unknown>;
   projectRoot?: string | null;
   title: string;
+  /** How to record the session title. "auto" records auto-rename provenance so
+   *  the periodic rename can update it; "manual" (the default) stores it as a
+   *  human-chosen title that the auto-rename does not overwrite. Chat replay
+   *  passes "auto"; workflow / flow replay omit this and use the default. */
+  titleOwnership?: "auto" | "manual";
 }): Promise<string> {
   const harness = canonicalHarnessId(args.harness);
   if (!isAllowedHarness(harness)) {
@@ -160,11 +167,9 @@ async function spawnHubSession(args: {
 
   await Promise.all([
     args.familiarId ? recordSessionFamiliar(res.data.id, args.familiarId) : Promise.resolve(),
-    setSessionTitleAutoIfOwned(
-      res.data.id,
-      args.title,
-      new Set([defaultChatTitleForSession(res.data.id)]),
-    ),
+    args.titleOwnership === "auto"
+      ? setSessionTitleAuto(res.data.id, args.title)
+      : setSessionTitle(res.data.id, args.title),
   ]);
   return res.data.id;
 }
@@ -233,6 +238,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     modelControls: record(payload.modelControls),
     projectRoot,
     title: replayTitle,
+    titleOwnership: "auto",
   });
   if (stringValue(payload.sessionId) && payload.sessionId !== sessionId) {
     await setSessionTitleAutoIfOwned(

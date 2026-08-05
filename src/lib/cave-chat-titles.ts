@@ -9,11 +9,18 @@ type SessionLike = {
 export const MAX_CHAT_TITLE_LENGTH = 120;
 
 // Strip complete emoji grapheme sequences at title edges without treating plain
-// digits, #, or * as emoji. This covers variation selectors, modifiers, ZWJ
-// compounds, and keycaps such as 1️⃣.
+// digits, #, or * as emoji. This covers:
+//   - keycaps such as 1️⃣ ([#*0-9] + optional VS16 + U+20E3)
+//   - variation selectors VS15 (U+FE0E, text presentation) and VS16 (U+FE0F)
+//   - Fitzpatrick skin-tone modifiers (Emoji_Modifier)
+//   - tag sequences used for regional-indicator flag sequences
+//   - ZWJ compounds such as 👩‍💻 and multi-member family sequences 👨‍👩‍👧‍👦
 const PICTOGRAPHIC = String.raw`(?:\p{Emoji_Presentation}|\p{Extended_Pictographic})`;
 const EMOJI_TAG_SEQUENCE = String.raw`(?:[\u{E0020}-\u{E007E}]+\u{E007F})`;
-const EMOJI_COMPONENT = String.raw`${PICTOGRAPHIC}(?:\uFE0F|\p{Emoji_Modifier})?(?:${EMOJI_TAG_SEQUENCE})?`;
+// VS15 (U+FE0E) requests text presentation; VS16 (U+FE0F) requests emoji
+// presentation. Both must be consumed as part of the preceding base character
+// so they do not leak into the stripped output (e.g. "❤︎ Fix" → "Fix").
+const EMOJI_COMPONENT = String.raw`${PICTOGRAPHIC}(?:\uFE0F|\uFE0E|\p{Emoji_Modifier})?(?:${EMOJI_TAG_SEQUENCE})?`;
 const EMOJI_SEQUENCE = String.raw`(?:[#*0-9]\uFE0F?\u20E3|${EMOJI_COMPONENT}(?:\u200D${EMOJI_COMPONENT})*)`;
 const LEADING_EMOJI_RE = new RegExp(String.raw`^(?:\s|${EMOJI_SEQUENCE})+`, "gu");
 const TRAILING_EMOJI_RE = new RegExp(String.raw`(?:\s|${EMOJI_SEQUENCE})+$`, "gu");

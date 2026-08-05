@@ -75,10 +75,18 @@ assert.match(
   /setSessionTitleAutoIfOwned/,
   "automatic replay titles should use the shared atomic provenance setter",
 );
-assert.doesNotMatch(
+// Chat replay uses auto provenance (setSessionTitleAuto via titleOwnership: "auto");
+// workflow / flow replay use manual provenance (setSessionTitle, the default).
+// Both must be imported and dispatched correctly.
+assert.match(
   replay,
   /\bsetSessionTitle\b/,
-  "automatic replay titles must not be stored as manual titles",
+  "travel replay must use setSessionTitle for non-chat (manual-provenance) titles",
+);
+assert.match(
+  replay,
+  /titleOwnership:\s*["']auto["']/,
+  "chat replay must pass titleOwnership: 'auto' to the session spawn helper",
 );
 assert.match(
   replay,
