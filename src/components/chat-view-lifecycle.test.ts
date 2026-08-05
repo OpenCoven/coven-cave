@@ -735,6 +735,22 @@ assert.match(
   );
 }
 
+assert.match(
+  source,
+  /const completedSessionId = ev\.sessionId \?\? liveGeneration\.sessionId;/,
+  "done resolves the stable session id from either the event or live generation",
+);
+assert.match(
+  source,
+  /if \(!ev\.isError && liveGeneration\.originSessionId === null && completedSessionId\) \{\s*onSessionsChanged\?\.\(\);\s*\}/,
+  "a successful first send refreshes the authoritative session list after persistence",
+);
+assert.doesNotMatch(
+  source,
+  /if \(completedSessionId\) \{\s*onSessionsChanged\?\.\(\);\s*\}/,
+  "ordinary follow-ups do not refresh as though they created a sidebar row",
+);
+
 // cave-b63 (1): model-state / usage-plan refreshes gate their setState on a
 // caller predicate so a fetch resolving after a thread switch can't overwrite
 // the new thread's model/plan; the effects pass () => !cancelled.

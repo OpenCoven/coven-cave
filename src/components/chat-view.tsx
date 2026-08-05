@@ -6138,6 +6138,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // saved the first transcript; otherwise the cockpit stays in its
         // one-shot bridge mode and never restores the normal work/rail view.
         if (startNewConversation && ev.sessionId) onSessionsChanged?.();
+        const completedSessionId = ev.sessionId ?? liveGeneration.sessionId;
+        if (!ev.isError && liveGeneration.originSessionId === null && completedSessionId) {
+          onSessionsChanged?.();
+        }
         persistLiveTurns(
           turnsRef.current,
           assistantId,
