@@ -42,6 +42,30 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /const ownsFirstExchangeTitle =\s*body\.sessionId == null \|\|\s*\(\s*body\.startNewConversation === true &&\s*existingConversation == null &&\s*taskCard != null\s*\);/,
+  "the route must derive title ownership from submitted-session provenance while preserving Board reservations",
+);
+
+assert.match(
+  chatRoute,
+  /title: ownsFirstExchangeTitle\s*\? chatSummaryTitle\(\{ userText: promptText \}\) \?\? defaultChatTitleForSession\(announcedId\)\s*: defaultChatTitleForSession\(announcedId\),/,
+  "the generic stub materializes daemon-only resumes without deriving their local title from the follow-up prompt",
+);
+
+assert.match(
+  chatRoute,
+  /createConversationStub\(\{[\s\S]*?sessionId: announcedId,[\s\S]*?\}\)\.then\(async \(created\) => \{\s*if \(created && ownsFirstExchangeTitle\) \{\s*await setDefaultStubTitleAuto\([\s\S]*?\);\s*\}\s*return created;\s*\}\)\.catch/,
+  "generic stub title initialization runs only when this request owns the first exchange",
+);
+
+assert.match(
+  chatRoute,
+  /const firstExchange =\s*ownsFirstExchangeTitle && \(!existing \|\| hadFirstTurnStub\);[\s\S]*?if \(!existing && ownsFirstExchangeTitle\) \{\s*await setDefaultStubTitleAuto\(finalSessionId, chatTitle\);\s*\}/,
+  "the generic final save gates both default ownership and first-exchange auto-naming on request provenance",
+);
+
+assert.match(
+  chatRoute,
   /if \(isFirstExchange && !result\.is_error && !cancelledByUser\) \{\s*await autoNameSessionFromFirstExchange\(finalSessionId, promptText\);/,
   "auto-naming must still fire for new chats whose conversation now pre-exists as a stub",
 );
@@ -72,8 +96,8 @@ assert.equal(
 );
 assert.match(
   chatRoute,
-  /ownsFirstExchangeTitle:\s*body\.sessionId == null \|\|[\s\S]*body\.startNewConversation === true[\s\S]*existingConversation == null[\s\S]*taskCard != null/,
-  "submitted session ids are resume provenance except for server-owned reserved new-chat handoffs",
+  /openClawChatResponse\(\{[\s\S]*?ownsFirstExchangeTitle,\s*\}\)/,
+  "OpenClaw consumes the same route-wide first-exchange ownership decision as generic harnesses",
 );
 assert.equal(
   (
@@ -81,8 +105,8 @@ assert.equal(
       /const (?:isFirstExchange|firstExchange) =\s*ownsFirstExchangeTitle && \(!existing \|\| hadFirstTurnStub\);/g,
     ) ?? []
   ).length,
-  2,
-  "both OpenClaw close paths gate first-exchange naming on authoritative new-chat provenance",
+  3,
+  "both OpenClaw close paths and the generic close path gate first-exchange naming on authoritative new-chat provenance",
 );
 assert.doesNotMatch(
   chatRoute,

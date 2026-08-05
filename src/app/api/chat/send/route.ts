@@ -1540,6 +1540,16 @@ export async function POST(req: Request) {
       { status: 404, headers: { "content-type": "application/json" } },
     );
   }
+  // A submitted stable id is resume provenance even when its transcript still
+  // exists only in the daemon. Board is the sole exception: it reserves Cave's
+  // id before dispatching the first native-chat turn.
+  const ownsFirstExchangeTitle =
+    body.sessionId == null ||
+    (
+      body.startNewConversation === true &&
+      existingConversation == null &&
+      taskCard != null
+    );
   // Host picker: an explicit allowed host wins; with no request, a conversation
   // recorded on an allowed ssh host stays pinned there; only then does the
   // familiar's own runtime binding decide. Unregistered hosts are rejected
@@ -2287,15 +2297,7 @@ export async function POST(req: Request) {
       desiredModel,
       modelState,
       initialModelIntent: existingConversation?.modelIntent?.model ?? null,
-      // A submitted id is resume provenance even when its only record is in the
-      // daemon. The sole new-chat exception is a server-owned Board reservation.
-      ownsFirstExchangeTitle:
-        body.sessionId == null ||
-        (
-          body.startNewConversation === true &&
-          existingConversation == null &&
-          taskCard != null
-        ),
+      ownsFirstExchangeTitle,
     });
   }
 
@@ -3027,7 +3029,9 @@ export async function POST(req: Request) {
           harness: binding.harness,
           ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
           ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
-          title: chatSummaryTitle({ userText: promptText }) ?? defaultChatTitleForSession(announcedId),
+          title: ownsFirstExchangeTitle
+            ? chatSummaryTitle({ userText: promptText }) ?? defaultChatTitleForSession(announcedId)
+            : defaultChatTitleForSession(announcedId),
           ...(body.origin ? { origin: body.origin } : {}),
           modelIntent: modelIntentForSend(body, modelState),
           userTurn: {
@@ -3036,16 +3040,16 @@ export async function POST(req: Request) {
             ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
             ...persistedTurnControls(body, responseMetadata.retryModel),
           },
+        }).then(async (created) => {
+          if (created && ownsFirstExchangeTitle) {
+            await setDefaultStubTitleAuto(
+              announcedId,
+              chatSummaryTitle({ userText: promptText }) ?? defaultChatTitleForSession(announcedId),
+            );
+          }
+          return created;
         }).catch(() => undefined);
         push({ kind: "session", sessionId: announcedId });
-        // Title the session from the user's prompt as soon as the id
-        // exists. The daemon's own title derives from the harness
-        // prompt — i.e. the identity-canon preamble — and is what the
-        // UI would otherwise show until the transcript save runs.
-        void setDefaultStubTitleAuto(
-          announcedId,
-          chatSummaryTitle({ userText: promptText }) ?? defaultChatTitleForSession(announcedId),
-        );
       };
 
       // Formatted OpenCode output carries no native session id. Cave still
@@ -5144,12 +5148,15 @@ export async function POST(req: Request) {
           const hadFirstTurnStub = existing
             ? stripConversationStubTurn(existing, pendingUserTurnId)
             : false;
-          const firstExchange = !existing || hadFirstTurnStub;
+          const firstExchange =
+            ownsFirstExchangeTitle && (!existing || hadFirstTurnStub);
           const now = new Date().toISOString();
           const userTurnId = pendingUserTurnId;
           const assistantTurnId = crypto.randomUUID();
           const chatTitle = existing?.title ?? defaultChatTitleForSession(finalSessionId);
-          if (!existing) await setDefaultStubTitleAuto(finalSessionId, chatTitle);
+          if (!existing && ownsFirstExchangeTitle) {
+            await setDefaultStubTitleAuto(finalSessionId, chatTitle);
+          }
           // Branching: when the client passes parentTurnId, the new user turn is
           // parented there (its prior sibling stays in the tree). For a normal
           // (non-branch) send, fall back to the prior activeLeafId so the
