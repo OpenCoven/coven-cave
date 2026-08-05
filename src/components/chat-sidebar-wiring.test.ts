@@ -159,6 +159,11 @@ assert.doesNotMatch(
 );
 assert.match(
   chatView,
+  /const externallySettledChatAttentionRuns = new Set<string>\(\);[\s\S]*?function markExternallySettledChatAttentionRun\(runId: string\): void \{[\s\S]*?function consumeExternallySettledChatAttentionRun\(runId: string\): boolean \{/,
+  "chat-view should share externally settled run ids across remounts so a stale-eviction settle suppresses the original owner's duplicate cleanup",
+);
+assert.match(
+  chatView,
   /function createChatAttentionSettlementTracker\(args: \{[\s\S]*?const clearedSessionIds = new Set<string>\(\);[\s\S]*?let persistenceConfirmed = false;[\s\S]*?let reconciled = false;/,
   "chat-view should inline the settlement tracker's per-generation state",
 );
@@ -168,8 +173,8 @@ const inlinedSettlementTracker = chatView.match(
 assert.ok(inlinedSettlementTracker, "chat-view should define the inlined settlement tracker factory");
 assert.match(
   inlinedSettlementTracker,
-  /const reconcileNow = \(\) => \{\s*if \(reconciled \|\| clearedSessionIds\.size === 0\) return;\s*reconciled = true;/,
-  "reconcileNow should guard on both the reconciled flag and having any recorded clears, so a settlement with nothing to settle is a no-op",
+  /const reconcileNow = \(\) => \{\s*if \(reconciled\) return;\s*if \(consumeExternallySettledChatAttentionRun\(args\.operationId\)\) \{\s*reconciled = true;\s*return;\s*\}\s*if \(clearedSessionIds\.size === 0\) return;\s*reconciled = true;/,
+  "reconcileNow should suppress duplicate cleanup for a run a remounted view already settled externally, and otherwise still no-op when nothing was ever cleared",
 );
 assert.match(
   inlinedSettlementTracker,
@@ -235,10 +240,50 @@ assert.match(
   /const live = readLiveChatGeneration\(sessionId\);\s*if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\) \{[\s\S]*?if \(isLiveGenerationPending\(live\) && live\.runId\) \{\s*emitChatAttentionClear\(sessionId, live\.runId\);/,
   "the initial-load adoption site should gate its attention clear on the snapshot still being pending",
 );
+
+// ── Stale/orphan live-snapshot eviction must settle (not strand) its
+//    attention projection and reconcile canonical sessions, without
+//    fabricating a "persisted" outcome it cannot prove (cave-zs85n Task 5
+//    spec-compliance). A pending generation whose registry entry goes stale
+//    (TTL expiry, or aborted) has no owning send left to ever call its
+//    normal finally-block settlement — without this, the operation would sit
+//    "pending" in the workspace's projection map forever. ────────────────────
+const staleEvictionBlock = chatView.match(
+  /if \(live\) \{\s*\/\/ Stale\/aborted snapshot whose cleanup never ran[\s\S]*?\n    \}\n/,
+)?.[0] ?? "";
+assert.ok(staleEvictionBlock, "chat-view should define the stale/orphan live-snapshot eviction branch");
+assert.match(
+  staleEvictionBlock,
+  /skipSettleNotifyRef\.current \+= 1;\s*clearLiveChatGeneration\(sessionId\);[\s\S]*?if \(isLiveGenerationPending\(live\) && live\.runId\) \{\s*markExternallySettledChatAttentionRun\(live\.runId\);\s*emitChatAttentionSettlement\(sessionId, live\.runId, "failed"\);\s*onSessionsChangedRef\.current\?\.\(\);\s*\}/,
+  "evicting a stale/orphan pending snapshot should settle its attention operation as \"failed\", reconcile canonical sessions once, and mark the run so the original owner's later finally path cannot duplicate that cleanup",
+);
+assert.doesNotMatch(
+  staleEvictionBlock,
+  /emitChatAttentionSettlement\([^)]*"persisted"/,
+  "stale eviction must never fabricate a \"persisted\" settlement outcome — it cannot prove the human's request was actually answered",
+);
+// Only reached when the evicted snapshot was actually pending — a
+// recent-but-settled snapshot never recorded a clear operation, so nothing
+// needs settling, and this must not unconditionally fire a refetch.
+assert.doesNotMatch(
+  staleEvictionBlock.replace(/if \(isLiveGenerationPending\(live\) && live\.runId\) \{[\s\S]*?\}\n/, ""),
+  /emitChatAttentionSettlement|onSessionsChangedRef/,
+  "the settle + reconcile must live strictly inside the isLiveGenerationPending(live) guard, not run unconditionally on every eviction",
+);
 assert.match(
   chatAttentionProjection,
   /export function applyChatAttentionProjections\(/,
   "workspace attention persistence should live in a focused projection helper",
+);
+assert.match(
+  chatAttentionProjection,
+  /export function clearSessionAttentionRows\(rows: readonly SessionRow\[\], sessionId: string\): SessionRow\[\]/,
+  "the projection helper should expose a targeted, non-retiring clear for a single session",
+);
+assert.match(
+  workspace,
+  /import \{[\s\S]*applyChatAttentionProjections,[\s\S]*clearSessionAttentionRows,[\s\S]*\} from "@\/lib\/chat-attention-projection";/,
+  "workspace should import the targeted clear alongside the retirement-capable apply",
 );
 assert.match(
   workspace,
@@ -252,8 +297,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /recordChatAttentionClear\([\s\S]*chatAttentionProjectionScopeKey\(activeIdRef\.current\)[\s\S]*baseSessionsRef\.current = applyChatAttentionProjections\([\s\S]*setSessions\(\(currentSessions\) => applyChatAttentionProjections\(/,
-  "workspace should patch both the canonical base rows and the rendered enriched rows for the matching session only",
+  /recordChatAttentionClear\([\s\S]*chatAttentionProjectionScopeKey\(activeIdRef\.current\)[\s\S]*baseSessionsRef\.current = clearSessionAttentionRows\(baseSessionsRef\.current, detail\.sessionId\);[\s\S]*setSessions\(\(currentSessions\) => clearSessionAttentionRows\(currentSessions, detail\.sessionId\)\);/,
+  "workspace should patch both the canonical base rows and the rendered enriched rows for the matching session only, via a targeted clear rather than the retirement-capable projection apply",
 );
 assert.match(
   workspace,
@@ -272,18 +317,42 @@ const onChatAttentionClearBlock = workspace.match(
 assert.ok(onChatAttentionClearBlock, "workspace should define the chat-attention clear handler");
 assert.match(
   onChatAttentionClearBlock,
-  /loadSessionsReqRef\.current \+= 1;[\s\S]*?recordChatAttentionClear\([\s\S]*?baseSessionsRef\.current = applyChatAttentionProjections/,
-  "workspace should invalidate any in-flight loadSessions request and retain a projection before patching attention state, so stale polls cannot resurrect the cleared attention (cave-zs85n Task 5 race)",
+  /loadSessionsReqRef\.current \+= 1;[\s\S]*?recordChatAttentionClear\([\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
+  "workspace should invalidate any in-flight loadSessions request and record a projection before patching attention state, so stale polls cannot resurrect the cleared attention (cave-zs85n Task 5 race)",
 );
 assert.match(
   onChatAttentionClearBlock,
-  /const baselineAttention = baseSessionsRef\.current\s*\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention \?\? NO_CHAT_ATTENTION;[\s\S]*?recordChatAttentionClear\([\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = applyChatAttentionProjections/,
+  /const baselineAttention = baseSessionsRef\.current\s*\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention \?\? NO_CHAT_ATTENTION;[\s\S]*?recordChatAttentionClear\([\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
   "workspace should capture canonical attention before either session array is projected to none",
+);
+// Task 5 spec-compliance: the clear handler patches cached arrays with a
+// targeted, non-retiring clear. It must NEVER call the retirement-capable
+// applyChatAttentionProjections against those cached arrays with a synthetic
+// (merely-incremented) request id — that call is reserved for an actually
+// accepted `/api/sessions/list` response, where retiring an operation means
+// something real.
+assert.doesNotMatch(
+  onChatAttentionClearBlock,
+  /applyChatAttentionProjections\(/,
+  "the chat-attention clear handler must not call canonical-response retirement logic against cached arrays with a synthetic request id — only clearSessionAttentionRows",
 );
 assert.match(
   workspace,
   /const baseSessions = applyChatAttentionProjections\([\s\S]*filterDeletedSessions\([\s\S]*capturedScopeKey/,
   "loadSessions should reapply retained attention clears before assigning canonical and rendered rows",
+);
+// Task 5 spec-compliance: applyChatAttentionProjections (which can retire
+// operations) may only run once a session-list response has been accepted —
+// gated behind both the isCurrent() scope/reqId guard and a successful
+// `json.ok` — never against a rejected/superseded/failed response.
+const loadSessionsBlock = workspace.match(
+  /const loadSessions = useCallback\(\(\) => \{[\s\S]*?\n  \}, \[\]\);/,
+)?.[0] ?? "";
+assert.ok(loadSessionsBlock, "workspace should define the loadSessions callback");
+assert.match(
+  loadSessionsBlock,
+  /if \(!isCurrent\(\)\) return;[\s\S]*?if \(!json\.ok\) \{[\s\S]*?return;\s*\}[\s\S]*?const baseSessions = applyChatAttentionProjections\(/,
+  "only an accepted (current + ok) /api/sessions/list response may apply and retire attention projections",
 );
 assert.match(
   workspace,

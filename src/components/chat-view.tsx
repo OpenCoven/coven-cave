@@ -318,6 +318,21 @@ function isLiveGenerationPending(live: Pick<LiveChatGenerationSnapshot, "turns" 
   return Boolean(live.turns.find((t) => t.id === live.activeLeafId)?.pending);
 }
 
+// A remounted view can evict and externally settle a stale/orphaned live
+// snapshot before the original send owner's `finally` runs. Share those run ids
+// across instances so the surviving owner suppresses its duplicate settle +
+// canonical-session reload when it eventually reaches the same generation's
+// normal cleanup path.
+const externallySettledChatAttentionRuns = new Set<string>();
+
+function markExternallySettledChatAttentionRun(runId: string): void {
+  externallySettledChatAttentionRuns.add(runId);
+}
+
+function consumeExternallySettledChatAttentionRun(runId: string): boolean {
+  return externallySettledChatAttentionRuns.delete(runId);
+}
+
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
@@ -482,7 +497,12 @@ function createChatAttentionSettlementTracker(args: {
   let reconciled = false;
 
   const reconcileNow = () => {
-    if (reconciled || clearedSessionIds.size === 0) return;
+    if (reconciled) return;
+    if (consumeExternallySettledChatAttentionRun(args.operationId)) {
+      reconciled = true;
+      return;
+    }
+    if (clearedSessionIds.size === 0) return;
     reconciled = true;
     const outcome = persistenceConfirmed ? "persisted" : "failed";
     for (const sessionId of clearedSessionIds) {
@@ -3916,6 +3936,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       skipSettleNotifyRef.current += 1;
       clearLiveChatGeneration(sessionId);
       if (!live.controller.signal.aborted) refetchOnSettleRef.current = sessionId;
+      // A still-pending snapshot (see isLiveGenerationPending above) had
+      // already optimistically cleared sidebar attention via
+      // emitChatAttentionClear when it was adopted. Evicting it here — dead
+      // orphan cleanup, not a real settlement — must not leave that
+      // projection "pending" forever (no owning generation is left to ever
+      // settle it). Settle it now as "failed": we cannot prove the human's
+      // request actually got a persisted reply, and fabricating "persisted"
+      // risks permanently hiding attention on a request that never got
+      // answered. Reconciling canonical sessions once afterward repaints the
+      // sidebar from disk truth (a genuinely still-running orphan stream's
+      // later settle must be a no-op against both the already-cleared
+      // operation and this one reload).
+      if (isLiveGenerationPending(live) && live.runId) {
+        markExternallySettledChatAttentionRun(live.runId);
+        emitChatAttentionSettlement(sessionId, live.runId, "failed");
+        onSessionsChangedRef.current?.();
+      }
     }
     const applyConversationPayload = (json: ConversationHistoryPayload) => {
       const mapped = mapConversationHistoryTurns(json.conversation?.turns ?? []);

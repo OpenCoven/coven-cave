@@ -47,6 +47,14 @@ export function recordChatAttentionClear(
 ): void {
   const operations = state.get(sessionId);
   const existingOperation = operations?.get(operationId);
+  // Idempotency for a repeated (sessionId, operationId): once an operation has
+  // settled to "persisted" it is done — a stale/duplicate pending
+  // notification for the SAME operationId (e.g. a late registry-subscription
+  // replay racing its own settle) must never downgrade it back to "pending"
+  // or touch its recorded canonicalAfterRequestId. Recording is a no-op here;
+  // the persisted entry already carries everything applyChatAttentionProjections
+  // needs to retire it once a fresh canonical response proves it safe.
+  if (existingOperation?.status === "persisted") return;
   const inheritedBaseline = existingOperation?.baseline ?? operations?.values().next().value?.baseline;
   const baseline = inheritedBaseline ?? normalizeAttentionSnapshot(canonicalAttention);
   if (!operations && baseline.state === "none") return;
@@ -121,8 +129,13 @@ function normalizeAttentionSnapshot(attention: ChatAttention | null | undefined)
 
 function attentionMatchesBaseline(attention: ChatAttention, baseline: ChatAttention): boolean {
   const normalized = normalizeAttentionSnapshot(attention);
-  return normalized.state === baseline.state &&
-    normalized.since === baseline.since &&
+  // Attention state can age from awaiting-human -> overdue-human without any
+  // underlying request change. Treat the stable evidence identity (since +
+  // reason) as authoritative, while canonical none still counts as a release.
+  if (normalized.state === "none" || baseline.state === "none") {
+    return normalized.state === baseline.state;
+  }
+  return normalized.since === baseline.since &&
     normalized.reason === baseline.reason;
 }
 

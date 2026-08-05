@@ -89,6 +89,7 @@ import type { BrowserPaneHandle } from "@/components/browser-pane";
 import {
   applyChatAttentionProjections,
   chatAttentionProjectionScopeKey,
+  clearSessionAttentionRows,
   createChatAttentionProjectionState,
   forgetChatAttentionProjections,
   isCurrentSessionListRequest,
@@ -594,18 +595,18 @@ export function Workspace() {
         chatAttentionProjectionScopeKey(activeIdRef.current),
         baselineAttention,
       );
-      baseSessionsRef.current = applyChatAttentionProjections(
-        chatAttentionProjectionRef.current,
-        baseSessionsRef.current,
-        loadSessionsReqRef.current,
-        chatAttentionProjectionScopeKey(activeIdRef.current),
-      );
-      setSessions((currentSessions) => applyChatAttentionProjections(
-        chatAttentionProjectionRef.current,
-        currentSessions,
-        loadSessionsReqRef.current,
-        chatAttentionProjectionScopeKey(activeIdRef.current),
-      ));
+      // Patch only THIS session's attention to none on both the canonical
+      // base rows and the currently rendered rows. This is an optimistic
+      // clear, not a canonical response: applyChatAttentionProjections also
+      // RETIRES operations (it may delete the just-recorded projection once
+      // it judges a response eligible), which is only safe to run against an
+      // accepted `/api/sessions/list` response carrying its own real request
+      // id (see loadSessions below) — never against these cached arrays with
+      // a synthetic, merely-incremented reqId. Doing so here would let this
+      // handler retire its own operation before any real response ever
+      // confirmed the clear.
+      baseSessionsRef.current = clearSessionAttentionRows(baseSessionsRef.current, detail.sessionId);
+      setSessions((currentSessions) => clearSessionAttentionRows(currentSessions, detail.sessionId));
     };
     const onChatAttentionSettle = (event: Event) => {
       const detail = attentionSettlementFromEvent(event);

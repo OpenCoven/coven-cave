@@ -94,7 +94,7 @@ test("a response below the persisted threshold still projects none", () => {
   assert.equal(state.has("session-1"), true);
 });
 
-test("eligible identical awaiting-human attention remains projected after settlement", () => {
+test("eligible overdue-human attention with the same request identity remains projected after settlement", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
     state,
@@ -105,7 +105,9 @@ test("eligible identical awaiting-human attention remains projected after settle
   );
   settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
 
-  const canonical = [row({ attention: { ...NEEDS_ATTENTION } })];
+  const canonical = [row({
+    attention: { state: "overdue-human", since: NEEDS_ATTENTION.since, reason: NEEDS_ATTENTION.reason },
+  })];
   assert.equal(
     applyChatAttentionProjections(state, canonical, 6, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
     "none",
@@ -145,6 +147,27 @@ test("eligible new awaiting-human attention with a new since releases the persis
 
   const newRequest = [row({
     attention: { state: "awaiting-human", since: "2026-08-05T00:05:00.000Z", reason: "approval" },
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, newRequest, 6, chatAttentionProjectionScopeKey("nova")),
+    newRequest,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("eligible new awaiting-human attention with the same since but a changed reason releases the persisted projection", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  const newRequest = [row({
+    attention: { state: "awaiting-human", since: NEEDS_ATTENTION.since, reason: "approval" },
   })];
   assert.equal(
     applyChatAttentionProjections(state, newRequest, 6, chatAttentionProjectionScopeKey("nova")),
@@ -314,6 +337,7 @@ test("a stale pending notification cannot downgrade an already-persisted operati
   const operation = state.get("session-1")?.get("operation-1");
   assert.equal(operation?.status, "persisted");
   assert.equal((operation as { canonicalAfterRequestId?: number })?.canonicalAfterRequestId, 6);
+  assert.equal(operation?.scopeKey, chatAttentionProjectionScopeKey("nova"));
   assert.deepEqual(operation?.baseline, NEEDS_ATTENTION);
 
   // The persisted operation still retires correctly on a fresh, eligible
