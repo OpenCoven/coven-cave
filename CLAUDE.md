@@ -269,13 +269,18 @@ Read the exit code.
 **Exit 2 — refused by the admission gate. Use an exception, not the fallback.**
 
 ```text
-worktree-lifecycle-create: creating a worktree would exceed the 12-worktree budget
+worktree-lifecycle-create: creating a worktree would exceed the 20-worktree budget
 ```
 
-`WORKTREE_WARNING_BUDGET = 12` (`src/lib/worktree-lifecycle.ts`) counts **every
-registered worktree in the checkout**, not yours. With ~20 concurrent sessions
-this is over budget essentially always, so cleaning up your own units will not
-reliably lift it and waiting does not either.
+`WORKTREE_WARNING_BUDGET = 20` (`src/lib/worktree-lifecycle.ts`) counts **every
+registered worktree in the checkout**, not yours, so cleaning up your own units
+may not lift it and waiting does not either.
+
+Raised from 12 on 2026-08-04 (`cave-qpwx0`) because 12 no longer described this
+checkout — over one session the count moved 22 → 17 → 22 → 34 → 13 → 17. A gate
+that refuses on every invocation is not a budget, it is an outage, and it taught
+sessions to reach for the unmanaged fallback below. Bursts past 20 are still
+expected; that is what the exception is for.
 
 Every refusal from this path is lifted by an attributed, expiring exception, and
 since `cave-no5nr` the refusal prints the exact admissible rerun:
@@ -297,8 +302,8 @@ exception is stored on the bead next to the worktree record, so the unit lands w
 not a bypass — the same gate admits it.
 
 Note the deliberate asymmetry between the two surfaces that read this number:
-the patrol reports `exceeded` as `count > 12`, while creation refuses at
-`count >= 12`, because one more unit is what would take it over. At exactly 12
+the patrol reports `exceeded` as `count > 20`, while creation refuses at
+`count >= 20`, because one more unit is what would take it over. At exactly 20
 the patrol is quiet and creation is refused; that is "*would* exceed", not an
 off-by-one.
 

@@ -511,7 +511,7 @@ function legacyObservation(overrides = {}) {
     activeExceptions: 1,
     expiredExceptions: 2,
   });
-  assert.equal(budgets.worktrees.warning, 12);
+  assert.equal(budgets.worktrees.warning, 20);
   assert.equal(budgets.branches.warning, 30);
   assert.deepEqual(budgets.exceptions, { active: 1, expired: 2 });
   assert.equal(budgets.worktrees.exceeded, false, "threshold itself is not exceeded");
@@ -557,7 +557,7 @@ function legacyObservation(overrides = {}) {
     allowed: false,
     reasons: [
       "active Bead cave-ox3ky already owns a registered worktree",
-      "creating a worktree would exceed the 12-worktree budget",
+      "creating a worktree would exceed the 20-worktree budget",
       "creating a branch would exceed the 30-local-branch budget",
     ],
   });
