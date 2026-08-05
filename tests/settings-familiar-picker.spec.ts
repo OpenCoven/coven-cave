@@ -107,11 +107,11 @@ test("the migrated Familiar Settings surface keeps its nested controls", async (
   const settings = page.getByRole("region", { name: "Settings for Familiar 01" });
   await expect(settings.getByRole("tab", { name: "Chat", exact: true })).toBeVisible();
   await expect(settings.getByRole("tab", { name: "Brain", exact: true })).toBeVisible();
-  await expect(settings.getByRole("tab", { name: "Projects", exact: true })).toBeVisible();
+  await expect(settings.getByRole("tab", { name: "Memory", exact: true })).toBeVisible();
   await expect(settings.getByRole("tab", { name: "Vault", exact: true })).toBeVisible();
 
-  await settings.getByRole("tab", { name: "Projects", exact: true }).click();
-  await expect(settings.getByRole("tab", { name: "Projects", exact: true })).toHaveAttribute(
+  await settings.getByRole("tab", { name: "Vault", exact: true }).click();
+  await expect(settings.getByRole("tab", { name: "Vault", exact: true })).toHaveAttribute(
     "aria-selected",
     "true",
   );

@@ -125,6 +125,7 @@ assert.match(
 
 // ── Editor source pins ──────────────────────────────────────────────────────
 const editor = readFileSync(new URL("./canvas-editor.tsx", import.meta.url), "utf8");
+const editorStyles = readFileSync(new URL("../styles/canvas-editor.css", import.meta.url), "utf8");
 
 // Contract the gallery agent wires against.
 assert.match(editor, /export function CanvasEditor\(props: \{/, "CanvasEditor is exported");
@@ -137,6 +138,11 @@ assert.match(
   "editor reports server-accepted artifact updates",
 );
 assert.match(editor, /import "@\/styles\/canvas-editor\.css";/, "editor imports its stylesheet");
+assert.doesNotMatch(
+  editorStyles,
+  /\.canvas-editor__play-(?:card|row)\b/,
+  "retired Play mode does not leave dead stylesheet selectors",
+);
 
 // Inspector wiring replicates the viewer's deliberate security boundary.
 assert.match(
@@ -200,7 +206,6 @@ assert.match(
   editor,
   /mode === "interact"[\s\S]{0,300}?Use the sketch normally/,
   "Interact mode explains that the artifact is live",
-);
 );
 
 // Escape routes through the shared resolver: field → selection → expand.

@@ -72,7 +72,7 @@ assert.doesNotMatch(workspaceSidebar, /workspace-sidebar__rail|chat-sidebar__rai
 // "Search projects or threads…" clipped); the aria-label keeps the full scope.
 assert.match(workspaceSidebar, /placeholder="Search chats…"/, "search placeholder fits the narrow panel");
 assert.match(workspaceSidebar, /aria-label="Search projects and threads"/, "search keeps its descriptive accessible name");
-assert.match(workspace, /const contextualNav = mode === "chat" \? chatSidebar : sidebar;/, "workspace selects Chats as the contextual primary nav");
+assert.match(workspace, /const contextualNav = navSection === "code" \? chatSidebar : sidebar;/, "workspace keeps the session rail across the Code section");
 assert.doesNotMatch(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/, "workspace should not mount Chats in the list slot");
 assert.match(workspace, /navPolicy=\{mode === "chat" \? "chat-contextual" : "remembered"\}/, "chat mode activates the contextual nav policy");
 assert.doesNotMatch(workspace, /navPolicy=\{mode === "chat" \? "visit-collapsed" : "remembered"\}/, "chat mode should not use the obsolete visit-collapsed policy");
@@ -104,5 +104,33 @@ assert.doesNotMatch(workspace, /lastNonChatMode/, "workspace should not track an
 // chat-view wiring (unchanged — just verify it still exists)
 assert.match(chatView, /setProjectAccessRoot/, "chat-view should capture failing project root on 403");
 assert.match(chatView, /async function handleAddProject/, "chat-view should implement add-project recovery");
+
+// ChatView uses the stable Workspace callback directly without introducing a
+// second global refresh mechanism.
+assert.doesNotMatch(
+  chatView,
+  /cave:sessions-refresh/,
+  "ChatView does not introduce a second global sessions-refresh mechanism",
+);
+assert.doesNotMatch(
+  workspace,
+  /cave:sessions-refresh/,
+  "Workspace keeps the callback chain as the single explicit refresh mechanism",
+);
+assert.match(
+  workspace,
+  /const currentActiveId = activeIdRef\.current;\s*\n\s*const scope = currentActiveId/,
+  "loadSessions reads the current familiar scope from activeIdRef",
+);
+assert.match(
+  workspace,
+  /const loadSessions = useCallback\(\(\) => \{[\s\S]*?\n\s*\}, \[\]\);/,
+  "loadSessions has stable empty callback dependencies",
+);
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*\n\s*void loadSessions\(\);\s*\n\s*\}, \[activeId, loadSessions\]\);/,
+  "mount and each active familiar scope change explicitly reload sessions once",
+);
 
 console.log("workspace-sidebar-wiring.test.ts passed");

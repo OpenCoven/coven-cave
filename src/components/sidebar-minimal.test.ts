@@ -70,81 +70,21 @@ assert.match(
   "Sidebar should keep the main navigation in one continuous scrollable rail",
 );
 
-assert.match(source, /function SidebarSection\(/, "sidebar destinations should share one collapsible section component");
-assert.match(
-  source,
-  /const storageKey = `cave:sidebar:section:\$\{sectionId\}`;/,
-  "each section derives an independent persisted preference key from its label",
-);
-assert.match(
-  source,
-  /const \[collapsed, setCollapsed\] = React\.useState\(false\);/,
-  "sections default open for SSR-safe first paint",
-);
-assert.match(
-  source,
-  /try \{\s*setCollapsed\(window\.localStorage\.getItem\(storageKey\) === "1"\);\s*\} catch \{/,
-  "saved collapse state hydrates safely when localStorage is unavailable",
-);
-assert.match(
-  source,
-  /window\.localStorage\.setItem\(storageKey, next \? "1" : "0"\)/,
-  "each section persists only its own collapse state",
-);
-assert.match(
-  source,
-  /aria-controls=\{contentId\}\s*aria-expanded=\{!collapsed\}/,
-  "section toggles expose their controlled content and expanded state",
-);
-assert.match(
-  source,
-  /<SidebarSection label="Work"[^>]*>[\s\S]{0,1800}?workItems\.map/,
-  "Work contains its registry-filtered destination rows",
-);
-assert.match(
-  source,
-  /<SidebarSection label="Explore"[^>]*>[\s\S]{0,1200}?exploreItems\.map/,
-  "Explore contains its registry-filtered destination rows",
-);
-assert.match(
-  source,
-  /item\.group === "work"[\s\S]{0,180}item\.group === "explore"/,
-  "section membership is derived from the workspace navigation registry",
-);
-assert.match(
-  source,
-  /<SidebarSection label="Rooms"[^>]*>[\s\S]{0,1800}?props\.roleSurfaces!\.map\(\(room\) =>/,
-  "dynamic role-surface rooms use the same collapsible section treatment",
-);
-assert.match(
-  source,
-  /itemsVersion: navItemsVersion/,
-  "collapsing a section re-synchronizes roving navigation to visible rows",
-);
-assert.match(
-  source,
-  /itemSelector: "\.sidebar-section-label, \.sidebar-folder-row"/,
-  "section toggles and destinations share one roving keyboard sequence",
-);
-assert.match(
-  source,
-  /<div id=\{contentId\} className="sidebar-section__content">\s*\{children\}/,
-  "section rows remain mounted so the icon rail can render every destination",
-);
+assert.match(source, /<NavSectionTabs section=\{section\} onSectionChange=\{onSectionChange\}/, "sidebar destinations use the shared Home and Code tabs");
+assert.match(source, /navItemsForSection\(section\)\.map/, "the active tab filters destination rows through the shared registry");
+assert.match(source, /sectionRooms\.map\(\(room\) =>/, "dynamic role-surface rooms follow the active section");
+assert.match(source, /itemSelector: "\.sidebar-folder-row"/, "visible destinations share one roving keyboard sequence");
+assert.match(source, /role="tabpanel"[\s\S]*?aria-labelledby=\{`nav-section-tab-\$\{section\}`\}/, "the destination list is labeled by its active tab");
+// Retiring the SidebarSection assertions took this rule's only coverage with
+// them. Its section-heading half is dead — nothing emits sidebar-section*
+// anymore — but the recent-activity half is live: RecentActivityRollup still
+// renders in the Code section, and the 56px rail has no room for it.
+// Tolerant of the group's ordering: the dead .sidebar-section-label half should
+// eventually be deleted from this rule, and that cleanup must not fail here.
 assert.match(
   styles,
-  /\.sidebar-section--collapsed \.sidebar-section__content \{\s*display: none;/,
-  "collapsed sections hide their rows in the expanded panel",
-);
-assert.match(
-  styles,
-  /\.shell-nav--rail \.sidebar-section--collapsed \.sidebar-section__content \{\s*display: flex;/,
-  "the icon rail restores rows from collapsed sections",
-);
-assert.match(
-  styles,
-  /\.shell-nav--rail \.sidebar-section-label,[\s\S]{0,100}\.recent-activity \{\s*display: none;/,
-  "the icon rail hides section headings while retaining destination icons",
+  /\.shell-nav--rail \.recent-activity[^{]*\{[^}]*display:\s*none/,
+  "the icon rail hides the recent-activity list while retaining destination icons",
 );
 
 // The standalone Knowledge section is gone; Library is now isolated on its

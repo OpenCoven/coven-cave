@@ -62,6 +62,53 @@ assert.match(
 
 assert.match(
   replay,
+  /import \{ chatSummaryTitle, defaultChatTitleForSession \} from "@\/lib\/cave-chat-titles"/,
+  "automatic replay titles should use the shared concise formatter",
+);
+assert.doesNotMatch(
+  replay,
+  /chatTitleFromPrompt/,
+  "automatic replay titles must not use the legacy 64-character prompt formatter",
+);
+assert.match(
+  replay,
+  /setSessionTitleAutoIfOwned/,
+  "automatic replay titles should use the shared atomic provenance setter",
+);
+// Chat replay uses auto provenance (setSessionTitleAutoIfOwned via titleOwnership: "auto");
+// workflow / flow replay use manual provenance (setSessionTitle, the default).
+// Both must be imported and dispatched correctly.
+assert.match(
+  replay,
+  /\bsetSessionTitle\b/,
+  "travel replay must use setSessionTitle for non-chat (manual-provenance) titles",
+);
+assert.match(
+  replay,
+  /titleOwnership:\s*["']auto["']/,
+  "chat replay must pass titleOwnership: 'auto' to the session spawn helper",
+);
+// Gap 2 fix: spawnHubSession's auto branch must use the atomic setSessionTitleAutoIfOwned
+// so a concurrent manual title written between daemon creation and this write is preserved.
+// The unconditional setSessionTitleAuto is no longer imported.
+assert.doesNotMatch(
+  replay,
+  /\bsetSessionTitleAuto\b(?!IfOwned)/,
+  "spawnHubSession auto branch must not use unconditional setSessionTitleAuto — use setSessionTitleAutoIfOwned",
+);
+assert.match(
+  replay,
+  /titleOwnership === "auto"[\s\S]{0,120}setSessionTitleAutoIfOwned\([\s\S]{0,200}defaultChatTitleForSession\(/,
+  "spawnHubSession auto branch must call setSessionTitleAutoIfOwned with defaultChatTitleForSession as an autoDefault",
+);
+assert.match(
+  replay,
+  /chatSummaryTitle\(\{ userText: prompt \}\)\s*\?\?\s*defaultChatTitleForSession/,
+  "chat replay should derive a concise title and retain the neutral fallback",
+);
+
+assert.match(
+  replay,
   /path: "\/api\/v1\/workflows\/run"/,
   "workflow replay should try the daemon workflow engine before session fallback",
 );

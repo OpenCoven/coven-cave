@@ -154,12 +154,17 @@ assert.match(
   /context=\{\{[\s\S]*linkedWork=\{\{[\s\S]*improve=\{\{[\s\S]*response=\{\{/,
   "the grouped menu receives Context, Linked Work, Improve, and Response contracts in visual order",
 );
-// The context chips (project · model · branch) live in the footer band below
-// the controls (2026-07-21 wide-column pass) — not in the utility row.
+// Context controls are placed adaptively via chatContextControls — new-chat
+// footer when inlineComposer, active-chat header when not. Not in the utility row.
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips/,
-  "the context chips anchor the footer band",
+  /const chatContextControls = \([\s\S]{0,50}\n\s*<ComposerContextChips/,
+  "chatContextControls is the single ComposerContextChips construction",
+);
+assert.match(
+  source,
+  /inlineComposer[\s\S]{0,200}cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
+  "new-chat footer carries chatContextControls when inlineComposer",
 );
 assert.doesNotMatch(
   source,
@@ -177,12 +182,11 @@ assert.match(
   "the grouped Response section carries Access, Model, and only selected-model capability controls with prompt guidance labelled",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
-// "Both" reconciliation (2026-07-21): the context chips ride the footer
-// band — but only there, never back in the control row.
+// "Both" reconciliation updated: context chips still construct exactly once.
 assert.equal(
   source.match(/<ComposerContextChips/g)?.length,
   1,
-  "the context chips mount exactly once — in the footer band",
+  "the context chips construct exactly once — as chatContextControls",
 );
 assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 assert.doesNotMatch(
@@ -649,8 +653,8 @@ assert.match(
 );
 assert.match(
   source,
-  /clearLiveChatGeneration\(liveGeneration\.sessionId, runId\)/,
-  "A settling older run must not clear a newer run's registry snapshot",
+  /clearLiveChatGenerationAliases\(liveGeneration\.sessionAliases, runId\)/,
+  "A settling older run clears all of its aliases without clearing a newer run's registry snapshot",
 );
 
 assert.match(

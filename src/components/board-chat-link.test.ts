@@ -170,8 +170,18 @@ assert.match(
 );
 assert.match(
   chatView,
-  /case "done":[\s\S]{0,6000}startNewConversation && ev\.sessionId\) onSessionsChanged\?\.\(\)/,
-  "A completed Board bridge refreshes sessions so the cockpit leaves its one-shot handoff mode",
+  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\| \(startNewConversation && !!ev\.sessionId && !ev\.isError\)/,
+  "Board condition requires !ev.isError so a successful first reply refreshes the sidebar but an errored one does not",
+);
+assert.doesNotMatch(
+  chatView,
+  /startNewConversation && !!ev\.sessionId(?! && !ev\.isError)/,
+  "Board condition must not fire on a failed first reply — !ev.isError guard is required",
+);
+assert.match(
+  chatView,
+  /if \(shouldRefreshSessions\) onSessionsChangedRef\.current\?\.\(\)/,
+  "The consolidated shouldRefreshSessions boolean causes exactly one onSessionsChangedRef.current() call at done completion",
 );
 assert.match(
   taskWorkCockpit,

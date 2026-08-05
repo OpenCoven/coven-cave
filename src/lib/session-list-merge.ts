@@ -81,6 +81,7 @@ function localConversationToSession(
     ...(conv.model ? { model: conv.model } : {}),
     ...(conv.runtime ? { runtime: conv.runtime } : {}),
     title,
+    titleRevision: state.sessionTitleRevision?.[conv.sessionId] ?? 0,
     status,
     exit_code: conv.exitCode ?? (status === "failed" || status === "error" ? 1 : 0),
     archived_at: state.sessionArchived[conv.sessionId] ?? null,
@@ -193,6 +194,7 @@ export function mergeSessionRows({
         titleOverride ??
         sanitizeSessionTitle(session.title) ??
         defaultChatTitleForSession(session.id),
+      titleRevision: state.sessionTitleRevision?.[session.id] ?? 0,
       archived_at,
       // A Cave conversation records real provenance at send time; harness/
       // title inference is only the fallback for daemon-only sessions.

@@ -42,6 +42,30 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /const ownsFirstExchangeTitle =\s*body\.sessionId == null \|\|\s*\(\s*body\.startNewConversation === true &&\s*existingConversation == null &&\s*taskCard != null\s*\);/,
+  "the route must derive title ownership from submitted-session provenance while preserving Board reservations",
+);
+
+assert.match(
+  chatRoute,
+  /title: ownsFirstExchangeTitle\s*\? chatSummaryTitle\(\{ userText: promptText \}\) \?\? defaultChatTitleForSession\(announcedId\)\s*: defaultChatTitleForSession\(announcedId\),/,
+  "the generic stub materializes daemon-only resumes without deriving their local title from the follow-up prompt",
+);
+
+assert.match(
+  chatRoute,
+  /createConversationStub\(\{[\s\S]*?sessionId: announcedId,[\s\S]*?\}\)\.then\(async \(created\) => \{\s*if \(created && ownsFirstExchangeTitle\) \{\s*await setDefaultStubTitleAuto\([\s\S]*?\);\s*\}\s*return created;\s*\}\)\.catch/,
+  "generic stub title initialization runs only when this request owns the first exchange",
+);
+
+assert.match(
+  chatRoute,
+  /const firstExchange =\s*ownsFirstExchangeTitle && \(!existing \|\| hadFirstTurnStub\);[\s\S]*?if \(!existing && ownsFirstExchangeTitle\) \{\s*await setDefaultStubTitleAuto\(finalSessionId, chatTitle\);\s*\}/,
+  "the generic final save gates both default ownership and first-exchange auto-naming on request provenance",
+);
+
+assert.match(
+  chatRoute,
   /if \(isFirstExchange && !result\.is_error && !cancelledByUser\) \{\s*await autoNameSessionFromFirstExchange\(finalSessionId, promptText\);/,
   "auto-naming must still fire for new chats whose conversation now pre-exists as a stub",
 );
@@ -58,6 +82,36 @@ assert.match(
   chatRoute,
   /if \(gatewayDispatch\.kind === "accepted"\)[\s\S]*?const stubWrite = createConversationStub\(\{[\s\S]*?modelIntent: modelIntentForSend\(args\.body, args\.modelState\),[\s\S]*?userTurn:/,
   "an accepted Gateway first turn persists its session model intent before the response completes",
+);
+
+const openClawStubWrites = [
+  ...chatRoute.matchAll(
+    /const stubWrite = createConversationStub\(\{[\s\S]*?harness: "openclaw",[\s\S]*?\}\)\.then\(async \(created\) => \{[\s\S]*?if \(created && ownsFirstExchangeTitle\) \{[\s\S]*?await setDefaultStubTitleAuto\(conversationId, stubTitle\);[\s\S]*?\}[\s\S]*?return created;[\s\S]*?\}\)\.catch\(\(\) => false\);/g,
+  ),
+];
+assert.equal(
+  openClawStubWrites.length,
+  2,
+  "both OpenClaw transports initialize title ownership only for an authoritative new chat whose stub was created",
+);
+assert.match(
+  chatRoute,
+  /openClawChatResponse\(\{[\s\S]*?ownsFirstExchangeTitle,\s*\}\)/,
+  "OpenClaw consumes the same route-wide first-exchange ownership decision as generic harnesses",
+);
+assert.equal(
+  (
+    chatRoute.match(
+      /const (?:isFirstExchange|firstExchange) =\s*ownsFirstExchangeTitle && \(!existing \|\| hadFirstTurnStub\);/g,
+    ) ?? []
+  ).length,
+  3,
+  "both OpenClaw close paths and the generic close path gate first-exchange naming on authoritative new-chat provenance",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /void setDefaultStubTitleAuto\(conversationId, stubTitle\);\s*const stubWrite = createConversationStub/,
+  "a resumed OpenClaw chat must not overwrite its auto-owned title before the stub no-op is known",
 );
 
 assert.match(
@@ -102,3 +156,117 @@ assert.match(
   /const announceSession = \(id: string\) => \{[\s\S]{0,1200}addChatRunKeys\(runHandle, \[announcedId\]\)/,
   "announceSession late-keys the run registry with the announced conversation id",
 );
+
+// ── autoNameSessionFromFirstExchange uses chatSummaryTitle (Gap 1 contract) ──
+// The summary must be derived via the shared chatSummaryTitle heuristic, NOT
+// chatTitleFromPrompt (which uses a 64-char truncation and bypasses the shared
+// formatter). The function must also load the stored conversation so it can
+// pass the first settled assistant text to chatSummaryTitle.
+
+assert.match(
+  chatRoute,
+  /import \{[^}]*chatSummaryTitle[^}]*\} from "@\/lib\/cave-chat-titles"/,
+  "chatSummaryTitle must be imported from @/lib/cave-chat-titles",
+);
+
+// D: setSessionTitleAutoIfOwned must be imported from cave-config.
+assert.match(
+  chatRoute,
+  /import \{[^}]*setSessionTitleAutoIfOwned[^}]*\} from "@\/lib\/cave-config"/,
+  "setSessionTitleAutoIfOwned must be imported from @/lib/cave-config",
+);
+
+{
+  const fnMarker = "async function autoNameSessionFromFirstExchange";
+  const fnStart = chatRoute.indexOf(fnMarker);
+  assert.ok(fnStart >= 0, "autoNameSessionFromFirstExchange function must exist");
+  // Grab the function body — from its start to the next top-level async function.
+  const nextFn = chatRoute.indexOf("\nasync function ", fnStart + 1);
+  const fnBody = nextFn > fnStart ? chatRoute.slice(fnStart, nextFn) : chatRoute.slice(fnStart, fnStart + 2000);
+
+  assert.match(
+    fnBody,
+    /chatSummaryTitle\(\s*\{/,
+    "autoNameSessionFromFirstExchange must call chatSummaryTitle with an exchange object",
+  );
+  assert.doesNotMatch(
+    fnBody,
+    /const summary = chatTitleFromPrompt/,
+    "autoNameSessionFromFirstExchange must not derive the title summary via chatTitleFromPrompt",
+  );
+  assert.match(
+    fnBody,
+    /loadConversation/,
+    "autoNameSessionFromFirstExchange must load the stored conversation for the settled exchange",
+  );
+  // D: must use atomic helper, not plain setSessionTitle.
+  assert.match(
+    fnBody,
+    /setSessionTitleAutoIfOwned/,
+    "autoNameSessionFromFirstExchange must call setSessionTitleAutoIfOwned (atomic ownership check)",
+  );
+  assert.doesNotMatch(
+    fnBody,
+    /await setSessionTitle\(sessionId,/,
+    "autoNameSessionFromFirstExchange must not call setSessionTitle — use setSessionTitleAutoIfOwned",
+  );
+}
+
+// Periodic renaming must make its ownership decision and title write in one
+// config-state mutation. A separate read/check followed by an unconditional
+// write can overwrite a manual rename that lands between those operations.
+{
+  const fnMarker = "async function maybeAutoRenameFromContext";
+  const fnStart = chatRoute.indexOf(fnMarker);
+  assert.ok(fnStart >= 0, "periodic auto-rename helper exists");
+  const nextFn = chatRoute.indexOf("\nasync function ", fnStart + fnMarker.length);
+  const fnBody = chatRoute.slice(fnStart, nextFn);
+  assert.match(
+    fnBody,
+    /setSessionTitleAutoIfOwned\([\s\S]*policy\.preserveManualTitles/,
+    "periodic rename atomically checks ownership and writes under the configured policy",
+  );
+  assert.doesNotMatch(
+    fnBody,
+    /\bsetSessionTitleAuto\(/,
+    "periodic rename must not perform an unconditional later write",
+  );
+  assert.doesNotMatch(
+    fnBody,
+    /isAutoOwnedTitle\(/,
+    "periodic rename must not split its ownership check from the state write",
+  );
+  assert.match(
+    fnBody,
+    /isRenameDueAtTurn\(assistantTurns, policy\.everyTurns\)/,
+    "periodic renaming remains controlled by the configured assistant-turn cadence",
+  );
+}
+
+// D: No stub title path may use chatTitleFromPrompt as the selected title.
+assert.doesNotMatch(
+  chatRoute,
+  /const stubTitle = chatTitleFromPrompt\(/,
+  "no stub title may be derived with chatTitleFromPrompt as the selected title",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /title: chatTitleFromPrompt\(/,
+  "no createConversationStub call may set title via chatTitleFromPrompt",
+);
+
+// D: setDefaultStubTitleAuto must exist, be named correctly, and use the atomic helper.
+{
+  const helperMarker = "async function setDefaultStubTitleAuto";
+  const helperStart = chatRoute.indexOf(helperMarker);
+  assert.ok(helperStart >= 0, "setDefaultStubTitleAuto helper must exist (renamed from setDefaultSessionTitleIfMissing)");
+  const nextFn = chatRoute.indexOf("\nasync function ", helperStart + 1);
+  const helperBody = nextFn > helperStart
+    ? chatRoute.slice(helperStart, nextFn)
+    : chatRoute.slice(helperStart, helperStart + 500);
+  assert.match(
+    helperBody,
+    /setSessionTitleAutoIfOwned/,
+    "setDefaultStubTitleAuto must call setSessionTitleAutoIfOwned (atomic auto-owned write)",
+  );
+}
