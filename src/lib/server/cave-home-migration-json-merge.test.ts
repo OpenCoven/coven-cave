@@ -171,6 +171,31 @@ try {
     );
   }
 
+  // Identical snapshots bypass mergeState, so canonical validation must reject
+  // malformed title-revision values and non-record map shapes on that path too.
+  for (const [name, sessionTitleRevision] of [
+    ["negative-value", { invalid: -1 }],
+    ["array", []],
+    ["null", null],
+    ["string", "invalid"],
+  ]) {
+    const { coven, cave } = await home(`state-identical-title-revision-${name}`);
+    await mkdir(cave, { recursive: true });
+    const state = baseState();
+    state.sessionTitleRevision = sessionTitleRevision;
+    const snapshot = JSON.stringify(state);
+    await writeFile(path.join(coven, "cave-state.json"), snapshot);
+    await writeFile(path.join(cave, "state.json"), snapshot);
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.equal(
+      result.errors.some((error) => error.legacy === "cave-state.json"),
+      true,
+      `${name} must fail canonical validation`,
+    );
+    assert.deepEqual((await json(path.join(cave, "state.json"))).sessionTitleRevision, sessionTitleRevision);
+    assert.equal(await kind(path.join(coven, "cave-state.json")), "file");
+  }
+
   // A larger revision cannot choose between genuinely conflicting titles or
   // ownership. Those conflicts must remain available for explicit review.
   for (const [name, mutateLegacy, expectedConflict] of [
