@@ -335,9 +335,13 @@ export function Workspace() {
   } = useProjects({ familiarId: projectGateCandidateFamiliarId });
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
-  // false until the first /api/sessions/list fetch settles — lets the chat
-  // list show a skeleton instead of flashing its empty state on boot.
-  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  // Inventory completion belongs to the scope that produced it. Deriving the
+  // boolean from that key makes a familiar/workspace switch read as unloaded
+  // during the very first render of the new scope, before child effects can
+  // consume stale rows from the previous one.
+  const sessionsScopeKey = activeId === null ? "all" : `familiar:${activeId}`;
+  const [loadedSessionsScope, setLoadedSessionsScope] = useState<string | null>(null);
+  const sessionsLoaded = loadedSessionsScope === sessionsScopeKey;
   // The last session-list load failed (cave-x6k5) — see loadSessions.
   const [sessionsError, setSessionsError] = useState(false);
   // Monotonic sequence guard for loadSessions (see its definition): the list is
@@ -1253,6 +1257,7 @@ export function Workspace() {
     // while A was still in flight) drops every superseded load's writes, so only
     // the newest scope ever reaches state.
     const reqId = ++loadSessionsReqRef.current;
+    const requestedScopeKey = sessionsScopeKey;
     const isCurrent = () => reqId === loadSessionsReqRef.current;
 
     return (async () => {
@@ -1290,15 +1295,15 @@ export function Workspace() {
         // reference when nothing changed so an unchanged list doesn't re-render
         // every sessions consumer (chat list, rails, badges) for nothing.
         setSessions((prev) => (sameSessionList(prev, visibleSessions) ? prev : visibleSessions));
-        setSessionsLoaded(true);
+        setLoadedSessionsScope(requestedScopeKey);
         baseSessionsApplied = true;
       } catch {
         if (isCurrent()) setSessionsError(true); // transient — poll retries
       } finally {
-        if (!baseSessionsApplied && isCurrent()) setSessionsLoaded(true);
+        if (!baseSessionsApplied && isCurrent()) setLoadedSessionsScope(requestedScopeKey);
       }
     })();
-  }, [activeId]);
+  }, [activeId, sessionsScopeKey]);
 
   const handleSessionsDeleted = useCallback((sessionIds: readonly string[]) => {
     const confirmedIds = recordDeletedSessionIds(locallyDeletedSessionIdsRef.current, sessionIds);

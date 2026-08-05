@@ -762,13 +762,15 @@ type MarkdownContentProps = {
   pending?: boolean;
   onOpenUrl?: (url: string) => void;
   citations?: readonly Citation[];
+  /** Immutable execution root of the transcript turn that owns this prose. */
+  projectRoot?: string | null;
   /** Extra classes on the markdown container — the Expand reader uses this to
    *  set its own reading scale (.cave-md--reader). Omitted in the transcript,
    *  which reads at the stream's density. */
   className?: string;
 };
 
-function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }: MarkdownContentProps) {
+function MarkdownContent({ text, pending, onOpenUrl, citations = [], projectRoot = null, className }: MarkdownContentProps) {
   const [html, setHtml] = useState<string | null>(
     () => pending ? null : renderCacheGet(text) ?? null,
   );
@@ -779,7 +781,13 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }
   // Same posture for code blocks (cave-f6mu9): Read/Compare stay hidden until a
   // surface supplies an inspector to receive them.
   const reading = useContext(CodeReadingContext);
-  const containerRef = useWireCopyButtons(html, onOpenUrl, fileLinkResolver, reading);
+  const containerRef = useWireCopyButtons(
+    html,
+    onOpenUrl,
+    fileLinkResolver,
+    reading,
+    projectRoot,
+  );
   // mdToHtml is async and several streaming renders can be in flight at once.
   // The gate orders their commits and invalidates pre-settle work synchronously
   // during render, before React runs passive-effect cleanup or the final pass.
@@ -897,6 +905,7 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }
         citations={citations}
         containerRef={containerRef}
         onOpenUrl={onOpenUrl}
+        projectRoot={projectRoot}
         renderedHtml={html}
       />
     </>
@@ -974,6 +983,8 @@ export type MessageBubbleProps = {
    *  caller gates it on settled (non-pending) turns with text. */
   onReply?: () => void;
   onOpenUrl?: (url: string) => void;
+  /** Immutable execution root recorded for this historical turn. */
+  projectRoot?: string | null;
   /** Stable id for this message — enables local thumbs-up/down persistence
    *  (assistant role only). Without it the thumbs buttons are not rendered. */
   messageId?: string;
@@ -1013,7 +1024,7 @@ export type MessageBubbleProps = {
   };
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, readerTools, readerDurationMs, onAskAbout, readerPrompt, onRerunWith, readerFamiliarId, branchNav }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, projectRoot = null, messageId, feedbackContext, segments, readerTools, readerDurationMs, onAskAbout, readerPrompt, onRerunWith, readerFamiliarId, branchNav }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
   const [vote, setVote] = useState<Feedback | null>(() => (messageId ? getFeedback(messageId) : null));
   const applyVote = (v: Feedback) => {
@@ -1077,7 +1088,12 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
         onMouseLeave={handleMouseLeave}
       >
         <div className="cave-bubble-user">
-          <MarkdownContent text={content} pending={pending} onOpenUrl={onOpenUrl} />
+          <MarkdownContent
+            text={content}
+            pending={pending}
+            onOpenUrl={onOpenUrl}
+            projectRoot={projectRoot}
+          />
         </div>
         {/* Action row sits BELOW the bubble (right-aligned via the items-end
             column) so it never overlays the message. Always in the DOM
@@ -1147,6 +1163,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
                 pending={pending && i === lastTextIdx}
                 onOpenUrl={onOpenUrl}
                 citations={cited.citations}
+                projectRoot={projectRoot}
               />
             );
           })
@@ -1156,6 +1173,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
             pending={pending}
             onOpenUrl={onOpenUrl}
             citations={cited.citations}
+            projectRoot={projectRoot}
           />
         )}
       </div>
@@ -1219,6 +1237,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
             prompt={readerPrompt}
             onRerunWith={onRerunWith}
             familiarId={readerFamiliarId}
+            projectRoot={projectRoot}
           />
           <CopyBubble text={content} />
           {role === "assistant" ? (
@@ -1268,6 +1287,7 @@ function ExpandBubble({
   prompt,
   onRerunWith,
   familiarId,
+  projectRoot,
 }: {
   text: string;
   label: string;
@@ -1277,6 +1297,7 @@ function ExpandBubble({
   prompt?: { text: string; createdAt?: string };
   onRerunWith?: (prompt: string) => void;
   familiarId?: string;
+  projectRoot?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const readerCited = useMemo(() => renderCitedBody(text), [text]);
@@ -1321,6 +1342,7 @@ function ExpandBubble({
           <MarkdownContent
             text={readerCited.body}
             citations={readerCited.citations}
+            projectRoot={projectRoot}
             className="cave-md--expanded cave-md--reader"
           />
         </MessageReader>

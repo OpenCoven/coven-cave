@@ -35,8 +35,8 @@ assert.match(
 const workspace = read("./workspace.tsx");
 assert.match(
   workspace,
-  /const \[sessionsLoaded, setSessionsLoaded\] = useState\(false\)/,
-  "Workspace flips sessionsLoaded after the first /api/sessions/list fetch settles",
+  /const sessionsScopeKey = activeId === null \? "all" : `familiar:\$\{activeId\}`;[\s\S]{0,180}const \[loadedSessionsScope, setLoadedSessionsScope\] = useState<string \| null>\(null\);[\s\S]{0,100}const sessionsLoaded = loadedSessionsScope === sessionsScopeKey;/,
+  "Workspace derives inventory readiness from the current scope instead of reusing a stale loaded bit",
 );
 // The session list is scoped to the active familiar and reloads on every scope
 // change, so loadSessions is sequence-guarded by a monotonic request id: a stale
@@ -63,8 +63,13 @@ assert.doesNotMatch(
 );
 assert.match(
   workspace,
-  /const visibleSessions = githubTasksRef\.current[\s\S]{0,180}attachGitHubTaskContext\(baseSessions[\s\S]{0,700}setSessionsLoaded\(true\)/,
+  /const visibleSessions = githubTasksRef\.current[\s\S]{0,180}attachGitHubTaskContext\(baseSessions[\s\S]{0,700}setLoadedSessionsScope\(requestedScopeKey\)/,
   "Workspace renders sessions immediately with any last-known-good GitHub task context",
+);
+assert.match(
+  workspace,
+  /const requestedScopeKey = sessionsScopeKey;[\s\S]{0,4000}setLoadedSessionsScope\(requestedScopeKey\)/,
+  "only the scope whose reload settled is marked loaded",
 );
 assert.match(
   workspace,

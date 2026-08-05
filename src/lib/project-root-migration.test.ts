@@ -36,9 +36,15 @@ const idb = { projectAvatars: new Map(), familiarImages: new Map() };
 const LITERAL_DRIVE_IMAGE = {
   dataUrl: "data:image/png;base64,LITERAL-C-DRIVE",
   mime: "image/png",
+  updatedAt: "2026-08-04T00:00:00.000Z",
+};
+const CANONICAL_DRIVE_IMAGE = {
+  dataUrl: "data:image/png;base64,CANONICAL-C-DRIVE",
+  mime: "image/png",
   updatedAt: "2026-08-05T00:00:00.000Z",
 };
 idb.projectAvatars.set("C:", LITERAL_DRIVE_IMAGE);
+idb.projectAvatars.set("C:/", CANONICAL_DRIVE_IMAGE);
 let denyWrites = false;
 const fakeDriver = {
   async getAll(s) {
@@ -100,8 +106,8 @@ const PROJECTS = [
   assert.equal(idb.projectAvatars.has("C:"), false, "the literal pre-upgrade key is removed");
   assert.deepEqual(
     idb.projectAvatars.get("C:/"),
-    LITERAL_DRIVE_IMAGE,
-    "the literal C: avatar and its metadata move to the canonical drive root",
+    CANONICAL_DRIVE_IMAGE,
+    "an existing newer canonical avatar is never overwritten by legacy C: data",
   );
   assert.equal(readProjectOverrides()["session-drive"], "C:/");
   assert.equal(moved, 1);

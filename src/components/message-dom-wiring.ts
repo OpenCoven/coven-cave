@@ -14,7 +14,7 @@ import {
 } from "@/lib/code-reading";
 import { wireMermaidDiagrams } from "./mermaid-viewer";
 
-export type FileLinkResolver = (ref: FileRef) => boolean;
+export type FileLinkResolver = (ref: FileRef, projectRoot: string) => boolean;
 
 /** Chat provides a resolver over its transcript; everywhere else (group chat,
  *  quick chat, previews) the default null keeps prose refs as plain text. */
@@ -28,14 +28,14 @@ export type CodeReadingRequest = {
   lang: string;
   /** Repo-relative path when the fence named one. */
   path: string | null;
+  /** Immutable execution root of the turn that rendered the block. */
+  projectRoot: string | null;
   provenance: CodeProvenance;
   /** Which tab to land on — Compare jumps straight to the diff. */
   tab: InspectorTabId;
 };
 
 export type CodeReading = {
-  /** Absolute project root; null disables the working-tree check. */
-  projectRoot: string | null;
   onRead: (request: CodeReadingRequest) => void;
 };
 
@@ -126,16 +126,27 @@ function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => 
   }
 }
 
-function wireFilePathLinks(container: HTMLElement, resolve: FileLinkResolver | null) {
+function wireFilePathLinks(
+  container: HTMLElement,
+  resolve: FileLinkResolver | null,
+  projectRoot: string | null,
+) {
   for (const code of Array.from(container.querySelectorAll<HTMLElement>("code"))) {
     if (code.closest("pre") || code.closest(".cave-code-wrap")) continue;
-    const flagged = code as HTMLElement & { _caveFileLinkCleanup?: () => void };
+    const flagged = code as HTMLElement & {
+      _caveFileLinkCleanup?: () => void;
+      _caveFileLinkProjectRoot?: string;
+    };
     const ref = parseFileRef(code.textContent ?? "");
-    const want = Boolean(ref && resolve?.(ref));
-    if (want === Boolean(flagged._caveFileLinkCleanup)) continue;
+    const want = Boolean(ref && projectRoot && resolve?.(ref, projectRoot));
+    const wiredForRoot =
+      Boolean(flagged._caveFileLinkCleanup) &&
+      flagged._caveFileLinkProjectRoot === projectRoot;
+    if (want && wiredForRoot) continue;
+    flagged._caveFileLinkCleanup?.();
+    delete flagged._caveFileLinkCleanup;
+    delete flagged._caveFileLinkProjectRoot;
     if (!want) {
-      flagged._caveFileLinkCleanup?.();
-      delete flagged._caveFileLinkCleanup;
       continue;
     }
     const { path, line } = ref!;
@@ -143,7 +154,12 @@ function wireFilePathLinks(container: HTMLElement, resolve: FileLinkResolver | n
     code.setAttribute("role", "button");
     code.setAttribute("tabindex", "0");
     code.title = `Open ${path}${line ? `:${line}` : ""} in the Code workspace`;
-    const open = () => window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail: { path, line } }));
+    const open = () =>
+      window.dispatchEvent(
+        new CustomEvent("cave:open-project-file", {
+          detail: { path, line, projectRoot },
+        }),
+      );
     const onKeydown = (event: KeyboardEvent) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
@@ -152,6 +168,7 @@ function wireFilePathLinks(container: HTMLElement, resolve: FileLinkResolver | n
     };
     code.addEventListener("click", open);
     code.addEventListener("keydown", onKeydown);
+    flagged._caveFileLinkProjectRoot = projectRoot!;
     flagged._caveFileLinkCleanup = () => {
       code.removeEventListener("click", open);
       code.removeEventListener("keydown", onKeydown);
@@ -159,6 +176,7 @@ function wireFilePathLinks(container: HTMLElement, resolve: FileLinkResolver | n
       code.removeAttribute("role");
       code.removeAttribute("tabindex");
       code.removeAttribute("title");
+      delete flagged._caveFileLinkProjectRoot;
     };
   }
 }
@@ -320,9 +338,16 @@ function markStaleness(wrap: HTMLElement, root: string, relPath: string) {
   });
 }
 
-function wireCodeReading(container: HTMLElement, reading: CodeReading | null) {
+function wireCodeReading(
+  container: HTMLElement,
+  reading: CodeReading | null,
+  projectRoot: string | null,
+) {
   for (const wrap of Array.from(container.querySelectorAll<HTMLElement>(".cave-code-wrap"))) {
-    const flagged = wrap as HTMLElement & { _caveReadingWired?: boolean };
+    const flagged = wrap as HTMLElement & {
+      _caveReadingCleanup?: () => void;
+      _caveReadingProjectRoot?: string | null;
+    };
     const raw = wrap.getAttribute("data-code-provenance");
     if (!isCodeProvenance(raw)) continue;
     const provenance = raw;
@@ -330,19 +355,47 @@ function wireCodeReading(container: HTMLElement, reading: CodeReading | null) {
     const lang = wrap.getAttribute("data-code-lang") ?? "text";
 
     // Reveal the controls only where an inspector exists to receive them.
-    if (reading) wrap.classList.add("cave-code-wrap--readable");
-    else wrap.classList.remove("cave-code-wrap--readable");
-
-    if (reading && provenance === "file-backed" && path && reading.projectRoot) {
-      markStaleness(wrap, reading.projectRoot, path);
+    if (reading) {
+      wrap.classList.add("cave-code-wrap--readable");
+    } else {
+      wrap.classList.remove("cave-code-wrap--readable");
+      flagged._caveReadingCleanup?.();
+      delete flagged._caveReadingCleanup;
+      delete flagged._caveReadingProjectRoot;
     }
 
-    if (flagged._caveReadingWired || !reading) continue;
-    flagged._caveReadingWired = true;
+    if (reading && provenance === "file-backed" && path && projectRoot) {
+      markStaleness(wrap, projectRoot, path);
+    }
+
+    if (!reading) continue;
+    if (
+      flagged._caveReadingCleanup &&
+      flagged._caveReadingProjectRoot === projectRoot
+    ) {
+      continue;
+    }
+    flagged._caveReadingCleanup?.();
     const open = (tab: InspectorTabId) => () =>
-      reading.onRead({ code: codeTextFromWrapEl(wrap), lang, path, provenance, tab });
-    wrap.querySelector<HTMLButtonElement>(".cave-code-read-btn")?.addEventListener("click", open("snippet"));
-    wrap.querySelector<HTMLButtonElement>(".cave-code-compare-btn")?.addEventListener("click", open("compare"));
+      reading.onRead({
+        code: codeTextFromWrapEl(wrap),
+        lang,
+        path,
+        projectRoot,
+        provenance,
+        tab,
+      });
+    const readButton = wrap.querySelector<HTMLButtonElement>(".cave-code-read-btn");
+    const compareButton = wrap.querySelector<HTMLButtonElement>(".cave-code-compare-btn");
+    const openSnippet = open("snippet");
+    const openCompare = open("compare");
+    readButton?.addEventListener("click", openSnippet);
+    compareButton?.addEventListener("click", openCompare);
+    flagged._caveReadingProjectRoot = projectRoot;
+    flagged._caveReadingCleanup = () => {
+      readButton?.removeEventListener("click", openSnippet);
+      compareButton?.removeEventListener("click", openCompare);
+    };
   }
 }
 
@@ -373,6 +426,7 @@ export function useWireCopyButtons(
   onOpenUrl?: (url: string) => void,
   fileLinkResolver: FileLinkResolver | null = null,
   reading: CodeReading | null = null,
+  projectRoot: string | null = null,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -383,13 +437,13 @@ export function useWireCopyButtons(
       wireMarkdownLinks(el, onOpenUrl);
       wireMermaidDiagrams(el);
       wireExpandableTables(el);
-      wireFilePathLinks(el, fileLinkResolver);
-      wireCodeReading(el, reading);
+      wireFilePathLinks(el, fileLinkResolver, projectRoot);
+      wireCodeReading(el, reading, projectRoot);
     };
     wireAll();
     const observer = new MutationObserver(() => wireAll());
     observer.observe(el, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [html, onOpenUrl, fileLinkResolver, reading]);
+  }, [html, onOpenUrl, fileLinkResolver, reading, projectRoot]);
   return containerRef;
 }
