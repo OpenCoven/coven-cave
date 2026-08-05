@@ -95,6 +95,12 @@ assert.match(
 
 assert.match(
   source,
+  /function toolGroupAriaLabel[\s\S]*?running \? `\$\{running\} running` : ""[\s\S]*?errors \? `\$\{errors\} \$\{errors === 1 \? "error" : "errors"\}` : ""/,
+  "toolGroupAriaLabel body appends '${running} running' and singular/plural error count — not just the base summary",
+);
+
+assert.match(
+  source,
   /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*aria-label=\{toolGroupAriaLabel\(summary, running, errors\)\}[\s\S]*<ToolRuns tools=\{tools\}/,
   "ToolGroup wraps ONE collapsed disclosure — named by toolGroupAriaLabel — around ToolRuns per assistant turn",
 );
@@ -109,6 +115,11 @@ assert.match(
   source,
   /function ToolRuns[\s\S]*groupConsecutiveTools\(tools\)[\s\S]*<ToolRunGroup[\s\S]*<ToolBlock/,
   "adjacent repeated tool calls roll into an expandable run while one-off calls retain their existing block",
+);
+assert.match(
+  source,
+  /function ToolRuns[\s\S]*?containsEdit = run\.tools\.some\(\(tool\) => toolInputAsDiff\(tool\.name, tool\.input\) != null\)[\s\S]*?run\.tools\.length > 1 && !containsEdit \? \(\s*<ToolRunGroup/,
+  "ToolRuns computes containsEdit via toolInputAsDiff and gates ToolRunGroup creation on run.tools.length > 1 && !containsEdit",
 );
 assert.match(
   source,
@@ -267,6 +278,11 @@ assert.match(
   turnRow,
   /otherTools\.length \? <ToolGroup tools=\{otherTools\}/,
   "non-edit tool activity still collapses into the designated ToolGroup",
+);
+assert.match(
+  turnRow,
+  /otherTools\.length \? <ToolGroup[\s\S]*?<MessageBubble[\s\S]*?!turn\.pending && turn\.tools\?\.length && editCards\.length/,
+  "TurnRowImpl source order: otherTools ToolGroup precedes MessageBubble; editCards section follows MessageBubble — the two sections are separate and in their current intended positions",
 );
 
 assert.match(
