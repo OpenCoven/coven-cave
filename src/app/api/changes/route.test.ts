@@ -199,8 +199,8 @@ assert.match(
 );
 assert.match(
   source,
-  /nativeProjectPathsEqual\(metadata\.projectRoot, root\.projectRoot\)[\s\S]{0,180}?target\.gitRelativePath !== metadata\.targetGitPath/,
-  "scoped restore requires checkpoint metadata for the exact captured project and target",
+  /function checkpointAuthorizedForProject\([\s\S]*?nativeProjectPathsEqual\(metadata\.projectRoot, root\.projectRoot\)[\s\S]{0,180}?target\.gitRelativePath === metadata\.targetGitPath/,
+  "scoped checkpoint operations require metadata for the exact captured project and target",
 );
 
 // remote=1 — read-only origin probe powering the project-setup modal's GitHub

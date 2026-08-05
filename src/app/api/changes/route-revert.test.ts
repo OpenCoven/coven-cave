@@ -197,7 +197,7 @@ try {
   delete process.env.NEXT_PUBLIC_WORKSPACE_ROOT;
   process.chdir(runnerCwd);
 
-  const { POST } = await import("./route.ts");
+  const { GET, POST } = await import("./route.ts");
   const canonicalProjectRoot = await realpath(projectRoot);
   const canonicalRepoRoot = await realpath(repoRoot);
 
@@ -375,6 +375,42 @@ try {
     (await wrongProjectRestore.json()).error,
     "checkpoint not authorized for project",
     "a scoped checkpoint cannot authorize restoration under another captured project",
+  );
+  const siblingCheckpointList = await GET({
+    nextUrl: new URL(
+      `http://127.0.0.1/api/changes?projectRoot=${encodeURIComponent(siblingRoot)}&checkpoints=1`,
+    ),
+  });
+  assert.equal(siblingCheckpointList.status, 200);
+  assert.equal(
+    (await siblingCheckpointList.json()).checkpoints.some(
+      (entry: { name: string }) => entry.name === checkpointName,
+    ),
+    false,
+    "a sibling project cannot list another project's scoped checkpoint",
+  );
+  const wrongProjectDelete = await POST(
+    checkpointRequest("delete-checkpoint", siblingRoot, checkpointName),
+  );
+  assert.equal(wrongProjectDelete.status, 403);
+  assert.equal(
+    (await wrongProjectDelete.json()).error,
+    "checkpoint not authorized for project",
+  );
+  await access(revertedBody.checkpointPath);
+  await access(`${revertedBody.checkpointPath}.scope.json`);
+
+  const authorizedDelete = await POST(
+    checkpointRequest("delete-checkpoint", projectRoot, checkpointName),
+  );
+  assert.equal(authorizedDelete.status, 200, await authorizedDelete.clone().text());
+  await assert.rejects(
+    () => access(revertedBody.checkpointPath),
+    "an authorized delete removes the checkpoint",
+  );
+  await assert.rejects(
+    () => access(`${revertedBody.checkpointPath}.scope.json`),
+    "an authorized delete removes its scope metadata",
   );
 
   for (const targetPath of [

@@ -19,6 +19,7 @@ export type AvatarStore = "familiarImages" | "projectAvatars";
 
 export type AvatarMoveResult = {
   source: AvatarRecord | null;
+  sourceKey?: string;
   destination: AvatarRecord | null;
   destinationKey: string;
 };
@@ -224,41 +225,57 @@ const idbDriver: AvatarStorageDriver = {
       const aliases = store === "projectAvatars"
         ? tx.objectStore(PROJECT_AVATAR_ALIASES)
         : null;
-      const destinationKey = aliases
+      const sourceKey = aliases
+        ? await resolveProjectAvatarAlias(aliases, from)
+        : from;
+      const resolvedDestinationKey = aliases
         ? await resolveProjectAvatarAlias(aliases, to)
         : to;
-      const source = (await requestToPromise(os.get(from))) as AvatarRecord | undefined;
-      const destination = (await requestToPromise(os.get(destinationKey))) as AvatarRecord | undefined;
+      const rerootsAliasChain =
+        aliases !== null &&
+        sourceKey === resolvedDestinationKey &&
+        from === sourceKey &&
+        to !== sourceKey;
+      const destinationKey = rerootsAliasChain ? to : resolvedDestinationKey;
+      const source = (await requestToPromise(os.get(sourceKey))) as AvatarRecord | undefined;
+      const destination = sourceKey === destinationKey
+        ? source
+        : (await requestToPromise(os.get(destinationKey))) as AvatarRecord | undefined;
       let result: AvatarMoveResult;
 
-      if (from === destinationKey) {
+      if (sourceKey === destinationKey) {
         result = {
           source: null,
+          sourceKey,
           destination: source ?? destination ?? null,
           destinationKey,
         };
       } else if (!source) {
         result = {
           source: null,
+          sourceKey,
           destination: destination ?? null,
           destinationKey,
         };
       } else if (destination) {
         if (avatarMigrationDestinationWins(source, destination)) {
-          os.delete(from);
-          result = { source: null, destination, destinationKey };
+          os.delete(sourceKey);
+          result = { source: null, sourceKey, destination, destinationKey };
         } else {
           os.put(source, destinationKey);
-          os.delete(from);
-          result = { source: null, destination: source, destinationKey };
+          os.delete(sourceKey);
+          result = { source: null, sourceKey, destination: source, destinationKey };
         }
       } else {
         os.put(source, destinationKey);
-        os.delete(from);
-        result = { source: null, destination: source, destinationKey };
+        os.delete(sourceKey);
+        result = { source: null, sourceKey, destination: source, destinationKey };
       }
-      if (aliases && from !== destinationKey) {
-        aliases.put(destinationKey, from);
+      if (aliases && rerootsAliasChain) {
+        await requestToPromise(aliases.delete(destinationKey));
+      }
+      if (aliases && sourceKey !== destinationKey) {
+        await requestToPromise(aliases.put(destinationKey, sourceKey));
       }
 
       const completion = await done;

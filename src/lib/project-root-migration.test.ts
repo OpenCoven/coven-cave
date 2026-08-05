@@ -673,7 +673,7 @@ assert.deepEqual(
   const projectImages = readFileSync(new URL("./cave-project-images.ts", import.meta.url), "utf8");
   assert.match(
     driver,
-    /async move\(store, from, to\) \{[\s\S]*?db\.transaction\(stores, "readwrite"\)[\s\S]*?resolveProjectAvatarAlias\(aliases, to\)[\s\S]*?os\.get\(from\)[\s\S]*?os\.get\(destinationKey\)[\s\S]*?os\.put\(source, destinationKey\)[\s\S]*?os\.delete\(from\)[\s\S]*?aliases\.put\(destinationKey, from\)[\s\S]*?await done;/,
+    /async move\(store, from, to\) \{[\s\S]*?db\.transaction\(stores, "readwrite"\)[\s\S]*?resolveProjectAvatarAlias\(aliases, from\)[\s\S]*?resolveProjectAvatarAlias\(aliases, to\)[\s\S]*?os\.get\(sourceKey\)[\s\S]*?os\.get\(destinationKey\)[\s\S]*?os\.put\(source, destinationKey\)[\s\S]*?os\.delete\(sourceKey\)[\s\S]*?aliases\.delete\(destinationKey\)[\s\S]*?aliases\.put\(destinationKey, sourceKey\)[\s\S]*?await done;/,
     "alias install, destination compare, conditional write, and source deletion share one readwrite transaction",
   );
   assert.match(

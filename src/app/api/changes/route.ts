@@ -218,6 +218,7 @@ function stripGitLineEnding(value: string): string {
 type RootResolution =
   | { ok: true; projectRoot: string; repoRoot: string; projectPathspec: string }
   | { ok: false; status: number; error: string; notARepo?: boolean };
+type ResolvedRepoRoot = Extract<RootResolution, { ok: true }>;
 
 function projectPathspecForGitRoot(projectRoot: string, repoRoot: string): string | null {
   if (nativeProjectPathsEqual(projectRoot, repoRoot)) return ".";
@@ -487,11 +488,18 @@ export async function GET(req: NextRequest) {
 
   try {
     if (wantCheckpoints !== null) {
-      return NextResponse.json({ ok: true, checkpoints: await listCheckpoints(root.repoRoot) });
+      return NextResponse.json({ ok: true, checkpoints: await listCheckpoints(root) });
     }
     if (checkpointName !== null) {
       const abs = await resolveCheckpointPath(root.repoRoot, checkpointName);
       if (!abs) return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
+      const metadata = readRevertCheckpointMetadata(abs);
+      if (!checkpointAuthorizedForProject(root, metadata)) {
+        return NextResponse.json(
+          { ok: false, error: "checkpoint not authorized for project" },
+          { status: 403 },
+        );
+      }
       let patch: string;
       try {
         patch = fs.readFileSync(/* turbopackIgnore: true */ abs, "utf8");
@@ -578,11 +586,25 @@ function readRevertCheckpointMetadata(
   checkpointPath: string,
 ): RevertCheckpointMetadata | null | "invalid" {
   const metadataPath = checkpointMetadataPath(checkpointPath);
-  if (!fs.existsSync(/* turbopackIgnore: true */ metadataPath)) return null;
+  let metadataFile: ReturnType<typeof openCheckpointFileIdentity>;
   try {
-    const parsed = JSON.parse(
-      fs.readFileSync(/* turbopackIgnore: true */ metadataPath, "utf8"),
-    ) as Partial<RevertCheckpointMetadata>;
+    metadataFile = openCheckpointFileIdentity(metadataPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    return "invalid";
+  }
+  try {
+    return parseRevertCheckpointMetadata(fs.readFileSync(metadataFile.fd, "utf8"));
+  } finally {
+    fs.closeSync(metadataFile.fd);
+  }
+}
+
+function parseRevertCheckpointMetadata(
+  raw: string,
+): RevertCheckpointMetadata | "invalid" {
+  try {
+    const parsed = JSON.parse(raw) as Partial<RevertCheckpointMetadata>;
     if (
       parsed.version !== 1 ||
       parsed.kind !== "revert-target" ||
@@ -596,6 +618,127 @@ function readRevertCheckpointMetadata(
   } catch {
     return "invalid";
   }
+}
+
+function checkpointAuthorizedForProject(
+  root: ResolvedRepoRoot,
+  metadata: RevertCheckpointMetadata | null | "invalid",
+): metadata is RevertCheckpointMetadata | null {
+  if (metadata === "invalid") return false;
+  if (!metadata) return true;
+  const target = resolveNativeProjectPathForGitRoot(
+    root.projectRoot,
+    root.repoRoot,
+    metadata.targetProjectRelativePath,
+  );
+  return (
+    nativeProjectPathsEqual(metadata.projectRoot, root.projectRoot) &&
+    target !== null &&
+    target.gitRelativePath === metadata.targetGitPath
+  );
+}
+
+type CheckpointFileIdentity = {
+  dev: number;
+  ino: number;
+  mode: number;
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+};
+
+function openCheckpointFileIdentity(file: string): {
+  fd: number;
+  identity: CheckpointFileIdentity;
+} {
+  const noFollow = fs.constants.O_NOFOLLOW ?? 0;
+  const fd = fs.openSync(
+    /* turbopackIgnore: true */ file,
+    fs.constants.O_RDONLY | noFollow,
+  );
+  try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) throw new Error("checkpoint is not a regular file");
+    return {
+      fd,
+      identity: {
+        dev: stat.dev,
+        ino: stat.ino,
+        mode: stat.mode,
+        size: stat.size,
+        mtimeMs: stat.mtimeMs,
+        ctimeMs: stat.ctimeMs,
+      },
+    };
+  } catch (error) {
+    fs.closeSync(fd);
+    throw error;
+  }
+}
+
+function sameCheckpointFileIdentity(
+  file: string,
+  expected: CheckpointFileIdentity,
+): boolean {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(/* turbopackIgnore: true */ file);
+  } catch {
+    return false;
+  }
+  return (
+    stat.isFile() &&
+    stat.dev === expected.dev &&
+    stat.ino === expected.ino &&
+    stat.mode === expected.mode &&
+    stat.size === expected.size &&
+    stat.mtimeMs === expected.mtimeMs &&
+    stat.ctimeMs === expected.ctimeMs
+  );
+}
+
+function deleteAuthorizedCheckpoint(
+  root: ResolvedRepoRoot,
+  checkpointPath: string,
+): boolean {
+  const metadataPath = checkpointMetadataPath(checkpointPath);
+  const checkpoint = openCheckpointFileIdentity(checkpointPath);
+  let metadataFile: ReturnType<typeof openCheckpointFileIdentity> | null = null;
+  let metadata: RevertCheckpointMetadata | null | "invalid" = null;
+  try {
+    try {
+      metadataFile = openCheckpointFileIdentity(metadataPath);
+      metadata = parseRevertCheckpointMetadata(
+        fs.readFileSync(metadataFile.fd, "utf8"),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  } finally {
+    fs.closeSync(checkpoint.fd);
+    if (metadataFile) fs.closeSync(metadataFile.fd);
+  }
+
+  if (!checkpointAuthorizedForProject(root, metadata)) return false;
+  if (!sameCheckpointFileIdentity(checkpointPath, checkpoint.identity)) {
+    throw new Error("checkpoint changed during deletion");
+  }
+  if (metadataFile) {
+    if (!sameCheckpointFileIdentity(metadataPath, metadataFile.identity)) {
+      throw new Error("checkpoint metadata changed during deletion");
+    }
+  } else if (fs.existsSync(/* turbopackIgnore: true */ metadataPath)) {
+    throw new Error("checkpoint metadata changed during deletion");
+  }
+
+  fs.unlinkSync(/* turbopackIgnore: true */ checkpointPath);
+  if (metadataFile) {
+    if (!sameCheckpointFileIdentity(metadataPath, metadataFile.identity)) {
+      throw new Error("checkpoint metadata changed during deletion");
+    }
+    fs.unlinkSync(/* turbopackIgnore: true */ metadataPath);
+  }
+  return true;
 }
 
 async function checkpointChanges(
@@ -693,8 +836,8 @@ async function checkpointChanges(
 type CheckpointMeta = { name: string; savedAt: string; bytes: number };
 
 /** List saved checkpoints, newest first. The stamp name sorts chronologically. */
-async function listCheckpoints(repoRoot: string): Promise<CheckpointMeta[]> {
-  const dir = await checkpointDirOf(repoRoot);
+async function listCheckpoints(root: ResolvedRepoRoot): Promise<CheckpointMeta[]> {
+  const dir = await checkpointDirOf(root.repoRoot);
   let names: string[];
   try {
     names = fs.readdirSync(/* turbopackIgnore: true */ dir);
@@ -705,7 +848,16 @@ async function listCheckpoints(repoRoot: string): Promise<CheckpointMeta[]> {
   for (const name of names) {
     if (!isCheckpointName(name)) continue;
     try {
-      const st = fs.statSync(/* turbopackIgnore: true */ path.join(dir, name));
+      const checkpointPath = path.join(/* turbopackIgnore: true */ dir, name);
+      if (
+        !checkpointAuthorizedForProject(
+          root,
+          readRevertCheckpointMetadata(checkpointPath),
+        )
+      ) {
+        continue;
+      }
+      const st = fs.statSync(/* turbopackIgnore: true */ checkpointPath);
       metas.push({ name, savedAt: st.mtime.toISOString(), bytes: st.size });
     } catch {
       /* vanished between readdir and stat — skip */
@@ -935,48 +1087,28 @@ export async function POST(req: NextRequest) {
     }
     try {
       if (action === "delete-checkpoint") {
-        fs.unlinkSync(/* turbopackIgnore: true */ abs);
-        fs.rmSync(/* turbopackIgnore: true */ checkpointMetadataPath(abs), {
-          force: true,
-        });
+        if (!deleteAuthorizedCheckpoint(root, abs)) {
+          return NextResponse.json(
+            { ok: false, error: "checkpoint not authorized for project" },
+            { status: 403 },
+          );
+        }
         return NextResponse.json({ ok: true, deleted: body.checkpoint });
       }
       const metadata = readRevertCheckpointMetadata(abs);
-      if (metadata === "invalid") {
+      if (!checkpointAuthorizedForProject(root, metadata)) {
         return NextResponse.json(
           { ok: false, error: "checkpoint not authorized for project" },
           { status: 403 },
         );
       }
       if (metadata) {
-        const target = resolveNativeProjectPathForGitRoot(
-          root.projectRoot,
-          root.repoRoot,
-          metadata.targetProjectRelativePath,
-        );
-        if (
-          !nativeProjectPathsEqual(metadata.projectRoot, root.projectRoot) ||
-          !target ||
-          target.gitRelativePath !== metadata.targetGitPath
-        ) {
-          return NextResponse.json(
-            { ok: false, error: "checkpoint not authorized for project" },
-            { status: 403 },
-          );
-        }
         await restoreCheckpoint(root.repoRoot, abs, metadata.targetGitPath);
       } else {
         // Legacy/manual checkpoints can span the repository. A captured nested
         // project may restore only target-scoped checkpoints; broad snapshots
         // still require the enclosing repository to pass standard authorization.
-        const standardRoot = await resolveRepoRoot(body.projectRoot);
-        if (!standardRoot.ok) {
-          return NextResponse.json(
-            { ok: false, error: standardRoot.error },
-            { status: standardRoot.status },
-          );
-        }
-        await restoreCheckpoint(standardRoot.repoRoot, abs);
+        await restoreCheckpoint(root.repoRoot, abs);
       }
       return NextResponse.json({ ok: true, restored: body.checkpoint });
     } catch (err) {

@@ -107,8 +107,10 @@ export async function migrateProjectRootKeys(
       // as `C:` before normalization canonicalized them to `C:/`.
       const result = await moveProjectImageFromStorageKey(fromKey, to);
       if (!result) continue;
-      if (result.source) migrationImages[fromKey] = result.source;
-      else delete migrationImages[fromKey];
+      const sourceKey = result.sourceKey || fromKey;
+      if (result.source) migrationImages[sourceKey] = result.source;
+      else delete migrationImages[sourceKey];
+      if (sourceKey !== fromKey) delete migrationImages[fromKey];
       const toKey = result.destinationKey || normalizeProjectRoot(to);
       if (result.destination) migrationImages[toKey] = result.destination;
       else delete migrationImages[toKey];

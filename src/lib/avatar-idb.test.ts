@@ -222,7 +222,12 @@ test("move resolves both avatar conflicts atomically and observes failed transac
     mutations.length = 0;
     assert.deepEqual(
       await avatarStorage().move("projectAvatars", "legacy", "canonical"),
-      { source: null, destination: newer, destinationKey: "canonical" },
+      {
+        source: null,
+        sourceKey: "legacy",
+        destination: newer,
+        destinationKey: "canonical",
+      },
     );
     assert.equal(records.has("legacy"), false, "newer canonical data consumes the legacy source");
     assert.deepEqual(records.get("canonical"), newer);
@@ -232,12 +237,18 @@ test("move resolves both avatar conflicts atomically and observes failed transac
       "destination-newer conflict only deletes the source",
     );
 
+    aliases.clear();
     records.set("legacy", newer);
     records.set("canonical", older);
     mutations.length = 0;
     assert.deepEqual(
       await avatarStorage().move("projectAvatars", "legacy", "canonical"),
-      { source: null, destination: newer, destinationKey: "canonical" },
+      {
+        source: null,
+        sourceKey: "legacy",
+        destination: newer,
+        destinationKey: "canonical",
+      },
     );
     assert.equal(records.has("legacy"), false, "newer legacy data is consumed after promotion");
     assert.deepEqual(records.get("canonical"), newer, "newer legacy data overwrites canonical data");
@@ -271,6 +282,7 @@ test("move resolves both avatar conflicts atomically and observes failed transac
       await avatarStorage().move("projectAvatars", "late-legacy", "late-canonical"),
       {
         source: null,
+        sourceKey: "late-legacy",
         destination: null,
         destinationKey: "late-canonical",
       },
@@ -288,6 +300,64 @@ test("move resolves both avatar conflicts atomically and observes failed transac
     );
     assert.equal(records.has("late-legacy"), false);
     assert.deepEqual(records.get("late-canonical"), late);
+
+    records.clear();
+    aliases.clear();
+    records.set("root-a", older);
+    await avatarStorage().move("projectAvatars", "root-a", "root-b");
+    assert.deepEqual(records.get("root-b"), older);
+    assert.equal(aliases.get("root-a"), "root-b");
+    assert.deepEqual(
+      await avatarStorage().move("projectAvatars", "root-b", "root-a"),
+      {
+        source: null,
+        sourceKey: "root-b",
+        destination: older,
+        destinationKey: "root-a",
+      },
+      "a reverse migration re-roots the alias instead of resolving the destination back to the source",
+    );
+    assert.deepEqual(records.get("root-a"), older);
+    assert.equal(records.has("root-b"), false);
+    assert.equal(aliases.has("root-a"), false, "the new canonical root retires its stale alias");
+    assert.equal(aliases.get("root-b"), "root-a", "the prior canonical root redirects late writers");
+    assert.equal(
+      await avatarStorage().put("projectAvatars", "root-b", newer),
+      "root-a",
+    );
+    assert.deepEqual(records.get("root-a"), newer);
+
+    records.clear();
+    aliases.clear();
+    records.set("chain-a", older);
+    await avatarStorage().move("projectAvatars", "chain-a", "chain-b");
+    await avatarStorage().move("projectAvatars", "chain-b", "chain-c");
+    await avatarStorage().move("projectAvatars", "chain-c", "chain-a");
+    assert.deepEqual(records.get("chain-a"), older, "a longer remigration chain lands at its latest root");
+    assert.equal(records.has("chain-b"), false);
+    assert.equal(records.has("chain-c"), false);
+    assert.equal(aliases.has("chain-a"), false);
+    assert.equal(aliases.get("chain-b"), "chain-c");
+    assert.equal(aliases.get("chain-c"), "chain-a");
+    await avatarStorage().put("projectAvatars", "chain-b", newer);
+    assert.deepEqual(
+      records.get("chain-a"),
+      newer,
+      "late writes follow the full retired-root chain to the current canonical root",
+    );
+
+    aliases.set("cycle-a", "cycle-b");
+    aliases.set("cycle-b", "cycle-a");
+    const beforeCycleAttempt = new Map(records);
+    await assert.rejects(
+      avatarStorage().move("projectAvatars", "cycle-a", "cycle-c"),
+      /project avatar alias cycle/,
+    );
+    assert.deepEqual(
+      records,
+      beforeCycleAttempt,
+      "a pre-existing alias cycle aborts migration before avatar mutation",
+    );
   } finally {
     process.off("unhandledRejection", onUnhandled);
     if (originalIndexedDb) {

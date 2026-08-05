@@ -146,9 +146,11 @@ async function moveProjectImageKey(
     return null;
   }
   const destinationKey = result.destinationKey || to;
+  const sourceKey = result.sourceKey || from;
   const next = { ...cached };
-  if (result.source) next[from] = result.source;
-  else delete next[from];
+  if (result.source) next[sourceKey] = result.source;
+  else delete next[sourceKey];
+  if (sourceKey !== from) delete next[from];
   if (result.destination) next[destinationKey] = result.destination;
   else delete next[destinationKey];
   cached = Object.keys(next).length > 0 ? next : EMPTY;
