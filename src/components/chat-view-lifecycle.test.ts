@@ -780,8 +780,8 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(shouldCreationRefresh\) onSessionsChangedRef\.current\?\.\(\)/,
-  "creation refresh gate fires onSessionsChangedRef.current only when the helper approves",
+  /shouldCreationRefresh \|\| shouldReplacementRefresh[\s\S]{0,200}onSessionsChangedRef\.current\?\.\(\)/,
+  "creation-refresh and replacement-refresh flags feed the consolidated shouldRefreshSessions decision that fires onSessionsChangedRef.current",
 );
 assert.doesNotMatch(
   source,
@@ -874,13 +874,13 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(shouldCreationRefresh\) onSessionsChangedRef\.current\?\.\(\)/,
-  "creation refresh callback uses the render-synced ref to avoid stale familiar-scope captures",
+  /shouldCreationRefresh \|\| shouldReplacementRefresh[\s\S]{0,200}onSessionsChangedRef\.current\?\.\(\)/,
+  "creation-refresh callback uses the render-synced ref via consolidated shouldRefreshSessions to avoid stale familiar-scope captures",
 );
 assert.match(
   source,
-  /startNewConversation && ev\.sessionId[\s\S]{0,50}?onSessionsChangedRef\.current\?\.\(\)/,
-  "Board/startNewConversation session refresh uses the render-synced ref",
+  /startNewConversation[\s\S]{0,200}onSessionsChangedRef\.current\?\.\(\)/,
+  "Board/startNewConversation condition feeds the consolidated shouldRefreshSessions decision that fires onSessionsChangedRef.current once",
 );
 
 // cave-b63 (1): model-state / usage-plan refreshes gate their setState on a
@@ -913,6 +913,33 @@ assert.match(
   source,
   /if \(command === "\/clear"\) \{\s*\n\s*\/\/[\s\S]*?cancelSend\(\);\s*\n\s*liveSessionIdRef\.current = null;\s*\n\s*setTurns\(\[\]\);/,
   "/clear cancels an in-flight stream before clearing the transcript",
+);
+
+// ── Replacement refresh wiring (Task 1 P2) ────────────────────────────────
+// shouldReplacementRefreshOnDone is imported and called in the done handler
+// with the three required decision inputs.
+assert.match(
+  source,
+  /shouldReplacementRefreshOnDone/,
+  "chat-view.tsx uses shouldReplacementRefreshOnDone for the replacement refresh decision",
+);
+assert.match(
+  source,
+  /shouldReplacementRefreshOnDone\(\s*liveGeneration\.originSessionId,\s*completedSessionId,\s*ev\.isError,?\s*\)/,
+  "done handler invokes shouldReplacementRefreshOnDone with originSessionId, completedSessionId, and ev.isError",
+);
+// Consolidation: exactly one onSessionsChangedRef call gated on the combined boolean;
+// no separate pre-bind startNewConversation-only call remains.
+assert.doesNotMatch(
+  source,
+  /if \(startNewConversation && ev\.sessionId\) onSessionsChangedRef\.current\?\.\(\)/,
+  "startNewConversation is consolidated into shouldRefreshSessions — no standalone pre-bind call",
+);
+// The consolidated boolean carries all three sources: creation, replacement, board.
+assert.match(
+  source,
+  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\|[\s\S]{0,80}startNewConversation/,
+  "shouldRefreshSessions consolidates creation, replacement, and board conditions before the single ref call",
 );
 
 console.log("chat-view-lifecycle.test.ts: ok");

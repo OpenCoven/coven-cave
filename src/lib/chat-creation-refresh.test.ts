@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { onSendStart, onCreationSessionIdentified, onDoneCreationRefresh, onCreationRunTerminated } from "./chat-creation-refresh.ts";
+import { onSendStart, onCreationSessionIdentified, onDoneCreationRefresh, onCreationRunTerminated, shouldReplacementRefreshOnDone } from "./chat-creation-refresh.ts";
 
 const FRESH = { pendingRuns: {} };
 
@@ -442,3 +442,55 @@ const FRESH = { pendingRuns: {} };
 }
 
 console.log("chat-creation-refresh.test.ts ok");
+
+// shouldReplacementRefreshOnDone ------------------------------------------------
+
+// success different-ID → true (replacement/fork)
+{
+  const result = shouldReplacementRefreshOnDone("origin-sess", "new-sess", false);
+  assert.equal(result, true, "shouldReplacementRefreshOnDone returns true when originSessionId is non-null and completedSessionId differs from origin");
+}
+
+// same-ID followup → false
+{
+  const result = shouldReplacementRefreshOnDone("sess-abc", "sess-abc", false);
+  assert.equal(result, false, "shouldReplacementRefreshOnDone returns false for ordinary same-ID followup");
+}
+
+// failed done → false
+{
+  const result = shouldReplacementRefreshOnDone("origin-sess", "new-sess", true);
+  assert.equal(result, false, "shouldReplacementRefreshOnDone returns false when isError is true (failed done)");
+}
+
+// sessionless (null origin) → false (handled by creation-refresh path)
+{
+  const result = shouldReplacementRefreshOnDone(null, "new-sess", false);
+  assert.equal(result, false, "shouldReplacementRefreshOnDone returns false when originSessionId is null (sessionless creation)");
+}
+
+// completedSessionId null → false
+{
+  const result = shouldReplacementRefreshOnDone("origin-sess", null, false);
+  assert.equal(result, false, "shouldReplacementRefreshOnDone returns false when completedSessionId is null");
+}
+
+// completedSessionId undefined → false
+{
+  const result = shouldReplacementRefreshOnDone("origin-sess", undefined, false);
+  assert.equal(result, false, "shouldReplacementRefreshOnDone returns false when completedSessionId is undefined");
+}
+
+// failed done same-ID → false (error gate fires before ID check)
+{
+  const result = shouldReplacementRefreshOnDone("sess-abc", "sess-abc", true);
+  assert.equal(result, false, "shouldReplacementRefreshOnDone returns false for failed same-ID done");
+}
+
+// failed done different-ID → false (error gate fires before ID check)
+{
+  const result = shouldReplacementRefreshOnDone("origin-sess", "forked-sess", true);
+  assert.equal(result, false, "shouldReplacementRefreshOnDone returns false for failed different-ID done");
+}
+
+console.log("shouldReplacementRefreshOnDone: ok");

@@ -156,6 +156,34 @@ export function onDoneCreationRefresh(
 }
 
 /**
+ * Returns true when a successfully-completed generation with a non-null origin
+ * should trigger a sidebar sessions refresh because the server settled on a
+ * different stable session ID (replacement/fork, e.g. OpenCode resume).
+ *
+ * The creation-refresh state machine only covers sessionless creations (null
+ * origin). This is the complementary decision for the resumed-session
+ * replacement path.
+ *
+ * Returns false when:
+ * - `originSessionId` is null — sessionless creation; handled by
+ *   `onDoneCreationRefresh` instead.
+ * - `isError` is true — a failed done must not trigger a refresh.
+ * - `completedSessionId` is null/undefined — no stable ID was resolved.
+ * - `completedSessionId === originSessionId` — ordinary same-ID followup;
+ *   the row already exists in the sidebar.
+ */
+export function shouldReplacementRefreshOnDone(
+  originSessionId: string | null,
+  completedSessionId: string | null | undefined,
+  isError: boolean | undefined,
+): boolean {
+  if (!originSessionId) return false;
+  if (isError) return false;
+  if (!completedSessionId) return false;
+  return completedSessionId !== originSessionId;
+}
+
+/**
  * Call at all terminal non-done paths (stream `error` event, user abort, send
  * exception) for a live generation to bound-check the pending entry.
  *

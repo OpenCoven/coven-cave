@@ -285,6 +285,7 @@ import {
   onCreationSessionIdentified,
   onDoneCreationRefresh,
   onCreationRunTerminated,
+  shouldReplacementRefreshOnDone,
 } from "@/lib/chat-creation-refresh";
 import { ownsDisplayedView } from "@/lib/chat-session-ownership";
 
@@ -6194,12 +6195,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onSessionStarted?.(ev.sessionId);
           }
         }
-        // A Board native-chat handoff already owns the stable conversation id,
-        // so its "session" event does not promote the router and therefore
-        // cannot refresh the task's session list. Refresh after the server has
-        // saved the first transcript; otherwise the cockpit stays in its
-        // one-shot bridge mode and never restores the normal work/rail view.
-        if (startNewConversation && ev.sessionId) onSessionsChangedRef.current?.();
         const completedSessionId = ev.sessionId ?? liveGeneration.sessionId;
         // Bind creation-refresh to this generation's session ID before the done
         // decision. Covers: (a) the race where done arrives before the "session"
@@ -6217,7 +6212,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         const { shouldRefresh: shouldCreationRefresh, nextState: nextCreationRefreshState } =
           onDoneCreationRefresh(creationRefreshStateRef.current, liveGeneration.runId, completedSessionId, ev.isError);
         creationRefreshStateRef.current = nextCreationRefreshState;
-        if (shouldCreationRefresh) onSessionsChangedRef.current?.();
+        // Replacement refresh: a resumed session (non-null origin) whose server-
+        // assigned stable ID differs from the origin (replacement/fork, e.g.
+        // OpenCode resume) needs a sidebar refresh so the new row appears.
+        // Background replacements refresh the sidebar but must not adopt the
+        // display — ownership is guarded upstream in the "session" and "done" event
+        // handlers via ownsDisplayedView.
+        const shouldReplacementRefresh = shouldReplacementRefreshOnDone(
+          liveGeneration.originSessionId,
+          completedSessionId,
+          ev.isError,
+        );
+        // Consolidate creation, replacement, and board refresh sources to a single
+        // call so no double-invocation is possible regardless of which path fires.
+        // A Board native-chat handoff already owns the stable conversation id, so
+        // its "session" event does not promote the router; refreshing here after
+        // persistence restores the normal work/rail view from the one-shot bridge mode.
+        const shouldRefreshSessions = shouldCreationRefresh || shouldReplacementRefresh || (startNewConversation && !!ev.sessionId);
+        if (shouldRefreshSessions) onSessionsChangedRef.current?.();
         persistLiveTurns(
           turnsRef.current,
           assistantId,
