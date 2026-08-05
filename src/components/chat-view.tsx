@@ -8834,7 +8834,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
         >
           <Icon name="ph:wrench" width={12} className="cave-tool-icon shrink-0" aria-hidden />
           <span className="cave-work-line__label">{summary}</span>
-          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
+          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-work-line__status">
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
           </span>
@@ -8926,7 +8926,7 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-run__name">{displayName}</span>
         <span className="cave-tool-count">×{tools.length}</span>
-        <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
+        <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-tool-run__status">
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
           {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
         </span>
