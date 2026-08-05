@@ -75,6 +75,15 @@ assert.match(source, /navItemsForSection\(section\)\.map/, "the active tab filte
 assert.match(source, /sectionRooms\.map\(\(room\) =>/, "dynamic role-surface rooms follow the active section");
 assert.match(source, /itemSelector: "\.sidebar-folder-row"/, "visible destinations share one roving keyboard sequence");
 assert.match(source, /role="tabpanel"[\s\S]*?aria-labelledby=\{`nav-section-tab-\$\{section\}`\}/, "the destination list is labeled by its active tab");
+// Retiring the SidebarSection assertions took this rule's only coverage with
+// them. Its section-heading half is dead — nothing emits sidebar-section*
+// anymore — but the recent-activity half is live: RecentActivityRollup still
+// renders in the Code section, and the 56px rail has no room for it.
+assert.match(
+  styles,
+  /\.shell-nav--rail \.recent-activity \{\s*display: none;/,
+  "the icon rail hides the recent-activity list while retaining destination icons",
+);
 
 // The standalone Knowledge section is gone; Library is now isolated on its
 // feature branch, so the integrated sidebar renders one flat app list.

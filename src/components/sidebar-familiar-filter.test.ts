@@ -6,7 +6,23 @@ const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
+// sidebar-minimal.css is only an import facade — the rules live in the modules
+// beside it, so read those too (the same set sidebar-minimal.test.ts reads).
+// Without them these assertions run against a file of @import lines and the
+// styling hooks below can never be found.
+const sidebarStyleModules = [
+  "shell-chrome.css",
+  "section-tabs.css",
+  "navigation-recents.css",
+  "familiars.css",
+  "activity-rail.css",
+];
+const styles = [
+  readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8"),
+  ...sidebarStyleModules.map((file) =>
+    readFileSync(new URL(`../styles/sidebar-minimal/${file}`, import.meta.url), "utf8"),
+  ),
+].join("\n");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 for (const [name, source] of [
