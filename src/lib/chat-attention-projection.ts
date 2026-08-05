@@ -4,14 +4,15 @@ import type { SessionRow } from "./types.ts";
 type PendingProjection = {
   status: "pending";
   scopeKey: string;
-  baseline: ChatAttention;
+  baseline: ChatAttention | null;
 };
 
 type PersistedProjection = {
   status: "persisted";
   canonicalAfterRequestId: number;
   scopeKey: string;
-  baseline: ChatAttention;
+  baseline: ChatAttention | null;
+  firstAcceptedAttention?: ChatAttention;
 };
 
 type ProjectionOperation = PendingProjection | PersistedProjection;
@@ -218,18 +219,20 @@ export function recordChatAttentionClear(
     touchSessionProjectionBucket(state, sessionId);
     return { recorded: false, reason: "duplicate" };
   }
-  const normalizedCanonical = normalizeAttentionSnapshot(canonicalAttention);
+  const hasCanonicalAttention = canonicalAttention != null;
+  const normalizedCanonical = hasCanonicalAttention ? normalizeAttentionSnapshot(canonicalAttention) : null;
   const canonicalTracker = canonicalAttentionTrackerFor(state);
   // The caller may already be looking at a projected "none", so overlap cases
   // fall back to the last accepted canonical attention for this session.
-  const baseline = normalizedCanonical.state !== "none"
+  const trackedCanonical = canonicalTracker.get(sessionId)?.attention ?? null;
+  const baseline = normalizedCanonical?.state !== "none"
     ? normalizedCanonical
-    : canonicalTracker.get(sessionId)?.attention ?? normalizedCanonical;
-  if (!operations && baseline.state === "none") return { recorded: false, reason: "no-baseline" };
+    : trackedCanonical;
+  if (!operations && !baseline && hasCanonicalAttention) return { recorded: false, reason: "no-baseline" };
 
   const nextOperations = operations ?? new Map<string, ProjectionOperation>();
   if (!operations) state.set(sessionId, nextOperations);
-  if (!canonicalTracker.has(sessionId)) {
+  if (baseline && !canonicalTracker.has(sessionId)) {
     trackCanonicalAttention(state, sessionId, baseline, scopeKey);
   }
   nextOperations.set(operationId, {
@@ -315,7 +318,8 @@ function attentionIdentity(attention: ChatAttention): string {
   return `${normalized.since ?? ""}\u0000${normalized.reason ?? ""}`;
 }
 
-function attentionMatchesBaseline(attention: ChatAttention, baseline: ChatAttention): boolean {
+function attentionMatchesBaseline(attention: ChatAttention, baseline: ChatAttention | null | undefined): boolean {
+  if (!baseline) return false;
   // Attention state can age from awaiting-human -> overdue-human without any
   // underlying request change. Treat the stable evidence identity (since +
   // reason) as authoritative, while canonical none still counts as a release.
@@ -360,11 +364,27 @@ export function applyChatAttentionProjections(
     );
 
     for (const [operationId, operation] of operations) {
-      if (
-        operation.status === "persisted" &&
-        responseRequestId >= operation.canonicalAfterRequestId &&
-        !attentionMatchesBaseline(row.attention, operation.baseline)
-      ) {
+      if (operation.status !== "persisted" || responseRequestId < operation.canonicalAfterRequestId) continue;
+      if (operation.baseline) {
+        if (!attentionMatchesBaseline(row.attention, operation.baseline)) {
+          operations.delete(operationId);
+          tombstoneChatAttentionOperation(state, row.id, operationId);
+        }
+        continue;
+      }
+      if (row.attention.state === "none") {
+        operations.delete(operationId);
+        tombstoneChatAttentionOperation(state, row.id, operationId);
+        continue;
+      }
+      if (!operation.firstAcceptedAttention) {
+        operations.set(operationId, {
+          ...operation,
+          firstAcceptedAttention: normalizeAttentionSnapshot(row.attention),
+        });
+        continue;
+      }
+      if (!attentionMatchesBaseline(row.attention, operation.firstAcceptedAttention)) {
         operations.delete(operationId);
         tombstoneChatAttentionOperation(state, row.id, operationId);
       }
@@ -385,7 +405,7 @@ export function applyChatAttentionProjections(
       for (const [operationId, operation] of operations) {
         const canTrustAbsence = operation.status === "persisted" &&
           responseRequestId >= operation.canonicalAfterRequestId;
-        if (canTrustAbsence && scopeProvesAbsence(operation.scopeKey, currentScopeKey)) {
+        if (canTrustAbsence && operation.baseline && scopeProvesAbsence(operation.scopeKey, currentScopeKey)) {
           operations.delete(operationId);
           tombstoneChatAttentionOperation(state, sessionId, operationId);
         }

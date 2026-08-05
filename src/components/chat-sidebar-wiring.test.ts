@@ -126,13 +126,28 @@ assert.match(
   "chat-view should emit the shared attention clear/settlement events",
 );
 assert.match(
+  chatAttentionEvents,
+  /export function emitChatAttentionClear\([\s\S]*sessionId: string,[\s\S]*operationId: string,[\s\S]*options\?: \{[\s\S]*scopeKey\?: string \| null;[\s\S]*baselineAttention\?: ChatAttention \| null;[\s\S]*\},[\s\S]*\): void \{/,
+  "the clear event emitter should accept optional scope and baseline evidence without breaking the session+operation API",
+);
+assert.match(
+  chatAttentionEvents,
+  /const scopeKey = normalizeString\(detail\?\.scopeKey\);[\s\S]*const baselineAttention = normalizeAttentionDetail\(detail\?\.baselineAttention\);[\s\S]*return sessionId && operationId[\s\S]*sessionId,[\s\S]*operationId,[\s\S]*\.\.\.\(scopeKey \? \{ scopeKey \} : \{\}\),[\s\S]*\.\.\.\(baselineAttention \? \{ baselineAttention \} : \{\}\),[\s\S]*: null;/,
+  "clear-event parsing should preserve optional scope and baseline evidence while remaining compatible with two-field events",
+);
+assert.match(
   chatView,
-  /if \(liveGeneration\.sessionId\) \{\s*emitChatAttentionClear\(liveGeneration\.sessionId, runId\);[\s\S]{0,240}const res = await fetch\("\/api\/chat\/send"/,
+  /function emitAttentionClear\(\s*targetSessionId: string,\s*operationId: string,\s*\) \{[\s\S]*emitChatAttentionClear\(targetSessionId, operationId, \{[\s\S]*scopeKey:[\s\S]*baselineAttention:[\s\S]*\}\);[\s\S]*\}/,
+  "chat-view should emit attention clears with the session's actual scope and any known baseline evidence",
+);
+assert.match(
+  chatView,
+  /if \(liveGeneration\.sessionId\) \{\s*emitAttentionClear\(liveGeneration\.sessionId, runId\);[\s\S]{0,240}const res = await fetch\("\/api\/chat\/send"/,
   "chat-view should clear attention immediately once the target session id is known, before /api/chat/send begins",
 );
 assert.match(
   chatView,
-  /case "session": \{[\s\S]*?emitChatAttentionClear\(ev\.sessionId, liveGeneration\.runId\);/,
+  /case "session": \{[\s\S]*?emitAttentionClear\(ev\.sessionId, liveGeneration\.runId\);/,
   "chat-view should clear attention when a live generation first gains a stable session id",
 );
 assert.match(
@@ -203,12 +218,12 @@ assert.match(
 );
 assert.match(
   chatView,
-  /if \(liveGeneration\.sessionId\) \{\s*emitChatAttentionClear\(liveGeneration\.sessionId, runId\);\s*attentionSettlement\.markAttentionCleared\(liveGeneration\.sessionId\);/,
+  /if \(liveGeneration\.sessionId\) \{\s*emitAttentionClear\(liveGeneration\.sessionId, runId\);\s*attentionSettlement\.markAttentionCleared\(liveGeneration\.sessionId\);/,
   "chat-view should track pre-send attention clears on existing sessions",
 );
 assert.match(
   chatView,
-  /case "session": \{[\s\S]*?emitChatAttentionClear\(ev\.sessionId, liveGeneration\.runId\);\s*liveGeneration\.markAttentionCleared\(ev\.sessionId\);/,
+  /case "session": \{[\s\S]*?emitAttentionClear\(ev\.sessionId, liveGeneration\.runId\);\s*liveGeneration\.markAttentionCleared\(ev\.sessionId\);/,
   "session events should remain id acquisition plus attention-clear bookkeeping, not persistence confirmation",
 );
 assert.match(
@@ -247,7 +262,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /function maybeEmitAdoptedPendingAttentionClear\([\s\S]*?targetSessionId: string,[\s\S]*?live: LiveChatGenerationSnapshot,[\s\S]*?\) \{[\s\S]*?if \(!isLiveGenerationPending\(live\) \|\| !live\.runId\) return;[\s\S]*?if \(!adoptedPendingAttentionClearRef\.current\.shouldEmit\(targetSessionId, live\.runId\)\) return;[\s\S]*?emitChatAttentionClear\(targetSessionId, live\.runId\);/,
+  /function maybeEmitAdoptedPendingAttentionClear\([\s\S]*?targetSessionId: string,[\s\S]*?live: LiveChatGenerationSnapshot,[\s\S]*?\) \{[\s\S]*?if \(!isLiveGenerationPending\(live\) \|\| !live\.runId\) return;[\s\S]*?if \(!adoptedPendingAttentionClearRef\.current\.shouldEmit\(targetSessionId, live\.runId\)\) return;[\s\S]*?emitAttentionClear\(targetSessionId, live\.runId\);/,
   "chat-view should centralize adopted pending-generation clears behind a one-per-lifecycle helper",
 );
 assert.match(
@@ -317,8 +332,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /recordChatAttentionClear\([\s\S]*chatAttentionProjectionScopeKey\(activeIdRef\.current\)[\s\S]*baseSessionsRef\.current = clearSessionAttentionRows\(baseSessionsRef\.current, sessionId\);[\s\S]*setSessions\(\(currentSessions\) => clearSessionAttentionRows\(currentSessions, sessionId\)\);/,
-  "workspace should patch both the canonical base rows and the rendered enriched rows for the matching session only, via a targeted clear rather than the retirement-capable projection apply",
+  /recordChatAttentionClear\([\s\S]*detail\.scopeKey \?\? chatAttentionProjectionScopeKey\(activeIdRef\.current\)[\s\S]*baseSessionsRef\.current = clearSessionAttentionRows\(baseSessionsRef\.current, sessionId\);[\s\S]*setSessions\(\(currentSessions\) => clearSessionAttentionRows\(currentSessions, sessionId\)\);/,
+  "workspace should record clears under the event's actual scope when known, then patch both the canonical base rows and the rendered enriched rows for the matching session only",
 );
 assert.match(
   workspace,
@@ -342,8 +357,8 @@ assert.match(
 );
 assert.match(
   onChatAttentionClearBlock,
-  /const baselineAttention = baseSessionsRef\.current\s*\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention \?\? NO_CHAT_ATTENTION;[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
-  "workspace should capture canonical attention before either session array is projected to none",
+  /const baselineAttention = detail\.baselineAttention \?\?[\s\S]*?baseSessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention \?\?[\s\S]*?sessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention;[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?detail\.scopeKey \?\? chatAttentionProjectionScopeKey\(activeIdRef\.current\),[\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
+  "workspace should prefer event-carried baseline/scope evidence, then fall back to known canonical or rendered session metadata before clearing rows",
 );
 assert.match(
   onChatAttentionClearBlock,

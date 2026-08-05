@@ -219,7 +219,10 @@ import {
   createChatAttentionAdoptionTracker,
   createExternallySettledGenerationRegistry,
 } from "@/lib/chat-attention-lifecycle";
-import type { ChatAttentionSettlementOutcome } from "@/lib/chat-attention-projection";
+import {
+  chatAttentionProjectionScopeKey,
+  type ChatAttentionSettlementOutcome,
+} from "@/lib/chat-attention-projection";
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
 import { GitHubActionCard } from "@/components/github-action-card";
@@ -3114,7 +3117,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) {
     if (!isLiveGenerationPending(live) || !live.runId) return;
     if (!adoptedPendingAttentionClearRef.current.shouldEmit(targetSessionId, live.runId)) return;
-    emitChatAttentionClear(targetSessionId, live.runId);
+    emitAttentionClear(targetSessionId, live.runId);
+  }
+
+  function emitAttentionClear(
+    targetSessionId: string,
+    operationId: string,
+  ) {
+    const knownSession = session?.id === targetSessionId
+      ? session
+      : sessions?.find((entry) => entry.id === targetSessionId) ?? null;
+    emitChatAttentionClear(targetSessionId, operationId, {
+      scopeKey: chatAttentionProjectionScopeKey(knownSession?.familiarId ?? familiar.id),
+      baselineAttention: knownSession?.attention ?? null,
+    });
   }
 
   function persistLiveTurns(
@@ -5135,7 +5151,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // must not be painted on a later revisit of this thread.
       if (liveGeneration.sessionId) invalidateConversation(liveGeneration.sessionId);
       if (liveGeneration.sessionId) {
-        emitChatAttentionClear(liveGeneration.sessionId, runId);
+        emitAttentionClear(liveGeneration.sessionId, runId);
         attentionSettlement.markAttentionCleared(liveGeneration.sessionId);
       }
       const res = await fetch("/api/chat/send", {
@@ -6088,7 +6104,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) => {
     switch (ev.kind) {
     case "session": {
-      emitChatAttentionClear(ev.sessionId, liveGeneration.runId);
+      emitAttentionClear(ev.sessionId, liveGeneration.runId);
       liveGeneration.markAttentionCleared(ev.sessionId);
       liveGeneration.sessionId = ev.sessionId;
       if (ev.sessionId !== currentSessionRef.current) {

@@ -47,6 +47,30 @@ test("validates session-scoped clear and settlement events", () => {
   })), { sessionId: "session-2", operationId: "run-2", outcome: "failed" });
 });
 
+test("preserves optional scope and baseline attention evidence on clear events", () => {
+  assert.deepEqual(attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: {
+      sessionId: " session-3 ",
+      operationId: " run-3 ",
+      scopeKey: " familiar:nova ",
+      baselineAttention: {
+        state: "awaiting-human",
+        since: "2026-08-05T00:00:00.000Z",
+        reason: "approval",
+      },
+    },
+  })), {
+    sessionId: "session-3",
+    operationId: "run-3",
+    scopeKey: "familiar:nova",
+    baselineAttention: {
+      state: "awaiting-human",
+      since: "2026-08-05T00:00:00.000Z",
+      reason: "approval",
+    },
+  });
+});
+
 test("rejects wrong event types and invalid detail payloads", () => {
   assert.equal(attentionClearedSessionId(new Event(CHAT_ATTENTION_CLEAR_EVENT)), null);
   assert.equal(attentionClearFromEvent(new Event(CHAT_ATTENTION_CLEAR_EVENT)), null);
@@ -85,12 +109,25 @@ test("rejects non-string and blank/whitespace-only detail fields", () => {
 
 await test("emits dispatchable clear and settlement events with trimmed ids", async () => {
   await withMockWindow((dispatched) => {
-    emitChatAttentionClear(" session-5 ", " run-5 ");
+    emitChatAttentionClear(" session-5 ", " run-5 ", {
+      scopeKey: " familiar:sage ",
+      baselineAttention: {
+        state: "left-hanging",
+        since: "2026-08-04T00:00:00.000Z",
+        reason: null,
+      },
+    });
     emitChatAttentionSettlement(" session-6 ", " run-6 ", "persisted");
     assert.equal(dispatched.length, 2);
     assert.deepEqual(attentionClearFromEvent(dispatched[0]), {
       sessionId: "session-5",
       operationId: "run-5",
+      scopeKey: "familiar:sage",
+      baselineAttention: {
+        state: "left-hanging",
+        since: "2026-08-04T00:00:00.000Z",
+        reason: null,
+      },
     });
     assert.deepEqual(attentionSettlementFromEvent(dispatched[1]), {
       sessionId: "session-6",

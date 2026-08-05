@@ -444,6 +444,99 @@ test("an initial canonical none creates no override and cannot hide future atten
   );
 });
 
+test("an unknown-baseline clear survives an empty same-scope poll and releases on failed settlement", () => {
+  const state = createChatAttentionProjectionState();
+  assert.deepEqual(
+    recordChatAttentionClear(
+      state,
+      "session-1",
+      "operation-1",
+      chatAttentionProjectionScopeKey("nova"),
+      undefined,
+    ),
+    { recorded: true, reason: "recorded" },
+  );
+
+  applyChatAttentionProjections(state, [], 5, chatAttentionProjectionScopeKey("nova"));
+  assert.equal(state.get("session-1")?.get("operation-1")?.status, "pending");
+
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 6);
+  assert.equal(state.has("session-1"), false);
+});
+
+test("an unknown-baseline persisted clear keeps masking the first stale attention row and retires on canonical none", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    undefined,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  applyChatAttentionProjections(state, [], 6, chatAttentionProjectionScopeKey("nova"));
+  assert.equal(state.has("session-1"), true);
+
+  const staleCanonical = [row({ attention: { ...NEEDS_ATTENTION } })];
+  assert.equal(
+    applyChatAttentionProjections(state, staleCanonical, 7, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    "none",
+  );
+  assert.equal(state.has("session-1"), true);
+
+  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalNone, 8, chatAttentionProjectionScopeKey("nova")),
+    canonicalNone,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("an unknown-baseline persisted clear yields once canonical attention proves a genuinely newer request", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    undefined,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  applyChatAttentionProjections(
+    state,
+    [row({ attention: { ...NEEDS_ATTENTION } })],
+    7,
+    chatAttentionProjectionScopeKey("nova"),
+  );
+  assert.equal(state.has("session-1"), true);
+
+  const newerRequest = [row({
+    attention: { state: "awaiting-human", since: "2026-08-05T00:05:00.000Z", reason: "approval" },
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, newerRequest, 8, chatAttentionProjectionScopeKey("nova")),
+    newerRequest,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("an unknown-baseline off-list clear recorded under its true scope survives an empty unrelated scope", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    undefined,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  applyChatAttentionProjections(state, [], 7, chatAttentionProjectionScopeKey("sage"));
+  assert.equal(state.has("session-1"), true);
+});
+
 // Offline-queued sends settle "persisted" before canonical attention changes.
 test("an offline-queued send settled persisted before travel sync keeps projecting none across repeated stale canonical polls", () => {
   const state = createChatAttentionProjectionState();

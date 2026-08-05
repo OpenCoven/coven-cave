@@ -96,7 +96,6 @@ import {
   recordChatAttentionClear,
   settleChatAttentionClear,
 } from "@/lib/chat-attention-projection";
-import { NO_CHAT_ATTENTION } from "@/lib/chat-attention";
 import {
   CHAT_ATTENTION_CLEAR_EVENT,
   CHAT_ATTENTION_SETTLE_EVENT,
@@ -580,13 +579,14 @@ export function Workspace() {
       const sessionId = detail?.sessionId ?? attentionClearedSessionId(event);
       if (!sessionId) return;
       if (detail) {
-        const baselineAttention = baseSessionsRef.current
-          .find((session) => session.id === detail.sessionId)?.attention ?? NO_CHAT_ATTENTION;
+        const baselineAttention = detail.baselineAttention ??
+          baseSessionsRef.current.find((session) => session.id === detail.sessionId)?.attention ??
+          sessionsRef.current.find((session) => session.id === detail.sessionId)?.attention;
         const recordResult = recordChatAttentionClear(
           chatAttentionProjectionRef.current,
           detail.sessionId,
           detail.operationId,
-          chatAttentionProjectionScopeKey(activeIdRef.current),
+          detail.scopeKey ?? chatAttentionProjectionScopeKey(activeIdRef.current),
           baselineAttention,
         );
         if (!recordResult.recorded) return;

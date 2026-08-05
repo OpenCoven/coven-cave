@@ -1,3 +1,5 @@
+import type { ChatAttention } from "./chat-attention.ts";
+import { CHAT_ATTENTION_REASONS, type ChatAttentionReason } from "./chat-attention-marker.ts";
 import type { ChatAttentionSettlementOutcome } from "./chat-attention-projection.ts";
 
 export const CHAT_ATTENTION_CLEAR_EVENT = "cave:chat-attention-clear";
@@ -6,6 +8,8 @@ export const CHAT_ATTENTION_SETTLE_EVENT = "cave:chat-attention-settle";
 export type ChatAttentionClearDetail = {
   sessionId: string;
   operationId: string;
+  scopeKey?: string;
+  baselineAttention?: ChatAttention;
 };
 
 export type ChatAttentionSettlementDetail = ChatAttentionClearDetail & {
@@ -18,23 +22,64 @@ function normalizeString(value: unknown): string | null {
   return trimmed || null;
 }
 
+function normalizeAttentionDetail(value: unknown): ChatAttention | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  const state = candidate.state;
+  const reason = normalizeString(candidate.reason);
+  if (
+    state !== "none" &&
+    state !== "left-hanging" &&
+    state !== "awaiting-human" &&
+    state !== "overdue-human"
+  ) {
+    return null;
+  }
+  if (reason && !CHAT_ATTENTION_REASONS.includes(reason as ChatAttentionReason)) return null;
+  return {
+    state,
+    since: normalizeString(candidate.since) ?? null,
+    reason: reason as ChatAttentionReason | null,
+  };
+}
+
 function attentionEventDetail(event: Event, type: string): ChatAttentionClearDetail | null {
   if (event.type !== type) return null;
   const detail = (event as CustomEvent<Record<string, unknown> | null>).detail;
   const sessionId = normalizeString(detail?.sessionId);
   const operationId = normalizeString(detail?.operationId);
-  return sessionId && operationId ? { sessionId, operationId } : null;
+  const scopeKey = normalizeString(detail?.scopeKey);
+  const baselineAttention = normalizeAttentionDetail(detail?.baselineAttention);
+  return sessionId && operationId
+    ? {
+      sessionId,
+      operationId,
+      ...(scopeKey ? { scopeKey } : {}),
+      ...(baselineAttention ? { baselineAttention } : {}),
+    }
+    : null;
 }
 
-export function emitChatAttentionClear(sessionId: string, operationId: string): void {
+export function emitChatAttentionClear(
+  sessionId: string,
+  operationId: string,
+  options?: {
+    scopeKey?: string | null;
+    baselineAttention?: ChatAttention | null;
+  },
+): void {
   if (typeof window === "undefined") return;
   const normalizedSessionId = normalizeString(sessionId);
   const normalizedOperationId = normalizeString(operationId);
+  const normalizedScopeKey = normalizeString(options?.scopeKey);
+  const normalizedBaselineAttention = normalizeAttentionDetail(options?.baselineAttention);
   if (!normalizedSessionId || !normalizedOperationId) return;
   window.dispatchEvent(new CustomEvent<ChatAttentionClearDetail>(CHAT_ATTENTION_CLEAR_EVENT, {
     detail: {
       sessionId: normalizedSessionId,
       operationId: normalizedOperationId,
+      ...(normalizedScopeKey ? { scopeKey: normalizedScopeKey } : {}),
+      ...(normalizedBaselineAttention ? { baselineAttention: normalizedBaselineAttention } : {}),
     },
   }));
 }
