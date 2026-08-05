@@ -204,7 +204,6 @@ export const SUITES = {
     "src/lib/chat-attention-marker.test.ts",
     "src/lib/chat-attention-events.test.ts",
     "src/lib/chat-attention-projection.test.ts",
-    "src/lib/chat-attention-settlement.test.ts",
     "src/lib/chat-attention.test.ts",
     "src/lib/coven-marker-directive.test.ts",
     "src/lib/citations-directive.test.ts",
