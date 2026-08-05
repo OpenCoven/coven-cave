@@ -620,6 +620,7 @@ export const SUITES = {
     "src/components/task-chat-cwd.test.ts",
     "src/lib/board-search.test.ts",
     "src/lib/board-wip.test.ts",
+    "src/lib/task-orchestration.test.ts",
     "src/lib/familiar-color.test.ts",
     "src/lib/github-search.test.ts",
     "src/lib/use-refresh-on-focus.test.ts",
