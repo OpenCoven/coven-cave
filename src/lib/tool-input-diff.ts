@@ -160,7 +160,7 @@ export type FileMutationDescriptor = {
   name: string;
   /** Displayable path, including relative paths. */
   path: string | null;
-  /** Absolute path suitable for the Code workspace and aggregate review. */
+  /** Absolute path suitable for the Code workspace. */
   targetFile: string | null;
   /** Structured diff only when the payload contains actual before/after data. */
   diff: string | null;
@@ -209,7 +209,7 @@ export function isFileMutationActionReady(
   return status === "ok" && mutation.path !== null && mutation.diff !== null;
 }
 
-/** Absolute review target only when the mutation is successful and complete. */
+/** Project-contained review target only when the mutation is successful and complete. */
 export function actionReadyMutationTargetFile(
   name: string,
   input: string | null | undefined,
