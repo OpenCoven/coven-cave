@@ -94,6 +94,33 @@ assert.match(
   /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*aria-label=\{toolGroupAriaLabel\(summary, running, errors\)\}[\s\S]*<ToolRuns tools=\{tools\}/,
   "ToolGroup wraps ONE collapsed disclosure — named by toolGroupAriaLabel — around ToolRuns per assistant turn",
 );
+// The helper body must append running/error counts so the accessible name
+// carries the same status that sighted readers get from tinted (color-only) chips.
+assert.match(
+  source,
+  /function toolGroupAriaLabel[\s\S]*?\$\{running\} running[\s\S]*?\$\{errors\}[\s\S]*?error/,
+  "toolGroupAriaLabel appends running and error counts so AT users get the same status as tinted-chip readers",
+);
+// The outer disclosure's summary leads with the canonical wrench icon so tool
+// activity is immediately recognisable in the transcript's collapsed state.
+assert.match(
+  source,
+  /function ToolGroup[\s\S]*<summary[\s\S]*<Icon name="ph:wrench"[\s\S]*cave-tool-icon/,
+  "ToolGroup summary leads with the ph:wrench icon so tool activity is recognisable when collapsed",
+);
+// The skills eyebrow (turnSkills → cave-tool-skills) must render inside
+// ToolGroup exactly once — two render sites would duplicate capability chips.
+assert.match(
+  source,
+  /function ToolGroup[\s\S]*?const skills = useMemo\(\(\) => turnSkills\(tools\)[\s\S]*?cave-tool-skills/,
+  "ToolGroup derives skills from turnSkills and renders the skills eyebrow",
+);
+const toolGroupSrc = source.match(/function ToolGroup[\s\S]*?function ToolRuns/)?.[0] ?? "";
+assert.equal(
+  (toolGroupSrc.match(/<div className="cave-tool-skills"/g) ?? []).length,
+  1,
+  "ToolGroup renders the skills eyebrow container (cave-tool-skills div) exactly once",
+);
 const toolGroup = source.match(/function ToolGroup[\s\S]*?function ToolRuns/)?.[0] ?? "";
 assert.equal(
   toolGroup.match(/<ToolRuns tools=\{tools\} \/>/g)?.length,
@@ -125,6 +152,21 @@ assert.match(
   source,
   /function ToolRunGroup[\s\S]*aria-label=\{`\$\{displayName\}, \$\{tools\.length\} \$\{tools\.length === 1 \? "call" : "calls"\}\$\{running \? `, \$\{running\} running` : ""\}\$\{errors \? `, \$\{errors\} \$\{errors === 1 \? "error" : "errors"\}` : ""\}`\}/,
   "a repeated run's accessible name includes its call, running, and error counts",
+);
+// Visible name text and tinted status chips must appear in the summary itself,
+// not only in the aria-label — so status is not conveyed by colour or label alone.
+assert.match(
+  source,
+  /function ToolRunGroup[\s\S]*<span className="cave-tool-run__name">\{displayName\}[\s\S]*cave-tool-count--running[\s\S]*cave-tool-count--error/,
+  "ToolRunGroup renders visible name text and running/error status chips alongside the aria-label",
+);
+// ToolRuns must not roll edit operations into the compact ToolRunGroup — the
+// containsEdit guard keeps each file-mutation call individually visible so
+// Review/Undo affordances are never hidden behind a ×N summary.
+assert.match(
+  source,
+  /function ToolRuns[\s\S]*?const containsEdit = run\.tools\.some[\s\S]*?toolInputAsDiff[\s\S]*?run\.tools\.length > 1 && !containsEdit/,
+  "ToolRuns gates the compact rollup on !containsEdit so file-mutation cards always render individually",
 );
 
 assert.match(
@@ -245,6 +287,13 @@ assert.match(
   turnRow,
   /otherTools\.length \? <ToolGroup tools=\{otherTools\}/,
   "non-edit tool activity still collapses into the designated ToolGroup",
+);
+// ToolGroup(otherTools) renders above prose; the edit-cards section renders
+// below — confirming the two sections stay separate and in design order.
+assert.match(
+  turnRow,
+  /otherTools\.length \? <ToolGroup tools=\{otherTools\}[\s\S]*?cave-edit-cards[\s\S]*?editCards\.map/,
+  "TurnRowImpl renders ToolGroup(otherTools) above prose and the edit-cards section below it",
 );
 
 assert.match(
