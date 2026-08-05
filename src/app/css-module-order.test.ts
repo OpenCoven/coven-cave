@@ -30,7 +30,7 @@ const FACADES: Record<string, string[]> = {
   "src/styles/cave-chat.css": ["./cave-chat/bubbles.css", "./cave-chat/activity.css", "./cave-chat/transcript.css", "./cave-chat/auxiliary-surfaces.css", "./cave-chat/start-from.css", "./cave-chat/session-chrome.css"],
   "src/styles/board.css": ["./board/chrome-table.css", "./board/kanban-inspector.css", "./board/github-list.css", "./board/github-detail.css", "./board/mobile-card-stack.css", "./board/gantt-fallbacks.css"],
   "src/styles/home-composer.css": ["./home-composer/landing-composer.css", "./home-composer/feed-menus.css", "./home-composer/hearth-continuations.css"],
-  "src/styles/sidebar-minimal.css": ["./sidebar-minimal/shell-chrome.css", "./sidebar-minimal/navigation-recents.css", "./sidebar-minimal/familiars.css", "./sidebar-minimal/activity-rail.css"],
+  "src/styles/sidebar-minimal.css": ["./sidebar-minimal/shell-chrome.css", "./sidebar-minimal/section-tabs.css", "./sidebar-minimal/navigation-recents.css", "./sidebar-minimal/familiars.css", "./sidebar-minimal/activity-rail.css"],
   "src/styles/cave-md.css": ["./cave-md/prose.css", "./cave-md/tables-mermaid.css", "./cave-md/code.css", "./cave-md/interactions.css"],
 };
 

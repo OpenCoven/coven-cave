@@ -93,12 +93,73 @@ function cleanSize(size: unknown): number | undefined {
   return Math.round(size);
 }
 
-const IMAGE_DATA_URL_RE =
-  /^data:(image\/[a-z0-9.+-]{1,60});base64,([A-Za-z0-9+/]+={0,2})$/i;
+/**
+ * The HEADER of a base64 image data URL — `data:image/png;base64` — and nothing
+ * after the comma.
+ *
+ * The pattern is deliberately never applied to the payload. It used to be:
+ * a single `^data:(image/…);base64,([A-Za-z0-9+/]+={0,2})$` was matched against
+ * the WHOLE string, which meant a backtracking engine walking several million
+ * characters of base64 inside one `String.prototype.match` call. That blew V8's
+ * stack — `RangeError: Maximum call stack size exceeded at String.match` — on a
+ * ~6 MB data URL. Thrown from a streaming route handler, that took the whole
+ * response down with it rather than rejecting one attachment.
+ *
+ * The length gate below is NOT the fix and must not be lowered to become one.
+ * It admits 5 MB of image on purpose, which is a legitimate photo; a cap tight
+ * enough to keep the old pattern safe would have rejected real images and hidden
+ * the defect rather than removed it.
+ *
+ * Every image-attachment path shares this parse. `POST /api/chat/send` runs
+ * user-pasted images through `normalizeChatAttachments` -> `cleanImageDataUrl`
+ * on exactly these multi-megabyte strings (`fileToAttachment` inlines any image
+ * up to MAX_ATTACHMENT_IMAGE_BYTES with no downscale), as do the board and the
+ * agent attachment reader.
+ */
+const IMAGE_DATA_URL_HEADER_RE = /^data:(image\/[a-z0-9.+-]{1,60});base64$/i;
+
+/** `data:` + a 60-char mime + `;base64` cannot exceed this. A comma further out
+ *  than this means the header is not one we accept, and we stop before slicing
+ *  anything large. */
+const MAX_DATA_URL_HEADER_CHARS = 128;
+
 // Generous string-length gate so multi-megabyte non-payloads are rejected
-// before the regex ever scans them: base64 inflates bytes 4/3 plus prefix.
+// before anything scans them: base64 inflates bytes 4/3 plus prefix.
 const MAX_IMAGE_DATA_URL_CHARS =
   Math.ceil(MAX_ATTACHMENT_IMAGE_BYTES / 3) * 4 + 128;
+
+/**
+ * Is this the base64 body of a data URL?
+ *
+ * A bounded forward scan, one character code at a time, with no pattern and no
+ * backtracking: cost is linear in the body and constant in stack. Accepts
+ * exactly what the old pattern's `[A-Za-z0-9+/]+={0,2}` accepted — at least one
+ * base64 character, then up to two `=` of padding — so nothing that used to be a
+ * valid attachment stops being one.
+ */
+function isBase64Body(body: string): boolean {
+  let end = body.length;
+  if (end === 0) return false;
+  // Trailing padding, at most two.
+  let padding = 0;
+  while (padding < 2 && end > 0 && body.charCodeAt(end - 1) === 0x3d /* = */) {
+    padding++;
+    end--;
+  }
+  // A third `=` is not padding, and an all-padding body has no payload.
+  if (end === 0 || body.charCodeAt(end - 1) === 0x3d) return false;
+  for (let i = 0; i < end; i++) {
+    const code = body.charCodeAt(i);
+    const ok =
+      (code >= 0x41 && code <= 0x5a) || // A-Z
+      (code >= 0x61 && code <= 0x7a) || // a-z
+      (code >= 0x30 && code <= 0x39) || // 0-9
+      code === 0x2b || // +
+      code === 0x2f; //  /
+    if (!ok) return false;
+  }
+  return true;
+}
 
 function base64DecodedBytes(base64: string): number {
   const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
@@ -112,11 +173,17 @@ export function cleanImageDataUrl(
   dataUrl: unknown,
 ): { dataUrl: string; mimeType: string } | null {
   if (typeof dataUrl !== "string" || dataUrl.length > MAX_IMAGE_DATA_URL_CHARS) return null;
-  const match = dataUrl.match(IMAGE_DATA_URL_RE);
-  if (!match) return null;
-  const decodedBytes = base64DecodedBytes(match[2]);
+  // Split on the first comma. A data URL's media type cannot contain one, so
+  // this is the separator, and `indexOf` never backtracks.
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0 || comma > MAX_DATA_URL_HEADER_CHARS) return null;
+  const header = IMAGE_DATA_URL_HEADER_RE.exec(dataUrl.slice(0, comma));
+  if (!header) return null;
+  const body = dataUrl.slice(comma + 1);
+  if (!isBase64Body(body)) return null;
+  const decodedBytes = base64DecodedBytes(body);
   if (decodedBytes === 0 || decodedBytes > MAX_ATTACHMENT_IMAGE_BYTES) return null;
-  return { dataUrl, mimeType: match[1].toLowerCase() };
+  return { dataUrl, mimeType: header[1].toLowerCase() };
 }
 
 function isImageAttachment(attachment: ChatAttachment): boolean {

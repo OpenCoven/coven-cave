@@ -6,7 +6,7 @@ const source = readFileSync(new URL("./familiar-quick-switch.tsx", import.meta.u
 const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const familiarStyles = readFileSync(new URL("../styles/globals/desktop-chrome.css", import.meta.url), "utf8");
 
 // ── Familiar selection is dropdown-only ───────────────────────────────────────
 // The one-tap avatar strip (and its avatars/dropdown style preference) is
@@ -17,13 +17,13 @@ assert.doesNotMatch(source, /useFamiliarSwitcherStyle|useFamiliarStripScope/, "t
 assert.doesNotMatch(source, /computeQuickSwitch/, "the strip's pin/recency selector is retired");
 
 // Strip CSS is gone with it (the wrapper class stays for the top-bar cluster).
-assert.doesNotMatch(globals, /\.familiar-quickswitch__strip \{/, "strip CSS removed");
-assert.match(globals, /\.familiar-quickswitch \{/, "wrapper CSS remains for the top-bar call site");
+assert.doesNotMatch(familiarStyles, /\.familiar-quickswitch__strip \{/, "strip CSS removed");
+assert.match(familiarStyles, /\.familiar-quickswitch \{/, "wrapper CSS remains for the top-bar call site");
 
 // ── Familiar selection follows the active primary sidebar ─────────────────────
-// WorkspaceSidebar replaces SidebarMinimal as the primary contextual nav during
-// Chat. Each host keeps a labeled switcher for the mode where it is active, and
-// SidebarMinimal returns when Chat exits.
+// WorkspaceSidebar replaces SidebarMinimal as the primary contextual nav in the
+// Code section. Each host keeps a labeled switcher for the section where it is
+// active, and SidebarMinimal returns outside Code.
 assert.doesNotMatch(menuBar, /FamiliarQuickSwitch|FamiliarSwitcher/, "the menu bar no longer hosts familiar selection");
 assert.match(sidebar, /<FamiliarSwitcher[\s\S]*?labeled/, "the Chats list header keeps a labeled familiar switcher beside thread navigation");
 const sidenav = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
@@ -34,8 +34,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const contextualNav = mode === "chat" \? chatSidebar : sidebar;[\s\S]*nav=\{contextualNav\}\s*list=\{undefined\}/,
-  "WorkspaceSidebar replaces the normal sidenav during Chat and SidebarMinimal returns on exit",
+  /const contextualNav = navSection === "code" \? chatSidebar : sidebar;[\s\S]*nav=\{contextualNav\}\s*list=\{undefined\}/,
+  "WorkspaceSidebar replaces the normal sidenav in Code and SidebarMinimal returns outside it",
 );
 
 console.log("familiar-quick-switch component: all assertions passed");

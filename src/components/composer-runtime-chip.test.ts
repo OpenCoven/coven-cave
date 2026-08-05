@@ -83,8 +83,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextChips/,
-  "the pill anchors the composer footer band — always visible, session or not (2026-07-21 wide-column pass moved it down from the utility row)",
+  /const chatContextControls = \([\s\S]*?<ComposerContextChips[\s\S]*?runtime=\{modelHarness\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
+  "chatContextControls is constructed once with live runtime/model state; new chat (inlineComposer) mounts it in the footer cluster, active chat in cave-chat-header-context",
 );
 
 // ── Runtime switching is real: familiar-level config, optimistic + refetch ──
