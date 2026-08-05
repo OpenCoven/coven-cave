@@ -710,6 +710,7 @@ export const SUITES = {
     "src/lib/milestone-defs.test.ts",
     "src/lib/mission-defs.test.ts",
     "src/lib/session-pulse.test.ts",
+    "src/lib/activity-lattice.test.ts",
     "src/lib/session-trace.test.ts",
     "src/lib/first-run-stamps.test.ts",
     "src/lib/summoning-draft.test.ts",
