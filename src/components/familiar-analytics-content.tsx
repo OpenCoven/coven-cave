@@ -1674,6 +1674,7 @@ export function FamiliarAnalyticsContent({
     setActionModal(buildActionModal(request));
   }, []);
   const traceRequest = useCallback((request: SelfHealRequest) => {
+    setBoardOpen(false);
     setTraceTarget({ id: request.id, title: request.title });
     setActionModal(null);
   }, []);
