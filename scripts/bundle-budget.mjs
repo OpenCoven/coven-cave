@@ -25,6 +25,8 @@ import { readdirSync, statSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { headroomOf } from "./budget-headroom.mjs";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nextDir = path.join(root, ".next");
 const chunksDir = path.join(nextDir, "static", "chunks");
@@ -137,8 +139,31 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // handing the same warning to whoever ships next — which is the whole failure
 // this raise exists to end. It is a ceiling for this surface's growth, not a
 // licence for the next one.
+// RAISED home 880→940 (2026-08-05, cave-yizcb), and root deliberately LEFT at
+// 600. The convention above — "the smallest ceiling that clears the 2% THIN
+// threshold" — is what put us back here: 880 was chosen on 2026-08-03 as exactly
+// that, and home was under the threshold again two days later. Measured:
+//
+//   home: 862.2 KiB (2026-08-03) → 869 KiB = ~3.4 KiB/day. The 10.7 KiB left is
+//         ~3 days; even a fresh 2% (17.6 KiB) would be ~5. 940 leaves 71 KiB,
+//         about 21 days at the observed rate.
+//   root: 588 KiB (2026-08-03) → 589 KiB = ~0.5 KiB/day. Its 10.9 KiB is ALREADY
+//         ~21 days. It reads 1.8% and warns, but the warning is a proportion
+//         artifact: root is large, so a healthy absolute margin still looks thin.
+//         Raising it would buy growth that is not happening.
+//
+// That asymmetry is the point. A percentage says how much is left, never how
+// long — and it misleads in BOTH directions: root warns with three weeks of
+// room, while the standalone byte ceiling sat SILENT at 3.9% with about six days
+// (see scripts/standalone-budget.mjs, same bead). Derive the next raise from
+// measured growth and record the rate, not just the number.
+//
+// Reclaiming instead of raising (#3264) remains the better long-term answer for
+// home, and is deliberately not attempted here: the extraction candidates are in
+// files several concurrent sessions are editing right now, so it would conflict
+// badly. That is a scheduling constraint, not an argument that the raise is free.
 const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 600) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 880) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 940) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(
@@ -157,20 +182,19 @@ const kb = (n) => (n / 1024).toFixed(0).padStart(6) + " KB";
 //
 // Deliberately does NOT fail: this is signal, not a new gate. A thin budget is
 // information for the next author, not a reason to block the current one.
-const THIN_HEADROOM_PCT = 2;
+//
+// The threshold and line formatting now live in scripts/budget-headroom.mjs
+// (cave-yizcb) so standalone-budget.mjs shares them rather than going without.
+// It had no thin detection at all, which is how it reached 0.10% headroom while
+// printing a clean check - the gates with the MOST room were the only ones
+// warning. A duplicated constant would have drifted the same way.
 const thin = [];
 
 function headroom(label, bytes, budget) {
-  const left = budget - bytes;
-  if (left < 0) return; // the caller's failure branch reports the overage
-  const pct = (left / budget) * 100;
-  const line = `  ${(left / 1024).toFixed(1).padStart(6)} KB headroom  (${pct.toFixed(1)}%)`;
-  if (pct < THIN_HEADROOM_PCT) {
-    thin.push(label);
-    console.log(`${line}  \u26a0 THIN — the next change of any size may fail this gate`);
-  } else {
-    console.log(line);
-  }
+  const report = headroomOf(bytes, budget);
+  if (!report) return; // the caller's failure branch reports the overage
+  if (report.thin) thin.push(label);
+  console.log(report.line);
 }
 const sizeOf = (relToNext) => {
   try {
