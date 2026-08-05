@@ -27,8 +27,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /const startDaemon = useCallback\([\s\S]*await waitForDaemonUpdateIdle\(\)[\s\S]*runWorkspaceDaemonStart\(\{[\s\S]*fetchImpl: fetch[\s\S]*refreshStatus: refreshDaemonStatus/,
-  "Workspace automatic and manual starts should share the behaviorally tested start flow",
+  /const startDaemon = useCallback\(async \(\{ automatic = false \}: \{ automatic\?: boolean \} = \{\}\) => \{[\s\S]*daemonRecoveryPresentation\(current,[\s\S]*await waitForDaemonUpdateIdle\(\)[\s\S]*runWorkspaceDaemonStart\(\{[\s\S]*automatic,[\s\S]*fetchImpl: fetch[\s\S]*refreshStatus: refreshDaemonStatus/,
+  "Workspace automatic and manual starts should share one flow with explicit intent",
 );
 
 assert.match(

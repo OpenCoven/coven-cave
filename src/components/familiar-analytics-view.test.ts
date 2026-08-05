@@ -469,7 +469,11 @@ describe("FamiliarAnalyticsView", () => {
 
   it("synthesizes a plain-language needs-attention card in the dock", () => {
     assert.match(dockSource, /import \{ deriveAnalyticsInsight \} from "@\/lib\/familiar-analytics-insight"/, "the dock uses the insight helper");
-    assert.match(dockSource, /deriveAnalyticsInsight\(model, healRequestCount\)/, "the card derives its lede from the model");
+    assert.match(
+      dockSource,
+      /deriveAnalyticsInsight\(model, healRequestCount, \{/,
+      "the card derives its lede from the model plus the visible trust scope",
+    );
     assert.match(dockSource, /fa-insight--\$\{insight\.tone\}/, "the card is tinted by tone");
     assert.match(dockSource, /className="fa-attention__lede">\{insight\.text\}/, "the plain-language line is the insight's own text");
     // Prioritized actions come from the same heal requests the strip shows.
@@ -687,6 +691,11 @@ describe("FamiliarAnalyticsView", () => {
       /const openAction = useCallback\(\(request: SelfHealRequest\) => \{\s*setBoardOpen\(false\);\s*setActionModal\(buildActionModal\(request\)\);/,
       "opening board action detail retires the board before activating the next modal focus trap",
     );
+    assert.match(
+      contentSource,
+      /const traceRequest = useCallback\(\(request: SelfHealRequest\) => \{\s*setBoardOpen\(false\);\s*setTraceTarget\(\{ id: request\.id, title: request\.title \}\);/,
+      "opening a trace from the board retires the board before activating the trace focus trap",
+    );
 
     // A face turned away is hidden to the eye by backface-visibility, but that
     // alone leaves its buttons in the tab order.
@@ -885,7 +894,6 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.equal(all.evidenceCount, 3);
     assert.equal(all.sessionCount, 3);
   });
-
   it("applies the selected time window to every thread-report analytic on the stage", () => {
     assert.match(
       contentSource,
@@ -918,11 +926,20 @@ describe("confidence from thread analysis + metric labeling", () => {
       "the dock trust ring uses the same scoped confidence as the stage",
     );
     assert.match(
+      dockSource,
+      /deriveAnalyticsInsight\(model, healRequestCount, \{\s*confidence,\s*threadReportCount: confidence\.reportCount,\s*\}\)/,
+      "the dock insight uses the same scoped confidence and report count as its trust ring",
+    );
+    assert.match(
       contentSource,
       /<TrustModal\s+confidence=\{windowConfidence\}\s+trends=\{windowSignalTrends\}/,
       "the trust modal uses the same scoped confidence and trends as the stage",
     );
-
+    assert.doesNotMatch(
+      contentSource,
+      /<TrustModal[\s\S]*?confidence=\{model\.confidence\}[\s\S]*?trends=\{model\.signalTrends\}/,
+      "the trust modal never falls back to lifetime analytics",
+    );
     assert.match(
       contentSource,
       /<ThreadSignalsSection familiarId=\{model\.familiarId\} reports=\{windowReports\} \/>/,

@@ -140,6 +140,7 @@ export const SUITES = {
     "src/lib/daemon-connection-supervisor.test.ts",
     "src/lib/daemon-status-classification.test.ts",
     "src/lib/daemon-desktop-auto-start.test.ts",
+    "src/lib/daemon-recovery-presentation.test.ts",
     "src/lib/about-diagnostics.test.ts",
     "src/lib/backup-passphrase-strength.test.ts",
     "src/lib/settings-general-summary.test.ts",
@@ -791,6 +792,7 @@ export const SUITES = {
     "src/components/chat-project-launch-gate.test.ts",
     "src/components/project-setup-modal.test.ts",
     "src/components/directory-picker.test.ts",
+    "src/lib/directory-picker-pins.test.ts",
     "src/components/first-project-gate.test.ts",
     "src/components/chat-view.test.ts",
     "src/components/drag-to-split.test.ts",
@@ -1105,6 +1107,9 @@ export const SUITES = {
     "src/components/grimoire-nav-state.test.ts",
     "src/components/marketplace/marketplace-view-model.test.ts",
     "src/components/onboarding-model.test.ts",
+    "src/lib/onboarding-readiness.test.ts",
+    "src/lib/onboarding-status-probes.test.ts",
+    "src/lib/onboarding-status-ui.test.ts",
     "src/components/settings-multihost.test.ts",
   ],
   api: [
@@ -1166,6 +1171,7 @@ export const SUITES = {
     "src/app/api/daemon/travel/reconcile/route.test.ts",
     "src/app/api/tailscale/devices/route.test.ts",
     "src/app/api/config/route.test.ts",
+    "src/app/api/config/workspace-path/route.test.ts",
     "src/app/api/opencoven-executions-route.test.ts",
     "src/app/api/opencoven-submissions-route.test.ts",
     "src/app/api/familiars/route.test.ts",
@@ -1440,6 +1446,7 @@ export const SUITES = {
     "src/lib/server/canonical-path.test.ts",
     "src/lib/server/project-paths.test.ts",
     "src/lib/server/home-browse.test.ts",
+    "src/lib/server/workspace-root-store.test.ts",
     "src/lib/server/session-project-roots.test.ts",
     "src/lib/server/familiar-avatar.test.ts",
     "src/lib/server/skill-scan.test.ts",
@@ -1572,6 +1579,8 @@ const ALIAS_LOADER = new Set([
   "src/components/role-surfaces/review-readiness.test.ts",
   // the diff route resolves "@/lib/github-token".
   "src/app/api/github/diff/route.test.ts",
+  // imports the store, which resolves "@/lib/coven-paths" and "@/lib/server/…".
+  "src/lib/server/workspace-root-store.test.ts",
   // imports the route module, which resolves "@/lib/server/..." aliases.
   "src/app/api/daemon/travel/reconcile/route.test.ts",
   "src/app/api/familiars/route.test.ts",

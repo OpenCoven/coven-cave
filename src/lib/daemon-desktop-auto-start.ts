@@ -133,9 +133,12 @@ export function createDaemonStatusRequestGate() {
 
 type DaemonStartPayload = {
   ok?: unknown;
+  code?: unknown;
   error?: unknown;
   stderr?: unknown;
 };
+
+export type WorkspaceDaemonStartOutcome = "started" | "deferred" | "failed";
 
 function daemonStartPayload(value: unknown): DaemonStartPayload {
   return value && typeof value === "object" ? value as DaemonStartPayload : {};
@@ -143,19 +146,33 @@ function daemonStartPayload(value: unknown): DaemonStartPayload {
 
 /** Shared automatic/manual Workspace start behavior with injectable effects. */
 export async function runWorkspaceDaemonStart(input: {
+  automatic?: boolean;
   fetchImpl: typeof fetch;
   dismissError(): void;
   reportError(message: string): void;
   refreshStatus(opts?: { trusted?: boolean; fresh?: boolean }): Promise<void>;
-}): Promise<boolean> {
+}): Promise<WorkspaceDaemonStartOutcome> {
   try {
     // Keep the injected function unbound. Calling `input.fetchImpl(...)`
     // supplies `input` as the receiver, which WebView2's native fetch rejects
     // with "Illegal invocation".
     const { fetchImpl } = input;
-    const response = await fetchImpl("/api/daemon/start", { method: "POST" });
+    const response = await fetchImpl(
+      "/api/daemon/start",
+      input.automatic
+        ? {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ automatic: true }),
+        }
+        : { method: "POST" },
+    );
     const payload = daemonStartPayload(await response.json().catch(() => ({})));
     if (!response.ok || payload.ok === false) {
+      if (input.automatic && payload.code === "owner_unreachable") {
+        await input.refreshStatus();
+        return "deferred";
+      }
       const message =
         typeof payload.error === "string" && payload.error.trim()
           ? payload.error
@@ -166,10 +183,10 @@ export async function runWorkspaceDaemonStart(input: {
     }
     input.dismissError();
     await input.refreshStatus({ trusted: true });
-    return true;
+    return "started";
   } catch (error) {
     input.reportError(error instanceof Error ? error.message : "daemon did not start");
     await input.refreshStatus();
-    return false;
+    return "failed";
   }
 }
