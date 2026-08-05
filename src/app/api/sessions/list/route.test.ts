@@ -102,7 +102,17 @@ try {
     sessionsListCache.clear();
   }
 
-  async function writeHubConfig(url: string) {
+  async function writeHubConfig(
+    url: string,
+    chatAutoArchive?: {
+      enabled?: boolean;
+      archiveOnTaskCompletion?: boolean;
+      archiveOnReflection?: boolean;
+      archiveOnPrMerge?: boolean;
+      externalAfterDays?: number;
+      idleAfterDays?: number;
+    },
+  ) {
     await mkdir(path.dirname(configPath), { recursive: true });
     await writeFile(
       configPath,
@@ -125,6 +135,7 @@ try {
           exposeHostsInComposer: true,
         },
         remoteHosts: [],
+        ...(chatAutoArchive ? { chatAutoArchive } : {}),
       }),
     );
   }
@@ -207,6 +218,50 @@ try {
       ],
       activeLeafId: "malformed-assistant",
     });
+
+    const sweptConversation = {
+      sessionId: "route-swept",
+      familiarId: "charm",
+      harness: "claude",
+      runtime: `local:${projectRoot}`,
+      title: "Route swept",
+      createdAt: "2026-08-01T10:00:00.000Z",
+      updatedAt: "2026-08-01T11:00:00.000Z",
+      turns: [
+        {
+          id: "swept-user",
+          role: "user",
+          text: "Still need approval?",
+          createdAt: "2026-08-01T10:00:00.000Z",
+          parentId: null,
+        },
+        {
+          id: "swept-assistant",
+          role: "assistant",
+          text: "Yes, please approve it.",
+          createdAt: "2026-08-01T11:00:00.000Z",
+          parentId: "swept-user",
+          responseMetadata: {
+            familiarId: "charm",
+            harness: "claude",
+            model: "anthropic/claude-sonnet-4.6",
+            runtime: `local:${projectRoot}`,
+            attentionRequest: {
+              sessionId: "route-swept",
+              turnId: "swept-assistant",
+              requestedAt: "2026-08-01T11:00:00.000Z",
+              reason: "approval",
+            },
+          },
+        },
+      ],
+      activeLeafId: "swept-assistant",
+    };
+    await saveConversation(sweptConversation);
+    await writeFile(
+      path.join(covenHome, "cave", "conversations", "route-swept.json"),
+      JSON.stringify({ ...sweptConversation, updatedAt: "2026-08-01T11:00:00.000Z" }),
+    );
   }
 
   async function startDaemon(rows: unknown[]) {
@@ -229,8 +284,8 @@ try {
       );
   }
 
-  async function fetchSessions() {
-    const response = await route.GET(request());
+  async function fetchSessions(url?: string) {
+    const response = await route.GET(request(url));
     assert.equal(response.status, 200, await response.clone().text());
     return response.json();
   }
@@ -296,6 +351,29 @@ try {
       since: null,
       reason: null,
     });
+
+    await writeHubConfig(daemonBaseUrl, {
+      enabled: true,
+      archiveOnTaskCompletion: false,
+      archiveOnReflection: false,
+      archiveOnPrMerge: false,
+      externalAfterDays: 0,
+      idleAfterDays: 1,
+    });
+    clearConversationListMetadataCache();
+    sessionsListCache.clear();
+    const sweptArchived = await fetchSessions("http://127.0.0.1/api/sessions/list?includeArchived=1");
+    const sweptRow = new Map(sweptArchived.sessions.map((row) => [row.id, row])).get("route-swept");
+    assert.ok(sweptRow?.archived_at, "the stale row is stamped archived by the sweep");
+    assert.deepEqual(
+      sweptRow?.attention,
+      {
+        state: "none",
+        since: null,
+        reason: null,
+      },
+      "a row archived by the sweep drops any pre-sweep attention in the same response",
+    );
   } finally {
     Date.now = realNow;
   }

@@ -889,9 +889,13 @@ console.log("cave-conversations pending-marker test OK");
   const ids = [
     "attention-leaf-request",
     "attention-stale-request-left-hanging",
+    "attention-user-leaf-resolution",
     "attention-malformed-request",
+    "attention-mismatched-turnid-request",
     "attention-off-path-request",
     "attention-malformed-turns",
+    "attention-corrupt-leaf",
+    "attention-non-canonical-request",
   ];
 
   await saveConversation({
@@ -1023,6 +1027,89 @@ console.log("cave-conversations pending-marker test OK");
   });
 
   await saveConversation({
+    sessionId: "attention-user-leaf-resolution",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Active user leaf resolves request",
+    createdAt: "2026-08-04T15:00:00.000Z",
+    updatedAt: "2026-08-04T17:00:00.000Z",
+    turns: [
+      {
+        id: "user-leaf-root",
+        role: "user",
+        text: "Do you need a decision?",
+        createdAt: "2026-08-04T15:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "user-leaf-request",
+        role: "assistant",
+        text: "Yes — please decide.",
+        createdAt: "2026-08-04T16:00:00.000Z",
+        parentId: "user-leaf-root",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-user-leaf-resolution",
+            turnId: "user-leaf-request",
+            requestedAt: "2026-08-04T16:00:00.000Z",
+            reason: "decision",
+          },
+        },
+      },
+      {
+        id: "user-leaf-active",
+        role: "user",
+        text: "Ship it.",
+        createdAt: "2026-08-04T17:00:00.000Z",
+        parentId: "user-leaf-request",
+      },
+    ],
+    activeLeafId: "user-leaf-active",
+  });
+
+  await saveConversation({
+    sessionId: "attention-mismatched-turnid-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Reject mismatched turn ids",
+    createdAt: "2026-08-04T13:00:00.000Z",
+    updatedAt: "2026-08-04T13:30:00.000Z",
+    turns: [
+      {
+        id: "turn-mismatch-user",
+        role: "user",
+        text: "Anything blocking you?",
+        createdAt: "2026-08-04T13:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "turn-mismatch-assistant",
+        role: "assistant",
+        text: "The metadata points at a different turn.",
+        createdAt: "2026-08-04T13:30:00.000Z",
+        parentId: "turn-mismatch-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-mismatched-turnid-request",
+            turnId: "some-other-turn",
+            requestedAt: "2026-08-04T13:30:00.000Z",
+            reason: "input",
+          },
+        },
+      },
+    ],
+    activeLeafId: "turn-mismatch-assistant",
+  });
+
+  await saveConversation({
     sessionId: "attention-off-path-request",
     familiarId: "charm",
     harness: "claude",
@@ -1116,6 +1203,97 @@ console.log("cave-conversations pending-marker test OK");
     activeLeafId: "malformed-error-assistant",
   });
 
+  // Regression (finding #1): a branched conversation whose activeLeafId is
+  // missing/corrupt (points at no turn in the file) must fail quiet — never
+  // fall back to a full createdAt linearization of every branch, which would
+  // admit an abandoned branch's attention request as if it were live.
+  await saveConversation({
+    sessionId: "attention-corrupt-leaf",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Corrupt active leaf",
+    createdAt: "2026-08-04T09:00:00.000Z",
+    updatedAt: "2026-08-04T09:05:00.000Z",
+    turns: [
+      {
+        id: "corrupt-root",
+        role: "user",
+        text: "Summarize the plan.",
+        createdAt: "2026-08-04T09:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "corrupt-branch-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T09:03:00.000Z",
+        parentId: "corrupt-root",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-corrupt-leaf",
+            turnId: "corrupt-branch-request",
+            requestedAt: "2026-08-04T09:03:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        id: "corrupt-branch-active",
+        role: "assistant",
+        text: "Here is the answer.",
+        createdAt: "2026-08-04T09:05:00.000Z",
+        parentId: "corrupt-root",
+      },
+    ],
+    // Neither branch tip — simulates a corrupted/rewritten activeLeafId.
+    activeLeafId: "corrupt-leaf-that-does-not-exist",
+  });
+
+  // Regression (finding #4): requestedAt must be a canonical ISO-8601 UTC
+  // instant, not merely a `Date.parse`-permissive string. A space instead of
+  // `T` parses fine in V8 but does not round-trip through toISOString().
+  await saveConversation({
+    sessionId: "attention-non-canonical-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Non-canonical timestamp",
+    createdAt: "2026-08-03T10:00:00.000Z",
+    updatedAt: "2026-08-03T10:05:00.000Z",
+    turns: [
+      {
+        id: "non-canonical-user",
+        role: "user",
+        text: "Do you need anything?",
+        createdAt: "2026-08-03T10:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "non-canonical-assistant",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-03T10:05:00.000Z",
+        parentId: "non-canonical-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-non-canonical-request",
+            turnId: "non-canonical-assistant",
+            requestedAt: "2026-08-03 10:05:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+    activeLeafId: "non-canonical-assistant",
+  });
+
   const summaries = await listConversations();
   const byId = new Map(summaries.map((summary) => [summary.sessionId, summary]));
 
@@ -1161,6 +1339,37 @@ console.log("cave-conversations pending-marker test OK");
     request: null,
   });
 
+  assert.deepEqual(byId.get("attention-user-leaf-resolution")?.attentionEvidence, {
+    latestCompletedTurn: { role: "user", at: "2026-08-04T17:00:00.000Z" },
+    latestUserTurnAt: "2026-08-04T17:00:00.000Z",
+    request: {
+      sessionId: "attention-user-leaf-resolution",
+      turnId: "user-leaf-request",
+      requestedAt: "2026-08-04T16:00:00.000Z",
+      reason: "decision",
+    },
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-user-leaf-resolution")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "an active user leaf resolves the request without inventing a later assistant fallback",
+  );
+
+  assert.deepEqual(byId.get("attention-mismatched-turnid-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T13:30:00.000Z" },
+    latestUserTurnAt: "2026-08-04T13:00:00.000Z",
+    request: null,
+  });
+
   assert.deepEqual(byId.get("attention-off-path-request")?.attentionEvidence, {
     latestCompletedTurn: { role: "assistant", at: "2026-08-04T12:02:00.000Z" },
     latestUserTurnAt: "2026-08-04T12:00:00.000Z",
@@ -1168,10 +1377,64 @@ console.log("cave-conversations pending-marker test OK");
   });
 
   assert.deepEqual(byId.get("attention-malformed-turns")?.attentionEvidence, {
-    latestCompletedTurn: { role: "assistant", at: "2026-08-04T18:00:00.000Z" },
-    latestUserTurnAt: "2026-08-04T17:00:00.000Z",
+    latestCompletedTurn: null,
+    latestUserTurnAt: null,
     request: null,
   });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-malformed-turns")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a malformed latest eligible turn must not fall back to older completion evidence",
+  );
+
+  assert.equal(
+    byId.get("attention-corrupt-leaf")?.attentionEvidence,
+    undefined,
+    "a missing/corrupt activeLeafId must fail quiet, not linearize every branch",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-corrupt-leaf")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a corrupt active leaf must never surface an off-path branch's attention request",
+  );
+
+  assert.deepEqual(byId.get("attention-non-canonical-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-03T10:05:00.000Z" },
+    latestUserTurnAt: "2026-08-03T10:00:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-non-canonical-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "left-hanging",
+      since: "2026-08-03T10:05:00.000Z",
+      reason: null,
+    },
+    "a Date.parse-permissive but non-canonical requestedAt must not be treated as an explicit request",
+  );
 
   for (const id of ids) {
     await deleteConversation(id);

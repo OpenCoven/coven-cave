@@ -388,6 +388,77 @@ test("treats canonical active waiting status as no attention", () => {
   );
 });
 
+test("treats archived status as no attention even when archivedAt is missing", () => {
+  const explicitRequest = {
+    sessionId: "s1",
+    turnId: "a1",
+    requestedAt: "2026-08-02T20:00:00.000Z",
+    reason: "approval" as const,
+  };
+
+  // A daemon-authoritative "archived" status recovered before Cave-local
+  // archive bookkeeping has stamped archivedAt (cave-zs85n finding #6) —
+  // status alone must be sufficient, independent of the archivedAt field.
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: {
+        latestCompletedTurn: {
+          role: "assistant",
+          at: "2026-08-03T18:00:00.000Z",
+        },
+        latestUserTurnAt: null,
+        request: explicitRequest,
+      },
+      status: "archived",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+  );
+
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: {
+        latestCompletedTurn: {
+          role: "assistant",
+          at: "2026-08-01T18:00:00.000Z",
+        },
+        latestUserTurnAt: null,
+        request: null,
+      },
+      status: "Archived",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+    "status matching is case/whitespace-insensitive, like every other status check here",
+  );
+});
+
+test("rejects a Date.parse-permissive but non-canonical requestedAt", () => {
+  // A space instead of "T" parses fine under V8's loose Date.parse but does
+  // not round-trip through toISOString() — must fail quiet like any other
+  // malformed request, not silently accept a non-canonical instant.
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: {
+        latestCompletedTurn: null,
+        latestUserTurnAt: null,
+        request: {
+          sessionId: "s1",
+          turnId: "a1",
+          requestedAt: "2026-08-04 18:00:00.000Z",
+          reason: "input",
+        },
+      },
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+  );
+});
+
 test("orders attention rows by urgency and oldest first within a tier", () => {
   const rows: Array<Pick<SessionRow, "attention"> & { id: string }> = [
     { id: "left-newer", attention: { state: "left-hanging", since: "2026-08-04T18:00:00.000Z", reason: null } },

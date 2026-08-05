@@ -12,6 +12,7 @@ import {
   localConversationSessionRows,
   mergeSessionRows,
 } from "@/lib/session-list-merge";
+import { NO_CHAT_ATTENTION } from "@/lib/chat-attention";
 import {
   applyStaleRunningPresentation,
   sweepStaleRunningGhosts,
@@ -78,7 +79,7 @@ function applySweptRows(
   for (const row of sessions) {
     const archivedAt = swept.get(row.id);
     if (!archivedAt) next.push(row);
-    else if (includeArchived) next.push({ ...row, archived_at: archivedAt });
+    else if (includeArchived) next.push({ ...row, archived_at: archivedAt, attention: NO_CHAT_ATTENTION });
   }
   return next;
 }

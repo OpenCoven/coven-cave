@@ -5,6 +5,7 @@ import {
 } from "./cave-chat-titles.ts";
 import {
   deriveChatAttention,
+  NO_CHAT_ATTENTION,
   type ChatAttentionEvidence,
 } from "./chat-attention.ts";
 import { initiatorFromSessionKey } from "./session-initiator.ts";
@@ -168,12 +169,15 @@ export function mergeSessionRows({
           status: session.status,
           exit_code: session.exit_code,
           archived_at,
-          attention: deriveChatAttention({
-            evidence: local.attentionEvidence,
-            status: session.status,
-            archivedAt: archived_at,
-            now,
-          }),
+          // A project-root mismatch means the daemon can no longer vouch for
+          // this session's cwd/branch identity — the recovered row is a
+          // best-effort reconstruction from the local transcript alone, and
+          // the daemon status here is always terminal (see
+          // isDaemonAuthoritativeTerminalStatus). Deriving attention from
+          // `local.attentionEvidence` in that state would let a stale or
+          // orphaned transcript's evidence resurface as if it were still
+          // live; recovered rows always present as `none`.
+          attention: NO_CHAT_ATTENTION,
           initiator: session.initiator ?? recovered.initiator,
         };
         if (visibleSession(row, state, includeArchived)) rows.push(row);

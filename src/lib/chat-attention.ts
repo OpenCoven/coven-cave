@@ -32,6 +32,22 @@ export const NO_CHAT_ATTENTION: ChatAttention = {
   reason: null,
 };
 
+/**
+ * A canonical ISO-8601 UTC instant: `Date.parse` must accept it AND
+ * re-serializing the parsed instant must reproduce the exact input string.
+ * Plain `Number.isFinite(Date.parse(value))` is too permissive — it also
+ * accepts non-canonical forms (missing milliseconds/`Z`, space instead of
+ * `T`, non-UTC offsets, loose RFC-2822 dates) that round-trip to a
+ * *different* string, which would silently corrupt `since`/ordering math
+ * downstream. Every stored timestamp in this feature is written by Cave
+ * itself via `new Date().toISOString()`, so requiring the canonical form
+ * costs nothing on the happy path and rejects tampered/foreign input.
+ */
+export function isCanonicalIsoInstant(value: string): boolean {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
 export function deriveChatAttention(args: {
   evidence: ChatAttentionEvidence | null | undefined;
   status: string;
@@ -40,8 +56,14 @@ export function deriveChatAttention(args: {
 }): ChatAttention {
   const nowMs = normalizeTimestamp(args.now);
   if (nowMs === null) return NO_CHAT_ATTENTION;
+  const normalizedStatus = (args.status ?? "").trim().toLowerCase();
+  // Archived is terminal by definition, regardless of whether archivedAt was
+  // stamped yet (e.g. a daemon-authoritative "archived" status recovered
+  // before Cave-local archival bookkeeping catches up) — never surface
+  // attention for it.
+  if (normalizedStatus === "archived") return NO_CHAT_ATTENTION;
   if (args.archivedAt) return NO_CHAT_ATTENTION;
-  if (ACTIVE_SESSION_STATUSES.has((args.status ?? "").trim().toLowerCase())) {
+  if (ACTIVE_SESSION_STATUSES.has(normalizedStatus)) {
     return NO_CHAT_ATTENTION;
   }
 
@@ -167,7 +189,9 @@ function normalizeAttentionRequest(
     typeof value.turnId !== "string" ||
     !value.turnId ||
     typeof value.reason !== "string" ||
-    !VALID_REASON_SET.has(value.reason)
+    !VALID_REASON_SET.has(value.reason) ||
+    typeof value.requestedAt !== "string" ||
+    !isCanonicalIsoInstant(value.requestedAt)
   ) {
     return null;
   }

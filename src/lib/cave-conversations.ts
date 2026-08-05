@@ -11,6 +11,7 @@ import type { GrokSandboxProfile } from "./grok-build.ts";
 import type { SessionOrigin } from "./types.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
 import { CHAT_ATTENTION_REASONS } from "./chat-attention-marker.ts";
+import { isCanonicalIsoInstant } from "./chat-attention.ts";
 import type { ChatAttentionEvidence } from "./chat-attention.ts";
 
 const CONV_DIR = path.join(caveHome(), "conversations");
@@ -205,7 +206,16 @@ export function clearConversationListMetadataCache(): void {
 }
 
 function activeConversationTurns(conv: Pick<ConversationFile, "turns" | "activeLeafId">): ChatTurn[] {
-  return conv.activeLeafId ? resolveActivePath(conv.turns, conv.activeLeafId) : conv.turns;
+  if (!conv.activeLeafId) return conv.turns;
+  // `resolveActivePath` falls back to a full createdAt linearization of every
+  // turn across every branch when the leaf id can't be found — a reasonable
+  // "show something" default for rendering, but wrong here: it would admit
+  // off-path (abandoned-branch) turns as attention/terminal-status evidence.
+  // A missing/corrupt leaf must fail quiet instead of trusting whichever
+  // branch happens to sort last.
+  const hasLeaf = conv.turns.some((turn) => turn.id === conv.activeLeafId);
+  if (!hasLeaf) return [];
+  return resolveActivePath(conv.turns, conv.activeLeafId);
 }
 
 function deriveConversationSignals(conv: ConversationFile): {
@@ -214,7 +224,9 @@ function deriveConversationSignals(conv: ConversationFile): {
 } {
   const turns = activeConversationTurns(conv);
   let latestAssistant: ChatTurn | null = null;
+  let sawLatestCompletedTurn = false;
   let latestCompletedTurn: ChatAttentionEvidence["latestCompletedTurn"] = null;
+  let sawLatestUserTurn = false;
   let latestUserTurnAt: string | null = null;
   let request: ChatAttentionEvidence["request"] = null;
 
@@ -222,14 +234,19 @@ function deriveConversationSignals(conv: ConversationFile): {
     const turn = turns[i];
     if (!latestAssistant && turn.role === "assistant") latestAssistant = turn;
 
-    if (!latestCompletedTurn && (turn.role === "user" || turn.role === "assistant")) {
+    if (
+      !sawLatestCompletedTurn &&
+      (turn.role === "user" || turn.role === "assistant") &&
+      !turn.isError &&
+      !turn.cancelled
+    ) {
+      sawLatestCompletedTurn = true;
       const createdAt = normalizeStableIsoTimestamp(turn.createdAt);
-      if (createdAt && !turn.isError && !turn.cancelled) {
-        latestCompletedTurn = { role: turn.role, at: createdAt };
-      }
+      latestCompletedTurn = createdAt ? { role: turn.role, at: createdAt } : null;
     }
 
-    if (!latestUserTurnAt && turn.role === "user") {
+    if (!sawLatestUserTurn && turn.role === "user") {
+      sawLatestUserTurn = true;
       latestUserTurnAt = normalizeStableIsoTimestamp(turn.createdAt);
     }
 
@@ -239,6 +256,7 @@ function deriveConversationSignals(conv: ConversationFile): {
           ? turn.responseMetadata.attentionRequest
           : undefined,
         conv.sessionId,
+        turn.id,
       );
     }
   }
@@ -251,7 +269,7 @@ function deriveConversationSignals(conv: ConversationFile): {
 
   return {
     terminal,
-    ...(latestCompletedTurn || latestUserTurnAt || request
+    ...(sawLatestCompletedTurn || sawLatestUserTurn || request
       ? {
           attentionEvidence: {
             latestCompletedTurn,
@@ -271,15 +289,16 @@ function normalizeStableIsoTimestamp(value: unknown): string | null {
 function normalizeStableAttentionRequest(
   value: ChatAttentionEvidence["request"] | undefined,
   sessionId: string,
+  assistantTurnId: string,
 ): ChatAttentionEvidence["request"] | null {
   if (!value) return null;
   if (
     typeof value.sessionId !== "string" ||
     value.sessionId !== sessionId ||
     typeof value.turnId !== "string" ||
-    !value.turnId ||
+    value.turnId !== assistantTurnId ||
     typeof value.requestedAt !== "string" ||
-    !normalizeStableIsoTimestamp(value.requestedAt) ||
+    !isCanonicalIsoInstant(value.requestedAt) ||
     typeof value.reason !== "string" ||
     !VALID_ATTENTION_REASON_SET.has(value.reason)
   ) {

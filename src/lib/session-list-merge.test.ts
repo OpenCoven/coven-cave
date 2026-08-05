@@ -463,6 +463,20 @@ const validRootArchived = mergeSessionRows({
       updatedAt: "2026-06-08T18:15:00.000Z",
       status: "completed",
       exitCode: 0,
+      // Regression (cave-zs85n finding #6): a daemon "archived" status must
+      // suppress attention even though archived_at is still null here — the
+      // Cave-local archive bookkeeping (state.sessionArchived) hasn't caught
+      // up yet. Explicit unresolved evidence must not leak through.
+      attentionEvidence: {
+        latestCompletedTurn: { role: "assistant", at: "2026-06-08T18:10:00.000Z" },
+        latestUserTurnAt: null,
+        request: {
+          sessionId: "valid-root-archived",
+          turnId: "archived-assistant",
+          requestedAt: "2026-06-08T18:05:00.000Z",
+          reason: "approval",
+        },
+      },
     },
   ],
   state,
@@ -496,6 +510,20 @@ const invalidRootInterrupted = mergeSessionRows({
       status: "completed",
       exitCode: 0,
       origin: "chat",
+      // Regression (cave-zs85n finding #5): a project-root mismatch means the
+      // daemon can no longer vouch for this session, so the recovered row
+      // must present as `none` — never derive attention from the local
+      // transcript's evidence, however "live" that evidence looks.
+      attentionEvidence: {
+        latestCompletedTurn: { role: "assistant", at: "2026-06-08T18:10:00.000Z" },
+        latestUserTurnAt: null,
+        request: {
+          sessionId: "invalid-root-interrupted",
+          turnId: "interrupted-assistant",
+          requestedAt: "2026-06-08T18:05:00.000Z",
+          reason: "input",
+        },
+      },
     },
   ],
   state,
@@ -510,6 +538,11 @@ assert.equal(invalidRootInterrupted[0]?.project_root, "/repo");
 assert.equal(invalidRootInterrupted[0]?.status, "killed");
 assert.equal(invalidRootInterrupted[0]?.exit_code, 137);
 assert.equal(invalidRootInterrupted[0]?.hasLocalConversation, true);
+assert.deepEqual(
+  invalidRootInterrupted[0]?.attention,
+  NO_CHAT_ATTENTION,
+  "invalid-root recovered rows must never derive attention from transcript evidence",
+);
 assert.deepEqual(
   invalidRootInterrupted[0]?.initiator,
   { kind: "familiar", label: "Cody", agentId: "cody" },
@@ -542,6 +575,16 @@ const invalidRootArchivedMatched = mergeSessionRows({
       status: "completed",
       exitCode: 0,
       origin: "chat",
+      attentionEvidence: {
+        latestCompletedTurn: { role: "assistant", at: "2026-06-08T18:10:00.000Z" },
+        latestUserTurnAt: null,
+        request: {
+          sessionId: "invalid-root-archived",
+          turnId: "archived-assistant",
+          requestedAt: "2026-06-08T18:05:00.000Z",
+          reason: "decision",
+        },
+      },
     },
   ],
   state,
@@ -556,6 +599,11 @@ assert.equal(invalidRootArchivedMatched[0]?.status, "archived");
 assert.equal(invalidRootArchivedMatched[0]?.exit_code, 143);
 assert.equal(invalidRootArchivedMatched[0]?.archived_at, null);
 assert.equal(invalidRootArchivedMatched[0]?.hasLocalConversation, true);
+assert.deepEqual(
+  invalidRootArchivedMatched[0]?.attention,
+  NO_CHAT_ATTENTION,
+  "invalid-root archived recovery must never derive attention from transcript evidence",
+);
 assert.deepEqual(
   invalidRootArchivedMatched[0]?.initiator,
   { kind: "familiar", label: "Cody", agentId: "cody" },
@@ -573,6 +621,11 @@ assert.equal(
   "newer local transcripts must not overwrite the daemon exit code for an archived status",
 );
 assert.equal(validRootArchived[0]?.archived_at, null, "the daemon status is authoritative even without archived_at");
+assert.deepEqual(
+  validRootArchived[0]?.attention,
+  NO_CHAT_ATTENTION,
+  "an archived status suppresses attention even when archived_at is still null",
+);
 
 const invalidRootArchived = {
   ...state,
