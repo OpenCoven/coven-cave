@@ -165,6 +165,113 @@ assert.equal(titleFromAssistantReply(""), null);
 // normalizeChatTitle max stays at 120 — manual titles not shortened.
 assert.equal(normalizeChatTitle("x".repeat(130))!.length, 120, "manual title max 120 unchanged");
 
+// ── Review issue 1: clamp must not return null for multiword strings ──────────
+// When the last space falls before the 60% threshold, the old code returned null
+// so the caller kept the current (stale) title. The fix always backs up to the
+// last word boundary — only a *truly* single-token over-length string (no spaces
+// at all) may yield null. Multiword strings must never be silently dropped.
+{
+  // "A " + 50 a's: space at index 1 < 24 (= 60 % of 40). Buggy code → null.
+  // Fixed code → "A…" (cut at the only word boundary).
+  const r = titleFromAssistantReply("# A " + "a".repeat(50));
+  assert.ok(r !== null, "multiword long title must not collapse to null — must cut at last word boundary");
+  assert.equal(r, "A…", "clamp backs up to word boundary even when space is before 60% threshold");
+}
+
+// ── Review issue 2: Markdown stripping ───────────────────────────────────────
+// Image syntax: already handled (was the bug that produced "!diagram"; fixed).
+assert.equal(
+  chatSummaryTitle({ userText: "![diagram](https://example.com/img.png)" }),
+  "Diagram",
+  "image syntax stripped to alt text (no leading !)",
+);
+// Strikethrough: ~~text~~ must reduce to its plain content.
+assert.equal(
+  titleFromAssistantReply("# ~~Fix parser~~"),
+  "Fix parser",
+  "strikethrough syntax stripped in assistant heading",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "~~Fix parser~~" }),
+  "Fix parser",
+  "strikethrough syntax stripped in user text",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "> Fix parser" }),
+  "Fix parser",
+  "blockquote marker stripped from user text",
+);
+assert.equal(
+  titleFromAssistantReply("> ## Retry policy"),
+  "Retry policy",
+  "blockquote marker stripped before assistant heading detection",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "[Retry docs][retries]" }),
+  "Retry docs",
+  "full reference link yields its label",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "[Retry docs][]" }),
+  "Retry docs",
+  "collapsed reference link yields its label",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "[Retry docs]" }),
+  "Retry docs",
+  "shortcut reference link yields its label",
+);
+
+// ── Review issue 3: VS16 / ZWJ emoji sequences fully stripped at edges ────────
+// ❤️ = U+2764 (Extended_Pictographic) + U+FE0F (VS16, variation selector).
+// Without the fix U+FE0F is not in EMOJI_RE and leaks into the output as an
+// invisible combining character, producing "️ Fix parser" or "Trailing ❤️".
+assert.equal(
+  titleFromAssistantReply("# \u2764\uFE0F Fix parser"),
+  "Fix parser",
+  "leading emoji with VS16 variation selector fully stripped",
+);
+{
+  const r = chatSummaryTitle({ userText: "trailing \u2764\uFE0F" });
+  assert.equal(r, "Trailing", "trailing emoji with VS16 fully stripped — no invisible residue");
+}
+// ZWJ sequence: 👩‍💻 = U+1F469 + U+200D (ZWJ) + U+1F4BB.
+// Without the fix the ZWJ and second emoji leak past the strip, producing
+// "‍💻 Fix parser" as the title.
+assert.equal(
+  titleFromAssistantReply("# \u{1F469}\u200D\u{1F4BB} Fix parser"),
+  "Fix parser",
+  "leading ZWJ emoji sequence fully stripped",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "1\uFE0F\u20E3 Fix parser" }),
+  "Fix parser",
+  "leading keycap emoji sequence fully stripped",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Fix parser #\uFE0F\u20E3" }),
+  "Fix parser",
+  "trailing keycap emoji sequence fully stripped",
+);
+
+// ── Review issue 4: Unicode sentence-ending punctuation stripped at title end ──
+// ASCII .!? were already stripped; 。(U+3002) ！(U+FF01) ？(U+FF1F) were not.
+assert.equal(
+  chatSummaryTitle({ userText: "Fix the parser\u3002" }),
+  "Fix the parser",
+  "ideographic full stop \u3002 stripped from title end",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Fix the parser\uFF01" }),
+  "Fix the parser",
+  "fullwidth exclamation mark \uFF01 stripped from title end",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Fix the parser\uFF1F" }),
+  "Fix the parser",
+  "fullwidth question mark \uFF1F stripped from title end",
+);
+
 // ── Formatter edge cases (Task 2 spec gaps) ──────────────────────────────────
 
 // Gap 2a: Markdown link syntax → label only, destination discarded.
@@ -306,14 +413,15 @@ assert.equal(
   "markdown link with nested parens in destination → label only, no URL or parens leak",
 );
 
-// C6: Prefixed giant token where only word boundary is too early → null.
+// C6: Multiword input where the only word boundary is before the 60% threshold —
+// must cut at the word boundary and yield a title, not null. Returning null here
+// would silently discard the title for any prompt with a short first word and a
+// long second token (the exact bug fixed in Review issue 1).
 {
   const prefixedGiant = "Fix " + "a".repeat(38); // 42 chars: "Fix " + 38 a's
-  assert.equal(
-    chatSummaryTitle({ userText: prefixedGiant }),
-    null,
-    "prefixed giant token (boundary too early for 60% threshold) yields null, not a mid-word fragment",
-  );
+  const r = chatSummaryTitle({ userText: prefixedGiant });
+  assert.ok(r !== null, "prefixed giant: multiword string must yield a result at word boundary, not null");
+  assert.equal(r, "Fix…", "prefixed giant: cut at word boundary even when space is before 60% threshold");
 }
 
 console.log("cave-chat-titles.test.ts ok");

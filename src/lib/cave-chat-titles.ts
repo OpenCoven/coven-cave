@@ -8,9 +8,13 @@ type SessionLike = {
 
 export const MAX_CHAT_TITLE_LENGTH = 120;
 
-// Strip leading/trailing emoji and whitespace from session titles.
-// Emoji in the middle of a title are left intact.
-const EMOJI_RE = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+|[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+$/gu;
+// Strip leading/trailing emoji sequences and whitespace from session titles.
+// Emoji in the middle of a title are left intact. The character class includes
+// variation selector VS16 (U+FE0F), ZWJ (U+200D), and Fitzpatrick skin-tone
+// modifiers (U+1F3FB–U+1F3FF) so that compound sequences such as ❤️ (U+2764
+// U+FE0F) and 👩‍💻 (U+1F469 U+200D U+1F4BB) are consumed as a whole unit.
+const EMOJI_RE =
+  /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D\u{1F3FB}-\u{1F3FF}\s]+|[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D\u{1F3FB}-\u{1F3FF}\s]+$/gu;
 export function stripLeadingTrailingEmoji(title: string): string {
   return title.replace(EMOJI_RE, "").trim();
 }
@@ -96,14 +100,16 @@ const ANSWER_HEADING_RE =
 const BOILERPLATE_ONLY_RE =
   /^(?:here\s+(?:is|are)|here['\u2018\u2019]s|this is)(?:\s+(?:a|an|the))?\s*[.,:;!?]?\s*$/i;
 
-// Returns null when no word boundary exists or the only boundary is too early
-// (< 60% of maxLen), so a single over-length token or a poorly-placed word break
-// never produces a mid-word fragment. Callers retain the current title.
+// Returns null only when no word boundary exists (lastSpace < 0), so a truly
+// single over-length token with no spaces produces null and the caller keeps
+// its current title. Multiword strings are always cut at the last word boundary,
+// even when that boundary is early in the string — a short first word followed
+// by a long second word must not collapse to null.
 function clampAtWordBoundary(text: string, maxLen: number): string | null {
   if (text.length <= maxLen) return text;
   const slice = text.slice(0, maxLen - 1);
   const lastSpace = slice.lastIndexOf(" ");
-  if (lastSpace < 0 || lastSpace < maxLen * 0.6) return null;
+  if (lastSpace < 0) return null;
   return `${slice.slice(0, lastSpace).trimEnd().replace(/[,;:\-–—]$/, "")}…`;
 }
 
@@ -129,15 +135,18 @@ function formatGeneratedTitle(text: string): string | null {
   // Normalize markdown links: [label](url) → label; destination discarded.
   // Supports one level of nested parentheses so [Docs](https://x.test/a_(b)) → Docs.
   s = s.replace(/\[([^\]]+)\]\((?:[^()]*|\([^()]*\))*(?:\s+"[^"]*")?\)/g, "$1");
+  // Strip strikethrough: ~~text~~ → text.
+  s = s.replace(/~~([^~]+)~~/g, "$1");
   // Strip remaining markdown syntax and collapse whitespace.
   s = s.replace(/[*_`#]+/g, " ").replace(/\s+/g, " ").trim();
   // Cleanup loop: trailing punctuation → edge emoji → leading separators exposed by
   // emoji removal → trailing punctuation again, so "🎉: Fix parser." → "Fix parser"
   // and "Fix parser 🎉." are both fully cleaned.
-  s = s.replace(/[.,:;!?]+$/, "").trim();
+  // Unicode sentence-ending punct (。！？) stripped alongside ASCII .!?
+  s = s.replace(/[.,:;!?\u3002\uFF01\uFF1F]+$/, "").trim();
   s = stripLeadingTrailingEmoji(s);
   s = s.replace(/^[\s,:;.!?\-–—]+/, "").trim(); // strip separators exposed after emoji removal
-  s = s.replace(/[.,:;!?]+$/, "").trim();
+  s = s.replace(/[.,:;!?\u3002\uFF01\uFF1F]+$/, "").trim();
   // Boilerplate-only: "This is.", "Here is.", "Here's." → null (no meaningful fallback).
   if (BOILERPLATE_ONLY_RE.test(s)) return null;
   // Strip answer-heading boilerplate: "Here is the …", "Here are …", "Here's the …", "This is a …"
@@ -154,7 +163,8 @@ function formatGeneratedTitle(text: string): string | null {
   // Strip question/request lead-ins: "How do I …", "What's the best …", etc.
   s = s.replace(QUESTION_LEAD_IN_RE, "").trim();
   // Final trailing-punctuation pass in case stripping exposed new punctuation.
-  s = s.replace(/[.,:;!?]+$/, "").trim();
+  // Unicode sentence-ending punct (。！？) stripped alongside ASCII .!?
+  s = s.replace(/[.,:;!?\u3002\uFF01\uFF1F]+$/, "").trim();
   // Allow two-character acronyms such as "AI"; single chars are not meaningful.
   if (s.length < 2) return null;
   // Capitalize.
