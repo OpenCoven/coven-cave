@@ -206,6 +206,21 @@ assert.match(
   /window\.addEventListener\(CHAT_ATTENTION_CLEAR_EVENT, onChatAttentionClear\);[\s\S]*?return \(\) => \{\s*window\.removeEventListener\(CHAT_ATTENTION_CLEAR_EVENT, onChatAttentionClear\);[\s\S]*?\};/,
   "workspace should subscribe once to chat attention clears and clean up the listener",
 );
+// A loadSessions() started before the clear (mount, the 4s poll, a scope
+// change) can still be in flight when the clear fires and resolve *after* it
+// with a stale, pre-clear attention snapshot — silently resurrecting the
+// attention this handler just cleared. The handler must bump
+// loadSessionsReqRef.current before patching state so any such in-flight
+// response is superseded (loadSessions' own isCurrent() guard) and dropped.
+const onChatAttentionClearBlock = workspace.match(
+  /const onChatAttentionClear = \(event: Event\) => \{[\s\S]*?\n    \};/,
+)?.[0] ?? "";
+assert.ok(onChatAttentionClearBlock, "workspace should define the chat-attention clear handler");
+assert.match(
+  onChatAttentionClearBlock,
+  /loadSessionsReqRef\.current \+= 1;[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
+  "workspace should invalidate any in-flight loadSessions request before patching attention state, so a stale pre-clear response cannot resurrect the attention this handler just cleared (cave-zs85n Task 5 race)",
+);
 
 // ── Visible grouping tabs: recency view (default) + by-project. ───────────────
 assert.match(

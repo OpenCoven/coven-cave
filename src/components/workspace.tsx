@@ -575,6 +575,15 @@ export function Workspace() {
     const onChatAttentionClear = (event: Event) => {
       const sessionId = attentionClearedSessionId(event);
       if (!sessionId) return;
+      // Invalidate any in-flight loadSessions before patching state: a load
+      // started before this clear (mount, the 4s poll, a scope change) can
+      // still be in flight and resolve *after* it with a stale, pre-clear
+      // attention snapshot, silently resurrecting the attention this handler
+      // just cleared. Bumping the shared reqId makes loadSessions' own
+      // isCurrent() guard drop that stale response; a fresh loadSessions()
+      // call (e.g. the failure-path reconciliation below) still gets its own
+      // newer reqId and is unaffected.
+      loadSessionsReqRef.current += 1;
       baseSessionsRef.current = clearSessionAttentionRows(baseSessionsRef.current, sessionId);
       setSessions((currentSessions) => clearSessionAttentionRows(currentSessions, sessionId));
     };
