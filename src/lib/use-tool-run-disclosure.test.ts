@@ -137,4 +137,64 @@ test("defers collapse while focus is inside the details; collapses on onBlurCapt
   }
 });
 
+// ── 5. Settled manual toggle clears pending collapse; blur no longer collapses ─
+test("settled manual close+reopen clears pending collapse so blur does not collapse", async () => {
+  const snapshots = [];
+  const originalDocument = globalThis.document;
+
+  const innerElement = {};
+  const fakeDetails = {
+    open: true,
+    contains: (node) => node === innerElement,
+  };
+
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: { activeElement: innerElement },
+  });
+
+  let renderer;
+  try {
+    // Mount running with focus inside.
+    await act(async () => {
+      renderer = create(createElement(Probe, { statuses: ["running"], snapshots }));
+    });
+    snapshots.at(-1).detailsRef.current = fakeDetails;
+
+    // Settle — focus still inside, so collapse is deferred (open stays true).
+    await act(async () => {
+      renderer.update(createElement(Probe, { statuses: ["ok"], snapshots }));
+    });
+    assert.equal(snapshots.at(-1).open, true, "stays open: pending collapse deferred");
+
+    // Settled manual close.
+    await act(async () => { snapshots.at(-1).onToggle(false); });
+    assert.equal(snapshots.at(-1).open, false, "manually closed");
+
+    // Settled manual reopen — this should clear the pending collapse.
+    await act(async () => { snapshots.at(-1).onToggle(true); });
+    assert.equal(snapshots.at(-1).open, true, "manually reopened");
+
+    // Blur out — pending collapse was cleared, so group must remain open.
+    await act(async () => {
+      snapshots.at(-1).onBlurCapture({ relatedTarget: null });
+    });
+    assert.equal(
+      snapshots.at(-1).open,
+      true,
+      "remains open after blur: pending collapse was cleared by manual toggle",
+    );
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    if (originalDocument === undefined) {
+      delete globalThis.document;
+    } else {
+      Object.defineProperty(globalThis, "document", {
+        configurable: true,
+        value: originalDocument,
+      });
+    }
+  }
+});
+
 console.log("use-tool-run-disclosure.test.ts: ok");

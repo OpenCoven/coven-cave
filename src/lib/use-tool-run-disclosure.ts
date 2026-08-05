@@ -66,6 +66,10 @@ export function useToolRunDisclosure(statuses: readonly RunStatus[]): ToolRunDis
       }
       return;
     }
+    // A settled manual toggle resolves any deferred collapse: the user has
+    // explicitly stated where they want the group, so pending blur-collapse
+    // must not override that later.
+    pendingCollapse.current = false;
     setOpen(nextOpen);
   };
 
