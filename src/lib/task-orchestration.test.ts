@@ -202,7 +202,11 @@ function codes(errors) {
   const onCycle = cyclicIds(cards);
   for (const id of ["a", "b", "c"]) {
     assert.ok(onCycle.has(id), `${id} is on the cycle`);
-    assert.equal(deriveReadiness(cards.find((x) => x.id === id), cards), "cyclic");
+    assert.equal(
+      deriveReadiness(cards.find((x) => x.id === id), cards, onCycle),
+      "cyclic",
+      "list derivation can reuse one precomputed cycle index",
+    );
   }
   assert.deepEqual(
     dependencyDepth(cards),
@@ -210,7 +214,10 @@ function codes(errors) {
     "cycle members stay out of dependency-depth layout",
   );
   assert.deepEqual(codes(validateOrchestration(a, { cards })), ["dependency_cycle"]);
-  assert.deepEqual(repairRecommendations(a, cards).map((r) => r.code), ["dependency_cycle"]);
+  assert.deepEqual(
+    repairRecommendations(a, cards, onCycle).map((r) => r.code),
+    ["dependency_cycle"],
+  );
 }
 
 {

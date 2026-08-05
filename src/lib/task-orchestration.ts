@@ -135,8 +135,8 @@ function oversizedComponents(edges: ReadonlyMap<string, readonly string[]>): str
 
 /**
  * Every cycle in the task graph, each as the ids on the loop in walk order.
- * A full multi-parent DFS: the single-upstream walk this replaces could not see
- * a loop that closed through a sibling parent, so `cyclic` was under-reported.
+ * Oversized connected components are returned as cycle-class data faults so
+ * traversal guards can never make validation silently pass.
  */
 export function detectCycles(cards: readonly Card[]): string[][] {
   const edges = buildEdges(cards);
@@ -147,18 +147,10 @@ export function detectCycles(cards: readonly Card[]): string[][] {
   const stack: string[] = [];
   const onStack = new Set<string>();
 
-  // Any component that hits the traversal guard is treated as a data fault
-  // (contract I4). We must mark every member of such a component as cyclic,
-  // not just the nodes visited before the guard fired. Collect the oversized
-  // component roots here and fan-out afterward.
-  const guardedRoots = new Set<string>();
-
   const walk = (id: string, depth: number): void => {
     if (depth >= TRAVERSAL_GUARD) {
-      // Guard hit: record a cycle spanning the current stack and flag the
-      // root so all reachable members get swept in the post-pass below.
+      // Defensive fallback: oversized components are filtered before DFS.
       cycles.push([...stack, id]);
-      guardedRoots.add(stack[0] ?? id);
       return;
     }
     seen.add(id);
@@ -178,22 +170,6 @@ export function detectCycles(cards: readonly Card[]): string[][] {
 
   for (const card of cards) {
     if (!guardFaultIds.has(card.id) && !seen.has(card.id)) walk(card.id, 0);
-  }
-
-  // Ensure every node reachable from a guarded root is included in a cycle
-  // entry so that `cyclicIds` marks them all, not only the visited prefix.
-  if (guardedRoots.size > 0) {
-    const guardedMembers: string[] = [];
-    const bfsVisited = new Set<string>();
-    const queue = [...guardedRoots];
-    while (queue.length > 0) {
-      const next = queue.shift() as string;
-      if (bfsVisited.has(next)) continue;
-      bfsVisited.add(next);
-      guardedMembers.push(next);
-      queue.push(...(edges.get(next) ?? []));
-    }
-    cycles.push(guardedMembers);
   }
   return cycles;
 }
@@ -225,10 +201,6 @@ export function dependencyDepth(cards: readonly Card[]): Record<string, number> 
     }
     const cached = memo[id];
     if (cached !== undefined) return cached;
-    if (cyclic.has(id)) {
-      memo[id] = 0;
-      return 0;
-    }
     if (seen.has(id) || seen.size >= TRAVERSAL_GUARD) return 0;
     seen.add(id);
     let depth = 0;
@@ -407,7 +379,8 @@ export function validateOrchestration(
 
 /**
  * Readiness is computed on read from the fields above and never persisted, so
- * it cannot drift out of step with the dependencies it describes.
+ * it cannot drift out of step with the dependencies it describes. List callers
+ * should compute `cyclicIds(cards)` once and pass it as the third argument.
  */
 export function deriveReadiness(
   card: Card,
@@ -437,7 +410,8 @@ export type RepairRecommendation = {
 /**
  * What a task is missing, phrased as the action that fixes it. Tasks blocked
  * before this contract existed stay readable (I8) — they surface here as a
- * cleanup queue instead of failing a read.
+ * cleanup queue instead of failing a read. List callers can reuse the same
+ * precomputed cycle set accepted by `deriveReadiness`.
  */
 export function repairRecommendations(
   card: Card,
