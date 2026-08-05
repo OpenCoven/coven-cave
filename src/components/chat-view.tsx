@@ -6260,7 +6260,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // A Board native-chat handoff already owns the stable conversation id, so
         // its "session" event does not promote the router; refreshing here after
         // persistence restores the normal work/rail view from the one-shot bridge mode.
-        const shouldRefreshSessions = shouldCreationRefresh || shouldReplacementRefresh || (startNewConversation && !!ev.sessionId);
+        const shouldRefreshSessions = shouldCreationRefresh || shouldReplacementRefresh || (startNewConversation && !!ev.sessionId && !ev.isError);
         // Use the latest callback while mounted; stale runs may not refresh a
         // replacement compose after layout cleanup revokes display ownership.
         if (shouldRefreshSessions) onSessionsChangedRef.current?.();

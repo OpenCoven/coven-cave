@@ -975,5 +975,15 @@ assert.match(
   /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\|[\s\S]{0,80}startNewConversation/,
   "shouldRefreshSessions consolidates creation, replacement, and board conditions before the single ref call",
 );
+assert.match(
+  source,
+  /startNewConversation && !!ev\.sessionId && !ev\.isError/,
+  "Board condition in shouldRefreshSessions requires !ev.isError — successful completion refreshes, error does not",
+);
+assert.doesNotMatch(
+  source,
+  /startNewConversation && !!ev\.sessionId(?! && !ev\.isError)/,
+  "Board refresh must not fire on ev.isError — bare condition without the guard must not exist",
+);
 
 console.log("chat-view-lifecycle.test.ts: ok");

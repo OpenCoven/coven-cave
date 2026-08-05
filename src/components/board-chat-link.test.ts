@@ -170,8 +170,13 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\| \(startNewConversation && !!ev\.sessionId\)/,
-  "Board startNewConversation && !!ev.sessionId participates in the consolidated shouldRefreshSessions boolean",
+  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\| \(startNewConversation && !!ev\.sessionId && !ev\.isError\)/,
+  "Board condition requires !ev.isError so a successful first reply refreshes the sidebar but an errored one does not",
+);
+assert.doesNotMatch(
+  chatView,
+  /startNewConversation && !!ev\.sessionId(?! && !ev\.isError)/,
+  "Board condition must not fire on a failed first reply — !ev.isError guard is required",
 );
 assert.match(
   chatView,
