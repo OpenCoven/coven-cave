@@ -66,7 +66,7 @@ function resolveOpenCodeWindowsLaunch(
   options: OpenCodeLaunchOptions,
 ): OpenCodeWindowsResolution {
   const statFile = options.statFile
-    ?? ((candidate: string) => statSync(candidate).isFile());
+    ?? ((candidate: string) => statSync(/* turbopackIgnore: true */ candidate).isFile());
   const resolveWindowsShim =
     options.resolveWindowsShim ?? windowsShimLaunchCommandForBinary;
   const exists = (candidate: string): boolean => {

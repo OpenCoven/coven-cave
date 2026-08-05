@@ -52,13 +52,13 @@ async function ensureArchiveDirectory(root: string, directory: string): Promise<
   for (const part of relative.split(path.sep)) {
     current = path.join(current, part);
     try {
-      const details = await lstat(current);
+      const details = await lstat(/* turbopackIgnore: true */ current);
       if (!details.isDirectory() || details.isSymbolicLink()) {
         throw archiveError("entry path crosses a link or non-directory");
       }
     } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-      await mkdir(current);
+      await mkdir(/* turbopackIgnore: true */ current);
     }
   }
 }
@@ -67,13 +67,13 @@ async function writeArchiveEntry(root: string, name: string, data: Buffer, direc
   const destination = safeArchiveDestination(root, name);
   if (directory) {
     await ensureArchiveDirectory(root, destination);
-    await chmod(destination, mode & 0o777);
+    await chmod(/* turbopackIgnore: true */ destination, mode & 0o777);
     return;
   }
   await ensureArchiveDirectory(root, path.dirname(destination));
   let handle;
   try {
-    handle = await open(destination, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, mode & 0o777);
+    handle = await open(/* turbopackIgnore: true */ destination, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, mode & 0o777);
     await handle.writeFile(data);
     await handle.chmod(mode & 0o777);
   } catch (error) {

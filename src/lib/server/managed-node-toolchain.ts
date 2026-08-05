@@ -109,7 +109,7 @@ export function managedNodeSpawnEnv(
 }
 
 export function managedNpmLaunch(paths = managedNodePaths()): { command: string; args: string[] } | null {
-  if (!paths || !existsSync(paths.node) || !existsSync(paths.npmCli)) return null;
+  if (!paths || !existsSync(/* turbopackIgnore: true */ paths.node) || !existsSync(/* turbopackIgnore: true */ paths.npmCli)) return null;
   return { command: paths.node, args: [paths.npmCli] };
 }
 
@@ -123,7 +123,7 @@ export async function probeManagedNodeToolchain(
   } = {},
 ): Promise<ManagedNodeProbe> {
   const paths = managedNodePaths(options.platform, options.architecture, options.env, options.home);
-  if (!paths || !existsSync(paths.node) || !existsSync(paths.npmCli)) return { status: "missing", paths: paths ?? unmanagedPaths() };
+  if (!paths || !existsSync(/* turbopackIgnore: true */ paths.node) || !existsSync(/* turbopackIgnore: true */ paths.npmCli)) return { status: "missing", paths: paths ?? unmanagedPaths() };
   const env = managedNodeSpawnEnv(options.env ?? process.env, paths);
   if (!env) return { status: "missing", paths };
   const run = options.exec ?? execFileAsync;
@@ -188,12 +188,12 @@ async function responseBuffer(response: Response, maxBytes: number, signal?: Abo
 }
 
 async function onlyRuntimeDirectory(root: string): Promise<string> {
-  const entries = await readdir(root, { withFileTypes: true });
+  const entries = await readdir(/* turbopackIgnore: true */ root, { withFileTypes: true });
   const directories = entries.filter((entry) => entry.isDirectory() && /^node-v\d+\.\d+\.\d+-/.test(entry.name));
   if (directories.length !== 1 || entries.some((entry) => !entry.isDirectory())) {
     throw new Error("managed Node archive did not contain one runtime directory");
   }
-  return path.join(root, directories[0]!.name);
+  return path.join(/* turbopackIgnore: true */ root, directories[0]!.name);
 }
 
 export async function installManagedNodeToolchain(options: {
@@ -218,10 +218,10 @@ export async function installManagedNodeToolchain(options: {
     return { status: "unusable", detail: "No approved Node artifact is available for this platform.", paths };
   }
   const fetcher = options.fetch ?? fetch;
-  const stage = path.join(paths.stagingRoot, `node-${randomUUID()}`);
+  const stage = path.join(/* turbopackIgnore: true */ paths.stagingRoot, `node-${randomUUID()}`);
   const installTemporary = `${paths.installDir}.tmp-${randomUUID()}`;
   try {
-    await mkdir(stage, { recursive: true });
+    await mkdir(/* turbopackIgnore: true */ stage, { recursive: true });
     options.onProgress?.(`Downloading Node.js ${MANAGED_NODE_VERSION} from nodejs.org…`);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), INSTALL_TIMEOUT_MS);
@@ -238,33 +238,33 @@ export async function installManagedNodeToolchain(options: {
     const archive = await responseBuffer(response, artifact.maxBytes, options.signal);
     const digest = createHash("sha256").update(archive).digest("hex");
     if (digest !== artifact.sha256) throw new Error("Node archive digest does not match the reviewed manifest");
-    await writeFile(path.join(stage, artifact.format === "zip" ? "node.zip" : "node.tar.gz"), archive, { mode: 0o600 });
-    const extracted = path.join(stage, "extracted");
-    await mkdir(extracted, { recursive: true });
+    await writeFile(path.join(/* turbopackIgnore: true */ stage, artifact.format === "zip" ? "node.zip" : "node.tar.gz"), archive, { mode: 0o600 });
+    const extracted = path.join(/* turbopackIgnore: true */ stage, "extracted");
+    await mkdir(/* turbopackIgnore: true */ extracted, { recursive: true });
     options.onProgress?.("Verifying and extracting the Node.js archive…");
     if (artifact.format === "zip") await extractSafeZip(archive, extracted);
     else await extractSafeTarGz(archive, extracted);
     const runtime = await onlyRuntimeDirectory(extracted);
-    await mkdir(path.dirname(paths.installDir), { recursive: true });
-    await rm(installTemporary, { recursive: true, force: true });
-    await rename(runtime, installTemporary);
-    await rm(paths.installDir, { recursive: true, force: true });
-    await rename(installTemporary, paths.installDir);
-    await mkdir(paths.npmPrefix, { recursive: true });
+    await mkdir(/* turbopackIgnore: true */ path.dirname(paths.installDir), { recursive: true });
+    await rm(/* turbopackIgnore: true */ installTemporary, { recursive: true, force: true });
+    await rename(/* turbopackIgnore: true */ runtime, installTemporary);
+    await rm(/* turbopackIgnore: true */ paths.installDir, { recursive: true, force: true });
+    await rename(/* turbopackIgnore: true */ installTemporary, paths.installDir);
+    await mkdir(/* turbopackIgnore: true */ paths.npmPrefix, { recursive: true });
     options.onProgress?.("Node.js and npm are ready in Cave’s user-scoped toolchain.");
     return probeManagedNodeToolchain({ platform, architecture, env: options.env, home: options.home });
   } catch (error) {
     return { status: "unusable", detail: error instanceof Error ? error.message : "Managed Node installation failed", paths };
   } finally {
-    await rm(stage, { recursive: true, force: true }).catch(() => undefined);
-    await rm(installTemporary, { recursive: true, force: true }).catch(() => undefined);
+    await rm(/* turbopackIgnore: true */ stage, { recursive: true, force: true }).catch(() => undefined);
+    await rm(/* turbopackIgnore: true */ installTemporary, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
 export async function managedToolchainWritable(paths: ManagedNodePaths): Promise<boolean> {
   try {
-    await mkdir(paths.root, { recursive: true });
-    const details = await stat(paths.root);
+    await mkdir(/* turbopackIgnore: true */ paths.root, { recursive: true });
+    const details = await stat(/* turbopackIgnore: true */ paths.root);
     return details.isDirectory();
   } catch {
     return false;
