@@ -282,6 +282,7 @@ import { preloadMarkdownPreview } from "@/lib/markdown-preview";
 import {
   type CreationRefreshState,
   onSendStart,
+  onCreationSessionIdentified,
   onDoneCreationRefresh,
 } from "@/lib/chat-creation-refresh";
 
@@ -2482,7 +2483,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [activeProjectRoot, onProjectRootChange]);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
-  const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingCreationRefresh: false });
+  const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingCreationRefresh: false, creationSessionId: null });
   const streamHealthSessionRef = useRef(sessionId);
   const currentStreamHealthRunIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -5963,6 +5964,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
+            // Bind the pending creation-refresh to this specific session ID so
+            // completions for other existing sessions don't consume it.
+            creationRefreshStateRef.current = onCreationSessionIdentified(creationRefreshStateRef.current, ev.sessionId);
           }
           onSessionStarted?.(ev.sessionId);
         }
@@ -6136,6 +6140,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
+            // Done-fallback: session event may not have fired (race). Bind the
+            // creation-refresh state here so the mismatch guard works correctly.
+            creationRefreshStateRef.current = onCreationSessionIdentified(creationRefreshStateRef.current, ev.sessionId);
           }
           onSessionStarted?.(ev.sessionId);
         }

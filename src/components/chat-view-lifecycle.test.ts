@@ -727,7 +727,7 @@ assert.match(
 );
 {
   const guarded = source.match(
-    /if \(currentSessionRef\.current === liveGeneration\.originSessionId\) \{\s*\n\s*liveSessionIdRef\.current = ev\.sessionId;\s*\n\s*currentSessionRef\.current = ev\.sessionId;\s*\n\s*setHistoryState\("loaded"\);\s*\n\s*\}\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);/g,
+    /if \(currentSessionRef\.current === liveGeneration\.originSessionId\) \{\s*\n\s*liveSessionIdRef\.current = ev\.sessionId;\s*\n\s*currentSessionRef\.current = ev\.sessionId;\s*\n\s*setHistoryState\("loaded"\);[\s\S]*?\}\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);/g,
   );
   assert.ok(
     guarded && guarded.length === 2,
@@ -754,6 +754,11 @@ assert.doesNotMatch(
   source,
   /if \(completedSessionId\) \{\s*onSessionsChanged\?\.\(\);\s*\}/,
   "ordinary follow-ups do not refresh as though they created a sidebar row",
+);
+assert.match(
+  source,
+  /onCreationSessionIdentified\(creationRefreshStateRef\.current,\s*ev\.sessionId\)/,
+  "ChatView binds the creation-refresh state to the server-assigned session ID when the view adopts it, so mismatch guard prevents existing-session completions from consuming a pending creation refresh",
 );
 
 // cave-b63 (1): model-state / usage-plan refreshes gate their setState on a

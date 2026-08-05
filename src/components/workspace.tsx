@@ -3148,6 +3148,7 @@ export function Workspace() {
         onActiveSessionChange={setActiveChatSessionId}
         onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}
+        onSessionStarted={loadSessions}
         onSessionsChanged={loadSessions}
         onSessionsDeleted={handleSessionsDeleted}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
