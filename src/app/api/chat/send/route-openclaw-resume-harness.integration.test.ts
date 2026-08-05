@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -11,6 +12,8 @@ const home = await mkdtemp(path.join(homedir(), "cave-openclaw-resume-"));
 const bin = path.join(home, "bin");
 const workspace = path.join(home, "workspace");
 const calls = path.join(home, "openclaw-calls.jsonl");
+const daemonSocket = path.join(home, "coven.sock");
+const daemonOnlySessionId = "openclaw-daemon-only-resume";
 await mkdir(bin, { recursive: true });
 await mkdir(workspace, { recursive: true });
 await writeFile(path.join(home, "familiars.toml"), "[[familiar]]\nid = \"wren\"\nopenclaw_agent = \"wren\"\n");
@@ -19,9 +22,34 @@ const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousOpenClawBin = process.env.OPENCLAW_BIN;
 const previousCallLog = process.env.OPENCLAW_TEST_CALLS;
+const previousCovenSocket = process.env.COVEN_SOCKET;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.OPENCLAW_TEST_CALLS = calls;
+process.env.COVEN_SOCKET = daemonSocket;
+
+let daemonSessionRequests = 0;
+const daemon = createServer((req, res) => {
+  res.setHeader("content-type", "application/json");
+  if (req.url === "/api/v1/sessions") {
+    daemonSessionRequests++;
+    res.end(JSON.stringify([{
+      id: daemonOnlySessionId,
+      title: "Established daemon thread",
+      project_root: workspace,
+    }]));
+    return;
+  }
+  res.statusCode = 404;
+  res.end(JSON.stringify({ error: "not found" }));
+});
+await new Promise((resolve, reject) => {
+  daemon.once("error", reject);
+  daemon.listen(daemonSocket, () => {
+    daemon.off("error", reject);
+    resolve();
+  });
+});
 
 const shimScript = path.join(bin, "openclaw.js");
 await writeFile(shimScript, [
@@ -54,8 +82,9 @@ async function readSse(response) {
 }
 
 try {
-  const { saveConfig } = await import("@/lib/cave-config");
+  const { loadState, saveConfig } = await import("@/lib/cave-config");
   const { loadConversation, saveConversation } = await import("@/lib/cave-conversations");
+  const { chatSummaryTitle, defaultChatTitleForSession } = await import("@/lib/cave-chat-titles");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
@@ -113,6 +142,57 @@ try {
   const conversation = await loadConversation(sessionId);
   assert.equal(conversation?.harness, "openclaw", "resume never rewrites the stored harness");
   assert.equal(conversation?.turns.at(-1)?.responseMetadata?.harness, "openclaw");
+
+  // A daemon-originated session has no Cave conversation file yet. The body
+  // session id and daemon row still make this a follow-up, not a first turn.
+  await saveConfig({ familiars: { wren: { harness: "openclaw", model: "" } } });
+  assert.equal(await loadConversation(daemonOnlySessionId), null);
+  const daemonResumePrompt = "continue the established daemon thread";
+  const daemonResumeEvents = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "wren",
+      sessionId: daemonOnlySessionId,
+      startNewConversation: true,
+      prompt: daemonResumePrompt,
+    }),
+  })));
+  assert.ok(daemonSessionRequests > 0, "daemon-only resume resolves its authoritative daemon session");
+  assert.equal(daemonResumeEvents.findLast((event) => event.kind === "done")?.isError, false);
+  const daemonResumeConversation = await loadConversation(daemonOnlySessionId);
+  assert.equal(
+    daemonResumeConversation?.title,
+    defaultChatTitleForSession(daemonOnlySessionId),
+    "a follow-up prompt does not become the title of a daemon-owned session",
+  );
+  let state = await loadState();
+  assert.equal(
+    state.sessionTitleAuto[daemonOnlySessionId],
+    undefined,
+    "daemon-only resume does not claim automatic title ownership",
+  );
+
+  // A genuinely new OpenClaw request has no submitted session id and therefore
+  // owns first-exchange title initialization.
+  const newPrompt = "design retry queues";
+  const newEvents = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "wren",
+      projectRoot: workspace,
+      prompt: newPrompt,
+    }),
+  })));
+  const newSessionId = newEvents.find((event) => event.kind === "session")?.sessionId;
+  assert.ok(newSessionId, "new OpenClaw chat announces its Cave-owned session id");
+  state = await loadState();
+  assert.equal(
+    state.sessionTitleAuto[newSessionId],
+    chatSummaryTitle({ userText: newPrompt }),
+    "true new OpenClaw chat initializes automatic title ownership",
+  );
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;
@@ -122,5 +202,8 @@ try {
   else process.env.OPENCLAW_BIN = previousOpenClawBin;
   if (previousCallLog === undefined) delete process.env.OPENCLAW_TEST_CALLS;
   else process.env.OPENCLAW_TEST_CALLS = previousCallLog;
+  if (previousCovenSocket === undefined) delete process.env.COVEN_SOCKET;
+  else process.env.COVEN_SOCKET = previousCovenSocket;
+  await new Promise((resolve, reject) => daemon.close((error) => error ? reject(error) : resolve()));
   await rm(home, { recursive: true, force: true });
 }

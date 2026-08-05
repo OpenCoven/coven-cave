@@ -62,13 +62,27 @@ assert.match(
 
 const openClawStubWrites = [
   ...chatRoute.matchAll(
-    /const stubWrite = createConversationStub\(\{[\s\S]*?harness: "openclaw",[\s\S]*?\}\)\.then\(async \(created\) => \{[\s\S]*?if \(created\) await setDefaultStubTitleAuto\(conversationId, stubTitle\);[\s\S]*?return created;[\s\S]*?\}\)\.catch\(\(\) => false\);/g,
+    /const stubWrite = createConversationStub\(\{[\s\S]*?harness: "openclaw",[\s\S]*?\}\)\.then\(async \(created\) => \{[\s\S]*?if \(created && ownsFirstExchangeTitle\) \{[\s\S]*?await setDefaultStubTitleAuto\(conversationId, stubTitle\);[\s\S]*?\}[\s\S]*?return created;[\s\S]*?\}\)\.catch\(\(\) => false\);/g,
   ),
 ];
 assert.equal(
   openClawStubWrites.length,
   2,
-  "both OpenClaw transports initialize stub-title ownership only when createConversationStub created a new conversation",
+  "both OpenClaw transports initialize title ownership only for an authoritative new chat whose stub was created",
+);
+assert.match(
+  chatRoute,
+  /ownsFirstExchangeTitle:\s*body\.sessionId == null \|\|[\s\S]*body\.startNewConversation === true[\s\S]*existingConversation == null[\s\S]*taskCard != null/,
+  "submitted session ids are resume provenance except for server-owned reserved new-chat handoffs",
+);
+assert.equal(
+  (
+    chatRoute.match(
+      /const (?:isFirstExchange|firstExchange) =\s*ownsFirstExchangeTitle && \(!existing \|\| hadFirstTurnStub\);/g,
+    ) ?? []
+  ).length,
+  2,
+  "both OpenClaw close paths gate first-exchange naming on authoritative new-chat provenance",
 );
 assert.doesNotMatch(
   chatRoute,

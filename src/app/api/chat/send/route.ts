@@ -604,6 +604,7 @@ function openClawChatResponse(args: {
   desiredModel: string;
   modelState: ChatModelState;
   initialModelIntent: string | null;
+  ownsFirstExchangeTitle: boolean;
 }): Response {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -662,6 +663,7 @@ function openClawChatResponse(args: {
       // the client got back on the first turn. The gateway session is keyed
       // off this id, so it survives OpenClaw's internal session-id rotation.
       const conversationId = args.body.sessionId ?? crypto.randomUUID();
+      const ownsFirstExchangeTitle = args.ownsFirstExchangeTitle;
       pushProgress("openclaw-resolve", "Resolving OpenClaw agent", "running");
       let agentBinding;
       try {
@@ -881,7 +883,9 @@ function openClawChatResponse(args: {
         responseMetadata.gatewaySessionId = gatewayDispatch.runId;
         pushProgress("openclaw-gateway", "OpenClaw Gateway dispatch accepted", "done", `run ${gatewayDispatch.runId}`);
         const pendingUserTurnId = crypto.randomUUID();
-        const stubTitle = chatSummaryTitle({ userText: args.promptText }) ?? defaultChatTitleForSession(conversationId);
+        const stubTitle = ownsFirstExchangeTitle
+          ? chatSummaryTitle({ userText: args.promptText }) ?? defaultChatTitleForSession(conversationId)
+          : defaultChatTitleForSession(conversationId);
         const stubWrite = createConversationStub({
           sessionId: conversationId,
           familiarId: args.body.familiarId,
@@ -898,7 +902,9 @@ function openClawChatResponse(args: {
             ...persistedTurnControls(args.body, responseMetadata.retryModel),
           },
         }).then(async (created) => {
-          if (created) await setDefaultStubTitleAuto(conversationId, stubTitle);
+          if (created && ownsFirstExchangeTitle) {
+            await setDefaultStubTitleAuto(conversationId, stubTitle);
+          }
           return created;
         }).catch(() => false);
         const stopGateway = () => {
@@ -956,10 +962,13 @@ function openClawChatResponse(args: {
         await stubWrite;
         const existing = await loadConversation(conversationId);
         const hadFirstTurnStub = existing ? stripConversationStubTurn(existing, pendingUserTurnId) : false;
-        const isFirstExchange = !existing || hadFirstTurnStub;
+        const isFirstExchange =
+          ownsFirstExchangeTitle && (!existing || hadFirstTurnStub);
         const now = new Date().toISOString();
         const chatTitle = existing?.title ?? defaultChatTitleForSession(conversationId);
-        if (!existing) await setDefaultStubTitleAuto(conversationId, chatTitle);
+        if (!existing && ownsFirstExchangeTitle) {
+          await setDefaultStubTitleAuto(conversationId, chatTitle);
+        }
         const branchParentId =
           args.body.parentTurnId !== undefined ? args.body.parentTurnId : existing?.activeLeafId ?? null;
         const conv = existing ?? {
@@ -1121,8 +1130,9 @@ function openClawChatResponse(args: {
       // chats. The close handler strips the stub turn and re-appends the
       // authoritative one under the same id.
       const pendingUserTurnId = crypto.randomUUID();
-      const stubTitle =
-        chatSummaryTitle({ userText: args.promptText }) ?? defaultChatTitleForSession(conversationId);
+      const stubTitle = ownsFirstExchangeTitle
+        ? chatSummaryTitle({ userText: args.promptText }) ?? defaultChatTitleForSession(conversationId)
+        : defaultChatTitleForSession(conversationId);
       const stubWrite = createConversationStub({
         sessionId: conversationId,
         familiarId: args.body.familiarId,
@@ -1139,7 +1149,9 @@ function openClawChatResponse(args: {
           ...persistedTurnControls(args.body, responseMetadata.retryModel),
         },
       }).then(async (created) => {
-        if (created) await setDefaultStubTitleAuto(conversationId, stubTitle);
+        if (created && ownsFirstExchangeTitle) {
+          await setDefaultStubTitleAuto(conversationId, stubTitle);
+        }
         return created;
       }).catch(() => false);
 
@@ -1292,12 +1304,15 @@ function openClawChatResponse(args: {
             const hadFirstTurnStub = existing
               ? stripConversationStubTurn(existing, pendingUserTurnId)
               : false;
-            const firstExchange = !existing || hadFirstTurnStub;
+            const firstExchange =
+              ownsFirstExchangeTitle && (!existing || hadFirstTurnStub);
             const now = new Date().toISOString();
             const userTurnId = pendingUserTurnId;
             const assistantTurnId = crypto.randomUUID();
             const chatTitle = existing?.title ?? defaultChatTitleForSession(sessionId);
-            if (!existing) await setDefaultStubTitleAuto(sessionId, chatTitle);
+            if (!existing && ownsFirstExchangeTitle) {
+              await setDefaultStubTitleAuto(sessionId, chatTitle);
+            }
             // Branching: same logic as the coven-run path — client-supplied
             // parentTurnId takes precedence; falls back to prior activeLeafId for
             // normal (non-branch) sends so the linear chain is preserved.
@@ -2272,6 +2287,15 @@ export async function POST(req: Request) {
       desiredModel,
       modelState,
       initialModelIntent: existingConversation?.modelIntent?.model ?? null,
+      // A submitted id is resume provenance even when its only record is in the
+      // daemon. The sole new-chat exception is a server-owned Board reservation.
+      ownsFirstExchangeTitle:
+        body.sessionId == null ||
+        (
+          body.startNewConversation === true &&
+          existingConversation == null &&
+          taskCard != null
+        ),
     });
   }
 

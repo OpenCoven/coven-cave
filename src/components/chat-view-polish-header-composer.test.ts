@@ -649,7 +649,7 @@ assert.match(
 );
 assert.match(
   source,
-  /for \(const alias of liveGeneration\.sessionAliases\) \{\s*clearLiveChatGeneration\(alias, runId\);\s*\}/,
+  /clearLiveChatGenerationAliases\(liveGeneration\.sessionAliases, runId\)/,
   "A settling older run clears all of its aliases without clearing a newer run's registry snapshot",
 );
 

@@ -610,6 +610,45 @@ try {
       "policy-gated reflection attempts do not archive",
     );
 
+    // A daemon-only session has no local conversation file. Its authoritative
+    // existence callback may load Cave config while resolving through the
+    // daemon; invoking that callback under updateState's reconciliation lock
+    // deadlocks because the lock is non-reentrant.
+    let daemonExistenceChecks = 0;
+    let deadlockTimer;
+    const daemonOnlyArchive = config.autoArchiveReflectedSessionLocal(
+      "reflect-daemon-only",
+      {
+        ...reflectionRequest,
+        sessionExists: async () => {
+          daemonExistenceChecks++;
+          await config.loadConfig();
+          return true;
+        },
+      },
+    );
+    const daemonOnlyResult = await Promise.race([
+      daemonOnlyArchive,
+      new Promise((_, reject) => {
+        deadlockTimer = setTimeout(
+          () => reject(new Error("daemon-only reflection archive deadlocked")),
+          1_000,
+        );
+      }),
+    ]).finally(() => clearTimeout(deadlockTimer));
+    assert.equal(daemonExistenceChecks, 1, "daemon existence is resolved once before the state transaction");
+    assert.ok(
+      typeof daemonOnlyResult === "string" && Number.isFinite(Date.parse(daemonOnlyResult)),
+      "daemon-only reflected session archives without a local conversation file",
+    );
+    state = await config.loadState();
+    assert.equal(
+      state.sessionArchived["reflect-daemon-only"],
+      daemonOnlyResult,
+      "daemon-only archive is committed after the external lookup completes",
+    );
+    await config.summonSessionLocal("reflect-daemon-only");
+
     // Sacrificed session (session-1 is already sacrificed above) skips.
     const sacrificedResult = await config.autoArchiveReflectedSessionLocal(
       "session-1",
