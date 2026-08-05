@@ -37,7 +37,7 @@ function makeContext(overrides: Partial<RoleSurfaceContext> = {}): RoleSurfaceCo
     activeFamiliar: { id: "fam-1", display_name: "Fam", role: "Researcher" },
     activePerson: null,
     currentThread: null,
-    runtimeState: { daemonRunning: true, sessions: [], activeSessionId: null },
+    runtimeState: { daemonRunning: true, sessions: [], sessionsLoaded: true, activeSessionId: null },
     memory: { listEntries: async () => [], readFile: async () => null },
     tools: { listTools: async () => [] },
     plugins: { listPlugins: async () => [] },

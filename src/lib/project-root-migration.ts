@@ -26,7 +26,7 @@
 
 import { normalizeProjectRoot, type CaveProject } from "./cave-projects-types.ts";
 import {
-  moveProjectImage,
+  moveProjectImageFromStorageKey,
   readProjectImagesSnapshot,
   whenProjectImagesHydrated,
 } from "./cave-project-images.ts";
@@ -37,10 +37,10 @@ import { readProjectOverrides, writeProjectOverrides } from "./chat-project-over
  * what makes idempotence observable: a second window running this immediately
  * after the first gets 0.
  *
- * Safe to run concurrently. Avatars go through `moveProjectImage`, which writes
- * the new key before deleting the old one, so a denied write (quota, private
- * mode) leaves the record under its old key rather than losing it. Overrides
- * are read-modify-written whole; the last writer wins with identical content.
+ * Safe to run concurrently. Avatar moves write the new key before deleting the
+ * old one, so a denied write (quota, private mode) leaves the record under its
+ * old key rather than losing it. Overrides are read-modify-written whole; the
+ * last writer wins with identical content.
  */
 export async function migrateProjectRootKeys(
   projects: readonly CaveProject[],
@@ -67,17 +67,16 @@ export async function migrateProjectRootKeys(
   await whenProjectImagesHydrated();
 
   for (const { from, to } of moves) {
-    // Look up by the store's OWN key. It is keyed by normalizeProjectRoot(root),
-    // which is identity for a plain `~/code/app` but not for a root carrying
-    // backslashes or a trailing slash — comparing the raw string would miss
-    // exactly those.
-    const fromKey = normalizeProjectRoot(from);
-    const hadImage = Object.hasOwn(readProjectImagesSnapshot(), fromKey);
-    if (hadImage) {
-      // Failures are swallowed inside moveProjectImage — it writes the new key
-      // first and deletes the old only on success, so a denied write leaves the
-      // record under its old key rather than losing it.
-      await moveProjectImage(from, to);
+    // Probe the literal persisted key before the canonical store key. Most
+    // historical writes normalized on entry, but pre-upgrade drive roots could
+    // already exist under literal `C:`.
+    const fromKeys = [...new Set([from, normalizeProjectRoot(from)])];
+    for (const fromKey of fromKeys) {
+      const hadImage = Object.hasOwn(readProjectImagesSnapshot(), fromKey);
+      if (!hadImage) continue;
+      // Probe the literal persisted key first: old drive roots could be stored
+      // as `C:` before normalization canonicalized them to `C:/`.
+      await moveProjectImageFromStorageKey(fromKey, to);
       if (!Object.hasOwn(readProjectImagesSnapshot(), fromKey)) followed.add(from);
     }
   }

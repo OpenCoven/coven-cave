@@ -9,6 +9,7 @@ import type { SessionRow } from "@/lib/types";
 import {
   isAbsoluteProjectPath,
   normalizeProjectRoot,
+  projectRootsEqual,
   resolvePathWithinProjectRoot,
 } from "./cave-projects-types.ts";
 import type { PendingCodeOpen } from "./pending-code-open.ts";
@@ -222,13 +223,43 @@ export function codeSessionForPendingOpen(
     ? rows.find(
         (row) =>
           isCodeRailSession(row) &&
-          normalizeProjectRoot(codeSessionWorkRoot(row)) === capturedRoot,
+          projectRootsEqual(codeSessionWorkRoot(row), capturedRoot),
       )
     : undefined;
   const byId = open.sessionId
     ? rows.find((row) => isCodeRailSession(row) && row.id === open.sessionId)
     : undefined;
   return byRoot ?? byId ?? null;
+}
+
+export type CodePendingOpenResolution =
+  | { status: "waiting"; capturedRoot: string; target: null }
+  | { status: "invalid"; capturedRoot: null; target: null }
+  | { status: "absent"; capturedRoot: string; target: null }
+  | { status: "ready"; capturedRoot: string | null; target: SessionRow | null };
+
+/**
+ * Separate a valid rooted open waiting on the session inventory from roots that
+ * are malformed or definitively absent after loading. Callers may acknowledge
+ * every result except `waiting`.
+ */
+export function resolveCodePendingOpen(
+  rows: readonly SessionRow[],
+  open: PendingCodeOpen,
+  sessionsLoaded: boolean,
+): CodePendingOpenResolution {
+  const capturedRoot = codePendingOpenProjectRoot(open);
+  if (open.root !== undefined && !capturedRoot) {
+    return { status: "invalid", capturedRoot: null, target: null };
+  }
+  if (capturedRoot && !sessionsLoaded) {
+    return { status: "waiting", capturedRoot, target: null };
+  }
+  const target = codeSessionForPendingOpen(rows, open);
+  if (capturedRoot && !target) {
+    return { status: "absent", capturedRoot, target: null };
+  }
+  return { status: "ready", capturedRoot, target };
 }
 
 export type CodeSessionActivity = "running" | "error" | "idle";

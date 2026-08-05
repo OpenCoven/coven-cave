@@ -113,11 +113,8 @@ export async function clearProjectImage(root: string): Promise<void> {
   broadcast();
 }
 
-/** Follow a root edit: re-key the stored image so the avatar survives. */
-export async function moveProjectImage(fromRoot: string, toRoot: string): Promise<void> {
+async function moveProjectImageKey(from: string, to: string): Promise<void> {
   await ensureHydrated();
-  const from = normalizeProjectRoot(fromRoot);
-  const to = normalizeProjectRoot(toRoot);
   const entry = cached[from];
   if (!entry || from === to) return;
   try {
@@ -133,6 +130,19 @@ export async function moveProjectImage(fromRoot: string, toRoot: string): Promis
   cached = next;
   notify();
   broadcast();
+}
+
+/** Follow a root edit: re-key the stored image so the avatar survives. */
+export async function moveProjectImage(fromRoot: string, toRoot: string): Promise<void> {
+  await moveProjectImageKey(normalizeProjectRoot(fromRoot), normalizeProjectRoot(toRoot));
+}
+
+/** Move an exact pre-normalization storage key during a root-key migration. */
+export async function moveProjectImageFromStorageKey(
+  fromKey: string,
+  toRoot: string,
+): Promise<void> {
+  await moveProjectImageKey(fromKey, normalizeProjectRoot(toRoot));
 }
 
 function subscribe(fn: () => void): () => void {

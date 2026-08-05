@@ -212,7 +212,7 @@ assert.match(
 );
 assert.match(
   codeView,
-  /if \(!pendingOpen\) return;[\s\S]*codeSessionForPendingOpen\([\s\S]*setTopTab\("sessions"\);\s*setInitialGithubTarget\(null\);\s*if \(target\) setSelectedId\(target\.id\);[\s\S]*pendingOpen\.root !== undefined && \(!capturedRoot \|\| !target\)[\s\S]*\{ open: pendingOpen, sessionId: target\?\.id \?\? null \}/,
+  /if \(!pendingOpen\) return;[\s\S]*resolveCodePendingOpen\([\s\S]*sessionsLoaded,[\s\S]*\);[\s\S]*if \(resolution\.status === "waiting"\) return;[\s\S]*setTopTab\("sessions"\);\s*setInitialGithubTarget\(null\);\s*if \(target\) setSelectedId\(target\.id\);[\s\S]*pendingOpen\.root !== undefined && resolution\.status !== "ready"[\s\S]*\{ open: pendingOpen, sessionId: target\?\.id \?\? null \}/,
   "file/diff navigation supersedes a pending GitHub detail so it cannot replay: the pending-open effect must switch to Sessions, clear the latched GitHub target, then keep the existing session/workbench selection flow",
 );
 

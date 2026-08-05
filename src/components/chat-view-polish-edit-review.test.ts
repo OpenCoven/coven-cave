@@ -16,6 +16,10 @@ const editCardStyles = readFileSync(
   new URL("../styles/globals/shell-cards-and-controls.css", import.meta.url),
   "utf8",
 );
+const editCardActions = readFileSync(
+  new URL("./chat-edit-card-actions.tsx", import.meta.url),
+  "utf8",
+);
 
 // Follow-ups are compact intent cards in both transcript and composer
 // placements. Their visual grammar belongs to the shared component rather
@@ -70,22 +74,22 @@ assert.match(editCardStyles, /\.cave-edit-card/, "edit card styling exists");
 // execution root. Multi-file and unrouteable cards keep the full card diff in
 // the read-only modal rather than opening one file while implying full review.
 assert.match(
-  source,
+  editCardActions,
   /const singleProjectPath = allMutationPathsResolved && resolvedMutationPaths\.length === 1/,
   "only a complete single-file mutation is project-routable",
 );
 assert.match(
-  source,
+  editCardActions,
   /if \(singleProjectPath && projectRoot\) \{[\s\S]{0,250}detail: \{ path: singleProjectPath\.absolutePath, projectRoot \}[\s\S]{0,160}setReviewOpen\(true\)/,
   "Review routes one file by captured root and falls back to the full inline diff otherwise",
 );
 assert.match(
-  source,
+  editCardActions,
   /<Modal[\s\S]{0,200}open=\{reviewOpen\}[\s\S]{0,600}<SyntaxBlock text=\{diff\} lang="diff" \/>/,
   "the review modal renders this edit's structured diff",
 );
 assert.match(
-  source,
+  editCardActions,
   /title=\{\s*singleProjectPath\s*\? "Review this file's pending diff in the Changes panel"\s*: "Review this edit's full diff"\s*\}/,
   "the Review tooltip truthfully distinguishes routed single-file and full-card review",
 );
@@ -109,30 +113,50 @@ assert.match(
 // Inline "Undo" reverts the edited file to its last committed state via the
 // changes revert API, resolving the repo-relative path through a context, and
 // pings the Changes panel to refresh.
-assert.match(source, /cave-edit-card__undo/, "edit card has an Undo action");
+assert.match(editCardActions, /cave-edit-card__undo/, "edit card has an Undo action");
 assert.match(
-  source,
+  editCardActions,
   /\{canUndo \? \([\s\S]*cave-edit-card__undo[\s\S]*\) : null\}/,
   "Undo is only available after exactly one affected path resolves inside the project",
 );
 assert.match(source, /ToolProjectRootContext/, "edit card resolves project root via context for revert");
 assert.match(
   source,
+  /new CustomEvent\(isEditTool \? "cave:open-file-diff" : "cave:open-project-file", \{\s*detail: \{ path: targetFile, projectRoot: railRoot \},\s*\}\)/,
+  "historical non-edit file tools route through the turn's captured root after the active project switches",
+);
+assert.match(
+  source,
+  /if \(!targetFile \|\| !railRoot\) return;[\s\S]*targetFile && railRoot \? \([\s\S]*onClick=\{openTargetFile\}[\s\S]*\) : \(/,
+  "file-tool links remain read-only when immutable root provenance is absent",
+);
+assert.match(
+  editCardActions,
   /mutationPaths\s*\.map\(\(path\) =>\s*resolvePathWithinProjectRoot\(projectRoot, path\)\)/,
   "individual review and undo actions use boundary-safe project path resolution",
 );
 assert.match(
-  source,
+  editCardActions,
   /resolvedMutationPaths\.length === mutationPaths\.length[\s\S]*resolvedMutationPaths\.length === 1/,
   "multi-file mutations never offer a partial one-file undo",
 );
 assert.ok(
-  source.includes('? [tool.id, railRoot ?? "", ...mutation.paths].join("\\0")') &&
+  source.includes("const actionIdentity = tool.id;") &&
     /<EditCardActions\s+key=\{actionIdentity\}/.test(source),
-  "mutation identity includes the captured root so an armed Undo remounts closed on identity or root changes",
+  "edit actions use the stable tool slot identity instead of mutable root or path metadata",
 );
-assert.match(source, /"\/api\/changes"/, "Undo posts to the changes revert API");
-assert.match(source, /cave:changes-refresh/, "Undo notifies the Changes panel to refresh");
+assert.match(
+  editCardActions,
+  /const undoTargetIdentity = JSON\.stringify\(\[projectRoot, \.\.\.mutationPaths\]\);[\s\S]*const undoTargetIsCurrent = undo\.targetIdentity === undoTargetIdentity;[\s\S]*useEffect\(\(\) => \{[\s\S]*idleUndoState\(undoTargetIdentity\)[\s\S]*\}, \[undoTargetIdentity\]\);/,
+  "root or path changes reset the armed Undo state with an effect instead of remounting Review",
+);
+assert.match(
+  editCardActions,
+  /state !== "armed" \|\|[\s\S]*undo\.targetIdentity !== undoTargetIdentity[\s\S]*current\.targetIdentity === requestIdentity[\s\S]*current\.targetIdentity === requestIdentity/,
+  "Undo confirmation and async completion are guarded against stale target identities",
+);
+assert.match(editCardActions, /"\/api\/changes"/, "Undo posts to the changes revert API");
+assert.match(editCardActions, /cave:changes-refresh/, "Undo notifies the Changes panel to refresh");
 assert.match(editCardStyles, /\.cave-edit-card__undo/, "Undo button styling exists");
 
 // cave-zvr: composer send hygiene + picker Escape.

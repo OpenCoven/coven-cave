@@ -36,6 +36,7 @@ export type SurfacePerson = { id: string; name: string };
 export type RoleSurfaceRuntimeState = {
   daemonRunning: boolean;
   sessions: SessionRow[];
+  sessionsLoaded: boolean;
   activeSessionId: string | null;
 };
 

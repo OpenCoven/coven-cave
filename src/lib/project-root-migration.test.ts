@@ -33,6 +33,12 @@ globalThis.window = {
 };
 
 const idb = { projectAvatars: new Map(), familiarImages: new Map() };
+const LITERAL_DRIVE_IMAGE = {
+  dataUrl: "data:image/png;base64,LITERAL-C-DRIVE",
+  mime: "image/png",
+  updatedAt: "2026-08-05T00:00:00.000Z",
+};
+idb.projectAvatars.set("C:", LITERAL_DRIVE_IMAGE);
 let denyWrites = false;
 const fakeDriver = {
   async getAll(s) {
@@ -81,6 +87,25 @@ const PROJECTS = [
   { id: "p1", root: EXPANDED, legacyRoot: LEGACY },
   { id: "p2", root: "/already/absolute" },
 ];
+
+{
+  store.set(
+    CHAT_PROJECT_OVERRIDES_KEY,
+    JSON.stringify({ "session-drive": "C:", "session-other": "/untouched/root" }),
+  );
+  const moved = await migrateProjectRootKeys([
+    { id: "drive", root: "C:/", legacyRoot: "C:" },
+  ]);
+
+  assert.equal(idb.projectAvatars.has("C:"), false, "the literal pre-upgrade key is removed");
+  assert.deepEqual(
+    idb.projectAvatars.get("C:/"),
+    LITERAL_DRIVE_IMAGE,
+    "the literal C: avatar and its metadata move to the canonical drive root",
+  );
+  assert.equal(readProjectOverrides()["session-drive"], "C:/");
+  assert.equal(moved, 1);
+}
 
 {
   // The acceptance criterion, demonstrated rather than assumed: an existing
@@ -180,7 +205,11 @@ const PROJECTS = [
 // to something else entirely, and comparing the raw string would skip it.
 {
   const src = readFileSync(new URL("./project-root-migration.ts", import.meta.url), "utf8");
-  assert.match(src, /const fromKey = normalizeProjectRoot\(from\)/, "probe uses the store's key");
+  assert.match(
+    src,
+    /const fromKeys = \[\.\.\.new Set\(\[from, normalizeProjectRoot\(from\)\]\)\]/,
+    "the literal legacy key is probed before the normalized store key",
+  );
   assert.match(
     src,
     /await whenProjectImagesHydrated\(\)/,
@@ -188,8 +217,8 @@ const PROJECTS = [
   );
   assert.doesNotMatch(
     src,
-    /readProjectImagesSnapshot\(\), from\)/,
-    "no raw-string snapshot lookups remain",
+    /new Set\(\[normalizeProjectRoot\(from\), from\]\)/,
+    "the literal source key is never probed after its normalized alias",
   );
 }
 

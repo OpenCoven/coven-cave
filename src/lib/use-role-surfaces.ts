@@ -191,6 +191,7 @@ export function useRoleSurfaceSession(input: {
   /** Familiars represented by the current scope. Empty scope means All. */
   familiars?: readonly Familiar[];
   sessions: SessionRow[];
+  sessionsLoaded?: boolean;
   activeSessionId: string | null;
   daemonRunning: boolean;
   openUrl: (url: string) => void;
@@ -202,6 +203,7 @@ export function useRoleSurfaceSession(input: {
     familiar,
     familiars: scopedFamiliars = [],
     sessions,
+    sessionsLoaded = true,
     activeSessionId,
     daemonRunning,
     openUrl,
@@ -335,7 +337,12 @@ export function useRoleSurfaceSession(input: {
         activeFamiliar: candidate,
         activePerson: null, // the Cave has no person model yet — honest null
         currentThread,
-        runtimeState: { daemonRunning, sessions: scoped, activeSessionId: currentThread?.id ?? null },
+        runtimeState: {
+          daemonRunning,
+          sessions: scoped,
+          sessionsLoaded,
+          activeSessionId: currentThread?.id ?? null,
+        },
         memory: createMemoryAccess(candidate.id),
         tools,
         plugins,
@@ -350,6 +357,7 @@ export function useRoleSurfaceSession(input: {
     candidateFamiliars,
     manifests,
     sessions,
+    sessionsLoaded,
     activeSessionId,
     daemonRunning,
     openUrlStable,

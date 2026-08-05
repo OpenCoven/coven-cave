@@ -5,6 +5,7 @@ import {
   codeSessionBranch,
   codeSessionDiffstat,
   codePendingOpenProjectRoot,
+  resolveCodePendingOpen,
   codeSessionForPendingOpen,
   codeSessionWorkRoot,
   groupCodeRailSessions,
@@ -208,6 +209,93 @@ test("pending historical review retains its captured root and path after a proje
   } finally {
     clearPendingCodeOpen();
   }
+});
+
+test("rooted pending open waits for sessions to load, then opens the matching workbench once", () => {
+  let pending: PendingCodeOpen | null = {
+    kind: "files",
+    path: "src/history.ts",
+    root: "/repo-a",
+    sessionId: "current",
+    nonce: 6,
+  };
+  let handled = 0;
+  const opened: string[] = [];
+
+  const consume = (sessions: SessionRow[], sessionsLoaded: boolean) => {
+    if (!pending) return;
+    const resolution = resolveCodePendingOpen(sessions, pending, sessionsLoaded);
+    if (resolution.status === "waiting") return;
+    if (resolution.status === "ready" && resolution.target) {
+      opened.push(resolution.target.id);
+    }
+    handled += 1;
+    pending = null;
+  };
+
+  consume([], false);
+  assert.ok(pending, "the rooted open stays pending while the session list is loading");
+  assert.equal(handled, 0, "loading is not acknowledged as a handled open");
+
+  consume([row({ id: "historical", project_root: "/repo-a" })], true);
+  assert.deepEqual(opened, ["historical"], "the captured-root workbench opens after sessions arrive");
+  assert.equal(handled, 1);
+
+  consume([row({ id: "historical", project_root: "/repo-a" })], true);
+  assert.deepEqual(opened, ["historical"], "the acknowledged open does not replay");
+  assert.equal(handled, 1);
+});
+
+test("rooted pending resolution distinguishes invalid and definitively absent roots", () => {
+  const invalid = resolveCodePendingOpen(
+    [],
+    { kind: "files", path: "src/file.ts", root: "relative/repo", nonce: 7 },
+    false,
+  );
+  assert.equal(invalid.status, "invalid", "malformed provenance fails closed without waiting forever");
+
+  const absent = resolveCodePendingOpen(
+    [row({ id: "other", project_root: "/repo-b" })],
+    { kind: "files", path: "src/file.ts", root: "/repo-a", nonce: 8 },
+    true,
+  );
+  assert.equal(absent.status, "absent", "a loaded session list can definitively reject an unknown root");
+});
+
+test("captured-root matching follows Windows and POSIX case semantics", () => {
+  const drive = row({ id: "drive", project_root: "c:\\Repos\\App" });
+  const unc = row({ id: "unc", project_root: "\\\\Server\\Share\\Repo" });
+  const posix = row({ id: "posix", project_root: "/Users/Val/Repo" });
+
+  assert.equal(
+    codeSessionForPendingOpen(
+      [drive],
+      { kind: "files", path: "C:/REPOS/APP/src/file.ts", root: "C:/REPOS/APP", nonce: 9 },
+    )?.id,
+    "drive",
+    "drive roots match across case and separator variants",
+  );
+  assert.equal(
+    codeSessionForPendingOpen(
+      [unc],
+      {
+        kind: "files",
+        path: "//server/share/repo/src/file.ts",
+        root: "//server/share/repo",
+        nonce: 10,
+      },
+    )?.id,
+    "unc",
+    "UNC server, share, and path segments match case-insensitively",
+  );
+  assert.equal(
+    codeSessionForPendingOpen(
+      [posix],
+      { kind: "files", path: "/users/val/repo/src/file.ts", root: "/users/val/repo", nonce: 11 },
+    ),
+    null,
+    "POSIX roots remain case-sensitive",
+  );
 });
 
 test("deep-link parsing falls back to defaults on unknown values", () => {

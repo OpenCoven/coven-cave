@@ -38,9 +38,9 @@ import {
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import {
   dedupeAbsoluteProjectPaths,
-  resolvePathWithinProjectRoot,
 } from "@/lib/cave-projects-types";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
+import { EditCardActions } from "@/components/chat-edit-card-actions";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
 import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-instruments";
@@ -8934,134 +8934,6 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
 // turns deliberately receive no filesystem authority.
 const ToolProjectRootContext = createContext<string | null>(null);
 
-// Review + Undo actions for a normalized inline mutation card. Review adapts to
-// where the edit can actually be reviewed: a file under the session's project
-// root jumps to its diff in the code rail's Changes panel (cumulative diff +
-// checkpoint/undo tools); anything else — familiar-workspace docs, repo-less
-// sessions, relative paths — opens an in-chat modal with this edit's diff, so
-// the button never lands on an empty Changes list or silently does nothing.
-// Undo reverts the edited file to its last committed state via `/api/changes`
-// (which auto-snapshots the tree to a checkpoint first, so the revert is
-// itself recoverable). Undo requires a two-step arm→confirm to avoid an
-// accidental one-click revert, and is only offered when the target resolves to
-// a repo-relative path under the project root.
-function EditCardActions({
-  projectRoot,
-  mutationPaths,
-  diff,
-  displayPath,
-}: {
-  projectRoot: string | null;
-  mutationPaths: string[];
-  diff: string;
-  displayPath: string;
-}) {
-  const resolvedMutationPaths = mutationPaths
-    .map((path) => resolvePathWithinProjectRoot(projectRoot, path))
-    .filter((path): path is NonNullable<typeof path> => path !== null);
-  const allMutationPathsResolved =
-    mutationPaths.length > 0 && resolvedMutationPaths.length === mutationPaths.length;
-  const singleProjectPath = allMutationPathsResolved && resolvedMutationPaths.length === 1
-    ? resolvedMutationPaths[0] ?? null
-    : null;
-  const relPath = singleProjectPath?.relativePath ?? null;
-  const canUndo = allMutationPathsResolved && resolvedMutationPaths.length === 1 && relPath !== null;
-  const [state, setState] = useState<"idle" | "armed" | "reverting" | "reverted" | "error">("idle");
-  const [err, setErr] = useState<string | null>(null);
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const base = displayPath.split("/").pop() || displayPath;
-
-  const review = () => {
-    if (singleProjectPath && projectRoot) {
-      window.dispatchEvent(
-        new CustomEvent("cave:open-file-diff", {
-          detail: { path: singleProjectPath.absolutePath, projectRoot },
-        }),
-      );
-    } else {
-      setReviewOpen(true);
-    }
-  };
-
-  const doUndo = async () => {
-    if (!projectRoot || !canUndo || !relPath) return;
-    setState("reverting");
-    setErr(null);
-    try {
-      const res = await fetch("/api/changes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectRoot, path: relPath, confirmUntracked: true }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error || `revert failed (${res.status})`);
-      setState("reverted");
-      window.dispatchEvent(new CustomEvent("cave:changes-refresh"));
-    } catch (e) {
-      setErr((e as Error)?.message ?? "revert failed");
-      setState("error");
-    }
-  };
-
-  return (
-    <span className="cave-edit-card__actions" onClick={(e) => e.stopPropagation()}>
-      {err ? <span className="cave-edit-card__error" title={err}>{err}</span> : null}
-      <button
-        type="button"
-        className="cave-edit-card__review focus-ring"
-        onClick={review}
-        title={
-          singleProjectPath
-            ? "Review this file's pending diff in the Changes panel"
-            : "Review this edit's full diff"
-        }
-      >
-        Review
-      </button>
-      <Modal
-        open={reviewOpen}
-        onClose={() => setReviewOpen(false)}
-        breadcrumb={["Review", base]}
-        wide
-      >
-        <div className="cave-review-modal">
-          <p className="cave-review-modal__path" title={displayPath}>
-            {displayPath}
-          </p>
-          <SyntaxBlock text={diff} lang="diff" />
-        </div>
-      </Modal>
-      {canUndo ? (
-        state === "reverted" ? (
-          <span className="cave-edit-card__reverted">Reverted</span>
-        ) : state === "reverting" ? (
-          <button type="button" className="cave-edit-card__undo focus-ring" disabled>
-            Undoing…
-          </button>
-        ) : state === "armed" ? (
-          <>
-            <button type="button" className="cave-edit-card__undo focus-ring" onClick={() => setState("idle")}>
-              Cancel
-            </button>
-            <button type="button" className="cave-edit-card__undo cave-edit-card__undo--confirm focus-ring" onClick={doUndo}>
-              Confirm undo
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            className="cave-edit-card__undo focus-ring"
-            onClick={() => setState("armed")}
-            title="Revert this file to its last committed state (a checkpoint is saved first)"
-          >
-            Undo
-          </button>
-        )
-      ) : null}
-    </span>
-  );
-}
-
 function ToolBlock({ tool }: { tool: ToolEvent }) {
   // The file chip's click opens the code rail, which needs a project root —
   // without one the rail never shows, so the chip renders as plain text
@@ -9084,16 +8956,14 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   // other addressable file tools open the file preview.
   const isEditTool = inputDiff != null;
   const actionReady = mutation && isFileMutationActionReady(mutation, tool.status);
-  const actionIdentity = mutation
-    ? [tool.id, railRoot ?? "", ...mutation.paths].join("\0")
-    : tool.id;
+  const actionIdentity = tool.id;
   const openTargetFile = (e: ReactMouseEvent) => {
-    if (!targetFile) return;
+    if (!targetFile || !railRoot) return;
     e.preventDefault();
     e.stopPropagation();
     window.dispatchEvent(
       new CustomEvent(isEditTool ? "cave:open-file-diff" : "cave:open-project-file", {
-        detail: { path: targetFile },
+        detail: { path: targetFile, projectRoot: railRoot },
       }),
     );
   };
