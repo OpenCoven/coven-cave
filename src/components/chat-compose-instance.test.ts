@@ -134,7 +134,7 @@ assert.doesNotMatch(
 // ── 9. Primary ChatView is keyed by composeInstance ───────────────────────────
 
 const primaryChatViewRendering =
-  routerSource.match(/<ChatView[\s\S]*?key=\{[^}]*composeInstance[^}]*\}[\s\S]*?\/>/)?.[0] ?? "";
+  routerSource.match(/<ChatView(?![A-Za-z])[\s\S]*?key=\{`[^`]*composeInstance[^`]*`\}[\s\S]*?\/>/)?.[0] ?? "";
 
 assert.ok(
   primaryChatViewRendering.length > 0,

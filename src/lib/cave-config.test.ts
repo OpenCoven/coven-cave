@@ -388,6 +388,44 @@ try {
   await config.summonSessionLocal("session-2");
   await config.summonSessionLocal("session-3");
 
+  // ── autoArchiveReflectedSessionLocal: atomic keep / skip guard ───────────────
+  // Archives an eligible session and returns the archive timestamp.
+  {
+    const reflectedAt = await config.autoArchiveReflectedSessionLocal("reflect-eligible");
+    assert.ok(
+      typeof reflectedAt === "string" && Number.isFinite(Date.parse(reflectedAt)),
+      "eligible session is archived and a timestamp is returned",
+    );
+    state = await config.loadState();
+    assert.equal(state.sessionArchived["reflect-eligible"], reflectedAt, "archive timestamp persisted in state");
+
+    // Idempotent: already-archived session must return null without restamping.
+    const idempotentResult = await config.autoArchiveReflectedSessionLocal("reflect-eligible");
+    assert.equal(idempotentResult, null, "already-archived session returns null");
+
+    // Keep prevents archive — checked atomically inside the state write so a
+    // concurrent setSessionKeepLocal cannot race with the archive decision.
+    await config.setSessionKeepLocal("reflect-kept", true);
+    const keptResult = await config.autoArchiveReflectedSessionLocal("reflect-kept");
+    assert.equal(keptResult, null, "kept session returns null — keep prevents archive");
+    state = await config.loadState();
+    assert.equal(
+      state.sessionArchived["reflect-kept"],
+      undefined,
+      "sessionArchived not written when sessionKeep is set for the session",
+    );
+    await config.setSessionKeepLocal("reflect-kept", false);
+
+    // Sacrificed session (session-1 is already sacrificed above) skips.
+    const sacrificedResult = await config.autoArchiveReflectedSessionLocal("session-1");
+    assert.equal(sacrificedResult, null, "sacrificed session returns null");
+
+    // Clean up: summon removes reflect-eligible from sessionArchived.
+    // sessionArchiveExtendedUntil["reflect-eligible"] is deleted before the
+    // final deepEqual assertion below, so no residue there either.
+    await config.summonSessionLocal("reflect-eligible");
+  }
+
   await config.recordTravelHubReachability(false, new Date("2026-06-30T10:00:00.000Z"));
   const manualDuringOutageAt = await config.setManualTravelMode(true, new Date("2026-06-30T10:00:05.000Z"));
   assert.equal(manualDuringOutageAt, "2026-06-30T10:00:05.000Z");

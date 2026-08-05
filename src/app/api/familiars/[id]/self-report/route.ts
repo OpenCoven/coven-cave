@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { redactSecretsDeep, redactSecretText } from "@/lib/secret-redaction";
 import {
-  autoArchiveSessionsLocal,
+  autoArchiveReflectedSessionLocal,
   loadConfig,
   loadState,
 } from "@/lib/cave-config";
@@ -104,8 +104,7 @@ async function maybeAutoArchiveReflectedThread(
       lastActivityAt: conversation?.updatedAt ?? null,
     });
     if (!due) return null;
-    const archived = await autoArchiveSessionsLocal([sessionId]);
-    const archivedAt = archived.get(sessionId) ?? null;
+    const archivedAt = await autoArchiveReflectedSessionLocal(sessionId);
     if (archivedAt) await resolveArchiveNudges(sessionId);
     return archivedAt;
   } catch {

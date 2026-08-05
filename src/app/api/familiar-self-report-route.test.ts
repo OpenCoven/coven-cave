@@ -31,8 +31,8 @@ describe("reflection auto-archive wiring", () => {
     );
     assert.match(
       routeSource,
-      /autoArchiveSessionsLocal\(\[sessionId\]\)/,
-      "route must archive through the shared batch helper (skips sacrificed/archived)",
+      /autoArchiveReflectedSessionLocal\(sessionId\)/,
+      "route must archive through the atomic reflection helper (skips kept/sacrificed/archived inside the write)",
     );
     assert.match(
       routeSource,

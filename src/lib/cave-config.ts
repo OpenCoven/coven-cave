@@ -1050,6 +1050,39 @@ export async function extendSessionAutoArchiveLocal(
 }
 
 /**
+ * Archive a single session after a successful reflection, atomically.
+ *
+ * Unlike the sweep-internal `autoArchiveSessionsLocal`, this helper checks
+ * `sessionKeep`, `sessionArchived`, and `sessionSacrificed` inside the same
+ * `updateState` write that sets the archive timestamp, so a concurrent
+ * `setSessionKeepLocal` cannot race with the archive decision. It also
+ * invalidates the sessions-list cache only when it actually archives,
+ * keeping the sidebar refresh on reflection without disrupting the sweep
+ * compute path.
+ *
+ * Returns the archive timestamp when archived, else null.
+ */
+export async function autoArchiveReflectedSessionLocal(
+  sessionId: string,
+): Promise<string | null> {
+  let archivedAt: string | null = null;
+  await updateState((state) => {
+    if (
+      state.sessionKeep[sessionId] ||
+      state.sessionArchived[sessionId] ||
+      state.sessionSacrificed[sessionId]
+    ) {
+      return;
+    }
+    const now = new Date().toISOString();
+    state.sessionArchived[sessionId] = now;
+    archivedAt = now;
+  });
+  if (archivedAt) invalidateSessionsListCache();
+  return archivedAt;
+}
+
+/**
  * Archive a batch of sessions in one state write (auto-archive sweep).
  * Sessions already archived or sacrificed are skipped. Returns the ids that
  * were archived now, mapped to their shared archive timestamp.
