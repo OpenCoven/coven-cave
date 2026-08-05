@@ -1591,6 +1591,72 @@ test("per-session operation eviction prefers oldest settled operation over oldes
   assert.equal(state.get("session-1")?.has("op-1"), true, "pending op-1 must survive when a settled op was available");
 });
 
+test("a single session's own operation map stays bounded under a flood of 2000 unique and overlapping operation clears", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  const offListScopeKey = chatAttentionProjectionScopeKey("other-familiar");
+
+  const FLOOD_COUNT = 2000;
+  const SESSION_OPERATION_LIMIT = 64;
+  for (let i = 1; i <= FLOOD_COUNT; i++) {
+    // Alternate the recorded scope so off-list clears (a different familiar's
+    // scope) are mixed in with the session's own list scope, proving neither
+    // off-list nor overlapping unique operation clears can inflate the bound.
+    const scope = i % 5 === 0 ? offListScopeKey : scopeKey;
+    recordChatAttentionClear(state, "session-1", `op-${i}`, scope, NEEDS_ATTENTION);
+    // A duplicate/overlapping clear for the operation just recorded (still
+    // live, not yet evicted) must be a no-op too, never growing the map.
+    const overlap = recordChatAttentionClear(state, "session-1", `op-${i}`, scope, NEEDS_ATTENTION);
+    assert.equal(overlap.recorded, false);
+    assert.equal(overlap.reason, "duplicate");
+    assert.ok(
+      (state.get("session-1")?.size ?? 0) <= SESSION_OPERATION_LIMIT,
+      `session map must never exceed ${SESSION_OPERATION_LIMIT} (i=${i})`,
+    );
+  }
+
+  assert.equal(
+    state.get("session-1")?.size,
+    SESSION_OPERATION_LIMIT,
+    "after the flood the session settles at exactly the bound",
+  );
+  assert.equal(state.get("session-1")?.has(`op-${FLOOD_COUNT}`), true, "the most recent operation must survive");
+  assert.equal(state.get("session-1")?.has("op-1"), false, "the earliest operations must have been evicted");
+
+  // The most recently evicted operation (the oldest one bumped off by the
+  // very last insert) is guaranteed to still be tombstoned: its eviction is
+  // the last one recorded, so no later churn in this state's shared,
+  // separately-bounded tombstone store could have aged it out yet. A replay
+  // of it must be rejected, not silently re-recorded.
+  const lastEvictedOperationId = `op-${FLOOD_COUNT - SESSION_OPERATION_LIMIT}`;
+  const replay = recordChatAttentionClear(state, "session-1", lastEvictedOperationId, scopeKey, NEEDS_ATTENTION);
+  assert.equal(replay.recorded, false);
+  assert.equal(replay.reason, "tombstoned", "a replay of the most recently evicted operation must stay tombstoned");
+  assert.equal(
+    state.get("session-1")?.size,
+    SESSION_OPERATION_LIMIT,
+    "a rejected replay must not grow the bounded map",
+  );
+
+  // Lifecycle still works correctly for the surviving live operations: they
+  // continue to mask canonical attention until settled and released by
+  // genuinely newer canonical evidence.
+  const masked = applyChatAttentionProjections(state, [row()], FLOOD_COUNT + 1, scopeKey);
+  assert.equal(masked[0]?.attention.state, "none");
+
+  for (const operationId of Array.from(state.get("session-1")?.keys() ?? [])) {
+    settleChatAttentionClear(state, "session-1", operationId, "persisted", FLOOD_COUNT + 2);
+  }
+  const newerAttention = [row({
+    attention: { state: "awaiting-human", since: "2026-08-05T02:00:00.000Z", reason: "decision" },
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, newerAttention, FLOOD_COUNT + 2, scopeKey),
+    newerAttention,
+  );
+  assert.equal(state.has("session-1"), false, "fresh canonical evidence releases the bounded live state");
+});
+
 test("releasing the last operation forgets the tracked canonical baseline for that session", () => {
   const state = createChatAttentionProjectionState();
   const canonicalB = {
