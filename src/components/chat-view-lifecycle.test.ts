@@ -742,7 +742,7 @@ assert.match(
 );
 assert.match(
   source,
-  /onDoneCreationRefresh\(creationRefreshStateRef\.current, completedSessionId, ev\.isError\)/,
+  /onDoneCreationRefresh\([\s\S]*?creationRefreshStateRef\.current,[\s\S]*?liveGeneration\.runId,[\s\S]*?completedSessionId[\s\S]*?\)/,
   "a successful first send refreshes the authoritative session list after persistence via the creation-refresh helper",
 );
 assert.match(
@@ -755,40 +755,50 @@ assert.doesNotMatch(
   /if \(completedSessionId\) \{\s*onSessionsChanged\?\.\(\);\s*\}/,
   "ordinary follow-ups do not refresh as though they created a sidebar row",
 );
-
-// Session event calls onCreationSessionIdentified(state, originSessionId, ev.sessionId)
-// BEFORE the ownership guard so background sessionless generations still bind.
-// No runId in the call — provenance gate is encoded in the helper.
 assert.match(
   source,
-  /case "session": \{[\s\S]*?creationRefreshStateRef\.current = onCreationSessionIdentified\(\s*creationRefreshStateRef\.current, liveGeneration\.originSessionId, ev\.sessionId/,
-  "session event calls onCreationSessionIdentified(state, originSessionId, ev.sessionId) before the ownership guard",
+  /onCreationSessionIdentified\([\s\S]*?creationRefreshStateRef\.current,[\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId/,
+  "ChatView passes liveGeneration.runId and liveGeneration.originSessionId to onCreationSessionIdentified for per-generation provenance",
 );
 
-// Done event calls identify (for done-before-session race) then done
+// Session event binds OUTSIDE the ownership guard: the generation owns its
+// session ID regardless of which thread the view is currently displaying.
+// The provenance gate is now encoded in the helper (runId + originSessionId
+// args), not the caller.
 assert.match(
   source,
-  /onCreationSessionIdentified\(\s*creationRefreshStateRef\.current, liveGeneration\.originSessionId, completedSessionId/,
-  "done handler calls onCreationSessionIdentified(state, originSessionId, completedSessionId) before onDoneCreationRefresh",
+  /case "session": \{[\s\S]*?creationRefreshStateRef\.current = onCreationSessionIdentified\([\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId,[\s\S]*?ev\.sessionId[\s\S]*?\)[\s\S]*?if \(currentSessionRef\.current === liveGeneration\.originSessionId\)/,
+  "session event binds creation-refresh (with runId and provenance param) before the ownership guard, so background sessionless generations still bind even when the user has switched threads",
 );
 
-// No runId or onSendStart/onCreationRunTerminated in creation-refresh wiring
-assert.doesNotMatch(
+// Done event binds with completedSessionId (covers the done-before-session race
+// and the background-generation path) before invoking onDoneCreationRefresh.
+// runId and provenance are passed to both helpers.
+assert.match(
   source,
-  /onSendStart\(\s*creationRefreshStateRef\.current/,
-  "session-keyed design removes onSendStart from creation-refresh wiring",
-);
-assert.doesNotMatch(
-  source,
-  /onCreationRunTerminated/,
-  "session-keyed design removes onCreationRunTerminated from creation-refresh wiring",
+  /onCreationSessionIdentified\(\s*creationRefreshStateRef\.current,[\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId,[\s\S]*?completedSessionId[\s\S]*?\)[\s\S]*?onDoneCreationRefresh\(/,
+  "done event binds creation-refresh using runId, provenance param, and completedSessionId before invoking onDoneCreationRefresh",
 );
 
-// Provenance gate encoded in helper: no caller-side originSessionId === null guard
+// Provenance gate is encoded in the helpers, not the caller: ChatView always
+// calls both helpers and passes liveGeneration.originSessionId. The old
+// caller-side `if (originSessionId === null)` guard must not be present.
 assert.doesNotMatch(
   source,
   /liveGeneration\.originSessionId === null[\s\S]{0,120}?onCreationSessionIdentified/,
-  "provenance gate is in the helper; ChatView must not guard onCreationSessionIdentified with a caller-side null check",
+  "provenance gate is encoded in the helper API; ChatView must not guard onCreationSessionIdentified calls with a caller-side originSessionId === null check",
+);
+// Done event passes liveGeneration.runId and liveGeneration.originSessionId to both helpers
+assert.match(
+  source,
+  /onCreationSessionIdentified\(\s*creationRefreshStateRef\.current,[\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId,[\s\S]*?completedSessionId[\s\S]*?onDoneCreationRefresh\([\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId/,
+  "done event passes liveGeneration.runId and liveGeneration.originSessionId to both onCreationSessionIdentified and onDoneCreationRefresh",
+);
+// sendRaw passes runId to onSendStart for per-generation creation-refresh tracking
+assert.match(
+  source,
+  /onSendStart\(\s*creationRefreshStateRef\.current,\s*runId,\s*initialLiveSessionId\s*\)/,
+  "sendRaw passes runId and initialLiveSessionId to onSendStart for per-generation creation-refresh tracking",
 );
 
 // cave-b63 (1): model-state / usage-plan refreshes gate their setState on a

@@ -1,71 +1,132 @@
 /**
  * Creation-refresh lifecycle helper for new-compose chat sessions.
  *
- * Eligibility is keyed by server-assigned session ID. Two overlapping
- * sessionless generations (A and B) each track their own pending slot and
- * complete independently. Failed A does not block fresh B.
+ * Tracks whether the post-persistence `onSessionsChanged` call ("creation
+ * refresh") is still owed for each brand-new chat generation. Eligibility is
+ * keyed per `runId` so that two overlapping sessionless generations (A and B)
+ * each track their own pending slot and complete independently.
  *
  * Invariants:
- * - Only a sessionless generation (`originSessionId === null`) adds an ID to
- *   `pendingIds` via `onCreationSessionIdentified`.
- * - Retries and follow-ups (non-null `originSessionId`) are no-ops for
- *   `onCreationSessionIdentified`. A retry's session ID was added when its
- *   original send failed and kept pending, so `onDoneCreationRefresh` finds it.
- * - `onDoneCreationRefresh` refreshes iff `completedSessionId` is in
- *   `pendingIds`. On success, removes only that ID (once-only guarantee). On
- *   failure, preserves it for retry.
- * - Existing-session generations whose ID was never added to `pendingIds` are
- *   no-ops throughout.
+ * - Only a sessionless send (`initialSessionId === null`) creates a pending
+ *   entry in `pendingRuns` for its `runId`.
+ * - A retry with a non-null `initialSessionId` participates only when that
+ *   session ID already has a pending entry (from the original failed creation);
+ *   the retry's `runId` is added as an alias for the same creation session.
+ * - Eligibility is bound to a specific server-assigned session ID via
+ *   `onCreationSessionIdentified`. An unbound entry (`sessionId: null`) never
+ *   refreshes — the caller must bind before calling `onDoneCreationRefresh`.
+ * - A failed done preserves the entry for retry.
+ * - A successful done removes all entries sharing the same `sessionId` (the
+ *   original run and any retry aliases), preventing duplicate refreshes.
+ * - A `runId` not present in `pendingRuns` (ordinary follow-up or unrelated
+ *   generation) is a no-op for all three helpers.
  */
 
 export interface CreationRefreshState {
-  readonly pendingIds: ReadonlySet<string>;
+  readonly pendingRuns: Readonly<Record<string, { readonly sessionId: string | null }>>;
 }
 
-export const CREATION_REFRESH_INITIAL: CreationRefreshState = { pendingIds: new Set() };
+/**
+ * Call at the start of each `sendRaw` invocation.
+ *
+ * - Sessionless send (`initialSessionId === null`): adds a pending entry for
+ *   `runId` with an unbound session ID.
+ * - Retry (`initialSessionId !== null` and that session has a pending entry):
+ *   adds `runId` as an alias so the retry can participate in the same creation
+ *   refresh.
+ * - Ordinary follow-up (non-null `initialSessionId` with no matching pending
+ *   entry): no-op.
+ */
+export function onSendStart(
+  state: CreationRefreshState,
+  runId: string,
+  initialSessionId: string | null,
+): CreationRefreshState {
+  if (initialSessionId === null) {
+    return { pendingRuns: { ...state.pendingRuns, [runId]: { sessionId: null } } };
+  }
+  // Retry: link this run to the pending creation session if the session ID is
+  // already tracked (from a prior failed creation send).
+  const hasPendingSession = Object.values(state.pendingRuns).some(
+    (run) => run.sessionId === initialSessionId,
+  );
+  if (hasPendingSession) {
+    return { pendingRuns: { ...state.pendingRuns, [runId]: { sessionId: initialSessionId } } };
+  }
+  return state;
+}
 
 /**
  * Call when the server assigns a session ID to a new chat (the "session" SSE
- * event, or the done-event fallback when no session event preceded it).
+ * event, or the done-event fallback). Binds the pending entry for `runId` to
+ * the assigned session ID.
  *
- * Adds `assignedId` to `pendingIds` only when `originSessionId === null`
- * (sessionless creation). Retries and follow-ups are no-ops.
- * Idempotent: an already-pending ID is left unchanged.
+ * Only a sessionless generation (`originSessionId === null`) may bind an
+ * unbound (`sessionId: null`) entry. Retries (non-null origin, already bound)
+ * and unrelated generations (not in `pendingRuns`) are no-ops.
+ *
+ * Idempotent: an already-bound entry is left unchanged.
  */
 export function onCreationSessionIdentified(
   state: CreationRefreshState,
+  runId: string,
   originSessionId: string | null,
   assignedId: string,
 ): CreationRefreshState {
-  if (originSessionId !== null) return state;
-  if (state.pendingIds.has(assignedId)) return state;
-  return { pendingIds: new Set([...state.pendingIds, assignedId]) };
+  const run = state.pendingRuns[runId];
+  if (run && run.sessionId === null && originSessionId === null) {
+    return { pendingRuns: { ...state.pendingRuns, [runId]: { sessionId: assignedId } } };
+  }
+  return state;
 }
 
 /**
  * Call when a `done` event is received.
  *
- * Returns `shouldRefresh` and the next state. Rules:
- * - If `completedSessionId` is not in `pendingIds`: no-op (not a pending
- *   creation, or already refreshed).
- * - If `isError`: preserve the ID for retry; no refresh.
- * - On a successful matching completion: refresh and remove only that ID.
+ * Returns `shouldRefresh` (whether to call `onSessionsChanged`) and the next
+ * state. Rules:
+ * - If `runId` is not in `pendingRuns`: no-op (not a tracked creation run).
+ * - If `isError`: preserve the entry for retry; no refresh.
+ * - If the entry is unbound (`sessionId: null`) or the completed ID mismatches:
+ *   no-op — the caller must bind via `onCreationSessionIdentified` first.
+ * - On a successful matching completion: fire the refresh and remove all
+ *   entries sharing `sessionId` (original run + retry aliases) so a duplicate
+ *   or stale completion cannot double-refresh.
  *
- * Callers should call `onCreationSessionIdentified` with `completedSessionId`
- * before calling this function to handle the done-before-session race.
+ * `originSessionId` is threaded through for documentation; eligibility is
+ * determined entirely by presence in `pendingRuns` and the session ID match.
  */
 export function onDoneCreationRefresh(
   state: CreationRefreshState,
+  runId: string,
+  originSessionId: string | null,
   completedSessionId: string | null | undefined,
   isError: boolean | undefined,
 ): { shouldRefresh: boolean; nextState: CreationRefreshState } {
-  if (!completedSessionId || !state.pendingIds.has(completedSessionId)) {
+  const run = state.pendingRuns[runId];
+  if (!run) {
     return { shouldRefresh: false, nextState: state };
   }
   if (isError) {
     return { shouldRefresh: false, nextState: state };
   }
-  const nextIds = new Set(state.pendingIds);
-  nextIds.delete(completedSessionId);
-  return { shouldRefresh: true, nextState: { pendingIds: nextIds } };
+  if (!completedSessionId) {
+    return { shouldRefresh: false, nextState: state };
+  }
+  if (run.sessionId === null || completedSessionId !== run.sessionId) {
+    return { shouldRefresh: false, nextState: state };
+  }
+  // Matching bound ID: fire refresh and remove all entries for this creation
+  // session (original run and any retry aliases).
+  const targetSessionId = run.sessionId;
+  const nextPendingRuns: Record<string, { readonly sessionId: string | null }> = {};
+  for (const [id, r] of Object.entries(state.pendingRuns)) {
+    if (r.sessionId !== targetSessionId) {
+      nextPendingRuns[id] = r;
+    }
+  }
+  return {
+    shouldRefresh: true,
+    nextState: { pendingRuns: nextPendingRuns },
+  };
 }
