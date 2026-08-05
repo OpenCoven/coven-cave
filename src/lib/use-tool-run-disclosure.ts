@@ -17,6 +17,46 @@ export type ToolRunDisclosure = {
   onBlurCapture: (event: FocusEvent<HTMLDetailsElement>) => void;
 };
 
+export type FocusSafeToolRelocation = {
+  keepToolsInline: boolean;
+  onFocusCapture: (event: FocusEvent<HTMLElement>) => void;
+  onBlurCapture: (event: FocusEvent<HTMLElement>) => void;
+};
+
+const INLINE_TOOL_RUNS_SELECTOR = "[data-inline-tool-runs]";
+
+function isInlineToolTarget(target: EventTarget | null): boolean {
+  const closest = (target as { closest?: (selector: string) => Element | null } | null)?.closest;
+  return typeof closest === "function" && closest.call(target, INLINE_TOOL_RUNS_SELECTOR) != null;
+}
+
+/**
+ * Keeps the streaming tool subtree in place across turn settlement while it
+ * owns focus. Once focus leaves, the caller can relocate tools into the
+ * settled rollup without disrupting keyboard interaction.
+ */
+export function useFocusSafeToolRelocation(pending: boolean): FocusSafeToolRelocation {
+  const [inlineToolsFocused, setInlineToolsFocused] = useState(false);
+
+  const onFocusCapture = (event: FocusEvent<HTMLElement>) => {
+    if (isInlineToolTarget(event.target)) {
+      setInlineToolsFocused(true);
+    }
+  };
+
+  const onBlurCapture = (event: FocusEvent<HTMLElement>) => {
+    if (!isInlineToolTarget(event.relatedTarget)) {
+      setInlineToolsFocused(false);
+    }
+  };
+
+  return {
+    keepToolsInline: pending || inlineToolsFocused,
+    onFocusCapture,
+    onBlurCapture,
+  };
+}
+
 /**
  * Controls the open/closed state of a <details> element that wraps a repeated
  * tool run group.  Rules:

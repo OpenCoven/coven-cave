@@ -46,7 +46,10 @@ import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
 import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
-import { useToolRunDisclosure } from "@/lib/use-tool-run-disclosure";
+import {
+  useFocusSafeToolRelocation,
+  useToolRunDisclosure,
+} from "@/lib/use-tool-run-disclosure";
 import {
   CHAT_OPEN_COVEN_EVENT,
   CHAT_OPEN_PROJECTS_EVENT,
@@ -8666,6 +8669,7 @@ function TurnRowImpl({
   // preference; the model/cwd/duration that used to sit here now live only in
   // the debug pane's per-turn JSON.
   const dtPrefs = useDateTimePrefs();
+  const toolRelocation = useFocusSafeToolRelocation(!!turn.pending);
 
   // Click-away dismissal for the inline familiar card. Hooks are placed here
   // (before any early return) so React's rules-of-hooks are never violated.
@@ -8821,7 +8825,7 @@ function TurnRowImpl({
           key: `tools-${seg.tools[0]?.id ?? i}`,
           // Each chronology-preserving segment only rolls consecutive calls
           // with the same name; prose and a new offset stay hard boundaries.
-          node: <ToolRuns tools={seg.tools} />,
+          node: <InlineToolRuns tools={seg.tools} />,
         },
   );
 
@@ -8830,9 +8834,10 @@ function TurnRowImpl({
   const artifactCtx = { familiarId: familiar.id };
 
   let renderSegments: MessageBubbleSegment[] | undefined;
-  if (turn.pending) {
+  if (toolRelocation.keepToolsInline) {
     // Streaming: interleave tool blocks inline at their chronological offset so
-    // you can watch them run as live feedback.
+    // you can watch them run as live feedback. If a tool owns focus when the
+    // turn settles, retain this exact subtree until focus leaves.
     renderSegments = bubbleSegments;
   } else {
     // Settled: prose only (+ artifact viewers + GitHub cards + image
@@ -8871,7 +8876,7 @@ function TurnRowImpl({
   // ("<N> calls · <categories>"). Streaming turns weave tools inline
   // instead — see renderSegments.
   const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
-  const settledTools = !turn.pending && turn.tools?.length ? turn.tools : [];
+  const settledTools = !toolRelocation.keepToolsInline && turn.tools?.length ? turn.tools : [];
   const editCards = settledTools.filter(isEditCard);
   const otherTools = settledTools.filter((t) => !isEditCard(t));
 
@@ -8959,7 +8964,11 @@ function TurnRowImpl({
             </span>
           </div>
 
-          <div className="cave-linear-turn-body">
+          <div
+            className="cave-linear-turn-body"
+            onFocusCapture={toolRelocation.onFocusCapture}
+            onBlurCapture={toolRelocation.onBlurCapture}
+          >
             {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} pending={!!turn.pending} /> : null}
             {/* Chat-revamp 1b: the collapsed agent-work line sits ABOVE the
                 answer, so the reader sees "N calls · categories" first and
@@ -9010,7 +9019,7 @@ function TurnRowImpl({
               <div className="mt-3 space-y-2">
                 {segments.map((seg, index) =>
                   seg.kind === "tools"
-                    ? <ToolRuns key={`tools-${seg.tools[0]?.id ?? index}`} tools={seg.tools} />
+                    ? <InlineToolRuns key={`tools-${seg.tools[0]?.id ?? index}`} tools={seg.tools} />
                     : null,
                 )}
               </div>
@@ -9324,6 +9333,14 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
         </div>
       </details>
     </>
+  );
+}
+
+function InlineToolRuns({ tools }: { tools: ToolEvent[] }) {
+  return (
+    <div data-inline-tool-runs>
+      <ToolRuns tools={tools} />
+    </div>
   );
 }
 
