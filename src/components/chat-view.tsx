@@ -199,6 +199,7 @@ import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks, stripImageMarkers } from "@/lib/image-blocks";
+import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
 import {
@@ -214,6 +215,7 @@ import {
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
+import { ChatSpecCard } from "@/components/chat-spec-card";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -6725,9 +6727,39 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // renders inline there and docked everywhere else. Extracted to a variable
   // rather than duplicated: a second composer would mean two textareas sharing
   // nothing, with draft, project, model, branch and enhance state forked.
+  // Context controls follow the same pattern: constructed once as
+  // chatContextControls and placed adaptively — footer cluster for new chats
+  // (inlineComposer) and session header for active chats (!inlineComposer)
+  // so picker state is never duplicated.
   const inlineComposer = sessionId === null;
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
+  const chatContextControls = (
+    <ComposerContextChips
+      projects={projects}
+      projectValue={resolvedProjectId}
+      onProjectChange={setProjectIdDraft}
+      familiarId={familiar.id ?? null}
+      createProject={createProject}
+      createProjectOrThrow={createProjectOrThrow}
+      runtime={modelHarness}
+      modelValue={composerModelValue}
+      modelOptions={composerModelOptions}
+      onPickRuntime={handleSelectRuntime}
+      onPickModel={handleSelectModel}
+      promotableModel={promotableModel}
+      onPromoteModelToDefault={handlePromoteModelToDefault}
+      modelDisabled={busy}
+      projectRoot={activeProjectRoot}
+      onOpenUrl={onOpenUrl}
+      registerCurrentRoot={setupCandidateRoot ?? undefined}
+      onRegisterCurrentRoot={
+        setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
+      }
+      popoverPlacement={composerPopoverPlacement}
+      ariaLabel={inlineComposer ? "New chat context" : "Session context"}
+    />
+  );
   const composerNode = (
         <footer
           className="cave-composer-dock"
@@ -7267,36 +7299,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </div>
                 </div>
               </div>
-              {/* Footer band — the darker strip attached to the panel's
-                  underside carries context and linked work first, then the
-                  latest assistant options. Suggestions stay hidden while a
-                  response streams so stale actions cannot be activated. */}
+              {/* Footer band — carries linked work and latest assistant options.
+                  Context controls ride here only for new chats (inlineComposer);
+                  active chats show them in the session header instead. */}
               <div className="cave-composer-footer-band">
-                <div className="cave-composer-footer-band__cluster">
-                  <ComposerContextChips
-                    projects={projects}
-                    projectValue={resolvedProjectId}
-                    onProjectChange={setProjectIdDraft}
-                    familiarId={familiar.id ?? null}
-                    createProject={createProject}
-                    createProjectOrThrow={createProjectOrThrow}
-                    runtime={modelHarness}
-                    modelValue={composerModelValue}
-                    modelOptions={composerModelOptions}
-                    onPickRuntime={handleSelectRuntime}
-                    onPickModel={handleSelectModel}
-                    promotableModel={promotableModel}
-                    onPromoteModelToDefault={handlePromoteModelToDefault}
-                    modelDisabled={busy}
-                    projectRoot={activeProjectRoot}
-                    onOpenUrl={onOpenUrl}
-                    registerCurrentRoot={setupCandidateRoot ?? undefined}
-                    onRegisterCurrentRoot={
-                      setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
-                    }
-                    popoverPlacement={composerPopoverPlacement}
-                  />
-                </div>
+                {inlineComposer ? (
+                  <div className="cave-composer-footer-band__cluster">
+                    {chatContextControls}
+                  </div>
+                ) : null}
                 {linkedContextRow}
                 {followUp.suggestions.length > 0 && !busy ? (
                   <div className="cave-chat-followups">
@@ -7450,6 +7461,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
           </div>
         </MetaLine>
+        {!inlineComposer ? (
+          <div className="cave-chat-header-context">{chatContextControls}</div>
+        ) : null}
       </header>
       {/* Chat.dc.html 2a: find slides open as a band under the title row —
           controls over a scrollable list of every hit. The list is the point:
@@ -8006,6 +8020,31 @@ function splitSegmentsForGitHub(
 }
 
 /**
+ * Replace complete familiar-authored spec fences with document cards. This is
+ * settled-turn only: while a familiar is still writing, the ordinary Markdown
+ * path keeps the unfinished fence legible until its closing delimiter arrives.
+ */
+function splitSegmentsForSpecs(
+  segments: MessageBubbleSegment[],
+): MessageBubbleSegment[] {
+  return segments.flatMap<MessageBubbleSegment>((segment, segmentIndex) => {
+    if (segment.kind !== "text") return [segment];
+    return sliceSpecBlocks(segment.text).flatMap<MessageBubbleSegment>((piece, pieceIndex) => {
+      if (piece.kind === "text") {
+        return piece.text.trim()
+          ? [{ kind: "text" as const, text: piece.text }]
+          : [];
+      }
+      return [{
+        kind: "block" as const,
+        key: `spec-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
+        node: <ChatSpecCard spec={piece.spec} />,
+      }];
+    });
+  });
+}
+
+/**
  * Split prose segments again on `<coven:image …>` markers, mounting one
  * ImageCarousel per deck at the marker's position (src/lib/image-blocks.ts).
  * This runs before the GitHub/artifact splits so a grouped deck can span either
@@ -8487,7 +8526,12 @@ function TurnRowImpl({
     // artifact or GitHub card. The later splitters refine only the remaining
     // prose; the `visible` fallback/content path is marker-free either way.
     const split = splitSegmentsForGitHub(
-      splitSegmentsForArtifacts(splitSegmentsForImages([{ kind: "text", text: visibleWithGh }]), artifactCtx),
+      splitSegmentsForArtifacts(
+        splitSegmentsForImages(
+          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }]),
+        ),
+        artifactCtx,
+      ),
       onOpenUrl,
       ghFamiliar,
     );

@@ -226,6 +226,13 @@ struct MainShellView: View {
                     app.selectedTab = tab
                 } label: { EmptyView() }
                 .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                // An EmptyView label gives VoiceOver nothing to announce, so
+                // without this each shortcut lands in the accessibility tree as
+                // an unnamed button. They only host the ⌘-key equivalents and
+                // duplicate the tab bar, which is already reachable — so hide
+                // them from assistive tech rather than inventing names for
+                // controls a VoiceOver user should never land on.
+                .accessibilityHidden(true)
             }
         }
         // Keep the app chrome in step with desktop theme changes: re-fetch while

@@ -71,6 +71,20 @@ pub(super) fn wait_for_sidecar_ready(
     PortWaitResult::TimedOut
 }
 
+#[cfg(desktop)]
+pub(super) fn sidecar_log_path(log_dir: &Path, port: u16) -> PathBuf {
+    log_dir.join(format!("sidecar-{}-{port}.log", std::process::id()))
+}
+
+#[cfg(desktop)]
+pub(super) fn sidecar_start_timeout() -> Duration {
+    if cfg!(target_os = "windows") {
+        Duration::from_secs(90)
+    } else {
+        Duration::from_secs(60)
+    }
+}
+
 #[cfg(all(desktop, target_os = "windows"))]
 pub(super) fn node_arg_path(path: &Path) -> PathBuf {
     let raw = path.as_os_str().to_string_lossy();
@@ -207,7 +221,7 @@ pub(super) fn start_sidecar_runtime(
             log_dir.display()
         );
     }
-    let log_path = log_dir.join("sidecar.log");
+    let log_path = sidecar_log_path(&log_dir, port);
     log::info!("[cave] sidecar log -> {}", log_path.display());
     let stdout_log = std::fs::File::create(&log_path).ok();
     let stderr_log = stdout_log.as_ref().and_then(|file| file.try_clone().ok());
@@ -354,11 +368,7 @@ pub(super) fn start_sidecar_runtime(
     }
 
     on_step(SidecarStartupStep::WaitingForService);
-    let sidecar_start_timeout = if cfg!(target_os = "windows") {
-        Duration::from_secs(90)
-    } else {
-        Duration::from_secs(20)
-    };
+    let sidecar_start_timeout = sidecar_start_timeout();
     match wait_for_sidecar_ready(port, &log_path, sidecar_start_timeout, &should_cancel) {
         PortWaitResult::Ready => {}
         PortWaitResult::Cancelled => return Err(SidecarStartError::Cancelled),
