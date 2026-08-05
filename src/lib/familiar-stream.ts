@@ -13,7 +13,7 @@ import type { SessionOrigin } from "./types";
 // user's saved conversations — useful for meta tasks like thread reflection.
 
 import { parseSseFrame } from "@/lib/canvas-generate";
-import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
 
 export async function streamFamiliarText(opts: {
   familiarId: string;
@@ -97,9 +97,7 @@ export async function streamFamiliarText(opts: {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  // Raw accumulated text (markers intact) — kept separate from what callers
-  // see so `assistant_replace` can still replace the true accumulator.
-  let text = "";
+  const attentionText = createAttentionSafeTextAccumulator();
   let error: string | null = null;
   let sessionId: string | undefined;
   let responseMetadata: ChatResponseMetadata | undefined;
@@ -109,20 +107,15 @@ export async function streamFamiliarText(opts: {
     sessionId = id;
     opts.onSession?.(id);
   };
-  // Strip `<coven:attention …>` before handing text to the caller (mid-stream:
-  // partial tails hidden too, since more chunks may still complete a marker).
-  const emitText = () => {
-    opts.onText?.(extractChatAttentionMarker(text, { pending: true }).visible);
-  };
   const handleFrame = (frame: string) => {
     const ev = parseSseFrame(frame);
     if (!ev) return;
     if (ev.kind === "assistant_chunk") {
-      text += ev.text ?? "";
-      emitText();
+      const visible = attentionText.append(ev.text ?? "");
+      opts.onText?.(visible);
     } else if (ev.kind === "assistant_replace") {
-      text = ev.text ?? "";
-      emitText();
+      const visible = attentionText.replace(ev.text ?? "");
+      opts.onText?.(visible);
     } else if (ev.kind === "session") noteSession(ev.sessionId);
     else if (ev.kind === "done") {
       noteSession(ev.sessionId);
@@ -148,10 +141,5 @@ export async function streamFamiliarText(opts: {
   // and process a last frame that arrived without its trailing blank line.
   buffer += decoder.decode();
   if (buffer.trim()) handleFrame(buffer);
-  // The stream is settled — no more chunks can arrive to complete a marker,
-  // so this reads as chat-view.tsx's non-pending (settled) pass: any
-  // complete `<coven:attention …>` marker is stripped, but a genuine trailing
-  // "<coven:a…" prose fragment (never actually a marker) is left visible
-  // rather than silently dropped.
-  return { text: extractChatAttentionMarker(text, { pending: false }).visible, error, sessionId, responseMetadata };
+  return { text: attentionText.settled(), error, sessionId, responseMetadata };
 }

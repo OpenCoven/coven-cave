@@ -4,7 +4,7 @@
 // The SSE frame parser is exported pure so it can be unit-tested.
 
 import { extractArtifact, type ArtifactKind } from "@/lib/canvas-artifacts";
-import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 
 export type SketchStreamEvent = {
@@ -108,10 +108,9 @@ export async function generateArtifactCode(opts: {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let text = "";
+  const attentionText = createAttentionSafeTextAccumulator();
   let sessionId: string | null = opts.sessionId ?? null;
   let error: string | null = null;
-  const visibleText = (pending: boolean) => extractChatAttentionMarker(text, { pending }).visible;
 
   // A mid-stream network drop (or an abort) makes reader.read() REJECT — an
   // unguarded loop turned that into a rejected promise that wedged callers'
@@ -130,12 +129,16 @@ export async function generateArtifactCode(opts: {
         if (!ev) continue;
         switch (ev.kind) {
           case "assistant_chunk":
-            text += ev.text ?? "";
-            opts.onText?.(visibleText(true));
+            {
+              const visible = attentionText.append(ev.text ?? "");
+              opts.onText?.(visible);
+            }
             break;
           case "assistant_replace":
-            text = ev.text ?? "";
-            opts.onText?.(visibleText(true));
+            {
+              const visible = attentionText.replace(ev.text ?? "");
+              opts.onText?.(visible);
+            }
             break;
           case "session":
             sessionId = ev.sessionId ?? sessionId;
@@ -156,7 +159,7 @@ export async function generateArtifactCode(opts: {
       : (err as Error)?.message ?? "the connection dropped mid-generation";
   }
 
-  const visible = visibleText(false);
+  const visible = attentionText.settled();
   const extracted = extractArtifact(visible);
   const failure = error ? "transport" : extracted ? null : "format";
   return {

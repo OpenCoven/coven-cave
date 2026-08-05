@@ -43,7 +43,7 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
   );
   assert.match(
     source,
-    /const trimmed = extractNextPaths\(visibleText\(false\)\)\.visible\.trim\(\);/,
+    /const trimmed = extractNextPaths\(attentionText\.settled\(\)\)\.visible\.trim\(\);/,
     "the directive block is stripped after attention markers are hidden from the final reflection text",
   );
 }
@@ -264,6 +264,40 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
     const result = await generateReflection({ familiarId: "nova", context: "ctx" });
     assert.equal(result.error, null);
     assert.equal(result.text, "Need input.", "malformed complete attention markup is stripped from the stored reflection");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          const frames = [
+            { kind: "assistant_chunk", text: "A useful reflection.\n<cov" },
+            { kind: "assistant_chunk", text: "en:attention rea" },
+            { kind: "done", sessionId: "j6", isError: false },
+          ];
+          frames.forEach((frame, index) => {
+            controller.enqueue(encoder.encode(`id: ${index + 1}\ndata: ${JSON.stringify(frame)}\n\n`));
+          });
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const seen: string[] = [];
+    const result = await generateReflection({
+      familiarId: "nova",
+      context: "ctx",
+      onText: (value) => seen.push(value),
+    });
+    assert.equal(result.error, null);
+    assert.equal(result.text, "A useful reflection.", "an unterminated marker cannot enter stored Journal text");
+    assert.ok(seen.every((value) => !value.includes("<cov")));
   } finally {
     globalThis.fetch = originalFetch;
   }

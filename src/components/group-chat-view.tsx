@@ -25,7 +25,7 @@ import {
 } from "react";
 import { Icon } from "@/lib/icon";
 import { extractNextPaths } from "@/lib/next-paths";
-import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
 import { Button } from "@/components/ui/button";
 import { ProjectPicker } from "@/components/project-picker";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
@@ -591,6 +591,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       // `settled` mirrors the live React state so callers can await the final
       // reply state without waiting for React to render. Apply every update to both.
       let settled = reply;
+      const attentionText = createAttentionSafeTextAccumulator();
       const apply = (fn: (r: GroupReply) => GroupReply) => {
         settled = fn(settled);
         updateReply(reply.id, fn);
@@ -633,7 +634,17 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             if (ev.kind === "session") recordSession(group.id, reply.familiarId, ev.sessionId);
             if (ev.kind === "done" && ev.sessionId)
               recordSession(group.id, reply.familiarId, ev.sessionId);
-            apply((r) => applyGroupEvent(r, ev));
+            if (ev.kind === "assistant_chunk") {
+              apply((r) => applyGroupEvent(r, {
+                kind: "assistant_replace", text: attentionText.append(ev.text),
+              }));
+            } else if (ev.kind === "assistant_replace") {
+              apply((r) => applyGroupEvent(r, {
+                kind: "assistant_replace", text: attentionText.replace(ev.text),
+              }));
+            } else {
+              apply((r) => applyGroupEvent(r, ev));
+            }
           }
         }
         // Stream closed without an explicit `done` — settle anything still live.
@@ -1531,15 +1542,12 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                           // attention surfaces in the sidebar, derived from the
                           // persisted `attentionRequest` metadata the server
                           // route owns.
-                          const withoutAttention = extractChatAttentionMarker(r.text, {
-                            pending: r.status === "queued" || r.status === "streaming",
-                          }).visible;
                           // Strip the piggybacked `<coven:next-paths>` suggestions
                           // block (and its streaming partial) from the visible
                           // reply, mirroring the single-chat surface; otherwise
                           // the raw control markup leaks into the coven bubble.
                           // The parsed lines render as click-to-send chips below.
-                          const { visible: withoutNextPaths, suggestions: typedSuggestions } = extractNextPaths(withoutAttention);
+                          const { visible: withoutNextPaths, suggestions: typedSuggestions } = extractNextPaths(r.text);
                           // Group chat has no task-review or action router.
                           // Never offer task/action suggestions here: a click
                           // sends an ordinary group message, not a side effect.

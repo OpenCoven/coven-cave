@@ -290,6 +290,23 @@ describe("streamFamiliarText", () => {
     assert.equal(text, "Pick one.\n", "the completed marker is stripped from the final text");
   });
 
+  it("never returns an unterminated attention marker after the stream settles", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: "Still useful.\n<coven:attention rea" }),
+      frame({ kind: "done" }),
+    ])) as typeof fetch;
+
+    const seen: string[] = [];
+    const { text, error } = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+      onText: (value) => seen.push(value),
+    });
+    assert.equal(error, null);
+    assert.equal(text, "Still useful.\n");
+    assert.ok(seen.every((value) => !value.includes("<coven:")));
+  });
+
   it("keeps a fenced literal attention marker visible (never a live request)", async () => {
     const literal = 'Example: `<coven:attention reason="decision" />`';
     globalThis.fetch = (async () => sseResponse([

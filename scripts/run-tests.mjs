@@ -1404,6 +1404,7 @@ export const SUITES = {
     "src/app/api/github/issue/route.test.ts",
     "src/app/api/github/runs/route.test.ts",
     "src/app/api/salem/strip-mdx.test.ts",
+    "src/app/api/salem/route.test.ts",
     "src/proxy-behavior.test.ts",
     "src/lib/server/memory-file-sources-coven-familiar.test.ts",
     "src/lib/server/memory-trash.test.ts",
@@ -1752,6 +1753,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/voice/hydrate-instructions.test.ts",
   "src/app/api/voice/session/route.test.ts",
   "src/app/api/hermes-profiles/route.test.ts",
+  "src/app/api/salem/route.test.ts",
   "src/app/api/chat/conversation/[id]/route.test.ts",
   // familiar-brain imports familiar-stream, whose graph reaches "@/lib/…".
   "src/lib/voice/familiar-brain.test.ts",

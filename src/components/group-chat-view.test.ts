@@ -547,24 +547,24 @@ test("coven bubbles strip attention markers before next-paths/delegations/Messag
   // MessageBubble — same order the single-chat surface (chat-view.tsx) uses.
   assert.match(
     view,
-    /import \{ extractChatAttentionMarker \} from "@\/lib\/chat-attention-marker";/,
-    "imports the shared attention-marker extractor",
+    /import \{ createAttentionSafeTextAccumulator \} from "@\/lib\/chat-attention-stream";/,
+    "imports the shared raw-text accumulator",
   );
   assert.match(
     view,
-    /const withoutAttention = extractChatAttentionMarker\(r\.text, \{\s*\n\s*pending: r\.status === "queued" \|\| r\.status === "streaming",\s*\n\s*\}\)\.visible;/,
-    "strips attention markers from the raw reply text, hiding partial tails while the reply is still streaming",
-  );
-  // Ordering: attention extraction feeds next-paths, which feeds delegation
-  // extraction, which feeds MessageBubble's `content` — never the raw r.text.
-  assert.match(
-    view,
-    /const withoutAttention = extractChatAttentionMarker\(r\.text[\s\S]*?extractNextPaths\(withoutAttention\)/,
-    "next-paths extraction reads the attention-stripped text, not the raw reply",
+    /const attentionText = createAttentionSafeTextAccumulator\(\);/,
+    "each participant stream owns an independent raw accumulator",
   );
   assert.match(
     view,
-    /extractNextPaths\(withoutAttention\)[\s\S]*?extractCovenDelegations\(withoutNextPaths\)/,
+    /ev\.kind === "assistant_chunk"[\s\S]{0,240}kind: "assistant_replace", text: attentionText\.append\(ev\.text\)[\s\S]{0,240}ev\.kind === "assistant_replace"[\s\S]{0,180}attentionText\.replace\(ev\.text\)/,
+    "chunk and replacement frames become authoritative safe replacements before transcript storage",
+  );
+  // The transcript is already attention-safe before render; next-paths then
+  // feed delegation extraction and MessageBubble.
+  assert.match(
+    view,
+    /extractNextPaths\(r\.text\)[\s\S]*?extractCovenDelegations\(withoutNextPaths\)/,
     "delegation extraction runs after next-paths, preserving the existing marker-protocol order",
   );
   assert.match(

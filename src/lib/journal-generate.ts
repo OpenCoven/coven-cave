@@ -4,7 +4,7 @@
 // but returns the assistant's plain text (no artifact extraction).
 
 import { parseSseFrame } from "@/lib/canvas-generate";
-import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
 import { extractNextPaths } from "@/lib/next-paths";
 import { DEFAULT_JOURNAL_PROMPT, renderJournalPrompt } from "@/lib/journal-prompt";
 
@@ -68,9 +68,8 @@ export async function generateReflection(opts: {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let text = "";
+  const attentionText = createAttentionSafeTextAccumulator();
   let error: string | null = null;
-  const visibleText = (pending: boolean) => extractChatAttentionMarker(text, { pending }).visible;
 
   try {
     while (true) {
@@ -85,12 +84,16 @@ export async function generateReflection(opts: {
         if (!ev) continue;
         switch (ev.kind) {
           case "assistant_chunk":
-            text += ev.text ?? "";
-            opts.onText?.(visibleText(true));
+            {
+              const visible = attentionText.append(ev.text ?? "");
+              opts.onText?.(visible);
+            }
             break;
           case "assistant_replace":
-            text = ev.text ?? "";
-            opts.onText?.(visibleText(true));
+            {
+              const visible = attentionText.replace(ev.text ?? "");
+              opts.onText?.(visible);
+            }
             break;
           case "done":
             if (ev.isError) error = error ?? "the familiar reported an error";
@@ -113,7 +116,7 @@ export async function generateReflection(opts: {
   // every prompt, and a compliant familiar echoes the block back. The journal
   // has no chip row — strip it (terminated or truncated) so it never lands in
   // the stored reflection.
-  const trimmed = extractNextPaths(visibleText(false)).visible.trim();
+  const trimmed = extractNextPaths(attentionText.settled()).visible.trim();
   if (!trimmed && !error) error = "The familiar didn't return a reflection. Try again.";
   return { text: trimmed, error };
 }

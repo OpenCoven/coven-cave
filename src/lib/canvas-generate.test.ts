@@ -128,6 +128,26 @@ try {
    "canvas strips malformed complete attention markup before storing transcript text",
   );
 
+  streamed = [];
+  globalThis.fetch = async () => responseFor([
+   { kind: "assistant_chunk", text: "```html\n<div>safe</div>\n```\n<cov" },
+   { kind: "assistant_chunk", text: "en:attention rea" },
+   { kind: "done", sessionId: "canvas-partial-attention" },
+  ]);
+  const partialAttention = await generateArtifactCode({
+   familiarId: "nova",
+   prompt: "build",
+   onText: (value) => streamed.push(value),
+  });
+  assert.equal(partialAttention.failure, null);
+  assert.equal(partialAttention.code, "<div>safe</div>");
+  assert.equal(
+   partialAttention.text,
+   "```html\n<div>safe</div>\n```\n",
+   "an unterminated marker cannot enter settled Canvas text",
+  );
+  assert.ok(streamed.every((value) => !value.includes("<cov")));
+
   globalThis.fetch = async (_url, init) => {
    sentBody = JSON.parse(init.body);
     return responseFor([
