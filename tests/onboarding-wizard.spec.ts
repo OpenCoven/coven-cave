@@ -26,6 +26,60 @@ const FRESH_STATUS = {
   tools: [],
 };
 
+const UNAVAILABLE_STATUS = {
+  ok: true,
+  complete: false,
+  mayContinue: true,
+  steps: {
+    covenCli: { ok: false, state: "checking" },
+    covenHome: { ok: true, state: "ready", detail: "~/.coven" },
+    adapters: {
+      ok: false,
+      state: "unavailable",
+      hint: "Couldn’t verify every available runtime. You can continue and retry later.",
+    },
+    daemon: { ok: true, state: "ready", detail: "running" },
+    git: {
+      ok: false,
+      optional: true,
+      state: "action-required",
+      hint: "Git is required to select and use a Queue project. Install Git from https://git-scm.com, then re-check.",
+    },
+    familiars: { ok: false, optional: true, state: "unavailable" },
+    binding: { ok: false, optional: true, state: "unavailable" },
+  },
+  // Deliberately omit tools: unknown local evidence must not invent an install.
+};
+
+const CONFIRMED_REQUIRED_FAILURE_STATUS = {
+  ...UNAVAILABLE_STATUS,
+  mayContinue: false,
+  steps: {
+    ...UNAVAILABLE_STATUS.steps,
+    covenCli: {
+      ok: false,
+      state: "action-required",
+      hint: "Install the Coven CLI, then retry.",
+    },
+  },
+  tools: [
+    {
+      id: "coven-cli",
+      label: "Coven CLI",
+      packageName: "@opencoven/cli",
+      binary: "coven",
+      installed: false,
+      path: null,
+      current: null,
+      latest: null,
+      latestCheck: null,
+      outdated: false,
+      compatible: false,
+      minimumVersion: "0.1.1",
+    },
+  ],
+};
+
 // A machine that finished setup once but whose daemon is currently stopped:
 // structural steps are healthy, daemon-dependent ones are not.
 const DAEMON_DOWN_VETERAN_STATUS = {
@@ -43,19 +97,45 @@ const DAEMON_DOWN_VETERAN_STATUS = {
   tools: [],
 };
 
-const GIT_REQUIRED_STATUS = {
+const OPTIONAL_GIT_FAILURE_STATUS = {
   ok: true,
   complete: false,
+  mayContinue: true,
   steps: {
     covenCli: { ok: true, detail: "0.0.60" },
     covenHome: { ok: true, detail: "~/.coven" },
-    adapters: { ok: true, detail: "Codex" },
+    adapters: {
+      ok: false,
+      state: "unavailable",
+      hint: "Couldn’t verify every available runtime. You can continue and retry later.",
+    },
     daemon: { ok: true, detail: "running" },
-    git: { ok: false, detail: "Git is required to select and use a Queue project.", hint: "Install Git from https://git-scm.com, then re-check." },
+    git: {
+      ok: false,
+      optional: true,
+      state: "action-required",
+      detail: "Git is required to select and use a Queue project.",
+      hint: "Install Git from https://git-scm.com, then re-check.",
+    },
     familiars: { ok: false, optional: true, detail: "no familiars" },
     binding: { ok: false, optional: true, detail: "no binding configured" },
   },
-  tools: [],
+  tools: [
+    {
+      id: "coven-cli",
+      label: "Coven CLI",
+      packageName: "@opencoven/cli",
+      binary: "coven",
+      installed: true,
+      path: "/usr/local/bin/coven",
+      current: "0.0.60",
+      latest: "0.0.60",
+      outdated: false,
+      compatible: true,
+      minimumVersion: "0.0.50",
+      latestCheck: { status: "verified", checkedAt: "2026-07-12T00:00:00.000Z", latest: "0.0.60" },
+    },
+  ],
 };
 
 // Every step healthy but the roster empty — the state the finish CTA's
@@ -181,13 +261,40 @@ test.describe("onboarding wizard", () => {
     await expect(current.first()).toContainText("Install the Coven CLI");
   });
 
-  test("surfaces Git remediation naming the Tasks-page Queue prerequisite", async ({ page }) => {
-    await gotoApp(page, GIT_REQUIRED_STATUS);
+  test("pending and unavailable checks allow continuing without inventing an install", async ({ page }) => {
+    await gotoApp(page, UNAVAILABLE_STATUS);
     await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
-    const current = wizard(page).locator('li[aria-current="step"]');
-    await expect(current).toContainText("Find Git");
-    await expect(current).toContainText("Git is required before choosing a Queue project on the Tasks page.");
-    await expect(current).toContainText("Install Git from https://git-scm.com");
+
+    await wizard(page).getByRole("button", { name: /Install the Coven CLI/ }).click();
+    await expect(wizard(page).getByText("Checking local installation…")).toBeVisible();
+    await expect(
+      wizard(page).getByRole("button", { name: "Install the Coven CLI", exact: true }),
+    ).toHaveCount(0);
+    await expect(wizard(page).getByRole("button", { name: "Continue to Cave" })).toBeEnabled();
+    await expect(wizard(page).locator('li[aria-current="step"]')).toHaveCount(0);
+  });
+
+  test("a confirmed required failure blocks normal continuation", async ({ page }) => {
+    await gotoApp(page, CONFIRMED_REQUIRED_FAILURE_STATUS);
+    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
+
+    await expect(
+      wizard(page).getByRole("button", { name: "Install the Coven CLI", exact: true }),
+    ).toBeEnabled();
+    await expect(wizard(page).getByRole("button", { name: "Continue to Cave" })).toHaveCount(0);
+    await expect(wizard(page).getByText("Finish required setup")).toBeVisible();
+  });
+
+  test("surfaces optional Git remediation without blocking Cave", async ({ page }) => {
+    await gotoApp(page, OPTIONAL_GIT_FAILURE_STATUS);
+    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
+    await expect(wizard(page).locator('li[aria-current="step"]')).toHaveCount(0);
+    await expect(wizard(page).getByRole("button", { name: "Continue to Cave" })).toBeEnabled();
+
+    await wizard(page).getByRole("button", { name: /Find Git/ }).click();
+    const gitStep = wizard(page).getByRole("listitem").filter({ hasText: "Find Git" });
+    await expect(gitStep).toContainText("Git is required before choosing a Queue project on the Tasks page.");
+    await expect(gitStep).toContainText("Install Git from https://git-scm.com");
   });
 
   test("Escape closes for the session without permanently skipping", async ({ page }) => {

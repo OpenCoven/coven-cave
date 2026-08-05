@@ -17,6 +17,7 @@ import {
   type CanonicalWorkspaceMode,
   type WorkspaceMode as WorkspaceModeFromDaemon,
 } from "@/lib/workspace-mode";
+import { navSectionForMode, type NavSection } from "@/lib/nav-section";
 import { clearChatHash, clearModeParam, readChatHash, readModeParam } from "@/lib/workspace-url-state";
 import {
   canMoveWorkspaceNavigation,
@@ -82,6 +83,10 @@ import {
   createDaemonDesktopAutoStartCoordinator,
   runWorkspaceDaemonStart,
 } from "@/lib/daemon-desktop-auto-start";
+import {
+  daemonRecoveryPresentation,
+  initialDaemonRecoveryPresentation,
+} from "@/lib/daemon-recovery-presentation";
 import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
 import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
 import { useTauriPlatform } from "@/lib/tauri-platform";
@@ -569,15 +574,16 @@ export function Workspace() {
   // the fix is re-auth (reload to the gate page), not "Start daemon" (cave-wkp5).
   const [authExpired, setAuthExpired] = useState(false);
   const [daemonStatusUnavailable, setDaemonStatusUnavailable] = useState<string | null>(null);
+  const [daemonRecovery, setDaemonRecovery] = useState(initialDaemonRecoveryPresentation);
   const daemonHealthyStreakRef = useRef(0);
   const daemonConnectionSupervisorRef = useRef<ReturnType<typeof createDaemonConnectionSupervisor> | null>(null);
   const daemonTravelReconcileRequesterRef = useRef<ReturnType<typeof createDaemonTravelReconcileRequester> | null>(null);
-  const startDaemonRef = useRef<() => Promise<void>>(async () => {});
+  const startDaemonRef = useRef<({ automatic }?: { automatic?: boolean }) => Promise<void>>(async () => {});
   const daemonAutoStartCoordinatorRef = useRef<ReturnType<typeof createDaemonDesktopAutoStartCoordinator> | null>(null);
   if (daemonAutoStartCoordinatorRef.current === null) {
     daemonAutoStartCoordinatorRef.current = createDaemonDesktopAutoStartCoordinator(
       () => {
-        void startDaemonRef.current();
+        void startDaemonRef.current({ automatic: true });
       },
       {
         // Read per decision, not captured: Settings → Daemon → Automation can
@@ -784,6 +790,7 @@ export function Workspace() {
     // live UI state, but can never turn into a delayed automatic restart.
     daemonAutoStartCoordinatorRef.current!.observeStatus(result);
     if (result.kind === "running") {
+      setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "running" }));
       setAcceptedLocalDaemonHealthy(result.targetMode === "local");
     } else {
       setAcceptedLocalDaemonHealthy(false);
@@ -805,6 +812,7 @@ export function Workspace() {
 
     setDaemonStatusUnavailable(null);
     if (result.kind === "offline") {
+      setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "offline" }));
       daemonHealthyStreakRef.current = 0;
       setDaemonRunning(false);
       setDaemonOffline(true);
@@ -825,12 +833,16 @@ export function Workspace() {
     await daemonConnectionSupervisorRef.current?.refresh({ fresh: opts?.fresh === true || opts?.trusted === true });
   }, []);
 
-  const startDaemon = useCallback(async () => {
+  const startDaemon = useCallback(async ({ automatic = false }: { automatic?: boolean } = {}) => {
+    setDaemonRecovery((current) => daemonRecoveryPresentation(current, {
+      type: automatic ? "automatic-start" : "manual-start",
+    }));
     // The release-alignment trigger may be replacing the CLI after observing
     // this same offline state. Starting the old binary during that window can
     // lock coven.exe on Windows and make the update fail.
     await waitForDaemonUpdateIdle();
-    await runWorkspaceDaemonStart({
+    const outcome = await runWorkspaceDaemonStart({
+      automatic,
       fetchImpl: fetch,
       dismissError: () => dismissBanner("daemon-start-error"),
       reportError: (message) => pushBanner({
@@ -840,6 +852,9 @@ export function Workspace() {
       }),
       refreshStatus: refreshDaemonStatus,
     });
+    if (automatic) {
+      setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "start-outcome", outcome }));
+    }
   }, [dismissBanner, pushBanner, refreshDaemonStatus]);
   startDaemonRef.current = startDaemon;
 
@@ -1036,7 +1051,7 @@ export function Workspace() {
   // token is rejected the daemon state is unknowable — suppress this banner
   // in favour of the re-auth one (cave-wkp5).
   useEffect(() => {
-    if (!daemonOffline || authExpired) {
+    if (!daemonOffline || authExpired || daemonRecovery.quiet) {
       dismissBanner("daemon-offline");
       dismissBanner("daemon-start-error");
     } else if (daemonStatusResolved) {
@@ -1054,7 +1069,7 @@ export function Workspace() {
         },
       });
     }
-  }, [daemonOffline, daemonStatusResolved, authExpired, pushBanner, dismissBanner, startDaemon]);
+  }, [daemonOffline, daemonStatusResolved, authExpired, daemonRecovery.quiet, pushBanner, dismissBanner, startDaemon]);
 
   // A status-service failure, timeout, malformed response, or non-local target
   // problem does not prove the local daemon is stopped. Keep that uncertainty
@@ -2971,9 +2986,26 @@ export function Workspace() {
     deactivateAllNativeBrowserWebviews();
   }, [browserVisible]);
 
+  // The global left-rail section (cave-24d2r). Derived from the active surface
+  // rather than stored, so the rail and the surface can never disagree — deep
+  // links, ⌘K and restored last-surface strings all land in the right room.
+  const navSection = navSectionForMode(mode);
+  const handleSectionChange = useCallback(
+    (next: NavSection) => {
+      if (navSectionForMode(modeRef.current) === next) return;
+      // Each room has a landing surface: Code opens Chat (its session list is
+      // right there in the rail), Home opens the overview.
+      setMode(next === "code" ? "chat" : "home");
+      shellRef.current?.dismissNavMobile();
+    },
+    [setMode],
+  );
+
   const sidebar = (
     <SidebarMinimal
       mode={mode}
+      section={navSection}
+      onSectionChange={handleSectionChange}
       splitPageModes={splitPageModes}
       // Registered Role Surfaces visible for the active scope — rendered by
       // the sidebar as generic rows (rooms), never named in shell code.
@@ -3053,6 +3085,7 @@ export function Workspace() {
         setMode(nextMode);
         shellRef.current?.dismissNavMobile();
       }}
+      onSectionChange={handleSectionChange}
       onDeleteSession={async (session) => {
         const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
         const json = await res.json().catch(() => ({ ok: false, error: "delete failed" }));
@@ -3075,7 +3108,9 @@ export function Workspace() {
     />
   );
 
-  const contextualNav = mode === "chat" ? chatSidebar : sidebar;
+  // The Code room keeps the session-list rail across all of its surfaces (Chat,
+  // the workbench, the browser); Home uses the destination rail.
+  const contextualNav = navSection === "code" ? chatSidebar : sidebar;
 
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split

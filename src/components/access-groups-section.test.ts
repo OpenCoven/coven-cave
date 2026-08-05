@@ -5,15 +5,25 @@ import { readFileSync } from "node:fs";
 const section = readFileSync(new URL("./access-groups-section.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const inline = readFileSync(new URL("./familiar-studio-inline.tsx", import.meta.url), "utf8");
+const projectsView = readFileSync(new URL("./projects-view.tsx", import.meta.url), "utf8");
 const sections = readFileSync(new URL("./settings-sections.ts", import.meta.url), "utf8");
 
-// ── Access groups management lives in Chat → Familiar → Settings ─────────────
+// ── Access groups are a peer pane of Chat → Projects (cave-2tmly) ────────────
+// They used to sit two levels down, inside a familiar's Settings → Projects
+// tab, which is why nobody found the one primitive that grants a set of
+// projects to a set of familiars at once.
 assert.match(section, /export function AccessGroupsSection/, "exports the access groups section");
 assert.doesNotMatch(shell, /<AccessGroupsSection/, "the shell does not duplicate access groups below the control sheet");
+assert.doesNotMatch(inline, /AccessGroupsSection/, "the inline studio no longer buries access groups");
 assert.match(
-  inline,
-  /<AccessGroupsSection familiars=\{resolved\} \/>/,
-  "the Projects tab mounts the access groups manager",
+  projectsView,
+  /<AccessGroupsSection familiars=\{resolvedFamiliars\} \/>/,
+  "Chat → Projects mounts the access groups manager",
+);
+assert.match(
+  projectsView,
+  /id: "groups",\s*label: "Groups",/,
+  "groups are a named tab, not a section scrolled past",
 );
 assert.doesNotMatch(sections, /group: "Access groups"/, "retired Settings search does not index the access groups group");
 
