@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { createElement, useEffect, useState } from "react";
 import { act, create } from "react-test-renderer";
@@ -9,6 +10,8 @@ import { source, turnRow } from "./chat-view-polish-fixtures.ts";
 import { useToolRunDisclosure } from "../lib/use-tool-run-disclosure.ts";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+const turnSegmentsSource = readFileSync(new URL("../lib/turn-segments.ts", import.meta.url), "utf8");
 
 function ToolGroupProbe({ statuses, snapshots, lifecycle, controller }) {
   const [outerOpen, setOuterOpen] = useState(false);
@@ -133,8 +136,8 @@ test("TurnRow gives tools stable activity and edit-card slots instead of streami
   const turnRender = turnRow.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "";
   assert.match(
     turnRender,
-    /const turnTools = turn\.tools \?\? \[\];\s*const editCards = turnTools\.filter\(isEditCard\);\s*const otherTools = turnTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
-    "edit and non-edit tools are partitioned independently of pending state",
+    /const turnTools = turn\.tools \?\? \[\];\s*const editToolIds = new Set\([\s\S]*isFileMutationTool\(tool\.name\)[\s\S]*tool\.id[\s\S]*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);\s*const otherTools = turnTools\.filter\(\(tool\) => !editToolIds\.has\(tool\.id\)\);/,
+    "edit and non-edit tools use a pending-independent id partition",
   );
   assert.match(
     turnRender,
@@ -150,6 +153,16 @@ test("TurnRow gives tools stable activity and edit-card slots instead of streami
     source,
     /InlineToolRuns|useFocusSafeToolRelocation|data-inline-tool-runs/,
     "obsolete inline relocation components and focus guards are removed",
+  );
+  assert.doesNotMatch(
+    turnSegmentsSource,
+    /\bsegmentTurn\b|TurnSegment|SegmentedTool/,
+    "the dead local prose-segmentation pipeline is removed",
+  );
+  assert.match(
+    turnSegmentsSource,
+    /export function groupConsecutiveTools/,
+    "the repeated-run grouping helper remains",
   );
 });
 

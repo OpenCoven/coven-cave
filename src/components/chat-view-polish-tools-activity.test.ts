@@ -99,7 +99,7 @@ assert.match(
 
 assert.match(
   source,
-  /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*aria-label=\{toolGroupAriaLabel\(summary, running, errors\)\}[\s\S]*<ToolRuns tools=\{tools\}/,
+  /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*title=\{summary\.label\}[\s\S]*aria-label=\{toolGroupAriaLabel\(summary\.label, running, errors\)\}[\s\S]*<ToolRuns tools=\{tools\}/,
   "ToolGroup wraps ONE collapsed disclosure — named by toolGroupAriaLabel — around ToolRuns per assistant turn",
 );
 const toolGroup = source.match(/function ToolGroup[\s\S]*?function ToolRuns/)?.[0] ?? "";
@@ -116,8 +116,8 @@ assert.match(
 );
 assert.match(
   source,
-  /function ToolRuns[\s\S]*?containsEdit = run\.tools\.some\(\(tool\) => toolInputAsDiff\(tool\.name, tool\.input\) != null\)[\s\S]*?const body = containsEdit\s*\? run\.tools\.map\(\(tool\) => <ToolBlock[\s\S]*: <ToolRunGroup/,
-  "ToolRuns keeps edits standalone and gives every non-edit run the same stable ToolRunGroup component",
+  /function ToolRuns[\s\S]*?containsEdit = run\.tools\.some\(\(tool\) => isFileMutationTool\(tool\.name\)\)[\s\S]*?const body = containsEdit\s*\? run\.tools\.map\(\(tool\) => <ToolBlock[\s\S]*: <ToolRunGroup/,
+  "ToolRuns classifies edits from stable tool identity and gives every non-edit run the same shell",
 );
 assert.match(
   source,
@@ -138,6 +138,11 @@ assert.match(
   toolRunDisclosureSource,
   /hidden: !repeated[\s\S]*className: repeated \? "cave-tool-run__list" : undefined/,
   "the same details and list nodes stay mounted while the repeated summary becomes visible",
+);
+assert.match(
+  source,
+  /function ProgressGroup[\s\S]*<summary className="cave-tool-summary focus-ring">/,
+  "the progress disclosure summary uses the shared keyboard focus ring",
 );
 assert.match(
   source,
@@ -250,8 +255,8 @@ assert.match(
 
 assert.match(
   turnRow,
-  /const turnTools = turn\.tools \?\? \[\];\s*const editCards = turnTools\.filter\(isEditCard\);\s*const otherTools = turnTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
-  "running and settled turns share one pending-independent tool partition",
+  /const turnTools = turn\.tools \?\? \[\];\s*const editToolIds = new Set\(\s*turnTools\.filter\(\(tool\) => isFileMutationTool\(tool\.name\)\)\.map\(\(tool\) => tool\.id\),?\s*\);\s*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);\s*const otherTools = turnTools\.filter\(\(tool\) => !editToolIds\.has\(tool\.id\)\);/,
+  "tool placement is keyed by id and cannot change when a streamed input becomes parseable",
 );
 assert.match(
   turnRow,
@@ -265,8 +270,8 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /const isEditCard = \(t: ToolEvent\) =>\s*toolInputAsDiff\(t\.name, t\.input\) != null;/,
-  "any structured file mutation diff stays visible inline, even when the tool input only has a relative path",
+  /isFileMutationTool\(tool\.name\)/,
+  "known mutation tools occupy the edit-card slot before their streamed input is complete",
 );
 // Golden path 4 (cave-qva4): a multi-file turn gets ONE aggregate entry into
 // the working-tree review, riding the per-card cave:open-file-diff contract.
@@ -317,6 +322,16 @@ assert.match(
   styles,
   /\.cave-tool-group\.cave-work-line > \.cave-tool-summary\s*\{[^}]*min-height:\s*var\(--space-8\)/,
   "compact work-line summary must have min-height: var(--space-8) for 32px touch target",
+);
+assert.match(
+  styles,
+  /\.cave-work-line__count\s*\{[^}]*flex:\s*none[^}]*white-space:\s*nowrap/,
+  "the call count never shrinks out of the collapsed work line",
+);
+assert.match(
+  styles,
+  /\.cave-work-line__categories\s*\{[^}]*min-width:\s*0[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/,
+  "only the category phrase truncates when the work line is narrow",
 );
 
 // Base standalone framing: ToolRunGroup outside .cave-work-line keeps card framing.

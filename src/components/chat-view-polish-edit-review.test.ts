@@ -81,6 +81,11 @@ assert.match(
   /<EditCardActions targetFile=\{targetFile\} diff=\{inputDiff \?\? ""\} displayPath=\{displayPath\} \/>/,
   "edit-card actions render unconditionally (Review works without an absolute target path)",
 );
+assert.match(
+  source,
+  /const isEditTool = inputDiff != null;[\s\S]*if \(isEditTool\) \{[\s\S]*<EditCardActions[\s\S]*\n  \}\n  return \(/,
+  "Review actions mount only after the streamed payload yields a structured diff",
+);
 assert.match(styles, /\.cave-review-modal/, "review modal styling exists");
 assert.match(
   source,

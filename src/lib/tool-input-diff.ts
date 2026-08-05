@@ -15,6 +15,11 @@
 /** Tool names whose input mutates a file (case-insensitive exact match). */
 const MUTATION_TOOLS = new Set(["edit", "write", "multiedit", "notebookedit"]);
 
+/** Stable mutation classification available before a streamed input parses. */
+export function isFileMutationTool(name: string): boolean {
+  return MUTATION_TOOLS.has(name.trim().toLowerCase());
+}
+
 /** Cap rendered diff output; beyond this we truncate with a marker. */
 const MAX_DIFF_LINES = 400;
 
@@ -63,7 +68,7 @@ function capLines(lines: string[]): string {
  * don't recognise — callers fall back to their current raw rendering.
  */
 export function toolInputAsDiff(name: string, input?: string | null): string | null {
-  if (!MUTATION_TOOLS.has(name.toLowerCase())) return null;
+  if (!isFileMutationTool(name)) return null;
   const raw = (input ?? "").trim();
   if (!raw) return null;
 
