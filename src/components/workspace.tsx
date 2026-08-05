@@ -17,6 +17,7 @@ import {
   type CanonicalWorkspaceMode,
   type WorkspaceMode as WorkspaceModeFromDaemon,
 } from "@/lib/workspace-mode";
+import { navSectionForMode, type NavSection } from "@/lib/nav-section";
 import { clearChatHash, clearModeParam, readChatHash, readModeParam } from "@/lib/workspace-url-state";
 import {
   canMoveWorkspaceNavigation,
@@ -2985,9 +2986,26 @@ export function Workspace() {
     deactivateAllNativeBrowserWebviews();
   }, [browserVisible]);
 
+  // The global left-rail section (cave-24d2r). Derived from the active surface
+  // rather than stored, so the rail and the surface can never disagree — deep
+  // links, ⌘K and restored last-surface strings all land in the right room.
+  const navSection = navSectionForMode(mode);
+  const handleSectionChange = useCallback(
+    (next: NavSection) => {
+      if (navSectionForMode(modeRef.current) === next) return;
+      // Each room has a landing surface: Code opens Chat (its session list is
+      // right there in the rail), Home opens the overview.
+      setMode(next === "code" ? "chat" : "home");
+      shellRef.current?.dismissNavMobile();
+    },
+    [setMode],
+  );
+
   const sidebar = (
     <SidebarMinimal
       mode={mode}
+      section={navSection}
+      onSectionChange={handleSectionChange}
       splitPageModes={splitPageModes}
       // Registered Role Surfaces visible for the active scope — rendered by
       // the sidebar as generic rows (rooms), never named in shell code.
@@ -3067,6 +3085,7 @@ export function Workspace() {
         setMode(nextMode);
         shellRef.current?.dismissNavMobile();
       }}
+      onSectionChange={handleSectionChange}
       onDeleteSession={async (session) => {
         const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
         const json = await res.json().catch(() => ({ ok: false, error: "delete failed" }));
@@ -3089,7 +3108,9 @@ export function Workspace() {
     />
   );
 
-  const contextualNav = mode === "chat" ? chatSidebar : sidebar;
+  // The Code room keeps the session-list rail across all of its surfaces (Chat,
+  // the workbench, the browser); Home uses the destination rail.
+  const contextualNav = navSection === "code" ? chatSidebar : sidebar;
 
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split

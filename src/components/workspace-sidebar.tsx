@@ -36,6 +36,8 @@ import {
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
+import { NavSectionTabs } from "@/components/nav-section-tabs";
+import type { NavSection } from "@/lib/nav-section";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 type WorkspaceSidebarMode = "home" | "inbox" | "marketplace";
@@ -58,6 +60,9 @@ type Props = {
   /** Home / Scheduled / Plugins shortcuts route through Workspace so it can
    *  coordinate mode changes with mobile drawer dismissal. */
   onNavigate: (mode: WorkspaceSidebarMode) => void;
+  /** Global section switcher (Home | Code). This sidebar hosts the Code room,
+   *  so the tabs ride at its top too — leaving Code returns to the Home rail. */
+  onSectionChange?: (section: NavSection) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
   /** Refresh the workspace sessions poll after an archive/unarchive PATCH so
@@ -343,6 +348,7 @@ export function WorkspaceSidebar({
   onOpenSession,
   onOpenSessionInSplit,
   onNavigate,
+  onSectionChange,
   onNewChat,
   onDeleteSession,
   onSessionsChanged,
@@ -563,6 +569,10 @@ export function WorkspaceSidebar({
   return (
     <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
+        {/* Global section switcher — Home | Code (cave-24d2r). This sidebar IS
+            the Code room, so switching to Home hands the rail back to the
+            standard destination list. */}
+        {onSectionChange ? <NavSectionTabs section="code" onSectionChange={onSectionChange} /> : null}
         {/* Header — the labeled familiar switcher (#2747). WorkspaceSidebar owns
             the primary Shell nav during Chat; Home exits Chat and restores the
             normal navigation. This scope control was restored by cave-l3ay
@@ -579,15 +589,19 @@ export function WorkspaceSidebar({
               labeled
             />
           </div>
-          <button
-            type="button"
-            aria-label="Go to Home"
-            title="Home"
-            onClick={() => onNavigate("home")}
-            className="cnav__back focus-ring ml-auto"
-          >
-            <Icon name="ph:house-bold" width={15} aria-hidden />
-          </button>
+          {/* The Home tab above owns the exit now; the icon button only remains
+              when the section switcher is not mounted (standalone hosts). */}
+          {onSectionChange ? null : (
+            <button
+              type="button"
+              aria-label="Go to Home"
+              title="Home"
+              onClick={() => onNavigate("home")}
+              className="cnav__back focus-ring ml-auto"
+            >
+              <Icon name="ph:house-bold" width={15} aria-hidden />
+            </button>
+          )}
           <button
             ref={menuAnchorRef}
             type="button"
@@ -596,7 +610,7 @@ export function WorkspaceSidebar({
             aria-expanded={menuOpen}
             title="Sidebar options"
             onClick={() => setMenuOpen((cur) => !cur)}
-            className="cnav__back focus-ring"
+            className={`cnav__back focus-ring${onSectionChange ? " ml-auto" : ""}`}
           >
             <Icon name="ph:dots-three-bold" width={15} aria-hidden />
           </button>
