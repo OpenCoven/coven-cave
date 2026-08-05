@@ -201,6 +201,33 @@ export function migrateLiveChatGeneration(
   );
 }
 
+export type LiveChatGenerationSessionIdentity = {
+  sessionId: string | null;
+  sessionAliases: Set<string>;
+};
+
+export function reconcileLiveChatGenerationSession(
+  generation: LiveChatGenerationSessionIdentity,
+  stableSessionId: string,
+  expectedRunId: string,
+): void {
+  const previousSessionId = generation.sessionId;
+  if (previousSessionId && previousSessionId !== stableSessionId) {
+    migrateLiveChatGeneration(previousSessionId, stableSessionId, expectedRunId);
+  }
+  generation.sessionId = stableSessionId;
+  generation.sessionAliases.add(stableSessionId);
+}
+
+export function clearLiveChatGenerationAliases(
+  sessionAliases: Iterable<string>,
+  expectedRunId: string,
+): void {
+  for (const sessionId of sessionAliases) {
+    clearLiveChatGeneration(sessionId, expectedRunId);
+  }
+}
+
 export function stageLiveChatGenerationMetadata(
   sessionId: string,
   metadata: LiveChatGenerationMetadata,

@@ -66,10 +66,11 @@ import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   advanceLiveChatGeneration,
   clearLiveChatGeneration,
+  clearLiveChatGenerationAliases,
   mapConversationHistoryTurns,
-  migrateLiveChatGeneration,
   publishLiveChatGenerationMetadata,
   readLiveChatGeneration,
+  reconcileLiveChatGenerationSession,
   recordLiveChatGeneration,
   retryTurnModelRequest,
   stageLiveChatGenerationMetadata,
@@ -5306,9 +5307,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // unbound pending entries and preserves bound session retry ones.
       creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       // Always retire THIS generation's registry entry (keyed by session).
-      for (const alias of liveGeneration.sessionAliases) {
-        clearLiveChatGeneration(alias, runId);
-      }
+      clearLiveChatGenerationAliases(liveGeneration.sessionAliases, runId);
       if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
         setHistoryRetryKey((k) => k + 1);
       }
@@ -5982,12 +5981,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) => {
     switch (ev.kind) {
       case "session": {
-        const previousSessionId = liveGeneration.sessionId;
-        if (previousSessionId && previousSessionId !== ev.sessionId) {
-          migrateLiveChatGeneration(previousSessionId, ev.sessionId, liveGeneration.runId);
-        }
-        liveGeneration.sessionId = ev.sessionId;
-        liveGeneration.sessionAliases.add(ev.sessionId);
+        reconcileLiveChatGenerationSession(
+          liveGeneration,
+          ev.sessionId,
+          liveGeneration.runId,
+        );
         // Bind creation-refresh OUTSIDE the ownership guard. The provenance
         // gate is now encoded in the helper: only a sessionless generation
         // (originSessionId === null) may bind an unbound pending creation state;
@@ -6191,8 +6189,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           stampFirstReplyOnce();
         }
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
+        if (ev.sessionId) {
+          reconcileLiveChatGenerationSession(
+            liveGeneration,
+            ev.sessionId,
+            liveGeneration.runId,
+          );
+        }
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
-          liveGeneration.sessionId = ev.sessionId;
           // Same run-and-thread ownership predicate as the "session" event.
           const owned = ownsDisplayedView({
             currentSessionId: currentSessionRef.current,

@@ -287,13 +287,18 @@ assert.match(
 
 assert.match(
   source,
-  /case "session": \{[\s\S]*?const previousSessionId = liveGeneration\.sessionId;[\s\S]*?migrateLiveChatGeneration\(previousSessionId, ev\.sessionId, liveGeneration\.runId\);[\s\S]*?liveGeneration\.sessionAliases\.add\(ev\.sessionId\)/,
+  /case "session": \{[\s\S]*?reconcileLiveChatGenerationSession\(\s*liveGeneration,\s*ev\.sessionId,\s*liveGeneration\.runId,\s*\)/,
   "stable session replacement migrates the live snapshot and tracks the final alias",
 );
 assert.match(
   source,
-  /for \(const alias of liveGeneration\.sessionAliases\) \{\s*clearLiveChatGeneration\(alias, runId\);\s*\}/,
+  /clearLiveChatGenerationAliases\(liveGeneration\.sessionAliases, runId\)/,
   "terminal cleanup retires every origin/final alias with the run-id guard",
+);
+assert.match(
+  source,
+  /case "done": \{[\s\S]*?if \(ev\.sessionId\) \{\s*reconcileLiveChatGenerationSession\(\s*liveGeneration,\s*ev\.sessionId,\s*liveGeneration\.runId,\s*\)/,
+  "done-only stable session replacements use the same migration and alias registration path",
 );
 
 assert.match(
