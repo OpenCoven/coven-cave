@@ -23,6 +23,7 @@ import {
   type FamiliarRuntime,
   normalizeFamiliarRuntime,
 } from "./familiar-runtime.ts";
+import { loadConversation } from "./cave-conversations.ts";
 import { normalizeHermesProfileBinding, type HermesProfileBinding } from "./hermes-profiles.ts";
 import { runtimeOwnsModelDefault } from "./runtime-models.ts";
 import type { UserProfile } from "./user-profile-shared.ts";
@@ -1055,18 +1056,21 @@ export async function extendSessionAutoArchiveLocal(
  * Unlike the sweep-internal `autoArchiveSessionsLocal`, this helper checks
  * `sessionKeep`, `sessionArchived`, and `sessionSacrificed` inside the same
  * `updateState` write that sets the archive timestamp, so a concurrent
- * `setSessionKeepLocal` cannot race with the archive decision. It also
- * invalidates the sessions-list cache only when it actually archives,
- * keeping the sidebar refresh on reflection without disrupting the sweep
- * compute path.
+ * `setSessionKeepLocal` cannot race with the archive decision. Authoritative
+ * session existence is checked inside that write as well, preventing a stale
+ * pre-check from creating an archive tombstone for a missing chat. It also
+ * invalidates the sessions-list cache only when it actually archives, keeping
+ * the sidebar refresh on reflection without disrupting the sweep compute path.
  *
  * Returns the archive timestamp when archived, else null.
  */
 export async function autoArchiveReflectedSessionLocal(
   sessionId: string,
+  sessionExists: () => Promise<boolean> = async () =>
+    Boolean(await loadConversation(sessionId)),
 ): Promise<string | null> {
   let archivedAt: string | null = null;
-  await updateState((state) => {
+  await updateState(async (state) => {
     if (
       state.sessionKeep[sessionId] ||
       state.sessionArchived[sessionId] ||
@@ -1074,6 +1078,7 @@ export async function autoArchiveReflectedSessionLocal(
     ) {
       return;
     }
+    if (!(await sessionExists())) return;
     const now = new Date().toISOString();
     state.sessionArchived[sessionId] = now;
     archivedAt = now;

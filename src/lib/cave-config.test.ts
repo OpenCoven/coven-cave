@@ -9,6 +9,7 @@ const tempHome = await mkdtemp(path.join(process.cwd(), ".cave-config-test-"));
 process.env.HOME = tempHome;
 
 const config = await import("./cave-config.ts");
+const conversations = await import("./cave-conversations.ts");
 const { sessionsListCache } = await import("./server/sessions-list-cache.ts");
 
 try {
@@ -392,6 +393,24 @@ try {
   // ── autoArchiveReflectedSessionLocal: atomic keep / skip guard ───────────────
   // Archives an eligible session and returns the archive timestamp.
   {
+    const missingResult = await config.autoArchiveReflectedSessionLocal("reflect-missing");
+    assert.equal(missingResult, null, "a reflected session missing from authoritative storage is a no-op");
+    state = await config.loadState();
+    assert.equal(
+      state.sessionArchived["reflect-missing"],
+      undefined,
+      "a missing reflected session never creates a sessionArchived tombstone",
+    );
+
+    await conversations.saveConversation({
+      sessionId: "reflect-eligible",
+      familiarId: "nova",
+      harness: "codex",
+      title: "Existing reflected chat",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      turns: [],
+    });
     const eligibleCacheKey = "reflection:eligible";
     await sessionsListCache.get(eligibleCacheKey, async () => ({
       payload: { ok: true, sessions: [{ id: "reflect-eligible" }] },
@@ -421,6 +440,15 @@ try {
 
     // Keep prevents archive — checked atomically inside the state write so a
     // concurrent setSessionKeepLocal cannot race with the archive decision.
+    await conversations.saveConversation({
+      sessionId: "reflect-kept",
+      familiarId: "nova",
+      harness: "codex",
+      title: "Kept reflected chat",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      turns: [],
+    });
     await config.setSessionKeepLocal("reflect-kept", true);
     const keptCacheKey = "reflection:kept";
     await sessionsListCache.get(keptCacheKey, async () => ({

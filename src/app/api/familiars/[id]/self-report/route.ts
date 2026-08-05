@@ -27,6 +27,7 @@ import type {
   ContextPressure,
   ThreadSelfReport,
 } from "@/lib/thread-self-report";
+import { callDaemon } from "@/lib/coven-daemon";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -47,6 +48,15 @@ const CAPABILITY_STATES = new Set<CapabilityState>(["available", "degraded", "mi
 const BLOCKER_CATEGORIES = new Set<BlockerCategory>(["auth", "tooling", "permission", "infra", "context", "skill", "other"]);
 const BLOCKER_IMPACTS = new Set<BlockerImpact>(["low", "medium", "high", "blocking"]);
 const IMPORTANCE = new Set<CapabilityImportance>(["nice-to-have", "important", "blocking"]);
+
+type ReflectedDaemonSession = {
+  id?: unknown;
+  updated_at?: unknown;
+};
+
+type ReflectedSession = {
+  lastActivityAt: string | null;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -80,6 +90,23 @@ function objectArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
+async function loadReflectedSession(sessionId: string): Promise<ReflectedSession | null> {
+  const conversation = await loadConversation(sessionId).catch(() => null);
+  if (conversation) return { lastActivityAt: conversation.updatedAt };
+
+  const response = await callDaemon<ReflectedDaemonSession[]>({
+    path: "/api/v1/sessions",
+  }).catch(() => null);
+  const daemonSession = response?.ok && Array.isArray(response.data)
+    ? response.data.find((session) => session?.id === sessionId)
+    : null;
+  if (!daemonSession) return null;
+  return {
+    lastActivityAt:
+      typeof daemonSession.updated_at === "string" ? daemonSession.updated_at : null,
+  };
+}
+
 /**
  * Auto-archive the reflected thread when the chat auto-archive policy opts in
  * (`archiveOnReflection`, edited from the chat page's Settings tab). A landed
@@ -94,17 +121,18 @@ async function maybeAutoArchiveReflectedThread(
   try {
     const [config, state] = await Promise.all([loadConfig(), loadState()]);
     const policy = normalizeChatAutoArchivePolicy(config.chatAutoArchive);
-    // Last-activity source for the auto-trigger idle gate: the stored
-    // conversation's updatedAt (bumped on every saved turn). Daemon-only
-    // sessions have no conversation — unknown activity keeps the thread.
-    const conversation = await loadConversation(sessionId).catch(() => null);
+    const reflectedSession = await loadReflectedSession(sessionId);
+    if (!reflectedSession) return null;
     const due = shouldAutoArchiveOnReflection(sessionId, trigger, policy, {
       keep: state.sessionKeep,
       archivedSessionIds: Object.keys(state.sessionArchived),
-      lastActivityAt: conversation?.updatedAt ?? null,
+      lastActivityAt: reflectedSession.lastActivityAt,
     });
     if (!due) return null;
-    const archivedAt = await autoArchiveReflectedSessionLocal(sessionId);
+    const archivedAt = await autoArchiveReflectedSessionLocal(
+      sessionId,
+      async () => Boolean(await loadReflectedSession(sessionId)),
+    );
     if (archivedAt) await resolveArchiveNudges(sessionId);
     return archivedAt;
   } catch {

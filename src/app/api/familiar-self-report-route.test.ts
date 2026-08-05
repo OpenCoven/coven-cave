@@ -21,7 +21,7 @@ describe("reflection auto-archive wiring", () => {
     );
     assert.match(
       routeSource,
-      /lastActivityAt: conversation\?\.updatedAt \?\? null,/,
+      /lastActivityAt: reflectedSession\.lastActivityAt,/,
       "route must feed the thread's last activity to the auto-trigger idle gate (cave-9q24)",
     );
     assert.match(
@@ -31,8 +31,18 @@ describe("reflection auto-archive wiring", () => {
     );
     assert.match(
       routeSource,
-      /autoArchiveReflectedSessionLocal\(sessionId\)/,
+      /autoArchiveReflectedSessionLocal\(\s*sessionId,/,
       "route must archive through the atomic reflection helper (skips kept/sacrificed/archived inside the write)",
+    );
+    assert.match(
+      routeSource,
+      /loadReflectedSession\(sessionId\)[\s\S]*?if \(!reflectedSession\) return null;/,
+      "a reflection for a missing local/daemon session is an archive no-op",
+    );
+    assert.match(
+      routeSource,
+      /autoArchiveReflectedSessionLocal\(\s*sessionId,\s*async \(\) => Boolean\(await loadReflectedSession\(sessionId\)\),\s*\)/,
+      "the authoritative existence check runs inside the atomic archive helper",
     );
     assert.match(
       routeSource,
