@@ -796,24 +796,27 @@ assert.match(
   "done event: onCreationSessionIdentified receives originSessionId; onDoneCreationRefresh takes only state/runId/completedSessionId (originSessionId removed)",
 );
 
-// Terminal non-done paths wire onCreationRunTerminated to evict unbound pending entries.
-// case "error": stream-level error event cleans up before returning.
+// The generation's finally unconditionally calls onCreationRunTerminated, covering every
+// terminal exit: HTTP rejection, missing body, exhausted recovery, abort, and stream
+// exceptions. The helper is safe to call unconditionally — it removes only unbound
+// entries and preserves bound session retry entries.
 assert.match(
   source,
-  /case "error": \{[\s\S]*?onCreationRunTerminated\(\s*creationRefreshStateRef\.current,\s*liveGeneration\.runId/,
-  "case 'error' wires onCreationRunTerminated to remove unbound pending entries on terminal stream error",
+  /} finally \{[\s\S]{0,800}?onCreationRunTerminated\(\s*creationRefreshStateRef\.current,\s*liveGeneration\.runId/,
+  "generation's finally unconditionally calls onCreationRunTerminated — covers every terminal exit",
 );
-// Outer catch: AbortError (user cancelled) path cleans up.
-assert.match(
+// HTTP rejection and missing body return early without scattered cleanup; they rely on
+// the generation's finally instead.
+assert.doesNotMatch(
   source,
-  /lifecycle: "cancelled"[\s\S]{0,2000}?onCreationRunTerminated\(\s*creationRefreshStateRef\.current,\s*liveGeneration\.runId/,
-  "outer catch AbortError path wires onCreationRunTerminated to remove unbound pending entries on cancellation",
+  /chatBridgeFailureMessage[\s\S]{0,1000}?onCreationRunTerminated/,
+  "HTTP rejection path has no scattered onCreationRunTerminated — relies on finally",
 );
-// Outer catch: non-AbortError (HTTP/network error) path cleans up.
-assert.match(
+// The SSE error event handler no longer carries scattered cleanup (finally covers it).
+assert.doesNotMatch(
   source,
-  /conciseStreamError\(err[\s\S]{0,700}?onCreationRunTerminated\(\s*creationRefreshStateRef\.current,\s*liveGeneration\.runId/,
-  "outer catch non-AbortError path wires onCreationRunTerminated to remove unbound pending entries on send failure",
+  /case "error": \{[\s\S]{0,500}?onCreationRunTerminated/,
+  "SSE case 'error' handler has no scattered onCreationRunTerminated — relies on finally",
 );
 // sendRaw passes runId to onSendStart for per-generation creation-refresh tracking
 assert.match(

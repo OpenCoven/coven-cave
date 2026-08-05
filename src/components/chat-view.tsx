@@ -5259,8 +5259,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           liveGeneration.sessionId,
           { runId, streamHealth: generationStreamHealth },
         );
-        // Terminal non-done path: remove the pending entry if it is still unbound.
-        creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       } else {
         const message = conciseStreamError(err, "send failed");
         setError(message);
@@ -5276,10 +5274,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           at: new Date().toISOString(),
           error: message,
         });
-        // Terminal non-done path: remove the pending entry if it is still unbound.
-        creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       }
     } finally {
+      // All terminal exits — HTTP rejection, missing body, exhausted recovery,
+      // abort, and stream exceptions — reach here. Calling
+      // onCreationRunTerminated unconditionally is safe: it removes only
+      // unbound pending entries and preserves bound session retry ones.
+      creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       // Always retire THIS generation's registry entry (keyed by session).
       clearLiveChatGeneration(liveGeneration.sessionId, runId);
       if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
@@ -6195,9 +6196,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         );
         raiseDebugError({ turnId: assistantId, code: ev.code });
         if (ev.code === "ENOENT") onOpenOnboarding?.();
-        // Terminal non-done path: remove the pending entry if it is still unbound.
-        // A bound entry (session ID was received earlier) is preserved for retry.
-        creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
         return;
       }
     }
