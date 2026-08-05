@@ -60,6 +60,58 @@ test("daemon travel reconcile POST reuses the current connection snapshot", asyn
   assert.deepEqual(seen, [snapshot]);
 });
 
+test("daemon travel reconcile POST asks the client to keep polling while replay is still pending", async () => {
+  const POST = createDaemonTravelReconcilePostHandler({
+    loadDaemonConnectionSnapshot: async () => ({
+      running: true,
+      availability: "online",
+      checkedAt: "2026-08-01T00:00:00.000Z",
+      target: {
+        mode: "hub",
+        label: "Server hub",
+        url: "https://cave.tailnet.example.ts.net:8787",
+      },
+    }),
+    reconcileDaemonTravelHeartbeatSnapshot: async () => ({
+      travelState: {
+        manualOffline: false,
+        hubUnreachableSince: null,
+        lastHubReachableAt: "2026-08-01T00:00:00.000Z",
+        staleCache: true,
+        localSubdaemonWakeRequestedAt: null,
+        localBindHost: "127.0.0.1",
+        offlineQueue: [
+          {
+            id: "queued-chat",
+            kind: "chat",
+            summary: "Queued chat",
+            createdAt: "2026-08-01T00:00:00.000Z",
+            status: "syncing",
+          },
+        ],
+      },
+      travelStatus: {
+        mode: "handoff-pending",
+        authority: "travel-local",
+        reason: "offline queue pending sync",
+        manualOffline: false,
+        staleCache: true,
+        wakeLocalSubdaemon: false,
+        localBindHost: "127.0.0.1",
+        hubUnreachableSince: null,
+        hubUnreachableForMs: 0,
+        pendingQueueCount: 1,
+        handoffPending: true,
+      },
+      travelReplay: { attempted: 1, synced: 1, failed: 0, errors: [] },
+    }),
+  });
+
+  const response = await POST(request());
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, retryAfterMs: 1000 });
+});
+
 test("daemon travel reconcile POST converts reconcile failures into a generic 503", async () => {
   const POST = createDaemonTravelReconcilePostHandler({
     loadDaemonConnectionSnapshot: async () => ({
@@ -146,7 +198,7 @@ assert.match(
 );
 assert.match(source, /loadDaemonConnectionSnapshot\(\)/);
 assert.match(source, /reconcileDaemonTravelHeartbeatSnapshot\(snapshot\)/);
-assert.match(source, /return NextResponse\.json\(\{ ok: true \}\)/);
+assert.match(source, /retryAfterMs !== null \? \{ retryAfterMs \} : \{\}/);
 assert.match(source, /error: "daemon travel reconciliation failed"/);
 assert.doesNotMatch(source, /executorStatusesForConfig|installedCovenVersion|request\.json\(/);
 assert.doesNotMatch(source, /searchParams\.get\("fresh"\)|reconcileDaemonTravelState\(\{/);

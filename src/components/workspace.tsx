@@ -968,6 +968,11 @@ export function Workspace() {
           signal,
         });
         if (!response.ok) throw new Error("daemon travel reconcile failed");
+        const payload = await response.json().catch(() => null);
+        const retryAfterMs = typeof payload?.retryAfterMs === "number" && Number.isFinite(payload.retryAfterMs)
+          ? Math.max(0, Math.floor(payload.retryAfterMs))
+          : null;
+        return retryAfterMs === null ? undefined : { retryAfterMs };
       },
     });
     const supervisor = createDaemonConnectionSupervisor({

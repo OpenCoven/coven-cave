@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { createDaemonTravelReconcileRequester } from "./daemon-travel-reconcile-client.ts";
+import {
+  createDaemonTravelReconcileRequester,
+  type DaemonTravelReconcileRequestResult,
+} from "./daemon-travel-reconcile-client.ts";
 import { TRAVEL_HUB_UNREACHABLE_MS } from "./travel-client-state.ts";
 
 const source = await readFile(new URL("./daemon-travel-reconcile-client.ts", import.meta.url), "utf8");
@@ -13,7 +16,7 @@ type Deferred<T> = {
   reject: (reason?: unknown) => void;
 };
 
-type RequestRecord = Deferred<void> & {
+type RequestRecord = Deferred<void | DaemonTravelReconcileRequestResult> & {
   signal: AbortSignal;
 };
 
@@ -38,6 +41,8 @@ function deferred<T>(): Deferred<T> {
 async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 function createRig() {
@@ -48,7 +53,7 @@ function createRig() {
   const timers: TimerRecord[] = [];
   const requester = createDaemonTravelReconcileRequester({
     request({ signal }) {
-      const pending = deferred<void>();
+      const pending = deferred<void | DaemonTravelReconcileRequestResult>();
       requests.push({ ...pending, signal });
       inFlight += 1;
       peakInFlight = Math.max(peakInFlight, inFlight);
@@ -103,8 +108,8 @@ function createRig() {
     get peakInFlight() {
       return peakInFlight;
     },
-    async resolve(index: number) {
-      requests[index]?.resolve();
+    async resolve(index: number, value?: void | DaemonTravelReconcileRequestResult) {
+      requests[index]?.resolve(value);
       await flushMicrotasks();
     },
     async reject(index: number, reason?: unknown) {
@@ -406,6 +411,74 @@ test("reachable failures wait for the next reachable observation before retrying
 
   assert.equal(rig.requests.length, 2);
   assert.equal(rig.peakInFlight, 1);
+});
+
+test("reachable replay pending keeps polling on one timer lane until completion", async () => {
+  const rig = createRig();
+
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 1);
+
+  await rig.resolve(0, { retryAfterMs: 1_000 });
+  assert.equal(rig.pendingTimers().length, 1);
+  assert.equal(rig.latestPendingTimer().delayMs, 1_000);
+
+  rig.fireLatestTimer();
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 2);
+  assert.equal(rig.peakInFlight, 1);
+
+  await rig.resolve(1, { retryAfterMs: 1_000 });
+  assert.equal(rig.pendingTimers().length, 1);
+  assert.equal(rig.latestPendingTimer().delayMs, 2_000);
+
+  rig.fireLatestTimer();
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 3);
+
+  await rig.resolve(2);
+  assert.equal(rig.pendingTimers().length, 0);
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 3);
+});
+
+test("reachable replay pending timer is cancelled on disconnect, hide, and stop", async () => {
+  const rig = createRig();
+
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+  await rig.resolve(0, { retryAfterMs: 1_000 });
+
+  const disconnectTimer = rig.latestPendingTimer();
+  rig.requester.observeHubState("unreachable");
+  await flushMicrotasks();
+  assert.equal(disconnectTimer.cancelled, true);
+  assert.equal(rig.pendingTimers().length, 1, "unreachable mode arms only the outage cadence");
+  assert.equal(rig.requests.length, 2);
+
+  await rig.resolve(1);
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+  assert.equal(rig.requests.length, 3);
+  await rig.resolve(2, { retryAfterMs: 1_000 });
+
+  const hideTimer = rig.latestPendingTimer();
+  rig.requester.setActive(false);
+  assert.equal(hideTimer.cancelled, true);
+  assert.equal(rig.pendingTimers().length, 0);
+
+  rig.requester.setActive(true);
+  rig.requester.observeHubState("inactive");
+  rig.requester.observeHubState("reachable");
+  await flushMicrotasks();
+  await rig.resolve(3, { retryAfterMs: 1_000 });
+
+  const stopTimer = rig.latestPendingTimer();
+  rig.requester.stop();
+  assert.equal(stopTimer.cancelled, true);
+  assert.equal(rig.pendingTimers().length, 0);
 });
 
 test("hub outage failures stay on the 10s timer lane instead of spinning immediately", async () => {

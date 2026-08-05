@@ -17,6 +17,7 @@ const replay = await import("./travel-offline-replay.ts");
 const sessionRequests: Array<Record<string, unknown>> = [];
 let nextSession = 1;
 let server: http.Server | null = null;
+const daemonSessions = new Map<string, { id: string; status: string; updated_at: string; reply: string }>();
 
 async function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -37,8 +38,57 @@ function createHubServer(): http.Server {
     if (method === "POST" && url === "/api/v1/sessions") {
       const body = await readJson(req);
       sessionRequests.push(body);
+      const id = `hub-session-${nextSession++}`;
+      // The terminal-empty-failure item deliberately sends no reply so its
+      // replay must fail rather than hang; every other queued chat gets an
+      // immediate completed session with a canonical assistant reply so the
+      // legacy userTurnId-fallback path (payload.userTurnId ?? item.id) can
+      // reach "synced" in one poll.
+      const noReply = typeof body.prompt === "string" && body.prompt.includes("terminal session with no reply");
+      daemonSessions.set(id, {
+        id,
+        status: "completed",
+        updated_at: "2026-06-30T12:02:05.000Z",
+        reply: noReply ? "" : `Replayed: ${body.prompt}`,
+      });
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ id: `hub-session-${nextSession++}`, status: "running" }));
+      res.end(JSON.stringify({ id, status: "running" }));
+      return;
+    }
+    if (method === "GET" && url === "/api/v1/sessions") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify([...daemonSessions.values()].map((session) => ({
+        id: session.id,
+        status: session.status,
+        updated_at: session.updated_at,
+      }))));
+      return;
+    }
+    if (method === "GET" && url.startsWith("/api/v1/events?")) {
+      const parsed = new URL(url, "http://127.0.0.1");
+      const sessionId = parsed.searchParams.get("sessionId") ?? "";
+      const session = daemonSessions.get(sessionId);
+      if (!session) {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "not found" } }));
+        return;
+      }
+      const events = session.reply
+        ? [
+            {
+              seq: 1,
+              kind: "assistant.message",
+              payload_json: JSON.stringify({ content: session.reply }),
+              created_at: session.updated_at,
+            },
+          ]
+        : [];
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(
+        events.length
+          ? { events, nextCursor: { afterSeq: 1 }, hasMore: false }
+          : { events: [], nextCursor: null, hasMore: false },
+      ));
       return;
     }
     res.writeHead(404, { "content-type": "application/json" });
@@ -258,6 +308,43 @@ try {
   assert.equal(
     state.travel.offlineQueue.find((entry) => entry.id === movedQueued.id)?.status,
     "failed",
+  );
+
+  const emptyReplyQueued = await config.enqueueOfflineTravelItem(
+    {
+      kind: "chat",
+      summary: "Offline Sage terminal session with no reply",
+      payload: {
+        familiarId: "sage",
+        prompt: "queued chat whose terminal session with no reply ever arrives",
+        projectRoot: process.cwd(),
+      },
+    },
+    new Date("2026-06-30T12:05:00.000Z"),
+  );
+  const beforeEmptyReplySessionRequests = sessionRequests.length;
+  const pendingBeforeEmptyReply = (await config.offlineTravelItemsNeedingSync()).length;
+  const emptyReplyResult = await replay.syncOfflineTravelQueue(
+    await config.loadConfig(),
+    { maxItems: pendingBeforeEmptyReply },
+  );
+  assert.equal(
+    sessionRequests.length,
+    beforeEmptyReplySessionRequests + 1,
+    "the legacy item (no payload.userTurnId) must still spawn exactly one daemon session",
+  );
+  state = await config.loadState();
+  const emptyReplyEntry = state.travel.offlineQueue.find((entry) => entry.id === emptyReplyQueued.id);
+  assert.equal(
+    emptyReplyEntry?.status,
+    "failed",
+    "a terminal daemon session with no usable assistant message must fail rather than stay pending forever",
+  );
+  const emptyReplyError = emptyReplyResult.errors.find((entry) => entry.id === emptyReplyQueued.id)?.error;
+  assert.match(
+    emptyReplyError ?? "",
+    /replayed session finished without a usable assistant reply to mirror/,
+    "the terminal-empty failure must carry an actionable reason instead of a silent hang",
   );
 
   console.log("travel-network-drop-proof.test.ts: ok");

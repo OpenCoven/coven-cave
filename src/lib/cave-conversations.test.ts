@@ -954,7 +954,8 @@ console.log("cave-conversations pending-marker test OK");
     "attention-explicit-null-roots",
     "attention-legacy-missing-parent-links",
     "attention-request-resolved-by-malformed-user",
-    "attention-requested-at-mismatch",
+    "attention-requested-at-skew-ahead",
+    "attention-requested-at-skew-behind",
     "attention-canonical-assistant-noncanonical-request",
     "attention-request-cleared-by-equal-timestamp",
     "attention-detached-leaf",
@@ -1904,41 +1905,79 @@ console.log("cave-conversations pending-marker test OK");
   });
 
   await saveConversation({
-    sessionId: "attention-requested-at-mismatch",
+    sessionId: "attention-requested-at-skew-ahead",
     familiarId: "charm",
     harness: "claude",
-    title: "Reject requestedAt mismatch",
+    title: "Preserve explicit request timestamp across +24h assistant skew",
     createdAt: "2026-08-04T10:00:00.000Z",
     updatedAt: "2026-08-04T10:05:00.000Z",
     turns: [
       {
-        id: "requested-at-mismatch-user",
+        id: "requested-at-skew-ahead-user",
         role: "user",
         text: "Anything blocking you?",
-        createdAt: "2026-08-04T10:00:00.000Z",
+        createdAt: "2026-08-02T10:00:00.000Z",
         parentId: null,
       },
       {
-        id: "requested-at-mismatch-assistant",
+        id: "requested-at-skew-ahead-assistant",
         role: "assistant",
-        text: "The request timestamp is wrong.",
-        createdAt: "2026-08-04T10:05:00.000Z",
-        parentId: "requested-at-mismatch-user",
+        text: "Keep the original request age.",
+        createdAt: "2026-08-03T20:00:00.000Z",
+        parentId: "requested-at-skew-ahead-user",
         responseMetadata: {
           familiarId: "charm",
           harness: "claude",
           model: "anthropic/claude-sonnet-4.6",
           runtime: "local:/repo",
           attentionRequest: {
-            sessionId: "attention-requested-at-mismatch",
-            turnId: "requested-at-mismatch-assistant",
-            requestedAt: "2026-08-04T10:04:59.000Z",
+            sessionId: "attention-requested-at-skew-ahead",
+            turnId: "requested-at-skew-ahead-assistant",
+            requestedAt: "2026-08-02T20:00:00.000Z",
             reason: "input",
           },
         },
       },
     ],
-    activeLeafId: "requested-at-mismatch-assistant",
+    activeLeafId: "requested-at-skew-ahead-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-requested-at-skew-behind",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Preserve explicit request timestamp across -24h assistant skew",
+    createdAt: "2026-08-04T10:00:00.000Z",
+    updatedAt: "2026-08-04T10:05:00.000Z",
+    turns: [
+      {
+        id: "requested-at-skew-behind-user",
+        role: "user",
+        text: "Anything blocking you?",
+        createdAt: "2026-08-02T10:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "requested-at-skew-behind-assistant",
+        role: "assistant",
+        text: "Keep the original request age.",
+        createdAt: "2026-08-01T20:00:00.000Z",
+        parentId: "requested-at-skew-behind-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-requested-at-skew-behind",
+            turnId: "requested-at-skew-behind-assistant",
+            requestedAt: "2026-08-02T20:00:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+    activeLeafId: "requested-at-skew-behind-assistant",
   });
 
   // Regression (cave-zs85n Task 4 spec gap): a noncanonical requestedAt that
@@ -2562,24 +2601,54 @@ console.log("cave-conversations pending-marker test OK");
     "a malformed-date user turn still resolves the older request, while a later valid assistant can independently become left-hanging",
   );
 
-  assert.deepEqual(byId.get("attention-requested-at-mismatch")?.attentionEvidence, {
-    latestCompletedTurn: { role: "assistant", at: "2026-08-04T10:05:00.000Z" },
-    latestUserTurnAt: "2026-08-04T10:00:00.000Z",
-    request: { state: "invalid" },
+  assert.deepEqual(byId.get("attention-requested-at-skew-ahead")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-03T20:00:00.000Z" },
+    latestUserTurnAt: "2026-08-02T10:00:00.000Z",
+    request: {
+      sessionId: "attention-requested-at-skew-ahead",
+      turnId: "requested-at-skew-ahead-assistant",
+      requestedAt: "2026-08-02T20:00:00.000Z",
+      reason: "input",
+    },
   });
   assert.deepEqual(
     deriveChatAttention({
-      evidence: byId.get("attention-requested-at-mismatch")?.attentionEvidence,
+      evidence: byId.get("attention-requested-at-skew-ahead")?.attentionEvidence,
       status: "completed",
       archivedAt: null,
       now: NOW,
     }),
     {
-      state: "none",
-      since: null,
-      reason: null,
+      state: "overdue-human",
+      since: "2026-08-02T20:00:00.000Z",
+      reason: "input",
     },
-    "requestedAt must match the containing assistant turn's instant or the request is discarded",
+    "a +24h assistant timestamp skew must not re-age or discard the original request",
+  );
+
+  assert.deepEqual(byId.get("attention-requested-at-skew-behind")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-01T20:00:00.000Z" },
+    latestUserTurnAt: "2026-08-02T10:00:00.000Z",
+    request: {
+      sessionId: "attention-requested-at-skew-behind",
+      turnId: "requested-at-skew-behind-assistant",
+      requestedAt: "2026-08-02T20:00:00.000Z",
+      reason: "approval",
+    },
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-requested-at-skew-behind")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "overdue-human",
+      since: "2026-08-02T20:00:00.000Z",
+      reason: "approval",
+    },
+    "a -24h assistant timestamp skew must not change request age or exact 48h overdue behavior",
   );
 
   assert.deepEqual(

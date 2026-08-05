@@ -52,10 +52,18 @@ export type TravelOfflineReplayResult = {
 };
 
 type DaemonSessionResponse = { id?: string; status?: string };
-type DaemonSessionListRow = { id?: string; status?: string; updated_at?: string | null };
+type DaemonSessionListRow = { id?: string; status?: string };
 type DaemonEventRow = { kind?: string; payload_json?: string; created_at?: string };
+type ReplayAssistantStatus = {
+  status: string | null;
+  assistantText: string | null;
+  eventsComplete: boolean;
+};
 type WorkflowEngineResponse = { ok?: boolean; runId?: string; status?: string; error?: string };
 type ReplayTravelQueueOutcome = "pending" | "complete";
+
+const REPLAY_EVENT_PAGE_SIZE = 500;
+export const REPLAY_EVENT_PAGE_SAFETY_CAP = 1_000;
 
 function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
   const hasModelOverride = Object.prototype.hasOwnProperty.call(payload, "modelOverride");
@@ -159,55 +167,128 @@ function prepareReplayAttentionRequest(args: {
   };
 }
 
-function eventTextPayload(payload: Record<string, unknown>): string | null {
+/**
+ * Text payload for a *canonical* assistant message event only. `content`/
+ * `text` are the documented fields for `assistant.message`/`assistant_message`
+ * frames (see copilot-stream.ts's protocol schema); `data` is deliberately
+ * excluded here — that's the raw PTY/tool transport field (see `output`
+ * events below), never validated assistant prose.
+ */
+function assistantMessageEventText(payload: Record<string, unknown>): string | null {
   if (typeof payload.content === "string") return payload.content;
   if (typeof payload.text === "string") return payload.text;
-  if (typeof payload.data === "string") return payload.data;
   return null;
 }
 
+/**
+ * Assistant reply text for a finished replayed session — canonical
+ * structured `assistant.message`/`assistant_message` events ONLY. Tool,
+ * protocol, and raw PTY `output` frames must never be treated as assistant
+ * prose: they can carry control characters, tool call chatter, or partial
+ * streaming fragments, none of which is a validated reply. A session with no
+ * qualifying event returns null rather than falling back to unsafe transport
+ * output — callers must treat that as a failure to mirror, not silently
+ * persist raw daemon transcript as if a model wrote it.
+ */
 function assistantTextFromReplayEvents(
   events: DaemonEventRow[],
-): { text: string; createdAt: string | null } | null {
-  const assistantMessages: Array<{ text: string; createdAt: string | null }> = [];
-  const output: Array<{ text: string; createdAt: string | null }> = [];
+): string | null {
+  const assistantMessages: string[] = [];
   for (const event of events) {
+    if (event.kind !== "assistant.message" && event.kind !== "assistant_message") continue;
     if (typeof event.payload_json !== "string" || !event.payload_json.trim()) continue;
     let payload: Record<string, unknown>;
     try {
-      payload = JSON.parse(event.payload_json) as Record<string, unknown>;
+      const parsed = JSON.parse(event.payload_json) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      payload = parsed as Record<string, unknown>;
     } catch {
       continue;
     }
-    const text = eventTextPayload(payload);
+    const text = assistantMessageEventText(payload);
     if (!text) continue;
-    if (event.kind === "assistant.message" || event.kind === "assistant_message") {
-      assistantMessages.push({ text, createdAt: stringValue(event.created_at) });
-      continue;
-    }
-    if (event.kind === "output") output.push({ text, createdAt: stringValue(event.created_at) });
+    assistantMessages.push(text);
   }
-  const transcript = assistantMessages.length
-    ? (assistantMessages.at(-1) ?? null)
-    : output.length
-      ? {
-          text: output.map((event) => event.text).join(""),
-          createdAt: output.at(-1)?.createdAt ?? null,
-        }
-      : null;
-  const trimmed = transcript?.text.trim();
-  return trimmed ? { text: trimmed, createdAt: transcript?.createdAt ?? null } : null;
+  const transcript = assistantMessages.at(-1) ?? null;
+  const trimmed = transcript?.trim();
+  return trimmed || null;
 }
 
-async function replayAssistantStatus(args: {
+function replayEventPage(
+  data: unknown,
+  previousAfterSeq: number,
+): { events: DaemonEventRow[]; nextAfterSeq: number | null; hasMore: boolean } | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const page = data as Record<string, unknown>;
+  if (
+    !Array.isArray(page.events) ||
+    !page.events.every((event) => event && typeof event === "object" && !Array.isArray(event)) ||
+    typeof page.hasMore !== "boolean"
+  ) {
+    return null;
+  }
+
+  if (page.nextCursor === null) {
+    return page.events.length === 0 && page.hasMore === false
+      ? { events: [], nextAfterSeq: null, hasMore: false }
+      : null;
+  }
+  if (!page.nextCursor || typeof page.nextCursor !== "object" || Array.isArray(page.nextCursor)) {
+    return null;
+  }
+  const nextAfterSeq = (page.nextCursor as Record<string, unknown>).afterSeq;
+  if (
+    !Number.isSafeInteger(nextAfterSeq) ||
+    (nextAfterSeq as number) <= previousAfterSeq ||
+    page.events.length === 0
+  ) {
+    return null;
+  }
+  return {
+    events: page.events as DaemonEventRow[],
+    nextAfterSeq: nextAfterSeq as number,
+    hasMore: page.hasMore,
+  };
+}
+
+export async function collectReplayEventPages(args: {
   harnessSessionId: string;
-}): Promise<{
-  status: string | null;
-  updatedAt: string | null;
-  assistantText: string | null;
-  assistantCreatedAt: string | null;
-}> {
-  const sessions = await callDaemon<DaemonSessionListRow[]>({
+  daemonCall?: typeof callDaemon;
+}): Promise<DaemonEventRow[] | null> {
+  const daemonCall = args.daemonCall ?? callDaemon;
+  const collected: DaemonEventRow[] = [];
+  let afterSeq = 0;
+
+  for (let pageNumber = 0; pageNumber < REPLAY_EVENT_PAGE_SAFETY_CAP; pageNumber += 1) {
+    const response = await daemonCall<unknown>({
+      path: `/api/v1/events?sessionId=${encodeURIComponent(args.harnessSessionId)}&afterSeq=${afterSeq}&limit=${REPLAY_EVENT_PAGE_SIZE}`,
+      timeoutMs: 4000,
+    });
+    if (!response.ok) return null;
+    const page = replayEventPage(response.data, afterSeq);
+    if (!page) return null;
+    collected.push(...page.events);
+    if (!page.hasMore) return collected;
+    if (page.nextAfterSeq === null) return null;
+    afterSeq = page.nextAfterSeq;
+  }
+
+  return null;
+}
+
+export function replayAssistantMirrorOutcome(
+  status: ReplayAssistantStatus,
+): "pending" | "missing" | "complete" {
+  if (!terminalReplayStatus(status.status) || !status.eventsComplete) return "pending";
+  return status.assistantText ? "complete" : "missing";
+}
+
+export async function replayAssistantStatus(args: {
+  harnessSessionId: string;
+  daemonCall?: typeof callDaemon;
+}): Promise<ReplayAssistantStatus> {
+  const daemonCall = args.daemonCall ?? callDaemon;
+  const sessions = await daemonCall<DaemonSessionListRow[]>({
     path: "/api/v1/sessions",
     timeoutMs: 4000,
   });
@@ -215,25 +296,37 @@ async function replayAssistantStatus(args: {
     throw new Error(daemonError(sessions));
   }
   const row = sessions.data.find((session) => session?.id === args.harnessSessionId);
-  if (!row) return { status: null, updatedAt: null, assistantText: null, assistantCreatedAt: null };
+  if (!row) {
+    return {
+      status: null,
+      assistantText: null,
+      eventsComplete: false,
+    };
+  }
   const status = stringValue(row.status);
-  const updatedAt = stringValue(row.updated_at);
   if (!terminalReplayStatus(status)) {
-    return { status, updatedAt, assistantText: null, assistantCreatedAt: null };
+    return {
+      status,
+      assistantText: null,
+      eventsComplete: false,
+    };
   }
-  const events = await callDaemon<{ events?: DaemonEventRow[] }>({
-    path: `/api/v1/events?sessionId=${encodeURIComponent(args.harnessSessionId)}&afterSeq=0&limit=500`,
-    timeoutMs: 4000,
+  const events = await collectReplayEventPages({
+    harnessSessionId: args.harnessSessionId,
+    daemonCall,
   });
-  if (!events.ok || !Array.isArray(events.data?.events)) {
-    return { status, updatedAt, assistantText: null, assistantCreatedAt: null };
+  if (!events) {
+    return {
+      status,
+      assistantText: null,
+      eventsComplete: false,
+    };
   }
-  const assistant = assistantTextFromReplayEvents(events.data.events);
+  const assistant = assistantTextFromReplayEvents(events);
   return {
     status,
-    updatedAt,
-    assistantText: assistant?.text ?? null,
-    assistantCreatedAt: assistant?.createdAt ?? null,
+    assistantText: assistant,
+    eventsComplete: true,
   };
 }
 
@@ -242,7 +335,6 @@ async function persistReplayAssistantTurn(args: {
   harnessSessionId: string;
   userTurnId: string;
   assistantText: string;
-  assistantCreatedAt: string;
   payload: Record<string, unknown>;
   familiarId: string;
   isError: boolean;
@@ -268,7 +360,7 @@ async function persistReplayAssistantTurn(args: {
       text: args.assistantText,
       sessionId: args.sessionId,
       turnId: assistantTurnId,
-      requestedAt: args.assistantCreatedAt,
+      requestedAt: persistedAssistantCreatedAt,
     });
     conv.turns.push({
       id: assistantTurnId,
@@ -313,6 +405,7 @@ async function spawnHubSession(args: {
       projectRoot,
       harness,
       prompt: args.prompt,
+      launchMode: "nonInteractive",
       ...(args.model ? { model: args.model } : {}),
       ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
       ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
@@ -403,6 +496,12 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     await updateOfflineTravelItemPayload(item.id, { ...payload, harnessSessionId });
   }
   const sessionId = stringValue(payload.sessionId) ?? item.id;
+  // Legacy queued chats predate the explicit userTurnId field. Fall back to
+  // the item's own stable id — the same id persistQueuedOfflineConversation
+  // below already uses for the persisted user turn — so the assistant reply
+  // mirrored further down attaches to that same turn instead of blocking on
+  // a field older queue entries never had.
+  const userTurnId = stringValue(payload.userTurnId) ?? item.id;
   await persistQueuedOfflineConversation({
     sessionId,
     familiarId,
@@ -417,7 +516,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     createdAt: item.createdAt,
     harnessSessionId,
     userTurn: {
-      id: stringValue(payload.userTurnId) ?? item.id,
+      id: userTurnId,
       text: prompt,
       ...(attachments.length ? { attachments } : {}),
       ...(queuedRunId ? { attentionClearOperationId: queuedRunId } : {}),
@@ -442,18 +541,25 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   if (sessionId !== harnessSessionId) {
     await setSessionTitle(harnessSessionId, chatTitleFromPrompt(prompt) ?? `Travel replay: ${item.summary}`);
   }
-  const userTurnId = stringValue(payload.userTurnId);
-  if (!userTurnId) return "pending";
   const mirrored = await replayAssistantStatus({ harnessSessionId });
-  if (!terminalReplayStatus(mirrored.status) || !mirrored.assistantText) {
+  const mirrorOutcome = replayAssistantMirrorOutcome(mirrored);
+  if (mirrorOutcome === "pending") {
     return "pending";
+  }
+  if (mirrorOutcome === "missing" || !mirrored.assistantText) {
+    // The daemon session is done but never produced a validated assistant
+    // message to mirror (crashed before replying, produced only tool/PTY
+    // output, etc). Returning "pending" here would poll forever — a
+    // terminal session never becomes non-terminal again. Throw so the
+    // caller marks this item failed/retryable with an actionable reason
+    // instead of silently stalling the offline queue.
+    throw new Error("replayed session finished without a usable assistant reply to mirror");
   }
   await persistReplayAssistantTurn({
     sessionId,
     harnessSessionId,
     userTurnId,
     assistantText: mirrored.assistantText,
-    assistantCreatedAt: mirrored.assistantCreatedAt ?? mirrored.updatedAt ?? new Date().toISOString(),
     payload,
     familiarId,
     isError: (mirrored.status ?? "").trim().toLowerCase() === "failed",

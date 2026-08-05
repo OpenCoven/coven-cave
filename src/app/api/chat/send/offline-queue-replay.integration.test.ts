@@ -29,7 +29,9 @@ const daemonSessions = new Map<string, {
   status: string;
   created_at: string;
   updated_at: string;
+  completion_at: string;
   transcript: string;
+  outputOnly: boolean;
 }>();
 const replayPolls = new Map<string, number>();
 
@@ -45,13 +47,18 @@ async function listenHub(port = 0): Promise<number> {
     if (req.method === "POST" && req.url === "/api/v1/sessions") {
       const body = await readJson(req);
       sessionRequests.push(body);
-      const id = `hub-session-${nextSession++}`;
+      const sessionNumber = nextSession++;
+      const id = `hub-session-${sessionNumber}`;
       daemonSessions.set(id, {
         id,
         status: "running",
         created_at: "2026-06-30T12:02:00.000Z",
         updated_at: "2026-06-30T12:02:00.000Z",
+        completion_at: sessionNumber === 1
+          ? "2026-06-30T12:02:05.000Z"
+          : "2099-06-30T12:02:05.000Z",
         transcript: "Working through it.\n<coven:attention reason=\"approval\" />",
+        outputOnly: body.prompt === "queued session that only ever emits raw daemon output",
       });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ id, status: "running" }));
@@ -63,7 +70,7 @@ async function listenHub(port = 0): Promise<number> {
         replayPolls.set(session.id, seen);
         if (seen >= 2) {
           session.status = "completed";
-          session.updated_at = "2026-06-30T12:02:05.000Z";
+          session.updated_at = session.completion_at;
         }
       }
       res.writeHead(200, { "content-type": "application/json" });
@@ -96,11 +103,30 @@ async function listenHub(port = 0): Promise<number> {
             seq: 1,
             id: `${sessionId}-output`,
             session_id: sessionId,
+            // A realistic daemon transcript also carries raw PTY/tool `output`
+            // frames alongside the canonical assistant message; only the
+            // structured `assistant.message` event may ever be mirrored as
+            // assistant prose (see the raw-output-only fixture below for the
+            // case where no such canonical event ever arrives).
             kind: "output",
-            payload_json: JSON.stringify({ data: session.transcript }),
+            payload_json: JSON.stringify({ data: "tool/PTY chatter that must never be mirrored" }),
             created_at: session.updated_at,
           },
+          ...(session.outputOnly
+            ? []
+            : [
+                {
+                  seq: 2,
+                  id: `${sessionId}-assistant`,
+                  session_id: sessionId,
+                  kind: "assistant.message",
+                  payload_json: JSON.stringify({ content: session.transcript }),
+                  created_at: session.updated_at,
+                },
+              ]),
         ],
+        nextCursor: { afterSeq: session.outputOnly ? 1 : 2 },
+        hasMore: false,
       }));
       return;
     }
@@ -158,12 +184,13 @@ try {
 
   await config.saveConfig({
     defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
-    familiars: { sage: { harness: "codex" } },
+    familiars: { sage: { harness: "codex" }, charm: { harness: "claude" } },
     multiHost: { mode: "hub", hubUrl, executorUrls: [] },
   });
 
   const project = await createProject({ name: "Offline replay fixture", root: projectRoot });
   await grantProjectToFamiliar({ familiarId: "sage", projectId: project.id, source: "human", access: "write" });
+  await grantProjectToFamiliar({ familiarId: "charm", projectId: project.id, source: "human", access: "write" });
   await config.recordTravelHubReachability(false, new Date("2026-06-30T12:00:00.000Z"));
 
   const response = await POST(new Request("http://localhost/api/chat/send", {
@@ -212,6 +239,7 @@ try {
   assert.equal(sessionRequests.length, 1, "the first replay should spawn exactly one daemon session");
   assert.equal(sessionRequests[0]?.prompt, "queued during travel mode");
   assert.equal(sessionRequests[0]?.harness, "codex");
+  assert.equal(sessionRequests[0]?.launchMode, "nonInteractive");
 
   const syncedState = await config.loadState();
   const syncedItem = syncedState.travel.offlineQueue[0];
@@ -241,16 +269,8 @@ try {
     "Working through it.",
     "the mirrored assistant reply strips the raw attention marker but keeps ordinary text visible",
   );
-  assert.deepEqual(
-    completedConversation?.turns[1]?.responseMetadata?.attentionRequest,
-    {
-      sessionId: "offline-chat-1",
-      turnId: completedConversation?.turns[1]?.id,
-      requestedAt: "2026-06-30T12:02:05.000Z",
-      reason: "approval",
-    },
-    "the mirrored assistant reply stamps local attention metadata from the stripped marker",
-  );
+  const behindAssistant = completedConversation?.turns[1];
+  const behindRequest = behindAssistant?.responseMetadata?.attentionRequest;
 
   const merged = mergeSessionRows({
     daemonSessions: [
@@ -309,6 +329,101 @@ try {
     2,
     "retrying a completed replay must not duplicate the mirrored assistant turn",
   );
+
+  await config.recordTravelHubReachability(false, new Date("2026-06-30T12:03:00.000Z"));
+  const aheadResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "sage",
+      prompt: "queued for ahead-clock replay",
+      projectRoot,
+      sessionId: "offline-chat-ahead",
+      runId: "run-offline-ahead",
+    }),
+  }));
+  await readSse(aheadResponse);
+
+  await config.recordTravelHubReachability(true, new Date("2026-06-30T12:04:00.000Z"));
+  await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+
+  const aheadConversation = await conversations.loadConversation("offline-chat-ahead");
+  const aheadAssistant = aheadConversation?.turns[1];
+  const aheadRequest = aheadAssistant?.responseMetadata?.attentionRequest;
+  const attentionBySession = new Map(
+    (await conversations.listConversations()).map((conversation) => [
+      conversation.sessionId,
+      conversation.attentionEvidence?.request,
+    ]),
+  );
+  assert.deepEqual(
+    [
+      {
+        skew: "hub-behind",
+        mirroredLocally: behindRequest?.requestedAt === behindAssistant?.createdAt,
+        requestValid: attentionBySession.get("offline-chat-1")?.turnId === behindAssistant?.id,
+      },
+      {
+        skew: "hub-ahead",
+        mirroredLocally: aheadRequest?.requestedAt === aheadAssistant?.createdAt,
+        requestValid: attentionBySession.get("offline-chat-ahead")?.turnId === aheadAssistant?.id,
+      },
+    ],
+    [
+      { skew: "hub-behind", mirroredLocally: true, requestValid: true },
+      { skew: "hub-ahead", mirroredLocally: true, requestValid: true },
+    ],
+    "hub clock skew must not invalidate replayed attention requests",
+  );
+
+  await config.recordTravelHubReachability(false, new Date("2026-06-30T12:05:00.000Z"));
+  const outputOnlyResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "sage",
+      prompt: "queued session that only ever emits raw daemon output",
+      projectRoot,
+      sessionId: "offline-chat-output-only",
+      runId: "run-offline-output-only",
+    }),
+  }));
+  await readSse(outputOnlyResponse);
+  await config.recordTravelHubReachability(true, new Date("2026-06-30T12:06:00.000Z"));
+
+  const spawnResult = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  assert.equal(spawnResult.failed, 0, "spawning the daemon session must not itself fail the item");
+  const outputOnlyState = await config.loadState();
+  const outputOnlyItem = outputOnlyState.travel.offlineQueue.find(
+    (entry) => entry.payload?.sessionId === "offline-chat-output-only",
+  );
+  assert.ok(outputOnlyItem, "the raw-output-only chat should still be queued after spawning");
+
+  const failureResult = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  assert.equal(failureResult.attempted, 1);
+  assert.equal(failureResult.synced, 0, "a terminal session with no canonical assistant message must never be reported synced");
+  assert.equal(failureResult.failed, 1);
+  assert.match(
+    failureResult.errors[0]?.error ?? "",
+    /replayed session finished without a usable assistant reply to mirror/,
+    "raw daemon output alone must fail with an actionable reason instead of hanging pending forever",
+  );
+
+  const outputOnlyFinalState = await config.loadState();
+  assert.equal(
+    outputOnlyFinalState.travel.offlineQueue.find((entry) => entry.id === outputOnlyItem?.id)?.status,
+    "failed",
+    "the raw-output-only item must end up retryable/failed rather than stuck pending",
+  );
+  const outputOnlyConversation = await conversations.loadConversation("offline-chat-output-only");
+  assert.equal(
+    outputOnlyConversation?.turns.length,
+    1,
+    "raw daemon output must never be persisted as a mirrored assistant turn",
+  );
+  assert.equal(outputOnlyConversation?.turns[0]?.role, "user");
+  await config.completeOfflineTravelItem(outputOnlyItem.id);
 
   console.log("offline-queue-replay.integration.test.ts: ok");
 } finally {

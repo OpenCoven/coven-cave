@@ -344,38 +344,21 @@ function normalizeStableIsoTimestamp(value: unknown): string | null {
   return isCanonicalIsoInstant(value) ? value : null;
 }
 
-function parseFiniteTimestamp(value: unknown): number | null {
-  if (typeof value !== "string" || !value.trim()) return null;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 function normalizeStableAttentionRequest(
   value: unknown,
   sessionId: string,
   assistantTurnId: string,
-  assistantCreatedAt: unknown,
+  _assistantCreatedAt: unknown,
 ): ChatAttentionRequest | null {
   if (!value || typeof value !== "object") return null;
-  const normalizedAssistantCreatedAt = normalizeStableIsoTimestamp(assistantCreatedAt);
-  const assistantCreatedAtMs = parseFiniteTimestamp(assistantCreatedAt);
   const candidate = value as Partial<ChatAttentionRequest>;
-  const requestedAtMs = parseFiniteTimestamp(candidate.requestedAt);
-  const allowsReplaySkew = assistantTurnId.endsWith(":offline-replay-assistant");
+  const normalizedRequestedAt = normalizeStableIsoTimestamp(candidate.requestedAt);
   if (
     typeof candidate.sessionId !== "string" ||
     candidate.sessionId !== sessionId ||
     typeof candidate.turnId !== "string" ||
     candidate.turnId !== assistantTurnId ||
-    !normalizedAssistantCreatedAt ||
-    // requestedAt must itself be canonical UTC ISO — instant equality alone
-    // (checked next) would otherwise accept a noncanonical requestedAt that
-    // merely parses to the same instant as the assistant's canonical
-    // createdAt, silently canonicalizing it below instead of discarding it.
-    !isCanonicalIsoInstant(candidate.requestedAt) ||
-    requestedAtMs === null ||
-    assistantCreatedAtMs === null ||
-    (allowsReplaySkew ? requestedAtMs > assistantCreatedAtMs : requestedAtMs !== assistantCreatedAtMs) ||
+    !normalizedRequestedAt ||
     typeof candidate.reason !== "string" ||
     !VALID_ATTENTION_REASON_SET.has(candidate.reason)
   ) {
@@ -384,7 +367,7 @@ function normalizeStableAttentionRequest(
   return {
     sessionId: candidate.sessionId,
     turnId: candidate.turnId,
-    requestedAt: normalizedAssistantCreatedAt,
+    requestedAt: normalizedRequestedAt,
     reason: candidate.reason,
   };
 }

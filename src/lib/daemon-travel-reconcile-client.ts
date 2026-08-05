@@ -1,6 +1,12 @@
 import { TRAVEL_HUB_UNREACHABLE_MS } from "./travel-client-state.ts";
 
-export type DaemonTravelReconcileRequest = (input: { signal: AbortSignal }) => Promise<void>;
+export type DaemonTravelReconcileRequestResult = {
+  retryAfterMs?: number | null;
+};
+
+export type DaemonTravelReconcileRequest = (
+  input: { signal: AbortSignal },
+) => Promise<void | DaemonTravelReconcileRequestResult>;
 
 type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 export type DaemonTravelObservedHubState = "unreachable" | "reachable" | "inactive";
@@ -22,6 +28,8 @@ type CreateDaemonTravelReconcileRequesterDependencies<Handle> = {
 const DEFAULT_SCHEDULE = (callback: () => void, delayMs: number) =>
   globalThis.setTimeout(callback, delayMs);
 const DEFAULT_CANCEL_SCHEDULE = (handle: TimerHandle) => globalThis.clearTimeout(handle);
+const REACHABLE_RETRY_BASE_MS = 1_000;
+const REACHABLE_RETRY_MAX_MS = 15_000;
 
 export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
   input: CreateDaemonTravelReconcileRequesterDependencies<Handle>,
@@ -40,6 +48,9 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
   let observedHubState: DaemonTravelObservedHubState = "inactive";
   let reachableTriggerNeeded = false;
   let reachableRetryNeeded = false;
+  let reachablePollNeeded = false;
+  let reachablePollTimer: Handle | null = null;
+  let reachablePollBackoffMs = REACHABLE_RETRY_BASE_MS;
   let outageTimer: Handle | null = null;
   let activeRequest: { controller: AbortController; promise: Promise<void> } | null = null;
 
@@ -48,6 +59,38 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
     const handle = outageTimer;
     outageTimer = null;
     cancelSchedule(handle);
+  }
+
+  function clearReachablePollTimer(options: { resetBackoff: boolean }): void {
+    if (reachablePollTimer !== null) {
+      const handle = reachablePollTimer;
+      reachablePollTimer = null;
+      cancelSchedule(handle);
+    }
+    reachablePollNeeded = false;
+    if (options.resetBackoff) reachablePollBackoffMs = REACHABLE_RETRY_BASE_MS;
+  }
+
+  function armReachablePollTimer(result?: void | DaemonTravelReconcileRequestResult): void {
+    const requestedDelay = Number.isFinite(result?.retryAfterMs) && (result?.retryAfterMs ?? 0) >= 0
+      ? Math.floor(result!.retryAfterMs!)
+      : REACHABLE_RETRY_BASE_MS;
+    const delayMs = Math.min(
+      REACHABLE_RETRY_MAX_MS,
+      Math.max(requestedDelay, reachablePollBackoffMs),
+    );
+    clearReachablePollTimer({ resetBackoff: false });
+    if (stopped || !requesterActive || observedHubState !== "reachable") return;
+    let handle: Handle | null = null;
+    handle = schedule(() => {
+      if (reachablePollTimer !== handle) return;
+      reachablePollTimer = null;
+      if (stopped || !requesterActive || observedHubState !== "reachable") return;
+      reachablePollNeeded = true;
+      trigger();
+    }, delayMs);
+    reachablePollTimer = handle;
+    reachablePollBackoffMs = Math.min(REACHABLE_RETRY_MAX_MS, Math.max(delayMs * 2, REACHABLE_RETRY_BASE_MS));
   }
 
   function armHubOutageTimer(): void {
@@ -66,7 +109,7 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
   function requestNeeded(): boolean {
     if (observedHubState === "unreachable") return true;
     if (observedHubState === "reachable") {
-      return reachableTriggerNeeded || reachableRetryNeeded;
+      return reachableTriggerNeeded || reachableRetryNeeded || reachablePollNeeded;
     }
     return false;
   }
@@ -78,13 +121,23 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
     if (startedForReachableObservation) {
       reachableTriggerNeeded = false;
       reachableRetryNeeded = false;
+      reachablePollNeeded = false;
     }
     const request = {
       controller,
       promise: Promise.resolve()
         .then(() => input.request({ signal: controller.signal }))
+        .then((result) => {
+          if (controller.signal.aborted || observedHubState !== "reachable") return;
+          if (result && Number.isFinite(result.retryAfterMs) && (result.retryAfterMs ?? 0) >= 0) {
+            armReachablePollTimer(result);
+            return;
+          }
+          clearReachablePollTimer({ resetBackoff: true });
+        })
         .catch(() => {
           if (controller.signal.aborted) return;
+          clearReachablePollTimer({ resetBackoff: true });
           if (observedHubState === "reachable") {
             reachableRetryNeeded = true;
           }
@@ -104,11 +157,13 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
   }
 
   function trigger(): void {
-    if (stopped || !requesterActive || !requestNeeded()) return;
+    if (stopped || !requesterActive) return;
     if (activeRequest) {
+      if (observedHubState === "reachable") reachableTriggerNeeded = true;
       trailing = true;
       return;
     }
+    if (!requestNeeded()) return;
     start();
   }
 
@@ -141,6 +196,7 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
       observedHubState = nextState;
       if (nextState === "inactive") {
         clearOutageTimer();
+        clearReachablePollTimer({ resetBackoff: true });
         trailing = false;
         reachableTriggerNeeded = false;
         reachableRetryNeeded = false;
@@ -155,6 +211,7 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
         return;
       }
 
+      clearReachablePollTimer({ resetBackoff: true });
       reachableTriggerNeeded = false;
       reachableRetryNeeded = false;
       if (!requesterActive) return;
@@ -167,6 +224,7 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
       requesterActive = nextActive;
       if (!requesterActive) {
         clearOutageTimer();
+        clearReachablePollTimer({ resetBackoff: true });
         trailing = false;
         abortActiveRequest({ preserveReachableRetry: true });
         return;
@@ -188,6 +246,7 @@ export function createDaemonTravelReconcileRequester<Handle = TimerHandle>(
       requesterActive = false;
       observedHubState = "inactive";
       clearOutageTimer();
+      clearReachablePollTimer({ resetBackoff: true });
       trailing = false;
       reachableTriggerNeeded = false;
       reachableRetryNeeded = false;
