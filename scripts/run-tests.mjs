@@ -791,6 +791,7 @@ export const SUITES = {
     "src/components/chat-project-launch-gate.test.ts",
     "src/components/project-setup-modal.test.ts",
     "src/components/directory-picker.test.ts",
+    "src/lib/directory-picker-pins.test.ts",
     "src/components/first-project-gate.test.ts",
     "src/components/chat-view.test.ts",
     "src/components/drag-to-split.test.ts",
