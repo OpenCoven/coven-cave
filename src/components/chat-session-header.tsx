@@ -78,6 +78,10 @@ export function SessionOverflowMenu({
   });
 
   const close = () => setOpen(false);
+  const setSessionMenuOpen = useCallback((next: boolean) => {
+    if (next) setProjectPickerOpen(false);
+    setOpen(next);
+  }, []);
 
   const getEnabledItems = useCallback(
     () =>
@@ -109,11 +113,11 @@ export function SessionOverflowMenu({
         if (open) {
           requestAnimationFrame(focusFirstEnabledItem);
         } else {
-          setOpen(true);
+          setSessionMenuOpen(true);
         }
       }
     },
-    [focusFirstEnabledItem, open],
+    [focusFirstEnabledItem, open, setSessionMenuOpen],
   );
 
   const onBodyKeyDown = useCallback(
@@ -184,17 +188,14 @@ export function SessionOverflowMenu({
         }}
         onKeyDown={onTriggerKeyDown}
         onClick={() => {
-          // The picker shares this anchor, so its outside-click handler skips
-          // clicks here — close it explicitly or both popovers stack open.
-          setProjectPickerOpen(false);
-          setOpen(!open);
+          setSessionMenuOpen(!open);
         }}
       >
         <Icon name="ph:dots-three-vertical" width={15} aria-hidden />
       </button>
       <Popover
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={setSessionMenuOpen}
         anchorRef={triggerRef}
         placement="bottom-end"
         minWidth={216}
@@ -226,7 +227,7 @@ export function SessionOverflowMenu({
                 {promotableFamiliars.map((candidate) => (
                   <PopoverItem
                     key={candidate.id}
-                    leading={<FamiliarIcon familiar={candidate} size="sm" />}
+                    leading={<span aria-hidden><FamiliarIcon familiar={candidate} size="sm" /></span>}
                     title={`Continue this chat in a coven with ${candidate.display_name}`}
                     onSelect={() => {
                       close();

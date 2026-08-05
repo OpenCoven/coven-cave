@@ -49,8 +49,18 @@ assert.match(
 );
 assert.match(
   sessionHeader,
-  /promotableFamiliars\.map\(\(candidate\) => \([\s\S]{0,700}?<PopoverItem[\s\S]{0,500}?onSelect=\{\(\) => \{\s*close\(\);\s*onPromoteToCoven\(candidate\.id\);\s*\}\}[\s\S]{0,300}?\{candidate\.display_name\}/,
-  "each eligible familiar must close Session options before its keyboard-activatable promotion mutation",
+  /const setSessionMenuOpen = useCallback\(\(next: boolean\) => \{\s*if \(next\) setProjectPickerOpen\(false\);\s*setOpen\(next\);\s*\}, \[\]\);/,
+  "Session options must use one controlled opener that closes the shared project picker first",
+);
+assert.match(
+  sessionHeader,
+  /if \(open\) \{[\s\S]{0,300}?\} else \{\s*setSessionMenuOpen\(true\);\s*\}[\s\S]{0,3000}?onClick=\{\(\) => \{[\s\S]{0,300}?setSessionMenuOpen\(!open\);/,
+  "both ArrowDown and trigger click must use the controlled Session options opener",
+);
+assert.match(
+  sessionHeader,
+  /promotableFamiliars\.map\(\(candidate\) => \([\s\S]{0,700}?<PopoverItem[\s\S]{0,300}?leading=\{<span aria-hidden><FamiliarIcon familiar=\{candidate\} size="sm" \/><\/span>\}[\s\S]{0,300}?onSelect=\{\(\) => \{\s*close\(\);\s*onPromoteToCoven\(candidate\.id\);\s*\}\}[\s\S]{0,300}?\{candidate\.display_name\}/,
+  "each eligible familiar must have a decorative icon and close Session options before promotion",
 );
 assert.match(
   chatView,
