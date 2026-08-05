@@ -55,8 +55,8 @@ try {
   }
   assert.match(
     reconciliationSource,
-    /const STATE_MAPS[^;]+["']sessionTitleRevision["']/s,
-    "title revisions must survive Cave-home state reconciliation",
+    /function mergeSessionTitleRevisions[\s\S]+Math\.max[\s\S]+value\.sessionTitleRevision = titleRevisions\.value/,
+    "title revisions must use their monotonic Cave-home reconciliation path",
   );
 
   await config.recordSessionFamiliar("session-1", "cody");

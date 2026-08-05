@@ -937,7 +937,6 @@ const STATE_MAPS = [
   "sessionTitles",
   "sessionTitleAuto",
   "sessionTitleManual",
-  "sessionTitleRevision",
   "sessionArchived",
   "sessionSacrificed",
   "sessionKeep",
@@ -991,6 +990,32 @@ function mergeRecordMap(
     const rightTime = parseDate(right[key]);
     if (!leftTime || !rightTime || leftTime === rightTime) return { ok: false, summary: `State map ${name} has an ambiguous timestamp for ${key}.` };
     value[key] = leftTime > rightTime ? left[key] : right[key];
+  }
+  return { ok: true, value };
+}
+
+function mergeSessionTitleRevisions(
+  leftValue: unknown,
+  rightValue: unknown,
+): { ok: true; value: Record<string, number> } | { ok: false; summary: string } {
+  const left = record(leftValue);
+  const right = record(rightValue);
+  if (!left || !right) {
+    return { ok: false, summary: "State map sessionTitleRevision is malformed." };
+  }
+  const value: Record<string, number> = {};
+  for (const revisions of [left, right]) {
+    for (const [sessionId, revision] of Object.entries(revisions)) {
+      if (
+        !sessionId ||
+        typeof revision !== "number" ||
+        !Number.isSafeInteger(revision) ||
+        revision < 0
+      ) {
+        return { ok: false, summary: `State map sessionTitleRevision is malformed for ${sessionId || "(empty session ID)"}.` };
+      }
+      value[sessionId] = Math.max(value[sessionId] ?? 0, revision);
+    }
   }
   return { ok: true, value };
 }
@@ -1061,6 +1086,12 @@ function mergeState(legacy: unknown, canonical: unknown): MergeOutcome {
     if (!merged.ok) return merged;
     value[name] = merged.value;
   }
+  const titleRevisions = mergeSessionTitleRevisions(
+    left.sessionTitleRevision ?? {},
+    right.sessionTitleRevision ?? {},
+  );
+  if (!titleRevisions.ok) return titleRevisions;
+  value.sessionTitleRevision = titleRevisions.value;
   const travel = mergeTravel(left.travel ?? {}, right.travel ?? {});
   if (!travel.ok) return travel;
   value.travel = travel.value;
