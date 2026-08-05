@@ -696,6 +696,7 @@ export const SUITES = {
     "src/lib/familiar-growth-route-wiring.test.ts",
     "src/lib/familiar-renown.test.ts",
     "src/lib/milestone-defs.test.ts",
+    "src/lib/mission-defs.test.ts",
     "src/lib/session-pulse.test.ts",
     "src/lib/session-trace.test.ts",
     "src/lib/first-run-stamps.test.ts",
@@ -1710,6 +1711,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/familiar-growth-route-wiring.test.ts",
   "src/lib/familiar-renown.test.ts",
   "src/lib/milestone-defs.test.ts",
+  "src/lib/mission-defs.test.ts",
   // familiars-view-stats now imports ritualStreak from "@/lib/familiar-renown".
   "src/components/familiars-view-stats.test.ts",
   "src/lib/session-pulse.test.ts",
