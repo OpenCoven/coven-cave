@@ -634,6 +634,42 @@ try {
       "policy-gated reflection attempts do not archive",
     );
 
+    // Explicit sessionExists:false — simulates a session found nowhere (not
+    // in local storage, not in daemon). A no-op: no archive, no tombstone.
+    const neverExistsResult = await config.autoArchiveReflectedSessionLocal(
+      "reflect-never-exists",
+      {
+        ...reflectionRequest,
+        sessionExists: async () => false,
+      },
+    );
+    assert.equal(neverExistsResult, null, "explicit sessionExists:false is a no-op");
+    state = await config.loadState();
+    assert.equal(
+      state.sessionArchived["reflect-never-exists"],
+      undefined,
+      "explicit sessionExists:false never creates an archive tombstone",
+    );
+
+    // sessionExists throws — existence lookup failed (daemon unreachable, IO
+    // error, etc). Must fail closed: no archive, no tombstone. The self-report
+    // that triggered the archive is already committed; only the archive
+    // side-effect is suppressed.
+    const lookupFailureResult = await config.autoArchiveReflectedSessionLocal(
+      "reflect-lookup-failure",
+      {
+        ...reflectionRequest,
+        sessionExists: async () => { throw new Error("daemon unreachable"); },
+      },
+    );
+    assert.equal(lookupFailureResult, null, "sessionExists throw is an archive no-op (fail-closed)");
+    state = await config.loadState();
+    assert.equal(
+      state.sessionArchived["reflect-lookup-failure"],
+      undefined,
+      "lookup failure never creates an archive tombstone",
+    );
+
     // A daemon-only session has no local conversation file. Its authoritative
     // existence callback may load Cave config while resolving through the
     // daemon; invoking that callback under updateState's reconciliation lock
