@@ -1,11 +1,12 @@
 // @ts-nocheck
 // Source pins for the chat composer's context grammar after the 2026-07-22
-// split (cave-g21f): the footer band carries project · model · branch as
-// three separate chips (ComposerContextChips) on the left — each opening its
-// own picker — and the linked-work strip (tasks · GitHub · link/create) on
-// the right. The grouped ComposerActionsMenu keeps its four groups. The
-// write surface stays minimal: textarea, then attach · voice · grouped menu ·
-// circular send.
+// split (cave-g21f) and the adaptive-placement refactor: context chips
+// (ComposerContextChips — project · model · branch) are constructed once as
+// chatContextControls and placed adaptively: footer-band cluster for new chats
+// (inlineComposer), session-header div for active chats (!inlineComposer).
+// The linked-work strip always lives in the footer band regardless of
+// placement. The grouped ComposerActionsMenu keeps its four groups. The write
+// surface stays minimal: textarea, then attach · voice · grouped menu · send.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -50,7 +51,7 @@ assert.doesNotMatch(
   "the standalone attach button is gone from the control row (it lives in the + menu now)",
 );
 assert.doesNotMatch(controlRow, /<ComposerPlusMenu/, "the composer actions should no longer expose the legacy plus menu");
-assert.doesNotMatch(controlRow, /<ComposerContextChips/, "the context chips live in the footer band, not the control row");
+assert.doesNotMatch(controlRow, /<ComposerContextChips/, "the context chips are placed adaptively (footer band for inlineComposer, session header for !inlineComposer) — never in the control row");
 assert.doesNotMatch(controlRow, /<ComposerOptionsMenu/, "the composer actions should no longer expose the legacy options menu");
 assert.doesNotMatch(source, /<ComposerLinkedWorkActions\b/, "ChatView should not mount the menu-row linked-work actions directly — the band uses the chip strip");
 
@@ -167,13 +168,27 @@ assert.match(
   "runtime and branch pickers honor the caller's preferred vertical side",
 );
 
-// ── The header no longer hosts the linked-context strip ─────────────────────
+// ── Header: MetaLine + adaptive context controls (never linkedContextRow) ───
 const header = source.match(/<header className="cave-chat-linear-header[\s\S]*?<\/header>/)?.[0] ?? "";
 assert.ok(header, "chat header is present");
 assert.doesNotMatch(
   header,
   /linkedContextRow/,
-  "the header renders MetaLine only — the linked-context strip stays in the band",
+  "the header never carries the linked-context strip (that always stays in the band)",
+);
+// For active chats (!inlineComposer) the header hosts chatContextControls in
+// .cave-chat-header-context; for new chats they move to the footer band.
+assert.match(
+  source,
+  /!inlineComposer[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
+  "active chats (!inlineComposer) mount context controls in .cave-chat-header-context inside the header",
+);
+// Interactive controls must not be nested inside MetaLine's live region —
+// the context div is placed *after* </MetaLine>, not inside it.
+assert.doesNotMatch(
+  source.match(/<MetaLine(?![A-Za-z])[\s\S]*?<\/MetaLine>/)?.[0] ?? "",
+  /chatContextControls/,
+  "chatContextControls is not nested inside MetaLine's live region",
 );
 
 // ── Band chrome: attached underside strip, one tone deeper ──────────────────
