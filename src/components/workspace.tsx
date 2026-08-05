@@ -2616,11 +2616,9 @@ export function Workspace() {
         setMode("journal"); // opens the Grimoire on its Journal tab (see setMode)
         return true;
       case "/canvas":
-        // The Canvas page moved to feature/journal-canvas-surface. /canvas is
-        // chat-inline now: hand off to a fresh chat and let its composer's
-        // /canvas handler take over (args typed here aren't forwarded).
-        startFamiliarChat(activeId);
-        return true;
+        // /canvas is chat-inline. Home falls back to a new chat with the exact
+        // command so ChatView can execute it after mounting.
+        return false;
       case "/chats":
       case "/agents":
       case "/chat":
@@ -2703,7 +2701,8 @@ export function Workspace() {
       case "/codex":
       case "/claude":
         // These need composer context; route to the chat view's slash handler.
-        routerRef.current?.runSlash(command);
+        if (!routerRef.current) return false;
+        routerRef.current.runSlash(command);
         return true;
     }
     return false;
@@ -3258,8 +3257,9 @@ export function Workspace() {
       <AskSalemView familiars={familiars} activeFamiliarId={activeId} />
     ) : (
       <HomeComposer
-        familiars={familiars}
+        familiars={resolvedFamiliars}
         activeFamiliarId={activeId}
+        onSetActiveFamiliar={setActiveId}
         sessions={sessions}
         onStartChat={(prompt, fid, projectRoot, opts) =>
           startFamiliarChat(fid, projectRoot, prompt, opts?.initialControls ?? null, opts?.initialAttachments ?? null)
@@ -3267,7 +3267,7 @@ export function Workspace() {
         onStartVoiceCall={(fid, projectRoot) => startVoiceChat(fid, projectRoot)}
         onNavigateToBoard={() => setMode("board")}
         onToast={pushToast}
-        onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
+        onSlash={handleSlashIntent}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
       />
     );

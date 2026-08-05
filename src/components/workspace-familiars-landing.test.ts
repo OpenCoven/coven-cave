@@ -316,7 +316,7 @@ assert.match(
 
 assert.match(
   navigation,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", group: "work", navHidden: true \}/,
   "Browser is kept for ⌘5/palette but navHidden from rendered navigation rows",
 );
 

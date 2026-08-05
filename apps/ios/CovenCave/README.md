@@ -19,11 +19,10 @@ phased plan and architecture.
 # from the repo root: build the web bundles the app embeds (Resources/markdown.html
 # and Resources/terminal.html — generated & gitignored, the Xcode build can't run
 # node). Needs `pnpm install`. Skipping the terminal bundle ships a blank Terminal tab.
-node scripts/build-ios-markdown.mjs
-node scripts/build-ios-terminal.mjs
+bash scripts/ios-xcodegen.sh   # builds the bundles, verifies them, then
+                               # runs xcodegen — in that order, which matters
 
 cd apps/ios/CovenCave
-xcodegen generate          # produces CovenCave.xcodeproj from project.yml
 open CovenCave.xcodeproj    # ⌘R to run, or:
 
 xcodebuild -project CovenCave.xcodeproj -scheme CovenCave \

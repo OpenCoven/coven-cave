@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+assert.equal(packageJson.type, "module", "Node loads server.ts and TypeScript scripts as ESM without reparsing warnings");
 
 assert.match(src, /new WebSocketServer\(\{ noServer: true \}\)/, "server owns a noServer WebSocket upgrade handler");
 assert.match(src, /pathname !== "\/api\/pty-ws"/, "server only handles /api/pty-ws upgrades");
