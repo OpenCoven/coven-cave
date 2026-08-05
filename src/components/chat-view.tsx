@@ -8829,9 +8829,10 @@ function TurnRowImpl({
   // below the prose — they're the actionable output (Review/Undo), so they
   // must not be buried in a collapsed rollup. All OTHER tool activity (reads,
   // greps, bash, …) collapses into the ONE work line ABOVE the answer
-  // ("<N> calls · <categories>").
+  // ("<N> calls · <categories>"). These partitions do not depend on pending,
+  // so React updates the same instances when the turn settles.
   const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
-  const settledTools = turn.tools?.length ? turn.tools : [];
+  const settledTools = turn.tools ?? [];
   const editCards = settledTools.filter(isEditCard);
   const otherTools = settledTools.filter((t) => !isEditCard(t));
 
