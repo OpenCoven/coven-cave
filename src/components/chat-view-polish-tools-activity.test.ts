@@ -101,7 +101,7 @@ assert.match(
   /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*aria-label=\{toolGroupAriaLabel\(summary, running, errors\)\}[\s\S]*<ToolRuns tools=\{tools\}/,
   "ToolGroup wraps ONE collapsed disclosure — named by toolGroupAriaLabel — around ToolRuns per assistant turn",
 );
-const toolGroup = source.match(/function ToolGroup[\s\S]*?function InlineToolRuns/)?.[0] ?? "";
+const toolGroup = source.match(/function ToolGroup[\s\S]*?function ToolRuns/)?.[0] ?? "";
 assert.equal(
   toolGroup.match(/<ToolRuns tools=\{tools\} \/>/g)?.length,
   1,
@@ -296,7 +296,7 @@ assert.match(
   "compact work-line summary must have min-height: var(--space-8) for 32px touch target",
 );
 
-// Base standalone framing: ToolRunGroup outside .cave-work-line (e.g. InlineToolRuns) keeps card framing
+// Base standalone framing: ToolRunGroup outside .cave-work-line keeps card framing.
 assert.match(
   styles,
   /\.cave-tool-run\s*\{[^}]*border:\s*1px solid[^}]*background:/,
