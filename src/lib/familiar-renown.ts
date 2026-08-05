@@ -99,6 +99,16 @@ export type RenownInput = {
   sessionsTotal: number;
   /** Curated coven-memory entries. */
   memoryCount: number;
+  /**
+   * Bonus renown from completed missions (mission-defs.ts). Optional and
+   * additive so the derived score stays a pure function of recorded work plus
+   * work the ledger says was completed — never a free-floating counter.
+   *
+   * Deliberately NOT applied per-familiar for coven-wide missions: one shared
+   * completion must not lift every familiar's tier at once. Pass it only for a
+   * familiar-scoped bonus, or use it on a coven-level total.
+   */
+  bonusPoints?: number;
 };
 
 /**
@@ -107,7 +117,11 @@ export type RenownInput = {
  * volume.
  */
 export function renownScore(input: RenownInput): number {
-  return Math.max(0, input.sessionsTotal) + 3 * Math.max(0, input.memoryCount);
+  return (
+    Math.max(0, input.sessionsTotal) +
+    3 * Math.max(0, input.memoryCount) +
+    Math.max(0, input.bonusPoints ?? 0)
+  );
 }
 
 export type FamiliarRenown = {

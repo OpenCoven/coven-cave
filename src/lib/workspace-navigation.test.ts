@@ -31,6 +31,21 @@ assert.match(
   /export const PRIMARY_WORKSPACE_NAV_ITEMS = VISIBLE_WORKSPACE_NAV_ITEMS\.filter\(\(item\) => !item\.quiet\)/,
   "the registry owns the promoted mobile destinations",
 );
+assert.match(
+  registry,
+  /group: "work" \| "explore";/,
+  "every workspace destination must declare a sidebar group",
+);
+assert.match(
+  registry,
+  /\{ id: "browser",[\s\S]*?group: "(?:work|explore)"/,
+  "hidden Browser remains classified for future visible navigation",
+);
+assert.match(
+  registry,
+  /\{ id: "salem",[\s\S]*?group: "(?:work|explore)"/,
+  "hidden Ask Salem remains classified for future visible navigation",
+);
 
 assert.match(
   sidebar,
