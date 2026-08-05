@@ -910,6 +910,74 @@ assert.deepEqual(
   "a running invalid-root daemon session must suppress attention regardless of local transcript evidence",
 );
 
+// Regression (cave-zs85n Task 4 spec gap): the same invalid-root recovery
+// bug for "waiting" — an active status distinct from "running" — must be
+// covered independently, since ACTIVE_SESSION_STATUSES has to recognize it
+// too, not just the specific status the first regression happened to name.
+const invalidRootWaiting = mergeSessionRows({
+  daemonSessions: [
+    {
+      id: "invalid-root-waiting",
+      project_root: "/invalid",
+      harness: "codex",
+      title: "Waiting chat",
+      status: "waiting",
+      exit_code: null,
+      archived_at: null,
+      created_at: "2026-06-08T18:00:00.000Z",
+      updated_at: "2026-06-08T18:10:00.000Z",
+      initiator: { kind: "familiar", label: "Cody", agentId: "cody" },
+    },
+  ],
+  localConversations: [
+    {
+      sessionId: "invalid-root-waiting",
+      familiarId: "nova",
+      harness: "codex",
+      runtime: "local:/repo",
+      title: "Waiting chat",
+      updatedAt: "2026-06-08T18:15:00.000Z",
+      status: "completed",
+      exitCode: 0,
+      origin: "chat",
+      // Matching local attention evidence that would resolve to an
+      // overdue-human request if derived from the local row's own
+      // ("completed") status instead of the daemon's "waiting" truth.
+      attentionEvidence: {
+        latestCompletedTurn: { role: "assistant", at: "2026-06-08T18:10:00.000Z" },
+        latestUserTurnAt: null,
+        request: {
+          sessionId: "invalid-root-waiting",
+          turnId: "waiting-assistant",
+          requestedAt: "2026-06-08T18:05:00.000Z",
+          reason: "input",
+        },
+      },
+    },
+  ],
+  state,
+  includeArchived: false,
+  isValidDaemonProjectRoot: (root) => root === "/repo",
+  projectRootForCwd: (cwd) => (cwd === "/repo" ? "/repo" : null),
+});
+
+assert.equal(
+  invalidRootWaiting.length,
+  1,
+  "an invalid-root waiting daemon session must merge into exactly one row, never dropped or duplicated",
+);
+assert.equal(invalidRootWaiting[0]?.id, "invalid-root-waiting");
+assert.equal(
+  invalidRootWaiting[0]?.status,
+  "waiting",
+  "an invalid-root waiting daemon session keeps the daemon's waiting status",
+);
+assert.deepEqual(
+  invalidRootWaiting[0]?.attention,
+  NO_CHAT_ATTENTION,
+  "a waiting invalid-root daemon session must suppress attention regardless of local transcript evidence",
+);
+
 const cwdFiltered = mergeSessionRows({
   daemonSessions: [
     {
