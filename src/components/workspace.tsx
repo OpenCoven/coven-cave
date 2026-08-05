@@ -819,10 +819,6 @@ export function Workspace() {
   // router applies opens in a deferred hop, so render-time ref reads always
   // lagged one update behind (the n-1 highlight bug).
   const [activeChatSessionId, setActiveChatSessionId] = useState<string | null>(null);
-  // Mirror for the []-dep file-open listener below: opens raised mid-chat
-  // attach the CURRENT session without re-subscribing on every change.
-  const activeChatSessionIdRef = useRef<string | null>(null);
-  activeChatSessionIdRef.current = activeChatSessionId;
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingResolved, setOnboardingResolved] = useState(false);
   const [autoFinishOnboarding, setAutoFinishOnboarding] = useState(false);
@@ -1224,15 +1220,17 @@ export function Workspace() {
         path?: string;
         line?: number;
         projectRoot?: string;
+        sourceSessionId?: string | null;
+        turnId?: string | null;
         origin?: PendingCodeOrigin;
       }>).detail;
       if (!detail?.path) return;
-      const sessionId = activeChatSessionIdRef.current ?? undefined;
+      const sessionId = detail.sourceSessionId ?? undefined;
       const root = detail.projectRoot ?? undefined;
       enqueuePendingCodeOpen(
         kind === "files"
-          ? { kind, path: detail.path, line: detail.line, root, sessionId, origin: detail.origin, nonce: Date.now() }
-          : { kind, path: detail.path, root, sessionId, origin: detail.origin, nonce: Date.now() },
+          ? { kind, path: detail.path, line: detail.line, root, sessionId, turnId: detail.turnId ?? undefined, origin: detail.origin, nonce: Date.now() }
+          : { kind, path: detail.path, root, sessionId, turnId: detail.turnId ?? undefined, origin: detail.origin, nonce: Date.now() },
       );
       setMode("code");
     };

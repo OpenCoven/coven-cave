@@ -45,7 +45,7 @@ const wiring = await readFile(new URL("./message-dom-wiring.ts", import.meta.url
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const css = (
   await Promise.all(
-    ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"].map((sheet) =>
+    ["cave-md", "cave-md/interactions", "cave-composer", "chat-list", "calendar", "cave-chat"].map((sheet) =>
       readFile(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"),
     ),
   )
@@ -88,6 +88,31 @@ assert.match(
   chatView,
   /resolveFileRefTarget\(ref, immutableRoot, files \?\? null\) != null/,
   "the chat resolver verifies refs against the cited turn's project index",
+);
+assert.match(
+  chatView,
+  /boundedTranscriptFileRoots\([\s\S]{0,160}?turnProjectRoots\.values\(\)/,
+  "the transcript keeps only an explicit bounded set of historical root indexes",
+);
+assert.match(
+  chatView,
+  /const controller = new AbortController\(\);[\s\S]{0,500}?loadTranscriptFileRefIndexes\([\s\S]{0,300}?signal: controller\.signal/,
+  "file-index loads are abortable and use the bounded loader",
+);
+assert.match(
+  chatView,
+  /return \(\) => controller\.abort\(\);/,
+  "a transcript or scope change aborts stale file-index work",
+);
+assert.match(
+  chatView,
+  /fileRefIndexScopeRef\.current !== scopeKey/,
+  "a stale completion is ignored even if it resolves before effect cleanup aborts it",
+);
+assert.doesNotMatch(
+  chatView,
+  /Promise\.all\(\s*missing\.map/,
+  "historical roots are not fetched in an unbounded parallel burst",
 );
 assert.match(
   chatView,

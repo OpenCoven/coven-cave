@@ -46,16 +46,68 @@ const CANONICAL_DRIVE_IMAGE = {
 idb.projectAvatars.set("C:", LITERAL_DRIVE_IMAGE);
 idb.projectAvatars.set("C:/", CANONICAL_DRIVE_IMAGE);
 let denyWrites = false;
+let writeTail = Promise.resolve();
+const withWriteLock = async (fn) => {
+  const run = writeTail.then(fn, fn);
+  writeTail = run.then(() => undefined, () => undefined);
+  return run;
+};
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+};
+let pausedMigration = null;
+const migrationDestinationWins = (source, destination) => {
+  if (!destination) return false;
+  if (source.dataUrl === destination.dataUrl && source.mime === destination.mime) return true;
+  const sourceTime = Date.parse(source.updatedAt);
+  const destinationTime = Date.parse(destination.updatedAt);
+  return Number.isFinite(sourceTime) &&
+    Number.isFinite(destinationTime) &&
+    destinationTime >= sourceTime;
+};
 const fakeDriver = {
   async getAll(s) {
     return Object.fromEntries(idb[s]);
   },
   async put(s, key, value) {
     if (denyWrites) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
-    idb[s].set(key, value);
+    if (
+      pausedMigration &&
+      s === "projectAvatars" &&
+      key === pausedMigration.to &&
+      value.dataUrl === pausedMigration.sourceDataUrl
+    ) {
+      pausedMigration.entered.resolve();
+      await pausedMigration.release.promise;
+    }
+    await withWriteLock(() => idb[s].set(key, value));
   },
   async delete(s, key) {
-    idb[s].delete(key);
+    await withWriteLock(() => idb[s].delete(key));
+  },
+  async move(s, from, to) {
+    if (denyWrites) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+    return withWriteLock(async () => {
+      if (pausedMigration && s === "projectAvatars" && from === pausedMigration.from && to === pausedMigration.to) {
+        pausedMigration.entered.resolve();
+        await pausedMigration.release.promise;
+      }
+      const source = idb[s].get(from) ?? null;
+      const destination = idb[s].get(to) ?? null;
+      if (!source) return { source: null, destination };
+      if (destination) {
+        if (migrationDestinationWins(source, destination)) {
+          idb[s].delete(from);
+          return { source: null, destination };
+        }
+        return { source, destination };
+      }
+      idb[s].set(to, source);
+      idb[s].delete(from);
+      return { source: null, destination: source };
+    });
   },
 };
 
@@ -149,6 +201,48 @@ const PROJECTS = [
 }
 
 {
+  // Deterministic version of the real two-window race. The migration pauses at
+  // its storage boundary while a newer canonical write starts. A transaction
+  // serializes the operations, so whichever commits last wins; the legacy
+  // snapshot can never compare from cache and overwrite the canonical write.
+  const SOURCE = "/race/legacy";
+  const DESTINATION = "/race/canonical";
+  const LEGACY_IMAGE = { dataUrl: "data:image/png;base64,RACE-LEGACY", mime: "image/png" };
+  const CANONICAL_IMAGE = { dataUrl: "data:image/png;base64,RACE-CANONICAL", mime: "image/png" };
+  await images.setProjectImage(SOURCE, LEGACY_IMAGE);
+  const entered = deferred();
+  const release = deferred();
+  pausedMigration = {
+    from: SOURCE,
+    to: DESTINATION,
+    sourceDataUrl: LEGACY_IMAGE.dataUrl,
+    entered,
+    release,
+  };
+
+  const moving = images.moveProjectImage(SOURCE, DESTINATION);
+  await entered.promise;
+  const canonicalWrite = images.setProjectImage(DESTINATION, CANONICAL_IMAGE);
+  await Promise.resolve();
+  await Promise.resolve();
+  release.resolve();
+  await Promise.all([moving, canonicalWrite]);
+  pausedMigration = null;
+
+  assert.equal(
+    idb.projectAvatars.get(DESTINATION)?.dataUrl,
+    CANONICAL_IMAGE.dataUrl,
+    "a concurrent canonical write cannot be overwritten by a stale legacy migration",
+  );
+  assert.equal(
+    images.readProjectImagesSnapshot()[DESTINATION]?.dataUrl,
+    CANONICAL_IMAGE.dataUrl,
+    "the render snapshot agrees with the atomic storage result",
+  );
+  assert.equal(idb.projectAvatars.has(SOURCE), false, "the legacy source is deleted exactly once");
+}
+
+{
   // No legacyRoot means the server never moved anything — touching a store
   // here would be a re-key with no cause.
   await seed();
@@ -225,6 +319,26 @@ const PROJECTS = [
     src,
     /new Set\(\[normalizeProjectRoot\(from\), from\]\)/,
     "the literal source key is never probed after its normalized alias",
+  );
+}
+
+{
+  const driver = readFileSync(new URL("./avatar-idb.ts", import.meta.url), "utf8");
+  const projectImages = readFileSync(new URL("./cave-project-images.ts", import.meta.url), "utf8");
+  assert.match(
+    driver,
+    /async move\(store, from, to\) \{[\s\S]*?db\.transaction\(store, "readwrite"\)[\s\S]*?os\.get\(from\)[\s\S]*?os\.get\(to\)[\s\S]*?os\.put\(source, to\)[\s\S]*?os\.delete\(from\)[\s\S]*?await done;/,
+    "destination compare, conditional write, and source deletion share one readwrite transaction",
+  );
+  assert.match(
+    projectImages,
+    /avatarStorage\(\)\.move\("projectAvatars", from, to\)/,
+    "project migration delegates its whole compare-and-move decision to the atomic storage operation",
+  );
+  assert.doesNotMatch(
+    projectImages,
+    /const destination = cached\[to\]/,
+    "migration never fakes atomicity with a destination cache read",
   );
 }
 

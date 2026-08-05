@@ -8,19 +8,25 @@
  * key. IndexedDB's quota is effectively unbounded for this use, so the avatar
  * stores persist here and keep localStorage free for small state.
  *
- * The driver is a three-method seam (`getAll` / `put` / `delete`) so the store
- * modules stay storage-agnostic and tests can inject a Map-backed fake via
- * `setAvatarStorageForTests`.
+ * The driver keeps ordinary CRUD plus an atomic `move` seam so store modules
+ * stay storage-agnostic and migrations can compare/write/delete in one
+ * transaction. Tests inject a Map-backed fake via `setAvatarStorageForTests`.
  */
 
 export type AvatarRecord = { dataUrl: string; mime: string; updatedAt: string };
 
 export type AvatarStore = "familiarImages" | "projectAvatars";
 
+export type AvatarMoveResult = {
+  source: AvatarRecord | null;
+  destination: AvatarRecord | null;
+};
+
 export type AvatarStorageDriver = {
   getAll(store: AvatarStore): Promise<Record<string, AvatarRecord>>;
   put(store: AvatarStore, key: string, value: AvatarRecord): Promise<void>;
   delete(store: AvatarStore, key: string): Promise<void>;
+  move(store: AvatarStore, from: string, to: string): Promise<AvatarMoveResult>;
 };
 
 const DB_NAME = "cave-avatars";
@@ -68,6 +74,30 @@ function requestToPromise<T>(req: IDBRequest<T>): Promise<T> {
   });
 }
 
+function transactionToPromise(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+  });
+}
+
+export function avatarMigrationDestinationWins(
+  source: AvatarRecord,
+  destination: AvatarRecord,
+): boolean {
+  if (source.dataUrl === destination.dataUrl && source.mime === destination.mime) {
+    return true;
+  }
+  const sourceTime = Date.parse(source.updatedAt);
+  const destinationTime = Date.parse(destination.updatedAt);
+  return (
+    Number.isFinite(sourceTime) &&
+    Number.isFinite(destinationTime) &&
+    destinationTime >= sourceTime
+  );
+}
+
 const hasIdb = () => typeof indexedDB !== "undefined";
 
 const idbDriver: AvatarStorageDriver = {
@@ -106,6 +136,35 @@ const idbDriver: AvatarStorageDriver = {
     const db = await openDb();
     const tx = db.transaction(store, "readwrite");
     await requestToPromise(tx.objectStore(store).delete(key));
+  },
+
+  async move(store, from, to) {
+    if (!hasIdb()) throw new Error("IndexedDB unavailable");
+    const db = await openDb();
+    const tx = db.transaction(store, "readwrite");
+    const done = transactionToPromise(tx);
+    const os = tx.objectStore(store);
+    const source = (await requestToPromise(os.get(from))) as AvatarRecord | undefined;
+    const destination = (await requestToPromise(os.get(to))) as AvatarRecord | undefined;
+
+    if (!source) {
+      await done;
+      return { source: null, destination: destination ?? null };
+    }
+    if (destination) {
+      if (avatarMigrationDestinationWins(source, destination)) {
+        os.delete(from);
+        await done;
+        return { source: null, destination };
+      }
+      await done;
+      return { source, destination };
+    }
+
+    os.put(source, to);
+    os.delete(from);
+    await done;
+    return { source: null, destination: source };
   },
 };
 

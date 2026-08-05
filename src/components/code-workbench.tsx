@@ -55,6 +55,7 @@ import {
   codeSessionDiffstat,
   codeSessionWorkRoot,
   codeWorkbenchFitsSplit,
+  resolveCodeWorkbenchFilePath,
   type CodeWorkbenchStep,
   type CodeWorkbenchTab,
 } from "@/lib/code-surface";
@@ -190,9 +191,7 @@ export function CodeWorkbench({
 
   const openPath = useCallback(
     (path: string) => {
-      setSelectedPath(
-        path.startsWith("/") ? path : `${contextRoot.replace(/\/$/, "")}/${path.replace(/^\.?\//, "")}`,
-      );
+      setSelectedPath(resolveCodeWorkbenchFilePath(contextRoot, path));
     },
     [contextRoot],
   );

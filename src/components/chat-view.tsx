@@ -35,7 +35,12 @@ import {
   readCodeReadingPin,
   writeCodeReadingPin,
 } from "@/lib/code-reading-pref";
+import { reconcileCodeReadingTargetRoot } from "@/lib/code-reading-target";
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
+import {
+  boundedTranscriptFileRoots,
+  loadTranscriptFileRefIndexes,
+} from "@/lib/transcript-file-index";
 import {
   dedupeAbsoluteProjectPaths,
 } from "@/lib/cave-projects-types";
@@ -2510,6 +2515,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const codeReading = useMemo<CodeReading>(
     () => ({
+      sourceSessionId: sessionId,
       onRead: (request) =>
         setReadingTarget({
           ...request,
@@ -2520,7 +2526,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           },
         }),
     }),
-    [familiar.display_name, session?.title],
+    [familiar.display_name, session?.title, sessionId],
   );
 
   const projectLaunchReady =
@@ -3762,36 +3768,46 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
   }, [mentionToken, mentionRoot, mentionIndex, familiar.id]);
 
-  // Every historical turn keeps the file index for its own recorded execution
-  // root. A project switch may change the active composer root, but it cannot
-  // retarget an old inline reference.
+  // Recent historical roots keep their own bounded file indexes. A project
+  // switch may change the active composer root, but it cannot retarget an old
+  // inline reference; roots outside the cap fail closed as plain text.
   const turnProjectRoots = useMemo(
     () => new Map(turns.map((turn) => [turn.id, turnToolProjectRoot(turn)])),
     [turns],
   );
+  useEffect(() => {
+    setReadingTarget((current) =>
+      reconcileCodeReadingTargetRoot(current, sessionId, turnProjectRoots),
+    );
+  }, [sessionId, turnProjectRoots]);
   const transcriptFileRoots = useMemo(
-    () => [...new Set([...turnProjectRoots.values()].filter((root): root is string => Boolean(root)))],
+    () => boundedTranscriptFileRoots(turnProjectRoots.values()),
     [turnProjectRoots],
   );
   const transcriptFileRootsKey = transcriptFileRoots.join("\0");
+  const fileRefIndexScopeKey = `${familiar.id}\n${sessionId ?? ""}\n${transcriptFileRootsKey}`;
+  const fileRefIndexScopeRef = useRef(fileRefIndexScopeKey);
+  fileRefIndexScopeRef.current = fileRefIndexScopeKey;
   const [fileRefIndexes, setFileRefIndexes] = useState<
     Map<string, ReadonlySet<string>>
   >(() => new Map());
   useEffect(() => {
+    const scopeKey = fileRefIndexScopeKey;
     const roots = transcriptFileRootsKey ? transcriptFileRootsKey.split("\0") : [];
-    const missing = roots.filter(
-      (root) => !fileRefIndexes.has(`${familiar.id}\n${root}`),
-    );
-    if (missing.length === 0) return;
-    let cancelled = false;
+    const controller = new AbortController();
+    setFileRefIndexes(new Map());
+    if (roots.length === 0) return () => controller.abort();
     void (async () => {
-      const loaded = await Promise.all(
-        missing.map(async (root) => {
+      const loaded = await loadTranscriptFileRefIndexes({
+        roots,
+        signal: controller.signal,
+        load: async (root, signal) => {
           let files = new Set<string>();
           try {
             const params = new URLSearchParams({ root, familiarId: familiar.id });
             const res = await fetch(`/api/project/files?${params.toString()}`, {
               cache: "no-store",
+              signal,
             });
             const json = await res.json() as {
               ok?: boolean;
@@ -3805,20 +3821,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             // Keep the root indexed as empty. The rendered reference then fails
             // closed instead of becoming a click with no verified destination.
           }
-          return [`${familiar.id}\n${root}`, files] as const;
-        }),
-      );
-      if (cancelled) return;
-      setFileRefIndexes((current) => {
-        const next = new Map(current);
-        for (const [key, files] of loaded) next.set(key, files);
-        return next;
+          return files;
+        },
       });
+      if (
+        controller.signal.aborted ||
+        fileRefIndexScopeRef.current !== scopeKey
+      ) return;
+      setFileRefIndexes(
+        new Map(
+          [...loaded].map(([root, files]) => [`${familiar.id}\n${root}`, files]),
+        ),
+      );
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [familiar.id, fileRefIndexes, transcriptFileRootsKey]);
+    return () => controller.abort();
+  }, [familiar.id, fileRefIndexScopeKey, transcriptFileRootsKey]);
   const fileLinkResolver = useCallback(
     (ref: FileRef, immutableRoot: string) => {
       const files = fileRefIndexes.get(`${familiar.id}\n${immutableRoot}`);
@@ -8042,6 +8059,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         path,
                         line: line ?? undefined,
                         projectRoot: readingTarget.projectRoot,
+                        sourceSessionId: readingTarget.sourceSessionId,
+                        turnId: readingTarget.turnId,
                         origin: { ...origin, selectionLabel: range },
                       },
                     }),

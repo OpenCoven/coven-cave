@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { reconcileCodeReadingTargetRoot } from "./code-reading-target.ts";
+
+const pending = {
+  turnId: "turn-a",
+  sourceSessionId: "session-a",
+  projectRoot: null,
+  code: "const value = 1;",
+};
+
+test("pending reader target gains settled provenance without changing identity", () => {
+  const settled = reconcileCodeReadingTargetRoot(
+    pending,
+    "session-a",
+    new Map([["turn-a", "/repo/a"]]),
+  );
+
+  assert.equal(settled?.projectRoot, "/repo/a");
+  assert.equal(settled?.turnId, pending.turnId);
+  assert.equal(settled?.sourceSessionId, pending.sourceSessionId);
+  assert.equal(settled?.code, pending.code);
+  assert.equal(
+    reconcileCodeReadingTargetRoot(settled, "session-a", new Map([["turn-a", "/repo/b"]])),
+    settled,
+    "an immutable settled root is never retargeted",
+  );
+});
+
+test("active session switch cannot reconcile a reader from another pane", () => {
+  const unchanged = reconcileCodeReadingTargetRoot(
+    pending,
+    "session-b",
+    new Map([["turn-a", "/repo/b"]]),
+  );
+
+  assert.equal(unchanged, pending);
+  assert.equal(unchanged?.projectRoot, null);
+  assert.equal(unchanged?.sourceSessionId, "session-a");
+});

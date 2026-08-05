@@ -24,6 +24,10 @@ export const FileLinkResolverContext = createContext<FileLinkResolver | null>(nu
 
 /** What the Read/Compare buttons hand to the surface that owns the inspector. */
 export type CodeReadingRequest = {
+  /** Stable transcript turn/message identity. */
+  turnId: string | null;
+  /** Chat session that owns the rendered turn, including split-pane chats. */
+  sourceSessionId: string | null;
   code: string;
   lang: string;
   /** Repo-relative path when the fence named one. */
@@ -36,6 +40,7 @@ export type CodeReadingRequest = {
 };
 
 export type CodeReading = {
+  sourceSessionId: string | null;
   onRead: (request: CodeReadingRequest) => void;
 };
 
@@ -342,6 +347,7 @@ function wireCodeReading(
   container: HTMLElement,
   reading: CodeReading | null,
   projectRoot: string | null,
+  turnId: string | null,
 ) {
   for (const wrap of Array.from(container.querySelectorAll<HTMLElement>(".cave-code-wrap"))) {
     const flagged = wrap as HTMLElement & {
@@ -378,6 +384,8 @@ function wireCodeReading(
     flagged._caveReadingCleanup?.();
     const open = (tab: InspectorTabId) => () =>
       reading.onRead({
+        turnId,
+        sourceSessionId: reading.sourceSessionId,
         code: codeTextFromWrapEl(wrap),
         lang,
         path,
@@ -427,6 +435,7 @@ export function useWireCopyButtons(
   fileLinkResolver: FileLinkResolver | null = null,
   reading: CodeReading | null = null,
   projectRoot: string | null = null,
+  turnId: string | null = null,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -438,12 +447,12 @@ export function useWireCopyButtons(
       wireMermaidDiagrams(el);
       wireExpandableTables(el);
       wireFilePathLinks(el, fileLinkResolver, projectRoot);
-      wireCodeReading(el, reading, projectRoot);
+      wireCodeReading(el, reading, projectRoot, turnId);
     };
     wireAll();
     const observer = new MutationObserver(() => wireAll());
     observer.observe(el, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [html, onOpenUrl, fileLinkResolver, reading, projectRoot]);
+  }, [html, onOpenUrl, fileLinkResolver, reading, projectRoot, turnId]);
   return containerRef;
 }

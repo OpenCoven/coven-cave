@@ -41,6 +41,8 @@ export const SUITES = {
     "src/lib/chat-live-generation-identity.test.ts",
     "src/lib/chat-router-promotion.test.ts",
     "src/lib/code-rail.test.ts",
+    "src/lib/code-reading-target.test.ts",
+    "src/lib/transcript-file-index.test.ts",
     "src/lib/use-code-rail.test.ts",
     "src/lib/initial-prompt-handoff.test.ts",
     "src/lib/cave-board-retention.test.ts",

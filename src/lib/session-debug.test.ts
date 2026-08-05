@@ -437,7 +437,7 @@ assert.match(
 );
 assert.match(
   chatViewSource,
-  /const turnTools = turn\.tools \?\? \[\];[\s\S]*const editToolIds = new Set\([\s\S]*normalizeFileMutation\(tool\.name, tool\.input\)[\s\S]*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);[\s\S]*const otherTools = turnTools\.filter/,
+  /const turnTools = turn\.tools \?\? \[\];[\s\S]*const editToolIds = new Set\([\s\S]*isFileMutationTool\(tool\.name\)[\s\S]*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);[\s\S]*const otherTools = turnTools\.filter/,
   "pending and settled turns share one id-keyed edit/non-edit partition",
 );
 assert.doesNotMatch(
@@ -456,8 +456,8 @@ assert.match(
 );
 assert.match(
   bubbleSource,
-  /<MarkdownContent text=\{content\} pending=\{pending\} onOpenUrl=\{onOpenUrl\} \/>/,
-  "CHAT-D4-01: segment-less bubbles keep the single MarkdownContent render",
+  /\{segments\?\.length \? \([\s\S]*?\) : \(\s*<MarkdownContent\s+text=\{cited\.body\}\s+pending=\{pending\}\s+onOpenUrl=\{onOpenUrl\}\s+citations=\{cited\.citations\}\s+decorateResponse\s+projectRoot=\{projectRoot\}\s+messageId=\{messageId\}\s*\/>\s*\)\}/,
+  "CHAT-D4-01: segment-less turns keep one provenance-aware MarkdownContent in the stable content slot",
 );
 
 // Round-trip: the conversation write route passes tool arrays through whole,

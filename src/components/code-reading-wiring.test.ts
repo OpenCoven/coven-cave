@@ -50,8 +50,8 @@ assert.match(
 assert.match(wiring, /function wireCodeReading\(/, "there is a reading wiring pass");
 assert.match(
   wiring,
-  /wireCodeReading\(el, reading, projectRoot\)/,
-  "useWireCopyButtons runs the reading pass with the owning turn root",
+  /wireCodeReading\(el, reading, projectRoot, turnId\)/,
+  "useWireCopyButtons runs the reading pass with the owning turn and root",
 );
 assert.match(
   wiring,
@@ -101,9 +101,44 @@ assert.match(
   "the reader request captures the rendered turn's immutable root",
 );
 assert.match(
+  wiring,
+  /export type CodeReadingRequest = \{[\s\S]*?turnId: string \| null;[\s\S]*?sourceSessionId: string \| null;/,
+  "reader requests carry stable turn and source-session identity",
+);
+assert.match(
+  wiring,
+  /reading\.onRead\(\{[\s\S]{0,240}?turnId,[\s\S]{0,120}?sourceSessionId: reading\.sourceSessionId,/,
+  "the DOM handoff captures the owning message and ChatView session",
+);
+assert.match(
   chatView,
   /projectRoot=\{readingTarget\.projectRoot\}/,
   "the inspector keeps using the captured root after the active project changes",
+);
+assert.match(
+  chatView,
+  /setReadingTarget\(\(current\) =>[\s\S]{0,180}?reconcileCodeReadingTargetRoot\([\s\S]{0,160}?sessionId,[\s\S]{0,160}?turnProjectRoots/,
+  "a pending reader reconciles its existing target when turn metadata supplies the immutable root",
+);
+assert.doesNotMatch(
+  chatView,
+  /<CodeReadingInspector[^>]*\bkey=/,
+  "provenance settlement updates the mounted reader instead of replacing it",
+);
+assert.match(
+  inspector,
+  /target\.sourceSessionId,[\s\S]{0,180}?target\.turnId,[\s\S]{0,240}?target\.code,[\s\S]{0,180}?target\.tab/,
+  "provenance-only target updates preserve the reader's local tab and selection state",
+);
+assert.match(
+  inspector,
+  /disabled=\{entry\.id !== "snippet" && !projectRoot\}/,
+  "working-tree tabs stay disabled until immutable root provenance arrives",
+);
+assert.match(
+  inspector,
+  /disabled=\{!canOpen\}[\s\S]{0,160}?Open in workshop/,
+  "the workshop handoff stays visible but disabled until provenance enables it",
 );
 // The pin is read after mount: localStorage does not exist during SSR and
 // reading it during render would hydrate-mismatch.
@@ -123,14 +158,24 @@ assert.match(chatView, /onQuote=\{/, "Quote is wired to the composer");
 
 assert.match(
   chatView,
-  /new CustomEvent\("cave:open-project-file", \{[\s\S]{0,180}?projectRoot: readingTarget\.projectRoot/,
-  "Open in workshop reuses the shell route with immutable turn provenance",
+  /new CustomEvent\("cave:open-project-file", \{[\s\S]{0,220}?projectRoot: readingTarget\.projectRoot,[\s\S]{0,120}?sourceSessionId: readingTarget\.sourceSessionId/,
+  "Open in workshop reuses the shell route with immutable turn and source-session provenance",
 );
 assert.match(chatView, /origin: \{ \.\.\.origin, selectionLabel: range \}/, "the selected range travels with the open");
 assert.match(
   workspace,
   /origin: detail\.origin/,
   "the shell handler forwards the origin into the pending open",
+);
+assert.match(
+  workspace,
+  /const sessionId = detail\.sourceSessionId \?\? undefined;/,
+  "the shell routes Code handoffs with the captured source session",
+);
+assert.doesNotMatch(
+  workspace,
+  /activeChatSessionIdRef/,
+  "Code handoffs never borrow the mutable primary chat session (including split-pane origins)",
 );
 assert.match(codeView, /<CodeSourceContext/, "the Code surface renders the source-context card");
 assert.match(

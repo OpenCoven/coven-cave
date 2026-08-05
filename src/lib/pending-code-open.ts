@@ -31,6 +31,8 @@ export type PendingCodeOpen =
       // surface selects this session's workbench so the file lands beside the
       // conversation's diff/terminal context. Absent for root-only browses.
       sessionId?: string;
+      /** Stable source transcript turn when this came from a reader. */
+      turnId?: string;
       /** Present when the open came from a chat code block. */
       origin?: PendingCodeOrigin;
       nonce: number;
@@ -41,6 +43,7 @@ export type PendingCodeOpen =
       /** Immutable execution root captured by a historical review action. */
       root?: string;
       sessionId?: string;
+      turnId?: string;
       origin?: PendingCodeOrigin;
       nonce: number;
     };

@@ -157,13 +157,18 @@ assert.match(
 );
 assert.match(
   workspace,
-  /CustomEvent<\{[\s\S]{0,180}path\?: string;[\s\S]{0,120}projectRoot\?: string;[\s\S]{0,120}origin\?: PendingCodeOrigin;/,
-  "Workspace accepts immutable project provenance on file/diff events",
+  /CustomEvent<\{[\s\S]{0,180}path\?: string;[\s\S]{0,120}projectRoot\?: string;[\s\S]{0,120}sourceSessionId\?: string \| null;[\s\S]{0,120}origin\?: PendingCodeOrigin;/,
+  "Workspace accepts immutable project and source-session provenance on file/diff events",
 );
 assert.match(
   workspace,
-  /const root = detail\.projectRoot \?\? undefined;[\s\S]{0,350}kind === "files"[\s\S]{0,250}root,[\s\S]{0,120}sessionId[\s\S]{0,300}setMode\("code"\)/,
-  "Workspace should preserve captured project provenance while switching into code mode",
+  /const sessionId = detail\.sourceSessionId \?\? undefined;[\s\S]{0,120}const root = detail\.projectRoot \?\? undefined;[\s\S]{0,350}kind === "files"[\s\S]{0,250}root,[\s\S]{0,120}sessionId[\s\S]{0,300}setMode\("code"\)/,
+  "Workspace should preserve captured project and source-session provenance while switching into code mode",
+);
+assert.doesNotMatch(
+  workspace,
+  /activeChatSessionIdRef/,
+  "split and secondary chat panes never inherit the primary pane's active session during Code handoff",
 );
 assert.match(
   codeRoom,
@@ -192,12 +197,12 @@ assert.match(
 );
 assert.match(
   codeView,
-  /if \(!pendingOpen\) return;[\s\S]*resolveCodePendingOpen\([\s\S]*groups\.flatMap\(\(group\) => group\.sessions\),[\s\S]*pendingOpen,[\s\S]*sessionsLoaded,[\s\S]*\)[\s\S]*if \(resolution\.status === "waiting"\) return;[\s\S]*onPendingOpenHandled\?\.\(\)/,
-  "CodeView should retain rooted opens until session loading settles, then acknowledge once",
+  /if \(!pendingOpen\) return;[\s\S]*resolveCodePendingOpen\([\s\S]*groups\.flatMap\(\(group\) => group\.sessions\),[\s\S]*pendingOpen,[\s\S]*sessionsLoaded,[\s\S]*\)[\s\S]*if \(resolution\.status === "waiting"\) return;[\s\S]*if \(resolution\.status !== "ready"\) \{\s*onPendingOpenHandled\?\.\(\);\s*return;\s*\}[\s\S]*setSelectedId\(target\.id\)[\s\S]*onPendingOpenHandled\?\.\(\)/,
+  "CodeView should retain loading opens, fail closed without changing selection, and retarget only a ready rooted open",
 );
 assert.match(
   codeView,
-  /openTarget=\{\s*workbenchTarget && \(workbenchTarget\.sessionId \?\? selected\.id\) === selected\.id\s*\? workbenchTarget\.open\s*: undefined\s*\}/,
+  /openTarget=\{\s*workbenchTarget && workbenchTarget\.sessionId === selected\.id\s*\? workbenchTarget\.open\s*: undefined\s*\}/,
   "CodeView should hand the open target only to the session it resolved to",
 );
 // cave-0rcku rebuilt the workbench from the design frame: the file tree and
@@ -262,8 +267,8 @@ assert.match(
 );
 assert.match(
   codeView,
-  /setWorkbenchTarget\(\s*pendingOpen\.root !== undefined && resolution\.status !== "ready"\s*\? null\s*: \{ open: pendingOpen, sessionId: target\?\.id \?\? null \},?\s*\)/,
-  "malformed or unhosted captured roots degrade without a stale focus",
+  /if \(resolution\.status !== "ready"\) \{\s*onPendingOpenHandled\?\.\(\);\s*return;\s*\}[\s\S]*setWorkbenchTarget\(\{ open: pendingOpen, sessionId: target\.id \}\)/,
+  "malformed or unhosted captured roots preserve the current workbench instead of attaching to it",
 );
 assert.match(
   chatSurface,
