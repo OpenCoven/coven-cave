@@ -6,10 +6,11 @@ import {
   offlineTravelItemsNeedingSync,
   recordSessionFamiliar,
   setSessionTitle,
+  setSessionTitleAutoIfOwned,
   type CaveConfig,
   type CaveTravelQueueItem,
 } from "@/lib/cave-config";
-import { chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
+import { chatSummaryTitle, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { buildPromptWithAttachments, type ChatAttachment } from "@/lib/chat-attachments";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import type { CodexAutomation } from "@/lib/codex-automations-types";
@@ -129,6 +130,11 @@ async function spawnHubSession(args: {
   modelControls?: Record<string, unknown>;
   projectRoot?: string | null;
   title: string;
+  /** How to record the session title. "auto" records auto-rename provenance so
+   *  the periodic rename can update it; "manual" (the default) stores it as a
+   *  human-chosen title that the auto-rename does not overwrite. Chat replay
+   *  passes "auto"; workflow / flow replay omit this and use the default. */
+  titleOwnership?: "auto" | "manual";
 }): Promise<string> {
   const harness = canonicalHarnessId(args.harness);
   if (!isAllowedHarness(harness)) {
@@ -160,7 +166,13 @@ async function spawnHubSession(args: {
 
   await Promise.all([
     args.familiarId ? recordSessionFamiliar(res.data.id, args.familiarId) : Promise.resolve(),
-    setSessionTitle(res.data.id, args.title),
+    args.titleOwnership === "auto"
+      ? setSessionTitleAutoIfOwned(
+          res.data.id,
+          args.title,
+          new Set([defaultChatTitleForSession(res.data.id)]),
+        )
+      : setSessionTitle(res.data.id, args.title),
   ]);
   return res.data.id;
 }
@@ -208,6 +220,9 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   if (profileBlock) throw new Error(profileBlock);
   const attachments = objectArray<ChatAttachment>(payload.attachments);
   const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
+  const replayTitle =
+    chatSummaryTitle({ userText: prompt }) ??
+    defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id);
   const sessionId = await spawnHubSession({
     config,
     familiarId,
@@ -225,10 +240,15 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     responseSpeed: stringValue(payload.responseSpeed),
     modelControls: record(payload.modelControls),
     projectRoot,
-    title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id),
+    title: replayTitle,
+    titleOwnership: "auto",
   });
   if (stringValue(payload.sessionId) && payload.sessionId !== sessionId) {
-    await setSessionTitle(sessionId, chatTitleFromPrompt(prompt) ?? `Travel replay: ${item.summary}`);
+    await setSessionTitleAutoIfOwned(
+      sessionId,
+      replayTitle,
+      new Set([defaultChatTitleForSession(sessionId)]),
+    );
   }
 }
 

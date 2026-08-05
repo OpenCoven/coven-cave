@@ -65,13 +65,18 @@ assert.equal(
 );
 assert.equal(
   DEFAULT_CHAT_AUTO_ARCHIVE_POLICY.archiveOnReflection,
-  false,
-  "reflection auto-archive is opt-in via the chat Settings tab",
+  true,
+  "reflection auto-archive is on by default — a reflection marks the thread as wrapped up",
 );
 assert.equal(
   normalizeChatAutoArchivePolicy({ archiveOnReflection: "yes" }).archiveOnReflection,
+  true,
+  "non-boolean reflection flags fall back to the default (true)",
+);
+assert.equal(
+  normalizeChatAutoArchivePolicy({ archiveOnReflection: false }).archiveOnReflection,
   false,
-  "non-boolean reflection flags fall back to the default",
+  "explicit stored false is preserved — disables reflection archiving even though the default is true",
 );
 assert.equal(
   DEFAULT_CHAT_AUTO_ARCHIVE_POLICY.archiveOnPrMerge,
@@ -316,8 +321,16 @@ assert.equal(
 );
 assert.equal(
   shouldAutoArchiveOnReflection("s-1", "manual", policy, { keep: {}, archivedSessionIds: [] }),
+  true,
+  "default policy archives reflected threads — reflection is the wrap-up signal",
+);
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "manual", { ...policy, archiveOnReflection: false }, {
+    keep: {},
+    archivedSessionIds: [],
+  }),
   false,
-  "default policy leaves reflected threads alone",
+  "explicit archiveOnReflection:false suppresses reflection archiving even when master enabled is true",
 );
 assert.equal(
   shouldAutoArchiveOnReflection(null, "manual", reflectionPolicy, { keep: {}, archivedSessionIds: [] }),

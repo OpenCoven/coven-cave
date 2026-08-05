@@ -172,7 +172,8 @@ test("managed Node probe distinguishes an absent toolchain from an unusable one"
 
 test("managed Node probe gives npm a cold-start budget without slowing the Node check", async () => {
   const home = await mkdtemp(path.join(tmpdir(), "coven-managed-node-probe-"));
-  const paths = managedNodePaths("linux", "x64", {}, home);
+  const env = { NODE_ENV: "test" } satisfies NodeJS.ProcessEnv;
+  const paths = managedNodePaths("linux", "x64", env, home);
   assert.ok(paths);
   await mkdir(path.dirname(paths.node), { recursive: true });
   await mkdir(path.dirname(paths.npmCli), { recursive: true });
@@ -184,7 +185,7 @@ test("managed Node probe gives npm a cold-start budget without slowing the Node 
     const probe = await probeManagedNodeToolchain({
       platform: "linux",
       architecture: "x64",
-      env: {},
+      env,
       home,
       exec: async (_command, args, options) => {
         calls.push({ args, timeout: options?.timeout });

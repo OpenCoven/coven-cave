@@ -324,7 +324,20 @@ test.describe("code surface (Coding familiar's room)", () => {
     const sessionsTab = page.getByRole("tab", { name: "Sessions" });
     await sessionsTab.focus();
     await expect(sessionsTab).toBeFocused();
-    await expect(sessionsTab).toHaveClass(/focus-ring-inset/);
+    await expect(sessionsTab).toHaveClass(/\bfocus-ring(?:\s|$)/);
+    await expect
+      .poll(
+        () =>
+          sessionsTab.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return {
+              outlineOffset: style.outlineOffset,
+              outlineWidth: style.outlineWidth,
+            };
+          }),
+        { timeout: 30_000 },
+      )
+      .toEqual({ outlineOffset: "2px", outlineWidth: "2px" });
 
     await page.getByRole("button", { name: "GitHub organization settings" }).click();
     const popover = page.getByRole("dialog", { name: "GitHub organization settings" });

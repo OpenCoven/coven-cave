@@ -198,6 +198,7 @@ assert.match(
 );
 assert.match(src, /frame\[0\]\s*=\s*0x01/, "server sends output tag 0x01");
 assert.match(src, /frame\[0\]\s*=\s*0x02/, "server sends exit tag 0x02");
+assert.match(src, /frame\[0\]\s*=\s*0x06/, "cursor-aware clients receive a replay-cursor control frame");
 assert.match(src, /tag === 0x03/, "server receives input tag 0x03");
 assert.match(src, /tag === 0x04/, "server receives resize tag 0x04");
 assert.match(src, /tag === 0x05/, "server receives an explicit kill tag 0x05 (cave-wujw)");
@@ -307,13 +308,13 @@ assert.match(
 //    socket after adoptSession swapped session.ws — one replay then silence.
 assert.match(
   src,
-  /shell\.onData\(\(data: string\) => \{[\s\S]*?if \(session\.ws\) sendPtyData\(session\.ws, data\)/,
-  "live PTY output routes to the current session.ws, not the spawn-time socket",
+  /shell\.onData\(\(data: string\) => \{[\s\S]*?queuePtyOutput\(threadId, session, bytes\)/,
+  "live PTY output enters the current session's bounded output queue",
 );
 assert.match(
   src,
-  /session\.scrollbackBytes > 0[\s\S]{0,80}sendPtyData\(ws, Buffer\.concat\(session\.scrollback\)/,
-  "adoptSession replays the scrollback ring to a reattaching client",
+  /replayPtyOutput\(threadId, session, replayCursor\)/,
+  "adoptSession replays only the retained cursor suffix, or legacy full ring",
 );
 // 3. A detach grace window: on socket close the shell is detached (session.ws
 //    nulled) and a timer reaps it later, instead of an immediate kill. A quick
@@ -325,7 +326,7 @@ assert.match(
 );
 assert.match(
   src,
-  /ws\.on\("close", \(\) => \{[\s\S]*?session\.ws = null;[\s\S]*?setTimeout\([\s\S]*?DETACH_GRACE_MS\)/,
+  /function detachPtyConsumer\([\s\S]*?session\.ws = null;[\s\S]*?armPtyDetach\(threadId, session\)/,
   "closing the socket detaches and arms a reap timer rather than killing the shell immediately",
 );
 assert.match(
@@ -346,6 +347,42 @@ assert.match(
   /const DETACH_GRACE_MS = [\s\S]{0,200}?300_000/,
   "detach grace defaults to 5 minutes so a backgrounded phone reattaches to a live shell",
 );
+
+// High-output sessions must not create an unbounded application queue or let
+// ws retain unlimited bytes for a stalled browser. The PTY remains alive; only
+// the current socket is closed with the retryable RFC 6455 code 1013.
+assert.match(src, /const PTY_FRAME_COALESCE_MS = 8/, "output coalescing has a short bounded latency");
+assert.match(src, /const PTY_FRAME_MAX_BYTES = 16 \* 1024/, "each output frame is bounded");
+assert.match(src, /const PTY_WS_BUFFERED_AMOUNT_LIMIT = 512 \* 1024/, "WebSocket buffering has a ceiling");
+assert.match(
+  src,
+  /ws\.bufferedAmount \+ payload\.length \+ 1 > PTY_WS_BUFFERED_AMOUNT_LIMIT[\s\S]{0,160}evictSlowPtyConsumer/,
+  "a slow consumer is evicted before buffered output exceeds the cap",
+);
+assert.match(
+  src,
+  /ws\.close\(PTY_SLOW_CONSUMER_CLOSE_CODE, PTY_SLOW_CONSUMER_CLOSE_REASON\)/,
+  "slow clients receive a retryable close reason",
+);
+assert.match(
+  src,
+  /const PTY_SLOW_CONSUMER_CLOSE_CODE = 1013/,
+  "slow-client eviction uses WebSocket Try Again Later",
+);
+assert.match(
+  src,
+  /function clearPendingPtyOutput[\s\S]*?pendingOutputBytes = 0/,
+  "a detached or replaced client cannot donate stale queued bytes to the next client",
+);
+
+// Cursor protocol: absence preserves existing full replay. New bridge clients
+// negotiate with -1, receive the retained stream origin, then reconnect with
+// their last delivered absolute byte cursor.
+assert.match(src, /function parsePtyReplayCursor/, "server parses the opt-in replay cursor");
+assert.match(src, /query\.ptyReplayCursor/, "upgrade passes the cursor into PTY attachment");
+assert.match(src, /replayCursor === undefined/, "legacy clients retain full replay");
+assert.match(src, /scrollbackFrom\(session, start\)/, "cursor replay starts at the retained byte suffix");
+assert.match(src, /const reset = replayCursor !== -1 && !validCursor/, "expired cursors request a client reset before full fallback replay");
 
 // Idle keep-alive: Node's 5s default closes idle sockets just as pooled
 // clients (URLSession on iOS, tailscale serve upstreams) reuse them, which
@@ -405,6 +442,172 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
     undefined,
     "empty segments consume maxKeys so credentials beyond the legacy cutoff stay ignored",
   );
+
+}
+
+{
+  const cursorBlock = src.match(/function firstQueryValue[\s\S]+?(?=\ntype UpgradeQuery)/);
+  assert.ok(cursorBlock, "cursor parser is available for behavioral coverage");
+  const { transformSync } = await import("esbuild");
+  const transformed = transformSync(
+    `${cursorBlock[0]}\nexport { parsePtyReplayCursor };`,
+    { loader: "ts", format: "esm", target: "node24" },
+  );
+  const cursorModule = await import(
+    `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`,
+  );
+  const parsePtyReplayCursor = cursorModule.parsePtyReplayCursor as (
+    raw: string | string[] | undefined,
+  ) => number | undefined | null;
+  assert.equal(parsePtyReplayCursor(undefined), undefined, "missing cursor preserves legacy replay");
+  assert.equal(parsePtyReplayCursor("-1"), -1, "-1 negotiates cursor support on first attach");
+  assert.equal(parsePtyReplayCursor("42"), 42, "safe integer cursor is accepted");
+  assert.equal(parsePtyReplayCursor("4.2"), null, "fractional cursor is rejected");
+  assert.equal(parsePtyReplayCursor("-2"), null, "only the documented -1 sentinel is accepted");
+  assert.equal(parsePtyReplayCursor("9007199254740992"), null, "unsafe integer cursor is rejected");
+}
+
+// Execute the pure ring helpers independently of Next, node-pty, and an
+// actual socket. This protects both the one-large-chunk memory cap and exact
+// cursor slicing used for reconnect replay.
+{
+  const ringBlock = src.match(/type PtySession[\s\S]+?(?=\nfunction getTokensFromCookie)/);
+  assert.ok(ringBlock, "scrollback helpers are available for behavioral coverage");
+  const { transformSync } = await import("esbuild");
+  const transformed = transformSync(
+    `${ringBlock[0]}\nexport { appendScrollback, scrollbackFrom, SCROLLBACK_LIMIT_BYTES };`,
+    { loader: "ts", format: "esm", target: "node24" },
+  );
+  const ringModule = await import(
+    `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`,
+  );
+  const appendScrollback = ringModule.appendScrollback as (session: {
+    scrollback: Buffer[];
+    scrollbackBytes: number;
+    scrollbackStart: number;
+    streamEnd: number;
+  }, data: Buffer) => void;
+  const scrollbackFrom = ringModule.scrollbackFrom as (session: {
+    scrollback: Buffer[];
+    scrollbackStart: number;
+  }, cursor: number) => Buffer[];
+  const limit = ringModule.SCROLLBACK_LIMIT_BYTES as number;
+  const session = { scrollback: [] as Buffer[], scrollbackBytes: 0, scrollbackStart: 0, streamEnd: 0 };
+
+  appendScrollback(session, Buffer.from("first"));
+  appendScrollback(session, Buffer.from("-second"));
+  assert.equal(session.streamEnd, 12, "stream end advances by delivered bytes");
+  assert.equal(Buffer.concat(scrollbackFrom(session, 5)).toString(), "-second", "cursor suffix excludes already delivered bytes");
+
+  const large = Buffer.alloc(limit + 17, 0x78);
+  appendScrollback(session, large);
+  assert.equal(session.scrollbackBytes, limit, "one oversized PTY callback cannot exceed scrollback cap");
+  assert.equal(session.scrollbackStart, session.streamEnd - limit, "oversized callback advances retained cursor origin");
+  assert.equal(Buffer.concat(scrollbackFrom(session, session.scrollbackStart)).length, limit, "retained replay is bounded and byte exact");
+  assert.equal(
+    session.scrollback[0].buffer.byteLength,
+    limit,
+    "the retained tail owns a right-sized allocation instead of pinning the oversized callback",
+  );
+}
+
+// Exercise the coalescer with a socket double. This catches regressions that a
+// source-pattern test cannot: small bursts must become one frame, every frame
+// stays capped, and a slow consumer is detached without killing its PTY.
+{
+  const stateBlock = src.match(/type PtySession[\s\S]+?(?=\nfunction getTokensFromCookie)/);
+  const streamingBlock = src.match(/function sendPtyData[\s\S]+?(?=\nfunction sendPtyExit)/);
+  assert.ok(stateBlock && streamingBlock, "streaming helpers are available for behavioral coverage");
+  const { transformSync } = await import("esbuild");
+  const transformed = transformSync(
+    `${stateBlock[0]}\n${streamingBlock[0]}\nexport { PTY_FRAME_MAX_BYTES, PTY_WS_BUFFERED_AMOUNT_LIMIT, queuePtyOutput };`,
+    { loader: "ts", format: "esm", target: "node24" },
+  );
+  (globalThis as typeof globalThis & { WebSocket: { OPEN: number } }).WebSocket = { OPEN: 1 };
+  const streamModule = await import(
+    `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`,
+  );
+  const queuePtyOutput = streamModule.queuePtyOutput as (
+    threadId: string,
+    session: Record<string, unknown>,
+    data: Buffer,
+  ) => void;
+  const frameLimit = streamModule.PTY_FRAME_MAX_BYTES as number;
+  const bufferedLimit = streamModule.PTY_WS_BUFFERED_AMOUNT_LIMIT as number;
+  const sent: Buffer[] = [];
+  const ws = {
+    readyState: 1,
+    bufferedAmount: 0,
+    send(frame: Buffer) { sent.push(frame); },
+    close() {},
+  };
+  const session = {
+    ws,
+    pendingOutput: [] as Buffer[],
+    pendingOutputBytes: 0,
+    flushTimer: null as NodeJS.Timeout | null,
+    detachTimer: null as NodeJS.Timeout | null,
+    pty: { kill() { throw new Error("slow-consumer eviction must not kill the PTY"); } },
+  };
+  queuePtyOutput("coalesce", session, Buffer.from("one"));
+  queuePtyOutput("coalesce", session, Buffer.from("-two"));
+  await new Promise((resolve) => setTimeout(resolve, 16));
+  assert.deepEqual(sent.map((frame) => frame.subarray(1).toString()), ["one-two"], "a short output burst is coalesced into one frame");
+
+  // #598 baseline metric: the legacy path emitted one frame per PTY callback.
+  // A deterministic same-tick burst must materially reduce
+  // `pty_output_frames_per_burst`, not merely prove that two writes can merge.
+  const burstFrames: Buffer[] = [];
+  const burstWs = {
+    ...ws,
+    send(frame: Buffer) { burstFrames.push(frame); },
+  };
+  const burst = {
+    ...session,
+    ws: burstWs,
+    pendingOutput: [] as Buffer[],
+    pendingOutputBytes: 0,
+    flushTimer: null as NodeJS.Timeout | null,
+    detachTimer: null as NodeJS.Timeout | null,
+  };
+  const legacyFrames = 128;
+  for (let i = 0; i < legacyFrames; i++) {
+    queuePtyOutput("frame-metric", burst, Buffer.from(`line-${i.toString().padStart(3, "0")}\n`));
+  }
+  await new Promise((resolve) => setTimeout(resolve, 16));
+  assert.ok(
+    burstFrames.length <= legacyFrames / 8,
+    `#598 pty_output_frames_per_burst must improve materially: before=${legacyFrames} after=${burstFrames.length}`,
+  );
+  console.log(
+    JSON.stringify({
+      metric: "pty_output_frames_per_burst",
+      issue: 598,
+      before: legacyFrames,
+      after: burstFrames.length,
+    }),
+  );
+
+  const oversizedCallback = Buffer.alloc(frameLimit * 8 + 3, 0x61);
+  queuePtyOutput("coalesce", session, oversizedCallback);
+  assert.ok(sent.slice(1).every((frame) => frame.length - 1 <= frameLimit), "large output is split into bounded frames");
+  assert.equal(session.pendingOutputBytes, 3, "only the short final frame remains queued");
+  assert.notEqual(
+    session.pendingOutput[0]?.buffer,
+    oversizedCallback.buffer,
+    "a short pending frame must not pin an oversized PTY callback allocation",
+  );
+  assert.ok(
+    (session.pendingOutput[0]?.buffer.byteLength ?? 0) <= frameLimit,
+    "pending output owns a bounded backing allocation",
+  );
+
+  const slowWs = { ...ws, bufferedAmount: bufferedLimit, closeCode: 0, close(code: number) { this.closeCode = code; } };
+  const slow = { ...session, ws: slowWs, pendingOutput: [] as Buffer[], pendingOutputBytes: 0, flushTimer: null, detachTimer: null };
+  queuePtyOutput("slow", slow, Buffer.alloc(frameLimit, 0x62));
+  assert.equal(slowWs.closeCode, 1013, "only a slow WebSocket is evicted with Try Again Later");
+  assert.equal(slow.ws, null, "slow consumer is detached while the PTY remains owned by its session");
+  if (slow.detachTimer) clearTimeout(slow.detachTimer);
 }
 
 // Twin parity: `pnpm start` runs the committed server.mjs, not server.ts, so a

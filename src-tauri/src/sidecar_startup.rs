@@ -1,4 +1,89 @@
 use super::*;
+use std::collections::VecDeque;
+use std::io::Read;
+
+#[cfg(desktop)]
+pub(super) const SIDECAR_OUTPUT_TAIL_BYTES: usize = 256 * 1024;
+
+#[cfg(desktop)]
+#[derive(Default)]
+pub(super) struct SidecarOutputTail {
+    bytes: VecDeque<u8>,
+}
+
+#[cfg(desktop)]
+impl SidecarOutputTail {
+    pub(super) fn push(&mut self, chunk: &[u8]) {
+        if chunk.len() >= SIDECAR_OUTPUT_TAIL_BYTES {
+            self.bytes.clear();
+            self.bytes.extend(
+                chunk[chunk.len() - SIDECAR_OUTPUT_TAIL_BYTES..]
+                    .iter()
+                    .copied(),
+            );
+            return;
+        }
+
+        let overflow = self
+            .bytes
+            .len()
+            .saturating_add(chunk.len())
+            .saturating_sub(SIDECAR_OUTPUT_TAIL_BYTES);
+        if overflow > 0 {
+            self.bytes.drain(..overflow);
+        }
+        self.bytes.extend(chunk.iter().copied());
+    }
+
+    #[cfg(test)]
+    pub(super) fn snapshot(&self) -> Vec<u8> {
+        self.bytes.iter().copied().collect()
+    }
+
+    pub(super) fn text(&self) -> String {
+        let bytes: Vec<u8> = self.bytes.iter().copied().collect();
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+}
+
+#[cfg(desktop)]
+pub(super) fn capture_sidecar_output(
+    mut reader: impl Read + Send + 'static,
+    output: Arc<Mutex<SidecarOutputTail>>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let mut buffer = [0_u8; 8192];
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => {
+                    if let Ok(mut output) = output.lock() {
+                        output.push(&buffer[..read]);
+                    } else {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    log::warn!("[cave] sidecar output capture stopped: {error}");
+                    break;
+                }
+            }
+        }
+    })
+}
+
+#[cfg(desktop)]
+pub(super) fn sidecar_output_text(output: &Arc<Mutex<SidecarOutputTail>>) -> String {
+    let captured = output
+        .lock()
+        .map(|output| output.text())
+        .unwrap_or_else(|_| "(could not read sidecar output)".to_string());
+    if captured.is_empty() {
+        "(no output captured)".to_string()
+    } else {
+        captured
+    }
+}
 
 #[cfg(desktop)]
 pub(super) fn find_free_port() -> Option<u16> {
@@ -46,9 +131,10 @@ pub(super) fn live_dev_server_url(app: &tauri::App) -> Option<tauri::Url> {
 #[cfg(desktop)]
 pub(super) fn wait_for_sidecar_ready(
     port: u16,
-    log_path: &Path,
+    output: &Arc<Mutex<SidecarOutputTail>>,
     timeout: Duration,
     should_cancel: impl Fn() -> bool,
+    mut child_exited: impl FnMut() -> bool,
 ) -> PortWaitResult {
     use std::net::{SocketAddr, TcpStream};
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -60,8 +146,12 @@ pub(super) fn wait_for_sidecar_ready(
         if should_cancel() {
             return PortWaitResult::Cancelled;
         }
-        let logged_ready = std::fs::read_to_string(log_path)
-            .map(|log| log.lines().any(|line| line.trim() == ready_line))
+        if child_exited() {
+            return PortWaitResult::Exited;
+        }
+        let logged_ready = output
+            .lock()
+            .map(|output| output.text().lines().any(|line| line.trim() == ready_line))
             .unwrap_or(false);
         if logged_ready && TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
             return PortWaitResult::Ready;
@@ -69,11 +159,6 @@ pub(super) fn wait_for_sidecar_ready(
         thread::sleep(Duration::from_millis(150));
     }
     PortWaitResult::TimedOut
-}
-
-#[cfg(desktop)]
-pub(super) fn sidecar_log_path(log_dir: &Path, port: u16) -> PathBuf {
-    log_dir.join(format!("sidecar-{}-{port}.log", std::process::id()))
 }
 
 #[cfg(desktop)]
@@ -190,41 +275,10 @@ pub(super) fn start_sidecar_runtime(
     })?;
     log::info!("[cave] using bundled Whisper at {}", whisper_cli.display());
 
-    // Capture sidecar logs so startup failures can be surfaced in the local
-    // preparation window instead of leaving a blank webview.
-    let log_dir = {
-        #[cfg(target_os = "macos")]
-        {
-            std::env::var("HOME")
-                .map(|home| PathBuf::from(home).join("Library/Logs/CovenCave"))
-                .unwrap_or_else(|_| std::env::temp_dir())
-        }
-        #[cfg(target_os = "windows")]
-        {
-            PathBuf::from(
-                std::env::var("APPDATA")
-                    .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into()),
-            )
-            .join("CovenCave")
-            .join("logs")
-        }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            std::env::var("HOME")
-                .map(|home| PathBuf::from(home).join(".local/share/CovenCave/logs"))
-                .unwrap_or_else(|_| std::env::temp_dir())
-        }
-    };
-    if let Err(error) = std::fs::create_dir_all(&log_dir) {
-        log::warn!(
-            "[cave] could not create sidecar log directory {}: {error}",
-            log_dir.display()
-        );
-    }
-    let log_path = sidecar_log_path(&log_dir, port);
-    log::info!("[cave] sidecar log -> {}", log_path.display());
-    let stdout_log = std::fs::File::create(&log_path).ok();
-    let stderr_log = stdout_log.as_ref().and_then(|file| file.try_clone().ok());
+    // Keep startup evidence in one fixed-size memory tail. Reader threads keep
+    // draining both pipes for the sidecar's lifetime, so successful launches
+    // do not leave persistent per-process log files behind.
+    let sidecar_output = Arc::new(Mutex::new(SidecarOutputTail::default()));
 
     let server_dir = server_entry.parent().ok_or_else(|| {
         SidecarStartError::Failed("server entry has no parent directory".to_string())
@@ -314,16 +368,9 @@ pub(super) fn start_sidecar_runtime(
         command.env("LD_LIBRARY_PATH", whisper_dir);
     }
 
-    if let Some(output) = stdout_log {
-        command.stdout(Stdio::from(output));
-    } else {
-        command.stdout(Stdio::null());
-    }
-    if let Some(error_output) = stderr_log {
-        command.stderr(Stdio::from(error_output));
-    } else {
-        command.stderr(Stdio::null());
-    }
+    #[cfg(unix)]
+    configure_unix_sidecar_parent_watchdog(&mut command);
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     #[cfg(target_os = "windows")]
     {
@@ -333,6 +380,16 @@ pub(super) fn start_sidecar_runtime(
     let mut child = command.spawn().map_err(|error| {
         SidecarStartError::Failed(format!("failed to spawn node sidecar: {error}"))
     })?;
+    let stdout = child.stdout.take().ok_or_else(|| {
+        let _ = child.kill();
+        SidecarStartError::Failed("node sidecar stdout pipe was unavailable".to_string())
+    })?;
+    let stderr = child.stderr.take().ok_or_else(|| {
+        let _ = child.kill();
+        SidecarStartError::Failed("node sidecar stderr pipe was unavailable".to_string())
+    })?;
+    capture_sidecar_output(stdout, Arc::clone(&sidecar_output));
+    capture_sidecar_output(stderr, Arc::clone(&sidecar_output));
     #[cfg(target_os = "windows")]
     let child = {
         if let Err(error) = process_job.assign_child(&child) {
@@ -369,28 +426,41 @@ pub(super) fn start_sidecar_runtime(
 
     on_step(SidecarStartupStep::WaitingForService);
     let sidecar_start_timeout = sidecar_start_timeout();
-    match wait_for_sidecar_ready(port, &log_path, sidecar_start_timeout, &should_cancel) {
+    let child_exited = || {
+        sidecar_state
+            .0
+            .lock()
+            .map(|mut sidecar| {
+                sidecar
+                    .as_mut()
+                    .is_none_or(|sidecar| sidecar.has_exited().unwrap_or(true))
+            })
+            .unwrap_or(true)
+    };
+    match wait_for_sidecar_ready(
+        port,
+        &sidecar_output,
+        sidecar_start_timeout,
+        &should_cancel,
+        child_exited,
+    ) {
         PortWaitResult::Ready => {}
         PortWaitResult::Cancelled => return Err(SidecarStartError::Cancelled),
-        PortWaitResult::TimedOut => {
-            let tail = std::fs::read_to_string(&log_path)
-                .ok()
-                .map(|contents| {
-                    let lines: Vec<&str> = contents.lines().rev().take(8).collect();
-                    let mut tail = lines.into_iter().rev().collect::<Vec<_>>().join("\n");
-                    if tail.is_empty() {
-                        tail.push_str("(no output captured)");
-                    }
-                    tail
-                })
-                .unwrap_or_else(|| "(could not read sidecar log)".to_string());
+        result @ (PortWaitResult::Exited | PortWaitResult::TimedOut) => {
+            let reason = match result {
+                PortWaitResult::Exited => "exited before becoming ready".to_string(),
+                PortWaitResult::TimedOut => format!(
+                    "did not become ready within {}s",
+                    sidecar_start_timeout.as_secs()
+                ),
+                _ => unreachable!(),
+            };
             return Err(SidecarStartError::Failed(format!(
-                "Sidecar (node {}) did not become ready on port {} within {}s.\n\nLast lines from {}:\n{}",
+                "Sidecar (node {}) {} on port {}.\n\nBounded sidecar output tail:\n{}",
                 node.display(),
+                reason,
                 port,
-                sidecar_start_timeout.as_secs(),
-                log_path.display(),
-                tail
+                sidecar_output_text(&sidecar_output)
             )));
         }
     }

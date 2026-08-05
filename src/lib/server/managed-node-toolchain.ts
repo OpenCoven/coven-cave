@@ -37,6 +37,12 @@ export type ManagedNodeProbe =
   | { status: "incompatible"; version: string; paths: ManagedNodePaths }
   | { status: "unusable"; detail: string; paths: ManagedNodePaths };
 
+type ManagedNodeProbeExec = (
+  file: string,
+  args: readonly string[],
+  options: { env: NodeJS.ProcessEnv; timeout: number },
+) => Promise<{ stdout: string; stderr: string }>;
+
 function supportedPlatform(platform: NodeJS.Platform): platform is ManagedNodePlatform {
   return platform === "win32" || platform === "darwin" || platform === "linux";
 }
@@ -121,7 +127,7 @@ export async function probeManagedNodeToolchain(
     architecture?: string;
     env?: NodeJS.ProcessEnv;
     home?: string;
-    exec?: typeof execFileAsync;
+    exec?: ManagedNodeProbeExec;
   } = {},
 ): Promise<ManagedNodeProbe> {
   const paths = managedNodePaths(options.platform, options.architecture, options.env, options.home);
