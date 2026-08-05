@@ -98,7 +98,7 @@ test("the first failed operation cannot undo a second live clear for the same se
   );
 });
 
-test("successful absence cleanup only releases when the current scope proves the session is gone", () => {
+test("absence cannot release a pending clear but can retire a persisted clear after a fresh response", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
 
@@ -106,5 +106,22 @@ test("successful absence cleanup only releases when the current scope proves the
   assert.equal(state.has("session-1"), true);
 
   applyChatAttentionProjections(state, [], 9, chatAttentionProjectionScopeKey("nova"));
+  assert.equal(state.has("session-1"), true);
+
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 10);
+  applyChatAttentionProjections(state, [], 10, chatAttentionProjectionScopeKey("nova"));
   assert.equal(state.has("session-1"), false);
+});
+
+test("projection preserves array identity when no field changes", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
+  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalNone, 1, chatAttentionProjectionScopeKey("nova")),
+    canonicalNone,
+  );
+
+  const unrelated = [row({ id: "session-2" })];
+  assert.equal(applyChatAttentionProjections(state, unrelated, 1), unrelated);
 });

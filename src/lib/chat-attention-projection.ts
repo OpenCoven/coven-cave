@@ -134,8 +134,8 @@ export function applyChatAttentionProjections(
     for (const [sessionId, operations] of state) {
       if (presentSessionIds.has(sessionId)) continue;
       for (const [operationId, operation] of operations) {
-        const canTrustAbsence = operation.status === "pending"
-          || responseRequestId >= operation.canonicalAfterRequestId;
+        const canTrustAbsence = operation.status === "persisted" &&
+          responseRequestId >= operation.canonicalAfterRequestId;
         if (canTrustAbsence && scopeProvesAbsence(operation.scopeKey, currentScopeKey)) {
           operations.delete(operationId);
         }
