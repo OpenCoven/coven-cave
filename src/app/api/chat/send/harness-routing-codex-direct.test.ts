@@ -35,7 +35,9 @@ process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 
 const daemonOnlySessionId = "codex-daemon-only-resume";
-const daemonSocket = path.join(home, "coven.sock");
+const daemonSocket = process.platform === "win32"
+  ? `\\\\.\\pipe\\cave-codex-direct-${process.pid}-${path.basename(home)}`
+  : path.join(home, "coven.sock");
 const daemon = createServer((req, res) => {
   res.setHeader("content-type", "application/json");
   if (req.url === "/api/v1/sessions") {

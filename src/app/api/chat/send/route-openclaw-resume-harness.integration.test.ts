@@ -12,7 +12,9 @@ const home = await mkdtemp(path.join(homedir(), "cave-openclaw-resume-"));
 const bin = path.join(home, "bin");
 const workspace = path.join(home, "workspace");
 const calls = path.join(home, "openclaw-calls.jsonl");
-const daemonSocket = path.join(home, "coven.sock");
+const daemonSocket = process.platform === "win32"
+  ? `\\\\.\\pipe\\cave-openclaw-resume-${process.pid}-${path.basename(home)}`
+  : path.join(home, "coven.sock");
 const daemonOnlySessionId = "openclaw-daemon-only-resume";
 await mkdir(bin, { recursive: true });
 await mkdir(workspace, { recursive: true });
