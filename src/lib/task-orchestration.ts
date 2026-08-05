@@ -74,7 +74,11 @@ export function detectCycles(cards: readonly Card[]): string[][] {
   const onStack = new Set<string>();
 
   const walk = (id: string, depth: number): void => {
-    if (depth >= TRAVERSAL_GUARD) return;
+    if (depth >= TRAVERSAL_GUARD) {
+      // Traversal guard hit is treated as a data fault (see contract I4).
+      cycles.push([...stack, id]);
+      return;
+    }
     seen.add(id);
     stack.push(id);
     onStack.add(id);
