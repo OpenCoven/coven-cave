@@ -8,6 +8,7 @@ import {
   MAX_SUMMARY_TITLE_WORDS,
   mergeSessionTitleOverrides,
   normalizeChatTitle,
+  stripLeadingTrailingEmoji,
   titleFromAssistantReply,
 } from "./cave-chat-titles.ts";
 
@@ -302,7 +303,39 @@ assert.equal(
   "fullwidth question mark \uFF1F stripped from title end",
 );
 
-// ── Task 2 adjacent gap: punctuation before closing delimiters ────────────────
+// ── Task 2 sanitizer issue 2: interrobang and Arabic question mark ────────────
+// ‽ (U+203D) and ؟ (U+061F) are sentence-ending characters not previously
+// included in the trailing punctuation strip; they must be removed before
+// a truncation ellipsis is appended (same contract as .!?。！？).
+assert.equal(
+  chatSummaryTitle({ userText: "Fix parser\u203D" }),
+  "Fix parser",
+  "interrobang \u203D (U+203D) stripped from bare title end",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Fix parser\u061F" }),
+  "Fix parser",
+  "Arabic question mark \u061F (U+061F) stripped from bare title end",
+);
+// Mixed with closing delimiter — same lookahead contract as existing types.
+assert.equal(
+  chatSummaryTitle({ userText: '"Fix parser\u203D"' }),
+  '"Fix parser"',
+  "interrobang before closing double-quote stripped; quote preserved",
+);
+// Before truncation: a source interrobang must not appear in the output
+// alongside the formatter-appended … when the title is long enough to truncate.
+{
+  const interrobangTrunc = chatSummaryTitle({
+    userText: "one two three four five six seven eight\u203D",
+  });
+  assert.ok(interrobangTrunc !== null, "interrobang truncation: must yield a title");
+  assert.ok(
+    !interrobangTrunc!.includes("\u203D"),
+    `interrobang removed before truncation ellipsis appended, got "${interrobangTrunc}"`,
+  );
+  assert.ok(interrobangTrunc!.endsWith("…"), "truncation ellipsis appended after interrobang stripped");
+}
 
 // Sentence punctuation immediately before a closing quote is stripped;
 // the closing quote itself is preserved.
@@ -532,6 +565,20 @@ assert.equal(
   "Fix parser Add focused tests",
   "list markers exposed by blockquote cleanup are stripped without losing text",
 );
+// ── Task 2 sanitizer issue 1: reference definition must not leak URL ──────────
+// The raw userText must pass through stripLineMarkdown BEFORE whitespace is
+// collapsed so that a reference definition on its own line (`[label]: url`)
+// is consumed by the line-oriented regex and never reaches formatGeneratedTitle.
+assert.equal(
+  chatSummaryTitle({ userText: "topic\n[retries]: https://example.com" }),
+  "Topic",
+  "reference definition on its own line stripped before whitespace collapse; URL does not leak",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Fix network\n[retries]: https://example.com\nconfig" }),
+  "Fix network config",
+  "reference definition embedded between content lines is stripped; URL does not leak",
+);
 
 // Unicode subdivision flags are emoji tag sequences: a pictograph followed by
 // tag characters U+E0020–U+E007E and cancel tag U+E007F.
@@ -544,7 +591,45 @@ assert.equal(
   );
 }
 
-// Word-limit truncation is visible, word-safe, and remains within both caps.
+// ── Task 2 sanitizer issue 3: lone tag chars at title edges ───────────────────
+// Tag chars (U+E0020–U+E007F) that appear without a preceding base pictographic
+// are invisible and must be stripped at title edges. They appear e.g. when only
+// part of a subdivision-flag sequence is present. Middle emoji are unaffected.
+{
+  // Lone CANCEL TAG (U+E007F) at start — invisible garbage.
+  assert.equal(
+    stripLeadingTrailingEmoji("\u{E007F}Fix parser"),
+    "Fix parser",
+    "lone cancel tag (U+E007F) at title start is stripped",
+  );
+  // Lone tag letter (U+E0067 = TAG LATIN SMALL LETTER G) at end.
+  assert.equal(
+    stripLeadingTrailingEmoji("Fix parser\u{E0067}"),
+    "Fix parser",
+    "lone tag char (U+E0067) at title end is stripped",
+  );
+  // Orphan tag sequence at start (multiple tag chars, no base pictographic).
+  assert.equal(
+    stripLeadingTrailingEmoji("\u{E0067}\u{E0062}\u{E007F}Fix parser"),
+    "Fix parser",
+    "orphan tag-char sequence at title start is stripped",
+  );
+  // Via chatSummaryTitle: the same cleanup runs through the formatter pipeline.
+  assert.equal(
+    chatSummaryTitle({ userText: "\u{E0067}Fix parser" }),
+    "Fix parser",
+    "lone tag char at start of userText is stripped via chatSummaryTitle",
+  );
+  // A full subdivision-flag emoji in the MIDDLE of a title is not touched.
+  {
+    const walesFlag = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}";
+    assert.equal(
+      stripLeadingTrailingEmoji(`Fix ${walesFlag} parser`),
+      `Fix ${walesFlag} parser`,
+      "tag sequence inside a middle emoji is not consumed by edge cleanup",
+    );
+  }
+}
 assert.equal(
   chatSummaryTitle({ userText: "one two three four five six seven eight" }),
   "One two three four five six seven…",

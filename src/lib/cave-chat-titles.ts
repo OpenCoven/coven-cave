@@ -22,8 +22,13 @@ const EMOJI_TAG_SEQUENCE = String.raw`(?:[\u{E0020}-\u{E007E}]+\u{E007F})`;
 // so they do not leak into the stripped output (e.g. "❤︎ Fix" → "Fix").
 const EMOJI_COMPONENT = String.raw`${PICTOGRAPHIC}(?:\uFE0F|\uFE0E|\p{Emoji_Modifier})?(?:${EMOJI_TAG_SEQUENCE})?`;
 const EMOJI_SEQUENCE = String.raw`(?:[#*0-9]\uFE0F?\u20E3|${EMOJI_COMPONENT}(?:\u200D${EMOJI_COMPONENT})*)`;
-const LEADING_EMOJI_RE = new RegExp(String.raw`^(?:\s|${EMOJI_SEQUENCE})+`, "gu");
-const TRAILING_EMOJI_RE = new RegExp(String.raw`(?:\s|${EMOJI_SEQUENCE})+$`, "gu");
+// Lone tag characters (U+E0020–U+E007F) at a title edge are invisible garbage
+// that can be left behind when a subdivision-flag sequence is only partially
+// present (e.g. tag chars without a preceding base pictographic). They must be
+// consumed at edges without touching tag chars inside a meaningful middle emoji.
+const LONE_TAG_CHAR = String.raw`[\u{E0020}-\u{E007F}]`;
+const LEADING_EMOJI_RE = new RegExp(String.raw`^(?:\s|${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})+`, "gu");
+const TRAILING_EMOJI_RE = new RegExp(String.raw`(?:\s|${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})+$`, "gu");
 export function stripLeadingTrailingEmoji(title: string): string {
   return title.replace(LEADING_EMOJI_RE, "").replace(TRAILING_EMOJI_RE, "").trim();
 }
@@ -121,10 +126,12 @@ const BOILERPLATE_ONLY_RE =
 // are NOT consumed — `"Fix parser."` becomes `"Fix parser"`, not `Fix parser`.
 // Placing the delimiters in the lookahead also means a bare trailing punct run
 // (`Fix parser.`) is handled identically: zero closing chars before `$`.
+// U+203D = interrobang ‽, U+061F = Arabic question mark ؟ — both are
+// sentence-ending characters not covered by ASCII .!? and must be stripped.
 const TRAILING_TITLE_PUNCTUATION_RE =
-  /[.,:;!?\u2026\u3002\uFF01\uFF1F][\s.,:;!?\u2026\u3002\uFF01\uFF1F]*(?=['")\]}\u2018\u2019\u201C\u201D\u203A\u00BB]*$)/u;
+  /[.,:;!?\u2026\u203D\u061F\u3002\uFF01\uFF1F][\s.,:;!?\u2026\u203D\u061F\u3002\uFF01\uFF1F]*(?=['")\]}\u2018\u2019\u201C\u201D\u203A\u00BB]*$)/u;
 const TRAILING_TRUNCATION_PUNCTUATION_RE =
-  /[.,:;!?\-–—\u2026\u3002\uFF01\uFF1F][\s.,:;!?\-–—\u2026\u3002\uFF01\uFF1F]*$/u;
+  /[.,:;!?\-–—\u2026\u203D\u061F\u3002\uFF01\uFF1F][\s.,:;!?\-–—\u2026\u203D\u061F\u3002\uFF01\uFF1F]*$/u;
 
 function stripTrailingTitlePunctuation(text: string): string {
   return text.replace(TRAILING_TITLE_PUNCTUATION_RE, "").trimEnd();
