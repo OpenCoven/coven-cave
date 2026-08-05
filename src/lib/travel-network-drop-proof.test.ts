@@ -41,7 +41,7 @@ function createHubServer(): http.Server {
       const id = `hub-session-${nextSession++}`;
       // The terminal-empty-failure item deliberately sends no reply so its
       // replay must fail rather than hang; every other queued chat gets an
-      // immediate completed session with a canonical assistant reply so the
+      // immediate completed session with a plain assistant reply so the
       // legacy userTurnId-fallback path (payload.userTurnId ?? item.id) can
       // reach "synced" in one poll.
       const noReply = typeof body.prompt === "string" && body.prompt.includes("terminal session with no reply");
@@ -49,7 +49,18 @@ function createHubServer(): http.Server {
         id,
         status: "completed",
         updated_at: "2026-06-30T12:02:05.000Z",
-        reply: noReply ? "" : "Replayed queued work.",
+        reply: noReply
+          ? ""
+          : [
+              "OpenAI Codex",
+              "--------",
+              "workdir: /workspace",
+              "model: gpt-test",
+              "user",
+              "PROMPT MUST STAY PRIVATE",
+              "codex",
+              "Replayed queued work.",
+            ].join("\n"),
       });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ id, status: "running" }));
@@ -77,8 +88,8 @@ function createHubServer(): http.Server {
         ? [
             {
               seq: 1,
-              kind: "assistant.message",
-              payload_json: JSON.stringify({ content: session.reply }),
+              kind: "output",
+              payload_json: JSON.stringify({ data: session.reply }),
               created_at: session.updated_at,
             },
           ]

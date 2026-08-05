@@ -170,7 +170,8 @@ export class AssistantFilter {
         this.pendingOpenAiCodexNormalization = line;
         return "";
       }
-      return visibleLine ? visibleLine + "\n" : "";
+      if (visibleLine !== line) return visibleLine ? visibleLine + "\n" : "";
+      return line + "\n";
     }
     const trimmed = line.trim();
 

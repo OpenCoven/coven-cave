@@ -27,6 +27,7 @@ export const OFFLINE_REPLAY_LAUNCH_CONTRACT = {
 export type ReplayOutputDecodeErrorCode =
   | "truncated_output"
   | "malformed_output_event"
+  | "malformed_assistant_event"
   | "malformed_structured_frame"
   | "unsupported_harness";
 
@@ -108,6 +109,41 @@ function outputChunks(events: ReplayDaemonEvent[]): string[] {
   return chunks;
 }
 
+function structuredAssistantText(events: ReplayDaemonEvent[]): string | null {
+  let latest: string | null = null;
+  for (const event of events) {
+    if (event.kind !== "assistant.message" && event.kind !== "assistant_message") continue;
+    if (typeof event.payload_json !== "string") {
+      throw replayOutputDecodeError(
+        "malformed_assistant_event",
+        "offline replay received a malformed assistant data event",
+      );
+    }
+    let payload: Record<string, unknown> | null;
+    try {
+      payload = record(JSON.parse(event.payload_json));
+    } catch {
+      throw replayOutputDecodeError(
+        "malformed_assistant_event",
+        "offline replay received a malformed assistant data event",
+      );
+    }
+    const text = typeof payload?.content === "string"
+      ? payload.content
+      : typeof payload?.text === "string"
+        ? payload.text
+        : null;
+    if (text === null) {
+      throw replayOutputDecodeError(
+        "malformed_assistant_event",
+        "offline replay received a malformed assistant data event",
+      );
+    }
+    latest = text;
+  }
+  return latest;
+}
+
 function cleanTerminalOutput(chunks: string[]): string {
   return resolveBackspaces(stripAnsi(chunks.join("")));
 }
@@ -152,7 +188,6 @@ const PLAIN_DECODERS: Record<string, (chunks: string[]) => string> = {
   claude: decodeDirectPlain,
   "coven-code": decodeDirectPlain,
   codex: decodeCodexPlain,
-  copilot: decodeDirectPlain,
   grok: decodeDirectPlain,
   hermes: decodeHermesPlain,
 };
@@ -180,10 +215,13 @@ export function replayOutputContractBlockReason(
 ): string | null {
   const harness = canonicalHarnessId(request.harness).trim().toLowerCase();
   if (
-    harness === "opencode" &&
+    (harness === "opencode" || harness === "copilot") &&
     request.launchMode === "nonInteractive" &&
     request.outputFormat === "plain"
   ) {
+    if (harness === "copilot") {
+      return "offline replay cannot safely launch Copilot: the daemon command omits Copilot's --silent assistant-only mode, so its nonInteractive plain stdout does not separate assistant replies from tool or control output. Update the daemon launch contract to include --silent, use online chat, or choose another harness.";
+    }
     return "offline replay cannot safely launch OpenCode: its nonInteractive plain stdout does not separate assistant replies from tool or control output. Use online chat or choose another harness.";
   }
   if (decoderFor(harness, request)) return null;
@@ -218,5 +256,8 @@ export function decodeReplayAssistantOutput(
   }
 
   const decoded = decoder(outputChunks(request.events)).trim();
-  return decoded || null;
+  const structured = structuredAssistantText(request.events)?.trim() ?? "";
+  if (!structured) return decoded || null;
+  if (!decoded || structured.startsWith(decoded)) return structured;
+  return `${decoded}${structured}`;
 }

@@ -61,8 +61,8 @@ test("Workspace wires one mounted supervisor with fresh connection requests, vis
   );
   assert.match(
     workspace,
-    /const requester = createDaemonTravelReconcileRequester\(\{[\s\S]*const response = await fetch\("\/api\/daemon\/travel\/reconcile", \{\s*method: "POST",\s*cache: "no-store",\s*signal,\s*\}\);[\s\S]*if \(!response\.ok\) throw new Error\("daemon travel reconcile failed"\);[\s\S]*\}\);/,
-    "Workspace should create a separate POST travel reconcile requester that uses AbortSignal and throws only a generic non-ok error",
+    /const requester = createDaemonTravelReconcileRequester\(\{[\s\S]*const response = await fetch\("\/api\/daemon\/travel\/reconcile", \{\s*method: "POST",\s*cache: "no-store",\s*signal,\s*\}\);[\s\S]*if \(!response\.ok\) throw new Error\("daemon travel reconcile failed"\);[\s\S]*const payload = await response\.json\(\);[\s\S]*payload\.ok !== true[\s\S]*throw new Error\("daemon travel reconcile returned an invalid response"\);[\s\S]*rawRetryAfterMs == null[\s\S]*typeof rawRetryAfterMs !== "number"[\s\S]*throw new Error\("daemon travel reconcile returned an invalid retry hint"\);[\s\S]*\}\);/,
+    "Workspace should reject malformed travel reconcile responses while still accepting the route's null-or-number retry hint contract",
   );
   assert.match(
     workspace,
@@ -88,6 +88,85 @@ test("Workspace wires one mounted supervisor with fresh connection requests, vis
     workspace,
     /setInterval\(/,
     "Workspace daemon connection wiring should stay on explicit supervisor/requester timers instead of a raw interval loop",
+  );
+});
+
+test("Workspace travel reconcile request validates the route's {ok,retryAfterMs?} contract at runtime", async () => {
+  // Extract the actual request() closure body and evaluate it, so this test
+  // exercises real behavior rather than only pattern-matching the source.
+  const bodyMatch = workspace.match(
+    /const requester = createDaemonTravelReconcileRequester\(\{\s*request: async \(\{ signal \}\) => \{([\s\S]*?)\n      \},\n    \}\);/,
+  );
+  assert.ok(bodyMatch, "travel reconcile request() body must be extractable for a runtime check");
+  const body = bodyMatch[1]
+    .replace(/: number \| null/g, "")
+    .replace(/: \{ signal: AbortSignal \}/g, "");
+  const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+  const request = new AsyncFunction("signal", body);
+
+  async function requestWith(mockResponse: { ok: boolean; json: () => Promise<unknown> }) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => mockResponse) as typeof fetch;
+    try {
+      return await request(undefined);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  function okResponse(json: () => Promise<unknown>) {
+    return { ok: true, json };
+  }
+
+  await assert.rejects(
+    () => requestWith(okResponse(() => Promise.reject(new SyntaxError("Unexpected token")))),
+    /./,
+    "malformed JSON should reject rather than silently resolve to no retry",
+  );
+  await assert.rejects(
+    () => requestWith(okResponse(async () => ({}))),
+    /invalid response/,
+    "a payload missing ok should be rejected as an invalid response",
+  );
+  await assert.rejects(
+    () => requestWith(okResponse(async () => ({ ok: false }))),
+    /invalid response/,
+    "ok: false should be rejected as an invalid response",
+  );
+  await assert.rejects(
+    () => requestWith(okResponse(async () => ({ ok: true, retryAfterMs: "soon" }))),
+    /invalid retry hint/,
+    "a non-numeric retry hint should be rejected",
+  );
+  await assert.rejects(
+    () => requestWith(okResponse(async () => ({ ok: true, retryAfterMs: -5 }))),
+    /invalid retry hint/,
+    "a negative retry hint should be rejected",
+  );
+  await assert.rejects(
+    () => requestWith(okResponse(async () => ({ ok: true, retryAfterMs: Number.NaN }))),
+    /invalid retry hint/,
+    "a NaN retry hint should be rejected",
+  );
+  await assert.rejects(
+    () => requestWith(okResponse(async () => ({ ok: true, retryAfterMs: Number.POSITIVE_INFINITY }))),
+    /invalid retry hint/,
+    "a non-finite retry hint should be rejected",
+  );
+  assert.equal(
+    await requestWith(okResponse(async () => ({ ok: true, retryAfterMs: null }))),
+    undefined,
+    "an explicit null retry hint should resolve to no retry",
+  );
+  assert.equal(
+    await requestWith(okResponse(async () => ({ ok: true }))),
+    undefined,
+    "an omitted retry hint should resolve to no retry",
+  );
+  assert.deepEqual(
+    await requestWith(okResponse(async () => ({ ok: true, retryAfterMs: 1500.7 }))),
+    { retryAfterMs: 1500 },
+    "a valid retry hint should resolve floored",
   );
 });
 

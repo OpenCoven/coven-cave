@@ -412,22 +412,25 @@ try {
     }),
   })));
   await config.recordTravelHubReachability(true, new Date("2026-06-30T12:02:13.000Z"));
+  const requestsBeforeCopilotReplay = sessionRequests.length;
   const copilotSpawn = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
-  assert.deepEqual(copilotSpawn, { attempted: 1, synced: 1, failed: 0, errors: [] });
-  const copilotRequest = sessionRequests.at(-1);
-  assert.equal(copilotRequest?.harness, "copilot");
-  assert.equal(copilotRequest?.launchMode, "nonInteractive");
-  await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
-  await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
-  assert.equal(
-    (await conversations.loadConversation("offline-chat-copilot"))?.turns.at(-1)?.text,
-    [
-      "Working through it.",
-      '{"answer":42}',
-      "data: literal answer",
-      "event: literal event",
-    ].join("\n"),
+  assert.equal(copilotSpawn.attempted, 1);
+  assert.equal(copilotSpawn.synced, 0);
+  assert.equal(copilotSpawn.failed, 1);
+  assert.match(
+    copilotSpawn.errors[0]?.error ?? "",
+    /nonInteractive plain stdout does not separate assistant replies from tool or control output/i,
   );
+  assert.equal(
+    sessionRequests.length,
+    requestsBeforeCopilotReplay,
+    "Copilot replay fails before raw PTY output can be mistaken for assistant prose",
+  );
+  const unsupportedCopilotItem = (await config.loadState()).travel.offlineQueue.find(
+    (item) => item.payload?.sessionId === "offline-chat-copilot",
+  );
+  assert.ok(unsupportedCopilotItem);
+  await config.completeOfflineTravelItem(unsupportedCopilotItem.id);
 
   await config.recordTravelHubReachability(false, new Date("2026-06-30T12:02:14.000Z"));
   await readSse(await POST(new Request("http://localhost/api/chat/send", {

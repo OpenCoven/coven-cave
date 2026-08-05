@@ -26,7 +26,6 @@ import {
   persistQueuedOfflineConversation,
   saveConversation,
   withConversationLock,
-  type ConversationFile,
 } from "@/lib/cave-conversations";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
@@ -45,7 +44,13 @@ import { recordRun } from "@/lib/workflow-runs";
 import { loadLocalWorkflowList } from "@/lib/workflow-source";
 import type { WorkflowSummary } from "@/lib/workflows";
 import { buildPromptWithResponseControls } from "@/app/api/chat/send/chat-send-models";
-import { decodeReplayAssistantOutput } from "@/lib/travel-replay-output";
+import {
+  decodeReplayAssistantOutput,
+  OFFLINE_REPLAY_LAUNCH_CONTRACT,
+  replayOutputContractBlockReason,
+} from "@/lib/travel-replay-output";
+import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
+import { AssistantFilter } from "@/lib/chat-assistant-filter";
 
 export type TravelOfflineReplayResult = {
   attempted: number;
@@ -155,28 +160,6 @@ function replayChatConversationId(item: CaveTravelQueueItem): string | null {
   return stringValue(record(item.payload).sessionId) ?? item.id;
 }
 
-function replayTurnIsOnActivePath(
-  conversation: Pick<ConversationFile, "turns" | "activeLeafId">,
-  turnId: string,
-): boolean {
-  if (!conversation.activeLeafId) return false;
-  const turnsById = new Map(conversation.turns.map((turn) => [turn.id, turn]));
-  if (turnsById.size !== conversation.turns.length) return false;
-
-  const seen = new Set<string>();
-  let currentId: string | null | undefined = conversation.activeLeafId;
-  let foundTarget = false;
-  while (currentId) {
-    if (seen.has(currentId)) return false;
-    seen.add(currentId);
-    const turn = turnsById.get(currentId);
-    if (!turn) return false;
-    if (turn.id === turnId) foundTarget = true;
-    currentId = turn.parentId;
-  }
-  return foundTarget;
-}
-
 function prepareReplayAttentionRequest(args: {
   text: string;
   sessionId: string;
@@ -234,6 +217,79 @@ function replayEventPage(
   };
 }
 
+function replayOutputChunk(event: DaemonEventRow): string | null {
+  if (event.kind !== "output") return null;
+  if (typeof event.payload_json !== "string") {
+    throw new Error("offline replay received a malformed daemon output event");
+  }
+  let payload: Record<string, unknown> | null;
+  try {
+    payload = record(JSON.parse(event.payload_json));
+  } catch {
+    throw new Error("offline replay received a malformed daemon output event");
+  }
+  if (typeof payload?.data !== "string") {
+    throw new Error("offline replay received a malformed daemon output event");
+  }
+  return payload.data;
+}
+
+function replayAssistantMessageContent(event: DaemonEventRow): string | null {
+  if (event.kind !== "assistant.message") return null;
+  if (typeof event.payload_json !== "string") {
+    throw new Error("offline replay received a malformed assistant data event");
+  }
+  let payload: Record<string, unknown> | null;
+  try {
+    payload = record(JSON.parse(event.payload_json));
+  } catch {
+    throw new Error("offline replay received a malformed assistant data event");
+  }
+  if (typeof payload?.content === "string") return payload.content;
+  const nestedData = record(payload?.data);
+  if (typeof nestedData?.content === "string") return nestedData.content;
+  throw new Error("offline replay received a malformed assistant data event");
+}
+
+function appendReplayAssistantText(current: string, next: string): string {
+  if (!next) return current;
+  if (!current) return next;
+  if (next.startsWith(current)) return next;
+  if (current.endsWith(next)) return current;
+  return current + next;
+}
+
+function decodeCodexReplayAssistantOutput(events: DaemonEventRow[]): string | null {
+  if (events.some((event) => event.kind === "output_truncated")) {
+    throw new Error("offline replay daemon output log was truncated; refusing to mirror a partial assistant reply");
+  }
+  const filter = new AssistantFilter();
+  const pendingChunks: string[] = [];
+  const flushOutput = () => {
+    if (pendingChunks.length === 0) return "";
+    const cleaned = resolveBackspaces(stripAnsi(pendingChunks.join("")));
+    pendingChunks.length = 0;
+    let text = filter.push(cleaned) + filter.flush();
+    if (!cleaned.endsWith("\n") && text.endsWith("\n")) text = text.slice(0, -1);
+    return text;
+  };
+
+  let merged = "";
+  for (const event of events) {
+    const outputChunk = replayOutputChunk(event);
+    if (outputChunk !== null) {
+      pendingChunks.push(outputChunk);
+      continue;
+    }
+    const assistantContent = replayAssistantMessageContent(event);
+    if (assistantContent === null) continue;
+    merged = appendReplayAssistantText(merged, flushOutput());
+    merged = appendReplayAssistantText(merged, assistantContent);
+  }
+  merged = appendReplayAssistantText(merged, flushOutput()).trim();
+  return merged || null;
+}
+
 export async function collectReplayEventPages(args: {
   harnessSessionId: string;
   daemonCall?: typeof callDaemon;
@@ -271,6 +327,11 @@ export async function replayAssistantStatus(args: {
   harness: string;
   daemonCall?: typeof callDaemon;
 }): Promise<ReplayAssistantStatus> {
+  const replayBlockReason = replayOutputContractBlockReason({
+    harness: args.harness,
+    ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+  });
+  if (replayBlockReason) throw new Error(replayBlockReason);
   const daemonCall = args.daemonCall ?? callDaemon;
   const sessions = await daemonCall<DaemonSessionListRow[]>({
     path: "/api/v1/sessions",
@@ -306,7 +367,13 @@ export async function replayAssistantStatus(args: {
       eventsComplete: false,
     };
   }
-  const assistant = decodeReplayAssistantOutput(args.harness, events);
+  const assistant = canonicalHarnessId(args.harness) === "codex"
+    ? decodeCodexReplayAssistantOutput(events)
+    : decodeReplayAssistantOutput({
+        harness: args.harness,
+        ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+        events,
+      });
   return {
     status,
     assistantText: assistant,
@@ -337,14 +404,14 @@ async function persistReplayAssistantTurn(args: {
   payload: Record<string, unknown>;
   familiarId: string;
   isError: boolean;
-}): Promise<void> {
-  await withConversationLock(args.sessionId, async () => {
+}): Promise<boolean> {
+  return withConversationLock(args.sessionId, async () => {
     const conv = await loadConversation(args.sessionId);
-    if (!conv) return;
+    if (!conv) return false;
     const assistantTurnId = stableReplayAssistantTurnId(args.userTurnId);
-    if (conv.turns.some((turn) => turn.id === assistantTurnId)) return;
+    if (conv.turns.some((turn) => turn.id === assistantTurnId)) return true;
     const userTurn = conv.turns.find((turn) => turn.id === args.userTurnId);
-    if (userTurn?.role !== "user" || !replayTurnIsOnActivePath(conv, args.userTurnId)) return;
+    if (userTurn?.role !== "user") return false;
 
     const advancesActiveBoundary = conv.activeLeafId === args.userTurnId;
     const persistedAssistantCreatedAt = new Date().toISOString();
@@ -378,6 +445,7 @@ async function persistReplayAssistantTurn(args: {
       conv.harnessSessionId = args.harnessSessionId;
     }
     await saveConversation(conv);
+    return true;
   });
 }
 
@@ -398,6 +466,11 @@ async function spawnHubSession(args: {
   if (!isAllowedHarness(harness)) {
     throw new Error(`harness '${harness}' can't run as an agent session`);
   }
+  const replayBlockReason = replayOutputContractBlockReason({
+    harness,
+    ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+  });
+  if (replayBlockReason) throw new Error(replayBlockReason);
   const projectRoot = normalizeProjectRoot(args.projectRoot ?? process.cwd());
   if (!projectRoot) throw new Error("invalid project root");
 
@@ -408,7 +481,7 @@ async function spawnHubSession(args: {
       projectRoot,
       harness,
       prompt: args.prompt,
-      launchMode: "nonInteractive",
+      launchMode: OFFLINE_REPLAY_LAUNCH_CONTRACT.launchMode,
       ...(args.model ? { model: args.model } : {}),
       ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
       ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
@@ -572,7 +645,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     // instead of silently stalling the offline queue.
     throw new Error("replayed session finished without a usable assistant reply to mirror");
   }
-  await persistReplayAssistantTurn({
+  const persisted = await persistReplayAssistantTurn({
     sessionId,
     harnessSessionId,
     userTurnId,
@@ -581,6 +654,9 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     familiarId,
     isError: (mirrored.status ?? "").trim().toLowerCase() === "failed",
   });
+  if (!persisted) {
+    throw new Error("replayed assistant reply could not be attached to its queued user turn");
+  }
   return "complete";
 }
 

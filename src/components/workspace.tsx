@@ -968,10 +968,26 @@ export function Workspace() {
           signal,
         });
         if (!response.ok) throw new Error("daemon travel reconcile failed");
-        const payload = await response.json().catch(() => null);
-        const retryAfterMs = typeof payload?.retryAfterMs === "number" && Number.isFinite(payload.retryAfterMs)
-          ? Math.max(0, Math.floor(payload.retryAfterMs))
-          : null;
+        const payload = await response.json();
+        if (!payload || typeof payload !== "object" || payload.ok !== true) {
+          throw new Error("daemon travel reconcile returned an invalid response");
+        }
+        const hasRetryAfterMs = Object.prototype.hasOwnProperty.call(payload, "retryAfterMs");
+        const rawRetryAfterMs = payload.retryAfterMs;
+        let retryAfterMs: number | null = null;
+        if (hasRetryAfterMs) {
+          if (rawRetryAfterMs == null) {
+            retryAfterMs = null;
+          } else if (
+            typeof rawRetryAfterMs !== "number" ||
+            !Number.isFinite(rawRetryAfterMs) ||
+            rawRetryAfterMs < 0
+          ) {
+            throw new Error("daemon travel reconcile returned an invalid retry hint");
+          } else {
+            retryAfterMs = Math.floor(rawRetryAfterMs);
+          }
+        }
         return retryAfterMs === null ? undefined : { retryAfterMs };
       },
     });

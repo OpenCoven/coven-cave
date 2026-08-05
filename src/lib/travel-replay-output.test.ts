@@ -58,7 +58,6 @@ const SAFE_PLAIN_HARNESSES = [
   "claude",
   "coven-code",
   "codex",
-  "copilot",
   "grok",
   "hermes",
 ];
@@ -104,40 +103,15 @@ test("Hermes removes only its established normalization diagnostic and preserves
   );
 });
 
-test("plain replay flushes buffered stdout before a later structured assistant event", () => {
+test("plain replay retains strictly validated structured compatibility events", () => {
   assert.equal(
-    plainDecode("codex", "Filtered first.", [
+    plainDecode("claude", '{"answer":42}', [
       daemonEvent(
         "assistant.message",
-        JSON.stringify({ content: "Structured second." }),
+        JSON.stringify({ content: "STRUCTURED TEXT MUST NOT OVERRIDE PLAIN STDOUT" }),
       ),
     ]),
-    "Filtered first.Structured second.",
-  );
-});
-
-test("plain replay merges a later structured replacement without duplicating the buffered prefix", () => {
-  assert.equal(
-    plainDecode("codex", "Filtered first.", [
-      daemonEvent(
-        "assistant.message",
-        JSON.stringify({ content: "Filtered first.Structured second." }),
-      ),
-    ]),
-    "Filtered first.Structured second.",
-  );
-});
-
-test("plain replay rejects malformed structured assistant compatibility events", () => {
-  assert.throws(
-    () =>
-      plainDecode("codex", "Filtered first.", [
-        daemonEvent("assistant.message", "{"),
-      ]),
-    (error) =>
-      error instanceof ReplayOutputDecodeError &&
-      error.code === "malformed_assistant_event" &&
-      /assistant data event/.test(error.message),
+    '{"answer":42}STRUCTURED TEXT MUST NOT OVERRIDE PLAIN STDOUT',
   );
 });
 
@@ -223,5 +197,37 @@ test("OpenCode plain replay is rejected with actionable guidance before launch",
       error instanceof ReplayOutputDecodeError &&
       error.code === "unsupported_harness" &&
       error.message === reason,
+  );
+});
+
+test("Copilot plain replay is rejected before launch because stdout is not assistant-scoped", () => {
+  const reason = replayOutputContractBlockReason({
+    harness: "copilot",
+    ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+  });
+  assert.match(reason ?? "", /nonInteractive plain stdout/i);
+  assert.match(reason ?? "", /tool or control output/i);
+  assert.match(reason ?? "", /--silent/);
+});
+
+test("structured replay rejects an incomplete frame after valid assistant text", () => {
+  const transcript = [
+    JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Partial answer." }] },
+    }),
+    '{"type":"assistant","message":',
+  ].join("\n");
+  assert.throws(
+    () =>
+      decodeReplayAssistantOutput({
+        harness: "claude",
+        launchMode: "stream",
+        outputFormat: "stream-json",
+        events: outputEvents(transcript),
+      }),
+    (error) =>
+      error instanceof ReplayOutputDecodeError &&
+      error.code === "malformed_structured_frame",
   );
 });
