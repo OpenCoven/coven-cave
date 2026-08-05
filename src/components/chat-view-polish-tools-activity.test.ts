@@ -171,6 +171,18 @@ assert.match(
 
 assert.match(
   source,
+  /function ToolGroup[\s\S]*<summary[\s\S]*<span[^>]*className="[^"]*ml-auto[^"]*cave-work-line__status/,
+  "ToolGroup's summary status <span> must have the cave-work-line__status class hook for Task 4 CSS styling",
+);
+
+assert.match(
+  source,
+  /function ToolRunGroup[\s\S]*<summary[\s\S]*<span[^>]*className="[^"]*ml-auto[^"]*cave-tool-run__status/,
+  "ToolRunGroup's summary status <span> must have the cave-tool-run__status class hook for Task 4 CSS styling",
+);
+
+assert.match(
+  source,
   /function ToolBlock[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*<summary[\s\S]*tool\.name[\s\S]*<ToolInputView input=\{tool\.input\}[\s\S]*<SyntaxBlock text=\{prettyToolOutput\(tool\.output\)\}/,
   "ToolBlock keeps payloads collapsed, renders readable input fields, and pretty-prints output",
 );
