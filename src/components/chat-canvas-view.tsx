@@ -30,8 +30,7 @@ import {
 // /api/canvas). Until this tab, saved artifacts had no surface after the
 // standalone Canvas page retired — save was a one-way door. This closes the
 // loop: browse saved sketches (toolbar search + kind filter), click one for a
-// preview modal (still by default, Play hands it real input), open it in the
-// full-surface Canvas editor, or delete it.
+// live preview modal, open it in the full-surface Canvas editor, or delete it.
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -374,9 +373,8 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
           </p>
         ) : null}
       </div>
-      {/* Preview modal: the sketch rendered live. Still by default; the Play
-          toggle hands input back so it actually runs. Refining/commenting
-          still happens in the editor. */}
+      {/* Preview modal: the sketch is live and interactive. Refining,
+          inspecting, and commenting remain editor actions. */}
       {preview ? (
         <div
           className="chat-canvas-preview-backdrop"
@@ -436,13 +434,11 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
                 sandbox="allow-scripts"
                 data-playing={previewPlaying || undefined}
                 srcDoc={preview.kind === "react" ? buildReactSrcDoc(preview.code) : buildPreviewSrcDoc(preview.code)}
-                tabIndex={previewPlaying ? 0 : -1}
+                tabIndex={0}
               />
             </div>
             <p className="chat-canvas-preview__hint">
-              {previewPlaying
-                ? "Live — clicks and keys reach the sketch. Click inside it first if keys aren't registering."
-                : "Still preview — press Play to interact, or open it in the editor to refine it."}
+              Live preview — open it in the editor to inspect, comment, or refine.
             </p>
             <footer className="chat-canvas-preview__foot">
               <Button

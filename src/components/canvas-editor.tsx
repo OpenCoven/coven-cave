@@ -1,18 +1,12 @@
 "use client";
 
 // Full-surface sketch editor for the Canvas tab (design-handoff redesign).
-// Four modes over the sandboxed sketch iframe: Select (inspect a component),
-// Comment (pin persisted annotations to components), Edit (live inline
-// style experiments driven through the inspector channel), and Play (hands the
-// sketch back its own input so it actually runs). A design-chat rail runs
-// refine requests through the same familiar generation path as the inline
-// artifact viewer and persists accepted revisions to /api/canvas.
-//
-// Play mode exists because the inspector swallows input. Its injected script
-// calls preventDefault + stopImmediatePropagation on every trusted click and
-// on Enter/Space, so while it is enabled NO generated sketch can ever be
-// interacted with — buttons, forms, and games are all inert. Play is the one
-// mode that disables it, which is what makes a generated sketch playable.
+// Four modes over the sandboxed sketch iframe: Interact (use the sketch),
+// Select (inspect a component), Comment (pin persisted annotations to
+// components), and Edit (live inline style experiments driven through the
+// inspector channel). A design-chat rail runs refine requests through the same
+// familiar generation path as the inline artifact viewer and persists accepted
+// revisions to /api/canvas.
 
 import "@/styles/canvas-editor.css";
 
@@ -45,7 +39,7 @@ import {
   type CanvasViewportPresetId,
 } from "@/lib/canvas-viewport";
 
-type EditorMode = "select" | "comment" | "edit" | "play";
+type EditorMode = "interact" | "select" | "comment" | "edit";
 
 type ChatMessage = {
   id: string;
@@ -175,7 +169,7 @@ export function CanvasEditor(props: {
 
   const [code, setCode] = useState(artifact.code);
   const [kind, setKind] = useState<ArtifactKind>(artifact.kind ?? "html");
-  const [mode, setMode] = useState<EditorMode>("select");
+  const [mode, setMode] = useState<EditorMode>("interact");
   const [selection, setSelection] = useState<CanvasComponentTarget | null>(null);
   const [inspectorLoaded, setInspectorLoaded] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
@@ -350,36 +344,17 @@ export function CanvasEditor(props: {
     }, 250);
   }, []);
 
-  // Selection stays enabled in Select/Comment/Edit — those modes change what
-  // the aside does with the selected component, not whether one can be picked.
-  // Play is the exception: the inspector is the thing eating the sketch's
-  // input, so playing means turning it off. Disabling also clears the
-  // highlight and restores the tabindexes the inspector added.
+  // The inspector consumes trusted pointer and keyboard activation while it is
+  // enabled. Yield those events to the sketch in Interact mode; inspection
+  // remains available in every editing mode.
   useEffect(() => {
     if (!inspectorLoaded) return;
     try {
-      inspectorChannelRef.current?.setEnabled(mode !== "play");
+      inspectorChannelRef.current?.setEnabled(mode !== "interact");
     } catch {
       // A srcdoc navigation may close the previous port between render and load.
     }
   }, [inspectorLoaded, mode]);
-
-  // Entering Play drops the stale selection (the aside no longer shows it) and
-  // hands the sketch keyboard focus, without which a WASD/arrow-key game would
-  // look broken until the user happened to click inside the frame.
-  useEffect(() => {
-    if (mode !== "play") return;
-    setSelection(null);
-    const frame = frameRef.current;
-    if (!frame) return;
-    const handle = requestAnimationFrame(() => frame.focus());
-    return () => cancelAnimationFrame(handle);
-  }, [mode, srcDoc]);
-
-  const restartSketch = useCallback(() => {
-    setRunNonce((current) => current + 1);
-    setAnnouncement("Sketch restarted from its first frame.");
-  }, []);
 
   // Sandbox runtime failures surface as an overlay alert; the same
   // e.source-identity check as the bootstrap listener (see cave-mnz1 above).
@@ -812,13 +787,14 @@ export function CanvasEditor(props: {
   // ── Render ────────────────────────────────────────────────────────────────
 
   const selectionLabel = selection ? selection.label || selection.selector : "Nothing selected";
-  const panelTitle = mode === "edit"
-    ? "Inspector"
-    : mode === "comment"
-      ? "Comments"
-      : mode === "play"
-        ? "Play"
+  const panelTitle = mode === "interact"
+    ? "Interact"
+    : mode === "edit"
+      ? "Inspector"
+      : mode === "comment"
+        ? "Comments"
         : "Selection";
+  const panelTarget = mode === "interact" ? "Live sketch" : selectionLabel;
 
   const modeButton = (id: EditorMode, label: string, title: string) => (
     <button
@@ -906,6 +882,7 @@ export function CanvasEditor(props: {
           ) : null}
         </span>
         <span className="canvas-editor__modes" role="group" aria-label="Editor mode">
+          {modeButton("interact", "Interact", "Use the sketch")}
           {modeButton("select", "Select", "Select components")}
           {modeButton("comment", "Comment", "Pin comments to components")}
           {modeButton("edit", "Edit", "Edit fonts, borders, padding")}
@@ -961,11 +938,17 @@ export function CanvasEditor(props: {
           <div className="canvas-editor__panel-head">
             <span className="canvas-editor__panel-title">{panelTitle}</span>
             <span className={`canvas-editor__panel-target${selection ? " has-selection" : ""}`}>
-              {selectionLabel}
+              {panelTarget}
             </span>
           </div>
 
           <div className="canvas-editor__panel-body">
+            {mode === "interact" ? (
+              <p className="canvas-editor__hint">
+                Use the sketch normally. Switch to Select, Comment, or Edit to inspect components.
+              </p>
+            ) : null}
+
             {mode === "select" ? (
               <>
                 <p className="canvas-editor__hint">
