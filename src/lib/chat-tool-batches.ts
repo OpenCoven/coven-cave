@@ -140,21 +140,6 @@ function batchDuration(group: readonly BatchTool[]): number | undefined {
   return total;
 }
 
-/** The work line's quiet right-hand rollup — "4 batches · 6 ok". Only the
- *  settled good news lives here; running and failed calls keep their own
- *  tinted counters beside it, so a problem never reads as neutral mono. A
- *  lone batch is not worth saying, and neither is a zero. */
-export function toolBatchSummary(
-  tools: readonly BatchTool[],
-  batches: readonly ToolBatch[],
-): string {
-  const parts: string[] = [];
-  if (batches.length > 1) parts.push(`${batches.length} batches`);
-  const ok = tools.filter((t) => t.status === "ok").length;
-  if (ok) parts.push(`${ok} ok`);
-  return parts.join(" · ");
-}
-
 /** Activity summary: count and derive unique tool categories in first-use order.
  *  Formats as "{count} call(s) · {categories}" or empty string if no tools. */
 export function toolActivitySummary(tools: readonly BatchTool[]): string {

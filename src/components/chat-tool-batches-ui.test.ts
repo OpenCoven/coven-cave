@@ -18,16 +18,23 @@ import { readFileSync } from "node:fs";
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const activityCss = readFileSync(new URL("../styles/cave-chat/activity.css", import.meta.url), "utf8");
 
-test("2a ④ — the work line states batches and settled calls, trouble stays tinted", () => {
+test("2a ④ — the work line states the compact activity summary, trouble stays tinted", () => {
+  const toolGroup = chatView.match(/function ToolGroup\([\s\S]*?\n\}/)?.[0] ?? "";
+  assert.ok(toolGroup, "expected ToolGroup in ChatView");
   assert.match(
-    chatView,
-    /const rollup = toolBatchSummary\(tools, toolBatches\(tools\)\);/,
-    "the rollup comes from the pure model, not a second count in the component",
+    toolGroup,
+    /const summary = toolActivitySummary\(tools\);/,
+    "the summary comes from the pure model, not a second count in the component",
   );
   assert.match(
-    chatView,
-    /\{rollup \? <span className="cave-tool-rollup">\{rollup\}<\/span> : null\}[\s\S]{0,400}cave-tool-count--running[\s\S]{0,300}cave-tool-count--error/,
-    "the neutral rollup precedes the tinted running and error counters",
+    toolGroup,
+    /<span className="cave-work-line__label">\{summary\}<\/span>[\s\S]{0,400}cave-tool-count--running[\s\S]{0,300}cave-tool-count--error/,
+    "the compact summary precedes the tinted running and error counters",
+  );
+  assert.doesNotMatch(
+    toolGroup,
+    /lastCommand|toolBatchSummary|Worked for|steps|success|\bok\b/,
+    "ToolGroup no longer derives duration, command, batch, step-count, or success prose",
   );
 });
 
