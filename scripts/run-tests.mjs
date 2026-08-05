@@ -623,6 +623,7 @@ export const SUITES = {
     "src/lib/use-composer-draft.test.ts",
     "src/lib/use-composer-history.test.ts",
     "src/lib/use-attachment-staging.test.ts",
+    "src/lib/slash-command-inline.test.ts",
     "src/lib/use-inline-slash-menus.test.ts",
     "src/lib/prompt-enhancer.test.ts",
     "src/lib/prompt-placeholders.test.ts",
