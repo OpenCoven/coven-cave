@@ -200,6 +200,7 @@ import { imageCarouselKey, sliceImageBlocks, stripImageMarkers } from "@/lib/ima
 import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
 import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
+import { splitReasoning } from "@/lib/chat-reasoning";
 import {
   AUTO_BRIEFED_KEY,
   clearAutoMission,
@@ -1022,64 +1023,6 @@ function lifecycleLabel(lifecycle: ChatTurnLifecycle): string {
     case "complete":
       return "Complete";
   }
-}
-
-/**
- * Split assistant text into visible body + accumulated reasoning. We treat any
- * `<thinking>...</thinking>` or `<reasoning>...</reasoning>` block (both
- * commonly emitted by Claude/Codex harnesses) as reasoning to be collapsed.
- * Unclosed reasoning blocks are captured while streaming instead of leaking
- * raw internal tags into the transcript.
- */
-function splitReasoning(text: string): { visible: string; reasoning: string } {
-  const reasoningParts: string[] = [];
-  const visibleParts: string[] = [];
-  const tagRe = /<(\/?)(thinking|reasoning)>/gi;
-  let activeTag: string | null = null;
-  let reasoningStart = 0;
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = tagRe.exec(text)) !== null) {
-    const closing = match[1] === "/";
-    const tag = match[2].toLowerCase();
-
-    if (!activeTag && closing) {
-      visibleParts.push(text.slice(cursor, match.index));
-      cursor = tagRe.lastIndex;
-      continue;
-    }
-
-    if (!activeTag && !closing) {
-      visibleParts.push(text.slice(cursor, match.index));
-      activeTag = tag;
-      reasoningStart = tagRe.lastIndex;
-      cursor = tagRe.lastIndex;
-      continue;
-    }
-
-    if (activeTag === tag && closing) {
-      reasoningParts.push(text.slice(reasoningStart, match.index).trim());
-      activeTag = null;
-      cursor = tagRe.lastIndex;
-    }
-  }
-
-  if (activeTag) {
-    reasoningParts.push(text.slice(reasoningStart).trim());
-  } else {
-    visibleParts.push(text.slice(cursor));
-  }
-
-  const visible = visibleParts.join("");
-  // Strip upstream debug-prefix lines (e.g. "[model-fallback/decision] …")
-  // that leak into the assistant transcript. Anchored to line start so
-  // inline brackets in prose are untouched.
-  const DEBUG_PREFIX_RE = /^\[[a-z][\w-]*(?:\/[\w-]+)+\][^\n]*\n?/gim;
-  return {
-    visible: visible.replace(DEBUG_PREFIX_RE, "").replace(/\n{3,}/g, "\n\n").trimStart(),
-    reasoning: reasoningParts.join("\n\n").trim(),
-  };
 }
 
 // ── ChatEmptyState ────────────────────────────────────────────────────────────

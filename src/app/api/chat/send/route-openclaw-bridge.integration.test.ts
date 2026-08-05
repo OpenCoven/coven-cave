@@ -56,6 +56,12 @@ const shim = [
   "  if (!local) { process.stderr.write('expected embedded run'); process.exit(1); }",
   "  process.stdout.write(JSON.stringify({ payloads: [{ text: 'explicit local reply' }] })); process.exit(0);",
   "}",
+  "if (mode === 'attention-reasoning') {",
+  "  process.stdout.write(JSON.stringify({ payloads: [{ text: 'Visible answer.\\n<thinking>private <coven:attention reason=\"approval\" /></thinking>' }] })); process.exit(0);",
+  "}",
+  "if (mode === 'attention-visible') {",
+  "  process.stdout.write(JSON.stringify({ payloads: [{ text: '<reasoning>private notes</reasoning>\\nVisible question.\\n<coven:attention reason=\"decision\" />' }] })); process.exit(0);",
+  "}",
   "if (mode === 'malformed') { process.stdout.write(JSON.stringify({ payloads: {} })); process.exit(0); }",
   "process.stderr.write('unknown fixture mode'); process.exit(1);",
 ].join("\n");
@@ -97,6 +103,7 @@ async function clearCalls() {
 
 try {
   const { saveConfig } = await import("@/lib/cave-config");
+  const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
@@ -138,6 +145,33 @@ try {
   assert.deepEqual(explicitEvents.filter((event) => event.kind === "assistant_chunk").map((event) => event.text), ["explicit local reply"]);
   assert.equal(explicitEvents.findLast((event) => event.kind === "done")?.isError, false);
   assert.deepEqual((await calls()).map((call) => call.local), [true], "an explicit local selection uses one embedded child");
+
+  delete process.env.OPENCLAW_EMBEDDED_LOCAL;
+  process.env.OPENCLAW_TEST_MODE = "attention-reasoning";
+  const reasoningOnlyEvents = await readSse(await send("do not request attention from hidden reasoning"));
+  const reasoningOnlySessionId = reasoningOnlyEvents.findLast((event) => event.kind === "done")?.sessionId;
+  const reasoningOnlyConversation = await loadConversation(reasoningOnlySessionId);
+  const reasoningOnlyTurn = reasoningOnlyConversation?.turns.at(-1);
+  assert.equal(reasoningOnlyTurn?.text, "Visible answer.");
+  assert.equal(
+    reasoningOnlyTurn?.responseMetadata?.attentionRequest,
+    undefined,
+    "a marker inside hidden reasoning is not persisted as an attention request",
+  );
+  assert.doesNotMatch(reasoningOnlyTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+
+  process.env.OPENCLAW_TEST_MODE = "attention-visible";
+  const visibleMarkerEvents = await readSse(await send("request a visible decision"));
+  const visibleMarkerSessionId = visibleMarkerEvents.findLast((event) => event.kind === "done")?.sessionId;
+  const visibleMarkerConversation = await loadConversation(visibleMarkerSessionId);
+  const visibleMarkerTurn = visibleMarkerConversation?.turns.at(-1);
+  assert.equal(visibleMarkerTurn?.text, "Visible question.");
+  assert.equal(
+    visibleMarkerTurn?.responseMetadata?.attentionRequest?.reason,
+    "decision",
+    "visible-body attention behavior remains intact after reasoning is removed",
+  );
+  assert.doesNotMatch(visibleMarkerTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
 
   process.env.OPENCLAW_TEST_MODE = "malformed";
   await clearCalls();

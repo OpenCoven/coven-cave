@@ -99,6 +99,43 @@ test("fenced markers stay literal example text", () => {
   });
 });
 
+test("detects a marker after a list-contained fenced example", () => {
+  const fenced = [
+    "- ```typescript-react",
+    '  <coven:attention reason="credentials" />',
+    "  ```",
+  ].join("\n");
+  const text = `${fenced}\n<coven:attention reason="decision" />`;
+  assert.deepEqual(extractChatAttentionMarker(text), {
+    visible: `${fenced}\n`,
+    request: { reason: "decision" },
+  });
+});
+
+test("handles ordered and nested list fences without activating their markers", () => {
+  const fenced = [
+    "1. ~~~xml",
+    '   <coven:attention reason="credentials" />',
+    "   ~~~",
+    "  - ```xml",
+    '    <coven:attention reason="approval" />',
+    "    ```",
+  ].join("\n");
+  const text = `${fenced}\n<coven:attention reason="input" />`;
+  assert.deepEqual(extractChatAttentionMarker(text), {
+    visible: `${fenced}\n`,
+    request: { reason: "input" },
+  });
+});
+
+test("an unclosed streaming list fence keeps a partial marker literal", () => {
+  const text = "- ```xml\n  <coven:attention rea";
+  assert.deepEqual(extractChatAttentionMarker(text, { pending: true }), {
+    visible: text,
+    request: null,
+  });
+});
+
 test("partial streaming tails stay hidden outside code ranges", () => {
   assert.deepEqual(extractChatAttentionMarker("Waiting <coven:attention rea", { pending: true }), {
     visible: "Waiting ",

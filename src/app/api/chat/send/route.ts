@@ -245,6 +245,7 @@ import {
 } from "@/lib/usage-format";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
+import { splitReasoning } from "@/lib/chat-reasoning";
 import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
@@ -449,7 +450,8 @@ function prepareAttentionRequest(args: {
   turnId: string;
   requestedAt: string;
 }): { text: string; request: ChatResponseMetadata["attentionRequest"] | null } {
-  const { visible, request: marker } = extractChatAttentionMarker(args.text);
+  const visibleBody = splitReasoning(args.text).visible;
+  const { visible, request: marker } = extractChatAttentionMarker(visibleBody);
   return {
     text: visible,
     request: marker

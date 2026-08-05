@@ -307,16 +307,21 @@ function rendererFenceRanges(text: string): Array<[number, number]> {
   let start = -1;
   let character = "";
   for (const line of text.split("\n")) {
-    const fence = /^\s*(`{3,}|~{3,})(\w*)?\s*$/.exec(line);
     if (start === -1) {
-      if (fence) {
+      const opening = /^[ \t]*(?:(?:[-+*]|\d{1,9}[.)])[ \t]+)?(`{3,}|~{3,})(.*)$/.exec(line);
+      const validOpening = opening &&
+        !(opening[1][0] === "`" && opening[2].includes("`"));
+      if (validOpening) {
         start = offset;
-        character = fence[1][0];
+        character = opening[1][0];
       }
-    } else if (fence && fence[1][0] === character) {
-      ranges.push([start, offset + line.length]);
-      start = -1;
-      character = "";
+    } else {
+      const closing = /^[ \t]*(`{3,}|~{3,})[ \t]*$/.exec(line);
+      if (closing && closing[1][0] === character) {
+        ranges.push([start, offset + line.length]);
+        start = -1;
+        character = "";
+      }
     }
     offset += line.length + 1;
   }

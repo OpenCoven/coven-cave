@@ -36,6 +36,11 @@ test("route imports the attention marker parser", () => {
     /import \{ extractChatAttentionMarker \} from "@\/lib\/chat-attention-marker";/,
     "the send route should parse explicit attention markers through the shared lib",
   );
+  assert.match(
+    route,
+    /import \{ splitReasoning \} from "@\/lib\/chat-reasoning";/,
+    "the send route should use the same hidden-reasoning semantics as ChatView",
+  );
 });
 
 test("exactly one shared prepareAttentionRequest helper is defined", () => {
@@ -52,8 +57,8 @@ test("exactly one shared prepareAttentionRequest helper is defined", () => {
   );
   assert.match(
     route,
-    /function prepareAttentionRequest\([\s\S]{0,400}extractChatAttentionMarker\(args\.text\)/,
-    "the helper itself is the one place that calls the marker parser",
+    /function prepareAttentionRequest\([\s\S]{0,400}splitReasoning\(args\.text\)\.visible;[\s\S]{0,120}extractChatAttentionMarker\(visibleBody\)/,
+    "the helper strips hidden reasoning before it parses a visible-body marker",
   );
 });
 
@@ -147,6 +152,16 @@ test("ChatView imports the attention marker parser and strips it before renderin
     chatView,
     /import \{ extractChatAttentionMarker \} from "@\/lib\/chat-attention-marker";/,
     "chat-view should strip explicit attention markers the same way it strips skill/auto-status markers",
+  );
+  assert.match(
+    chatView,
+    /import \{ splitReasoning \} from "@\/lib\/chat-reasoning";/,
+    "chat-view and persistence must share one reasoning splitter",
+  );
+  assert.doesNotMatch(
+    chatView,
+    /function splitReasoning\(/,
+    "ChatView must not drift into a duplicate reasoning parser",
   );
 });
 
