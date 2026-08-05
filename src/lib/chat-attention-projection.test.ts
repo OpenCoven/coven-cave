@@ -5,6 +5,7 @@ import {
   applyChatAttentionProjections,
   chatAttentionProjectionScopeKey,
   createChatAttentionProjectionState,
+  forgetChatAttentionProjections,
   isCurrentSessionListRequest,
   recordChatAttentionClear,
   settleChatAttentionClear,
@@ -459,4 +460,236 @@ test("a later durably-synced canonical response releases the offline-queued proj
     syncedCanonical,
   );
   assert.equal(state.has("session-1"), false);
+});
+
+// ── Late-event race (cave-zs85n Task 5 final race): ChatView's adoption
+//    subscription can enqueue a pending clear notification before an earlier
+//    failed-send settlement for the SAME (sessionId, operationId) has run,
+//    and only deliver that queued notification afterward. Without a
+//    tombstone surviving the settlement's removal, that late duplicate would
+//    re-add a "pending" operation nothing will ever settle again, hiding
+//    attention that should have been restored. ─────────────────────────────
+test("a clear followed by failed settlement then a duplicate clear for the same op is ignored, restoring canonical attention", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 5);
+  assert.equal(state.has("session-1"), false);
+
+  // The late duplicate clear for the SAME operationId must be ignored.
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  assert.equal(state.has("session-1"), false);
+
+  const canonical = [row()];
+  assert.equal(
+    applyChatAttentionProjections(state, canonical, 5, chatAttentionProjectionScopeKey("nova")),
+    canonical,
+  );
+});
+
+test("a clear followed by persisted settlement and canonical release, then a duplicate clear for the same op is ignored", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalNone, 6, chatAttentionProjectionScopeKey("nova")),
+    canonicalNone,
+  );
+  assert.equal(state.has("session-1"), false);
+
+  // The late duplicate clear arrives after the release already proved this
+  // operation done — it must not reopen it.
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  assert.equal(state.has("session-1"), false);
+
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalNone, 7, chatAttentionProjectionScopeKey("nova")),
+    canonicalNone,
+  );
+});
+
+test("a duplicate clear while an operation is still persisted (not yet tombstoned) does not revert it to pending", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+
+  assert.equal(state.get("session-1")?.get("operation-1")?.status, "persisted");
+});
+
+test("the same operation id tombstoned in one session leaves an identical operation id in a different session independent", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 5);
+  assert.equal(state.has("session-1"), false);
+
+  // A duplicate late clear for the tombstoned session+op is ignored...
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  assert.equal(state.has("session-1"), false);
+
+  // ...but the identical operationId in an unrelated session is entirely
+  // unaffected and records normally.
+  recordChatAttentionClear(
+    state,
+    "session-2",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  assert.equal(state.get("session-2")?.get("operation-1")?.status, "pending");
+});
+
+test("forgetting a session's projections also forgets its tombstones, allowing a subsequent clear to re-record, without affecting other sessions", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 5);
+
+  recordChatAttentionClear(
+    state,
+    "session-2",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-2", "operation-1", "failed", 5);
+
+  // Both sessions are tombstoned for operation-1: a duplicate clear is a
+  // no-op for either right now.
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  recordChatAttentionClear(
+    state,
+    "session-2",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  assert.equal(state.has("session-1"), false);
+  assert.equal(state.has("session-2"), false);
+
+  // Forgetting session-1 only (e.g. it left the currently-loaded scope) lifts
+  // ITS tombstone: expected semantics are that a fresh clear for session-1 is
+  // no longer a stale replay of a settled operation and legitimately records
+  // pending again, exactly as if operation-1 had never been seen there.
+  forgetChatAttentionProjections(state, ["session-1"]);
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  assert.equal(state.get("session-1")?.get("operation-1")?.status, "pending");
+
+  // session-2's tombstone is untouched by forgetting session-1.
+  recordChatAttentionClear(
+    state,
+    "session-2",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  assert.equal(state.has("session-2"), false);
+});
+
+test("tombstones are bounded so the oldest is evicted once the limit is exceeded, without relying on timing", () => {
+  const state = createChatAttentionProjectionState();
+  const TOMBSTONE_LIMIT = 256;
+  // Fill the tombstone bound with distinct (session, operation) pairs, one
+  // over the limit, so the very first pair recorded must be evicted.
+  for (let i = 0; i < TOMBSTONE_LIMIT + 1; i += 1) {
+    const sessionId = `session-bound-${i}`;
+    recordChatAttentionClear(
+      state,
+      sessionId,
+      "operation-1",
+      chatAttentionProjectionScopeKey("nova"),
+      NEEDS_ATTENTION,
+    );
+    settleChatAttentionClear(state, sessionId, "operation-1", "failed", 5);
+  }
+
+  // The oldest tombstone (session-bound-0) was evicted to keep the bound: a
+  // duplicate clear for it now records normally again, exactly as if it had
+  // never settled.
+  recordChatAttentionClear(
+    state,
+    "session-bound-0",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  assert.equal(state.get("session-bound-0")?.get("operation-1")?.status, "pending");
+
+  // The most recently tombstoned pair is still within the bound and remains
+  // ignored.
+  recordChatAttentionClear(
+    state,
+    `session-bound-${TOMBSTONE_LIMIT}`,
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  assert.equal(state.has(`session-bound-${TOMBSTONE_LIMIT}`), false);
 });

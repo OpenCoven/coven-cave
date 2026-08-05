@@ -24,6 +24,67 @@ export function createChatAttentionProjectionState(): ChatAttentionProjectionSta
   return new Map();
 }
 
+// A late-arriving duplicate `recordChatAttentionClear` for an operation this
+// projection has ALREADY settled (either failed and removed, or persisted and
+// then released by canonical evidence) must not resurrect it. The in-memory
+// operation itself is gone by the time that replay lands — a
+// registry-subscription can enqueue a pending snapshot before an earlier
+// failed-send settlement and only deliver it after — so idempotency needs a
+// tombstone that survives the operation's removal. Tombstones are scoped per
+// ChatAttentionProjectionState via a WeakMap so they never outlive the state
+// (and thus the ChatView instance) that recorded them, and are bounded via a
+// FIFO so a long-lived app session cannot accumulate unbounded memory from
+// sessions/operations that come and go over the app's lifetime.
+const CHAT_ATTENTION_TOMBSTONE_LIMIT = 256;
+const chatAttentionTombstones = new WeakMap<ChatAttentionProjectionState, Map<string, string>>();
+
+function chatAttentionTombstoneKey(sessionId: string, operationId: string): string {
+  return `${sessionId}\u0000${operationId}`;
+}
+
+function tombstoneChatAttentionOperation(
+  state: ChatAttentionProjectionState,
+  sessionId: string,
+  operationId: string,
+): void {
+  let tombstones = chatAttentionTombstones.get(state);
+  if (!tombstones) {
+    tombstones = new Map();
+    chatAttentionTombstones.set(state, tombstones);
+  }
+  const key = chatAttentionTombstoneKey(sessionId, operationId);
+  // Re-inserting (delete then set) moves this entry to the freshest end of
+  // the Map's iteration order, so the FIFO eviction below always reclaims the
+  // truly oldest tombstone rather than one that was merely inserted first.
+  tombstones.delete(key);
+  tombstones.set(key, sessionId);
+  while (tombstones.size > CHAT_ATTENTION_TOMBSTONE_LIMIT) {
+    const oldestKey = tombstones.keys().next().value;
+    if (oldestKey === undefined) break;
+    tombstones.delete(oldestKey);
+  }
+}
+
+function isChatAttentionOperationTombstoned(
+  state: ChatAttentionProjectionState,
+  sessionId: string,
+  operationId: string,
+): boolean {
+  return chatAttentionTombstones.get(state)?.has(chatAttentionTombstoneKey(sessionId, operationId)) ?? false;
+}
+
+function forgetChatAttentionTombstones(
+  state: ChatAttentionProjectionState,
+  sessionIds: readonly string[],
+): void {
+  const tombstones = chatAttentionTombstones.get(state);
+  if (!tombstones) return;
+  const forgottenSessionIds = new Set(sessionIds);
+  for (const [key, sessionId] of tombstones) {
+    if (forgottenSessionIds.has(sessionId)) tombstones.delete(key);
+  }
+}
+
 export function chatAttentionProjectionScopeKey(familiarId: string | null): string {
   return familiarId ? `familiar:${familiarId}` : "all-familiars";
 }
@@ -45,6 +106,15 @@ export function recordChatAttentionClear(
   scopeKey: string,
   canonicalAttention: ChatAttention | null | undefined,
 ): void {
+  // Idempotency across the operation's full lifetime, not just while it is
+  // still tracked: once (sessionId, operationId) has settled — failed and
+  // been removed, or persisted and later released by canonical evidence —
+  // a tombstone survives that removal so a late-arriving duplicate clear
+  // (e.g. a registry-subscription's queued pending snapshot delivered after
+  // its own failed-send settlement already ran) is ignored rather than
+  // re-adding a pending operation nothing will ever settle again.
+  if (isChatAttentionOperationTombstoned(state, sessionId, operationId)) return;
+
   const operations = state.get(sessionId);
   const existingOperation = operations?.get(operationId);
   // Idempotency for a repeated (sessionId, operationId): once an operation has
@@ -77,10 +147,16 @@ export function settleChatAttentionClear(
 ): void {
   const operations = state.get(sessionId);
   const operation = operations?.get(operationId);
+  // An unknown (sessionId, operationId) is ignored rather than tombstoned:
+  // real event ordering never guarantees settle follows clear for a pair
+  // this projection never recorded, so tombstoning here on nothing but an
+  // unrecognized settlement could permanently block a legitimate future
+  // clear for that same id pair.
   if (!operations || !operation) return;
   if (outcome === "failed") {
     operations.delete(operationId);
     if (operations.size === 0) state.delete(sessionId);
+    tombstoneChatAttentionOperation(state, sessionId, operationId);
     return;
   }
   operations.set(operationId, {
@@ -96,6 +172,7 @@ export function forgetChatAttentionProjections(
   sessionIds: readonly string[],
 ): void {
   for (const sessionId of sessionIds) state.delete(sessionId);
+  forgetChatAttentionTombstones(state, sessionIds);
 }
 
 function clearSessionAttention(row: SessionRow): SessionRow {
@@ -159,6 +236,12 @@ export function applyChatAttentionProjections(
         !attentionMatchesBaseline(row.attention, operation.baseline)
       ) {
         operations.delete(operationId);
+        // Canonical evidence just proved this operation is done. Tombstone it
+        // too — otherwise a queued late clear for this same operationId
+        // (delivered after this release, e.g. a stale registry-subscription
+        // replay) would re-add a pending projection nothing will ever settle
+        // again, hiding attention this release just correctly restored.
+        tombstoneChatAttentionOperation(state, row.id, operationId);
       }
     }
     if (operations.size === 0) {
@@ -179,6 +262,10 @@ export function applyChatAttentionProjections(
           responseRequestId >= operation.canonicalAfterRequestId;
         if (canTrustAbsence && scopeProvesAbsence(operation.scopeKey, currentScopeKey)) {
           operations.delete(operationId);
+          // Same tombstone rationale as the present-row release above: proven
+          // absence is canonical evidence this operation is done, so a
+          // queued late clear for it must not be allowed to reopen it.
+          tombstoneChatAttentionOperation(state, sessionId, operationId);
         }
       }
       if (operations.size === 0) state.delete(sessionId);
