@@ -53,12 +53,32 @@ test("an open pre-session reader is promoted in place when the chat gets its ses
     preSession,
     "session-assigned",
     new Map([["turn-a", "/repo/a"]]),
+    "session-assigned",
   );
 
   assert.equal(promoted?.sourceSessionId, "session-assigned");
   assert.equal(promoted?.projectRoot, "/repo/a");
   assert.equal(promoted?.turnId, preSession.turnId);
   assert.equal(promoted?.code, preSession.code);
+});
+
+test("a pre-session reader is not promoted when the user opens an unrelated session", () => {
+  const preSession = {
+    ...pending,
+    sourceSessionId: null,
+    projectRoot: null,
+  };
+
+  const unchanged = reconcileCodeReadingTargetRoot(
+    preSession,
+    "existing-session",
+    new Map([["turn-a", "/repo/a"]]),
+    null,
+  );
+
+  assert.equal(unchanged, preSession);
+  assert.equal(unchanged?.sourceSessionId, null);
+  assert.equal(unchanged?.projectRoot, null);
 });
 
 test("code-fence working-tree targets resolve only within their captured project", () => {

@@ -3588,7 +3588,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   useEffect(() => {
     setReadingTarget((current) =>
-      reconcileCodeReadingTargetRoot(current, sessionId, turnProjectRoots),
+      reconcileCodeReadingTargetRoot(
+        current,
+        sessionId,
+        turnProjectRoots,
+        liveSessionIdRef.current,
+      ),
     );
   }, [sessionId, turnProjectRoots]);
   const transcriptFileRoots = useMemo(

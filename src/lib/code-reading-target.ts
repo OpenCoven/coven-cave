@@ -13,10 +13,17 @@ export function reconcileCodeReadingTargetRoot<T extends RootedCodeReadingTarget
   target: T | null,
   sourceSessionId: string | null,
   turnProjectRoots: ReadonlyMap<string, string | null>,
+  liveCreatedSessionId: string | null = null,
 ): T | null {
   if (!target) return target;
+  const canPromote =
+    target.sourceSessionId === null &&
+    sourceSessionId !== null &&
+    liveCreatedSessionId === sourceSessionId &&
+    target.turnId !== null &&
+    turnProjectRoots.has(target.turnId);
   const promoted =
-    target.sourceSessionId === null && sourceSessionId !== null
+    canPromote
       ? { ...target, sourceSessionId }
       : target;
   if (
