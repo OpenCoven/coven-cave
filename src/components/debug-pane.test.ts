@@ -642,8 +642,8 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /status === "untracked"[\s\S]*?gitDiff\(repoRoot,[\s\S]*?\["--no-index"[\s\S]*?"--"[\s\S]*?DEV_NULL[\s\S]*?file\.path\]/,
-  "Untracked checkpoint diffs use repo-relative paths so the snapshot can be git apply'd back",
+  /status === "untracked"[\s\S]*?gitDiff\(repoRoot,[\s\S]*?\[[\s\S]*?"--binary"[\s\S]*?"--no-index"[\s\S]*?"--"[\s\S]*?DEV_NULL[\s\S]*?file\.path[\s\S]*?\]/,
+  "Untracked checkpoint diffs are binary-safe and use repo-relative paths so the snapshot can be git apply'd back",
 );
 assert.match(
   changesRoute,
