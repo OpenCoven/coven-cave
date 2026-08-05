@@ -189,6 +189,7 @@ import {
   createConversationStub,
   loadConversation,
   persistQueuedOfflineConversation,
+  resolveConversationSessionId,
   saveConversation,
   stripConversationStubTurn,
   withConversationLock,
@@ -1525,6 +1526,21 @@ export async function POST(req: Request) {
       }),
       { status: 400, headers: { "content-type": "application/json" } },
     );
+  }
+  if (body.sessionId) {
+    const resolvedSession = await resolveConversationSessionId(body.sessionId);
+    if (resolvedSession.sessionId === null) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: resolvedSession.error === "ambiguous-replay-history"
+            ? "replay history is ambiguous for this session id"
+            : "replay history contains a cycle for this session id",
+        }),
+        { status: 409, headers: { "content-type": "application/json" } },
+      );
+    }
+    body.sessionId = resolvedSession.sessionId;
   }
   // Model ids are untrusted input. Reject malformed or flag-shaped values at
   // the send boundary before capability probes or any runtime can spawn. The

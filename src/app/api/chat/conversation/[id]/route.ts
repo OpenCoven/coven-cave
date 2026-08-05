@@ -8,7 +8,7 @@ import {
   deleteConversation,
   linkedReplaySessionIds,
   loadConversation,
-  resolveCanonicalConversationSessionId,
+  resolveConversationSessionId,
   saveConversation,
   withConversationLock,
   type ChatTurn,
@@ -54,6 +54,24 @@ type ConversationPatchBody = {
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ ok: false, error }, { status });
+}
+
+async function resolveRequestedConversationId(
+  requestedId: string,
+): Promise<{ ok: true; id: string } | { ok: false; response: NextResponse }> {
+  const resolved = await resolveConversationSessionId(requestedId);
+  if (resolved.sessionId === null) {
+    return {
+      ok: false,
+      response: jsonError(
+        resolved.error === "ambiguous-replay-history"
+          ? "replay history is ambiguous for this session id"
+          : "replay history contains a cycle for this session id",
+        409,
+      ),
+    };
+  }
+  return { ok: true, id: resolved.sessionId };
 }
 
 const MODEL_METADATA_SOURCES = new Set([
@@ -448,7 +466,9 @@ function buildConversation(args: {
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: requestedId } = await params;
-  const id = await resolveCanonicalConversationSessionId(requestedId) ?? requestedId;
+  const resolved = await resolveRequestedConversationId(requestedId);
+  if (!resolved.ok) return resolved.response;
+  const id = resolved.id;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
@@ -493,13 +513,26 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: requestedId } = await params;
-  const id = await resolveCanonicalConversationSessionId(requestedId) ?? requestedId;
+  const resolved = await resolveRequestedConversationId(requestedId);
+  if (!resolved.ok) return resolved.response;
+  const id = resolved.id;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
   const body = await readBody(req);
   if (!body) return jsonError("invalid json body", 400);
-  if (body.sessionId && body.sessionId !== id) {
+  const bodySessionId = body.sessionId
+    ? await resolveConversationSessionId(body.sessionId)
+    : null;
+  if (bodySessionId?.sessionId === null) {
+    return jsonError(
+      bodySessionId.error === "ambiguous-replay-history"
+        ? "replay history is ambiguous for this session id"
+        : "replay history contains a cycle for this session id",
+      409,
+    );
+  }
+  if (bodySessionId?.sessionId && bodySessionId.sessionId !== id) {
     return jsonError("session id mismatch", 400);
   }
   const turns = normalizeTurns(body);
@@ -529,13 +562,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: requestedId } = await params;
-  const id = await resolveCanonicalConversationSessionId(requestedId) ?? requestedId;
+  const resolved = await resolveRequestedConversationId(requestedId);
+  if (!resolved.ok) return resolved.response;
+  const id = resolved.id;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
   const body = await readBody(req);
   if (!body) return jsonError("invalid json body", 400);
-  if (body.sessionId && body.sessionId !== id) {
+  const bodySessionId = body.sessionId
+    ? await resolveConversationSessionId(body.sessionId)
+    : null;
+  if (bodySessionId?.sessionId === null) {
+    return jsonError(
+      bodySessionId.error === "ambiguous-replay-history"
+        ? "replay history is ambiguous for this session id"
+        : "replay history contains a cycle for this session id",
+      409,
+    );
+  }
+  if (bodySessionId?.sessionId && bodySessionId.sessionId !== id) {
     return jsonError("session id mismatch", 400);
   }
   const turns = normalizeTurns(body);
@@ -557,7 +603,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: requestedId } = await params;
-  const id = await resolveCanonicalConversationSessionId(requestedId) ?? requestedId;
+  const resolved = await resolveRequestedConversationId(requestedId);
+  if (!resolved.ok) return resolved.response;
+  const id = resolved.id;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
@@ -634,7 +682,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: requestedId } = await params;
-  const id = await resolveCanonicalConversationSessionId(requestedId) ?? requestedId;
+  const resolved = await resolveRequestedConversationId(requestedId);
+  if (!resolved.ok) return resolved.response;
+  const id = resolved.id;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }

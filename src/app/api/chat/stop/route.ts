@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveConversationSessionId } from "@/lib/cave-conversations";
 import { requestChatStop } from "@/lib/server/chat-stop-registry";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,21 @@ export async function POST(req: Request) {
     // Malformed body → nothing to stop; fall through to the not-found reply.
   }
 
-  const keys = [body.runId, body.sessionId].filter(
+  const sessionKey = typeof body.sessionId === "string" && body.sessionId.length > 0
+    ? await resolveConversationSessionId(body.sessionId)
+    : null;
+  if (!body.runId && sessionKey?.sessionId === null) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: sessionKey.error === "ambiguous-replay-history"
+          ? "replay history is ambiguous for this session id"
+          : "replay history contains a cycle for this session id",
+      },
+      { status: 409 },
+    );
+  }
+  const keys = [body.runId, sessionKey?.sessionId].filter(
     (key): key is string => typeof key === "string" && key.length > 0,
   );
   if (keys.length === 0) {

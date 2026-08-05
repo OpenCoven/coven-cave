@@ -1,4 +1,5 @@
 import { hasRunBuffer, subscribeRunStream } from "@/lib/server/chat-stream-buffer";
+import { resolveConversationSessionId } from "@/lib/cave-conversations";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,7 +26,23 @@ const SSE_HEARTBEAT_INTERVAL_MS = 15_000;
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const key = url.searchParams.get("runId")?.trim() || url.searchParams.get("sessionId")?.trim();
+  const runId = url.searchParams.get("runId")?.trim() || null;
+  const requestedSessionId = url.searchParams.get("sessionId")?.trim() || null;
+  const resolvedSession = !runId && requestedSessionId
+    ? await resolveConversationSessionId(requestedSessionId)
+    : null;
+  if (!runId && resolvedSession?.sessionId === null) {
+    return Response.json(
+      {
+        ok: false,
+        error: resolvedSession.error === "ambiguous-replay-history"
+          ? "replay history is ambiguous for this session id"
+          : "replay history contains a cycle for this session id",
+      },
+      { status: 409 },
+    );
+  }
+  const key = runId || resolvedSession?.sessionId || requestedSessionId;
   if (!key) {
     return Response.json({ ok: false, error: "runId or sessionId required" }, { status: 400 });
   }

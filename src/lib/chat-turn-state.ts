@@ -97,6 +97,7 @@ export type ConversationHistoryPayload = {
   ok?: boolean;
   context?: ChatLinkedContext | null;
   conversation?: {
+    sessionId?: string;
     activeLeafId?: string;
     turns?: ConversationHistoryTurn[];
   };

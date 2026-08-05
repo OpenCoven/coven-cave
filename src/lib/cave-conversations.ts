@@ -314,6 +314,29 @@ export function linkedReplayAliases(
   return [...aliases];
 }
 
+export type ConversationSessionResolution =
+  | { sessionId: string; canonicalized: boolean }
+  | { sessionId: null; error: "ambiguous-replay-history" | "cyclic-replay-history" };
+
+function resolveReplayAliasOwner(
+  sessionId: string,
+  aliasOwners: ReadonlyMap<string, ReadonlySet<string>>,
+  visited: Set<string> = new Set(),
+): ConversationSessionResolution {
+  const owners = [...(aliasOwners.get(sessionId) ?? [])];
+  if (owners.length === 0) return { sessionId, canonicalized: false };
+  if (owners.length !== 1) return { sessionId: null, error: "ambiguous-replay-history" };
+  const owner = owners[0];
+  if (owner === sessionId || visited.has(sessionId) || visited.has(owner)) {
+    return { sessionId: null, error: "cyclic-replay-history" };
+  }
+  visited.add(sessionId);
+  const resolved = resolveReplayAliasOwner(owner, aliasOwners, visited);
+  return resolved.sessionId === null
+    ? resolved
+    : { sessionId: resolved.sessionId, canonicalized: resolved.sessionId !== sessionId };
+}
+
 function hasDuplicateTurnIds(turns: Pick<ChatTurn, "id">[]): boolean {
   const seen = new Set<string>();
   for (const turn of turns) {
@@ -858,12 +881,24 @@ export async function upsertConversationReplaySession(args: {
   });
 }
 
-export async function resolveCanonicalConversationSessionId(sessionId: string): Promise<string | null> {
-  if (await loadConversation(sessionId)) return sessionId;
+export async function resolveConversationSessionId(sessionId: string): Promise<ConversationSessionResolution> {
+  const aliasOwners = new Map<string, Set<string>>();
   for (const summary of await listConversations()) {
-    if (linkedReplayAliases(summary).includes(sessionId)) return summary.sessionId;
+    for (const alias of linkedReplayAliases(summary)) {
+      const owners = aliasOwners.get(alias) ?? new Set<string>();
+      owners.add(summary.sessionId);
+      aliasOwners.set(alias, owners);
+    }
   }
-  return null;
+  const replayResolved = resolveReplayAliasOwner(sessionId, aliasOwners);
+  if (replayResolved.sessionId === null || replayResolved.canonicalized) return replayResolved;
+  if (await loadConversation(sessionId)) return replayResolved;
+  return { sessionId, canonicalized: false };
+}
+
+export async function resolveCanonicalConversationSessionId(sessionId: string): Promise<string | null> {
+  const resolved = await resolveConversationSessionId(sessionId);
+  return resolved.sessionId;
 }
 
 /**

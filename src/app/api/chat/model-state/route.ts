@@ -3,6 +3,7 @@ import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
 import {
   isSafeConversationSessionId,
   loadConversation,
+  resolveConversationSessionId,
   saveConversation,
   withConversationLock,
 } from "@/lib/cave-conversations";
@@ -108,7 +109,7 @@ async function currentState(
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const familiarId = cleanText(url.searchParams.get("familiarId"));
-  const sessionId = cleanText(url.searchParams.get("sessionId"));
+  const requestedSessionId = cleanText(url.searchParams.get("sessionId"));
   const rawPreviewModel = url.searchParams.get("model");
   // A model preview is intentionally read-only. Clients use it after staging
   // a pre-first-send selection so the response controls are resolved for that
@@ -121,12 +122,24 @@ export async function GET(req: Request) {
       : cleanModelId(rawPreviewModel);
   if (!familiarId) return jsonError("familiarId is required", 400);
   if (!isValidFamiliarId(familiarId)) return jsonError("invalid familiar id", 400);
-  if (sessionId && !isSafeConversationSessionId(sessionId)) {
+  if (requestedSessionId && !isSafeConversationSessionId(requestedSessionId)) {
     return jsonError("invalid session id", 400);
   }
   if (rawPreviewModel !== null && previewModel === null) {
     return jsonError("invalid model", 400);
   }
+  const resolvedSession = requestedSessionId
+    ? await resolveConversationSessionId(requestedSessionId)
+    : null;
+  if (resolvedSession?.sessionId === null) {
+    return jsonError(
+      resolvedSession.error === "ambiguous-replay-history"
+        ? "replay history is ambiguous for this session id"
+        : "replay history contains a cycle for this session id",
+      409,
+    );
+  }
+  const sessionId = resolvedSession?.sessionId ?? requestedSessionId;
 
   if (sessionId) {
     const conversation = await loadConversation(sessionId);
@@ -200,7 +213,7 @@ export async function PATCH(req: Request) {
   }
 
   const familiarId = cleanText(body.familiarId);
-  const sessionId = cleanText(body.sessionId);
+  const requestedSessionId = cleanText(body.sessionId);
   // Both null (older clients) and the empty string (new clients that need to
   // preserve the sentinel through JSON/config merges) mean explicit runtime
   // default intent. Whitespace is still rejected as an invalid model id.
@@ -210,10 +223,22 @@ export async function PATCH(req: Request) {
 
   if (!familiarId) return jsonError("familiarId is required", 400);
   if (!isValidFamiliarId(familiarId)) return jsonError("invalid familiar id", 400);
-  if (sessionId && !isSafeConversationSessionId(sessionId)) {
+  if (requestedSessionId && !isSafeConversationSessionId(requestedSessionId)) {
     return jsonError("invalid session id", 400);
   }
   if (!clearModel && !model) return jsonError("invalid model", 400);
+  const resolvedSession = requestedSessionId
+    ? await resolveConversationSessionId(requestedSessionId)
+    : null;
+  if (resolvedSession?.sessionId === null) {
+    return jsonError(
+      resolvedSession.error === "ambiguous-replay-history"
+        ? "replay history is ambiguous for this session id"
+        : "replay history contains a cycle for this session id",
+      409,
+    );
+  }
+  const sessionId = resolvedSession?.sessionId ?? requestedSessionId;
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
   if (scope === "next-message") {

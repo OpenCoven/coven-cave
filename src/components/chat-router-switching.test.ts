@@ -144,6 +144,12 @@ assert.match(
 );
 
 assert.match(
+  source,
+  /onSessionCanonicalized=\{\(fromSessionId, toSessionId\) => \{[\s\S]*prev\.kind === "chat" && prev\.sessionId === fromSessionId[\s\S]*\{ \.\.\.prev, sessionId: toSessionId \}/,
+  "Replay rows that resolve to a canonical conversation should update the router's active session id in place",
+);
+
+assert.match(
   chatSurfaceSource,
   /<ChatRouter[\s\S]*?syncUrlHash[\s\S]*?\/>/,
   "The main chat surface's ChatRouter must opt into URL hash sync",
@@ -245,7 +251,7 @@ const findChromeSource =
   chatViewSource + readFileSync(new URL("./chat-find-band.tsx", import.meta.url), "utf8");
 // cave-chat.css is a facade of @imports; the runner's css-source-contract-hook
 // patches readFileSync so it yields the effective content of the split sheets.
-const chatCssSource = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+const chatCssSource = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat", "cave-chat/transcript", "cave-chat/activity"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 

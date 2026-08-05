@@ -351,6 +351,32 @@ try {
     "status-only replay must not fabricate assistant attention or mutate queued causal evidence",
   );
 
+  await config.recordTravelHubReachability(false, new Date("2026-06-30T12:03:00.000Z"));
+  const aliasQueuedResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "sage",
+      prompt: "follow up through replay alias",
+      projectRoot,
+      sessionId: "hub-session-1",
+      runId: "run-offline-alias",
+    }),
+  }));
+  const aliasQueuedEvents = await readSse(aliasQueuedResponse);
+  assert.equal(aliasQueuedEvents.find((event) => event.kind === "session")?.sessionId, "offline-chat-1");
+  const aliasQueuedState = await config.loadState();
+  const aliasQueuedItem = aliasQueuedState.travel.offlineQueue.find((item) => item.payload?.runId === "run-offline-alias");
+  assert.equal(aliasQueuedItem?.payload?.sessionId, "offline-chat-1");
+  assert.equal(
+    replayedConversation?.turns.some((turn) => turn.text === "follow up through replay alias"),
+    false,
+    "the pre-queue snapshot must stay unchanged until the newly queued follow-up is durably appended",
+  );
+  const aliasQueuedConversation = await conversations.loadConversation("offline-chat-1");
+  assert.equal(aliasQueuedConversation?.turns.at(-1)?.text, "follow up through replay alias");
+  assert.equal(await conversations.loadConversation("hub-session-1"), null, "offline enqueue must not fork a replay alias file");
+
   const merged = mergeSessionRows({
     daemonSessions: [
       {
@@ -386,7 +412,7 @@ try {
   const historicalReplayRow = merged.find((row) => row.id === "hub-session-1");
   assert.ok(primaryMerged, "the stable Cave conversation should stay reachable");
   assert.ok(historicalReplayRow, "earlier daemon replay rows stay reachable after a later replay");
-  assert.equal(primaryMerged?.attentionAfterOperationId, "run-offline-2");
+  assert.equal(primaryMerged?.attentionAfterOperationId, "run-offline-alias");
   assert.equal(primaryMerged?.status, "completed");
   assert.deepEqual(
     primaryMerged?.attention,
@@ -409,12 +435,12 @@ try {
     reason: "approval" as const,
   };
   assert.equal(
-    recordChatAttentionClear(projection, "offline-chat-1", "run-offline-2", scopeKey, baselineAttention).recorded,
+    recordChatAttentionClear(projection, "offline-chat-1", "run-offline-alias", scopeKey, baselineAttention).recorded,
     true,
   );
-  settleChatAttentionClear(projection, "offline-chat-1", "run-offline-2", "persisted", 1);
+  settleChatAttentionClear(projection, "offline-chat-1", "run-offline-alias", "persisted", 1);
   const projectedRows = applyChatAttentionProjections(projection, merged, 1, scopeKey);
-  assert.equal(projectedRows.find((row) => row.id === "offline-chat-1")?.attentionAfterOperationId, "run-offline-2");
+  assert.equal(projectedRows.find((row) => row.id === "offline-chat-1")?.attentionAfterOperationId, "run-offline-alias");
   assert.equal(
     projection.has("offline-chat-1"),
     false,
@@ -430,7 +456,7 @@ try {
     "retrying a replay after the daemon session id was recorded must not spawn a second daemon session",
   );
   const retriedConversation = await conversations.loadConversation("offline-chat-1");
-  assert.equal(retriedConversation?.turns.length, 4);
+  assert.equal(retriedConversation?.turns.length, 5);
   assert.equal(
     retriedConversation?.turns.filter((turn) => turn.id === queuedUserTurnId).length,
     1,

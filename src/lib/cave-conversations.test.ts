@@ -15,6 +15,7 @@ const {
   isSafeConversationSessionId,
   listConversations,
   loadConversation,
+  resolveConversationSessionId,
   saveConversation,
 } = await import("./cave-conversations.ts");
 const {
@@ -171,6 +172,76 @@ assert.equal((await loadConversation("delete-me"))?.turns.length, 1);
 assert.equal(await deleteConversation("delete-me"), true);
 assert.equal(await loadConversation("delete-me"), null);
 assert.equal(await deleteConversation("delete-me"), false);
+
+await saveConversation({
+  sessionId: "stable-replay-root",
+  familiarId: "charm",
+  harness: "codex",
+  title: "Replay root",
+  createdAt: "2026-06-10T00:00:00.000Z",
+  updatedAt: "2026-06-10T00:00:00.000Z",
+  replaySessions: [{
+    sessionId: "hub-replay-root",
+    conversationId: "codex-thread-1",
+    createdAt: "2026-06-10T00:00:00.000Z",
+    updatedAt: "2026-06-10T00:00:01.000Z",
+  }],
+  turns: [],
+});
+await saveConversation({
+  sessionId: "hub-replay-root",
+  familiarId: "charm",
+  harness: "codex",
+  title: "Stray replay alias",
+  createdAt: "2026-06-10T00:00:00.000Z",
+  updatedAt: "2026-06-10T00:00:00.000Z",
+  turns: [],
+});
+assert.deepEqual(
+  await resolveConversationSessionId("hub-replay-root"),
+  { sessionId: "stable-replay-root", canonicalized: true },
+  "explicit replay history must outrank a same-named stray alias file",
+);
+
+await saveConversation({
+  sessionId: "cycle-replay-root",
+  familiarId: "charm",
+  harness: "codex",
+  title: "Replay cycle root",
+  createdAt: "2026-06-10T00:00:00.000Z",
+  updatedAt: "2026-06-10T00:00:00.000Z",
+  replaySessions: [{
+    sessionId: "hub-replay-cycle",
+    conversationId: "codex-thread-2",
+    createdAt: "2026-06-10T00:00:00.000Z",
+    updatedAt: "2026-06-10T00:00:01.000Z",
+  }],
+  turns: [],
+});
+await saveConversation({
+  sessionId: "hub-replay-cycle",
+  familiarId: "charm",
+  harness: "codex",
+  title: "Replay cycle alias",
+  createdAt: "2026-06-10T00:00:00.000Z",
+  updatedAt: "2026-06-10T00:00:00.000Z",
+  replaySessions: [{
+    sessionId: "cycle-replay-root",
+    conversationId: "codex-thread-2",
+    createdAt: "2026-06-10T00:00:00.000Z",
+    updatedAt: "2026-06-10T00:00:01.000Z",
+  }],
+  turns: [],
+});
+assert.deepEqual(
+  await resolveConversationSessionId("hub-replay-cycle"),
+  { sessionId: null, error: "cyclic-replay-history" },
+  "cyclic replay mappings should fail closed instead of picking an arbitrary local file",
+);
+await deleteConversation("stable-replay-root");
+await deleteConversation("hub-replay-root");
+await deleteConversation("cycle-replay-root");
+await deleteConversation("hub-replay-cycle");
 
 // CHAT-D5-02: a user-cancelled turn persists as an honest cancelled record —
 // partial text kept, cancelled flag set, never re-flagged as an error.

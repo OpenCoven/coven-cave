@@ -810,6 +810,13 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         );
         onSessionStarted?.();
       }}
+      onSessionCanonicalized={(fromSessionId, toSessionId) => {
+        setView((prev) =>
+          prev.kind === "chat" && prev.sessionId === fromSessionId
+            ? { ...prev, sessionId: toSessionId }
+            : prev,
+        );
+      }}
       onVoiceSessionCreated={(sid) => {
         // Pre-session voice call: ChatView created the conversation; promote
         // it into the view (same null-only guard as onSessionStarted) and arm

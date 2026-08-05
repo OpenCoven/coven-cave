@@ -23,6 +23,7 @@ import {
   latestConversationReplaySession,
   loadConversation,
   normalizeDaemonConversationId,
+  resolveConversationSessionId,
   upsertConversationReplaySession,
 } from "@/lib/cave-conversations";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
@@ -284,7 +285,16 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const queuedPayloadModelOverride = stringValue(payload.modelOverride);
   const queuedRunId = stringValue(payload.runId);
   const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
-  const sessionId = stringValue(payload.sessionId) ?? item.id;
+  const payloadSessionId = stringValue(payload.sessionId) ?? item.id;
+  const resolvedSession = await resolveConversationSessionId(payloadSessionId);
+  if (resolvedSession.sessionId === null) {
+    throw new Error(
+      resolvedSession.error === "ambiguous-replay-history"
+        ? "queued chat replay history is ambiguous for this session id"
+        : "queued chat replay history contains a cycle for this session id",
+    );
+  }
+  const sessionId = resolvedSession.sessionId;
   const chatTitle = chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(sessionId);
   const existingConversation = await loadConversation(sessionId);
   const latestReplay = latestConversationReplaySession(existingConversation);
