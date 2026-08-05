@@ -51,18 +51,29 @@ const directCopilot = resolveCopilotChatRouting({
 assert.equal(directCopilot.mode, "direct-jsonl");
 assert.ok(directCopilot.spec, "a supported local Copilot runtime selects the direct JSONL launch");
 assert.equal(directCopilot.spec.executable, "copilot");
+const directCopilotArgs = buildCopilotStreamArgs({
+  spec: directCopilot.spec,
+  prompt: "route behavior",
+  resumeSessionId: null,
+  newSessionId: null,
+  model: null,
+  permissionMode: "full",
+  addDirs: [],
+});
 assert.deepEqual(
-  buildCopilotStreamArgs({
-    spec: directCopilot.spec,
-    prompt: "route behavior",
-    resumeSessionId: null,
-    newSessionId: null,
-    model: null,
-    permissionMode: "full",
-    addDirs: [],
-  }).slice(0, 6),
+  directCopilotArgs.slice(0, 6),
   ["--no-auto-update", "--allow-all", "--output-format", "json", "--stream", "on"],
   "the direct full-mode routing decision keeps its approval flag before the reviewed JSONL launch contract",
+);
+assert.equal(
+  directCopilotArgs.at(-1),
+  "route behavior",
+  "the reviewed direct launch still transports the full prompt as one final argv element",
+);
+assert.notEqual(
+  directCopilotArgs.at(-2),
+  "route behavior",
+  "the prompt is not split across multiple argv positions",
 );
 
 for (const capabilityVersion of ["1.0.70.1", "0.9.9", "2.0.0", "2.0.0-rc.1"]) {

@@ -1,32 +1,57 @@
 import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
 import { parseClaudeTextOnlyEnvelope } from "@/lib/claude-stream";
-import {
-  CopilotMessageTranscript,
-  CopilotTextAssembler,
-  parseCopilotChatEvent,
-} from "@/lib/copilot-stream";
-import { parseGrokStreamEvent } from "@/lib/grok-build";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
-import {
-  HermesSseDecoder,
-  parseHermesResponsesEvent,
-} from "@/lib/hermes-responses-stream";
-import { BUILTIN_OPENCODE_SCHEMA_BUNDLE } from "@/lib/opencode-compatibility";
-import { handleOpenCodeJsonLine } from "@/lib/opencode-stream";
 
 export type ReplayDaemonEvent = {
   kind?: string;
   payload_json?: string;
 };
 
-type LineHandler = (line: string) => void;
+export type ReplayLaunchMode = "nonInteractive" | "stream";
+export type ReplayOutputFormat = "plain" | "stream-json";
+export type ReplayOutputContract = {
+  launchMode: ReplayLaunchMode;
+  outputFormat: ReplayOutputFormat;
+};
+export type ReplayOutputDecodeRequest = ReplayOutputContract & {
+  harness: string;
+  events: ReplayDaemonEvent[];
+};
+
+export const OFFLINE_REPLAY_LAUNCH_CONTRACT = {
+  launchMode: "nonInteractive",
+  outputFormat: "plain",
+} as const satisfies ReplayOutputContract;
+
+export type ReplayOutputDecodeErrorCode =
+  | "truncated_output"
+  | "malformed_output_event"
+  | "malformed_structured_frame"
+  | "unsupported_harness";
+
+export class ReplayOutputDecodeError extends Error {
+  public readonly code: ReplayOutputDecodeErrorCode;
+
+  constructor(code: ReplayOutputDecodeErrorCode, message: string) {
+    super(message);
+    this.name = "ReplayOutputDecodeError";
+    this.code = code;
+  }
+}
+
+function replayOutputDecodeError(
+  code: ReplayOutputDecodeErrorCode,
+  message: string,
+): ReplayOutputDecodeError {
+  return new ReplayOutputDecodeError(code, message);
+}
 
 class ReplayLineDecoder {
   private buffer = "";
-  private readonly onLine: LineHandler;
+  private readonly onLine: (line: string) => void;
 
-  constructor(onLine: LineHandler) {
+  constructor(onLine: (line: string) => void) {
     this.onLine = onLine;
   }
 
@@ -53,226 +78,145 @@ function record(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function canonicalAssistantText(events: ReplayDaemonEvent[]): string | null {
-  let latest: string | null = null;
-  for (const event of events) {
-    if (event.kind !== "assistant.message" && event.kind !== "assistant_message") continue;
-    if (typeof event.payload_json !== "string" || !event.payload_json.trim()) continue;
-    try {
-      const payload = record(JSON.parse(event.payload_json));
-      const text = typeof payload?.content === "string"
-        ? payload.content
-        : typeof payload?.text === "string"
-          ? payload.text
-          : null;
-      if (text) latest = text;
-    } catch {
-      // A malformed compatibility event is not assistant text.
-    }
-  }
-  return latest?.trim() || null;
-}
-
 function outputChunks(events: ReplayDaemonEvent[]): string[] {
   const chunks: string[] = [];
   for (const event of events) {
     if (event.kind !== "output") continue;
     if (typeof event.payload_json !== "string") {
-      throw new Error("offline replay received a malformed daemon output event");
+      throw replayOutputDecodeError(
+        "malformed_output_event",
+        "offline replay received a malformed daemon output event",
+      );
     }
     let payload: Record<string, unknown> | null;
     try {
       payload = record(JSON.parse(event.payload_json));
     } catch {
-      throw new Error("offline replay received a malformed daemon output event");
+      throw replayOutputDecodeError(
+        "malformed_output_event",
+        "offline replay received a malformed daemon output event",
+      );
     }
     if (typeof payload?.data !== "string") {
-      throw new Error("offline replay received a malformed daemon output event");
+      throw replayOutputDecodeError(
+        "malformed_output_event",
+        "offline replay received a malformed daemon output event",
+      );
     }
     chunks.push(payload.data);
   }
   return chunks;
 }
 
-function decodeClaude(chunks: string[]): string {
-  const text: string[] = [];
-  const lines = new ReplayLineDecoder((line) => {
-    if (!line.trim()) return;
-    try {
-      text.push(...parseClaudeTextOnlyEnvelope(JSON.parse(line)));
-    } catch {
-      // Claude output is trusted only through complete stream-json envelopes.
-    }
-  });
-  for (const chunk of chunks) lines.push(chunk);
-  lines.finish();
-  return text.join("");
+function cleanTerminalOutput(chunks: string[]): string {
+  return resolveBackspaces(stripAnsi(chunks.join("")));
 }
 
-function decodeCodex(chunks: string[]): string {
+function decodeDirectPlain(chunks: string[]): string {
+  return cleanTerminalOutput(chunks);
+}
+
+function decodeCodexPlain(chunks: string[]): string {
   const filter = new AssistantFilter();
-  const text: string[] = [];
-  const pushFiltered = (chunk: string) => {
-    const filtered = filter.push(chunk);
-    if (filtered) text.push(filtered);
-  };
-  const lines = new ReplayLineDecoder((line) => {
-    const trimmed = line.trim();
-    if (trimmed) {
-      try {
-        const envelope = record(JSON.parse(trimmed));
-        if (!envelope) return;
-        if (envelope.type === "output" && typeof envelope.text === "string") {
-          pushFiltered(resolveBackspaces(stripAnsi(envelope.text)));
-        } else {
-          const structuredText = parseClaudeTextOnlyEnvelope(envelope);
-          if (structuredText.length) {
-            const pendingText = filter.flush();
-            if (pendingText) text.push(pendingText);
-            text.push(...structuredText);
-          }
-        }
-        return;
-      } catch {
-        // Raw PTY transcript lines continue through the phase-aware filter.
-      }
-    }
-    pushFiltered(`${resolveBackspaces(stripAnsi(line))}\n`);
-  });
-  for (const chunk of chunks) lines.push(chunk);
-  lines.finish();
-  text.push(filter.flush());
-  return text.join("");
+  const cleaned = cleanTerminalOutput(chunks);
+  return filter.push(cleaned) + filter.flush();
 }
 
-function decodeCopilot(chunks: string[]): string {
-  const assembler = new CopilotTextAssembler();
-  const transcript = new CopilotMessageTranscript();
+function decodeHermesPlain(chunks: string[]): string {
+  const filter = new AssistantFilter({ passthrough: true });
+  const cleaned = cleanTerminalOutput(chunks);
+  return filter.push(cleaned) + filter.flush();
+}
+
+function decodeClaudeStreamJson(chunks: string[]): string {
+  const text: string[] = [];
   const lines = new ReplayLineDecoder((line) => {
     if (!line.trim()) return;
+    let envelope: unknown;
     try {
-      const event = parseCopilotChatEvent(JSON.parse(line));
-      if (event?.kind === "text_delta") {
-        const delta = assembler.delta(event.messageId, event.text, event.frameId);
-        if (delta) transcript.appendDelta(event.messageId, delta);
-      } else if (event?.kind === "message") {
-        assembler.message(event.messageId, event.content);
-        transcript.setMessage(event.messageId, event.content);
-      }
+      envelope = JSON.parse(line);
     } catch {
-      // Non-JSON and malformed protocol output is never assistant prose.
+      throw replayOutputDecodeError(
+        "malformed_structured_frame",
+        "offline replay received a malformed structured output frame",
+      );
     }
-  });
-  for (const chunk of chunks) lines.push(chunk);
-  lines.finish();
-  return transcript.text;
-}
-
-function decodeOpenCode(chunks: string[]): string {
-  const text: string[] = [];
-  const lines = new ReplayLineDecoder((line) => {
-    handleOpenCodeJsonLine(
-      line,
-      BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
-      {
-        onText(event) {
-          text.push(event.text.endsWith("\n") ? event.text : `${event.text}\n`);
-        },
-      },
-    );
+    text.push(...parseClaudeTextOnlyEnvelope(envelope));
   });
   for (const chunk of chunks) lines.push(chunk);
   lines.finish();
   return text.join("");
 }
 
-function decodeGrok(chunks: string[]): string {
-  const structuredText: string[] = [];
-  const plainText: string[] = [];
-  const plain = new AssistantFilter({ passthrough: true });
-  let structured = false;
-  const lines = new ReplayLineDecoder((line) => {
-    if (line.trim()) {
-      try {
-        const raw = JSON.parse(line);
-        if (raw && typeof raw === "object") {
-          structured = true;
-          const event = parseGrokStreamEvent(raw);
-          if (event.kind === "text") structuredText.push(event.text);
-          return;
-        }
-      } catch {
-        // Grok's verified plain mode reserves stdout for final response prose.
-      }
-    }
-    const filtered = plain.push(`${resolveBackspaces(stripAnsi(line))}\n`);
-    if (filtered) plainText.push(filtered);
-  });
-  for (const chunk of chunks) lines.push(chunk);
-  lines.finish();
-  plainText.push(plain.flush());
-  return structured ? structuredText.join("") : plainText.join("");
-}
-
-function decodeHermes(chunks: string[]): string {
-  const decoder = new HermesSseDecoder();
-  const structuredText: string[] = [];
-  const plainText: string[] = [];
-  const plain = new AssistantFilter({ passthrough: true });
-  let structured = false;
-  let sseFraming = false;
-  const framingLines = new ReplayLineDecoder((line) => {
-    if (/^(?::|event:|data:|id:|retry:)/.test(line)) sseFraming = true;
-  });
-
-  const consume = (frames: Array<{ event: string; data: string }>) => {
-    for (const frame of frames) {
-      structured = true;
-      try {
-        const event = parseHermesResponsesEvent(frame.event, JSON.parse(frame.data));
-        if (event.kind === "text") structuredText.push(event.text);
-      } catch {
-        // Malformed SSE payloads never become assistant text.
-      }
-    }
-  };
-
-  for (const chunk of chunks) {
-    consume(decoder.push(chunk));
-    framingLines.push(chunk);
-    const filtered = plain.push(resolveBackspaces(stripAnsi(chunk)));
-    if (filtered) plainText.push(filtered);
-  }
-  consume(decoder.finish());
-  framingLines.finish();
-  plainText.push(plain.flush());
-  return structured || sseFraming ? structuredText.join("") : plainText.join("");
-}
-
-const DECODERS: Record<string, (chunks: string[]) => string> = {
-  claude: decodeClaude,
-  "coven-code": decodeClaude,
-  codex: decodeCodex,
-  copilot: decodeCopilot,
-  opencode: decodeOpenCode,
-  grok: decodeGrok,
-  hermes: decodeHermes,
+const PLAIN_DECODERS: Record<string, (chunks: string[]) => string> = {
+  claude: decodeDirectPlain,
+  "coven-code": decodeDirectPlain,
+  codex: decodeCodexPlain,
+  copilot: decodeDirectPlain,
+  grok: decodeDirectPlain,
+  hermes: decodeHermesPlain,
 };
 
-export function decodeReplayAssistantOutput(
+const STREAM_JSON_DECODERS: Record<string, (chunks: string[]) => string> = {
+  claude: decodeClaudeStreamJson,
+  "coven-code": decodeClaudeStreamJson,
+};
+
+function decoderFor(
   harness: string,
-  events: ReplayDaemonEvent[],
+  contract: ReplayOutputContract,
+): ((chunks: string[]) => string) | null {
+  if (contract.launchMode === "nonInteractive" && contract.outputFormat === "plain") {
+    return PLAIN_DECODERS[harness] ?? null;
+  }
+  if (contract.launchMode === "stream" && contract.outputFormat === "stream-json") {
+    return STREAM_JSON_DECODERS[harness] ?? null;
+  }
+  return null;
+}
+
+export function replayOutputContractBlockReason(
+  request: ReplayOutputContract & { harness: string },
 ): string | null {
-  if (events.some((event) => event.kind === "output_truncated")) {
-    throw new Error("offline replay daemon output log was truncated; refusing to mirror a partial assistant reply");
+  const harness = canonicalHarnessId(request.harness).trim().toLowerCase();
+  if (
+    harness === "opencode" &&
+    request.launchMode === "nonInteractive" &&
+    request.outputFormat === "plain"
+  ) {
+    return "offline replay cannot safely launch OpenCode: its nonInteractive plain stdout does not separate assistant replies from tool or control output. Use online chat or choose another harness.";
   }
-  const canonical = canonicalAssistantText(events);
-  const id = canonicalHarnessId(harness).trim().toLowerCase();
-  const decoder = DECODERS[id];
+  if (decoderFor(harness, request)) return null;
+  return `offline replay output decoding is not supported for harness '${harness || request.harness}' with launchMode '${request.launchMode}' and output format '${request.outputFormat}'`;
+}
+
+export function supportsReplayOutputHarness(
+  harness: string,
+  contract: ReplayOutputContract,
+): boolean {
+  return replayOutputContractBlockReason({ harness, ...contract }) === null;
+}
+
+export function decodeReplayAssistantOutput(
+  request: ReplayOutputDecodeRequest,
+): string | null {
+  if (request.events.some((event) => event.kind === "output_truncated")) {
+    throw replayOutputDecodeError(
+      "truncated_output",
+      "offline replay daemon output log was truncated; refusing to mirror a partial assistant reply",
+    );
+  }
+
+  const harness = canonicalHarnessId(request.harness).trim().toLowerCase();
+  const decoder = decoderFor(harness, request);
   if (!decoder) {
-    if (canonical) return canonical;
-    throw new Error(`offline replay output decoding is not supported for harness '${id || harness}'`);
+    throw replayOutputDecodeError(
+      "unsupported_harness",
+      replayOutputContractBlockReason(request) ??
+        `offline replay output decoding is not supported for harness '${harness || request.harness}'`,
+    );
   }
-  const decoded = decoder(outputChunks(events)).trim();
-  return decoded || canonical;
+
+  const decoded = decoder(outputChunks(request.events)).trim();
+  return decoded || null;
 }

@@ -30,7 +30,7 @@ const daemonSessions = new Map<string, {
   created_at: string;
   updated_at: string;
   completion_at: string;
-  outputChunks: string[];
+  events: Array<{ kind: string; payload_json: string }>;
 }>();
 const replayPolls = new Map<string, number>();
 
@@ -51,36 +51,21 @@ function arbitraryOutputChunks(value: string): string[] {
 function daemonTranscript(harness: string, prompt: string): string {
   if (harness === "claude") {
     return [
-      JSON.stringify({ type: "system", subtype: "init", prompt: "CLAUDE PROMPT ECHO MUST STAY PRIVATE" }),
-      JSON.stringify({
-        type: "assistant",
-        message: {
-          content: [
-            { type: "tool_use", id: "tool-1", name: "Read", input: { path: "private.txt" } },
-            { type: "text", text: "Working through it.\n" },
-          ],
-        },
-      }),
-      JSON.stringify({
-        type: "user",
-        message: {
-          content: [{ type: "tool_result", tool_use_id: "tool-1", content: "TOOL OUTPUT MUST NEVER BE MIRRORED" }],
-        },
-      }),
-      JSON.stringify({
-        type: "assistant",
-        message: { content: [{ type: "text", text: '<coven:attention reason="approval" />' }] },
-      }),
+      "Working through it.",
+      '{"answer":42}',
+      "data: literal answer",
+      "event: literal event",
+      '<coven:attention reason="approval" />',
     ].join("\n") + "\n";
   }
+
   if (harness === "copilot") {
     return [
-      JSON.stringify({ type: "user.message", data: { content: prompt } }),
-      JSON.stringify({ type: "assistant.message_delta", data: { id: "frame-1", messageId: "message-1", deltaContent: "Working through it.\n" } }),
-      JSON.stringify({ type: "tool.execution_start", data: { toolCallId: "call-1", toolName: "read", arguments: { path: "private.txt" } } }),
-      JSON.stringify({ type: "tool.execution_complete", data: { toolCallId: "call-1", success: true, result: { content: "TOOL OUTPUT MUST NEVER BE MIRRORED" } } }),
-      JSON.stringify({ type: "assistant.message", data: { messageId: "message-1", content: 'Working through it.\n<coven:attention reason="approval" />' } }),
-      JSON.stringify({ type: "result", exitCode: 0 }),
+      "Working through it.",
+      '{"answer":42}',
+      "data: literal answer",
+      "event: literal event",
+      '<coven:attention reason="approval" />',
     ].join("\n") + "\n";
   }
   return [
@@ -101,6 +86,13 @@ function daemonTranscript(harness: string, prompt: string): string {
     "tokens used",
     "123",
   ].join("\n") + "\n";
+}
+
+function daemonOutputEvents(transcript: string): Array<{ kind: string; payload_json: string }> {
+  return arbitraryOutputChunks(transcript).map((data) => ({
+    kind: "output",
+    payload_json: JSON.stringify({ data }),
+  }));
 }
 
 async function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
@@ -125,9 +117,22 @@ async function listenHub(port = 0): Promise<number> {
         return;
       }
       const outputOnly = launchedPrompt.includes("queued session that only ever emits raw daemon output");
+      const truncatedReplay = launchedPrompt.includes("queued session whose replay output truncates");
+      const malformedReplayEnvelope = launchedPrompt.includes("queued session whose replay output envelope is malformed");
       const transcript = outputOnly
         ? "raw PTY text without a verified assistant boundary"
         : daemonTranscript(launchedHarness, launchedPrompt);
+      const events = truncatedReplay
+        ? [
+            ...daemonOutputEvents(transcript),
+            { kind: "output_truncated", payload_json: JSON.stringify({ droppedEvents: 1, droppedBytes: 128 }) },
+          ]
+        : malformedReplayEnvelope
+          ? [
+              ...daemonOutputEvents(transcript).slice(0, 1),
+              { kind: "output", payload_json: JSON.stringify({ notData: "oops" }) },
+            ]
+          : daemonOutputEvents(transcript);
       daemonSessions.set(id, {
         id,
         status: "running",
@@ -136,7 +141,7 @@ async function listenHub(port = 0): Promise<number> {
         completion_at: sessionNumber === 1
           ? "2026-06-30T12:02:05.000Z"
           : "2099-06-30T12:02:05.000Z",
-        outputChunks: arbitraryOutputChunks(transcript),
+        events,
       });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ id, status: "running" }));
@@ -176,17 +181,15 @@ async function listenHub(port = 0): Promise<number> {
       }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({
-        // The real daemon persists raw PTY/JSONL transport chunks as
-        // `kind: output` with `{ data }`; chunk boundaries are arbitrary.
-        events: session.outputChunks.map((data, index) => ({
+        events: session.events.map((event, index) => ({
           seq: index + 1,
           id: `${sessionId}-output-${index + 1}`,
           session_id: sessionId,
-          kind: "output",
-          payload_json: JSON.stringify({ data }),
+          kind: event.kind,
+          payload_json: event.payload_json,
           created_at: session.updated_at,
         })),
-        nextCursor: { afterSeq: session.outputChunks.length },
+        nextCursor: { afterSeq: session.events.length },
         hasMore: false,
       }));
       return;
@@ -249,6 +252,7 @@ try {
       sage: { harness: "codex" },
       charm: { harness: "claude" },
       nova: { harness: "copilot" },
+      opal: { harness: "opencode" },
     },
     multiHost: { mode: "hub", hubUrl, executorUrls: [] },
   });
@@ -257,6 +261,7 @@ try {
   await grantProjectToFamiliar({ familiarId: "sage", projectId: project.id, source: "human", access: "write" });
   await grantProjectToFamiliar({ familiarId: "charm", projectId: project.id, source: "human", access: "write" });
   await grantProjectToFamiliar({ familiarId: "nova", projectId: project.id, source: "human", access: "write" });
+  await grantProjectToFamiliar({ familiarId: "opal", projectId: project.id, source: "human", access: "write" });
   await config.recordTravelHubReachability(false, new Date("2026-06-30T12:00:00.000Z"));
 
   const response = await POST(new Request("http://localhost/api/chat/send", {
@@ -347,6 +352,7 @@ try {
   );
   const behindAssistant = completedConversation?.turns[1];
   const behindRequest = behindAssistant?.responseMetadata?.attentionRequest;
+  await config.completeOfflineTravelItem(queuedItem.id);
 
   await config.recordTravelHubReachability(false, new Date("2026-06-30T12:02:10.000Z"));
   await readSse(await POST(new Request("http://localhost/api/chat/send", {
@@ -363,7 +369,9 @@ try {
   await config.recordTravelHubReachability(true, new Date("2026-06-30T12:02:11.000Z"));
   const claudeSpawn = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
   assert.deepEqual(claudeSpawn, { attempted: 1, synced: 1, failed: 0, errors: [] });
-  const claudeRequest = sessionRequests.at(-1);
+  const claudeRequest = [...sessionRequests].reverse().find((request) =>
+    String(request.prompt ?? "").includes("queued during travel mode for Claude")
+  );
   const claudePrompt = String(claudeRequest?.prompt ?? "");
   assert.equal(claudeRequest?.harness, "claude");
   assert.equal(claudeRequest?.launchMode, "nonInteractive");
@@ -372,7 +380,24 @@ try {
     1,
     "Claude replay keeps the multi-word human prompt intact",
   );
+  const requestsAfterClaudeSpawn = sessionRequests.length;
   await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  assert.equal(
+    sessionRequests.length,
+    requestsAfterClaudeSpawn,
+    "Claude replay re-polls the existing daemon session instead of spawning duplicates",
+  );
+  assert.equal(
+    (await conversations.loadConversation("offline-chat-claude"))?.turns.at(-1)?.text,
+    [
+      "Working through it.",
+      '{"answer":42}',
+      "data: literal answer",
+      "event: literal event",
+    ].join("\n"),
+    "offline replay mirrors plain output without interpreting JSON or SSE-looking prose",
+  );
 
   await config.recordTravelHubReachability(false, new Date("2026-06-30T12:02:12.000Z"));
   await readSse(await POST(new Request("http://localhost/api/chat/send", {
@@ -390,19 +415,52 @@ try {
   const copilotSpawn = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
   assert.deepEqual(copilotSpawn, { attempted: 1, synced: 1, failed: 0, errors: [] });
   const copilotRequest = sessionRequests.at(-1);
-  const copilotPrompt = String(copilotRequest?.prompt ?? "");
   assert.equal(copilotRequest?.harness, "copilot");
-  assert.equal(
-    copilotRequest?.launchMode,
-    "nonInteractive",
-    "Copilot replay must use the daemon's finite one-shot launch contract",
-  );
-  assert.equal(
-    copilotPrompt.split("queued multi word Copilot replay prompt").length - 1,
-    1,
-    "Copilot replay preserves the exact multi-word prompt payload once",
-  );
+  assert.equal(copilotRequest?.launchMode, "nonInteractive");
   await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  assert.equal(
+    (await conversations.loadConversation("offline-chat-copilot"))?.turns.at(-1)?.text,
+    [
+      "Working through it.",
+      '{"answer":42}',
+      "data: literal answer",
+      "event: literal event",
+    ].join("\n"),
+  );
+
+  await config.recordTravelHubReachability(false, new Date("2026-06-30T12:02:14.000Z"));
+  await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      prompt: "queued OpenCode replay must fail before spawn",
+      projectRoot,
+      sessionId: "offline-chat-opencode",
+      runId: "run-offline-opencode",
+    }),
+  })));
+  await config.recordTravelHubReachability(true, new Date("2026-06-30T12:02:15.000Z"));
+  const requestsBeforeUnsupportedReplay = sessionRequests.length;
+  const openCodeReplay = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  assert.equal(openCodeReplay.attempted, 1);
+  assert.equal(openCodeReplay.synced, 0);
+  assert.equal(openCodeReplay.failed, 1);
+  assert.match(
+    openCodeReplay.errors[0]?.error ?? "",
+    /nonInteractive plain stdout does not separate assistant replies from tool or control output/i,
+  );
+  assert.equal(
+    sessionRequests.length,
+    requestsBeforeUnsupportedReplay,
+    "unsupported replay output contracts fail before launching a daemon session",
+  );
+  const unsupportedItem = (await config.loadState()).travel.offlineQueue.find(
+    (item) => item.payload?.sessionId === "offline-chat-opencode",
+  );
+  assert.ok(unsupportedItem);
+  await config.completeOfflineTravelItem(unsupportedItem.id);
 
   const merged = mergeSessionRows({
     daemonSessions: [
@@ -517,7 +575,7 @@ try {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      familiarId: "sage",
+      familiarId: "charm",
       prompt: "queued session that only ever emits raw daemon output",
       projectRoot,
       sessionId: "offline-chat-output-only",
@@ -535,30 +593,55 @@ try {
   );
   assert.ok(outputOnlyItem, "the raw-output-only chat should still be queued after spawning");
 
-  const failureResult = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
-  assert.equal(failureResult.attempted, 1);
-  assert.equal(failureResult.synced, 0, "a terminal session with no verified assistant boundary must never be reported synced");
-  assert.equal(failureResult.failed, 1);
-  assert.match(
-    failureResult.errors[0]?.error ?? "",
-    /replayed session finished without a usable assistant reply to mirror/,
-    "raw daemon output alone must fail with an actionable reason instead of hanging pending forever",
-  );
+  await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
 
   const outputOnlyFinalState = await config.loadState();
   assert.equal(
     outputOnlyFinalState.travel.offlineQueue.find((entry) => entry.id === outputOnlyItem?.id)?.status,
-    "failed",
-    "the raw-output-only item must end up retryable/failed rather than stuck pending",
+    "synced",
+    "the plain-output item stays durably synced after its reply is mirrored",
   );
   const outputOnlyConversation = await conversations.loadConversation("offline-chat-output-only");
   assert.equal(
     outputOnlyConversation?.turns.length,
-    1,
-    "raw daemon output must never be persisted as a mirrored assistant turn",
+    2,
+    "plain daemon output is persisted as the mirrored assistant turn",
   );
-  assert.equal(outputOnlyConversation?.turns[0]?.role, "user");
-  await config.completeOfflineTravelItem(outputOnlyItem.id);
+  assert.equal(
+    outputOnlyConversation?.turns[1]?.text,
+    "raw PTY text without a verified assistant boundary",
+    "a direct plain-output harness does not require structured framing",
+  );
+
+  await config.recordTravelHubReachability(false, new Date("2026-06-30T12:06:30.000Z"));
+  await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "sage",
+      prompt: "queued session whose replay output truncates",
+      projectRoot,
+      sessionId: "offline-chat-truncated",
+      runId: "run-offline-truncated",
+    }),
+  })));
+  await config.recordTravelHubReachability(true, new Date("2026-06-30T12:06:40.000Z"));
+  await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  const truncatedFailure = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  assert.equal(truncatedFailure.failed, 1);
+  assert.match(truncatedFailure.errors[0]?.error ?? "", /truncated/i);
+  const truncatedState = await config.loadState();
+  const truncatedItem = truncatedState.travel.offlineQueue.find(
+    (entry) => entry.payload?.sessionId === "offline-chat-truncated",
+  );
+  assert.equal(truncatedItem?.status, "failed", "truncated replay output leaves the queue item retryable");
+  const truncatedConversation = await conversations.loadConversation("offline-chat-truncated");
+  assert.equal(truncatedConversation?.turns.length, 1, "truncated replay output must not persist a partial assistant turn");
+  await config.completeOfflineTravelItem(truncatedItem.id);
+  assert.equal(
+    (await config.loadState()).travel.offlineQueue.find((entry) => entry.id === truncatedItem.id)?.status,
+    "synced",
+  );
 
   await config.recordTravelHubReachability(false, new Date("2026-06-30T12:07:00.000Z"));
   for (const body of [
