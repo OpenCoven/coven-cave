@@ -195,7 +195,7 @@ assert.deepEqual(
 );
 assert.equal(openCodeProbeTreeKillCommand(4242, "linux"), null, "non-Windows probes retain process-local termination");
 
-{
+if (process.platform !== "win32") {
   const probeDir = await mkdtemp(path.join(tmpdir(), "cave-probe-help-signal-close-"));
   try {
     const childScript = path.join(probeDir, "close-null.js");
