@@ -284,6 +284,7 @@ import {
   onSendStart,
   onCreationSessionIdentified,
   onDoneCreationRefresh,
+  onCreationRunTerminated,
 } from "@/lib/chat-creation-refresh";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
@@ -5258,6 +5259,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           liveGeneration.sessionId,
           { runId, streamHealth: generationStreamHealth },
         );
+        // Terminal non-done path: remove the pending entry if it is still unbound.
+        creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       } else {
         const message = conciseStreamError(err, "send failed");
         setError(message);
@@ -5273,6 +5276,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           at: new Date().toISOString(),
           error: message,
         });
+        // Terminal non-done path: remove the pending entry if it is still unbound.
+        creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       }
     } finally {
       // Always retire THIS generation's registry entry (keyed by session).
@@ -6168,7 +6173,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           );
         }
         const { shouldRefresh: shouldCreationRefresh, nextState: nextCreationRefreshState } =
-          onDoneCreationRefresh(creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, completedSessionId, ev.isError);
+          onDoneCreationRefresh(creationRefreshStateRef.current, liveGeneration.runId, completedSessionId, ev.isError);
         creationRefreshStateRef.current = nextCreationRefreshState;
         if (shouldCreationRefresh) onSessionsChanged?.();
         persistLiveTurns(
@@ -6190,6 +6195,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         );
         raiseDebugError({ turnId: assistantId, code: ev.code });
         if (ev.code === "ENOENT") onOpenOnboarding?.();
+        // Terminal non-done path: remove the pending entry if it is still unbound.
+        // A bound entry (session ID was received earlier) is preserved for retry.
+        creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
         return;
       }
     }

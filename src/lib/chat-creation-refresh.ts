@@ -15,11 +15,16 @@
  * - Eligibility is bound to a specific server-assigned session ID via
  *   `onCreationSessionIdentified`. An unbound entry (`sessionId: null`) never
  *   refreshes — the caller must bind before calling `onDoneCreationRefresh`.
- * - A failed done preserves the entry for retry.
+ * - A failed done with a bound session ID preserves the entry for retry.
+ * - A failed done with no bound session removes the entry — it cannot be
+ *   retried by session ID so there is nothing to preserve.
+ * - A terminal non-done path (stream `error` event, abort, send exception)
+ *   calls `onCreationRunTerminated` which removes unbound entries and preserves
+ *   bound ones.
  * - A successful done removes all entries sharing the same `sessionId` (the
  *   original run and any retry aliases), preventing duplicate refreshes.
  * - A `runId` not present in `pendingRuns` (ordinary follow-up or unrelated
- *   generation) is a no-op for all three helpers.
+ *   generation) is a no-op for all helpers.
  */
 
 export interface CreationRefreshState {
@@ -86,20 +91,19 @@ export function onCreationSessionIdentified(
  * Returns `shouldRefresh` (whether to call `onSessionsChanged`) and the next
  * state. Rules:
  * - If `runId` is not in `pendingRuns`: no-op (not a tracked creation run).
- * - If `isError`: preserve the entry for retry; no refresh.
+ * - If `isError` and the entry is bound: preserve the entry for same-ID retry;
+ *   no refresh.
+ * - If `isError` and the entry is unbound: remove the entry — an unbound run
+ *   cannot be retried by session ID; no refresh.
  * - If the entry is unbound (`sessionId: null`) or the completed ID mismatches:
  *   no-op — the caller must bind via `onCreationSessionIdentified` first.
  * - On a successful matching completion: fire the refresh and remove all
  *   entries sharing `sessionId` (original run + retry aliases) so a duplicate
  *   or stale completion cannot double-refresh.
- *
- * `originSessionId` is threaded through for documentation; eligibility is
- * determined entirely by presence in `pendingRuns` and the session ID match.
  */
 export function onDoneCreationRefresh(
   state: CreationRefreshState,
   runId: string,
-  originSessionId: string | null,
   completedSessionId: string | null | undefined,
   isError: boolean | undefined,
 ): { shouldRefresh: boolean; nextState: CreationRefreshState } {
@@ -108,7 +112,14 @@ export function onDoneCreationRefresh(
     return { shouldRefresh: false, nextState: state };
   }
   if (isError) {
-    return { shouldRefresh: false, nextState: state };
+    if (run.sessionId !== null) {
+      // Bound: preserve for same-ID retry.
+      return { shouldRefresh: false, nextState: state };
+    }
+    // Unbound: cannot retry by session ID — remove the entry.
+    const nextPendingRuns = { ...state.pendingRuns };
+    delete nextPendingRuns[runId];
+    return { shouldRefresh: false, nextState: { pendingRuns: nextPendingRuns } };
   }
   if (!completedSessionId) {
     return { shouldRefresh: false, nextState: state };
@@ -129,4 +140,25 @@ export function onDoneCreationRefresh(
     shouldRefresh: true,
     nextState: { pendingRuns: nextPendingRuns },
   };
+}
+
+/**
+ * Call at all terminal non-done paths (stream `error` event, user abort, send
+ * exception) for a live generation to bound-check the pending entry.
+ *
+ * - If `runId` is not in `pendingRuns`: no-op.
+ * - If the entry is unbound (`sessionId: null`): remove it — the generation
+ *   ended without ever receiving a session ID, so it cannot be retried by
+ *   session ID and must not linger in `pendingRuns` indefinitely.
+ * - If the entry is bound: preserve it for same-ID retry.
+ */
+export function onCreationRunTerminated(
+  state: CreationRefreshState,
+  runId: string,
+): CreationRefreshState {
+  const run = state.pendingRuns[runId];
+  if (!run || run.sessionId !== null) return state;
+  const nextPendingRuns = { ...state.pendingRuns };
+  delete nextPendingRuns[runId];
+  return { pendingRuns: nextPendingRuns };
 }

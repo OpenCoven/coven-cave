@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { onSendStart, onCreationSessionIdentified, onDoneCreationRefresh } from "./chat-creation-refresh.ts";
+import { onSendStart, onCreationSessionIdentified, onDoneCreationRefresh, onCreationRunTerminated } from "./chat-creation-refresh.ts";
 
 const FRESH = { pendingRuns: {} };
 
@@ -89,22 +89,22 @@ const FRESH = { pendingRuns: {} };
 // Unbound pending: binding required before done; no auto-refresh
 {
   const state = { pendingRuns: { "run-a": { sessionId: null } } };
-  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", null, "sess-abc", false);
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", "sess-abc", false);
   assert.equal(shouldRefresh, false, "unbound pending done does not auto-refresh — binding required before done");
   assert.deepEqual(nextState, state, "unbound pending done leaves state unchanged");
 }
 
-// Failed completion while unbound: no refresh, eligibility preserved
+// Failed completion while unbound: no refresh, entry removed (cannot retry without session)
 {
   const state = { pendingRuns: { "run-a": { sessionId: null } } };
-  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", null, "sess-abc", true);
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", "sess-abc", true);
   assert.equal(shouldRefresh, false, "failed completion does not refresh");
-  assert.deepEqual(nextState, state, "failed completion preserves eligibility for retry");
+  assert.deepEqual(nextState, FRESH, "failed completion while unbound removes entry (no session ID to retry with)");
 }
 
 // runId not in pendingRuns (follow-up done): no refresh
 {
-  const { shouldRefresh, nextState } = onDoneCreationRefresh(FRESH, "run-unknown", null, "sess-abc", false);
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(FRESH, "run-unknown", "sess-abc", false);
   assert.equal(shouldRefresh, false, "done for untracked runId does not creation-refresh");
   assert.deepEqual(nextState, FRESH, "done for untracked runId leaves state unchanged");
 }
@@ -112,20 +112,20 @@ const FRESH = { pendingRuns: {} };
 // Successful done with missing completedSessionId: no refresh even if eligible
 {
   const state = { pendingRuns: { "run-a": { sessionId: "sess-abc" } } };
-  const { shouldRefresh } = onDoneCreationRefresh(state, "run-a", null, null, false);
+  const { shouldRefresh } = onDoneCreationRefresh(state, "run-a", null, false);
   assert.equal(shouldRefresh, false, "eligible done with null completedSessionId does not refresh");
 }
 {
   const state = { pendingRuns: { "run-a": { sessionId: "sess-abc" } } };
-  const { shouldRefresh } = onDoneCreationRefresh(state, "run-a", null, undefined, false);
+  const { shouldRefresh } = onDoneCreationRefresh(state, "run-a", undefined, false);
   assert.equal(shouldRefresh, false, "eligible done with undefined completedSessionId does not refresh");
 }
 
 // No double-refresh: once done successfully, the next done must not fire again
 {
   const state = { pendingRuns: { "run-a": { sessionId: "sess-abc" } } };
-  const first = onDoneCreationRefresh(state, "run-a", null, "sess-abc", false);
-  const second = onDoneCreationRefresh(first.nextState, "run-a", null, "sess-abc", false);
+  const first = onDoneCreationRefresh(state, "run-a", "sess-abc", false);
+  const second = onDoneCreationRefresh(first.nextState, "run-a", "sess-abc", false);
   assert.equal(first.shouldRefresh, true, "first successful bound done refreshes");
   assert.equal(second.shouldRefresh, false, "second done does not refresh (entry removed)");
 }
@@ -135,7 +135,7 @@ const FRESH = { pendingRuns: {} };
 // Successful done for the bound creation ID: refresh and remove entry
 {
   const state = { pendingRuns: { "run-a": { sessionId: "sess-new" } } };
-  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", null, "sess-new", false);
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", "sess-new", false);
   assert.equal(shouldRefresh, true, "bound creation session success should refresh");
   assert.deepEqual(nextState, FRESH, "entry removed after bound creation session success");
 }
@@ -143,7 +143,7 @@ const FRESH = { pendingRuns: {} };
 // Failed done for the bound creation ID: preserve entry for retry
 {
   const state = { pendingRuns: { "run-a": { sessionId: "sess-new" } } };
-  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", null, "sess-new", true);
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", "sess-new", true);
   assert.equal(shouldRefresh, false, "failed done on bound creation session does not refresh");
   assert.deepEqual(nextState, state, "failed done on bound creation session preserves entry");
 }
@@ -151,7 +151,7 @@ const FRESH = { pendingRuns: {} };
 // Mismatched session ID: must not refresh and must not consume the pending entry
 {
   const state = { pendingRuns: { "run-a": { sessionId: "sess-new" } } };
-  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", null, "sess-other", false);
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", "sess-other", false);
   assert.equal(shouldRefresh, false, "mismatched completion does not consume the pending creation entry");
   assert.deepEqual(nextState, state, "mismatched completion leaves pending creation state untouched");
 }
@@ -159,7 +159,7 @@ const FRESH = { pendingRuns: {} };
 // Unrelated existing-session completion (runId not in pendingRuns): no effect
 {
   const state = { pendingRuns: { "run-a": { sessionId: "sess-new" } } };
-  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-unrelated", "sess-existing", "sess-existing", false);
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-unrelated", "sess-existing", false);
   assert.equal(shouldRefresh, false, "unrelated existing-session done does not consume the pending creation entry");
   assert.deepEqual(nextState, state, "unrelated existing-session done leaves pending creation state untouched");
 }
@@ -167,8 +167,8 @@ const FRESH = { pendingRuns: {} };
 // Duplicate completion: once entry removed, a second call for same runId is no-op
 {
   const state = { pendingRuns: { "run-a": { sessionId: "sess-new" } } };
-  const first = onDoneCreationRefresh(state, "run-a", null, "sess-new", false);
-  const second = onDoneCreationRefresh(first.nextState, "run-a", null, "sess-new", false);
+  const first = onDoneCreationRefresh(state, "run-a", "sess-new", false);
+  const second = onDoneCreationRefresh(first.nextState, "run-a", "sess-new", false);
   assert.equal(first.shouldRefresh, true, "first successful done refreshes");
   assert.equal(second.shouldRefresh, false, "duplicate completion does not re-refresh after entry removed");
 }
@@ -187,14 +187,14 @@ const FRESH = { pendingRuns: {} };
   assert.equal(state.pendingRuns["run-a"].sessionId, "sess-abc", "session identified binds the ID");
 
   // First done arrives as an error
-  const failedResult = onDoneCreationRefresh(state, "run-a", null, "sess-abc", true);
+  const failedResult = onDoneCreationRefresh(state, "run-a", "sess-abc", true);
   state = failedResult.nextState;
   assert.equal(failedResult.shouldRefresh, false, "failed first done does not refresh");
   assert.ok(state.pendingRuns["run-a"], "entry preserved after failure");
   assert.equal(state.pendingRuns["run-a"].sessionId, "sess-abc", "bound ID preserved after failure");
 
   // An existing session completes while we're waiting — must not consume state
-  const existingResult = onDoneCreationRefresh(state, "run-other", "sess-other", "sess-other", false);
+  const existingResult = onDoneCreationRefresh(state, "run-other", "sess-other", false);
   assert.equal(existingResult.shouldRefresh, false, "existing-session done does not consume creation pending");
   assert.deepEqual(existingResult.nextState, state, "state unchanged after existing-session done");
 
@@ -208,13 +208,13 @@ const FRESH = { pendingRuns: {} };
   assert.equal(state.pendingRuns["run-b"].sessionId, "sess-abc", "retry session event is a no-op on already-bound entry");
 
   // Successful retry (run-b in pendingRuns, sessionId matches)
-  const successResult = onDoneCreationRefresh(state, "run-b", "sess-abc", "sess-abc", false);
+  const successResult = onDoneCreationRefresh(state, "run-b", "sess-abc", false);
   state = successResult.nextState;
   assert.equal(successResult.shouldRefresh, true, "successful retry fires the creation refresh");
   assert.deepEqual(state, FRESH, "all entries for sess-abc removed after successful retry");
 
   // Follow-up completion does not refresh
-  const followupResult = onDoneCreationRefresh(state, "run-b", "sess-abc", "sess-abc", false);
+  const followupResult = onDoneCreationRefresh(state, "run-b", "sess-abc", false);
   assert.equal(followupResult.shouldRefresh, false, "follow-up completion after clear does not refresh");
 }
 
@@ -234,14 +234,14 @@ const FRESH = { pendingRuns: {} };
   assert.equal(state.pendingRuns["run-b"].sessionId, "sess-B", "[overlap] run-b bound to sess-B");
 
   // A completes first: should refresh, B entry intact
-  const resultA = onDoneCreationRefresh(state, "run-a", null, "sess-A", false);
+  const resultA = onDoneCreationRefresh(state, "run-a", "sess-A", false);
   assert.equal(resultA.shouldRefresh, true, "[overlap] run-a completion returns shouldRefresh true");
   state = resultA.nextState;
   assert.equal(state.pendingRuns["run-a"], undefined, "[overlap] run-a entry removed after A completes");
   assert.ok(state.pendingRuns["run-b"], "[overlap] run-b entry still present after A completes");
 
   // B completes: should also refresh
-  const resultB = onDoneCreationRefresh(state, "run-b", null, "sess-B", false);
+  const resultB = onDoneCreationRefresh(state, "run-b", "sess-B", false);
   assert.equal(resultB.shouldRefresh, true, "[overlap] run-b completion returns shouldRefresh true");
   assert.deepEqual(resultB.nextState, FRESH, "[overlap] all entries cleared after both complete");
 }
@@ -259,17 +259,17 @@ const FRESH = { pendingRuns: {} };
   assert.equal(state.pendingRuns["run-a"].sessionId, "creation-sess", "binding attaches the session ID");
 
   // The currently-displayed existing session completes — must NOT refresh
-  const unrelated = onDoneCreationRefresh(state, "run-other", "other-existing-sess", "other-existing-sess", false);
+  const unrelated = onDoneCreationRefresh(state, "run-other", "other-existing-sess", false);
   assert.equal(unrelated.shouldRefresh, false, "unrelated session done does not consume the pending creation entry");
   assert.deepEqual(unrelated.nextState, state, "unrelated session done leaves state untouched");
 
   // The original background creation session completes — must refresh once
-  const creation = onDoneCreationRefresh(state, "run-a", null, "creation-sess", false);
+  const creation = onDoneCreationRefresh(state, "run-a", "creation-sess", false);
   assert.equal(creation.shouldRefresh, true, "background creation session done refreshes the sidebar");
   assert.deepEqual(creation.nextState, FRESH, "entry consumed after creation refresh");
 
   // Subsequent completion for the same run must not refresh again
-  const again = onDoneCreationRefresh(creation.nextState, "run-a", null, "creation-sess", false);
+  const again = onDoneCreationRefresh(creation.nextState, "run-a", "creation-sess", false);
   assert.equal(again.shouldRefresh, false, "second completion does not re-refresh after entry removed");
 }
 
@@ -293,7 +293,7 @@ const FRESH = { pendingRuns: {} };
     "[interleave] unrelated runId not in pendingRuns — session event is a no-op");
 
   // That same existing generation completes — no refresh
-  const existingDone = onDoneCreationRefresh(state, "run-unrelated", "existing-1", "existing-1", false);
+  const existingDone = onDoneCreationRefresh(state, "run-unrelated", "existing-1", false);
   assert.equal(existingDone.shouldRefresh, false,
     "[interleave] unrelated completion does not fire creation refresh");
   assert.deepEqual(existingDone.nextState, state,
@@ -305,16 +305,99 @@ const FRESH = { pendingRuns: {} };
     "[interleave] sessionless generation's session event binds to created-1");
 
   // Background creation generation completes → refresh fires exactly once
-  const createdDone = onDoneCreationRefresh(state, "run-a", null, "created-1", false);
+  const createdDone = onDoneCreationRefresh(state, "run-a", "created-1", false);
   assert.equal(createdDone.shouldRefresh, true,
     "[interleave] creation generation completion fires the sidebar refresh");
   assert.deepEqual(createdDone.nextState, FRESH,
     "[interleave] entry consumed after creation refresh");
 
   // No second refresh
-  const createdDoneAgain = onDoneCreationRefresh(createdDone.nextState, "run-a", null, "created-1", false);
+  const createdDoneAgain = onDoneCreationRefresh(createdDone.nextState, "run-a", "created-1", false);
   assert.equal(createdDoneAgain.shouldRefresh, false,
     "[interleave] second completion after refresh does not re-fire");
+}
+
+// onCreationRunTerminated -------------------------------------------------------
+
+// Unbound entry: removes the entry
+{
+  const state = { pendingRuns: { "run-a": { sessionId: null } } };
+  const next = onCreationRunTerminated(state, "run-a");
+  assert.deepEqual(next, FRESH, "onCreationRunTerminated removes an unbound pending entry");
+}
+
+// Bound entry: preserves the entry for same-ID retry
+{
+  const state = { pendingRuns: { "run-a": { sessionId: "sess-abc" } } };
+  const next = onCreationRunTerminated(state, "run-a");
+  assert.deepEqual(next, state, "onCreationRunTerminated preserves a bound pending entry");
+}
+
+// runId not in pendingRuns: no-op
+{
+  const next = onCreationRunTerminated(FRESH, "run-unknown");
+  assert.deepEqual(next, FRESH, "onCreationRunTerminated is a no-op when runId not in pendingRuns");
+}
+
+// Overlapping runs: only the targeted unbound run is removed
+{
+  const state = {
+    pendingRuns: {
+      "run-a": { sessionId: null },
+      "run-b": { sessionId: null },
+      "run-c": { sessionId: "sess-xyz" },
+    },
+  };
+  const next = onCreationRunTerminated(state, "run-a");
+  assert.deepEqual(next, {
+    pendingRuns: {
+      "run-b": { sessionId: null },
+      "run-c": { sessionId: "sess-xyz" },
+    },
+  }, "onCreationRunTerminated removes only the targeted unbound run, leaving others intact");
+}
+
+// Idempotent: calling twice on the same runId after removal is a no-op
+{
+  const state = { pendingRuns: { "run-a": { sessionId: null } } };
+  const once = onCreationRunTerminated(state, "run-a");
+  const twice = onCreationRunTerminated(once, "run-a");
+  assert.deepEqual(twice, FRESH, "onCreationRunTerminated is idempotent");
+}
+
+// onDoneCreationRefresh — failed done unbound removes entry -----------------------
+
+// Failed done while unbound: entry removed (consistent with onCreationRunTerminated)
+{
+  const state = { pendingRuns: { "run-a": { sessionId: null } } };
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", "sess-new", true);
+  assert.equal(shouldRefresh, false, "failed done while unbound does not refresh");
+  assert.deepEqual(nextState, FRESH, "failed done while unbound removes the entry");
+}
+
+// Failed done while bound: entry preserved for retry
+{
+  const state = { pendingRuns: { "run-a": { sessionId: "sess-new" }, "run-b": { sessionId: "sess-new" } } };
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", "sess-new", true);
+  assert.equal(shouldRefresh, false, "failed done while bound does not refresh");
+  assert.deepEqual(nextState, state, "failed done while bound preserves all entries (including aliases)");
+}
+
+// Overlapping runs: terminated unbound run does not affect other runs
+{
+  const state = {
+    pendingRuns: {
+      "run-a": { sessionId: null },
+      "run-b": { sessionId: "sess-B" },
+    },
+  };
+  const terminated = onCreationRunTerminated(state, "run-a");
+  assert.deepEqual(terminated, { pendingRuns: { "run-b": { sessionId: "sess-B" } } },
+    "terminating run-a does not affect run-b");
+  // run-b still completes normally
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(terminated, "run-b", "sess-B", false);
+  assert.equal(shouldRefresh, true, "run-b completion still refreshes after run-a was terminated");
+  assert.deepEqual(nextState, FRESH, "all entries cleared after run-b completes");
 }
 
 console.log("chat-creation-refresh.test.ts ok");

@@ -773,7 +773,8 @@ assert.match(
 
 // Done event binds with completedSessionId (covers the done-before-session race
 // and the background-generation path) before invoking onDoneCreationRefresh.
-// runId and provenance are passed to both helpers.
+// runId and provenance are passed to onCreationSessionIdentified; onDoneCreationRefresh
+// no longer takes originSessionId (removed as unused parameter).
 assert.match(
   source,
   /onCreationSessionIdentified\(\s*creationRefreshStateRef\.current,[\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId,[\s\S]*?completedSessionId[\s\S]*?\)[\s\S]*?onDoneCreationRefresh\(/,
@@ -788,11 +789,31 @@ assert.doesNotMatch(
   /liveGeneration\.originSessionId === null[\s\S]{0,120}?onCreationSessionIdentified/,
   "provenance gate is encoded in the helper API; ChatView must not guard onCreationSessionIdentified calls with a caller-side originSessionId === null check",
 );
-// Done event passes liveGeneration.runId and liveGeneration.originSessionId to both helpers
+// onCreationSessionIdentified receives liveGeneration.originSessionId; onDoneCreationRefresh does not
 assert.match(
   source,
-  /onCreationSessionIdentified\(\s*creationRefreshStateRef\.current,[\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId,[\s\S]*?completedSessionId[\s\S]*?onDoneCreationRefresh\([\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId/,
-  "done event passes liveGeneration.runId and liveGeneration.originSessionId to both onCreationSessionIdentified and onDoneCreationRefresh",
+  /onCreationSessionIdentified\(\s*creationRefreshStateRef\.current,[\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId,[\s\S]*?completedSessionId[\s\S]*?onDoneCreationRefresh\(\s*creationRefreshStateRef\.current,\s*liveGeneration\.runId,\s*completedSessionId/,
+  "done event: onCreationSessionIdentified receives originSessionId; onDoneCreationRefresh takes only state/runId/completedSessionId (originSessionId removed)",
+);
+
+// Terminal non-done paths wire onCreationRunTerminated to evict unbound pending entries.
+// case "error": stream-level error event cleans up before returning.
+assert.match(
+  source,
+  /case "error": \{[\s\S]*?onCreationRunTerminated\(\s*creationRefreshStateRef\.current,\s*liveGeneration\.runId/,
+  "case 'error' wires onCreationRunTerminated to remove unbound pending entries on terminal stream error",
+);
+// Outer catch: AbortError (user cancelled) path cleans up.
+assert.match(
+  source,
+  /lifecycle: "cancelled"[\s\S]{0,2000}?onCreationRunTerminated\(\s*creationRefreshStateRef\.current,\s*liveGeneration\.runId/,
+  "outer catch AbortError path wires onCreationRunTerminated to remove unbound pending entries on cancellation",
+);
+// Outer catch: non-AbortError (HTTP/network error) path cleans up.
+assert.match(
+  source,
+  /conciseStreamError\(err[\s\S]{0,700}?onCreationRunTerminated\(\s*creationRefreshStateRef\.current,\s*liveGeneration\.runId/,
+  "outer catch non-AbortError path wires onCreationRunTerminated to remove unbound pending entries on send failure",
 );
 // sendRaw passes runId to onSendStart for per-generation creation-refresh tracking
 assert.match(
