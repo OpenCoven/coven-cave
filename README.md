@@ -83,14 +83,23 @@ Grab the latest desktop build from the releases page:
 
 **→ https://github.com/OpenCoven/coven-cave/releases/latest**
 
-Release assets include macOS, Windows, and Linux builds plus update metadata and
-checksums.
+| Platform | Published build | Install |
+| --- | --- | --- |
+| macOS Apple Silicon | `aarch64.dmg` | Use Homebrew above, or open the matching DMG and drag CovenCave to Applications. |
+| macOS Intel | `x86_64.dmg` | Use Homebrew above, or open the matching DMG and drag CovenCave to Applications. |
+| Windows x64 | `x64_en-US.msi` | Download the MSI and run it. |
+| Linux x64 / amd64 | `amd64.AppImage` | Download it, run `chmod +x CovenCave_*.AppImage`, then launch it. |
+
+Release assets also include update metadata, signatures, and checksums. Windows
+Arm and Linux Arm builds are not currently published.
 
 ### iOS
 
-The iOS client ships through **TestFlight**. See
-[`apps/ios/CovenCave/README.md`](apps/ios/CovenCave/README.md) for the native
-client and widget notes.
+The native iOS client is distributed through invitation-based **TestFlight**
+builds. Coven Cave can expose the current invitation when maintainers configure
+`COVEN_CAVE_IOS_INSTALL_URL`; no public enrollment URL is committed in this
+repository. Ask an OpenCoven maintainer for access. Contributors can use the
+[`native iOS source-build guide`](apps/ios/CovenCave/README.md).
 
 ---
 
@@ -165,17 +174,26 @@ For deeper design context, start with [`docs/golden-paths.md`](docs/golden-paths
 
 ### Requirements
 
-- **Node.js 24.18.0 LTS**
-- **pnpm 10+**
+- **Node.js 24.18.0 or newer within Node 24** (`.nvmrc` pins 24.18.0;
+  `package.json` requires `>=24.18.0 <25`)
+- **Corepack** with **pnpm 10.34.0** (the version pinned by `packageManager`)
 - **Rust** and Cargo
-- Tauri desktop prerequisites for your platform
-- **Xcode + XcodeGen** for iOS work
+- [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for macOS,
+  Windows, or Linux
+- **Xcode 16+** and
+  [XcodeGen](https://github.com/yonaskolb/XcodeGen) for iOS work only
 
 ### Setup
 
 ```bash
-pnpm install
+corepack enable
+corepack prepare pnpm@10.34.0 --activate
+corepack pnpm install --frozen-lockfile
 ```
+
+`corepack pnpm --version` should print `10.34.0`. Invoking pnpm through
+Corepack also avoids an older globally installed `pnpm` taking precedence on
+your `PATH`.
 
 ### Run the web app
 
@@ -213,8 +231,9 @@ Running DevCommand (`cargo run --no-default-features --color always --`)
 <details>
 <summary><strong>Startup looks stuck? Diagnose it here</strong></summary>
 
-- **First launch is slow by design.** Cargo downloads and compiles Rust crates
-  before the window appears. `Compiling ...` lines are progress, not a hang.
+- **The first native development launch can be slow.** Cargo downloads and
+  compiles Rust crates before the window appears. `Compiling ...` lines are
+  progress, not a hang.
 - **No `port ... is free` line + an error** → every port in `3000..3010` is
   occupied. Free one or pass an explicit `PORT=`.
 - **Stuck before `> Ready on ...`** → the Next dev server. Check the wrapper's
@@ -269,16 +288,25 @@ pnpm check:tests-wired  # ensure new tests are registered
 ## Contributing
 
 `main` is **protected** — every change goes through a short-lived branch and a
-pull request. Use a worktree:
+pull request. Create a managed Beads worktree:
 
 ```bash
-git worktree add -b <branch> .worktrees/<branch> origin/main
-cd .worktrees/<branch>
+pnpm beads:worktrees:create --bead <id> --branch <branch> \
+  --owner <owner> --purpose "<purpose>"
+cd .worktrees/<slugged-branch>
+corepack pnpm install --frozen-lockfile
 ```
 
+`--bead`, `--branch`, `--owner`, and `--purpose` are required. The command
+starts from `origin/main` and slugifies the branch for the directory name. See
+[`AGENTS.md`](AGENTS.md) for admission exceptions, the narrowly permitted
+fallback, and lifecycle retirement.
+
 Make the branch PR-shaped before opening: a scoped diff, relevant local
-verification, and a clear summary of what changed. After merge, delete the
-remote branch and remove the local worktree.
+verification, and a clear summary of what changed. After merge, run
+`pnpm beads:worktrees`, record the unit's disposition, and use
+`pnpm beads:worktrees:apply` only when it reports a complete repository
+maintenance transaction.
 
 - **Releases, TestFlight uploads, and updater validation start from clean
   `main`.**
@@ -334,25 +362,27 @@ sessions so familiar work can run on your machine.
 
 Two paths. For quick dogfooding, `pnpm mobile:tailscale` exposes the web app to
 your phone over **Tailscale**. For a first-class experience, the native SwiftUI
-iOS client (shipped via TestFlight) has its own chat, code, tasks, and feed
-tabs.
+iOS client (distributed through invitation-based TestFlight builds) has its own
+chat, code, tasks, and feed tabs.
 
 </details>
 
 <details>
 <summary><strong>Which platforms are supported?</strong></summary>
 
-Desktop: **macOS, Windows, and Linux**. Mobile: **iOS** (native client) and any
-phone browser via Tailscale.
+Desktop: **macOS Apple Silicon and Intel**, **Windows x64**, and **Linux
+x64/amd64**. Mobile: the invitation-based native **iOS** client and any phone
+browser via Tailscale.
 
 </details>
 
 <details>
 <summary><strong>The desktop app seems stuck on first launch — is it broken?</strong></summary>
 
-Almost always no. The first `dev:app` or first install compiles Rust crates,
-which can take several minutes. `Compiling ...` output is progress. See the
-[startup diagnostics](#run-the-native-desktop-shell) above.
+The signed desktop build does not compile Rust on first launch. Cargo
+compilation only occurs when running the native shell from source with
+`scripts/dev-app.sh`; that first development build can take several minutes.
+See the [startup diagnostics](#run-the-native-desktop-shell) above.
 
 </details>
 
