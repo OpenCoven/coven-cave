@@ -9,6 +9,7 @@ import {
 const state = {
   sessionFamiliar: { "local-1": "charm", "daemon-1": "cody" },
   sessionTitles: { "local-1": "Recovered local chat" },
+  sessionTitleRevision: { "local-1": 7 },
   sessionArchived: {},
   sessionSacrificed: {},
 };
@@ -33,6 +34,7 @@ assert.deepEqual(
     project_root: "",
     harness: "codex",
     title: "Recovered local chat",
+    titleRevision: 7,
     status: "completed",
     exit_code: 0,
     archived_at: null,

@@ -704,14 +704,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /await setDefaultSessionTitleIfMissing\(finalSessionId, chatTitle\)/,
+  /await setDefaultStubTitleAuto\(finalSessionId, chatTitle\)/,
   "Fresh chats should store a Cave-side title override so daemon prompt-derived titles do not win in the session list",
 );
 
 assert.match(
   chatRoute,
-  /async function setDefaultSessionTitleIfMissing[\s\S]*await setSessionTitle\(sessionId, title\)/,
-  "The default title override helper should preserve existing titles and write only through the Cave title override path",
+  /async function setDefaultStubTitleAuto[\s\S]{0,400}setSessionTitleAutoIfOwned/,
+  "The default title override helper must use the atomic auto-owned write (setSessionTitleAutoIfOwned)",
 );
 
 assert.match(
