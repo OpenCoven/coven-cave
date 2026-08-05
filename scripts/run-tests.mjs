@@ -1318,6 +1318,7 @@ export const SUITES = {
     "src/lib/server/session-security.test.ts",
     "src/lib/server/memory-file-sources.test.ts",
     "src/lib/server/familiar-startup-context.test.ts",
+    "src/lib/server/familiar-contract-context.test.ts",
     "src/lib/server/operator-profile-context.test.ts",
     "src/lib/server/knowledge-vault.test.ts",
     "src/lib/server/knowledge-vault-collections.test.ts",
@@ -1736,6 +1737,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/travel-network-drop-proof.test.ts",
   "src/lib/chat-task-autofill.test.ts",
   "src/lib/voice/hydrate-instructions.test.ts",
+  // the shared contract builder resolves "@/lib/server/familiar-contract-files".
+  "src/lib/server/familiar-contract-context.test.ts",
   "src/app/api/voice/session/route.test.ts",
   "src/app/api/hermes-profiles/route.test.ts",
   "src/app/api/chat/conversation/[id]/route.test.ts",
