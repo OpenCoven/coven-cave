@@ -73,6 +73,8 @@ export type CodeReadingTarget = {
   lang: string;
   /** Repo-relative path when the fence named one. */
   path: string | null;
+  /** Immutable execution root captured from the transcript turn. */
+  projectRoot: string | null;
   provenance: CodeProvenance;
   /** Tab to land on. Compare jumps straight to the difference. */
   tab: InspectorTabId;
@@ -384,7 +386,11 @@ export function CodeReadingInspector({
     announce(`Opening ${displayName} in the workshop`);
   }, [announce, displayName, label, onOpenInWorkshop, selection, snippetStart, target.origin, target.path]);
 
-  const canOpen = canOpenInWorkshop(target.provenance) && Boolean(target.path) && Boolean(onOpenInWorkshop);
+  const canOpen =
+    canOpenInWorkshop(target.provenance) &&
+    Boolean(target.path) &&
+    Boolean(projectRoot) &&
+    Boolean(onOpenInWorkshop);
 
   return (
     <>

@@ -117,6 +117,33 @@ async function moveProjectImageKey(from: string, to: string): Promise<void> {
   await ensureHydrated();
   const entry = cached[from];
   if (!entry || from === to) return;
+  const destination = cached[to];
+  if (destination) {
+    // A canonical key is authoritative. Never replace it with a legacy-key
+    // record, even if both windows race this migration. The old duplicate is
+    // safe to remove when the canonical bytes match or its timestamp proves it
+    // is at least as recent; otherwise preserve both sides for manual recovery.
+    const sourceTime = Date.parse(entry.updatedAt);
+    const destinationTime = Date.parse(destination.updatedAt);
+    const sameImage =
+      entry.dataUrl === destination.dataUrl && entry.mime === destination.mime;
+    const destinationIsAtLeastAsRecent =
+      Number.isFinite(sourceTime) &&
+      Number.isFinite(destinationTime) &&
+      destinationTime >= sourceTime;
+    if (!sameImage && !destinationIsAtLeastAsRecent) return;
+    try {
+      await avatarStorage().delete("projectAvatars", from);
+    } catch {
+      return;
+    }
+    const next = { ...cached };
+    delete next[from];
+    cached = Object.keys(next).length > 0 ? next : EMPTY;
+    notify();
+    broadcast();
+    return;
+  }
   try {
     await avatarStorage().put("projectAvatars", to, entry);
   } catch {

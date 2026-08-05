@@ -295,7 +295,6 @@ import {
   isFileMutationActionReady,
   isFileMutationTool,
   normalizeFileMutation,
-  toolInputAsDiff,
   toolTargetFile,
   toolTargetPath,
 } from "@/lib/tool-input-diff";
@@ -2511,7 +2510,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const codeReading = useMemo<CodeReading>(
     () => ({
-      projectRoot: activeProjectRoot || null,
       onRead: (request) =>
         setReadingTarget({
           ...request,
@@ -2522,7 +2520,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           },
         }),
     }),
-    [activeProjectRoot, familiar.display_name, session?.title],
+    [familiar.display_name, session?.title],
   );
 
   const projectLaunchReady =
@@ -3764,40 +3762,69 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
   }, [mentionToken, mentionRoot, mentionIndex, familiar.id]);
 
-  // Transcript file-ref links: prose refs (`src/foo.ts:42`) only render as
-  // clickable when they resolve to a real file under the session's project
-  // root — a rendered link is a promise the click opens it in the code rail,
-  // so no root or an unindexed path keeps the ref as plain text. The index is
-  // fetched once per root (same /api/project/files the @-mention picker uses;
-  // the API's short-lived cache absorbs re-opens).
-  const transcriptFileRoot = session?.project_root ?? projectRoot ?? null;
-  const [fileRefIndex, setFileRefIndex] = useState<{ root: string; files: Set<string> } | null>(null);
+  // Every historical turn keeps the file index for its own recorded execution
+  // root. A project switch may change the active composer root, but it cannot
+  // retarget an old inline reference.
+  const turnProjectRoots = useMemo(
+    () => new Map(turns.map((turn) => [turn.id, turnToolProjectRoot(turn)])),
+    [turns],
+  );
+  const transcriptFileRoots = useMemo(
+    () => [...new Set([...turnProjectRoots.values()].filter((root): root is string => Boolean(root)))],
+    [turnProjectRoots],
+  );
+  const transcriptFileRootsKey = transcriptFileRoots.join("\0");
+  const [fileRefIndexes, setFileRefIndexes] = useState<
+    Map<string, ReadonlySet<string>>
+  >(() => new Map());
   useEffect(() => {
-    if (!transcriptFileRoot || fileRefIndex?.root === transcriptFileRoot) return;
+    const roots = transcriptFileRootsKey ? transcriptFileRootsKey.split("\0") : [];
+    const missing = roots.filter(
+      (root) => !fileRefIndexes.has(`${familiar.id}\n${root}`),
+    );
+    if (missing.length === 0) return;
     let cancelled = false;
     void (async () => {
-      try {
-        const params = new URLSearchParams({ root: transcriptFileRoot, familiarId: familiar.id });
-        const res = await fetch(`/api/project/files?${params.toString()}`, { cache: "no-store" });
-        const json = await res.json() as { ok?: boolean; repo?: boolean; files?: string[] };
-        if (cancelled) return;
-        setFileRefIndex({
-          root: transcriptFileRoot,
-          files: new Set(json.ok === true && json.repo === true && Array.isArray(json.files) ? json.files : []),
-        });
-      } catch {
-        if (!cancelled) setFileRefIndex({ root: transcriptFileRoot, files: new Set<string>() });
-      }
+      const loaded = await Promise.all(
+        missing.map(async (root) => {
+          let files = new Set<string>();
+          try {
+            const params = new URLSearchParams({ root, familiarId: familiar.id });
+            const res = await fetch(`/api/project/files?${params.toString()}`, {
+              cache: "no-store",
+            });
+            const json = await res.json() as {
+              ok?: boolean;
+              repo?: boolean;
+              files?: string[];
+            };
+            if (json.ok === true && json.repo === true && Array.isArray(json.files)) {
+              files = new Set(json.files);
+            }
+          } catch {
+            // Keep the root indexed as empty. The rendered reference then fails
+            // closed instead of becoming a click with no verified destination.
+          }
+          return [`${familiar.id}\n${root}`, files] as const;
+        }),
+      );
+      if (cancelled) return;
+      setFileRefIndexes((current) => {
+        const next = new Map(current);
+        for (const [key, files] of loaded) next.set(key, files);
+        return next;
+      });
     })();
     return () => {
       cancelled = true;
     };
-  }, [transcriptFileRoot, fileRefIndex, familiar.id]);
+  }, [familiar.id, fileRefIndexes, transcriptFileRootsKey]);
   const fileLinkResolver = useCallback(
-    (ref: FileRef) =>
-      fileRefIndex?.root === transcriptFileRoot &&
-      resolveFileRefTarget(ref, transcriptFileRoot, fileRefIndex.files) != null,
-    [fileRefIndex, transcriptFileRoot],
+    (ref: FileRef, immutableRoot: string) => {
+      const files = fileRefIndexes.get(`${familiar.id}\n${immutableRoot}`);
+      return resolveFileRefTarget(ref, immutableRoot, files ?? null) != null;
+    },
+    [familiar.id, fileRefIndexes],
   );
 
   // Insert the picked path inline, replacing the `@query` token (Claude Code
@@ -3860,11 +3887,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!activeLeafId) return turns;
     return resolveActivePath(turns, activeLeafId) as Turn[];
   }, [turns, activeLeafId]);
-  const turnProjectRoots = useMemo(
-    () => new Map(turns.map((turn) => [turn.id, turnToolProjectRoot(turn)])),
-    [turns],
-  );
-
   // The last settled assistant turn's first reply next-path. Typed task/action
   // suggestions are deliberately excluded: keyboard fill may only prepare
   // editable chat text, never start a task or navigate as a side effect.
@@ -7998,7 +8020,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       {readingTarget ? (
         <CodeReadingInspector
           target={readingTarget}
-          projectRoot={activeProjectRoot || null}
+          projectRoot={readingTarget.projectRoot}
           pin={readingPin}
           onPinChange={changeReadingPin}
           onClose={() => setReadingTarget(null)}
@@ -8011,21 +8033,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onQuote={(markdown) =>
             setInput((prev) => (prev ? `${prev.replace(/\s*$/, "")}\n\n${markdown}` : markdown))
           }
-          onOpenInWorkshop={({ path, line, selectionLabel: range, origin }) => {
-            // The workshop consumes this through the same shell handler that
-            // inline file refs use (workspace.tsx → pending-code-open), so the
-            // handoff has one route, not a second parallel one.
-            window.dispatchEvent(
-              new CustomEvent("cave:open-project-file", {
-                detail: {
-                  path,
-                  line: line ?? undefined,
-                  origin: { ...origin, selectionLabel: range },
-                },
-              }),
-            );
-            setReadingTarget(null);
-          }}
+          onOpenInWorkshop={
+            readingTarget.projectRoot
+              ? ({ path, line, selectionLabel: range, origin }) => {
+                  window.dispatchEvent(
+                    new CustomEvent("cave:open-project-file", {
+                      detail: {
+                        path,
+                        line: line ?? undefined,
+                        projectRoot: readingTarget.projectRoot,
+                        origin: { ...origin, selectionLabel: range },
+                      },
+                    }),
+                  );
+                  setReadingTarget(null);
+                }
+              : undefined
+          }
         />
       ) : null}
               {/* Run rail (Coven Cave - Chat Session handoff, cave-w716g): the
@@ -8766,6 +8790,7 @@ function TurnRowImpl({
                 onEdit={onEdit}
                 onReply={onReply}
                 onOpenUrl={onOpenUrl}
+                projectRoot={toolProjectRoot}
                 branchNav={branchNav}
               />
               {/* An image or playable clip you attached renders as itself,
@@ -8957,42 +8982,44 @@ function TurnRowImpl({
               content={
                 <>
                   {indicatorVisible ? (
-              <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
-            ) : (
-              // `cave-artifact-content` scopes the comment-on-artifact text
-              // selection to this turn's rendered markdown (see ArtifactComments).
-              <div className="cave-artifact-content">
-                <MessageBubble
-                  role="assistant"
-                  content={visible || (turn.pending ? "…" : "")}
-                  timestamp={turn.createdAt}
-                  showTimestamp={false}
-                  pending={turn.pending}
-                  isError={turn.error}
-                  label={familiar.display_name}
-                  messageId={turn.id}
-                  feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
-                  onRegenerate={onRegenerate}
-                  onReply={onReply}
-                  onOpenUrl={onOpenUrl}
-                  // CHAT-D13-01: with tools hidden, fall back to plain content —
-                  // the text segments concatenate to `visible` anyway, so prose
-                  // renders identically with the tool blocks omitted.
-                  segments={renderSegments}
-                  // The reader's "How this was made" footer reads the same
-                  // settled tool events the stream already renders, so the
-                  // provenance it shows can never disagree with the transcript.
-                  readerTools={turnTools}
-                  readerDurationMs={turn.durationMs}
-                  onAskAbout={onAskAbout}
-                  readerPrompt={readerPrompt}
-                  onRerunWith={onRerunWith}
-                  readerFamiliarId={familiar.id}
-                  branchNav={branchNav}
-                />
-                <ResponseModelStatus metadata={turn.responseMetadata} />
-                <ResponseControlStatus metadata={turn.responseMetadata} />
-              </div>
+                    <ThinkingIndicator
+                      label="Thinking"
+                      startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined}
+                    />
+                  ) : (
+                    // `cave-artifact-content` scopes the comment-on-artifact text
+                    // selection to this turn's rendered markdown (see ArtifactComments).
+                    <div className="cave-artifact-content">
+                      <MessageBubble
+                        role="assistant"
+                        content={visible || (turn.pending ? "…" : "")}
+                        timestamp={turn.createdAt}
+                        showTimestamp={false}
+                        pending={turn.pending}
+                        isError={turn.error}
+                        label={familiar.display_name}
+                        messageId={turn.id}
+                        feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
+                        onRegenerate={onRegenerate}
+                        onReply={onReply}
+                        onOpenUrl={onOpenUrl}
+                        projectRoot={toolProjectRoot}
+                        // CHAT-D13-01: with tools hidden, fall back to plain
+                        // content; text segments concatenate to `visible`.
+                        segments={renderSegments}
+                        // The reader's "How this was made" footer reads the same
+                        // settled tool events the stream already renders.
+                        readerTools={turnTools}
+                        readerDurationMs={turn.durationMs}
+                        onAskAbout={onAskAbout}
+                        readerPrompt={readerPrompt}
+                        onRerunWith={onRerunWith}
+                        readerFamiliarId={familiar.id}
+                        branchNav={branchNav}
+                      />
+                      <ResponseModelStatus metadata={turn.responseMetadata} />
+                      <ResponseControlStatus metadata={turn.responseMetadata} />
+                    </div>
                   )}
                   {/* Agent-produced inline attachments: images render full-bleed
                 (e.g. /image generations), audio/video mount as players, and

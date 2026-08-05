@@ -287,15 +287,15 @@ export function codeSessionForPendingOpen(
 }
 
 export type CodePendingOpenResolution =
-  | { status: "waiting"; capturedRoot: string; target: null }
+  | { status: "waiting"; capturedRoot: string | null; target: null }
   | { status: "invalid"; capturedRoot: null; target: null }
-  | { status: "absent"; capturedRoot: string; target: null }
+  | { status: "absent"; capturedRoot: string | null; target: null }
   | { status: "ready"; capturedRoot: string | null; target: SessionRow | null };
 
 /**
- * Separate a valid rooted open waiting on the session inventory from roots that
- * are malformed or definitively absent after loading. Callers may acknowledge
- * every result except `waiting`.
+ * Keep rooted and session-targeted opens pending until the current scoped
+ * inventory is authoritative. Callers may acknowledge every result except
+ * `waiting`.
  */
 export function resolveCodePendingOpen(
   rows: readonly SessionRow[],
@@ -306,11 +306,12 @@ export function resolveCodePendingOpen(
   if (open.root !== undefined && !capturedRoot) {
     return { status: "invalid", capturedRoot: null, target: null };
   }
-  if (capturedRoot && !sessionsLoaded) {
+  const target = codeSessionForPendingOpen(rows, open);
+  const hasInventoryTarget = Boolean(capturedRoot || open.sessionId);
+  if (hasInventoryTarget && !sessionsLoaded) {
     return { status: "waiting", capturedRoot, target: null };
   }
-  const target = codeSessionForPendingOpen(rows, open);
-  if (capturedRoot && !target) {
+  if (hasInventoryTarget && !target) {
     return { status: "absent", capturedRoot, target: null };
   }
   return { status: "ready", capturedRoot, target };

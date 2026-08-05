@@ -50,7 +50,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /dispatchEvent\(\s*new CustomEvent\(isEditTool \? "cave:open-file-diff" : "cave:open-project-file", \{\s*detail: \{ path: targetFile \},/,
+  /dispatchEvent\(\s*new CustomEvent\(isEditTool \? "cave:open-file-diff" : "cave:open-project-file", \{\s*detail: \{ path: targetFile, projectRoot: railRoot \},/,
   "clicking a tool's file dispatches the diff jump for edit tools, else the file preview",
 );
 // Click must not also toggle the <details> open/closed.

@@ -59,13 +59,17 @@ assert.match(
 );
 assert.match(
   wiring,
-  /dispatchEvent\(new CustomEvent\("cave:open-project-file", \{ detail: \{ path, line \} \}\)\)/,
-  "clicking a file ref opens it in the Code workspace",
+  /detail: \{ path, line, projectRoot \}/,
+  "clicking a file ref carries its immutable turn root into the Code workspace",
 );
 // A ref is only linkified when the surface's resolver confirms the click can
 // open it; wiring reconciles (adds AND removes the affordance) so a resolver
 // change never leaves a stale clickable ref.
-assert.match(wiring, /const want = Boolean\(ref && resolve\?\.\(ref\)\)/, "linkify is gated on the resolver approving the ref");
+assert.match(
+  wiring,
+  /const want = Boolean\(ref && projectRoot && resolve\?\.\(ref, projectRoot\)\)/,
+  "linkify requires both immutable provenance and a resolver-approved ref",
+);
 assert.match(wiring, /_caveFileLinkCleanup = \(\) => \{[\s\S]*?removeEventListener\("click", open\)[\s\S]*?classList\.remove\("cave-file-link"\)/, "wiring keeps a cleanup so a rejected ref is un-linkified in place");
 // Chat prose supplies the resolver via context; the shared MarkdownBlock must
 // not enable file-link resolution, but can open ordinary web links through its
@@ -75,7 +79,26 @@ assert.match(bubble, /const containerRef = useWireCopyButtons\(html, onOpenUrl\)
 // ChatView provides the resolver over its transcript, backed by the project
 // file index, so links only render for files that exist under the session root.
 assert.match(chatView, /<FileLinkResolverContext\.Provider value=\{fileLinkResolver\}>/, "chat transcript provides the file-link resolver");
-assert.match(chatView, /resolveFileRefTarget\(ref, transcriptFileRoot, fileRefIndex\.files\) != null/, "the chat resolver verifies refs against the fetched project file index");
+assert.match(
+  chatView,
+  /new Map\(turns\.map\(\(turn\) => \[turn\.id, turnToolProjectRoot\(turn\)\]\)\)/,
+  "each transcript turn derives its own immutable execution root",
+);
+assert.match(
+  chatView,
+  /resolveFileRefTarget\(ref, immutableRoot, files \?\? null\) != null/,
+  "the chat resolver verifies refs against the cited turn's project index",
+);
+assert.match(
+  chatView,
+  /<MessageBubble[\s\S]{0,700}?projectRoot=\{toolProjectRoot\}/,
+  "a project switch cannot retarget an already-rendered message's inline refs",
+);
+assert.doesNotMatch(
+  chatView,
+  /const transcriptFileRoot = session\?\.project_root \?\? projectRoot/,
+  "historical inline refs never inherit the mutable current project root",
+);
 // The tool file chip needs the code rail (a project root) to open anything —
 // no root ⇒ plain text, not a dead button.
 assert.match(chatView, /targetFile && railRoot \? \(/, "tool file chips are gated on a project root");

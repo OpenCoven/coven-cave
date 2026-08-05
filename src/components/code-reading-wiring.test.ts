@@ -50,17 +50,17 @@ assert.match(
 assert.match(wiring, /function wireCodeReading\(/, "there is a reading wiring pass");
 assert.match(
   wiring,
-  /wireCodeReading\(el, reading\)/,
-  "useWireCopyButtons runs the reading pass alongside copy/collapse",
+  /wireCodeReading\(el, reading, projectRoot\)/,
+  "useWireCopyButtons runs the reading pass with the owning turn root",
 );
 assert.match(
   wiring,
-  /\.cave-code-read-btn"\)\?\.addEventListener\("click"/,
+  /readButton\?\.addEventListener\("click", openSnippet\)/,
   "the Read control gets a click handler",
 );
 assert.match(
   wiring,
-  /\.cave-code-compare-btn"\)\?\.addEventListener\("click"/,
+  /compareButton\?\.addEventListener\("click", openCompare\)/,
   "the Compare control gets a click handler",
 );
 
@@ -72,7 +72,7 @@ assert.match(wiring, /open\("compare"\)/, "Compare opens the compare tab");
 // settings/journal/palette surfaces that have no inspector.
 assert.match(
   wiring,
-  /if \(reading\) wrap\.classList\.add\("cave-code-wrap--readable"\)/,
+  /if \(reading\) \{\s*wrap\.classList\.add\("cave-code-wrap--readable"\)/,
   "controls are revealed only where a reading context exists",
 );
 assert.match(
@@ -96,9 +96,14 @@ assert.match(
 assert.match(chatView, /<CodeReadingContext\.Provider value=\{codeReading\}>/, "chat provides the reading context");
 assert.match(chatView, /<CodeReadingInspector/, "chat renders the inspector");
 assert.match(
+  wiring,
+  /reading\.onRead\(\{[\s\S]{0,180}?projectRoot,/,
+  "the reader request captures the rendered turn's immutable root",
+);
+assert.match(
   chatView,
-  /projectRoot: activeProjectRoot \|\| null/,
-  "the context carries the session's active project root, not a guess",
+  /projectRoot=\{readingTarget\.projectRoot\}/,
+  "the inspector keeps using the captured root after the active project changes",
 );
 // The pin is read after mount: localStorage does not exist during SSR and
 // reading it during render would hydrate-mismatch.
@@ -118,8 +123,8 @@ assert.match(chatView, /onQuote=\{/, "Quote is wired to the composer");
 
 assert.match(
   chatView,
-  /new CustomEvent\("cave:open-project-file"/,
-  "Open in workshop reuses the existing shell route rather than a parallel one",
+  /new CustomEvent\("cave:open-project-file", \{[\s\S]{0,180}?projectRoot: readingTarget\.projectRoot/,
+  "Open in workshop reuses the shell route with immutable turn provenance",
 );
 assert.match(chatView, /origin: \{ \.\.\.origin, selectionLabel: range \}/, "the selected range travels with the open");
 assert.match(

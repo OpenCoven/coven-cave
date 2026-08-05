@@ -50,7 +50,13 @@ function isPlainPrimaryClick(event: ReactMouseEvent<HTMLAnchorElement>): boolean
  * The quoted text is the citation's own snippet; nothing is read off disk here,
  * so the card can never show a peek the citation did not carry.
  */
-function RepoCitationCard({ citation }: { citation: Citation }) {
+function RepoCitationCard({
+  citation,
+  projectRoot,
+}: {
+  citation: Citation;
+  projectRoot?: string | null;
+}) {
   const file = citation.file!;
   const range = lineRangeLabel(file);
   const peek = (citation.snippet ?? "").split("\n").slice(0, 4);
@@ -94,24 +100,27 @@ function RepoCitationCard({ citation }: { citation: Citation }) {
         <span className="min-w-0 truncate font-[family-name:var(--font-mono)] text-[length:var(--text-2xs)] text-[var(--text-muted)]">
           {citation.title}
         </span>
-        {/* A real action, not a label that looks like one: this is the same
-            `cave:open-project-file` bridge the inline file links dispatch, so
-            the Code rail opens the cited file at the cited line. */}
-        <button
-          type="button"
-          onClick={() =>
-            window.dispatchEvent(
-              new CustomEvent("cave:open-project-file", {
-                detail: { path: file.path, line: file.lineStart },
-              }),
-            )
-          }
-          title={`Open ${file.path}${file.lineStart ? `:${file.lineStart}` : ""} in the Code workspace`}
-          className="focus-ring ml-auto inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-2xs)] font-medium text-[var(--accent-presence)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)]"
-        >
-          Open in Code
-          <Icon name="ph:arrow-square-out" width={10} height={10} aria-hidden />
-        </button>
+        {projectRoot ? (
+          <button
+            type="button"
+            onClick={() =>
+              window.dispatchEvent(
+                new CustomEvent("cave:open-project-file", {
+                  detail: {
+                    path: file.path,
+                    line: file.lineStart,
+                    projectRoot,
+                  },
+                }),
+              )
+            }
+            title={`Open ${file.path}${file.lineStart ? `:${file.lineStart}` : ""} in the Code workspace`}
+            className="focus-ring ml-auto inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-2xs)] font-medium text-[var(--accent-presence)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)]"
+          >
+            Open in Code
+            <Icon name="ph:arrow-square-out" width={10} height={10} aria-hidden />
+          </button>
+        ) : null}
       </footer>
     </article>
   );
@@ -120,11 +129,15 @@ function RepoCitationCard({ citation }: { citation: Citation }) {
 function CitationCard({
   citation,
   onOpenUrl,
+  projectRoot,
 }: {
   citation: Citation;
   onOpenUrl?: (url: string) => void;
+  projectRoot?: string | null;
 }) {
-  if (citation.file) return <RepoCitationCard citation={citation} />;
+  if (citation.file) {
+    return <RepoCitationCard citation={citation} projectRoot={projectRoot} />;
+  }
   const presentation = citationSourcePresentation(citation);
   const openSource = (event: ReactMouseEvent<HTMLAnchorElement>) => {
     if (!citation.url || !onOpenUrl || !isPlainPrimaryClick(event)) return;
@@ -195,11 +208,13 @@ export function InlineCitationPreviews({
   citations,
   containerRef,
   onOpenUrl,
+  projectRoot,
   renderedHtml,
 }: {
   citations: readonly Citation[];
   containerRef: RefObject<HTMLElement | null>;
   onOpenUrl?: (url: string) => void;
+  projectRoot?: string | null;
   renderedHtml: string;
 }) {
   const anchorRef = useRef<HTMLElement | null>(null);
@@ -354,7 +369,11 @@ export function InlineCitationPreviews({
           onFocusCapture={() => preview.enter("preview-focus")}
           onBlurCapture={() => preview.leave("preview-focus")}
         >
-          <CitationCard citation={activeCitation} onOpenUrl={onOpenUrl} />
+          <CitationCard
+            citation={activeCitation}
+            onOpenUrl={onOpenUrl}
+            projectRoot={projectRoot}
+          />
         </div>
       </PopoverBody>
     </Popover>

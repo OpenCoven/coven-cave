@@ -255,17 +255,73 @@ test("rooted pending open waits for sessions to load, then opens the matching wo
   assert.equal(handled, 1);
 });
 
+test("a scope change cannot resolve a rooted open against stale inventory", () => {
+  const pending: PendingCodeOpen = {
+    kind: "files",
+    path: "src/history.ts",
+    root: "/repo-b",
+    sessionId: "repo-b-session",
+    nonce: 7,
+  };
+  const staleRows = [
+    row({ id: "repo-a-session", project_root: "/repo-a" }),
+    row({ id: "repo-b-session", project_root: "/repo-b" }),
+  ];
+
+  assert.equal(
+    resolveCodePendingOpen(staleRows, pending, false).status,
+    "waiting",
+    "even a matching stale row is not authoritative for the new scope",
+  );
+  assert.equal(
+    resolveCodePendingOpen([], pending, false).status,
+    "waiting",
+    "clearing stale rows does not make the still-loading inventory definitive",
+  );
+  assert.equal(
+    resolveCodePendingOpen(
+      [row({ id: "repo-b-session", project_root: "/repo-b" })],
+      pending,
+      true,
+    ).target?.id,
+    "repo-b-session",
+    "the later scope load resolves the captured-root target",
+  );
+});
+
+test("a rootless session-targeted open waits for inventory before resolving", () => {
+  const pending: PendingCodeOpen = {
+    kind: "files",
+    path: "src/history.ts",
+    sessionId: "historical",
+    nonce: 8,
+  };
+
+  assert.equal(
+    resolveCodePendingOpen([], pending, false).status,
+    "waiting",
+    "an empty loading inventory cannot disprove a session id",
+  );
+  const loaded = resolveCodePendingOpen(
+    [row({ id: "historical", project_root: "/repo-a" })],
+    pending,
+    true,
+  );
+  assert.equal(loaded.status, "ready");
+  assert.equal(loaded.target?.id, "historical");
+});
+
 test("rooted pending resolution distinguishes invalid and definitively absent roots", () => {
   const invalid = resolveCodePendingOpen(
     [],
-    { kind: "files", path: "src/file.ts", root: "relative/repo", nonce: 7 },
+    { kind: "files", path: "src/file.ts", root: "relative/repo", nonce: 9 },
     false,
   );
   assert.equal(invalid.status, "invalid", "malformed provenance fails closed without waiting forever");
 
   const absent = resolveCodePendingOpen(
     [row({ id: "other", project_root: "/repo-b" })],
-    { kind: "files", path: "src/file.ts", root: "/repo-a", nonce: 8 },
+    { kind: "files", path: "src/file.ts", root: "/repo-a", nonce: 10 },
     true,
   );
   assert.equal(absent.status, "absent", "a loaded session list can definitively reject an unknown root");
