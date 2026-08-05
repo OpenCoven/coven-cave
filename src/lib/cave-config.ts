@@ -13,6 +13,8 @@ import {
   type ChatAutoArchivePolicy,
   extendUntilIso,
   normalizeChatAutoArchivePolicy,
+  type ReflectionTrigger,
+  shouldAutoArchiveOnReflection,
   SUMMON_GRACE_DAYS,
 } from "./chat-auto-archive.ts";
 import {
@@ -1053,32 +1055,44 @@ export async function extendSessionAutoArchiveLocal(
 /**
  * Archive a single session after a successful reflection, atomically.
  *
- * Unlike the sweep-internal `autoArchiveSessionsLocal`, this helper checks
- * `sessionKeep`, `sessionArchived`, and `sessionSacrificed` inside the same
- * `updateState` write that sets the archive timestamp, so a concurrent
- * `setSessionKeepLocal` cannot race with the archive decision. Authoritative
- * session existence is checked inside that write as well, preventing a stale
- * pre-check from creating an archive tombstone for a missing chat. It also
- * invalidates the sessions-list cache only when it actually archives, keeping
- * the sidebar refresh on reflection without disrupting the sweep compute path.
+ * Unlike the sweep-internal `autoArchiveSessionsLocal`, this helper applies the
+ * reflection policy against `sessionKeep` and `sessionArchived`, and checks
+ * `sessionSacrificed`, inside the same `updateState` write that sets the archive
+ * timestamp. A concurrent `setSessionKeepLocal` queued first therefore wins.
+ * Authoritative session existence is checked before entering the write so no
+ * external I/O holds the state lock. The sessions-list cache is invalidated
+ * only when the write actually archives.
  *
  * Returns the archive timestamp when archived, else null.
  */
+export type ReflectionArchiveRequest = {
+  trigger: ReflectionTrigger;
+  policy: ChatAutoArchivePolicy;
+  lastActivityAt?: string | null;
+  sessionExists?: () => Promise<boolean>;
+};
+
 export async function autoArchiveReflectedSessionLocal(
   sessionId: string,
-  sessionExists: () => Promise<boolean> = async () =>
-    Boolean(await loadConversation(sessionId)),
+  request: ReflectionArchiveRequest,
 ): Promise<string | null> {
+  const sessionExists = request.sessionExists ?? (async () =>
+    Boolean(await loadConversation(sessionId)));
+  if (!(await sessionExists())) return null;
+
   let archivedAt: string | null = null;
-  await updateState(async (state) => {
-    if (
-      state.sessionKeep[sessionId] ||
-      state.sessionArchived[sessionId] ||
-      state.sessionSacrificed[sessionId]
-    ) {
-      return;
-    }
-    if (!(await sessionExists())) return;
+  await updateState((state) => {
+    if (state.sessionSacrificed[sessionId]) return;
+    if (!shouldAutoArchiveOnReflection(
+      sessionId,
+      request.trigger,
+      request.policy,
+      {
+        keep: state.sessionKeep,
+        archivedSessionIds: Object.keys(state.sessionArchived),
+        lastActivityAt: request.lastActivityAt,
+      },
+    )) return;
     const now = new Date().toISOString();
     state.sessionArchived[sessionId] = now;
     archivedAt = now;

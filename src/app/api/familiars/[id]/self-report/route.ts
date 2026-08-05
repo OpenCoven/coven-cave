@@ -3,11 +3,9 @@ import { redactSecretsDeep, redactSecretText } from "@/lib/secret-redaction";
 import {
   autoArchiveReflectedSessionLocal,
   loadConfig,
-  loadState,
 } from "@/lib/cave-config";
 import {
   normalizeChatAutoArchivePolicy,
-  shouldAutoArchiveOnReflection,
   type ReflectionTrigger,
 } from "@/lib/chat-auto-archive";
 import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
@@ -119,20 +117,18 @@ async function maybeAutoArchiveReflectedThread(
   trigger: ReflectionTrigger,
 ): Promise<string | null> {
   try {
-    const [config, state] = await Promise.all([loadConfig(), loadState()]);
+    const [config, reflectedSession] = await Promise.all([
+      loadConfig(),
+      loadReflectedSession(sessionId),
+    ]);
     const policy = normalizeChatAutoArchivePolicy(config.chatAutoArchive);
-    const reflectedSession = await loadReflectedSession(sessionId);
     if (!reflectedSession) return null;
-    const due = shouldAutoArchiveOnReflection(sessionId, trigger, policy, {
-      keep: state.sessionKeep,
-      archivedSessionIds: Object.keys(state.sessionArchived),
+    const archivedAt = await autoArchiveReflectedSessionLocal(sessionId, {
+      trigger,
+      policy,
       lastActivityAt: reflectedSession.lastActivityAt,
+      sessionExists: async () => Boolean(await loadReflectedSession(sessionId)),
     });
-    if (!due) return null;
-    const archivedAt = await autoArchiveReflectedSessionLocal(
-      sessionId,
-      async () => Boolean(await loadReflectedSession(sessionId)),
-    );
     if (archivedAt) await resolveArchiveNudges(sessionId);
     return archivedAt;
   } catch {

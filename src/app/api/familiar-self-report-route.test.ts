@@ -14,10 +14,10 @@ const routeSource = readFileSync(
 
 describe("reflection auto-archive wiring", () => {
   it("archives the reflected thread through the shared policy helper", () => {
-    assert.match(
+    assert.doesNotMatch(
       routeSource,
-      /shouldAutoArchiveOnReflection\(sessionId, trigger, policy, \{/,
-      "route must delegate the archive decision to the pure policy helper",
+      /shouldAutoArchiveOnReflection|loadState/,
+      "route must not make a stale state/policy decision before the atomic mutator",
     );
     assert.match(
       routeSource,
@@ -31,8 +31,8 @@ describe("reflection auto-archive wiring", () => {
     );
     assert.match(
       routeSource,
-      /autoArchiveReflectedSessionLocal\(\s*sessionId,/,
-      "route must archive through the atomic reflection helper (skips kept/sacrificed/archived inside the write)",
+      /autoArchiveReflectedSessionLocal\(\s*sessionId,\s*\{\s*trigger,\s*policy,\s*lastActivityAt: reflectedSession\.lastActivityAt,/,
+      "route must pass trigger and external context to the atomic reflection helper",
     );
     assert.match(
       routeSource,
@@ -41,8 +41,8 @@ describe("reflection auto-archive wiring", () => {
     );
     assert.match(
       routeSource,
-      /autoArchiveReflectedSessionLocal\(\s*sessionId,\s*async \(\) => Boolean\(await loadReflectedSession\(sessionId\)\),\s*\)/,
-      "the authoritative existence check runs inside the atomic archive helper",
+      /sessionExists: async \(\) => Boolean\(await loadReflectedSession\(sessionId\)\),/,
+      "the authoritative existence recheck is owned by the archive helper",
     );
     assert.match(
       routeSource,

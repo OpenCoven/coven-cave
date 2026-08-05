@@ -10,6 +10,7 @@ process.env.HOME = tempHome;
 
 const config = await import("./cave-config.ts");
 const conversations = await import("./cave-conversations.ts");
+const { DEFAULT_CHAT_AUTO_ARCHIVE_POLICY } = await import("./chat-auto-archive.ts");
 const { sessionsListCache } = await import("./server/sessions-list-cache.ts");
 
 try {
@@ -393,7 +394,15 @@ try {
   // ── autoArchiveReflectedSessionLocal: atomic keep / skip guard ───────────────
   // Archives an eligible session and returns the archive timestamp.
   {
-    const missingResult = await config.autoArchiveReflectedSessionLocal("reflect-missing");
+    const reflectionRequest = {
+      trigger: "manual",
+      policy: DEFAULT_CHAT_AUTO_ARCHIVE_POLICY,
+      lastActivityAt: null,
+    };
+    const missingResult = await config.autoArchiveReflectedSessionLocal(
+      "reflect-missing",
+      reflectionRequest,
+    );
     assert.equal(missingResult, null, "a reflected session missing from authoritative storage is a no-op");
     state = await config.loadState();
     assert.equal(
@@ -415,7 +424,10 @@ try {
     await sessionsListCache.get(eligibleCacheKey, async () => ({
       payload: { ok: true, sessions: [{ id: "reflect-eligible" }] },
     }));
-    const reflectedAt = await config.autoArchiveReflectedSessionLocal("reflect-eligible");
+    const reflectedAt = await config.autoArchiveReflectedSessionLocal(
+      "reflect-eligible",
+      reflectionRequest,
+    );
     assert.ok(
       typeof reflectedAt === "string" && Number.isFinite(Date.parse(reflectedAt)),
       "eligible session is archived and a timestamp is returned",
@@ -435,7 +447,10 @@ try {
     assert.equal(state.sessionArchived["reflect-eligible"], reflectedAt, "archive timestamp persisted in state");
 
     // Idempotent: already-archived session must return null without restamping.
-    const idempotentResult = await config.autoArchiveReflectedSessionLocal("reflect-eligible");
+    const idempotentResult = await config.autoArchiveReflectedSessionLocal(
+      "reflect-eligible",
+      reflectionRequest,
+    );
     assert.equal(idempotentResult, null, "already-archived session returns null");
 
     // Keep prevents archive — checked atomically inside the state write so a
@@ -454,7 +469,10 @@ try {
     await sessionsListCache.get(keptCacheKey, async () => ({
       payload: { ok: true, sessions: [{ id: "reflect-kept" }] },
     }));
-    const keptResult = await config.autoArchiveReflectedSessionLocal("reflect-kept");
+    const keptResult = await config.autoArchiveReflectedSessionLocal(
+      "reflect-kept",
+      reflectionRequest,
+    );
     assert.equal(keptResult, null, "kept session returns null — keep prevents archive");
     let keptRecomputes = 0;
     const keptList = await sessionsListCache.get(keptCacheKey, async () => {
@@ -471,8 +489,72 @@ try {
     );
     await config.setSessionKeepLocal("reflect-kept", false);
 
+    await conversations.saveConversation({
+      sessionId: "reflect-race",
+      familiarId: "nova",
+      harness: "codex",
+      title: "Concurrent keep race",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      turns: [],
+    });
+    const [, racedArchive] = await Promise.all([
+      config.setSessionKeepLocal("reflect-race", true),
+      config.autoArchiveReflectedSessionLocal("reflect-race", reflectionRequest),
+    ]);
+    assert.equal(racedArchive, null, "a concurrent Keep queued before reflection archive wins");
+    state = await config.loadState();
+    assert.ok(state.sessionKeep["reflect-race"], "concurrent Keep is persisted");
+    assert.equal(
+      state.sessionArchived["reflect-race"],
+      undefined,
+      "reflection archive rechecks Keep in its atomic state mutation",
+    );
+    await config.setSessionKeepLocal("reflect-race", false);
+
+    await conversations.saveConversation({
+      sessionId: "reflect-policy-gated",
+      familiarId: "nova",
+      harness: "codex",
+      title: "Policy-gated reflection",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      turns: [],
+    });
+    for (const request of [
+      {
+        ...reflectionRequest,
+        policy: { ...DEFAULT_CHAT_AUTO_ARCHIVE_POLICY, enabled: false },
+      },
+      {
+        ...reflectionRequest,
+        policy: { ...DEFAULT_CHAT_AUTO_ARCHIVE_POLICY, archiveOnReflection: false },
+      },
+      { ...reflectionRequest, trigger: "periodic" },
+      {
+        ...reflectionRequest,
+        trigger: "auto",
+        lastActivityAt: new Date().toISOString(),
+      },
+    ]) {
+      assert.equal(
+        await config.autoArchiveReflectedSessionLocal("reflect-policy-gated", request),
+        null,
+        "reflection mutator preserves policy, periodic, and auto-idle gates",
+      );
+    }
+    state = await config.loadState();
+    assert.equal(
+      state.sessionArchived["reflect-policy-gated"],
+      undefined,
+      "policy-gated reflection attempts do not archive",
+    );
+
     // Sacrificed session (session-1 is already sacrificed above) skips.
-    const sacrificedResult = await config.autoArchiveReflectedSessionLocal("session-1");
+    const sacrificedResult = await config.autoArchiveReflectedSessionLocal(
+      "session-1",
+      reflectionRequest,
+    );
     assert.equal(sacrificedResult, null, "sacrificed session returns null");
 
     // Clean up: summon removes reflect-eligible from sessionArchived.
