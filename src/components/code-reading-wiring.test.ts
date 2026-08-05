@@ -63,6 +63,21 @@ assert.match(
   /compareButton\?\.addEventListener\("click", openCompare\)/,
   "the Compare control gets a click handler",
 );
+assert.match(
+  wiring,
+  /_caveReadingIdentity[\s\S]{0,900}?projectRoot[\s\S]{0,180}?sourceSessionId[\s\S]{0,180}?turnId[\s\S]{0,180}?path[\s\S]{0,180}?lang[\s\S]{0,180}?provenance/,
+  "listener reuse is keyed by every captured open-payload provenance field",
+);
+assert.match(
+  wiring,
+  /codeReadingWireIdentityMatches\(/,
+  "same-root session or turn changes run through the full identity comparison before listener reuse",
+);
+assert.match(
+  wiring,
+  /flagged\._caveReadingOnRead = reading\.onRead;[\s\S]{0,220}?codeReadingWireIdentityMatches/,
+  "unchanged provenance reuses its listener while dispatching through the current reader callback",
+);
 
 // Compare must land on the compare tab, not the snippet the reader already saw.
 assert.match(wiring, /open\("compare"\)/, "Compare opens the compare tab");
@@ -97,7 +112,7 @@ assert.match(chatView, /<CodeReadingContext\.Provider value=\{codeReading\}>/, "
 assert.match(chatView, /<CodeReadingInspector/, "chat renders the inspector");
 assert.match(
   wiring,
-  /reading\.onRead\(\{[\s\S]{0,180}?projectRoot,/,
+  /const identity: CodeReadingWireIdentity = \{[\s\S]{0,180}?projectRoot,/,
   "the reader request captures the rendered turn's immutable root",
 );
 assert.match(
@@ -107,8 +122,13 @@ assert.match(
 );
 assert.match(
   wiring,
-  /reading\.onRead\(\{[\s\S]{0,240}?turnId,[\s\S]{0,120}?sourceSessionId: reading\.sourceSessionId,/,
+  /const identity: CodeReadingWireIdentity = \{[\s\S]{0,180}?sourceSessionId: reading\.sourceSessionId,[\s\S]{0,120}?turnId,/,
   "the DOM handoff captures the owning message and ChatView session",
+);
+assert.match(
+  wiring,
+  /flagged\._caveReadingOnRead\?\.\(\{[\s\S]{0,80}?\.\.\.identity/,
+  "the click handler emits the current identity through the current callback",
 );
 assert.match(
   chatView,

@@ -44,6 +44,23 @@ export type CodeReading = {
   onRead: (request: CodeReadingRequest) => void;
 };
 
+type CodeReadingWireIdentity = Omit<CodeReadingRequest, "code" | "tab">;
+
+function codeReadingWireIdentityMatches(
+  current: CodeReadingWireIdentity | undefined,
+  next: CodeReadingWireIdentity,
+): boolean {
+  return Boolean(
+    current &&
+    current.projectRoot === next.projectRoot &&
+    current.sourceSessionId === next.sourceSessionId &&
+    current.turnId === next.turnId &&
+    current.path === next.path &&
+    current.lang === next.lang &&
+    current.provenance === next.provenance
+  );
+}
+
 /**
  * Only surfaces that can actually *show* an inspector provide this. Everywhere
  * else the default null leaves the reading controls hidden rather than
@@ -352,7 +369,8 @@ function wireCodeReading(
   for (const wrap of Array.from(container.querySelectorAll<HTMLElement>(".cave-code-wrap"))) {
     const flagged = wrap as HTMLElement & {
       _caveReadingCleanup?: () => void;
-      _caveReadingProjectRoot?: string | null;
+      _caveReadingIdentity?: CodeReadingWireIdentity;
+      _caveReadingOnRead?: CodeReading["onRead"];
     };
     const raw = wrap.getAttribute("data-code-provenance");
     if (!isCodeProvenance(raw)) continue;
@@ -367,7 +385,8 @@ function wireCodeReading(
       wrap.classList.remove("cave-code-wrap--readable");
       flagged._caveReadingCleanup?.();
       delete flagged._caveReadingCleanup;
-      delete flagged._caveReadingProjectRoot;
+      delete flagged._caveReadingIdentity;
+      delete flagged._caveReadingOnRead;
     }
 
     if (reading && provenance === "file-backed" && path && projectRoot) {
@@ -375,22 +394,26 @@ function wireCodeReading(
     }
 
     if (!reading) continue;
+    const identity: CodeReadingWireIdentity = {
+      projectRoot,
+      sourceSessionId: reading.sourceSessionId,
+      turnId,
+      path,
+      lang,
+      provenance,
+    };
+    flagged._caveReadingOnRead = reading.onRead;
     if (
       flagged._caveReadingCleanup &&
-      flagged._caveReadingProjectRoot === projectRoot
+      codeReadingWireIdentityMatches(flagged._caveReadingIdentity, identity)
     ) {
       continue;
     }
     flagged._caveReadingCleanup?.();
     const open = (tab: InspectorTabId) => () =>
-      reading.onRead({
-        turnId,
-        sourceSessionId: reading.sourceSessionId,
+      flagged._caveReadingOnRead?.({
+        ...identity,
         code: codeTextFromWrapEl(wrap),
-        lang,
-        path,
-        projectRoot,
-        provenance,
         tab,
       });
     const readButton = wrap.querySelector<HTMLButtonElement>(".cave-code-read-btn");
@@ -399,7 +422,7 @@ function wireCodeReading(
     const openCompare = open("compare");
     readButton?.addEventListener("click", openSnippet);
     compareButton?.addEventListener("click", openCompare);
-    flagged._caveReadingProjectRoot = projectRoot;
+    flagged._caveReadingIdentity = identity;
     flagged._caveReadingCleanup = () => {
       readButton?.removeEventListener("click", openSnippet);
       compareButton?.removeEventListener("click", openCompare);
