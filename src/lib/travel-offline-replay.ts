@@ -170,7 +170,7 @@ async function spawnHubSession(args: {
       ? setSessionTitleAutoIfOwned(
           res.data.id,
           args.title,
-          new Set([args.title, defaultChatTitleForSession(res.data.id)]),
+          new Set([defaultChatTitleForSession(res.data.id)]),
         )
       : setSessionTitle(res.data.id, args.title),
   ]);

@@ -431,7 +431,7 @@ async function sleep(ms: number) {
 /** Set a session title from the first-turn stub path with auto-provenance,
  *  atomically skipping when a manual title is already present. Best effort. */
 async function setDefaultStubTitleAuto(sessionId: string, title: string): Promise<void> {
-  const autoDefaults = new Set([title, defaultChatTitleForSession(sessionId)]);
+  const autoDefaults = new Set([defaultChatTitleForSession(sessionId)]);
   await setSessionTitleAutoIfOwned(sessionId, title, autoDefaults).catch(() => undefined);
 }
 

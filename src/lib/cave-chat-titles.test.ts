@@ -702,4 +702,102 @@ assert.equal(
   );
 }
 
+// ── Issue 1: Linear link/image scanner — malformed/adversarial inputs ────────
+// No backtracking; all complete in O(n) time over the capped source.
+{
+  // Malformed unclosed image: ![x]( + many chars — must complete quickly, output ≤40
+  const malformedImage = "![x](" + "a".repeat(5000);
+  const t0 = Date.now();
+  const imgResult = chatSummaryTitle({ userText: malformedImage });
+  assert.ok(Date.now() - t0 < 100, `malformed image: must complete in <100ms`);
+  assert.ok(imgResult === null || imgResult.length <= 40, "malformed image: output bounded at 40");
+  assert.ok(imgResult === null || !imgResult.includes("aaa"), "malformed image: long garbage not leaked");
+}
+{
+  // Malformed unclosed link: [Docs](url... — must emit label "Docs", not the URL
+  const malformedLink = "[Docs](https://x.test/" + "b".repeat(5000);
+  const t0 = Date.now();
+  const linkResult = chatSummaryTitle({ userText: malformedLink });
+  assert.ok(Date.now() - t0 < 100, `malformed link: must complete in <100ms`);
+  assert.ok(linkResult === null || linkResult === "Docs", `malformed link: expected "Docs" or null, got "${linkResult}"`);
+}
+{
+  // Long nested-ish destination: [x]( many parens + content ) — must complete quickly
+  const nestedDest = "[label](" + "(".repeat(80) + "a".repeat(200) + ")".repeat(80) + ")";
+  const t0 = Date.now();
+  const nestedResult = chatSummaryTitle({ userText: nestedDest });
+  assert.ok(Date.now() - t0 < 100, `nested dest: must complete in <100ms`);
+  assert.ok(nestedResult === null || nestedResult.length <= 40, "nested dest: output bounded");
+}
+
+// ── Issue 2: Preserve programming symbols; strip Markdown contextually ────────
+assert.equal(
+  chatSummaryTitle({ userText: "C# programming" }),
+  "C# programming",
+  "C# symbol preserved — # is not stripped when adjacent to word char",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Fix #123" }),
+  "Fix #123",
+  "issue reference #123 preserved — # not stripped before digit",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Handle *.ts files" }),
+  "Handle *.ts files",
+  "glob *.ts preserved — unpaired * not stripped",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "**bold text**" }),
+  "Bold text",
+  "paired ** bold emphasis stripped from user text",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "*italic*" }),
+  "Italic",
+  "paired * italic emphasis stripped from user text",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "_underscored_" }),
+  "Underscored",
+  "paired _ emphasis stripped at word boundaries",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "snake_case naming" }),
+  "Snake_case naming",
+  "intra-word underscore preserved in snake_case",
+);
+// Heading from assistant reply — paired ** inside heading content stripped
+assert.equal(
+  titleFromAssistantReply("# **Fix C# parser** for #123"),
+  "Fix C# parser for #123",
+  "paired ** stripped from heading; C# and #123 preserved",
+);
+
+// ── Issue 3: Balance truncation delimiters ────────────────────────────────────
+// Quoted long input: 10-word quoted prompt is truncated at 7 words; the
+// leading " has no matching " in the retained stem → strip it.
+{
+  const quotedLong = '"Implement the new feature for the search component right now"';
+  const r = chatSummaryTitle({ userText: quotedLong });
+  assert.ok(r !== null, "quoted long: yields a title");
+  assert.ok(r!.endsWith("…"), "quoted long: truncation ellipsis appended");
+  assert.ok(!r!.startsWith('"'), 'quoted long: unmatched leading " removed after truncation');
+  assert.ok(r!.length <= 40, "quoted long: ≤40 chars");
+}
+// Parenthesized long input: leading ( has no matching ) in retained stem.
+{
+  const parenLong = "(Handle the configuration right now to fix all the performance issues)";
+  const r = chatSummaryTitle({ userText: parenLong });
+  assert.ok(r !== null, "parens long: yields a title");
+  assert.ok(r!.endsWith("…"), "parens long: truncation ellipsis appended");
+  assert.ok(!r!.startsWith("("), "parens long: unmatched leading ( removed after truncation");
+  assert.ok(r!.length <= 40, "parens long: ≤40 chars");
+}
+// Short balanced title: both delimiters present → keep both.
+assert.equal(
+  chatSummaryTitle({ userText: '"Short quote"' }),
+  '"Short quote"',
+  "balanced short: leading and closing quotes preserved",
+);
+
 console.log("cave-chat-titles.test.ts ok");

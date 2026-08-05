@@ -764,17 +764,26 @@ assert.match(
   );
 }
 {
-  // onSessionStarted is gated on display ownership for both null and non-null
-  // origins. ownsDisplayedView makes a stale remounted resumed run unowned,
-  // while allowing a same-mount resumed replacement to promote normally.
+  // onSessionStarted is gated on BOTH display ownership AND null origin. Only a
+  // sessionless generation (originSessionId === null) that owns the displayed
+  // compose may promote the router. Non-null-origin replacement/fork runs must
+  // never call onSessionStarted — only sessions refresh is dispatched via the
+  // done handler's shouldReplacementRefresh path.
   const notifyChecks = source.match(
-    /if \(owned\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/g,
+    /if \(owned && liveGeneration\.originSessionId === null\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/g,
   );
   assert.ok(
     notifyChecks && notifyChecks.length === 2,
-    "session and done events call onSessionStarted only when this run owns the displayed view",
+    "session and done events call onSessionStarted only for null-origin generations that own the displayed view (non-null-origin forks must not notify the router)",
   );
 }
+// A background non-null-origin fork must never trigger router promotion via a
+// raw owned-only guard — the null-origin check is required in both event paths.
+assert.doesNotMatch(
+  source,
+  /if \(owned\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/,
+  "onSessionStarted is never called on the raw owned-only path — null-origin guard is required in both session and done handlers",
+);
 
 assert.match(
   source,

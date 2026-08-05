@@ -172,6 +172,82 @@ function normalizeGeneratedTitleSource(input: unknown): string | null {
 }
 
 /**
+ * Linear O(n) normalizer for inline Markdown image and link syntax.
+ * Walks the input once: `![alt](dest)` → alt text, `[label](dest)` → label.
+ * For malformed / unclosed constructs emits the safe human label text without
+ * backtracking or looping. Destination content (URLs) is always discarded so
+ * it never leaks into the title. Bounded label (≤200 chars) and destination
+ * (≤500 chars) scans make the whole function O(n).
+ */
+function normalizeMarkdownInlineLinks(s: string): string {
+  const len = s.length;
+  if (len === 0) return s;
+  let result = "";
+  let i = 0;
+  while (i < len) {
+    const isImage = s[i] === "!" && i + 1 < len && s[i + 1] === "[";
+    const bracketPos = isImage ? i + 1 : i;
+    if (s[bracketPos] !== "[") {
+      result += s[i++];
+      continue;
+    }
+    // Bounded label scan: search at most 200 chars for the closing `]`.
+    const labelStart = bracketPos + 1;
+    let labelEnd = -1;
+    const labelCap = Math.min(labelStart + 200, len);
+    for (let k = labelStart; k < labelCap; k++) {
+      if (s[k] === "]") { labelEnd = k; break; }
+    }
+    if (labelEnd < 0 || labelEnd + 1 >= len || s[labelEnd + 1] !== "(") {
+      result += s[i++];
+      continue;
+    }
+    // Destination scan with parenthesis depth counter — O(n), no backtracking.
+    // Handles naturally balanced nested parens (e.g. url_(anchor)). Bounded at
+    // 500 chars to guard against malformed / adversarial long destinations.
+    const destStart = labelEnd + 2;
+    let depth = 1;
+    let j = destStart;
+    const destCap = Math.min(destStart + 500, len);
+    while (j < destCap && depth > 0) {
+      if (s[j] === "(") depth++;
+      else if (s[j] === ")") depth--;
+      j++;
+    }
+    const label = isImage
+      ? s.slice(labelStart, labelEnd).trim()
+      : s.slice(labelStart, labelEnd);
+    if (depth === 0) {
+      // Well-formed: emit label/alt text, skip destination entirely.
+      result += label;
+      i = j;
+    } else {
+      // Malformed (unclosed dest): emit label/alt text and skip the unclosed
+      // construct. No URL content leaks. Resume from destCap.
+      result += label;
+      i = destCap;
+    }
+  }
+  return result;
+}
+
+/** Remove an unmatched leading opening delimiter when its corresponding closer
+ *  is absent from the truncated stem. Only applied when the title ends with an
+ *  ellipsis (i.e. was truncated). Balanced pairs (closer present) are kept. */
+function stripUnmatchedLeadingDelimiter(text: string): string {
+  if (text.length < 2 || !text.endsWith("…")) return text;
+  const closers: Record<string, string> = {
+    '"': '"', "'": "'",
+    "\u201C": "\u201D", "\u2018": "\u2019",
+    "(": ")", "[": "]", "{": "}",
+  };
+  const closer = closers[text[0]];
+  if (closer === undefined) return text;
+  // Balanced if the closer appears anywhere after the first char.
+  return text.indexOf(closer, 1) >= 0 ? text : text.slice(1).trimStart();
+}
+
+/**
  * Shared formatter for all auto-generated titles (first-exchange naming,
  * periodic auto-rename, sparkle generation). Deterministic offline contract:
  * normalizes markdown links to their label, removes other markdown and edge
@@ -186,20 +262,14 @@ function formatGeneratedTitle(text: string): string | null {
   // Remove reference definitions and blockquote prefixes before line structure
   // is collapsed. Nested blockquotes are consumed as one prefix.
   let s = stripLineMarkdown(text);
-  // Normalize markdown images: ![alt](url) → alt text if non-empty, else stripped.
-  // Must run before link normalization to avoid the leading ! leaking into the output.
-  // Supports one level of nested parentheses in the destination (e.g. url_(anchor)).
-  s = s.replace(
-    /!\[([^\]]*)\]\((?:[^()]*|\([^()]*\))*(?:\s+"[^"]*")?\)/g,
-    (_, alt) => alt.trim(),
-  );
-  // Normalize markdown links: [label](url) → label; destination discarded.
-  // Supports one level of nested parentheses so [Docs](https://x.test/a_(b)) → Docs.
-  s = s.replace(/\[([^\]]+)\]\((?:[^()]*|\([^()]*\))*(?:\s+"[^"]*")?\)/g, "$1");
+  // Normalize markdown images and links linearly (no backtracking regex).
+  // ![alt](dest) → alt text; [label](dest) → label; destination discarded.
+  s = normalizeMarkdownInlineLinks(s);
   // Markdown autolinks have no human-readable label, so discard the entire
   // construct rather than leaking either the URL or its angle brackets.
   s = s.replace(/<(?:https?:\/\/|mailto:)[^>\s]+>/gi, " ");
   // Normalize full/collapsed reference links and shortcut reference links.
+  // These simple patterns are safe (no nested quantifiers).
   s = s
     .replace(/\[([^\]]+)\]\s*\[[^\]]*\]/g, "$1")
     .replace(/\[([^\]]+)\](?!\s*\()/g, "$1");
@@ -208,12 +278,23 @@ function formatGeneratedTitle(text: string): string | null {
   // Source ellipses are prose punctuation, not a truncation signal. Remove them
   // before measuring; appendTruncationEllipsis is the only path that adds one.
   s = s.replace(/(?:\u2026|\.{3,})+/g, " ");
-  // Strip remaining markdown syntax without removing the base of *️⃣ / #️⃣
-  // keycap emoji before the edge-emoji pass can consume the full sequence.
-  s = s
-    .replace(/[_`]+|[*#](?!\uFE0F?\u20E3)/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  // Strip paired emphasis and code spans contextually, preserving programming
+  // symbols such as C#, issue refs (#123), globs (*.ts), and intra-word
+  // underscores (snake_case). Only paired markers are removed; unpaired `#`,
+  // `*`, and `_` that form part of meaningful content are left intact.
+  // Bold: **text** or __text__
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, "$1").replace(/__([^_\n]+)__/g, "$1");
+  // Italic *text*: strip only when the marker is not adjacent to a word char
+  // or another * on the outside, so globs (*.ts) and ** runs are unaffected.
+  s = s.replace(/(?<![*\w])\*([^*\n]+)\*(?![*\w])/g, "$1");
+  // Code span: `text`
+  s = s.replace(/`([^`\n]+)`/g, "$1");
+  // Remaining isolated backticks (incomplete code spans)
+  s = s.replace(/`+/g, " ");
+  // Underscore emphasis _text_: only when markers are not adjacent to
+  // alphanumeric chars on the outside (preserves snake_case, C_CONSTANT, etc.).
+  s = s.replace(/(?<![A-Za-z0-9])_([^_\n]+)_(?![A-Za-z0-9])/g, "$1");
+  s = s.replace(/\s+/g, " ").trim();
   // Cleanup loop: trailing punctuation → edge emoji → leading separators exposed by
   // emoji removal → trailing punctuation again, so "🎉: Fix parser." → "Fix parser"
   // and "Fix parser 🎉." are both fully cleaned.
@@ -256,7 +337,11 @@ function formatGeneratedTitle(text: string): string | null {
   }
   // Clamp at character limit; null when no word boundary exists (prevents
   // mid-word fragments from single over-length tokens).
-  return clampAtWordBoundary(s, MAX_SUMMARY_TITLE_LENGTH);
+  const clamped = clampAtWordBoundary(s, MAX_SUMMARY_TITLE_LENGTH);
+  if (clamped === null) return null;
+  // Remove an unmatched leading opening delimiter when truncation left its
+  // closer outside the retained stem (e.g. '"Implement...' → 'Implement...').
+  return stripUnmatchedLeadingDelimiter(clamped);
 }
 
 /** First markdown heading (h1–h3) in the opening lines of an assistant reply,

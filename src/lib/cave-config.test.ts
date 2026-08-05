@@ -268,6 +268,58 @@ try {
   state = await config.loadState();
   assert.equal(state.sessionTitles["session-owned2"], undefined, "blank input leaves title unset");
 
+  // ── Issue 4: Atomic auto ownership defaults ───────────────────────────────
+  // Identical current title WITHOUT provenance must be preserved and must NOT
+  // gain provenance. This guards against the caller including the proposed
+  // title in autoDefaults and thereby misclassifying a concurrent human rename
+  // as an auto-owned default. autoDefaults here contains only neutral defaults
+  // ("New chat"), NOT the proposed title — which is the correct caller contract.
+  {
+    const statePath = path.join(tempHome, ".coven", "cave", "state.json");
+    const rawState = JSON.parse(await readFile(statePath, "utf8"));
+    rawState.sessionTitles["daemon-no-provenance"] = "Generate reply";
+    // No sessionTitleAuto / sessionTitleManual entry: title came from daemon sync.
+    await writeFile(statePath, JSON.stringify(rawState));
+
+    const result = await config.setSessionTitleAutoIfOwned(
+      "daemon-no-provenance",
+      "Generate reply",
+      new Set(["New chat"]),   // autoDefaults does NOT include the proposed title
+    );
+    assert.equal(result, null, "identical title without provenance: preserved, not reclaimed as auto");
+    const stateAfter = await config.loadState();
+    assert.equal(stateAfter.sessionTitleAuto["daemon-no-provenance"], undefined, "no provenance gained");
+    assert.equal(stateAfter.sessionTitles["daemon-no-provenance"], "Generate reply", "title unchanged");
+
+    // Clean up
+    await config.setSessionTitle("daemon-no-provenance", "");
+  }
+
+  // Identical current title WITH matching sessionTitleAuto provenance must
+  // remain auto-owned and updatable (same-text re-write is allowed).
+  {
+    const provenanceSession = "auto-provenance-same";
+    await config.setSessionTitleAutoIfOwned(
+      provenanceSession,
+      "Generate reply",
+      new Set(["New chat"]),
+    );
+    const firstState = await config.loadState();
+    assert.equal(firstState.sessionTitleAuto[provenanceSession], "Generate reply", "provenance established");
+
+    const result = await config.setSessionTitleAutoIfOwned(
+      provenanceSession,
+      "Generate reply",
+      new Set(["New chat"]),
+    );
+    assert.equal(result, "Generate reply", "identical text with provenance: auto-owned, can update");
+    const stateAfter = await config.loadState();
+    assert.equal(stateAfter.sessionTitleAuto[provenanceSession], "Generate reply", "provenance preserved");
+
+    // Clean up
+    await config.setSessionTitle(provenanceSession, "");
+  }
+
   // Clean up so the whole-state assertion below still sees empty titles.
   await config.setSessionTitle("session-owned", "");
   await config.setSessionTitle("manual-new-chat", "");
