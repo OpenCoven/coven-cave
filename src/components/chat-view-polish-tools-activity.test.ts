@@ -348,6 +348,11 @@ const reducedMotionBlocks = Array.from(
   (m) => m[0],
 ).join("\n");
 assert.match(
+  activityCss,
+  /\.cave-tool-summary::before\s*\{[^}]*transition:\s*transform\s+var\(--duration-fast\)\s+var\(--ease-standard\)/,
+  "chevron transition must use design motion tokens, not hardcoded values",
+);
+assert.match(
   reducedMotionBlocks,
   /\.cave-tool-summary::before\s*\{[^}]*transition:\s*none/,
   "reduced-motion must disable the .cave-tool-summary::before chevron transition",

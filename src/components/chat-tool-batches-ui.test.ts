@@ -58,6 +58,20 @@ test("2a ④ — one band per block of calls, and none when a band would say not
     /groupConsecutiveTools\(tools\)[\s\S]*<ToolRunGroup[\s\S]*<ToolBlock/,
     "banding is layered over the existing run/block grammar, not instead of it",
   );
+  // Fragment key must be stable for the run's lifetime: the first tool ID is
+  // unique and does not change as adjacent repeats append further calls.
+  // A key that joins the growing list remounts ToolRunGroup on every append,
+  // losing open/focused descendant state mid-stream.
+  assert.match(
+    toolRuns,
+    /const key = run\.tools\[0\]!\.id;/,
+    "Fragment key is the run's first tool ID — stable as adjacent repeats append",
+  );
+  assert.doesNotMatch(
+    toolRuns,
+    /run\.tools\.map[\s\S]{0,80}\.join/,
+    "Fragment key must not join the growing tool list — that remounts ToolRunGroup on each append",
+  );
 });
 
 test("2a ④ — the band states which move, what ran, how, and how long", () => {
