@@ -3,10 +3,13 @@
 // tool run group's open/closed state.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createElement } from "react";
+import { createElement, useEffect } from "react";
 import { act, create } from "react-test-renderer";
 
-import { useToolRunDisclosure } from "./use-tool-run-disclosure.ts";
+import {
+  useFocusSafeToolRelocation,
+  useToolRunDisclosure,
+} from "./use-tool-run-disclosure.ts";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -255,6 +258,71 @@ test("delayed programmatic onToggle(true) after focus-deferred settlement preser
       });
     }
   }
+});
+
+function RelocationProbe({ pending, snapshots, lifecycle }) {
+  const relocation = useFocusSafeToolRelocation(pending);
+  snapshots.push(relocation);
+  return createElement(
+    "turn-body",
+    {
+      onFocusCapture: relocation.onFocusCapture,
+      onBlurCapture: relocation.onBlurCapture,
+    },
+    relocation.keepToolsInline
+      ? createElement("inline-tool-slot", null, createElement(RelocationTool, { lifecycle }))
+      : createElement("settled-tool-slot", null, createElement(RelocationTool, { lifecycle })),
+  );
+}
+
+function RelocationTool({ lifecycle }) {
+  useEffect(() => {
+    lifecycle.mounts += 1;
+    return () => {
+      lifecycle.unmounts += 1;
+    };
+  }, [lifecycle]);
+  return createElement("button");
+}
+
+test("pending-to-settled relocation preserves focused tool content until focus leaves", async () => {
+  const snapshots = [];
+  const lifecycle = { mounts: 0, unmounts: 0 };
+  const inlineTarget = {
+    closest: (selector) => selector === "[data-inline-tool-runs]" ? inlineTarget : null,
+  };
+  const outsideTarget = { closest: () => null };
+  let renderer;
+
+  await act(async () => {
+    renderer = create(createElement(RelocationProbe, { pending: true, snapshots, lifecycle }));
+  });
+  assert.deepEqual(lifecycle, { mounts: 1, unmounts: 0 }, "live tool content mounts once");
+
+  await act(async () => {
+    snapshots.at(-1).onFocusCapture({ target: inlineTarget });
+  });
+  await act(async () => {
+    renderer.update(createElement(RelocationProbe, { pending: false, snapshots, lifecycle }));
+  });
+  assert.equal(snapshots.at(-1).keepToolsInline, true, "settlement retains the inline render path");
+  assert.deepEqual(
+    lifecycle,
+    { mounts: 1, unmounts: 0 },
+    "settlement does not remount focused tool content",
+  );
+
+  await act(async () => {
+    snapshots.at(-1).onBlurCapture({ relatedTarget: outsideTarget });
+  });
+  assert.equal(snapshots.at(-1).keepToolsInline, false, "focus exit releases the settled layout");
+  assert.deepEqual(
+    lifecycle,
+    { mounts: 2, unmounts: 1 },
+    "tool content relocates only after focus leaves",
+  );
+
+  await act(async () => { renderer.unmount(); });
 });
 
 console.log("use-tool-run-disclosure.test.ts: ok");
