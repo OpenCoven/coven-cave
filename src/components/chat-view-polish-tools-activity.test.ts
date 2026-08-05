@@ -12,6 +12,7 @@ import {
   source,
   splitReasoning,
   styles,
+  toolRunDisclosureSource,
   turnRow,
 } from "./chat-view-polish-fixtures.ts";
 
@@ -114,32 +115,37 @@ assert.equal(
 
 assert.match(
   source,
-  /function ToolRuns[\s\S]*groupConsecutiveTools\(tools\)[\s\S]*<ToolRunGroup[\s\S]*<ToolBlock/,
-  "adjacent repeated tool calls roll into an expandable run while one-off calls retain their existing block",
+  /function ToolRuns[\s\S]*groupConsecutiveTools\(tools\)[\s\S]*containsEdit[\s\S]*<ToolBlock[\s\S]*<ToolRunGroup/,
+  "adjacent non-edit calls share a stable run shell while edit calls retain standalone blocks",
 );
 assert.match(
   source,
-  /function ToolRuns[\s\S]*?containsEdit = run\.tools\.some\(\(tool\) => toolInputAsDiff\(tool\.name, tool\.input\) != null\)[\s\S]*?run\.tools\.length > 1 && !containsEdit \? \(\s*<ToolRunGroup/,
-  "ToolRuns computes containsEdit via toolInputAsDiff and gates ToolRunGroup creation on run.tools.length > 1 && !containsEdit",
+  /function ToolRuns[\s\S]*?containsEdit = run\.tools\.some\(\(tool\) => toolInputAsDiff\(tool\.name, tool\.input\) != null\)[\s\S]*?const body = containsEdit\s*\? run\.tools\.map\(\(tool\) => <ToolBlock[\s\S]*: <ToolRunGroup/,
+  "ToolRuns keeps edits standalone and gives every non-edit run the same stable ToolRunGroup component",
 );
 assert.match(
   source,
-  /function ToolRunGroup[\s\S]*<details[\s\S]*×\{tools\.length\}[\s\S]*tools\.map\(\(tool\) => <ToolBlock/,
+  /function ToolRunGroup[\s\S]*<ChatToolRunDisclosure[\s\S]*×\{tools\.length\}[\s\S]*tools\.map\(\(tool\) => <ToolBlock/,
   "a tool run's compact summary states its call count as ×N and expands to every underlying tool block",
 );
 assert.match(
-  source,
-  /function ToolRunGroup[\s\S]*const disclosure = useToolRunDisclosure\(tools\.map\(\(tool\) => tool\.status\)\);/,
-  "a tool run's disclosure state comes from the shared repeated-run hook, not a local useState",
+  toolRunDisclosureSource,
+  /useToolRunDisclosure\(statuses, repeated\)/,
+  "the stable run shell delegates disclosure state to the shared hook",
+);
+assert.match(
+  toolRunDisclosureSource,
+  /"details"[\s\S]*ref: disclosure\.detailsRef[\s\S]*open: disclosure\.open[\s\S]*onToggle:[\s\S]*disclosure\.onToggle[\s\S]*onBlurCapture: disclosure\.onBlurCapture/,
+  "the stable run shell controls its details element and defers focused collapse",
+);
+assert.match(
+  toolRunDisclosureSource,
+  /hidden: !repeated[\s\S]*className: repeated \? "cave-tool-run__list" : undefined/,
+  "the same details and list nodes stay mounted while the repeated summary becomes visible",
 );
 assert.match(
   source,
-  /function ToolRunGroup[\s\S]*ref=\{disclosure\.detailsRef\}[\s\S]*open=\{disclosure\.open\}[\s\S]*onToggle=\{\(event\) => disclosure\.onToggle\(event\.currentTarget\.open\)\}[\s\S]*onBlurCapture=\{disclosure\.onBlurCapture\}/,
-  "a tool run's <details> is controlled by the disclosure hook (open + ref) and defers collapse via onBlurCapture",
-);
-assert.match(
-  source,
-  /function ToolRunGroup[\s\S]*aria-label=\{`\$\{displayName\}, \$\{tools\.length\} \$\{tools\.length === 1 \? "call" : "calls"\}\$\{running \? `, \$\{running\} running` : ""\}\$\{errors \? `, \$\{errors\} \$\{errors === 1 \? "error" : "errors"\}` : ""\}`\}/,
+  /function ToolRunGroup[\s\S]*ariaLabel=\{`\$\{displayName\}, \$\{tools\.length\} \$\{tools\.length === 1 \? "call" : "calls"\}\$\{running \? `, \$\{running\} running` : ""\}\$\{errors \? `, \$\{errors\} \$\{errors === 1 \? "error" : "errors"\}` : ""\}`\}/,
   "a repeated run's accessible name includes its call, running, and error counts",
 );
 
@@ -154,11 +160,10 @@ assert.match(
 );
 
 const toolRunGroupSrc = source.match(/function ToolRunGroup[\s\S]*?const ToolProjectRootContext/)?.[0] ?? "";
-const toolRunGroupSummary = toolRunGroupSrc.match(/<summary[\s\S]*?<\/summary>/)?.[0] ?? "";
 assert.match(
-  toolRunGroupSummary,
-  /cave-tool-run__status">[^]*?cave-tool-count--running[^]*?cave-tool-count--error[^]*?<\/span>\s*<\/summary>/,
-  "ToolRunGroup summary: cave-tool-run__status span contains the running/error chips before the span closes",
+  toolRunGroupSrc,
+  /summary=\{[\s\S]*?cave-tool-run__status">[^]*?cave-tool-count--running[^]*?cave-tool-count--error[^]*?<\/span>[\s\S]*?\}\s*>/,
+  "ToolRunGroup summary content contains the running/error chips",
 );
 
 assert.match(
@@ -202,9 +207,8 @@ assert.match(
 );
 
 // Tool-use disclosures must never default open (the transcript stays clean).
-// ReasoningBlock and ToolRunGroup are the two exceptions — each `open` is a
-// controlled binding (Show-thinking preference / useToolRunDisclosure,
-// respectively), not a hardcoded default.
+// ReasoningBlock and ChatToolRunDisclosure are the two exceptions — each open
+// state is controlled by a preference/hook, not hardcoded.
 assert.doesNotMatch(
   [
     source.match(/function ToolGroup[\s\S]*?function ToolRunGroup/)?.[0] ?? "",
@@ -213,13 +217,10 @@ assert.doesNotMatch(
   /<details[^>]*\sopen(?:=|\s|>)/,
   "Tool-use disclosures must not default open",
 );
-// A hardcoded `open` (open with no binding) on a repeated tool run would defeat
-// the running-forces-open / settle-collapses behaviour — only the controlled
-// `open={disclosure.open}` is allowed.
-assert.doesNotMatch(
-  source.match(/function ToolRunGroup[\s\S]*?function ToolBlock/)?.[0] ?? "",
-  /<details[^>]*\sopen(?:\s|>)/,
-  "ToolRunGroup must not hardcode the disclosure open",
+assert.match(
+  toolRunDisclosureSource,
+  /open: disclosure\.open/,
+  "ChatToolRunDisclosure uses only the hook-controlled open state",
 );
 // A hardcoded `open` (open with no binding) on the reasoning block would defeat
 // the toggle — only the controlled `open={showThinking || undefined}` is allowed.

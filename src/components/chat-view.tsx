@@ -45,8 +45,8 @@ import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { groupConsecutiveTools } from "@/lib/turn-segments";
 import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
-import { useToolRunDisclosure } from "@/lib/use-tool-run-disclosure";
 import { ChatToolActivityLayout } from "@/components/chat-tool-activity-layout";
+import { ChatToolRunDisclosure } from "@/components/chat-tool-run-disclosure";
 import {
   CHAT_OPEN_COVEN_EVENT,
   CHAT_OPEN_PROJECTS_EVENT,
@@ -8834,12 +8834,9 @@ function ToolRuns({ tools }: { tools: ToolEvent[] }) {
     // File-mutation cards carry review/undo affordances. Keeping each one
     // standalone means a repeated edit never hides an actionable change.
     const containsEdit = run.tools.some((tool) => toolInputAsDiff(tool.name, tool.input) != null);
-    const body =
-      run.tools.length > 1 && !containsEdit ? (
-        <ToolRunGroup name={run.name} tools={run.tools} />
-      ) : (
-        run.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
-      );
+    const body = containsEdit
+      ? run.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
+      : <ToolRunGroup name={run.name} tools={run.tools} />;
     return (
       <Fragment key={key}>
         {header ? <ToolBatchHeader batch={header} /> : null}
@@ -8868,42 +8865,35 @@ function ToolBatchHeader({ batch }: { batch: ToolBatch }) {
 }
 
 function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
-  // A repeated run's own disclosure: forced open while any call in the group
-  // is running, and — on settling — collapsed unless the reader's focus is
-  // still inside it (see useToolRunDisclosure for the full state machine).
-  const disclosure = useToolRunDisclosure(tools.map((tool) => tool.status));
+  // The shell exists for the first call, but is visually inert until a second
+  // adjacent call arrives. That stable parent/list keeps the first ToolBlock's
+  // DOM, focus, and local disclosure state intact across the one→two transition.
+  const repeated = tools.length > 1;
   const visual = toolVisual(name);
   const displayName = name.trim() || "Tool";
   const running = tools.filter((tool) => tool.status === "running").length;
   const errors = tools.filter((tool) => tool.status === "error").length;
 
   return (
-    <details
-      ref={disclosure.detailsRef}
-      className="cave-tool-run"
-      data-default-collapsed="true"
-      data-tool-category={visual.category}
-      open={disclosure.open}
-      onToggle={(event) => disclosure.onToggle(event.currentTarget.open)}
-      onBlurCapture={disclosure.onBlurCapture}
+    <ChatToolRunDisclosure
+      repeated={repeated}
+      statuses={tools.map((tool) => tool.status)}
+      category={visual.category}
+      ariaLabel={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
+      summary={
+        <>
+          <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
+          <span className="cave-tool-run__name">{displayName}</span>
+          <span className="cave-tool-count">×{tools.length}</span>
+          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-tool-run__status">
+            {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+            {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+          </span>
+        </>
+      }
     >
-      <summary
-        className="cave-tool-summary focus-ring"
-        aria-expanded={disclosure.open}
-        aria-label={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
-      >
-        <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
-        <span className="cave-tool-run__name">{displayName}</span>
-        <span className="cave-tool-count">×{tools.length}</span>
-        <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-tool-run__status">
-          {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
-          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
-        </span>
-      </summary>
-      <div className="cave-tool-run__list">
-        {tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
-      </div>
-    </details>
+      {tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+    </ChatToolRunDisclosure>
   );
 }
 

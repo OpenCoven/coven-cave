@@ -55,8 +55,8 @@ test("2a ④ — one band per block of calls, and none when a band would say not
   // into a run, one-offs still render as blocks.
   assert.match(
     toolRuns,
-    /groupConsecutiveTools\(tools\)[\s\S]*<ToolRunGroup[\s\S]*<ToolBlock/,
-    "banding is layered over the existing run/block grammar, not instead of it",
+    /groupConsecutiveTools\(tools\)[\s\S]*containsEdit[\s\S]*<ToolBlock[\s\S]*<ToolRunGroup/,
+    "banding is layered over the stable non-edit run shell and standalone edit blocks",
   );
   // Fragment key must be stable for the run's lifetime: the first tool ID is
   // unique and does not change as adjacent repeats append further calls.

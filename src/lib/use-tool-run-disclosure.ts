@@ -29,38 +29,44 @@ export type ToolRunDisclosure = {
  *  • If focus is inside at settlement, defers the collapse until focus leaves
  *    the subtree (detected via onBlurCapture).
  *  • While settled, manual open/close via onToggle works normally.
+ *  • A one-call shell stays open and inert so its ToolBlock remains mounted
+ *    when a second same-name call turns the shell into a repeated subgroup.
  */
-export function useToolRunDisclosure(statuses: readonly RunStatus[]): ToolRunDisclosure {
+export function useToolRunDisclosure(
+  statuses: readonly RunStatus[],
+  collapsible = true,
+): ToolRunDisclosure {
   const isRunning = statuses.some((s) => s === "running");
-  const [open, setOpen] = useState(isRunning);
+  const [open, setOpen] = useState(!collapsible || isRunning);
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
   const prevRunning = useRef(isRunning);
+  const prevCollapsible = useRef(collapsible);
   const pendingCollapse = useRef(false);
 
   useEffect(() => {
-    if (isRunning) {
+    if (!collapsible || isRunning) {
       pendingCollapse.current = false;
       setOpen(true);
       if (detailsRef.current) {
         detailsRef.current.open = true;
       }
-    } else if (prevRunning.current) {
-      // Transition from running to settled.
+    } else if (!prevCollapsible.current || prevRunning.current) {
       const activeEl = globalThis.document?.activeElement ?? null;
       const details = detailsRef.current;
       if (details && activeEl && details.contains(activeEl)) {
-        // Defer collapse until focus leaves.
         pendingCollapse.current = true;
       } else {
         setOpen(false);
       }
     }
     prevRunning.current = isRunning;
-  }, [isRunning]);
+    prevCollapsible.current = collapsible;
+  }, [collapsible, isRunning]);
+
+  const effectiveOpen = !collapsible || isRunning || open;
 
   const onToggle = (nextOpen: boolean) => {
-    if (isRunning && !nextOpen) {
-      // Refuse manual collapse while running and restore the DOM attribute.
+    if ((!collapsible || isRunning) && !nextOpen) {
       if (detailsRef.current) {
         detailsRef.current.open = true;
       }
@@ -70,7 +76,7 @@ export function useToolRunDisclosure(statuses: readonly RunStatus[]): ToolRunDis
     // events for programmatic `open` attribute writes, so a delayed forced-open
     // echo can arrive after settlement carrying the same value that is already
     // controlled.  Only a real state change clears pendingCollapse.
-    if (nextOpen === open) return;
+    if (nextOpen === effectiveOpen) return;
     // A settled manual toggle resolves any deferred collapse: the user has
     // explicitly stated where they want the group, so pending blur-collapse
     // must not override that later.
@@ -88,5 +94,5 @@ export function useToolRunDisclosure(statuses: readonly RunStatus[]): ToolRunDis
     }
   };
 
-  return { open, detailsRef, onToggle, onBlurCapture };
+  return { open: effectiveOpen, detailsRef, onToggle, onBlurCapture };
 }
