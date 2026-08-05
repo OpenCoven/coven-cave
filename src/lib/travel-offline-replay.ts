@@ -16,9 +16,17 @@ import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import type { CodexAutomation } from "@/lib/codex-automations-types";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { ACTIVE_SESSION_STATUSES } from "@/lib/chat-auto-archive";
 import { cleanModelId } from "@/lib/chat-model-state";
+import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import { persistQueuedOfflineConversation } from "@/lib/cave-conversations";
+import {
+  loadConversation,
+  persistQueuedOfflineConversation,
+  saveConversation,
+  withConversationLock,
+} from "@/lib/cave-conversations";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
@@ -44,7 +52,10 @@ export type TravelOfflineReplayResult = {
 };
 
 type DaemonSessionResponse = { id?: string; status?: string };
+type DaemonSessionListRow = { id?: string; status?: string; updated_at?: string | null };
+type DaemonEventRow = { kind?: string; payload_json?: string; created_at?: string };
 type WorkflowEngineResponse = { ok?: boolean; runId?: string; status?: string; error?: string };
+type ReplayTravelQueueOutcome = "pending" | "complete";
 
 function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
   const hasModelOverride = Object.prototype.hasOwnProperty.call(payload, "modelOverride");
@@ -119,6 +130,162 @@ function daemonError(res: { status: number; error?: string; data: unknown }): st
     `daemon http ${res.status}`;
 }
 
+function terminalReplayStatus(status: string | null): boolean {
+  if (!status) return false;
+  return !ACTIVE_SESSION_STATUSES.has(status.trim().toLowerCase());
+}
+
+function stableReplayAssistantTurnId(userTurnId: string): string {
+  return `${userTurnId}:offline-replay-assistant`;
+}
+
+function prepareReplayAttentionRequest(args: {
+  text: string;
+  sessionId: string;
+  turnId: string;
+  requestedAt: string;
+}): { text: string; request: ChatResponseMetadata["attentionRequest"] | null } {
+  const { visible, request: marker } = extractChatAttentionMarker(args.text);
+  return {
+    text: visible,
+    request: marker
+      ? {
+          sessionId: args.sessionId,
+          turnId: args.turnId,
+          requestedAt: args.requestedAt,
+          reason: marker.reason,
+        }
+      : null,
+  };
+}
+
+function eventTextPayload(payload: Record<string, unknown>): string | null {
+  if (typeof payload.content === "string") return payload.content;
+  if (typeof payload.text === "string") return payload.text;
+  if (typeof payload.data === "string") return payload.data;
+  return null;
+}
+
+function assistantTextFromReplayEvents(
+  events: DaemonEventRow[],
+): { text: string; createdAt: string | null } | null {
+  const assistantMessages: Array<{ text: string; createdAt: string | null }> = [];
+  const output: Array<{ text: string; createdAt: string | null }> = [];
+  for (const event of events) {
+    if (typeof event.payload_json !== "string" || !event.payload_json.trim()) continue;
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(event.payload_json) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const text = eventTextPayload(payload);
+    if (!text) continue;
+    if (event.kind === "assistant.message" || event.kind === "assistant_message") {
+      assistantMessages.push({ text, createdAt: stringValue(event.created_at) });
+      continue;
+    }
+    if (event.kind === "output") output.push({ text, createdAt: stringValue(event.created_at) });
+  }
+  const transcript = assistantMessages.length
+    ? (assistantMessages.at(-1) ?? null)
+    : output.length
+      ? {
+          text: output.map((event) => event.text).join(""),
+          createdAt: output.at(-1)?.createdAt ?? null,
+        }
+      : null;
+  const trimmed = transcript?.text.trim();
+  return trimmed ? { text: trimmed, createdAt: transcript?.createdAt ?? null } : null;
+}
+
+async function replayAssistantStatus(args: {
+  harnessSessionId: string;
+}): Promise<{
+  status: string | null;
+  updatedAt: string | null;
+  assistantText: string | null;
+  assistantCreatedAt: string | null;
+}> {
+  const sessions = await callDaemon<DaemonSessionListRow[]>({
+    path: "/api/v1/sessions",
+    timeoutMs: 4000,
+  });
+  if (!sessions.ok || !sessions.data) {
+    throw new Error(daemonError(sessions));
+  }
+  const row = sessions.data.find((session) => session?.id === args.harnessSessionId);
+  if (!row) return { status: null, updatedAt: null, assistantText: null, assistantCreatedAt: null };
+  const status = stringValue(row.status);
+  const updatedAt = stringValue(row.updated_at);
+  if (!terminalReplayStatus(status)) {
+    return { status, updatedAt, assistantText: null, assistantCreatedAt: null };
+  }
+  const events = await callDaemon<{ events?: DaemonEventRow[] }>({
+    path: `/api/v1/events?sessionId=${encodeURIComponent(args.harnessSessionId)}&afterSeq=0&limit=500`,
+    timeoutMs: 4000,
+  });
+  if (!events.ok || !Array.isArray(events.data?.events)) {
+    return { status, updatedAt, assistantText: null, assistantCreatedAt: null };
+  }
+  const assistant = assistantTextFromReplayEvents(events.data.events);
+  return {
+    status,
+    updatedAt,
+    assistantText: assistant?.text ?? null,
+    assistantCreatedAt: assistant?.createdAt ?? null,
+  };
+}
+
+async function persistReplayAssistantTurn(args: {
+  sessionId: string;
+  harnessSessionId: string;
+  userTurnId: string;
+  assistantText: string;
+  assistantCreatedAt: string;
+  payload: Record<string, unknown>;
+  familiarId: string;
+  isError: boolean;
+}): Promise<void> {
+  await withConversationLock(args.sessionId, async () => {
+    const conv = await loadConversation(args.sessionId);
+    if (!conv) return;
+    conv.harnessSessionId = args.harnessSessionId;
+    const assistantTurnId = stableReplayAssistantTurnId(args.userTurnId);
+    const persistedAssistantCreatedAt = new Date().toISOString();
+    if (conv.turns.some((turn) => turn.id === assistantTurnId)) {
+      await saveConversation(conv);
+      return;
+    }
+    const queuedMetadata = record(args.payload.responseMetadata);
+    const baseResponseMetadata: ChatResponseMetadata = {
+      familiarId: stringValue(queuedMetadata.familiarId) ?? args.familiarId,
+      harness: stringValue(queuedMetadata.harness) ?? conv.harness,
+      model: stringValue(queuedMetadata.model) ?? conv.model ?? "",
+      runtime: stringValue(queuedMetadata.runtime) ?? conv.runtime ?? "local:",
+    };
+    const attention = prepareReplayAttentionRequest({
+      text: args.assistantText,
+      sessionId: args.sessionId,
+      turnId: assistantTurnId,
+      requestedAt: args.assistantCreatedAt,
+    });
+    conv.turns.push({
+      id: assistantTurnId,
+      role: "assistant",
+      text: attention.text.trim(),
+      createdAt: persistedAssistantCreatedAt,
+      parentId: args.userTurnId,
+      ...(args.isError ? { isError: true } : {}),
+      responseMetadata: attention.request
+        ? { ...baseResponseMetadata, attentionRequest: attention.request }
+        : baseResponseMetadata,
+    });
+    conv.activeLeafId = assistantTurnId;
+    await saveConversation(conv);
+  });
+}
+
 async function spawnHubSession(args: {
   config: CaveConfig;
   familiarId: string | null;
@@ -167,7 +334,7 @@ async function spawnHubSession(args: {
   return res.data.id;
 }
 
-async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
+async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promise<ReplayTravelQueueOutcome> {
   const payload = record(item.payload);
   const familiarId = stringValue(payload.familiarId);
   const prompt = stringValue(payload.prompt);
@@ -275,6 +442,23 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   if (sessionId !== harnessSessionId) {
     await setSessionTitle(harnessSessionId, chatTitleFromPrompt(prompt) ?? `Travel replay: ${item.summary}`);
   }
+  const userTurnId = stringValue(payload.userTurnId);
+  if (!userTurnId) return "pending";
+  const mirrored = await replayAssistantStatus({ harnessSessionId });
+  if (!terminalReplayStatus(mirrored.status) || !mirrored.assistantText) {
+    return "pending";
+  }
+  await persistReplayAssistantTurn({
+    sessionId,
+    harnessSessionId,
+    userTurnId,
+    assistantText: mirrored.assistantText,
+    assistantCreatedAt: mirrored.assistantCreatedAt ?? mirrored.updatedAt ?? new Date().toISOString(),
+    payload,
+    familiarId,
+    isError: (mirrored.status ?? "").trim().toLowerCase() === "failed",
+  });
+  return "complete";
 }
 
 async function workflowForPayload(payload: Record<string, unknown>, body: Record<string, unknown>): Promise<WorkflowSummary | null> {
@@ -286,7 +470,7 @@ async function workflowForPayload(payload: Record<string, unknown>, body: Record
   return list.workflows.find((wf) => (wantedId && wf.id === wantedId) || (wantedPath && wf.path === wantedPath)) ?? null;
 }
 
-async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
+async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Promise<ReplayTravelQueueOutcome> {
   const payload = record(item.payload);
   const body = record(payload.body);
   const workflow = await workflowForPayload(payload, body);
@@ -308,7 +492,7 @@ async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Pr
       summary: engine.data?.runId ? `replayed daemon run ${engine.data.runId}` : `replayed ${item.id}`,
       source: "daemon",
     });
-    return;
+    return "complete";
   }
   if (engine.status !== 404) throw new Error(daemonError(engine));
 
@@ -336,6 +520,7 @@ async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Pr
     source: "cave",
     sessionId,
   });
+  return "complete";
 }
 
 function flowFamiliar(flow: FlowDoc): string | null {
@@ -366,7 +551,7 @@ function flowExecutionMode(value: unknown): FlowExecutionMode {
   return value === "production" ? "production" : "manual";
 }
 
-async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
+async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promise<ReplayTravelQueueOutcome> {
   const payload = record(item.payload);
   const flow = payload.flow as FlowDoc | undefined;
   if (!flow?.id || !Array.isArray(flow.nodes)) throw new Error("queued flow payload missing flow snapshot");
@@ -420,12 +605,13 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const placeholderRunId = stringValue(payload.placeholderRunId);
   if (placeholderRunId) {
     const updated = await updateFlowRun(placeholderRunId, runFields);
-    if (updated) return;
+    if (updated) return "complete";
   }
   await recordFlowRun(runFields);
+  return "complete";
 }
 
-async function replayJob(item: CaveTravelQueueItem): Promise<void> {
+async function replayJob(item: CaveTravelQueueItem): Promise<ReplayTravelQueueOutcome> {
   const payload = record(item.payload);
   const automation = record(payload.automation) as Partial<CodexAutomation>;
   if (!automation.id || !automation.name || !Array.isArray(automation.cwds) || typeof automation.prompt !== "string") {
@@ -447,9 +633,13 @@ async function replayJob(item: CaveTravelQueueItem): Promise<void> {
     skillPath: automation.skillPath ?? null,
     scheduleHuman: automation.scheduleHuman ?? "manual",
   });
+  return "complete";
 }
 
-async function replayTravelQueueItem(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
+async function replayTravelQueueItem(
+  item: CaveTravelQueueItem,
+  config: CaveConfig,
+): Promise<ReplayTravelQueueOutcome> {
   const route = stringValue(record(item.payload).route);
   if (item.kind === "chat") return replayChat(item, config);
   if (item.kind === "workflow" && route === "flow-session") return replayFlow(item, config);
@@ -485,8 +675,10 @@ async function syncOfflineTravelQueueInner(
     if (!item) continue;
     result.attempted += 1;
     try {
-      await replayTravelQueueItem(item, config);
-      await completeOfflineTravelItem(item.id);
+      const outcome = await replayTravelQueueItem(item, config);
+      if (outcome === "complete") {
+        await completeOfflineTravelItem(item.id);
+      }
       result.synced += 1;
     } catch (err) {
       const error = replayError(err);

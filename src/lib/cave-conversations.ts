@@ -361,6 +361,7 @@ function normalizeStableAttentionRequest(
   const assistantCreatedAtMs = parseFiniteTimestamp(assistantCreatedAt);
   const candidate = value as Partial<ChatAttentionRequest>;
   const requestedAtMs = parseFiniteTimestamp(candidate.requestedAt);
+  const allowsReplaySkew = assistantTurnId.endsWith(":offline-replay-assistant");
   if (
     typeof candidate.sessionId !== "string" ||
     candidate.sessionId !== sessionId ||
@@ -374,7 +375,7 @@ function normalizeStableAttentionRequest(
     !isCanonicalIsoInstant(candidate.requestedAt) ||
     requestedAtMs === null ||
     assistantCreatedAtMs === null ||
-    requestedAtMs !== assistantCreatedAtMs ||
+    (allowsReplaySkew ? requestedAtMs > assistantCreatedAtMs : requestedAtMs !== assistantCreatedAtMs) ||
     typeof candidate.reason !== "string" ||
     !VALID_ATTENTION_REASON_SET.has(candidate.reason)
   ) {

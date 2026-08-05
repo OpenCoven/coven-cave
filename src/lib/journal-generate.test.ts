@@ -43,7 +43,7 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
   );
   assert.match(
     source,
-    /const trimmed = extractNextPaths\(text\)\.visible\.trim\(\);/,
+    /const trimmed = extractNextPaths\(extractChatAttentionMarker\(text\)\.visible\)\.visible\.trim\(\);/,
     "the directive block is stripped from the reflection text",
   );
 }
@@ -105,6 +105,102 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
     const result = await generateReflection({ familiarId: "nova", context: "ctx" });
     assert.equal(result.error, null, "a replacement frame is not an error");
     assert.equal(result.text, "Final reflection.", "replacement text supersedes earlier chunks");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// ── attention markers never flash or persist in journal generations ──────────
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  const streamed: string[] = [];
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          const frames = [
+            { kind: "assistant_chunk", text: "A careful reflection " },
+            { kind: "assistant_chunk", text: "<coven:att" },
+            { kind: "assistant_chunk", text: 'ention reason="approval" />' },
+            { kind: "done", sessionId: "j-attn", isError: false },
+          ];
+          frames.forEach((frame, index) => {
+            controller.enqueue(encoder.encode(`id: ${index + 1}\ndata: ${JSON.stringify(frame)}\n\n`));
+          });
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({
+      familiarId: "nova",
+      context: "ctx",
+      onText: (text) => streamed.push(text),
+    });
+    assert.deepEqual(streamed, [
+      "A careful reflection ",
+      "A careful reflection ",
+      "A careful reflection ",
+    ], "streaming hides both partial and completed attention markers");
+    assert.equal(result.text, "A careful reflection", "the final reflection strips the marker before persistence");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          const frames = [
+            { kind: "assistant_chunk", text: '```\n<coven:attention reason="approval" />\n```' },
+            { kind: "done", sessionId: "j-fence", isError: false },
+          ];
+          frames.forEach((frame, index) => {
+            controller.enqueue(encoder.encode(`id: ${index + 1}\ndata: ${JSON.stringify(frame)}\n\n`));
+          });
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({ familiarId: "nova", context: "ctx" });
+    assert.equal(
+      result.text,
+      '```\n<coven:attention reason="approval" />\n```',
+      "fenced literal marker examples stay visible in journal output",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          const frames = [
+            { kind: "assistant_chunk", text: "A malformed request " },
+            { kind: "assistant_chunk", text: '<coven:attention reason="approval">' },
+            { kind: "done", sessionId: "j-malformed", isError: false },
+          ];
+          frames.forEach((frame, index) => {
+            controller.enqueue(encoder.encode(`id: ${index + 1}\ndata: ${JSON.stringify(frame)}\n\n`));
+          });
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({ familiarId: "nova", context: "ctx" });
+    assert.equal(result.text, "A malformed request", "malformed non-chat attention tags are stripped instead of persisting raw");
   } finally {
     globalThis.fetch = originalFetch;
   }

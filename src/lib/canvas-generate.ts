@@ -4,6 +4,7 @@
 // The SSE frame parser is exported pure so it can be unit-tested.
 
 import { extractArtifact, type ArtifactKind } from "@/lib/canvas-artifacts";
+import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 
 export type SketchStreamEvent = {
@@ -129,11 +130,11 @@ export async function generateArtifactCode(opts: {
         switch (ev.kind) {
           case "assistant_chunk":
             text += ev.text ?? "";
-            opts.onText?.(text);
+            opts.onText?.(extractChatAttentionMarker(text, { pending: true }).visible);
             break;
           case "assistant_replace":
             text = ev.text ?? "";
-            opts.onText?.(text);
+            opts.onText?.(extractChatAttentionMarker(text, { pending: true }).visible);
             break;
           case "session":
             sessionId = ev.sessionId ?? sessionId;
@@ -154,12 +155,13 @@ export async function generateArtifactCode(opts: {
       : (err as Error)?.message ?? "the connection dropped mid-generation";
   }
 
-  const extracted = extractArtifact(text);
+  const visibleText = extractChatAttentionMarker(text).visible;
+  const extracted = extractArtifact(visibleText);
   const failure = error ? "transport" : extracted ? null : "format";
   return {
     code: extracted?.code ?? null,
     kind: extracted?.kind ?? null,
-    text,
+    text: visibleText,
     sessionId,
     error: error ?? (failure === "format" ? "response format could not be previewed" : null),
     failure,

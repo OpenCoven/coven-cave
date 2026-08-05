@@ -24,6 +24,14 @@ delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
 const sessionRequests: Array<Record<string, unknown>> = [];
 let nextSession = 1;
 let server: http.Server | null = null;
+const daemonSessions = new Map<string, {
+  id: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  transcript: string;
+}>();
+const replayPolls = new Map<string, number>();
 
 async function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -35,9 +43,65 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
 async function listenHub(port = 0): Promise<number> {
   server = http.createServer(async (req, res) => {
     if (req.method === "POST" && req.url === "/api/v1/sessions") {
-      sessionRequests.push(await readJson(req));
+      const body = await readJson(req);
+      sessionRequests.push(body);
+      const id = `hub-session-${nextSession++}`;
+      daemonSessions.set(id, {
+        id,
+        status: "running",
+        created_at: "2026-06-30T12:02:00.000Z",
+        updated_at: "2026-06-30T12:02:00.000Z",
+        transcript: "Working through it.\n<coven:attention reason=\"approval\" />",
+      });
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ id: `hub-session-${nextSession++}`, status: "running" }));
+      res.end(JSON.stringify({ id, status: "running" }));
+      return;
+    }
+    if (req.method === "GET" && req.url === "/api/v1/sessions") {
+      for (const session of daemonSessions.values()) {
+        const seen = (replayPolls.get(session.id) ?? 0) + 1;
+        replayPolls.set(session.id, seen);
+        if (seen >= 2) {
+          session.status = "completed";
+          session.updated_at = "2026-06-30T12:02:05.000Z";
+        }
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify([...daemonSessions.values()].map((session) => ({
+        id: session.id,
+        project_root: projectRoot,
+        harness: "codex",
+        title: "daemon replay row",
+        status: session.status,
+        exit_code: session.status === "completed" ? 0 : null,
+        archived_at: null,
+        created_at: session.created_at,
+        updated_at: session.updated_at,
+      }))));
+      return;
+    }
+    if (req.method === "GET" && req.url?.startsWith("/api/v1/events?")) {
+      const url = new URL(req.url, "http://127.0.0.1");
+      const sessionId = url.searchParams.get("sessionId") ?? "";
+      const session = daemonSessions.get(sessionId);
+      if (!session) {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "not found" } }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        events: [
+          {
+            seq: 1,
+            id: `${sessionId}-output`,
+            session_id: sessionId,
+            kind: "output",
+            payload_json: JSON.stringify({ data: session.transcript }),
+            created_at: session.updated_at,
+          },
+        ],
+      }));
       return;
     }
     if (req.method === "GET" && req.url === "/api/v1/health") {
@@ -151,7 +215,7 @@ try {
 
   const syncedState = await config.loadState();
   const syncedItem = syncedState.travel.offlineQueue[0];
-  assert.equal(syncedItem?.status, "synced");
+  assert.equal(syncedItem?.status, "syncing", "the replay stays syncing until the daemon transcript is durably mirrored");
   assert.equal(
     syncedItem?.payload?.harnessSessionId,
     "hub-session-1",
@@ -163,9 +227,30 @@ try {
   assert.equal(
     replayedConversation?.turns.length,
     1,
-    "successful replay should not duplicate the already persisted offline user turn",
+    "spawning the daemon session must not duplicate the already persisted offline user turn",
   );
   assert.equal(replayedConversation?.turns[0]?.attentionClearOperationId, "run-offline-1");
+
+  const completedResult = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  assert.deepEqual(completedResult, { attempted: 1, synced: 1, failed: 0, errors: [] });
+  const completedConversation = await conversations.loadConversation("offline-chat-1");
+  assert.equal(completedConversation?.turns.length, 2, "completion persists exactly one assistant reply back into the original conversation");
+  assert.equal(completedConversation?.turns[1]?.role, "assistant");
+  assert.equal(
+    completedConversation?.turns[1]?.text,
+    "Working through it.",
+    "the mirrored assistant reply strips the raw attention marker but keeps ordinary text visible",
+  );
+  assert.deepEqual(
+    completedConversation?.turns[1]?.responseMetadata?.attentionRequest,
+    {
+      sessionId: "offline-chat-1",
+      turnId: completedConversation?.turns[1]?.id,
+      requestedAt: "2026-06-30T12:02:05.000Z",
+      reason: "approval",
+    },
+    "the mirrored assistant reply stamps local attention metadata from the stripped marker",
+  );
 
   const merged = mergeSessionRows({
     daemonSessions: [
@@ -188,6 +273,7 @@ try {
   assert.equal(merged[0]?.id, "offline-chat-1");
   assert.equal(merged[0]?.attentionAfterOperationId, "run-offline-1");
   assert.equal(merged[0]?.status, "completed");
+  assert.equal(merged[0]?.attention.state, "awaiting-human");
 
   const projection = createChatAttentionProjectionState();
   const scopeKey = chatAttentionProjectionScopeKey(null);
@@ -204,10 +290,11 @@ try {
   const projectedRows = applyChatAttentionProjections(projection, merged, 1, scopeKey);
   assert.equal(projectedRows[0]?.attentionAfterOperationId, "run-offline-1");
   assert.equal(
-    projection.has("offline-chat-1"),
-    false,
-    "once the flushed row carries the original operation id, the optimistic projection retires",
+    projectedRows[0]?.attention.state,
+    "awaiting-human",
+    "the mirrored assistant reply reveals the accepted post-clear request instead of masking it forever",
   );
+  assert.equal(projection.has("offline-chat-1"), false);
 
   await config.failOfflineTravelItem(queuedItem.id, "force retry");
   const retryResult = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
@@ -217,7 +304,11 @@ try {
     1,
     "retrying a replay after the daemon session id was recorded must not spawn a second daemon session",
   );
-  assert.equal((await conversations.loadConversation("offline-chat-1"))?.turns.length, 1);
+  assert.equal(
+    (await conversations.loadConversation("offline-chat-1"))?.turns.length,
+    2,
+    "retrying a completed replay must not duplicate the mirrored assistant turn",
+  );
 
   console.log("offline-queue-replay.integration.test.ts: ok");
 } finally {
@@ -231,4 +322,6 @@ try {
   else process.env.COVEN_SOCKET = previousEnv.COVEN_SOCKET;
   if (previousEnv.CAVE_PROJECTS_PATH_OVERRIDE === undefined) delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
   else process.env.CAVE_PROJECTS_PATH_OVERRIDE = previousEnv.CAVE_PROJECTS_PATH_OVERRIDE;
+  daemonSessions.clear();
+  replayPolls.clear();
 }
