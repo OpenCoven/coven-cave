@@ -760,6 +760,7 @@ export const SUITES = {
     "src/lib/code-reading-pref.test.ts",
     "src/lib/code-lines.test.ts",
     "src/components/code-reading-wiring.test.ts",
+    "src/components/message-dom-wiring-lifecycle.test.ts",
     "src/components/chat-prompt-enhance.test.ts",
     "src/components/settings-shortcut.test.ts",
     "src/components/bottom-terminal-sr-mirror.test.ts",
@@ -1730,6 +1731,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/components/message-dom-wiring-lifecycle.test.ts",
   // onboarding diagnostics and core tools resolve shared server/API aliases.
   "src/lib/server/onboarding-diagnostics.test.ts",
   "src/lib/server/onboarding-core-tools.test.ts",
