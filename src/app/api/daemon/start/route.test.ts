@@ -4,7 +4,11 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
-assert.match(source, /startLocalDaemon\(\{ restart \}\)/, "daemon start should use the shared local daemon starter");
+assert.match(
+  source,
+  /startLocalDaemon\(\{ restart, automatic \}\)/,
+  "daemon start should pass explicit restart and automatic intent to the shared starter",
+);
 
 assert.match(
   source,
@@ -16,6 +20,12 @@ assert.match(
   source,
   /const restart = body\?\.restart === true/,
   "daemon start route should accept an explicit restart option",
+);
+
+assert.match(
+  source,
+  /const automatic = body\?\.automatic === true/,
+  "daemon start route should accept explicit automatic-recovery intent",
 );
 
 assert.match(

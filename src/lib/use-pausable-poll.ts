@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
+import { runRefreshSafely, useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 
 /**
  * Poll `callback` every `intervalMs` — but only while the tab is visible — and
@@ -44,7 +44,7 @@ function pollPausedForActiveInput(pauseWhileInputActive: boolean): boolean {
 }
 
 export function usePausablePoll(
-  callback: () => void,
+  callback: () => void | Promise<void>,
   intervalMs: number,
   opts?: { enabled?: boolean; pauseWhileInputActive?: boolean },
 ): void {
@@ -60,7 +60,7 @@ export function usePausablePoll(
     const id = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
       if (pollPausedForActiveInput(pauseWhileInputActive)) return;
-      cbRef.current();
+      runRefreshSafely(cbRef.current);
     }, intervalMs);
     return () => clearInterval(id);
   }, [enabled, intervalMs, pauseWhileInputActive]);
@@ -69,6 +69,6 @@ export function usePausablePoll(
   // Tauri native focus), so returning to the tab doesn't wait out the interval.
   useRefreshOnFocus(() => {
     if (pollPausedForActiveInput(pauseWhileInputActive)) return;
-    cbRef.current();
+    return cbRef.current();
   }, { enabled });
 }

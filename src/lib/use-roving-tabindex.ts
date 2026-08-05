@@ -11,6 +11,8 @@ type Options = {
   itemSelector: string;
   /** Which arrow keys move focus. Default "both". */
   orientation?: Orientation;
+  /** Increment when CSS visibility changes alter the navigable item set. */
+  itemsVersion?: unknown;
   /** Wrap from last → first / first → last. Default false. */
   loop?: boolean;
   /**
@@ -35,6 +37,7 @@ export function useRovingTabIndex({
   containerRef,
   itemSelector,
   orientation = "both",
+  itemsVersion,
   loop = false,
   columns,
 }: Options) {
@@ -59,6 +62,17 @@ export function useRovingTabIndex({
   // activeIndex if the list shrunk below it — without this, a dynamic list
   // can leave the tab stop out of range (next ArrowDown lands on nothing).
   useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    // CSS-only visibility changes can reveal rows before React has another
+    // chance to render. Reset every matching row so only the visible rove set
+    // receives a tab stop below.
+    const allItems = Array.from(container.querySelectorAll<HTMLElement>(itemSelector));
+    allItems.forEach((item) => {
+      item.tabIndex = -1;
+    });
+
     const items = getItems();
     if (items.length === 0) return;
     if (activeRef.current >= items.length) {
@@ -69,11 +83,9 @@ export function useRovingTabIndex({
     items.forEach((item, i) => {
       if (i === activeRef.current) {
         item.tabIndex = 0;
-      } else {
-        item.tabIndex = -1;
       }
     });
-  }, [getItems, activeIndex]);
+  }, [containerRef, getItems, itemSelector, activeIndex, itemsVersion]);
 
   useEffect(() => {
     const container = containerRef.current;

@@ -31,11 +31,31 @@ assert.match(
   /export const PRIMARY_WORKSPACE_NAV_ITEMS = VISIBLE_WORKSPACE_NAV_ITEMS\.filter\(\(item\) => !item\.quiet\)/,
   "the registry owns the promoted mobile destinations",
 );
+assert.match(
+  registry,
+  /group: "work" \| "explore";/,
+  "every workspace destination must declare a sidebar group",
+);
+assert.match(
+  registry,
+  /\{ id: "browser",[\s\S]*?group: "(?:work|explore)"/,
+  "hidden Browser remains classified for future visible navigation",
+);
+assert.match(
+  registry,
+  /\{ id: "salem",[\s\S]*?group: "(?:work|explore)"/,
+  "hidden Ask Salem remains classified for future visible navigation",
+);
 
 assert.match(
   sidebar,
-  /import \{[\s\S]*?VISIBLE_WORKSPACE_NAV_ITEMS,[\s\S]*?type WorkspaceNavItem,[\s\S]*?type WorkspaceNavMode,[\s\S]*?\} from "@\/lib\/workspace-navigation"/,
-  "the desktop sidebar consumes the shared visible registry",
+  /import \{[\s\S]*?navItemsForSection,[\s\S]*?\} from "@\/lib\/nav-section"/,
+  "the desktop sidebar takes its rows from the section-filtered registry derivation",
+);
+assert.match(
+  read("./nav-section.ts"),
+  /VISIBLE_WORKSPACE_NAV_ITEMS\.filter\(\(item\) => navSectionForMode\(item\.id\) === section\)/,
+  "the section split derives from the shared visible registry rather than a second list",
 );
 assert.doesNotMatch(sidebar, /const FOLDER_MODES/, "the sidebar no longer owns a duplicate route registry");
 assert.doesNotMatch(sidebar, /export \{ FOLDER_MODES \}/, "the obsolete component-level registry export is removed");

@@ -134,6 +134,11 @@ import {
 import { redactSecretText, redactSecretsDeep } from "@/lib/secret-redaction";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
+  buildFamiliarContractContext,
+  buildPromptWithFamiliarContract,
+  familiarContractNotice,
+} from "@/lib/server/familiar-contract-context";
+import {
   buildPromptWithKnowledgeVault,
   listCollections,
   readKnowledgeVaultForPrompt,
@@ -1645,13 +1650,15 @@ export async function POST(req: Request) {
     : null;
 
   // Resolve the direct plan in the exact familiar-scoped environment passed to
-  // the child. The capability probe scrubs credentials only for `--version`;
-  // it must never discover a different launcher than the model spawn uses.
-  const copilotSpawnEnv = copilotDirect ? harnessSpawnEnv(body.familiarId) : null;
+  // the child. The resolver owns bounded PATH discovery so a cold desktop
+  // login-shell lookup cannot consume the launch-plan verification budget.
+  // The capability probe scrubs credentials only for `--version`; it must never
+  // discover a different launcher than the model spawn uses.
   const copilotManifestStream = copilotDirect ? copilotStreamSpec() : null;
   const copilotRuntimeLaunch = copilotManifestStream
     ? await resolveCopilotRuntimeLaunch(copilotManifestStream.executable, {
-        spawnEnv: () => copilotSpawnEnv!,
+        spawnEnv: (discoveryDeadline) =>
+          harnessSpawnEnv(body.familiarId, { discoveryDeadline }),
       })
     : null;
   const copilotCapability = copilotManifestStream && copilotRuntimeLaunch
@@ -2252,31 +2259,61 @@ export async function POST(req: Request) {
     : await readKnowledgeVaultForPrompt(body.familiarId);
   const knowledgeVaultCollections = skipKnowledgeVault ? [] : await listCollections();
 
+  // Familiar Contract — SOUL.md / IDENTITY.md from the familiar's own workspace.
+  // The identity canon injected on every turn asserts these files define the
+  // familiar; until cave-gw3iq chat never actually loaded them, so the claim was
+  // unbacked in the one surface users spend most of their time in.
+  //
+  // New sessions only, matching the operator profile: a resumed conversation
+  // already carries the block in its transcript, and re-sending several KB of
+  // identity prose on every turn is exactly the imbalance this fix is meant to
+  // correct — not to invert.
+  //
+  // `enhance` is skipped for the same reason it skips the Knowledge Vault: that
+  // origin is the one-shot utility lane (prompt enhance, reply recommendation,
+  // gh review draft, thread reflection), whose entire input is already in the
+  // prompt. Persona prose there is pure ballast.
+  //
+  // MEMORY.md is deliberately excluded — see FamiliarContractBlockOptions. Chat
+  // already injects today's daily memory as its own startup-context block.
+  const familiarContract =
+    body.sessionId || body.origin === "enhance"
+      ? { block: null, loaded: [], clamped: [] }
+      : await buildFamiliarContractContext(body.familiarId);
+  const familiarContractBlock = familiarContract.block;
+
   // Reuse the task card already loaded to authorize this reserved handoff.
   // Besides avoiding a second board-store read on every chat turn, this keeps
   // the permission decision and prompt context on the same task snapshot.
   const taskContext = taskCard ? buildTaskContext(taskCard) : null;
   const scopedPrompt = buildPromptWithRuntimeScope(
     buildPromptWithCovenIdentityCanon(
-      buildTaskAwarePrompt(
-        buildPromptWithKnowledgeVault(
-          buildPromptWithFamiliarStartupContext(
-            appendMentionedFilesBlock(
-              buildPromptWithResponseControls(
-                buildPromptWithAttachments(promptText, attachments, {
-                  imagesSupported,
-                  imageFilePaths,
-                }),
-                { modelControls: promptModelControls },
+      // Sits directly inside the canon so the files land next to the rule that
+      // names them, and ahead of the vault/task/memory data blocks so persona
+      // frames how the familiar reads them. The genuine runtime boundary is
+      // applied outermost and therefore still leads the assembled prompt.
+      buildPromptWithFamiliarContract(
+        buildTaskAwarePrompt(
+          buildPromptWithKnowledgeVault(
+            buildPromptWithFamiliarStartupContext(
+              appendMentionedFilesBlock(
+                buildPromptWithResponseControls(
+                  buildPromptWithAttachments(promptText, attachments, {
+                    imagesSupported,
+                    imageFilePaths,
+                  }),
+                  { modelControls: promptModelControls },
+                ),
+                mentionedFiles,
               ),
-              mentionedFiles,
+              [operatorProfileContext, dailyMemoryContext],
             ),
-            [operatorProfileContext, dailyMemoryContext],
+            knowledgeVaultEntries,
+            knowledgeVaultCollections,
           ),
-          knowledgeVaultEntries,
-          knowledgeVaultCollections,
+          taskContext,
         ),
-        taskContext,
+        familiarContractBlock,
       ),
       body.familiarId,
     ),
@@ -2634,6 +2671,12 @@ export async function POST(req: Request) {
         if (
           (id === "opencode-compatibility" || id === "grok-compatibility") ||
           id === "codex-compatibility" ||
+          // Identity loading must survive a transcript reload for the same
+          // reason the compatibility rows do: the question it answers ("what
+          // context did this familiar actually have?") is usually asked later,
+          // from a reloaded or exported transcript, long after the live SSE
+          // buffer has expired. It carries file names only, never contents.
+          id === "familiar-contract" ||
           id === "runtime-process"
         ) {
           persistedCompatibilityDiagnostics.push({
@@ -2667,6 +2710,14 @@ export async function POST(req: Request) {
       };
 
       push({ kind: "user", text: promptText });
+      // Report what identity context this turn actually loaded. A familiar
+      // asked "what is in your SOUL.md" should be answerable from the run's own
+      // record rather than from the familiar's introspection, which is exactly
+      // what was missing when this injection was specified.
+      if (!body.sessionId && body.origin !== "enhance" && body.familiarId) {
+        const notice = familiarContractNotice(familiarContract);
+        pushProgress("familiar-contract", notice.label, "notice", notice.detail);
+      }
       if (hermesDirect && !hermesApi) {
         // Do not fabricate tool bubbles from the CLI's presentation layer.
         // This gives the operator an actionable, privacy-safe degradation

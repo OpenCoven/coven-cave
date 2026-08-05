@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { CaveProject } from "@/lib/cave-projects";
 import { chatProjectById } from "@/lib/chat-projects";
 import { archiveAction, sessionMenuSections, voiceAction, type SessionMenuItemId } from "@/lib/chat-session-menu-model";
@@ -8,8 +8,12 @@ import { Icon } from "@/lib/icon";
 import { useShowThinking } from "@/lib/reasoning-visibility";
 import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { FamiliarIcon } from "@/components/familiar-icon";
 import { ProjectPickerPopover } from "@/components/project-picker";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
+
+const ENABLED_MENU_ITEM_SELECTOR =
+  '[role="menuitem"]:not(:disabled):not([aria-disabled="true"]), [role="menuitemradio"]:not(:disabled):not([aria-disabled="true"]), [role="menuitemcheckbox"]:not(:disabled):not([aria-disabled="true"])';
 
 /** Slim overflow kebab (cave-zolo): only genuinely secondary tools live here.
  *  Lifecycle verbs (archive, delete) and the voice call are direct header
@@ -26,6 +30,8 @@ export function SessionOverflowMenu({
   sessionId,
   hasTurns,
   onOpenDebug,
+  promotableFamiliars,
+  onPromoteToCoven,
   reflecting,
   onReflect,
 }: {
@@ -43,6 +49,8 @@ export function SessionOverflowMenu({
   /** Gates the Show-thinking toggle — pointless on an empty transcript. */
   hasTurns: boolean;
   onOpenDebug: () => void;
+  promotableFamiliars: Familiar[];
+  onPromoteToCoven: (familiarId: string) => void;
   /** Reflect-on-thread (absent when the familiar has no id). */
   reflecting: boolean;
   onReflect?: () => void;
@@ -52,6 +60,8 @@ export function SessionOverflowMenu({
   const [showThinking, setShowThinking] = useShowThinking();
   const [instrumentsVisible, setInstrumentsVisible] = useThreadInstrumentsVisible();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const keyboardOpenRequested = useRef(false);
   const activeProject =
     (projectId ? chatProjectById(projectId, projects) : projects[0]) ?? null;
 
@@ -68,6 +78,66 @@ export function SessionOverflowMenu({
   });
 
   const close = () => setOpen(false);
+  const setSessionMenuOpen = useCallback((next: boolean) => {
+    if (next) setProjectPickerOpen(false);
+    setOpen(next);
+  }, []);
+
+  const getEnabledItems = useCallback(
+    () =>
+      Array.from(
+        menuRef.current?.querySelectorAll<HTMLElement>(ENABLED_MENU_ITEM_SELECTOR) ?? [],
+      ),
+    [],
+  );
+
+  const focusFirstEnabledItem = useCallback(() => {
+    keyboardOpenRequested.current = false;
+    getEnabledItems()[0]?.focus();
+  }, [getEnabledItems]);
+
+  useEffect(() => {
+    if (!open || !keyboardOpenRequested.current) return;
+    const focusFrame = requestAnimationFrame(focusFirstEnabledItem);
+    return () => cancelAnimationFrame(focusFrame);
+  }, [focusFirstEnabledItem, open]);
+
+  const onTriggerKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+        keyboardOpenRequested.current = true;
+        e.stopPropagation();
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (open) {
+          requestAnimationFrame(focusFirstEnabledItem);
+        } else {
+          setSessionMenuOpen(true);
+        }
+      }
+    },
+    [focusFirstEnabledItem, open, setSessionMenuOpen],
+  );
+
+  const onBodyKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+      const items = getEnabledItems();
+      if (items.length === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+      let nextIndex: number;
+      if (e.key === "Home") nextIndex = 0;
+      else if (e.key === "End") nextIndex = items.length - 1;
+      else if (e.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+      else nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+      items[nextIndex]?.focus();
+    },
+    [getEnabledItems],
+  );
 
   const handlers: Record<SessionMenuItemId, () => void> = {
     "continue-on-phone": () => {
@@ -113,42 +183,64 @@ export function SessionOverflowMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         title="Session options"
+        onPointerDown={() => {
+          keyboardOpenRequested.current = false;
+        }}
+        onKeyDown={onTriggerKeyDown}
         onClick={() => {
-          // The picker shares this anchor, so its outside-click handler skips
-          // clicks here — close it explicitly or both popovers stack open.
-          setProjectPickerOpen(false);
-          setOpen(!open);
+          setSessionMenuOpen(!open);
         }}
       >
         <Icon name="ph:dots-three-vertical" width={15} aria-hidden />
       </button>
       <Popover
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={setSessionMenuOpen}
         anchorRef={triggerRef}
         placement="bottom-end"
         minWidth={216}
         ariaLabel="Chat options"
       >
-        <PopoverBody>
-          {sections.map((section, si) => (
-            <Fragment key={si}>
-              {si > 0 ? <PopoverSeparator /> : null}
-              {section.map((item) => (
-                <PopoverItem
-                  key={item.id}
-                  icon={item.icon}
-                  checked={item.checked}
-                  disabled={item.disabled}
-                  title={item.title}
-                  onSelect={handlers[item.id]}
-                >
-                  {item.label}
-                </PopoverItem>
-              ))}
-            </Fragment>
-          ))}
-        </PopoverBody>
+        <div ref={menuRef} onKeyDown={onBodyKeyDown}>
+          <PopoverBody role="menu" ariaLabel="Chat options">
+            {sections.map((section, si) => (
+              <Fragment key={si}>
+                {si > 0 ? <PopoverSeparator /> : null}
+                {section.map((item) => (
+                  <PopoverItem
+                    key={item.id}
+                    icon={item.icon}
+                    checked={item.checked}
+                    disabled={item.disabled}
+                    title={item.title}
+                    onSelect={handlers[item.id]}
+                  >
+                    {item.label}
+                  </PopoverItem>
+                ))}
+              </Fragment>
+            ))}
+            {promotableFamiliars.length > 0 ? (
+              <>
+                <PopoverSeparator />
+                <PopoverLabel>Start a coven with</PopoverLabel>
+                {promotableFamiliars.map((candidate) => (
+                  <PopoverItem
+                    key={candidate.id}
+                    leading={<span aria-hidden><FamiliarIcon familiar={candidate} size="sm" /></span>}
+                    title={`Continue this chat in a coven with ${candidate.display_name}`}
+                    onSelect={() => {
+                      close();
+                      onPromoteToCoven(candidate.id);
+                    }}
+                  >
+                    {candidate.display_name}
+                  </PopoverItem>
+                ))}
+              </>
+            ) : null}
+          </PopoverBody>
+        </div>
       </Popover>
       <ProjectPickerPopover
         open={projectPickerOpen}

@@ -230,7 +230,10 @@ export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
   const lastActive = model.growthReport?.lastActiveAt ?? model.recentSessions[0]?.updated_at ?? null;
   // The dock's one plain-language sentence about this familiar — the same
   // synthesis the roster insight uses, so both surfaces read the same way.
-  const insight = deriveAnalyticsInsight(model, healRequestCount);
+  const insight = deriveAnalyticsInsight(model, healRequestCount, {
+    confidence,
+    threadReportCount: confidence.reportCount,
+  });
   const passCount = contractReport
     ? contractReport.properties.filter((property) => property.pass).length
     : 0;

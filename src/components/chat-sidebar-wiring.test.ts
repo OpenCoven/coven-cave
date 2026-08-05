@@ -16,8 +16,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const contextualNav = mode === "chat" \? chatSidebar : sidebar;/,
-  "workspace should select Chats as the primary nav only in chat mode",
+  /const contextualNav = navSection === "code" \? chatSidebar : sidebar;/,
+  "workspace should select the session-list rail for the whole Code section",
 );
 assert.doesNotMatch(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/);
 assert.match(

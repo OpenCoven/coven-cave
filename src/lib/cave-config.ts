@@ -49,9 +49,27 @@ export {
 
 const CONFIG_PATH = path.join(caveHome(), "config.json");
 const STATE_PATH = path.join(caveHome(), "state.json");
+const CONFIG_SCHEMA_VERSION = 1;
+
+export class CaveConfigCompatibilityError extends Error {
+  readonly code: "invalid_cave_config" | "unsupported_cave_config_version" | "invalid_cave_state";
+
+  constructor(
+    code: CaveConfigCompatibilityError["code"],
+    message: string,
+  ) {
+    super(message);
+    this.name = "CaveConfigCompatibilityError";
+    this.code = code;
+  }
+}
+
+export function isCaveConfigCompatibilityError(error: unknown): error is CaveConfigCompatibilityError {
+  return error instanceof CaveConfigCompatibilityError;
+}
 
 const DEFAULT_CONFIG: CaveConfig = {
-  version: 1,
+  version: CONFIG_SCHEMA_VERSION,
   defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
   familiars: {},
   roles: [],
@@ -401,11 +419,49 @@ function incrementSessionTitleRevision(state: CaveState, sessionId: string): voi
 }
 
 async function loadConfigUnlocked(): Promise<CaveConfig> {
+  let raw: string;
   try {
-    const raw = await readFile(CONFIG_PATH, "utf8");
-    const parsed = JSON.parse(raw) as Partial<CaveConfig>;
+    raw = await readFile(CONFIG_PATH, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return defaultConfig();
+    throw error;
+  }
+
+  let parsed: Partial<CaveConfig>;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new CaveConfigCompatibilityError(
+        "invalid_cave_config",
+        "Cave configuration is invalid. Restore a valid config.json backup before changing settings.",
+      );
+    }
+    parsed = value as Partial<CaveConfig>;
+  } catch (error) {
+    if (isCaveConfigCompatibilityError(error)) throw error;
+    throw new CaveConfigCompatibilityError(
+      "invalid_cave_config",
+      "Cave configuration is invalid. Restore a valid config.json backup before changing settings.",
+    );
+  }
+
+  const version = parsed.version ?? CONFIG_SCHEMA_VERSION;
+  if (!Number.isSafeInteger(version) || version < 1) {
+    throw new CaveConfigCompatibilityError(
+      "invalid_cave_config",
+      "Cave configuration has an invalid schema version. Restore a valid config.json backup before changing settings.",
+    );
+  }
+  if (version > CONFIG_SCHEMA_VERSION) {
+    throw new CaveConfigCompatibilityError(
+      "unsupported_cave_config_version",
+      "Cave configuration was written by a newer version of Cave. Update Cave before changing settings.",
+    );
+  }
+
+  try {
     const config: CaveConfig = {
-      version: parsed.version ?? 1,
+      version,
       defaults: { ...DEFAULT_CONFIG.defaults, ...(parsed.defaults ?? {}) },
       familiars: parsed.familiars ?? {},
       roles: parsed.roles ?? [],
@@ -460,8 +516,12 @@ async function loadConfigUnlocked(): Promise<CaveConfig> {
       await writeJsonAtomic(CONFIG_PATH, config).catch(() => {});
     }
     return config;
-  } catch {
-    return defaultConfig();
+  } catch (error) {
+    if (isCaveConfigCompatibilityError(error)) throw error;
+    throw new CaveConfigCompatibilityError(
+      "invalid_cave_config",
+      "Cave configuration is invalid. Restore a valid config.json backup before changing settings.",
+    );
   }
 }
 
@@ -705,9 +765,22 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
 }
 
 async function loadStateUnlocked(): Promise<CaveState> {
+  let raw: string;
   try {
-    const raw = await readFile(STATE_PATH, "utf8");
-    const parsed = JSON.parse(raw) as Partial<CaveState>;
+    raw = await readFile(STATE_PATH, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return defaultState();
+    throw error;
+  }
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new CaveConfigCompatibilityError(
+        "invalid_cave_state",
+        "Cave state is invalid. Restore a valid state.json backup before changing sessions.",
+      );
+    }
+    const parsed = value as Partial<CaveState>;
     return {
       sessionFamiliar: parsed.sessionFamiliar ?? {},
       sessionTitles: parsed.sessionTitles ?? {},
@@ -723,8 +796,12 @@ async function loadStateUnlocked(): Promise<CaveState> {
       mergedPrAutoArchived: parsed.mergedPrAutoArchived ?? {},
       travel: normalizeTravelState(parsed.travel),
     };
-  } catch {
-    return defaultState();
+  } catch (error) {
+    if (isCaveConfigCompatibilityError(error)) throw error;
+    throw new CaveConfigCompatibilityError(
+      "invalid_cave_state",
+      "Cave state is invalid. Restore a valid state.json backup before changing sessions.",
+    );
   }
 }
 

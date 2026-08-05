@@ -10,6 +10,7 @@ import {
   type MilestoneAward,
   type TierAscension,
 } from "@/lib/milestone-defs";
+import { dueMissionAwards, missionSignals } from "@/lib/mission-defs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 
@@ -89,6 +90,18 @@ export function useMilestoneWatch(enabled = true) {
           awarded,
         ),
         ...(memoryCounts === null ? [] : dueTierMilestones(tierRows, awarded)),
+        // Missions ride the same ledger. When memory is unavailable its counts
+        // read 0, so a memory mission can pay out late but never early.
+        ...dueMissionAwards(
+          missionSignals(
+            familiars.map((f) => f.id),
+            bySessions,
+            memoryCounts,
+            covenStreak(sessions, Date.now()),
+            live.length,
+          ),
+          awarded,
+        ),
       ];
       if (due.length === 0) return;
       await fetch("/api/milestones", {

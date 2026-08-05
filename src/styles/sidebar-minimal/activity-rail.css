@@ -49,11 +49,15 @@
 }
 
 /* Section headers and the recent-activity rollup have no compact form, so
-   they drop out entirely in the rail. (Rooms cluster label included.) */
+   they drop out entirely in the rail. Section contents stay mounted and
+   visible: a collapsed expanded-panel group must never remove its rail icons. */
 .shell-nav--rail .sidebar-section-label,
-.shell-nav--rail .sidebar-rooms-label,
 .shell-nav--rail .recent-activity {
   display: none;
+}
+
+.shell-nav--rail .sidebar-section--collapsed .sidebar-section__content {
+  display: flex;
 }
 
 /* ── Rail-only bookends (chat-revamp phase D) ────────────────────────────────

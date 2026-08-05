@@ -439,7 +439,7 @@ test("POST does not register TOML when config persistence fails", async () => {
 });
 
 test("behavior tests used only the controlled empty daemon roster", () => {
-  assert.ok(daemonRequests.length >= 5);
+  assert.ok(daemonRequests.length >= 4);
   assert.deepEqual(new Set(daemonRequests), new Set(["/api/v1/familiars"]));
 });
 

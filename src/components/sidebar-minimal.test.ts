@@ -66,14 +66,85 @@ assert.match(
 
 assert.match(
   source,
-  /<div className="sidebar-nav-scroll"/,
+  /<div\s+className="sidebar-nav-scroll"/,
   "Sidebar should keep the main navigation in one continuous scrollable rail",
 );
 
-assert.doesNotMatch(
+assert.match(source, /function SidebarSection\(/, "sidebar destinations should share one collapsible section component");
+assert.match(
   source,
-  /function SidebarSection|<SidebarSection|sidebar-section-label|fm\.group === "work"|fm\.group === "tools"/,
-  "Left sidepanel should render one flat list without collapsible Work/Tools sections",
+  /const storageKey = `cave:sidebar:section:\$\{sectionId\}`;/,
+  "each section derives an independent persisted preference key from its label",
+);
+assert.match(
+  source,
+  /const \[collapsed, setCollapsed\] = React\.useState\(false\);/,
+  "sections default open for SSR-safe first paint",
+);
+assert.match(
+  source,
+  /try \{\s*setCollapsed\(window\.localStorage\.getItem\(storageKey\) === "1"\);\s*\} catch \{/,
+  "saved collapse state hydrates safely when localStorage is unavailable",
+);
+assert.match(
+  source,
+  /window\.localStorage\.setItem\(storageKey, next \? "1" : "0"\)/,
+  "each section persists only its own collapse state",
+);
+assert.match(
+  source,
+  /aria-controls=\{contentId\}\s*aria-expanded=\{!collapsed\}/,
+  "section toggles expose their controlled content and expanded state",
+);
+assert.match(
+  source,
+  /<SidebarSection label="Work"[^>]*>[\s\S]{0,1800}?workItems\.map/,
+  "Work contains its registry-filtered destination rows",
+);
+assert.match(
+  source,
+  /<SidebarSection label="Explore"[^>]*>[\s\S]{0,1200}?exploreItems\.map/,
+  "Explore contains its registry-filtered destination rows",
+);
+assert.match(
+  source,
+  /item\.group === "work"[\s\S]{0,180}item\.group === "explore"/,
+  "section membership is derived from the workspace navigation registry",
+);
+assert.match(
+  source,
+  /<SidebarSection label="Rooms"[^>]*>[\s\S]{0,1800}?props\.roleSurfaces!\.map\(\(room\) =>/,
+  "dynamic role-surface rooms use the same collapsible section treatment",
+);
+assert.match(
+  source,
+  /itemsVersion: navItemsVersion/,
+  "collapsing a section re-synchronizes roving navigation to visible rows",
+);
+assert.match(
+  source,
+  /itemSelector: "\.sidebar-section-label, \.sidebar-folder-row"/,
+  "section toggles and destinations share one roving keyboard sequence",
+);
+assert.match(
+  source,
+  /<div id=\{contentId\} className="sidebar-section__content">\s*\{children\}/,
+  "section rows remain mounted so the icon rail can render every destination",
+);
+assert.match(
+  styles,
+  /\.sidebar-section--collapsed \.sidebar-section__content \{\s*display: none;/,
+  "collapsed sections hide their rows in the expanded panel",
+);
+assert.match(
+  styles,
+  /\.shell-nav--rail \.sidebar-section--collapsed \.sidebar-section__content \{\s*display: flex;/,
+  "the icon rail restores rows from collapsed sections",
+);
+assert.match(
+  styles,
+  /\.shell-nav--rail \.sidebar-section-label,[\s\S]{0,100}\.recent-activity \{\s*display: none;/,
+  "the icon rail hides section headings while retaining destination icons",
 );
 
 // The standalone Knowledge section is gone; Library is now isolated on its
@@ -96,7 +167,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /props\.roleSurfaces!\.map\(\(room\) =>/,
+  /const sectionRooms = React\.useMemo\(\s*\(\) => \(props\.roleSurfaces \?\? \[\]\)\.filter\(/,
   "Code Workshop remains registry-driven through the active familiar's rooms",
 );
 assert.match(
@@ -106,14 +177,23 @@ assert.match(
 );
 assert.match(
   source,
-  /import \{[\s\S]*VISIBLE_WORKSPACE_NAV_ITEMS,[\s\S]*\} from "@\/lib\/workspace-navigation"/,
-  "the sidebar consumes the shared registry's already-filtered visible rows",
+  /import \{[\s\S]*navItemsForSection,[\s\S]*\} from "@\/lib\/nav-section"/,
+  "the sidebar consumes the shared registry's visible rows through the section split",
 );
 
 assert.match(
   navigation,
-  /\{ id: "home", label: "Home"/,
-  "Home is the first workspace destination",
+  /\{ id: "home", label: "Home", iconName: "ph:house-bold",[^}]*group: "work"/,
+  "Home starts the Work destination group",
+);
+assert.match(navigation, /\{ id: "chat", label: "Chat", iconName: "ph:chats",[^}]*group: "work"/, "Chat belongs to Work");
+assert.match(navigation, /\{ id: "board", label: "Tasks", iconName: "ph:kanban",[^}]*group: "work"/, "Tasks belongs to Work");
+assert.match(navigation, /\{ id: "inbox", label: "Rituals", iconName: "ph:calendar-check",[^}]*group: "work"/, "Rituals belongs to Work");
+assert.match(navigation, /\{ id: "grimoire", label: "Memories", iconName: "ph:books",[^}]*group: "explore"/, "Memories belongs to Explore");
+assert.match(
+  navigation,
+  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold",[^}]*group: "explore"/,
+  "Marketplace belongs to Explore",
 );
 
 assert.doesNotMatch(
@@ -191,7 +271,7 @@ assert.doesNotMatch(
 // it) but is navHidden, so it renders no sidebar row — summoned on demand.
 assert.match(
   navigation,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", group: "work", navHidden: true \}/,
   "Browser is kept for ⌘5/palette but hidden from the sidebar rows (navHidden)",
 );
 
@@ -454,11 +534,8 @@ assert.match(
   "The 56px rail has no room for text — the version line hides there",
 );
 
-// Quiet cluster (§8): occasional destinations stay in the same flat list but
-// render muted-until-hover, with the first quiet row opening a spacing gap.
-// Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
-// ⌘-numbered daily set (Home ⌘1 · Chat ⌘2 · Tasks ⌘3 · Schedules ⌘4); Memories
-// leads the quiet cluster, followed by Marketplace/GitHub/Work Queue.
+// Explore retains quiet row treatment, while its section header now owns the
+// separation from the daily Work destinations.
 assert.match(
   navigation,
   /\{ id: "journal",[^}]*navHidden: true \}/,
@@ -480,19 +557,9 @@ assert.match(
   "Marketplace is in the quiet cluster",
 );
 assert.match(
-  source,
-  /quietLead=\{Boolean\(fm\.quiet\) && !rows\[i - 1\]\?\.quiet\}/,
-  "the first quiet row opens the spacing gap (indexed on the rendered list after navHidden filtering)",
-);
-assert.match(
   styles,
   /\.sidebar-folder-row--quiet \{[^}]*color: var\(--text-muted\);/,
   "quiet rows read muted at rest",
-);
-assert.match(
-  styles,
-  /\.sidebar-folder-row--quiet-lead \{[^}]*margin-top: var\(--space-3\);/,
-  "the quiet cluster opens with spacing, not a hairline divider",
 );
 
 // ── Split-open marker ────────────────────────────────────────────────────────
@@ -528,8 +595,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<SidebarMinimal\s+mode=\{mode\}\s+splitPageModes=\{splitPageModes\}/,
-  "workspace threads splitPageModes into the sidebar",
+  /<SidebarMinimal\s+mode=\{mode\}\s+section=\{navSection\}\s+onSectionChange=\{handleSectionChange\}\s+splitPageModes=\{splitPageModes\}/,
+  "workspace threads the section and splitPageModes into the sidebar",
 );
 assert.match(
   styles,

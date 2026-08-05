@@ -61,8 +61,8 @@ assert.match(
 
 assert.match(
   homeComposer,
-  /useLayoutEffect\(\(\) => \{\s*setText\(readComposerDraft\(HOME_DRAFT_KEY\)\);\s*setDraftRestored\(true\);\s*\}, \[\]\)/,
-  "HomeComposer must restore a persisted draft before paint without hydrating mismatched controls",
+  /useLayoutEffect\(\(\) => \{\s*const restored = readComposerDraft\(HOME_DRAFT_KEY\);\s*setText\(restored\);\s*setComposerCaret\(restored\.length\);\s*setDraftRestored\(true\);\s*\}, \[\]\)/,
+  "HomeComposer must restore a persisted draft and its caret before paint without hydrating mismatched controls",
 );
 
 console.log("shell-first-paint.test.ts OK");

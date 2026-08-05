@@ -49,8 +49,8 @@ final class SessionSwitchTests: XCTestCase {
     }
 
     /// The chosen session must stay put once opened. After the view consumes
-    /// the one-shot request, that session is now the current one — so the
-    /// picker offering it again must not re-request it and rebuild the chat.
+    /// the one-shot request, that session is the current one — so the picker
+    /// offering it again must not re-request it and rebuild the live chat.
     func testChosenSessionSticksAfterTheRequestIsConsumed() {
         let app = AppModel()
         let chosen = thread("sticky-session")
