@@ -1216,13 +1216,19 @@ export function Workspace() {
       // `origin` is set only when the open came from a chat code block
       // (cave-f6mu9); the Code surface shows it as a source-context card so
       // the reader can see — and walk back — why they are looking at this file.
-      const detail = (e as CustomEvent<{ path?: string; line?: number; origin?: PendingCodeOrigin }>).detail;
+      const detail = (e as CustomEvent<{
+        path?: string;
+        line?: number;
+        projectRoot?: string;
+        origin?: PendingCodeOrigin;
+      }>).detail;
       if (!detail?.path) return;
       const sessionId = activeChatSessionIdRef.current ?? undefined;
+      const root = detail.projectRoot ?? undefined;
       enqueuePendingCodeOpen(
         kind === "files"
-          ? { kind, path: detail.path, line: detail.line, sessionId, origin: detail.origin, nonce: Date.now() }
-          : { kind, path: detail.path, sessionId, origin: detail.origin, nonce: Date.now() },
+          ? { kind, path: detail.path, line: detail.line, root, sessionId, origin: detail.origin, nonce: Date.now() }
+          : { kind, path: detail.path, root, sessionId, origin: detail.origin, nonce: Date.now() },
       );
       setMode("code");
     };

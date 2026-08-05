@@ -9,6 +9,8 @@ import {
 
 test("project containment follows case-insensitive Windows drive semantics", () => {
   assert.equal(normalizeProjectRoot("C:\\"), "C:/");
+  assert.equal(normalizeProjectRoot("C:"), "C:/", "legacy server drive roots migrate to drive-root form");
+  assert.equal(normalizeProjectRoot("c:////"), "c:/");
   assert.equal(normalizeProjectRoot("\\\\Server\\Share\\"), "//Server/Share");
   assert.deepEqual(
     resolvePathWithinProjectRoot("C:\\Repo\\App", "c:/repo/APP/src\\File.ts"),

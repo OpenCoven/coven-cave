@@ -6,6 +6,8 @@
  */
 
 import type { SessionRow } from "@/lib/types";
+import { normalizeProjectRoot } from "./cave-projects-types.ts";
+import type { PendingCodeOpen } from "./pending-code-open.ts";
 
 /** Workbench tabs within a selected session. Diff/Files/Terminal/PR land in
  *  follow-up PRs; the vocabulary is fixed here so deep links stay stable. */
@@ -238,6 +240,28 @@ export function codeSessionDiffstat(row: SessionRow): string | null {
  */
 export function codeSessionWorkRoot(row: SessionRow): string {
   return row.git?.worktreeRoot || row.project_root;
+}
+
+/**
+ * Resolve a routed open to the workbench that owns its captured root. Root
+ * provenance outranks the raising session id; if no root matches, fail closed.
+ */
+export function codeSessionForPendingOpen(
+  rows: readonly SessionRow[],
+  open: PendingCodeOpen,
+): SessionRow | null {
+  if (open.root) {
+    const targetRoot = normalizeProjectRoot(open.root);
+    return (
+      rows.find(
+        (row) =>
+          isCodeRailSession(row) &&
+          normalizeProjectRoot(codeSessionWorkRoot(row)) === targetRoot,
+      ) ?? null
+    );
+  }
+  if (!open.sessionId) return null;
+  return rows.find((row) => isCodeRailSession(row) && row.id === open.sessionId) ?? null;
 }
 
 export type CodeSessionActivity = "running" | "error" | "idle";

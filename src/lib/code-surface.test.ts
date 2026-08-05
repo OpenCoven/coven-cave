@@ -5,6 +5,7 @@ import {
   codeSessionActivity,
   codeSessionBranch,
   codeSessionDiffstat,
+  codeSessionForPendingOpen,
   codeSessionWorkRoot,
   groupCodeRailSessions,
   isCodeGithubTab,
@@ -130,6 +131,36 @@ test("work root prefers the session's worktree over the shared project root", ()
     codeSessionWorkRoot(row({ git: { worktreeRoot: null, isWorktree: false, branch: "main" } })),
     "/repo/a",
     "a null worktreeRoot falls back to the project root",
+  );
+});
+
+test("historical review selects the captured root when projects share a relative filename", () => {
+  const current = row({ id: "current", project_root: "/projects/current" });
+  const historical = row({ id: "historical", project_root: "/projects/original" });
+  const target = codeSessionForPendingOpen(
+    [current, historical],
+    {
+      kind: "changes",
+      path: "/projects/original/src/shared.ts",
+      root: "/projects/original",
+      sessionId: "current",
+      nonce: 1,
+    },
+  );
+  assert.equal(target?.id, "historical", "captured root outranks the currently active chat session");
+  assert.equal(
+    codeSessionForPendingOpen(
+      [current, historical],
+      {
+        kind: "changes",
+        path: "/projects/missing/src/shared.ts",
+        root: "/projects/missing",
+        sessionId: "current",
+        nonce: 2,
+      },
+    ),
+    null,
+    "a captured root with no workbench fails closed instead of using the current session",
   );
 });
 

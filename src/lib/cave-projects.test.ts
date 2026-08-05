@@ -19,7 +19,7 @@ try {
     seedDefaultProjectsIfEmpty,
     sortProjectsAlphabetically,
   } = await import("./cave-projects.ts");
-  const { projectForPickerQuery } = await import("./cave-projects-types.ts");
+  const { normalizeProjectRoot, projectForPickerQuery } = await import("./cave-projects-types.ts");
   const source = await readFile(new URL("./cave-projects.ts", import.meta.url), "utf8");
 
   assert.equal(
@@ -87,6 +87,21 @@ try {
   });
   assert.equal(slashHeavy.root, "C:/tmp/slash-heavy");
 
+  const driveRoot = await createProject({ name: "Drive root", root: "C:\\" });
+  assert.equal(
+    driveRoot.root,
+    normalizeProjectRoot("C:\\"),
+    "server and client preserve the same canonical drive-root form",
+  );
+  const driveRootLegacyAlias = await createProject({ name: "Legacy drive alias", root: "C:" });
+  assert.equal(driveRootLegacyAlias.id, driveRoot.id, "C: and C:/ cannot split project identity");
+  const uncRoot = await createProject({ name: "UNC root", root: "\\\\Server\\Share\\" });
+  assert.equal(
+    uncRoot.root,
+    normalizeProjectRoot("\\\\Server\\Share\\"),
+    "server and client preserve the same canonical UNC root",
+  );
+
   // (cave-psp8) A manually-typed ~/path expands to the absolute home path —
   // stored literally it never matched the daemon's absolute project_root, so
   // Sessions/Git/Tasks stayed empty and the project looked dead.
@@ -134,6 +149,8 @@ try {
   assert.equal(await deleteProject(created.id), true);
   assert.equal(await deleteProject(created.id), false);
   assert.equal(await deleteProject(slashHeavy.id), true);
+  assert.equal(await deleteProject(driveRoot.id), true);
+  assert.equal(await deleteProject(uncRoot.id), true);
   assert.equal(await deleteProject(allSlashProject.id), true);
   assert.deepEqual(await loadProjects(), []);
 
@@ -213,6 +230,34 @@ try {
   );
   assert.equal(await deleteProject("disk-new"), true);
   assert.deepEqual(await loadProjects(), []);
+
+  await writeFile(
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+    JSON.stringify({
+      version: 1,
+      projects: [
+        {
+          id: "legacy-drive-root",
+          name: "Legacy drive root",
+          root: "C:",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+  const [migratedDriveRoot] = await loadProjects();
+  assert.equal(migratedDriveRoot?.root, "C:/");
+  assert.equal(migratedDriveRoot?.legacyRoot, "C:", "clients can re-key stores from the legacy root");
+  const persistedDriveRoot = await patchProject("legacy-drive-root", { name: "Migrated drive root" });
+  assert.equal(persistedDriveRoot?.root, "C:/");
+  const migratedDisk = JSON.parse(
+    await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"),
+  );
+  assert.equal(migratedDisk.projects[0]?.root, "C:/", "the next mutation self-heals legacy C:");
+  assert.equal("legacyRoot" in migratedDisk.projects[0], false);
+  assert.equal(await deleteProject("legacy-drive-root"), true);
 
   assert.deepEqual(
     sortProjectsAlphabetically([

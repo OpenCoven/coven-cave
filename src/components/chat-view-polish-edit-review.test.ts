@@ -60,16 +60,18 @@ assert.match(source, /diffStat/, "edit card derives a +/- stat");
 assert.match(source, /Review/, "edit card has a Review action");
 assert.match(styles, /\.cave-edit-card/, "edit card styling exists");
 
-// Review adapts to where the edit can actually be reviewed: a file under the
-// session's project root jumps to the code rail's Changes diff; anything else
-// (familiar-workspace docs, repo-less sessions, relative paths) opens an
-// in-chat modal with this edit's diff instead of dispatching an event nothing
-// can service. The actions row renders on every edit card — not only when an
-// absolute target path exists — so Review is always available.
+// Review routes only a clearly single-file mutation through its immutable
+// execution root. Multi-file and unrouteable cards keep the full card diff in
+// the read-only modal rather than opening one file while implying full review.
 assert.match(
   source,
-  /if \(relPath && resolvedTargetFile\) \{[\s\S]{0,200}cave:open-file-diff[\s\S]{0,200}setReviewOpen\(true\)/,
-  "Review falls back to the in-chat diff modal when the Changes panel can't show the file",
+  /const singleProjectPath = allMutationPathsResolved && resolvedMutationPaths\.length === 1/,
+  "only a complete single-file mutation is project-routable",
+);
+assert.match(
+  source,
+  /if \(singleProjectPath && projectRoot\) \{[\s\S]{0,250}detail: \{ path: singleProjectPath\.absolutePath, projectRoot \}[\s\S]{0,160}setReviewOpen\(true\)/,
+  "Review routes one file by captured root and falls back to the full inline diff otherwise",
 );
 assert.match(
   source,
@@ -78,7 +80,12 @@ assert.match(
 );
 assert.match(
   source,
-  /<EditCardActions[\s\S]{0,300}projectRoot=\{railRoot\}[\s\S]{0,200}mutationPath=\{mutation\.path\}[\s\S]{0,200}diff=\{inputDiff \?\? ""\}/,
+  /title=\{\s*singleProjectPath\s*\? "Review this file's pending diff in the Changes panel"\s*: "Review this edit's full diff"\s*\}/,
+  "the Review tooltip truthfully distinguishes routed single-file and full-card review",
+);
+assert.match(
+  source,
+  /<EditCardActions[\s\S]{0,300}projectRoot=\{railRoot\}[\s\S]{0,200}mutationPaths=\{mutation\.paths\}[\s\S]{0,200}diff=\{inputDiff \?\? ""\}/,
   "edit-card actions render unconditionally (Review works without an absolute target path)",
 );
 assert.match(

@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  mapConversationHistoryTurns,
   sessionToolProjectRoot,
-  sessionToolProjectRootForIdentity,
   turnToolProjectRoot,
   type Turn,
 } from "./chat-turn-state.ts";
@@ -38,15 +38,38 @@ test("historical tool actions use the turn runtime after the active project swit
   );
 });
 
-test("legacy turns use only an evidence-based local session fallback", () => {
+test("legacy turns never inherit a session root, including after transcript reload", () => {
+  const sessionRoot = sessionToolProjectRoot("local:/projects/original", "/other");
+  assert.equal(sessionRoot, "/projects/original");
   assert.equal(
-    turnToolProjectRoot(assistantTurn(), sessionToolProjectRoot("local:/projects/original", "/other")),
-    "/projects/original",
+    turnToolProjectRoot(assistantTurn(), sessionRoot),
+    null,
+    "a legacy in-memory turn has no immutable execution provenance",
+  );
+
+  const [reloaded] = mapConversationHistoryTurns([
+    {
+      id: "legacy-assistant",
+      role: "assistant",
+      text: "",
+      createdAt: "2026-08-05T00:00:00.000Z",
+    },
+  ]);
+  assert.ok(reloaded);
+  assert.equal(
+    turnToolProjectRoot(reloaded, sessionToolProjectRoot("local:/projects/latest", "/projects/latest")),
+    null,
+    "reloading cannot attach the session's latest root to a legacy turn",
   );
   assert.equal(sessionToolProjectRoot(undefined, "/projects/legacy"), "/projects/legacy");
   assert.equal(sessionToolProjectRoot("ssh:builder:/srv/repo", "/projects/local-shadow"), null);
   assert.equal(turnToolProjectRoot(assistantTurn("ssh:builder:/srv/repo"), "/projects/local-shadow"), null);
   assert.equal(turnToolProjectRoot(assistantTurn("not-a-runtime"), "/projects/local-shadow"), null);
+});
+
+test("a malformed non-empty session runtime cannot fall back to mutable project metadata", () => {
+  assert.equal(sessionToolProjectRoot("not-a-runtime", "/projects/latest"), null);
+  assert.equal(sessionToolProjectRoot("local:", "/projects/latest"), null);
 });
 
 test("an in-flight turn without execution metadata fails closed", () => {
@@ -60,43 +83,5 @@ test("an in-flight turn without execution metadata fails closed", () => {
       "/projects/previous-turn",
     ),
     null,
-  );
-});
-
-test("legacy session fallback is captured from session metadata, never a later project", () => {
-  const roots = new Map<string, string | null>();
-
-  assert.equal(
-    sessionToolProjectRootForIdentity(roots, "session-a", undefined, undefined),
-    null,
-    "missing metadata is not mistaken for evidence",
-  );
-  assert.equal(
-    sessionToolProjectRootForIdentity(
-      roots,
-      "session-a",
-      "local:/projects/original",
-      "/projects/original",
-    ),
-    "/projects/original",
-  );
-  assert.equal(
-    sessionToolProjectRootForIdentity(
-      roots,
-      "session-a",
-      "local:/projects/newly-selected",
-      "/projects/newly-selected",
-    ),
-    "/projects/original",
-  );
-  assert.equal(
-    sessionToolProjectRootForIdentity(
-      roots,
-      "session-ssh",
-      "ssh:builder:/srv/repo",
-      "/projects/local-shadow",
-    ),
-    null,
-    "a recorded SSH session remains fail-closed",
   );
 });

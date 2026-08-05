@@ -38,6 +38,8 @@ export type PendingCodeOpen =
   | {
       kind: "changes";
       path: string;
+      /** Immutable execution root captured by a historical review action. */
+      root?: string;
       sessionId?: string;
       origin?: PendingCodeOrigin;
       nonce: number;

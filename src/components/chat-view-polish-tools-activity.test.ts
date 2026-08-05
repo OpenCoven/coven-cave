@@ -282,13 +282,13 @@ assert.match(
 );
 assert.match(
   source,
-  /sessionToolProjectRootForIdentity\([\s\S]*sessionToolProjectRootsRef\.current,[\s\S]*sessionId,[\s\S]*session\?\.runtime,[\s\S]*session\?\.project_root,[\s\S]*\)[\s\S]*turnToolProjectRoot\(turn, sessionProjectRoot\)/,
-  "tool actions use per-turn execution metadata with the session root only as a legacy fallback",
+  /new Map\(turns\.map\(\(turn\) => \[turn\.id, turnToolProjectRoot\(turn\)\]\)\)/,
+  "tool actions derive only from immutable per-turn execution metadata",
 );
 assert.doesNotMatch(
   source,
-  /projectRootSnapshotForIdentity|turnProjectRoots[\s\S]{0,500}activeProjectRoot/,
-  "historical tool roots are never snapshotted from the mutable active project selection",
+  /sessionToolProjectRootForIdentity|sessionToolProjectRootsRef|projectRootSnapshotForIdentity|turnProjectRoots[\s\S]{0,500}activeProjectRoot/,
+  "historical tool roots never use a component cache or mutable session/project selection",
 );
 assert.match(
   turnRow,
@@ -297,8 +297,8 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /aria-label=\{`Review all \$\{editedFiles\.length\} changed files in the Changes tab`\}[\s\S]{0,300}?cave:open-file-diff/,
-  "Review all opens the Changes tab through the cards' existing event contract",
+  /aria-label=\{`Review all \$\{editedFiles\.length\} changed files in the Changes tab`\}[\s\S]{0,350}?cave:open-file-diff[\s\S]{0,180}?detail: \{ path: editedFiles\[0\], projectRoot: toolProjectRoot \}/,
+  "Review all opens Changes with the turn's captured execution root",
 );
 assert.match(
   turnRow,
