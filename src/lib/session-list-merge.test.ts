@@ -1331,6 +1331,76 @@ assert.equal(
 );
 
 {
+  const replayHistoryRows = mergeSessionRows({
+    daemonSessions: [
+      {
+        id: "hub-session-offline-1",
+        project_root: "/repo",
+        harness: "codex",
+        title: "Replay 1",
+        status: "completed",
+        exit_code: 0,
+        archived_at: null,
+        created_at: "2026-06-25T04:23:34.393Z",
+        updated_at: "2026-06-25T04:29:00.000Z",
+        conversation_id: "codex-thread-1",
+      },
+      {
+        id: "hub-session-offline-2",
+        project_root: "/repo",
+        harness: "codex",
+        title: "Replay 2",
+        status: "completed",
+        exit_code: 0,
+        archived_at: null,
+        created_at: "2026-06-25T04:30:00.000Z",
+        updated_at: "2026-06-25T04:31:00.000Z",
+        conversation_id: "codex-thread-1",
+      },
+    ],
+    localConversations: [
+      {
+        sessionId: "offline-chat-2",
+        harnessSessionId: "codex-thread-1",
+        familiarId: "charm",
+        harness: "codex",
+        title: "Offline chat",
+        updatedAt: "2026-06-25T04:30:30.000Z",
+        replaySessions: [
+          {
+            sessionId: "hub-session-offline-1",
+            conversationId: "codex-thread-1",
+            createdAt: "2026-06-25T04:23:34.393Z",
+            updatedAt: "2026-06-25T04:29:00.000Z",
+          },
+          {
+            sessionId: "hub-session-offline-2",
+            conversationId: "codex-thread-1",
+            createdAt: "2026-06-25T04:30:00.000Z",
+            updatedAt: "2026-06-25T04:31:00.000Z",
+          },
+        ],
+      },
+    ],
+    state: { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} },
+    includeArchived: false,
+  });
+
+  assert.ok(
+    replayHistoryRows.some((row) => row.id === "offline-chat-2"),
+    "the stable Cave conversation remains the primary row",
+  );
+  const linkedReplayRow = replayHistoryRows.find((row) => row.id === "hub-session-offline-1");
+  assert.equal(linkedReplayRow?.hasLocalConversation, true);
+  assert.match(String(linkedReplayRow?.title), /Replay 1/);
+  assert.equal(
+    filterVisibleChatSessions(replayHistoryRows, null).some((row) => row.id === "hub-session-offline-1"),
+    true,
+    "historical replay rows should stay visible instead of being filtered as generated daemon sessions",
+  );
+}
+
+{
   const caveId = "mapped-cave-duplicate";
   const harnessId = "mapped-harness-duplicate";
   const duplicateMappedRows = mergeSessionRows({

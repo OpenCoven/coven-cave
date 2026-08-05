@@ -94,6 +94,15 @@ export type ConversationModelIntent = {
   reason?: string;
 };
 
+export type ConversationReplaySession = {
+  sessionId: string;
+  conversationId?: string;
+  title?: string;
+  status?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ConversationFile = {
   /** Cave-owned conversation identity — stable for the life of the chat. */
   sessionId: string;
@@ -130,6 +139,8 @@ export type ConversationFile = {
   createdAt: string;
   updatedAt: string;
   turns: ChatTurn[];
+  /** Ordered daemon replay history for offline-travel chat sends. */
+  replaySessions?: ConversationReplaySession[];
   /** Branching: id of the turn at the tip of the currently selected path. The
    *  rendered conversation is the chain from here to the root. */
   activeLeafId?: string;
@@ -167,6 +178,7 @@ export type ConversationSummary = {
   createdAt?: string;
   updatedAt: string;
   attentionEvidence?: ChatAttentionEvidence;
+  replaySessions?: ConversationReplaySession[];
 };
 
 export type ConversationListMetrics = {
@@ -182,6 +194,7 @@ export type ConversationListMetrics = {
 };
 
 const CONVERSATION_LIST_READ_CONCURRENCY = 8;
+const SAFE_DAEMON_CONVERSATION_ID_RE = /^[A-Za-z0-9._-]+$/;
 // The list route only needs this compact projection. Stat keys detect both
 // ordinary edits (mtime/size) and atomic replacements (ctime), while keeping
 // unchanged transcript bodies out of the four-second polling path.
@@ -211,6 +224,94 @@ export function getConversationListMetrics(): ConversationListMetrics {
 
 export function clearConversationListMetadataCache(): void {
   conversationSummaryCache.clear();
+}
+
+export function normalizeDaemonConversationId(value: unknown): string | null {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed || trimmed.length > 240 || !SAFE_DAEMON_CONVERSATION_ID_RE.test(trimmed)) return null;
+  return trimmed;
+}
+
+function normalizeReplayTitle(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 240) return undefined;
+  return trimmed;
+}
+
+function normalizeReplayStatus(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 80) return undefined;
+  return trimmed;
+}
+
+function normalizeConversationReplaySession(value: unknown): ConversationReplaySession | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Partial<ConversationReplaySession>;
+  const sessionId =
+    typeof item.sessionId === "string" && isSafeConversationSessionId(item.sessionId)
+      ? item.sessionId
+      : null;
+  if (!sessionId) return null;
+  const createdAt = isCanonicalIsoInstant(item.createdAt) ? item.createdAt : null;
+  const updatedAt = isCanonicalIsoInstant(item.updatedAt) ? item.updatedAt : createdAt;
+  if (!createdAt || !updatedAt) return null;
+  const conversationId = normalizeDaemonConversationId(item.conversationId);
+  const title = normalizeReplayTitle(item.title);
+  const status = normalizeReplayStatus(item.status);
+  return {
+    sessionId,
+    ...(conversationId ? { conversationId } : {}),
+    ...(title ? { title } : {}),
+    ...(status ? { status } : {}),
+    createdAt,
+    updatedAt,
+  };
+}
+
+export function conversationReplaySessions(
+  conv: Pick<ConversationFile | ConversationSummary, "replaySessions"> | null | undefined,
+): ConversationReplaySession[] {
+  const normalized = Array.isArray(conv?.replaySessions)
+    ? conv.replaySessions.flatMap((entry) => {
+        const replay = normalizeConversationReplaySession(entry);
+        return replay ? [replay] : [];
+      })
+    : [];
+  const deduped = new Map<string, ConversationReplaySession>();
+  for (const replay of normalized) {
+    const existing = deduped.get(replay.sessionId);
+    deduped.set(replay.sessionId, existing ? { ...existing, ...replay } : replay);
+  }
+  return [...deduped.values()].sort((a, b) => {
+    if (a.createdAt === b.createdAt) return a.updatedAt < b.updatedAt ? -1 : 1;
+    return a.createdAt < b.createdAt ? -1 : 1;
+  });
+}
+
+export function latestConversationReplaySession(
+  conv: Pick<ConversationFile | ConversationSummary, "replaySessions"> | null | undefined,
+): ConversationReplaySession | null {
+  const replays = conversationReplaySessions(conv);
+  return replays.at(-1) ?? null;
+}
+
+export function linkedReplaySessionIds(
+  conv: Pick<ConversationFile | ConversationSummary, "replaySessions"> | null | undefined,
+): string[] {
+  return conversationReplaySessions(conv).map((replay) => replay.sessionId);
+}
+
+export function linkedReplayAliases(
+  conv: Pick<ConversationFile | ConversationSummary, "replaySessions"> | null | undefined,
+): string[] {
+  const aliases = new Set<string>();
+  for (const replay of conversationReplaySessions(conv)) {
+    aliases.add(replay.sessionId);
+    if (replay.conversationId) aliases.add(replay.conversationId);
+  }
+  return [...aliases];
 }
 
 function hasDuplicateTurnIds(turns: Pick<ChatTurn, "id">[]): boolean {
@@ -728,6 +829,43 @@ export async function persistQueuedOfflineConversation(
   });
 }
 
+export async function upsertConversationReplaySession(args: {
+  sessionId: string;
+  replaySessionId: string;
+  conversationId?: string | null;
+  title?: string | null;
+  status?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}): Promise<ConversationFile | null> {
+  return withConversationLock(args.sessionId, async () => {
+    const conv = await loadConversation(args.sessionId);
+    if (!conv) return null;
+    const replay = normalizeConversationReplaySession({
+      sessionId: args.replaySessionId,
+      conversationId: args.conversationId ?? undefined,
+      title: args.title ?? undefined,
+      status: args.status ?? undefined,
+      createdAt: args.createdAt,
+      updatedAt: args.updatedAt ?? args.createdAt,
+    });
+    if (!replay) return conv;
+    const existing = conversationReplaySessions(conv).filter((entry) => entry.sessionId !== replay.sessionId);
+    conv.replaySessions = [...existing, replay];
+    if (replay.conversationId) conv.harnessSessionId = replay.conversationId;
+    await saveConversation(conv);
+    return conv;
+  });
+}
+
+export async function resolveCanonicalConversationSessionId(sessionId: string): Promise<string | null> {
+  if (await loadConversation(sessionId)) return sessionId;
+  for (const summary of await listConversations()) {
+    if (linkedReplayAliases(summary).includes(sessionId)) return summary.sessionId;
+  }
+  return null;
+}
+
 /**
  * Remove a pending stub turn (createConversationStub) from a loaded
  * conversation before the end-of-stream save re-appends the authoritative
@@ -811,6 +949,7 @@ async function readConversationSummary(
     // truly-linear transcripts still project a synthetic path, while corrupt or
     // ambiguous branch state fails quiet instead of picking a branch implicitly.
     const signals = deriveConversationSignals(conv);
+    const replaySessions = conversationReplaySessions(conv);
     return {
       summary: {
         sessionId: conv.sessionId,
@@ -828,6 +967,7 @@ async function readConversationSummary(
           : {}),
         ...(conv.pendingUserTurnId ? { pending: true } : {}),
         ...(signals.attentionEvidence ? { attentionEvidence: signals.attentionEvidence } : {}),
+        ...(replaySessions.length ? { replaySessions } : {}),
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
       },

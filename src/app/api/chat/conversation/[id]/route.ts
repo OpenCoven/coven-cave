@@ -6,7 +6,9 @@ import { cleanModelControlValues } from "@/lib/model-control-capabilities";
 import {
   isSafeConversationSessionId,
   deleteConversation,
+  linkedReplaySessionIds,
   loadConversation,
+  resolveCanonicalConversationSessionId,
   saveConversation,
   withConversationLock,
   type ChatTurn,
@@ -425,6 +427,7 @@ function buildConversation(args: {
     ...(args.existing?.model ? { model: args.existing.model } : {}),
     ...(args.existing?.modelIntent ? { modelIntent: args.existing.modelIntent } : {}),
     ...(args.existing?.runtime ? { runtime: args.existing.runtime } : {}),
+    ...(args.existing?.replaySessions?.length ? { replaySessions: args.existing.replaySessions } : {}),
     title: conversationTitle(args.id, args.body, args.existing),
     createdAt:
       typeof args.body.createdAt === "string" && args.body.createdAt.trim()
@@ -444,7 +447,8 @@ function buildConversation(args: {
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+  const { id: requestedId } = await params;
+  const id = await resolveCanonicalConversationSessionId(requestedId) ?? requestedId;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
@@ -488,7 +492,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+  const { id: requestedId } = await params;
+  const id = await resolveCanonicalConversationSessionId(requestedId) ?? requestedId;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
@@ -523,7 +528,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+  const { id: requestedId } = await params;
+  const id = await resolveCanonicalConversationSessionId(requestedId) ?? requestedId;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
@@ -550,7 +556,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+  const { id: requestedId } = await params;
+  const id = await resolveCanonicalConversationSessionId(requestedId) ?? requestedId;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
@@ -626,7 +633,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+  const { id: requestedId } = await params;
+  const id = await resolveCanonicalConversationSessionId(requestedId) ?? requestedId;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
@@ -651,8 +659,12 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   // Default: an explicit user-initiated delete. Sacrifice keeps a
   // recreated-later file (e.g. a stale client retrying) from resurrecting a
   // session the user deliberately removed — other callers depend on this.
+  const linkedReplayIds = linkedReplaySessionIds(await loadConversation(id));
   const deleted = await deleteConversation(id);
   const sacrificedAt = await sacrificeSessionLocal(id);
+  for (const replaySessionId of linkedReplayIds) {
+    await sacrificeSessionLocal(replaySessionId);
+  }
   const unlinkedCards = await unlinkSessionFromCards(id);
   return NextResponse.json({ ok: true, deleted, sacrificedAt, unlinkedCards });
 }

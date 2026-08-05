@@ -30,7 +30,7 @@ const CONV_DIR = join(TMP, "conversations");
 const STATE_PATH = join(TMP, "state.json");
 const BOARD_PATH = join(TMP, "board.json");
 
-function writeConversation(id: string, turns: unknown[] = []) {
+function writeConversation(id: string, turns: unknown[] = [], extra: Record<string, unknown> = {}) {
   mkdirSync(CONV_DIR, { recursive: true });
   writeFileSync(
     join(CONV_DIR, `${id}.json`),
@@ -42,6 +42,7 @@ function writeConversation(id: string, turns: unknown[] = []) {
       createdAt: "2026-06-01T00:00:00Z",
       updatedAt: "2026-06-01T00:00:00Z",
       turns,
+      ...extra,
     }),
   );
 }
@@ -155,6 +156,38 @@ test("default DELETE (no ifEmpty) still deletes AND sacrifices, even with turns"
   assert.equal(typeof state.sessionSacrificed["sess-default"], "string", "sacrificed — other callers depend on this");
   const board = JSON.parse(readFileSync(BOARD_PATH, "utf8"));
   assert.equal(board.cards[0].sessionId, null, "deleted conversations cannot leave dangling task links");
+});
+
+test("GET and DELETE resolve replay daemon ids back to the stable local conversation", async () => {
+  writeConversation(
+    "sess-replay-root",
+    [{ id: "t1", role: "user", text: "queued", createdAt: "2026-06-01T00:00:00Z" }],
+    {
+      harnessSessionId: "codex-thread-1",
+      replaySessions: [
+        {
+          sessionId: "hub-session-1",
+          conversationId: "codex-thread-1",
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:01:00.000Z",
+        },
+      ],
+    },
+  );
+
+  const getRes = await GET(new Request("http://test/api/chat/conversation/hub-session-1"), paramsFor("hub-session-1"));
+  const getJson = await getRes.json();
+  assert.equal(getRes.status, 200);
+  assert.equal(getJson.conversation.sessionId, "sess-replay-root");
+
+  const deleteRes = await DELETE(deleteReq(), paramsFor("hub-session-1"));
+  const deleteJson = await deleteRes.json();
+  assert.equal(deleteRes.status, 200);
+  assert.equal(deleteJson.deleted, true);
+  assert.equal(existsSync(conversationPath("sess-replay-root")), false, "stable conversation file removed");
+  const state = readState();
+  assert.equal(typeof state.sessionSacrificed["sess-replay-root"], "string");
+  assert.equal(typeof state.sessionSacrificed["hub-session-1"], "string", "linked replay ids are sacrificed too");
 });
 
 // --- #3469: client PUT cannot forge harness telemetry onto assistant turns ---

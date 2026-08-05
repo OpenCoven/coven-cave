@@ -115,6 +115,11 @@ assert.match(
   /export function buildHubSessionLaunchBody\(args: HubSessionLaunchArgs\): Record<string, unknown> \{[\s\S]*projectRoot: args\.projectRoot,[\s\S]*prompt: args\.prompt,[\s\S]*launchMode: "nonInteractive"/,
   "travel replay keeps the daemon session-create contract on camelCase projectRoot/harness/prompt and forces nonInteractive replay launch mode",
 );
+assert.match(
+  replay,
+  /args\.conversation \? \{ conversation: args\.conversation \} : \{\}[\s\S]*args\.conversationId \? \{ conversationId: args\.conversationId \} : \{\}/,
+  "travel replay can resume a daemon conversation explicitly through the daemon's conversation and conversationId fields",
+);
 
 const { buildHubSessionLaunchBody } = await import("./travel-offline-replay.ts");
 for (const [inputHarness, expectedHarness] of [
@@ -167,6 +172,11 @@ assert.match(
   replay,
   /const payloadProjectRoot = stringValue\(payload\.projectRoot\)[\s\S]*const projectRoot = payloadProjectRoot \?\? runtimeCwd \?\? process\.cwd\(\)/,
   "chat replay should derive projectRoot from queued local runtime when payload omits it",
+);
+assert.match(
+  replay,
+  /const replaySessionId =[\s\S]*latestReplay && !isTerminalReplayStatus\(latestReplay\.status\)[\s\S]*return false;[\s\S]*conversation: \{ mode: "resume" as const, id: resumeConversationId \}/,
+  "same-session queued chat replays should wait for the earlier daemon run to finish, then resume it through the daemon contract",
 );
 
 assert.match(

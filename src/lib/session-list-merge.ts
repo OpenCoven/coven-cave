@@ -4,6 +4,10 @@ import {
   sanitizeSessionTitle,
 } from "./cave-chat-titles.ts";
 import {
+  conversationReplaySessions,
+  type ConversationReplaySession,
+} from "./cave-conversations.ts";
+import {
   deriveChatAttention,
   NO_CHAT_ATTENTION,
   normalizeChatAttentionOperationId,
@@ -18,7 +22,9 @@ import type { SessionInitiator, SessionOrigin, SessionRow } from "./types.ts";
 export type DaemonSessionRow = Omit<
   SessionRow,
   "attention" | "attentionAfterOperationId" | "attentionOperationLineage" | "familiarId" | "origin"
->;
+> & {
+  conversation_id?: string | null;
+};
 
 export type LocalConversationSummary = {
   sessionId: string;
@@ -39,6 +45,7 @@ export type LocalConversationSummary = {
   /** PR URL the chat reported in an assistant reply (transcript snapshot). */
   prUrl?: string;
   attentionEvidence?: ChatAttentionEvidence;
+  replaySessions?: ConversationReplaySession[];
 };
 
 type MergeOptions = {
@@ -160,6 +167,18 @@ function localConversationToSession(
   };
 }
 
+function linkedReplayTitle(
+  local: LocalConversationSummary,
+  replay: ConversationReplaySession,
+  ordinal: number,
+): string {
+  const base =
+    replay.title
+    ?? sanitizeSessionTitle(local.title)
+    ?? defaultChatTitleForSession(local.sessionId);
+  return `${base} · Replay ${ordinal}`;
+}
+
 function visibleSession(row: SessionRow, state: CaveState, includeArchived: boolean): boolean {
   if (state.sessionSacrificed[row.id]) return false;
   return includeArchived || !row.archived_at;
@@ -199,6 +218,8 @@ export function mergeSessionRows({
   const localUpdatedById = new Map<string, string>();
   const localById = new Map<string, LocalConversationSummary>();
   const localByHarnessSessionId = new Map<string, LocalConversationSummary>();
+  const localByReplaySessionId = new Map<string, { local: LocalConversationSummary; replayIndex: number }>();
+  const localByReplayConversationId = new Map<string, { local: LocalConversationSummary; replayIndex: number }>();
   for (const conv of localConversations) {
     if (conv.updatedAt) {
       localUpdatedById.set(conv.sessionId, conv.updatedAt);
@@ -207,6 +228,12 @@ export function mergeSessionRows({
     if (conv.harnessSessionId) {
       localByHarnessSessionId.set(conv.harnessSessionId, conv);
     }
+    for (const [replayIndex, replay] of conversationReplaySessions(conv).entries()) {
+      localByReplaySessionId.set(replay.sessionId, { local: conv, replayIndex });
+      if (replay.conversationId) {
+        localByReplayConversationId.set(replay.conversationId, { local: conv, replayIndex });
+      }
+    }
   }
 
   type MappedDaemonSession = {
@@ -214,23 +241,47 @@ export function mergeSessionRows({
     local: LocalConversationSummary | undefined;
     stateSessionId: string;
     harnessMatched: boolean;
+    replayMatched: boolean;
+    replayIndex: number | null;
   };
   const daemonByMappedId = new Map<string, MappedDaemonSession>();
   for (const session of daemonSessions) {
     const directLocal = localById.get(session.id);
     const harnessLocal = directLocal ? undefined : localByHarnessSessionId.get(session.id);
-    const local = directLocal ?? harnessLocal;
+    const replayMatch = directLocal || harnessLocal
+      ? undefined
+      : localByReplaySessionId.get(session.id)
+        ?? (session.conversation_id ? localByReplayConversationId.get(session.conversation_id) : undefined);
+    const local = directLocal ?? harnessLocal ?? replayMatch?.local;
     const stateSessionId = local?.sessionId ?? session.id;
     const candidate = {
       session,
       local,
       stateSessionId,
       harnessMatched: Boolean(harnessLocal),
+      replayMatched: Boolean(replayMatch),
+      replayIndex: replayMatch?.replayIndex ?? null,
     };
     const existing = daemonByMappedId.get(stateSessionId);
-    if (!existing || (candidate.harnessMatched && !existing.harnessMatched)) {
+    const candidateScore = candidate.harnessMatched ? 3 : candidate.replayMatched ? 2 : 1;
+    const existingScore = existing ? (existing.harnessMatched ? 3 : existing.replayMatched ? 2 : 1) : 0;
+    if (
+      !existing
+      || candidateScore > existingScore
+      || (candidateScore === existingScore && session.updated_at > existing.session.updated_at)
+      || (
+        candidateScore === existingScore
+        && candidate.replayMatched
+        && existing.replayMatched
+        && (candidate.replayIndex ?? -1) > (existing.replayIndex ?? -1)
+      )
+    ) {
       daemonByMappedId.set(stateSessionId, candidate);
     }
+  }
+  const primaryDaemonSessionIdByLocalId = new Map<string, string>();
+  for (const mapped of daemonByMappedId.values()) {
+    if (mapped.local) primaryDaemonSessionIdByLocalId.set(mapped.stateSessionId, mapped.session.id);
   }
 
   for (const { session, local, stateSessionId } of daemonByMappedId.values()) {
@@ -339,6 +390,32 @@ export function mergeSessionRows({
       initiator: session.initiator ?? initiatorFromSessionKey("", familiarId ?? session.harness),
     };
     if (visibleSession(row, state, includeArchived)) rows.push(row);
+  }
+
+  for (const local of localConversations) {
+    const primarySessionId = primaryDaemonSessionIdByLocalId.get(local.sessionId);
+    const parentRow = localConversationToSession(local, state, projectRootForCwd, now);
+    const archivedAt = parentRow.archived_at;
+    for (const [replayIndex, replay] of conversationReplaySessions(local).entries()) {
+      if (replay.sessionId === primarySessionId) continue;
+      const daemon = daemonSessions.find((session) => session.id === replay.sessionId);
+      if (!daemon) continue;
+      const title = linkedReplayTitle(local, replay, replayIndex + 1);
+      const row: SessionRow = {
+        ...parentRow,
+        id: replay.sessionId,
+        project_root: daemon.project_root,
+        harness: daemon.harness,
+        title,
+        status: daemon.status,
+        exit_code: daemon.exit_code,
+        archived_at: archivedAt,
+        created_at: daemon.created_at,
+        updated_at: daemon.updated_at,
+        attention: NO_CHAT_ATTENTION,
+      };
+      if (visibleSession(row, state, includeArchived)) rows.push(row);
+    }
   }
 
   for (const row of localConversations

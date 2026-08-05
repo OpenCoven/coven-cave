@@ -42,6 +42,7 @@ type DaemonSession = {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  conversation_id?: string | null;
   initiator?: SessionInitiator;
 };
 
