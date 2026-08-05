@@ -300,10 +300,18 @@ assert.match(
   "compact work-line summary must have min-height: var(--space-8) for 32px touch target",
 );
 
+// Base standalone framing: ToolRunGroup outside .cave-work-line (e.g. InlineToolRuns) keeps card framing
 assert.match(
   styles,
-  /\.cave-tool-run\s*\{[^}]*border:\s*0[^}]*background:\s*transparent/,
-  ".cave-tool-run must remove nested framing (border: 0, background: transparent) inside the work-line",
+  /\.cave-tool-run\s*\{[^}]*border:\s*1px solid[^}]*background:/,
+  "base .cave-tool-run must retain standalone card framing (border and background) for use outside .cave-work-line",
+);
+
+// Scoped flat override: only flatten when nested inside the work-line disclosure
+assert.match(
+  styles,
+  /\.cave-work-line\s+\.cave-tool-run\s*\{[^}]*border:\s*0[^}]*background:\s*transparent/,
+  ".cave-work-line .cave-tool-run must remove nested framing (border: 0, background: transparent) inside the work-line",
 );
 
 assert.match(
