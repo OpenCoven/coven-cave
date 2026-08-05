@@ -286,3 +286,29 @@ assert.match(
   /<MessageBubble[\s\S]*role="assistant"[\s\S]*content=\{visible \|\| \(turn\.pending \? "…" : ""\)\}/,
   "Assistant turns should render only filtered visible content",
 );
+
+// ── Task 4: CSS density contract ────────────────────────────────────────────
+
+assert.match(
+  styles,
+  /\.cave-tool-group\.cave-work-line > \.cave-tool-summary\s*\{[^}]*min-height:\s*var\(--space-8\)/,
+  "compact work-line summary must have min-height: var(--space-8) for 32px touch target",
+);
+
+assert.match(
+  styles,
+  /\.cave-tool-run\s*\{[^}]*border:\s*0[^}]*background:\s*transparent/,
+  ".cave-tool-run must remove nested framing (border: 0, background: transparent) inside the work-line",
+);
+
+assert.match(
+  styles,
+  /\.cave-tool-run__list\s*\{[^}]*gap:\s*var\(--space-1\)/,
+  ".cave-tool-run__list must use tight gap: var(--space-1) (4px) between tool blocks",
+);
+
+assert.match(
+  styles,
+  /prefers-reduced-motion[\s\S]*?\.cave-tool-summary::before[\s\S]*?transition:\s*none/,
+  "reduced-motion must disable the .cave-tool-summary::before chevron transition",
+);
