@@ -8,6 +8,7 @@ import {
   NO_CHAT_ATTENTION,
   type ChatAttentionEvidence,
 } from "./chat-attention.ts";
+import { ACTIVE_SESSION_STATUSES } from "./chat-auto-archive.ts";
 import { initiatorFromSessionKey } from "./session-initiator.ts";
 import { inferOrigin } from "./session-origin.ts";
 import type { SessionInitiator, SessionOrigin, SessionRow } from "./types.ts";
@@ -49,6 +50,20 @@ const DAEMON_AUTHORITATIVE_TERMINAL_STATUSES = new Set(["archived", "killed", "o
 
 function isDaemonAuthoritativeTerminalStatus(status: string): boolean {
   return DAEMON_AUTHORITATIVE_TERMINAL_STATUSES.has(status);
+}
+
+// A project-root mismatch means the daemon can no longer vouch for a
+// session's cwd/branch identity, but its status is still daemon-authoritative
+// truth. Recovery previously handled only the terminal statuses above, so an
+// invalid-root daemon session that is still actively running (or otherwise
+// still doing work) was never marked `seen` — the local conversation then
+// fell through to the local-only path and derived attention from its own
+// ("completed") status, surfacing stale attention for a session the daemon
+// says is still running. Recover active statuses too so `deriveChatAttention`
+// sees the daemon-truth status and suppresses attention via
+// ACTIVE_SESSION_STATUSES, same as it already does for a valid-root row.
+function isDaemonRecoverableStatus(status: string): boolean {
+  return isDaemonAuthoritativeTerminalStatus(status) || ACTIVE_SESSION_STATUSES.has(status);
 }
 
 function isArchivedStatus(status: string | null | undefined): boolean {
@@ -164,7 +179,7 @@ export function mergeSessionRows({
   for (const session of daemonSessions) {
     const local = localById.get(session.id);
     if (isValidDaemonProjectRoot && !isValidDaemonProjectRoot(session.project_root)) {
-      if (local && isDaemonAuthoritativeTerminalStatus(session.status)) {
+      if (local && isDaemonRecoverableStatus(session.status)) {
         seen.add(session.id);
         const recovered = localConversationToSession(local, state, projectRootForCwd, now);
         const archived_at = state.sessionArchived[session.id] ?? session.archived_at;

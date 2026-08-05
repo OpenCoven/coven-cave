@@ -266,6 +266,27 @@ assert.equal(
       NO_CHAT_ATTENTION,
       "archived rows discard attention state at projection time",
     );
+    const [archivedStatusRow] = localConversationSessionRows(
+      [
+        {
+          ...localAttention,
+          sessionId: "attention-archived-status",
+          status: "archived",
+        },
+      ],
+      bareState,
+      false,
+    );
+    assert.equal(
+      archivedStatusRow?.archived_at,
+      null,
+      "local archived status does not fabricate archived_at when none was stamped",
+    );
+    assert.deepEqual(
+      archivedStatusRow?.attention,
+      NO_CHAT_ATTENTION,
+      "local archived status suppresses attention even before archived_at is stamped",
+    );
 
     const daemonOnly = mergeSessionRows({
       daemonSessions: [
@@ -817,6 +838,76 @@ assert.equal(
   })[0]?.archived_at,
   "2026-06-08T18:20:00.000Z",
   "invalid-root interrupted recovery should still honor the Cave-local archive override",
+);
+
+// Regression (cave-zs85n reviewer follow-up): an invalid-root daemon session
+// that is still actively running was never marked `seen` by recovery, which
+// previously handled only the authoritative terminal statuses (archived,
+// killed, orphaned, stopped). The local conversation then fell through to the
+// local-only path and derived attention from its own ("completed") status,
+// surfacing stale attention for a session the daemon says is still running.
+const invalidRootRunning = mergeSessionRows({
+  daemonSessions: [
+    {
+      id: "invalid-root-running",
+      project_root: "/invalid",
+      harness: "codex",
+      title: "Running chat",
+      status: "running",
+      exit_code: null,
+      archived_at: null,
+      created_at: "2026-06-08T18:00:00.000Z",
+      updated_at: "2026-06-08T18:10:00.000Z",
+      initiator: { kind: "familiar", label: "Cody", agentId: "cody" },
+    },
+  ],
+  localConversations: [
+    {
+      sessionId: "invalid-root-running",
+      familiarId: "nova",
+      harness: "codex",
+      runtime: "local:/repo",
+      title: "Running chat",
+      updatedAt: "2026-06-08T18:15:00.000Z",
+      status: "completed",
+      exitCode: 0,
+      origin: "chat",
+      // Matching local attention evidence that would resolve to an
+      // overdue-human request if derived from the local row's own
+      // ("completed") status instead of the daemon's "running" truth.
+      attentionEvidence: {
+        latestCompletedTurn: { role: "assistant", at: "2026-06-08T18:10:00.000Z" },
+        latestUserTurnAt: null,
+        request: {
+          sessionId: "invalid-root-running",
+          turnId: "running-assistant",
+          requestedAt: "2026-06-08T18:05:00.000Z",
+          reason: "input",
+        },
+      },
+    },
+  ],
+  state,
+  includeArchived: false,
+  isValidDaemonProjectRoot: (root) => root === "/repo",
+  projectRootForCwd: (cwd) => (cwd === "/repo" ? "/repo" : null),
+});
+
+assert.equal(
+  invalidRootRunning.length,
+  1,
+  "an invalid-root active daemon session must merge into exactly one row, never dropped or duplicated",
+);
+assert.equal(invalidRootRunning[0]?.id, "invalid-root-running");
+assert.equal(
+  invalidRootRunning[0]?.status,
+  "running",
+  "an invalid-root active daemon session keeps the daemon's running status",
+);
+assert.deepEqual(
+  invalidRootRunning[0]?.attention,
+  NO_CHAT_ATTENTION,
+  "a running invalid-root daemon session must suppress attention regardless of local transcript evidence",
 );
 
 const cwdFiltered = mergeSessionRows({

@@ -362,6 +362,28 @@ test("fails quiet for malformed evidence", () => {
     }),
     NO_CHAT_ATTENTION,
   );
+
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: {
+        latestCompletedTurn: {
+          role: "assistant",
+          at: "2026-08-04T18:00:00Z",
+        },
+        latestUserTurnAt: "2026-08-04T17:00:00.000Z",
+        request: {
+          sessionId: "s1",
+          turnId: "a1",
+          requestedAt: "2026-08-04T18:00:00Z",
+          reason: "approval",
+        },
+      },
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+  );
 });
 
 test("treats canonical active waiting status as no attention", () => {
@@ -381,6 +403,30 @@ test("treats canonical active waiting status as no attention", () => {
         },
       },
       status: "waiting",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+  );
+});
+
+test("treats archived status as no attention even before archivedAt is stamped", () => {
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: {
+        latestCompletedTurn: {
+          role: "assistant",
+          at: "2026-08-03T18:00:00.000Z",
+        },
+        latestUserTurnAt: null,
+        request: {
+          sessionId: "s1",
+          turnId: "a1",
+          requestedAt: "2026-08-02T20:00:00.000Z",
+          reason: "approval",
+        },
+      },
+      status: "archived",
       archivedAt: null,
       now: NOW,
     }),

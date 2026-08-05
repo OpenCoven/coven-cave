@@ -21,7 +21,7 @@ const {
   mapConversationHistoryTurns,
   retryTurnModelRequest,
 } = await import("./chat-turn-state.ts");
-const { deriveChatAttention } = await import("./chat-attention.ts");
+const { deriveChatAttention, NO_CHAT_ATTENTION } = await import("./chat-attention.ts");
 const { persistedTurnControls } = await import(
   "../app/api/chat/send/chat-send-models.ts"
 );
@@ -931,8 +931,12 @@ console.log("cave-conversations pending-marker test OK");
     "attention-stale-request-left-hanging",
     "attention-user-leaf-resolution",
     "attention-malformed-request",
+    "attention-noncanonical-request",
+    "attention-cancelled-request-turn",
+    "attention-error-request-turn",
     "attention-mismatched-turnid-request",
     "attention-off-path-request",
+    "attention-multi-root-active-leaf",
     "attention-malformed-turns",
     "attention-corrupt-leaf",
     "attention-duplicate-leaf-id",
@@ -1118,6 +1122,122 @@ console.log("cave-conversations pending-marker test OK");
       },
     ],
     activeLeafId: "user-leaf-active",
+  });
+
+  await saveConversation({
+    sessionId: "attention-noncanonical-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Reject parseable noncanonical timestamps",
+    createdAt: "2026-08-04T16:45:00.000Z",
+    updatedAt: "2026-08-04T18:45:00.000Z",
+    turns: [
+      {
+        id: "noncanonical-user",
+        role: "user",
+        text: "Do you need anything?",
+        createdAt: "2026-08-04T16:45:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "noncanonical-assistant",
+        role: "assistant",
+        text: "I need approval, but the timestamps are noncanonical.",
+        createdAt: "2026-08-04T18:45:00Z",
+        parentId: "noncanonical-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-noncanonical-request",
+            turnId: "noncanonical-assistant",
+            requestedAt: "2026-08-04T18:45:00Z",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+    activeLeafId: "noncanonical-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-cancelled-request-turn",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Cancelled assistant requests no attention",
+    createdAt: "2026-08-04T14:00:00.000Z",
+    updatedAt: "2026-08-04T14:30:00.000Z",
+    turns: [
+      {
+        id: "cancelled-request-user",
+        role: "user",
+        text: "Anything blocking you?",
+        createdAt: "2026-08-04T14:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "cancelled-request-assistant",
+        role: "assistant",
+        text: "Partial answer before cancel.",
+        createdAt: "2026-08-04T14:30:00.000Z",
+        parentId: "cancelled-request-user",
+        cancelled: true,
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-cancelled-request-turn",
+            turnId: "cancelled-request-assistant",
+            requestedAt: "2026-08-04T14:30:00.000Z",
+            reason: "input",
+          },
+        },
+      },
+    ],
+    activeLeafId: "cancelled-request-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-error-request-turn",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Errored assistant requests no attention",
+    createdAt: "2026-08-04T14:40:00.000Z",
+    updatedAt: "2026-08-04T14:50:00.000Z",
+    turns: [
+      {
+        id: "error-request-user",
+        role: "user",
+        text: "Anything blocking you?",
+        createdAt: "2026-08-04T14:40:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "error-request-assistant",
+        role: "assistant",
+        text: "I crashed after asking.",
+        createdAt: "2026-08-04T14:50:00.000Z",
+        parentId: "error-request-user",
+        isError: true,
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-error-request-turn",
+            turnId: "error-request-assistant",
+            requestedAt: "2026-08-04T14:50:00.000Z",
+            reason: "credentials",
+          },
+        },
+      },
+    ],
+    activeLeafId: "error-request-assistant",
   });
 
   await saveConversation({
@@ -1844,6 +1964,22 @@ console.log("cave-conversations pending-marker test OK");
     request: null,
   });
 
+  assert.deepEqual(byId.get("attention-noncanonical-request")?.attentionEvidence, {
+    latestCompletedTurn: null,
+    latestUserTurnAt: "2026-08-04T16:45:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-noncanonical-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+    "parseable noncanonical assistant/request timestamps must not create attention-capable evidence",
+  );
+
   assert.deepEqual(byId.get("attention-user-leaf-resolution")?.attentionEvidence, {
     latestCompletedTurn: { role: "user", at: "2026-08-04T17:00:00.000Z" },
     latestUserTurnAt: "2026-08-04T17:00:00.000Z",
@@ -1862,6 +1998,38 @@ console.log("cave-conversations pending-marker test OK");
       reason: null,
     },
     "an active user leaf resolves the request without inventing a later assistant fallback",
+  );
+
+  assert.deepEqual(byId.get("attention-cancelled-request-turn")?.attentionEvidence, {
+    latestCompletedTurn: { role: "user", at: "2026-08-04T14:00:00.000Z" },
+    latestUserTurnAt: "2026-08-04T14:00:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-cancelled-request-turn")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+    "cancelled assistant turns must not surface explicit attention requests",
+  );
+
+  assert.deepEqual(byId.get("attention-error-request-turn")?.attentionEvidence, {
+    latestCompletedTurn: { role: "user", at: "2026-08-04T14:40:00.000Z" },
+    latestUserTurnAt: "2026-08-04T14:40:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-error-request-turn")?.attentionEvidence,
+      status: "failed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+    "error assistant turns must not surface explicit attention requests",
   );
 
   assert.deepEqual(byId.get("attention-mismatched-turnid-request")?.attentionEvidence, {

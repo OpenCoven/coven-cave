@@ -32,6 +32,12 @@ export const NO_CHAT_ATTENTION: ChatAttention = {
   reason: null,
 };
 
+export function isCanonicalIsoInstant(value: unknown): value is string {
+  if (typeof value !== "string" || !value.trim()) return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
 export function deriveChatAttention(args: {
   evidence: ChatAttentionEvidence | null | undefined;
   status: string;
@@ -40,6 +46,7 @@ export function deriveChatAttention(args: {
 }): ChatAttention {
   const nowMs = normalizeTimestamp(args.now);
   if (nowMs === null) return NO_CHAT_ATTENTION;
+  if ((args.status ?? "").trim().toLowerCase() === "archived") return NO_CHAT_ATTENTION;
   if (args.archivedAt) return NO_CHAT_ATTENTION;
   if (ACTIVE_SESSION_STATUSES.has((args.status ?? "").trim().toLowerCase())) {
     return NO_CHAT_ATTENTION;
@@ -190,7 +197,7 @@ function normalizeLatestUserTurnAt(value: ChatAttentionEvidence["latestUserTurnA
 }
 
 function parseFiniteIso(value: string | null | undefined): number | null {
-  if (typeof value !== "string" || !value.trim()) return null;
+  if (!isCanonicalIsoInstant(value)) return null;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
 }

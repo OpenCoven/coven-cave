@@ -11,7 +11,10 @@ import type { GrokSandboxProfile } from "./grok-build.ts";
 import type { SessionOrigin } from "./types.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
 import { CHAT_ATTENTION_REASONS } from "./chat-attention-marker.ts";
-import type { ChatAttentionEvidence } from "./chat-attention.ts";
+import {
+  isCanonicalIsoInstant,
+  type ChatAttentionEvidence,
+} from "./chat-attention.ts";
 
 const CONV_DIR = path.join(caveHome(), "conversations");
 const conversationLockTails = new Map<string, Promise<void>>();
@@ -276,7 +279,7 @@ function deriveConversationSignals(conv: ConversationFile): {
 
     if (turn.role === "user") sawUserAfterAssistant = true;
 
-    if (!request && turn.role === "assistant") {
+    if (!request && turn.role === "assistant" && !turn.isError && !turn.cancelled) {
       const candidate = normalizeStableAttentionRequest(
         typeof turn.responseMetadata === "object" && turn.responseMetadata
           ? turn.responseMetadata.attentionRequest
@@ -310,8 +313,7 @@ function deriveConversationSignals(conv: ConversationFile): {
 }
 
 function normalizeStableIsoTimestamp(value: unknown): string | null {
-  if (typeof value !== "string" || !value.trim()) return null;
-  return Number.isFinite(Date.parse(value)) ? value : null;
+  return isCanonicalIsoInstant(value) ? value : null;
 }
 
 function parseFiniteTimestamp(value: unknown): number | null {
