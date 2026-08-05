@@ -725,7 +725,7 @@
 }
 /* Recent/flat rows align with their section label instead of indenting under a folder. */
 .cnav__thread--flat .cnav__thread-main {
-  padding-left: 13px;
+  padding-left: var(--space-3);
 }
 /* Row actions overlay the right edge so they reserve NO layout width — the title
    and timestamp use the full row when not hovered, then the actions fade in over
@@ -1020,6 +1020,11 @@
 }
 .cnav__more:hover {
   color: var(--text-secondary);
+}
+/* Flat sections (Awaiting you, time buckets) show their "Show N more" control
+   indented to match the flat rows above it, not the deeper folder indent. */
+.cnav__more--flat {
+  padding-left: var(--space-3);
 }
 .cnav__empty {
   padding: 22px 14px;

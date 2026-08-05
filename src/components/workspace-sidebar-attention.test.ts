@@ -91,6 +91,16 @@ assert.match(css, /data-attention="awaiting-human"[\s\S]*color-mix\(in oklch, va
 assert.match(css, /data-attention="overdue-human"[\s\S]*background:\s*var\(--danger-bg\);/, "overdue-human should use the existing danger background token");
 assert.match(css, /data-attention="overdue-human"[\s\S]*border-color:\s*var\(--danger-border\);/, "overdue-human should use the existing danger border token");
 assert.match(css, /data-attention="overdue-human"[\s\S]*\.cnav__attention[\s\S]*color:\s*var\(--danger-text\);/, "overdue-human attention copy should use the danger text token");
+assert.match(
+  sidebar,
+  /className="cnav__more cnav__more--flat focus-ring"/,
+  "flat recent sections should use the semantic show-more modifier without dropping focus-ring",
+);
+assert.doesNotMatch(
+  sidebar,
+  /\[padding-left:13px\]!/,
+  "show-more buttons should not keep the arbitrary 13px padding escape hatch",
+);
 
 const mockProjects = vi.hoisted(() => ({
   state: {
@@ -211,6 +221,25 @@ function sectionThreadTitles(section: ReturnType<typeof sectionByLabel>) {
     .map((node) => textContent(node.children));
 }
 
+/** Extracts a single balanced-brace CSS block starting at `marker` — lets a
+ *  source test assert on a container-query rule's *contents* without a fragile
+ *  regex trying to guess where the block ends. */
+function extractBraceBlock(source: string, marker: string): string {
+  const markerIndex = source.indexOf(marker);
+  assert.ok(markerIndex !== -1, `expected to find "${marker}" in source`);
+  const braceStart = source.indexOf("{", markerIndex);
+  let depth = 0;
+  let i = braceStart;
+  for (; i < source.length; i++) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}") {
+      depth--;
+      if (depth === 0) break;
+    }
+  }
+  return source.slice(braceStart, i + 1);
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-05T20:00:00.000Z"));
@@ -230,6 +259,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  mockProjects.state.projects = [];
 });
 
 test("attention rows keep the visible state in the button name and move the detailed description outside the button subtree", async () => {
@@ -356,6 +386,14 @@ test("recent view shows the visible Awaiting you count and keeps promoted rows o
     "Needs reply",
     "Follow up on branch",
   ]);
+  expect(
+    awaitingSection.findAll(
+      (node) =>
+        typeof node.type === "string"
+        && typeof node.props.className === "string"
+        && node.props.className.includes("cnav__thread--flat"),
+    ),
+  ).toHaveLength(3);
 
   const recencyTitles = renderer.root
     .findAll(
@@ -376,5 +414,61 @@ test("recent view shows the visible Awaiting you count and keeps promoted rows o
 
   await act(async () => renderer.unmount());
 });
+
+test("attention show-more keeps the flat modifier, focus ring, and click handler", async () => {
+  let renderer!: ReactTestRenderer;
+  const sessions = Array.from({ length: 7 }, (_, index) =>
+    makeSession({
+      id: `session-${index}`,
+      title: `Needs reply ${index + 1}`,
+      updated_at: `2026-08-05T19:5${index}:00.000Z`,
+      attention: {
+        state: "awaiting-human",
+        since: "2026-08-05T19:00:00.000Z",
+        reason: "reply",
+      },
+    }),
+  );
+
+  await act(async () => {
+    renderer = create(
+      createElement(WorkspaceSidebar, {
+        sessions,
+        familiars: [],
+        responseNeeded: new Set(),
+        onSelectFamiliar: () => undefined,
+        onOpenSession: () => undefined,
+        onNavigate: () => undefined,
+        onNewChat: () => undefined,
+        onDeleteSession: async () => undefined,
+        onOpenSettings: () => undefined,
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  const awaitingSection = sectionByLabel(renderer, "Awaiting you");
+  const showMore = awaitingSection.find(
+    (node) => node.type === "button" && textContent(node.children) === "Show 1 more",
+  );
+  expect(showMore.props.className).toBe("cnav__more cnav__more--flat focus-ring");
+
+  await act(async () => {
+    showMore.props.onClick();
+    await Promise.resolve();
+  });
+
+  expect(sectionThreadTitles(sectionByLabel(renderer, "Awaiting you"))).toHaveLength(7);
+
+  await act(async () => renderer.unmount());
+});
+
+const flatThreadBlock = extractBraceBlock(css, ".cnav__thread--flat .cnav__thread-main");
+assert.match(flatThreadBlock, /padding-left:\s*var\(--space-3\);/, "flat attention rows should align to the space-3 token");
+assert.doesNotMatch(flatThreadBlock, /13px/, "flat row padding should not use 13px");
+
+const flatMoreBlock = extractBraceBlock(css, ".cnav__more--flat");
+assert.match(flatMoreBlock, /padding-left:\s*var\(--space-3\);/, "flat show-more buttons should align to the same space-3 token");
+assert.doesNotMatch(flatMoreBlock, /13px/, "flat show-more padding should not use 13px");
 
 console.log("workspace-sidebar-attention: ok");

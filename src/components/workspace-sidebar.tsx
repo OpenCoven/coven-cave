@@ -32,6 +32,7 @@ import {
   chatAttentionDescription,
   chatAttentionLabel,
   compareChatAttention,
+  type ChatAttentionState,
 } from "@/lib/chat-attention";
 import {
   CHAT_SESSION_DRAG_MIME,
@@ -141,6 +142,37 @@ function groupMeta(group: ChatProjectGroup, now: number): string {
   return awaiting > 0 ? `${awaiting} awaiting · ${meta}` : meta;
 }
 
+// Archived rows always read as settled regardless of their stored attention —
+// centralized so every attention-bearing row shape (the full ThreadRow and the
+// compact Pinned rail below) derives the same visible state/label/description
+// from one place instead of each re-deriving (and risking drift on) the
+// archived-suppression rule.
+function resolveThreadAttention(
+  session: SessionRow,
+  archived: boolean,
+  now: number,
+): { state: ChatAttentionState; label: string | null; description: string | null } {
+  const state: ChatAttentionState = archived ? "none" : session.attention.state;
+  return {
+    state,
+    label: chatAttentionLabel(state),
+    description: archived ? null : chatAttentionDescription(session.attention, now),
+  };
+}
+
+// The visible attention cue (dot + label) — the ONE place that renders it, so
+// ThreadRow and the compact Pinned rail can never drift into divergent markup
+// for the same attention state.
+function ThreadAttentionCue({ label }: { label: string | null }) {
+  if (!label) return null;
+  return (
+    <span className="cnav__attention">
+      <span className="cnav__attention-dot" aria-hidden />
+      <span>{label}</span>
+    </span>
+  );
+}
+
 // Returns a context-aware leading icon for threads whose title suggests a PR
 // or branch operation (from code-sidebar). Returns null for ordinary threads.
 function threadLeadingIcon(title: string): IconName | null {
@@ -237,9 +269,11 @@ function ThreadRow({
   // Archived rows (visible via the "Show archived" option) read muted, and the
   // leading slot shows the archive glyph so they can't pass for live threads.
   const archived = Boolean(session.archived_at);
-  const attentionState = archived ? "none" : session.attention.state;
-  const attentionLabel = chatAttentionLabel(attentionState);
-  const attentionDescription = archived ? null : chatAttentionDescription(session.attention, now);
+  const { state: attentionState, label: attentionLabel, description: attentionDescription } = resolveThreadAttention(
+    session,
+    archived,
+    now,
+  );
   const leadGlyph = archived ? ("ph:archive" as IconName) : glyph;
   return (
     <div
@@ -304,12 +338,7 @@ function ThreadRow({
               <span className="cnav__time">{bareTimeAt(session.updated_at || session.created_at, now)}</span>
             )}
           </span>
-          {attentionLabel ? (
-            <span className="cnav__attention">
-              <span className="cnav__attention-dot" aria-hidden />
-              <span>{attentionLabel}</span>
-            </span>
-          ) : null}
+          <ThreadAttentionCue label={attentionLabel} />
         </span>
       </button>
       {attentionDescription ? (
@@ -357,6 +386,73 @@ function ThreadRow({
           </button>
         </span>
       )}
+    </div>
+  );
+}
+
+type PinnedThreadRowProps = {
+  session: SessionRow;
+  active: boolean;
+  now: number;
+  onOpenUrl?: (url: string) => void;
+  onOpen: () => void;
+  onTogglePin: () => void;
+};
+
+// The Pinned rail is deliberately NOT a ThreadRow: it drops the timestamp,
+// project tile, drag/split, and archive/delete affordances to stay a compact,
+// always-visible shortlist, and its trailing bookmark is a one-click unpin
+// rather than ThreadRow's row-actions overlay. It still shares attention
+// derivation (resolveThreadAttention) and cue rendering (ThreadAttentionCue)
+// with ThreadRow so the two row shapes can't render divergent attention state
+// for the same session — only the surrounding chrome differs.
+function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin }: PinnedThreadRowProps) {
+  const attentionDescriptionId = useId();
+  const title = sessionRailTitle(session);
+  const prStatus = sessionPrStatus(session.pullRequest);
+  const archived = Boolean(session.archived_at);
+  const { state: attentionState, label: attentionLabel, description: attentionDescription } = resolveThreadAttention(
+    session,
+    archived,
+    now,
+  );
+  return (
+    <div
+      className={`cnav__thread cnav__thread--flat${active ? " is-active" : ""}`}
+      data-attention={attentionState}
+    >
+      {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
+      <button
+        type="button"
+        aria-current={active ? "page" : undefined}
+        aria-describedby={attentionDescription ? attentionDescriptionId : undefined}
+        onClick={onOpen}
+        className="cnav__thread-main focus-ring"
+      >
+        {prStatus ? null : (
+          <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
+        )}
+        <span className="cnav__thread-copy">
+          <span className="cnav__thread-title" title={title}>{title}</span>
+          <ThreadAttentionCue label={attentionLabel} />
+        </span>
+      </button>
+      {attentionDescription ? (
+        <span id={attentionDescriptionId} className="sr-only">{attentionDescription}</span>
+      ) : null}
+      {/* The trailing always-visible bookmark doubles as the pin marker AND a
+          one-click unpin — otherwise the only unpin lives on the (possibly
+          truncated/collapsed) copy of the row further down the rail. */}
+      <button
+        type="button"
+        title="Unpin chat"
+        aria-label={`Unpin ${title}`}
+        aria-pressed
+        onClick={onTogglePin}
+        className="cnav__icon-btn is-on focus-ring"
+      >
+        <Icon name="ph:bookmark-simple-fill" width={12} aria-hidden />
+      </button>
     </div>
   );
 }
@@ -769,43 +865,18 @@ export function WorkspaceSidebar({
                 <span className="cnav__label-rule" aria-hidden />
               </div>
               <ul>
-                {/* Pinned rail is compact; the trailing always-visible bookmark
-                    doubles as the pin marker AND a one-click unpin — otherwise
-                    the only unpin lives on the (possibly truncated/collapsed)
-                    copy of the row further down the rail. */}
-                {pinnedSessions.map((session) => {
-                  const title = sessionRailTitle(session);
-                  const active = activeSessionId === session.id;
-                  const prStatus = sessionPrStatus(session.pullRequest);
-                  return (
-                    <li key={`pin-${session.id}`}>
-                      <div className={`cnav__thread cnav__thread--flat${active ? " is-active" : ""}`}>
-                        {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
-                        <button
-                          type="button"
-                          aria-current={active ? "page" : undefined}
-                          onClick={() => onOpenSession(session)}
-                          className="cnav__thread-main focus-ring"
-                        >
-                          {prStatus ? null : (
-                            <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
-                          )}
-                          <span className="cnav__thread-title" title={title}>{title}</span>
-                        </button>
-                        <button
-                          type="button"
-                          title="Unpin chat"
-                          aria-label={`Unpin ${title}`}
-                          aria-pressed
-                          onClick={() => togglePin(session.id)}
-                          className="cnav__icon-btn is-on focus-ring"
-                        >
-                          <Icon name="ph:bookmark-simple-fill" width={12} aria-hidden />
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
+                {pinnedSessions.map((session) => (
+                  <li key={`pin-${session.id}`}>
+                    <PinnedThreadRow
+                      session={session}
+                      active={activeSessionId === session.id}
+                      now={now}
+                      onOpenUrl={onOpenUrl}
+                      onOpen={() => onOpenSession(session)}
+                      onTogglePin={() => togglePin(session.id)}
+                    />
+                  </li>
+                ))}
               </ul>
             </section>
           ) : null}
@@ -851,7 +922,7 @@ export function WorkspaceSidebar({
                         <button
                           type="button"
                           onClick={() => setShowAllByKey((cur) => new Set(cur).add("attention"))}
-                          className="cnav__more focus-ring [padding-left:13px]!"
+                          className="cnav__more cnav__more--flat focus-ring"
                         >
                           Show {attentionSessions.length - THREADS_PREVIEW} more
                         </button>
@@ -912,7 +983,7 @@ export function WorkspaceSidebar({
                           <button
                             type="button"
                             onClick={() => setShowAllByKey((cur) => new Set(cur).add(key))}
-                            className="cnav__more focus-ring [padding-left:13px]!"
+                            className="cnav__more cnav__more--flat focus-ring"
                           >
                             Show {bucket.sessions.length - THREADS_PREVIEW} more
                           </button>
