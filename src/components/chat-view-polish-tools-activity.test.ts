@@ -98,7 +98,7 @@ assert.match(
   /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*aria-label=\{toolGroupAriaLabel\(summary, running, errors\)\}[\s\S]*<ToolRuns tools=\{tools\}/,
   "ToolGroup wraps ONE collapsed disclosure — named by toolGroupAriaLabel — around ToolRuns per assistant turn",
 );
-const toolGroup = source.match(/function ToolGroup[\s\S]*?function ToolRuns/)?.[0] ?? "";
+const toolGroup = source.match(/function ToolGroup[\s\S]*?function InlineToolRuns/)?.[0] ?? "";
 assert.equal(
   toolGroup.match(/<ToolRuns tools=\{tools\} \/>/g)?.length,
   1,
@@ -131,16 +131,22 @@ assert.match(
   "a repeated run's accessible name includes its call, running, and error counts",
 );
 
+// Task 3 cont.: Status spans are scoped to their <summary> and wrap the chip markup.
+// Narrow to just the <summary> block so neither assertion can cross </summary>
+// or reach into ToolRuns / ToolRunGroup.
+const toolGroupSummary = toolGroup.match(/<summary[\s\S]*?<\/summary>/)?.[0] ?? "";
 assert.match(
-  source,
-  /function ToolGroup[\s\S]*<summary[\s\S]*<span[^>]*className="[^"]*ml-auto[^"]*cave-work-line__status/,
-  "ToolGroup's summary status <span> must have the cave-work-line__status class hook for Task 4 CSS styling",
+  toolGroupSummary,
+  /cave-work-line__status">[^]*?cave-tool-count--running[^]*?cave-tool-count--error[^]*?<\/span>\s*<\/summary>/,
+  "ToolGroup summary: cave-work-line__status span contains the running/error chips before the span closes",
 );
 
+const toolRunGroupSrc = source.match(/function ToolRunGroup[\s\S]*?const ToolProjectRootContext/)?.[0] ?? "";
+const toolRunGroupSummary = toolRunGroupSrc.match(/<summary[\s\S]*?<\/summary>/)?.[0] ?? "";
 assert.match(
-  source,
-  /function ToolRunGroup[\s\S]*<summary[\s\S]*<span[^>]*className="[^"]*ml-auto[^"]*cave-tool-run__status/,
-  "ToolRunGroup's summary status <span> must have the cave-tool-run__status class hook for Task 4 CSS styling",
+  toolRunGroupSummary,
+  /cave-tool-run__status">[^]*?cave-tool-count--running[^]*?cave-tool-count--error[^]*?<\/span>\s*<\/summary>/,
+  "ToolRunGroup summary: cave-tool-run__status span contains the running/error chips before the span closes",
 );
 
 assert.match(
@@ -229,6 +235,26 @@ assert.match(
   turnRow,
   /const editCards = settledTools\.filter\(isEditCard\);\s*const otherTools = settledTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
   "edit cards are split before the remaining tool activity",
+);
+assert.match(
+  turnRow,
+  /const toolRelocation = useFocusSafeToolRelocation\(!!turn\.pending\);[\s\S]*if \(toolRelocation\.keepToolsInline\) \{[\s\S]*renderSegments = bubbleSegments;/,
+  "focused streaming tools keep the inline render path when the turn settles",
+);
+assert.match(
+  turnRow,
+  /const settledTools = !toolRelocation\.keepToolsInline && turn\.tools\?\.length \? turn\.tools : \[\];/,
+  "the settled ToolGroup and edit-card path stays empty until focus-safe relocation is released",
+);
+assert.match(
+  turnRow,
+  /className="cave-linear-turn-body"[\s\S]*onFocusCapture=\{toolRelocation\.onFocusCapture\}[\s\S]*onBlurCapture=\{toolRelocation\.onBlurCapture\}/,
+  "the stable turn body observes focus crossing the inline tool boundary",
+);
+assert.match(
+  source,
+  /function InlineToolRuns[\s\S]*data-inline-tool-runs[\s\S]*<ToolRuns tools=\{tools\}/,
+  "inline tool runs expose the focus boundary without duplicating ToolRuns",
 );
 assert.match(
   turnRow,
