@@ -286,6 +286,7 @@ import {
   onDoneCreationRefresh,
   onCreationRunTerminated,
 } from "@/lib/chat-creation-refresh";
+import { ownsDisplayedView } from "@/lib/chat-session-ownership";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
 // lightweight browser-only serializer while that request is in flight so
@@ -2485,6 +2486,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
   const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingRuns: {} });
+  // Tracks which sessionless generation run currently owns the displayed compose
+  // view. Set to a run's id at the start of each sessionless send; cleared on
+  // thread switch and on adoption. See ownsDisplayedView for the guard semantics.
+  const displayedCreationRunIdRef = useRef<string | null>(null);
   const onSessionsChangedRef = useRef(onSessionsChanged);
   onSessionsChangedRef.current = onSessionsChanged;
   const streamHealthSessionRef = useRef(sessionId);
@@ -3783,6 +3788,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // A queued follow-up belongs to the conversation that was visible when it
     // was composed. Never let a thread switch dispatch it into another chat.
     if (isThreadSwitch) {
+      // Clearing compose ownership on any thread switch means an in-flight
+      // sessionless generation from the previous view can no longer adopt.
+      displayedCreationRunIdRef.current = null;
       queuedMessagesRef.current = [];
       setQueuedMessages([]);
     }
@@ -4860,6 +4868,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     liveSessionIdRef.current = initialLiveSessionId;
     const runId = crypto.randomUUID();
     creationRefreshStateRef.current = onSendStart(creationRefreshStateRef.current, runId, initialLiveSessionId);
+    // Register this run as the one that owns the displayed compose view. Only a
+    // sessionless send (new chat, no prior session) sets the slot; existing-session
+    // follow-ups leave it alone so a concurrent new-chat run keeps its ownership.
+    if (initialLiveSessionId === null) {
+      displayedCreationRunIdRef.current = runId;
+    }
     setHistoryState("loaded");
 
     // Explicit parentTurnId (including null = root) wins; only fall back to the
@@ -5967,20 +5981,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, ev.sessionId,
         );
         if (ev.sessionId !== currentSessionRef.current) {
-          // Only adopt the new session id into THIS view's refs when the view is
-          // still on the thread this generation started from. If the user
-          // switched to another conversation before the id arrived (a new chat's
-          // first-token latency), this is a *background* generation: adopting its
-          // id would splice its chunks into the displayed thread and mis-address
-          // the next send (sendRaw reads currentSessionRef as initialLiveSessionId).
-          // Still notify onSessionStarted — the router promotes a still-open new
-          // chat but leaves an already-switched view alone (chat-router.tsx).
-          if (currentSessionRef.current === liveGeneration.originSessionId) {
+          // Only adopt the new session id into THIS view's refs when this run
+          // owns the displayed thread. For null-origin runs (sessionless), the
+          // run must also own the displayed compose slot — without this extra
+          // guard two overlapping sessionless runs (A then B) both satisfy
+          // `currentSessionId === null === originSessionId` and A would adopt B's
+          // compose view. For non-null origin the original equality semantics apply.
+          const owned = ownsDisplayedView({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
+            // Clear compose ownership: this run adopted its session, so no
+            // subsequent null-origin generation (including a stale background
+            // one) may re-adopt via the done stable-ID fallback.
+            displayedCreationRunIdRef.current = null;
           }
-          onSessionStarted?.(ev.sessionId);
+          // Non-null origin: always notify the router so a background stream
+          // registers its session. Null origin: only notify when this run owns
+          // the displayed compose — calling onSessionStarted for a background
+          // sessionless run would cause ChatRouter's null-view guard to promote
+          // A's session into B's compose view.
+          if (liveGeneration.originSessionId !== null || owned) {
+            onSessionStarted?.(ev.sessionId);
+          }
         }
         if (taskArmedRef.current) {
           // One-shot: clear before the async create so a second session event
@@ -6145,15 +6174,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
           liveGeneration.sessionId = ev.sessionId;
-          // Same ownership guard as the "session" event: a background generation
-          // (user switched threads before this settled) must not overwrite the
-          // displayed thread's currentSessionRef. Still let the router register it.
-          if (currentSessionRef.current === liveGeneration.originSessionId) {
+          // Same ownership predicate as the "session" event: a background null-origin
+          // run (A) must not overwrite the displayed compose (B) when both share
+          // originSessionId === null. Non-null origin uses the original equality check.
+          const owned = ownsDisplayedView({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
+            // Clear compose ownership after adoption (same as session event path).
+            displayedCreationRunIdRef.current = null;
           }
-          onSessionStarted?.(ev.sessionId);
+          if (liveGeneration.originSessionId !== null || owned) {
+            onSessionStarted?.(ev.sessionId);
+          }
         }
         // A Board native-chat handoff already owns the stable conversation id,
         // so its "session" event does not promote the router and therefore

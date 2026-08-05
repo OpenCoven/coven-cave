@@ -716,22 +716,55 @@ assert.match(
 // New-chat background-generation isolation (cave-8zq): a generation started on
 // a brand-new chat carries an immutable originSessionId, and both the "session"
 // and "done" events only adopt the server-assigned id into the displayed
-// thread's currentSessionRef when the view is STILL on that origin thread.
-// Otherwise (user switched away during first-token latency) the late id would
-// splice the background stream into the wrong thread and mis-address the next
-// send — while onSessionStarted still fires so the router can register it.
+// thread's currentSessionRef when this run owns the displayed view.
+// For null-origin (sessionless) runs the ownership predicate also checks the
+// displayed compose slot so that an older background run (A) cannot splice into
+// a newer displayed compose (B) when both share originSessionId === null.
+// Background null-origin runs still bind creation-refresh state and refresh the
+// authoritative sidebar on done — only view adoption and router notification
+// (onSessionStarted) are gated, to prevent ChatRouter's null-view guard from
+// promoting A's session into B's compose view.
 assert.match(
   source,
   /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,/,
   "each generation records the immutable thread it started on (originSessionId)",
 );
+// ownsDisplayedView is imported from the pure helper module and called in both events.
+assert.match(
+  source,
+  /import \{[\s\S]*?ownsDisplayedView[\s\S]*?\} from "@\/lib\/chat-session-ownership"/,
+  "ChatView imports the pure ownsDisplayedView predicate from chat-session-ownership",
+);
+// displayedCreationRunIdRef tracks which sessionless run owns the compose slot.
+assert.match(
+  source,
+  /const displayedCreationRunIdRef = useRef<string \| null>\(null\)/,
+  "displayedCreationRunIdRef is declared to track the sessionless run owning the displayed compose view",
+);
+// Set to runId at the start of each sessionless send.
+assert.match(
+  source,
+  /if \(initialLiveSessionId === null\) \{\s*\n\s*displayedCreationRunIdRef\.current = runId;\s*\n\s*\}/,
+  "sessionless send sets displayedCreationRunIdRef to its runId so older background runs cannot adopt",
+);
 {
-  const guarded = source.match(
-    /if \(currentSessionRef\.current === liveGeneration\.originSessionId\) \{\s*\n\s*liveSessionIdRef\.current = ev\.sessionId;\s*\n\s*currentSessionRef\.current = ev\.sessionId;\s*\n\s*setHistoryState\("loaded"\);[\s\S]*?\}\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);/g,
+  // Both session and done events call ownsDisplayedView and gate adoption on it.
+  const ownedChecks = source.match(
+    /const owned = ownsDisplayedView\(\{[\s\S]*?currentSessionId: currentSessionRef\.current,[\s\S]*?originSessionId: liveGeneration\.originSessionId,[\s\S]*?runId: liveGeneration\.runId,[\s\S]*?displayedCreationRunId: displayedCreationRunIdRef\.current,[\s\S]*?\}\);[\s\S]*?if \(owned\) \{[\s\S]*?liveSessionIdRef\.current = ev\.sessionId;[\s\S]*?currentSessionRef\.current = ev\.sessionId;[\s\S]*?setHistoryState\("loaded"\);/g,
   );
   assert.ok(
-    guarded && guarded.length === 2,
-    "both the session and done events gate currentSessionRef adoption on still owning the displayed thread, yet always notify onSessionStarted",
+    ownedChecks && ownedChecks.length === 2,
+    "both session and done events call ownsDisplayedView and gate ref adoption on the owned result",
+  );
+}
+{
+  // onSessionStarted is gated: called for non-null origin OR when the run owns the compose view.
+  const notifyChecks = source.match(
+    /if \(liveGeneration\.originSessionId !== null \|\| owned\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/g,
+  );
+  assert.ok(
+    notifyChecks && notifyChecks.length === 2,
+    "session and done events call onSessionStarted only when non-null origin OR this run owns the compose view",
   );
 }
 
@@ -761,14 +794,14 @@ assert.match(
   "ChatView passes liveGeneration.runId and liveGeneration.originSessionId to onCreationSessionIdentified for per-generation provenance",
 );
 
-// Session event binds OUTSIDE the ownership guard: the generation owns its
+// Session event binds OUTSIDE the ownership predicate: the generation owns its
 // session ID regardless of which thread the view is currently displaying.
-// The provenance gate is now encoded in the helper (runId + originSessionId
-// args), not the caller.
+// The provenance gate is encoded in the helper (runId + originSessionId args).
+// ownsDisplayedView is called after the bind and gates both adoption and notify.
 assert.match(
   source,
-  /case "session": \{[\s\S]*?creationRefreshStateRef\.current = onCreationSessionIdentified\([\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId,[\s\S]*?ev\.sessionId[\s\S]*?\)[\s\S]*?if \(currentSessionRef\.current === liveGeneration\.originSessionId\)/,
-  "session event binds creation-refresh (with runId and provenance param) before the ownership guard, so background sessionless generations still bind even when the user has switched threads",
+  /case "session": \{[\s\S]*?creationRefreshStateRef\.current = onCreationSessionIdentified\([\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId,[\s\S]*?ev\.sessionId[\s\S]*?\)[\s\S]*?const owned = ownsDisplayedView\(/,
+  "session event binds creation-refresh (with runId and provenance param) before calling ownsDisplayedView, so background sessionless generations still bind even when the user has switched threads",
 );
 
 // Done event binds with completedSessionId (covers the done-before-session race
