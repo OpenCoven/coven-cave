@@ -141,4 +141,18 @@ assert.match(
   "starting a review announces the outcome",
 );
 
+// A nested project is the checkpoint authorization identity even though the
+// route resolves its enclosing Git repository internally. Every checkpoint
+// action from one panel must therefore carry the same projectRoot.
+assert.match(
+  src,
+  /const json = await mutateSessionChanges<\{[\s\S]*?\}>\(fetch, projectRoot, "revert", \{/,
+  "revert uses the same nested project identity as checkpoint list/restore/delete",
+);
+assert.doesNotMatch(
+  src,
+  /const json = await mutateSessionChanges<\{[\s\S]*?\}>\(fetch, repoRoot \?\? projectRoot, "revert", \{/,
+  "the enclosing repo root must never replace the panel's checkpoint identity",
+);
+
 console.log("session-changes-panel.test.ts: cave-4op footer + icon-button control primitives ok");

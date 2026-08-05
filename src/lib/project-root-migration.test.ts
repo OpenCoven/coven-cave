@@ -253,6 +253,109 @@ const PROJECTS = [
 }
 
 {
+  const backslashLegacy = "/upgrade/backslash/name";
+  const backslashCurrent = String.raw`/upgrade/backslash\name`;
+  const whitespaceLegacy = "/upgrade/edge";
+  const whitespaceCurrent = "/upgrade/edge ";
+  const backslashImage = {
+    dataUrl: "data:image/png;base64,POSIX-BACKSLASH",
+    mime: "image/png",
+  };
+  const whitespaceImage = {
+    dataUrl: "data:image/png;base64,POSIX-WHITESPACE",
+    mime: "image/png",
+  };
+  await images.setProjectImage(backslashLegacy, backslashImage);
+  await images.setProjectImage(whitespaceLegacy, whitespaceImage);
+  store.set(
+    CHAT_PROJECT_OVERRIDES_KEY,
+    JSON.stringify({
+      "session-backslash": backslashLegacy,
+      "session-whitespace": whitespaceLegacy,
+    }),
+  );
+  store.set(
+    "cave:project-frecency:v1",
+    JSON.stringify({
+      [backslashLegacy]: { picks: 2, lastPickedAt: 20 },
+      [whitespaceLegacy]: { picks: 3, lastPickedAt: 30 },
+    }),
+  );
+
+  assert.equal(
+    await migrateProjectRootKeys([
+      {
+        id: "posix-backslash-upgrade",
+        root: backslashCurrent,
+        legacyRoots: [backslashLegacy],
+      },
+      {
+        id: "posix-whitespace-upgrade",
+        root: whitespaceCurrent,
+        legacyRoots: [whitespaceLegacy],
+      },
+    ]),
+    2,
+  );
+  assert.equal(idb.projectAvatars.get(backslashCurrent)?.dataUrl, backslashImage.dataUrl);
+  assert.equal(idb.projectAvatars.get(whitespaceCurrent)?.dataUrl, whitespaceImage.dataUrl);
+  assert.deepEqual(readProjectOverrides(), {
+    "session-backslash": backslashCurrent,
+    "session-whitespace": whitespaceCurrent,
+  });
+  assert.deepEqual(
+    JSON.parse(store.get("cave:project-frecency:v1")),
+    {
+      [backslashCurrent]: { picks: 2, lastPickedAt: 20 },
+      [whitespaceCurrent]: { picks: 3, lastPickedAt: 30 },
+    },
+    "frecency follows both forms through the existing root-alias migration",
+  );
+}
+
+{
+  const occupiedRoot = "/upgrade/collision/name";
+  const collidingRoot = String.raw`/upgrade/collision\name`;
+  const occupiedImage = {
+    dataUrl: "data:image/png;base64,CURRENT-PROJECT",
+    mime: "image/png",
+  };
+  await images.setProjectImage(occupiedRoot, occupiedImage);
+  store.set(
+    CHAT_PROJECT_OVERRIDES_KEY,
+    JSON.stringify({ "session-current": occupiedRoot }),
+  );
+  store.set(
+    "cave:project-frecency:v1",
+    JSON.stringify({ [occupiedRoot]: { picks: 5, lastPickedAt: 50 } }),
+  );
+
+  assert.equal(
+    await migrateProjectRootKeys([
+      {
+        id: "backslash-project",
+        root: collidingRoot,
+        legacyRoots: [occupiedRoot],
+      },
+      {
+        id: "current-project",
+        root: occupiedRoot,
+      },
+    ]),
+    0,
+    "an alias claimed by another current project is skipped deterministically",
+  );
+  assert.equal(idb.projectAvatars.get(occupiedRoot)?.dataUrl, occupiedImage.dataUrl);
+  assert.equal(idb.projectAvatars.has(collidingRoot), false);
+  assert.equal(readProjectOverrides()["session-current"], occupiedRoot);
+  assert.deepEqual(
+    JSON.parse(store.get("cave:project-frecency:v1")),
+    { [occupiedRoot]: { picks: 5, lastPickedAt: 50 } },
+    "a collision never re-keys another current project's history",
+  );
+}
+
+{
   // The acceptance criterion, demonstrated rather than assumed: an existing
   // profile keeps its avatar, override, and picker history across the upgrade.
   await seed();

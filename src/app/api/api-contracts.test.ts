@@ -210,7 +210,7 @@ const contracts: RouteContract[] = [
   { route: "/projects/[id]", methods: ["PUT", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/projects/icon", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/projects/seed", methods: ["POST"], kind: "json" },
-  { route: "/projects", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/projects", methods: ["GET", "POST", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/prompt/enhance", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/profile/avatar", methods: ["GET", "POST", "DELETE"], kind: "stream", readsJson: true, invalidJson: "guarded" },
   { route: "/profile", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },

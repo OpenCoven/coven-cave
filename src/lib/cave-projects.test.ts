@@ -20,7 +20,11 @@ try {
     seedDefaultProjectsIfEmpty,
     sortProjectsAlphabetically,
   } = await import("./cave-projects.ts");
-  const { normalizeProjectRoot, projectForPickerQuery } = await import("./cave-projects-types.ts");
+  const {
+    normalizeProjectRoot,
+    projectForPickerQuery,
+    projectIdMigrationMap,
+  } = await import("./cave-projects-types.ts");
   const source = await readFile(new URL("./cave-projects.ts", import.meta.url), "utf8");
 
   assert.equal(
@@ -156,6 +160,12 @@ try {
       "POSIX project storage cannot collapse a filename backslash into a separator",
     );
     assert.equal(posixBackslash.root, String.raw`/repo/packages/app\name`);
+    const collisionProjects = await loadProjects();
+    assert.equal(
+      projectIdMigrationMap(collisionProjects).size,
+      0,
+      "normalizer alias collisions never merge project ids or their grants",
+    );
   }
 
   // (cave-psp8) A manually-typed ~/path expands to the absolute home path —
@@ -366,6 +376,106 @@ try {
   );
   assert.equal(await deleteProject("disk-new"), true);
   assert.deepEqual(await loadProjects(), []);
+
+  if (process.platform !== "win32") {
+    const upgradeProjects = [
+      {
+        id: "safe-backslash",
+        name: "Safe backslash",
+        root: String.raw`/upgrade/safe\name`,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "safe-whitespace",
+        name: "Safe whitespace",
+        root: "/upgrade/edge ",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "collision-backslash",
+        name: "Collision backslash",
+        root: String.raw`/upgrade/collision\name`,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "collision-separator",
+        name: "Collision separator",
+        root: "/upgrade/collision/name",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "collision-whitespace",
+        name: "Collision whitespace",
+        root: "/upgrade/occupied ",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "collision-trimmed",
+        name: "Collision trimmed",
+        root: "/upgrade/occupied",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    await writeFile(
+      process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+      JSON.stringify({ version: 1, projects: upgradeProjects }),
+      "utf8",
+    );
+    const upgraded = await loadProjects();
+    assert.equal(upgraded.length, upgradeProjects.length, "current POSIX roots stay distinct");
+    assert.deepEqual(
+      upgraded.find((project) => project.id === "safe-backslash")?.legacyRoots,
+      ["/upgrade/safe/name"],
+      "a preserved POSIX backslash root advertises the prior canonical client key",
+    );
+    assert.deepEqual(
+      upgraded.find((project) => project.id === "safe-whitespace")?.legacyRoots,
+      ["/upgrade/edge"],
+      "a preserved POSIX edge-space root advertises the prior trimmed client key",
+    );
+    assert.equal(
+      upgraded.find((project) => project.id === "collision-backslash")?.legacyRoots,
+      undefined,
+      "a separator sibling blocks an unsafe prior backslash alias",
+    );
+    assert.equal(
+      upgraded.find((project) => project.id === "collision-whitespace")?.legacyRoots,
+      undefined,
+      "a trimmed sibling blocks an unsafe prior whitespace alias",
+    );
+    assert.equal(
+      projectIdMigrationMap(upgraded).size,
+      0,
+      "root-key collisions never become project-id migrations",
+    );
+
+    await acknowledgeProjectRootMigrations([
+      { projectId: "safe-backslash", legacyRoots: ["/upgrade/safe/name"] },
+      { projectId: "safe-whitespace", legacyRoots: ["/upgrade/edge"] },
+    ]);
+    const upgradedDisk = JSON.parse(
+      await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"),
+    );
+    assert.equal(
+      upgradedDisk.rootKeyNormalizerVersion,
+      2,
+      "the projects file records that prior canonical aliases were materialized",
+    );
+    assert.equal(
+      (await loadProjects()).some((project) => project.legacyRoots?.length),
+      false,
+      "acknowledged POSIX aliases are not re-derived on every load",
+    );
+    for (const project of upgradeProjects) {
+      assert.equal(await deleteProject(project.id), true);
+    }
+  }
 
   await writeFile(
     process.env.CAVE_PROJECTS_PATH_OVERRIDE,

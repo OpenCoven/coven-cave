@@ -13,14 +13,18 @@ export {
 import type { CaveProject } from "./cave-projects-types.ts";
 import {
   dedupeProjectsByRoot as dedupeByRoot,
+  legacyProjectRootKey,
   normalizeProjectRoot as normalizeSharedProjectRoot,
   projectPathIdentityKey,
+  projectRootMigrationMap,
 } from "./cave-projects-types.ts";
 import { caveHome } from "./coven-paths.ts";
 import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 
 type ProjectsFile = {
   version: 1;
+  /** Persisted once pre-POSIX-safe root keys have been materialized as aliases. */
+  rootKeyNormalizerVersion?: 2;
   projects: CaveProject[];
 };
 
@@ -133,12 +137,20 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
     // client. `legacyRoots` carries every collapsed old key so the client can
     // re-key what it already stored. Aliases stay durable until the client
     // explicitly acknowledges that every local migration succeeded.
+    const addPreviousCanonicalAliases =
+      parsed.rootKeyNormalizerVersion !== 2;
     const normalizedProjects = parsed.projects.map((project) => {
       const expanded = normalizeRootExpandingHome(project.root);
+      const previousCanonical = addPreviousCanonicalAliases
+        ? legacyProjectRootKey(project.root)
+        : null;
       const aliases = new Set([
         ...(project.legacyRoots ?? []),
         ...(project.legacyRoot ? [project.legacyRoot] : []),
         ...(expanded === project.root ? [] : [project.root]),
+        ...(previousCanonical && previousCanonical !== expanded
+          ? [previousCanonical]
+          : []),
       ]);
       aliases.delete(expanded);
       const legacyRoots = [...aliases];
@@ -152,11 +164,29 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
       }
       return normalized;
     });
-    return dedupeByRoot(
+    const deduped = dedupeByRoot(
       normalizedProjects,
       normalizeRootExpandingHome,
       serverProjectRootIdentity,
     );
+    const safeMigrations = projectRootMigrationMap(deduped);
+    return deduped.map((project) => {
+      const aliases = [
+        ...new Set([
+          ...(project.legacyRoots ?? []),
+          ...(project.legacyRoot ? [project.legacyRoot] : []),
+        ]),
+      ].filter((root) => safeMigrations.get(root) === project.root);
+      const safeProject = { ...project };
+      if (aliases.length) {
+        safeProject.legacyRoot = aliases[0];
+        safeProject.legacyRoots = aliases;
+      } else {
+        delete safeProject.legacyRoot;
+        delete safeProject.legacyRoots;
+      }
+      return safeProject;
+    });
   } catch {
     return [];
   }
@@ -184,6 +214,7 @@ export function withProjectRegistryLock<T>(
 async function saveProjects(projects: CaveProject[]): Promise<void> {
   const file: ProjectsFile = {
     version: 1,
+    rootKeyNormalizerVersion: 2,
     projects,
   };
   await writeProjectsFile(projectsFilePath(), JSON.stringify(file, null, 2));
