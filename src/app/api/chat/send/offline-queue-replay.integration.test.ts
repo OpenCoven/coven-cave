@@ -207,8 +207,14 @@ try {
     latestCompletedTurn: { role: "user", at: queuedItem.createdAt },
     latestUserTurnAt: queuedItem.createdAt,
     attentionAfterOperationId: "run-offline-1",
+    attentionOperationLineage: ["run-offline-1"],
     request: null,
   });
+  assert.equal(
+    queuedSummary?.attentionEvidence?.attentionOperationLineage?.includes("run-unrelated"),
+    false,
+    "queued summaries must keep only the selected path's causal clear ancestry",
+  );
 
   await config.completeOfflineTravelItem(queuedItem.id);
   const replayItem = await config.enqueueOfflineTravelItem({
@@ -255,6 +261,12 @@ try {
     replayedConversation?.turns.some((turn) => turn.parentId === queuedUserTurnId),
     false,
     "baseline replay transport must not claim an assistant reply",
+  );
+  const replayedSummary = (await conversations.listConversations()).find((conv) => conv.sessionId === "offline-chat-1");
+  assert.deepEqual(
+    replayedSummary?.attentionEvidence,
+    queuedSummary?.attentionEvidence,
+    "status-only replay must not fabricate assistant attention or mutate queued causal evidence",
   );
 
   const merged = mergeSessionRows({
