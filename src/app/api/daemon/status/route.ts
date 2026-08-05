@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   loadDaemonStatusSnapshot,
+  isCaveConfigCompatibilityError,
 } from "@/lib/cave-config";
 import {
   callDaemonTarget,
@@ -14,6 +15,7 @@ import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version"
 import { classifyDaemonFailureAvailability } from "@/lib/daemon-status-classification";
 import { executorStatusesForConfig } from "@/lib/executor-status";
 import { daemonHealthRequest, daemonHealthResponseSucceeded } from "@/lib/server/daemon-health-request";
+import { assessDaemonStartupCompatibility, type DaemonStartupHealth } from "@/lib/daemon-startup-contract";
 import { classifyHubFailure } from "@/lib/server/daemon-probe";
 import { reconcileDaemonTravelState } from "@/lib/server/daemon-travel-reconcile";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
@@ -21,12 +23,7 @@ import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type Health = {
-  ok?: boolean;
-  apiVersion?: string;
-  covenVersion?: string;
-  daemon?: { pid: number; startedAt: string; socket: string };
-};
+type Health = DaemonStartupHealth;
 
 function targetSummary(target: DaemonTarget) {
   if (target.mode === "local") {
@@ -57,6 +54,7 @@ function failureAvailability(target: DaemonTarget, res: DaemonResponse<unknown>)
 }
 
 function isCaveHomeStatusFailure(error: unknown): boolean {
+  if (isCaveConfigCompatibilityError(error)) return true;
   const code = typeof error === "object" && error !== null && "code" in error
     ? String((error as NodeJS.ErrnoException).code ?? "")
     : "";
@@ -64,7 +62,14 @@ function isCaveHomeStatusFailure(error: unknown): boolean {
   return error instanceof Error && error.message.startsWith("Cave home reconciliation failed");
 }
 
-function caveHomeStatusUnavailable() {
+function caveHomeStatusUnavailable(error?: unknown) {
+  if (isCaveConfigCompatibilityError(error)) {
+    return NextResponse.json({
+      running: false,
+      availability: "incompatible",
+      reason: error.message,
+    });
+  }
   return NextResponse.json({
     running: false,
     availability: "status-unavailable",
@@ -82,7 +87,7 @@ export async function GET() {
       ? String((error as NodeJS.ErrnoException).code ?? "")
       : "reconciliation";
     console.warn("[daemon-status] Cave home status snapshot unavailable", { code });
-    return caveHomeStatusUnavailable();
+    return caveHomeStatusUnavailable(error);
   }
   const { config } = snapshot;
   const target = daemonTargetForConfig(config);
@@ -116,6 +121,12 @@ export async function GET() {
   const res = await callDaemonTarget<Health>(target, daemonHealthRequest());
   const health = daemonHealthResponseSucceeded(res) ? res.data : null;
   const daemonHealthy = health !== null;
+  const installedVersion = daemonHealthy && target.mode === "local"
+    ? await installedCovenVersion()
+    : null;
+  const compatibility = daemonHealthy && target.mode === "local"
+    ? assessDaemonStartupCompatibility(health, installedVersion)
+    : null;
   const { travelStatus, travelReplay } = await reconcileDaemonTravelState({
     config,
     travelState,
@@ -124,11 +135,11 @@ export async function GET() {
     daemonHealthy,
   });
   const root = covenWorkspaceRoot();
-  if (!daemonHealthy) {
+  if (!daemonHealthy || (compatibility && !compatibility.ok)) {
     return NextResponse.json({
       running: false,
-      availability: failureAvailability(target, res),
-      reason: failureReason(target, res),
+      availability: compatibility && !compatibility.ok ? "incompatible" : failureAvailability(target, res),
+      reason: compatibility && !compatibility.ok ? compatibility.diagnostic : failureReason(target, res),
       checkedAt,
       target: targetSummary(target),
       executors: executorStatuses,
@@ -138,18 +149,19 @@ export async function GET() {
       projectRoot: root,
     });
   }
-  const installedVersion =
-    !health.covenVersion || health.covenVersion === "0.0.0"
+  const daemonVersion = typeof health.covenVersion === "string" ? health.covenVersion : undefined;
+  const fallbackInstalledVersion =
+    !daemonVersion || daemonVersion === "0.0.0"
       ? await installedCovenVersion()
-      : null;
+      : installedVersion;
   return NextResponse.json({
     running: true,
     availability: "online",
     checkedAt,
     apiVersion: health.apiVersion,
     covenVersion: displayCovenVersion({
-      daemonVersion: health.covenVersion,
-      installedVersion,
+      daemonVersion,
+      installedVersion: fallbackInstalledVersion,
     }),
     daemon: health.daemon,
     target: targetSummary(target),
