@@ -101,6 +101,7 @@ import {
   CHAT_ATTENTION_CLEAR_EVENT,
   CHAT_ATTENTION_SETTLE_EVENT,
   attentionClearFromEvent,
+  attentionClearedSessionId,
   attentionSettlementFromEvent,
 } from "@/lib/chat-attention-events";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
@@ -576,17 +577,20 @@ export function Workspace() {
   useEffect(() => {
     const onChatAttentionClear = (event: Event) => {
       const detail = attentionClearFromEvent(event);
-      if (!detail) return;
-      const baselineAttention = baseSessionsRef.current
-        .find((session) => session.id === detail.sessionId)?.attention ?? NO_CHAT_ATTENTION;
-      const recordResult = recordChatAttentionClear(
-        chatAttentionProjectionRef.current,
-        detail.sessionId,
-        detail.operationId,
-        chatAttentionProjectionScopeKey(activeIdRef.current),
-        baselineAttention,
-      );
-      if (!recordResult.recorded) return;
+      const sessionId = detail?.sessionId ?? attentionClearedSessionId(event);
+      if (!sessionId) return;
+      if (detail) {
+        const baselineAttention = baseSessionsRef.current
+          .find((session) => session.id === detail.sessionId)?.attention ?? NO_CHAT_ATTENTION;
+        const recordResult = recordChatAttentionClear(
+          chatAttentionProjectionRef.current,
+          detail.sessionId,
+          detail.operationId,
+          chatAttentionProjectionScopeKey(activeIdRef.current),
+          baselineAttention,
+        );
+        if (!recordResult.recorded) return;
+      }
       // Invalidate any in-flight loadSessions before patching state: a load
       // started before this clear (mount, the 4s poll, a scope change) can
       // still be in flight and resolve *after* it with a stale, pre-clear
@@ -606,8 +610,8 @@ export function Workspace() {
       // a synthetic, merely-incremented reqId. Doing so here would let this
       // handler retire its own operation before any real response ever
       // confirmed the clear.
-      baseSessionsRef.current = clearSessionAttentionRows(baseSessionsRef.current, detail.sessionId);
-      setSessions((currentSessions) => clearSessionAttentionRows(currentSessions, detail.sessionId));
+      baseSessionsRef.current = clearSessionAttentionRows(baseSessionsRef.current, sessionId);
+      setSessions((currentSessions) => clearSessionAttentionRows(currentSessions, sessionId));
     };
     const onChatAttentionSettle = (event: Event) => {
       const detail = attentionSettlementFromEvent(event);

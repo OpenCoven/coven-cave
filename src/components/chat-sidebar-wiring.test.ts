@@ -307,7 +307,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /import \{[\s\S]*CHAT_ATTENTION_CLEAR_EVENT,[\s\S]*CHAT_ATTENTION_SETTLE_EVENT,[\s\S]*attentionClearFromEvent,[\s\S]*attentionSettlementFromEvent,[\s\S]*\} from "@\/lib\/chat-attention-events";/,
+  /import \{[\s\S]*CHAT_ATTENTION_CLEAR_EVENT,[\s\S]*CHAT_ATTENTION_SETTLE_EVENT,[\s\S]*attentionClearFromEvent,[\s\S]*attentionClearedSessionId,[\s\S]*attentionSettlementFromEvent,[\s\S]*\} from "@\/lib\/chat-attention-events";/,
   "workspace should subscribe to the shared attention clear/settlement events",
 );
 assert.match(
@@ -317,7 +317,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /recordChatAttentionClear\([\s\S]*chatAttentionProjectionScopeKey\(activeIdRef\.current\)[\s\S]*baseSessionsRef\.current = clearSessionAttentionRows\(baseSessionsRef\.current, detail\.sessionId\);[\s\S]*setSessions\(\(currentSessions\) => clearSessionAttentionRows\(currentSessions, detail\.sessionId\)\);/,
+  /recordChatAttentionClear\([\s\S]*chatAttentionProjectionScopeKey\(activeIdRef\.current\)[\s\S]*baseSessionsRef\.current = clearSessionAttentionRows\(baseSessionsRef\.current, sessionId\);[\s\S]*setSessions\(\(currentSessions\) => clearSessionAttentionRows\(currentSessions, sessionId\)\);/,
   "workspace should patch both the canonical base rows and the rendered enriched rows for the matching session only, via a targeted clear rather than the retirement-capable projection apply",
 );
 assert.match(
@@ -337,13 +337,18 @@ const onChatAttentionClearBlock = workspace.match(
 assert.ok(onChatAttentionClearBlock, "workspace should define the chat-attention clear handler");
 assert.match(
   onChatAttentionClearBlock,
-  /const recordResult = recordChatAttentionClear\([\s\S]*?if \(!recordResult\.recorded\) return;[\s\S]*?loadSessionsReqRef\.current \+= 1;[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
-  "workspace should only invalidate/persist the optimistic clear after the projection actually records it, so tombstoned or duplicate clears stay true no-ops while real clears still supersede stale polls",
+  /const sessionId = detail\?\.sessionId \?\? attentionClearedSessionId\(event\);\s*if \(!sessionId\) return;[\s\S]*?if \(detail\) \{[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?if \(!recordResult\.recorded\) return;[\s\S]*?\}[\s\S]*?loadSessionsReqRef\.current \+= 1;[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
+  "workspace should accept legacy session-only clear payloads, but only record/invalidate durable projection state for real operation-aware clears",
 );
 assert.match(
   onChatAttentionClearBlock,
   /const baselineAttention = baseSessionsRef\.current\s*\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention \?\? NO_CHAT_ATTENTION;[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
   "workspace should capture canonical attention before either session array is projected to none",
+);
+assert.match(
+  onChatAttentionClearBlock,
+  /if \(detail\) \{[\s\S]*?recordChatAttentionClear[\s\S]*?\}[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows\(baseSessionsRef\.current, sessionId\);[\s\S]*?setSessions\(\(currentSessions\) => clearSessionAttentionRows\(currentSessions, sessionId\)\);/,
+  "workspace should use the shared targeted clear for both session-only compatibility payloads and operation-aware payloads, without changing unrelated rows",
 );
 // Task 5 spec-compliance: the clear handler patches cached arrays with a
 // targeted, non-retiring clear. It must NEVER call the retirement-capable
