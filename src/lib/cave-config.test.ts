@@ -135,6 +135,23 @@ try {
   assert.equal(state.sessionTitles["session-owned"], "My manual title", "manual title preserved");
   assert.equal(state.sessionTitleAuto["session-owned"], undefined, "provenance still absent");
 
+  // preserveManualTitles=false keeps the policy's explicit takeover behavior,
+  // while still recording provenance in the same atomic state update.
+  const forced = await config.setSessionTitleAutoIfOwned(
+    "session-owned",
+    "Policy-selected title",
+    new Set(["New chat"]),
+    false,
+  );
+  assert.equal(forced, "Policy-selected title", "preserve-off policy may replace a manual title");
+  state = await config.loadState();
+  assert.equal(state.sessionTitles["session-owned"], "Policy-selected title");
+  assert.equal(
+    state.sessionTitleAuto["session-owned"],
+    "Policy-selected title",
+    "policy takeover records automatic provenance",
+  );
+
   // Trim/empty input is a no-op (returns null).
   assert.equal(
     await config.setSessionTitleAutoIfOwned("session-owned2", "   ", new Set(["New chat"])),

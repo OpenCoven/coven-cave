@@ -11,12 +11,10 @@ import {
   loadConfig,
   loadState,
   recordSessionFamiliar,
-  setSessionTitleAuto,
   setSessionTitleAutoIfOwned,
 } from "@/lib/cave-config";
 import { chatSummaryTitle, chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import {
-  isAutoOwnedTitle,
   isRenameDueAtTurn,
   normalizeChatAutoRenamePolicy,
   renameTitleFromLatestExchange,
@@ -502,26 +500,22 @@ async function maybeAutoRenameFromContext(
     const next = renameTitleFromLatestExchange({ userText: lastUser, assistantText: lastAssistant });
     if (!next) return;
 
-    const state = await loadState();
-    const current = state.sessionTitles[sessionId];
-    if (current === next) return;
     const firstPrompt = turns.find((t) => t.role === "user")?.text ?? firstPromptText;
     const autoDefaults = new Set(
-      [defaultChatTitleForSession(sessionId), chatTitleFromPrompt(firstPrompt)].filter(
+      [
+        defaultChatTitleForSession(sessionId),
+        chatTitleFromPrompt(firstPrompt),
+        chatSummaryTitle({ userText: firstPrompt }),
+      ].filter(
         (t): t is string => Boolean(t),
       ),
     );
-    if (
-      !isAutoOwnedTitle({
-        current,
-        lastAutoTitle: state.sessionTitleAuto[sessionId],
-        autoDefaults,
-        preserveManualTitles: policy.preserveManualTitles,
-      })
-    ) {
-      return;
-    }
-    await setSessionTitleAuto(sessionId, next);
+    await setSessionTitleAutoIfOwned(
+      sessionId,
+      next,
+      autoDefaults,
+      policy.preserveManualTitles,
+    );
   } catch {
     /* best effort */
   }

@@ -158,6 +158,32 @@ assert.match(
   );
 }
 
+// Periodic renaming must make its ownership decision and title write in one
+// config-state mutation. A separate read/check followed by an unconditional
+// write can overwrite a manual rename that lands between those operations.
+{
+  const fnMarker = "async function maybeAutoRenameFromContext";
+  const fnStart = chatRoute.indexOf(fnMarker);
+  assert.ok(fnStart >= 0, "periodic auto-rename helper exists");
+  const nextFn = chatRoute.indexOf("\nasync function ", fnStart + fnMarker.length);
+  const fnBody = chatRoute.slice(fnStart, nextFn);
+  assert.match(
+    fnBody,
+    /setSessionTitleAutoIfOwned\([\s\S]*policy\.preserveManualTitles/,
+    "periodic rename atomically checks ownership and writes under the configured policy",
+  );
+  assert.doesNotMatch(
+    fnBody,
+    /\bsetSessionTitleAuto\(/,
+    "periodic rename must not perform an unconditional later write",
+  );
+  assert.doesNotMatch(
+    fnBody,
+    /isAutoOwnedTitle\(/,
+    "periodic rename must not split its ownership check from the state write",
+  );
+}
+
 // D: No stub title path may use chatTitleFromPrompt as the selected title.
 assert.doesNotMatch(
   chatRoute,

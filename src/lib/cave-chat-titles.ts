@@ -8,15 +8,15 @@ type SessionLike = {
 
 export const MAX_CHAT_TITLE_LENGTH = 120;
 
-// Strip leading/trailing emoji sequences and whitespace from session titles.
-// Emoji in the middle of a title are left intact. The character class includes
-// variation selector VS16 (U+FE0F), ZWJ (U+200D), and Fitzpatrick skin-tone
-// modifiers (U+1F3FB–U+1F3FF) so that compound sequences such as ❤️ (U+2764
-// U+FE0F) and 👩‍💻 (U+1F469 U+200D U+1F4BB) are consumed as a whole unit.
-const EMOJI_RE =
-  /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D\u{1F3FB}-\u{1F3FF}\s]+|[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D\u{1F3FB}-\u{1F3FF}\s]+$/gu;
+// Strip complete emoji grapheme sequences at title edges without treating plain
+// digits, #, or * as emoji. This covers variation selectors, modifiers, ZWJ
+// compounds, and keycaps such as 1️⃣.
+const PICTOGRAPHIC = String.raw`(?:\p{Emoji_Presentation}|\p{Extended_Pictographic})`;
+const EMOJI_SEQUENCE = String.raw`(?:[#*0-9]\uFE0F?\u20E3|${PICTOGRAPHIC}(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D${PICTOGRAPHIC}(?:\uFE0F|\p{Emoji_Modifier})?)*)`;
+const LEADING_EMOJI_RE = new RegExp(String.raw`^(?:\s|${EMOJI_SEQUENCE})+`, "gu");
+const TRAILING_EMOJI_RE = new RegExp(String.raw`(?:\s|${EMOJI_SEQUENCE})+$`, "gu");
 export function stripLeadingTrailingEmoji(title: string): string {
-  return title.replace(EMOJI_RE, "").trim();
+  return title.replace(LEADING_EMOJI_RE, "").replace(TRAILING_EMOJI_RE, "").trim();
 }
 
 export function normalizeChatTitle(input: unknown): string | null {
@@ -125,20 +125,33 @@ function clampAtWordBoundary(text: string, maxLen: number): string | null {
  * single over-length token has no word boundary to cut at cleanly.
  */
 function formatGeneratedTitle(text: string): string | null {
+  // Remove reference definitions and blockquote prefixes before line structure
+  // is collapsed. Nested blockquotes are consumed as one prefix.
+  let s = text
+    .replace(/^\s{0,3}\[[^\]]+\]:\s+\S+.*$/gm, " ")
+    .replace(/^(?:\s{0,3}>\s*)+/gm, "");
   // Normalize markdown images: ![alt](url) → alt text if non-empty, else stripped.
   // Must run before link normalization to avoid the leading ! leaking into the output.
   // Supports one level of nested parentheses in the destination (e.g. url_(anchor)).
-  let s = text.replace(
+  s = s.replace(
     /!\[([^\]]*)\]\((?:[^()]*|\([^()]*\))*(?:\s+"[^"]*")?\)/g,
     (_, alt) => alt.trim(),
   );
   // Normalize markdown links: [label](url) → label; destination discarded.
   // Supports one level of nested parentheses so [Docs](https://x.test/a_(b)) → Docs.
   s = s.replace(/\[([^\]]+)\]\((?:[^()]*|\([^()]*\))*(?:\s+"[^"]*")?\)/g, "$1");
+  // Normalize full/collapsed reference links and shortcut reference links.
+  s = s
+    .replace(/\[([^\]]+)\]\s*\[[^\]]*\]/g, "$1")
+    .replace(/\[([^\]]+)\](?!\s*\()/g, "$1");
   // Strip strikethrough: ~~text~~ → text.
   s = s.replace(/~~([^~]+)~~/g, "$1");
-  // Strip remaining markdown syntax and collapse whitespace.
-  s = s.replace(/[*_`#]+/g, " ").replace(/\s+/g, " ").trim();
+  // Strip remaining markdown syntax without removing the base of *️⃣ / #️⃣
+  // keycap emoji before the edge-emoji pass can consume the full sequence.
+  s = s
+    .replace(/[_`]+|[*#](?!\uFE0F?\u20E3)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   // Cleanup loop: trailing punctuation → edge emoji → leading separators exposed by
   // emoji removal → trailing punctuation again, so "🎉: Fix parser." → "Fix parser"
   // and "Fix parser 🎉." are both fully cleaned.
@@ -187,7 +200,7 @@ export function titleFromAssistantReply(assistantText: string | null | undefined
   if (typeof assistantText !== "string") return null;
   const lines = assistantText
     .split(/\r?\n/)
-    .map((line) => line.trim())
+    .map((line) => line.trim().replace(/^(?:>\s*)+/, ""))
     .filter(Boolean)
     .slice(0, 3);
   for (const line of lines) {

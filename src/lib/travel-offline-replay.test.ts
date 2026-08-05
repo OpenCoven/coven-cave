@@ -62,6 +62,32 @@ assert.match(
 
 assert.match(
   replay,
+  /import \{ chatSummaryTitle, defaultChatTitleForSession \} from "@\/lib\/cave-chat-titles"/,
+  "automatic replay titles should use the shared concise formatter",
+);
+assert.doesNotMatch(
+  replay,
+  /chatTitleFromPrompt/,
+  "automatic replay titles must not use the legacy 64-character prompt formatter",
+);
+assert.match(
+  replay,
+  /setSessionTitleAutoIfOwned/,
+  "automatic replay titles should use the shared atomic provenance setter",
+);
+assert.doesNotMatch(
+  replay,
+  /\bsetSessionTitle\b/,
+  "automatic replay titles must not be stored as manual titles",
+);
+assert.match(
+  replay,
+  /chatSummaryTitle\(\{ userText: prompt \}\)\s*\?\?\s*defaultChatTitleForSession/,
+  "chat replay should derive a concise title and retain the neutral fallback",
+);
+
+assert.match(
+  replay,
   /path: "\/api\/v1\/workflows\/run"/,
   "workflow replay should try the daemon workflow engine before session fallback",
 );
