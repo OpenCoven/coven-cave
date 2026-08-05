@@ -348,6 +348,11 @@ export const ICON_NAMES = [
   "ph:download-simple",
   "ph:shield-warning",
   "ph:microphone",
+  // Project-folder picker sidebar — the known folders Explorer's Quick access
+  // lists (Desktop/Downloads/Documents already appear above).
+  "ph:house",
+  "ph:image",
+  "ph:music-notes",
   // Chart Room (navigator) — lenses, chain tracing, and structural repairs.
   "ph:chart-line-up",
   "ph:chart-bar",

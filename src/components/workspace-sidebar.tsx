@@ -36,6 +36,8 @@ import {
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
+import { NavSectionTabs } from "@/components/nav-section-tabs";
+import type { NavSection } from "@/lib/nav-section";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 type WorkspaceSidebarMode = "home" | "inbox" | "marketplace";
@@ -58,6 +60,9 @@ type Props = {
   /** Home / Scheduled / Plugins shortcuts route through Workspace so it can
    *  coordinate mode changes with mobile drawer dismissal. */
   onNavigate: (mode: WorkspaceSidebarMode) => void;
+  /** Global section switcher (Home | Code). This sidebar hosts the Code room,
+   *  so the tabs ride at its top too — leaving Code returns to the Home rail. */
+  onSectionChange?: (section: NavSection) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
   /** Refresh the workspace sessions poll after an archive/unarchive PATCH so
@@ -343,6 +348,7 @@ export function WorkspaceSidebar({
   onOpenSession,
   onOpenSessionInSplit,
   onNavigate,
+  onSectionChange,
   onNewChat,
   onDeleteSession,
   onSessionsChanged,
@@ -563,6 +569,10 @@ export function WorkspaceSidebar({
   return (
     <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
+        {/* Global section switcher — Home | Code (cave-24d2r). This sidebar IS
+            the Code room, so switching to Home hands the rail back to the
+            standard destination list. */}
+        {onSectionChange ? <NavSectionTabs section="code" onSectionChange={onSectionChange} /> : null}
         {/* Header — the labeled familiar switcher (#2747). WorkspaceSidebar owns
             the primary Shell nav during Chat; Home exits Chat and restores the
             normal navigation. This scope control was restored by cave-l3ay
@@ -579,15 +589,19 @@ export function WorkspaceSidebar({
               labeled
             />
           </div>
-          <button
-            type="button"
-            aria-label="Go to Home"
-            title="Home"
-            onClick={() => onNavigate("home")}
-            className="cnav__back focus-ring ml-auto"
-          >
-            <Icon name="ph:house-bold" width={15} aria-hidden />
-          </button>
+          {/* The Home tab above owns the exit now; the icon button only remains
+              when the section switcher is not mounted (standalone hosts). */}
+          {onSectionChange ? null : (
+            <button
+              type="button"
+              aria-label="Go to Home"
+              title="Home"
+              onClick={() => onNavigate("home")}
+              className="cnav__back focus-ring ml-auto"
+            >
+              <Icon name="ph:house-bold" width={15} aria-hidden />
+            </button>
+          )}
           <button
             ref={menuAnchorRef}
             type="button"
@@ -596,7 +610,7 @@ export function WorkspaceSidebar({
             aria-expanded={menuOpen}
             title="Sidebar options"
             onClick={() => setMenuOpen((cur) => !cur)}
-            className="cnav__back focus-ring"
+            className={`cnav__back focus-ring${onSectionChange ? " ml-auto" : ""}`}
           >
             <Icon name="ph:dots-three-bold" width={15} aria-hidden />
           </button>
@@ -723,233 +737,233 @@ export function WorkspaceSidebar({
           className="cnav__scroll focus-ring-inset"
         >
           <nav aria-label="Chat threads">
-          {!hasSearch && pinnedSessions.length > 0 ? (
-            <section aria-label="Pinned threads">
-              <div className="cnav__label">
-                <span className="cnav__label-text">Pinned</span>
-                <span className="cnav__label-count">{pinnedSessions.length}</span>
-                <span className="cnav__label-rule" aria-hidden />
-              </div>
-              <ul>
-                {/* Pinned rail is compact; the trailing always-visible bookmark
+            {!hasSearch && pinnedSessions.length > 0 ? (
+              <section aria-label="Pinned threads">
+                <div className="cnav__label">
+                  <span className="cnav__label-text">Pinned</span>
+                  <span className="cnav__label-count">{pinnedSessions.length}</span>
+                  <span className="cnav__label-rule" aria-hidden />
+                </div>
+                <ul>
+                  {/* Pinned rail is compact; the trailing always-visible bookmark
                     doubles as the pin marker AND a one-click unpin — otherwise
                     the only unpin lives on the (possibly truncated/collapsed)
                     copy of the row further down the rail. */}
-                {pinnedSessions.map((session) => {
-                  const title = sessionRailTitle(session);
-                  const active = activeSessionId === session.id;
-                  const prStatus = sessionPrStatus(session.pullRequest);
-                  return (
-                    <li key={`pin-${session.id}`}>
-                      <div className={`cnav__thread cnav__thread--flat${active ? " is-active" : ""}`}>
-                        {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
-                        <button
-                          type="button"
-                          aria-current={active ? "page" : undefined}
-                          onClick={() => onOpenSession(session)}
-                          className="cnav__thread-main focus-ring"
-                        >
-                          {prStatus ? null : (
-                            <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
-                          )}
-                          <span className="cnav__thread-title" title={title}>{title}</span>
-                        </button>
-                        <button
-                          type="button"
-                          title="Unpin chat"
-                          aria-label={`Unpin ${title}`}
-                          aria-pressed
-                          onClick={() => togglePin(session.id)}
-                          className="cnav__icon-btn is-on focus-ring"
-                        >
-                          <Icon name="ph:bookmark-simple-fill" width={12} aria-hidden />
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ) : null}
+                  {pinnedSessions.map((session) => {
+                    const title = sessionRailTitle(session);
+                    const active = activeSessionId === session.id;
+                    const prStatus = sessionPrStatus(session.pullRequest);
+                    return (
+                      <li key={`pin-${session.id}`}>
+                        <div className={`cnav__thread cnav__thread--flat${active ? " is-active" : ""}`}>
+                          {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
+                          <button
+                            type="button"
+                            aria-current={active ? "page" : undefined}
+                            onClick={() => onOpenSession(session)}
+                            className="cnav__thread-main focus-ring"
+                          >
+                            {prStatus ? null : (
+                              <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
+                            )}
+                            <span className="cnav__thread-title" title={title}>{title}</span>
+                          </button>
+                          <button
+                            type="button"
+                            title="Unpin chat"
+                            aria-label={`Unpin ${title}`}
+                            aria-pressed
+                            onClick={() => togglePin(session.id)}
+                            className="cnav__icon-btn is-on focus-ring"
+                          >
+                            <Icon name="ph:bookmark-simple-fill" width={12} aria-hidden />
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ) : null}
 
-          {view === "recent" ? (
-            recentBuckets.length === 0 ? (
+            {view === "recent" ? (
+              recentBuckets.length === 0 ? (
+                <p className="cnav__empty">
+                  {hasSearch ? "No threads match your search." : "No conversations yet."}
+                </p>
+              ) : (
+                recentBuckets.map((bucket) => {
+                  const key = `bucket:${bucket.key}`;
+                  const rows =
+                    showAllByKey.has(key) || hasSearch
+                      ? bucket.sessions
+                      : bucket.sessions.slice(0, THREADS_PREVIEW);
+                  return (
+                    <section key={bucket.key} aria-label={bucket.label}>
+                      <div className="cnav__label">
+                        <span className="cnav__label-text">{bucket.label}</span>
+                        <span className="cnav__label-count">{bucket.sessions.length}</span>
+                        <span className="cnav__label-rule" aria-hidden />
+                      </div>
+                      <ul>
+                        {rows.map((session) => (
+                          <li key={session.id}>
+                            <ThreadRow
+                              session={session}
+                              active={activeSessionId === session.id}
+                              pinned={isSessionPinned(pinnedIds, session.id)}
+                              confirming={confirmingSessionId === session.id}
+                              deleting={deletingSessionId === session.id}
+                              indent="flat"
+                              project={sessionProjectById.get(session.id) ?? null}
+                              glyph={threadLeadingIcon(sessionRailTitle(session))}
+                              onOpenUrl={onOpenUrl}
+                              onOpen={() => onOpenSession(session)}
+                              onOpenInSplit={
+                                onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
+                              }
+                              onTogglePin={() => togglePin(session.id)}
+                              onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
+                              archiving={archivingId !== null}
+                              onRequestDelete={() => setConfirmingSessionId(session.id)}
+                              onCancelDelete={() => setConfirmingSessionId(null)}
+                              onConfirmDelete={() => void handleDeleteSession(session)}
+                            />
+                          </li>
+                        ))}
+                        {bucket.sessions.length > THREADS_PREVIEW && !showAllByKey.has(key) && !hasSearch ? (
+                          <li>
+                            <button
+                              type="button"
+                              onClick={() => setShowAllByKey((cur) => new Set(cur).add(key))}
+                              className="cnav__more focus-ring [padding-left:13px]!"
+                            >
+                              Show {bucket.sessions.length - THREADS_PREVIEW} more
+                            </button>
+                          </li>
+                        ) : null}
+                      </ul>
+                    </section>
+                  );
+                })
+              )
+            ) : visibleGroups.length === 0 ? (
               <p className="cnav__empty">
                 {hasSearch ? "No threads match your search." : "No conversations yet."}
               </p>
             ) : (
-              recentBuckets.map((bucket) => {
-                const key = `bucket:${bucket.key}`;
-                const rows =
-                  showAllByKey.has(key) || hasSearch
-                    ? bucket.sessions
-                    : bucket.sessions.slice(0, THREADS_PREVIEW);
-                return (
-                  <section key={bucket.key} aria-label={bucket.label}>
-                    <div className="cnav__label">
-                      <span className="cnav__label-text">{bucket.label}</span>
-                      <span className="cnav__label-count">{bucket.sessions.length}</span>
-                      <span className="cnav__label-rule" aria-hidden />
-                    </div>
-                    <ul>
-                      {rows.map((session) => (
-                        <li key={session.id}>
-                          <ThreadRow
-                            session={session}
-                            active={activeSessionId === session.id}
-                            pinned={isSessionPinned(pinnedIds, session.id)}
-                            confirming={confirmingSessionId === session.id}
-                            deleting={deletingSessionId === session.id}
-                            indent="flat"
-                            project={sessionProjectById.get(session.id) ?? null}
-                            glyph={threadLeadingIcon(sessionRailTitle(session))}
-                            onOpenUrl={onOpenUrl}
-                            onOpen={() => onOpenSession(session)}
-                            onOpenInSplit={
-                              onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
-                            }
-                            onTogglePin={() => togglePin(session.id)}
-                            onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
-                            archiving={archivingId !== null}
-                            onRequestDelete={() => setConfirmingSessionId(session.id)}
-                            onCancelDelete={() => setConfirmingSessionId(null)}
-                            onConfirmDelete={() => void handleDeleteSession(session)}
-                          />
-                        </li>
-                      ))}
-                      {bucket.sessions.length > THREADS_PREVIEW && !showAllByKey.has(key) && !hasSearch ? (
-                        <li>
-                          <button
-                            type="button"
-                            onClick={() => setShowAllByKey((cur) => new Set(cur).add(key))}
-                            className="cnav__more focus-ring [padding-left:13px]!"
-                          >
-                            Show {bucket.sessions.length - THREADS_PREVIEW} more
-                          </button>
-                        </li>
-                      ) : null}
-                    </ul>
-                  </section>
-                );
-              })
-            )
-          ) : visibleGroups.length === 0 ? (
-            <p className="cnav__empty">
-              {hasSearch ? "No threads match your search." : "No conversations yet."}
-            </p>
-          ) : (
-            <ul>
-              {visibleGroups.map((group) => {
-                const key = groupKey(group);
-                const expanded = !collapsedKeys.has(key) || hasSearch;
-                const label = folderLabel(group);
-                const unregistered = Boolean(group.projectRoot) && !group.projectId;
-                const registering = registeringRoot === group.projectRoot;
-                const rows = showAllByKey.has(key) || hasSearch
-                  ? group.sessions
-                  : group.sessions.slice(0, THREADS_PREVIEW);
-                return (
-                  <li key={key} className={`cnav__group${expanded ? "" : " is-collapsed"}`}>
-                    <div className="cnav__group-head">
-                      <button
-                        type="button"
-                        aria-expanded={expanded}
-                        aria-label={`${expanded ? "Collapse" : "Expand"} ${label} threads`}
-                        onClick={() => toggleCollapse(key)}
-                        className="cnav__group-toggle focus-ring"
-                      >
-                        <Icon name="ph:caret-down" width={10} className="cnav__chev" aria-hidden />
-                        {group.projectId ? (
-                          <ProjectAvatar name={label} root={group.projectRoot} color={group.projectColor} size="sm" className="cnav__folder" />
-                        ) : (
-                          <Icon name={folderIcon(group, expanded)} width={14} className="cnav__folder" aria-hidden />
-                        )}
-                        <span className="cnav__group-text">
-                          <span className="cnav__group-name" title={group.projectRoot ?? "Threads with no project"}>
-                            {label}
-                          </span>
-                          <span className="cnav__group-meta">{groupMeta(group)}</span>
-                        </span>
-                      </button>
-                      {unregistered ? (
+              <ul>
+                {visibleGroups.map((group) => {
+                  const key = groupKey(group);
+                  const expanded = !collapsedKeys.has(key) || hasSearch;
+                  const label = folderLabel(group);
+                  const unregistered = Boolean(group.projectRoot) && !group.projectId;
+                  const registering = registeringRoot === group.projectRoot;
+                  const rows = showAllByKey.has(key) || hasSearch
+                    ? group.sessions
+                    : group.sessions.slice(0, THREADS_PREVIEW);
+                  return (
+                    <li key={key} className={`cnav__group${expanded ? "" : " is-collapsed"}`}>
+                      <div className="cnav__group-head">
                         <button
                           type="button"
-                          disabled={registering}
-                          onClick={() => handleRegister(group)}
-                          title={`Register ${label} as a project`}
-                          aria-label={`Register ${label} as a project`}
-                          className="cnav__icon-btn is-accent focus-ring"
+                          aria-expanded={expanded}
+                          aria-label={`${expanded ? "Collapse" : "Expand"} ${label} threads`}
+                          onClick={() => toggleCollapse(key)}
+                          className="cnav__group-toggle focus-ring"
                         >
-                          <Icon name={registering ? "ph:arrows-clockwise" : "ph:folders-bold"} width={13} className={registering ? "animate-spin" : undefined} aria-hidden />
+                          <Icon name="ph:caret-down" width={10} className="cnav__chev" aria-hidden />
+                          {group.projectId ? (
+                            <ProjectAvatar name={label} root={group.projectRoot} color={group.projectColor} size="sm" className="cnav__folder" />
+                          ) : (
+                            <Icon name={folderIcon(group, expanded)} width={14} className="cnav__folder" aria-hidden />
+                          )}
+                          <span className="cnav__group-text">
+                            <span className="cnav__group-name" title={group.projectRoot ?? "Threads with no project"}>
+                              {label}
+                            </span>
+                            <span className="cnav__group-meta">{groupMeta(group)}</span>
+                          </span>
                         </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        // (cave-gg5d) A "cave:code-select-project" dispatch used
-                        // to precede this — its only listener lived in the
-                        // retired (now deleted) ComuxView; onNewChat does the work.
-                        onClick={() => onNewChat(group.projectRoot)}
-                        title={`New chat in ${label}`}
-                        aria-label={`New chat in ${label}`}
-                        className="cnav__icon-btn focus-ring"
-                      >
-                        <Icon name="ph:plus" width={12} aria-hidden />
-                      </button>
-                    </div>
-                    {expanded ? (
-                      group.sessions.length === 0 ? (
-                        <p className="cnav__thread-empty">No threads yet.</p>
-                      ) : (
-                        <ul>
-                          {rows.map((session) => {
-                            const title = sessionRailTitle(session);
-                            const glyph = threadLeadingIcon(title);
-                            return (
-                              <li key={session.id}>
-                                <ThreadRow
-                                  session={session}
-                                  active={activeSessionId === session.id}
-                                  pinned={isSessionPinned(pinnedIds, session.id)}
-                                  confirming={confirmingSessionId === session.id}
-                                  deleting={deletingSessionId === session.id}
-                                  indent="folder"
-                                  glyph={glyph}
-                                  onOpenUrl={onOpenUrl}
-                                  onOpen={() => onOpenSession(session)}
-                                  onOpenInSplit={
-                                    onOpenSessionInSplit
-                                      ? () => onOpenSessionInSplit(session)
-                                      : undefined
-                                  }
-                                  onTogglePin={() => togglePin(session.id)}
-                                  onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
-                                  archiving={archivingId !== null}
-                                  onRequestDelete={() => setConfirmingSessionId(session.id)}
-                                  onCancelDelete={() => setConfirmingSessionId(null)}
-                                  onConfirmDelete={() => void handleDeleteSession(session)}
-                                />
+                        {unregistered ? (
+                          <button
+                            type="button"
+                            disabled={registering}
+                            onClick={() => handleRegister(group)}
+                            title={`Register ${label} as a project`}
+                            aria-label={`Register ${label} as a project`}
+                            className="cnav__icon-btn is-accent focus-ring"
+                          >
+                            <Icon name={registering ? "ph:arrows-clockwise" : "ph:folders-bold"} width={13} className={registering ? "animate-spin" : undefined} aria-hidden />
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          // (cave-gg5d) A "cave:code-select-project" dispatch used
+                          // to precede this — its only listener lived in the
+                          // retired (now deleted) ComuxView; onNewChat does the work.
+                          onClick={() => onNewChat(group.projectRoot)}
+                          title={`New chat in ${label}`}
+                          aria-label={`New chat in ${label}`}
+                          className="cnav__icon-btn focus-ring"
+                        >
+                          <Icon name="ph:plus" width={12} aria-hidden />
+                        </button>
+                      </div>
+                      {expanded ? (
+                        group.sessions.length === 0 ? (
+                          <p className="cnav__thread-empty">No threads yet.</p>
+                        ) : (
+                          <ul>
+                            {rows.map((session) => {
+                              const title = sessionRailTitle(session);
+                              const glyph = threadLeadingIcon(title);
+                              return (
+                                <li key={session.id}>
+                                  <ThreadRow
+                                    session={session}
+                                    active={activeSessionId === session.id}
+                                    pinned={isSessionPinned(pinnedIds, session.id)}
+                                    confirming={confirmingSessionId === session.id}
+                                    deleting={deletingSessionId === session.id}
+                                    indent="folder"
+                                    glyph={glyph}
+                                    onOpenUrl={onOpenUrl}
+                                    onOpen={() => onOpenSession(session)}
+                                    onOpenInSplit={
+                                      onOpenSessionInSplit
+                                        ? () => onOpenSessionInSplit(session)
+                                        : undefined
+                                    }
+                                    onTogglePin={() => togglePin(session.id)}
+                                    onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
+                                    archiving={archivingId !== null}
+                                    onRequestDelete={() => setConfirmingSessionId(session.id)}
+                                    onCancelDelete={() => setConfirmingSessionId(null)}
+                                    onConfirmDelete={() => void handleDeleteSession(session)}
+                                  />
+                                </li>
+                              );
+                            })}
+                            {group.sessions.length > THREADS_PREVIEW && !showAllByKey.has(key) && !hasSearch ? (
+                              <li>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAllByKey((cur) => new Set(cur).add(key))}
+                                  className="cnav__more focus-ring"
+                                >
+                                  Show {group.sessions.length - THREADS_PREVIEW} more
+                                </button>
                               </li>
-                            );
-                          })}
-                          {group.sessions.length > THREADS_PREVIEW && !showAllByKey.has(key) && !hasSearch ? (
-                            <li>
-                              <button
-                                type="button"
-                                onClick={() => setShowAllByKey((cur) => new Set(cur).add(key))}
-                                className="cnav__more focus-ring"
-                              >
-                                Show {group.sessions.length - THREADS_PREVIEW} more
-                              </button>
-                            </li>
-                          ) : null}
-                        </ul>
-                      )
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                            ) : null}
+                          </ul>
+                        )
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </nav>
         </div>
 

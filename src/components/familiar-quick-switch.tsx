@@ -17,6 +17,7 @@ type Props = {
   placement?: "bottom-start" | "bottom-end" | "top-start" | "top-end";
   /** Labels the switcher's trigger with the active familiar name. */
   labeled?: boolean;
+  singleRequired?: boolean;
 };
 
 /**
@@ -35,6 +36,7 @@ export function FamiliarQuickSwitch({
   onSelectFamiliar,
   placement = "bottom-start",
   labeled = false,
+  singleRequired = false,
 }: Props) {
   return (
     <div className="familiar-quickswitch">
@@ -47,6 +49,7 @@ export function FamiliarQuickSwitch({
         onSelectFamiliar={onSelectFamiliar}
         placement={placement}
         labeled={labeled}
+        singleRequired={singleRequired}
       />
     </div>
   );

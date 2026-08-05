@@ -197,6 +197,7 @@ import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks, stripImageMarkers } from "@/lib/image-blocks";
+import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
 import {
@@ -212,6 +213,7 @@ import {
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
+import { ChatSpecCard } from "@/components/chat-spec-card";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -3374,6 +3376,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       : modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
       : "";
+  const [composerCaret, setComposerCaret] = useState(0);
+  const completeComposerText = useCallback((nextText: string, nextCaret: number) => {
+    setInput(nextText);
+    setComposerCaret(nextCaret);
+    requestAnimationFrame(() => {
+      const textarea = inputRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }, []);
   const {
     skills,
     prompts,
@@ -3389,10 +3402,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     slashIdx,
     setSlashIdx,
     slashListboxId,
+    completeCommand,
     handleKeyDown: handleMenuKey,
   } = useInlineSlashMenus({
     text: input,
     setText: setInput,
+    caret: composerCaret,
+    onCompleteText: completeComposerText,
     modelHarness,
     modelOptionsOverride: composerModelOptions,
     onPickModel: (id) => {
@@ -3468,9 +3484,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // @-file mentions (CHAT-D1-04). Typing `@` opens a workspace-file picker
   // for the selected predetermined project. The file index is fetched once
   // per root from /api/project/files and fuzzy-filtered client-side. Mentions
-  // stay disjoint from the slash menu: `@` is mid-token, `/` first-token-only.
+  // stay disjoint from the slash menu because each requires its own boundary.
   const mentionRoot = activeProjectRoot.trim();
-  const [composerCaret, setComposerCaret] = useState(0);
   const [mentionIdx, setMentionIdx] = useState(0);
   // Esc hides the picker for the current input; any edit brings it back.
   const [mentionDismissed, setMentionDismissed] = useState(false);
@@ -5797,6 +5812,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : {}),
           }
         : undefined;
+      if (
+        (initialAttachments?.length ?? 0) === 0 &&
+        intentFromSlash(initialPrompt)
+      ) {
+        return;
+      }
       void sendRaw(
         initialPrompt,
         initialAttachments ?? [],
@@ -6418,6 +6439,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // transcript survives, reachable via the chat list's "Show archived" toggle
   // where the same menu item unarchives it back onto the rail.
   // Rail drag-to-promote retains this callback for turning a solo chat into a coven.
+  const promotableFamiliars = useMemo(
+    () => addableFamiliars(familiars, familiar.id),
+    [familiar.id, familiars],
+  );
+  const promotableFamiliarIds = useMemo(
+    () => promotableFamiliars.map((candidate) => candidate.id),
+    [promotableFamiliars],
+  );
+
   const promoteToCoven = useCallback(
     (addedId: string) => {
       const added = familiars.find((f) => f.id === addedId);
@@ -6455,8 +6485,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const onStart = (e: Event) => {
       const detail = (e as CustomEvent<FamiliarDragDetail>).detail;
       if (!detail?.id) return;
-      const addable = addableFamiliars(familiars, familiar.id).map((f) => f.id);
-      if (!canDropFamiliar({ draggedId: detail.id, hostId: familiar.id, addableIds: addable })) return;
+      if (!canDropFamiliar({ draggedId: detail.id, hostId: familiar.id, addableIds: promotableFamiliarIds })) return;
       setFamiliarDrag(detail);
     };
     const onEnd = () => {
@@ -6469,7 +6498,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       window.removeEventListener(FAMILIAR_DRAG_START, onStart);
       window.removeEventListener(FAMILIAR_DRAG_END, onEnd);
     };
-  }, [familiar.id, familiars]);
+  }, [familiar.id, promotableFamiliarIds]);
 
   const handleFamiliarDrop = useCallback(
     (e: React.DragEvent) => {
@@ -6478,11 +6507,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setFamiliarDrag(null);
       setDropHover(false);
       if (!dropped) return;
-      const addable = addableFamiliars(familiars, familiar.id).map((f) => f.id);
-      if (!canDropFamiliar({ draggedId: dropped, hostId: familiar.id, addableIds: addable })) return;
+      if (!canDropFamiliar({ draggedId: dropped, hostId: familiar.id, addableIds: promotableFamiliarIds })) return;
       promoteToCoven(dropped);
     },
-    [familiar.id, familiarDrag, familiars, promoteToCoven],
+    [familiar.id, familiarDrag, promoteToCoven, promotableFamiliarIds],
   );
 
   const setChatArchived = async (archived: boolean) => {
@@ -6573,9 +6601,39 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // renders inline there and docked everywhere else. Extracted to a variable
   // rather than duplicated: a second composer would mean two textareas sharing
   // nothing, with draft, project, model, branch and enhance state forked.
+  // Context controls follow the same pattern: constructed once as
+  // chatContextControls and placed adaptively — footer cluster for new chats
+  // (inlineComposer) and session header for active chats (!inlineComposer)
+  // so picker state is never duplicated.
   const inlineComposer = sessionId === null;
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
+  const chatContextControls = (
+    <ComposerContextChips
+      projects={projects}
+      projectValue={resolvedProjectId}
+      onProjectChange={setProjectIdDraft}
+      familiarId={familiar.id ?? null}
+      createProject={createProject}
+      createProjectOrThrow={createProjectOrThrow}
+      runtime={modelHarness}
+      modelValue={composerModelValue}
+      modelOptions={composerModelOptions}
+      onPickRuntime={handleSelectRuntime}
+      onPickModel={handleSelectModel}
+      promotableModel={promotableModel}
+      onPromoteModelToDefault={handlePromoteModelToDefault}
+      modelDisabled={busy}
+      projectRoot={activeProjectRoot}
+      onOpenUrl={onOpenUrl}
+      registerCurrentRoot={setupCandidateRoot ?? undefined}
+      onRegisterCurrentRoot={
+        setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
+      }
+      popoverPlacement={composerPopoverPlacement}
+      ariaLabel={inlineComposer ? "New chat context" : "Session context"}
+    />
+  );
   const composerNode = (
         <footer
           className="cave-composer-dock"
@@ -6775,7 +6833,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           ref={active ? activeSlashOptionRef : null}
                           onMouseEnter={() => setSlashIdx(i)}
                           onClick={() => {
-                            setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
+                            completeCommand(cmd.name, Boolean(cmd.argPlaceholder));
                             inputRef.current?.focus();
                           }}
                           className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
@@ -7115,36 +7173,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </div>
                 </div>
               </div>
-              {/* Footer band — the darker strip attached to the panel's
-                  underside carries context and linked work first, then the
-                  latest assistant options. Suggestions stay hidden while a
-                  response streams so stale actions cannot be activated. */}
+              {/* Footer band — carries linked work and latest assistant options.
+                  Context controls ride here only for new chats (inlineComposer);
+                  active chats show them in the session header instead. */}
               <div className="cave-composer-footer-band">
-                <div className="cave-composer-footer-band__cluster">
-                  <ComposerContextChips
-                    projects={projects}
-                    projectValue={resolvedProjectId}
-                    onProjectChange={setProjectIdDraft}
-                    familiarId={familiar.id ?? null}
-                    createProject={createProject}
-                    createProjectOrThrow={createProjectOrThrow}
-                    runtime={modelHarness}
-                    modelValue={composerModelValue}
-                    modelOptions={composerModelOptions}
-                    onPickRuntime={handleSelectRuntime}
-                    onPickModel={handleSelectModel}
-                    promotableModel={promotableModel}
-                    onPromoteModelToDefault={handlePromoteModelToDefault}
-                    modelDisabled={busy}
-                    projectRoot={activeProjectRoot}
-                    onOpenUrl={onOpenUrl}
-                    registerCurrentRoot={setupCandidateRoot ?? undefined}
-                    onRegisterCurrentRoot={
-                      setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
-                    }
-                    popoverPlacement={composerPopoverPlacement}
-                  />
-                </div>
+                {inlineComposer ? (
+                  <div className="cave-composer-footer-band__cluster">
+                    {chatContextControls}
+                  </div>
+                ) : null}
                 {linkedContextRow}
                 {followUp.suggestions.length > 0 && !busy ? (
                   <div className="cave-chat-followups">
@@ -7270,6 +7307,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 sessionId={sessionId}
                 hasTurns={turns.length > 0}
                 onOpenDebug={openDebug}
+                promotableFamiliars={promotableFamiliars}
+                onPromoteToCoven={promoteToCoven}
                 reflecting={reflecting}
                 onReflect={familiar.id ? () => void reflectOnThread() : undefined}
                 registerCurrentRoot={setupCandidateRoot ?? undefined}
@@ -7296,6 +7335,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
           </div>
         </MetaLine>
+        {!inlineComposer ? (
+          <div className="cave-chat-header-context">{chatContextControls}</div>
+        ) : null}
       </header>
       {/* Chat.dc.html 2a: find slides open as a band under the title row —
           controls over a scrollable list of every hit. The list is the point:
@@ -7852,6 +7894,31 @@ function splitSegmentsForGitHub(
 }
 
 /**
+ * Replace complete familiar-authored spec fences with document cards. This is
+ * settled-turn only: while a familiar is still writing, the ordinary Markdown
+ * path keeps the unfinished fence legible until its closing delimiter arrives.
+ */
+function splitSegmentsForSpecs(
+  segments: MessageBubbleSegment[],
+): MessageBubbleSegment[] {
+  return segments.flatMap<MessageBubbleSegment>((segment, segmentIndex) => {
+    if (segment.kind !== "text") return [segment];
+    return sliceSpecBlocks(segment.text).flatMap<MessageBubbleSegment>((piece, pieceIndex) => {
+      if (piece.kind === "text") {
+        return piece.text.trim()
+          ? [{ kind: "text" as const, text: piece.text }]
+          : [];
+      }
+      return [{
+        kind: "block" as const,
+        key: `spec-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
+        node: <ChatSpecCard spec={piece.spec} />,
+      }];
+    });
+  });
+}
+
+/**
  * Split prose segments again on `<coven:image …>` markers, mounting one
  * ImageCarousel per deck at the marker's position (src/lib/image-blocks.ts).
  * This runs before the GitHub/artifact splits so a grouped deck can span either
@@ -8333,7 +8400,12 @@ function TurnRowImpl({
     // artifact or GitHub card. The later splitters refine only the remaining
     // prose; the `visible` fallback/content path is marker-free either way.
     const split = splitSegmentsForGitHub(
-      splitSegmentsForArtifacts(splitSegmentsForImages([{ kind: "text", text: visibleWithGh }]), artifactCtx),
+      splitSegmentsForArtifacts(
+        splitSegmentsForImages(
+          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }]),
+        ),
+        artifactCtx,
+      ),
       onOpenUrl,
       ghFamiliar,
     );

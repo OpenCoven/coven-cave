@@ -5,6 +5,7 @@ import {
   DRIVES_LOCATION,
   createSubdirInBrowsableDir,
   homeRoot,
+  listPlaceGroups,
   listSystemRootEntries,
   listSystemRoots,
   resolveBrowsableDir,
@@ -20,6 +21,12 @@ import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
  * volume root (`/` on POSIX, drive roots on Windows); the `::drives`
  * pseudo-location lists those roots so multi-drive machines can switch.
  *
+ * `?places=1` returns the sidebar's jump-off locations instead of a listing:
+ * Quick access ($HOME + known folders) and This PC (labeled volumes). The
+ * client fetches it once per modal open and navigates to the paths it names
+ * through the ordinary browse path, so it grants no reach the walk below
+ * wouldn't already allow.
+ *
  * Security: loopback-only (a phone on the tailnet must not browse the host's
  * filesystem), and every requested path is re-derived from its volume root by
  * resolveBrowsableDir's trusted directory walk — anything else returns 403.
@@ -27,6 +34,10 @@ import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
 export async function GET(req: NextRequest) {
   const denied = rejectNonLocalRequest(req);
   if (denied) return denied;
+
+  if (req.nextUrl.searchParams.get("places") === "1") {
+    return NextResponse.json({ ok: true, home: homeRoot(), groups: listPlaceGroups() });
+  }
 
   const requested = req.nextUrl.searchParams.get("dir");
   if ((requested ?? "").trim() === DRIVES_LOCATION) {

@@ -509,6 +509,19 @@
   font-size: var(--text-sm);
 }
 
+.settings-workspace-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings-workspace-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
 .settings-workspace-error {
   grid-column: 1 / -1;
   margin: 0;

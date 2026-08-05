@@ -614,6 +614,16 @@
     display: none;
   }
 
+  /* Keep the header context strip visible on mobile with full touch targets. */
+  .cave-chat-header-context {
+    display: block;
+    padding-inline-start: 0;
+  }
+
+  .cave-chat-header-context .cave-context-chip {
+    min-height: var(--touch-target);
+  }
+
   .cave-mobile-header-identity {
     position: relative;
     display: flex;

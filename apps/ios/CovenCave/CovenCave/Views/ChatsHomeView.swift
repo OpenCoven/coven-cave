@@ -17,7 +17,7 @@ struct ChatsHomeView: View {
     @Environment(\.chrome) private var chrome
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var showNewChat = false
-    @State private var initialNewChatFamiliarIds: [String] = []
+    @State private var fixedNewChatFamiliarId: String?
     @State private var query = ""
     /// Drives the accent glow on the search field while it's being edited.
     @FocusState private var searchFocused: Bool
@@ -42,7 +42,7 @@ struct ChatsHomeView: View {
         .sheet(isPresented: $showFamiliars) {
             FamiliarsListView { familiar in
                 showFamiliars = false
-                initialNewChatFamiliarIds = [familiar.id]
+                fixedNewChatFamiliarId = familiar.id
                 Task { @MainActor in
                     await Task.yield()
                     showNewChat = true
@@ -81,9 +81,9 @@ struct ChatsHomeView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { homeSearchBar }
             .sheet(
                 isPresented: $showNewChat,
-                onDismiss: { initialNewChatFamiliarIds = [] }
+                onDismiss: { fixedNewChatFamiliarId = nil }
             ) {
-                NewChatView(initialFamiliarIds: initialNewChatFamiliarIds) { thread in
+                NewChatView(fixedFamiliarId: fixedNewChatFamiliarId) { thread in
                     showNewChat = false
                     open(.thread(thread))
                 }
@@ -214,11 +214,11 @@ struct ChatsHomeView: View {
 
     /// Start a brand-new chat with a familiar and open it (familiar-row action).
     private func startNewChat(with familiar: Familiar) {
-        presentNewChat(familiarIds: [familiar.id])
+        presentNewChat(fixedFamiliarId: familiar.id)
     }
 
-    private func presentNewChat(familiarIds: [String] = []) {
-        initialNewChatFamiliarIds = familiarIds
+    private func presentNewChat(fixedFamiliarId: String? = nil) {
+        self.fixedNewChatFamiliarId = fixedFamiliarId
         showNewChat = true
     }
 

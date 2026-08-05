@@ -1,0 +1,93 @@
+/* ── Global section switcher (Home | Code) ───────────────────────────────────
+ * Two rooms at the top of the left siderail (cave-24d2r). A segmented control
+ * rather than two more nav rows: the choice is a scope for everything below it,
+ * so it must not read as a peer destination.
+ *
+ * Hosted by both siderails (SidebarMinimal and the Chat-time WorkspaceSidebar)
+ * so the switcher never moves between rooms.
+ */
+
+.nav-sections {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  margin: 0 var(--space-2) var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 55%, transparent);
+}
+
+.nav-sections__tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 26px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.nav-sections__tab:hover {
+  background: color-mix(in oklch, var(--bg-hover) 60%, transparent);
+  color: var(--text-primary);
+}
+
+/* Active section: the presence accent carries it — a solid text tone over a
+   soft fill of the SAME hue (no second color), per the state-tint recipe. */
+.nav-sections__tab.is-active {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, transparent);
+  padding: 0 calc(var(--space-2) - 1px);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.nav-sections__icon {
+  flex-shrink: 0;
+  color: var(--accent-presence);
+  opacity: 0.75;
+}
+
+.nav-sections__tab.is-active .nav-sections__icon {
+  opacity: 1;
+}
+
+.nav-sections__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Collapsed 56px rail: labels drop, the control stacks so both rooms stay
+   reachable as icons (same treatment as the destination rows). */
+.shell-nav--rail .nav-sections {
+  grid-auto-flow: row;
+  grid-auto-columns: auto;
+  margin-inline: var(--space-1);
+}
+
+.shell-nav--rail .nav-sections__label {
+  display: none;
+}
+
+.shell-nav--rail .nav-sections__tab {
+  padding: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-sections__tab {
+    transition: none;
+  }
+}

@@ -7,6 +7,9 @@ import {
   createSubdirInBrowsableDir,
   createSubdirWithinRoot,
   homeRoot,
+  listDrivePlaces,
+  listKnownFolders,
+  listPlaceGroups,
   listSubdirs,
   listSystemRoots,
   resolveBrowsableDir,
@@ -214,6 +217,63 @@ test("createSubdirInBrowsableDir creates beneath absolute parents via their volu
       reason: "invalid-parent",
     });
   });
+});
+
+// ── Sidebar places (Quick access / This PC) ─────────────────────────────────
+test("known folders resolve to real directories and never repeat a path", () => {
+  const places = listKnownFolders();
+  const seen = new Set<string>();
+  for (const place of places) {
+    assert.equal(place.kind, "known");
+    assert.equal(path.isAbsolute(place.path), true, `${place.path} is absolute`);
+    assert.equal(fs.statSync(place.path).isDirectory(), true, `${place.path} exists`);
+    assert.equal(seen.has(place.path), false, `${place.path} appears once`);
+    seen.add(place.path);
+  }
+});
+
+test("drive places cover every volume root and stay navigable", () => {
+  const roots = listSystemRoots();
+  const places = listDrivePlaces();
+
+  assert.deepEqual(
+    places.map((place) => place.path),
+    roots,
+    "one place per volume root, in the same order",
+  );
+  for (const place of places) {
+    assert.equal(place.kind, "drive");
+    assert.ok(place.name.length > 0, "every drive row is labelled");
+    // The rail only ever hands these back to the browse walk, so each must
+    // survive it — a label that isn't a real path would dead-end the sidebar.
+    assert.equal(resolveBrowsableDir(place.path), place.path);
+  }
+  if (process.platform !== "win32") {
+    assert.deepEqual(places.map((place) => place.name), ["/"]);
+  }
+});
+
+test("place groups lead with home and list volumes separately", () => {
+  const groups = listPlaceGroups();
+
+  assert.deepEqual(groups.map((group) => group.id), ["quick", "this-pc"]);
+  const quick = groups[0];
+  assert.equal(quick.label, "Quick access");
+  assert.deepEqual(quick.places[0], {
+    id: "home",
+    name: "Home",
+    path: homeRoot(),
+    kind: "home",
+  });
+  // $HOME already leads the group; a known folder that resolves to it (a
+  // container-flat profile) must not render a second identical row.
+  assert.equal(
+    quick.places.filter((place) => place.path === homeRoot()).length,
+    1,
+    "home appears exactly once",
+  );
+  assert.equal(groups[1].label, "This PC");
+  assert.ok(groups[1].places.length >= 1, "at least one volume is offered");
 });
 
 test("listSubdirs exposes dot folders while retaining non-dot noise filtering", () => {
