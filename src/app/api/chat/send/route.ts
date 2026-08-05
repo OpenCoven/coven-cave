@@ -882,7 +882,6 @@ function openClawChatResponse(args: {
         pushProgress("openclaw-gateway", "OpenClaw Gateway dispatch accepted", "done", `run ${gatewayDispatch.runId}`);
         const pendingUserTurnId = crypto.randomUUID();
         const stubTitle = chatSummaryTitle({ userText: args.promptText }) ?? defaultChatTitleForSession(conversationId);
-        void setDefaultStubTitleAuto(conversationId, stubTitle);
         const stubWrite = createConversationStub({
           sessionId: conversationId,
           familiarId: args.body.familiarId,
@@ -898,7 +897,10 @@ function openClawChatResponse(args: {
             ...(args.attachments.length ? { attachments: args.attachments } : {}),
             ...persistedTurnControls(args.body, responseMetadata.retryModel),
           },
-        }).catch(() => undefined);
+        }).then(async (created) => {
+          if (created) await setDefaultStubTitleAuto(conversationId, stubTitle);
+          return created;
+        }).catch(() => false);
         const stopGateway = () => {
           settleOpenGatewayTools("[tool cancelled by user]");
           void gatewayDispatch.abort();
@@ -1121,7 +1123,6 @@ function openClawChatResponse(args: {
       const pendingUserTurnId = crypto.randomUUID();
       const stubTitle =
         chatSummaryTitle({ userText: args.promptText }) ?? defaultChatTitleForSession(conversationId);
-      void setDefaultStubTitleAuto(conversationId, stubTitle);
       const stubWrite = createConversationStub({
         sessionId: conversationId,
         familiarId: args.body.familiarId,
@@ -1137,7 +1138,10 @@ function openClawChatResponse(args: {
           ...(args.attachments.length ? { attachments: args.attachments } : {}),
           ...persistedTurnControls(args.body, responseMetadata.retryModel),
         },
-      }).catch(() => undefined);
+      }).then(async (created) => {
+        if (created) await setDefaultStubTitleAuto(conversationId, stubTitle);
+        return created;
+      }).catch(() => false);
 
       const failChild = (err: NodeJS.ErrnoException) => {
         if (terminal) return;

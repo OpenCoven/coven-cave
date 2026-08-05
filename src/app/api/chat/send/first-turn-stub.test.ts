@@ -60,6 +60,22 @@ assert.match(
   "an accepted Gateway first turn persists its session model intent before the response completes",
 );
 
+const openClawStubWrites = [
+  ...chatRoute.matchAll(
+    /const stubWrite = createConversationStub\(\{[\s\S]*?harness: "openclaw",[\s\S]*?\}\)\.then\(async \(created\) => \{[\s\S]*?if \(created\) await setDefaultStubTitleAuto\(conversationId, stubTitle\);[\s\S]*?return created;[\s\S]*?\}\)\.catch\(\(\) => false\);/g,
+  ),
+];
+assert.equal(
+  openClawStubWrites.length,
+  2,
+  "both OpenClaw transports initialize stub-title ownership only when createConversationStub created a new conversation",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /void setDefaultStubTitleAuto\(conversationId, stubTitle\);\s*const stubWrite = createConversationStub/,
+  "a resumed OpenClaw chat must not overwrite its auto-owned title before the stub no-op is known",
+);
+
 assert.match(
   chatRoute,
   /await stubWrite;\s*const isFirstExchange = await withConversationLock\(sessionId, async \(\) => \{\s*const existing = await loadConversation\(sessionId\);/,
@@ -181,6 +197,11 @@ assert.match(
     fnBody,
     /isAutoOwnedTitle\(/,
     "periodic rename must not split its ownership check from the state write",
+  );
+  assert.match(
+    fnBody,
+    /isRenameDueAtTurn\(assistantTurns, policy\.everyTurns\)/,
+    "periodic renaming remains controlled by the configured assistant-turn cadence",
   );
 }
 
