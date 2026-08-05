@@ -26,6 +26,20 @@ assert.match(
   /proposal card the user must tap/,
   "action markers must be described as tap-to-fire proposals",
 );
+for (const reason of ["input", "approval", "credentials", "decision"]) {
+  assert.match(directive, new RegExp(`\\b${reason}\\b`), `attention reason ${reason} taught`);
+}
+const attentionExample = directive.match(/Choose a release channel\.\n<coven:attention reason="decision" \/>/)?.[0];
+assert.ok(attentionExample, "directive carries a concrete parseable attention example");
+const { extractChatAttentionMarker } = await import("./chat-attention-marker.ts");
+assert.deepEqual(
+  extractChatAttentionMarker(attentionExample),
+  {
+    visible: "Choose a release channel.\n",
+    request: { reason: "decision" },
+  },
+  "the taught attention example must parse into a concrete request",
+);
 
 // ── Lockstep: the directive's own example markers must parse (github-blocks) ─
 // If marker syntax drifts, the examples taught to agents break first — these

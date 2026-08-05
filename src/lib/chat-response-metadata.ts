@@ -1,5 +1,6 @@
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { ModelControlValues } from "./model-control-capabilities.ts";
+import type { ChatAttentionReason } from "./chat-attention-marker.ts";
 
 export type ChatResponseMetadata = {
   familiarId: string;
@@ -34,6 +35,12 @@ export type ChatResponseMetadata = {
   caveSessionId?: string;
   gatewaySessionId?: string;
   sessionKey?: string;
+  attentionRequest?: {
+    sessionId: string;
+    turnId: string;
+    requestedAt: string;
+    reason: ChatAttentionReason;
+  };
 };
 
 /** Collapse a user home prefix to "~" so the directory reads as a location the
