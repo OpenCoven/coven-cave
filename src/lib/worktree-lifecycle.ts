@@ -9,6 +9,7 @@ export type WorktreeLifecycleLane =
   | "active"
   | "recovery"
   | "cooldown"
+  | "review-needed"
   | "retire-after-gate"
   | "uncertain"
   | "protected";
@@ -28,6 +29,13 @@ export type WorktreePrRef = {
 
 export type WorktreeMergedPrRef = WorktreePrRef & {
   headOid: string;
+};
+
+export type WorktreeTaskRef = {
+  id: string;
+  title: string;
+  status: "open" | "in_progress" | "blocked" | "deferred";
+  updatedAt: string;
 };
 
 export type ManagedCreationException = {
@@ -68,6 +76,7 @@ export type WorktreeLifecycleObservation = {
   processOwners: WorktreeProcessOwner[];
   claimOwners: string[];
   taskIds: string[];
+  taskRefs: WorktreeTaskRef[];
   openPrs: WorktreePrRef[];
   mergedPr: WorktreeMergedPrRef | null;
   activeWorkflowUrls: string[];
@@ -108,7 +117,13 @@ type LegacyWorktreeObservation = Pick<
 type WorktreeObservationCompatibilityFields = Partial<
   Pick<
     WorktreeLifecycleObservation,
-    "kind" | "ref" | "metadata" | "metadataErrors" | "remoteRef" | "sessionIds"
+    | "kind"
+    | "ref"
+    | "metadata"
+    | "metadataErrors"
+    | "remoteRef"
+    | "sessionIds"
+    | "taskRefs"
   >
 >;
 
@@ -181,6 +196,7 @@ const HUMAN_LANE_LABELS: Record<WorktreeLifecycleLane, string> = {
   active: "active",
   recovery: "recovery",
   cooldown: "cooldown",
+  "review-needed": "review-needed",
   "retire-after-gate": "cleanup-ready",
   uncertain: "uncertain",
   protected: "protected",
@@ -201,7 +217,7 @@ export function isDisposableIgnoredPath(candidate: string): boolean {
   );
 }
 
-function activeReasons(observation: WorktreeLifecycleObservation): string[] {
+function hardActivityReasons(observation: WorktreeLifecycleObservation): string[] {
   const reasons: string[] = [];
   if (observation.changes.length > 0) {
     reasons.push(
@@ -230,9 +246,6 @@ function activeReasons(observation: WorktreeLifecycleObservation): string[] {
   if (observation.claimOwners.length > 0) {
     reasons.push(`active claim: ${observation.claimOwners.join(", ")}`);
   }
-  if (observation.taskIds.length > 0) {
-    reasons.push(`non-closed Beads: ${observation.taskIds.join(", ")}`);
-  }
   if (observation.openPrs.length > 0) {
     reasons.push(`open PR ${observation.openPrs.map((pr) => `#${pr.number}`).join(", ")}`);
   }
@@ -243,6 +256,32 @@ function activeReasons(observation: WorktreeLifecycleObservation): string[] {
     reasons.push(`active session: ${observation.sessionIds.join(", ")}`);
   }
   return reasons;
+}
+
+function formatTaskStatus(status: WorktreeTaskRef["status"]): string {
+  return status.replaceAll("_", " ");
+}
+
+function administrativeTaskReasons(observation: WorktreeLifecycleObservation): string[] {
+  if (observation.taskRefs.length > 0) {
+    return observation.taskRefs.map((taskRef) => {
+      const title = taskRef.title.trim();
+      const detail = title.length > 0 ? `: ${title}` : "";
+      return `Bead ${taskRef.id} (${formatTaskStatus(taskRef.status)})${detail}`;
+    });
+  }
+  if (observation.taskIds.length > 0) {
+    return [`non-closed Beads: ${observation.taskIds.join(", ")}`];
+  }
+  return [];
+}
+
+function administrativeReviewReasons(observation: WorktreeLifecycleObservation): string[] {
+  const reasons: string[] = [];
+  if (!observation.metadata) {
+    reasons.push(metadataBackfillReason());
+  }
+  return [...reasons, ...administrativeTaskReasons(observation)];
 }
 
 function reviewAfterReasons(metadata: WorktreeLifecycleMetadata, nowMs: number): string[] {
@@ -325,14 +364,9 @@ function divergentRemoteRefReason(remoteRef: WorktreeRemoteRef): string {
   return `same-named remote ref ${remoteRef.ref} diverges from local HEAD`;
 }
 
-type ClassifyLifecycleUnitOptions = {
-  allowLegacyMissingMetadata: boolean;
-};
-
 function classifyLifecycleUnitInternal(
   observation: WorktreeLifecycleObservation,
   nowMs: number,
-  options: ClassifyLifecycleUnitOptions,
 ): WorktreeLifecycleItem {
   if (observation.isPrimary || observation.protectedBranch) {
     return withReasons(observation, "protected", [
@@ -340,7 +374,7 @@ function classifyLifecycleUnitInternal(
     ]);
   }
 
-  const live = activeReasons(observation);
+  const live = hardActivityReasons(observation);
   if (live.length > 0) {
     return withReasons(observation, "active", [
       ...live,
@@ -356,43 +390,36 @@ function classifyLifecycleUnitInternal(
     return withReasons(observation, "uncertain", observation.metadataErrors);
   }
 
-  const legacyMissingMetadata = options.allowLegacyMissingMetadata && observation.metadata === null;
-  if (!observation.metadata) {
-    if (legacyMissingMetadata) {
-      return classifyLifecycleUnitWithoutMetadata(observation, nowMs);
-    }
-    return withReasons(observation, "uncertain", [metadataBackfillReason()]);
-  }
-
   if (!observation.branch) {
     return withReasons(observation, "recovery", [
       "detached HEAD",
-      ...reviewAfterReasons(observation.metadata, nowMs),
+      ...(observation.metadata ? reviewAfterReasons(observation.metadata, nowMs) : []),
     ]);
   }
 
   if (RECOVERY_BRANCH.test(observation.branch) || WIP_BRANCH.test(observation.branch)) {
     return withReasons(observation, "recovery", [
       "branch name identifies a recovery or WIP snapshot",
-      ...reviewAfterReasons(observation.metadata, nowMs),
+      ...(observation.metadata ? reviewAfterReasons(observation.metadata, nowMs) : []),
     ]);
   }
 
   if (
-    observation.metadata.disposition === "recovery" ||
-    observation.metadata.disposition === "archive"
+    observation.metadata &&
+    (observation.metadata.disposition === "recovery" ||
+      observation.metadata.disposition === "archive")
   ) {
     return withReasons(
       observation,
       "recovery",
-      recoveryDispositionReasons(observation.metadata, nowMs),
+      recoveryDispositionReasons(observation.metadata!, nowMs),
     );
   }
 
   if (observation.mergedPr && observation.mergedPr.headOid !== observation.head) {
     return withReasons(observation, "recovery", [
       `local HEAD does not match merged PR #${observation.mergedPr.number} head`,
-      ...reviewAfterReasons(observation.metadata, nowMs),
+      ...(observation.metadata ? reviewAfterReasons(observation.metadata, nowMs) : []),
     ]);
   }
 
@@ -400,30 +427,32 @@ function classifyLifecycleUnitInternal(
   if (!landed) {
     return withReasons(observation, "recovery", [
       "HEAD is not proven landed on the default branch or an exact merged PR",
-      ...reviewAfterReasons(observation.metadata, nowMs),
+      ...(observation.metadata ? reviewAfterReasons(observation.metadata, nowMs) : []),
     ]);
   }
 
-  const activeException = applicableManagedCreationException({
-    exception: observation.metadata.exception,
-    requestedPath: observation.path,
-    nowMs,
-  });
-  if (activeException) {
-    return withReasons(observation, "active", managedCreationExceptionReasons(activeException));
+  if (observation.metadata) {
+    const activeException = applicableManagedCreationException({
+      exception: observation.metadata.exception,
+      requestedPath: observation.path,
+      nowMs,
+    });
+    if (activeException) {
+      return withReasons(observation, "active", managedCreationExceptionReasons(activeException));
+    }
   }
 
   if (observation.remoteRef && observation.remoteRef.oid !== observation.head) {
     return withReasons(observation, "recovery", [
       divergentRemoteRefReason(observation.remoteRef),
-      ...reviewAfterReasons(observation.metadata, nowMs),
+      ...(observation.metadata ? reviewAfterReasons(observation.metadata, nowMs) : []),
     ]);
   }
 
   if (observation.updatedAtMs === null || !Number.isFinite(observation.updatedAtMs)) {
     return withReasons(observation, "uncertain", [
       "branch/worktree recency is unavailable",
-      ...reviewAfterReasons(observation.metadata, nowMs),
+      ...(observation.metadata ? reviewAfterReasons(observation.metadata, nowMs) : []),
     ]);
   }
 
@@ -431,62 +460,22 @@ function classifyLifecycleUnitInternal(
   if (ageMs < RETIREMENT_COOLDOWN_MS) {
     return withReasons(observation, "cooldown", [
       "landed work remains inside the mandatory 8-hour cooldown",
-      ...reviewAfterReasons(observation.metadata, nowMs),
+      ...(observation.metadata ? reviewAfterReasons(observation.metadata, nowMs) : []),
+    ]);
+  }
+
+  const administrativeReview = administrativeReviewReasons(observation);
+  if (administrativeReview.length > 0) {
+    return withReasons(observation, "review-needed", [
+      ...administrativeReview,
+      ...(observation.metadata ? reviewAfterReasons(observation.metadata, nowMs) : []),
     ]);
   }
 
   return withReasons(observation, "retire-after-gate", [
     "clean landed work is older than 8 hours",
     "removal still requires the repository-wide maintenance gate and final deletion proof",
-    ...reviewAfterReasons(observation.metadata, nowMs),
-  ]);
-}
-
-function classifyLifecycleUnitWithoutMetadata(
-  observation: WorktreeLifecycleObservation,
-  nowMs: number,
-): WorktreeLifecycleItem {
-  if (!observation.branch) {
-    return withReasons(observation, "recovery", ["detached HEAD"]);
-  }
-
-  if (RECOVERY_BRANCH.test(observation.branch) || WIP_BRANCH.test(observation.branch)) {
-    return withReasons(observation, "recovery", [
-      "branch name identifies a recovery or WIP snapshot",
-    ]);
-  }
-
-  if (observation.mergedPr && observation.mergedPr.headOid !== observation.head) {
-    return withReasons(observation, "recovery", [
-      `local HEAD does not match merged PR #${observation.mergedPr.number} head`,
-    ]);
-  }
-
-  const landed = observation.headOnDefaultBranch || observation.mergedPr !== null;
-  if (!landed) {
-    return withReasons(observation, "recovery", [
-      "HEAD is not proven landed on the default branch or an exact merged PR",
-    ]);
-  }
-
-  if (observation.remoteRef && observation.remoteRef.oid !== observation.head) {
-    return withReasons(observation, "recovery", [divergentRemoteRefReason(observation.remoteRef)]);
-  }
-
-  if (observation.updatedAtMs === null || !Number.isFinite(observation.updatedAtMs)) {
-    return withReasons(observation, "uncertain", ["branch/worktree recency is unavailable"]);
-  }
-
-  const ageMs = nowMs - observation.updatedAtMs;
-  if (ageMs < RETIREMENT_COOLDOWN_MS) {
-    return withReasons(observation, "cooldown", [
-      "landed work remains inside the mandatory 8-hour cooldown",
-    ]);
-  }
-
-  return withReasons(observation, "retire-after-gate", [
-    "clean landed work is older than 8 hours",
-    "removal still requires the repository-wide maintenance gate and final deletion proof",
+    ...(observation.metadata ? reviewAfterReasons(observation.metadata, nowMs) : []),
   ]);
 }
 
@@ -494,9 +483,7 @@ export function classifyLifecycleUnit(
   observation: WorktreeLifecycleObservation,
   nowMs = Date.now(),
 ): WorktreeLifecycleItem {
-  return classifyLifecycleUnitInternal(observation, nowMs, {
-    allowLegacyMissingMetadata: false,
-  });
+  return classifyLifecycleUnitInternal(observation, nowMs);
 }
 
 function normalizeLegacyRef(branch: string | null, ref: string | null | undefined): string | null {
@@ -509,40 +496,34 @@ function hasOwnProperty(value: object, key: PropertyKey): boolean {
 
 function normalizeWorktreeObservation(
   observation: WorktreeObservation,
-): {
-  observation: WorktreeLifecycleObservation;
-  allowLegacyMissingMetadata: boolean;
-} {
-  const allowLegacyMissingMetadata = !hasOwnProperty(observation, "metadata");
+): WorktreeLifecycleObservation {
   return {
-    allowLegacyMissingMetadata,
-    observation: {
-      kind: observation.kind ?? "worktree",
-      path: observation.path,
-      ref: normalizeLegacyRef(observation.branch, observation.ref),
-      branch: observation.branch,
-      head: observation.head,
-      isPrimary: observation.isPrimary,
-      protectedBranch: observation.protectedBranch,
-      changes: observation.changes,
-      ignoredPaths: observation.ignoredPaths,
-      nonDisposableIgnoredPaths: observation.nonDisposableIgnoredPaths,
-      indexFlags: observation.indexFlags,
-      processOwners: observation.processOwners,
-      claimOwners: observation.claimOwners,
-      taskIds: observation.taskIds,
-      openPrs: observation.openPrs,
-      mergedPr: observation.mergedPr,
-      activeWorkflowUrls: observation.activeWorkflowUrls,
-      headOnDefaultBranch: observation.headOnDefaultBranch,
-      remoteRefsContainingHead: observation.remoteRefsContainingHead,
-      updatedAtMs: observation.updatedAtMs,
-      probeErrors: observation.probeErrors,
-      metadata: observation.metadata ?? null,
-      metadataErrors: observation.metadataErrors ?? [],
-      remoteRef: observation.remoteRef ?? null,
-      sessionIds: observation.sessionIds ?? [],
-    },
+    kind: observation.kind ?? "worktree",
+    path: observation.path,
+    ref: normalizeLegacyRef(observation.branch, observation.ref),
+    branch: observation.branch,
+    head: observation.head,
+    isPrimary: observation.isPrimary,
+    protectedBranch: observation.protectedBranch,
+    changes: observation.changes,
+    ignoredPaths: observation.ignoredPaths,
+    nonDisposableIgnoredPaths: observation.nonDisposableIgnoredPaths,
+    indexFlags: observation.indexFlags,
+    processOwners: observation.processOwners,
+    claimOwners: observation.claimOwners,
+    taskIds: observation.taskIds,
+    taskRefs: observation.taskRefs ?? [],
+    openPrs: observation.openPrs,
+    mergedPr: observation.mergedPr,
+    activeWorkflowUrls: observation.activeWorkflowUrls,
+    headOnDefaultBranch: observation.headOnDefaultBranch,
+    remoteRefsContainingHead: observation.remoteRefsContainingHead,
+    updatedAtMs: observation.updatedAtMs,
+    probeErrors: observation.probeErrors,
+    metadata: hasOwnProperty(observation, "metadata") ? observation.metadata ?? null : null,
+    metadataErrors: observation.metadataErrors ?? [],
+    remoteRef: observation.remoteRef ?? null,
+    sessionIds: observation.sessionIds ?? [],
   };
 }
 
@@ -550,16 +531,14 @@ export function classifyWorktree(
   observation: WorktreeObservation,
   nowMs = Date.now(),
 ): WorktreeLifecycleItem {
-  const normalized = normalizeWorktreeObservation(observation);
-  return classifyLifecycleUnitInternal(normalized.observation, nowMs, {
-    allowLegacyMissingMetadata: normalized.allowLegacyMissingMetadata,
-  });
+  return classifyLifecycleUnitInternal(normalizeWorktreeObservation(observation), nowMs);
 }
 
 const LANE_ORDER: WorktreeLifecycleLane[] = [
   "active",
   "recovery",
   "cooldown",
+  "review-needed",
   "retire-after-gate",
   "uncertain",
   "protected",
@@ -686,7 +665,7 @@ export function renderWorktreeLifecycleReport(
   const { includeFooter = true } = options;
   const { counts } = summary;
   const lines = [
-    `Worktree lifecycle: ${summary.items.length} registered | ${counts.active} active | ${counts.recovery} recovery | ${counts.cooldown} cooldown | ${counts["retire-after-gate"]} cleanup-ready | ${counts.uncertain} uncertain | ${counts.protected} protected`,
+    `Worktree lifecycle: ${summary.items.length} registered | ${counts.active} active | ${counts.recovery} recovery | ${counts.cooldown} cooldown | ${counts["review-needed"]} review-needed | ${counts["retire-after-gate"]} cleanup-ready | ${counts.uncertain} uncertain | ${counts.protected} protected`,
     `Worktree budget: ${summary.budgets.worktrees.count}/${summary.budgets.worktrees.warning} (${summary.budgets.worktrees.exceeded ? "exceeded" : "within budget"})`,
     `Local branch budget: ${summary.budgets.branches.count}/${summary.budgets.branches.warning} (${summary.budgets.branches.exceeded ? "exceeded" : "within budget"})`,
     `Managed exceptions: ${summary.budgets.exceptions.active} active | ${summary.budgets.exceptions.expired} expired`,

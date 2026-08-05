@@ -116,6 +116,16 @@ function metadata(overrides = {}) {
   };
 }
 
+function taskRef(overrides = {}) {
+  return {
+    id: "cave-ox3ky",
+    title: "Review automatic branch retirement",
+    status: "open",
+    updatedAt: "2026-07-29T12:00:00Z",
+    ...overrides,
+  };
+}
+
 function observation(overrides = {}) {
   const head = overrides.head ?? "a".repeat(40);
   return {
@@ -133,6 +143,7 @@ function observation(overrides = {}) {
     processOwners: [],
     claimOwners: [],
     taskIds: [],
+    taskRefs: [],
     openPrs: [],
     mergedPr: null,
     activeWorkflowUrls: [],
@@ -201,7 +212,6 @@ function legacyObservation(overrides = {}) {
   const item = classifyLifecycleUnit(
     observation({
       claimOwners: ["buns@coven-cave"],
-      taskIds: ["cave-x"],
       openPrs: [{ number: 44, url: "https://example.test/44" }],
       activeWorkflowUrls: ["https://example.test/run"],
     }),
@@ -209,7 +219,6 @@ function legacyObservation(overrides = {}) {
   );
   assert.equal(item.lane, "active");
   assert.match(item.reasons.join("\n"), /claim/);
-  assert.match(item.reasons.join("\n"), /cave-x/);
   assert.match(item.reasons.join("\n"), /PR #44/);
   assert.match(item.reasons.join("\n"), /workflow/);
 }
@@ -220,12 +229,48 @@ function legacyObservation(overrides = {}) {
       metadata: null,
       branch: "feat/missing-metadata",
       ref: "refs/heads/feat/missing-metadata",
+      mergedPr: { number: 43, headOid: "a".repeat(40), url: "https://example.test/43" },
       headOnDefaultBranch: true,
     }),
     NOW,
   );
-  assert.equal(item.lane, "uncertain", "missing metadata fails closed");
-  assert.match(item.reasons.join("\n"), /metadata backfill/i);
+  assert.equal(item.lane, "review-needed", "clean landed legacy work queues for administrative review");
+  assert.match(item.reasons.join("\n"), /structured lifecycle metadata/i);
+}
+
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      metadata: metadata({ disposition: "pr" }),
+      taskRefs: [
+        taskRef({
+          id: "cave-task",
+          title: "Close administrative cleanup bead",
+          status: "blocked",
+        }),
+      ],
+      mergedPr: { number: 44, headOid: "a".repeat(40), url: "https://example.test/44" },
+      updatedAtMs: NOW - 2 * DAY,
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "review-needed", "non-closed Beads become administrative review only");
+  assert.match(item.reasons.join("\n"), /Bead cave-task/i);
+}
+
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      changes: ["1 .M N... src/live.ts"],
+      metadata: null,
+      taskRefs: [taskRef({ id: "cave-dirty" })],
+      mergedPr: { number: 45, headOid: "a".repeat(40), url: "https://example.test/45" },
+      updatedAtMs: NOW - 2 * DAY,
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "active", "hard activity outranks administrative review blockers");
+  assert.match(item.reasons.join("\n"), /tracked or untracked change/);
 }
 
 {
@@ -258,11 +303,12 @@ function legacyObservation(overrides = {}) {
     observation({
       branch: "backup/feat-x-2026-07-29",
       ref: "refs/heads/backup/feat-x-2026-07-29",
+      metadata: null,
       remoteRefsContainingHead: ["refs/remotes/origin/backup/feat-x-2026-07-29"],
     }),
     NOW,
   );
-  assert.equal(item.lane, "recovery", "backup branches are never cleanup candidates");
+  assert.equal(item.lane, "recovery", "backup branches outrank administrative review without metadata");
 }
 
 {
@@ -283,13 +329,14 @@ function legacyObservation(overrides = {}) {
 {
   const item = classifyLifecycleUnit(
     observation({
-      metadata: metadata({ disposition: "pr" }),
+      metadata: null,
+      taskRefs: [taskRef({ id: "cave-cooldown", status: "in_progress" })],
       mergedPr: { number: 46, headOid: "a".repeat(40), url: "https://example.test/46" },
       updatedAtMs: NOW - RETIREMENT_COOLDOWN_MS + 1,
     }),
     NOW,
   );
-  assert.equal(item.lane, "cooldown");
+  assert.equal(item.lane, "cooldown", "cooldown still outranks administrative review");
   assert.match(item.reasons.join("\n"), /8-hour cooldown/);
 }
 
@@ -327,11 +374,12 @@ function legacyObservation(overrides = {}) {
       metadata: null,
       branch: "feat/missing-metadata-wrapper",
       ref: "refs/heads/feat/missing-metadata-wrapper",
+      mergedPr: { number: 59, headOid: "a".repeat(40), url: "https://example.test/59" },
       headOnDefaultBranch: true,
     }),
     NOW,
   );
-  assert.equal(item.lane, "uncertain", "new callers stay fail-closed when metadata is explicitly missing");
+  assert.equal(item.lane, "review-needed", "wrapper callers also queue explicit missing metadata for review");
   assert.match(item.reasons.join("\n"), /metadata backfill/i);
 }
 
@@ -704,6 +752,7 @@ function legacyObservation(overrides = {}) {
     active: 1,
     recovery: 0,
     cooldown: 0,
+    "review-needed": 0,
     "retire-after-gate": 1,
     uncertain: 0,
     protected: 1,
@@ -711,7 +760,7 @@ function legacyObservation(overrides = {}) {
   assert.deepEqual(summary.budgets, budgets, "the exact prevention budget object survives summary creation");
   assert.equal(summary.budgets, budgets, "summary creation preserves the supplied budget object");
   const text = renderWorktreeLifecycleReport(summary);
-  assert.match(text, /3 registered \| 1 active .* 1 cleanup-ready .* 1 protected/);
+  assert.match(text, /3 registered \| 1 active .* 0 review-needed .* 1 cleanup-ready .* 1 protected/);
   assert.match(text, /Worktree budget: 13\/12 \(exceeded\)/);
   assert.match(text, /Local branch budget: 31\/30 \(exceeded\)/);
   assert.doesNotMatch(text, /retire after gate/i, "human report renames the lane");
@@ -734,6 +783,7 @@ function legacyObservation(overrides = {}) {
         branch: "feat/metadata-backfill",
         ref: "refs/heads/feat/metadata-backfill",
         metadata: null,
+        mergedPr: { number: 60, headOid: "a".repeat(40), url: "https://example.test/60" },
         headOnDefaultBranch: true,
       }),
       NOW,
@@ -809,22 +859,35 @@ function legacyObservation(overrides = {}) {
         lane: "retire-after-gate",
         reasons: ["merged PR landed"],
       },
+      {
+        ...observation({
+          branch: "feat/review-needed",
+          ref: "refs/heads/feat/review-needed",
+          path: "/repo/.worktrees/review-needed",
+        }),
+        lane: "review-needed",
+        reasons: ["Bead cave-review (blocked): Close administrative cleanup bead"],
+      },
     ],
     {
-      worktrees: { count: 2, warning: 12, exceeded: false },
-      branches: { count: 2, warning: 30, exceeded: false },
+      worktrees: { count: 3, warning: 12, exceeded: false },
+      branches: { count: 3, warning: 30, exceeded: false },
       exceptions: { active: 0, expired: 0 },
     },
   );
   const expected = [
-    "Worktree lifecycle: 2 registered | 1 active | 0 recovery | 0 cooldown | 1 cleanup-ready | 0 uncertain | 0 protected",
-    "Worktree budget: 2/12 (within budget)",
-    "Local branch budget: 2/30 (within budget)",
+    "Worktree lifecycle: 3 registered | 1 active | 0 recovery | 0 cooldown | 1 review-needed | 1 cleanup-ready | 0 uncertain | 0 protected",
+    "Worktree budget: 3/12 (within budget)",
+    "Local branch budget: 3/30 (within budget)",
     "Managed exceptions: 0 active | 0 expired",
     "",
     "active",
     "- feat/live @ /repo/.worktrees/live",
     "  claimed by cave-1",
+    "",
+    "review-needed",
+    "- feat/review-needed @ /repo/.worktrees/review-needed",
+    "  Bead cave-review (blocked): Close administrative cleanup bead",
     "",
     "cleanup-ready",
     "- feat/old [branch-only]",
@@ -836,14 +899,18 @@ function legacyObservation(overrides = {}) {
     "Report only. No worktree or branch was changed.",
   ].join("\n");
   const expectedWithoutFooter = [
-    "Worktree lifecycle: 2 registered | 1 active | 0 recovery | 0 cooldown | 1 cleanup-ready | 0 uncertain | 0 protected",
-    "Worktree budget: 2/12 (within budget)",
-    "Local branch budget: 2/30 (within budget)",
+    "Worktree lifecycle: 3 registered | 1 active | 0 recovery | 0 cooldown | 1 review-needed | 1 cleanup-ready | 0 uncertain | 0 protected",
+    "Worktree budget: 3/12 (within budget)",
+    "Local branch budget: 3/30 (within budget)",
     "Managed exceptions: 0 active | 0 expired",
     "",
     "active",
     "- feat/live @ /repo/.worktrees/live",
     "  claimed by cave-1",
+    "",
+    "review-needed",
+    "- feat/review-needed @ /repo/.worktrees/review-needed",
+    "  Bead cave-review (blocked): Close administrative cleanup bead",
     "",
     "cleanup-ready",
     "- feat/old [branch-only]",
